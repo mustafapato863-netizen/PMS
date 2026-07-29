@@ -53,7 +53,7 @@ Required:
 
 - `DATABASE_URL`: Supabase PostgreSQL connection string with TLS.
 - `JWT_SECRET`: strong random secret, never the Supabase publishable key.
-- `CORS_ORIGINS`: explicit frontend origin(s), comma-separated; never `*` with credentials.
+- `CORS_ALLOWED_ORIGINS`: explicit frontend origin(s), comma-separated; never `*` with credentials.
 
 Recommended:
 
