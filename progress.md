@@ -176,3 +176,33 @@
 - Restarted the exact local Uvicorn listener onto the final source after the log-privacy hardening. Final smoke confirmed public health 200, canonical 422 validation, canonical 401 auth rejection, matching request IDs, timing headers, and `route=unmatched` rather than a raw protected path. The current listener is PID 6252.
 - Re-ran the complete backend suite with bounded output after the final privacy change: 538/538 passed in 46.53 seconds.
 - Final log-safety review removed raw-path fallback from request and error telemetry so pre-routing failures cannot record path identifiers.
+
+## Session: 2026-08-01 — Performance+ Roadmap
+
+- Selected `planning-with-files`, `senior-architect`, and `code-reviewer`.
+- Confirmed `graphify-out/graph.json` is absent, so planning uses repository evidence and existing audit artifacts.
+- Verified the current frontend production build succeeds and captured current chunk sizes.
+- Began Phase 11 as planning-only work; no application, schema, environment, or deployment changes have been made.
+- Read the current baseline/results/database/final implementation artifacts and separated already-delivered improvements from remaining opportunities.
+- Created `PERFORMANCE_PLUS_ROADMAP.md` with quantified targets, seven delivery phases, acceptance gates, technology decisions, ownership, risks, rollback boundaries, sequencing, estimates, and approval checkpoints.
+- Completed Phase 11 planning. Product implementation remains intentionally unstarted.
+
+## Session: 2026-08-01 — Performance+ Implementation Kickoff
+
+- Re-read the Performance+ roadmap and selected the first implementation release scope.
+- Confirmed existing Backend/Frontend dirty work must be preserved.
+- Initial source discovery shows the shared App shell imports Framer Motion and existing Performance/Insights hooks are the correct extension points.
+- No product source has been edited in this implementation session yet.
+- A bounded source read used an assumed SQL repository path that does not exist; no source change occurred. The next inspection will resolve the import path before editing.
+- Added Frontend `budget` and `build:ci` scripts with raw/gzip limits for charts, animation, and Team Dashboard chunks.
+- Initially removed route-level `AnimatePresence`, then measured no chunk-size benefit because shared shell components still import Framer Motion; reverted that behavior-only change.
+- Added a regression test proving priority-only Insights skips unused planning classification.
+- Inspected the management and SQL repository paths; period-scoped priority loading is a separate higher-risk optimization and was not mixed into this first safe patch.
+- Verification passed: backend Insights tests 19/19, frontend typecheck, lint, targeted Reports/Insights tests 6/6, production build, bundle budgets, and whitespace checks.
+- Identified `TeamChartsSection` as a below-the-fold synchronous import in the Team Dashboard; preparing a component-level lazy boundary as the next safe frontend optimization.
+- Implemented the Team Dashboard chart lazy boundary with an accessible loading skeleton; typecheck, build:ci, bundle budgets, focused backend tests, and diff checks passed.
+- Full backend suite result: 540 passed, 1 pre-existing date-sensitive failure in `test_report_story_service.py`; no performance-path test failed. Frontend full-suite result is being run separately after the combined command stopped on the backend failure.
+- Full frontend suite passed: 55 files / 189 tests.
+- Phase 12 implementation scope is complete; remaining Performance+ phases (period-scoped Insights loader, compact Performance consumer migration, async report jobs, hosting/realtime migration, staging load) remain intentionally separate.
+- Final combined diff inspection timed out; bounded submodule checks remain before closing the implementation session.
+- Added `PERFORMANCE_PLUS_IMPLEMENTATION.md` with the actual changes, measurements, verification, and remaining roadmap work.

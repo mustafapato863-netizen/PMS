@@ -170,3 +170,33 @@
   - only the base `/health` path was excluded from rate metrics, not liveness/readiness.
 - Import-time `DATA_DIR` creation was also removed. Writers already create their required parent directory at the actual write boundary, so read-only/serverless imports no longer attempt this filesystem mutation.
 - The last log-safety review found that requests rejected before route resolution fell back to the raw URL path, which could contain an employee ID. Telemetry and persisted error endpoints now use the normalized route template when available and the literal `unmatched` otherwise.
+
+## Performance+ Planning — 2026-08-01
+
+- The repository already contains a completed performance/compatibility audit, reproducible baseline, database query audit, cache architecture, and final implementation evidence.
+- The new roadmap will extend those results rather than proposing a rewrite or repeating completed projection/configuration-cache work.
+- Current production build evidence: charts 392.53 kB raw / 112.70 kB gzip; vendor 221.08 / 71.04; Team Dashboard 185.67 / 48.73; animation 132.20 / 43.28; Socket.IO 41.18 / 12.86; CSS 244.91 / 35.37.
+- Core React/Vite/TypeScript/Tailwind and FastAPI/SQLAlchemy/PostgreSQL choices remain appropriate. Highest-value candidates are selective chart/animation loading, serverless realtime alignment, heavy report/import isolation, response/query budgets, and RTL design-system standardisation.
+- The current screenshot's unused space and icon/text crowding are layout-system defects, not evidence that React, Tailwind, or Lucide must be replaced.
+- Existing measured work already reduced Planning options by 93.9%, Report options by 95.1%, shell payload by 99.6%, and priority Insights payload by 96.1%; these are baselines, not future roadmap items.
+- Remaining measured backend opportunities are full Performance (~598 kB), full Insights (~487 kB), priority Insights retaining 14 SQL statements, and one active-user database query for every protected request.
+- SQL accounted for under 9% of the original slow request wall time, so speculative indexes are explicitly excluded until production-like evidence exists.
+- Missing evidence that must become Phase 0 of Performance+: browser Core Web Vitals, production cold starts, production p95/p99, DB pool saturation, report/import timings, and Supabase network latency.
+- Existing release verification is strong (538 backend tests, 187 frontend tests, production build, type/lint, and six Chromium smoke/accessibility checks); the new plan should preserve these as non-regression gates.
+- The safest contract strategy is additive: introduce explicit compact views, migrate internal consumers, observe compatibility, and only then consider changing a default.
+- Infrastructure choices, schema-backed jobs, staging mutation/load tests, and production canary each require a separate approval checkpoint.
+- Implementation kickoff confirms the existing working tree has unrelated dirty work in the Backend and Frontend submodules; it must be preserved.
+- `framer-motion` is imported by the shared `App.tsx` shell and many authenticated screens, so removing it globally is not a safe first patch; component-level lazy loading/CSS replacement must be incremental.
+- Existing frontend hooks already expose `usePerformanceData`, `usePerformanceCatalog`, and `useInsightsWorkspace`; implementation should extend these contracts rather than create parallel data clients.
+- The existing `priority_only` Insights path preserves priority ordering through a regression test, but still performs full current/previous record loading and several analyses before returning its compact response; this is the safest measured backend target.
+- The repository path for the SQL performance adapter must be discovered from imports before editing; an assumed `Backend/repositories/sql_performance_repository.py` path does not exist.
+- Removing only the `AnimatePresence` import from `App.tsx` did not change the generated chunk sizes because shared `Header`, `Sidebar`, `WorkspaceLoader`, and other shell components still import Framer Motion; that experiment was reverted to avoid a behavior-only change without a measured gain.
+- The first measured safe frontend gate is therefore bundle-budget enforcement, not a partial animation-library removal.
+- `ManagementBSCService.list_analysis_records()` loads all management snapshots/configurations and builds records in Python; a future period-scoped priority loader can reduce this, but it requires careful handling of current/previous periods and management configuration continuity.
+- `TeamChartsSection` is imported synchronously by `TeamDashboardView` even though charts are below the first viewport; component-level lazy loading is a safe next frontend improvement and can reduce the route's initial work without changing chart behavior.
+- After lazy-loading `TeamChartsSection`, the Team Dashboard route fell from 185.67 kB raw / 48.73 kB gzip to 183.88 / 48.13; the chart module is now emitted separately at 2.68 / 1.15 and remains under the bundle budgets.
+- Full backend regression reached 540 passed and one failure in an unrelated date-sensitive report-story test: the fixture due date is July 31, 2026 and the current date is August 1, 2026, so `Overdue` is the correct runtime result. This is not on the modified performance paths.
+- Full frontend regression passed 55 files / 189 tests with one worker and a 15-second test timeout.
+- A combined root/submodule diff inspection timed out due to the dirty nested repositories; this is an inspection-time issue only and does not affect test results.
+- The first implementation release now has a passing bundle budget: charts 383.33 kB raw / 108.99 kB gzip, animation 129.11 / 41.82, Team Dashboard 181.33 / 47.17; all are below their enforced limits.
+- Priority-only planning classification is covered by a regression test and the focused Insights suite passes 19 tests; no business-value comparison failed.

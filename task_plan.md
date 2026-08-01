@@ -155,3 +155,34 @@ Complete — all accepted implementation phases and release checks are finished.
 - Resolution: rely on the clean targeted compile checks for application packages/files and record the cache-directory permission warning as environment-only.
 - Error: the first final task-plan status patch matched a mis-decoded em dash and found no target line.
 - Resolution: re-read the file explicitly as UTF-8 and apply the completion update against the actual text.
+
+## Phase 11: Performance+ Improvement Roadmap
+
+- [x] Reuse the completed production audit and measured baseline instead of repeating discovery.
+- [x] Define measurable frontend, API, database, report-generation, realtime, and reliability targets.
+- [x] Rank improvements by evidence, impact, risk, and implementation dependency.
+- [x] Produce a phased plan with acceptance gates, rollback boundaries, and release sequencing.
+- [x] Review the plan against current code ownership and existing dirty worktree state.
+- **Status:** completed (planning only; no product implementation authorised in this phase)
+
+### Phase 11 errors
+
+- Error: the first append patch targeted lines from `progress.md` as if they were at the end of `task_plan.md`.
+- Resolution: inspected the exact tails of all three planning files and appended against their real final lines; no product source was affected.
+
+### Phase 12 errors
+
+- Error: full backend regression has one date-sensitive failure in `tests/test_report_story_service.py`; its fixture due date is 2026-07-31 while the current environment date is 2026-08-01, so the product correctly reports `Overdue` while the stale test expects `Scheduled`.
+- Resolution: do not alter unrelated report-story behavior or user work; record the existing temporal fixture mismatch and run frontend verification separately.
+- Error: combined final diff/status inspection exceeded the short shell timeout while traversing dirty nested repositories.
+- Resolution: inspect the Frontend and Backend submodules separately with bounded commands; no source change resulted.
+
+## Phase 12: Performance+ First Implementation Release
+
+- [x] Add frontend bundle budgets and a `build:ci` gate.
+- [x] Add component-level lazy loading for Team Dashboard charts.
+- [x] Skip unused planning classification in priority-only Insights.
+- [x] Add regression coverage for the priority-only compute boundary.
+- [x] Run full backend/frontend regression and review the final diff.
+- [x] Record release metrics and remaining roadmap phases.
+- **Status:** completed with one unrelated date-sensitive backend fixture failure documented above
