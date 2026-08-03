@@ -9,6 +9,22 @@
 - Produce the ten requested audit, architecture, baseline, results, environment, rollback, and final-report documents.
 - Implement the accepted recommendations in staged, release-safe increments, beginning with production configuration security, session cache isolation, and the verified Pharmacy fixture mismatch.
 
+## Global KPI cap normalization (2026-08-03)
+- The repository initially contained mixed team-level `capping` declarations: some teams were `uncapped`, while others were `capped_at_100`.
+- The user confirmed that the business rule is global: each KPI achievement must display and score at no more than 100%.
+- KPI achievement capping and final weighted-score capping are separate concerns. Both are now aligned so a capped KPI cannot leak an above-target achievement through persisted records, API responses, frontend aggregates, or history views.
+- The configuration loader applies the global cap to every flat, level-scoped, and position-scoped KPI, protecting older files and uploaded configurations even before the checked-in JSON is updated.
+- Legacy database evidence is normalized on read; score and grade are recomputed only when measured canonical KPI contributions exist, preserving a persisted score when a legacy payload has no usable scoring evidence.
+- The frontend treats cap metadata as compatibility information rather than an opt-out: achievement is always clamped to `0..100`, and contribution is clamped to the configured weight share.
+- All checked-in team JSON files now use `capped_at_100` where capping is declared and no file retains an `uncapped` or `cap_achievement: false` entry.
+- Full verification passed: Backend 560 tests; Frontend 194 tests; frontend typecheck/lint/build/budget; graphify update; whitespace checks.
+- Balanced Scorecard management analysis remains a separate contract: its `raw_achievement_ratio` is retained for diagnostic comparison, while its weighted contribution and final score remain capped. The global 100% rule applies to operational KPI cards, scores, exports, API serializers, and team analysis.
+
+## OP Final team merge and branch filtering (2026-08-03)
+- The requested canonical display identity is `Pre-Approvals OP Final`; the existing Dubai and SHJ/AJM sources must remain distinguishable by normalized branch/region metadata.
+- Multi-select branch filtering must be applied before KPI aggregation and employee lists are built; an empty selection means all authorized branches, not no data.
+- The deferred analysis step is the per-KPI regional root-cause attribution; this session should not add new attribution narratives or rankings.
+
 ## Research Findings
 - Project stack is React/TypeScript, FastAPI/Python, SQLAlchemy/Alembic, PostgreSQL, optional Redis, Socket.IO, and Vercel deployment.
 - The working tree already contains unrelated user changes in both nested Backend and Frontend repositories; audit work must preserve them.
@@ -200,3 +216,92 @@
 - A combined root/submodule diff inspection timed out due to the dirty nested repositories; this is an inspection-time issue only and does not affect test results.
 - The first implementation release now has a passing bundle budget: charts 383.33 kB raw / 108.99 kB gzip, animation 129.11 / 41.82, Team Dashboard 181.33 / 47.17; all are below their enforced limits.
 - Priority-only planning classification is covered by a regression test and the focused Insights suite passes 19 tests; no business-value comparison failed.
+
+## Pre-Approvals IP Elective Dubai onboarding — 2026-08-03
+
+- The supplied tables define two mutually exclusive employee workstreams: `IP Elective` uses `Approval Within 48 HR` with a 75% target, while `ER / IP Approval` uses `Approval Within 1.5 HR` with a 100% target.
+- Workstream selection is deterministic from exactly one populated turnaround numerator. A row with both or neither populated cannot be scored safely and must fail with the employee identifiers instead of guessing.
+- The ER table contains a wording inconsistency: its target header says “within 48 hrs” while the KPI, numerator, and requested logic are 1.5 hours. The canonical configuration uses 1.5 hours and records the correction.
+- The supplied formulas do not define an achievement or final-score cap. The new configuration therefore preserves uncapped achievement and weighted contribution; any presentation-only cap must not mutate stored scoring.
+- Exclusions are `Leave`, `New Staff`, and `-` in the status/grade fields. `Resigned` is not excluded because it was not supplied as a rule.
+- The actual `.xlsx` workbook was not attached, so exact header spelling/order and representative missing-value behavior remain a release-input validation item.
+
+## PMS_Trend_All.xlsx validation — 2026-08-03
+
+- Workbook inspection is intentionally metadata-only: report sheet names, headers, counts, and normalized value categories, never employee names or IDs.
+- The source workbook must be compared against the canonical normalized headers used by `preapprovals_ip_elective_dubai.py`; any aliases will be handled in the cleaner rather than by changing the business formulas.
+- The target sheet has a merged KPI reference area in columns Y:AE and 511 formatted rows, but only 42 non-empty data rows. The actual employee header is row 2, not row 1.
+- The source combines the two turnaround fields into `Approval Within 48 HR/1.5 HR` and `A.Number Approval within 48 HR/1.5 HR`; it does not provide separate 48-hour and 1.5-hour columns.
+- The production target sheet has 41 non-empty data rows across January–June 2026; one `Leave` row is excluded, leaving 40 scored rows. Its target pairs are `(3%,75%)`, `(1%,100%)`, `(3%,100%)`, and `(6%,75%)`; the turnaround component separates the workstreams and the rejection component validates historical target revisions.
+- Recomputing the 40 source performance scores from raw counts and row-level targets matches the workbook within floating-point noise (maximum absolute difference `2.3e-16` in fraction scale).
+
+## Updated target-pair validation — 2026-08-03
+
+- The user supplied a refreshed workbook with target-pair logic and calculation formulas; no mapping change is assumed until the pair values and formulas are inspected.
+
+### Confirmed target-pair rules
+
+- The refreshed target sheet contains four observed pairs: `(0.03, 0.75)`, `(0.06, 0.75)`, `(0.01, 1.0)`, and `(0.03, 1.0)`.
+- `(3%,75%)` and `(6%,75%)` classify as `IP Elective`; `(1%,100%)` and `(3%,100%)` classify as `ER / IP Approval`. The rejection target is historically revised, so using only the turnaround target would lose validation of the first target column.
+- The sheet now includes formula columns: `A.IP/ER Initial Rejection %`, `A.Number Approval within 48 HR/1.5 HR`, `Rejection Rate`, `% of Submission Within Due date`, and `Performance Score`. The cleaner continues to recompute these from raw counts and row-level targets, then validates against the workbook formulas rather than trusting cached Excel values.
+- The pair-aware cleaner and config now reject missing or unsupported target pairs. The complete workbook dry-run passed with `1,028` records, `245` employees, no failed teams, and `40` active rows from the new sheet (`13` IP Elective / `27` ER / IP Approval).
+- Direct score reconciliation against the refreshed workbook matched all `40` active new-team rows exactly (`max_diff = 0.0` in fraction scale). Full Backend regression passed `550` tests; graphify was refreshed to `6,100` nodes.
+
+## Session: 2026-08-03 - Pre-Approvals OP Final SHJ/AJM onboarding
+
+### Implementation discoveries
+
+- `ExcelProcessor` and `SeedingService` use explicit per-sheet cleaner/mapping registrations; the new sheet must be added in both places and included in the UAE region fallback list.
+- The seeding path sends Employee rows with a position through the configurable multi-team scorer, so the single KPI set is isolated under the internal `OP Final` position while SHJ/AJM remains one user-facing team.
+- The shared KPI service currently treats missing actual values as zero and has no conditional exception hook. The supplied `"-"` TAT rule therefore needs an explicit, config-driven exception that returns the Initial Rejection achievement as the final score.
+- The workbook's active rows use `Submitted Requests` as the rejection denominator and `Submitted Requests - Manual Request` as the TAT denominator; the cleaner will preserve the row-level targets and expose canonical columns for both ratios.
+- The real workbook contains 23 scored rows after excluding one Leave row (14 AJM and 9 SHJ); all current rows have a usable TAT value.
+- Recalculation of all 23 workbook scores matched the cached `Performance Score` values with a maximum absolute difference of `2.22e-16` on the decimal scale.
+- The missing-TAT exception is covered with a synthetic `"-"` row and returns the Initial Rejection achievement directly (not weighted a second time).
+
+## Session: 2026-08-03 - Pre-Approvals IP SHJ/AJM onboarding
+
+- Requested sheet: `Pre-Approvals IP Final SHJAJM`; the workbook path is `D:\Trend\PMS_Trend_All.xlsx`.
+- The sheet uses row 1 as the employee header and stores the KPI reference table starting at column S; the employee data columns are `Assigned Request`, `Approved Requests`, `Rejected Requests`, and `Submitted Within Month (Untill 3rd of next month)`.
+- The source has two branch values (`SHJ` and `AJM`) in its `Team` column and the supplied formula is a single 40% Acceptance / 60% Submission Within Month scorecard.
+- Both source targets are currently 1.0 (100%) and the workbook formulas use the 80% baseline in both achievement formulas; source scores must be reconciled from the raw counters and row-level targets rather than cached Excel formulas.
+- The sheet contains four active rows (two SHJ and two AJM), no excluded rows, and one target pair `(1.0, 1.0)`.
+- Recomputing `(acceptance - 0.80) / (target - 0.80)` and `(submission - 0.80) / (target - 0.80)` with 40%/60% weights matches all four cached Performance Scores exactly (`max_diff = 0.0`).
+- The new cleaner exposes canonical counters/ratios and an internal `IP Final` position so the existing configurable scorer is used without presenting SHJ/AJM as separate teams.
+- The scorecard intentionally preserves uncapped upside and floors below-baseline achievement at zero, matching the existing IP Final implementation; the current source rows are all above the baseline.
+- Focused tests cover registration, counter-based ratios, baseline scoring, and active-row-only dry-run import. Full workbook dry-run now includes both new SHJAJM sheets with no failed teams.
+
+- Requested sheet name: `Pre-Approvals OP Final SHJAJM`.
+- Supplied KPI model: Initial Rejection 60% (lower is better) plus Submission Within TAT 40% (higher is better).
+- Exception rule: when Submission Within TAT is unavailable (`-`), final score equals Initial Rejection achievement expressed as a percentage.
+- Workbook inspection and compatibility mapping are complete; the production sheet uses the row-1 header and the supplied denominators/targets.
+## 2026-08-03 — OP Final SHJ/AJM dashboard score mismatch
+
+- The screenshot's KPI cards are internally plausible: Initial Rejection 2.2% against a 5% lower-is-better target produces a capped 60% contribution, while Submission Within TAT 95.4% against 70% produces an uncapped 54.5% contribution. The weighted raw total is therefore about 114.5 points (or 100 after the configured overall cap), not 1.1%.
+- The dashboard's `TeamDashboardView` intentionally replaces the canonical pooled score with the hook's employee-score average unless the two values differ by no more than 15 points (`calculatedAvgScore` and `trendData`). This is unsafe for legacy records whose persisted `evaluation.score` is stored as a decimal ratio (for example 1.1 for 110%) or stale percent value. In that case the canonical KPI aggregate is rejected and the stale 1.1 value is rendered.
+- `useTeamData` and `resolveDisplayScore` also trust `evaluation.score` before deriving a score from KPI values for this team. That explains the 1.1% average, all agents classified as E, and top/bottom scores around 1.1% while the cards display correct KPI contributions.
+- The backend dashboard resolver normalizes KPI values but only has explicit score reconciliation for the legacy IP Elective team (and Sales); OP Final SHJ/AJM falls through to `item.score`, so old/mis-scaled persisted scores remain visible even when canonical `kpi_values` are correct.
+- Local JSON June records are correctly persisted at 100.0 for this team, so the shown mismatch is most consistent with stale/mis-scaled production records or an older backend deployment/data path rather than the OP Final formula itself. No database writes were performed during this diagnosis.
+
+## 2026-08-03 — OP Final cap correction implemented
+
+- Both OP Final SHJ/AJM KPI definitions now cap achievement at 100%; the final score is also capped at 100%.
+- The scoring service now persists the effective capped ratio for explicitly capped KPIs, while intentionally uncapped teams retain their existing above-target evidence.
+- The dashboard resolver now normalizes legacy KPI values and recalculates score/grade from capped contributions for capped configurations, so old rows no longer expose 110%+ as a team or KPI score.
+
+## 2026-08-03 - OP Final branch merge findings
+
+- The two OP Final sources must keep separate configs because Dubai is position/workstream scoped while SHJ/AJM uses its own 60/40 KPI set; merging the JSON configs would change scoring semantics.
+- A presentation-level canonical alias is safer than a database migration: source records remain auditable and the repository accepts `Pre-Approvals OP Final` as an alias for both source teams.
+- Branch identity is available from the source team/branch fields and is now normalized with fallback checks across `Team`, `Branch`, `Site`, `Area`, and identity region fields.
+- Multi-selection is stored as a comma-separated `branches` query value, with legacy `branch`/`location` keys kept synchronized for backward compatibility.
+- For the merged view, the headline average is the average of selected employees' display scores; KPI cards continue to use configured KPI aggregation. Region-level KPI attribution/root-cause analysis remains deferred by request.
+- Frontend analysis and employee action details consume the cap metadata. Actual KPI values and targets remain unchanged; only achievement and weighted contribution are capped.
+
+## 2026-08-03 - IP Final branch merge findings
+
+- `Pre-Approvals IP Final Dubai` and `Pre-Approvals IP Final SHJAJM` now share the presentation-level identity `Pre-Approvals IP Final`.
+- Their source configurations remain position-scoped: Dubai keeps `Combined` (50/30/20), `IP Approval` (60/40), and `IP Discharge` (100%) while SHJ/AJM keeps `IP Final` (40/60). This avoids changing source scoring semantics.
+- The merged route reuses authoritative source branch matching and the URL-backed multi-branch selector; employees, headcount, trends, KPI aggregation, and average score follow the selected branch set.
+- Backend repository, authorization, and action aliases accept the canonical name while source rows/configs remain auditable. No database migration or source-data rewrite was required.
+- Per-KPI branch attribution/root-cause analysis remains deferred as requested.

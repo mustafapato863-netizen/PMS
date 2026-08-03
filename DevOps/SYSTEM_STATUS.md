@@ -53,8 +53,8 @@ cd ..\Backend
 
 Current unified KPI scoring behavior:
 
-1. KPI achievement may exceed `100%`
-2. Raw achievement is stored uncapped
+1. KPI achievement is capped at `100%` across all API and UI surfaces
+2. Stored achievement is normalized to the global `0..1` range, including legacy rows when read
 3. Effective achievement is capped at `100%` for contribution math
 4. KPI contribution cannot exceed its configured weight share
 5. Final score is the sum of contributions and cannot exceed `100%`

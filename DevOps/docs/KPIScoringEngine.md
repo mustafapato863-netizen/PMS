@@ -12,7 +12,7 @@ To align performance metrics across multiple teams, the scoring engine separates
 A percentage representing the raw ratio of an employee's actual performance relative to their configured target.
 - **Direct KPIs:** Higher actuals are better (e.g. Attendance, Booking conversion).
 - **Inverse KPIs:** Lower actuals are better (e.g. AHT, Rejection rate, Error rate).
-- **Uncapped:** KPI Achievement is stored without caps and may exceed 100%.
+- **Capped:** KPI Achievement is normalized and capped at 100% before it is stored, returned by the API, or displayed.
 
 ### Effective Achievement
 The achievement score capped at `100%` before applying weight configurations:
@@ -38,10 +38,10 @@ $$\text{Final Performance Score} = \sum (\text{KPI Contribution})$$
 For each performance record, the KPI scores are calculated using the following formulas:
 
 ### Direct KPI Achievement Ratio
-$$\text{KPI Achievement} = \left( \frac{\text{Actual}}{\text{Target}} \right) \times 100\%$$
+$$\text{KPI Achievement} = \min\left(\frac{\text{Actual}}{\text{Target}} \times 100\%, 100\%\right)$$
 
 ### Inverse KPI Achievement Ratio
-$$\text{KPI Achievement} = \left( \frac{\text{Target}}{\text{Actual}} \right) \times 100\%$$
+$$\text{KPI Achievement} = \min\left(\frac{\text{Target}}{\text{Actual}} \times 100\%, 100\%\right)$$
 
 ---
 
@@ -53,8 +53,8 @@ $$\text{KPI Achievement} = \left( \frac{\text{Target}}{\text{Actual}} \right) \t
 - **Target:** 75%
 - **Actual:** 85%
 - **Calculation:**
-  $$\text{KPI Achievement} = \left( \frac{85}{75} \right) \times 100\% = 113.33\%$$
-  $$\text{Effective Achievement} = \min(113.33\%, 100\%) = 100\%$$
+  $$\text{KPI Achievement} = \min\left(\frac{85}{75} \times 100\%, 100\%\right) = 100\%$$
+  $$\text{Effective Achievement} = 100\%$$
   $$\text{KPI Contribution} = 100\% \times 0.70 = 70.0\%$$
 
 ### Example B: Below Target on Lower Weight KPI (Direct)
@@ -63,8 +63,8 @@ $$\text{KPI Achievement} = \left( \frac{\text{Target}}{\text{Actual}} \right) \t
 - **Target:** 45%
 - **Actual:** 30%
 - **Calculation:**
-  $$\text{KPI Achievement} = \left( \frac{30}{45} \right) \times 100\% = 66.67\%$$
-  $$\text{Effective Achievement} = \min(66.67\%, 100\%) = 66.67\%$$
+  $$\text{KPI Achievement} = \min\left(\frac{30}{45} \times 100\%, 100\%\right) = 66.67\%$$
+  $$\text{Effective Achievement} = 66.67\%$$
   $$\text{KPI Contribution} = 66.67\% \times 0.10 = 6.67\%$$
 
 ### Example C: Exceeding Target on Inverse KPI
@@ -73,8 +73,8 @@ $$\text{KPI Achievement} = \left( \frac{\text{Target}}{\text{Actual}} \right) \t
 - **Target:** 150 seconds (2.5 mins)
 - **Actual:** 120 seconds (2.0 mins)
 - **Calculation:**
-  $$\text{KPI Achievement} = \left( \frac{150}{120} \right) \times 100\% = 125\%$$
-  $$\text{Effective Achievement} = \min(125\%, 100\%) = 100\%$$
+  $$\text{KPI Achievement} = \min\left(\frac{150}{120} \times 100\%, 100\%\right) = 100\%$$
+  $$\text{Effective Achievement} = 100\%$$
   $$\text{KPI Contribution} = 100\% \times 0.05 = 5.0\%$$
 
 ---

@@ -6,6 +6,25 @@ Implement the accepted audit recommendations in safe, reversible stages while pr
 ## Current Phase
 Complete — all accepted implementation phases and release checks are finished.
 
+## Session: 2026-08-03 - Global KPI achievement cap normalization
+
+- [x] Audit every team/position/KPI capping declaration and persistence path.
+- [x] Normalize all production team configurations to a 100% maximum achievement rule.
+- [x] Align backend persistence, API normalization, and frontend display/aggregation semantics.
+- [x] Update regression tests and documentation to the global business rule.
+- [x] Run backend/frontend tests, typecheck/lint/build, whitespace checks, and graphify update.
+- **Status:** completed
+
+## Session: 2026-08-03 - Merge OP Final teams with branch filtering
+
+- [x] Audit current OP Dubai and OP Final SHJ/AJM team identities, branch fields, and dashboard filters.
+- [x] Define a compatibility-safe canonical team identity and branch normalization for API, imports, and frontend routing.
+- [x] Implement multi-select branch filtering with all-branch performance aggregation and employee/KPI scoping.
+- [x] Preserve the requested deferral of region root-cause attribution analysis.
+- [x] Add regression coverage through existing mapping, repository, and performance-data tests.
+- [x] Run final production build and graphify update.
+- **Status:** completed; production build/bundle budget and graphify update passed.
+
 ## Phases
 
 ### Phase 1: Current-State Architecture Audit
@@ -15,6 +34,18 @@ Complete — all accepted implementation phases and release checks are finished.
 - [x] Trace authentication, upload, dashboard, reporting, cache, and Vercel flows
 - [x] Produce `PERFORMANCE_AND_COMPATIBILITY_CURRENT_STATE_AUDIT.md`
 - **Status:** completed
+
+## Session: 2026-08-03 - Pre-Approvals IP SHJ/AJM onboarding
+
+- [x] Inspect workbook headers, target values, source formulas, and branch/missing-value patterns.
+- [x] Reconcile the 80% baseline formula with the existing IP Final implementation.
+- [x] Add isolated config, cleaner/import registration, frontend mappings, and regression coverage.
+- [x] Run workbook dry-run, score reconciliation, full regression checks, and graphify update.
+- **Status:** completed
+
+### Errors encountered
+
+- Initial workbook audit probe attempted to print a sixth data row from a six-row sheet and raised `IndexError` after reporting all four active rows. No application code was affected; subsequent probes will bound the row loop to available data.
 
 ### Phase 2: Reproducible Performance Baseline
 - [x] Define safe representative local dataset and authenticated test scope
@@ -186,3 +217,67 @@ Complete — all accepted implementation phases and release checks are finished.
 - [x] Run full backend/frontend regression and review the final diff.
 - [x] Record release metrics and remaining roadmap phases.
 - **Status:** completed with one unrelated date-sensitive backend fixture failure documented above
+
+## Session: 2026-08-03 — Pre-Approvals IP Elective Dubai onboarding
+
+- [x] Reconcile the supplied KPI tables with existing configuration and cleaner conventions.
+- [x] Add the team configuration, deterministic workstream cleaner, import registration, and team mappings.
+- [x] Add focused tests for formulas, exclusions, workstream ambiguity, dry-run ingestion, and config discovery.
+- [x] Run backend/frontend checks, refresh the knowledge graph, and document any workbook-dependent validation still pending.
+- **Status:** completed; exact workbook-header validation remains pending until the source `.xlsx` is supplied.
+
+## Session: 2026-08-03 — Validate PMS_Trend_All.xlsx onboarding input
+
+- [x] Inspect workbook sheets, headers, dimensions, sample values, and duplicate/empty rows without exposing employee data.
+- [x] Compare the workbook against the new Pre-Approvals IP Elective Dubai cleaner and config; identify exact incompatibilities.
+- [x] Patch only the required ingestion/configuration gaps, preserving other teams and existing dirty work.
+- [x] Run dry-run import, focused/new regressions, graph update, and whitespace/type checks.
+- **Status:** completed; workbook dry-run and score reconciliation passed.
+
+## Session: 2026-08-03 — Confirm target-pair workstream pattern
+
+- [x] Inspect the updated workbook's target-pair values and newly added calculation formulas.
+- [x] Compare the observed pair mapping with the current cleaner and identify any ambiguity or historical variants.
+- [x] Update the cleaner/config/tests to use the confirmed pair mapping and formula columns safely.
+- [x] Re-run real-workbook dry-run, score reconciliation, regression tests, and graph update.
+- **Status:** completed; target-pair mapping and source-formula reconciliation passed.
+
+### Errors encountered in this session
+
+- A normal (non-read-only) openpyxl load of the 770 KB workbook exceeded the command timeout because the workbook contains large formatted/merged ranges. Resolution: use read-only workbook iteration and inspect only the target sheet/cells.
+- A one-off score comparison script had an unmatched parenthesis and did not run; resolution: replace the inline expression with named target series before rerunning.
+- A first focused test command used the system Python and failed during collection because the Backend virtual environment was not active; resolution: rerun with `Backend/.venv/Scripts/python.exe -m pytest`.
+- A first reconciliation probe assigned 40 calculated scores to a 42-row merge because of duplicate/blank source keys; resolution: compare against the cleaner's preserved source row indexes instead.
+- The first compatibility regression failed for a byte source and a normalized sheet without a title row after header=1 was introduced. Resolution: wrap byte inputs and fall back to header=0 when employee identifiers are absent.
+
+## Session: 2026-08-03 - Pre-Approvals OP Final SHJ/AJM onboarding
+
+- [ ] Inspect workbook headers, target values, source formulas, and missing-value patterns.
+- [ ] Reconcile the SHJ/AJM formula with the existing OP Final implementation.
+- [ ] Add isolated config, cleaner/import registration, frontend mappings, and regression coverage.
+- [ ] Run workbook dry-run, score reconciliation, full regression checks, and graphify update.
+- [x] Audit workbook and existing registration/scoring paths.
+- [x] Implement SHJ/AJM cleaner and team configuration.
+- [x] Add conditional missing-TAT scoring exception and focused tests.
+- [x] Register import/seeding/frontend mappings as needed.
+- [x] Verify workbook reconciliation and full test/build checks.
+- **Status:** completed
+
+## Session: 2026-08-03 - OP Final KPI achievement cap correction
+
+- [x] Confirm the mismatch between KPI contributions and the displayed team/employee score.
+- [x] Enforce a 100% achievement cap for both OP Final SHJ/AJM KPIs and cap the final score at 100%.
+- [x] Normalize persisted KPI evidence and recompute capped scores/grades in the dashboard API for legacy rows.
+- [x] Apply the same cap metadata in frontend KPI analysis and employee action details.
+- [x] Run focused and full backend/frontend tests, typecheck, lint, production build, and graphify update.
+- **Status:** completed
+
+## Session: 2026-08-03 - Merge IP Final Dubai and SHJ/AJM
+
+- [x] Audit existing IP Final team mappings, KPI configs, and branch fields.
+- [x] Add a canonical `Pre-Approvals IP Final` identity while preserving the two source scoring configurations.
+- [x] Reuse the corrected authoritative branch filter and multi-select behavior for Dubai, Sharjah, Ajman, and Clinics.
+- [x] Ensure IP KPI weights and baseline formulas remain source/config driven in the merged view.
+- [x] Add regression coverage for the merged route and source aliases.
+- [x] Run full frontend/backend verification, production build, graphify update, and code review.
+- **Status:** completed

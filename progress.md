@@ -1,5 +1,30 @@
 # Progress Log
 
+### Session: 2026-08-03 - Global KPI achievement cap normalization
+- **Status:** in progress
+- Confirmed mixed capping settings across team configuration files and the user's global 100% rule.
+- Began tracing backend persistence, record resolution, frontend aggregation, and regression tests before changing configuration semantics.
+- Initial focused test command used repository-root paths from inside `Backend`; it ran no tests. The next run uses paths relative to the backend working directory.
+- The first bulk JSON rewrite used PowerShell's default UTF-8 BOM, which broke `json.load`; rewritten team configs with UTF-8 without BOM before continuing.
+- Applied a global 100% achievement cap in the config loader, scoring service, seed/import paths, dashboard legacy-row normalization, reporting/insights evidence, and query serializers.
+- Normalized all checked-in team configuration capping declarations and KPI metadata to `capped_at_100` / `cap_achievement: true`; loader normalization also protects older or uploaded configurations in memory.
+- Updated frontend KPI cards, employee actions, team aggregation, team analysis, score utilities, and pre-approvals rollups so achievement never exceeds 100% and contribution never exceeds its KPI weight.
+- Updated balanced-scorecard/reporting documentation and replaced legacy uncapped assertions with global-cap regression coverage.
+- Focused backend verification passed: 133 tests. Full backend regression passed: 560 tests with 62 warnings.
+- Focused frontend verification passed: 37 tests. Full serial frontend regression passed: 58 files / 194 tests.
+- Frontend typecheck, lint, production build, and bundle-budget checks passed. `git diff --check` passed for the root and both nested repositories.
+- `graphify update .` completed successfully; the graph now contains 6,196 nodes and 13,208 edges. Graphify reported only the existing zero-node JSON/SQL dependency warnings.
+- One attempted full frontend command used an unsupported Vitest `--poolOptions` flag and exited before tests; the native Vitest one-worker command was then used successfully.
+- After a final defensive clamp in the weighted-score helper, the complete backend suite was rerun and remained green: 560 passed in 47.16 seconds.
+- A second graphify refresh completed after the final backend scoring change; the graph remains at 6,196 nodes and 13,208 edges.
+- Added export/report-evidence guards so legacy report inputs cannot emit achievement or contribution percentages above their allowed cap; management Balanced Scorecard raw diagnostic ratios remain intentionally separate from operational KPI display semantics.
+- Final backend regression after the export/report-evidence and legacy-insights normalization hardening remained green: 560 passed in 50.73 seconds.
+
+### Session: 2026-08-03 - Merge OP Final teams with branch filtering
+- User requested one visible team named `Pre-Approvals OP Final` combining `Pre-Approvals OP Dubai` and `Pre-Approvals OP Final SHJAJM`.
+- Requested behavior: branch/region filtering, multi-select branch selection, employee/KPI scoping to selected branches, and overall score as the average across selected branch populations. Region root-cause attribution is explicitly deferred.
+- Started repository and graphify audit; no product source changed yet in this session.
+
 ## Session: 2026-07-29
 
 ### Phase 7: Accepted Implementation Roadmap
@@ -206,3 +231,87 @@
 - Phase 12 implementation scope is complete; remaining Performance+ phases (period-scoped Insights loader, compact Performance consumer migration, async report jobs, hosting/realtime migration, staging load) remain intentionally separate.
 - Final combined diff inspection timed out; bounded submodule checks remain before closing the implementation session.
 - Added `PERFORMANCE_PLUS_IMPLEMENTATION.md` with the actual changes, measurements, verification, and remaining roadmap work.
+
+## Session: 2026-08-03 — Pre-Approvals IP Elective Dubai onboarding
+
+- Read the supplied onboarding notes, current IP Final/OP cleaners, config validation rules, seeding flow, and score calculation semantics.
+- Confirmed the existing IP Final Dubai configuration must remain untouched; the new team gets its own config and cleaner.
+- Added the dedicated team JSON, deterministic cleaner, Excel/seeding registrations, API/action/team navigation mappings, and a timer icon for the new sidebar entry.
+- Added six backend tests covering configuration, formula scoring, exclusions, ambiguous workstreams, dry-run import, and config API discovery; all passed.
+- Verification passed: full backend suite 547/547, frontend typecheck, targeted navigation tests 2/2, production build, compile checks, diff whitespace checks, and graphify update.
+- The exact `.xlsx` workbook is still needed to confirm its final header order/spelling and real missing-value patterns before production upload.
+
+## Session: 2026-08-03 — PMS_Trend_All.xlsx validation
+
+- Workbook path received: `D:\Trend\PMS_Trend_All.xlsx`.
+- Started a metadata-only workbook audit before changing onboarding code; no production or database writes are authorized by this request.
+- Found the target sheet's real header row and combined turnaround columns; the existing cleaner will not parse this sheet as-is and needs a compatibility path based on the target columns.
+- A full workbook load timed out; switched to read-only iteration for the remaining formula and value checks.
+- The first score-comparison probe was a script syntax error only; no application code was affected.
+- The first compatibility test run exposed the expected header-source mismatch; the cleaner now supports both the production title-row workbook and normalized header-row uploads.
+- Updated the cleaner to detect the actual second-row header, support the combined turnaround column, classify from the complete target pair (including historical target revisions), preserve row-level targets, and expose canonical source counters for frontend aggregation.
+- Dry-run of the complete `PMS_Trend_All.xlsx` passed with no failed teams; the new team contributed 40 cleaned/scored rows and the full workbook produced 1,028 records.
+- Direct recalculation of all 40 active new-team rows reproduced the workbook's stored scores to floating-point precision.
+- Full Backend regression passed: 549/549 tests. Graphify incremental update completed with the new cleaner and validation paths included.
+
+## Session: 2026-08-03 — Confirm target-pair workstream pattern
+
+- Received an updated `D:\Trend\PMS_Trend_All.xlsx` and started a second metadata/formula audit; no database writes yet.
+- Inspected the refreshed target columns and confirmed the four historical target pairs; added pair-aware workstream classification with explicit rejection of missing/unsupported combinations.
+- Added configuration and regression coverage for the observed target revisions (`3%/75%`, `6%/75%`, `1%/100%`, `3%/100%`).
+- Recalculated the source formulas from raw counts and matched all 40 active rows exactly; full workbook dry-run completed with 1,028 records and no failed teams.
+- Full Backend suite passed 550 tests and graphify was refreshed after the implementation.
+
+## Session: 2026-08-03 - Pre-Approvals OP Final SHJ/AJM onboarding
+
+- Started a new onboarding scope for the `Pre-Approvals OP Final SHJAJM` worksheet.
+- Read the supplied 60/40 KPI formulas and exception behavior.
+- Audited the target worksheet: row-1 headers, 23 active measurable rows (AJM/SHJ), one Leave row, and formula columns matching the supplied 60/40 table.
+- Confirmed explicit registrations are required in cleaner factory, Excel processor, and seeding service; KPI service needs a safe conditional exception for unavailable TAT.
+- Workbook and existing OP Final paths were inspected before implementation.
+- Implemented the SHJ/AJM cleaner, isolated team configuration, import/seeding registrations, frontend route/sidebar mappings, and the config-driven missing-TAT scoring exception.
+- Workbook dry-run succeeded with no failed teams; the new sheet contributed 23 active rows. Full backend regression passed 554 tests; frontend regression passed 193 tests, typecheck/lint/build/bundle budgets passed, and graphify was refreshed.
+
+## Session: 2026-08-03 - Pre-Approvals IP SHJ/AJM onboarding
+
+- Started onboarding for `Pre-Approvals IP Final SHJAJM` using the supplied 40/60 baseline-80 formulas.
+- Confirmed the target sheet is row-1 based, with KPI reference text to the right of the data table; implementation must crop/process only the employee columns and preserve SHJ/AJM branch values.
+- Next: audit all data rows and cached formula values, then add isolated cleaner/config/registrations and tests.
+- First audit probe printed the complete four-row dataset and formula samples, then hit an out-of-range debug index while requesting a non-existent sixth data row; no source changes resulted.
+- The bounded reconciliation probe confirmed four active rows (2 SHJ, 2 AJM), targets of 100%/100%, and exact score parity with the workbook.
+- Implemented the IP SHJ/AJM cleaner, config, cleaner-factory/Excel/seeding registrations, frontend route/sidebar mapping, and focused regression tests.
+- Complete workbook dry-run succeeded with no failed teams: 1,055 records and 255 employees, including both SHJAJM teams.
+- Release verification passed: Backend 558 tests, Frontend 194 tests, frontend typecheck/lint/build/bundle budgets, and graphify update.
+
+## 2026-08-03 — OP Final KPI achievement cap correction
+
+- Changed `Pre-Approvals OP Final SHJAJM` so both KPI achievements are capped at 100% and the final score is capped at 100%.
+- Updated the scoring service to persist capped achievement ratios for explicitly capped KPIs.
+- Added dashboard API normalization/recalculation so legacy rows with uncapped or decimal scores return consistent KPI evidence, score, and grade.
+- Updated frontend team analysis and employee action details to honor the API cap metadata.
+- Verification: Backend `559 passed`; Frontend `194 passed`; typecheck, lint, production build/bundle budget, and graphify update all passed.
+
+## 2026-08-03 - OP Final branch merge and multi-select filter
+
+- Added the canonical presentation team `Pre-Approvals OP Final` while retaining both source team names and their independent scoring configurations.
+- Replaced the two duplicate sidebar entries with one canonical route; legacy slugs remain compatible aliases.
+- Added a multi-select branch control for Dubai, Sharjah, Ajman, and Clinics. Selection is persisted in the URL and scopes employees, headcount, trends, KPI aggregation, and the merged team's employee-score average.
+- Added backend repository and authorization aliases so direct dashboard queries and exports can resolve the canonical team without a schema/data migration.
+- The requested per-KPI region attribution/root-cause analysis remains intentionally deferred.
+- Verification: Backend full suite `560 passed`; Frontend full suite `194 passed`; frontend typecheck/lint/production build/bundle budget passed; graphify refreshed successfully.
+
+## 2026-08-03 - Branch precedence correction
+
+- Confirmed the source `Team` values are present (`AJM`/`SHJ`) and the defect was in frontend filtering order: synthesized geo activity was evaluated before the explicit branch field.
+- Changed branch matching to treat source `Team`, `Branch`, `Site`, and `Area` as authoritative; geo totals are now fallback-only for legacy call-center rows.
+- Made merged OP Final KPI weights prefer the active configuration when persisted KPI rows contain stale weights, preventing the 40% TAT KPI from displaying as 100%.
+- Added a regression test proving an AJM row with activity in every geo bucket still matches only Ajman.
+- Final verification after the correction: Frontend `195 passed`; typecheck/lint/build/bundle budget passed; graphify refreshed.
+
+## 2026-08-03 - Merge IP Final Dubai and SHJ/AJM
+
+- Added one canonical `Pre-Approvals IP Final` sidebar route while keeping legacy source slugs compatible.
+- Added frontend canonicalization, source-team access handling, and the same multi-branch selector used by OP Final.
+- Merged source configs by position, preserving Dubai workstream weights and SHJ/AJM 40/60 baseline scoring.
+- Added backend performance, authorization-scope, and action-service aliases for canonical IP Final requests.
+- Verification passed: Frontend `196` tests plus typecheck/lint/build/bundle budgets; Backend `562` tests; graphify update completed.

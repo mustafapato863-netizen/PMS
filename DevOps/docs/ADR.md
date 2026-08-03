@@ -78,14 +78,14 @@ Different operational teams track a wide variety of KPIs (e.g. Average Handle Ti
 
 ### Decision
 Implement a unified calculation engine where:
-1. Raw KPI achievement is calculated based on direction (`higher_better` vs `lower_better`) and stored uncapped.
-2. Effective KPI achievement is capped at 100% for final score aggregation.
+1. KPI achievement is calculated based on direction (`higher_better` vs `lower_better`) and capped at 100% before it is persisted or displayed.
+2. Effective KPI achievement remains capped at 100% for final score aggregation.
 3. KPI Contribution is calculated as: $\text{Effective Achievement} \times \text{KPI Weight}$.
 4. The Final Performance Score is the sum of all contributions, capped at 100%.
 
 ### Consequences
 - **Positive:** Prevents a single over-achieving KPI from artificially masking poor performance in other critical KPIs. Ensures all final scores reside on a standard 0–100% scale.
-- **Negative:** Agents do not receive scoring credit on the dashboard for performing far beyond 100% on a specific KPI, though their raw achievement remains stored.
+- **Negative:** Agents do not receive scoring credit on the dashboard for performing far beyond 100% on a specific KPI; the product intentionally uses a single comparable scale.
 - **Verification:** Unit tests inside `test_three_teams.py` and `test_submission_team.py` validate this calculation.
 
 ### Alternatives Considered
