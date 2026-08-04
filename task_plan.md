@@ -15,6 +15,16 @@ Complete — all accepted implementation phases and release checks are finished.
 - [x] Run backend/frontend tests, typecheck/lint/build, whitespace checks, and graphify update.
 - **Status:** completed
 
+## Session: 2026-08-04 - UAE Pre-Approvals parent consolidation
+
+- [x] Define a collision-safe `Pre-Approvals` UAE parent route and preserve legacy source identifiers.
+- [x] Add workflow metadata/filtering for `IP Final`, `OP Final`, and `IP Elective` without pooling KPI definitions.
+- [x] Consolidate UAE source rows, access checks, summaries, and exports under the parent route.
+- [x] Keep branch multi-select behavior and rename the IP Elective display label without changing config lookup names.
+- [x] Hide duplicate legacy child links from the sidebar while retaining their routes for backward compatibility.
+- [x] Add regression coverage and complete local verification.
+- **Status:** completed locally; no database migration or remote deployment performed.
+
 ## Session: 2026-08-03 - Merge OP Final teams with branch filtering
 
 - [x] Audit current OP Dubai and OP Final SHJ/AJM team identities, branch fields, and dashboard filters.
@@ -280,4 +290,13 @@ Complete — all accepted implementation phases and release checks are finished.
 - [x] Ensure IP KPI weights and baseline formulas remain source/config driven in the merged view.
 - [x] Add regression coverage for the merged route and source aliases.
 - [x] Run full frontend/backend verification, production build, graphify update, and code review.
+- **Status:** completed
+
+## Session: 2026-08-04 - Call Center parent/channel consolidation
+
+- [x] Audit existing Inbound/Outbound routes, KPI handling, and access scope behavior.
+- [x] Add canonical `Call Center` parent identity with URL-backed channel filtering.
+- [x] Add clickable neon channel summary cards and preserve channel-specific KPI scoring.
+- [x] Update sidebar, repository aliases, report authorization, and export routing.
+- [x] Add regression tests and run frontend/backend verification plus graphify refresh.
 - **Status:** completed

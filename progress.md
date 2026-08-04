@@ -315,3 +315,23 @@
 - Merged source configs by position, preserving Dubai workstream weights and SHJ/AJM 40/60 baseline scoring.
 - Added backend performance, authorization-scope, and action-service aliases for canonical IP Final requests.
 - Verification passed: Frontend `196` tests plus typecheck/lint/build/bundle budgets; Backend `562` tests; graphify update completed.
+
+## 2026-08-04 - UAE Pre-Approvals parent consolidation
+
+- Added parent/workflow aliases and route metadata in `Frontend/src/types.ts`.
+- Added URL-backed workflow filter and parent workflow summary component.
+- Updated team dashboard filtering, access checks, export workflow routing, and UAE sidebar navigation.
+- Updated backend repository/report-scope aliases and export workflow handling.
+- Added frontend and backend regression tests for parent matching, workflow separation, and team-level scope expansion.
+- Verification: Frontend lint, typecheck, `202` tests, production build/bundle budget; Backend full suite `566 passed`.
+- Graphify update completed after the final source changes; no commit or deployment performed.
+- Enhanced the parent workflow summary cards with restrained neon hover/focus states and click-through to the corresponding workflow filter; interaction regression coverage now brings the frontend suite to `203` tests.
+
+## 2026-08-04 - Call Center parent/channel consolidation
+
+- Added the canonical `Call Center` parent route and replaced the duplicate Egypt `Inbound`/`Outbound` sidebar entries with one parent entry; legacy source routes remain compatible.
+- Added a URL-backed `All Channels` / `Inbound` / `Outbound` filter and clickable neon channel summary cards. The parent view intentionally avoids pooled KPI cards; selecting a channel loads that channel's own KPI configuration and score calculations.
+- Kept `Inbound UAE` outside the parent scope and preserved direct channel authorization boundaries. Parent access expands to both Egypt channels, while access to one source channel does not grant the other.
+- Updated backend repository aliases, report-scope authorization, and Excel export channel handling without a schema migration or source-data rewrite.
+- Added frontend/backend regression coverage for parent mapping, channel classification, scope isolation, and card navigation.
+- Verification: Frontend `207` tests, typecheck, lint, production build/bundle budget, and code-quality checker passed; Backend `568 passed`; graphify refreshed successfully.

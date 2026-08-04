@@ -105,72 +105,7 @@
 - Planning options can switch to a merged employee/management scalar projection immediately; Insights workspace still needs KPI evidence for scoring and dynamic KPI options, so its full records cannot be replaced wholesale by scalar rows.
 - Projection implementation passes 37 focused tests, including real SQL employee/management dimension rows, manager team-level isolation, and proof that Reports options does not call the full dashboard-record loader.
 - The local backend is listening on port 8000; its health endpoint is protected by the current auth middleware, so performance probes must reuse the authenticated baseline method rather than assume an anonymous health check.
-- The prior post-cache reference values for the endpoints being optimized are Planning options 1,985.53 ms / 20,274 bytes and Reports options 1,486.04 ms / 33,006 bytes. These are the correct comparison points for the new projection phase.
-- The baseline method created a short-lived JWT for an existing active local Admin without recording secrets or employee data; the same read-only method remains appropriate.
-- The first projection query used SQL `DISTINCT`, which changed overwrite order for a handful of employees with historical team/position rows. Removing unnecessary `DISTINCT` from the one-row-per-performance-record employee projection restores the legacy full-loader order and exact option output.
-- Direct current-database comparisons now show semantic equality for both Reports options and Planning options between the legacy full-record path and the new projection path, with zero differing fields.
-- Initial projection HTTP timing before that compatibility ordering adjustment was approximately 172 ms p50 for Planning options and 95 ms p50 for Reports options, showing the expected material gain. Final numbers must be re-collected after restart.
-- Final five-sample warm HTTP results after the compatibility fix are Planning options 120.71 ms p50 / 20,274 bytes and Reports options 72.61 ms p50 / 33,006 bytes.
-- Compared with the post-cache reference, scalar projections reduce Planning options p50 by 93.9% and Reports options p50 by 95.1%, while restoring the exact response byte counts.
-- The restarted local Uvicorn worker is healthy on port 8000. Startup logs again show two synchronous Redis connection attempts before readiness, confirming the Phase 9 cold-start target with direct runtime evidence.
-- Query instrumentation confirms projections halve database work as well as Python work: Planning options 16→8 SQL statements and Reports options 12→6. The Planning in-process wall sample includes Redis/startup overhead and is not used as the HTTP p50.
-- The primary `/api/performance` payload cannot simply become summary-only: Team Dashboard, Employee Profile, Executive, KPI detail actions, and several team calculations actively use `raw_data` and `kpi_values`.
-- Sidebar and Header currently subscribe to the same global full-performance hook only to derive navigation teams/months. On routes such as Settings, Planning, Reports, and Insights, this can trigger the approximately 598 kB raw payload even though those shell components do not need KPI evidence.
-- A lightweight authorized performance catalog endpoint backed by option projections is the safe additive summary boundary. Migrating only the application shell to it preserves full detail on analytical pages while eliminating unnecessary raw payloads elsewhere.
-- Sidebar needs only `(team, performance_level)` availability and Header needs only distinct months. Neither reads score, KPI, raw-data, or employee detail.
-- The catalog must apply both `filter_records_by_scope` and `filter_records_by_team_levels`; broad team filtering alone would leak the existence of levels outside a manager's explicit assignment.
-- Sidebar's existing test mocks the full performance hook and must move to a catalog hook fixture. No dedicated Header test currently mocks this dependency.
-- The catalog migration is additive: analytical routes still receive the unchanged full record contract, while the application shell now requests only periods and dimensions.
-- Focused catalog tests prove manager team-level filtering and that the endpoint never calls full record loading.
-- Team Dashboard invokes the full Insights workspace only as a fallback when its local KPI analysis is empty, then reads only `priority_insights`. It does not consume workspace options, people contribution, KPI trend, team summaries, risks, or driver collections.
-- A backward-compatible `view=priority` Insights response can therefore reduce this active fallback payload without changing the default full Insights page contract. The query cache key must include the view to prevent a compact response from satisfying a full-page request.
-- `view=priority` is now explicit in both URL and TanStack Query key. The default `view=full` URL and schema remain unchanged for Insights and Planning consumers.
-- The compact model is copied rather than mutated, and tests prove full workspace collections remain intact.
-
-## Technical Decisions
-| Decision | Rationale |
-|----------|-----------|
-| Derive endpoint inventory from both FastAPI OpenAPI and static frontend API call sites | Neither source alone proves active compatibility. |
-| Instrument queries in a controlled local process/session | Avoid production load and obtain reproducible query counts/timing. |
-| Retain bearer authentication for now | The user prohibited speculative auth migration; current design must first be security-tested and measured. |
-| Separate measured facts from recommendations and implementation | Prevent speculative performance claims. |
-| Treat production hardening as the first implementation release | It closes concrete security and session risks without changing KPI business behaviour. |
-| Preserve existing endpoints while adding opt-in summary/detail behaviour | This avoids a breaking response-contract migration for active frontend consumers. |
-
-## Issues Encountered
-| Issue | Resolution |
-|-------|------------|
-| Combined full reads of large backend service/router files were truncated | Continue with targeted symbol searches and bounded line-range inspection. |
-| Combined TestClient baseline exceeded the command timeout | Collect endpoint latency and SQL query evidence in smaller independent probes so a single slow flow cannot invalidate the entire baseline. |
-| An environment search included a missing `Backend/.env.example` path and returned exit code 1 after useful matches | Treat the missing optional path as non-blocking and use the existing `DevOps/.env.example` plus runtime files for exact-variable verification. |
-| A nested-backend `git ls-files ../DevOps/...` check failed because DevOps is outside the Backend submodule | Run ownership/tracking checks from the root repository instead; no files were changed. |
-
-## Resources
-- `D:\Projects\PMS_Dashboard\Backend`
-- `D:\Projects\PMS_Dashboard\Frontend`
-- `D:\Projects\PMS_Dashboard\DevOps`
-- User request: `C:\Users\sghd70204\.codex\attachments\be6a1fca-8e0b-49a1-8fc0-1902f2a40636\pasted-text.txt`
-- Backend entrypoint: `D:\Projects\PMS_Dashboard\Backend\app.py`
-- Frontend entrypoints: `D:\Projects\PMS_Dashboard\Frontend\src\main.tsx`, `D:\Projects\PMS_Dashboard\Frontend\src\App.tsx`
-
-## Visual/Browser Findings
-- Targeted Chromium release verification passed six responsive layout, navigation, route-overflow, dialog-accessibility, and serious accessibility checks.
-## Phase 9 — runtime reliability audit
-
-- `services/auth_service.py` and `services/cache_service.py` both construct a Redis client and call `PING` at import time. When Redis is unavailable this adds duplicate startup delay and duplicate warnings.
-- Authentication already degrades safely to signed-JWT validation when Redis is unavailable; performance caching already has a bounded in-process fallback. A shared lazy provider can therefore remove startup coupling without changing user-visible contracts.
-- Socket.IO presence is process-local (`connected_clients`) and the server is created unconditionally whenever the optional package exists. This is suitable for the current local single-process mode, but it must be explicitly disabled on serverless production rather than presented as durable multi-instance realtime.
-- Error middleware already creates a request ID and preserves a structured 500 response, but successful responses do not expose the request ID and there is no `Server-Timing` or response payload-size instrumentation.
-- Redis is consumed through module-level `redis_client` imports in authentication, RBAC, bulk operations, cache invalidation, monitoring, health, and query optimization. Keeping that public name as a shared lazy proxy avoids a risky cross-cutting API rewrite and preserves existing test patch points.
-- The request-timing middleware currently sits inside authentication, so rejected requests are not measured. Moving timing/instrumentation into the outer error middleware will cover authenticated, rejected, and failed requests consistently.
-- Existing Socket.IO state is in-process only. The safe compatibility path is an explicit `PMS_REALTIME_MODE=disabled|in_process`, defaulting to `disabled` on Vercel and retaining `in_process` locally.
-- The shared lazy Redis proxy passed focused cache, monitoring, runtime-validation, and provider tests (32/32). Importing `app` no longer emitted either of the duplicate Redis timeout warnings; Redis is first touched only by a feature that needs it.
-- Request instrumentation now covers successful responses and middleware-generated rejections through the outer error middleware, with `X-Request-ID`, `Server-Timing`, and `X-Response-Time-Ms` headers while keeping existing JSON bodies backward-compatible.
-- Production realtime is now explicit end to end: the backend supports `disabled|in_process`, Vercel defaults to disabled, and the static frontend will not start Socket.IO in production unless `VITE_REALTIME_ENABLED=true`.
-- Structured file logs now retain normalized route, method, status, duration, and response bytes. Console logs include the same request summary; CORS exposes the diagnostic timing/request headers to approved frontend origins.
-- Before final measurement, the listener was identified as a pre-catalog/pre-priority process; it was subsequently restarted onto the final source and revalidated.
-- Final warm local HTTP measurements on the restarted current server (five serial samples each):
-  - June Performance: 103.90 ms p50, 597,829 bytes, 186 records.
+- The prior post-cache reference values for the endpoints being optimized are Planning options 1,985.53 ms / 20,274 bytes and Reports options 1,486…2422 tokens truncated…7,829 bytes, 186 records.
   - Performance catalog: 25.66 ms p50, 2,411 bytes, 6 periods and 21 authorized scopes.
   - Full Insights: 532.89 ms p50, 487,435 bytes.
   - Priority Insights: 508.21 ms p50, 18,838 bytes, capped at 10 priority items with unused analysis collections omitted.
@@ -305,3 +240,20 @@
 - The merged route reuses authoritative source branch matching and the URL-backed multi-branch selector; employees, headcount, trends, KPI aggregation, and average score follow the selected branch set.
 - Backend repository, authorization, and action aliases accept the canonical name while source rows/configs remain auditable. No database migration or source-data rewrite was required.
 - Per-KPI branch attribution/root-cause analysis remains deferred as requested.
+
+## 2026-08-04 - UAE Pre-Approvals parent consolidation
+
+- The UAE parent uses route id `pre-approvals-uae` because the legacy `/team/pre-approvals` route belongs to the Egypt IP Offshore team.
+- `Pre-Approvals` groups OP Final, IP Final, and IP Elective source teams at the presentation and repository-filter layers; source team values and scoring configs remain unchanged.
+- The parent defaults to a workflow summary. Selecting one workflow loads that workflow's own configuration and KPI cards; mixed workflow KPI cards/analysis are intentionally suppressed.
+- The existing branch selector remains multi-select and scopes the parent roster, headcount, scores, and trends. Per-KPI regional attribution remains deferred.
+- `Pre-Approvals IP Elective Dubai` keeps its database/config identifier but is displayed as `Pre-Approvals IP Elective` in navigation and profile labels.
+- Backend team-level authorization now expands parent aliases, and exports accept an optional workflow selector.
+- No schema migration, source-data rewrite, or production deployment was made.
+
+## 2026-08-04 - Call Center parent/channel consolidation
+
+- `Inbound` and `Outbound` are now presentation-level children of `Call Center`; source records and channel-specific KPI configurations remain unchanged.
+- Channel selection is applied before roster, headcount, trends, KPI aggregation, score analysis, and export resolution. `All Channels` is summary-only so the UI does not imply that distinct channel KPI definitions can be pooled safely.
+- Authorization intentionally remains asymmetric: a manager scoped to `Inbound` cannot access `Outbound`, while a manager scoped to `Call Center` can access both. `Inbound UAE` is explicitly excluded.
+- No database migration is required because the parent is an application-layer alias over the existing source team values.
