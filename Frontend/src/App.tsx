@@ -25,6 +25,7 @@ const ReportBuilderView = lazy(() => import('./pages/ReportBuilderView'));
 const ReportPreviewView = lazy(() => import('./pages/ReportPreviewView'));
 const InsightsView = lazy(() => import('./pages/InsightsView'));
 const PlanningView = lazy(() => import('./pages/PlanningView'));
+const DesignSystemView = lazy(() => import('./pages/DesignSystemView'));
 const NotFound = lazy(() => import('./pages/NotFound'));
 
 const RouteLoadingFallback = () => <PageLoadingSkeleton variant="dashboard" label="Loading page" />;
@@ -139,6 +140,16 @@ function AnimatedRoutes() {
           }
         />
         <Route path="/planning" element={<RouteGuard allowedRoles={['Admin']}><Suspense fallback={<RouteLoadingFallback />}><PlanningView /></Suspense></RouteGuard>} />
+
+        {/* Design system laboratory (Admin only) */}
+        <Route
+          path="/design-system"
+          element={
+            <RouteGuard allowedRoles={['Admin']}>
+              <Suspense fallback={<RouteLoadingFallback />}><DesignSystemView /></Suspense>
+            </RouteGuard>
+          }
+        />
 
         {/* 404 Page Not Found */}
         <Route path="*" element={<Suspense fallback={<RouteLoadingFallback />}><NotFound /></Suspense>} />

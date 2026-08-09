@@ -17,7 +17,7 @@ const ThemeToggle = ({ variant = 'icon' }: ThemeToggleProps) => {
         onClick={toggleTheme}
         aria-label={`Switch to ${isDark ? 'light' : 'dark'} mode`}
         title={`Switch to ${isDark ? 'light' : 'dark'} mode`}
-        className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold transition-all duration-200 cursor-pointer w-full"
+        className="theme-toggle-pill flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold transition-all duration-200 cursor-pointer w-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
         style={{
           background: 'var(--sidebar-hover-bg)',
           color: 'var(--text-secondary)',

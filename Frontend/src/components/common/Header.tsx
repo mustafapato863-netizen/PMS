@@ -31,6 +31,7 @@ const ROUTE_TITLES: Record<string, { title: string; subtitle: string }> = {
   '/reports': { title: 'Reports', subtitle: 'Generate and manage performance reports' },
   '/insights': { title: 'Insights', subtitle: 'Understand what drives performance' },
   '/planning': { title: 'Planning', subtitle: 'Create, track and manage performance plans' },
+  '/design-system': { title: 'Design System', subtitle: 'Admin reference for reusable workspace surfaces' },
 };
 
 // ── helpers ───────────────────────────────────────────────────────────────────

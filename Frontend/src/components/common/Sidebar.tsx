@@ -7,6 +7,7 @@ import {
   ClipboardCheck,
   Building2,
   Layers,
+  Palette,
   PanelLeftClose,
   PanelLeftOpen,
 } from 'lucide-react';
@@ -204,7 +205,8 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed = false, onToggleCollapsed = (
           ? [
               { name: 'Reports', path: '/reports', icon: <FileBarChart size={18} /> },
               { name: 'Insights', path: '/insights', icon: <Lightbulb size={18} /> },
-              { name: 'Planning', path: '/planning', icon: <ClipboardCheck size={18} /> }
+              { name: 'Planning', path: '/planning', icon: <ClipboardCheck size={18} /> },
+              { name: 'Design System', path: '/design-system', icon: <Palette size={18} /> },
             ]
           : []),
       ]
@@ -213,7 +215,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed = false, onToggleCollapsed = (
   return (
     <aside
       aria-label="Primary navigation"
-      className={`fixed left-0 top-0 z-40 flex h-dvh w-[272px] shrink-0 flex-col transition-[width,transform] duration-300 xl:translate-x-0 ${isCollapsed ? 'xl:w-[84px]' : ''} ${isOpen ? 'translate-x-0' : '-translate-x-full'} sidebar-navigation`}
+      className={`fixed left-0 top-0 z-40 flex h-dvh w-[272px] shrink-0 flex-col transition-[width,transform] duration-300 xl:translate-x-0 ${isCollapsed ? 'xl:w-[84px] is-collapsed' : 'is-expanded'} ${isOpen ? 'translate-x-0' : '-translate-x-full'} sidebar-navigation`}
       style={{ background: 'var(--sidebar-bg)', borderRight: '1px solid var(--sidebar-border)', boxShadow: '4px 0 20px rgba(0,0,0,0.04)' }}
     >
       <div className={`flex items-center justify-between gap-3 py-5 ${isCollapsed ? 'px-3 xl:justify-center' : 'px-5'}`}>
@@ -368,7 +370,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed = false, onToggleCollapsed = (
         {role !== 'Agent' && renderLink({ name: 'Settings', path: '/settings', icon: <Settings size={18} /> })}
         <div className={`sidebar-user-menu flex items-center justify-between gap-2 rounded-xl border border-[var(--border-light)] bg-[var(--glass-bg)] p-2.5 ${isCollapsed ? 'xl:justify-center xl:p-2' : ''}`}>
           <div className={`flex min-w-0 items-center gap-2 ${isCollapsed ? 'xl:justify-center' : ''}`}>
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 text-[11px] font-bold text-white">
+            <div className="sidebar-user-avatar flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 text-[11px] font-bold text-white">
               {currentUser ? currentUser.name.split(' ').map((name) => name[0]).join('') : 'U'}
             </div>
             <div className={`min-w-0 ${isCollapsed ? 'xl:hidden' : ''}`}>
