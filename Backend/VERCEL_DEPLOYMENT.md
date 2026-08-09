@@ -1,7 +1,7 @@
 # Deploying the FastAPI backend on Vercel
 
 Vercel detects the exported ASGI application from `app.py`. When creating the
-Vercel project from the `PMS_DevOPS` repository, set **Root Directory** to
+Vercel project from the `PMS` repository, set **Root Directory** to
 `Backend` and leave the Framework Preset as **Other**. The checked-in
 `Backend/vercel.json` configures the Python function bundle and includes the
 team configuration files read at runtime.

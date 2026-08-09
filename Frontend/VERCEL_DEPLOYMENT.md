@@ -1,6 +1,6 @@
 # Deploying the frontend on Vercel
 
-When importing the `PMS_DevOPS` repository, create a separate Vercel project
+When importing the `PMS` repository, create a separate Vercel project
 for the `Frontend` directory:
 
 - **Root Directory:** `Frontend`
