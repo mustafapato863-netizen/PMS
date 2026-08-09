@@ -7,6 +7,8 @@ import {
   ClipboardCheck,
   Building2,
   Layers,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useUserRole } from '../../context/RoleContext';
@@ -25,6 +27,8 @@ import { prepareBalancedScorecardTeamParams } from '../team/balancedScorecardNav
 interface SidebarProps {
   isOpen: boolean;
   setIsOpen: (val: boolean) => void;
+  isCollapsed?: boolean;
+  onToggleCollapsed?: () => void;
 }
 
 const LEVELS: Array<{ name: 'Employee'; icon: React.ReactNode; color: string }> = [
@@ -44,7 +48,7 @@ const prettyTeamLabel = (teamName: string) =>
     ? teamName.toUpperCase()
     : teamName.replace(/\b\w/g, (char) => char.toUpperCase());
 
-const Sidebar = ({ isOpen, setIsOpen }: SidebarProps) => {
+const Sidebar = ({ isOpen, setIsOpen, isCollapsed = false, onToggleCollapsed = () => {} }: SidebarProps) => {
   const { pathname } = useLocation();
   const [searchParams] = useSearchParams();
   const selectedLevel = searchParams.get('performance_level');
@@ -170,19 +174,21 @@ const Sidebar = ({ isOpen, setIsOpen }: SidebarProps) => {
         key={`${item.id || item.path}-${performanceLevel || 'general'}`}
         to={destination}
         aria-current={active ? 'page' : undefined}
+        aria-label={isCollapsed ? item.name : undefined}
+        title={isCollapsed ? item.name : undefined}
         onClick={() => setIsOpen(false)}
-        className={`flex min-h-10 items-center justify-between rounded-xl py-2 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${nested ? 'pl-9 pr-3' : 'px-3'} ${active ? 'active-nav-item' : 'inactive-nav-item'}`}
+        className={`flex min-h-10 items-center justify-between rounded-xl py-2 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${isCollapsed ? 'xl:justify-center xl:px-2' : nested ? 'pl-9 pr-3' : 'px-3'} ${active ? 'active-nav-item' : 'inactive-nav-item'}`}
         style={{
           color: active ? 'var(--sidebar-active-text)' : 'var(--sidebar-text)',
           background: active ? 'var(--sidebar-active-bg)' : undefined,
           border: active ? '1px solid var(--sidebar-active-border)' : '1px solid transparent',
         }}
       >
-        <span className="flex min-w-0 flex-1 items-center gap-3">
+        <span className={`flex min-w-0 flex-1 items-center gap-3 ${isCollapsed ? 'xl:justify-center' : ''}`}>
           <span style={{ color: active ? 'var(--sidebar-active-text)' : 'var(--text-faint)' }}>{item.icon}</span>
-          <span className="truncate">{item.name}</span>
+          <span className={isCollapsed ? 'truncate xl:hidden' : 'truncate'}>{item.name}</span>
         </span>
-        {active && <span className="h-1.5 w-1.5 rounded-full bg-current opacity-70" />}
+        {active && <span className={`h-1.5 w-1.5 rounded-full bg-current opacity-70 ${isCollapsed ? 'xl:hidden' : ''}`} />}
       </Link>
     );
   };
@@ -207,25 +213,34 @@ const Sidebar = ({ isOpen, setIsOpen }: SidebarProps) => {
   return (
     <aside
       aria-label="Primary navigation"
-      className={`fixed left-0 top-0 z-40 flex h-dvh w-[272px] shrink-0 flex-col transition-transform duration-300 xl:translate-x-0 ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}
+      className={`fixed left-0 top-0 z-40 flex h-dvh w-[272px] shrink-0 flex-col transition-[width,transform] duration-300 xl:translate-x-0 ${isCollapsed ? 'xl:w-[84px]' : ''} ${isOpen ? 'translate-x-0' : '-translate-x-full'} sidebar-navigation`}
       style={{ background: 'var(--sidebar-bg)', borderRight: '1px solid var(--sidebar-border)', boxShadow: '4px 0 20px rgba(0,0,0,0.04)' }}
     >
-      <div className="flex items-center justify-between gap-3 px-5 py-5">
-        <div className="flex items-center gap-3">
+      <div className={`flex items-center justify-between gap-3 py-5 ${isCollapsed ? 'px-3 xl:justify-center' : 'px-5'}`}>
+        <div className={`flex items-center gap-3 ${isCollapsed ? 'xl:justify-center' : ''}`}>
           <div className="rounded-xl border border-blue-400/20 bg-gradient-to-br from-blue-500 to-indigo-600 p-2 shadow-[0_4px_12px_rgba(59,130,246,0.30)]">
             <HeartPulse size={22} className="text-white" />
           </div>
-          <div>
+          <div className={isCollapsed ? 'xl:hidden' : ''}>
             <h1 className="text-[15px] font-extrabold tracking-tight text-[var(--text-primary)]">SGH Hub</h1>
             <span className="mt-0.5 block text-[10px] font-bold uppercase tracking-widest text-blue-600">Intelligence</span>
           </div>
         </div>
+        <button
+          type="button"
+          onClick={onToggleCollapsed}
+          aria-label={isCollapsed ? 'Expand navigation sidebar' : 'Minimize navigation sidebar'}
+          title={isCollapsed ? 'Expand sidebar' : 'Minimize sidebar'}
+          className="hidden min-h-9 min-w-9 items-center justify-center rounded-lg text-[var(--text-muted)] transition-colors hover:bg-[var(--sidebar-hover-bg)] hover:text-blue-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 xl:flex"
+        >
+          {isCollapsed ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}
+        </button>
         <button onClick={() => setIsOpen(false)} aria-label="Close navigation sidebar" className="min-h-11 min-w-11 rounded-lg text-[var(--text-muted)] xl:hidden">
           <X size={18} className="mx-auto" />
         </button>
       </div>
 
-      <div className="mb-2 px-5"><p className="text-label text-[0.625rem] text-[var(--text-faint)]">DASHBOARDS</p></div>
+      <div className={`mb-2 px-5 ${isCollapsed ? 'xl:hidden' : ''}`}><p className="text-label text-[0.625rem] text-[var(--text-faint)]">DASHBOARDS</p></div>
       <nav className="custom-scrollbar flex-1 space-y-0.5 overflow-y-auto px-3 pb-3">
         {generalItems.map((item) => renderLink(item))}
 
@@ -237,17 +252,17 @@ const Sidebar = ({ isOpen, setIsOpen }: SidebarProps) => {
           if (!regions.length) return null;
           const isLevelOpen = levelOpen[level.name];
           return (
-            <div key={level.name} className="mt-3">
+            <div key={level.name} className={`mt-3 ${isCollapsed ? 'xl:mt-2' : ''}`}>
               <button
                 type="button"
                 aria-expanded={isLevelOpen}
                 onClick={() => setLevelOpen((state) => ({ ...state, [level.name]: !isLevelOpen }))}
-                className="flex min-h-11 w-full items-center gap-2.5 rounded-xl px-3 text-left text-sm font-extrabold text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-sunken)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                className={`flex min-h-11 w-full items-center gap-2.5 rounded-xl px-3 text-left text-sm font-extrabold text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-sunken)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${isCollapsed ? 'xl:justify-center xl:px-2' : ''}`}
               >
                 <span className={`h-4 w-1 rounded-full ${level.color}`} />
                 <span className="text-[var(--text-faint)]">{level.icon}</span>
-                <span className="flex-1">{level.name}</span>
-                <ChevronDown size={14} className={`transition-transform ${isLevelOpen ? '' : '-rotate-90'}`} />
+                <span className={`flex-1 ${isCollapsed ? 'xl:hidden' : ''}`}>{level.name}</span>
+                <ChevronDown size={14} className={`transition-transform ${isLevelOpen ? '' : '-rotate-90'} ${isCollapsed ? 'xl:hidden' : ''}`} />
               </button>
               <AnimatePresence initial={false}>
                 {isLevelOpen && (
@@ -256,16 +271,16 @@ const Sidebar = ({ isOpen, setIsOpen }: SidebarProps) => {
                       const key = `${level.name}-${region.id}`;
                       const isRegionOpen = regionOpen[key] ?? true;
                       return (
-                        <div key={key} className="ml-3 border-l border-[var(--border-light)] pl-2">
+                        <div key={key} className={`ml-3 border-l border-[var(--border-light)] pl-2 ${isCollapsed ? 'xl:ml-0 xl:border-l-0 xl:pl-0' : ''}`}>
                           <button
                             type="button"
                             aria-expanded={isRegionOpen}
                             onClick={() => setRegionOpen((state) => ({ ...state, [key]: !isRegionOpen }))}
-                            className="flex min-h-10 w-full items-center gap-2 px-2 text-left text-[11px] font-extrabold uppercase tracking-wider text-[var(--text-faint)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                            className={`flex min-h-10 w-full items-center gap-2 px-2 text-left text-[11px] font-extrabold uppercase tracking-wider text-[var(--text-faint)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${isCollapsed ? 'xl:justify-center xl:px-1' : ''}`}
                           >
                             <span className={`h-3 w-1 rounded-full ${region.color}`} />
-                            <span className="flex-1">{region.label}</span>
-                            <ChevronDown size={13} className={`transition-transform ${isRegionOpen ? '' : '-rotate-90'}`} />
+                            <span className={`flex-1 ${isCollapsed ? 'xl:hidden' : ''}`}>{region.label}</span>
+                            <ChevronDown size={13} className={`transition-transform ${isRegionOpen ? '' : '-rotate-90'} ${isCollapsed ? 'xl:hidden' : ''}`} />
                           </button>
                           {isRegionOpen && <div className="space-y-0.5">{region.teams.map((item) => renderLink(item, level.name, true))}</div>}
                         </div>
@@ -279,22 +294,22 @@ const Sidebar = ({ isOpen, setIsOpen }: SidebarProps) => {
         })}
 
         {canSeeBroadNavigation && (marketingVisible || rcmVisible) && (
-          <div className="mt-3">
+          <div className={`mt-3 ${isCollapsed ? 'xl:mt-2' : ''}`}>
             <button
               type="button"
               aria-expanded={sharedOpen}
               onClick={() => setSharedOpen((open) => !open)}
-              className="flex min-h-11 w-full items-center gap-2.5 rounded-xl px-3 text-left text-sm font-extrabold text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-sunken)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+              className={`flex min-h-11 w-full items-center gap-2.5 rounded-xl px-3 text-left text-sm font-extrabold text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-sunken)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${isCollapsed ? 'xl:justify-center xl:px-2' : ''}`}
             >
               <span className="h-4 w-1 rounded-full bg-violet-500" />
               <span className="text-[var(--text-faint)]"><Layers size={17} /></span>
-              <span className="flex-1">Shared Functions</span>
-              <ChevronDown size={14} className={`transition-transform ${sharedOpen ? '' : '-rotate-90'}`} />
+              <span className={`flex-1 ${isCollapsed ? 'xl:hidden' : ''}`}>Shared Functions</span>
+              <ChevronDown size={14} className={`transition-transform ${sharedOpen ? '' : '-rotate-90'} ${isCollapsed ? 'xl:hidden' : ''}`} />
             </button>
             <AnimatePresence initial={false}>
                 {sharedOpen && (
                   <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
-                    <div className="ml-3 border-l border-[var(--border-light)] pl-2">
+                    <div className={`ml-3 border-l border-[var(--border-light)] pl-2 ${isCollapsed ? 'xl:ml-0 xl:border-l-0 xl:pl-0' : ''}`}>
                       {rcmVisible && renderLink(
                         { name: RCM_TEAM, path: '/team/rcm', icon: getTeamIcon(RCM_TEAM) },
                         'Employee',
@@ -319,22 +334,22 @@ const Sidebar = ({ isOpen, setIsOpen }: SidebarProps) => {
         {canSeeBroadNavigation && managementItems.length > 0 && (() => {
           const isLevelOpen = levelOpen.Management;
           return (
-            <div key="Management" className="mt-3">
+            <div key="Management" className={`mt-3 ${isCollapsed ? 'xl:mt-2' : ''}`}>
               <button
                 type="button"
                 aria-expanded={isLevelOpen}
                 onClick={() => setLevelOpen((state) => ({ ...state, Management: !isLevelOpen }))}
-                className="flex min-h-11 w-full items-center gap-2.5 rounded-xl px-3 text-left text-sm font-extrabold text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-sunken)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                className={`flex min-h-11 w-full items-center gap-2.5 rounded-xl px-3 text-left text-sm font-extrabold text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-sunken)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${isCollapsed ? 'xl:justify-center xl:px-2' : ''}`}
               >
                 <span className="h-4 w-1 rounded-full bg-amber-500" />
                 <span className="text-[var(--text-faint)]"><Building2 size={17} /></span>
-                <span className="flex-1">Management</span>
-                <ChevronDown size={14} className={`transition-transform ${isLevelOpen ? '' : '-rotate-90'}`} />
+                <span className={`flex-1 ${isCollapsed ? 'xl:hidden' : ''}`}>Management</span>
+                <ChevronDown size={14} className={`transition-transform ${isLevelOpen ? '' : '-rotate-90'} ${isCollapsed ? 'xl:hidden' : ''}`} />
               </button>
               <AnimatePresence initial={false}>
                 {isLevelOpen && (
                   <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
-                    <div className="ml-3 border-l border-[var(--border-light)] pl-2">
+                    <div className={`ml-3 border-l border-[var(--border-light)] pl-2 ${isCollapsed ? 'xl:ml-0 xl:border-l-0 xl:pl-0' : ''}`}>
                       <div className="space-y-0.5">
                         {managementItems.map((item) => renderLink(item, 'Corporate', true, false, 'management'))}
                       </div>
@@ -348,20 +363,20 @@ const Sidebar = ({ isOpen, setIsOpen }: SidebarProps) => {
 
       </nav>
 
-      <div className="mt-auto shrink-0 space-y-2 border-t border-[var(--border-light)] p-3">
-        <ThemeToggle variant="pill" />
+      <div className={`mt-auto shrink-0 space-y-2 border-t border-[var(--border-light)] p-3 ${isCollapsed ? 'xl:p-2' : ''}`}>
+        <div className={isCollapsed ? 'sidebar-collapsed-theme' : ''}><ThemeToggle variant="pill" /></div>
         {role !== 'Agent' && renderLink({ name: 'Settings', path: '/settings', icon: <Settings size={18} /> })}
-        <div className="flex items-center justify-between gap-2 rounded-xl border border-[var(--border-light)] bg-[var(--glass-bg)] p-2.5">
-          <div className="flex min-w-0 items-center gap-2">
+        <div className={`sidebar-user-menu flex items-center justify-between gap-2 rounded-xl border border-[var(--border-light)] bg-[var(--glass-bg)] p-2.5 ${isCollapsed ? 'xl:justify-center xl:p-2' : ''}`}>
+          <div className={`flex min-w-0 items-center gap-2 ${isCollapsed ? 'xl:justify-center' : ''}`}>
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 text-[11px] font-bold text-white">
               {currentUser ? currentUser.name.split(' ').map((name) => name[0]).join('') : 'U'}
             </div>
-            <div className="min-w-0">
+            <div className={`min-w-0 ${isCollapsed ? 'xl:hidden' : ''}`}>
               <p className="truncate text-xs font-bold text-[var(--text-primary)]">{currentUser?.name}</p>
               <p className="mt-0.5 truncate text-[10px] font-semibold uppercase tracking-wider text-[var(--text-faint)]">{role}</p>
             </div>
           </div>
-          <button onClick={logout} aria-label="Log out" className="min-h-9 min-w-9 rounded-lg text-[var(--text-muted)] transition-colors hover:bg-red-100 hover:text-red-600">
+          <button onClick={logout} aria-label="Log out" title="Log out" className="min-h-9 min-w-9 rounded-lg text-[var(--text-muted)] transition-colors hover:bg-red-100 hover:text-red-600">
             <LogOut size={14} className="mx-auto" />
           </button>
         </div>

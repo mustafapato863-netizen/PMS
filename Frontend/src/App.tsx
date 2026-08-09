@@ -1,4 +1,4 @@
-import { useState, lazy, Suspense } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AnimatePresence } from 'framer-motion';
 import Sidebar from './components/common/Sidebar';
@@ -151,7 +151,22 @@ function AppContent() {
   const { currentUser, isAppInitializing, initializationStatus, initializationError } = useAuth();
   const location = useLocation();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
+    try {
+      return window.localStorage.getItem('pms.sidebar.collapsed') === 'true';
+    } catch {
+      return false;
+    }
+  });
   const isReportBuilder = location.pathname === '/reports/new' || /^\/reports\/[^/]+\/edit$/.test(location.pathname);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem('pms.sidebar.collapsed', String(isSidebarCollapsed));
+    } catch {
+      // Keep the sidebar usable when storage is unavailable (private browsing, embedded webviews, etc.).
+    }
+  }, [isSidebarCollapsed]);
 
   // Initialize real-time notifications
   useNotificationSocket(REALTIME_ENABLED && initializationStatus === 'ready');
@@ -201,7 +216,14 @@ function AppContent() {
         <div className="absolute top-[50%] left-[45%] w-[450px] h-[450px] rounded-full bg-emerald-500/3 blur-[120px] animate-blob animation-delay-4000" />
       </div>
 
-      {!isReportBuilder && <Sidebar isOpen={isSidebarOpen} setIsOpen={setIsSidebarOpen} />}
+      {!isReportBuilder && (
+        <Sidebar
+          isOpen={isSidebarOpen}
+          setIsOpen={setIsSidebarOpen}
+          isCollapsed={isSidebarCollapsed}
+          onToggleCollapsed={() => setIsSidebarCollapsed((collapsed) => !collapsed)}
+        />
+      )}
 
 
       {/* Mobile Overlay */}
@@ -212,7 +234,7 @@ function AppContent() {
         />
       )}
 
-      <main className={`relative flex min-h-screen min-w-0 w-full flex-1 flex-col transition-all duration-300 ${isReportBuilder ? '' : 'xl:ml-[272px] xl:w-[calc(100%-272px)]'}`}>
+      <main className={`relative flex min-h-screen min-w-0 w-full flex-1 flex-col transition-[margin,width] duration-300 ${isReportBuilder ? '' : isSidebarCollapsed ? 'xl:ml-[84px] xl:w-[calc(100%-84px)]' : 'xl:ml-[272px] xl:w-[calc(100%-272px)]'}`}>
         {!isReportBuilder && <Header onMenuClick={() => setIsSidebarOpen(true)} />}
         <div className={`flex-1 w-full relative z-10 ${isReportBuilder ? 'p-3 sm:p-4' : 'p-3 sm:p-4 md:p-6 lg:p-8'}`}>
           <AnimatedRoutes />

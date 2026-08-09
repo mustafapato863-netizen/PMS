@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ThemeProvider } from '../../context/ThemeContext';
@@ -85,6 +85,22 @@ describe('Sidebar team icons', () => {
     expect(screen.getByRole('complementary', { name: 'Primary navigation' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'SGH Hub' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Planning' })).toBeInTheDocument();
+  });
+
+  it('provides an accessible desktop collapse control', () => {
+    const onToggleCollapsed = vi.fn();
+    render(
+      <MemoryRouter>
+        <ThemeProvider>
+          <Sidebar isOpen setIsOpen={vi.fn()} onToggleCollapsed={onToggleCollapsed} />
+        </ThemeProvider>
+      </MemoryRouter>,
+    );
+
+    const collapseButton = screen.getByRole('button', { name: 'Minimize navigation sidebar' });
+    expect(collapseButton).toHaveAttribute('title', 'Minimize sidebar');
+    fireEvent.click(collapseButton);
+    expect(onToggleCollapsed).toHaveBeenCalledTimes(1);
   });
 
   it.each(['Managerial', 'Corporate'])(
