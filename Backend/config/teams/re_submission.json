@@ -1,0 +1,54 @@
+{
+  "team": "Re-Submission",
+  "db_name": "Re-Submission",
+  "region": "UAE",
+  "employee_id_col": "HRID",
+  "employee_name_col": "AgentName",
+  "grade_thresholds": {
+    "A": 95,
+    "B": 85,
+    "C": 75,
+    "D": 65
+  },
+  "kpis": [
+    {
+      "key": "quality_errors_rate",
+      "label": "Quality Errors Rate",
+      "weight": 0.2,
+      "direction": "lower_better",
+      "unit": "%",
+      "color": "#EF4444",
+      "actual_col": "A.QualityErrorsRate",
+      "target_col": "T.QualityErrorsRate",
+      "aggregation": {"method": "ratio", "numerator_col": "FinalErrorsClaims(RaisedbyQualitySameMonth)", "denominator_col": "QltySamples"},
+      "achievement_col": "QualityErrorsRateAch%",
+      "capping": "capped_at_100"
+    },
+    {
+      "key": "rejection_rate_after_resubmission",
+      "label": "Rejection Rate After Re-Submission",
+      "weight": 0.5,
+      "direction": "lower_better",
+      "unit": "%",
+      "color": "#F97316",
+      "actual_col": "A.RejectionRateAfterRe-Submission",
+      "target_col": "T.RejectionRateAfterRe-Submission",
+      "aggregation": {"method": "ratio", "numerator_col": "RejectedClaims3MonthsPrevious(byInsurance)", "denominator_col": "RemittanceAmount"},
+      "achievement_col": "RejectionRateAfterRe-SubmissionAch%",
+      "capping": "capped_at_100"
+    },
+    {
+      "key": "tat",
+      "label": "TAT",
+      "weight": 0.3,
+      "direction": "higher_better",
+      "unit": "%",
+      "color": "#2563EB",
+      "actual_col": "A.TAT",
+      "target_col": "T.TAT",
+      "aggregation": {"method": "ratio", "numerator_col": "TotalSubmittedWithin(TAT)", "denominator_col": "Allocatedclaims"},
+      "achievement_col": "TATAch%",
+      "capping": "capped_at_100"
+    }
+  ]
+}

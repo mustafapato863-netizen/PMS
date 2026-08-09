@@ -1,0 +1,32 @@
+# Python cache and byte-code
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+.venv-workers/
+venv/
+ENV/
+env/
+
+# Application state, persistent storage and local assets
+data/*.json
+*.xlsx
+*.xls
+*.csv
+
+# Docker and configs
+Dockerfile
+docker-compose.yml
+.dockerignore
+.git
+.gitignore
+.python-version
+wrangler.toml
+
+# IDE and system configs
+.vscode/
+.idea/
+.project
+.pydevproject
+.DS_Store
+Thumbs.db

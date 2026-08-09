@@ -1,0 +1,69 @@
+{
+  "team": "Pre-Approvals IP Final SHJAJM",
+  "db_name": "Pre-Approvals IP Final SHJAJM",
+  "region": "UAE",
+  "employee_id_col": "HRID",
+  "employee_name_col": "AgentName",
+  "grade_thresholds": {
+    "A": 95,
+    "B": 85,
+    "C": 75,
+    "D": 65
+  },
+  "configuration_notes": [
+    "SHJ and AJM are branches inside one IP Final scoring team; the source Team column is preserved for filtering and reporting.",
+    "Acceptance Rate = Approved Requests / Assigned Request.",
+    "Submission Within Month % = Submitted Within Month (until the 3rd of the next month) / Assigned Request.",
+    "Both achievements use the documented 80% baseline formula, floor below-baseline achievement at zero, and cap achievement and final score at 100%."
+  ],
+  "performance_levels": {
+    "Employee": {
+      "positions": {
+        "IP Final": {
+          "capping": "capped_at_100",
+          "kpis": [
+            {
+              "key": "ip_final_acceptance_rate",
+              "label": "Acceptance Rate",
+              "weight": 0.4,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#3B82F6",
+              "actual_col": "AcceptanceRate",
+              "target_col": "T.AcceptanceRate",
+              "achievement_col": "AcceptanceRateAchievement",
+              "score_formula": "baseline_80",
+              "cap_achievement": true,
+              "aggregation": {
+                "method": "ratio",
+                "numerator_col": "ApprovedRequests",
+                "denominator_col": "AssignedRequest"
+              },
+              "perspective": "Internal Process"
+            },
+            {
+              "key": "ip_final_submission_within_month",
+              "label": "Submission Within Month %",
+              "weight": 0.6,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#10B981",
+              "actual_col": "SubmissionWithinMonth%",
+              "target_col": "T.SubmissionWithinMonth%",
+              "achievement_col": "SubmissionWithinMonthAchievement",
+              "score_formula": "baseline_80",
+              "cap_achievement": true,
+              "aggregation": {
+                "method": "ratio",
+                "numerator_col": "SubmittedWithinMonth(Untill3rdofnextmonth)",
+                "denominator_col": "AssignedRequest"
+              },
+              "perspective": "Internal Process"
+            }
+          ]
+        }
+      }
+    }
+  }
+}
+

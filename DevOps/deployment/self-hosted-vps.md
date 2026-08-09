@@ -1,18 +1,18 @@
 # Self-Hosted VPS Deployment Guide
 
-This guide documents the procedures for deploying the PMS Dashboard stack on a self-hosted Virtual Private Server (VPS) using Docker Compose and Nginx.
+This guide now points to the canonical Hostinger-compatible monorepo deployment. See [`hostinger-vps.md`](hostinger-vps.md) for the full production procedure.
 
 ---
 
 ## 1. Deployment Model & Architecture
 
-A self-hosted deployment runs all tiers (Database, Cache, API, Reverse Proxy, and Telemetry Monitoring) on a single Virtual Private Server (VPS) or server cluster.
+A self-hosted deployment runs the TLS gateway, static frontend, API, and Redis on the VPS. PostgreSQL remains on Supabase.
 
 ```
                   Web Client Request (Port 80 / 443)
                                  |
                                  v
-                            [Nginx Proxy]
+                            [Caddy TLS Gateway]
                                  |
            +---------------------+---------------------+
            |                                           |
@@ -22,7 +22,7 @@ A self-hosted deployment runs all tiers (Database, Cache, API, Reverse Proxy, an
                                             +----------+----------+
                                             |                     |
                                             v                     v
-                                      [PostgreSQL]             [Redis]
+                                   [Supabase PostgreSQL]       [Redis]
 ```
 
 ---
@@ -39,36 +39,36 @@ A self-hosted deployment runs all tiers (Database, Cache, API, Reverse Proxy, an
 
 ## 3. Provisioning Steps
 
-1. **Clone the DevOps Workspace:**
+1. **Clone the monorepo:**
    ```bash
-   git clone https://github.com/PMS-Dashboard/PMS-DevOps.git /opt/pms-devops
-   cd /opt/pms-devops
+   git clone <repository-url> /opt/pms-dashboard
+   cd /opt/pms-dashboard
    ```
 
 2. **Configure Environment variables:**
    Create a `.env` file from the template and edit it:
    ```bash
-   cp .env.example .env
-   nano .env # Set database passwords, JWT secrets, and ports
+   cp DevOps/.env.hostinger.example DevOps/.env.hostinger
+   nano DevOps/.env.hostinger
    ```
 
 3. **Establish Scripts Permissions:**
    ```bash
-   chmod +x scripts/*.sh
+   chmod +x DevOps/scripts/*.sh
    ```
 
 4. **Run Ingestion and Compilation Deployments:**
    ```bash
-   ./scripts/deploy.sh
+   DevOps/scripts/deploy.sh
    ```
 
 5. **Verify Stack Container health checks:**
    ```bash
-   docker compose -f compose/docker-compose.prod.yml ps
+   docker compose --env-file DevOps/.env.hostinger -f compose.production.yml ps
    ```
 
 ---
 
 ## 4. Backups and Logging Maintenance
-- Backups are stored under `/opt/pms-devops/backups/`. Add `scripts/backup-db.sh` to a daily cron tab scheduler to automate snapshots.
+- Use Supabase managed backups as the primary database recovery mechanism and verify restore procedures in staging.
 - Logger rotated trace files reside under the backend's `/app/logs/` directories inside the container.

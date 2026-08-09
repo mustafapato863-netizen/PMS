@@ -1,0 +1,76 @@
+{
+  "team": "Pharmacy",
+  "db_name": "Pharmacy",
+  "region": "UAE",
+  "employee_id_col": "HRID",
+  "employee_name_col": "AgentName",
+  "grade_thresholds": {
+    "A": 95,
+    "B": 85,
+    "C": 75,
+    "D": 65
+  },
+  "kpis": [
+    {
+      "key": "WaitingTime",
+      "label": "Waiting Time",
+      "weight": 0.20,
+      "direction": "lower_better",
+      "unit": "min",
+      "color": "#EF4444",
+      "actual_col": "A.TotalAvgWaitingTime",
+      "target_col": "T.TotalWaitingTime",
+      "aggregation": {"method": "average"},
+      "capping": "capped_at_100"
+    },
+    {
+      "key": "Leakage",
+      "label": "Leakage",
+      "weight": 0.20,
+      "direction": "lower_better",
+      "unit": "%",
+      "color": "#F97316",
+      "actual_col": "A.Leakage%",
+      "target_col": "T.Leakage%",
+      "aggregation": {"method": "average"},
+      "capping": "capped_at_100"
+    },
+    {
+      "key": "TenderCompliance",
+      "label": "Tender Compliance",
+      "weight": 0.20,
+      "direction": "higher_better",
+      "unit": "%",
+      "color": "#10B981",
+      "actual_col": "A.TenderItemCompliance",
+      "target_col": "T.TenderItemCompliance",
+      "aggregation": {"method": "average"},
+      "capping": "capped_at_100"
+    },
+    {
+      "key": "ATV",
+      "label": "Average Transaction Value",
+      "weight": 0.20,
+      "direction": "higher_better",
+      "unit": "AED",
+      "color": "#3B82F6",
+      "actual_col": "A.ATV",
+      "target_col": "T.ATV",
+      "aggregation": {"method": "average"},
+      "capping": "capped_at_100"
+    },
+    {
+      "key": "Prescription",
+      "label": "Prescription Contribution",
+      "weight": 0.20,
+      "direction": "higher_better",
+      "unit": "%",
+      "color": "#8B5CF6",
+      "actual_col": "NoofPrescriptionAch%",
+      "target_col": "T.NoofPrescriptionsContribution",
+      "aggregation": {"method": "average"},
+      "score_target": 100,
+      "capping": "capped_at_100"
+    }
+  ]
+}

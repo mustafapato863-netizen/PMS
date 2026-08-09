@@ -7,6 +7,19 @@ DevOps/*.bak
 DevOps/*.backup
 DevOps/*.tmp
 
+# Workspace-only agent and analysis artifacts
+/.codex/
+/.codex-tmp/
+/graphify-out/
+/Backend/graphify-out/
+/Frontend/graphify-out/
+
+# Root-level local secrets and runtime state
+/.env
+/.env.*
+!/.env.example
+/backups/
+
 # Local verification and handover artifacts
 /output/
 /tmp/

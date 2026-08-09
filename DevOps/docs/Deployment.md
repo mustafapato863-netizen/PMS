@@ -26,39 +26,36 @@ For development or local testing, the application is packaged into a Docker Comp
 
 ---
 
-## 2. Production Deployment (Proposed Stack)
+## 2. Production Deployment (Hostinger VPS)
 
 To transition from a "stable development candidate" to a production environment, the following stack is recommended:
 
 ```mermaid
 graph TD
     Client([Web Client])
-    Nginx[Nginx Reverse Proxy]
-    Static[Static Assets Host]
-    Gunicorn[Gunicorn Process Manager]
+    Caddy[Caddy TLS Gateway]
+    Static[React on Nginx]
     FastAPI[FastAPI Workers]
-    Postgres[(PostgreSQL Master)]
+    Postgres[(Supabase PostgreSQL)]
     Redis[(Redis Cache & Socket adapter)]
 
-    Client -->|HTTPS / WSS| Nginx
-    Nginx -->|Serve Static| Static
-    Nginx -->|Proxy HTTP Requests| Gunicorn
-    Gunicorn --> FastAPI
+    Client -->|HTTPS / WSS| Caddy
+    Caddy -->|Static and SPA routes| Static
+    Caddy -->|/api and /socket.io| FastAPI
     FastAPI --> Postgres
     FastAPI --> Redis
 ```
 
-### A. Reverse Proxy (Nginx)
-- Configured to handle SSL/TLS termination.
-- Serves static compiled assets directly.
-- Redirects `/api` HTTP and WebSocket traffic to Gunicorn.
+### A. TLS Gateway (Caddy)
+- Obtains and renews public certificates automatically.
+- Routes `/api/*` and `/socket.io/*` to FastAPI.
+- Routes all other requests to the frontend's Nginx container.
 
-### B. WSGI/ASGI Server (Gunicorn & Uvicorn)
-- Manages process isolation for FastAPI workers.
-- Recommended configuration utilizes Gunicorn as the process coordinator running Uvicorn ASGI workers:
-  ```bash
-  gunicorn app:app -k uvicorn.workers.UvicornWorker -w 4 --bind 127.0.0.1:8000
-  ```
+### B. ASGI Server (Uvicorn)
+- Runs one FastAPI process because the current Socket.IO implementation is in-process.
+- Redis remains private and Supabase is reached through an unexposed egress network.
+
+Use `compose.production.yml` and follow `DevOps/deployment/hostinger-vps.md`; production is not launched from the legacy files under `DevOps/compose/`.
 
 ---
 

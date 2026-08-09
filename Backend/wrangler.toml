@@ -1,0 +1,7 @@
+name = "pms-dashboard-api"
+main = "app.py"
+compatibility_date = "2026-06-11"
+compatibility_flags = ["python_workers"]
+
+[env.production]
+vars = { ENVIRONMENT = "production" }

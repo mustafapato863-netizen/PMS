@@ -1,0 +1,36 @@
+{
+    email {$ACME_EMAIL}
+    admin off
+}
+
+{$APP_DOMAIN:localhost} {
+    encode zstd gzip
+
+    header {
+        -Server
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        Permissions-Policy "camera=(), microphone=(), geolocation=()"
+    }
+
+    handle /api/* {
+        reverse_proxy backend:7860
+    }
+
+    handle /socket.io/* {
+        reverse_proxy backend:7860
+    }
+
+    handle /healthz {
+        respond "ok" 200
+    }
+
+    handle {
+        reverse_proxy frontend:80
+    }
+
+    log {
+        output stdout
+        format json
+    }
+}

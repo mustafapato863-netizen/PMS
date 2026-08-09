@@ -29,7 +29,7 @@ DevOps/
 |-- DATABASE_SCHEMA.md
 |-- README_PROJECT_STRUCTURE.md
 |-- SYSTEM_STATUS.md
-|-- compose/        # docker-compose files for dev / staging / prod
+|-- compose/        # legacy development and staging compose files
 |-- docker/         # backend and frontend Dockerfiles
 |-- deployment/     # platform-specific deployment notes
 |-- docs/           # architecture, API, security, troubleshooting, roadmap
@@ -65,6 +65,8 @@ npm run lint
 cd ..\Backend
 .\.venv\Scripts\python -m pytest tests\test_three_teams.py tests\test_submission_team.py tests\test_services.py -q
 ```
+
+The canonical production definition is `compose.production.yml` at the repository root. Do not use the legacy environment-specific Compose files for production.
 
 ## Documentation policy
 

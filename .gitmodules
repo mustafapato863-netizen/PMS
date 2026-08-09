@@ -1,6 +1,0 @@
-[submodule "Backend"]
-	path = Backend
-	url = https://github.com/mustafapato863-netizen/PMS_Backend.git
-[submodule "Frontend"]
-	path = Frontend
-	url = https://github.com/mustafapato863-netizen/PMS_Frontend.git

@@ -21,25 +21,25 @@ This document outlines the standard operating procedures (SOPs) for classifying,
 2. Check active containers: `docker ps`.
 3. Inspect system error logs:
    ```bash
-   docker compose -f compose/docker-compose.prod.yml logs -f web
+   docker compose --env-file DevOps/.env.hostinger -f compose.production.yml logs -f backend
    ```
-4. If PostgreSQL is offline, check connections and volumes:
+4. If PostgreSQL is offline, check the backend readiness response and Supabase service status:
    ```bash
-   docker compose -f compose/docker-compose.prod.yml logs -f db
+   curl --fail "https://${APP_DOMAIN}/api/health/readiness"
    ```
 5. If data corruption has occurred, stop stack, restore last validated SQL backup, and restart:
    ```bash
-   ./scripts/restore-db.sh backups/pms_backup_latest.sql
+   Follow the approved Supabase restore procedure from a verified backup.
    ```
 
 ### Playbook B: Infinite WebSocket Reconnection Loop
-1. Open Nginx reverse proxy logs:
+1. Open Caddy gateway logs:
    ```bash
-   docker compose -f compose/docker-compose.prod.yml logs -f nginx
+   docker compose --env-file DevOps/.env.hostinger -f compose.production.yml logs -f gateway
    ```
 2. Verify if requests to `/socket.io/` return HTTP 400 or HTTP 403.
 3. Ensure CORS settings in `socket_config.py` allow the frontend domain.
 4. Restart the WebSocket handler:
    ```bash
-   docker compose -f compose/docker-compose.prod.yml restart web
+   docker compose --env-file DevOps/.env.hostinger -f compose.production.yml restart backend
    ```

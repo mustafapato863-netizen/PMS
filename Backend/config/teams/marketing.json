@@ -1,0 +1,70 @@
+{
+  "team": "Marketing",
+  "db_name": "Marketing",
+  "region": "EGY",
+  "employee_id_col": "Employee ID",
+  "employee_name_col": "Employee Name",
+  "grade_thresholds": {
+    "A": 95,
+    "B": 85,
+    "C": 75,
+    "D": 65
+  },
+  "performance_levels": {
+    "Employee": {
+      "positions": {
+        "Media Buyer": {
+          "kpis": [
+            {"key": "mb_cpl", "label": "CPL", "perspective": "Financial", "weight": 0.10, "direction": "lower_better", "unit": "AED", "color": "#2563EB", "actual_col": "Actual Value", "target_col": "Target Value", "aggregation": {"method": "average"}, "display_order": 1},
+            {"key": "mb_cr", "label": "CR", "perspective": "Internal Process", "weight": 0.30, "direction": "higher_better", "unit": "%", "color": "#0D9488", "actual_col": "Actual Value", "target_col": "Target Value", "aggregation": {"method": "average"}, "display_order": 2},
+            {"key": "mb_leads", "label": "Leads", "perspective": "Customer", "weight": 0.30, "direction": "higher_better", "unit": "count", "color": "#D97706", "actual_col": "Actual Value", "target_col": "Target Value", "aggregation": {"method": "average"}, "display_order": 3},
+            {"key": "mb_cpv", "label": "CPV", "perspective": "Financial", "weight": 0.10, "direction": "lower_better", "unit": "AED", "color": "#7C3AED", "actual_col": "Actual Value", "target_col": "Target Value", "aggregation": {"method": "average"}, "display_order": 4},
+            {"key": "mb_revenue", "label": "Revenue", "perspective": "Financial", "weight": 0.10, "direction": "higher_better", "unit": "AED", "color": "#DC2626", "actual_col": "Actual Value", "target_col": "Target Value", "aggregation": {"method": "average"}, "display_order": 5},
+            {"key": "mb_app_installs", "label": "# App installs", "perspective": "Customer", "weight": 0.10, "direction": "higher_better", "unit": "count", "color": "#0891B2", "actual_col": "Actual Value", "target_col": "Target Value", "aggregation": {"method": "average"}, "display_order": 6}
+          ]
+        },
+        "Graphic Designer": {
+          "kpis": [
+            {"key": "gd_on_schedule", "label": "Projects delivered on schedule", "perspective": "Internal Process", "weight": 0.40, "direction": "higher_better", "unit": "count", "color": "#2563EB", "actual_col": "Actual Value", "target_col": "Target Value", "aggregation": {"method": "average"}, "display_order": 1},
+            {"key": "gd_rework", "label": "Rework percentage", "perspective": "Internal Process", "weight": 0.25, "direction": "lower_better", "unit": "%", "color": "#0D9488", "actual_col": "Actual Value", "target_col": "Target Value", "aggregation": {"method": "average"}, "display_order": 2},
+            {"key": "gd_brand_consistency", "label": "Consistency with brand guidelines", "perspective": "Internal Process", "weight": 0.20, "direction": "higher_better", "unit": "%", "color": "#D97706", "actual_col": "Actual Value", "target_col": "Target Value", "aggregation": {"method": "average"}, "display_order": 3},
+            {"key": "gd_edits_rate", "label": "Edits Rate", "perspective": "Internal Process", "weight": 0.15, "direction": "lower_better", "unit": "%", "color": "#7C3AED", "actual_col": "Actual Value", "target_col": "Target Value", "aggregation": {"method": "average"}, "display_order": 4}
+          ]
+        },
+        "Social Media Specialist": {
+          "kpis": [
+            {"key": "sms_response_rate", "label": "Response rate (%)", "perspective": "Customer", "weight": 0.40, "direction": "higher_better", "unit": "%", "color": "#2563EB", "actual_col": "Actual Value", "target_col": "Target Value", "aggregation": {"method": "average"}, "display_order": 1},
+            {"key": "sms_channel_growth", "label": "Channels growth rate", "perspective": "Customer", "weight": 0.20, "direction": "higher_better", "unit": "%", "color": "#0D9488", "actual_col": "Actual Value", "target_col": "Target Value", "aggregation": {"method": "average"}, "display_order": 2},
+            {"key": "sms_response_time", "label": "Response Time", "perspective": "Internal Process", "weight": 0.40, "direction": "lower_better", "unit": "min", "color": "#D97706", "actual_col": "Actual Value", "target_col": "Target Value", "aggregation": {"method": "average"}, "display_order": 3}
+          ]
+        },
+        "Account Manager": {
+          "kpis": [
+            {"key": "am_campaign_delivery", "label": "Campaign delivery", "perspective": "Internal Process", "weight": 0.15, "direction": "higher_better", "unit": "%", "color": "#2563EB", "actual_col": "Actual Value", "target_col": "Target Value", "aggregation": {"method": "average"}, "display_order": 1},
+            {"key": "am_campaign_delivery_ontime", "label": "Campaign delivery Ontime", "perspective": "Internal Process", "weight": 0.20, "direction": "higher_better", "unit": "%", "color": "#0D9488", "actual_col": "Actual Value", "target_col": "Target Value", "aggregation": {"method": "average"}, "display_order": 2},
+            {"key": "am_deficit", "label": "Deficit", "perspective": "Financial", "weight": 0.10, "direction": "lower_better", "unit": "%", "color": "#D97706", "actual_col": "Actual Value", "target_col": "Target Value", "aggregation": {"method": "average"}, "display_order": 3},
+            {"key": "am_requests", "label": "Requests Delivery Rate", "aliases": ["Requests"], "perspective": "Internal Process", "weight": 0.10, "direction": "higher_better", "unit": "%", "color": "#7C3AED", "actual_col": "Actual Value", "target_col": "Target Value", "aggregation": {"method": "average"}, "display_order": 4},
+            {"key": "am_modifications", "label": "Modification Rate", "aliases": ["Modifications"], "perspective": "Internal Process", "weight": 0.10, "direction": "lower_better", "unit": "%", "color": "#DC2626", "actual_col": "Actual Value", "target_col": "Target Value", "aggregation": {"method": "average"}, "display_order": 5},
+            {"key": "am_edit_rate", "label": "Edit Rate", "perspective": "Internal Process", "weight": 0.15, "direction": "lower_better", "unit": "%", "color": "#0891B2", "actual_col": "Actual Value", "target_col": "Target Value", "aggregation": {"method": "average"}, "display_order": 6},
+            {"key": "am_projects_ontime", "label": "Projects Ontime", "perspective": "Internal Process", "weight": 0.20, "direction": "higher_better", "unit": "%", "color": "#16A34A", "actual_col": "Actual Value", "target_col": "Target Value", "aggregation": {"method": "average"}, "display_order": 7}
+          ]
+        },
+        "Web Developer": {
+          "kpis": [
+            {"key": "wd_uptime", "label": "Website uptime (%)", "perspective": "Internal Process", "weight": 0.25, "direction": "lower_better", "unit": "%", "color": "#2563EB", "actual_col": "Actual Value", "target_col": "Target Value", "aggregation": {"method": "average"}, "display_order": 1},
+            {"key": "wd_page_speed", "label": "Page load speed", "perspective": "Internal Process", "weight": 0.25, "direction": "lower_better", "unit": "sec", "color": "#0D9488", "actual_col": "Actual Value", "target_col": "Target Value", "aggregation": {"method": "average"}, "display_order": 2},
+            {"key": "wd_bug_resolution", "label": "Error / bug resolution rate", "perspective": "Internal Process", "weight": 0.25, "direction": "higher_better", "unit": "%", "color": "#D97706", "actual_col": "Actual Value", "target_col": "Target Value", "aggregation": {"method": "average"}, "display_order": 3},
+            {"key": "wd_delivery_timeliness", "label": "Request delivery timeliness", "perspective": "Internal Process", "weight": 0.25, "direction": "lower_better", "unit": "%", "color": "#7C3AED", "actual_col": "Actual Value", "target_col": "Target Value", "aggregation": {"method": "average"}, "display_order": 4}
+          ]
+        },
+        "Content Writer": {
+          "kpis": [
+            {"key": "cw_organic_traffic", "label": "Organic traffic from content", "perspective": "Customer", "weight": 0.40, "direction": "higher_better", "unit": "visits", "color": "#2563EB", "actual_col": "Actual Value", "target_col": "Target Value", "aggregation": {"method": "average"}, "display_order": 1},
+            {"key": "cw_delivery_timeliness", "label": "Content delivery timeliness", "perspective": "Internal Process", "weight": 0.30, "direction": "higher_better", "unit": "%", "color": "#0D9488", "actual_col": "Actual Value", "target_col": "Target Value", "aggregation": {"method": "average"}, "display_order": 2},
+            {"key": "cw_error_free", "label": "Error-free content ratio", "perspective": "Internal Process", "weight": 0.30, "direction": "higher_better", "unit": "%", "color": "#D97706", "actual_col": "Actual Value", "target_col": "Target Value", "aggregation": {"method": "average"}, "display_order": 3}
+          ]
+        }
+      }
+    }
+  }
+}

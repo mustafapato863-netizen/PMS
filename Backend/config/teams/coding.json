@@ -1,0 +1,51 @@
+{
+  "team": "Coding",
+  "db_name": "Coding",
+  "region": "UAE",
+  "employee_id_col": "HRID",
+  "employee_name_col": "AgentName",
+  "grade_thresholds": {
+    "A": 95,
+    "B": 85,
+    "C": 75,
+    "D": 65
+  },
+  "kpis": [
+    {
+      "key": "QualityErrors",
+      "label": "Quality Errors",
+      "weight": 0.20,
+      "direction": "lower_better",
+      "unit": "%",
+      "color": "#EF4444",
+      "actual_col": "A.QualityErrorsRate",
+      "target_col": "T.QualityErrorsRate",
+      "aggregation": {"method": "average"},
+      "capping": "capped_at_100"
+    },
+    {
+      "key": "Rejection",
+      "label": "Rejection",
+      "weight": 0.50,
+      "direction": "lower_better",
+      "unit": "%",
+      "color": "#F97316",
+      "actual_col": "A.RejectionRate",
+      "target_col": "T.RejectionRate",
+      "aggregation": {"method": "average"},
+      "capping": "capped_at_100"
+    },
+    {
+      "key": "TAT",
+      "label": "Turnaround Time",
+      "weight": 0.30,
+      "direction": "lower_better",
+      "unit": "hours",
+      "color": "#3B82F6",
+      "actual_col": "A.TAT",
+      "target_col": "T.TAT",
+      "aggregation": {"method": "average"},
+      "capping": "capped_at_100"
+    }
+  ]
+}

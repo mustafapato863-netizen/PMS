@@ -1,5 +1,26 @@
 # Task Plan: PMS Production Hardening and Performance Implementation
 
+## Session: 2026-08-09 - Hostinger VPS monorepo and production deployment
+
+- [x] Audit the parent repository, Backend/Frontend gitlinks, Docker assets, environment contract, and current CI workflows.
+- [x] Create a reversible migration branch and define the target monorepo layout without exposing secrets.
+- [x] Convert Backend and Frontend from gitlinks into normal tracked directories while preserving the exact stable revisions.
+- [x] Add a production Docker Compose stack, TLS routing, health checks, and Hostinger-safe environment templates.
+- [x] Add GitHub Actions validation and a guarded Hostinger VPS deployment workflow.
+- [x] Update deployment/runbook documentation and migration/rollback guidance.
+- [x] Run backend/frontend tests, image/config validation, security review, and graphify update; graphify preserved its existing graph after refusing a partial overwrite.
+- [x] Commit the completed migration branch; do not deploy to the live VPS until the required Hostinger/VPS connection is available and staging acceptance passes.
+- **Status:** completed locally — sanitized monorepo branch ready; live Hostinger deployment remains intentionally gated on production variables, secrets, DNS, and approval.
+
+### Errors encountered in this session
+
+- The first planning-file patch expected generic `# Findings` and `# Progress` headings; the existing files use `# Findings & Decisions` and `# Progress Log`. No file was changed by that failed patch; the update was retried with the actual headings.
+- The nested-repository metadata move completed, but the immediate `Get-Item` verification returned a Windows hidden-item lookup error. A separate `Get-ChildItem -Force` check confirmed both recoverable backups exist as `.codex-tmp/monorepo-backup-20260809/Backend.git` and `Frontend.git` alongside verified Git bundles.
+- Docker Desktop was initially stopped; it was started and the production images were then built successfully.
+- The first local Docker build could not traverse an ACL-restricted `Backend/.pytest_cache`. Verification was rerun from a clean Git-index export, matching a GitHub/Hostinger checkout, and both images built successfully.
+- The first backend container import exposed a non-root log-directory permission issue. The backend image now defaults to console logging, and the rebuilt image passed import and liveness smoke tests.
+- `graphify update .` re-extracted the source but refused to replace a larger existing graph with a smaller partial graph. The existing graph was preserved rather than forcing a destructive overwrite.
+
 ## Goal
 Implement the accepted audit recommendations in safe, reversible stages while preserving security, business rules, historical periods, configuration versions, and PostgreSQL as the source of truth.
 

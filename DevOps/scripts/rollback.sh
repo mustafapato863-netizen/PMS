@@ -5,39 +5,38 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "${SCRIPT_DIR}/.."
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+COMPOSE_FILE="${PROJECT_ROOT}/compose.production.yml"
+ENV_FILE="${PMS_ENV_FILE:-${PROJECT_ROOT}/DevOps/.env.hostinger}"
+cd "${PROJECT_ROOT}"
 
-# Load env configurations
-if [ -f .env ]; then
-  source .env
+if [ ! -f "${ENV_FILE}" ]; then
+  echo "[ERROR] Missing deployment environment file: ${ENV_FILE}"
+  exit 1
 fi
 
-echo "[WARNING] CAUTION: Destructive Action. This operation will rollback the last database migration schema update and restart container instances."
-read -p "Are you absolutely sure you want to perform this rollback? (y/N) " confirm
+if [ -z "${PREVIOUS_APP_VERSION:-}" ]; then
+  echo "[ERROR] Set PREVIOUS_APP_VERSION to the last known-good commit SHA or image tag."
+  exit 1
+fi
+
+echo "[WARNING] This will redeploy application images tagged ${PREVIOUS_APP_VERSION}."
+echo "[WARNING] Database migrations will not be downgraded automatically."
+read -r -p "Continue with the application rollback? (y/N) " confirm
 
 if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
   echo "[INFO] Rollback procedure cancelled by user."
   exit 0
 fi
 
-echo "[INFO] Downgrading database migration state by 1 step..."
-cd Backend
-if alembic downgrade -1; then
-  echo "[SUCCESS] Database schema downgrade executed successfully."
+echo "[INFO] Starting the already-built previous application images without running a database downgrade or old migration job..."
+export APP_VERSION="${PREVIOUS_APP_VERSION}"
+if docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" up -d --no-build redis && \
+   docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" up -d --no-build --no-deps backend frontend && \
+   docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" up -d --no-build --no-deps gateway; then
+  PMS_ENV_FILE="${ENV_FILE}" "${SCRIPT_DIR}/health-check.sh"
+  echo "[SUCCESS] Previous application release is healthy."
 else
-  echo "[WARNING] Database schema downgrade failed. Logical backup restore might be required."
-fi
-
-cd "${SCRIPT_DIR}/.."
-echo "[INFO] Stopping production containers..."
-docker compose -f compose/docker-compose.prod.yml down
-
-echo "[INFO] Launching previous container states..."
-if docker compose -f compose/docker-compose.prod.yml up -d; then
-  echo "[SUCCESS] Previous container states launched successfully."
-else
-  echo "[ERROR] Failed to start previous container states."
+  echo "[ERROR] Failed to start the previous application release. Confirm that both previous images still exist on the VPS."
   exit 1
 fi
-
-echo "[SUCCESS] Rollback operations complete."

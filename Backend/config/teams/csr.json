@@ -1,0 +1,51 @@
+{
+  "team": "CSR",
+  "db_name": "CSR",
+  "region": "UAE",
+  "employee_id_col": "HRID",
+  "employee_name_col": "AgentName",
+  "grade_thresholds": {
+    "A": 95,
+    "B": 85,
+    "C": 75,
+    "D": 65
+  },
+  "kpis": [
+    {
+      "key": "Rejection",
+      "label": "Rejection",
+      "weight": 0.40,
+      "direction": "lower_better",
+      "unit": "%",
+      "color": "#EF4444",
+      "actual_col": "A.CSRRejection%",
+      "target_col": "T.CSRRejection%",
+      "aggregation": {"method": "average"},
+      "capping": "capped_at_100"
+    },
+    {
+      "key": "Queries",
+      "label": "Queries Handled",
+      "weight": 0.30,
+      "direction": "higher_better",
+      "unit": "%",
+      "color": "#10B981",
+      "actual_col": "A.CSRQueries",
+      "target_col": "T.QueriesTarget",
+      "aggregation": {"method": "sum"},
+      "capping": "capped_at_100"
+    },
+    {
+      "key": "AttendedCR",
+      "label": "Attended CR",
+      "weight": 0.30,
+      "direction": "higher_better",
+      "unit": "count",
+      "color": "#8B5CF6",
+      "actual_col": "A.CPTConversion%",
+      "target_col": "T.AttendedC.R",
+      "aggregation": {"method": "average"},
+      "capping": "capped_at_100"
+    }
+  ]
+}

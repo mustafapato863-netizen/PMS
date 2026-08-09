@@ -10,24 +10,24 @@ Commands are executed from the repository root directory on the host VPS:
 
 ### Start the Application Stack
 ```bash
-docker compose -f compose/docker-compose.prod.yml up -d
+docker compose --env-file DevOps/.env.hostinger -f compose.production.yml up -d
 ```
 
 ### Stop the Application Stack
 This stops containers but preserves all persistent volume data:
 ```bash
-docker compose -f compose/docker-compose.prod.yml down
+docker compose --env-file DevOps/.env.hostinger -f compose.production.yml down
 ```
 
 ### Restart a Specific Service
 To restart the FastAPI backend container after a configuration adjust:
 ```bash
-docker compose -f compose/docker-compose.prod.yml restart web
+docker compose --env-file DevOps/.env.hostinger -f compose.production.yml restart backend
 ```
 
 ### View Live Log Streams
 ```bash
-docker compose -f compose/docker-compose.prod.yml logs -f web
+docker compose --env-file DevOps/.env.hostinger -f compose.production.yml logs -f backend
 ```
 
 ---
@@ -37,20 +37,20 @@ docker compose -f compose/docker-compose.prod.yml logs -f web
 ### Schema Migrations Rollout
 When updating databases to the latest version:
 ```bash
-./scripts/migrate.sh
+DevOps/scripts/migrate.sh
 ```
 
 ### Logical Database Backups
 Automated backups run daily at 02:00 AM. To run a manual logical backup:
 ```bash
-./scripts/backup-db.sh
+DevOps/scripts/backup-db.sh
 ```
 *Backups are saved as SQL files under `backups/`.*
 
 ### Database Restoration
 To restore a snapshot:
 ```bash
-./scripts/restore-db.sh backups/pms_backup_PMS_Sys_20260625_120000.sql
+DevOps/scripts/restore-db.sh backups/pms_backup_PMS_Sys_20260625_120000.sql
 ```
 
 ---
@@ -62,10 +62,10 @@ If cache inconsistencies occur:
 ### Purging All Caches
 To flush Redis records completely:
 ```bash
-docker exec -it pms_redis_cache_prod redis-cli FLUSHALL
+docker compose --env-file DevOps/.env.hostinger -f compose.production.yml exec redis redis-cli -a "$REDIS_PASSWORD" FLUSHALL
 ```
 
 ### Inspecting Cache Keys
 ```bash
-docker exec -it pms_redis_cache_prod redis-cli KEYS "*"
+docker compose --env-file DevOps/.env.hostinger -f compose.production.yml exec redis redis-cli -a "$REDIS_PASSWORD" --scan
 ```

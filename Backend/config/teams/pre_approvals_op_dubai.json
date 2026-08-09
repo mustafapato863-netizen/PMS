@@ -1,0 +1,98 @@
+{
+  "team": "Pre-Approvals OP Dubai",
+  "db_name": "Pre-Approvals OP Dubai",
+  "region": "UAE",
+  "employee_id_col": "HRID",
+  "employee_name_col": "AgentName",
+  "grade_thresholds": {
+    "A": 95,
+    "B": 85,
+    "C": 75,
+    "D": 65
+  },
+  "configuration_notes": [
+    "Workstream is derived per row from the populated operational volume columns.",
+    "Final Rejection Rate is excluded until Final Rejected Requests and its target are supplied."
+  ],
+  "performance_levels": {
+    "Employee": {
+      "positions": {
+        "Initial Submission": {
+          "capping": "capped_at_100",
+          "kpis": [
+            {
+              "key": "initial_rejection_rate",
+              "label": "Initial Rejection Rate",
+              "weight": 0.6,
+              "direction": "lower_better",
+              "unit": "%",
+              "color": "#EF4444",
+              "actual_col": "A.InitialRejectionRate",
+              "target_col": "T.InitialRejectionRate",
+              "aggregation": {"method": "ratio", "numerator_col": "RejectedRequests", "denominator_col": "SubmittedRequests"},
+              "perspective": "Internal Process"
+            },
+            {
+              "key": "submission_within_hour",
+              "label": "Submission Within TAT",
+              "weight": 0.4,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#10B981",
+              "actual_col": "A.SubmissionWithinHourRate",
+              "target_col": "T.SubmissionWithinHourRate",
+              "aggregation": {"method": "ratio", "numerator_col": "SubmittedWithinHour", "denominator_col": "SubmittedRequests"},
+              "perspective": "Internal Process"
+            }
+          ]
+        },
+        "Final Submission": {
+          "capping": "capped_at_100",
+          "kpis": [
+            {
+              "key": "submission_within_due_date",
+              "label": "Submission Within Due Date",
+              "weight": 1.0,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#10B981",
+              "actual_col": "A.SubmissionWithinDueDateRate",
+              "target_col": "T.SubmissionWithinDueDateRate",
+              "aggregation": {"method": "ratio", "numerator_col": "SubmittedWithinDay", "denominator_col": "AssignedRequest"},
+              "perspective": "Internal Process"
+            }
+          ]
+        },
+        "Calls": {
+          "capping": "capped_at_100",
+          "kpis": [
+            {
+              "key": "abandoned_calls_rate",
+              "label": "Abandoned Calls Rate",
+              "weight": 0.6,
+              "direction": "lower_better",
+              "unit": "%",
+              "color": "#EF4444",
+              "actual_col": "A.AbandonedCallsRate",
+              "target_col": "T.AbandonedCallsRate",
+              "aggregation": {"method": "ratio", "numerator_col": "TotalAbandonedCallsPerDay", "denominator_col": "TotalNumberOfCallsperDay"},
+              "perspective": "Customer"
+            },
+            {
+              "key": "attended_calls_rate",
+              "label": "Attended Calls Rate",
+              "weight": 0.4,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#3B82F6",
+              "actual_col": "A.AttendedCallsRate",
+              "target_col": "T.AttendedCallsRate",
+              "aggregation": {"method": "ratio", "numerator_col": "TotalAttendedCallsPerDay", "denominator_col": "TotalNumberOfCallsperDay"},
+              "perspective": "Customer"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

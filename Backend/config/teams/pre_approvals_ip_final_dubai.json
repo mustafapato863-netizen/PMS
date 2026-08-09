@@ -1,0 +1,131 @@
+{
+  "team": "Pre-Approvals IP Final Dubai",
+  "db_name": "Pre-Approvals IP Final Dubai",
+  "region": "UAE",
+  "employee_id_col": "HRID",
+  "employee_name_col": "AgentName",
+  "grade_thresholds": {
+    "A": 95,
+    "B": 85,
+    "C": 75,
+    "D": 65
+  },
+  "configuration_notes": [
+    "Achievement uses the 80% baseline formula: max(0, (actual - 80%) / (target - 80%)).",
+    "Rows without discharge activity use the IP Approval 60%/40% exception.",
+    "Rows without approval activity use the available IP Discharge KPI at 100%.",
+    "Because the source has no Position column, the cleaner identifies the applied workstream by reconciling the source Performance Score against the three documented weight sets, then recalculates the score independently.",
+    "Achievement and final scores are capped at 100% under the global scorecard rule."
+  ],
+  "performance_levels": {
+    "Employee": {
+      "positions": {
+        "Combined": {
+          "capping": "capped_at_100",
+          "kpis": [
+            {
+              "key": "combined_acceptance_rate",
+              "label": "Acceptance Rate",
+              "weight": 0.5,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#3B82F6",
+              "actual_col": "AcceptanceRate",
+              "target_col": "A.AcceptanceRate",
+              "aggregation": {"method": "ratio", "numerator_col": "ApprovedRequests", "denominator_col": "AssignedRequest"},
+              "achievement_col": "T.AcceptanceRate%",
+              "score_formula": "baseline_80",
+              "cap_achievement": true,
+              "perspective": "Internal Process"
+            },
+            {
+              "key": "combined_submission_within_month",
+              "label": "Submission Within Month %",
+              "weight": 0.3,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#10B981",
+              "actual_col": "SubmissionWithinMonth%",
+              "target_col": "A.SubmissionWithinMonth%",
+              "aggregation": {"method": "ratio", "numerator_col": "SubmittedWithinMonth(Untill3rdofnextmonth)", "denominator_col": "AssignedRequest"},
+              "achievement_col": "T.%ofSubmissionWithinDuedate",
+              "score_formula": "baseline_80",
+              "cap_achievement": true,
+              "perspective": "Internal Process"
+            },
+            {
+              "key": "combined_discharge_within_one_hour",
+              "label": "Discharge % Within 1 Hour",
+              "weight": 0.2,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#8B5CF6",
+              "actual_col": "Discharge%Within1Hour",
+              "target_col": "A.Discharge%Within1Hour",
+              "aggregation": {"method": "ratio", "numerator_col": "DischargeWithinHour", "denominator_col": "DischargeRequests"},
+              "achievement_col": "T.Discharge%Within1Hour",
+              "score_formula": "baseline_80",
+              "cap_achievement": true,
+              "perspective": "Customer"
+            }
+          ]
+        },
+        "IP Approval": {
+          "capping": "capped_at_100",
+          "kpis": [
+            {
+              "key": "ip_approval_acceptance_rate",
+              "label": "Acceptance Rate",
+              "weight": 0.6,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#3B82F6",
+              "actual_col": "AcceptanceRate",
+              "target_col": "A.AcceptanceRate",
+              "aggregation": {"method": "ratio", "numerator_col": "ApprovedRequests", "denominator_col": "AssignedRequest"},
+              "achievement_col": "T.AcceptanceRate%",
+              "score_formula": "baseline_80",
+              "cap_achievement": true,
+              "perspective": "Internal Process"
+            },
+            {
+              "key": "ip_approval_submission_within_month",
+              "label": "Submission Within Month %",
+              "weight": 0.4,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#10B981",
+              "actual_col": "SubmissionWithinMonth%",
+              "target_col": "A.SubmissionWithinMonth%",
+              "aggregation": {"method": "ratio", "numerator_col": "SubmittedWithinMonth(Untill3rdofnextmonth)", "denominator_col": "AssignedRequest"},
+              "achievement_col": "T.%ofSubmissionWithinDuedate",
+              "score_formula": "baseline_80",
+              "cap_achievement": true,
+              "perspective": "Internal Process"
+            }
+          ]
+        },
+        "IP Discharge": {
+          "capping": "capped_at_100",
+          "kpis": [
+            {
+              "key": "ip_discharge_within_one_hour",
+              "label": "Discharge % Within 1 Hour",
+              "weight": 1.0,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#8B5CF6",
+              "actual_col": "Discharge%Within1Hour",
+              "target_col": "A.Discharge%Within1Hour",
+              "aggregation": {"method": "ratio", "numerator_col": "DischargeWithinHour", "denominator_col": "DischargeRequests"},
+              "achievement_col": "T.Discharge%Within1Hour",
+              "score_formula": "baseline_80",
+              "cap_achievement": true,
+              "perspective": "Customer"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

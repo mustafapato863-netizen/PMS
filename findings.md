@@ -1,5 +1,22 @@
 # Findings & Decisions
 
+## 2026-08-09 - Hostinger VPS monorepo migration
+
+- The root repository currently tracks `Backend` and `Frontend` as gitlinks/submodules, while `DevOps` is a normal directory.
+- The stable parent commit points to Backend `77c988cd137eba1e80583dfa55010238aa191c26` and Frontend `ba64afe171e78c07fcdd07e2a7e583cee501e30c`.
+- The intended runtime remains separate services: React/Vite static frontend, FastAPI/Socket.IO backend, Supabase PostgreSQL, and optional Redis behind Nginx.
+- Hostinger Web/Cloud hosting is insufficient for the Python backend; the user confirmed a Hostinger VPS is available, so Docker Compose deployment is viable.
+- Production deployment must preserve the existing backend authorization/calculation path and keep database and JWT secrets out of Git and frontend bundles.
+- Exact import verification: Backend tree contained 278 tracked files and Frontend contained 357; the monorepo conversion staged and committed exactly those counts, with only `.gitmodules` and the two old gitlinks removed.
+- The existing `DevOps/compose/docker-compose.prod.yml` resolves `../Backend` relative to `DevOps/compose`, so its build context is invalid. It also mounts an empty Nginx static root, maps port 443 without certificate files, and publishes Prometheus/Grafana directly.
+- The current frontend production fallback is hard-coded to the legacy Vercel backend. A same-origin VPS deployment needs the production fallback to use the browser origin, with `/api` and `/socket.io` reverse-proxied to FastAPI.
+- The official current Hostinger action is `hostinger/deploy-on-vps@v2`; the older `deploy-action@v1`/personal-token configuration is not the current interface.
+- A Docker `internal` network cannot provide backend outbound access to Supabase. Production keeps Redis on the internal network and gives backend/migrations a separate unexposed egress network.
+- The old backend migration helper embedded a Supabase credential. Current source now requires `LOCAL_DATABASE_URL` and `REMOTE_DATABASE_URL`; the exposed credential must be rotated outside the repository.
+- Connecting the child histories would carry that old credential into the unified repository. The final branch must be squashed directly onto the stable root commit so only the sanitized source snapshot is published.
+- The backend image runs as a non-root user and must use stdout logging by default; otherwise `setup_logging()` attempts to create `/app/logs` and fails during startup.
+
+
 ## Requirements
 - Audit frontend/backend API compatibility and backend/PostgreSQL compatibility.
 - Measure current latency, query count/time, payload size, request count, rendering, cold/warm behaviour, and representative major flows.

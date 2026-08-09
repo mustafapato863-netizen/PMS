@@ -1,0 +1,51 @@
+{
+  "team": "Inbound UAE",
+  "db_name": "Inbound UAE",
+  "region": "UAE",
+  "employee_id_col": "EmployeeID",
+  "employee_name_col": "EmployeeName",
+  "grade_thresholds": {
+    "A": 95,
+    "B": 85,
+    "C": 75,
+    "D": 65
+  },
+  "kpis": [
+    {
+      "key": "Attendance",
+      "label": "Attendance Rate",
+      "weight": 0.70,
+      "direction": "higher_better",
+      "unit": "%",
+      "color": "#3B82F6",
+      "actual_col": "A.Attend%",
+      "target_col": "T.Attend%",
+      "aggregation": {"method": "ratio", "numerator_col": "$geo.attended", "denominator_col": "$geo.bookings"},
+      "achievement_col": "AttendC.RAch%"
+    },
+    {
+      "key": "Booking",
+      "label": "Booking Rate",
+      "weight": 0.20,
+      "direction": "higher_better",
+      "unit": "%",
+      "color": "#10B981",
+      "actual_col": "A.Booking%",
+      "target_col": "T.Booking%",
+      "aggregation": {"method": "ratio", "numerator_col": "$geo.bookings", "denominator_col": "$calls.total_handled"},
+      "achievement_col": "BookingC.RAch%"
+    },
+    {
+      "key": "Other",
+      "label": "Abandon Rate",
+      "weight": 0.10,
+      "direction": "lower_better",
+      "unit": "%",
+      "color": "#EF4444",
+      "actual_col": "A.AbandonRate%",
+      "target_col": "T.Abandon%",
+      "aggregation": {"method": "ratio", "numerator_col": "$calls.abandoned", "denominator_col": "$calls.total_handled"},
+      "achievement_col": "AbandonRateAch%"
+    }
+  ]
+}

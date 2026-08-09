@@ -1,0 +1,131 @@
+{
+  "team": "Sales",
+  "db_name": "Sales",
+  "region": "UAE",
+  "employee_id_col": "EmployeeID",
+  "employee_name_col": "EmployeeName",
+  "grade_thresholds": {
+    "A": 95,
+    "B": 85,
+    "C": 75,
+    "D": 65
+  },
+  "performance_levels": {
+    "Managerial": {
+      "balanced_scorecard": {
+        "enabled": true,
+        "perspectives": [
+          {"key": "Financial", "label": "Financial", "focus": "Commercial performance", "strategic_objective": "Grow sustainable revenue", "display_order": 1, "icon_key": "wallet"},
+          {"key": "Customer", "label": "Customer", "focus": "Stakeholder value", "strategic_objective": "Improve stakeholder outcomes", "display_order": 2, "icon_key": "users"},
+          {"key": "Internal Process", "label": "Internal Process", "focus": "Pipeline execution", "strategic_objective": "Improve forecast and delivery", "display_order": 3, "icon_key": "settings"},
+          {"key": "Learning & Growth", "label": "Learning & Growth", "focus": "Sales capability", "strategic_objective": "Build coaching capability", "display_order": 4, "icon_key": "graduation-cap"}
+        ],
+        "strategy_map_links": [
+          {"from": "Learning & Growth", "to": "Internal Process"},
+          {"from": "Internal Process", "to": "Customer"},
+          {"from": "Customer", "to": "Financial"}
+        ]
+      },
+      "kpis": [
+        {"key": "PipelineAttainment", "label": "Pipeline Attainment", "weight": 0.35, "direction": "higher_better", "unit": "%", "color": "#2563EB", "actual_col": "A.PipelineAttainment", "target_col": "T.PipelineAttainment", "perspective": "Financial", "rollup": "average"},
+        {"key": "ForecastAccuracy", "label": "Forecast Accuracy", "weight": 0.25, "direction": "higher_better", "unit": "%", "color": "#0D9488", "actual_col": "A.ForecastAccuracy", "target_col": "T.ForecastAccuracy", "perspective": "Internal Process", "rollup": "average"},
+        {"key": "CoachingCompletion", "label": "Coaching Completion", "weight": 0.20, "direction": "higher_better", "unit": "%", "color": "#D97706", "actual_col": "A.CoachingCompletion", "target_col": "T.CoachingCompletion", "perspective": "Learning & Growth", "rollup": "average"},
+        {"key": "EscalationResolution", "label": "Escalation Resolution", "weight": 0.20, "direction": "higher_better", "unit": "%", "color": "#7C3AED", "actual_col": "A.EscalationResolution", "target_col": "T.EscalationResolution", "perspective": "Customer", "rollup": "average"}
+      ]
+    },
+    "Corporate": {
+      "balanced_scorecard": {
+        "enabled": true,
+        "perspectives": [
+          {"key": "Financial", "label": "Financial", "focus": "Revenue governance", "strategic_objective": "Strengthen commercial governance", "display_order": 1, "icon_key": "wallet"},
+          {"key": "Customer", "label": "Customer", "focus": "Stakeholder value", "strategic_objective": "Improve stakeholder satisfaction", "display_order": 2, "icon_key": "users"},
+          {"key": "Internal Process", "label": "Internal Process", "focus": "Strategic delivery", "strategic_objective": "Deliver strategic milestones", "display_order": 3, "icon_key": "settings"},
+          {"key": "Learning & Growth", "label": "Learning & Growth", "focus": "Organizational capability", "strategic_objective": "Build sustainable capability", "display_order": 4, "icon_key": "graduation-cap"}
+        ],
+        "strategy_map_links": [
+          {"from": "Learning & Growth", "to": "Internal Process"},
+          {"from": "Internal Process", "to": "Customer"},
+          {"from": "Customer", "to": "Financial"}
+        ]
+      },
+      "kpis": [
+        {"key": "StrategicDelivery", "label": "Strategic Delivery", "weight": 0.30, "direction": "higher_better", "unit": "%", "color": "#2563EB", "actual_col": "A.StrategicDelivery", "target_col": "T.StrategicDelivery", "perspective": "Internal Process", "rollup": "average"},
+        {"key": "RevenueGovernance", "label": "Revenue Governance", "weight": 0.25, "direction": "higher_better", "unit": "%", "color": "#0D9488", "actual_col": "A.RevenueGovernance", "target_col": "T.RevenueGovernance", "perspective": "Financial", "rollup": "average"},
+        {"key": "StakeholderSatisfaction", "label": "Stakeholder Satisfaction", "weight": 0.25, "direction": "higher_better", "unit": "%", "color": "#D97706", "actual_col": "A.StakeholderSatisfaction", "target_col": "T.StakeholderSatisfaction", "perspective": "Customer", "rollup": "average"},
+        {"key": "ProjectMilestones", "label": "Project Milestone Completion", "weight": 0.20, "direction": "higher_better", "unit": "%", "color": "#7C3AED", "actual_col": "A.ProjectMilestones", "target_col": "T.ProjectMilestones", "perspective": "Internal Process", "rollup": "average"}
+      ]
+    }
+  },
+  "kpis": [
+    {
+      "key": "OPCensus",
+      "label": "OP Census Ach",
+      "weight": 0.10,
+      "direction": "higher_better",
+      "unit": "number",
+      "color": "#3B82F6",
+      "actual_col": "A.OPCensus",
+      "target_col": "T.OPCensus",
+      "aggregation": {"method": "ratio", "numerator_col": "A.OPCensus", "denominator_col": "T.OPCensus"},
+      "score_target": 1.0,
+      "achievement_col": "OPCensusAch%",
+      "volume_unit": "Census"
+    },
+    {
+      "key": "OPRevenue",
+      "label": "OP Revenue Ach",
+      "weight": 0.10,
+      "direction": "higher_better",
+      "unit": "currency",
+      "color": "#10B981",
+      "actual_col": "A.OPRevenue",
+      "target_col": "T.OPRevenue",
+      "aggregation": {"method": "ratio", "numerator_col": "A.OPRevenue", "denominator_col": "T.OPRevenue"},
+      "score_target": 1.0,
+      "achievement_col": "OPRevenueAch%",
+      "volume_unit": "Rev"
+    },
+    {
+      "key": "IPCensus",
+      "label": "IP Census Ach",
+      "weight": 0.25,
+      "direction": "higher_better",
+      "unit": "number",
+      "color": "#8B5CF6",
+      "actual_col": "A.IPCensus",
+      "target_col": "T.IPCensus",
+      "aggregation": {"method": "ratio", "numerator_col": "A.IPCensus", "denominator_col": "T.IPCensus"},
+      "score_target": 1.0,
+      "achievement_col": "IPCensusAch%",
+      "volume_unit": "Census"
+    },
+    {
+      "key": "IPRevenue",
+      "label": "IP Revenue Ach",
+      "weight": 0.45,
+      "direction": "higher_better",
+      "unit": "currency",
+      "color": "#F59E0B",
+      "actual_col": "A.IPRevenue",
+      "target_col": "T.IPRevenue",
+      "aggregation": {"method": "ratio", "numerator_col": "A.IPRevenue", "denominator_col": "T.IPRevenue"},
+      "score_target": 1.0,
+      "achievement_col": "IPRevenueAch%",
+      "volume_unit": "Rev"
+    },
+    {
+      "key": "Activity",
+      "label": "Activity Score",
+      "weight": 0.10,
+      "direction": "higher_better",
+      "unit": "number",
+      "color": "#6366F1",
+      "actual_col": "A.Activity",
+      "target_col": "T.Activity",
+      "aggregation": {"method": "ratio", "numerator_col": "A.Activity", "denominator_col": "T.Activity"},
+      "score_target": 1.0,
+      "achievement_col": "ActivityAch%",
+      "volume_unit": "Activities"
+    }
+  ]
+}

@@ -1,5 +1,23 @@
 # Progress Log
 
+## 2026-08-09 - Hostinger VPS monorepo migration
+
+- Started a reversible implementation to consolidate the parent, Backend, Frontend, and DevOps sources into one deployable repository.
+- Selected a branch-based migration with staging-first deployment; no live VPS or database mutation has been performed.
+- Next: inventory current Docker/CI assets and submodule metadata, then create the migration branch.
+- Created `codex/hostinger-monorepo-deploy` from the verified stable `main` commit.
+- Created and verified complete Backend/Frontend Git bundles, then connected both histories to the parent merge commit.
+- Converted all 278 Backend and 357 Frontend tracked files from gitlinks into normal monorepo paths at the exact pinned revisions; committed as `37ec756`.
+- Confirmed the existing production Compose file has incorrect relative build paths, does not build/copy the frontend, exposes monitoring ports publicly, and maps HTTPS without certificate provisioning.
+- Added the canonical Hostinger production stack: Caddy automatic TLS, Nginx static frontend, FastAPI, one-shot migrations, private Redis, and Supabase egress networking.
+- Added CI and guarded Hostinger `deploy-on-vps@v2` workflows, environment templates, updated operational scripts, and a deployment/rollback runbook.
+- Removed the obsolete production Compose definition under `DevOps/compose/` so `compose.production.yml` is the single production source of truth.
+- Removed a hard-coded Supabase connection string from current source and changed the migration utility to require environment-provided URLs.
+- Updated frontend dependencies to patched lockfile versions; `npm audit` now reports zero vulnerabilities.
+- Verification passed: Backend 571 tests; Frontend 213 tests, lint, typecheck, production build and bundle budgets; Compose config; frontend/backend image builds; Nginx syntax; backend import; and container liveness/health smoke tests.
+- Prepared the final branch as one sanitized commit directly on the stable parent so the old embedded credential is not carried into the unified repository history.
+
+
 ### Session: 2026-08-03 - Global KPI achievement cap normalization
 - **Status:** in progress
 - Confirmed mixed capping settings across team configuration files and the user's global 100% rule.

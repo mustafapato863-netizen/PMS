@@ -1,0 +1,130 @@
+{
+  "team": "Pre-Approvals IP Elective Dubai",
+  "db_name": "Pre-Approvals IP Elective Dubai",
+  "region": "UAE",
+  "employee_id_col": "HRID",
+  "employee_name_col": "AgentName",
+  "grade_thresholds": {
+    "A": 95,
+    "B": 85,
+    "C": 75,
+    "D": 65
+  },
+  "workstream_target_pairs": {
+    "IP Elective": [
+      {
+        "initial_rejection": 0.03,
+        "turnaround": 0.75
+      },
+      {
+        "initial_rejection": 0.06,
+        "turnaround": 0.75
+      }
+    ],
+    "ER / IP Approval": [
+      {
+        "initial_rejection": 0.01,
+        "turnaround": 1.0
+      },
+      {
+        "initial_rejection": 0.03,
+        "turnaround": 1.0
+      }
+    ]
+  },
+  "configuration_notes": [
+    "Workstream is selected per active row from the complete target pair: T.Initial Rejection % plus T.% Of Approval within 48 HR/1.5 HR. The approved pairs are (3%, 75%) and (6%, 75%) for IP Elective, and (1%, 100%) and (3%, 100%) for ER / IP Approval. The turnaround numerator must agree with that pair; both or neither populated, a missing target, or an unsupported pair fails ingestion with employee identifiers instead of guessing.",
+    "Rows whose Status or Performance Grade is Leave, New Staff, or - are excluded before scoring. Resigned is not excluded because it was not supplied as a business rule.",
+    "The ER source table says within 48 hours in its target header, but its KPI and source numerator are 1.5 hours. The canonical target is 100% within 1.5 hours. Row-level target values are preserved to support historical target revisions in the source workbook.",
+    "The product scorecard caps each KPI achievement and final score at 100%; presentation and stored scoring use the same cap."
+  ],
+  "performance_levels": {
+    "Employee": {
+      "positions": {
+        "IP Elective": {
+          "capping": "capped_at_100",
+          "kpis": [
+            {
+              "key": "ip_initial_rejection_rate",
+              "label": "IP Initial Rejection %",
+              "weight": 0.6,
+              "direction": "lower_better",
+              "unit": "%",
+              "color": "#EF4444",
+              "actual_col": "A.IPInitialRejectionRate",
+              "target_col": "T.IPInitialRejectionRate",
+              "score_formula": "target_ratio",
+              "cap_achievement": true,
+              "aggregation": {
+                "method": "ratio",
+                "numerator_col": "RejectedRequests",
+                "denominator_col": "AssignedRequests"
+              },
+              "perspective": "Internal Process"
+            },
+            {
+              "key": "approval_within_48_hours",
+              "label": "Approval Within 48 Hours %",
+              "weight": 0.4,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#10B981",
+              "actual_col": "A.ApprovalWithin48HoursRate",
+              "target_col": "T.ApprovalWithin48HoursRate",
+              "score_formula": "target_ratio",
+              "cap_achievement": true,
+              "aggregation": {
+                "method": "ratio",
+                "numerator_col": "ApprovalWithin48HR",
+                "denominator_col": "ApprovedRequests"
+              },
+              "perspective": "Internal Process"
+            }
+          ]
+        },
+        "ER / IP Approval": {
+          "capping": "capped_at_100",
+          "kpis": [
+            {
+              "key": "er_initial_rejection_rate",
+              "label": "ER Initial Rejection %",
+              "weight": 0.6,
+              "direction": "lower_better",
+              "unit": "%",
+              "color": "#EF4444",
+              "actual_col": "A.ERInitialRejectionRate",
+              "target_col": "T.ERInitialRejectionRate",
+              "score_formula": "target_ratio",
+              "cap_achievement": true,
+              "aggregation": {
+                "method": "ratio",
+                "numerator_col": "RejectedRequests",
+                "denominator_col": "AssignedRequests"
+              },
+              "perspective": "Internal Process"
+            },
+            {
+              "key": "approval_within_1_5_hours",
+              "label": "Approval Within 1.5 Hours %",
+              "weight": 0.4,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#10B981",
+              "actual_col": "A.ApprovalWithin1.5HoursRate",
+              "target_col": "T.ApprovalWithin1.5HoursRate",
+              "score_formula": "target_ratio",
+              "cap_achievement": true,
+              "aggregation": {
+                "method": "ratio",
+                "numerator_col": "ApprovalWithin1.5HR",
+                "denominator_col": "ApprovedRequests"
+              },
+              "perspective": "Internal Process"
+            }
+          ]
+        }
+      }
+    }
+  }
+}
+

@@ -1,29 +1,30 @@
-# ==============================================================================
-# Build Stage
-# ==============================================================================
-FROM node:18-alpine AS builder
+# syntax=docker/dockerfile:1.7
+FROM node:24-alpine AS builder
 
-WORKDIR /app
+WORKDIR /workspace/Frontend
 
-# Install dependencies using clean install
-COPY package*.json ./
+COPY Frontend/package*.json ./
 RUN npm ci
 
-# Copy source and compile production bundle
-COPY . .
-RUN npm run build
+COPY Frontend/ ./
 
-# ==============================================================================
-# Runner Stage
-# ==============================================================================
+ARG VITE_API_BASE_URL=
+ARG VITE_SOCKET_URL=
+ARG VITE_REALTIME_ENABLED=true
+ENV VITE_API_BASE_URL=${VITE_API_BASE_URL} \
+    VITE_SOCKET_URL=${VITE_SOCKET_URL} \
+    VITE_REALTIME_ENABLED=${VITE_REALTIME_ENABLED}
+
+RUN npm run build:ci
+
 FROM nginx:alpine
 
-# Copy compiled SPA static assets from builder stage
-COPY --from=builder /app/dist /usr/share/nginx/html
-
-# Copy custom Nginx configuration block
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=builder /workspace/Frontend/dist /usr/share/nginx/html
+COPY DevOps/nginx/frontend.conf /etc/nginx/conf.d/default.conf
 
 EXPOSE 80
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+    CMD wget -q -O /dev/null http://127.0.0.1/healthz || exit 1
 
 CMD ["nginx", "-g", "daemon off;"]

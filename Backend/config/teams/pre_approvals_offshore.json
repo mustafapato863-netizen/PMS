@@ -1,0 +1,51 @@
+{
+  "team": "Pre-Approvals IP Offshore",
+  "db_name": "Pre-Approvals IP Offshore",
+  "region": "EGY",
+  "employee_id_col": "EmployeeID",
+  "employee_name_col": "EmployeeName",
+  "grade_thresholds": {
+    "A": 95,
+    "B": 85,
+    "C": 75,
+    "D": 65
+  },
+  "kpis": [
+    {
+      "key": "Rejection",
+      "label": "Rejection Rate",
+      "weight": 0.50,
+      "direction": "lower_better",
+      "unit": "%",
+      "color": "#EF4444",
+      "actual_col": "IPInitialRejection%",
+      "target_col": "T.Rejection%",
+      "aggregation": {"method": "ratio", "numerator_col": "RejectedRequests", "denominator_col": "AssignedRequest"},
+      "achievement_col": "RejectionRate"
+    },
+    {
+      "key": "InitialError",
+      "label": "Initial Error Rate",
+      "weight": 0.20,
+      "direction": "lower_better",
+      "unit": "%",
+      "color": "#F59E0B",
+      "actual_col": "Error%",
+      "target_col": "T.InitialError%",
+      "aggregation": {"method": "ratio", "numerator_col": "ErrosClaims", "denominator_col": "SubmittedClaims"},
+      "achievement_col": "InitialError%"
+    },
+    {
+      "key": "Submission",
+      "label": "Submission Rate",
+      "weight": 0.30,
+      "direction": "higher_better",
+      "unit": "%",
+      "color": "#10B981",
+      "actual_col": "NumberApprovalwithin48hrs",
+      "target_col": "T.Submission%",
+      "aggregation": {"method": "ratio", "numerator_col": "ApprovalWithin48HR", "denominator_col": "ApprovedRequests"},
+      "achievement_col": "%ofSubmissionWithinDuedate"
+    }
+  ]
+}

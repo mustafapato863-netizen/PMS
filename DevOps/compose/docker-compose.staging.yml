@@ -34,8 +34,8 @@ services:
 
   web:
     build:
-      context: ../Backend
-      dockerfile: ../docker/Dockerfile.backend
+      context: ../..
+      dockerfile: DevOps/docker/Dockerfile.backend
     container_name: pms_fastapi_app_staging
     ports:
       - "8080:7860"

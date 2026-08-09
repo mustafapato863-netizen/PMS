@@ -5,25 +5,27 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "${SCRIPT_DIR}/.."
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+COMPOSE_FILE="${PROJECT_ROOT}/compose.production.yml"
+ENV_FILE="${PMS_ENV_FILE:-${PROJECT_ROOT}/DevOps/.env.hostinger}"
+cd "${PROJECT_ROOT}"
 
-# Load env configurations
-if [ -f .env ]; then
-  source .env
-fi
-
-ENV_NAME=${ENVIRONMENT:-production}
-echo "[INFO] Commencing containerized deployment for environment: ${ENV_NAME}..."
-
-# Ensure we pull the latest images or build them
-# Build and run containers via compose/docker-compose.prod.yml
-if docker compose -f compose/docker-compose.prod.yml up -d --build; then
-  echo "[SUCCESS] Production services compiled and started in background."
-  
-  # Trigger post-deployment health check
-  echo "[INFO] Triggering post-deployment sanity checks..."
-  "./scripts/health-check.sh"
-else
-  echo "[ERROR] Container deployment failed."
+if [ ! -f "${ENV_FILE}" ]; then
+  echo "[ERROR] Missing deployment environment file: ${ENV_FILE}"
+  echo "[INFO] Copy DevOps/.env.hostinger.example and populate production values."
   exit 1
 fi
+
+echo "[INFO] Validating the production Compose project..."
+docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" config --quiet
+
+echo "[INFO] Building immutable frontend and backend images..."
+docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" build backend frontend migrate
+
+echo "[INFO] Starting the production services; backend startup waits for migrations to complete..."
+docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" up -d --no-build --remove-orphans
+
+echo "[INFO] Triggering post-deployment health checks..."
+PMS_ENV_FILE="${ENV_FILE}" "${SCRIPT_DIR}/health-check.sh"
+
+echo "[SUCCESS] Production deployment completed."

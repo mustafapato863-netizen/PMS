@@ -1,0 +1,67 @@
+{
+  "team": "Pre-Approvals OP Final SHJAJM",
+  "db_name": "Pre-Approvals OP Final SHJAJM",
+  "region": "UAE",
+  "employee_id_col": "HRID",
+  "employee_name_col": "AgentName",
+  "grade_thresholds": {
+    "A": 95,
+    "B": 85,
+    "C": 75,
+    "D": 65
+  },
+  "missing_actual_exception": "initial_rejection_only",
+  "configuration_notes": [
+    "SHJ and AJM are branches inside one OP Final scoring team; the source Team column is preserved for filtering and reporting.",
+    "Initial Rejection % = Rejected Requests / Submitted Requests; target and direction are read from each source row.",
+    "Submission Within TAT % = Submitted Within Hour / (Submitted Requests - Manual Request); target is read from each source row.",
+    "When Submission Within TAT is unavailable, the final score is the Initial Rejection achievement as a percentage, per the supplied exception rule."
+  ],
+  "performance_levels": {
+    "Employee": {
+      "positions": {
+        "OP Final": {
+          "capping": "capped_at_100",
+          "kpis": [
+            {
+      "key": "initial_rejection_rate",
+      "label": "Initial Rejection %",
+      "weight": 0.6,
+      "direction": "lower_better",
+      "unit": "%",
+      "color": "#EF4444",
+      "actual_col": "A.InitialRejectionRate",
+      "target_col": "T.InitialRejectionRate",
+      "score_formula": "target_ratio",
+      "cap_achievement": true,
+      "aggregation": {
+        "method": "ratio",
+        "numerator_col": "RejectedRequests",
+        "denominator_col": "SubmittedRequests"
+      },
+      "perspective": "Internal Process"
+            },
+            {
+      "key": "submission_within_tat",
+      "label": "Submission Within TAT %",
+      "weight": 0.4,
+      "direction": "higher_better",
+      "unit": "%",
+      "color": "#10B981",
+      "actual_col": "A.SubmissionWithinTATRate",
+      "target_col": "T.SubmissionWithinTATRate",
+      "score_formula": "target_ratio",
+      "cap_achievement": true,
+      "aggregation": {
+        "method": "ratio",
+        "numerator_col": "SubmittedWithinHour",
+        "denominator_col": "SubmittedRequestsExcludingManual"
+      },
+      "perspective": "Internal Process"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

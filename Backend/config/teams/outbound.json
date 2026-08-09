@@ -1,0 +1,63 @@
+{
+  "team": "Outbound",
+  "db_name": "Outbound",
+  "region": "EGY",
+  "employee_id_col": "EmployeeID",
+  "employee_name_col": "EmployeeName",
+  "grade_thresholds": {
+    "A": 95,
+    "B": 85,
+    "C": 75,
+    "D": 65
+  },
+  "kpis": [
+    {
+      "key": "Attendance",
+      "label": "Attendance Rate",
+      "weight": 0.70,
+      "direction": "higher_better",
+      "unit": "%",
+      "color": "#3B82F6",
+      "actual_col": "A.Attend%",
+      "target_col": "T.Attend%",
+      "aggregation": {"method": "ratio", "numerator_col": "$geo.attended", "denominator_col": "$geo.bookings"},
+      "achievement_col": "AttendC.RAch%"
+    },
+    {
+      "key": "Booking",
+      "label": "Booking Rate",
+      "weight": 0.10,
+      "direction": "higher_better",
+      "unit": "%",
+      "color": "#10B981",
+      "actual_col": "A.Booking%",
+      "target_col": "T.Booking%",
+      "aggregation": {"method": "ratio", "numerator_col": "$geo.bookings", "denominator_col": "$calls.total_handled"},
+      "achievement_col": "BookingC.RAch%"
+    },
+    {
+      "key": "Quality",
+      "label": "Quality Score",
+      "weight": 0.10,
+      "direction": "higher_better",
+      "unit": "%",
+      "color": "#8B5CF6",
+      "actual_col": "A.QualityScore",
+      "target_col": "T.Quality%",
+      "aggregation": {"method": "average"},
+      "achievement_col": "QualityAch%"
+    },
+    {
+      "key": "Other",
+      "label": "Reachability",
+      "weight": 0.10,
+      "direction": "higher_better",
+      "unit": "%",
+      "color": "#F59E0B",
+      "actual_col": "A.Reachability%",
+      "target_col": "T.Reachability%",
+      "aggregation": {"method": "average"},
+      "achievement_col": "Reachability%Ach%"
+    }
+  ]
+}
