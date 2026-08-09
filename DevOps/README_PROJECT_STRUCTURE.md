@@ -1,6 +1,6 @@
 # PMS Dashboard Project Structure
 
-This guide maps the current monorepo and points to the main implementation paths. For the latest health snapshot, see [`SYSTEM_STATUS.md`](D:/Projects/PMS_Dashboard/DevOps/SYSTEM_STATUS.md).
+This guide maps the current monorepo and points to the main implementation paths. For the current release and architecture summary, see [`PROJECT_SUMMARY.md`](../../PROJECT_SUMMARY.md).
 
 ## Runtime shape
 
