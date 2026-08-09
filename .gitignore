@@ -24,3 +24,15 @@ DevOps/*.tmp
 /output/
 /tmp/
 /Handover/*.zip
+
+# Rebuildable local dependencies, caches, logs, and test output
+**/node_modules/
+**/.venv/
+**/dist/
+**/.vite/
+**/coverage/
+**/test-results/
+**/playwright-report/
+**/.pytest_cache/
+**/__pycache__/
+**/logs/
