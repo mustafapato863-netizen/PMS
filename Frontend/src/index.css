@@ -1724,6 +1724,71 @@ body {
   transform: translateY(-1px);
 }
 
+.sidebar-tooltip-trigger {
+  position: relative;
+}
+.sidebar-nav-group {
+  position: relative;
+}
+
+@media (min-width: 1280px) {
+  .sidebar-navigation.is-collapsed nav {
+    padding-inline: 10px;
+  }
+  .sidebar-navigation.is-collapsed .sidebar-tooltip-trigger {
+    min-height: 36px;
+  }
+  .sidebar-navigation.is-collapsed .sidebar-nav-group {
+    margin-top: 10px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border-light);
+  }
+  .sidebar-navigation.is-collapsed .sidebar-nav-group-trigger {
+    min-height: 36px;
+  }
+  .sidebar-navigation.is-collapsed .sidebar-tooltip-trigger[data-tooltip]::after {
+    position: absolute;
+    z-index: 80;
+    top: 50%;
+    left: calc(100% + 10px);
+    width: max-content;
+    max-width: 220px;
+    padding: 7px 10px;
+    border: 1px solid var(--border-medium);
+    border-radius: 9px;
+    color: var(--text-primary);
+    background: var(--bg-raised);
+    box-shadow: 0 10px 24px rgba(15, 23, 42, .16);
+    content: attr(data-tooltip);
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1.25;
+    opacity: 0;
+    pointer-events: none;
+    transform: translate(4px, -50%);
+    transition: opacity .16s ease, transform .16s ease;
+    white-space: nowrap;
+  }
+  .sidebar-navigation.is-collapsed .sidebar-tooltip-trigger[data-tooltip]:hover::after,
+  .sidebar-navigation.is-collapsed .sidebar-tooltip-trigger[data-tooltip]:focus-visible::after {
+    opacity: 1;
+    transform: translate(0, -50%);
+  }
+  .sidebar-navigation.is-collapsed .sidebar-logout-button {
+    width: 34px;
+    height: 34px;
+    border: 1px solid var(--border-light);
+    background: var(--sidebar-hover-bg);
+  }
+  .sidebar-navigation.is-collapsed .sidebar-logout-button:hover {
+    border-color: rgba(239, 68, 68, .28);
+    background: rgba(254, 226, 226, .72);
+  }
+  .dark .sidebar-navigation.is-collapsed .sidebar-logout-button:hover {
+    background: rgba(127, 29, 29, .3);
+  }
+}
+
 /* ────────────────────────────────────────────────────────────── */
 /*  AMBIENT BACKGROUND ANIMATIONS                                  */
 /* ────────────────────────────────────────────────────────────── */

@@ -177,8 +177,9 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed = false, onToggleCollapsed = (
         aria-current={active ? 'page' : undefined}
         aria-label={isCollapsed ? item.name : undefined}
         title={isCollapsed ? item.name : undefined}
+        data-tooltip={isCollapsed ? item.name : undefined}
         onClick={() => setIsOpen(false)}
-        className={`flex min-h-10 items-center justify-between rounded-xl py-2 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${isCollapsed ? 'xl:justify-center xl:px-2' : nested ? 'pl-9 pr-3' : 'px-3'} ${active ? 'active-nav-item' : 'inactive-nav-item'}`}
+        className={`sidebar-tooltip-trigger flex min-h-10 items-center justify-between rounded-xl py-2 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${isCollapsed ? 'xl:justify-center xl:px-2' : nested ? 'pl-9 pr-3' : 'px-3'} ${active ? 'active-nav-item' : 'inactive-nav-item'}`}
         style={{
           color: active ? 'var(--sidebar-active-text)' : 'var(--sidebar-text)',
           background: active ? 'var(--sidebar-active-bg)' : undefined,
@@ -254,12 +255,15 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed = false, onToggleCollapsed = (
           if (!regions.length) return null;
           const isLevelOpen = levelOpen[level.name];
           return (
-            <div key={level.name} className={`mt-3 ${isCollapsed ? 'xl:mt-2' : ''}`}>
+            <div key={level.name} className={`sidebar-nav-group mt-3 ${isCollapsed ? 'xl:mt-2' : ''}`}>
               <button
                 type="button"
                 aria-expanded={isLevelOpen}
+                aria-label={isCollapsed ? level.name : undefined}
+                title={isCollapsed ? level.name : undefined}
+                data-tooltip={isCollapsed ? level.name : undefined}
                 onClick={() => setLevelOpen((state) => ({ ...state, [level.name]: !isLevelOpen }))}
-                className={`flex min-h-11 w-full items-center gap-2.5 rounded-xl px-3 text-left text-sm font-extrabold text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-sunken)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${isCollapsed ? 'xl:justify-center xl:px-2' : ''}`}
+                className={`sidebar-tooltip-trigger sidebar-nav-group-trigger flex min-h-11 w-full items-center gap-2.5 rounded-xl px-3 text-left text-sm font-extrabold text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-sunken)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${isCollapsed ? 'xl:justify-center xl:px-2' : ''}`}
               >
                 <span className={`h-4 w-1 rounded-full ${level.color}`} />
                 <span className="text-[var(--text-faint)]">{level.icon}</span>
@@ -277,8 +281,11 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed = false, onToggleCollapsed = (
                           <button
                             type="button"
                             aria-expanded={isRegionOpen}
+                            aria-label={isCollapsed ? region.label : undefined}
+                            title={isCollapsed ? region.label : undefined}
+                            data-tooltip={isCollapsed ? region.label : undefined}
                             onClick={() => setRegionOpen((state) => ({ ...state, [key]: !isRegionOpen }))}
-                            className={`flex min-h-10 w-full items-center gap-2 px-2 text-left text-[11px] font-extrabold uppercase tracking-wider text-[var(--text-faint)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${isCollapsed ? 'xl:justify-center xl:px-1' : ''}`}
+                            className={`sidebar-tooltip-trigger flex min-h-10 w-full items-center gap-2 px-2 text-left text-[11px] font-extrabold uppercase tracking-wider text-[var(--text-faint)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${isCollapsed ? 'xl:justify-center xl:px-1' : ''}`}
                           >
                             <span className={`h-3 w-1 rounded-full ${region.color}`} />
                             <span className={`flex-1 ${isCollapsed ? 'xl:hidden' : ''}`}>{region.label}</span>
@@ -296,12 +303,15 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed = false, onToggleCollapsed = (
         })}
 
         {canSeeBroadNavigation && (marketingVisible || rcmVisible) && (
-          <div className={`mt-3 ${isCollapsed ? 'xl:mt-2' : ''}`}>
+          <div className={`sidebar-nav-group mt-3 ${isCollapsed ? 'xl:mt-2' : ''}`}>
             <button
               type="button"
               aria-expanded={sharedOpen}
+              aria-label={isCollapsed ? 'Shared Functions' : undefined}
+              title={isCollapsed ? 'Shared Functions' : undefined}
+              data-tooltip={isCollapsed ? 'Shared Functions' : undefined}
               onClick={() => setSharedOpen((open) => !open)}
-              className={`flex min-h-11 w-full items-center gap-2.5 rounded-xl px-3 text-left text-sm font-extrabold text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-sunken)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${isCollapsed ? 'xl:justify-center xl:px-2' : ''}`}
+              className={`sidebar-tooltip-trigger sidebar-nav-group-trigger flex min-h-11 w-full items-center gap-2.5 rounded-xl px-3 text-left text-sm font-extrabold text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-sunken)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${isCollapsed ? 'xl:justify-center xl:px-2' : ''}`}
             >
               <span className="h-4 w-1 rounded-full bg-violet-500" />
               <span className="text-[var(--text-faint)]"><Layers size={17} /></span>
@@ -336,12 +346,15 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed = false, onToggleCollapsed = (
         {canSeeBroadNavigation && managementItems.length > 0 && (() => {
           const isLevelOpen = levelOpen.Management;
           return (
-            <div key="Management" className={`mt-3 ${isCollapsed ? 'xl:mt-2' : ''}`}>
+            <div key="Management" className={`sidebar-nav-group mt-3 ${isCollapsed ? 'xl:mt-2' : ''}`}>
               <button
                 type="button"
                 aria-expanded={isLevelOpen}
+                aria-label={isCollapsed ? 'Management' : undefined}
+                title={isCollapsed ? 'Management' : undefined}
+                data-tooltip={isCollapsed ? 'Management' : undefined}
                 onClick={() => setLevelOpen((state) => ({ ...state, Management: !isLevelOpen }))}
-                className={`flex min-h-11 w-full items-center gap-2.5 rounded-xl px-3 text-left text-sm font-extrabold text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-sunken)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${isCollapsed ? 'xl:justify-center xl:px-2' : ''}`}
+                className={`sidebar-tooltip-trigger sidebar-nav-group-trigger flex min-h-11 w-full items-center gap-2.5 rounded-xl px-3 text-left text-sm font-extrabold text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-sunken)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${isCollapsed ? 'xl:justify-center xl:px-2' : ''}`}
               >
                 <span className="h-4 w-1 rounded-full bg-amber-500" />
                 <span className="text-[var(--text-faint)]"><Building2 size={17} /></span>
@@ -378,7 +391,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed = false, onToggleCollapsed = (
               <p className="mt-0.5 truncate text-[10px] font-semibold uppercase tracking-wider text-[var(--text-faint)]">{role}</p>
             </div>
           </div>
-          <button onClick={logout} aria-label="Log out" title="Log out" className="min-h-9 min-w-9 rounded-lg text-[var(--text-muted)] transition-colors hover:bg-red-100 hover:text-red-600">
+          <button onClick={logout} aria-label="Log out" title="Log out" data-tooltip="Log out" className="sidebar-logout-button sidebar-tooltip-trigger min-h-9 min-w-9 rounded-lg text-[var(--text-muted)] transition-colors hover:bg-red-100 hover:text-red-600">
             <LogOut size={14} className="mx-auto" />
           </button>
         </div>
