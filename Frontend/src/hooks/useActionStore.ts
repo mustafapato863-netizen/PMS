@@ -101,8 +101,12 @@ export async function fetchActions(role?: string) {
   if (isFetching) return;
   isFetching = true;
   try {
+    // FastAPI exposes this collection route with a trailing slash. Keep it in
+    // the request URL so production HTTPS deployments do not follow a
+    // redirect to an HTTP Location header and silently fall back to empty
+    // local storage.
     const result = await apiFetch<{ success: boolean; data: BackendActionItem[]; message?: string }>(
-      '/api/corrective-actions'
+      '/api/corrective-actions/'
     );
     if (result && result.success && Array.isArray(result.data)) {
       const localByKey = new Map<string, PMSAction>();

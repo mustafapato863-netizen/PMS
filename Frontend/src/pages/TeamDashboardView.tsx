@@ -515,7 +515,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
     const fetchTeamAction = async () => {
       try {
         const result = await apiFetch<{ success: boolean; data?: { overall_action: string } }>(
-          `/api/team-actions?team_id=${teamId}&month=${activeMonth}&year=${insightYear}`
+          `/api/team-actions/?team_id=${teamId}&month=${activeMonth}&year=${insightYear}`
         );
         if (result.success && result.data) {
           setTeamAction(result.data.overall_action);
@@ -539,7 +539,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
     setSavingAction(true);
     try {
       const result = await apiFetch<{ success: boolean; message?: string }>(
-        '/api/team-actions',
+        '/api/team-actions/',
         {
           method: 'POST',
           body: JSON.stringify({
