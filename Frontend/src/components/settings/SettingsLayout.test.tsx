@@ -10,6 +10,7 @@ describe('SettingsLayout', () => {
 
     expect(screen.getByRole('navigation', { name: 'Settings sections' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Data Management/ })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('button', { name: /Corrective Actions/ })).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: /User Management/ }));
     expect(onChange).toHaveBeenCalledWith('users');
   });

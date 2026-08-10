@@ -6,6 +6,7 @@ import { SettingsLayout } from '../components/settings/SettingsLayout';
 import { DataManagementPanel } from '../components/settings/DataManagementPanel';
 import { KPIConfigPanel } from '../components/settings/KPIConfigPanel';
 import { UserManagementPanel } from '../components/settings/UserManagementPanel';
+import { CorrectiveActionDataPanel } from '../components/settings/CorrectiveActionDataPanel';
 import type { SettingsSection } from '../components/settings/types';
 import TeamManagementView from './TeamManagementView';
 
@@ -34,6 +35,7 @@ const SettingsView = () => {
       </header>
       <SettingsLayout activeSection={activeSection} onSectionChange={setActiveSection}>
         {activeSection === 'upload' && <DataManagementPanel />}
+        {activeSection === 'corrective_actions' && <CorrectiveActionDataPanel />}
         {activeSection === 'kpis' && <KPIConfigPanel />}
         {activeSection === 'users' && <UserManagementPanel />}
         {activeSection === 'teams' && <div className="glass-panel rounded-3xl p-5 shadow-sm"><TeamManagementView /></div>}

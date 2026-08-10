@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Database, SlidersHorizontal, Users } from 'lucide-react';
+import { ClipboardCheck, Database, SlidersHorizontal, Users } from 'lucide-react';
 import type { SettingsSection } from './types';
 
 interface SettingsLayoutProps {
@@ -10,6 +10,7 @@ interface SettingsLayoutProps {
 
 const navigation = [
   { id: 'upload' as const, label: 'Data Management', description: 'Employee and management uploads', icon: Database },
+  { id: 'corrective_actions' as const, label: 'Corrective Actions', description: 'Transfer action history safely', icon: ClipboardCheck },
   { id: 'kpis' as const, label: 'KPI Configuration', description: 'Weights and targets by team', icon: SlidersHorizontal },
   { id: 'users' as const, label: 'User Management', description: 'Accounts, roles and access', icon: Users },
 ];

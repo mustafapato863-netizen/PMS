@@ -38,4 +38,4 @@ export interface TeamConfigItem {
   name: string;
 }
 
-export type SettingsSection = 'upload' | 'kpis' | 'users' | 'teams';
+export type SettingsSection = 'upload' | 'corrective_actions' | 'kpis' | 'users' | 'teams';

@@ -93,7 +93,8 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed = false, onToggleCollapsed = (
     apiFetch<{ success: boolean; data: Array<{ team: string; performance_levels?: Record<string, unknown> }> }>('/api/config/teams')
       .then((result) => {
         if (!result.success) return;
-        setConfigured(Object.fromEntries(result.data.map((config) => [
+        const teamConfigs = Array.isArray(result.data) ? result.data : [];
+        setConfigured(Object.fromEntries(teamConfigs.map((config) => [
           normalizeTeamName(config.team),
           Object.keys(config.performance_levels || {}),
         ])));
