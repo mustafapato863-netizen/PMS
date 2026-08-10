@@ -26,6 +26,7 @@ const ReportPreviewView = lazy(() => import('./pages/ReportPreviewView'));
 const InsightsView = lazy(() => import('./pages/InsightsView'));
 const PlanningView = lazy(() => import('./pages/PlanningView'));
 const DesignSystemView = lazy(() => import('./pages/DesignSystemView'));
+const CorrectiveActionsView = lazy(() => import('./pages/CorrectiveActionsView'));
 const NotFound = lazy(() => import('./pages/NotFound'));
 
 const RouteLoadingFallback = () => <PageLoadingSkeleton variant="dashboard" label="Loading page" />;
@@ -140,6 +141,16 @@ function AnimatedRoutes() {
           }
         />
         <Route path="/planning" element={<RouteGuard allowedRoles={['Admin']}><Suspense fallback={<RouteLoadingFallback />}><PlanningView /></Suspense></RouteGuard>} />
+
+        {/* Corrective action review is intentionally restricted to Admin and Executive users. */}
+        <Route
+          path="/corrective-actions"
+          element={
+            <RouteGuard allowedRoles={['Admin', 'Executive']}>
+              <Suspense fallback={<RouteLoadingFallback />}><CorrectiveActionsView /></Suspense>
+            </RouteGuard>
+          }
+        />
 
         {/* Design system laboratory (Admin only) */}
         <Route

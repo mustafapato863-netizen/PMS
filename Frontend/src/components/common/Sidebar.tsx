@@ -211,6 +211,9 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed = false, onToggleCollapsed = (
               { name: 'Design System', path: '/design-system', icon: <Palette size={18} /> },
             ]
           : []),
+        ...(role === 'Admin' || role === 'Executive'
+          ? [{ name: 'Corrective Actions', path: '/corrective-actions', icon: <ClipboardCheck size={18} /> }]
+          : []),
       ]
     : [{ name: 'My Profile', path: `/employee/${currentUser?.employee_id || currentUser?.id || ''}`, icon: <User size={18} /> }];
 
