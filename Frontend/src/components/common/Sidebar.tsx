@@ -220,10 +220,10 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed = false, onToggleCollapsed = (
       className={`fixed left-0 top-0 z-40 flex h-dvh w-[272px] shrink-0 flex-col transition-[width,transform] duration-300 xl:translate-x-0 ${isCollapsed ? 'xl:w-[84px] is-collapsed' : 'is-expanded'} ${isOpen ? 'translate-x-0' : '-translate-x-full'} sidebar-navigation`}
       style={{ background: 'var(--sidebar-bg)', borderRight: '1px solid var(--sidebar-border)', boxShadow: '4px 0 20px rgba(0,0,0,0.04)' }}
     >
-      <div className={`flex items-center justify-between gap-3 py-5 ${isCollapsed ? 'px-3 xl:justify-center' : 'px-5'}`}>
-        <div className={`flex items-center gap-3 ${isCollapsed ? 'xl:justify-center' : ''}`}>
-          <div className="rounded-xl border border-blue-400/20 bg-gradient-to-br from-blue-500 to-indigo-600 p-2 shadow-[0_4px_12px_rgba(59,130,246,0.30)]">
-            <HeartPulse size={22} className="text-white" />
+      <div className={`flex items-center justify-between py-5 ${isCollapsed ? 'gap-1 px-1 xl:gap-1' : 'gap-3 px-5'}`}>
+        <div className={`flex min-w-0 items-center ${isCollapsed ? 'gap-1 xl:shrink-0' : 'gap-3'}`}>
+          <div className={`shrink-0 rounded-xl border border-blue-400/20 bg-gradient-to-br from-blue-500 to-indigo-600 shadow-[0_4px_12px_rgba(59,130,246,0.30)] ${isCollapsed ? 'p-1.5 xl:rounded-lg' : 'p-2'}`}>
+            <HeartPulse size={isCollapsed ? 20 : 22} className="text-white" />
           </div>
           <div className={isCollapsed ? 'xl:hidden' : ''}>
             <h1 className="text-[15px] font-extrabold tracking-tight text-[var(--text-primary)]">SGH Hub</h1>
@@ -235,7 +235,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed = false, onToggleCollapsed = (
           onClick={onToggleCollapsed}
           aria-label={isCollapsed ? 'Expand navigation sidebar' : 'Minimize navigation sidebar'}
           title={isCollapsed ? 'Expand sidebar' : 'Minimize sidebar'}
-          className="hidden min-h-9 min-w-9 items-center justify-center rounded-lg text-[var(--text-muted)] transition-colors hover:bg-[var(--sidebar-hover-bg)] hover:text-blue-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 xl:flex"
+          className={`hidden min-h-9 min-w-9 shrink-0 items-center justify-center rounded-lg text-[var(--text-muted)] transition-colors hover:bg-[var(--sidebar-hover-bg)] hover:text-blue-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 xl:flex ${isCollapsed ? 'xl:min-h-8 xl:min-w-8' : ''}`}
         >
           {isCollapsed ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}
         </button>

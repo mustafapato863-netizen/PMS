@@ -103,6 +103,20 @@ describe('Sidebar team icons', () => {
     expect(onToggleCollapsed).toHaveBeenCalledTimes(1);
   });
 
+  it('keeps the collapsed header controls inside the compact rail', () => {
+    render(
+      <MemoryRouter>
+        <ThemeProvider>
+          <Sidebar isOpen setIsOpen={vi.fn()} isCollapsed onToggleCollapsed={vi.fn()} />
+        </ThemeProvider>
+      </MemoryRouter>,
+    );
+
+    const sidebar = screen.getByRole('complementary', { name: 'Primary navigation' });
+    expect(sidebar).toHaveClass('is-collapsed');
+    expect(screen.getByRole('button', { name: 'Expand navigation sidebar' })).toHaveClass('xl:min-w-8');
+  });
+
   it.each(['Managerial', 'Corporate'])(
     'marks only Management Marketing active for the %s scope',
     async (performanceLevel) => {
