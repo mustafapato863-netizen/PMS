@@ -18,6 +18,7 @@ import type {
   StoryTemplate,
   StoryValidationResult,
 } from '../../features/reports/types';
+import { waitForProcessingJob, type ProcessingJobReference } from './useProcessingJobs';
 
 interface ApiResponse<T> {
   success: boolean;
@@ -82,12 +83,18 @@ export function usePreviewReport() {
 export function useGenerateReport() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (configuration: ReportConfiguration) => (
-      await apiFetch<ApiResponse<GeneratedReport>>('/api/reports/generate', {
+    mutationFn: async (configuration: ReportConfiguration) => {
+      const data = (await apiFetch<ApiResponse<GeneratedReport | ProcessingJobReference>>('/api/reports/generate', {
         method: 'POST',
         body: JSON.stringify(configuration),
-      })
-    ).data,
+      })).data;
+      if (!('job_id' in data)) return data;
+      const job = await waitForProcessingJob(data.job_id);
+      if (job.status !== 'succeeded' || !job.result) {
+        throw new Error(job.error?.message || 'Report generation failed.');
+      }
+      return job.result as unknown as GeneratedReport;
+    },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['reports', 'list'] }),
   });
 }
@@ -215,11 +222,17 @@ export function useRegenerateStoryNarratives() {
 export function useGenerateStoryPdf() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, expectedVersion }: { id: string; expectedVersion: number }) => (
-      await apiFetch<ApiResponse<StoryGeneratedReport>>(`/api/reports/story/drafts/${id}/generate`, {
+    mutationFn: async ({ id, expectedVersion }: { id: string; expectedVersion: number }) => {
+      const data = (await apiFetch<ApiResponse<StoryGeneratedReport | ProcessingJobReference>>(`/api/reports/story/drafts/${id}/generate`, {
         method: 'POST', body: JSON.stringify({ expected_version: expectedVersion, output_format: 'pdf' }),
-      })
-    ).data,
+      })).data;
+      if (!('job_id' in data)) return data;
+      const job = await waitForProcessingJob(data.job_id);
+      if (job.status !== 'succeeded' || !job.result) {
+        throw new Error(job.error?.message || 'Presentation PDF generation failed.');
+      }
+      return job.result as unknown as StoryGeneratedReport;
+    },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['reports', 'list'] }),
   });
 }

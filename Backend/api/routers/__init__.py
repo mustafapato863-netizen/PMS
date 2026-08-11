@@ -16,6 +16,7 @@ from .vitals import router as vitals_router
 from .reports import router as reports_router
 from .insights import router as insights_router
 from .planning import router as planning_router
+from .jobs import router as jobs_router
 
 router = APIRouter()
 
@@ -36,4 +37,5 @@ router.include_router(vitals_router, tags=["Web Vitals"])
 router.include_router(reports_router)
 router.include_router(insights_router)
 router.include_router(planning_router)
+router.include_router(jobs_router)
 

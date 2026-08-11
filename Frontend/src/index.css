@@ -1686,6 +1686,52 @@ body {
 .theme-toggle svg {
   transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.2s ease;
 }
+
+/* Shared live-page shell: the same spacing, surface depth and ambient canvas
+   used by the Design System showcase. Pages keep their own domain components,
+   while this contract makes navigation feel like one product. */
+.app-route-canvas {
+  min-height: calc(100vh - var(--header-height, 64px));
+  background:
+    radial-gradient(circle at 4% -8%, color-mix(in srgb, var(--bsc-blue) 7%, transparent), transparent 34%),
+    radial-gradient(circle at 100% 8%, color-mix(in srgb, var(--bsc-purple) 5%, transparent), transparent 30%),
+    var(--bg-base);
+}
+
+.app-page-shell {
+  display: grid;
+  gap: 18px;
+  width: 100%;
+  max-width: 1720px;
+  margin: 0 auto;
+  padding: 4px 0 34px;
+  color: var(--text-primary);
+}
+
+.app-page-shell > * {
+  min-width: 0;
+}
+
+.app-page-shell > header,
+.app-page-shell > section,
+.app-page-shell > article {
+  animation: app-page-surface-in 320ms ease both;
+}
+
+@keyframes app-page-surface-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-page-shell > header,
+  .app-page-shell > section,
+  .app-page-shell > article { animation: none; }
+}
+
+@media (max-width: 767px) {
+  .app-page-shell { gap: 14px; padding-bottom: 24px; }
+}
 .theme-toggle-pill {
   min-height: 44px;
   border-radius: 14px !important;

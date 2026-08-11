@@ -11,6 +11,10 @@ x-backend-environment: &backend-environment
   REDIS_SOCKET_TIMEOUT_SECONDS: ${REDIS_SOCKET_TIMEOUT_SECONDS:-0.25}
   REDIS_RETRY_INTERVAL_SECONDS: ${REDIS_RETRY_INTERVAL_SECONDS:-30}
   PMS_REALTIME_MODE: ${PMS_REALTIME_MODE:-in_process}
+  PMS_ASYNC_JOBS_ENABLED: ${PMS_ASYNC_JOBS_ENABLED:-true}
+  PMS_JOB_POLL_SECONDS: ${PMS_JOB_POLL_SECONDS:-1}
+  PMS_JOB_LEASE_SECONDS: ${PMS_JOB_LEASE_SECONDS:-300}
+  PMS_JOB_MAX_ATTEMPTS: ${PMS_JOB_MAX_ATTEMPTS:-3}
   PMS_AUTO_SEED: "false"
   PMS_SEED_PERMISSIONS_ON_STARTUP: "false"
   PMS_SEED_DEMO_LEVELS: "false"
@@ -71,6 +75,25 @@ services:
       timeout: 10s
       retries: 10
       start_period: 20s
+    restart: unless-stopped
+    networks:
+      - private
+      - egress
+
+  worker:
+    image: pms-backend:${APP_VERSION:-latest}
+    build:
+      context: .
+      dockerfile: DevOps/docker/Dockerfile.backend
+    command: ["sh", "-c", "exec python worker.py"]
+    environment: *backend-environment
+    volumes:
+      - backend_data:/app/data
+    depends_on:
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     restart: unless-stopped
     networks:
       - private

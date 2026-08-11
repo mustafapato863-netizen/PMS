@@ -209,6 +209,7 @@ class DatabaseSeeder:
         dry_run: bool = False,
         uploaded_by_user_id: str | None = None,
         uploaded_by_name: str | None = None,
+        upload_batch_id: str | None = None,
     ):
         """Processes an uploaded PMS excel file and returns the import counts."""
         excel_file = self.excel_processor.load_excel(contents)
@@ -225,11 +226,27 @@ class DatabaseSeeder:
 
         # Vercel Production Safety: Do not write to JSON repositories for runtime persistence.
         # Generate upload ID for the batch. Metadata persistence is delegated to the DB.
-        upload_uuid = uuid.uuid4()
+        try:
+            upload_uuid = uuid.UUID(str(upload_batch_id)) if upload_batch_id else uuid.uuid4()
+        except (TypeError, ValueError) as exc:
+            raise UploadProcessingError("The upload batch identifier is invalid.", {}) from exc
         upload_id = str(upload_uuid)
         
         db = SessionLocal()
         try:
+            existing_batch = None
+            if upload_batch_id:
+                existing_batch = db.query(EmployeeUploadBatch).filter(EmployeeUploadBatch.id == upload_uuid).first()
+            if existing_batch and existing_batch.status == "success":
+                return {
+                    "upload_id": upload_id,
+                    "filename": existing_batch.filename,
+                    "records_imported": int(existing_batch.record_count or 0),
+                    "teams": [],
+                    "persisted_teams": [],
+                    "dry_run": False,
+                    "idempotent_replay": True,
+                }
             batch = EmployeeUploadBatch(
                 id=upload_uuid,
                 filename=filename or "PMS upload.xlsx",

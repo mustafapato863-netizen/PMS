@@ -115,7 +115,7 @@ const ExecutiveView = () => {
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, x: -20 }}
       transition={{ duration: 0.35 }}
-      className="max-w-[1600px] mx-auto space-y-8"
+      className="app-page-shell"
     >
       {/* Page Header */}
       <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">

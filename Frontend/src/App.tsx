@@ -258,7 +258,7 @@ function AppContent() {
 
       <main className={`relative flex min-h-screen min-w-0 w-full flex-1 flex-col transition-[margin,width] duration-300 ${isReportBuilder ? '' : isSidebarCollapsed ? 'xl:ml-[84px] xl:w-[calc(100%-84px)]' : 'xl:ml-[272px] xl:w-[calc(100%-272px)]'}`}>
         {!isReportBuilder && <Header onMenuClick={() => setIsSidebarOpen(true)} />}
-        <div className={`flex-1 w-full relative z-10 ${isReportBuilder ? 'p-3 sm:p-4' : 'p-3 sm:p-4 md:p-6 lg:p-8'}`}>
+        <div className={`app-route-canvas flex-1 w-full relative z-10 ${isReportBuilder ? 'p-3 sm:p-4' : 'p-3 sm:p-4 md:p-6 lg:p-8'}`}>
           <AnimatedRoutes />
         </div>
       </main>

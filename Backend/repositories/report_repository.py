@@ -79,6 +79,23 @@ class ReportRepository:
     def get_generated(self, report_id: UUID) -> GeneratedReport | None:
         return self.db.query(GeneratedReport).filter(GeneratedReport.id == report_id).first()
 
+    def get_generated_by_processing_job(
+        self,
+        job_id: str,
+        *,
+        owner_user_id: UUID | None = None,
+    ) -> GeneratedReport | None:
+        """Find a report committed before a worker lost its lease."""
+
+        query = self.db.query(GeneratedReport).options(defer(GeneratedReport.file_data))
+        if owner_user_id is not None:
+            query = query.filter(GeneratedReport.created_by_user_id == owner_user_id)
+        for row in query.order_by(GeneratedReport.created_at.desc()).all():
+            configuration = row.configuration if isinstance(row.configuration, dict) else {}
+            if str(configuration.get("_processing_job_id") or "") == str(job_id):
+                return row
+        return None
+
     def add_saved_template(self, template: SavedReportTemplate) -> None:
         self.db.add(template)
 

@@ -14,6 +14,7 @@ import {
 import { useActionStore } from '../hooks/useActionStore';
 import CustomDropdown from '../components/common/CustomDropdown';
 import type { ActionType, PMSAction } from '../types';
+import { downloadCorrectiveActionsPowerPoint } from '../utils/correctiveActionPowerPoint';
 
 const ACTION_TYPES: ActionType[] = ['Training', 'Reward', 'PIP', 'Monitor', 'Coaching'];
 
@@ -25,56 +26,11 @@ const ACTION_STYLES: Record<ActionType, { label: string; className: string }> = 
   Coaching: { label: 'Coaching', className: 'bg-purple-500/10 text-purple-700 dark:text-purple-300' },
 };
 
-function escapeHtml(value: string): string {
-  return value
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#039;');
-}
-
 function formatDate(value: string): string {
   if (!value) return 'Date unavailable';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).format(date);
-}
-
-function downloadWordFile(actions: PMSAction[], filters: { team: string; month: string; type: string }) {
-  const generatedAt = new Intl.DateTimeFormat('en-US', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(new Date());
-  const filterText = `Team: ${filters.team} | Month: ${filters.month} | Type: ${filters.type}`;
-  const rows = actions.map((action) => `
-    <tr>
-      <td>${escapeHtml(action.employee_name)}</td>
-      <td>${escapeHtml(action.team)}</td>
-      <td>${escapeHtml(action.action_type)}</td>
-      <td>${escapeHtml(action.action_text)}</td>
-      <td>${escapeHtml(action.root_cause_note || '—')}</td>
-      <td>${escapeHtml(action.month)}</td>
-      <td>${escapeHtml(formatDate(action.created_at))}</td>
-      <td>${escapeHtml(action.created_by || 'Unknown')}</td>
-    </tr>`).join('');
-  const html = `<!doctype html>
-<html><head><meta charset="utf-8"><title>Corrective Actions</title>
-<style>
-body{font-family:Arial,sans-serif;color:#172033;margin:32px}h1{color:#1456d9;margin-bottom:4px}p{color:#64748b}table{border-collapse:collapse;width:100%;font-size:10px;margin-top:20px}th{background:#edf3ff;color:#34466b;text-align:left}th,td{border:1px solid #dbe3ef;padding:7px;vertical-align:top}tr:nth-child(even){background:#f8fafc}.meta{font-size:11px}
-</style></head><body><h1>Corrective Actions</h1>
-<p class="meta">${escapeHtml(filterText)}</p><p class="meta">Generated ${escapeHtml(generatedAt)} · ${actions.length} action(s)</p>
-<table><thead><tr><th>Employee</th><th>Team</th><th>Type</th><th>Action</th><th>Root cause / notes</th><th>Month</th><th>Created</th><th>Created by</th></tr></thead>
-<tbody>${rows || '<tr><td colspan="8">No corrective actions match the selected filters.</td></tr>'}</tbody></table></body></html>`;
-  const blob = new Blob([html], { type: 'application/msword;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = `corrective-actions-${new Date().toISOString().slice(0, 10)}.doc`;
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 function ActionCard({ action }: { action: PMSAction }) {
@@ -116,6 +72,8 @@ export default function CorrectiveActionsView() {
   const [teamFilter, setTeamFilter] = useState('All teams');
   const [monthFilter, setMonthFilter] = useState('All months');
   const [typeFilter, setTypeFilter] = useState('All types');
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportError, setExportError] = useState('');
 
   const actions = getAllActions();
   const teams = useMemo(() => Array.from(new Set(actions.map((action) => action.team).filter(Boolean))).sort(), [actions]);
@@ -136,8 +94,20 @@ export default function CorrectiveActionsView() {
   const teamsRepresented = new Set(filteredActions.map((action) => action.team).filter(Boolean)).size;
   const pendingSync = filteredActions.filter((action) => !action.synced).length;
 
+  const handlePowerPointExport = async () => {
+    setIsExporting(true);
+    setExportError('');
+    try {
+      await downloadCorrectiveActionsPowerPoint(filteredActions, { team: teamFilter, month: monthFilter, type: typeFilter });
+    } catch (error) {
+      setExportError(error instanceof Error ? error.message : 'PowerPoint export failed.');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   return (
-    <div className="mx-auto max-w-[1500px] space-y-6">
+    <div className="app-page-shell">
       <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <div className="flex items-center gap-2 text-blue-600 dark:text-blue-400"><ClipboardCheck size={19} /><span className="text-[11px] font-black uppercase tracking-[0.18em]">Executive workspace</span></div>
@@ -146,12 +116,15 @@ export default function CorrectiveActionsView() {
         </div>
         <button
           type="button"
-          onClick={() => downloadWordFile(filteredActions, { team: teamFilter, month: monthFilter, type: typeFilter })}
-          className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-sm font-black text-white shadow-sm transition-colors hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+          onClick={() => void handlePowerPointExport()}
+          disabled={isExporting}
+          className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-sm font-black text-white shadow-sm transition-colors hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:cursor-wait disabled:opacity-70"
         >
-          <Download size={17} /> Export Word
+          <Download size={17} /> {isExporting ? 'Preparing PowerPoint…' : 'Export PowerPoint'}
         </button>
       </header>
+
+      {exportError && <p role="alert" className="rounded-xl border border-rose-500/20 bg-rose-500/5 px-3 py-2 text-sm font-semibold text-rose-700 dark:text-rose-300">{exportError}</p>}
 
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Corrective action summary">
         <article className="rounded-2xl border border-blue-500/15 bg-blue-500/5 p-4"><p className="text-[10px] font-black uppercase tracking-wider text-blue-700 dark:text-blue-300">Visible actions</p><p className="mt-2 text-3xl font-black text-[var(--text-primary)]">{filteredActions.length}</p></article>

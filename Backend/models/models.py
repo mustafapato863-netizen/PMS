@@ -284,6 +284,54 @@ class UploadLog(Base):
     )
 
 
+class ProcessingJob(Base):
+    """Durable state for work that must outlive the HTTP request process."""
+
+    __tablename__ = "processing_jobs"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    kind = Column(String(40), nullable=False)
+    status = Column(String(20), nullable=False, default="queued")
+    requested_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    requested_by_name = Column(String(255), nullable=True)
+    request_json = Column(JSON_COMPAT_TYPE, nullable=False, default=dict)
+    input_path = Column(String(500), nullable=True)
+    progress = Column(SmallInteger, nullable=False, default=0)
+    attempt_count = Column(Integer, nullable=False, default=0)
+    max_attempts = Column(Integer, nullable=False, default=3)
+    available_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    worker_id = Column(String(150), nullable=True)
+    lease_expires_at = Column(DateTime(timezone=True), nullable=True)
+    heartbeat_at = Column(DateTime(timezone=True), nullable=True)
+    started_at = Column(DateTime(timezone=True), nullable=True)
+    finished_at = Column(DateTime(timezone=True), nullable=True)
+    result_type = Column(String(60), nullable=True)
+    result_id = Column(String(100), nullable=True)
+    result_json = Column(JSON_COMPAT_TYPE, nullable=True)
+    error_code = Column(String(80), nullable=True)
+    safe_error_message = Column(Text, nullable=True)
+    idempotency_key = Column(String(255), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    __table_args__ = (
+        CheckConstraint(
+            "kind IN ('pms_upload', 'report_generation', 'story_report_generation')",
+            name="ck_processing_job_kind",
+        ),
+        CheckConstraint(
+            "status IN ('queued', 'running', 'succeeded', 'failed', 'cancelled')",
+            name="ck_processing_job_status",
+        ),
+        CheckConstraint("progress >= 0 AND progress <= 100", name="ck_processing_job_progress"),
+        CheckConstraint("attempt_count >= 0", name="ck_processing_job_attempts"),
+        CheckConstraint("max_attempts >= 1", name="ck_processing_job_max_attempts"),
+        UniqueConstraint("kind", "idempotency_key", name="uq_processing_job_idempotency"),
+        Index("idx_processing_job_claim", "status", "available_at", "created_at"),
+        Index("idx_processing_job_requester", "requested_by_user_id", "created_at"),
+    )
+
+
 class PerformanceRecord(Base):
     __tablename__ = "performance_records"
 

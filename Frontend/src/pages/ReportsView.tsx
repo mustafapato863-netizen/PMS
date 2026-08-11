@@ -23,6 +23,7 @@ import {
   useReportOptions,
   useReportTemplates,
 } from '../hooks/api/useReports';
+import { waitForProcessingJob } from '../hooks/api/useProcessingJobs';
 
 const TEMPLATE_ICON: Record<string, typeof FileBarChart> = {
   monthly_uae: Building2,
@@ -165,7 +166,19 @@ export default function ReportsView() {
         throw new Error(data?.detail || 'Failed to generate report');
       }
 
-      const { data: generatedReport } = await response.json();
+      const responseBody = await response.json();
+      let generatedReport = responseBody.data as GeneratedReport;
+      if (generatedReport && typeof (generatedReport as GeneratedReport & { job_id?: unknown }).job_id === 'string') {
+        const job = await waitForProcessingJob((generatedReport as GeneratedReport & { job_id: string }).job_id, (state) => {
+          if (state.status === 'queued' || state.status === 'running') {
+            setDownloadSuccess(`Report ${state.status} (${state.progress}%).`);
+          }
+        });
+        if (job.status !== 'succeeded' || !job.result) {
+          throw new Error(job.error?.message || 'Report generation failed.');
+        }
+        generatedReport = job.result as unknown as GeneratedReport;
+      }
       reportsQuery.refetch();
       
       // Auto download
@@ -219,7 +232,7 @@ export default function ReportsView() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-[1540px] space-y-6">
+      <div className="app-page-shell">
       <section className="rounded-3xl border border-[var(--border-light)] bg-[var(--bg-surface)] p-5 shadow-sm md:p-7">
         <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
           <div>

@@ -2,8 +2,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   AlertCircle, AlertTriangle, ArrowRight, ArrowUpRight,
-  BadgeAlert, BarChart3, ChevronDown, ChevronLeft, ChevronRight, DatabaseZap, Eye, Filter, Lightbulb,
-  Loader2, RefreshCw, SearchX, ShieldAlert, Sparkles, Target, TrendingDown, X, MapPinned,
+  BadgeAlert, BarChart3, ChevronLeft, ChevronRight, ClipboardCheck, DatabaseZap,
+  Download, Eye, Filter, Lightbulb, Loader2, PlusCircle, RefreshCw, SearchCheck, SearchX,
+  Share2, ShieldAlert, Sparkles, Target, TrendingDown, UsersRound, Wrench, X, MapPinned,
 } from 'lucide-react';
 import InsightDetailDrawer from '../components/insights/InsightDetailDrawer';
 import KpiSixMonthTrend from '../components/insights/KpiSixMonthTrend';
@@ -17,8 +18,7 @@ import { refreshPerformanceData, useTeamData, type TeamAgentRow } from '../hooks
 import { useActionStore } from '../hooks/useActionStore';
 import { useUserRole } from '../context/RoleContext';
 import type { PerformanceLevelFilter } from '../types';
-
-const selectClass = 'min-h-11 w-full appearance-none rounded-xl border border-[var(--input-border)] bg-[var(--input-bg)] pl-3 pr-9 text-sm font-semibold text-[var(--input-text)] outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20';
+import CustomDropdown from '../components/common/CustomDropdown';
 
 function FilterSelect({ label, value, onChange, options, allLabel }: {
   label: string;
@@ -27,15 +27,23 @@ function FilterSelect({ label, value, onChange, options, allLabel }: {
   options: Array<{ value: string; label: string }>;
   allLabel?: string;
 }) {
+  const dropdownOptions = [
+    ...(allLabel ? [{ value: '', label: allLabel }] : []),
+    ...options,
+  ];
   return (
-    <label className="relative min-w-0">
+    <div className="min-w-0">
       <span className="sr-only">{label}</span>
-      <select aria-label={label} className={selectClass} value={value} onChange={(event) => onChange(event.target.value)}>
-        {allLabel && <option value="">{allLabel}</option>}
-        {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-      </select>
-      <ChevronDown aria-hidden="true" size={15} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
-    </label>
+      <CustomDropdown
+        ariaLabel={label}
+        value={value}
+        options={dropdownOptions}
+        onChange={(nextValue) => onChange(String(nextValue))}
+        className="w-full"
+        buttonClassName="min-h-11 w-full rounded-xl"
+        size="lg"
+      />
+    </div>
   );
 }
 
@@ -202,10 +210,11 @@ function ExecutiveStoryCard({
           <h2 id="executive-story-title" className="mt-3 max-w-4xl text-lg font-black leading-7 text-[var(--text-primary)]">{story.headline}</h2>
           <p className="mt-2 max-w-4xl text-sm leading-6 text-[var(--text-secondary)]">{story.recommended_focus}</p>
         </div>
-        <div className="grid shrink-0 grid-cols-2 gap-2 sm:grid-cols-3 lg:min-w-[350px]">
+        <div className="grid shrink-0 grid-cols-2 gap-2 sm:grid-cols-4 lg:min-w-[520px]">
           <div className="rounded-xl border border-white/80 bg-white/75 p-3 dark:border-white/10 dark:bg-white/[0.06]"><span className="text-[10px] font-bold uppercase text-[var(--text-faint)]">Current</span><strong className="mt-1 block text-lg font-black text-[var(--text-primary)]">{story.current_score === null ? 'N/A' : `${story.current_score.toFixed(1)}%`}</strong></div>
-          <div className="rounded-xl border border-white/80 bg-white/75 p-3 dark:border-white/10 dark:bg-white/[0.06]"><span className="text-[10px] font-bold uppercase text-[var(--text-faint)]">Gap</span><strong className={`mt-1 block text-lg font-black ${story.gap_points !== null && story.gap_points < 0 ? 'text-rose-600' : 'text-emerald-600'}`}>{story.gap_points === null ? 'N/A' : `${story.gap_points > 0 ? '+' : ''}${story.gap_points.toFixed(1)} pts`}</strong></div>
-          <div className="rounded-xl border border-white/80 bg-white/75 p-3 dark:border-white/10 dark:bg-white/[0.06]"><span className="text-[10px] font-bold uppercase text-[var(--text-faint)]">Movement</span><strong className={`mt-1 block text-lg font-black ${story.score_change !== null && story.score_change < 0 ? 'text-rose-600' : 'text-emerald-600'}`}>{story.score_change === null ? 'N/A' : `${story.score_change > 0 ? '+' : ''}${story.score_change.toFixed(1)} pts`}</strong></div>
+          <div className="rounded-xl border border-white/80 bg-white/75 p-3 dark:border-white/10 dark:bg-white/[0.06]"><span className="text-[10px] font-bold uppercase text-[var(--text-faint)]">Gap</span><strong className={`mt-1 block text-lg font-black ${story.gap_points !== null && story.gap_points < 0 ? 'text-rose-600' : 'text-emerald-600'}`}>{story.gap_points === null ? 'N/A' : `${story.gap_points > 0 ? '+' : ''}${story.gap_points.toFixed(1)}%`}</strong></div>
+          <div className="rounded-xl border border-white/80 bg-white/75 p-3 dark:border-white/10 dark:bg-white/[0.06]"><span className="text-[10px] font-bold uppercase text-[var(--text-faint)]">Movement</span><strong className={`mt-1 block text-lg font-black ${story.score_change !== null && story.score_change < 0 ? 'text-rose-600' : 'text-emerald-600'}`}>{story.score_change === null ? 'N/A' : `${story.score_change > 0 ? '+' : ''}${story.score_change.toFixed(1)}%`}</strong></div>
+          <div className="rounded-xl border border-white/80 bg-white/75 p-3 dark:border-white/10 dark:bg-white/[0.06]"><span className="text-[10px] font-bold uppercase text-[var(--text-faint)]">Leading driver</span><strong className="mt-1 block truncate text-sm font-black text-[var(--text-primary)]" title={story.primary_driver || 'Not available'}>{story.primary_driver || 'Not available'}</strong><span className="mt-1 block text-[10px] font-semibold text-rose-600">{story.primary_driver_impact === null ? 'No measured impact' : impactLabel(story.primary_driver_impact)}</span></div>
         </div>
       </div>
       <div className="flex flex-wrap items-center gap-2 border-t border-blue-100/80 px-5 py-3 text-xs dark:border-blue-500/15 md:px-6">
@@ -233,8 +242,79 @@ function GeographyContribution({
         {summaries.map((summary) => (
           <button key={summary.scope} type="button" onClick={() => onSelect(summary.scope)} className="rounded-xl border border-[var(--border-light)] bg-[var(--bg-sunken)]/35 p-4 text-left transition hover:border-blue-400/50 hover:bg-blue-500/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
             <div className="flex items-start justify-between gap-3"><span className="text-sm font-black text-[var(--text-primary)]">{summary.scope}</span><ArrowRight size={15} className="text-blue-600" /></div>
-            <div className="mt-3 flex items-end justify-between gap-3"><div><span className="text-[10px] font-bold uppercase text-[var(--text-faint)]">Score</span><strong className="mt-1 block text-xl font-black text-[var(--text-primary)]">{summary.current_score === null ? 'N/A' : `${summary.current_score.toFixed(1)}%`}</strong></div><div className="text-right"><span className="text-[10px] font-bold uppercase text-[var(--text-faint)]">Gap share</span><strong className="mt-1 block text-sm font-black text-rose-600">{summary.gap_contribution_percent === null ? 'N/A' : `${summary.gap_contribution_percent.toFixed(1)}%`}</strong></div></div>
-            <div className="mt-3 flex items-center justify-between text-[11px] text-[var(--text-muted)]"><span>{summary.impacted_employees}/{summary.total_employees} affected</span><span>{summary.affected_percentage === null ? 'No coverage' : `${summary.affected_percentage.toFixed(1)}% affected`}</span></div>
+            <div className="mt-3 grid grid-cols-2 gap-3"><div><span className="text-[10px] font-bold uppercase text-[var(--text-faint)]">Score</span><strong className="mt-1 block text-xl font-black text-[var(--text-primary)]">{summary.current_score === null ? 'N/A' : `${summary.current_score.toFixed(1)}%`}</strong></div><div><span className="text-[10px] font-bold uppercase text-[var(--text-faint)]">Gap to target</span><strong className={`mt-1 block text-sm font-black ${summary.gap_points !== null && summary.gap_points < 0 ? 'text-rose-600' : 'text-emerald-600'}`}>{summary.gap_points === null ? 'N/A' : `${summary.gap_points > 0 ? '+' : ''}${summary.gap_points.toFixed(1)}%`}</strong></div></div>
+            <div className="mt-3 flex items-center justify-between border-t border-[var(--border-light)] pt-3 text-[11px] text-[var(--text-muted)]"><span>{summary.impacted_employees}/{summary.total_employees} affected</span><span className="font-bold text-rose-600">{summary.gap_contribution_percent === null ? 'No gap share' : `${summary.gap_contribution_percent.toFixed(1)}% gap share`}</span></div>
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function RecommendedActions({
+  workspace,
+  focusInsight,
+  onOpenInsight,
+  onSelectTeam,
+  onNavigate,
+}: {
+  workspace: import('../features/insights/types').InsightsWorkspace;
+  focusInsight: InsightItem | null;
+  onOpenInsight: () => void;
+  onSelectTeam: (team: string) => void;
+  onNavigate: (path: string) => void;
+}) {
+  const leadTeam = focusInsight?.team || workspace.team_summaries.find((team) => team.main_insight_id)?.team || '';
+  const actionCards = [
+    {
+      title: 'Create corrective action',
+      copy: focusInsight ? `Build a tracked plan for ${focusInsight.title}.` : 'Turn the highest-priority issue into a tracked plan.',
+      icon: PlusCircle,
+      tone: 'violet',
+      onClick: () => onNavigate('/corrective-actions'),
+    },
+    {
+      title: 'Assign coaching',
+      copy: 'Open the planning workspace to assign support and follow-up.',
+      icon: UsersRound,
+      tone: 'blue',
+      onClick: () => onNavigate('/planning'),
+    },
+    {
+      title: 'Open team review',
+      copy: leadTeam ? `Review ${leadTeam} at team level.` : 'Choose a team to inspect its drivers and people.',
+      icon: SearchCheck,
+      tone: 'orange',
+      onClick: () => leadTeam ? onSelectTeam(leadTeam) : onOpenInsight(),
+    },
+    {
+      title: 'Review root cause',
+      copy: focusInsight?.detail.recommended_focus || 'Open the evidence behind the leading insight.',
+      icon: Wrench,
+      tone: 'emerald',
+      onClick: onOpenInsight,
+    },
+  ] as const;
+
+  const toneClasses: Record<(typeof actionCards)[number]['tone'], string> = {
+    violet: 'border-violet-200 bg-violet-50/70 text-violet-700 hover:border-violet-300 dark:border-violet-500/20 dark:bg-violet-500/10 dark:text-violet-200',
+    blue: 'border-blue-200 bg-blue-50/70 text-blue-700 hover:border-blue-300 dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-200',
+    orange: 'border-orange-200 bg-orange-50/70 text-orange-700 hover:border-orange-300 dark:border-orange-500/20 dark:bg-orange-500/10 dark:text-orange-200',
+    emerald: 'border-emerald-200 bg-emerald-50/70 text-emerald-700 hover:border-emerald-300 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-200',
+  };
+
+  return (
+    <section className="overflow-hidden rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] shadow-sm" aria-labelledby="recommended-actions-title">
+      <header className="border-b border-[var(--border-light)] px-5 py-4 md:px-6">
+        <div className="flex items-center gap-2"><ClipboardCheck size={17} className="text-blue-600" /><h2 id="recommended-actions-title" className="text-lg font-extrabold text-[var(--text-primary)]">Recommended actions</h2></div>
+        <p className="mt-1 text-xs text-[var(--text-muted)]">Move from measured insight to an accountable next step.</p>
+      </header>
+      <div className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-4">
+        {actionCards.map(({ title, copy, icon: Icon, tone, onClick }) => (
+          <button key={title} type="button" onClick={onClick} className={`group flex min-h-[132px] flex-col items-start rounded-xl border p-4 text-left transition hover:-translate-y-0.5 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${toneClasses[tone]}`}>
+            <span className="flex w-full items-start justify-between gap-3"><span className="grid h-9 w-9 place-items-center rounded-xl bg-white/80 shadow-sm dark:bg-white/10"><Icon size={17} /></span><ArrowUpRight size={15} className="opacity-60 transition group-hover:translate-x-0.5 group-hover:-translate-y-0.5" /></span>
+            <strong className="mt-4 text-sm font-extrabold text-[var(--text-primary)]">{title}</strong>
+            <span className="mt-1 line-clamp-2 text-[11px] leading-5 text-[var(--text-muted)]">{copy}</span>
           </button>
         ))}
       </div>
@@ -277,6 +357,7 @@ export default function InsightsView() {
   const [analysisPage, setAnalysisPage] = useState(1);
   const [modalEmployee, setModalEmployee] = useState<TeamAgentRow | null>(null);
   const [hoverTooltip, setHoverTooltip] = useState<{ text: string; x: number; y: number } | null>(null);
+  const [shareNotice, setShareNotice] = useState<string | null>(null);
   const query = useInsightsWorkspace(filters);
   const workspace = query.data;
   const quickActionMonth = workspace?.comparison.current?.month || 'All';
@@ -419,13 +500,44 @@ export default function InsightsView() {
       kpi: undefined,
     }));
   };
+  const selectTeam = (team: string) => {
+    setAnalysisPage(1);
+    setFilters((current) => ({
+      ...current,
+      team: team || undefined,
+      position: undefined,
+      employeeId: undefined,
+      kpi: undefined,
+    }));
+  };
+  const openFocusedInsight = () => {
+    if (focusedInsight) setDrawerInsight(focusedInsight);
+  };
+  const handleShare = async () => {
+    const url = window.location.href;
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: 'Insights workspace', text: 'PMS Insights workspace', url });
+        setShareNotice('View shared');
+      } else {
+        await navigator.clipboard.writeText(url);
+        setShareNotice('Link copied');
+      }
+    } catch {
+      setShareNotice('Share cancelled');
+    }
+    window.setTimeout(() => setShareNotice(null), 2200);
+  };
+  const handleExport = () => {
+    window.print();
+  };
 
   return (
-    <div className="mx-auto w-full max-w-[1540px] space-y-5">
+    <div className="app-page-shell">
       <section className="rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] shadow-sm">
         <div className="flex flex-col gap-4 p-5 xl:flex-row xl:items-center xl:justify-between">
-          <div><div className="flex items-center gap-2"><h1 className="text-2xl font-extrabold tracking-tight text-[var(--text-primary)]">Insights</h1><AlertCircle size={15} className="text-[var(--text-faint)]" /></div><p className="mt-1 text-sm text-[var(--text-muted)]">Understand what happened, why it happened, and what to do next.</p></div>
-          <div className="flex flex-wrap items-center gap-2 text-xs text-[var(--text-muted)]"><span className="rounded-full bg-[var(--bg-sunken)] px-3 py-1.5 font-semibold">Current: {workspace.comparison.current ? `${workspace.comparison.current.month} ${workspace.comparison.current.year}` : 'Unavailable'}</span><span className="rounded-full bg-[var(--bg-sunken)] px-3 py-1.5 font-semibold">Compare: {workspace.comparison.previous ? `${workspace.comparison.previous.month} ${workspace.comparison.previous.year}` : 'Unavailable'}</span>{query.isFetching && <Loader2 size={14} className="animate-spin text-blue-600" />}</div>
+          <div><div className="flex items-center gap-2"><h1 className="text-2xl font-extrabold tracking-tight text-[var(--text-primary)]">Insights</h1><AlertCircle size={15} className="text-[var(--text-faint)]" /></div><p className="mt-1 max-w-2xl text-sm text-[var(--text-muted)]">Understand what happened, why it happened, and what to do next.</p></div>
+          <div className="flex flex-wrap items-center gap-2 text-xs text-[var(--text-muted)]"><span className="rounded-full bg-[var(--bg-sunken)] px-3 py-1.5 font-semibold">Current: {workspace.comparison.current ? `${workspace.comparison.current.month} ${workspace.comparison.current.year}` : 'Unavailable'}</span><span className="rounded-full bg-[var(--bg-sunken)] px-3 py-1.5 font-semibold">Compare: {workspace.comparison.previous ? `${workspace.comparison.previous.month} ${workspace.comparison.previous.year}` : 'Unavailable'}</span><button type="button" onClick={() => void handleShare()} className="inline-flex min-h-9 items-center gap-1.5 rounded-xl border border-[var(--input-border)] bg-[var(--input-bg)] px-3 font-bold text-[var(--text-secondary)] transition hover:border-blue-500/40 hover:text-blue-600"><Share2 size={14} /> Share</button><button type="button" onClick={handleExport} className="inline-flex min-h-9 items-center gap-1.5 rounded-xl bg-blue-600 px-3 font-bold text-white transition hover:bg-blue-700"><Download size={14} /> Export</button>{query.isFetching && <Loader2 size={14} className="animate-spin text-blue-600" />}{shareNotice && <span role="status" className="font-bold text-blue-600">{shareNotice}</span>}</div>
         </div>
         <div className="grid gap-2 border-t border-[var(--border-light)] p-4 sm:grid-cols-2 xl:grid-cols-5">
           <FilterSelect label="Insight period" value={effectivePeriod} onChange={(value) => update('periodKey', value)} options={workspace.options.periods.map((period) => ({ value: period.key, label: `${period.month} ${period.year}` }))} />
@@ -504,6 +616,14 @@ export default function InsightsView() {
         </div>
         {visibleAnalyses.length ? <div><div className="overflow-x-auto"><table className="w-full min-w-[980px] text-left"><thead><tr className="border-b border-[var(--border-light)] bg-[var(--bg-sunken)]/50 text-[9px] font-extrabold uppercase tracking-wide text-[var(--text-faint)]"><th className="px-5 py-3">Insight</th><th className="px-4 py-3">Team / role</th><th className="px-4 py-3">Current</th><th className="px-4 py-3">Target</th><th className="px-4 py-3">Impact</th><th className="px-4 py-3">Trend</th><th className="px-5 py-3 text-right">Action</th></tr></thead><tbody>{pagedAnalyses.map((insight) => <tr key={insight.id} onClick={() => setFocusedInsightId(insight.id)} className="cursor-pointer border-b border-[var(--border-light)] last:border-0 hover:bg-[var(--bg-sunken)]/55"><td className="px-5 py-4"><div className="flex items-start gap-3"><span className={`mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg border ${severityStyles[insight.severity]}`}>{insight.severity === 'opportunity' ? <ArrowUpRight size={14} /> : <AlertTriangle size={14} />}</span><span><span className={`inline-flex rounded-full border px-1.5 py-0.5 text-[8px] font-black uppercase ${severityStyles[insight.severity]}`}>{severityLabels[insight.severity]}</span><strong className="mt-1 block max-w-[360px] text-xs text-[var(--text-primary)]">{insight.title}</strong><span className="mt-1 block text-[10px] text-[var(--text-muted)]">{insight.detail.direction?.replace('_', ' ') || 'Operational diagnostic'}</span></span></div></td><td className="px-4 py-4 text-xs text-[var(--text-secondary)]">{cleanScope(insight.scope)}</td><td className="px-4 py-4 text-xs font-extrabold text-[var(--text-primary)]">{formatMetric(insight.detail.current_value, insight.detail.unit)}</td><td className="px-4 py-4 text-xs text-[var(--text-secondary)]">{formatMetric(insight.detail.target_value, insight.detail.unit)}</td><td className={`px-4 py-4 text-xs font-extrabold ${insight.impact_points === null ? 'text-[var(--text-muted)]' : insight.impact_points >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>{impactLabel(insight.impact_points)}</td><td className="max-w-[180px] px-4 py-4 text-xs text-[var(--text-secondary)]">{insight.trend_label}</td><td className="px-5 py-4 text-right"><button type="button" aria-label={`View ${insight.title}`} onClick={(event) => { event.stopPropagation(); setDrawerInsight(insight); }} className="inline-grid h-9 w-9 place-items-center rounded-lg border border-[var(--border-light)] text-blue-600 hover:bg-blue-500/10"><Eye size={15} /></button></td></tr>)}</tbody></table></div><div className="flex flex-col gap-3 border-t border-[var(--border-light)] px-5 py-4 sm:flex-row sm:items-center sm:justify-between"><p className="text-sm font-semibold text-[var(--text-muted)]">Showing {analysisStart}–{analysisEnd} of {visibleAnalyses.length} analyses</p><div className="flex items-center gap-2"><button type="button" aria-label="Previous page" disabled={currentAnalysisPage === 1} onClick={() => setAnalysisPage((page) => Math.max(1, page - 1))} className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-[var(--border-light)] text-[var(--text-secondary)] transition hover:border-blue-500/40 hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-40"><ChevronLeft size={16} /></button>{pageNumbers.map((page) => <button key={page} type="button" aria-current={page === currentAnalysisPage ? 'page' : undefined} onClick={() => setAnalysisPage(page)} className={`min-h-10 min-w-10 rounded-xl border px-3 text-sm font-bold transition ${page === currentAnalysisPage ? 'border-blue-600 bg-blue-600 text-white shadow-sm shadow-blue-500/20' : 'border-[var(--border-light)] text-[var(--text-secondary)] hover:border-blue-500/40 hover:text-blue-600'}`}>{page}</button>)}<button type="button" aria-label="Next page" disabled={currentAnalysisPage === totalAnalysisPages} onClick={() => setAnalysisPage((page) => Math.min(totalAnalysisPages, page + 1))} className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-[var(--border-light)] text-[var(--text-secondary)] transition hover:border-blue-500/40 hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-40"><ChevronRight size={16} /></button></div></div></div> : <div className="px-6 py-14 text-center"><SearchX className="mx-auto text-[var(--text-faint)]" /><p className="mt-3 font-extrabold text-[var(--text-primary)]">No analyses match this view</p></div>}
       </section> : <section className="rounded-2xl border border-dashed border-blue-200 bg-blue-50/50 p-5 text-sm text-[var(--text-secondary)] dark:border-blue-500/20 dark:bg-blue-500/[0.05]"><div className="flex items-start gap-3"><span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-blue-600/10 text-blue-600"><Filter size={17} /></span><div><p className="font-extrabold text-[var(--text-primary)]">Choose a team or KPI to open diagnostic analysis</p><p className="mt-1 leading-6">The executive layer is intentionally compact. Select a geography above, then choose a team or KPI to reveal detailed drivers, trends, affected people, and actions.</p></div></div></section>}
+
+      <RecommendedActions
+        workspace={workspace}
+        focusInsight={focusedInsight}
+        onOpenInsight={openFocusedInsight}
+        onSelectTeam={selectTeam}
+        onNavigate={navigate}
+      />
 
       <section className="grid gap-5 xl:grid-cols-2">
         <article className="overflow-hidden rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] shadow-sm">

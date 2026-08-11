@@ -1,8 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Header
+from fastapi.responses import JSONResponse
 import logging
 import time
+from uuid import uuid4
 from sqlalchemy.orm import Session
 
+from config import settings
 from config.database import get_db
 from api.dependencies import (
     clear_serialization_cache,
@@ -13,6 +16,8 @@ from services.cache_invalidation_service import CacheInvalidationService
 from models.schemas import StandardResponse
 from services.upload_security import read_validated_excel
 from services.employee_upload_service import EmployeeUploadService
+from services.job_storage import cleanup_job_files, stage_upload
+from services.processing_job_service import ProcessingJobService
 
 logger = logging.getLogger(__name__)
 
@@ -38,12 +43,66 @@ async def get_upload_history(
 async def upload_pms_file(
     file: UploadFile = File(...),
     dry_run: bool = False,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    db: Session = Depends(get_db),
     _user=Depends(require_permission("upload_data"))
 ):
     try:
         started_at = time.perf_counter()
         upload_filename = file.filename
         contents = await read_validated_excel(file)
+
+        if settings.PMS_ASYNC_JOBS_ENABLED:
+            user_id = _user.get("user_id") if isinstance(_user, dict) else None
+            user_name = (
+                (_user.get("name") or _user.get("username") or "Admin")
+                if isinstance(_user, dict)
+                else "Admin"
+            )
+            scoped_key = f"{user_id or 'anonymous'}:{idempotency_key.strip()[:220]}" if idempotency_key and idempotency_key.strip() else None
+            existing = ProcessingJobService.find_by_idempotency(db, "pms_upload", scoped_key)
+            if existing:
+                return JSONResponse(
+                    status_code=202,
+                    content=StandardResponse(
+                        success=True,
+                        message="PMS Excel upload is already queued",
+                        data=ProcessingJobService.reference(existing),
+                    ).model_dump(mode="json"),
+                )
+
+            job_id = uuid4()
+            input_path = stage_upload(job_id, file.filename or "PMS upload.xlsx", contents)
+            try:
+                job = ProcessingJobService.create(
+                    db,
+                    kind="pms_upload",
+                    job_id=job_id,
+                    input_path=input_path,
+                    idempotency_key=scoped_key,
+                    requested_by_user_id=user_id,
+                    requested_by_name=user_name,
+                    request_json={
+                        "filename": file.filename or "PMS upload.xlsx",
+                        "dry_run": dry_run,
+                        "uploaded_by_user_id": user_id,
+                        "uploaded_by_name": user_name,
+                    },
+                )
+            except Exception:
+                cleanup_job_files(job_id)
+                raise
+            if str(job.id) != str(job_id):
+                cleanup_job_files(job_id)
+            return JSONResponse(
+                status_code=202,
+                content=StandardResponse(
+                    success=True,
+                    message="PMS Excel upload queued for background processing",
+                    data=ProcessingJobService.reference(job),
+                ).model_dump(mode="json"),
+            )
+
         seeder = DatabaseSeeder()
         result = (
             seeder.process_uploaded_file(file.filename, contents, dry_run=True)

@@ -160,7 +160,7 @@ export const MarketingDashboardContent = ({
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3 }}
-      className="mx-auto max-w-[1680px] space-y-6"
+      className="app-page-shell"
     >
       <MarketingFiltersHeader
         filters={filters}

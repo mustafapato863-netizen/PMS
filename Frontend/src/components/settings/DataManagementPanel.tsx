@@ -4,6 +4,7 @@ import { AlertCircle, CheckCircle2, Download, FileSpreadsheet, Loader2, Trash2, 
 import { API_BASE } from '../../config';
 import { useUserRole } from '../../context/RoleContext';
 import { refreshPerformanceData } from '../../hooks/usePerformanceData';
+import { waitForProcessingJob } from '../../hooks/api/useProcessingJobs';
 import OverlayPortal from '../common/OverlayPortal';
 import type { ManagementUploadItem, UploadHistoryItem } from './types';
 import { refreshManagementData } from './settingsUtils';
@@ -361,9 +362,23 @@ export function DataManagementPanel() {
       const response = await fetchWithRole(`${API_BASE}/api/uploads/pms`, { method: 'POST', body });
       const result = await response.json().catch(() => ({}));
       if (!response.ok || !result?.success) throw new Error(result?.detail || result?.message || 'Upload failed');
+      let uploadData = result?.data as Record<string, unknown> | undefined;
+      const jobId = typeof uploadData?.job_id === 'string' ? uploadData.job_id : null;
+      if (jobId) {
+        setEmployeeStatus({ type: 'success', message: 'Upload queued. Processing will continue in the background…' });
+        const job = await waitForProcessingJob(jobId, (state) => {
+          if (state.status === 'queued' || state.status === 'running') {
+            setEmployeeStatus({ type: 'success', message: `Upload ${state.status} (${state.progress}%).` });
+          }
+        });
+        if (job.status !== 'succeeded' || !job.result) {
+          throw new Error(job.error?.message || 'Background upload processing failed.');
+        }
+        uploadData = job.result;
+      }
       setEmployeeStatus({
         type: 'success',
-        message: `Processed ${result?.data?.records_imported || 0} records across ${asArray(result?.data?.teams).length} team sheets.`,
+        message: `Processed ${Number(uploadData?.records_imported || 0)} records across ${asArray(uploadData?.teams).length} team sheets.`,
       });
       refreshPerformanceData();
       await loadUploads();

@@ -815,7 +815,14 @@ class ReportStoryService:
             except Exception: self.db.rollback(); raise
         return result
 
-    def generate(self, draft_id: str, payload: ReportGenerateRequest, scope: dict) -> dict[str, Any]:
+    def generate(
+        self,
+        draft_id: str,
+        payload: ReportGenerateRequest,
+        scope: dict,
+        *,
+        processing_job_id: str | None = None,
+    ) -> dict[str, Any]:
         draft = self._get_draft(draft_id, scope, edit=True)
         if draft.version != payload.expected_version: raise StoryConflictError("This draft changed before export. Reload and validate again")
         validation = self.validate_draft(draft_id, scope)
@@ -827,7 +834,10 @@ class ReportStoryService:
         snapshot = {"definition": definition.model_dump(mode="json"), "commentary": draft.management_commentary_json, "slide_data": slide_data, "metadata": metadata}; snapshot_bytes = json.dumps(snapshot, sort_keys=True, separators=(",", ":")).encode()
         file_data = build_presentation_pdf(report_name=draft.name, definition=snapshot["definition"], slide_data=slide_data, commentary=draft.management_commentary_json, metadata=metadata)
         integrity = pdf_integrity_identifier(file_data, snapshot_bytes); safe_name = re.sub(r"[^A-Za-z0-9_-]+", "_", draft.name).strip("_") or "PMS_Report"
-        generated = GeneratedReport(name=draft.name, report_type=draft.report_type, scope_summary=metadata["scope"], period_label=metadata["primary_period"], created_by_user_id=_safe_uuid(scope.get("user_id")), created_by_name=metadata["generated_by"], output_format="pdf", status="ready", file_name=f"{safe_name}.pdf", content_type="application/pdf", file_data=file_data, configuration={"draft_id": str(draft.id)}, record_count=len(self._context(draft, scope)["current"]), warning=" ".join(issue.message for issue in validation.issues if issue.severity == "warning") or None, draft_id=draft.id, template_id=draft.template_id, template_version=draft.template_version, primary_period_month=draft.primary_period_month, primary_period_year=draft.primary_period_year, comparison_period_month=draft.comparison_period_month, comparison_period_year=draft.comparison_period_year, scope_json=deepcopy(draft.scope_json), final_definition_json=deepcopy(snapshot["definition"]), narrative_snapshot_json={"system_analysis": deepcopy(snapshot["definition"].get("narratives", {})), "management_commentary": deepcopy(draft.management_commentary_json)}, data_snapshot_json=deepcopy(slide_data), validation_json=validation.model_dump(mode="json"), integrity_identifier=integrity, generated_at=datetime.now(timezone.utc))
+        persisted_configuration = {"draft_id": str(draft.id)}
+        if processing_job_id:
+            persisted_configuration["_processing_job_id"] = str(processing_job_id)
+        generated = GeneratedReport(name=draft.name, report_type=draft.report_type, scope_summary=metadata["scope"], period_label=metadata["primary_period"], created_by_user_id=_safe_uuid(scope.get("user_id")), created_by_name=metadata["generated_by"], output_format="pdf", status="ready", file_name=f"{safe_name}.pdf", content_type="application/pdf", file_data=file_data, configuration=persisted_configuration, record_count=len(self._context(draft, scope)["current"]), warning=" ".join(issue.message for issue in validation.issues if issue.severity == "warning") or None, draft_id=draft.id, template_id=draft.template_id, template_version=draft.template_version, primary_period_month=draft.primary_period_month, primary_period_year=draft.primary_period_year, comparison_period_month=draft.comparison_period_month, comparison_period_year=draft.comparison_period_year, scope_json=deepcopy(draft.scope_json), final_definition_json=deepcopy(snapshot["definition"]), narrative_snapshot_json={"system_analysis": deepcopy(snapshot["definition"].get("narratives", {})), "management_commentary": deepcopy(draft.management_commentary_json)}, data_snapshot_json=deepcopy(slide_data), validation_json=validation.model_dump(mode="json"), integrity_identifier=integrity, generated_at=datetime.now(timezone.utc))
         try: self.repo.add_generated(generated); draft.status = "generated"; self.db.commit(); self.db.refresh(generated)
         except Exception: self.db.rollback(); raise
         return {"id": str(generated.id), "name": generated.name, "status": generated.status, "format": "pdf", "file_name": generated.file_name, "integrity_identifier": integrity, "download_url": f"/api/reports/{generated.id}/download"}

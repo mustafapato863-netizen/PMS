@@ -28,7 +28,7 @@ const SettingsView = () => {
   }
 
   return (
-    <motion.main initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6 p-4 sm:p-6 lg:p-8">
+    <motion.main initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="app-page-shell">
       <header className="flex items-center gap-3">
         <div className="rounded-2xl bg-blue-500/10 p-3 text-blue-600 dark:text-blue-400"><Settings size={22} /></div>
         <div><h1 className="text-2xl font-black tracking-tight text-[var(--text-primary)]">Settings & Administration</h1><p className="mt-1 text-xs text-[var(--text-muted)]">Manage data, KPI definitions, users and team onboarding.</p></div>

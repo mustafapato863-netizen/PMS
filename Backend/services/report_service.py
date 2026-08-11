@@ -380,7 +380,13 @@ class ReportService:
             "table_preview": data.rows[:5],
         }
 
-    def generate(self, configuration: ReportConfiguration, scope: dict) -> GeneratedReport:
+    def generate(
+        self,
+        configuration: ReportConfiguration,
+        scope: dict,
+        *,
+        processing_job_id: str | None = None,
+    ) -> GeneratedReport:
         data = self._collect(configuration, scope)
         period_label = self._period_label(configuration)
         scope_summary = self._scope_summary(configuration)
@@ -460,6 +466,9 @@ class ReportService:
         safe_name = re.sub(r"[^A-Za-z0-9_-]+", "_", configuration.report_name).strip("_") or "PMS_Report"
         user = scope.get("user")
         user_id = getattr(user, "id", None) or _safe_uuid(scope.get("user_id"))
+        persisted_configuration = configuration.model_dump(mode="json")
+        if processing_job_id:
+            persisted_configuration["_processing_job_id"] = str(processing_job_id)
         report = GeneratedReport(
             name=configuration.report_name,
             report_type=configuration.report_type,
@@ -472,7 +481,7 @@ class ReportService:
             file_name=f"{safe_name}{extension}",
             content_type=content_type,
             file_data=file_data,
-            configuration=configuration.model_dump(mode="json"),
+            configuration=persisted_configuration,
             record_count=data.summary["record_count"],
             warning=" ".join(data.warnings) or None,
         )
@@ -490,6 +499,10 @@ class ReportService:
         created_at = report.created_at
         if created_at and created_at.tzinfo is None:
             created_at = created_at.replace(tzinfo=timezone.utc)
+        configuration = report.configuration if isinstance(report.configuration, dict) else {}
+        public_configuration = {
+            key: value for key, value in configuration.items() if not str(key).startswith("_")
+        }
         return {
             "id": str(report.id),
             "name": report.name,
@@ -503,7 +516,7 @@ class ReportService:
             "file_name": report.file_name,
             "record_count": report.record_count,
             "warning": report.warning,
-            "configuration": report.configuration,
+            "configuration": public_configuration,
             "download_url": f"/api/reports/{report.id}/download",
         }
 

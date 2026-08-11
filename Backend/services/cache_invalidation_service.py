@@ -5,9 +5,12 @@ Also invalidates the in-memory cache fallback.
 
 import json
 import logging
+import threading
 from services.cache_service import redis_client, in_memory_cache
 
 logger = logging.getLogger(__name__)
+_fallback_data_version = 0
+_fallback_data_version_lock = threading.Lock()
 
 
 class CacheInvalidationService:
@@ -35,13 +38,28 @@ class CacheInvalidationService:
 
     @staticmethod
     def flush_all() -> None:
-        """Invalidate all cached entries in both Redis and in-memory cache."""
+        """Compatibility name for a safe namespace invalidation."""
         in_memory_cache.invalidate_by_prefix("")
+        CacheInvalidationService.bump_data_version()
+
+    @staticmethod
+    def bump_data_version() -> int:
+        """Publish a post-commit data version without evicting auth/session keys."""
+
+        global _fallback_data_version
         if redis_client:
             try:
-                redis_client.flushdb()
-            except Exception as e:
-                logger.warning(f"Failed to flush Redis cache: {e}")
+                version = int(redis_client.incr("pms:version:data"))
+                redis_client.publish(
+                    "cache_invalidation",
+                    json.dumps({"action": "version_bump", "type": "data", "version": version}),
+                )
+                return version
+            except Exception as exc:
+                logger.warning("Failed to bump shared data version: %s", exc)
+        with _fallback_data_version_lock:
+            _fallback_data_version += 1
+            return _fallback_data_version
 
     @staticmethod
     def invalidate_team_config(team_id: str, month: str = None, year: int = None) -> None:

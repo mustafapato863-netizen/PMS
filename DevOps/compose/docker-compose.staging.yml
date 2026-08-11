@@ -46,6 +46,10 @@ services:
       - REDIS_SOCKET_TIMEOUT_SECONDS=${REDIS_SOCKET_TIMEOUT_SECONDS:-0.25}
       - REDIS_RETRY_INTERVAL_SECONDS=${REDIS_RETRY_INTERVAL_SECONDS:-30}
       - PMS_REALTIME_MODE=${PMS_REALTIME_MODE:-in_process}
+      - PMS_ASYNC_JOBS_ENABLED=${PMS_ASYNC_JOBS_ENABLED:-true}
+      - PMS_JOB_POLL_SECONDS=${PMS_JOB_POLL_SECONDS:-1}
+      - PMS_JOB_LEASE_SECONDS=${PMS_JOB_LEASE_SECONDS:-300}
+      - PMS_JOB_MAX_ATTEMPTS=${PMS_JOB_MAX_ATTEMPTS:-3}
       - JWT_SECRET=${JWT_SECRET}
       - JWT_ALGORITHM=HS256
       - JWT_EXPIRE_MINUTES=1440
@@ -53,6 +57,34 @@ services:
       - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS}
       - MAX_UPLOAD_BYTES=${MAX_UPLOAD_BYTES:-26214400}
       - PORT=7860
+    volumes:
+      - backend_data_staging:/app/data
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: always
+
+  worker:
+    build:
+      context: ../..
+      dockerfile: DevOps/docker/Dockerfile.backend
+    command: ["sh", "-c", "exec python worker.py"]
+    environment:
+      - APP_ENV=staging
+      - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD}@db:5432/PMS_Sys_Staging
+      - REDIS_URL=redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379/0
+      - REDIS_SOCKET_TIMEOUT_SECONDS=${REDIS_SOCKET_TIMEOUT_SECONDS:-0.25}
+      - REDIS_RETRY_INTERVAL_SECONDS=${REDIS_RETRY_INTERVAL_SECONDS:-30}
+      - PMS_ASYNC_JOBS_ENABLED=${PMS_ASYNC_JOBS_ENABLED:-true}
+      - PMS_JOB_POLL_SECONDS=${PMS_JOB_POLL_SECONDS:-1}
+      - PMS_JOB_LEASE_SECONDS=${PMS_JOB_LEASE_SECONDS:-300}
+      - PMS_JOB_MAX_ATTEMPTS=${PMS_JOB_MAX_ATTEMPTS:-3}
+      - PMS_DATA_DIR=/app/data
+      - JWT_SECRET=${JWT_SECRET}
+      - JWT_ALGORITHM=HS256
+      - JWT_EXPIRE_MINUTES=1440
     volumes:
       - backend_data_staging:/app/data
     depends_on:

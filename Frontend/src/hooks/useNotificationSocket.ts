@@ -7,13 +7,16 @@ import { apiFetch } from '../lib/apiClient';
 
 interface NotificationPayload {
   id?: string;
-  type?: 'info' | 'success' | 'warning' | 'error' | 'upload' | 'action';
+  type?: 'info' | 'success' | 'warning' | 'error' | 'upload' | 'action' | 'job';
   message?: string;
   timestamp?: string;
   meta?: string;
   data?: {
     created_by_name?: string;
     created_by_role?: string;
+    job_id?: string;
+    kind?: string;
+    status?: string;
   };
 }
 
@@ -154,7 +157,7 @@ export function useNotificationSocket(enabled = true) {
         meta = `${data.data.created_by_name} - ${data.data.created_by_role || ''}`;
       }
 
-      const notificationType: Notification['type'] = data.type === 'warning'
+      const notificationType: Notification['type'] = data.type === 'warning' || data.type === 'job'
         ? 'info'
         : data.type ?? 'info';
       const notification = {
@@ -172,6 +175,16 @@ export function useNotificationSocket(enabled = true) {
         queryClient.invalidateQueries({ queryKey: ['performance'] });
         queryClient.invalidateQueries({ queryKey: ['team-configs'] });
         queryClient.invalidateQueries({ queryKey: ['teams'] });
+      }
+      if (data.type === 'job' && data.data?.job_id) {
+        queryClient.invalidateQueries({ queryKey: ['processing-jobs', data.data.job_id] });
+        if (data.data.kind?.includes('report')) {
+          queryClient.invalidateQueries({ queryKey: ['reports', 'list'] });
+        }
+        if (data.data.kind === 'pms_upload') {
+          queryClient.invalidateQueries({ queryKey: ['performance'] });
+          queryClient.invalidateQueries({ queryKey: ['teams'] });
+        }
       }
     };
 

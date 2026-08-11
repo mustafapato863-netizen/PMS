@@ -1621,7 +1621,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
       ? branchSelections.map((branch) => branchLabels[branch]).join(' and ')
       : '';
     return (
-      <div className="max-w-[1600px] mx-auto space-y-6 text-slate-800 dark:text-slate-100">
+      <div className="app-page-shell text-slate-800 dark:text-slate-100">
         <TeamHeader
           displayName={displayName}
           month={month}
@@ -1756,7 +1756,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
   ] : [];
 
   return (
-    <div className="max-w-[1600px] mx-auto space-y-6 text-slate-800 dark:text-slate-100">
+    <div className="app-page-shell text-slate-800 dark:text-slate-100">
       {/* Header */}
       {showBscFallbackMessage && (
         <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">

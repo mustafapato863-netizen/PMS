@@ -1,12 +1,19 @@
 import { MemoryRouter } from 'react-router-dom';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PMSAction } from '../types';
 
-const { getAllActions } = vi.hoisted(() => ({ getAllActions: vi.fn() }));
+const { getAllActions, downloadCorrectiveActionsPowerPoint } = vi.hoisted(() => ({
+  getAllActions: vi.fn(),
+  downloadCorrectiveActionsPowerPoint: vi.fn(() => Promise.resolve()),
+}));
 
 vi.mock('../hooks/useActionStore', () => ({
   useActionStore: () => ({ getAllActions }),
+}));
+
+vi.mock('../utils/correctiveActionPowerPoint', () => ({
+  downloadCorrectiveActionsPowerPoint,
 }));
 
 import CorrectiveActionsView from './CorrectiveActionsView';
@@ -42,14 +49,17 @@ describe('CorrectiveActionsView', () => {
     expect(screen.getByText('Pending sync').parentElement).toHaveTextContent('1');
   });
 
-  it('filters records before exporting a Word-compatible document', () => {
+  it('filters records before exporting a PowerPoint document', async () => {
     render(<MemoryRouter><CorrectiveActionsView /></MemoryRouter>);
 
     fireEvent.change(screen.getByLabelText('Filter by team'), { target: { value: 'Inbound' } });
     expect(screen.getByText('Agent One')).toBeInTheDocument();
     expect(screen.queryByText('Agent Two')).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Export Word' }));
-    expect(URL.createObjectURL).toHaveBeenCalledWith(expect.any(Blob));
+    fireEvent.click(screen.getByRole('button', { name: 'Export PowerPoint' }));
+    await waitFor(() => expect(downloadCorrectiveActionsPowerPoint).toHaveBeenCalledWith(
+      [actions[0]],
+      { team: 'Inbound', month: 'All months', type: 'All types' },
+    ));
   });
 });

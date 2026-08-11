@@ -39,6 +39,17 @@ class SocketNotificationService:
         })
 
     @staticmethod
+    async def notify_job_updated(job_id: str, kind: str, status: str):
+        """Emit safe job metadata; clients still use REST polling as authority."""
+
+        await broadcast_notification({
+            "type": "job",
+            "message": f"Background {kind.replace('_', ' ')} job {status}.",
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "data": {"job_id": str(job_id), "kind": kind, "status": status},
+        })
+
+    @staticmethod
     async def notify_action_assigned(employee_name: str, action_type: str, team_name: str, created_by_name: str | None = None, created_by_role: str | None = None, is_update: bool = False):
         """Emit action assigned or updated notification with meta information."""
         action_verb = "updated for" if is_update else "assigned to"

@@ -439,7 +439,7 @@ const EmployeeProfileView = () => {
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, x: -20 }}
       transition={{ duration: 0.35 }}
-      className="max-w-[1600px] mx-auto space-y-6 w-full min-w-0"
+      className="app-page-shell min-w-0"
     >
       {/* Header */}
       <div className="flex items-center gap-3">

@@ -2,12 +2,13 @@ from __future__ import annotations
 
 from io import BytesIO
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Depends, HTTPException, Header, Query, Request, status
+from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
 from api.dependencies import require_authenticated_scope
 from api.middleware.rbac_middleware import require_permission
+from config import settings
 from config.database import get_db
 from models.report_definitions import (
     DraftPeriodChange,
@@ -33,6 +34,7 @@ from services.report_story_service import (
     StoryNotFoundError,
     StoryValidationError,
 )
+from services.processing_job_service import ProcessingJobService, scope_snapshot
 
 
 router = APIRouter(prefix="/reports", tags=["Reports"])
@@ -62,6 +64,22 @@ def _raise_story_error(exc: Exception) -> None:
     if isinstance(exc, StoryValidationError):
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
     raise exc
+
+
+def _job_key(user_id: str | None, idempotency_key: str | None) -> str | None:
+    value = (idempotency_key or "").strip()
+    return f"{user_id or 'anonymous'}:{value[:220]}" if value else None
+
+
+def _queued_response(job, message: str) -> JSONResponse:
+    return JSONResponse(
+        status_code=status.HTTP_202_ACCEPTED,
+        content=StandardResponse(
+            success=True,
+            message=message,
+            data=ProcessingJobService.reference(job),
+        ).model_dump(mode="json"),
+    )
 
 
 @router.get("/templates", response_model=StandardResponse)
@@ -262,10 +280,30 @@ def generate_story_report(
     payload: ReportGenerateRequest,
     request: Request,
     db: Session = Depends(get_db),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     _user=Depends(require_permission("export_data")),
 ):
     try:
-        data = ReportStoryService(db).generate(draft_id, payload, _scope(db, request))
+        scope = _scope(db, request)
+        service = ReportStoryService(db)
+        if settings.PMS_ASYNC_JOBS_ENABLED:
+            draft = service._get_draft(draft_id, scope)
+            if draft.version != payload.expected_version:
+                raise StoryConflictError("This draft changed before export. Reload and validate again")
+            job = ProcessingJobService.create(
+                db,
+                kind="story_report_generation",
+                request_json={
+                    "draft_id": draft_id,
+                    "request": payload.model_dump(mode="json"),
+                    "scope": scope_snapshot(scope),
+                },
+                requested_by_user_id=scope.get("user_id"),
+                requested_by_name=scope.get("username") or "User",
+                idempotency_key=_job_key(scope.get("user_id"), idempotency_key),
+            )
+            return _queued_response(job, "Presentation PDF queued for background generation")
+        data = service.generate(draft_id, payload, scope)
     except (StoryAccessError, StoryConflictError, StoryNotFoundError, StoryValidationError) as exc:
         _raise_story_error(exc)
     return StandardResponse(success=True, message="Presentation PDF generated", data=data)
@@ -345,11 +383,27 @@ def generate_report(
     configuration: ReportConfiguration,
     request: Request,
     db: Session = Depends(get_db),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     _user=Depends(require_permission("export_data")),
 ):
     try:
+        scope = _scope(db, request)
         service = ReportService(db)
-        report = service.generate(configuration, _scope(db, request))
+        if settings.PMS_ASYNC_JOBS_ENABLED:
+            service._validate_scope(configuration, scope)
+            job = ProcessingJobService.create(
+                db,
+                kind="report_generation",
+                request_json={
+                    "configuration": configuration.model_dump(mode="json"),
+                    "scope": scope_snapshot(scope),
+                },
+                requested_by_user_id=scope.get("user_id"),
+                requested_by_name=scope.get("username") or "User",
+                idempotency_key=_job_key(scope.get("user_id"), idempotency_key),
+            )
+            return _queued_response(job, "Report queued for background generation")
+        report = service.generate(configuration, scope)
     except (ReportAccessError, ReportNotFoundError, ReportValidationError) as exc:
         _raise_report_error(exc)
     return StandardResponse(
