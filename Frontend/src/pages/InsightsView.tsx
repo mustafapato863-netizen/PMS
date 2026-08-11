@@ -201,7 +201,7 @@ function ExecutiveStoryCard({
   return (
     <section className="overflow-hidden rounded-2xl border border-blue-200/70 bg-gradient-to-br from-blue-50 via-white to-indigo-50 shadow-sm dark:border-blue-500/20 dark:from-blue-500/10 dark:via-slate-950/80 dark:to-indigo-500/10" aria-labelledby="executive-story-title">
       <div className="flex flex-col gap-4 p-5 md:p-6 lg:flex-row lg:items-start lg:justify-between">
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <span className="grid h-9 w-9 place-items-center rounded-xl bg-blue-600 text-white shadow-sm shadow-blue-500/25"><Sparkles size={17} /></span>
             <span className="text-[10px] font-black uppercase tracking-[0.16em] text-blue-700 dark:text-blue-300">Executive story</span>
@@ -210,7 +210,7 @@ function ExecutiveStoryCard({
           <h2 id="executive-story-title" className="mt-3 max-w-4xl text-lg font-black leading-7 text-[var(--text-primary)]">{story.headline}</h2>
           <p className="mt-2 max-w-4xl text-sm leading-6 text-[var(--text-secondary)]">{story.recommended_focus}</p>
         </div>
-        <div className="grid shrink-0 grid-cols-2 gap-2 sm:grid-cols-4 lg:min-w-[520px]">
+        <div className="grid w-full shrink-0 grid-cols-2 gap-2 sm:grid-cols-4 lg:w-[520px]">
           <div className="rounded-xl border border-white/80 bg-white/75 p-3 dark:border-white/10 dark:bg-white/[0.06]"><span className="text-[10px] font-bold uppercase text-[var(--text-faint)]">Current</span><strong className="mt-1 block text-lg font-black text-[var(--text-primary)]">{story.current_score === null ? 'N/A' : `${story.current_score.toFixed(1)}%`}</strong></div>
           <div className="rounded-xl border border-white/80 bg-white/75 p-3 dark:border-white/10 dark:bg-white/[0.06]"><span className="text-[10px] font-bold uppercase text-[var(--text-faint)]">Gap</span><strong className={`mt-1 block text-lg font-black ${story.gap_points !== null && story.gap_points < 0 ? 'text-rose-600' : 'text-emerald-600'}`}>{story.gap_points === null ? 'N/A' : `${story.gap_points > 0 ? '+' : ''}${story.gap_points.toFixed(1)}%`}</strong></div>
           <div className="rounded-xl border border-white/80 bg-white/75 p-3 dark:border-white/10 dark:bg-white/[0.06]"><span className="text-[10px] font-bold uppercase text-[var(--text-faint)]">Movement</span><strong className={`mt-1 block text-lg font-black ${story.score_change !== null && story.score_change < 0 ? 'text-rose-600' : 'text-emerald-600'}`}>{story.score_change === null ? 'N/A' : `${story.score_change > 0 ? '+' : ''}${story.score_change.toFixed(1)}%`}</strong></div>
