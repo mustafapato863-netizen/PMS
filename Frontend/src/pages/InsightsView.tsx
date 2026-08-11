@@ -47,6 +47,10 @@ function FilterSelect({ label, value, onChange, options, allLabel }: {
   );
 }
 
+// Keep the executive-story component behind a small feature flag while the
+// layout continues to evolve without changing the workspace contract.
+const SHOW_EXECUTIVE_STORY = true;
+
 const severityStyles: Record<InsightSeverity, string> = {
   critical: 'border-rose-200 bg-rose-50 text-rose-600 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300',
   risk: 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300',
@@ -568,7 +572,7 @@ export default function InsightsView() {
         {activeFilterEntries.length > 0 && <div className="flex flex-wrap items-center gap-2 border-t border-[var(--border-light)] px-4 py-3"><span className="mr-1 text-[10px] font-black uppercase tracking-[0.14em] text-[var(--text-faint)]">{analysisDepth}</span>{activeFilterEntries.map((entry) => <button key={entry.key} type="button" onClick={() => clearFilter(entry.key)} className="inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-[11px] font-bold text-blue-700 hover:border-blue-400 dark:border-blue-500/25 dark:bg-blue-500/10 dark:text-blue-200">{entry.label}: {entry.value}<X size={12} /></button>)}<button type="button" onClick={clearAnalysis} className="ml-auto text-[11px] font-bold text-[var(--text-muted)] hover:text-rose-600">Reset analysis</button></div>}
       </section>
 
-      {workspace.executive_story && <ExecutiveStoryCard story={workspace.executive_story} onScopeSelect={selectRegion} />}
+      {SHOW_EXECUTIVE_STORY && workspace.executive_story && <ExecutiveStoryCard story={workspace.executive_story} onScopeSelect={selectRegion} />}
       {!filters.region && !filters.team && !filters.kpi && (workspace.geography_summaries?.length ?? 0) > 0 && <GeographyContribution summaries={workspace.geography_summaries || []} onSelect={selectRegion} />}
 
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Insight summary">{summaryCards.map(({ label, value, copy, icon: Icon, style }) => <article key={label} className={`min-h-[142px] rounded-2xl border p-5 shadow-sm ${style}`}><div className="flex items-start justify-between"><span className="text-sm font-extrabold">{label}</span><span className="grid h-10 w-10 place-items-center rounded-xl bg-current/10"><Icon size={19} /></span></div><p className="mt-3 text-3xl font-black text-[var(--text-primary)]">{value}</p><p className="mt-1 text-xs font-medium text-[var(--text-muted)]">{copy}</p></article>)}</section>

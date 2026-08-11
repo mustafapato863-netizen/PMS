@@ -185,9 +185,10 @@ export function CustomDropdown<T extends string | number = string>({
       </button>
 
       {/* ─── Animated popover option list ─── */}
-      <AnimatePresence>
-        {isOpen && !disabled && (
-          createPortal(
+      {isOpen &&
+        !disabled &&
+        createPortal(
+          <AnimatePresence>
             <motion.div
               ref={menuRef}
               aria-hidden="true"
@@ -201,6 +202,7 @@ export function CustomDropdown<T extends string | number = string>({
                 left: menuPosition.left,
                 width: menuPosition.width,
                 maxHeight: menuPosition.maxHeight,
+                zIndex: 9999,
               }}
               className="fixed z-[9999] overflow-y-auto rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] p-1.5 shadow-[0_16px_40px_rgba(15,23,42,0.18)] backdrop-blur-2xl dark:bg-slate-900/95 custom-scrollbar"
             >
@@ -228,11 +230,10 @@ export function CustomDropdown<T extends string | number = string>({
                   </button>
                 );
               })}
-            </motion.div>,
-            document.body,
-          )
+            </motion.div>
+          </AnimatePresence>,
+          document.body,
         )}
-      </AnimatePresence>
     </div>
   );
 }
