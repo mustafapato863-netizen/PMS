@@ -67,6 +67,9 @@ def _apply_global_kpi_cap(config: Dict[str, Any]) -> Dict[str, Any]:
             for position_config in positions.values():
                 if isinstance(position_config, dict):
                     normalize_kpis(position_config)
+                    for variant in position_config.get("period_variants", []):
+                        if isinstance(variant, dict):
+                            normalize_kpis(variant)
 
     # A top-level flag keeps the final-score rule explicit even for teams whose
     # KPI list only exists under performance_levels.
@@ -163,6 +166,27 @@ def _validate_required_fields(config: Dict[str, Any]) -> Tuple[bool, List[str]]:
         groups.append((level, value.get('kpis', []), False))
         for position_name, position_config in value.get("positions", {}).items():
             groups.append((f"{level}/{position_name}", position_config.get("kpis", []), True))
+            for variant_index, variant in enumerate(position_config.get("period_variants", []), start=1):
+                if not isinstance(variant, dict):
+                    errors.append(
+                        f"{level}/{position_name} period variant {variant_index} must be an object"
+                    )
+                    continue
+                if not variant.get("id"):
+                    errors.append(
+                        f"{level}/{position_name} period variant {variant_index} is missing field 'id'"
+                    )
+                if not variant.get("effective_from"):
+                    errors.append(
+                        f"{level}/{position_name} period variant {variant_index} is missing field 'effective_from'"
+                    )
+                groups.append(
+                    (
+                        f"{level}/{position_name}/period_variants[{variant_index}]",
+                        variant.get("kpis", []),
+                        True,
+                    )
+                )
 
     for level, kpis, position_scoped in groups:
         for idx, kpi in enumerate(kpis):
@@ -269,12 +293,28 @@ def validate_team_config(config: Dict[str, Any]) -> Tuple[bool, List[str]]:
                     f"{level} KPI keys are repeated across positions: {', '.join(duplicates)}"
                 )
             seen_position_keys.update(keys)
-            for kpi in position_kpis:
-                if kpi.get("perspective") not in PERSPECTIVES:
-                    all_errors.append(
-                        f"{level}/{position_name} KPI {kpi.get('key', 'unknown')}: "
-                        "missing or invalid perspective"
+            position_sets = [("default", position_kpis)]
+            for variant_index, variant in enumerate(position_config.get("period_variants", []), start=1):
+                if isinstance(variant, dict):
+                    variant_kpis = variant.get("kpis", [])
+                    position_sets.append((f"period_variants[{variant_index}]", variant_kpis))
+                    _, errors = _validate_weights(
+                        variant_kpis,
+                        f"{level}/{position_name}/{variant.get('id', variant_index)}",
                     )
+                    all_errors.extend(errors)
+                    variant_keys = [str(kpi.get("key", "")).strip() for kpi in variant_kpis]
+                    if len(variant_keys) != len(set(variant_keys)):
+                        all_errors.append(
+                            f"{level}/{position_name}/{variant.get('id', variant_index)} KPI keys must be unique"
+                        )
+            for set_name, kpis in position_sets:
+                for kpi in kpis:
+                    if kpi.get("perspective") not in PERSPECTIVES:
+                        all_errors.append(
+                            f"{level}/{position_name}/{set_name} KPI {kpi.get('key', 'unknown')}: "
+                            "missing or invalid perspective"
+                        )
         all_errors.extend(_validate_balanced_scorecard(level, level_config))
     
     # Validate grade thresholds

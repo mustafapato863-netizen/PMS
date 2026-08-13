@@ -677,6 +677,97 @@ function buildPreApprovalsKpis(agent: AgentRecord, workstream: PreApprovalsWorks
   });
 }
 
+/**
+ * The Offshore RCM sheet historically persisted KPI values alongside the
+ * source counters.  When an upload was reprocessed, those persisted values
+ * could remain stale (for example, Error% = 58.7%) even though the row still
+ * contained the authoritative counts (ErrosClaims / SubmittedClaims).
+ *
+ * Keep the employee and team views on the same source of truth: counters win,
+ * then explicit source percentages, and only then the legacy persisted KPI.
+ */
+function isPreApprovalsIpOffshoreTeam(value: string | null | undefined): boolean {
+  return normalizeTeamIdentity(value) === normalizeTeamIdentity('Pre-Approvals IP Offshore');
+}
+
+function buildPreApprovalsIpOffshoreKpis(agent: AgentRecord): KPIConfig[] {
+  const raw = agent.raw_data;
+  const persisted = new Map((agent.kpi_values || []).map((kpi) => [normalizeWorkstream(kpi.kpi_key), kpi]));
+  const sourceKpi = (key: string) => persisted.get(normalizeWorkstream(key));
+
+  const rejection = sourceKpi('Rejection');
+  const initialError = sourceKpi('InitialError');
+  const submission = sourceKpi('Submission');
+
+  const rejectionActual = getPreApprovalsCountRatio(
+    raw,
+    ['RejectedRequests', 'RejectedRequest'],
+    ['AssignedRequests', 'AssignedRequest'],
+  ) ?? getRawNumber(raw, ['IPInitialRejection%', 'A.IPInitialRejectionRate', 'A.IPInitialRejection%', 'RejectionRate'])
+    ?? normalizeRate(rejection?.actual_value)
+    ?? 0;
+  const errorActual = getPreApprovalsCountRatio(
+    raw,
+    ['ErrosClaims', 'ErrorsClaims', 'ErrorClaims'],
+    ['SubmittedClaims', 'SubmittedClaim'],
+  ) ?? getRawNumber(raw, ['Error%', 'A.InitialErrorRate', 'A.InitialError%', 'InitialError%'])
+    ?? normalizeRate(initialError?.actual_value)
+    ?? 0;
+  const submissionActual = getPreApprovalsCountRatio(
+    raw,
+    ['ApprovalWithin48HR', 'ApprovalWithin48hrs', 'NumberApprovalwithin48hrs'],
+    ['ApprovedRequests', 'ApprovedRequest'],
+  ) ?? getRawNumber(raw, ['%ofSubmissionWithinDuedate', 'A.SubmissionRate', 'A.Submission%', 'SubmissionRate'])
+    ?? normalizeRate(submission?.actual_value)
+    ?? 0;
+
+  const rejectionTarget = getRawNumber(raw, [
+    'T.Rejection%', 'T.InitialRejection%', 'T.Rejection', 'T.InitialRejectionRate', 'T.InitialRejection',
+  ]) ?? normalizeRate(rejection?.target_value) ?? 0.03;
+  const errorTarget = getRawNumber(raw, [
+    'T.InitialError%', 'T.InitialError', 'T.InitialErrorRate', 'T.Error%', 'T.Error',
+  ]) ?? normalizeRate(initialError?.target_value) ?? 0.03;
+  const submissionTarget = getRawNumber(raw, [
+    'T.Submission%', 'T.Submission', 'T.SubmissionRate', 'T.%ofSubmissionWithinDuedate',
+    'T.%OfApprovalwithin48HR', 'T.%OfSubmissionWithin48HR',
+  ]) ?? normalizeRate(submission?.target_value) ?? 0.90;
+
+  const build = (
+    source: NonNullable<AgentRecord['kpi_values']>[number] | undefined,
+    key: string,
+    label: string,
+    actual: number,
+    target: number,
+    isLowerBetter: boolean,
+    color: string,
+    fallbackWeight: number,
+  ): KPIConfig => {
+    const safeWeight = Number.isFinite(source?.weight_applied) ? Math.max(0, source!.weight_applied) : fallbackWeight;
+    const rawAchievement = isLowerBetter
+      ? (actual <= 0 ? 100 : (target / actual) * 100)
+      : (target > 0 ? (actual / target) * 100 : 0);
+    const achievement = Math.min(Math.max(0, rawAchievement), 100);
+    return {
+      key,
+      label,
+      actual,
+      target,
+      unit: '%',
+      isLowerBetter,
+      color,
+      achievement,
+      weight: safeWeight,
+      contribution: (achievement / 100) * safeWeight * 100,
+    };
+  };
+
+  return [
+    build(rejection, 'Rejection', 'Rejection Rate', rejectionActual, rejectionTarget, true, '#EF4444', 0.50),
+    build(initialError, 'InitialError', 'Initial Error Rate', errorActual, errorTarget, true, '#F59E0B', 0.20),
+    build(submission, 'Submission', 'Submission Rate', submissionActual, submissionTarget, false, '#10B981', 0.30),
+  ];
+}
+
 function getAhtTarget(raw_data: RawData | undefined, fallback: number): number {
   if (!raw_data) return fallback;
   const tAht = raw_data['T.AHT'] ?? raw_data['T.AHTTarget'] ?? raw_data['T.AHT_Target'];
@@ -709,6 +800,12 @@ export function getKPIsForAgent(agent: AgentRecord): KPIConfig[] {
   // any values to cards, trends, or score calculations.
   if (isPreApprovalsIpElectiveTeam(team)) {
     return buildPreApprovalsKpis(agent, resolvePreApprovalsWorkstream(agent));
+  }
+
+  // Offshore rows can carry stale persisted KPI values. Rebuild from the
+  // source counters before the generic persisted-value branch is reached.
+  if (isPreApprovalsIpOffshoreTeam(team)) {
+    return buildPreApprovalsIpOffshoreKpis(agent);
   }
 
   if (agent.kpi_values?.length) {

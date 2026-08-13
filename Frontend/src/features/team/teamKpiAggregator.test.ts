@@ -66,6 +66,23 @@ describe('aggregateConfiguredTeamKpis', () => {
     expect(result.get('configuredrate')?.actual).not.toBeCloseTo(0.75);
   });
 
+  it('accepts the corrected ErrorsClaims spelling used by newer uploads', () => {
+    const result = aggregateConfiguredTeamKpis([
+      record('1', 0.587, 0.03, { ErrorsClaims: '3', SubmittedClaims: '501' }),
+    ], config({ method: 'ratio', numerator_col: 'ErrosClaims', denominator_col: 'SubmittedClaims' }));
+
+    expect(result.get('configuredrate')?.actual).toBeCloseTo(3 / 501);
+  });
+
+  it('uses configured source percentages when ratio counters are absent', () => {
+    const result = aggregateConfiguredTeamKpis([
+      record('1', 0.587, 0.03, { Actual: '0.006', Target: '0.03' }),
+    ], config({ method: 'ratio', numerator_col: 'missing_numerator', denominator_col: 'missing_denominator' }));
+
+    expect(result.get('configuredrate')?.actual).toBeCloseTo(0.006);
+    expect(result.get('configuredrate')?.target).toBeCloseTo(0.03);
+  });
+
   it('falls back to the employee average when the configured raw counters are unavailable', () => {
     const result = aggregateConfiguredTeamKpis([
       record('1', 0.5, 0.9, {}),

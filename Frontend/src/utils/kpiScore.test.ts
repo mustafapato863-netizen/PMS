@@ -83,6 +83,33 @@ describe('resolveDisplayScore', () => {
     expect(resolveDisplayScore(withClaims, weights)).toBeCloseTo(0);
   });
 
+  it('rebuilds Offshore Initial Error Rate from source counters when persisted KPI values are stale', () => {
+    const agent = weightedRecord(
+      'Pre-Approvals IP Offshore',
+      'July',
+      {
+        'Rejection Rate': 8.1,
+        'Initial Error Rate': 58.7,
+        'Submission Rate': 75.2,
+      },
+      {
+        RejectedRequests: '8',
+        AssignedRequests: '99',
+        ErrosClaims: '3',
+        SubmittedClaims: '501',
+        ApprovalWithin48HR: '90',
+        ApprovedRequests: '120',
+        'Error%': '58.7%',
+        'T.InitialError%': '2.1%',
+      },
+    );
+
+    const error = getKPIsForAgent(agent).find((kpi) => kpi.label === 'Initial Error Rate');
+    expect(error?.actual).toBeCloseTo(3 / 501, 6);
+    expect(error?.target).toBeCloseTo(0.021, 6);
+    expect(error?.achievement).toBe(100);
+  });
+
   it('rebuilds the new Pre-Approvals workstream score and ignores stale combined KPIs', () => {
     const agent = {
       identity: {

@@ -111,6 +111,23 @@ def test_marketing_config_covers_all_employee_positions_and_kpis():
     assert account_manager_by_key["am_requests"]["aliases"] == ["Requests"]
     assert account_manager_by_key["am_modifications"]["label"] == "Modification Rate"
     assert account_manager_by_key["am_modifications"]["aliases"] == ["Modifications"]
+    period_variant = positions["Account Manager"]["period_variants"][0]
+    assert period_variant["id"] == "may_2026_onward"
+    assert period_variant["effective_from"] == "2026-05-01"
+    assert [kpi["key"] for kpi in period_variant["kpis"]] == [
+        "am_requests",
+        "am_edit_rate",
+        "am_projects_ontime",
+    ]
+    assert sum(kpi["weight"] for kpi in period_variant["kpis"]) == pytest.approx(1.0)
+    assert positions["Web Developer"]["kpis"][0]["direction"] == "higher_better"
+    assert positions["Web Developer"]["kpis"][3]["direction"] == "higher_better"
+    assert positions["Content Writer"]["kpis"][0]["unit"] == "%"
+    content_writer_directions = {
+        kpi["key"]: kpi["direction"]
+        for kpi in positions["Content Writer"]["kpis"]
+    }
+    assert content_writer_directions["cw_error_free"] == "lower_better"
 
 
 def test_all_marketing_positions_and_directions_are_calculated():
@@ -135,6 +152,20 @@ def test_all_marketing_positions_and_directions_are_calculated():
     } == {"higher_better", "lower_better"}
 
 
+def test_rows_with_no_kpi_measurements_are_excluded_with_warning():
+    frame = _valid_frame(positions=["Media Buyer"])
+    frame.loc[:, ["Target Value", "Actual Value"]] = float("nan")
+
+    result = MarketingImportService().parse_frame(frame)
+
+    assert result.report["employee_rows"] == 6
+    assert result.report["excluded_incomplete_rows"] == 6
+    assert result.report["employees"] == 0
+    assert result.report["performance_records"] == 0
+    assert {warning["code"] for warning in result.report["warnings"]} == {"INCOMPLETE_KPI_ROW"}
+    assert {warning["row"] for warning in result.report["warnings"]} == set(range(2, 8))
+
+
 @pytest.mark.asyncio
 async def test_config_api_resolves_one_marketing_position_without_mixing_kpis():
     response = await get_team_config(
@@ -149,30 +180,34 @@ async def test_config_api_resolves_one_marketing_position_without_mixing_kpis():
 
 
 @pytest.mark.skipif(not REAL_WORKBOOK.exists(), reason="User acceptance workbook is not available")
-def test_real_marketing_workbook_matches_reference_counts_and_scores():
+def test_real_marketing_workbook_imports_with_incomplete_rows_excluded():
     result = MarketingImportService().parse_excel(pd.ExcelFile(REAL_WORKBOOK))
     scores = {
         (record.employee_name, record.month): record.evaluation.score
         for record in result.records
     }
 
-    assert result.report["total_rows"] == 60
-    assert result.report["employee_rows"] == 60
+    assert result.report["total_rows"] == 68
+    assert result.report["employee_rows"] == 68
     assert result.report["excluded_non_employee_rows"] == 0
-    assert result.report["employees"] == 8
-    assert result.report["performance_records"] == 13
-    assert result.report["months"] == ["May", "June"]
+    assert result.report["excluded_incomplete_rows"] == 6
+    assert result.report["employees"] == 9
+    assert result.report["performance_records"] == 17
+    assert result.report["months"] == ["May", "June", "July"]
     assert result.report["years"] == [2026]
-    assert len(result.report["warnings"]) == 14
-    assert {
-        (warning["column"], warning["code"])
-        for warning in result.report["warnings"]
-    } == {("Performance Score", "DERIVED_VALUE_MISMATCH")}
+    assert sum(warning["code"] == "INCOMPLETE_KPI_ROW" for warning in result.report["warnings"]) == 6
+    assert {warning["code"] for warning in result.report["warnings"]} <= {
+        "INCOMPLETE_KPI_ROW",
+        "DERIVED_VALUE_MISMATCH",
+    }
     assert scores[("Bahy Hamed Amer", "June")] == 51.10
-    assert scores[("Abdelrahman Yousry", "May")] == 97.25
-    assert scores[("Asser Mohamed", "June")] == 93.50
-    assert scores[("Dina Samir", "May")] == 90.37
-    assert scores[("Dina Samir", "June")] == 97.59
+    assert scores[("Abdelrahman Yousry", "May")] == 97.50
+    assert scores[("Abdelrahman Yousry", "June")] == 78.75
+    assert scores[("Asser Mohamed", "July")] == 93.50
+    assert scores[("Dina Samir", "May")] == 100.0
+    assert scores[("Dina Samir", "June")] == 98.75
+    assert scores[("Dina Samir", "July")] == 100.0
+    assert scores[("Nourshan", "July")] == 98.0
 
 
 def test_zero_target_and_actual_produce_zero_higher_better_contribution():

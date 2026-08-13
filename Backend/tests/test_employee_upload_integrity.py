@@ -149,6 +149,23 @@ def test_preapprovals_without_claims_excludes_error_and_uses_60_40_weights():
     assert weights == {"Rejection": 0.60, "InitialError": 0, "Submission": 0.40}
 
 
+def test_preapprovals_error_rate_uses_claim_counters_over_stale_percentage():
+    row = {
+        "SubmittedClaims": 501,
+        "ErrosClaims": 3,
+        "Error%": 0.587,  # legacy achievement-like value
+        "IPInitialRejection%": 0.0,
+        "NumberApprovalwithin48hrs": 0.90,
+    }
+
+    _score, _grade, achievements, _weights = _kpi_service().calculate_performance(
+        "Pre-Approvals IP Offshore", row
+    )
+
+    assert row["Error%"] == pytest.approx(3 / 501)
+    assert achievements["InitialError"] == 1.0
+
+
 def _db():
     engine = create_engine("sqlite:///:memory:")
     Base.metadata.create_all(engine)

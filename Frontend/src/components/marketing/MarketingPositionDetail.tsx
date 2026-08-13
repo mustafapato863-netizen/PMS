@@ -71,7 +71,8 @@ const PositionKpiCard = ({ kpi }: { kpi: MarketingKpiAggregate }) => {
       iconAccentColor={kpi.color}
       label={kpi.label}
       value={actual.display}
-      detailLabel={`Target: ${target.display}`}
+      targetValue={target.display}
+      detailLabel={kpi.direction === 'lower_better' ? 'Lower is better' : 'Higher is better'}
       badgeText={tone.label}
       badgeType={tone.badgeType}
       trendDelta={kpi.achievementDelta}

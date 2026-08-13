@@ -72,8 +72,8 @@ REPORT_TEMPLATES = [
     {
         "type": "team_marketing",
         "category": "team",
-        "name": "Team Report - Marketing",
-        "description": "Storytelling PPTX report for Marketing department performance.",
+        "name": "Marketing Summary - PowerPoint",
+        "description": "Filtered-month executive story: overall performance, largest gap, KPI driver, affected people, and actions.",
         "formats": ["pptx"],
         "sections": ["summary", "details"],
     }
@@ -318,6 +318,58 @@ class ReportService:
             warnings=[],
         )
 
+    def _marketing_presentation_data(self, configuration: ReportConfiguration, scope: dict) -> dict[str, Any]:
+        """Build the presentation payload from the same filtered records/actions as the API.
+
+        Marketing used to be generated from a fixed workbook inside the PPTX
+        builder.  Keep the filtering here so the selected Reports period,
+        region, position and authorization scope are applied before export.
+        """
+        performance = self._performance_data(configuration, scope)
+        action_rows: list[dict[str, Any]] = []
+        for action in self.actions.list_active():
+            team_name = logical_team_name(action.team)
+            employee_identifier = str(action.employee.employee_id) if action.employee else ""
+            if not self._in_period(action.year, action.month, configuration):
+                continue
+            if configuration.team and team_name.casefold() != configuration.team.casefold():
+                continue
+            if configuration.employee_id and employee_identifier != configuration.employee_id:
+                continue
+            if scope.get("role") in {"Agent", "Executive"} and employee_identifier != str(scope.get("employee_id") or ""):
+                continue
+            if scope.get("role") == "Manager" and not scope.get("is_general_manager") and not user_can_access_team(scope, team_name):
+                continue
+            action_rows.append({
+                "employee_id": employee_identifier,
+                "employee_name": action.employee.name if action.employee else "Team / position action",
+                "team": team_name,
+                "month": action.month,
+                "year": action.year,
+                "action_type": action.action_type,
+                "action_text": action.action_text,
+                "root_cause_note": action.root_cause_note or "",
+                "status": action.status,
+                "priority": action.priority or "",
+                "linked_kpi_key": action.linked_kpi_key or "",
+            })
+
+        return {
+            "records": [
+                {
+                    "employee_id": str(record.employee_id),
+                    "employee_name": record.employee_name,
+                    "position": record.position or "Marketing",
+                    "region": record.region or "",
+                    "score": record.evaluation.score,
+                    "suggested_action": record.evaluation.suggested_action or "",
+                    "kpis": list(record.kpi_values or []),
+                }
+                for record in performance.records
+            ],
+            "actions": action_rows,
+        }
+
     def _upload_data(self, configuration: ReportConfiguration, scope: dict) -> CollectedReport:
         uploads = []
         for upload in self.reports.list_upload_logs():
@@ -451,7 +503,10 @@ class ReportService:
             content_type = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
             extension = ".pptx"
         elif configuration.report_type == "team_marketing":
-            file_data = build_marketing_pptx(period_label)
+            file_data = build_marketing_pptx(
+                period_label,
+                self._marketing_presentation_data(configuration, scope),
+            )
             content_type = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
             extension = ".pptx"
             configuration.output_format = "pptx"

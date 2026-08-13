@@ -93,6 +93,19 @@ def _first_normalized(row: Mapping[str, Any], *keys: str) -> float | None:
     return None
 
 
+def _ratio_from_counts(
+    row: Mapping[str, Any],
+    numerator_keys: tuple[str, ...],
+    denominator_keys: tuple[str, ...],
+) -> float | None:
+    """Return a ratio from source counters when both counters are present."""
+    numerator = _first_normalized(row, *numerator_keys)
+    denominator = _first_normalized(row, *denominator_keys)
+    if numerator is None or denominator is None or denominator <= 0:
+        return None
+    return max(numerator, 0.0) / denominator
+
+
 def _pre_approvals_workstream(row: Mapping[str, Any], config: Mapping[str, Any] | None) -> str:
     configured_position = _normalized_text((config or {}).get("position_name"))
     if "eripapproval" in configured_position or ("er" in configured_position and "approval" in configured_position):
@@ -310,10 +323,29 @@ def build_legacy_employee_kpi_values(
             ("Activity", "Activity Score", "higher_better", activity_actual, _first(row, "ActivityAch%", "SalesActivtiesAch%", "SalesActivitiesAch%"), activity_target or 1.0),
         ]
     else:
+        # The source workbook includes both displayed percentages and the
+        # authoritative counters. Prefer counters whenever available; older
+        # uploads sometimes stored an achievement ratio in ``Error%`` rather
+        # than the actual error rate.
+        rejection_actual = _ratio_from_counts(
+            row,
+            ("RejectedRequests", "RejectedRequest"),
+            ("AssignedRequests", "AssignedRequest"),
+        )
+        error_actual = _ratio_from_counts(
+            row,
+            ("ErrosClaims", "ErrorsClaims", "ErrorClaims"),
+            ("SubmittedClaims", "SubmittedClaim"),
+        )
+        submission_actual = _ratio_from_counts(
+            row,
+            ("ApprovalWithin48HR", "ApprovalWithin48hrs"),
+            ("ApprovedRequests", "ApprovedRequest"),
+        )
         specs = [
-            ("Rejection", "Rejection Rate", "lower_better", _first(row, "IPInitialRejection%"), _first(row, "RejectionRate"), 0.03),
-            ("InitialError", "Initial Error Rate", "lower_better", _first(row, "Error%"), _first(row, "InitialError%"), 0.03),
-            ("Submission", "Submission Rate", "higher_better", _first(row, "NumberApprovalwithin48hrs"), _first(row, "%ofSubmissionWithinDuedate"), 0.90),
+            ("Rejection", "Rejection Rate", "lower_better", rejection_actual if rejection_actual is not None else _first(row, "IPInitialRejection%"), _first(row, "RejectionRate"), 0.03),
+            ("InitialError", "Initial Error Rate", "lower_better", error_actual if error_actual is not None else _first(row, "Error%"), _first(row, "InitialError%"), 0.03),
+            ("Submission", "Submission Rate", "higher_better", submission_actual if submission_actual is not None else _first(row, "NumberApprovalwithin48hrs"), _first(row, "%ofSubmissionWithinDuedate"), 0.90),
         ]
 
     result: list[dict[str, Any]] = []
@@ -343,7 +375,12 @@ def build_legacy_employee_kpi_values(
             if key in ("AHT", "WaitingTime") and 0 < explicit_target < 1.0:
                 target = round(explicit_target * 1440.0, 4)
             else:
-                target = explicit_target
+                # Percentage targets may arrive as either ``0.03`` or
+                # ``3%``/``3`` depending on the Excel parser used. Keep KPI
+                # targets on the canonical 0-1 ratio scale.
+                target = explicit_target / 100.0 if key in {
+                    "Attendance", "Booking", "Quality", "Other", "Rejection", "InitialError", "Submission"
+                } and explicit_target > 1.0 else explicit_target
         else:
             target = _target(actual, achievement, direction, fallback_target)
 

@@ -120,6 +120,10 @@ def _derived_ratio(value: Any) -> Decimal | None:
     return result / Decimal("100") if abs(result) > Decimal("2") else result
 
 
+def _is_blank(value: Any) -> bool:
+    return value is None or pd.isna(value) or _normalized_text(value) == ""
+
+
 def _status(grade: str) -> str:
     if grade == "A":
         return "Exceeds"
@@ -182,6 +186,68 @@ class MarketingImportService:
             return "Employee"
         return normalize_performance_level(_normalized_text(row.get("Performance Level")))
 
+    @staticmethod
+    def _position_kpi_sets(
+        position_config: dict[str, Any],
+        period_date: Any | None = None,
+    ) -> list[tuple[str, list[dict[str, Any]]]]:
+        """Return the default KPI set plus variants effective for a period."""
+        kpi_sets = [("default", position_config.get("kpis", []))]
+        for index, variant in enumerate(position_config.get("period_variants", []), start=1):
+            if not isinstance(variant, dict):
+                continue
+            if period_date is not None and variant.get("effective_from"):
+                try:
+                    if pd.Timestamp(variant["effective_from"]).date() > pd.Timestamp(period_date).date():
+                        continue
+                except (TypeError, ValueError):
+                    pass
+            kpi_sets.append((str(variant.get("id") or f"variant_{index}"), variant.get("kpis", [])))
+        return kpi_sets
+
+    @staticmethod
+    def _kpi_lookup(kpis: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+        return {
+            _lookup_key(label): item
+            for item in kpis
+            for label in (item["label"], *(item.get("aliases") or []))
+        }
+
+    @classmethod
+    def _select_kpi_set(
+        cls,
+        position_config: dict[str, Any],
+        rows: list[dict[str, Any]],
+        period_date: Any | None = None,
+    ) -> tuple[str, list[dict[str, Any]], dict[int, dict[str, Any]]]:
+        """Select the KPI set whose definitions exactly match one employee period.
+
+        Marketing KPI groupings can change between periods. Matching the complete
+        row set keeps legacy periods importable while allowing a new period to
+        use a different KPI grouping and weight distribution.
+        """
+        candidates: list[tuple[int, int, str, list[dict[str, Any]], dict[int, dict[str, Any]]]] = []
+        for index, (set_name, kpis) in enumerate(cls._position_kpi_sets(position_config, period_date)):
+            lookup = cls._kpi_lookup(kpis)
+            matched = {
+                item["row"]: lookup.get(_lookup_key(item["kpi_label"]))
+                for item in rows
+            }
+            matched_count = sum(definition is not None for definition in matched.values())
+            matched_keys = [definition["key"] for definition in matched.values() if definition is not None]
+            expected_keys = {definition["key"] for definition in kpis}
+            exact = (
+                matched_count == len(rows)
+                and len(rows) == len(kpis)
+                and len(matched_keys) == len(set(matched_keys))
+                and set(matched_keys) == expected_keys
+            )
+            candidates.append((0 if exact else 1, -matched_count, set_name, kpis, matched))
+
+        candidates.sort(key=lambda candidate: (candidate[0], candidate[1]))
+        _, _, set_name, kpis, matched = candidates[0]
+        return set_name, kpis, matched
+
     def parse_frame(self, frame: pd.DataFrame) -> MarketingImportResult:
         total_rows = len(frame.index)
         errors: list[dict[str, Any]] = []
@@ -192,6 +258,7 @@ class MarketingImportService:
             "total_rows": total_rows,
             "employee_rows": 0,
             "excluded_non_employee_rows": 0,
+            "excluded_incomplete_rows": 0,
             "employees": 0,
             "performance_records": 0,
             "months": [],
@@ -207,6 +274,7 @@ class MarketingImportService:
         valid_rows: list[dict[str, Any]] = []
         employee_rows = 0
         excluded_rows = 0
+        incomplete_rows = 0
 
         for zero_index, row in frame.iterrows():
             row_number = int(zero_index) + 2
@@ -262,6 +330,46 @@ class MarketingImportService:
                 position_config = None
                 self._error(errors, row_number, "Position", "UNKNOWN_POSITION", str(exc))
 
+            configured_kpis: list[dict[str, Any]] = []
+            if position_config:
+                configured_kpis = [
+                    definition
+                    for _, kpis in self._position_kpi_sets(position_config, period_date)
+                    for definition in kpis
+                    if _lookup_key(kpi_label)
+                    in {
+                        _lookup_key(label)
+                        for label in (definition["label"], *(definition.get("aliases") or []))
+                    }
+                ]
+                if not configured_kpis:
+                    self._error(
+                        errors,
+                        row_number,
+                        "KPI",
+                        "UNKNOWN_KPI",
+                        f"KPI {kpi_label!r} is not configured for {position}",
+                    )
+
+            if (
+                position_config
+                and configured_kpis
+                and _is_blank(row.get("Target Value"))
+                and _is_blank(row.get("Actual Value"))
+                and len(errors) == row_error_count
+            ):
+                warnings.append(
+                    {
+                        "sheet": SHEET_NAME,
+                        "row": row_number,
+                        "column": "Target Value/Actual Value",
+                        "code": "INCOMPLETE_KPI_ROW",
+                        "message": "Target Value and Actual Value are both blank; row was excluded from import",
+                    }
+                )
+                incomplete_rows += 1
+                continue
+
             try:
                 actual = _decimal(row.get("Actual Value"))
             except (InvalidOperation, ValueError):
@@ -289,65 +397,6 @@ class MarketingImportService:
             if target is not None and target < 0:
                 self._error(errors, row_number, "Target Value", "NEGATIVE_VALUE", "Target Value cannot be negative")
 
-            kpi_config = None
-            if position_config:
-                by_label = {
-                    _lookup_key(label): item
-                    for item in position_config["kpis"]
-                    for label in (item["label"], *(item.get("aliases") or []))
-                }
-                kpi_config = by_label.get(_lookup_key(kpi_label))
-                if kpi_config is None:
-                    self._error(
-                        errors,
-                        row_number,
-                        "KPI",
-                        "UNKNOWN_KPI",
-                        f"KPI {kpi_label!r} is not configured for {position}",
-                    )
-                else:
-                    uploaded_direction = _direction(row.get("Direction"))
-                    if uploaded_direction != kpi_config["direction"]:
-                        self._error(
-                            errors,
-                            row_number,
-                            "Direction",
-                            "CONFIG_MISMATCH",
-                            f"Direction must be {kpi_config['direction']}",
-                        )
-                    if _lookup_key(row.get("Perspective")) != _lookup_key(kpi_config["perspective"]):
-                        self._error(
-                            errors,
-                            row_number,
-                            "Perspective",
-                            "CONFIG_MISMATCH",
-                            f"Perspective must be {kpi_config['perspective']}",
-                        )
-                    if _lookup_key(row.get("Target Unit")) != _lookup_key(kpi_config["unit"]):
-                        self._error(
-                            errors,
-                            row_number,
-                            "Target Unit",
-                            "CONFIG_MISMATCH",
-                            f"Target Unit must be {kpi_config['unit']}",
-                        )
-                    try:
-                        uploaded_weight = _decimal(row.get("Weight"))
-                    except (InvalidOperation, ValueError):
-                        uploaded_weight = None
-                        self._error(errors, row_number, "Weight", "INVALID_NUMBER", "Weight must be numeric")
-                    if (
-                        uploaded_weight is not None
-                        and abs(uploaded_weight - Decimal(str(kpi_config["weight"]))) > WEIGHT_TOLERANCE
-                    ):
-                        self._error(
-                            errors,
-                            row_number,
-                            "Weight",
-                            "CONFIG_MISMATCH",
-                            f"Weight must be {kpi_config['weight']}",
-                        )
-
             if len(errors) != row_error_count:
                 continue
 
@@ -361,7 +410,11 @@ class MarketingImportService:
                     "date": period_date,
                     "year": period_date.year,
                     "month": period_date.strftime("%B"),
-                    "kpi": kpi_config,
+                    "kpi_label": kpi_label,
+                    "direction": row.get("Direction"),
+                    "perspective": row.get("Perspective"),
+                    "target_unit": row.get("Target Unit"),
+                    "weight": row.get("Weight"),
                     "actual": actual,
                     "target": target,
                     "uploaded_achievement": _derived_ratio(row.get("Achievement %")),
@@ -372,6 +425,7 @@ class MarketingImportService:
 
         base_report["employee_rows"] = employee_rows
         base_report["excluded_non_employee_rows"] = excluded_rows
+        base_report["excluded_incomplete_rows"] = incomplete_rows
         if errors:
             raise MarketingImportValidationError(errors, base_report)
 
@@ -400,17 +454,83 @@ class MarketingImportService:
                     )
 
             position_config = resolve_position_config(self.config, "Employee", first["position"])
-            expected_by_key = {item["key"]: item for item in position_config["kpis"]}
+            _, selected_kpis, matched_kpis = self._select_kpi_set(
+                position_config,
+                rows,
+                first["date"],
+            )
+            expected_by_key = {item["key"]: item for item in selected_kpis}
             row_by_key: dict[str, dict[str, Any]] = {}
             for item in rows:
-                kpi_key = item["kpi"]["key"]
+                kpi_definition = matched_kpis.get(item["row"])
+                if kpi_definition is None:
+                    self._error(
+                        errors,
+                        item["row"],
+                        "KPI",
+                        "UNKNOWN_KPI",
+                        f"KPI {item['kpi_label']!r} is not configured for {first['position']}",
+                    )
+                    continue
+
+                item["kpi"] = kpi_definition
+                uploaded_direction = _direction(item.get("direction"))
+                # The Content Writer workbook predates the current scoring rule
+                # for error-free content. Keep that legacy label uploadable while
+                # using the configured direction as the canonical scoring source.
+                legacy_direction = (
+                    kpi_definition["key"] == "cw_error_free"
+                    and uploaded_direction == "higher_better"
+                )
+                if uploaded_direction != kpi_definition["direction"] and not legacy_direction:
+                    self._error(
+                        errors,
+                        item["row"],
+                        "Direction",
+                        "CONFIG_MISMATCH",
+                        f"Direction must be {kpi_definition['direction']}",
+                    )
+                if _lookup_key(item.get("perspective")) != _lookup_key(kpi_definition["perspective"]):
+                    self._error(
+                        errors,
+                        item["row"],
+                        "Perspective",
+                        "CONFIG_MISMATCH",
+                        f"Perspective must be {kpi_definition['perspective']}",
+                    )
+                if _lookup_key(item.get("target_unit")) != _lookup_key(kpi_definition["unit"]):
+                    self._error(
+                        errors,
+                        item["row"],
+                        "Target Unit",
+                        "CONFIG_MISMATCH",
+                        f"Target Unit must be {kpi_definition['unit']}",
+                    )
+                try:
+                    uploaded_weight = _decimal(item.get("weight"))
+                except (InvalidOperation, ValueError):
+                    uploaded_weight = None
+                    self._error(errors, item["row"], "Weight", "INVALID_NUMBER", "Weight must be numeric")
+                if (
+                    uploaded_weight is not None
+                    and abs(uploaded_weight - Decimal(str(kpi_definition["weight"]))) > WEIGHT_TOLERANCE
+                ):
+                    self._error(
+                        errors,
+                        item["row"],
+                        "Weight",
+                        "CONFIG_MISMATCH",
+                        f"Weight must be {kpi_definition['weight']}",
+                    )
+
+                kpi_key = kpi_definition["key"]
                 if kpi_key in row_by_key:
                     self._error(
                         errors,
                         item["row"],
                         "KPI",
                         "DUPLICATE_KPI",
-                        f"KPI {item['kpi']['label']} is duplicated for {employee_id} in {month} {year}",
+                        f"KPI {kpi_definition['label']} is duplicated for {employee_id} in {month} {year}",
                     )
                 row_by_key[kpi_key] = item
 
@@ -437,7 +557,7 @@ class MarketingImportService:
 
             total_contribution = Decimal("0")
             kpi_values: list[dict[str, Any]] = []
-            for kpi_definition in position_config["kpis"]:
+            for kpi_definition in selected_kpis:
                 item = row_by_key[kpi_definition["key"]]
                 actual = item["actual"]
                 target = item["target"]

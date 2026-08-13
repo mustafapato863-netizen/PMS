@@ -163,6 +163,87 @@ def test_dashboard_repairs_legacy_call_center_kpi_evidence_from_the_original_row
     assert by_key["Attendance"]["weight_applied"] == 0.70
 
 
+def test_dashboard_repairs_malformed_offshore_payload_from_source_counters():
+    """A stale KPIValue actual must not replace the source error ratio."""
+    team = SimpleNamespace(
+        name="Pre-Approvals IP Offshore",
+        db_name="Pre-Approvals IP Offshore",
+        display_name=None,
+    )
+    employee = SimpleNamespace(
+        employee_id="SGHD-ERROR-1",
+        name="Offshore Agent",
+        team=team,
+        region="EGY",
+        position_name=None,
+    )
+    raw_data = {
+        "AssignedRequest": "100",
+        "RejectedRequests": "0",
+        "ApprovedRequests": "100",
+        "ApprovalWithin48HR": "90",
+        "SubmittedClaims": "501",
+        "ErrosClaims": "3",
+        # This legacy display column is intentionally wrong/stale.
+        "Error%": "58.7%",
+        "IPInitialRejection%": "0%",
+        "NumberApprovalwithin48hrs": "90%",
+        "T.Rejection%": "3%",
+        "T.InitialError%": "3%",
+        "T.Submission%": "90%",
+    }
+    row = SimpleNamespace(
+        id="sql-error-1",
+        employee=employee,
+        team=team,
+        month="July",
+        year=2026,
+        region="EGY",
+        performance_level="Employee",
+        position_name=None,
+        status="Below",
+        score=58.7,
+        grade="E",
+        upload_id=None,
+        record_payload={"raw_data": raw_data},  # deliberately partial
+        kpi_values=[
+            SimpleNamespace(
+                kpi_key="Rejection",
+                actual_value=0.0,
+                target_value=0.03,
+                achievement_ratio=1.0,
+                weight_applied=0.50,
+                contribution=0.50,
+            ),
+            SimpleNamespace(
+                kpi_key="InitialError",
+                actual_value=0.587,
+                target_value=0.03,
+                achievement_ratio=1.0,
+                weight_applied=0.20,
+                contribution=0.20,
+            ),
+            SimpleNamespace(
+                kpi_key="Submission",
+                actual_value=0.90,
+                target_value=0.90,
+                achievement_ratio=1.0,
+                weight_applied=0.30,
+                contribution=0.30,
+            ),
+        ],
+    )
+
+    [record] = _service([row]).list_records()
+    by_key = {item["kpi_key"]: item for item in record.kpi_values}
+
+    assert record.raw_data["SubmittedClaims"] == "501"
+    assert by_key["InitialError"]["actual_value"] == pytest.approx(3 / 501)
+    assert by_key["InitialError"]["target_value"] == pytest.approx(0.03)
+    assert by_key["InitialError"]["achievement_ratio"] == pytest.approx(1.0)
+    assert record.evaluation.score == pytest.approx(100.0)
+
+
 def test_dashboard_rebuilds_new_pre_approvals_workstream_and_score_from_source_row():
     rich_record = PerformanceRecord(
         id="legacy-id",

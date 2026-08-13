@@ -153,6 +153,55 @@ def test_generate_persists_real_pptx_and_selected_sections(db):
         assert archive.read("ppt/slides/slide1.xml").startswith(b"<?xml")
 
 
+def test_marketing_pptx_uses_selected_period_records_and_actions(db):
+    session, user = db
+    marketing_record = _record("EMP1", "Marketing", "Employee", "July")
+    marketing_record.year = 2026
+    marketing_record.position = "Media Buyer"
+    marketing_record.evaluation.score = 61.0
+    marketing_record.kpi_values = [{
+        "kpi_key": "mb_leads",
+        "label": "Leads",
+        "unit": "count",
+        "direction": "higher_better",
+        "actual_value": 35,
+        "target_value": 100,
+        "achievement_ratio": 0.35,
+        "weight_applied": 0.30,
+    }]
+    service = ReportService(session, StubRecordService([marketing_record]))
+    service.actions.list_active = lambda: []
+
+    report = service.generate(
+        _configuration(
+            report_type="team_marketing",
+            report_name="July Marketing Summary",
+            start_month="July",
+            start_year=2026,
+            team="Marketing",
+            performance_level="Employee",
+            included_sections=["summary", "details"],
+        ),
+        _admin_scope(user),
+    )
+
+    assert report.output_format == "pptx"
+    assert report.file_name == "July_Marketing_Summary.pptx"
+    from pptx import Presentation
+
+    presentation = Presentation(io.BytesIO(report.file_data))
+    slide_text = "\n".join(
+        shape.text
+        for slide in presentation.slides
+        for shape in slide.shapes
+        if hasattr(shape, "text")
+    )
+    assert "July 2026" in slide_text
+    assert "Leads" in slide_text
+    assert "61.0%" in slide_text
+    assert "June 2026" not in slide_text
+
+
 def test_generate_pdf_export_uses_pdf_content_type(db):
     session, user = db
     service = ReportService(

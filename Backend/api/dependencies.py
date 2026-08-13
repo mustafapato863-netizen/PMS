@@ -87,27 +87,55 @@ def serialize_performance_record(r) -> Dict[str, Any]:
         "clinics": r.geo.attended.clinics
     }
     
-    # Resolve actual values with fallback to raw_data if database field is missing/zero
-    actual_booking = r.actual.booking_rate or safe_float(r.raw_data.get("A.Booking%", 0.0))
-    actual_attend = r.actual.attend_rate or safe_float(r.raw_data.get("A.Attend%", 0.0))
-    actual_abandon = r.actual.abandon_rate or safe_float(r.raw_data.get("A.AbandonRate%", 0.0))
-    actual_reachability = r.actual.reachability_rate or safe_float(r.raw_data.get("A.Reachability%", 0.0))
-    actual_rejection = r.actual.rejection_rate or safe_float(
-        r.raw_data.get("IPInitialRejection%")
-        or r.raw_data.get("A.RejectionRateAfterRe-Submission")
-        or r.raw_data.get("A.RejectionRateAfterResubmission")
-        or 0.0
+    raw_data = r.raw_data or {}
+
+    def raw_ratio(numerator_keys: tuple[str, ...], denominator_keys: tuple[str, ...]) -> float | None:
+        numerator = next((safe_float(raw_data.get(key)) for key in numerator_keys if raw_data.get(key) is not None), None)
+        denominator = next((safe_float(raw_data.get(key)) for key in denominator_keys if raw_data.get(key) is not None), None)
+        if numerator is None or denominator is None or denominator <= 0:
+            return None
+        return max(0.0, numerator / denominator)
+
+    # Resolve actual values with fallback to raw_data if database field is missing/zero.
+    # Offshore Pre-Approvals is counter-based; persisted actual columns can be
+    # stale after an upload, so use the source ratios first for that team.
+    is_offshore_pre_approvals = str(getattr(r, "team", "")).strip().casefold() == "pre-approvals ip offshore"
+    actual_booking = r.actual.booking_rate or safe_float(raw_data.get("A.Booking%", 0.0))
+    actual_attend = r.actual.attend_rate or safe_float(raw_data.get("A.Attend%", 0.0))
+    actual_abandon = r.actual.abandon_rate or safe_float(raw_data.get("A.AbandonRate%", 0.0))
+    actual_reachability = r.actual.reachability_rate or safe_float(raw_data.get("A.Reachability%", 0.0))
+    actual_rejection = (
+        raw_ratio(("RejectedRequests", "RejectedRequest"), ("AssignedRequests", "AssignedRequest"))
+        if is_offshore_pre_approvals else None
     )
-    actual_error = r.actual.initial_error_rate or safe_float(r.raw_data.get("Error%", 0.0))
-    actual_submission = r.actual.submission_rate or safe_float(r.raw_data.get("NumberApprovalwithin48hrs", 0.0))
-    actual_quality = getattr(r.actual, "quality_rate", 0.0) or safe_float(r.raw_data.get("A.QualityScore", 0.0))
-    actual_utz = getattr(r.actual, "utz_rate", 0.0) or safe_float(r.raw_data.get("A.UTZ%", 0.0))
+    actual_rejection = actual_rejection if actual_rejection is not None else (
+        r.actual.rejection_rate or safe_float(
+            raw_data.get("IPInitialRejection%")
+            or raw_data.get("A.RejectionRateAfterRe-Submission")
+            or raw_data.get("A.RejectionRateAfterResubmission")
+            or 0.0
+        )
+    )
+    actual_error = (
+        raw_ratio(("ErrosClaims", "ErrorsClaims", "ErrorClaims"), ("SubmittedClaims", "SubmittedClaim"))
+        if is_offshore_pre_approvals else None
+    )
+    actual_error = actual_error if actual_error is not None else (r.actual.initial_error_rate or safe_float(raw_data.get("Error%", 0.0)))
+    actual_submission = (
+        raw_ratio(("ApprovalWithin48HR", "ApprovalWithin48hrs"), ("ApprovedRequests", "ApprovedRequest"))
+        if is_offshore_pre_approvals else None
+    )
+    actual_submission = actual_submission if actual_submission is not None else (
+        r.actual.submission_rate or safe_float(raw_data.get("NumberApprovalwithin48hrs", 0.0))
+    )
+    actual_quality = getattr(r.actual, "quality_rate", 0.0) or safe_float(raw_data.get("A.QualityScore", 0.0))
+    actual_utz = getattr(r.actual, "utz_rate", 0.0) or safe_float(raw_data.get("A.UTZ%", 0.0))
 
     aht_raw = r.calls.aht_raw
     if aht_raw == "00:00:00" or not aht_raw:
-        aht_mins = r.raw_data.get("AHT_Minutes") or safe_float(r.raw_data.get("A.AHT", 0.0)) or safe_float(r.raw_data.get("AHT", 0.0))
+        aht_mins = raw_data.get("AHT_Minutes") or safe_float(raw_data.get("A.AHT", 0.0)) or safe_float(raw_data.get("AHT", 0.0))
         if aht_mins > 0:
-            if aht_mins < 1.0 and not r.raw_data.get("AHT_Minutes"):
+            if aht_mins < 1.0 and not raw_data.get("AHT_Minutes"):
                 aht_mins = aht_mins * 24.0 * 60.0
             from utils.helpers import format_minutes_to_hhmmss
             aht_raw = format_minutes_to_hhmmss(aht_mins)
@@ -189,7 +217,7 @@ def serialize_performance_record(r) -> Dict[str, Any]:
             "planning_category": r.evaluation.planning_category,
             "trend_status": get_overall_trend_label(r.evaluation.trend_status)
         },
-        "raw_data": r.raw_data,
+        "raw_data": raw_data,
         "kpi_values": getattr(r, "kpi_values", []) or [],
     }
 

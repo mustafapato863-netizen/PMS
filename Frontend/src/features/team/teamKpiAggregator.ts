@@ -64,6 +64,17 @@ const sourceValue = (
   if (source === '$geo.bookings') return geoSourceValue(agent, 'bookings', location);
   if (source === '$geo.attended') return geoSourceValue(agent, 'attended', location);
   let rawValue = agent.raw_data?.[source];
+  if (rawValue === undefined) {
+    const aliases: Record<string, string[]> = {
+      errosclaims: ['ErrorsClaims', 'ErrorClaims'],
+      errorsclaims: ['ErrosClaims', 'ErrorClaims'],
+      errorclaims: ['ErrosClaims', 'ErrorsClaims'],
+    };
+    const alternateKeys = aliases[normalize(source)] ?? [];
+    rawValue = alternateKeys
+      .map((key) => agent.raw_data?.[key])
+      .find((value) => value !== undefined);
+  }
   if (rawValue === undefined && source === 'A.DispensedItems') {
     rawValue = agent.raw_data?.['Dispensed Items'] ?? agent.raw_data?.['A.TotalDispensedPrescriptions'] ?? agent.raw_data?.['Dispensed Prescriptions'];
   }
@@ -71,7 +82,10 @@ const sourceValue = (
     rawValue = agent.raw_data?.['Total Prescribed Items'] ?? agent.raw_data?.['Total Prescriped Items'] ?? agent.raw_data?.['Prescribed Items'];
   }
   if (rawValue === undefined || rawValue === null || rawValue === '') return undefined;
-  const value = Number(rawValue);
+  const rawText = String(rawValue).replace(/,/g, '').trim();
+  const parsed = Number(rawText.replace(/%$/, ''));
+  if (!Number.isFinite(parsed)) return undefined;
+  const value = /%$/.test(rawText) || /%/.test(source) ? (parsed > 1 ? parsed / 100 : parsed) : parsed;
   return Number.isFinite(value) ? value : undefined;
 };
 
@@ -152,8 +166,22 @@ export function aggregateConfiguredTeamKpis(
         scoreTarget: definition?.score_target,
       };
 
-      bucket.actualSum += kpi.actual;
-      bucket.targetSum += kpi.target;
+      // Ratio KPIs should not fall back to a stale persisted actual when the
+      // source row still exposes its canonical percentage/target columns.
+      // Counters remain the preferred path below; this only covers rows where
+      // one of the ratio counters is missing.
+      const configuredActual = definition?.actual_col
+        ? sourceValue(agent, definition.actual_col, location)
+        : undefined;
+      const configuredTarget = definition?.target_col
+        ? sourceValue(agent, definition.target_col, location)
+        : undefined;
+      bucket.actualSum += aggregation.method === 'ratio' && configuredActual !== undefined
+        ? configuredActual
+        : kpi.actual;
+      bucket.targetSum += aggregation.method === 'ratio' && configuredTarget !== undefined
+        ? configuredTarget
+        : kpi.target;
       bucket.count += 1;
       const effectiveWeight = options.preferConfiguredWeights
         ? (definition?.weight ?? kpi.weight)

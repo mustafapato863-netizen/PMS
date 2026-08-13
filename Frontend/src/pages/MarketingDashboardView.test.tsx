@@ -183,6 +183,8 @@ describe('MarketingDashboardContent', () => {
     expect(screen.getByRole('heading', { name: 'Media Buyer · Employee' })).toBeInTheDocument();
     expect(screen.getByLabelText('Marketing performance level')).toBeDisabled();
     expect(screen.getAllByText('90%').length).toBeGreaterThan(0);
+    expect(screen.getByText('Target: 100%')).toBeInTheDocument();
+    expect(screen.getAllByText('Higher is better').length).toBeGreaterThan(0);
     expect(screen.getByRole('progressbar', { name: 'Media Buyer KPI progress to target' })).toHaveAttribute('aria-valuetext', '90.0% of target');
     expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
     expect(screen.getAllByText('Contribution').length).toBeGreaterThan(0);

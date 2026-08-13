@@ -171,14 +171,26 @@ class DashboardRecordService:
             ]
             kpi_values = _normalise_kpi_values(kpi_values, config, config_by_key)
 
+            # Keep normalized persisted weights available for both the rich
+            # payload and compatibility paths. If the JSON payload is
+            # malformed, we can still rebuild canonical KPI evidence from its
+            # original source row instead of exposing stale KPIValue actuals.
+            persisted_weights = {
+                str(value.kpi_key): (
+                    float(value.weight_applied) / 100.0
+                    if float(value.weight_applied) > 1.0
+                    else float(value.weight_applied)
+                )
+                for value in item.kpi_values
+            }
             payload = getattr(item, "record_payload", None)
+            payload_raw_data: dict = {}
             if isinstance(payload, dict):
+                candidate_raw_data = payload.get("raw_data")
+                if isinstance(candidate_raw_data, dict):
+                    payload_raw_data = candidate_raw_data
                 try:
                     rich_record = SchemaPerformanceRecord.model_validate(payload)
-                    persisted_weights = {
-                        str(value.kpi_key): float(value.weight_applied)
-                        for value in item.kpi_values
-                    }
                     repaired_kpis = build_legacy_employee_kpi_values(
                         team_name,
                         rich_record.raw_data,
@@ -256,7 +268,17 @@ class DashboardRecordService:
                     # columns.  A malformed payload must not hide the record.
                     pass
 
-            fallback_kpis = (
+            # Prefer a deterministic rebuild from the original source row for
+            # legacy formula-based teams. Older KPIValue rows can contain an
+            # achievement copied into actual_value (the source of the 58.7%
+            # Initial Error Rate card), while the row counters remain correct.
+            repaired_fallback_kpis = build_legacy_employee_kpi_values(
+                team_name,
+                payload_raw_data,
+                weights=persisted_weights,
+                config=config,
+            ) if payload_raw_data else []
+            fallback_kpis = repaired_fallback_kpis or (
                 [value for value in kpi_values if value["kpi_key"] in config_by_key]
                 if team_name == "Pre-Approvals IP Elective Dubai" and config_by_key
                 else kpi_values
@@ -290,7 +312,7 @@ class DashboardRecordService:
                 position=item.position_name or employee.position_name,
                 status=item.status,
                 evaluation={"score": fallback_score, "grade": fallback_grade},
-                raw_data={},
+                raw_data=payload_raw_data,
                 kpi_values=fallback_kpis,
             ))
             

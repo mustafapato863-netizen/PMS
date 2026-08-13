@@ -146,7 +146,7 @@ export default function ReportsView() {
       region: template.type === 'monthly_uae' ? 'UAE' : template.type === 'monthly_egypt' ? 'Egypt' : null,
       team: template.type === 'team_marketing' ? 'Marketing' : null,
       position: null,
-      performance_level: null,
+      performance_level: template.type === 'team_marketing' ? 'Employee' : null,
       employee_id: null,
       grade: null,
       status: null,

@@ -436,14 +436,22 @@ class KPIService:
 
         elif team == "Pre-Approvals IP Offshore":
             actual_rejection = convert_percentage(row.get("IPInitialRejection%", 0.0))
-            actual_error = convert_percentage(row.get("Error%", 0.0))
+            claims = safe_float(row.get("SubmittedClaims"))
+            raw_error_count = row.get("ErrosClaims")
+            if raw_error_count is None:
+                raw_error_count = row.get("ErrorsClaims")
+            # Submitted/errored claim counters are authoritative. Some older
+            # workbooks placed the achievement ratio in Error%, which made a
+            # team card show values such as 58.7% instead of 3 / 501 = 0.6%.
+            if claims > 0 and raw_error_count is not None:
+                actual_error = max(safe_float(raw_error_count), 0.0) / claims
+            else:
+                actual_error = convert_percentage(row.get("Error%", 0.0))
             actual_submission = convert_percentage(row.get("NumberApprovalwithin48hrs") or row.get("NumberApprovalwithin48hrs ") or 0.0)
 
             t_rej = targets.get("Rejection", 0.03)
             t_err = targets.get("InitialError", 0.03)
             t_sub = targets.get("Submission", 0.90)
-
-            claims = safe_float(row.get("SubmittedClaims"))
             
             # Rejection achievement is inverse
             if actual_rejection <= t_rej:
