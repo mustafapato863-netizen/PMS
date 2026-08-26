@@ -195,6 +195,8 @@ def test_report_options_use_projection_without_loading_full_records(monkeypatch)
         assert options["teams"] == ["Marketing"]
         assert options["grades"] == ["B"]
         assert options["statuses"] == ["Meets"]
-        assert [employee["id"] for employee in options["employees"]] == ["EMP-1"]
+        # Report filters expose both employee and management BSC people so an
+        # All-level report can be narrowed by a visible manager name.
+        assert [employee["id"] for employee in options["employees"]] == ["EMP-1", "MGR-1"]
     finally:
         db.close()

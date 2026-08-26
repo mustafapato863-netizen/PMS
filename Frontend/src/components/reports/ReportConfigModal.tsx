@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AlertCircle, CheckCircle2, Eye, FileText, Loader2, Presentation, Save, X } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Eye, FileText, Loader2, Presentation, Save, Table2, X } from 'lucide-react';
 import { useGenerateReport, usePreviewReport, useSaveReportTemplate } from '../../hooks/api/useReports';
 import type {
   GeneratedReport,
@@ -28,13 +28,15 @@ const SECTION_LABELS: Record<string, string> = {
   details: 'Detailed records',
 };
 
-const OUTPUT_FORMATS: Array<{ value: 'pptx' | 'pdf'; label: string; description: string; icon: typeof Presentation }> = [
+const OUTPUT_FORMATS: Array<{ value: 'pptx' | 'pdf' | 'excel'; label: string; description: string; icon: typeof Presentation }> = [
   { value: 'pptx', label: 'PowerPoint', description: 'Default presentation export', icon: Presentation },
   { value: 'pdf', label: 'PDF', description: 'Portable document export', icon: FileText },
+  { value: 'excel', label: 'Excel', description: 'Workbook with report tables', icon: Table2 },
 ];
 
 function normalizeOutputFormat(value?: string | null): ReportOutputFormat {
-  return value === 'pdf' ? 'pdf' : 'pptx';
+  if (value === 'pdf' || value === 'excel') return value;
+  return 'pptx';
 }
 
 function SelectField({
@@ -75,9 +77,17 @@ export default function ReportConfigModal({
   onClose,
   onGenerated,
 }: ReportConfigModalProps) {
-  const [configuration, setConfiguration] = useState({
-    ...initialConfiguration,
-    output_format: normalizeOutputFormat(initialConfiguration.output_format),
+  const availableFormats = useMemo(() => {
+    const allowed = options.allowed_formats?.length ? new Set(options.allowed_formats) : null;
+    return OUTPUT_FORMATS.filter((format) => template.formats.includes(format.value) && (!allowed || allowed.has(format.value)));
+  }, [options.allowed_formats, template.formats]);
+
+  const [configuration, setConfiguration] = useState(() => {
+    const requested = normalizeOutputFormat(initialConfiguration.output_format);
+    const outputFormat = availableFormats.some((format) => format.value === requested)
+      ? requested
+      : availableFormats[0]?.value || requested;
+    return { ...initialConfiguration, output_format: outputFormat };
   });
   const [templateName, setTemplateName] = useState(initialConfiguration.report_name);
   const previewMutation = usePreviewReport();
@@ -157,7 +167,7 @@ export default function ReportConfigModal({
           <div>
             <p className="text-[10px] font-extrabold uppercase tracking-[0.18em] text-blue-600">Configure report</p>
             <h2 id="report-dialog-title" className="mt-1 text-xl font-extrabold text-[var(--text-primary)]">{template.name}</h2>
-            <p className="mt-1 text-sm text-[var(--text-muted)]">Preview the authorized data before generating the presentation or PDF.</p>
+            <p className="mt-1 text-sm text-[var(--text-muted)]">Preview the authorized data before generating a PDF, PowerPoint, or Excel workbook.</p>
           </div>
           <button type="button" onClick={onClose} aria-label="Close report configuration" className="min-h-11 min-w-11 rounded-xl text-[var(--text-muted)] hover:bg-[var(--bg-sunken)]">
             <X className="mx-auto" size={19} />
@@ -181,11 +191,12 @@ export default function ReportConfigModal({
               <SelectField label="End period" value={endKey} values={periodValues} allLabel="Same as start" onChange={(value) => setPeriod('end', value)} />
               <SelectField label="Region" value={configuration.region || ''} values={options.regions.map((value) => ({ value, label: value }))} onChange={(value) => update('region', value || null)} />
               <SelectField label="Team" value={configuration.team || ''} values={options.teams.map((value) => ({ value, label: value }))} required={template.type === 'team'} onChange={(value) => update('team', value || null)} />
-              <SelectField label="Performance level" value={configuration.performance_level || ''} values={options.performance_levels.map((value) => ({ value, label: value }))} onChange={(value) => update('performance_level', value || null)} />
+              <SelectField label="Performance level" value={configuration.performance_level || ''} values={options.performance_levels.map((value) => ({ value, label: value }))} allLabel="All levels" onChange={(value) => update('performance_level', value || null)} />
               <SelectField label="Position" value={configuration.position || ''} values={options.positions.map((value) => ({ value, label: value }))} required={template.type === 'position'} onChange={(value) => update('position', value || null)} />
-              <SelectField label="Employee" value={configuration.employee_id || ''} values={employees.map((employee) => ({ value: employee.id, label: `${employee.name} (${employee.id})` }))} required={template.type === 'employee'} onChange={(value) => update('employee_id', value || null)} />
+              <SelectField label="Employee" value={configuration.employee_id || ''} values={employees.map((employee) => ({ value: employee.id, label: employee.name || employee.id }))} allLabel="All employees in selected scope" required={template.type === 'employee'} onChange={(value) => update('employee_id', value || null)} />
               <SelectField label="Grade" value={configuration.grade || ''} values={options.grades.map((value) => ({ value, label: value }))} onChange={(value) => update('grade', value || null)} />
               <SelectField label="Status" value={configuration.status || ''} values={options.statuses.map((value) => ({ value, label: value }))} onChange={(value) => update('status', value || null)} />
+              <SelectField label="KPI" value={configuration.kpi || ''} values={(options.kpis || []).map((value) => ({ value, label: value }))} onChange={(value) => update('kpi', value || null)} />
             </div>
 
             <fieldset>
@@ -204,12 +215,13 @@ export default function ReportConfigModal({
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="text-xs font-extrabold text-blue-800 dark:text-blue-200">Output format</p>
-                  <p className="text-[11px] text-blue-700 dark:text-blue-300">PowerPoint is selected by default.</p>
+                <p className="text-[11px] text-blue-700 dark:text-blue-300">PowerPoint is selected by default.</p>
+                <p className="mt-0.5 text-[11px] text-blue-700 dark:text-blue-300">Preview is required before export.</p>
                 </div>
                 <Presentation size={20} className="text-blue-600" />
               </div>
               <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                {OUTPUT_FORMATS.map((format) => {
+                {availableFormats.map((format) => {
                   const Icon = format.icon;
                   const selected = configuration.output_format === format.value;
                   return (
@@ -326,7 +338,7 @@ export default function ReportConfigModal({
             onClick={() => generateMutation.mutate(configuration, { onSuccess: onGenerated })}
             className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-5 text-sm font-bold text-white shadow-lg shadow-blue-500/20 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {generateMutation.isPending ? <Loader2 size={17} className="animate-spin" /> : (configuration.output_format === 'pdf' ? <FileText size={17} /> : <Presentation size={17} />)}
+            {generateMutation.isPending ? <Loader2 size={17} className="animate-spin" /> : (configuration.output_format === 'pdf' ? <FileText size={17} /> : configuration.output_format === 'excel' ? <Table2 size={17} /> : <Presentation size={17} />)}
             {options.can_export ? `Generate ${configuration.output_format.toUpperCase()}` : 'Export permission required'}
           </button>
         </footer>

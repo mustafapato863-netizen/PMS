@@ -11,12 +11,18 @@ Date: 2026-07-29
 | `JWT_SECRET` | Required strong secret; no repository/default value |
 | `JWT_ALGORITHM` | Explicitly approved algorithm |
 | `JWT_EXPIRE_MINUTES` | Explicit bounded lifetime |
+| `AUTH_REFRESH_SESSION_HOURS` | Non-remembered refresh-session lifetime; default `8` |
+| `AUTH_REMEMBER_SESSION_DAYS` | Explicit Remember me refresh-session lifetime; default `30` |
+| `AUTH_COOKIE_SECURE` | Must be `true` for HTTPS production |
+| `AUTH_COOKIE_SAMESITE` | `none` for split-origin hosting, with Secure cookies |
+| `AUTH_COOKIE_DOMAIN` | Optional shared parent-domain cookie scope |
 | `CORS_ALLOWED_ORIGINS` | Comma-separated exact frontend origins |
 | `PMS_DATA_DIR` | `/tmp` only for ephemeral work, otherwise external storage |
 | `REDIS_URL` | Required only if shared cache/session revocation is enabled |
 | `REDIS_SOCKET_TIMEOUT_SECONDS` | `0.25` recommended; must be greater than zero |
 | `REDIS_RETRY_INTERVAL_SECONDS` | `30` recommended; zero or greater |
 | `PMS_REALTIME_MODE` | `disabled` on Vercel; `in_process` only on an approved single-process host |
+| `PMS_REPORT_CENTER_ENABLED` | `false` until Reports Center staging, export, and authorization checks pass; then enable by role/release |
 | `DATABASE_POOL_SIZE` | Sized for provider and serverless concurrency |
 | `DATABASE_MAX_OVERFLOW` | Usually zero with a transaction pooler |
 | `DATABASE_POOL_RECYCLE` | Below provider idle timeout |
@@ -25,6 +31,10 @@ Date: 2026-07-29
 | `PMS_SEED_PERMISSIONS_ON_STARTUP` | `false`; use migrations/admin job |
 | `PMS_SEED_DEMO_LEVELS` | `false` |
 | `VITE_REALTIME_ENABLED` | `false` unless the backend explicitly uses `PMS_REALTIME_MODE=in_process` |
+| `PMS_SCOPED_PERFORMANCE_API_ENABLED` | `false` until the bounded read-path rollout is approved; coordinate with the frontend flag |
+| `PMS_SCOPED_PERFORMANCE_ALLOWED_ROLES` | Optional comma-separated role allow-list for scoped performance reads |
+| `VITE_SCOPED_PERFORMANCE_API` | `false` until backend read-path and role rollout checks pass |
+| `VITE_REPORT_CENTER_ENABLED` | `false` until the Reports Center backend flag and browser acceptance flows pass |
 
 Documentation must use the exact runtime names. Existing references to `CORS_ORIGINS` and `JWT_SECRET_KEY` are incorrect.
 

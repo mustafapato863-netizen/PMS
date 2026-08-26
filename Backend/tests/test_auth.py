@@ -8,7 +8,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 from config import settings
-from models.models import Base, User, RolePermission
+from models.models import Base, RefreshSession, User, RolePermission
 from services.password_service import (
     validate_password_strength,
     hash_password,
@@ -30,6 +30,7 @@ def db_session():
     Base.metadata.create_all(bind=engine, tables=[
         User.__table__,
         RolePermission.__table__,
+        RefreshSession.__table__,
     ])
     
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -282,6 +283,112 @@ class TestAuthRouterAndMiddleware:
         assert "access_token" in data["data"]
         assert data["data"]["username"] == "loginuser"
         assert data["data"]["role"] == "Viewer"
+        assert data["data"]["expires_in"] == settings.JWT_EXPIRE_MINUTES * 60
+        assert data["data"]["csrf_token"]
+        assert test_client.cookies.get(settings.AUTH_REFRESH_COOKIE_NAME)
+        assert db_session.query(RefreshSession).count() == 1
+
+    def test_login_honors_remember_me_and_rotates_refresh_token(self, test_client, db_session):
+        AuthenticationService.create_user(db_session, "rotateuser", "rotate@test.com", "SecurePassword123!")
+
+        login_response = test_client.post(
+            "/api/auth/login",
+            json={
+                "username": "rotateuser",
+                "password": "SecurePassword123!",
+                "remember_me": True,
+            },
+        )
+        assert login_response.status_code == 200
+        login_data = login_response.json()["data"]
+        old_refresh = test_client.cookies.get(settings.AUTH_REFRESH_COOKIE_NAME)
+        old_csrf = login_data["csrf_token"]
+        first = db_session.query(RefreshSession).one()
+        assert first.remember_me is True
+
+        refresh_response = test_client.post(
+            "/api/auth/refresh",
+            headers={"X-CSRF-Token": old_csrf},
+        )
+        assert refresh_response.status_code == 200
+        assert refresh_response.json()["data"]["access_token"] != login_data["access_token"]
+        db_session.refresh(first)
+        assert first.revocation_reason == "rotated"
+        assert first.replaced_by_session_id is not None
+        assert db_session.query(RefreshSession).count() == 2
+
+        # Presenting the rotated token again revokes the entire family.
+        test_client.cookies.set(settings.AUTH_REFRESH_COOKIE_NAME, old_refresh)
+        reuse_response = test_client.post(
+            "/api/auth/refresh",
+            headers={"X-CSRF-Token": old_csrf},
+        )
+        assert reuse_response.status_code == 401
+        assert all(row.revoked_at is not None for row in db_session.query(RefreshSession).all())
+
+    def test_new_login_access_token_reaches_protected_route(self, test_client, db_session):
+        AuthenticationService.create_user(db_session, "browseruser", "browser@test.com", "SecurePassword123!")
+        login_response = test_client.post(
+            "/api/auth/login",
+            json={"username": "browseruser", "password": "SecurePassword123!"},
+        )
+        token = login_response.json()["data"]["access_token"]
+
+        protected_response = test_client.get(
+            "/api/protected",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert protected_response.status_code == 200
+        assert protected_response.json()["user"]["username"] == "browseruser"
+
+    def test_refresh_rejects_invalid_csrf_token(self, test_client, db_session):
+        AuthenticationService.create_user(db_session, "csrfuser", "csrf@test.com", "SecurePassword123!")
+        response = test_client.post(
+            "/api/auth/login",
+            json={"username": "csrfuser", "password": "SecurePassword123!"},
+        )
+        assert response.status_code == 200
+
+        refresh_response = test_client.post(
+            "/api/auth/refresh",
+            headers={"X-CSRF-Token": "wrong-token"},
+        )
+        assert refresh_response.status_code == 403
+
+        missing_csrf_response = test_client.post("/api/auth/refresh")
+        assert missing_csrf_response.status_code == 403
+
+    def test_refresh_rejects_untrusted_origin_in_hosted_mode(self, test_client, db_session, monkeypatch):
+        AuthenticationService.create_user(db_session, "originuser", "origin@test.com", "SecurePassword123!")
+        response = test_client.post(
+            "/api/auth/login",
+            json={"username": "originuser", "password": "SecurePassword123!"},
+        )
+        csrf_token = response.json()["data"]["csrf_token"]
+        monkeypatch.setattr(settings, "APP_ENV", "production")
+
+        refresh_response = test_client.post(
+            "/api/auth/refresh",
+            headers={
+                "Origin": "https://evil.example",
+                "X-CSRF-Token": csrf_token,
+            },
+        )
+        assert refresh_response.status_code == 403
+
+    def test_cookie_logout_revokes_refresh_session(self, test_client, db_session):
+        AuthenticationService.create_user(db_session, "cookieuser", "cookie@test.com", "SecurePassword123!")
+        response = test_client.post(
+            "/api/auth/login",
+            json={"username": "cookieuser", "password": "SecurePassword123!"},
+        )
+        csrf_token = response.json()["data"]["csrf_token"]
+        logout_response = test_client.post(
+            "/api/auth/logout",
+            headers={"X-CSRF-Token": csrf_token},
+        )
+        assert logout_response.status_code == 200
+        assert db_session.query(RefreshSession).one().revocation_reason == "logout"
 
     def test_login_invalid_credentials(self, test_client, db_session):
         """Test login with wrong credentials"""

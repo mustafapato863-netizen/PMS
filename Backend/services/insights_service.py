@@ -19,6 +19,8 @@ from models.insight_schemas import (
     InsightItem,
     InsightKpiTrend,
     InsightKpiTrendPoint,
+    InsightKpiOverview,
+    InsightKpiOverviewPoint,
     InsightPeriod,
     InsightPeopleContributionAnalysis,
     InsightPersonContribution,
@@ -27,11 +29,13 @@ from models.insight_schemas import (
     InsightExecutiveStory,
     InsightScopeSummary,
     InsightTeamSummary,
+    InsightRoleSummary,
     InsightsWorkspace,
 )
 from models.schemas import PerformanceRecord
 from repositories.base import PerformanceRepository
 from services.dashboard_record_service import DashboardRecordService
+from services.kpi_aggregation import aggregate_kpi_metric, capped_achievement, configured_weight
 from services.management_bsc_service import ManagementBSCService
 from services.planning_service import PlanningService, MONTH_ORDER
 from utils.report_scope import (
@@ -112,7 +116,7 @@ def _format_value(value: float | None, unit: str | None) -> str:
 
 def _format_gap(value: float, unit: str | None) -> str:
     if (unit or "").strip() == "%" and abs(value) <= 1:
-        return f"{value * 100:,.1f} percentage points"
+        return f"{value * 100:,.1f}%"
     return _format_value(value, unit)
 
 
@@ -208,6 +212,8 @@ def _configured_kpi_values(record: Any) -> list[Any]:
             item.setdefault("label", kpi.get("label") or key)
             item.setdefault("direction", kpi.get("direction") or "higher_better")
             item.setdefault("unit", kpi.get("unit") or "number")
+            item.setdefault("aggregation", kpi.get("aggregation"))
+            item.setdefault("weight_applied", kpi.get("weight"))
             if item.get("achievement_ratio") is not None:
                 try:
                     item["achievement_ratio"] = min(max(float(item["achievement_ratio"]), 0.0), 1.0)
@@ -292,6 +298,7 @@ def _configured_kpi_values(record: Any) -> list[Any]:
             "label": label,
             "direction": direction,
             "unit": unit,
+            "aggregation": kpi.get("aggregation"),
             "actual_value": actual,
             "target_value": target,
             "achievement_ratio": achievement,
@@ -829,6 +836,7 @@ class InsightsService:
                         "label": str(_value(kpi, "label", key)),
                         "direction": _value(kpi, "direction"),
                         "unit": _value(kpi, "unit"),
+                        "aggregation": _value(kpi, "aggregation"),
                     }
 
         items: list[InsightItem] = []
@@ -840,12 +848,25 @@ class InsightsService:
             previous_values = previous_buckets.get(bucket_key, [])
             meta = metadata[bucket_key]
             label, direction, unit = meta["label"], meta["direction"], meta["unit"]
-            actual = _average(_value(value, "actual_value") for value in values)
-            previous_actual = _average(_value(value, "actual_value") for value in previous_values)
-            target = _average(_value(value, "target_value") for value in values)
-            contribution = _average(_value(value, "contribution") for value in values)
-            previous_contribution = _average(_value(value, "contribution") for value in previous_values)
-            weight = _average(_value(value, "weight_applied") for value in values)
+            metric = aggregate_kpi_metric(values, meta)
+            previous_metric = aggregate_kpi_metric(previous_values, meta)
+            actual = metric.actual
+            previous_actual = previous_metric.actual
+            target = metric.target
+            previous_target = previous_metric.target
+            weight = _average(
+                configured_weight(value, meta)
+                for value in values
+            )
+            weight = weight if weight is not None else configured_weight(values[0], meta)
+            contribution_ratio = capped_achievement(metric, direction)
+            previous_contribution_ratio = capped_achievement(previous_metric, direction)
+            contribution = contribution_ratio * weight if contribution_ratio is not None and weight is not None else None
+            previous_contribution = (
+                previous_contribution_ratio * weight
+                if previous_contribution_ratio is not None and weight is not None
+                else None
+            )
             if target is None or target == 0:
                 configuration_item = self._make_item(
                     severity="information",
@@ -877,12 +898,8 @@ class InsightsService:
                 continue
             if contribution is None or weight is None:
                 continue
-            contribution_scale = 100 if max(
-                abs(contribution or 0),
-                abs(previous_contribution or 0),
-            ) <= 1 else 1
-            contribution_points = contribution * contribution_scale
-            previous_contribution_points = previous_contribution * contribution_scale if previous_contribution is not None else None
+            contribution_points = contribution * 100
+            previous_contribution_points = previous_contribution * 100 if previous_contribution is not None else None
             gap_points = max((weight * 100) - contribution_points, 0)
             impact = (
                 contribution_points - previous_contribution_points
@@ -1166,16 +1183,22 @@ class InsightsService:
         points = []
         for period in window:
             values = values_by_period.get(period, [])
+            definition = {
+                "label": label,
+                "unit": unit,
+                "aggregation": _value(values[0], "aggregation") if values else None,
+            }
+            metric = aggregate_kpi_metric(values, definition)
             points.append(InsightKpiTrendPoint(
                 period=_period_schema(period),
                 actual_value=(
                     round(actual, 4)
-                    if (actual := _average(_value(value, "actual_value") for value in values)) is not None
+                    if (actual := metric.actual) is not None
                     else None
                 ),
                 target_value=(
                     round(target, 4)
-                    if (target := _average(_value(value, "target_value") for value in values)) is not None
+                    if (target := metric.target) is not None
                     else None
                 ),
                 measured_records=len([
@@ -1429,7 +1452,7 @@ class InsightsService:
             recommended = "Review data coverage and source configuration before making a performance decision."
             confidence = "low"
         elif gap_points is not None and gap_points < 0:
-            headline = f"{period_label} performance is {abs(gap_points):.1f} points below the 100% target."
+            headline = f"{period_label} performance is {abs(gap_points):.1f}% below the 100% target."
             recommended = (
                 f"Review {primary_driver.driver} in {primary_driver.scope} first."
                 if primary_driver else "Review the highest-impact team and KPI drivers first."
@@ -1453,7 +1476,7 @@ class InsightsService:
         if primary_driver:
             evidence.append(InsightEvidence(
                 label="Leading measured KPI driver",
-                value=f"{primary_driver.driver} ({primary_driver.impact_points:+.1f} points)",
+                value=f"{primary_driver.driver} ({primary_driver.impact_points:+.1f}%)",
             ))
 
         return InsightExecutiveStory(
@@ -1469,6 +1492,122 @@ class InsightsService:
             recommended_focus=recommended,
             confidence=confidence,
             evidence=evidence,
+        )
+
+    @staticmethod
+    def _role_summaries(
+        current: list[Any],
+        previous: list[Any],
+        team_analyses: list[InsightItem],
+    ) -> list[InsightRoleSummary]:
+        """Build role-level summaries for the executive-to-diagnostic layer.
+
+        Roles are scoped by team so identically named positions in different
+        teams do not get blended together. This is intentionally derived from
+        the same authorized records already used for the workspace score.
+        """
+        current_groups: dict[tuple[str, str], list[Any]] = defaultdict(list)
+        previous_groups: dict[tuple[str, str], list[Any]] = defaultdict(list)
+        for record in current:
+            team = str(_value(record, "team", "") or "")
+            role = str(_value(record, "position", "") or "All positions")
+            if team:
+                current_groups[(team, role)].append(record)
+        for record in previous:
+            team = str(_value(record, "team", "") or "")
+            role = str(_value(record, "position", "") or "All positions")
+            if team:
+                previous_groups[(team, role)].append(record)
+
+        result: list[InsightRoleSummary] = []
+        for (team, role), records in sorted(current_groups.items()):
+            previous_records = previous_groups.get((team, role), [])
+            current_score = _average(_evaluation_value(record, "score") for record in records)
+            previous_score = _average(_evaluation_value(record, "score") for record in previous_records)
+            employee_ids = {
+                str(_value(record, "employee_id"))
+                for record in records
+                if _value(record, "employee_id")
+            }
+            total_employees = len(employee_ids) or len(records)
+            affected = sum(
+                1
+                for record in records
+                if _evaluation_value(record, "score") is not None
+                and float(_evaluation_value(record, "score")) < 70
+            )
+            related = [
+                item for item in team_analyses
+                if item.team == team and (item.position or "All positions") == role
+            ]
+            ranked = InsightsService._sort_items(related)
+            movement = current_score - previous_score if current_score is not None and previous_score is not None else None
+            result.append(InsightRoleSummary(
+                role=role,
+                team=team,
+                current_score=round(current_score, 1) if current_score is not None else None,
+                previous_score=round(previous_score, 1) if previous_score is not None else None,
+                movement=round(movement, 1) if movement is not None else None,
+                net_impact=round(movement, 1) if movement is not None else None,
+                affected_employees=affected,
+                total_employees=total_employees,
+                primary_insight_id=ranked[0].id if ranked else None,
+            ))
+        result.sort(key=lambda item: (-(abs(item.net_impact or 0)), -(item.affected_employees), item.team, item.role))
+        return result
+
+    @staticmethod
+    def _kpi_overview(
+        records: list[Any],
+        current_period: tuple[int, int],
+        available_periods: list[tuple[int, int]],
+    ) -> InsightKpiOverview:
+        """Summarize KPI health by period for the overview trend.
+
+        KPI status uses the canonical capped achievement ratio: 100%+ is
+        on-track, 70–99.9% is at-risk, and below 70% is critical. The same
+        target/direction rules are used by all score calculations.
+        """
+        points: list[InsightKpiOverviewPoint] = []
+        for period in available_periods[-6:]:
+            period_records = [record for record in records if _period(record) == period]
+            grouped: dict[tuple[str, str, str, str], list[Any]] = defaultdict(list)
+            for record in period_records:
+                for kpi in _configured_kpi_values(record):
+                    key = str(_value(kpi, "kpi_key", "") or "")
+                    if key:
+                        grouped[(
+                            str(_value(record, "team", "")),
+                            str(_value(record, "position", "") or ""),
+                            str(_value(record, "performance_level", "")),
+                            key,
+                        )].append(kpi)
+            statuses: list[float] = []
+            for values in grouped.values():
+                first = values[0]
+                metric = aggregate_kpi_metric(values, {
+                    "label": _value(first, "label"),
+                    "unit": _value(first, "unit"),
+                    "aggregation": _value(first, "aggregation"),
+                })
+                achievement = capped_achievement(metric, _value(first, "direction"))
+                if achievement is not None:
+                    statuses.append(achievement * 100)
+            points.append(InsightKpiOverviewPoint(
+                period=_period_schema(period),
+                total_kpis=len(statuses),
+                on_track=sum(value >= 100 for value in statuses),
+                at_risk=sum(70 <= value < 100 for value in statuses),
+                critical=sum(value < 70 for value in statuses),
+            ))
+
+        current_point = next((point for point in points if point.period.key == _period_schema(current_period).key), None)
+        return InsightKpiOverview(
+            total_kpis=current_point.total_kpis if current_point else 0,
+            on_track=current_point.on_track if current_point else 0,
+            at_risk=current_point.at_risk if current_point else 0,
+            critical=current_point.critical if current_point else 0,
+            points=points,
         )
 
     def generate_workspace(
@@ -1506,6 +1645,8 @@ class InsightsService:
                 risks=[InsightRisk(key="data", label="Missing or incomplete data", count=max(missing_year_count, 1), explanation="No explicit reporting period is available in the authorized scope.", filter_type="data_quality")],
                 opportunities=[],
                 data_issues=data_issues,
+                role_summaries=[],
+                kpi_overview=InsightKpiOverview(),
                 options=options,
                 comparison=InsightComparison(note="No explicit reporting period is available."),
                 deferred_capabilities=["Overdue corrective actions require a persisted due date, which is not available in the current action model."],
@@ -1576,15 +1717,34 @@ class InsightsService:
         visible_drivers = scoped_drivers[:10]
         opportunities = [item for item in sorted_items if item.severity == "opportunity"]
         visible_data_issues = [item for item in sorted_items if item.insight_type == "data_quality"]
+        reference_kpi = selected_kpi
+        if not reference_kpi:
+            for driver in visible_drivers:
+                driver_item = next((item for item in filtered_team_analyses if item.id == driver.insight_id), None)
+                if driver_item and driver_item.kpi_key:
+                    reference_kpi = driver_item.kpi_key
+                    break
+        if not reference_kpi:
+            reference_kpi = next(
+                (
+                    item.kpi_key
+                    for item in sorted(
+                        (item for item in filtered_team_analyses if item.kpi_key),
+                        key=lambda item: -(abs(item.impact_points or 0)),
+                    )
+                    if item.kpi_key
+                ),
+                None,
+            )
         people_contribution_analysis = (
             None
             if priority_only
-            else self._people_contribution_analysis(selected_kpi, current, previous)
+            else self._people_contribution_analysis(reference_kpi, current, previous)
         )
         kpi_trend = (
             None
             if priority_only
-            else self._kpi_trend(selected_kpi, records, current_period)
+            else self._kpi_trend(reference_kpi, records, current_period)
         )
 
         selected_kpi_key = str(selected_kpi or "")
@@ -1651,6 +1811,8 @@ class InsightsService:
                 risks=[],
                 opportunities=[],
                 data_issues=[],
+                role_summaries=[],
+                kpi_overview=InsightKpiOverview(),
                 options=options,
                 comparison=InsightComparison(
                     current=current_schema,
@@ -1723,6 +1885,9 @@ class InsightsService:
             ) if item.total_employees else None
         team_summaries.sort(key=lambda item: (- (item.gap_contribution_percent or 0), -item.critical, -item.at_risk, item.team))
 
+        role_summaries = self._role_summaries(current, previous, filtered_team_analyses)
+        kpi_overview = self._kpi_overview(records, current_period, explicit_periods)
+
         geography_summaries = self._scope_summaries(current, previous, "region")
         executive_story = self._executive_story(
             current,
@@ -1776,6 +1941,8 @@ class InsightsService:
             executive_story=executive_story,
             people_contribution_analysis=people_contribution_analysis,
             kpi_trend=kpi_trend,
+            role_summaries=role_summaries,
+            kpi_overview=kpi_overview,
             options=options,
             comparison=InsightComparison(current=current_schema, previous=previous_schema, is_adjacent=adjacent, note=comparison_note),
             deferred_capabilities=["Overdue corrective actions require a persisted due date, which is not available in the current action model."],

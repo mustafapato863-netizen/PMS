@@ -12,7 +12,8 @@ def test_recovered_migration_graph_has_one_head() -> None:
     config.set_main_option("script_location", str(BACKEND_DIR / "migrations"))
     scripts = ScriptDirectory.from_config(config)
 
-    assert scripts.get_heads() == ["f5c2d7e8a901"]
+    assert scripts.get_heads() == ["a6d4e8f1c220"]
+    assert scripts.get_revision("a6d4e8f1c220").down_revision == "f5c2d7e8a901"
     assert scripts.get_revision("e4a7c1d9b520").down_revision == "d9f4b6a1c230"
     assert scripts.get_revision("d9f4b6a1c230").down_revision == "c2f8a6d9e410"
     assert scripts.get_revision("e8c1a7d4b920").down_revision == "d5a7c9e2f410"

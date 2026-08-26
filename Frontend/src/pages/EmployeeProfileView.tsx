@@ -1,7 +1,8 @@
-import { useState, useEffect, useMemo } from 'react';
+import './PageEnhancements.css';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, User, Plus, AlertTriangle, Loader2 } from 'lucide-react';
+import { ArrowLeft, User, Plus, AlertTriangle, Loader2, Users, ChevronLeft, ChevronRight } from 'lucide-react';
 import Breadcrumb from '../components/common/Breadcrumb';
 import { PageLoadingSkeleton } from '../components/common/SkeletonLoader';
 import { usePerformanceData, useTeamData } from '../hooks/usePerformanceData';
@@ -22,12 +23,21 @@ import { EmployeeStatsSummary } from '../components/employee/EmployeeStatsSummar
 import { calculateRank, calculatePercentile, calculateStability, getPerformanceArchetype, generateRootCauseNarrative } from '../services/employeeAnalytics';
 import { normalizeScore } from '../hooks/usePerformanceData';
 import { matchesTeamConfig } from '../hooks/api/useKpiWeights';
+import { mapScopedPerformanceRecord } from '../hooks/usePerformanceData';
+import { scopedPerformanceApiEnabled, useScopedEmployeePerformanceHistory } from '../hooks/api/usePerformanceDashboard';
 import { getWeightForLabel, resolveDisplayScore } from '../utils/kpiScore';
 import {
   compareEmployeePeriods,
   mergeEmployeeHistory,
   type EmployeeHistoryRecord,
 } from '../features/employee/employeeProfileHistory';
+import {
+  ALL_EMPLOYEE_POSITIONS,
+  getEmployeeDirectoryPosition,
+  getEmployeeDirectoryPositions,
+  getEmployeeDirectoryRows,
+  getEmployeeDirectoryTeams,
+} from '../features/employee/employeeDirectory';
 
 interface BackendProfile {
   employee: { id: string; name: string; team: string; status: string };
@@ -163,8 +173,17 @@ const EmployeeProfileView = () => {
       .catch(() => { });
   }, [role]);
 
-  const { rows } = useTeamData(null, month, 'All', 'all', weightsList, performanceLevel);
-  const { agents: allPerformanceAgents } = usePerformanceData('All', 'all', 'All', performanceLevel);
+  const { rows, loading: loadingRoster } = useTeamData(null, month, 'All', 'all', weightsList, performanceLevel);
+  const { agents: legacyPerformanceAgents } = usePerformanceData('All', 'all', 'All', performanceLevel);
+  const scopedHistoryQuery = useScopedEmployeePerformanceHistory(employeeId, {
+    months: 24,
+    performance_level: performanceLevel !== 'All' ? performanceLevel : undefined,
+  });
+  const scopedPerformanceAgents = useMemo(
+    () => (scopedHistoryQuery.data || []).map((item) => mapScopedPerformanceRecord(item)),
+    [scopedHistoryQuery.data],
+  );
+  const allPerformanceAgents = scopedPerformanceApiEnabled ? scopedPerformanceAgents : legacyPerformanceAgents;
   const employee = useMemo(() => {
     const empRows = rows.filter((r) => r.id === employeeId);
     if (empRows.length === 0) return undefined;
@@ -178,6 +197,59 @@ const EmployeeProfileView = () => {
     }
     return empRows.find((r) => r.month === month) || empRows[0];
   }, [rows, employeeId, month]);
+
+  const [directoryTeamFilter, setDirectoryTeamFilter] = useState<string | null>(null);
+  const [directoryPositionFilter, setDirectoryPositionFilter] = useState(ALL_EMPLOYEE_POSITIONS);
+  const activeDirectoryTeamFilter = directoryTeamFilter ?? employee?.team ?? '';
+
+  const directorySourceRows = useMemo(
+    () => employee && !rows.some((row) => row.id === employee.id) ? [...rows, employee] : rows,
+    [employee, rows],
+  );
+  const directoryTeamOptions = useMemo(
+    () => getEmployeeDirectoryTeams(directorySourceRows),
+    [directorySourceRows],
+  );
+  const directoryPositionOptions = useMemo(
+    () => getEmployeeDirectoryPositions(directorySourceRows, activeDirectoryTeamFilter),
+    [activeDirectoryTeamFilter, directorySourceRows],
+  );
+  const directoryRows = useMemo(
+    () => getEmployeeDirectoryRows(directorySourceRows, activeDirectoryTeamFilter, directoryPositionFilter),
+    [activeDirectoryTeamFilter, directoryPositionFilter, directorySourceRows],
+  );
+  const directoryIndex = directoryRows.findIndex((row) => row.id === employeeId);
+
+  const navigateToDirectoryEmployee = useCallback((targetEmployeeId: string, replace = false) => {
+    if (!targetEmployeeId) return;
+    const query = new URLSearchParams();
+    if (month !== 'All') query.set('month', month);
+    if (performanceLevel !== 'All') query.set('performance_level', performanceLevel);
+    const queryString = query.toString();
+    navigate(`/employee/${encodeURIComponent(targetEmployeeId)}${queryString ? `?${queryString}` : ''}`, { replace });
+  }, [month, navigate, performanceLevel]);
+
+  useEffect(() => {
+    if (loadingRoster || !employeeId || directoryRows.length === 0) return;
+    if (directoryIndex < 0) navigateToDirectoryEmployee(directoryRows[0].id, true);
+  }, [directoryIndex, directoryRows, employeeId, loadingRoster, navigateToDirectoryEmployee]);
+
+  const selectDirectoryTeam = (team: string) => {
+    setDirectoryTeamFilter(team);
+    setDirectoryPositionFilter(ALL_EMPLOYEE_POSITIONS);
+    const nextRows = getEmployeeDirectoryRows(directorySourceRows, team, ALL_EMPLOYEE_POSITIONS);
+    if (nextRows.length > 0 && !nextRows.some((row) => row.id === employeeId)) {
+      navigateToDirectoryEmployee(nextRows[0].id, true);
+    }
+  };
+
+  const selectDirectoryPosition = (position: string) => {
+    setDirectoryPositionFilter(position);
+    const nextRows = getEmployeeDirectoryRows(directorySourceRows, activeDirectoryTeamFilter, position);
+    if (nextRows.length > 0 && !nextRows.some((row) => row.id === employeeId)) {
+      navigateToDirectoryEmployee(nextRows[0].id, true);
+    }
+  };
 
   const teamWeights = useMemo(() => {
     const teamName = (employee?.team || '').toLowerCase();
@@ -439,10 +511,10 @@ const EmployeeProfileView = () => {
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, x: -20 }}
       transition={{ duration: 0.35 }}
-      className="app-page-shell min-w-0"
+      className="app-page-shell rf-page rf-page--employee min-w-0"
     >
       {/* Header */}
-      <div className="flex items-center gap-3">
+      <div className="rf-page-heading-row flex items-center gap-3">
         <button
           onClick={() => navigate(-1)}
           aria-label="Go back"
@@ -462,6 +534,95 @@ const EmployeeProfileView = () => {
           />
         </div>
       </div>
+
+      {employee && (
+        <section
+          className="mt-4 glass-panel rf-filter-panel rounded-2xl p-4 shadow-sm"
+          aria-label="Employee directory filter"
+          data-testid="employee-directory-filter"
+        >
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div className="flex items-start gap-3">
+              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400">
+                <Users size={17} />
+              </span>
+              <div>
+                <h3 className="text-sm font-extrabold text-[var(--text-primary)]">Employee directory</h3>
+                <p className="mt-0.5 text-xs font-medium text-[var(--text-muted)]">Filter this team by department / position and switch profiles without leaving the page.</p>
+              </div>
+            </div>
+            <span className="w-fit rounded-full bg-[var(--bg-sunken)] px-3 py-1 text-[10px] font-bold text-[var(--text-muted)]" aria-live="polite">
+              {directoryRows.length} employee{directoryRows.length === 1 ? '' : 's'}
+            </span>
+          </div>
+
+          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-[1fr_1fr_1.6fr_auto] xl:items-end">
+            <label className="text-xs font-bold text-[var(--text-secondary)]">
+              Team
+              <select
+                value={activeDirectoryTeamFilter}
+                onChange={(event) => selectDirectoryTeam(event.target.value)}
+                className="mt-1 min-h-10 w-full rounded-xl border border-[var(--input-border)] bg-[var(--bg-surface)] px-3 text-sm font-semibold text-[var(--text-primary)] outline-none focus:border-blue-500"
+              >
+                <option value="">All teams</option>
+                {directoryTeamOptions.map((team) => <option key={team} value={team}>{team}</option>)}
+              </select>
+            </label>
+
+            <label className="text-xs font-bold text-[var(--text-secondary)]">
+              Department / position
+              <select
+                value={directoryPositionFilter}
+                onChange={(event) => selectDirectoryPosition(event.target.value)}
+                className="mt-1 min-h-10 w-full rounded-xl border border-[var(--input-border)] bg-[var(--bg-surface)] px-3 text-sm font-semibold text-[var(--text-primary)] outline-none focus:border-blue-500"
+              >
+                <option value={ALL_EMPLOYEE_POSITIONS}>{ALL_EMPLOYEE_POSITIONS}</option>
+                {directoryPositionOptions.map((position) => <option key={position} value={position}>{position}</option>)}
+              </select>
+            </label>
+
+            <label className="text-xs font-bold text-[var(--text-secondary)]">
+              Employee
+              <select
+                value={directoryIndex >= 0 ? employeeId : ''}
+                onChange={(event) => navigateToDirectoryEmployee(event.target.value)}
+                className="mt-1 min-h-10 w-full rounded-xl border border-[var(--input-border)] bg-[var(--bg-surface)] px-3 text-sm font-semibold text-[var(--text-primary)] outline-none focus:border-blue-500"
+                aria-label="Select employee"
+              >
+                {directoryRows.length === 0 && <option value="">No employees found</option>}
+                {directoryRows.map((row) => (
+                  <option key={row.id} value={row.id}>
+                    {row.name} · {getEmployeeDirectoryPosition(row)}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <div className="flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => directoryIndex > 0 && navigateToDirectoryEmployee(directoryRows[directoryIndex - 1].id)}
+                disabled={directoryIndex <= 0}
+                aria-label="Previous employee"
+                title="Previous employee"
+                className="grid h-10 w-10 place-items-center rounded-xl border border-[var(--input-border)] text-[var(--text-secondary)] transition hover:border-blue-500 hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <ChevronLeft size={17} />
+              </button>
+              <button
+                type="button"
+                onClick={() => directoryIndex >= 0 && directoryIndex < directoryRows.length - 1 && navigateToDirectoryEmployee(directoryRows[directoryIndex + 1].id)}
+                disabled={directoryIndex < 0 || directoryIndex >= directoryRows.length - 1}
+                aria-label="Next employee"
+                title="Next employee"
+                className="grid h-10 w-10 place-items-center rounded-xl border border-[var(--input-border)] text-[var(--text-secondary)] transition hover:border-blue-500 hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <ChevronRight size={17} />
+              </button>
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* Loading state when employee not found yet */}
       {!employee && loadingProfile && (

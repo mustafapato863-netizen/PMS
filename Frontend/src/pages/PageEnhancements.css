@@ -1,0 +1,310 @@
+/* Page-level polish for SGH Hub / performance workspace.
+   This file intentionally builds on the existing semantic CSS variables
+   instead of introducing a second theme system. */
+
+:root {
+  --rf-page-max: 1600px;
+  --rf-page-gap: clamp(1rem, 1.5vw, 1.4rem);
+  --rf-card-radius: 18px;
+  --rf-panel-shadow: 0 1px 2px rgba(15, 23, 42, 0.03), 0 12px 36px rgba(15, 23, 42, 0.045);
+  --rf-panel-shadow-hover: 0 2px 4px rgba(15, 23, 42, 0.04), 0 18px 44px rgba(15, 23, 42, 0.075);
+}
+
+.rf-page {
+  width: min(100%, var(--rf-page-max));
+  margin-inline: auto;
+  padding: clamp(1rem, 1.8vw, 1.75rem);
+  gap: var(--rf-page-gap);
+}
+
+.rf-page :is(button, a, input, select, textarea) {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.rf-page :is(button, a, input, select, textarea):focus-visible {
+  outline: 2px solid color-mix(in srgb, #2563eb 72%, transparent);
+  outline-offset: 2px;
+}
+
+.rf-page :is(input, select, textarea) {
+  transition: border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
+}
+
+.rf-page :is(input, select, textarea):focus {
+  box-shadow: 0 0 0 3px color-mix(in srgb, #2563eb 12%, transparent);
+}
+
+.rf-page-hero,
+.rf-page-heading-row {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--border-light);
+  border-radius: 22px;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--bg-surface) 96%, #2563eb 4%), var(--bg-surface));
+  padding: clamp(1rem, 2vw, 1.5rem);
+  box-shadow: var(--rf-panel-shadow);
+}
+
+.rf-page-hero::after,
+.rf-page-heading-row::after {
+  content: "";
+  position: absolute;
+  width: 220px;
+  height: 220px;
+  right: -100px;
+  top: -130px;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(37, 99, 235, 0.12), transparent 66%);
+  pointer-events: none;
+}
+
+.rf-page-hero > *,
+.rf-page-heading-row > * {
+  position: relative;
+  z-index: 1;
+}
+
+.rf-toolbar,
+.rf-filter-panel,
+.rf-data-panel {
+  border: 1px solid var(--border-light);
+  border-radius: var(--rf-card-radius);
+  background: var(--bg-surface);
+  box-shadow: var(--rf-panel-shadow);
+}
+
+.rf-filter-panel {
+  overflow: visible;
+}
+
+.rf-data-panel {
+  overflow: hidden;
+}
+
+.rf-stat-card {
+  position: relative;
+  contain: layout paint style;
+  overflow: hidden;
+  min-height: 112px;
+  border-radius: 18px !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.025);
+  transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+}
+
+.rf-stat-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--rf-panel-shadow-hover);
+}
+
+.rf-stat-card::after {
+  content: "";
+  position: absolute;
+  width: 90px;
+  height: 90px;
+  right: -34px;
+  bottom: -46px;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0.035;
+  pointer-events: none;
+}
+
+.rf-action-card {
+  position: relative;
+  contain: layout paint style;
+  overflow: hidden;
+  border-radius: 18px !important;
+  box-shadow: var(--rf-panel-shadow);
+  transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+}
+
+.rf-action-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--rf-panel-shadow-hover);
+  border-color: color-mix(in srgb, #2563eb 22%, var(--border-light));
+}
+
+.rf-empty-state {
+  border: 1px dashed color-mix(in srgb, var(--border-light) 82%, #2563eb 18%);
+  border-radius: 22px !important;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--bg-surface) 97%, #2563eb 3%), var(--bg-surface));
+}
+
+.rf-page table {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.rf-page table thead {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.rf-page table thead th {
+  background: color-mix(in srgb, var(--bg-sunken) 88%, var(--bg-surface));
+  backdrop-filter: blur(8px);
+}
+
+.rf-page table tbody tr {
+  transition: background-color 140ms ease;
+}
+
+.rf-page table tbody tr:hover {
+  background: color-mix(in srgb, #2563eb 3%, var(--bg-surface));
+}
+
+.rf-page table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.rf-page [role="alert"],
+.rf-page [role="status"] {
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.02);
+}
+
+/* Large analytical pages */
+.rf-page--insights .insights-filter-shell {
+  position: sticky;
+  top: 0.75rem;
+  z-index: 20;
+  border-radius: 20px !important;
+  box-shadow: 0 12px 40px rgba(15, 23, 42, 0.075);
+}
+
+.rf-page--team-dashboard,
+.rf-page--employee,
+.rf-page--executive {
+  min-width: 0;
+}
+
+.rf-page--team-dashboard > *,
+.rf-page--employee > *,
+.rf-page--executive > *,
+.rf-page--insights > * {
+  min-width: 0;
+}
+
+/* Reports */
+.rf-page--reports .rf-data-panel thead th {
+  white-space: nowrap;
+}
+
+.rf-page--reports .rf-data-panel tbody td {
+  vertical-align: middle;
+}
+
+.rf-builder-shell {
+  width: min(100%, var(--rf-page-max));
+  margin-inline: auto;
+  border-radius: 24px !important;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.10) !important;
+}
+
+.rf-builder-header {
+  min-height: 72px !important;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--bg-surface) 98%, #2563eb 2%), var(--bg-surface)) !important;
+}
+
+.rf-preview-canvas {
+  box-shadow: 0 20px 55px rgba(15, 23, 42, 0.10) !important;
+}
+
+/* Settings and team management */
+.rf-page--settings .glass-panel,
+.rf-page--team-management .glass-panel {
+  box-shadow: var(--rf-panel-shadow);
+}
+
+.rf-page--team-management .rf-toolbar {
+  padding: 0.8rem 0.9rem;
+}
+
+.rf-modal-backdrop {
+  background: rgba(15, 23, 42, 0.44) !important;
+  backdrop-filter: blur(6px);
+}
+
+.rf-modal-panel {
+  border: 1px solid var(--border-light);
+  border-radius: 22px !important;
+  background: var(--bg-surface);
+  box-shadow: 0 28px 90px rgba(15, 23, 42, 0.20) !important;
+}
+
+/* Not found */
+.rf-not-found {
+  background:
+    radial-gradient(circle at 18% 20%, rgba(37, 99, 235, 0.08), transparent 34%),
+    radial-gradient(circle at 82% 78%, rgba(79, 70, 229, 0.07), transparent 36%),
+    var(--bg-base) !important;
+}
+
+.rf-not-found-card {
+  box-shadow: 0 24px 72px rgba(15, 23, 42, 0.10) !important;
+}
+
+/* Login */
+.login-shell {
+  background:
+    radial-gradient(circle at 18% 12%, rgba(37, 99, 235, 0.10), transparent 30%),
+    radial-gradient(circle at 82% 88%, rgba(79, 70, 229, 0.08), transparent 34%),
+    var(--bg-base);
+}
+
+.login-card {
+  box-shadow: 0 28px 90px rgba(15, 23, 42, 0.14) !important;
+}
+
+.login-field input {
+  transition: border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease !important;
+}
+
+.login-field input:focus {
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.10) !important;
+}
+
+/* Avoid expensive paint work for large off-screen page sections where supported. */
+@supports (content-visibility: auto) {
+  .rf-page > .rf-deferred-section {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 420px;
+  }
+}
+
+/* Keep motion respectful and avoid battery-heavy decorative effects. */
+@media (prefers-reduced-motion: reduce) {
+  .rf-page *,
+  .login-shell *,
+  .rf-not-found * {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@media (max-width: 768px) {
+  .rf-page {
+    padding: 0.85rem;
+  }
+
+  .rf-page-hero,
+  .rf-page-heading-row {
+    border-radius: 18px;
+    padding: 1rem;
+  }
+
+  .rf-page--insights .insights-filter-shell {
+    position: static;
+  }
+
+  .rf-builder-shell {
+    min-height: calc(100dvh - 1rem) !important;
+    height: auto !important;
+    border-radius: 18px !important;
+  }
+}

@@ -1,3 +1,4 @@
+import './PageEnhancements.css';
 import { lazy, Suspense, useState, useMemo, useEffect, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useTeamData, usePerformanceData, parseAHTtoSeconds, formatSecondsToMMSS, agentMatchesLocation, refreshPerformanceData, resolveTeamMonths, hasRealActivity } from '../hooks/usePerformanceData';
@@ -9,7 +10,7 @@ import { OperationalViewSkeleton } from '../components/common/SkeletonLoader';
 import { TrendingUp, Target, Activity, Phone, Shield, Lightbulb, Edit2, Check, X, Award, AlertCircle, AlertTriangle, MessageSquare, Code, Headphones, Pill, Users, Send } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { TeamAgentRow, TeamWeightConfig } from '../hooks/usePerformanceData';
-import { TEAM_NAME_MAP, TEAM_DB_NAME_MAP, MERGED_OP_FINAL_TEAM, MERGED_IP_FINAL_TEAM, PRE_APPROVALS_UAE_TEAM, PRE_APPROVALS_UAE_SOURCE_TEAMS, CALL_CENTER_TEAM, RCM_TEAM, isCallCenterChannelTeam, isPreApprovalsWorkflowTeam, isRcmDomainTeam, isRcmGroupTeam, isMergedBranchTeam, isMergedOpFinalTeam, sameCanonicalTeam } from '../types';
+import { TEAM_NAME_MAP, TEAM_DB_NAME_MAP, MERGED_OP_FINAL_TEAM, MERGED_IP_FINAL_TEAM, PRE_APPROVALS_UAE_TEAM, PRE_APPROVALS_UAE_SOURCE_TEAMS, CALL_CENTER_TEAM, RCM_TEAM, callCenterChannelForTeam, isCallCenterChannelTeam, isPreApprovalsWorkflowTeam, isRcmDomainTeam, isRcmGroupTeam, isMergedBranchTeam, isMergedOpFinalTeam, sameCanonicalTeam } from '../types';
 import type { AgentRecord, GeoBreakdown, LocationKey, PreApprovalsWorkflowFilter, CallCenterChannelFilter, RcmDomainFilter, RcmGroupFilter } from '../types';
 import { useUserRole } from '../context/RoleContext';
 import { useAuth } from '../context/auth';
@@ -205,6 +206,8 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
               : ''
     : teamName || '';
   const { data: teamConfig } = useTeamConfig(workflowConfigTeam);
+  const { data: inboundTeamConfig } = useTeamConfig(isCallCenterParent ? 'Inbound' : '');
+  const { data: outboundTeamConfig } = useTeamConfig(isCallCenterParent ? 'Outbound' : '');
   const region = regionSelection?.teamName === teamName
     ? regionSelection.value
     : isPreApprovalsParent ? 'UAE' : isCallCenterParent ? 'EGY' : teamName ? (teamConfig?.region ?? 'All') : 'All';
@@ -259,6 +262,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
 
   const isCallCenterView = teamId?.toLowerCase() === 'inbound' || teamId?.toLowerCase() === 'inbound-uae' || teamId?.toLowerCase() === 'outbound'
     || (isCallCenterParent && callCenterChannel !== 'all');
+  const isCallCenterAggregate = isCallCenterParent && callCenterChannel === 'all';
   const isInbound = teamId?.toLowerCase() === 'inbound' || teamId?.toLowerCase() === 'inbound-uae'
     || (isCallCenterParent && callCenterChannel === 'inbound');
   const scoredTeamId = isCallCenterParent
@@ -321,7 +325,8 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
     : 'Headcount unavailable';
   const { getActionsForEmployee, getAllActions } = useActionStore();
 
-  useEffect(() => {
+
+  useEffect(() => {
     apiFetch<{ success: boolean; data: TeamWeightConfig[] }>('/api/settings/weights')
       .then((res) => {
         if (res?.success && Array.isArray(res.data)) {
@@ -464,6 +469,40 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
       );
     },
     [rows, previousTeamAgents, historicalTeamAgents, activeMonth, isCallCenterView, scoredTeamId, location, activeTeamWeights, teamConfig, isPreApprovalsParent, preApprovalsWorkflow, isCallCenterParent, callCenterChannel, isRcmParent, rcmDomain, rcmGroup],
+  );
+  const callCenterChannelKpiAnalysis = useMemo(
+    () => {
+      if (!isCallCenterAggregate) return [];
+
+      return (['inbound', 'outbound'] as const).map((channel) => {
+        const channelTeam = channel === 'inbound' ? 'Inbound' : 'Outbound';
+        const currentRecords = (rows || [])
+          .map((row) => row.raw)
+          .filter((record) => record.identity.month === activeMonth && callCenterChannelForTeam(record.identity.team) === channel);
+        const previousRecords = previousTeamAgents.filter((agent) => callCenterChannelForTeam(agent.identity.team) === channel);
+        const baselineRecords = historicalTeamAgents.filter((agent) => callCenterChannelForTeam(agent.identity.team) === channel);
+        const teamWeights = weightsList.find((weightConfig) => matchesTeamConfig(
+          {
+            team: String(weightConfig.team || weightConfig.db_name || weightConfig.name || ''),
+            weights: weightConfig.weights,
+          },
+          channelTeam,
+        ))?.weights;
+
+        return {
+          channel,
+          analyses: buildTeamKpiAnalysis(currentRecords, previousRecords, {
+            includeNoShow: true,
+            includeAht: channel === 'outbound',
+            location,
+            teamWeights,
+            teamConfig: channel === 'inbound' ? inboundTeamConfig : outboundTeamConfig,
+            baselineRecords,
+          }),
+        };
+      });
+    },
+    [activeMonth, historicalTeamAgents, inboundTeamConfig, isCallCenterAggregate, location, outboundTeamConfig, previousTeamAgents, rows, weightsList],
   );
 
   const insightYear = useMemo(() => {
@@ -1216,7 +1255,8 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
     else {
       setSortCol(col);
       setSortDir('desc');
-    }    setPage(1);
+    }
+    setPage(1);
   };
 
   // Pie data
@@ -1621,7 +1661,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
       ? branchSelections.map((branch) => branchLabels[branch]).join(' and ')
       : '';
     return (
-      <div className="app-page-shell text-slate-800 dark:text-slate-100">
+      <div className="app-page-shell rf-page rf-page--team-dashboard text-slate-800 dark:text-slate-100">
         <TeamHeader
           displayName={displayName}
           month={month}
@@ -1756,7 +1796,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
   ] : [];
 
   return (
-    <div className="app-page-shell text-slate-800 dark:text-slate-100">
+    <div className="app-page-shell rf-page rf-page--team-dashboard text-slate-800 dark:text-slate-100">
       {/* Header */}
       {showBscFallbackMessage && (
         <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
@@ -1839,7 +1879,11 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
         ) : isPreApprovalsParent && preApprovalsWorkflow === 'all' ? (
           <PreApprovalsWorkflowSummary rows={rows} onWorkflowSelect={handlePreApprovalsWorkflowChange} />
         ) : isCallCenterParent && callCenterChannel === 'all' ? (
-          <CallCenterChannelSummary rows={rows} onChannelSelect={handleCallCenterChannelChange} />
+          <CallCenterChannelSummary
+            rows={rows}
+            onChannelSelect={handleCallCenterChannelChange}
+            channelKpiAnalysis={callCenterChannelKpiAnalysis}
+          />
         ) : (
           <TeamKpiSection
             totalAgents={metrics.totalAgents}
@@ -1879,7 +1923,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
       </Suspense>
 
       {/* Main Table / Roster Panel */}
-      <TeamRosterSection
+      {!isCallCenterAggregate && <TeamRosterSection
         showTopBottomToggle={teamId !== 'all'}
         rosterView={rosterView}
         setRosterView={setRosterView}
@@ -1907,10 +1951,10 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
         toggleSort={toggleSort}
         canExport={canExport}
         onExport={handleExport}
-      />
+      />}
 
       {/* Team Performance Summary & Action Needed Cards */}
-      {teamId !== 'all' && (
+      {teamId !== 'all' && !isCallCenterAggregate && (
         <div className={`mt-10 grid w-full grid-cols-1 gap-6 ${teamKpiAnalysis.length > 0 ? 'xl:grid-cols-1' : 'xl:grid-cols-2'}`}>
           {/* Card 1: Performance Summary */}
           {teamKpiAnalysis.length === 0 && <div className="overflow-hidden rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] shadow-[0_12px_32px_rgba(15,23,42,0.06)] dark:border-slate-800 dark:bg-slate-950/95 dark:shadow-2xl">

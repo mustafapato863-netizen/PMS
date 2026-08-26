@@ -5,7 +5,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from models.models import Action, Base, Employee, PerformanceRecord, Team, User
+from models.models import Action, Base, Employee, PerformancePlan, PerformanceRecord, PlanMilestone, Team, User
 from services.corrective_action_service import CorrectiveActionService, CorrectiveActionValidationError
 
 
@@ -18,7 +18,15 @@ def db():
     )
     Base.metadata.create_all(
         bind=engine,
-        tables=[Team.__table__, Employee.__table__, User.__table__, PerformanceRecord.__table__, Action.__table__],
+        tables=[
+            Team.__table__,
+            Employee.__table__,
+            User.__table__,
+            PerformanceRecord.__table__,
+            PerformancePlan.__table__,
+            PlanMilestone.__table__,
+            Action.__table__,
+        ],
     )
     session = sessionmaker(bind=engine, autoflush=False, autocommit=False)()
     yield session
@@ -58,6 +66,86 @@ def test_action_persists_without_performance_record(db, employee):
 
     history = service.get_history(employee.employee_id)
     assert [item["id"] for item in history] == [saved["id"]]
+
+
+def test_period_performance_team_controls_action_listing_and_filter_scope(db, employee):
+    inbound = Team(id=uuid.uuid4(), name="Inbound", db_name="inbound", region="EGY")
+    db.add(inbound)
+    db.add(
+        PerformanceRecord(
+            id=uuid.uuid4(),
+            year=2026,
+            employee_id=employee.id,
+            team_id=inbound.id,
+            month="July",
+            performance_level="Employee",
+            region="EGY",
+            score=72.5,
+            grade="C",
+            status="Below",
+        )
+    )
+    action = Action(
+        id=uuid.uuid4(),
+        employee_id=employee.id,
+        team_id=employee.team_id,
+        month="July",
+        year=2026,
+        action_type="Coaching",
+        action_text="Review the workflow",
+        is_active=True,
+    )
+    db.add(action)
+    db.commit()
+
+    service = CorrectiveActionService(db)
+    inbound_scope = {
+        "role": "Manager",
+        "accessible_teams": ["Inbound"],
+        "accessible_team_levels": [("Inbound", "Employee")],
+        "legacy_unscoped": False,
+    }
+    outbound_scope = {
+        "role": "Manager",
+        "accessible_teams": ["Outbound"],
+        "accessible_team_levels": [("Outbound", "Employee")],
+        "legacy_unscoped": False,
+    }
+
+    inbound_actions = service.list_scoped(inbound_scope)
+    assert len(inbound_actions) == 1
+    assert inbound_actions[0]["team"] == "Inbound"
+    assert service.list_scoped(outbound_scope) == []
+
+
+def test_saving_period_action_uses_period_performance_team(db, employee):
+    inbound = Team(id=uuid.uuid4(), name="Inbound", db_name="inbound", region="EGY")
+    db.add(inbound)
+    db.add(
+        PerformanceRecord(
+            id=uuid.uuid4(),
+            year=2026,
+            employee_id=employee.id,
+            team_id=inbound.id,
+            month="July",
+            performance_level="Employee",
+            region="EGY",
+            score=72.5,
+            grade="C",
+            status="Below",
+        )
+    )
+    db.commit()
+
+    saved, _ = CorrectiveActionService(db).save(
+        employee_identifier=employee.employee_id,
+        month="July",
+        year=2026,
+        manager_action="Coaching: Review the workflow",
+    )
+
+    assert saved["team"] == "Inbound"
+    assert db.query(Action).one().team_id == inbound.id
 
 
 def test_update_and_delete_keep_single_historical_row(db, employee):

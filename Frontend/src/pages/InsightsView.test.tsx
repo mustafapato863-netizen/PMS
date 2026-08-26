@@ -207,7 +207,7 @@ describe('InsightsView', () => {
     expect(screen.getByRole('heading', { name: 'Insight Summary' })).toBeInTheDocument();
     expect(screen.getByText('Net weighted KPI impact')).toBeInTheDocument();
     expect(screen.getByText('91.7%')).toBeInTheDocument();
-    expect(screen.queryByText('All positions average declined by 94.4%')).not.toBeInTheDocument();
+    expect(screen.getAllByText('All positions average declined by 94.4%').length).toBeGreaterThan(0);
     expect(screen.getAllByText('-5.6%').length).toBeGreaterThan(1);
     expect(screen.getAllByText('CPL contributed to the performance gap').length).toBeGreaterThan(1);
     expect(screen.getAllByText('-5.6%').length).toBeGreaterThan(1);
@@ -254,12 +254,15 @@ describe('InsightsView', () => {
     expect(screen.getByText(/does not contribute to the weighted score/)).toBeInTheDocument();
   });
 
-  it('shows people contribution analysis only after selecting one KPI', async () => {
+  it('shows the report reference by default and detailed people analysis after selecting a KPI', async () => {
     const user = userEvent.setup();
     render(<MemoryRouter><InsightsView /></MemoryRouter>);
 
+    expect(screen.getByRole('heading', { name: 'Report reference' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '6-Month KPI Trend' })).toBeInTheDocument();
+    expect(screen.getAllByText('Analyst One').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('-2.8%').length).toBeGreaterThan(0);
     expect(screen.queryByRole('heading', { name: 'People Contribution Analysis' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: '6-Month KPI Trend' })).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /Filters/i }));
     await user.selectOptions(screen.getByRole('combobox', { name: 'KPI' }), 'cpl');
 

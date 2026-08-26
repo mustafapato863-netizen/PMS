@@ -21,6 +21,7 @@ from services.team_service import TeamService
 from services.team_onboarding_service import TeamOnboardingService
 from services.management_bsc_service import ManagementBSCService, ManagementBSCSchemaError
 from api.middleware.rbac_middleware import require_permission
+from services.cache_invalidation_service import CacheInvalidationService
 
 router = APIRouter(prefix="/team-management", tags=["Team Management"])
 
@@ -93,7 +94,7 @@ async def create_team(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="; ".join(errors)
         )
-    
+    CacheInvalidationService.bump_config_version()
     return TeamResponse(**team_config)
 
 
@@ -123,7 +124,7 @@ async def update_team(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="; ".join(errors)
         )
-    
+    CacheInvalidationService.bump_config_version()
     return TeamResponse(**team_config)
 
 
@@ -151,7 +152,7 @@ async def delete_team(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="; ".join(errors)
         )
-    
+    CacheInvalidationService.bump_config_version()
     return {
         "success": True,
         "message": f"Team '{team_name}' deleted successfully",
@@ -249,7 +250,7 @@ async def start_onboarding(
             team_name=team_name,
             auto_proceed=request.auto_proceed,
         )
-        
+        CacheInvalidationService.bump_config_version()
         return response
     
     except Exception as e:
@@ -364,6 +365,7 @@ async def delete_management_kpi_upload(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except ManagementBSCSchemaError as exc:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update the team.") from exc
+    CacheInvalidationService.bump_config_version()
     return {
         "success": True,
         "data": result,
@@ -387,7 +389,8 @@ async def batch_delete_management_kpi_uploads(
                 results.append(svc.delete_upload_batch(batch_id))
             except Exception:
                 pass
-        
+        if results:
+            CacheInvalidationService.bump_config_version()
         return {
             "success": True,
             "data": results,

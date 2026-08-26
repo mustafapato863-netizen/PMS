@@ -1,3 +1,4 @@
+import './PageEnhancements.css';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
@@ -11,7 +12,7 @@ import KpiSixMonthTrend from '../components/insights/KpiSixMonthTrend';
 import PeopleContributionAnalysis from '../components/insights/PeopleContributionAnalysis';
 import EmployeeActionModal from '../components/team/EmployeeActionModal';
 import EmployeeRowActions from '../components/team/EmployeeRowActions';
-import type { InsightFilters, InsightItem, InsightSeverity } from '../features/insights/types';
+import type { InsightFilters, InsightItem, InsightSeverity, InsightKpiOverview, InsightRoleSummary, InsightExecutiveStory, InsightKpiTrend, InsightPeopleContributionAnalysis } from '../features/insights/types';
 import { useInsightsWorkspace } from '../hooks/api/useInsightsWorkspace';
 import { PageLoadingSkeleton } from '../components/common/SkeletonLoader';
 import { refreshPerformanceData, useTeamData, type TeamAgentRow } from '../hooks/usePerformanceData';
@@ -19,6 +20,8 @@ import { useActionStore } from '../hooks/useActionStore';
 import { useUserRole } from '../context/RoleContext';
 import type { PerformanceLevelFilter } from '../types';
 import CustomDropdown from '../components/common/CustomDropdown';
+import { API_BASE } from '../config';
+import { waitForProcessingJob } from '../hooks/api/useProcessingJobs';
 
 function FilterSelect({ label, value, onChange, options, allLabel }: {
   label: string;
@@ -231,6 +234,69 @@ function ExecutiveStoryCard({
   );
 }
 
+function ReportReference({
+  story,
+  trend,
+  people,
+  onOpenEmployee,
+}: {
+  story: InsightExecutiveStory | null | undefined;
+  trend: InsightKpiTrend | null | undefined;
+  people: InsightPeopleContributionAnalysis | null | undefined;
+  onOpenEmployee: (employeeId: string, performanceLevel: string) => void;
+}) {
+  const leadingKpi = trend?.kpi_label || story?.primary_driver || 'No leading KPI identified';
+  const latestPoint = [...(trend?.points || [])].reverse().find((point) => point.actual_value !== null) || null;
+  const negativeRows = (people?.rows || [])
+    .filter((row) => row.classification === 'negative')
+    .slice(0, 3);
+
+  if (!trend && !people && !story?.primary_driver) return null;
+
+  return (
+    <section className="overflow-hidden rounded-2xl border border-amber-200/70 bg-gradient-to-br from-amber-50/80 via-white to-rose-50/60 shadow-sm dark:border-amber-500/20 dark:from-amber-500/10 dark:via-slate-950/80 dark:to-rose-500/10" aria-labelledby="report-reference-title">
+      <header className="flex flex-col gap-2 border-b border-amber-200/70 px-5 py-4 md:flex-row md:items-center md:justify-between dark:border-amber-500/15">
+        <div>
+          <div className="flex items-center gap-2"><span className="grid h-8 w-8 place-items-center rounded-lg bg-amber-500/15 text-amber-700 dark:text-amber-300"><Target size={16} /></span><h2 id="report-reference-title" className="text-lg font-extrabold text-[var(--text-primary)]">Report reference</h2></div>
+          <p className="mt-1 text-xs text-[var(--text-muted)]">The leading KPI, its six-period movement, and the people behind the current gap.</p>
+        </div>
+        <span className="rounded-full border border-amber-200 bg-white/70 px-3 py-1 text-[10px] font-extrabold uppercase tracking-wide text-amber-700 dark:border-amber-500/25 dark:bg-white/[0.06] dark:text-amber-300">Decision evidence</span>
+      </header>
+
+      <div className="grid gap-4 p-4 lg:grid-cols-[minmax(250px,0.8fr)_minmax(0,1.4fr)]">
+        <article className="rounded-xl border border-amber-200/70 bg-white/75 p-4 dark:border-amber-500/20 dark:bg-white/[0.04]">
+          <p className="text-[10px] font-black uppercase tracking-[0.14em] text-rose-700 dark:text-rose-300">Leading KPI pulling the score down</p>
+          <h3 className="mt-2 text-xl font-black text-[var(--text-primary)]">{leadingKpi}</h3>
+          <p className="mt-1 text-xs font-semibold text-[var(--text-muted)]">{trend?.direction === 'lower_better' ? 'Lower is better' : trend?.direction === 'higher_better' ? 'Higher is better' : 'Configured scoring direction'}</p>
+          <div className="mt-4 grid grid-cols-2 gap-3">
+            <div><span className="text-[10px] font-bold uppercase text-[var(--text-faint)]">Latest actual</span><strong className="mt-1 block text-lg font-black text-[var(--text-primary)]">{latestPoint ? formatMetric(latestPoint.actual_value, trend?.unit || null) : 'N/A'}</strong></div>
+            <div><span className="text-[10px] font-bold uppercase text-[var(--text-faint)]">Target</span><strong className="mt-1 block text-lg font-black text-[var(--text-primary)]">{latestPoint ? formatMetric(latestPoint.target_value, trend?.unit || null) : 'N/A'}</strong></div>
+          </div>
+          <p className="mt-4 border-t border-amber-200/60 pt-3 text-xs font-bold text-rose-700 dark:border-amber-500/15 dark:text-rose-300">Weighted gap: {story?.primary_driver_impact === null || story?.primary_driver_impact === undefined ? 'N/A' : impactLabel(-Math.abs(story.primary_driver_impact))}</p>
+        </article>
+
+        <article className="rounded-xl border border-rose-200/70 bg-white/75 p-4 dark:border-rose-500/20 dark:bg-white/[0.04]">
+          <div className="flex items-start justify-between gap-3"><div><p className="text-[10px] font-black uppercase tracking-[0.14em] text-rose-700 dark:text-rose-300">People to review</p><h3 className="mt-1 text-base font-black text-[var(--text-primary)]">Employees behind the KPI gap</h3></div><UsersRound size={17} className="text-rose-600" /></div>
+          {negativeRows.length ? (
+            <div className="mt-3 divide-y divide-rose-200/60 dark:divide-rose-500/15">
+              {negativeRows.map((row) => (
+                <button key={`${row.team}-${row.employee_id}-${row.performance_level}-${row.position}`} type="button" onClick={() => onOpenEmployee(row.employee_id, row.performance_level)} className="grid w-full grid-cols-[minmax(0,1.1fr)_auto_auto] items-center gap-3 py-3 text-left transition hover:bg-rose-500/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
+                  <span className="min-w-0"><strong className="block truncate text-xs font-extrabold text-[var(--text-primary)]">{row.employee_name}</strong><span className="mt-0.5 block truncate text-[10px] text-[var(--text-muted)]">{row.team} · {row.position}</span></span>
+                  <span className="text-right"><span className="block text-[9px] font-bold uppercase text-[var(--text-faint)]">Actual / Target</span><strong className="text-[11px] font-extrabold text-[var(--text-primary)]">{formatMetric(row.current_value, row.unit)} / {formatMetric(row.target_value, row.unit)}</strong></span>
+                  <span className="text-right"><span className="block text-[9px] font-bold uppercase text-[var(--text-faint)]">Impact</span><strong className="text-[11px] font-extrabold text-rose-600">{impactLabel(row.weighted_impact)}</strong></span>
+                </button>
+              ))}
+            </div>
+          ) : <p className="mt-6 text-sm font-semibold text-[var(--text-muted)]">No negative employee contributors were measured for this KPI.</p>}
+          <p className="mt-2 text-[10px] font-medium text-[var(--text-muted)]">Impact is weighted contribution to the score gap, not a root-cause claim.</p>
+        </article>
+      </div>
+
+      {trend && <KpiSixMonthTrend trend={trend} />}
+    </section>
+  );
+}
+
 function GeographyContribution({
   summaries,
   onSelect,
@@ -251,6 +317,101 @@ function GeographyContribution({
           </button>
         ))}
       </div>
+    </section>
+  );
+}
+
+function ImpactHighlights({
+  drivers,
+  onOpen,
+}: {
+  drivers: Array<{ id: string; driver: string; scope: string; impact_points: number; direction: 'positive' | 'negative'; insight_id: string }>;
+  onOpen: (id: string) => void;
+}) {
+  const largestGap = drivers.filter((driver) => driver.impact_points < 0).sort((a, b) => a.impact_points - b.impact_points)[0];
+  const positive = drivers.filter((driver) => driver.impact_points > 0).sort((a, b) => b.impact_points - a.impact_points)[0];
+  const card = (driver: typeof largestGap, positiveCard: boolean) => (
+    <article className={`rounded-2xl border p-5 shadow-sm ${positiveCard ? 'border-emerald-200/70 bg-gradient-to-br from-emerald-50/90 to-white dark:border-emerald-500/20 dark:from-emerald-500/10 dark:to-transparent' : 'border-rose-200/70 bg-gradient-to-br from-rose-50/90 to-white dark:border-rose-500/20 dark:from-rose-500/10 dark:to-transparent'}`}>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className={`text-[10px] font-black uppercase tracking-[0.14em] ${positiveCard ? 'text-emerald-700' : 'text-rose-700'}`}>{positiveCard ? 'Top positive contributor' : 'Largest performance gap'}</p>
+          <h2 className="mt-2 text-lg font-black text-[var(--text-primary)]">{driver?.driver || 'No measured driver'}</h2>
+          <p className="mt-1 truncate text-xs font-semibold text-[var(--text-muted)]" title={driver?.scope}>{driver ? cleanScope(driver.scope) : 'The selected scope has no measured impact.'}</p>
+        </div>
+        <span className={`text-2xl font-black ${positiveCard ? 'text-emerald-600' : 'text-rose-600'}`}>{driver ? impactLabel(driver.impact_points) : 'N/A'}</span>
+      </div>
+      {driver && <button type="button" onClick={() => onOpen(driver.insight_id)} className="mt-5 inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-current/20 px-3 text-xs font-extrabold text-[var(--text-secondary)] transition hover:border-current/40 hover:text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">View analysis <ArrowRight size={14} /></button>}
+    </article>
+  );
+  return <section className="grid gap-4 md:grid-cols-2" aria-label="Impact highlights">{card(largestGap, false)}{card(positive, true)}</section>;
+}
+
+function PerformanceByTeam({
+  summaries,
+  onSelect,
+}: {
+  summaries: import('../features/insights/types').InsightsWorkspace['team_summaries'];
+  onSelect: (team: string) => void;
+}) {
+  if (!summaries.length) return null;
+  return (
+    <section className="overflow-hidden rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] shadow-sm" aria-labelledby="performance-by-team-title">
+      <header className="flex items-start justify-between gap-3 border-b border-[var(--border-light)] px-5 py-4"><div><h2 id="performance-by-team-title" className="text-base font-extrabold text-[var(--text-primary)]">Performance by team</h2><p className="mt-1 text-xs text-[var(--text-muted)]">Choose a team to reveal its KPI diagnostics.</p></div><UsersRound size={17} className="text-blue-600" /></header>
+      <div className="divide-y divide-[var(--border-light)]">
+        {summaries.slice(0, 8).map((summary) => (
+          <button key={summary.team} type="button" onClick={() => onSelect(summary.team)} className="grid w-full grid-cols-[minmax(0,1.3fr)_auto_auto_auto] items-center gap-3 px-5 py-3 text-left transition hover:bg-[var(--bg-sunken)]/55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500">
+            <span className="min-w-0"><strong className="block truncate text-xs font-extrabold text-[var(--text-primary)]">{summary.team}</strong><span className="mt-0.5 block text-[10px] text-[var(--text-muted)]">{summary.impacted_employees}/{summary.total_employees} affected</span></span>
+            <strong className="text-sm font-black text-[var(--text-primary)]">{summary.current_score === null ? 'N/A' : `${summary.current_score.toFixed(1)}%`}</strong>
+            <span className={`text-xs font-extrabold ${summary.score_change !== null && summary.score_change < 0 ? 'text-rose-600' : 'text-emerald-600'}`}>{summary.score_change === null ? 'N/A' : `${summary.score_change > 0 ? '+' : ''}${summary.score_change.toFixed(1)}%`}</span>
+            <ArrowRight size={14} className="text-blue-600" />
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function PerformanceByRole({
+  summaries,
+  onOpen,
+}: {
+  summaries: InsightRoleSummary[];
+  onOpen: (id: string) => void;
+}) {
+  if (!summaries.length) return null;
+  return (
+    <section className="overflow-hidden rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] shadow-sm" aria-labelledby="performance-by-role-title">
+      <header className="flex items-start justify-between gap-3 border-b border-[var(--border-light)] px-5 py-4"><div><h2 id="performance-by-role-title" className="text-base font-extrabold text-[var(--text-primary)]">Performance by role</h2><p className="mt-1 text-xs text-[var(--text-muted)]">Role movement is scoped to its team.</p></div><Target size={17} className="text-violet-600" /></header>
+      <div className="divide-y divide-[var(--border-light)]">
+        {summaries.slice(0, 8).map((summary) => (
+          <button key={`${summary.team}-${summary.role}`} type="button" disabled={!summary.primary_insight_id} onClick={() => summary.primary_insight_id && onOpen(summary.primary_insight_id)} className="grid w-full grid-cols-[minmax(0,1.3fr)_auto_auto] items-center gap-3 px-5 py-3 text-left transition hover:bg-[var(--bg-sunken)]/55 disabled:cursor-default focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500">
+            <span className="min-w-0"><strong className="block truncate text-xs font-extrabold text-[var(--text-primary)]">{summary.role}</strong><span className="mt-0.5 block truncate text-[10px] text-[var(--text-muted)]">{summary.team} · {summary.affected_employees}/{summary.total_employees} affected</span></span>
+            <strong className="text-sm font-black text-[var(--text-primary)]">{summary.current_score === null ? 'N/A' : `${summary.current_score.toFixed(1)}%`}</strong>
+            <span className={`text-xs font-extrabold ${summary.movement !== null && summary.movement < 0 ? 'text-rose-600' : 'text-emerald-600'}`}>{summary.movement === null ? 'N/A' : `${summary.movement > 0 ? '+' : ''}${summary.movement.toFixed(1)}%`}</span>
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function KpiOverviewPanel({ overview }: { overview: InsightKpiOverview }) {
+  const max = Math.max(1, ...overview.points.map((point) => point.total_kpis));
+  return (
+    <section className="overflow-hidden rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] shadow-sm" aria-labelledby="kpi-overview-title">
+      <header className="border-b border-[var(--border-light)] px-5 py-4"><div className="flex items-center gap-2"><BarChart3 size={17} className="text-blue-600" /><h2 id="kpi-overview-title" className="text-base font-extrabold text-[var(--text-primary)]">KPI overview</h2></div><p className="mt-1 text-xs text-[var(--text-muted)]">Health of configured KPIs across the selected scope.</p></header>
+      <div className="grid grid-cols-3 gap-2 px-5 py-4 sm:grid-cols-4"><div><span className="text-[10px] font-bold uppercase text-[var(--text-faint)]">Total</span><strong className="mt-1 block text-xl font-black text-[var(--text-primary)]">{overview.total_kpis}</strong></div><div><span className="text-[10px] font-bold uppercase text-emerald-600">On track</span><strong className="mt-1 block text-xl font-black text-emerald-600">{overview.on_track}</strong></div><div><span className="text-[10px] font-bold uppercase text-amber-600">At risk</span><strong className="mt-1 block text-xl font-black text-amber-600">{overview.at_risk}</strong></div><div><span className="text-[10px] font-bold uppercase text-rose-600">Critical</span><strong className="mt-1 block text-xl font-black text-rose-600">{overview.critical}</strong></div></div>
+      {overview.points.length > 0 && <div className="flex h-28 items-end gap-3 border-t border-[var(--border-light)] px-5 pb-4 pt-3">{overview.points.map((point) => <div key={point.period.key} className="flex min-w-0 flex-1 flex-col items-center justify-end gap-1"><div className="flex h-16 w-full max-w-10 items-end gap-0.5"><span className="w-1/3 rounded-t bg-emerald-400" style={{ height: `${Math.max(4, (point.on_track / max) * 100)}%` }} /><span className="w-1/3 rounded-t bg-amber-400" style={{ height: `${Math.max(4, (point.at_risk / max) * 100)}%` }} /><span className="w-1/3 rounded-t bg-rose-400" style={{ height: `${Math.max(4, (point.critical / max) * 100)}%` }} /></div><span className="truncate text-[9px] font-bold text-[var(--text-faint)]">{point.period.month.slice(0, 3)}</span></div>)}</div>}
+    </section>
+  );
+}
+
+function CriticalAlertsPanel({ insights, onOpen }: { insights: InsightItem[]; onOpen: (insight: InsightItem) => void }) {
+  const alerts = insights.filter((insight) => insight.severity === 'critical' || insight.severity === 'risk').slice(0, 4);
+  return (
+    <section className="overflow-hidden rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] shadow-sm" aria-labelledby="critical-alerts-title">
+      <header className="flex items-center justify-between border-b border-[var(--border-light)] px-5 py-4"><div className="flex items-center gap-2"><BadgeAlert size={17} className="text-rose-600" /><h2 id="critical-alerts-title" className="text-base font-extrabold text-[var(--text-primary)]">Recent critical alerts</h2></div><span className="text-xs font-bold text-[var(--text-muted)]">{alerts.length} visible</span></header>
+      {alerts.length ? <div className="divide-y divide-[var(--border-light)]">{alerts.map((insight) => <button key={insight.id} type="button" onClick={() => onOpen(insight)} className="flex w-full items-center gap-3 px-5 py-3 text-left transition hover:bg-rose-500/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"><span className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg border ${severityStyles[insight.severity]}`}><AlertTriangle size={14} /></span><span className="min-w-0 flex-1"><strong className="block truncate text-xs font-extrabold text-[var(--text-primary)]">{insight.title}</strong><span className="mt-0.5 block truncate text-[10px] text-[var(--text-muted)]">{cleanScope(insight.scope)}</span></span><ArrowRight size={14} className="text-[var(--text-faint)]" /></button>)}</div> : <p className="px-5 py-8 text-center text-sm text-[var(--text-muted)]">No critical alerts in this scope.</p>}
     </section>
   );
 }
@@ -351,7 +512,7 @@ function filtersFromUrl(params: URLSearchParams): InsightFilters {
 
 export default function InsightsView() {
   const navigate = useNavigate();
-  const { role } = useUserRole();
+  const { role, fetchWithRole } = useUserRole();
   const [searchParams, setSearchParams] = useSearchParams();
   const [filters, setFilters] = useState<InsightFilters>(() => filtersFromUrl(searchParams));
   const [showAdditional, setShowAdditional] = useState(false);
@@ -362,8 +523,16 @@ export default function InsightsView() {
   const [modalEmployee, setModalEmployee] = useState<TeamAgentRow | null>(null);
   const [hoverTooltip, setHoverTooltip] = useState<{ text: string; x: number; y: number } | null>(null);
   const [shareNotice, setShareNotice] = useState<string | null>(null);
+  const [exportState, setExportState] = useState<'idle' | 'exporting' | 'error'>('idle');
+  const [exportError, setExportError] = useState<string | null>(null);
   const query = useInsightsWorkspace(filters);
   const workspace = query.data;
+  // Keep placeholder data from showing the previous KPI's trend while a new
+  // KPI-only filter request is in flight. The chart must identify the KPI the
+  // user selected, not merely display whatever trend was cached previously.
+  const selectedKpiTrend = filters.kpi && workspace?.kpi_trend?.kpi_key !== filters.kpi
+    ? null
+    : workspace?.kpi_trend;
   const quickActionMonth = workspace?.comparison.current?.month || 'All';
   const quickActionLevel = (filters.performanceLevel || 'All') as PerformanceLevelFilter;
   const quickActionRegion = filters.region === 'EGY' || filters.region === 'UAE' ? filters.region : 'All';
@@ -483,6 +652,7 @@ export default function InsightsView() {
     filters.kpi ? { key: 'kpi' as const, label: 'KPI', value: workspace.options.kpis.find((item) => item.key === filters.kpi)?.label || filters.kpi } : null,
     filters.severity ? { key: 'severity' as const, label: 'Severity', value: filters.severity } : null,
     filters.insightType ? { key: 'insightType' as const, label: 'Type', value: filters.insightType } : null,
+    filters.status ? { key: 'status' as const, label: 'Status', value: filters.status } : null,
   ].filter(Boolean) as Array<{ key: keyof InsightFilters; label: string; value: string }>;
   const clearFilter = (key: keyof InsightFilters) => {
     setAnalysisPage(1);
@@ -532,16 +702,79 @@ export default function InsightsView() {
     }
     window.setTimeout(() => setShareNotice(null), 2200);
   };
-  const handleExport = () => {
-    window.print();
+  const handleExport = async () => {
+    const period = workspace.options.periods.find((item) => item.key === effectivePeriod);
+    if (!period) {
+      setExportState('error');
+      setExportError('The selected Insights period is unavailable for export.');
+      return;
+    }
+    setExportState('exporting');
+    setExportError(null);
+    try {
+      const response = await fetchWithRole(`${API_BASE}/api/reports/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          report_type: 'insights',
+          report_name: `Insights - ${period.month} ${period.year}`,
+          start_month: period.month,
+          start_year: period.year,
+          region: filters.region || null,
+          team: filters.team || null,
+          position: filters.position || null,
+          performance_level: filters.performanceLevel || null,
+          employee_id: filters.employeeId || null,
+          kpi: filters.kpi || null,
+          severity: filters.severity || null,
+          insight_type: filters.insightType || null,
+          included_sections: ['summary', 'team_breakdown', 'kpi_breakdown', 'details'],
+          output_format: 'pptx',
+        }),
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => null);
+        throw new Error(body?.detail || 'PowerPoint export failed.');
+      }
+      const responseBody = await response.json();
+      let generatedReport = responseBody.data as { download_url?: string; file_name?: string; job_id?: string };
+      if (generatedReport?.job_id) {
+        const job = await waitForProcessingJob(generatedReport.job_id);
+        if (job.status !== 'succeeded' || !job.result) {
+          throw new Error(job.error?.message || 'PowerPoint generation failed.');
+        }
+        generatedReport = job.result as typeof generatedReport;
+      }
+      if (!generatedReport?.download_url) {
+        throw new Error('The generated PowerPoint download is unavailable.');
+      }
+      const downloadUrl = generatedReport.download_url.startsWith('http')
+        ? generatedReport.download_url
+        : `${API_BASE}${generatedReport.download_url}`;
+      const fileResponse = await fetchWithRole(downloadUrl);
+      if (!fileResponse.ok) throw new Error('The generated PowerPoint could not be downloaded.');
+      const blob = await fileResponse.blob();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = generatedReport.file_name || `insights-${period.year}-${period.month}.pptx`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+      setExportState('idle');
+    } catch (error) {
+      setExportState('error');
+      setExportError(error instanceof Error ? error.message : 'PowerPoint export failed.');
+    }
   };
 
   return (
-    <div className="app-page-shell">
-      <section className="rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] shadow-sm">
+    <div className="app-page-shell rf-page rf-page--insights insights-page">
+      <section className="insights-filter-shell rf-filter-panel rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] shadow-sm">
         <div className="flex flex-col gap-4 p-5 xl:flex-row xl:items-center xl:justify-between">
           <div><div className="flex items-center gap-2"><h1 className="text-2xl font-extrabold tracking-tight text-[var(--text-primary)]">Insights</h1><AlertCircle size={15} className="text-[var(--text-faint)]" /></div><p className="mt-1 max-w-2xl text-sm text-[var(--text-muted)]">Understand what happened, why it happened, and what to do next.</p></div>
-          <div className="flex flex-wrap items-center gap-2 text-xs text-[var(--text-muted)]"><span className="rounded-full bg-[var(--bg-sunken)] px-3 py-1.5 font-semibold">Current: {workspace.comparison.current ? `${workspace.comparison.current.month} ${workspace.comparison.current.year}` : 'Unavailable'}</span><span className="rounded-full bg-[var(--bg-sunken)] px-3 py-1.5 font-semibold">Compare: {workspace.comparison.previous ? `${workspace.comparison.previous.month} ${workspace.comparison.previous.year}` : 'Unavailable'}</span><button type="button" onClick={() => void handleShare()} className="inline-flex min-h-9 items-center gap-1.5 rounded-xl border border-[var(--input-border)] bg-[var(--input-bg)] px-3 font-bold text-[var(--text-secondary)] transition hover:border-blue-500/40 hover:text-blue-600"><Share2 size={14} /> Share</button><button type="button" onClick={handleExport} className="inline-flex min-h-9 items-center gap-1.5 rounded-xl bg-blue-600 px-3 font-bold text-white transition hover:bg-blue-700"><Download size={14} /> Export</button>{query.isFetching && <Loader2 size={14} className="animate-spin text-blue-600" />}{shareNotice && <span role="status" className="font-bold text-blue-600">{shareNotice}</span>}</div>
+          <div className="flex flex-wrap items-center gap-2 text-xs text-[var(--text-muted)]"><span className="rounded-full bg-[var(--bg-sunken)] px-3 py-1.5 font-semibold">Current: {workspace.comparison.current ? `${workspace.comparison.current.month} ${workspace.comparison.current.year}` : 'Unavailable'}</span><span className="rounded-full bg-[var(--bg-sunken)] px-3 py-1.5 font-semibold">Compare: {workspace.comparison.previous ? `${workspace.comparison.previous.month} ${workspace.comparison.previous.year}` : 'Unavailable'}</span><button type="button" onClick={() => void handleShare()} className="inline-flex min-h-9 items-center gap-1.5 rounded-xl border border-[var(--input-border)] bg-[var(--input-bg)] px-3 font-bold text-[var(--text-secondary)] transition hover:border-blue-500/40 hover:text-blue-600"><Share2 size={14} /> Share</button><button type="button" onClick={() => void handleExport()} disabled={exportState === 'exporting'} className="inline-flex min-h-9 items-center gap-1.5 rounded-xl bg-blue-600 px-3 font-bold text-white transition hover:bg-blue-700 disabled:cursor-wait disabled:opacity-70">{exportState === 'exporting' ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} {exportState === 'exporting' ? 'Exporting PPTX…' : 'Export PowerPoint'}</button>{query.isFetching && <Loader2 size={14} className="animate-spin text-blue-600" />}{shareNotice && <span role="status" className="font-bold text-blue-600">{shareNotice}</span>}{exportError && <span role="alert" className="font-bold text-rose-600">{exportError}</span>}</div>
         </div>
         <div className="grid gap-2 border-t border-[var(--border-light)] p-4 sm:grid-cols-2 xl:grid-cols-5">
           <FilterSelect label="Insight period" value={effectivePeriod} onChange={(value) => update('periodKey', value)} options={workspace.options.periods.map((period) => ({ value: period.key, label: `${period.month} ${period.year}` }))} />
@@ -568,17 +801,38 @@ export default function InsightsView() {
           }} allLabel="All levels" options={workspace.options.performance_levels.map((value) => ({ value, label: value }))} />
           <button type="button" aria-expanded={showAdditional} onClick={() => setShowAdditional((value) => !value)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-[var(--input-border)] bg-[var(--input-bg)] px-4 text-sm font-bold text-[var(--text-secondary)] hover:border-blue-500/40"><Filter size={16} /> More filters {activeFilterEntries.length > 0 && <span className="grid h-5 min-w-5 place-items-center rounded-full bg-blue-600 px-1 text-[10px] text-white">{activeFilterEntries.length}</span>}</button>
         </div>
-        {showAdditional && <div className="grid gap-2 border-t border-[var(--border-light)] bg-[var(--bg-sunken)]/40 p-4 sm:grid-cols-2 xl:grid-cols-6"><FilterSelect label="Position" value={filters.position || ''} onChange={(value) => { update('position', value); update('employeeId', ''); }} allLabel="All positions" options={workspace.options.positions.map((value) => ({ value, label: value }))} /><FilterSelect label="Employee" value={filters.employeeId || ''} onChange={(value) => update('employeeId', value)} allLabel="All employees" options={filteredEmployees.map((employee) => ({ value: employee.id, label: `${employee.name} (${employee.id})` }))} /><FilterSelect label="KPI" value={filters.kpi || ''} onChange={(value) => update('kpi', value)} allLabel="All KPIs" options={workspace.options.kpis.map((kpi) => ({ value: kpi.key, label: kpi.label }))} /><FilterSelect label="Severity" value={filters.severity || ''} onChange={(value) => update('severity', value)} allLabel="All severities" options={workspace.options.severities.map((value) => ({ value, label: value.replace('_', ' ') }))} /><FilterSelect label="Insight type" value={filters.insightType || ''} onChange={(value) => update('insightType', value)} allLabel="All types" options={workspace.options.insight_types.map((value) => ({ value, label: value.replace('_', ' ') }))} /><button type="button" onClick={clearAnalysis} className="min-h-11 rounded-xl border border-[var(--input-border)] px-4 text-sm font-bold text-[var(--text-secondary)] hover:text-red-600">Clear analysis</button></div>}
+        {showAdditional && <div className="grid gap-2 border-t border-[var(--border-light)] bg-[var(--bg-sunken)]/40 p-4 sm:grid-cols-2 xl:grid-cols-7"><FilterSelect label="Position" value={filters.position || ''} onChange={(value) => { update('position', value); update('employeeId', ''); }} allLabel="All positions" options={workspace.options.positions.map((value) => ({ value, label: value }))} /><FilterSelect label="Employee" value={filters.employeeId || ''} onChange={(value) => { update('employeeId', value); const employeeInsight = [...workspace.priority_insights, ...workspace.team_analyses].find((insight) => insight.employee_id === value); if (employeeInsight) { setFocusedInsightId(employeeInsight.id); setDrawerInsight(employeeInsight); } }} allLabel="All employees" options={filteredEmployees.map((employee) => ({ value: employee.id, label: `${employee.name} (${employee.id})` }))} /><FilterSelect label="KPI" value={filters.kpi || ''} onChange={(value) => update('kpi', value)} allLabel="All KPIs" options={workspace.options.kpis.map((kpi) => ({ value: kpi.key, label: kpi.label }))} /><FilterSelect label="Severity" value={filters.severity || ''} onChange={(value) => update('severity', value)} allLabel="All severities" options={workspace.options.severities.map((value) => ({ value, label: value.replace('_', ' ') }))} /><FilterSelect label="Insight type" value={filters.insightType || ''} onChange={(value) => update('insightType', value)} allLabel="All types" options={workspace.options.insight_types.map((value) => ({ value, label: value.replace('_', ' ') }))} /><FilterSelect label="Status" value={filters.status || ''} onChange={(value) => update('status', value)} allLabel="All statuses" options={workspace.options.statuses.map((value) => ({ value, label: value.replace('_', ' ') }))} /><button type="button" onClick={clearAnalysis} className="min-h-11 rounded-xl border border-[var(--input-border)] px-4 text-sm font-bold text-[var(--text-secondary)] hover:text-red-600">Clear analysis</button></div>}
         {activeFilterEntries.length > 0 && <div className="flex flex-wrap items-center gap-2 border-t border-[var(--border-light)] px-4 py-3"><span className="mr-1 text-[10px] font-black uppercase tracking-[0.14em] text-[var(--text-faint)]">{analysisDepth}</span>{activeFilterEntries.map((entry) => <button key={entry.key} type="button" onClick={() => clearFilter(entry.key)} className="inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-[11px] font-bold text-blue-700 hover:border-blue-400 dark:border-blue-500/25 dark:bg-blue-500/10 dark:text-blue-200">{entry.label}: {entry.value}<X size={12} /></button>)}<button type="button" onClick={clearAnalysis} className="ml-auto text-[11px] font-bold text-[var(--text-muted)] hover:text-rose-600">Reset analysis</button></div>}
       </section>
 
       {SHOW_EXECUTIVE_STORY && workspace.executive_story && <ExecutiveStoryCard story={workspace.executive_story} onScopeSelect={selectRegion} />}
+      <ReportReference
+        story={workspace.executive_story}
+        trend={selectedKpiTrend}
+        people={workspace.people_contribution_analysis}
+        onOpenEmployee={(employeeId, level) => {
+          const month = workspace.comparison.current?.month || '';
+          navigate(`/employee/${encodeURIComponent(employeeId)}?month=${encodeURIComponent(month)}&performance_level=${encodeURIComponent(level || 'Employee')}`);
+        }}
+      />
       {!filters.region && !filters.team && !filters.kpi && (workspace.geography_summaries?.length ?? 0) > 0 && <GeographyContribution summaries={workspace.geography_summaries || []} onSelect={selectRegion} />}
+
+      {!filters.team && !filters.kpi && !filters.employeeId && <>
+        <ImpactHighlights drivers={workspace.performance_drivers} onOpen={(id) => { setFocusedInsightId(id); window.scrollTo({ top: 0, behavior: 'smooth' }); }} />
+        <section className="grid gap-5 xl:grid-cols-2" aria-label="Performance summaries">
+          <PerformanceByTeam summaries={workspace.team_summaries} onSelect={selectTeam} />
+          <PerformanceByRole summaries={workspace.role_summaries || []} onOpen={(id) => setFocusedInsightId(id)} />
+        </section>
+        <section className="grid gap-5 xl:grid-cols-2" aria-label="KPI health and alerts">
+          {workspace.kpi_overview && <KpiOverviewPanel overview={workspace.kpi_overview} />}
+          <CriticalAlertsPanel insights={workspace.priority_insights} onOpen={(insight) => { setFocusedInsightId(insight.id); setDrawerInsight(insight); }} />
+        </section>
+      </>}
 
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Insight summary">{summaryCards.map(({ label, value, copy, icon: Icon, style }) => <article key={label} className={`min-h-[142px] rounded-2xl border p-5 shadow-sm ${style}`}><div className="flex items-start justify-between"><span className="text-sm font-extrabold">{label}</span><span className="grid h-10 w-10 place-items-center rounded-xl bg-current/10"><Icon size={19} /></span></div><p className="mt-3 text-3xl font-black text-[var(--text-primary)]">{value}</p><p className="mt-1 text-xs font-medium text-[var(--text-muted)]">{copy}</p></article>)}</section>
 
       <section className="grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(340px,0.75fr)]">
-        <article className="overflow-hidden rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] shadow-sm"><header className="border-b border-[var(--border-light)] px-5 py-4"><div className="flex items-center gap-2"><h2 className="text-lg font-extrabold text-[var(--text-primary)]">Weighted Score Contribution</h2><AlertCircle size={14} className="text-[var(--text-faint)]" /></div><p className="mt-1 text-xs text-[var(--text-muted)]">Measured KPI contribution movements—not assumed operational root causes.</p></header><DriverChart drivers={workspace.performance_drivers} onSelect={setFocusedInsightId} onHoverTooltip={setHoverTooltip} />{filters.kpi && workspace.kpi_trend?.kpi_key === filters.kpi ? <KpiSixMonthTrend trend={workspace.kpi_trend} /> : null}</article>
+        <article className="overflow-hidden rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] shadow-sm"><header className="border-b border-[var(--border-light)] px-5 py-4"><div className="flex items-center gap-2"><h2 className="text-lg font-extrabold text-[var(--text-primary)]">Weighted Score Contribution</h2><AlertCircle size={14} className="text-[var(--text-faint)]" /></div><p className="mt-1 text-xs text-[var(--text-muted)]">Measured KPI contribution movements—not assumed operational root causes.</p></header><DriverChart drivers={workspace.performance_drivers} onSelect={setFocusedInsightId} onHoverTooltip={setHoverTooltip} /></article>
         <article className="overflow-hidden rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] shadow-sm"><header className="flex items-center justify-between border-b border-[var(--border-light)] px-5 py-4"><h2 className="text-lg font-extrabold text-[var(--text-primary)]">Insight Summary</h2>{focusedInsight && <span className={`rounded-full border px-2 py-1 text-[9px] font-black uppercase ${severityStyles[focusedInsight.severity]}`}>{severityLabels[focusedInsight.severity]}</span>}</header><InsightSpotlight insight={focusedInsight} onOpen={() => focusedInsight && setDrawerInsight(focusedInsight)} /></article>
       </section>
 
@@ -629,7 +883,7 @@ export default function InsightsView() {
         onNavigate={navigate}
       />
 
-      <section className="grid gap-5 xl:grid-cols-2">
+      {showDiagnosticAnalysis && <section className="grid gap-5 xl:grid-cols-2">
         <article className="overflow-hidden rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] shadow-sm">
           <header className="border-b border-[var(--border-light)] px-5 py-4">
             <h2 className="text-base font-extrabold text-[var(--text-primary)]">Team Risk Matrix</h2>
@@ -722,7 +976,7 @@ export default function InsightsView() {
           )}
         </article>
         <article className="rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] p-5 shadow-sm"><div className="flex items-center gap-2"><Target size={17} className="text-blue-600" /><h2 className="text-base font-extrabold text-[var(--text-primary)]">Decision Support Notes</h2></div><div className="mt-4 space-y-3">{workspace.risks.map((risk) => <button type="button" key={risk.key} onClick={() => update('insightType', filters.insightType === risk.filter_type ? '' : risk.filter_type)} className="flex w-full items-center gap-3 rounded-xl border border-[var(--border-light)] bg-[var(--bg-sunken)]/35 p-3 text-left hover:border-blue-500/30"><span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-rose-500/10 text-rose-600"><AlertTriangle size={16} /></span><span className="min-w-0 flex-1"><strong className="text-sm text-[var(--text-primary)]">{risk.count} {risk.label}</strong><span className="mt-0.5 block text-xs text-[var(--text-muted)]">{risk.explanation}</span></span><ArrowRight size={15} className="text-[var(--text-faint)]" /></button>)}</div>{workspace.deferred_capabilities.length > 0 && <p className="mt-4 rounded-xl bg-[var(--bg-sunken)] p-3 text-xs leading-5 text-[var(--text-muted)]">{workspace.deferred_capabilities.join(' ')}</p>}</article>
-      </section>
+      </section>}
 
       <footer className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[var(--border-light)] bg-[var(--bg-surface)] px-4 py-3 text-[10px] text-[var(--text-muted)]"><span className="flex items-center gap-2"><AlertCircle size={13} /> Insights use the same authorized performance evidence and active configuration.</span><span>{analysisItems.length} analyses in the selected scope</span></footer>
       <InsightDetailDrawer key={drawerInsight?.id || 'closed'} insight={drawerInsight} onClose={() => setDrawerInsight(null)} />

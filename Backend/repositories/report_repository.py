@@ -68,10 +68,29 @@ class ReportRepository:
         owner_user_id: UUID | None,
         offset: int,
         limit: int,
+        report_type: str | None = None,
+        period: str | None = None,
+        status: str | None = None,
+        search: str | None = None,
     ) -> tuple[list[GeneratedReport], int]:
         query = self.db.query(GeneratedReport).options(defer(GeneratedReport.file_data))
         if owner_user_id is not None:
             query = query.filter(GeneratedReport.created_by_user_id == owner_user_id)
+        if report_type:
+            query = query.filter(GeneratedReport.report_type == report_type)
+        if period:
+            query = query.filter(GeneratedReport.period_label.ilike(f"%{period}%"))
+        if status:
+            query = query.filter(GeneratedReport.status == status)
+        if search:
+            pattern = f"%{search.strip()}%"
+            query = query.filter(or_(
+                GeneratedReport.name.ilike(pattern),
+                GeneratedReport.report_type.ilike(pattern),
+                GeneratedReport.scope_summary.ilike(pattern),
+                GeneratedReport.created_by_name.ilike(pattern),
+                GeneratedReport.file_name.ilike(pattern),
+            ))
         total = query.count()
         rows = query.order_by(GeneratedReport.created_at.desc()).offset(offset).limit(limit).all()
         return rows, total
@@ -93,6 +112,26 @@ class ReportRepository:
         for row in query.order_by(GeneratedReport.created_at.desc()).all():
             configuration = row.configuration if isinstance(row.configuration, dict) else {}
             if str(configuration.get("_processing_job_id") or "") == str(job_id):
+                return row
+        return None
+
+    def get_generated_by_idempotency_key(
+        self,
+        idempotency_key: str,
+        *,
+        owner_user_id: UUID | None = None,
+    ) -> GeneratedReport | None:
+        """Return the report previously committed for a synchronous request key."""
+
+        normalized_key = (idempotency_key or "").strip()
+        if not normalized_key:
+            return None
+        query = self.db.query(GeneratedReport).options(defer(GeneratedReport.file_data))
+        if owner_user_id is not None:
+            query = query.filter(GeneratedReport.created_by_user_id == owner_user_id)
+        for row in query.order_by(GeneratedReport.created_at.desc()).all():
+            configuration = row.configuration if isinstance(row.configuration, dict) else {}
+            if str(configuration.get("_idempotency_key") or "") == normalized_key:
                 return row
         return None
 

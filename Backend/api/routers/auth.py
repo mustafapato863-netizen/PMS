@@ -3,8 +3,12 @@ Provides login and logout endpoints.
 """
 
 import logging
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from datetime import datetime, timezone
+from urllib.parse import urlsplit
+
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session
+from config import settings
 from config.database import get_db
 from models.schemas import (
     JWTToken,
@@ -14,7 +18,12 @@ from models.schemas import (
     StandardResponse,
 )
 from models.models import Team, User, UserTeamAssignment
-from services.auth_service import AuthenticationService, redis_client
+from services.auth_service import (
+    AuthenticationService,
+    InvalidCsrfTokenError,
+    RefreshTokenError,
+    RefreshTokenReuseError,
+)
 from services.user_identity_service import UserIdentityService
 from services.user_profile_service import (
     CurrentPasswordInvalidError,
@@ -30,6 +39,69 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 
+def _request_origin_is_trusted(request: Request) -> bool:
+    origin = request.headers.get("origin")
+    if origin:
+        return origin.rstrip("/") in settings.CORS_ORIGINS
+
+    referer = request.headers.get("referer")
+    if referer:
+        parsed = urlsplit(referer)
+        return f"{parsed.scheme}://{parsed.netloc}".rstrip("/") in settings.CORS_ORIGINS
+
+    # Direct service calls and same-process tests do not carry browser origin
+    # metadata. Production browsers send Origin on these POST requests; keep
+    # the fallback for non-browser clients and local development.
+    return settings.APP_ENV not in {"production", "staging"}
+
+
+def _require_trusted_cookie_request(request: Request) -> None:
+    if not _request_origin_is_trusted(request):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Untrusted authentication request origin.",
+        )
+
+
+def _request_metadata(request: Request) -> tuple[str | None, str | None]:
+    user_agent = request.headers.get("user-agent")
+    client_host = request.client.host if request.client else None
+    return user_agent, client_host
+
+
+def _set_session_cookies(response: Response, tokens) -> None:
+    refresh_max_age = max(1, int((tokens.refresh_expires_at - datetime.now(timezone.utc)).total_seconds()))
+    cookie_kwargs = {
+        "max_age": refresh_max_age,
+        "secure": settings.AUTH_COOKIE_SECURE,
+        "samesite": settings.AUTH_COOKIE_SAMESITE,
+        "domain": settings.AUTH_COOKIE_DOMAIN,
+    }
+    response.set_cookie(
+        settings.AUTH_REFRESH_COOKIE_NAME,
+        tokens.refresh_token,
+        httponly=True,
+        path="/api/auth",
+        **cookie_kwargs,
+    )
+    response.set_cookie(
+        settings.AUTH_CSRF_COOKIE_NAME,
+        tokens.csrf_token,
+        httponly=False,
+        path="/api/auth",
+        **cookie_kwargs,
+    )
+
+
+def _clear_session_cookies(response: Response) -> None:
+    for name in (settings.AUTH_REFRESH_COOKIE_NAME, settings.AUTH_CSRF_COOKIE_NAME):
+        response.delete_cookie(
+            name,
+            path="/api/auth",
+            domain=settings.AUTH_COOKIE_DOMAIN,
+        )
+
+
 def _current_user_payload(request: Request) -> dict:
     payload = getattr(request.state, "user", None)
     if not isinstance(payload, dict):
@@ -38,23 +110,30 @@ def _current_user_payload(request: Request) -> dict:
 
 
 @router.post("/login", response_model=StandardResponse)
-async def login(payload: LoginPayload, db: Session = Depends(get_db)):
+async def login(payload: LoginPayload, request: Request, response: Response, db: Session = Depends(get_db)):
     """
     Authenticate user and return JWT token.
     """
     try:
-        token = AuthenticationService.authenticate_user(db, payload.username, payload.password)
-        
-        # Get user details for JWTToken schema
-        from models.models import User
-        user = db.query(User).filter(User.username == payload.username).first()
-        
-        token_data = JWTToken(
-            access_token=token,
-            token_type="bearer",
-            role=user.role,
-            username=user.username
+        user_agent, client_host = _request_metadata(request)
+        tokens = AuthenticationService.authenticate_user_with_session(
+            db,
+            payload.username,
+            payload.password,
+            remember_me=payload.remember_me,
+            user_agent=user_agent,
+            ip_address=client_host,
         )
+
+        token_data = JWTToken(
+            access_token=tokens.access_token,
+            token_type="bearer",
+            role=tokens.user.role,
+            username=tokens.user.username,
+            expires_in=tokens.access_expires_in,
+            csrf_token=tokens.csrf_token,
+        )
+        _set_session_cookies(response, tokens)
         
         return StandardResponse(
             success=True,
@@ -80,25 +159,70 @@ async def login(payload: LoginPayload, db: Session = Depends(get_db)):
         )
 
 
+@router.post("/refresh", response_model=StandardResponse)
+async def refresh(request: Request, response: Response, db: Session = Depends(get_db)):
+    _require_trusted_cookie_request(request)
+    refresh_token = request.cookies.get(settings.AUTH_REFRESH_COOKIE_NAME)
+    user_agent, client_host = _request_metadata(request)
+    try:
+        tokens = AuthenticationService.rotate_refresh_token(
+            db,
+            refresh_token or "",
+            csrf_token=request.headers.get("X-CSRF-Token"),
+            user_agent=user_agent,
+            ip_address=client_host,
+        )
+        _set_session_cookies(response, tokens)
+        return StandardResponse(
+            success=True,
+            message="Authentication session refreshed",
+            data=JWTToken(
+                access_token=tokens.access_token,
+                token_type="bearer",
+                role=tokens.user.role,
+                username=tokens.user.username,
+                expires_in=tokens.access_expires_in,
+                csrf_token=tokens.csrf_token,
+            ).model_dump(),
+        )
+    except InvalidCsrfTokenError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except RefreshTokenReuseError:
+        logger.warning("Refresh token reuse detected from %s", client_host)
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Refresh session is invalid.")
+    except RefreshTokenError as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
+
+
 @router.post("/logout", response_model=StandardResponse)
-async def logout(request: Request):
+async def logout(request: Request, response: Response, db: Session = Depends(get_db)):
     """
     Log out the current user and invalidate the session cache.
     """
     try:
-        # Check if token exists in request state
-        if hasattr(request.state, "user"):
-            user_id = request.state.user.get("user_id")
-            if redis_client:
-                try:
-                    redis_client.delete(f"session:{user_id}")
-                except Exception as ex:
-                    logger.warning(f"Failed to clear session in Redis: {ex}")
+        refresh_token = request.cookies.get(settings.AUTH_REFRESH_COOKIE_NAME)
+        if refresh_token:
+            _require_trusted_cookie_request(request)
+        payload = getattr(request.state, "user", None)
+        csrf_token = request.headers.get("X-CSRF-Token")
+        AuthenticationService.revoke_session(
+            db,
+            refresh_token=refresh_token,
+            session_id=payload.get("session_id") if isinstance(payload, dict) else None,
+            csrf_token=csrf_token,
+        )
+        if not refresh_token and isinstance(payload, dict) and not payload.get("session_id"):
+            AuthenticationService.revoke_legacy_session(payload.get("user_id"))
+        _clear_session_cookies(response)
         
         return StandardResponse(
             success=True,
             message="Successfully logged out"
         )
+    except InvalidCsrfTokenError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Logout error: {e}")
         raise HTTPException(
@@ -209,6 +333,7 @@ async def change_password(
             payload.current_password,
             payload.new_password,
         )
+        AuthenticationService.revoke_all_sessions(db, str(user_id), reason="password_changed")
         return StandardResponse(
             success=True,
             message="Password changed successfully",

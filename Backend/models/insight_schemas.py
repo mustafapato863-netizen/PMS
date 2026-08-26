@@ -65,6 +65,12 @@ class InsightDriver(BaseModel):
     impact_points: float
     direction: Literal["positive", "negative"]
     insight_id: str
+    trend: list["InsightDriverTrendPoint"] = Field(default_factory=list)
+
+
+class InsightDriverTrendPoint(BaseModel):
+    period: InsightPeriod
+    impact_points: float | None = None
 
 
 class InsightRisk(BaseModel):
@@ -182,6 +188,34 @@ class InsightKpiTrend(BaseModel):
     points: list[InsightKpiTrendPoint] = Field(default_factory=list)
 
 
+class InsightRoleSummary(BaseModel):
+    role: str
+    team: str
+    current_score: float | None = None
+    previous_score: float | None = None
+    movement: float | None = None
+    net_impact: float | None = None
+    affected_employees: int = 0
+    total_employees: int = 0
+    primary_insight_id: str | None = None
+
+
+class InsightKpiOverviewPoint(BaseModel):
+    period: InsightPeriod
+    total_kpis: int = 0
+    on_track: int = 0
+    at_risk: int = 0
+    critical: int = 0
+
+
+class InsightKpiOverview(BaseModel):
+    total_kpis: int = 0
+    on_track: int = 0
+    at_risk: int = 0
+    critical: int = 0
+    points: list[InsightKpiOverviewPoint] = Field(default_factory=list)
+
+
 class InsightFilterOptions(BaseModel):
     periods: list[InsightPeriod] = Field(default_factory=list)
     regions: list[str] = Field(default_factory=list)
@@ -215,6 +249,8 @@ class InsightsWorkspace(BaseModel):
     executive_story: InsightExecutiveStory | None = None
     people_contribution_analysis: InsightPeopleContributionAnalysis | None = None
     kpi_trend: InsightKpiTrend | None = None
+    role_summaries: list[InsightRoleSummary] = Field(default_factory=list)
+    kpi_overview: InsightKpiOverview = Field(default_factory=InsightKpiOverview)
     options: InsightFilterOptions
     comparison: InsightComparison
     deferred_capabilities: list[str] = Field(default_factory=list)

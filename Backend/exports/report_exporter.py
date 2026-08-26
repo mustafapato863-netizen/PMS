@@ -105,6 +105,12 @@ class ReportExporter:
         normalized = (output_format or "pptx").lower()
         if normalized == "pdf":
             return ReportExporter._export_pdf(title=title, metadata=metadata, sheets=sheets), "application/pdf", ".pdf"
+        if normalized == "excel":
+            return (
+                ReportExporter.export_workbook(metadata=metadata, sheets=sheets),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                ".xlsx",
+            )
         return (
             ReportExporter._export_pptx(title=title, metadata=metadata, sheets=sheets),
             "application/vnd.openxmlformats-officedocument.presentationml.presentation",

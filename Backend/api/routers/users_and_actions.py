@@ -322,6 +322,8 @@ async def update_user_route(
 
         if updates.get("password"):
             existing.password_hash = hash_password(updates["password"])
+            from services.auth_service import AuthenticationService
+            AuthenticationService.revoke_all_sessions(db, str(existing.id), reason="admin_password_changed")
 
         if "accessible_teams" in updates or "accessible_team_levels" in updates or "is_general_manager" in updates:
             if updates.get("is_general_manager") and existing.role == "Manager":

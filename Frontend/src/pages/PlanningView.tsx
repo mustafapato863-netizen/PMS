@@ -1,3 +1,4 @@
+import './PageEnhancements.css';
 import { useMemo, useState, type FormEvent } from 'react';
 import {
   AlertCircle, CalendarDays, CheckCircle2, ChevronLeft, ClipboardCheck,
@@ -240,7 +241,7 @@ export default function PlanningView() {
   const countFor = (value: string) => current?.counts[value.toLowerCase() as keyof typeof current.counts] ?? 0;
 
   return (
-    <div className="app-page-shell">
+    <div className="app-page-shell rf-page rf-page--planning">
       <header className="flex flex-col gap-3 rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] p-4 shadow-sm xl:flex-row xl:items-center xl:justify-between">
         <div className="shrink-0"><div className="flex items-center gap-2"><h1 className="text-xl font-extrabold text-[var(--text-primary)]">Planning</h1><ClipboardCheck size={17} className="text-blue-600" /></div><p className="mt-0.5 text-xs text-[var(--text-muted)]">Turn performance insights into owned, measurable actions.</p></div>
         <div className="grid gap-2 sm:grid-cols-2 xl:flex xl:items-center"><select aria-label="Team" className="min-h-10 min-w-0 rounded-xl border border-[var(--input-border)] bg-[var(--input-bg)] px-3 text-xs font-semibold text-[var(--input-text)] outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 xl:w-44" value={team} onChange={(event) => setTeam(event.target.value)}><option value="">All Teams</option>{options.data.teams.map((value) => <option key={value}>{value}</option>)}</select><select aria-label="Plan owner" className="min-h-10 min-w-0 rounded-xl border border-[var(--input-border)] bg-[var(--input-bg)] px-3 text-xs font-semibold text-[var(--input-text)] outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 xl:w-40" value={owner} onChange={(event) => setOwner(event.target.value)}><option value="">All Plan Owners</option>{options.data.owners.map((value) => <option key={value.id} value={value.id}>{value.name}</option>)}</select><select aria-label="Status" className="min-h-10 min-w-0 rounded-xl border border-[var(--input-border)] bg-[var(--input-bg)] px-3 text-xs font-semibold text-[var(--input-text)] outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 xl:w-32" value={status} onChange={(event) => setStatus(event.target.value)}><option value="">All Statuses</option>{options.data.statuses.map((value) => <option key={value}>{value}</option>)}</select>{options.data.can_edit && <button type="button" onClick={() => setNewOpen(true)} className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-xl bg-blue-600 px-3.5 text-xs font-bold text-white shadow-sm hover:bg-blue-700"><Plus size={16} />New Plan</button>}</div>

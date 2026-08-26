@@ -67,16 +67,16 @@ def test_lower_better_kpi_narrative_uses_real_values_and_weighted_impact():
     workspace = service.generate_workspace(_scope(), month="June", year=2026)
 
     cpl = next(item for item in workspace.priority_insights if item.kpi_key == "cpl")
-    assert cpl.impact_points == -5.6
+    assert cpl.impact_points == -5.59
     assert "declined by 81.00 AED" in cpl.explanation
     assert "moving from 55.00 AED to 136.00 AED" in cpl.explanation
     assert "76.00 AED above target" in cpl.explanation
     assert cpl.detail.recommended_focus == "Reduce CPL and review the affected employees with the largest gap."
-    assert workspace.performance_drivers[0].impact_points == -5.6
+    assert workspace.performance_drivers[0].impact_points == -5.59
     assert any(item.kpi_key == "cpl" for item in workspace.team_analyses)
     assert workspace.summary.critical_issues == 1
     assert workspace.summary.negative_weighted_drivers == 1
-    assert workspace.summary.weighted_net_impact == -5.6
+    assert workspace.summary.weighted_net_impact == -5.59
     assert workspace.summary.coverage_percent == 100
     assert workspace.team_summaries[0].team == "Marketing"
     assert workspace.team_summaries[0].score_change == -20.1
@@ -85,10 +85,46 @@ def test_lower_better_kpi_narrative_uses_real_values_and_weighted_impact():
     assert workspace.executive_story.gap_points == -30.1
     assert workspace.geography_summaries[0].scope == "EGY"
     assert workspace.geography_summaries[0].gap_contribution_percent == 100.0
+    assert workspace.role_summaries[0].role == "Media Buyer"
+    assert workspace.role_summaries[0].team == "Marketing"
+    assert workspace.kpi_overview.total_kpis == 1
+    assert workspace.kpi_overview.critical == 1
+    assert len(workspace.kpi_overview.points) == 2
     assert cpl.planning_context["baseline_value"] == 55
     assert cpl.planning_context["current_value"] == 136
     assert cpl.planning_context["target_value"] == 60
     assert cpl.planning_context["suggested_action"] == cpl.detail.recommended_focus
+
+
+def test_marketing_insights_use_configured_volume_rollup_and_average_scores():
+    first = _record("June", 60, 150, 100, .4)
+    second = _record("June", 90, 100, 100, .4)
+    second.employee_id = "E2"
+    first.position = second.position = "Graphic Designer"
+    for record, actual in ((first, 150), (second, 100)):
+        record.kpi_values = [{
+            "kpi_key": "gd_on_schedule",
+            "label": "Projects delivered on schedule",
+            "direction": "higher_better",
+            "unit": "count",
+            "actual_value": actual,
+            "target_value": 100,
+            "weight_applied": .4,
+            "contribution": .4,
+        }]
+
+    workspace = _service([first, second]).generate_workspace(
+        _scope(), month="June", year=2026, team="Marketing"
+    )
+
+    kpi = next(item for item in workspace.team_analyses if item.kpi_key == "gd_on_schedule")
+    assert kpi.detail.current_value == 250
+    assert kpi.detail.target_value == 200
+    assert any(
+        evidence.label == "Target achievement" and evidence.value == "100.0%"
+        for evidence in kpi.detail.evidence
+    )
+    assert workspace.team_summaries[0].current_score == 75.0
 
 
 def test_priority_workspace_is_compact_and_does_not_mutate_full_workspace():
@@ -108,6 +144,8 @@ def test_priority_workspace_is_compact_and_does_not_mutate_full_workspace():
     assert compact.team_summaries == []
     assert compact.people_contribution_analysis is None
     assert compact.kpi_trend is None
+    assert compact.role_summaries == []
+    assert compact.kpi_overview.total_kpis == 0
     assert compact.options.periods == []
     assert full.team_analyses
     assert full.performance_drivers
@@ -182,7 +220,7 @@ def test_near_target_high_weight_kpi_is_at_risk_not_critical():
     assert cpl.severity == "risk"
     assert workspace.summary.critical_issues == 0
     assert workspace.summary.positive_weighted_drivers == 1
-    assert workspace.summary.weighted_positive_impact == .4
+    assert workspace.summary.weighted_positive_impact == .32
     assert any(evidence.label == "Target achievement" and evidence.value == "89.2%" for evidence in cpl.detail.evidence)
 
 
@@ -195,8 +233,8 @@ def test_weighted_impact_uses_global_capped_contribution_values():
     workspace = service.generate_workspace(_scope(), month="June", year=2026)
 
     cpl = next(item for item in workspace.priority_insights if item.kpi_key == "cpl")
-    assert cpl.impact_points == -5.6
-    assert workspace.performance_drivers[0].impact_points == -5.6
+    assert cpl.impact_points == -5.59
+    assert workspace.performance_drivers[0].impact_points == -5.59
 
 
 def test_zero_target_suppresses_percentage_and_surfaces_data_issue():
@@ -321,7 +359,7 @@ def test_position_options_follow_selected_team_and_performance_level():
     assert workspace.options.positions == ["Media Buyer"]
 
 
-def test_people_contribution_analysis_only_exists_for_one_selected_kpi():
+def test_people_contribution_analysis_defaults_to_the_leading_kpi_and_respects_selection():
     previous_one = _record("May", 90, 55, 60, .1)
     previous_one.employee_id = "E1"
     previous_one.employee_name = "Analyst One"
@@ -343,7 +381,9 @@ def test_people_contribution_analysis_only_exists_for_one_selected_kpi():
     unfiltered = service.generate_workspace(_scope(), month="June", year=2026)
     filtered = service.generate_workspace(_scope(), month="June", year=2026, kpi="cpl")
 
-    assert unfiltered.people_contribution_analysis is None
+    assert unfiltered.people_contribution_analysis is not None
+    assert unfiltered.people_contribution_analysis.kpi_key == "cpl"
+    assert unfiltered.people_contribution_analysis.total_employees == 2
     assert filtered.people_contribution_analysis is not None
     assert filtered.people_contribution_analysis.kpi_key == "cpl"
     assert filtered.people_contribution_analysis.total_employees == 2
@@ -368,7 +408,7 @@ def test_people_contribution_analysis_surfaces_invalid_target_as_data_issue():
     assert analysis.rows[0].weighted_impact is None
 
 
-def test_kpi_trend_returns_six_calendar_months_only_for_selected_kpi():
+def test_kpi_trend_returns_six_calendar_months_for_the_reference_kpi():
     records = [
         _record("January", 80, 45, 60, .075),
         _record("March", 82, 50, 60, .083),
@@ -383,16 +423,57 @@ def test_kpi_trend_returns_six_calendar_months_only_for_selected_kpi():
         _scope(), month="June", year=2026, kpi="cpl"
     )
 
-    assert unfiltered.kpi_trend is None
+    assert unfiltered.kpi_trend is not None
+    assert unfiltered.kpi_trend.kpi_key == "cpl"
     assert filtered.kpi_trend is not None
     assert [point.period.key for point in filtered.kpi_trend.points] == [
         "2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06",
     ]
     assert filtered.kpi_trend.points[1].actual_value is None
     assert filtered.kpi_trend.points[1].measured_records == 0
-    assert filtered.kpi_trend.points[-1].actual_value == 60
-    assert filtered.kpi_trend.points[-1].target_value == 65
+    assert filtered.kpi_trend.points[-1].actual_value == 60.3846
+    assert filtered.kpi_trend.points[-1].target_value == 65.3846
     assert filtered.kpi_trend.points[-1].measured_records == 2
+
+
+def test_ratio_kpi_trend_keeps_raw_actual_and_target_instead_of_achievement():
+    def offshore_record(employee_id: str, actual: float) -> PerformanceRecord:
+        return PerformanceRecord(
+            id=f"{employee_id}_2026_June",
+            employee_id=employee_id,
+            employee_name=employee_id,
+            team="Pre-Approvals IP Offshore",
+            month="June",
+            year=2026,
+            region="EGY",
+            position="Agent",
+            performance_level="Employee",
+            status="Below",
+            evaluation=EvaluationData(score=80, grade="B"),
+            kpi_values=[{
+                "kpi_key": "Rejection",
+                "label": "Rejection Rate",
+                "direction": "lower_better",
+                "unit": "%",
+                "actual_value": actual,
+                "target_value": .03,
+                "weight_applied": .5,
+                "achievement_ratio": min(.03 / actual if actual else 1.0, 1.0),
+                "contribution": .5,
+            }],
+        )
+
+    records = [offshore_record("E1", .01), offshore_record("E2", .09)]
+
+    workspace = _service(records).generate_workspace(
+        _scope(), month="June", year=2026, kpi="Rejection"
+    )
+
+    assert workspace.kpi_trend is not None
+    point = workspace.kpi_trend.points[-1]
+    assert point.actual_value == .05
+    assert point.target_value == .03
+    assert point.target_value != 1.0
 
 
 def test_missing_requested_period_does_not_fallback_and_order_is_deterministic():
@@ -449,7 +530,7 @@ def test_call_center_operational_analyses_are_available_without_score_impact():
     assert no_show.detail.direction == "lower_better"
     assert no_show.impact_points is None
     assert no_show.trend_label == "Improving · Still above target"
-    assert "31.0 percentage points above target" in no_show.explanation
+    assert "31.0% above target" in no_show.explanation
     assert "calculated" not in no_show.explanation.casefold()
 
     aht = analyses["aht"]

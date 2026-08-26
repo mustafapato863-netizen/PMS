@@ -1,3 +1,4 @@
+import './PageEnhancements.css';
 import { useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { AlertCircle, RefreshCw } from 'lucide-react';
@@ -160,7 +161,7 @@ export const MarketingDashboardContent = ({
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3 }}
-      className="app-page-shell"
+      className="app-page-shell rf-page rf-page--marketing"
     >
       <MarketingFiltersHeader
         filters={filters}

@@ -3,6 +3,15 @@ import type { AgentRecord, GradeClass } from '../../types';
 export type MarketingRegion = 'All' | 'EGY' | 'UAE';
 export type MarketingStatus = 'All' | 'Exceeds' | 'Meets' | 'Below';
 
+export type MarketingKpiAggregationMethod = 'average' | 'sum' | 'ratio' | 'weighted_average';
+
+export interface MarketingKpiAggregation {
+  method: MarketingKpiAggregationMethod;
+  numerator_col?: string;
+  denominator_col?: string;
+  weight_col?: string;
+}
+
 export interface MarketingKpiConfig {
   key: string;
   label: string;
@@ -12,6 +21,7 @@ export interface MarketingKpiConfig {
   unit: string;
   color: string;
   display_order: number;
+  aggregation?: MarketingKpiAggregation;
 }
 
 export interface MarketingPositionConfig {
@@ -46,6 +56,7 @@ export interface MarketingFilters {
 export interface MarketingKpiAggregate extends MarketingKpiConfig {
   currentPeriodLabel: string | null;
   previousPeriodLabel: string | null;
+  /** Aggregated actual/target; volume KPIs may be totals rather than averages. */
   averageActual: number | null;
   averageTarget: number | null;
   previousActual: number | null;

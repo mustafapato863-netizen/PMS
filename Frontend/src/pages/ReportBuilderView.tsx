@@ -1,3 +1,4 @@
+import './PageEnhancements.css';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { AlertTriangle, ArrowLeft, ArrowRight, Check, Cloud, Loader2, Save } from 'lucide-react';
@@ -105,8 +106,8 @@ export default function ReportBuilderView() {
     conflict: <><AlertTriangle size={14} /> Version conflict - reload required</>,
   }[state.saveState];
 
-  return <div className="flex h-[calc(100vh-2rem)] min-h-[720px] w-full flex-col overflow-hidden rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] shadow-sm">
-    <header className="flex min-h-16 items-center justify-between gap-4 border-b border-[var(--border-light)] bg-[var(--bg-surface)] px-5">
+  return <div className="rf-builder-shell flex h-[calc(100vh-2rem)] min-h-[720px] w-full flex-col overflow-hidden rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] shadow-sm">
+    <header className="rf-builder-header flex min-h-16 items-center justify-between gap-4 border-b border-[var(--border-light)] bg-[var(--bg-surface)] px-5">
       <div className="flex items-center gap-4"><button onClick={back} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label="Back"><ArrowLeft size={19} /></button>
         <div className="hidden items-center gap-2 lg:flex">{STEPS.map((label, index) => { const id = index + 1; return <div key={label} className="flex items-center gap-2"><button onClick={() => id <= state.currentStep && state.setStep(id as BuilderStep)} className={`flex items-center gap-2 text-xs font-extrabold ${id === state.currentStep ? 'text-blue-600' : id < state.currentStep ? 'text-slate-700 dark:text-slate-300' : 'text-slate-400'}`}><span className={`grid h-6 w-6 place-items-center rounded-full border ${id <= state.currentStep ? 'border-blue-600 bg-blue-600 text-white' : 'border-slate-300'}`}>{id}</span>{label}</button>{id < 5 && <span className="h-px w-7 bg-slate-200" />}</div>; })}</div>
       </div>

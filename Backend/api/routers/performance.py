@@ -1,8 +1,8 @@
-from fastapi import APIRouter, Depends, Query, HTTPException, Request, UploadFile, File
+from fastapi import APIRouter, Depends, Query, HTTPException, Request, Response, UploadFile, File
 from fastapi.responses import StreamingResponse, FileResponse
 import io
 from typing import List
-from datetime import datetime
+from datetime import datetime, timezone
 
 from api.dependencies import (
     performance_repo,
@@ -20,6 +20,7 @@ from utils.report_scope import filter_records_by_team_levels
 from config.database import get_db
 from sqlalchemy.orm import Session
 from models.schemas import StandardResponse
+from models.performance_read_schemas import PerformanceCatalogData, PerformanceRecordPage, PerformanceSummaryData
 from exports.report_exporter import ReportExporter
 from repositories.performance_repository import PerformanceRepository as SQLPerformanceRepository
 from utils.performance_levels import normalize_performance_level
@@ -31,6 +32,9 @@ from services.dashboard_record_service import DashboardRecordService
 from api.middleware.rbac_middleware import require_permission
 from services.upload_security import read_validated_excel
 from models.report_schemas import MONTHS
+from config import settings
+from services.cache_invalidation_service import CacheInvalidationService
+from services.performance_dashboard_read_service import PerformanceDashboardReadService
 
 router = APIRouter(prefix="/performance", tags=["Performance"])
 
@@ -225,6 +229,7 @@ async def upload_balanced_scorecard_template(
 @router.get("", response_model=StandardResponse)
 def get_all_records(
     request: Request,
+    response: Response,
     db: Session = Depends(get_db),
     team: str = Query(None, alias="team"),
     month: str = Query(None),
@@ -233,6 +238,8 @@ def get_all_records(
     position: str | None = Query(None),
     region: str | None = Query(None),
 ):
+    response.headers["Deprecation"] = "true"
+    response.headers["X-PMS-Performance-Route"] = "legacy"
     try:
         scope = get_current_user_scope(db, request)
         if team and not user_can_access_team(scope, team):
@@ -300,83 +307,191 @@ def get_performance_catalog(
             if row.get("team")
         }
     )
+    catalog_data = PerformanceCatalogData.model_validate({
+        "periods": [
+            {"year": year, "month": month, "key": f"{year}-{month_number:02d}"}
+            for year, month_number, month in periods
+        ],
+        "months": [
+            month
+            for month in MONTHS
+            if any(period_month == month for _, _, period_month in periods)
+        ],
+        "scopes": [
+            {
+                "team": team,
+                "region": region or None,
+                "performance_level": performance_level,
+                "position": position or None,
+            }
+            for team, region, performance_level, position in scopes
+        ],
+        "data_version": CacheInvalidationService.get_data_version(),
+        "as_of": datetime.now(timezone.utc).isoformat(),
+    })
     return StandardResponse(
         success=True,
         message="Authorized performance catalog retrieved",
-        data={
-            "periods": [
-                {"year": year, "month": month, "key": f"{year}-{month_number:02d}"}
-                for year, month_number, month in periods
-            ],
-            "months": [
-                month
-                for month in MONTHS
-                if any(period_month == month for _, _, period_month in periods)
-            ],
-            "scopes": [
-                {
-                    "team": team,
-                    "region": region or None,
-                    "performance_level": performance_level,
-                    "position": position or None,
-                }
-                for team, region, performance_level, position in scopes
-            ],
-        },
+        data=catalog_data.model_dump(mode="json"),
+    )
+
+
+def _require_scoped_read_api(scope: dict) -> None:
+    if not settings.PMS_SCOPED_PERFORMANCE_API_ENABLED:
+        raise HTTPException(status_code=404, detail="Scoped performance API is disabled")
+    allowed_roles = set(settings.PMS_SCOPED_PERFORMANCE_ALLOWED_ROLES or ())
+    if allowed_roles and str(scope.get("role") or "") not in allowed_roles:
+        raise HTTPException(status_code=404, detail="Scoped performance API is not enabled for this role")
+
+
+def _mark_scoped_read(response: Response) -> None:
+    response.headers["X-PMS-Performance-Route"] = "scoped"
+    response.headers["X-PMS-Performance-Data-Version"] = str(CacheInvalidationService.get_data_version())
+
+
+@router.get("/summary", response_model=StandardResponse)
+def get_performance_summary(
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+    period: str = Query(...),
+    team: str | None = Query(None),
+    performance_level: str | None = Query(None),
+    region: str | None = Query(None),
+    position: str | None = Query(None),
+    location: str = Query("all"),
+    trend_months: int = Query(12, ge=1, le=24),
+):
+    scope = require_authenticated_scope(db, request)
+    _require_scoped_read_api(scope)
+    data = PerformanceDashboardReadService(db, scope).summary(
+        period=period,
+        team=team,
+        performance_level=_level_filter(performance_level),
+        region=region,
+        position=position,
+        location=location,
+        trend_months=trend_months,
+    )
+    summary_data = PerformanceSummaryData.model_validate(data)
+    _mark_scoped_read(response)
+    return StandardResponse(
+        success=True,
+        message="Performance summary retrieved",
+        data=summary_data.model_dump(mode="json"),
     )
 
 
 @router.get("/records", response_model=StandardResponse)
 def get_monthly_records(
     request: Request,
+    response: Response,
     db: Session = Depends(get_db),
-    team: str = Query(None, alias="team"),
-    month: str = Query(None),
-    performance_level: str = Query(None),
+    period: str | None = Query(None),
+    team: str | None = Query(None, alias="team"),
+    month: str | None = Query(None),
     year: int | None = Query(None, ge=2000, le=2100),
+    performance_level: str | None = Query(None),
     position: str | None = Query(None),
     region: str | None = Query(None),
+    location: str = Query("all"),
+    employee_search: str | None = Query(None, max_length=100),
+    grade: str | None = Query(None, max_length=20),
+    status: str | None = Query(None, max_length=30),
+    sort: str = Query("name"),
+    detail: str = Query("table"),
+    cursor: str | None = Query(None, max_length=500),
+    page_size: int = Query(50, ge=1, le=100),
+    include_total: bool = Query(False),
 ):
-    try:
-        scope = get_current_user_scope(db, request)
-        if team and not user_can_access_team(scope, team):
-            raise HTTPException(status_code=403, detail="Access denied for this team")
+    # Keep the pre-rollout month-based contract for one compatibility release.
+    # New consumers must provide period=YYYY-MM and use the bounded response.
+    if not period:
+        if not month:
+            raise HTTPException(status_code=422, detail="period is required for the bounded records route")
+        try:
+            scope = get_current_user_scope(db, request)
+            if team and not user_can_access_team(scope, team):
+                raise HTTPException(status_code=403, detail="Access denied for this team")
+            records = _get_dashboard_records(
+                db,
+                team=team,
+                month=month,
+                performance_level=_level_filter(performance_level),
+                year=year,
+                position=position,
+                region=region,
+            )
+            records = filter_records_by_scope(records, scope)
+            response.headers["Deprecation"] = "true"
+            response.headers["X-PMS-Performance-Route"] = "legacy-records"
+            return StandardResponse(
+                success=True,
+                message=f"Retrieved {len(records)} performance records",
+                data=[serialize_performance_record(record) for record in records],
+            )
+        except HTTPException:
+            raise
+        except Exception:
+            return StandardResponse(success=False, message="Failed to fetch performance records.")
 
-        records = _get_dashboard_records(
-            db,
-            team=team,
-            month=month,
-            performance_level=_level_filter(performance_level),
-            year=year,
-            position=position,
-            region=region,
-        )
-        records = filter_records_by_scope(records, scope)
-
-        return StandardResponse(
-            success=True,
-            message=f"Retrieved {len(records)} performance records",
-            data=[serialize_performance_record(r) for r in records]
-        )
-    except HTTPException as he:
-        raise he
-    except Exception as e:
-        return StandardResponse(
-            success=False,
-            message="Failed to fetch performance records."
-        )
+    scope = require_authenticated_scope(db, request)
+    _require_scoped_read_api(scope)
+    data = PerformanceDashboardReadService(db, scope).records_page(
+        period=period,
+        team=team,
+        performance_level=_level_filter(performance_level),
+        region=region,
+        position=position,
+        location=location,
+        employee_search=employee_search,
+        grade=grade,
+        status=status,
+        sort=sort,
+        detail=detail,
+        cursor=cursor,
+        page_size=page_size,
+        include_total=include_total,
+    )
+    records_data = PerformanceRecordPage.model_validate(data)
+    _mark_scoped_read(response)
+    return StandardResponse(
+        success=True,
+        message="Performance records retrieved",
+        data=records_data.model_dump(mode="json"),
+    )
 
 
 @router.get("/employee/{emp_id}", response_model=StandardResponse)
 def get_employee_history(
     emp_id: str,
     request: Request,
+    response: Response,
     db: Session = Depends(get_db),
     performance_level: str = Query(None),
     year: int | None = Query(None, ge=2000, le=2100),
     position: str | None = Query(None),
     region: str | None = Query(None),
+    period_end: str | None = Query(None),
+    months: int = Query(12, ge=1, le=24),
 ):
+    if settings.PMS_SCOPED_PERFORMANCE_API_ENABLED:
+        scope = require_authenticated_scope(db, request)
+        _require_scoped_read_api(scope)
+        data = PerformanceDashboardReadService(db, scope).employee_history(
+            employee_id=emp_id,
+            period_end=period_end,
+            months=months,
+            performance_level=_level_filter(performance_level),
+            position=position,
+            region=region,
+        )
+        _mark_scoped_read(response)
+        return StandardResponse(
+            success=True,
+            message=f"Retrieved {len(data)} performance history records",
+            data=data,
+        )
     try:
         scope = get_current_user_scope(db, request)
         records = _get_dashboard_records(

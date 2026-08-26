@@ -29,6 +29,26 @@ const config: MarketingTeamConfig = {
   },
 };
 
+const graphicConfig: MarketingTeamConfig = {
+  ...config,
+  positions: {
+    ...config.positions,
+    'Graphic Designer': {
+      kpis: [{
+        key: 'gd_on_schedule',
+        label: 'Projects delivered on schedule',
+        perspective: 'Internal Process',
+        weight: 0.4,
+        direction: 'higher_better',
+        unit: 'count',
+        color: '#2563EB',
+        display_order: 1,
+        aggregation: { method: 'sum' },
+      }],
+    },
+  },
+};
+
 const record = ({
   id,
   year,
@@ -74,6 +94,40 @@ const record = ({
     { kpi_key: 'cpl', label: 'CPL', unit: 'AED', direction: 'lower_better', actual_value: cplActual, target_value: cplTarget, achievement_ratio: cplAchievement, weight_applied: 0.5, contribution: Math.min(cplAchievement, 1) * 0.5 },
     { kpi_key: 'leads', label: 'Leads', unit: 'count', direction: 'higher_better', actual_value: leadsAchievement * 100, target_value: 100, achievement_ratio: leadsAchievement, weight_applied: 0.5, contribution: Math.min(leadsAchievement, 1) * 0.5 },
   ],
+});
+
+const graphicRecord = ({
+  id,
+  month,
+  actual,
+  target = 100,
+  score,
+}: {
+  id: string;
+  month: string;
+  actual: number;
+  target?: number;
+  score: number;
+}): AgentRecord => ({
+  ...record({
+    id,
+    year: 2026,
+    month,
+    position: 'Graphic Designer',
+    score,
+    grade: score >= 95 ? 'A' : score >= 85 ? 'B' : score >= 75 ? 'C' : score >= 65 ? 'D' : 'E',
+  }),
+  kpi_values: [{
+    kpi_key: 'gd_on_schedule',
+    label: 'Projects delivered on schedule',
+    unit: 'count',
+    direction: 'higher_better',
+    actual_value: actual,
+    target_value: target,
+    achievement_ratio: target > 0 ? actual / target : 0,
+    weight_applied: 0.4,
+    contribution: target > 0 ? Math.min(actual / target, 1) * 0.4 : 0,
+  }],
 });
 
 describe('marketing analytics', () => {
@@ -136,7 +190,7 @@ describe('marketing analytics', () => {
     expect(analytics.trend.map((point) => point.month)).toEqual(['May', 'June']);
   });
 
-  it('averages KPI values and uses direction when calculating focus gaps', () => {
+  it('aggregates KPI values and uses direction when calculating focus gaps', () => {
     const records = [
       record({ id: '1', year: 2026, month: 'May', score: 75, grade: 'C', cplActual: 100, cplTarget: 100, cplAchievement: 1, leadsAchievement: 0.4 }),
       record({ id: '1', year: 2026, month: 'June', score: 80, grade: 'C', cplActual: 125, cplTarget: 100, cplAchievement: 0.8, leadsAchievement: 0.5 }),
@@ -153,8 +207,8 @@ describe('marketing analytics', () => {
     expect(cpl?.averageActual).toBe(112.5);
     expect(cpl?.previousActual).toBe(100);
     expect(cpl?.previousTarget).toBe(100);
-    expect(cpl?.averageAchievement).toBe(90);
-    expect(cpl?.averageGap).toBe(25);
+    expect(cpl?.averageAchievement).toBeCloseTo(88.8889, 4);
+    expect(cpl?.averageGap).toBe(12.5);
     expect(cpl?.currentPeriodLabel).toBe('June 2026');
     expect(cpl?.previousPeriodLabel).toBe('May 2026');
     expect(cpl?.baselineActual).toBe(100);
@@ -162,6 +216,37 @@ describe('marketing analytics', () => {
     expect(cpl?.isNewBaseline).toBe(false);
     expect(leads?.averageGap).toBe(50);
     expect(analytics.employeeRows[1].weakestKpi?.key).toBe('leads');
+  });
+
+  it('sums volume KPIs across employees and periods while averaging only performance scores', () => {
+    const records = [
+      graphicRecord({ id: 'design-1', month: 'May', actual: 100, score: 60 }),
+      graphicRecord({ id: 'design-1', month: 'June', actual: 150, score: 80 }),
+      graphicRecord({ id: 'design-2', month: 'June', actual: 100, score: 90 }),
+    ];
+
+    const singleMonth = buildMarketingAnalytics(records, graphicConfig, {
+      year: 2026,
+      month: 'June',
+      region: 'All',
+      position: 'Graphic Designer',
+    });
+    const monthlyKpi = singleMonth.kpiAggregates.find((item) => item.key === 'gd_on_schedule');
+    expect(monthlyKpi?.averageActual).toBe(250);
+    expect(monthlyKpi?.averageTarget).toBe(200);
+    expect(singleMonth.averageScore).toBe(85);
+
+    const allMonths = buildMarketingAnalytics(records, graphicConfig, {
+      year: 2026,
+      month: 'All',
+      region: 'All',
+      position: 'Graphic Designer',
+    });
+    const allMonthsKpi = allMonths.kpiAggregates.find((item) => item.key === 'gd_on_schedule');
+    expect(allMonthsKpi?.averageActual).toBe(350);
+    expect(allMonthsKpi?.averageTarget).toBe(300);
+    expect(allMonths.averageScore).toBe(80);
+    expect(allMonths.employeeRows.map((employee) => employee.score).sort()).toEqual([70, 90]);
   });
 
   it('uses only the selected position history up to the selected month for baseline and previous comparison', () => {

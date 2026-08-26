@@ -7,7 +7,7 @@ export interface AuthContextProps {
   initializationStatus: 'authenticating' | 'loadingProfile' | 'loadingPermissions' | 'loadingTeams' | 'loadingNavigation' | 'ready' | 'error';
   isAppInitializing: boolean;
   initializationError: string | null;
-  login: (username: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  login: (username: string, password: string, rememberMe?: boolean) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
   updateProfile: (fullName: string) => Promise<{ success: boolean; error?: string }>;
   changePassword: (currentPassword: string, newPassword: string) => Promise<{ success: boolean; error?: string }>;

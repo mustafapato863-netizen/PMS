@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from api.dependencies import performance_repo, planning_service, require_authenticated_scope, require_role
 from config.database import get_db
-from models.insight_schemas import InsightFilterOptions, InsightsWorkspace, InsightsWorkspaceResponse
+from models.insight_schemas import InsightFilterOptions, InsightKpiOverview, InsightsWorkspace, InsightsWorkspaceResponse
 from services.insights_service import InsightAccessError, InsightValidationError, InsightsService
 
 
@@ -26,6 +26,8 @@ def _priority_workspace(workspace: InsightsWorkspace, *, limit: int = 10) -> Ins
         "team_summaries": [],
         "people_contribution_analysis": None,
         "kpi_trend": None,
+        "role_summaries": [],
+        "kpi_overview": InsightKpiOverview(),
         "options": InsightFilterOptions(),
     })
 

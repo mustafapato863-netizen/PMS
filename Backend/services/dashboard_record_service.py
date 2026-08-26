@@ -101,6 +101,10 @@ class DashboardRecordService:
         year: int | None = None,
         position: str | None = None,
         region: str | None = None,
+        periods: list[tuple[int, str]] | None = None,
+        scope: dict | None = None,
+        employee_search: str | None = None,
+        kpi: str | None = None,
     ):
         sql_repository = self.sql_repository_cls(self.db, PerformanceRecord)
         records = sql_repository.get_dashboard_records(
@@ -113,8 +117,14 @@ class DashboardRecordService:
             year=year,
             position=position,
             region=region,
+            periods=periods,
+            scope=scope,
+            employee_search=employee_search,
+            kpi=kpi,
         )
-        
+        return self.resolve_records(records)
+
+    def resolve_records(self, records):
         result = []
         resolved_configs: dict[tuple[str, str, str], dict | None] = {}
         for item in records:
@@ -322,6 +332,12 @@ class DashboardRecordService:
         """Return lightweight dimensions without loading KPI/config payloads."""
         sql_repository = self.sql_repository_cls(self.db, PerformanceRecord)
         return sql_repository.get_option_rows()
+
+    def list_kpi_options(self, scope: dict | None = None) -> list[str]:
+        """Return authorized KPI keys without materializing dashboard records."""
+        sql_repository = self.sql_repository_cls(self.db, PerformanceRecord)
+        loader = getattr(sql_repository, "get_option_kpi_keys", None)
+        return list(loader(scope)) if callable(loader) else []
 
     def list_analysis_records(self):
         """Return the same canonical persisted records used by dashboards."""

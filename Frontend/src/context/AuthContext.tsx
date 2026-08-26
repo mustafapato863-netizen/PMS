@@ -1,17 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import type { User } from '../types';
-import { apiFetch, terminateClientSession } from '../lib/apiClient';
-import { jwtDecode } from 'jwt-decode';
+import { apiFetch, getAccessToken, setAccessToken, terminateClientSession } from '../lib/apiClient';
 import { AuthContext } from './auth';
 import type { AuthContextProps } from './auth';
-
-interface JWTPayload {
-  user_id: string;
-  sub: string;
-  role: string;
-  username: string;
-  exp: number;
-}
 
 const SESSION_KEY = 'pms_session_v1';
 
@@ -28,37 +19,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   });
   const [initializationStatus, setInitializationStatus] = useState<AuthContextProps['initializationStatus']>('authenticating');
   const [initializationError, setInitializationError] = useState<string | null>(null);
+  const [authReady, setAuthReady] = useState(false);
 
-  // Validate token on mount
+  // Bootstrap from the HttpOnly refresh cookie. A legacy localStorage access
+  // token is accepted once during migration, but no new long-lived token is
+  // written there by this provider.
   useEffect(() => {
-    const token = localStorage.getItem('pms_token');
-    if (!token) return;
-    queueMicrotask(() => {
-      try {
-        const decoded = jwtDecode<JWTPayload>(token);
-        if (decoded.exp * 1000 < Date.now()) throw new Error('Expired');
-        setCurrentUser((previousUser) => {
-          const normalized = previousUser
-            ? { ...previousUser, id: previousUser.id || decoded.user_id }
-            : { id: decoded.user_id, name: decoded.username, username: decoded.sub, role: decoded.role as User['role'] };
-          localStorage.setItem(SESSION_KEY, JSON.stringify(normalized));
-          localStorage.setItem('pms_user_role', normalized.role);
-          return normalized;
-        });
-        setInitializationStatus('loadingProfile');
-      } catch {
-        void terminateClientSession();
-        setCurrentUser(null);
-        setInitializationStatus('authenticating');
+    const bootstrap = async () => {
+      const token = getAccessToken();
+      if (!token) {
+        try {
+          const refreshed = await apiFetch<{ success: boolean; data?: { access_token?: string } }>('/api/auth/refresh', { method: 'POST' });
+          if (!refreshed.success || !refreshed.data?.access_token) throw new Error('No session');
+          setAccessToken(refreshed.data.access_token);
+        } catch {
+          await terminateClientSession();
+          setCurrentUser(null);
+          setInitializationStatus('authenticating');
+          return;
+        }
       }
-    });
+      setAuthReady(true);
+      setInitializationStatus('loadingProfile');
+    };
+    void bootstrap();
   }, []);
 
   // Load profile, permissions, teams
   useEffect(() => {
     const load = async () => {
-      const token = localStorage.getItem('pms_token');
-      if (!token) return;
+      if (!getAccessToken()) return;
       try {
         setInitializationStatus('loadingProfile');
         const meRes = await apiFetch<{ success: boolean; data?: Partial<User> }>('/api/auth/me');
@@ -84,19 +74,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     };
     load();
-  }, []);
+  }, [authReady]);
 
-  const login = async (username: string, password: string) => {
+  const login = async (username: string, password: string, rememberMe = false) => {
     try {
       const res = await apiFetch<{ success: boolean; data?: { access_token: string; username: string; role: string }; message?: string }>('/api/auth/login', {
         method: 'POST',
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({ username, password, remember_me: rememberMe }),
       });
       if (!res.success) return { success: false, error: res.message || 'Username or Password wrong' };
       const { access_token } = res.data!;
-      const decoded = jwtDecode<JWTPayload>(access_token);
-      const user: User = { id: decoded.user_id, name: decoded.username, username: decoded.username, role: decoded.role as User['role'] };
-      localStorage.setItem('pms_token', access_token);
+      const user: User = { id: '', name: res.data?.username || username, username: res.data?.username || username, role: (res.data?.role || 'Viewer') as User['role'] };
+      setAccessToken(access_token);
+      const csrfToken = (res.data as { csrf_token?: string } | undefined)?.csrf_token;
+      if (csrfToken) localStorage.setItem('pms_csrf_token', csrfToken);
       setCurrentUser(user);
       setInitializationError(null);
       setInitializationStatus('loadingProfile');

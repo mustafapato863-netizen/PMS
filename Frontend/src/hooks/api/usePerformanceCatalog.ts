@@ -10,14 +10,33 @@ export interface PerformanceCatalog {
     performance_level: string;
     position: string | null;
   }>;
+  data_version?: number;
+  as_of?: string;
 }
 
-export function usePerformanceCatalog() {
+function sessionCacheKey(): string {
+  try {
+    const saved = localStorage.getItem('pms_session_v1');
+    if (!saved) return 'anonymous';
+    const user = JSON.parse(saved) as { id?: string; username?: string };
+    return user.id || user.username || 'anonymous';
+  } catch {
+    return 'anonymous';
+  }
+}
+
+export function usePerformanceCatalog(enabled = true) {
+  const session = sessionCacheKey();
   return useQuery({
-    queryKey: ['performance', 'catalog'],
-    queryFn: async () => (
-      await apiFetch<{ success: boolean; data: PerformanceCatalog }>('/api/performance/catalog')
-    ).data,
+    queryKey: ['performance', 'catalog', session],
+    queryFn: async () => {
+      const response = await apiFetch<{ success: boolean; data?: PerformanceCatalog; message?: string }>('/api/performance/catalog');
+      if (!response.success || !response.data) {
+        throw new Error(response.message || 'Performance catalog request failed');
+      }
+      return response.data;
+    },
     staleTime: 10 * 60 * 1000,
+    enabled,
   });
 }

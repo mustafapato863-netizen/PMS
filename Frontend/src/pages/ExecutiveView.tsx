@@ -1,9 +1,11 @@
+import './PageEnhancements.css';
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Users, TrendingUp, Award, AlertTriangle, CalendarDays, ChevronDown, ClipboardList, Globe, MapPin } from 'lucide-react';
 import Breadcrumb from '../components/common/Breadcrumb';
 import { useAuth } from '../context/auth';
 import { useAllTeamsSummary, usePerformanceData } from '../hooks/usePerformanceData';
+import { scopedPerformanceApiEnabled, useScopedExecutiveSummary } from '../hooks/api/usePerformanceDashboard';
 import { useActionStore } from '../hooks/useActionStore';
 import { useMonthParam } from '../hooks/useMonthParam';
 import { useLocationParam } from '../hooks/useLocationParam';
@@ -30,28 +32,53 @@ const ExecutiveView = () => {
   const locationKey: LocationKey = (['all', 'dubai', 'sharjah', 'ajman', 'clinics'].includes(location)
     ? location
     : 'all') as LocationKey;
-  const { summaries, totalAgents, uniqueTeamCount, overallAvgScore, pctAB, pctDE, allClassCounts, loading, dataSource, errorMessage } = useAllTeamsSummary(month, region, locationKey, performanceLevel, weightsList);
-  const { uniqueMonths, agents: allAgents } = usePerformanceData('All', locationKey, region, performanceLevel);
+  const legacySummary = useAllTeamsSummary(month, region, locationKey, performanceLevel, weightsList, !scopedPerformanceApiEnabled);
+  const scopedSummary = useScopedExecutiveSummary(month, region, locationKey, performanceLevel);
+  const { summaries, totalAgents, uniqueTeamCount, overallAvgScore, pctAB, pctDE, allClassCounts, loading, dataSource, errorMessage } = scopedPerformanceApiEnabled
+    ? scopedSummary
+    : legacySummary;
+  const legacyAllData = usePerformanceData('All', locationKey, region, performanceLevel, !scopedPerformanceApiEnabled);
+  const uniqueMonths = scopedPerformanceApiEnabled ? scopedSummary.uniqueMonths : legacyAllData.uniqueMonths;
+  const allAgents = scopedPerformanceApiEnabled ? [] : legacyAllData.agents;
   const activeMonth = month === 'All'
-    ? (uniqueMonths[uniqueMonths.length - 1] || 'January')
+    ? (scopedPerformanceApiEnabled ? scopedSummary.activePeriod?.month : uniqueMonths[uniqueMonths.length - 1]) || 'January'
     : month;
   const activeMonthIndex = uniqueMonths.indexOf(activeMonth);
-  const previousMonth = month !== 'All' && activeMonthIndex > 0
-    ? uniqueMonths[activeMonthIndex - 1]
-    : null;
-  const {
-    summaries: previousSummaries,
-    totalAgents: previousTotalAgents,
-    overallAvgScore: previousOverallAvgScore,
-    pctAB: previousPctAB,
-    pctDE: previousPctDE,
-  } = useAllTeamsSummary(
+  const previousMonth = scopedPerformanceApiEnabled
+    ? scopedSummary.previousPeriod?.month || null
+    : month !== 'All' && activeMonthIndex > 0
+      ? uniqueMonths[activeMonthIndex - 1]
+      : null;
+  const legacyPreviousSummary = useAllTeamsSummary(
     previousMonth || activeMonth,
     region,
     locationKey,
     performanceLevel,
     weightsList,
+    !scopedPerformanceApiEnabled,
   );
+  const previousData = scopedPerformanceApiEnabled
+    ? {
+      summaries: scopedSummary.previousSummaries,
+      previousTotalAgents: scopedSummary.previousTotalAgents,
+      previousOverallAvgScore: scopedSummary.previousOverallAvgScore,
+      previousPctAB: scopedSummary.previousPctAB,
+      previousPctDE: scopedSummary.previousPctDE,
+    }
+    : {
+      summaries: legacyPreviousSummary.summaries,
+      previousTotalAgents: legacyPreviousSummary.totalAgents,
+      previousOverallAvgScore: legacyPreviousSummary.overallAvgScore,
+      previousPctAB: legacyPreviousSummary.pctAB,
+      previousPctDE: legacyPreviousSummary.pctDE,
+    };
+  const {
+    summaries: previousSummaries,
+    previousTotalAgents,
+    previousOverallAvgScore,
+    previousPctAB,
+    previousPctDE,
+  } = previousData;
   const headcountMoM = previousMonth && previousTotalAgents > 0
     ? ((totalAgents - previousTotalAgents) / previousTotalAgents) * 100
     : undefined;
@@ -98,7 +125,11 @@ const ExecutiveView = () => {
         return (currentUser.accessible_teams || []).some((assignedTeam) => assignedTeam.toLowerCase() === team);
       })
     : allActions;
-  const dashboardScopedActions = filterActionsByPerformanceScope(scopedActions, allAgents);
+  const dashboardScopedActions = scopedPerformanceApiEnabled
+    ? (currentUser?.role === 'Agent' || currentUser?.role === 'Executive'
+      ? scopedActions.filter((action) => String(action.employee_id || '') === String(currentUser.employee_id || ''))
+      : scopedActions)
+    : filterActionsByPerformanceScope(scopedActions, allAgents);
   const actionStats = summarizeRootCauses(
     dashboardScopedActions.filter((action) => action.month === activeMonth)
   );
@@ -115,10 +146,10 @@ const ExecutiveView = () => {
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, x: -20 }}
       transition={{ duration: 0.35 }}
-      className="app-page-shell"
+      className="app-page-shell rf-page rf-page--executive"
     >
       {/* Page Header */}
-      <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+      <div className="rf-page-heading-row flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div className="flex flex-col gap-1">
           <h2 className="heading-2 mb-0">Executive Overview</h2>
           <Breadcrumb

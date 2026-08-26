@@ -150,7 +150,12 @@ def _execute_report(job_id: str, payload: dict[str, Any]) -> tuple[dict[str, Any
         if existing:
             return service.serialize_generated(existing), str(existing.id), "report"
         configuration = ReportConfiguration.model_validate(payload.get("configuration") or {})
-        report = service.generate(configuration, scope, processing_job_id=job_id)
+        report = service.generate(
+            configuration,
+            scope,
+            processing_job_id=job_id,
+            idempotency_key=payload.get("idempotency_key"),
+        )
         return service.serialize_generated(report), str(report.id), "report"
     finally:
         db.close()

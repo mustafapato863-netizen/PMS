@@ -54,7 +54,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
         path = request.url.path
 
         # Exclude paths that do not require authentication
-        exempt_paths = ["/api/auth/login", "/docs", "/openapi.json"]
+        exempt_paths = ["/api/auth/login", "/api/auth/refresh", "/docs", "/openapi.json"]
+        auth_header = request.headers.get("Authorization")
+        is_logout = path == "/api/auth/logout"
         is_exempt = any(
             path == p
             for p in exempt_paths
@@ -62,10 +64,15 @@ class AuthMiddleware(BaseHTTPMiddleware):
             path == "/api/health" or path.startswith("/api/health/")
         )
 
-        if is_exempt or request.method == "OPTIONS":
+        # Logout may be authenticated by the HttpOnly refresh cookie when the
+        # short-lived access token is already gone. If a bearer token is sent,
+        # continue through normal validation so its session id can be revoked.
+        if is_logout:
+            is_exempt = False
+
+        if is_exempt or (is_logout and not auth_header) or request.method == "OPTIONS":
             return await call_next(request)
 
-        auth_header = request.headers.get("Authorization")
         if not auth_header or not auth_header.startswith("Bearer "):
             # Handle legacy unauthenticated paths in test environments
             legacy_paths = (
@@ -106,6 +113,16 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 user_id = user_id_str
 
             with _authentication_session(request) as db:
+                if payload.get("sid"):
+                    import uuid
+                    from models.models import RefreshSession
+                    try:
+                        session_id = uuid.UUID(str(payload["sid"]))
+                    except (ValueError, TypeError):
+                        raise ValueError("Invalid authentication session")
+                    session = db.query(RefreshSession).filter(RefreshSession.id == session_id).first()
+                    if not session or session.revoked_at is not None:
+                        raise ValueError("Authentication session has been revoked")
                 user = db.query(User).filter(User.id == user_id).first()
                 if not user or not user.is_active:
                     raise ValueError("User account is disabled")
@@ -114,6 +131,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
                     "username": user.username,
                     "role": user.role,
                     "employee_id": getattr(user, "employee_id", None),
+                    "session_id": payload.get("sid"),
                 }
         except Exception:
             logger.warning("Authentication token validation failed")

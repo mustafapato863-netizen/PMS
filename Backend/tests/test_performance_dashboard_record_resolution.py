@@ -4,6 +4,7 @@ import pytest
 
 from models.schemas import EvaluationData, PerformanceRecord
 from services.dashboard_record_service import DashboardRecordService
+from services.legacy_kpi_evidence import build_legacy_employee_kpi_values
 
 
 def _sql_record(*, employee_id="IN-1", month="June", score=82, grade="C", payload=None):
@@ -51,6 +52,42 @@ def _service(rows):
         object(),
         sql_repository_cls=_SQLRepositoryStub,
     )
+
+
+def test_offshore_rebuild_prefers_canonical_rejection_target_over_persisted_achievement_target():
+    values = build_legacy_employee_kpi_values(
+        "Pre-Approvals IP Offshore",
+        {
+            "RejectedRequests": "2",
+            "AssignedRequest": "84",
+            "IPInitialRejection%": "0.02381",
+            "T.IPInitialRejection%": "0.03",
+            "RejectionRate": "1",
+            "ErrosClaims": "0",
+            "SubmittedClaims": "0",
+            "NumberApprovalwithin48hrs": "0.90",
+        },
+        weights={"Rejection": 0.50, "InitialError": 0.20, "Submission": 0.30},
+    )
+
+    rejection = next(value for value in values if value["kpi_key"] == "Rejection")
+    assert rejection["target_value"] == pytest.approx(0.03)
+
+
+def test_offshore_rebuild_prefers_canonical_submission_target_over_persisted_target():
+    values = build_legacy_employee_kpi_values(
+        "Pre-Approvals IP Offshore",
+        {
+            "ApprovalWithin48HR": "90",
+            "ApprovedRequests": "100",
+            "T.%ofApprovalwithin48hrs": "0.90",
+            "NumberApprovalwithin48hrs": "0.90",
+        },
+        weights={"Rejection": 0.50, "InitialError": 0.20, "Submission": 0.30},
+    )
+
+    submission = next(value for value in values if value["kpi_key"] == "Submission")
+    assert submission["target_value"] == pytest.approx(0.90)
 
 
 def test_dashboard_uses_persisted_payload_and_database_score_as_canonical():

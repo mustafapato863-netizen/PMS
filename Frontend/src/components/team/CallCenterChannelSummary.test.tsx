@@ -33,6 +33,10 @@ describe('CallCenterChannelSummary', () => {
       />,
     );
 
+    expect(screen.getByRole('heading', { name: 'Call Center Overview' })).toBeInTheDocument();
+    expect(screen.getByText('Department performance')).toBeInTheDocument();
+    expect(screen.getByText('Employees affecting the average')).toBeInTheDocument();
+    expect(screen.getByText('Next decision')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Open Inbound channel' }));
 
     expect(onChannelSelect).toHaveBeenCalledWith('inbound');

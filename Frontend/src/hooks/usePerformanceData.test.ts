@@ -7,6 +7,7 @@ import {
   resolveRecordGradeClass,
   reconcileTeamSummaryScore,
   resolveTeamMonths,
+  mapScopedPerformanceRecord,
 } from './usePerformanceData';
 
 const baseRecord = {
@@ -160,5 +161,46 @@ describe('agentMatchesLocation', () => {
     expect(agentMatchesLocation(ajman, 'ajman')).toBe(true);
     expect(agentMatchesLocation(ajman, 'sharjah')).toBe(false);
     expect(agentMatchesLocation(ajman, 'dubai')).toBe(false);
+  });
+});
+
+describe('mapScopedPerformanceRecord', () => {
+  it('maps the bounded REST detail contract into the legacy dashboard model', () => {
+    const record = mapScopedPerformanceRecord({
+      id: 'record-1',
+      employee_id: 'EMP-1',
+      employee_name: 'Bounded Employee',
+      team: 'Inbound',
+      month: 'June',
+      year: 2026,
+      region: 'UAE',
+      performance_level: 'Employee',
+      position: 'Agent',
+      status: 'Meets',
+      score: 91,
+      grade: 'A',
+      previous_score: 87,
+      trend: 4,
+      calls: { inbound: 10, outbound: 2, total_handled: 12, abandoned: 1, aht_raw: '00:05:00' },
+      geo: {
+        bookings: { dubai: 4, sharjah: 0, ajman: 0, clinics: 0 },
+        attended: { dubai: 3, sharjah: 0, ajman: 0, clinics: 0 },
+      },
+      actual: { booking_rate: 0.4, attend_rate: 0.75, abandon_rate: 0.08 },
+      achievement: { booking_ach: 1, attend_ach: 0.9 },
+      evaluation: { score: 91, grade: 'A' },
+      raw_data: { Team: 'Dubai' },
+      kpi_values: [],
+    });
+
+    expect(record.identity).toMatchObject({
+      employee_id: 'EMP-1',
+      name: 'Bounded Employee',
+      month: 'June',
+      team: 'Inbound',
+    });
+    expect(record.evaluation.score).toBe(91);
+    expect(record.geo.bookings.dubai).toBe(4);
+    expect(record.calls.total_handled).toBe(12);
   });
 });

@@ -722,14 +722,14 @@ function buildPreApprovalsIpOffshoreKpis(agent: AgentRecord): KPIConfig[] {
     ?? 0;
 
   const rejectionTarget = getRawNumber(raw, [
-    'T.Rejection%', 'T.InitialRejection%', 'T.Rejection', 'T.InitialRejectionRate', 'T.InitialRejection',
+    'T.IPInitialRejection%', 'T.Rejection%', 'T.InitialRejection%', 'T.Rejection', 'T.InitialRejectionRate', 'T.InitialRejection',
   ]) ?? normalizeRate(rejection?.target_value) ?? 0.03;
   const errorTarget = getRawNumber(raw, [
     'T.InitialError%', 'T.InitialError', 'T.InitialErrorRate', 'T.Error%', 'T.Error',
   ]) ?? normalizeRate(initialError?.target_value) ?? 0.03;
   const submissionTarget = getRawNumber(raw, [
-    'T.Submission%', 'T.Submission', 'T.SubmissionRate', 'T.%ofSubmissionWithinDuedate',
-    'T.%OfApprovalwithin48HR', 'T.%OfSubmissionWithin48HR',
+    'T.%ofApprovalwithin48hrs', 'T.%OfApprovalwithin48HR', 'T.%OfApprovalwithin48hrs', 'T.%ofApprovalwithin48HR',
+    'T.Submission%', 'T.Submission', 'T.SubmissionRate', 'T.%ofSubmissionWithinDuedate', 'T.%OfSubmissionWithin48HR',
   ]) ?? normalizeRate(submission?.target_value) ?? 0.90;
 
   const build = (
@@ -957,9 +957,12 @@ export function getKPIsForAgent(agent: AgentRecord): KPIConfig[] {
   }
 
   if (team === 'Pre-Approvals IP Offshore') {
-    const targetRejection = getTargetValue(raw_data, ['T.Rejection', 'T.RejectionRate', 'T.Rejection%', 'T.InitialRejection%'], 0.03);
+    const targetRejection = getTargetValue(raw_data, ['T.IPInitialRejection%', 'T.Rejection', 'T.RejectionRate', 'T.Rejection%', 'T.InitialRejection%'], 0.03);
     const targetError = getTargetValue(raw_data, ['T.InitialError', 'T.InitialErrorRate', 'T.InitialError%', 'T.Error%', 'Error%'], 0.03);
-    const targetSubmission = getTargetValue(raw_data, ['T.Submission', 'T.SubmissionRate', 'T.Submission%'], 0.90);
+    const targetSubmission = getTargetValue(raw_data, [
+      'T.%ofApprovalwithin48hrs', 'T.%OfApprovalwithin48HR', 'T.%OfApprovalwithin48hrs', 'T.%ofApprovalwithin48HR',
+      'T.Submission', 'T.SubmissionRate', 'T.Submission%',
+    ], 0.90);
 
     return [
       { label: 'Rejection Rate', actual: actual.rejection_rate ?? 0, target: targetRejection, unit: '%', isLowerBetter: true, color: '#EF4444' },

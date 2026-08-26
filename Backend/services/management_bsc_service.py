@@ -10,6 +10,7 @@ from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 
+from config.loader import ConfigurationError, load_team_config, resolve_team_config
 from models.models import ManagementKPIConfig, ManagementKPIConfigHistory, ManagementKPISnapshot, Team
 from services.balanced_scorecard_service import BalancedScorecardService, MONTHS
 from utils.team_identity import (
@@ -414,18 +415,65 @@ class ManagementBSCService:
             if not scope_configs:
                 continue
             team = team_by_id[scope_key[0]]
-            records = self._build_records_from_snapshots(scope_snapshots, self._group_configs(scope_configs))
+            team_name = logical_team_name(team)
+            performance_level = scope_key[1]
+            config_lookup = self._group_configs(scope_configs)
+            records = self._build_records_from_snapshots(scope_snapshots, config_lookup)
+            try:
+                base_config = resolve_team_config(load_team_config(team_name), performance_level)
+            except (ConfigurationError, KeyError, TypeError, ValueError):
+                # Imported management snapshots remain reportable even when a
+                # matching file-based team config is not installed. The
+                # database config rows still provide the complete KPI scoring
+                # definition; the fallback only supplies BSC presentation
+                # metadata and default grade thresholds.
+                base_config = {}
+            periods = {
+                _period_value(record.get("month", ""), record.get("year", 0))
+                for record in records
+                if MONTHS.get(str(record.get("month", "")))
+            }
+            period_configs = {
+                period: self._build_runtime_config(
+                    scope_configs,
+                    base_config,
+                    team_name,
+                    performance_level,
+                    period,
+                )
+                for period in periods
+            }
+            thresholds = base_config.get("grade_thresholds", {"A": 90, "B": 80, "C": 70, "D": 60})
+
+            def grade_for(score: float | None) -> str:
+                if score is None:
+                    return ""
+                for grade, threshold in (("A", "A"), ("B", "B"), ("C", "C"), ("D", "D")):
+                    if score >= float(thresholds.get(threshold, {"A": 90, "B": 80, "C": 70, "D": 60}[threshold])):
+                        return grade
+                return "E"
+
             for record in records:
-                record["team"] = logical_team_name(team)
+                record["team"] = team_name
                 record["region"] = team.region
                 record["position"] = record.get("raw_data", {}).get("Position")
-                measured = [
-                    value for value in record["kpi_values"]
-                    if value.get("contribution") is not None and value.get("weight_applied")
-                ]
-                measured_weight = sum(float(value["weight_applied"]) for value in measured)
-                contribution = sum(float(value["contribution"]) for value in measured)
-                record["evaluation"]["score"] = contribution / measured_weight * 100 if measured_weight else None
+                period = _period_value(record.get("month", ""), record.get("year", 0))
+                runtime_config = period_configs.get(period)
+                summary = (
+                    BalancedScorecardService._summarize([record], runtime_config)
+                    if runtime_config
+                    else {"scorecard": {"score": None}}
+                )
+                score = summary.get("scorecard", {}).get("score")
+                record["evaluation"]["score"] = float(score) if score is not None else None
+                record["evaluation"]["grade"] = grade_for(record["evaluation"]["score"])
+                record["status"] = (
+                    "Meets"
+                    if record["evaluation"]["score"] is not None and record["evaluation"]["score"] >= 100
+                    else "Below"
+                    if record["evaluation"]["score"] is not None
+                    else "No Data"
+                )
                 result.append(record)
         return result
 

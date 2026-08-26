@@ -74,33 +74,79 @@ class CorrectiveActionService:
         parsed = cls._uuid(value)
         return parsed or uuid.uuid5(ACTION_ID_NAMESPACE, value.strip())
 
-    def _score_snapshot(self, action: Action) -> tuple[float | None, str | None]:
-        if not action.employee_id:
-            return None, None
-        record = (
+    def _period_performance_record(
+        self,
+        *,
+        employee_id: uuid.UUID | None,
+        month: str | None,
+        year: int | None,
+    ) -> PerformanceRecord | None:
+        if not employee_id or not month or year is None:
+            return None
+        return (
             self.db.query(PerformanceRecord)
+            .options(joinedload(PerformanceRecord.team))
             .filter(
-                PerformanceRecord.employee_id == action.employee_id,
-                PerformanceRecord.month == action.month,
-                PerformanceRecord.year == action.year,
+                PerformanceRecord.employee_id == employee_id,
+                func.lower(PerformanceRecord.month) == month.strip().casefold(),
+                PerformanceRecord.year == year,
             )
             .order_by(PerformanceRecord.uploaded_at.desc())
             .first()
         )
+
+    def _performance_record_for_action(self, action: Action) -> PerformanceRecord | None:
+        return self._period_performance_record(
+            employee_id=action.employee_id,
+            month=action.month,
+            year=action.year,
+        )
+
+    @staticmethod
+    def _effective_action_team(action: Action, record: PerformanceRecord | None = None) -> Team | None:
+        """Resolve the team for an employee action's reporting period.
+
+        Performance records preserve the team that owned the employee in the
+        measured period. That snapshot is authoritative for month-specific
+        corrective-action filtering; legacy rows then fall back to the
+        employee's current team and finally the action's stored team.
+        """
+        if record and record.team:
+            return record.team
+        if action.employee and action.employee.team:
+            return action.employee.team
+        return action.team
+
+    def _score_snapshot(
+        self,
+        action: Action,
+        record: PerformanceRecord | None = None,
+    ) -> tuple[float | None, str | None]:
+        if not action.employee_id:
+            return None, None
+        record = record or self._performance_record_for_action(action)
         if not record:
             return None, None
         score = float(record.score) if isinstance(record.score, (Decimal, int, float)) else None
         return score, record.grade or None
 
-    def serialize(self, action: Action) -> dict[str, Any]:
-        score, grade = self._score_snapshot(action)
+    def serialize(
+        self,
+        action: Action,
+        *,
+        effective_team: Team | None = None,
+        performance_record: PerformanceRecord | None = None,
+    ) -> dict[str, Any]:
+        performance_record = performance_record or self._performance_record_for_action(action)
+        score, grade = self._score_snapshot(action, performance_record)
         created_by = action.created_by_user
         timestamp = action.created_at or dt.datetime.now(dt.timezone.utc)
+        display_team = effective_team or self._effective_action_team(action, performance_record)
         return {
             "id": str(action.id),
             "employee_id": action.employee.employee_id if action.employee else None,
             "employee_name": action.employee.name if action.employee else None,
-            "team": action.team.display_name or action.team.name,
+            "team": display_team.display_name or display_team.name if display_team else None,
             "month": action.month,
             "year": action.year,
             "score": score,
@@ -125,13 +171,26 @@ class CorrectiveActionService:
         ]
 
     def list_scoped(self, scope: dict) -> list[dict[str, Any]]:
-        return [
-            self.serialize(action)
-            for action in self.actions.list_active()
-            if action.employee_id is not None
-            and action.employee is not None
-            and user_can_access_team_level(scope, logical_team_name(action.team), action.employee.performance_level)
-        ]
+        scoped_actions: list[dict[str, Any]] = []
+        for action in self.actions.list_active():
+            if action.employee_id is None or action.employee is None:
+                continue
+            performance_record = self._performance_record_for_action(action)
+            effective_team = self._effective_action_team(action, performance_record)
+            if not effective_team or not user_can_access_team_level(
+                scope,
+                logical_team_name(effective_team),
+                action.employee.performance_level,
+            ):
+                continue
+            scoped_actions.append(
+                self.serialize(
+                    action,
+                    effective_team=effective_team,
+                    performance_record=performance_record,
+                )
+            )
+        return scoped_actions
 
     def ensure_employee_scope(self, employee_identifier: str, scope: dict) -> Employee:
         employee = self._employee(employee_identifier)
@@ -159,6 +218,12 @@ class CorrectiveActionService:
             raise CorrectiveActionValidationError("Month is required")
         action_type, action_text = self.split_manager_action(manager_action)
         employee = self._employee(employee_identifier)
+        period_record = self._period_performance_record(
+            employee_id=employee.id,
+            month=month,
+            year=year or dt.datetime.now().year,
+        )
+        period_team = period_record.team if period_record and period_record.team else employee.team
         parsed_action_id = self._action_uuid(action_id)
         action = self.actions.get_active(parsed_action_id) if parsed_action_id else None
         if parsed_action_id and not action:
@@ -178,6 +243,7 @@ class CorrectiveActionService:
             if action:
                 action.month = month
                 action.year = year or action.year
+                action.team_id = period_team.id
                 action.action_type = action_type
                 action.action_text = action_text
                 action.root_cause_note = manager_notes.strip() or None
@@ -187,7 +253,7 @@ class CorrectiveActionService:
                 action = Action(
                     id=parsed_action_id or uuid.uuid4(),
                     employee_id=employee.id,
-                    team_id=employee.team_id,
+                    team_id=period_team.id,
                     month=month,
                     year=year or dt.datetime.now().year,
                     action_type=action_type,

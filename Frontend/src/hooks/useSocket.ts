@@ -6,6 +6,7 @@
 import { useEffect, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { SOCKET_URL } from '../config';
+import { getAccessToken } from '../lib/apiClient';
 
 interface UseSocketOptions {
   autoConnect?: boolean;
@@ -62,8 +63,9 @@ export function useSocket({
       const connectionUrl = namespace ? `${url.replace(/\/$/, '')}${namespace}` : url;
       client = io(connectionUrl, {
         auth: {
-          token: localStorage.getItem('pms_token'),
+          token: getAccessToken(),
         },
+        withCredentials: true,
         reconnection: true,
         reconnectionDelay: 1000,
         reconnectionDelayMax: 5000,

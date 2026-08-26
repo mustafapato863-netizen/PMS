@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any, Literal
+from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -17,6 +18,9 @@ REPORT_TYPES = Literal[
     "monthly_uae",
     "monthly_egypt",
     "team_marketing",
+    "insights",
+    "executive_group_summary",
+    "uae_executive_summary",
 ]
 
 MONTHS = {
@@ -60,6 +64,11 @@ class ReportConfiguration(BaseModel):
     start_year: int = Field(ge=2000, le=2100)
     end_month: str | None = None
     end_year: int | None = Field(default=None, ge=2000, le=2100)
+    # Optional comparison period used by direct month-over-month exports.
+    # It is deliberately separate from end_month/end_year because the latter
+    # represents a selected reporting range.
+    comparison_month: str | None = None
+    comparison_year: int | None = Field(default=None, ge=2000, le=2100)
     region: str | None = None
     team: str | None = None
     position: str | None = None
@@ -67,9 +76,25 @@ class ReportConfiguration(BaseModel):
     employee_id: str | None = None
     grade: str | None = None
     status: str | None = None
+    # Insights-only filters. They are optional so existing Reports clients
+    # remain backward-compatible with the generic report contract.
+    kpi: str | None = None
+    severity: str | None = None
+    insight_type: str | None = None
     included_sections: list[str] = Field(default_factory=lambda: ["summary", "details"])
     output_format: str = "pptx"
     slides: list[ReportSlideSchema] = Field(default_factory=list)
+
+    @field_validator("performance_level", mode="before")
+    @classmethod
+    def normalize_performance_level(cls, value: Any) -> str | None:
+        """Treat the UI's explicit All levels choice as an unfiltered scope."""
+        if value is None:
+            return None
+        normalized = str(value).strip()
+        if not normalized or normalized.casefold() == "all":
+            return None
+        return normalized
 
     @field_validator("report_name")
     @classmethod
@@ -83,10 +108,8 @@ class ReportConfiguration(BaseModel):
     @classmethod
     def validate_output_format(cls, value: str | None) -> str:
         normalized = str(value or "pptx").strip().lower()
-        if normalized == "excel":
-            return "pptx"
-        if normalized not in {"pdf", "pptx"}:
-            raise ValueError("Output format must be either pdf or pptx")
+        if normalized not in {"pdf", "pptx", "excel"}:
+            raise ValueError("Output format must be either pdf, pptx, or excel")
         return normalized
 
     @model_validator(mode="after")
@@ -95,6 +118,8 @@ class ReportConfiguration(BaseModel):
             raise ValueError("Invalid start month")
         if (self.end_month is None) != (self.end_year is None):
             raise ValueError("End month and end year must be provided together")
+        if (self.comparison_month is None) != (self.comparison_year is None):
+            raise ValueError("Comparison month and comparison year must be provided together")
         if self.end_month is not None:
             if self.end_month not in MONTHS:
                 raise ValueError("Invalid end month")
@@ -102,6 +127,8 @@ class ReportConfiguration(BaseModel):
             end = (self.end_year or self.start_year, MONTHS[self.end_month])
             if end < start:
                 raise ValueError("End period cannot be before start period")
+        if self.comparison_month is not None and self.comparison_month not in MONTHS:
+            raise ValueError("Invalid comparison month")
         return self
 
 
@@ -116,3 +143,7 @@ class SaveReportTemplateRequest(BaseModel):
         if not value:
             raise ValueError("Template name cannot be empty")
         return value
+
+
+class DeleteGeneratedReportsRequest(BaseModel):
+    report_ids: list[UUID] = Field(min_length=1, max_length=100)

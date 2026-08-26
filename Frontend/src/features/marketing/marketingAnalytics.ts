@@ -99,6 +99,123 @@ const average = (values: number[]) => {
     : null;
 };
 
+type MarketingKpiValue = NonNullable<AgentRecord['kpi_values']>[number];
+
+interface AggregatedKpiMetric {
+  actual: number | null;
+  target: number | null;
+}
+
+const sum = (values: number[]) => {
+  const validValues = values.filter(Number.isFinite);
+  return validValues.length ? validValues.reduce((total, value) => total + value, 0) : null;
+};
+
+const finiteValue = (value: unknown): number | null => {
+  if (value === null || value === undefined || value === '') return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const aggregateKpiMetric = (
+  values: MarketingKpiValue[],
+  definition: MarketingKpiConfig,
+): AggregatedKpiMetric => {
+  // Position KPI cards use the configured rollup across the selected employee-period rows.
+  // The separate scoreAverage path below is intentionally the only performance-score average.
+  const actualValues = values.map((value) => finiteValue(value.actual_value));
+  const targetValues = values.map((value) => finiteValue(value.target_value));
+  const actuals = actualValues.filter((value): value is number => value !== null);
+  const targets = targetValues.filter((value): value is number => value !== null);
+  if (!actuals.length && !targets.length) return { actual: null, target: null };
+
+  const method = definition.aggregation?.method
+    ?? (definition.unit.trim().toLowerCase() === 'count'
+      || definition.unit.trim().toLowerCase() === 'number'
+      || definition.unit.trim().toLowerCase() === 'visits'
+      || /revenue|income|sales/i.test(definition.label)
+      ? 'sum'
+      : 'weighted_average');
+
+  if (method === 'sum') {
+    return { actual: sum(actuals), target: sum(targets) };
+  }
+
+  if (method === 'ratio') {
+    const actualTotal = sum(actuals);
+    const targetTotal = sum(targets);
+    return {
+      actual: actualTotal === null || targetTotal === null || targetTotal === 0
+        ? null
+        : actualTotal / targetTotal,
+      target: targetTotal === null || targetTotal === 0 ? null : 1,
+    };
+  }
+
+  if (method === 'weighted_average') {
+    const weightedRows = values
+      .map((value) => ({
+        actual: finiteValue(value.actual_value),
+        target: finiteValue(value.target_value),
+      }))
+      .filter((value): value is { actual: number; target: number | null } => value.actual !== null);
+    const totalWeight = weightedRows.reduce(
+      (total, value) => total + (value.target !== null && value.target > 0 ? value.target : 1),
+      0,
+    );
+    const targetRows = weightedRows.filter((value): value is { actual: number; target: number } => value.target !== null);
+    const targetWeight = targetRows.reduce(
+      (total, value) => total + (value.target > 0 ? value.target : 1),
+      0,
+    );
+    if (totalWeight > 0 && weightedRows.length > 0) {
+      return {
+        actual: weightedRows.reduce(
+          (total, value) => total + value.actual * (value.target !== null && value.target > 0 ? value.target : 1),
+          0,
+        ) / totalWeight,
+        target: targetWeight > 0
+          ? targetRows.reduce(
+            (total, value) => total + value.target * (value.target > 0 ? value.target : 1),
+            0,
+          ) / targetWeight
+          : null,
+      };
+    }
+  }
+
+  return { actual: average(actuals), target: average(targets) };
+};
+
+const achievementRatio = (
+  actual: number | null,
+  target: number | null,
+  direction: MarketingKpiConfig['direction'],
+): number | null => {
+  if (actual === null || target === null) return null;
+  if (target <= 0) return 0;
+  if (direction === 'lower_better') return actual <= 0 ? 1 : target / actual;
+  return actual / target;
+};
+
+const achievementPercent = (
+  metric: AggregatedKpiMetric,
+  definition: MarketingKpiConfig,
+): number | null => {
+  const ratio = achievementRatio(metric.actual, metric.target, definition.direction);
+  return ratio === null ? null : Math.min(Math.max(ratio, 0), 1) * 100;
+};
+
+const achievementGap = (
+  metric: AggregatedKpiMetric,
+  direction: MarketingKpiConfig['direction'],
+): number | null => {
+  if (metric.actual === null || metric.target === null) return null;
+  return direction === 'lower_better'
+    ? Math.max(metric.actual - metric.target, 0)
+    : Math.max(metric.target - metric.actual, 0);
+};
+
 const periodSortValue = (year: number, month: string) => year * 12 + (MONTH_ORDER[month] || 0);
 
 const filterScopeRecords = (
@@ -179,9 +296,11 @@ const buildBaselineCandidates = (
 ) => getMarketingPeriods(records)
   .filter((period) => !currentPeriod || period.sortValue <= currentPeriod.sortValue)
   .map((period) => {
-    const actual = average(records
+    const values = records
       .filter((record) => record.year === period.year && record.identity.month === period.month)
-      .map((record) => Number(resolveKpiValue(record, definition.key)?.actual_value)));
+      .map((record) => resolveKpiValue(record, definition.key))
+      .filter((value): value is MarketingKpiValue => Boolean(value));
+    const actual = aggregateKpiMetric(values, definition).actual;
     return actual === null ? null : { actual, period };
   })
   .filter((candidate): candidate is MarketingBaselineCandidate => candidate !== null);
@@ -195,25 +314,38 @@ export const aggregateMarketingKpis = (
   .slice()
   .sort((left, right) => left.display_order - right.display_order)
   .map((definition) => {
-    const values = records.map((record) => resolveKpiValue(record, definition.key)).filter(Boolean);
-    const previousValues = previousRecords.map((record) => resolveKpiValue(record, definition.key)).filter(Boolean);
-    const averageActual = average(values.map((value) => Number(value?.actual_value)));
-    const averageTarget = average(values.map((value) => Number(value?.target_value)));
-    const previousActual = average(previousValues.map((value) => Number(value?.actual_value)));
-    const previousTarget = average(previousValues.map((value) => Number(value?.target_value)));
-    const averageAchievementRatio = average(values.map((value) => Number(value?.achievement_ratio)));
-    const previousAchievementRatio = average(previousValues.map((value) => Number(value?.achievement_ratio)));
-    const averageContributionRatio = average(values.map((value) => Number(value?.contribution)));
-    const affected = values.filter((value) => Number(value?.achievement_ratio) < 1);
-    const gaps = affected.map((value) => {
-      const actual = Number(value?.actual_value);
-      const target = Number(value?.target_value);
-      return definition.direction === 'lower_better'
-        ? Math.max(actual - target, 0)
-        : Math.max(target - actual, 0);
+    const values = records
+      .map((record) => resolveKpiValue(record, definition.key))
+      .filter((value): value is MarketingKpiValue => Boolean(value));
+    const previousValues = previousRecords
+      .map((record) => resolveKpiValue(record, definition.key))
+      .filter((value): value is MarketingKpiValue => Boolean(value));
+    const currentMetric = aggregateKpiMetric(values, definition);
+    const previousMetric = aggregateKpiMetric(previousValues, definition);
+    const averageActual = currentMetric.actual;
+    const averageTarget = currentMetric.target;
+    const previousActual = previousMetric.actual;
+    const previousTarget = previousMetric.target;
+    const averageAchievement = achievementPercent(currentMetric, definition);
+    const previousAchievement = achievementPercent(previousMetric, definition);
+    const currentRatio = achievementRatio(currentMetric.actual, currentMetric.target, definition.direction);
+    const averageContribution = currentRatio === null
+      ? null
+      : Math.min(Math.max(currentRatio, 0), 1) * definition.weight * 100;
+    const employeeValues = new Map<string, MarketingKpiValue[]>();
+    records.forEach((record) => {
+      const value = resolveKpiValue(record, definition.key);
+      const employeeId = recordId(record);
+      if (!value || !employeeId) return;
+      const employeeKpiValues = employeeValues.get(employeeId) || [];
+      employeeKpiValues.push(value);
+      employeeValues.set(employeeId, employeeKpiValues);
     });
-    const averageAchievement = averageAchievementRatio === null ? null : averageAchievementRatio * 100;
-    const previousAchievement = previousAchievementRatio === null ? null : previousAchievementRatio * 100;
+    const affectedEmployees = [...employeeValues.values()].filter((employeeKpiValues) => {
+      const metric = aggregateKpiMetric(employeeKpiValues, definition);
+      const ratio = achievementRatio(metric.actual, metric.target, definition.direction);
+      return ratio !== null && ratio < 1;
+    });
     const currentPeriod = context.currentPeriod ?? getMarketingPeriods(records).at(-1) ?? null;
     const previousPeriod = context.previousPeriod ?? getMarketingPeriods(previousRecords).at(-1) ?? null;
     const baselineCandidates = buildBaselineCandidates(
@@ -239,13 +371,13 @@ export const aggregateMarketingKpis = (
       previousActual,
       previousTarget,
       averageAchievement,
-      averageContribution: averageContributionRatio === null ? null : averageContributionRatio * 100,
+      averageContribution,
       previousAchievement,
       achievementDelta: averageAchievement !== null && previousAchievement !== null && previousAchievement !== 0
         ? ((averageAchievement - previousAchievement) / previousAchievement) * 100
         : null,
-      affectedEmployees: affected.length,
-      averageGap: average(gaps),
+      affectedEmployees: affectedEmployees.length,
+      averageGap: achievementGap(currentMetric, definition.direction),
       baselineActual: baseline?.actual ?? null,
       baselinePeriodLabel: baseline?.period.label ?? null,
       previousBaselineActual: previousBaseline?.actual ?? null,

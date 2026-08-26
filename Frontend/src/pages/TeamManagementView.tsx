@@ -1,3 +1,4 @@
+import './PageEnhancements.css';
 /**
  * Team Management View
  * Admin page for managing teams (create, edit, delete, view).
@@ -89,10 +90,10 @@ export function TeamManagementView() {
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4 }}
-      className="flex-1 w-full"
+      className="rf-page rf-page--team-management flex-1 w-full"
     >
       {/* Header */}
-      <div className="mb-8">
+      <div className="rf-page-hero mb-6">
         <h1 className="text-3xl font-bold text-[var(--text-primary)] mb-2">
           Team Management
         </h1>
@@ -125,7 +126,7 @@ export function TeamManagementView() {
           transition={{ duration: 0.3 }}
         >
           {/* Actions Bar */}
-          <div className="flex items-center justify-between mb-6">
+          <div className="rf-toolbar flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-6">
             <div className="flex items-center gap-2">
               <Settings size={20} className="text-blue-500" />
               <span className="text-sm font-semibold text-[var(--text-secondary)]">
@@ -154,7 +155,7 @@ export function TeamManagementView() {
               <div className="text-[var(--text-muted)]">Loading teams...</div>
             </div>
           ) : teams.length === 0 ? (
-            <div className="text-center py-12 bg-[var(--bg-surface)]/50 rounded-lg">
+            <div className="rf-empty-state text-center py-12 bg-[var(--bg-surface)]/50 rounded-2xl">
               <Settings size={48} className="text-[var(--text-muted)] mx-auto mb-4 opacity-50" />
               <p className="text-[var(--text-secondary)] font-medium">No teams yet</p>
               <p className="text-xs text-[var(--text-muted)] mt-1">Click "New Team" to create one</p>
@@ -171,12 +172,12 @@ export function TeamManagementView() {
       )}
 
       {teamToDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-sm">
+        <div className="rf-modal-backdrop fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-sm">
           <motion.div
             initial={{ opacity: 0, y: 12, scale: 0.97 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0 }}
-            className="w-full max-w-md rounded-3xl border border-red-200 bg-[var(--bg-surface)] p-6 shadow-2xl"
+            className="rf-modal-panel w-full max-w-md rounded-3xl border border-red-200 bg-[var(--bg-surface)] p-6 shadow-2xl"
             role="dialog"
             aria-modal="true"
             aria-labelledby="team-delete-title"

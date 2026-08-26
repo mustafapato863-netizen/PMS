@@ -6,6 +6,33 @@ type ApiErrorPayload = {
   detail?: unknown;
 };
 
+type AccessTokenResponse = {
+  success: boolean;
+  message?: string;
+  data?: {
+    access_token?: string;
+    csrf_token?: string;
+  };
+};
+
+let accessToken: string | null = null;
+
+export function getAccessToken(): string | null {
+  if (accessToken) return accessToken;
+  // One-time migration for sessions created before the refresh-cookie flow.
+  const legacyToken = localStorage.getItem('pms_token');
+  if (legacyToken) {
+    accessToken = legacyToken;
+    localStorage.removeItem('pms_token');
+  }
+  return accessToken;
+}
+
+export function setAccessToken(token: string | null): void {
+  accessToken = token;
+  localStorage.removeItem('pms_token');
+}
+
 function readableIssue(issue: unknown): string | null {
   if (typeof issue === 'string' && issue.trim()) return issue;
   if (!issue || typeof issue !== 'object') return null;
@@ -41,12 +68,42 @@ export function apiErrorMessage(payload: unknown, status: number): string {
 }
 
 export function clearStoredAuthentication(): void {
+  setAccessToken(null);
   localStorage.removeItem('pms_token');
+  localStorage.removeItem('pms_csrf_token');
   localStorage.removeItem('pms_session_v1');
   localStorage.removeItem('pms_user_role');
 }
 
+function getCsrfToken(): string | null {
+  const storedToken = localStorage.getItem('pms_csrf_token');
+  if (storedToken) return storedToken;
+  const cookieName = 'pms_csrf_token=';
+  const cookie = document.cookie.split('; ').find((entry) => entry.startsWith(cookieName));
+  return cookie ? decodeURIComponent(cookie.slice(cookieName.length)) : null;
+}
+
+async function refreshAccessToken(): Promise<boolean> {
+  const csrfToken = getCsrfToken();
+  const headers: Record<string, string> = {};
+  if (csrfToken) headers['X-CSRF-Token'] = csrfToken;
+
+  const response = await fetch(`${API_BASE}/api/auth/refresh`, {
+    method: 'POST',
+    credentials: 'include',
+    headers,
+  });
+  if (!response.ok) return false;
+  const payload = await response.json() as AccessTokenResponse;
+  const accessToken = payload.data?.access_token;
+  if (!payload.success || !accessToken) return false;
+  setAccessToken(accessToken);
+  if (payload.data?.csrf_token) localStorage.setItem('pms_csrf_token', payload.data.csrf_token);
+  return true;
+}
+
 let sessionTermination: Promise<void> | null = null;
+let tokenRefresh: Promise<boolean> | null = null;
 
 export function terminateClientSession(): Promise<void> {
   clearStoredAuthentication();
@@ -64,7 +121,7 @@ export async function apiFetch<T>(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<T> {
-  const token = localStorage.getItem('pms_token');
+  const token = getAccessToken();
   const role = localStorage.getItem('pms_user_role') || 'Viewer';
 
   const headers: Record<string, string> = {
@@ -83,14 +140,43 @@ export async function apiFetch<T>(
   const res = await fetch(`${API_BASE}${cleanEndpoint}`, {
     ...options,
     headers,
+    credentials: 'include',
   });
 
   if (res.status === 401) {
-    // For login endpoint, return error response without redirect
-    if (cleanEndpoint.includes('/auth/login')) {
+    // Login and refresh errors belong to their callers.
+    if (cleanEndpoint.includes('/auth/login') || cleanEndpoint.includes('/auth/refresh')) {
       return await res.json();
     }
-    // Token expired for other endpoints – clear auth and redirect to login
+
+    // Access tokens are intentionally short-lived. One refresh attempt is
+    // shared by concurrent requests so a tab cannot rotate the cookie family
+    // several times at once.
+    if (!tokenRefresh) {
+      tokenRefresh = refreshAccessToken().finally(() => { tokenRefresh = null; });
+    }
+    if (await tokenRefresh) {
+      const retryHeaders: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'X-User-Role': localStorage.getItem('pms_user_role') || 'Viewer',
+        ...(options.headers as Record<string, string>),
+      };
+      const refreshedToken = getAccessToken();
+      if (refreshedToken) retryHeaders['Authorization'] = `Bearer ${refreshedToken}`;
+      const retry = await fetch(`${API_BASE}${cleanEndpoint}`, {
+        ...options,
+        headers: retryHeaders,
+        credentials: 'include',
+      });
+      if (retry.status !== 401) {
+        if (!retry.ok) {
+          const error = await retry.json().catch(() => ({ message: retry.statusText }));
+          throw new Error(apiErrorMessage(error, retry.status));
+        }
+        return retry.json();
+      }
+    }
+
     await terminateClientSession();
     window.location.href = '/login';
     throw new Error('Session expired');

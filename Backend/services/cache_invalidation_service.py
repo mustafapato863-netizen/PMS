@@ -11,6 +11,8 @@ from services.cache_service import redis_client, in_memory_cache
 logger = logging.getLogger(__name__)
 _fallback_data_version = 0
 _fallback_data_version_lock = threading.Lock()
+_fallback_config_version = 0
+_fallback_config_version_lock = threading.Lock()
 
 
 class CacheInvalidationService:
@@ -60,6 +62,47 @@ class CacheInvalidationService:
         with _fallback_data_version_lock:
             _fallback_data_version += 1
             return _fallback_data_version
+
+    @staticmethod
+    def get_data_version() -> int:
+        if redis_client:
+            try:
+                value = redis_client.get("pms:version:data")
+                return int(value or 0)
+            except Exception as exc:
+                logger.warning("Failed to read shared data version: %s", exc)
+        with _fallback_data_version_lock:
+            return _fallback_data_version
+
+    @staticmethod
+    def bump_config_version() -> int:
+        """Publish a configuration version after a committed configuration change."""
+
+        global _fallback_config_version
+        if redis_client:
+            try:
+                version = int(redis_client.incr("pms:version:config"))
+                redis_client.publish(
+                    "cache_invalidation",
+                    json.dumps({"action": "version_bump", "type": "config", "version": version}),
+                )
+                return version
+            except Exception as exc:
+                logger.warning("Failed to bump shared config version: %s", exc)
+        with _fallback_config_version_lock:
+            _fallback_config_version += 1
+            return _fallback_config_version
+
+    @staticmethod
+    def get_config_version() -> int:
+        if redis_client:
+            try:
+                value = redis_client.get("pms:version:config")
+                return int(value or 0)
+            except Exception as exc:
+                logger.warning("Failed to read shared config version: %s", exc)
+        with _fallback_config_version_lock:
+            return _fallback_config_version
 
     @staticmethod
     def invalidate_team_config(team_id: str, month: str = None, year: int = None) -> None:

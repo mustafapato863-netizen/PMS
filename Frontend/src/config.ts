@@ -23,5 +23,9 @@ export const REALTIME_ENABLED = (
   import.meta.env.VITE_REALTIME_ENABLED ?? (import.meta.env.PROD ? 'false' : 'true')
 ).trim().toLowerCase() === 'true';
 
+export const REPORT_CENTER_ENABLED = (
+  import.meta.env.VITE_REPORT_CENTER_ENABLED ?? 'true'
+).trim().toLowerCase() === 'true';
+
 export const API_TIMEOUT_MS = 30_000;
 

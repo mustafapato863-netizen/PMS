@@ -12,6 +12,7 @@ from api.middleware.rbac_middleware import require_permission
 from services.batch_processor import BatchProcessor
 from services.soft_delete_service import SoftDeleteService
 from services.cache_service import redis_client
+from services.cache_invalidation_service import CacheInvalidationService
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +46,8 @@ async def bulk_insert_performance_records(
                     "failed_records": result["failed_records"]
                 }
             )
+        if result["success_count"] > 0:
+            CacheInvalidationService.bump_data_version()
             
         return StandardResponse(
             success=True,
@@ -90,6 +93,7 @@ async def bulk_update_kpi_weights(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="; ".join(result["errors"])
             )
+        CacheInvalidationService.bump_config_version()
             
         return StandardResponse(
             success=True,
@@ -154,12 +158,16 @@ async def bulk_delete_employees(
                 failed_ids.append(emp_id)
         
         if failed_ids:
+            if success_count > 0:
+                CacheInvalidationService.bump_data_version()
             return StandardResponse(
                 success=True,
                 message=f"Bulk delete completed with partial failures. Deleted: {success_count}. Failed: {len(failed_ids)}.",
                 data={"failed_ids": failed_ids}
             )
             
+        if success_count > 0:
+            CacheInvalidationService.bump_data_version()
         return StandardResponse(
             success=True,
             message=f"Successfully bulk deleted {success_count} employees"

@@ -1732,6 +1732,42 @@ body {
 @media (max-width: 767px) {
   .app-page-shell { gap: 14px; padding-bottom: 24px; }
 }
+
+/* Keep browser-print fallback for the filtered Insights view. The primary
+   export action generates the executive PowerPoint through the report API. */
+@media print {
+  [aria-label="Application header"],
+  .sidebar-navigation,
+  .insights-filter-shell button,
+  .insights-page button,
+  .insights-page [role="dialog"] {
+    display: none !important;
+  }
+
+  .insights-page {
+    display: block;
+    max-width: none;
+    padding: 0;
+  }
+
+  .insights-page > * {
+    break-inside: avoid;
+    box-shadow: none !important;
+  }
+
+  .insights-page .insights-filter-shell {
+    border: 0;
+    padding: 0 0 12px;
+  }
+
+  .insights-page .insights-filter-shell > div:first-child {
+    padding: 0 0 12px;
+  }
+
+  .insights-page .app-page-surface-in {
+    animation: none !important;
+  }
+}
 .theme-toggle-pill {
   min-height: 44px;
   border-radius: 14px !important;
@@ -2505,6 +2541,8 @@ body {
 .login-submit:focus-visible { outline: 3px solid rgba(110, 193, 255, .9); outline-offset: 3px; }
 .login-submit:disabled { cursor: not-allowed; opacity: .62; }
 .login-security-note { margin: 17px 0 0; color: #667eaa; font-size: 10px; font-weight: 600; text-align: center; }
+.login-remember { display: flex; align-items: center; gap: 8px; color: #94a8c7; font-size: 12px; font-weight: 700; cursor: pointer; }
+.login-remember input { width: 15px; height: 15px; accent-color: #398eff; }
 
 @keyframes login-border-spin { to { transform: rotate(360deg); } }
 @keyframes login-brand-pulse { 0%, 100% { box-shadow: 0 13px 28px rgba(38, 100, 239, .38), inset 0 1px 0 rgba(255, 255, 255, .3); } 50% { box-shadow: 0 15px 34px rgba(60, 120, 255, .58), 0 0 30px rgba(72, 76, 241, .28), inset 0 1px 0 rgba(255, 255, 255, .32); } }

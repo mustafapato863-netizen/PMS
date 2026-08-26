@@ -7,7 +7,6 @@ import {
   ClipboardCheck,
   Building2,
   Layers,
-  Palette,
   PanelLeftClose,
   PanelLeftOpen,
 } from 'lucide-react';
@@ -208,7 +207,6 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed = false, onToggleCollapsed = (
               { name: 'Reports', path: '/reports', icon: <FileBarChart size={18} /> },
               { name: 'Insights', path: '/insights', icon: <Lightbulb size={18} /> },
               { name: 'Planning', path: '/planning', icon: <ClipboardCheck size={18} /> },
-              { name: 'Design System', path: '/design-system', icon: <Palette size={18} /> },
             ]
           : []),
         ...(role === 'Admin' || role === 'Executive'

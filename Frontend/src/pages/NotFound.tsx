@@ -1,3 +1,4 @@
+import './PageEnhancements.css';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Compass, ArrowLeft, Home, User, HeartPulse } from 'lucide-react';
@@ -19,12 +20,12 @@ const NotFound = () => {
 
   return (
     <div
-      className="min-h-screen flex items-center justify-center p-6 bg-[var(--bg-base)] transition-colors duration-300 relative overflow-hidden"
+      className="rf-not-found min-h-screen flex items-center justify-center p-6 bg-[var(--bg-base)] transition-colors duration-300 relative overflow-hidden"
       style={{ background: 'var(--bg-base)' }}
     >
       {/* Background Decorative Blobs */}
-      <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-500/10 rounded-full blur-[120px] pointer-events-none animate-pulse" />
-      <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-indigo-500/10 rounded-full blur-[120px] pointer-events-none animate-pulse" style={{ animationDelay: '2s' }} />
+      <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-500/10 rounded-full blur-[120px] pointer-events-none" />
+      <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-indigo-500/10 rounded-full blur-[120px] pointer-events-none" style={{ animationDelay: '2s' }} />
 
       <div className="max-w-xl w-full text-center relative z-10">
         {/* Logo block */}
@@ -35,7 +36,7 @@ const NotFound = () => {
           className="flex items-center justify-center gap-2.5 mb-8"
         >
           <div className="rounded-xl border border-blue-400/20 bg-gradient-to-br from-blue-500 to-indigo-600 p-2 shadow-[0_4px_12px_rgba(59,130,246,0.30)]">
-            <HeartPulse size={20} className="text-white animate-pulse" />
+            <HeartPulse size={20} className="text-white" />
           </div>
           <div>
             <span className="text-sm font-extrabold tracking-tight text-[var(--text-primary)]">SGH Hub</span>
@@ -48,27 +49,23 @@ const NotFound = () => {
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.5, delay: 0.1 }}
-          className="rounded-[32px] border border-[var(--border-light)] bg-[var(--bg-surface)]/80 backdrop-blur-xl p-10 md:p-12 shadow-[0_20px_50px_rgba(15,23,42,0.08)]"
+          className="rf-not-found-card rounded-[32px] border border-[var(--border-light)] bg-[var(--bg-surface)]/95 p-10 md:p-12 shadow-[0_20px_50px_rgba(15,23,42,0.08)]"
         >
           {/* Animated Illustration */}
           <div className="relative flex justify-center mb-8">
-            <motion.div
-              animate={{ rotate: 360 }}
-              transition={{ repeat: Infinity, duration: 25, ease: "linear" }}
-              className="absolute inset-0 w-32 h-32 mx-auto bg-gradient-to-tr from-blue-500/10 to-indigo-500/10 rounded-full blur-xl pointer-events-none"
+            <div
+              className="absolute inset-0 mx-auto h-32 w-32 rounded-full bg-gradient-to-tr from-blue-500/10 to-indigo-500/10 blur-xl pointer-events-none"
+              aria-hidden="true"
             />
-            <motion.div
-              initial={{ y: 0 }}
-              animate={{ y: [-8, 8, -8] }}
-              transition={{ repeat: Infinity, duration: 6, ease: "easeInOut" }}
-              className="w-24 h-24 rounded-3xl bg-gradient-to-br from-blue-500 to-indigo-600 shadow-[0_12px_30px_rgba(59,130,246,0.25)] flex items-center justify-center relative"
+            <div
+              className="relative flex h-24 w-24 items-center justify-center rounded-3xl bg-gradient-to-br from-blue-500 to-indigo-600 shadow-[0_12px_30px_rgba(59,130,246,0.25)]"
             >
               <Compass className="text-white w-12 h-12 stroke-[1.5]" />
               {/* Absctract 404 tag badge */}
               <div className="absolute -bottom-2 -right-2 px-2.5 py-1 rounded-lg bg-[var(--bg-surface)] border border-[var(--border-light)] text-[10px] font-extrabold text-blue-600 tracking-wider shadow-md uppercase">
                 Code 404
               </div>
-            </motion.div>
+            </div>
           </div>
 
           <h1 className="text-6xl font-black tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-400 mb-4">

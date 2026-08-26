@@ -171,6 +171,7 @@ class UserUpdateRecord(BaseModel):
 class LoginPayload(BaseModel):
     username: str
     password: str
+    remember_me: bool = False
 
 
 class ProfileUpdatePayload(BaseModel):
@@ -201,4 +202,6 @@ class JWTToken(BaseModel):
     token_type: str = "bearer"
     role: str
     username: str
+    expires_in: int
+    csrf_token: str
 

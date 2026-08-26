@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useCallback } from 'react';
 import { useAuth } from './auth';
+import { getAccessToken } from '../lib/apiClient';
 
 export type UserRole = 'Admin' | 'Manager' | 'Executive' | 'Viewer' | 'Agent';
 
@@ -23,11 +24,11 @@ export const RoleProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const fetchWithRole = useCallback(async (input: RequestInfo | URL, init?: RequestInit) => {
     const headers = new Headers(init?.headers);
     headers.set('X-User-Role', role);
-    const token = localStorage.getItem('pms_token');
+    const token = getAccessToken();
     if (token) {
       headers.set('Authorization', `Bearer ${token}`);
     }
-    return fetch(input, { ...init, headers });
+    return fetch(input, { ...init, headers, credentials: 'include' });
   }, [role]);
 
   return (

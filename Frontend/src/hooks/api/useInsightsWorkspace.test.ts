@@ -17,4 +17,10 @@ describe('insightsWorkspaceUrl', () => {
       '/api/insights/workspace?year=2026&month=June&team=Outbound&view=priority',
     );
   });
+
+  it('keeps a KPI-only selection in the workspace request', () => {
+    expect(insightsWorkspaceUrl({ kpi: 'cpl' })).toBe(
+      '/api/insights/workspace?kpi=cpl',
+    );
+  });
 });

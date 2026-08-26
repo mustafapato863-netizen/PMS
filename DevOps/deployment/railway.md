@@ -45,7 +45,11 @@ Because Railway builds and deploys directly from the application repository, the
 4. **Configure Environment Variables:** Add the following environment properties on the service variable configuration tab:
    * `JWT_SECRET` — Secure 32-byte signing secret.
    * `JWT_ALGORITHM` — Defaults to `HS256`.
-   * `JWT_EXPIRE_MINUTES` — Defaults to `1440` (24 hours).
+   * `JWT_EXPIRE_MINUTES` — Defaults to `10` minutes for short-lived access tokens.
+   * `AUTH_REFRESH_SESSION_HOURS` — Defaults to `8` hours for non-remembered sessions.
+   * `AUTH_REMEMBER_SESSION_DAYS` — Defaults to `30` days for explicit Remember me sessions.
+   * `AUTH_COOKIE_SECURE` — Must be `true` for HTTPS deployment.
+   * `AUTH_COOKIE_SAMESITE` — Use `none` for a split-origin frontend/API deployment.
    * `PMS_DATA_DIR` — Set to `/app/data` (persistent volume path).
    * `PORT` — Set to `7860` (Railway port mapping target).
 5. **Configure Persistent Disk Volume:** Under the service settings, mount a persistent volume at `/app/data` to preserve Excel upload documents and static worksheets across container rebuilds.

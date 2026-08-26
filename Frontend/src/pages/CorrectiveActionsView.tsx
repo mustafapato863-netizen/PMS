@@ -1,3 +1,4 @@
+import './PageEnhancements.css';
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
@@ -36,7 +37,7 @@ function formatDate(value: string): string {
 function ActionCard({ action }: { action: PMSAction }) {
   const style = ACTION_STYLES[action.action_type] || ACTION_STYLES.Coaching;
   return (
-    <article className="rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] p-5 shadow-sm transition-shadow hover:shadow-md">
+    <article className="rf-action-card rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] p-5 shadow-sm transition-shadow hover:shadow-md">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h2 className="truncate text-sm font-black text-[var(--text-primary)]">{action.employee_name || 'Unknown employee'}</h2>
@@ -107,8 +108,8 @@ export default function CorrectiveActionsView() {
   };
 
   return (
-    <div className="app-page-shell">
-      <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+    <div className="app-page-shell rf-page rf-page--corrective-actions">
+      <header className="rf-page-hero flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <div className="flex items-center gap-2 text-blue-600 dark:text-blue-400"><ClipboardCheck size={19} /><span className="text-[11px] font-black uppercase tracking-[0.18em]">Executive workspace</span></div>
           <h1 className="mt-2 text-3xl font-black tracking-tight text-[var(--text-primary)]">Corrective Actions</h1>
@@ -127,13 +128,13 @@ export default function CorrectiveActionsView() {
       {exportError && <p role="alert" className="rounded-xl border border-rose-500/20 bg-rose-500/5 px-3 py-2 text-sm font-semibold text-rose-700 dark:text-rose-300">{exportError}</p>}
 
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Corrective action summary">
-        <article className="rounded-2xl border border-blue-500/15 bg-blue-500/5 p-4"><p className="text-[10px] font-black uppercase tracking-wider text-blue-700 dark:text-blue-300">Visible actions</p><p className="mt-2 text-3xl font-black text-[var(--text-primary)]">{filteredActions.length}</p></article>
-        <article className="rounded-2xl border border-purple-500/15 bg-purple-500/5 p-4"><p className="text-[10px] font-black uppercase tracking-wider text-purple-700 dark:text-purple-300">Employees actioned</p><p className="mt-2 text-3xl font-black text-[var(--text-primary)]">{employeesActioned}</p></article>
-        <article className="rounded-2xl border border-emerald-500/15 bg-emerald-500/5 p-4"><p className="text-[10px] font-black uppercase tracking-wider text-emerald-700 dark:text-emerald-300">Teams represented</p><p className="mt-2 text-3xl font-black text-[var(--text-primary)]">{teamsRepresented}</p></article>
-        <article className="rounded-2xl border border-amber-500/15 bg-amber-500/5 p-4"><p className="text-[10px] font-black uppercase tracking-wider text-amber-700 dark:text-amber-300">Pending sync</p><p className="mt-2 text-3xl font-black text-[var(--text-primary)]">{pendingSync}</p></article>
+        <article className="rf-stat-card rounded-2xl border border-blue-500/15 bg-blue-500/5 p-4"><p className="text-[10px] font-black uppercase tracking-wider text-blue-700 dark:text-blue-300">Visible actions</p><p className="mt-2 text-3xl font-black text-[var(--text-primary)]">{filteredActions.length}</p></article>
+        <article className="rf-stat-card rounded-2xl border border-purple-500/15 bg-purple-500/5 p-4"><p className="text-[10px] font-black uppercase tracking-wider text-purple-700 dark:text-purple-300">Employees actioned</p><p className="mt-2 text-3xl font-black text-[var(--text-primary)]">{employeesActioned}</p></article>
+        <article className="rf-stat-card rounded-2xl border border-emerald-500/15 bg-emerald-500/5 p-4"><p className="text-[10px] font-black uppercase tracking-wider text-emerald-700 dark:text-emerald-300">Teams represented</p><p className="mt-2 text-3xl font-black text-[var(--text-primary)]">{teamsRepresented}</p></article>
+        <article className="rf-stat-card rounded-2xl border border-amber-500/15 bg-amber-500/5 p-4"><p className="text-[10px] font-black uppercase tracking-wider text-amber-700 dark:text-amber-300">Pending sync</p><p className="mt-2 text-3xl font-black text-[var(--text-primary)]">{pendingSync}</p></article>
       </section>
 
-      <section className="glass-panel rounded-2xl p-4 shadow-sm" aria-label="Corrective action filters">
+      <section className="glass-panel rf-filter-panel rounded-2xl p-4 shadow-sm" aria-label="Corrective action filters">
         <div className="grid gap-3 lg:grid-cols-[minmax(240px,1fr)_repeat(3,minmax(150px,0.7fr))]">
           <label className="relative block">
             <span className="sr-only">Search corrective actions</span>
@@ -151,7 +152,7 @@ export default function CorrectiveActionsView() {
           {filteredActions.map((action) => <ActionCard key={action.id} action={action} />)}
         </section>
       ) : (
-        <section className="glass-panel rounded-2xl p-12 text-center shadow-sm">
+        <section className="glass-panel rf-empty-state rounded-2xl p-12 text-center shadow-sm">
           {actions.length === 0 ? <RefreshCw size={32} className="mx-auto text-[var(--text-muted)]" /> : <AlertCircle size={32} className="mx-auto text-[var(--text-muted)]" />}
           <h2 className="mt-4 text-lg font-black text-[var(--text-primary)]">{actions.length === 0 ? 'No corrective actions available' : 'No actions match these filters'}</h2>
           <p className="mt-2 text-sm text-[var(--text-muted)]">{actions.length === 0 ? 'The connected database returned no active actions for your scope.' : 'Try clearing a filter or changing the search term.'}</p>

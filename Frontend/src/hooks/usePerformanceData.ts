@@ -8,6 +8,7 @@ import { normalizeTeamName } from './api/useKpiWeights';
 import { calculatePerformanceSummary } from '../utils/performanceSummary';
 import { useAllTeamConfigs } from './useTeamConfig';
 import { calculateAggregatedTeamPerformance } from '../features/team/teamKpiAggregator';
+import { scopedPerformanceApiEnabled } from './api/usePerformanceDashboard';
 
 const MONTH_ORDER: Record<string, number> = {
   January: 1, February: 2, March: 3, April: 4, May: 5, June: 6,
@@ -170,6 +171,234 @@ const listeners = new Set<(data: AgentRecord[]) => void>();
 let isFetching = false;
 let lastDataSource: 'api' | 'empty' = 'empty';
 let lastErrorMessage: string | null = null;
+let scopedRefreshVersion = 0;
+const scopedRefreshListeners = new Set<() => void>();
+
+type ScopedPerformancePeriod = { key: string; month: string; year: number };
+type ScopedPerformanceCatalog = { periods: ScopedPerformancePeriod[] };
+type ScopedRecordItem = Record<string, unknown>;
+type ScopedRecordPage = {
+  items: ScopedRecordItem[];
+  next_cursor?: string | null;
+  has_more?: boolean;
+};
+
+let scopedCatalog: ScopedPerformanceCatalog | null = null;
+let scopedCatalogSession = '';
+let scopedCatalogFetchedAt = 0;
+let scopedCatalogRequest: Promise<ScopedPerformanceCatalog> | null = null;
+let scopedCatalogRequestSession = '';
+
+function objectValue(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+function numberValue(value: unknown, fallback = 0): number {
+  const parsed = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function stringValue(value: unknown, fallback = ''): string {
+  return typeof value === 'string' ? value : value == null ? fallback : String(value);
+}
+
+function scopedSessionKey(): string {
+  try {
+    const saved = localStorage.getItem('pms_session_v1');
+    if (!saved) return 'anonymous';
+    const user = JSON.parse(saved) as { id?: string; username?: string };
+    return user.id || user.username || 'anonymous';
+  } catch {
+    return 'anonymous';
+  }
+}
+
+function geoValue(value: unknown): GeoBreakdown {
+  const source = objectValue(value);
+  return {
+    dubai: numberValue(source.dubai),
+    sharjah: numberValue(source.sharjah),
+    ajman: numberValue(source.ajman),
+    clinics: numberValue(source.clinics),
+  };
+}
+
+/** Adapt the bounded REST record contract to the existing dashboard view model. */
+export function mapScopedPerformanceRecord(item: ScopedRecordItem): AgentRecord {
+  const identity = objectValue(item.identity);
+  const calls = objectValue(item.calls);
+  const geo = objectValue(item.geo);
+  const actual = objectValue(item.actual);
+  const achievement = objectValue(item.achievement);
+  const evaluation = objectValue(item.evaluation);
+  const level = stringValue(item.performance_level, 'Employee');
+  const performanceLevel: AgentRecord['performance_level'] = level === 'Managerial' || level === 'Corporate'
+    ? level
+    : 'Employee';
+  const score = numberValue(evaluation.score ?? item.score);
+
+  return {
+    raw_data: objectValue(item.raw_data) as AgentRecord['raw_data'],
+    region: stringValue(item.region ?? identity.region, '') || undefined,
+    year: item.year == null ? undefined : numberValue(item.year),
+    position: stringValue(item.position ?? identity.position, '') || undefined,
+    status: stringValue(item.status, '') || undefined,
+    performance_level: performanceLevel,
+    kpi_values: (Array.isArray(item.kpi_values) ? item.kpi_values : []) as AgentRecord['kpi_values'],
+    identity: {
+      name: stringValue(item.employee_name ?? identity.name),
+      month: stringValue(item.month ?? identity.month),
+      team: stringValue(item.team ?? identity.team, '') || undefined,
+      employee_id: stringValue(item.employee_id ?? identity.employee_id, '') || undefined,
+      position: stringValue(item.position ?? identity.position, '') || undefined,
+      region: stringValue(item.region ?? identity.region, '') || undefined,
+    },
+    calls: {
+      inbound: numberValue(calls.inbound),
+      outbound: numberValue(calls.outbound),
+      total_handled: numberValue(calls.total_handled),
+      total_calls: calls.total_calls == null ? undefined : numberValue(calls.total_calls),
+      abandoned: numberValue(calls.abandoned),
+      aht_raw: stringValue(calls.aht_raw, '00:00:00'),
+    },
+    geo: {
+      bookings: geoValue(geo.bookings),
+      attended: geoValue(geo.attended),
+    },
+    actual: {
+      booking_rate: numberValue(actual.booking_rate),
+      attend_rate: numberValue(actual.attend_rate),
+      abandon_rate: numberValue(actual.abandon_rate),
+      reachability_rate: numberValue(actual.reachability_rate),
+      rejection_rate: numberValue(actual.rejection_rate),
+      initial_error_rate: numberValue(actual.initial_error_rate),
+      submission_rate: numberValue(actual.submission_rate),
+      quality_rate: numberValue(actual.quality_rate),
+      utz_rate: numberValue(actual.utz_rate),
+    },
+    achievement: {
+      booking_ach: numberValue(achievement.booking_ach),
+      attend_ach: numberValue(achievement.attend_ach),
+      quality_ach: numberValue(achievement.quality_ach),
+      aht_ach: numberValue(achievement.aht_ach),
+      reachability_ach: numberValue(achievement.reachability_ach),
+      abandon_ach: numberValue(achievement.abandon_ach),
+      rejection_ach: numberValue(achievement.rejection_ach),
+      initial_error_ach: numberValue(achievement.initial_error_ach),
+      submission_ach: numberValue(achievement.submission_ach),
+      op_census_ach: numberValue(achievement.op_census_ach),
+      op_revenue_ach: numberValue(achievement.op_revenue_ach),
+      ip_census_ach: numberValue(achievement.ip_census_ach),
+      ip_revenue_ach: numberValue(achievement.ip_revenue_ach),
+      activity_ach: numberValue(achievement.activity_ach),
+    },
+    evaluation: {
+      score,
+      grade: stringValue(evaluation.grade ?? item.grade, 'E'),
+      root_cause: evaluation.root_cause as AgentRecord['evaluation']['root_cause'],
+      suggested_action: stringValue(evaluation.suggested_action, '') || null,
+      corrective_action: stringValue(evaluation.corrective_action, '') || null,
+      manager_notes: stringValue(evaluation.manager_notes, '') || null,
+      planning_category: Array.isArray(evaluation.planning_category)
+        ? evaluation.planning_category.filter((value): value is string => typeof value === 'string')
+        : [],
+      trend_status: evaluation.trend_status as AgentRecord['evaluation']['trend_status'],
+    },
+  };
+}
+
+async function getScopedCatalog(): Promise<ScopedPerformanceCatalog> {
+  const session = scopedSessionKey();
+  const cacheIsFresh = scopedCatalog
+    && scopedCatalogSession === session
+    && Date.now() - scopedCatalogFetchedAt < 2 * 60 * 1000;
+  if (cacheIsFresh) return scopedCatalog!;
+  if (scopedCatalogRequest && scopedCatalogRequestSession === session) return scopedCatalogRequest;
+
+  scopedCatalogRequestSession = session;
+  scopedCatalogRequest = apiFetch<{
+    success: boolean;
+    data?: ScopedPerformanceCatalog;
+    message?: string;
+  }>('/api/performance/catalog').then((response) => {
+    if (!response.success || !response.data) {
+      throw new Error(response.message || 'Performance catalog request failed');
+    }
+    scopedCatalog = response.data;
+    scopedCatalogSession = session;
+    scopedCatalogFetchedAt = Date.now();
+    return response.data;
+  }).finally(() => {
+    scopedCatalogRequest = null;
+  });
+  return scopedCatalogRequest;
+}
+
+function periodsForRequest(
+  catalog: ScopedPerformanceCatalog,
+  month: MonthKey,
+  periodCount = 2,
+): ScopedPerformancePeriod[] {
+  const periods = (catalog.periods || []).slice().sort((left, right) => right.key.localeCompare(left.key));
+  if (!periods.length) return [];
+  const active = month !== 'All'
+    ? periods.find((period) => period.key === month || period.month === month) || periods[0]
+    : periods[0];
+  const activeIndex = periods.findIndex((period) => period.key === active.key);
+  return periods.slice(activeIndex, activeIndex + Math.max(1, periodCount)).filter(
+    (period, index, values): period is ScopedPerformancePeriod => values.findIndex((item) => item.key === period.key) === index,
+  );
+}
+
+async function fetchScopedPerformanceData(
+  month: MonthKey,
+  region: 'All' | 'EGY' | 'UAE',
+  performanceLevel: PerformanceLevelFilter,
+  location: LocationKey,
+  team?: string,
+): Promise<AgentRecord[]> {
+  const catalog = await getScopedCatalog();
+  const periods = periodsForRequest(catalog, month, month === 'All' ? 6 : 2);
+  const records: AgentRecord[] = [];
+
+  for (const period of periods) {
+    let cursor: string | undefined;
+    let pageCount = 0;
+    do {
+      const params = new URLSearchParams({
+        period: period.key,
+        detail: 'full',
+        page_size: '100',
+      });
+      if (region !== 'All') params.set('region', region);
+      if (performanceLevel !== 'All') params.set('performance_level', performanceLevel);
+      if (location !== 'all') params.set('location', location);
+      if (team) params.set('team', team);
+      if (cursor) params.set('cursor', cursor);
+
+      const response = await apiFetch<{
+        success: boolean;
+        data?: ScopedRecordPage;
+        message?: string;
+      }>(`/api/performance/records?${params.toString()}`);
+      if (!response.success || !response.data) {
+        throw new Error(response.message || 'Performance records request failed');
+      }
+      records.push(...(response.data.items || []).map(mapScopedPerformanceRecord));
+      cursor = response.data.has_more && response.data.next_cursor
+        ? response.data.next_cursor
+        : undefined;
+      pageCount += 1;
+      if (pageCount >= 1000 && cursor) {
+        throw new Error('Performance records pagination exceeded the safety limit');
+      }
+    } while (cursor);
+  }
+
+  return records;
+}
 
 async function fetchPerformanceData(force = false) {
   if (!force && isFetching) return;
@@ -205,6 +434,13 @@ async function fetchPerformanceData(force = false) {
 
 /** Force a re-fetch from the backend API (e.g. after a new file upload). */
 export function refreshPerformanceData() {
+  if (scopedPerformanceApiEnabled) {
+    scopedCatalog = null;
+    scopedCatalogFetchedAt = 0;
+    scopedRefreshVersion += 1;
+    scopedRefreshListeners.forEach((listener) => listener());
+    return;
+  }
   cachedData = null;
   lastFetchTime = 0;
   isFetching = false;
@@ -404,13 +640,56 @@ export interface AgentWithLocation extends AgentRecord {
 
 /* ── Main Hook ── */
 
-export function usePerformanceData(month: MonthKey, location: LocationKey, region: 'All' | 'EGY' | 'UAE' = 'All', performanceLevel: PerformanceLevelFilter = 'All') {
-  const [allData, setAllData] = useState<AgentRecord[]>(cachedData || []);
-  const [loading, setLoading] = useState(!cachedData);
-  const [dataSource, setDataSource] = useState<'api' | 'empty'>(lastDataSource);
-  const [errorMessage, setErrorMessage] = useState<string | null>(lastErrorMessage);
+export function usePerformanceData(
+  month: MonthKey,
+  location: LocationKey,
+  region: 'All' | 'EGY' | 'UAE' = 'All',
+  performanceLevel: PerformanceLevelFilter = 'All',
+  enabled = true,
+  scopedTeam?: string,
+) {
+  const [allData, setAllData] = useState<AgentRecord[]>(scopedPerformanceApiEnabled ? [] : cachedData || []);
+  const [loading, setLoading] = useState(enabled && (scopedPerformanceApiEnabled || !cachedData));
+  const [dataSource, setDataSource] = useState<'api' | 'empty'>(scopedPerformanceApiEnabled ? 'empty' : lastDataSource);
+  const [errorMessage, setErrorMessage] = useState<string | null>(scopedPerformanceApiEnabled ? null : lastErrorMessage);
+  const [refreshVersion, setRefreshVersion] = useState(scopedRefreshVersion);
 
   useEffect(() => {
+    const listener = () => setRefreshVersion(scopedRefreshVersion);
+    scopedRefreshListeners.add(listener);
+    return () => {
+      scopedRefreshListeners.delete(listener);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!enabled) {
+      return;
+    }
+
+    if (scopedPerformanceApiEnabled) {
+      let cancelled = false;
+      fetchScopedPerformanceData(month, region, performanceLevel, location, scopedTeam)
+        .then((newData) => {
+          if (cancelled) return;
+          setAllData(newData);
+          setLoading(false);
+          setDataSource('api');
+          setErrorMessage(null);
+        })
+        .catch((error: unknown) => {
+          if (cancelled) return;
+          console.warn('Failed to fetch bounded performance data from the Backend API.');
+          setAllData([]);
+          setLoading(false);
+          setDataSource('empty');
+          setErrorMessage(error instanceof Error ? error.message : 'Failed to fetch performance data');
+        });
+      return () => {
+        cancelled = true;
+      };
+    }
+
     const listener = (newData: AgentRecord[]) => {
       setAllData(newData);
       setLoading(false);
@@ -426,7 +705,7 @@ export function usePerformanceData(month: MonthKey, location: LocationKey, regio
     return () => {
       listeners.delete(listener);
     };
-  }, []);
+  }, [enabled, location, month, performanceLevel, refreshVersion, region, scopedTeam]);
 
   return useMemo(() => {
     const levelData = performanceLevel === 'All'
@@ -747,11 +1026,11 @@ export function usePerformanceData(month: MonthKey, location: LocationKey, regio
       avgAHTSeconds,
       kpiVsTarget,
       outliers,
-      loading,
+      loading: enabled ? loading : false,
       dataSource,
       errorMessage,
     };
-  }, [allData, month, location, region, performanceLevel, loading, dataSource, errorMessage]);
+  }, [allData, month, location, region, performanceLevel, loading, dataSource, errorMessage, enabled]);
 }
 
 export function useCRMData(month: MonthKey, location: LocationKey, performanceLevel: PerformanceLevelFilter = 'All') {
@@ -867,8 +1146,20 @@ export function useTeamData(
   callCenterChannel: CallCenterChannelFilter = 'all',
   rcmDomain: RcmDomainFilter = 'all',
   rcmGroup: RcmGroupFilter = 'all',
+  legacyEnabled = true,
 ) {
-  const { agents: allAgents, loading, dataSource, errorMessage } = usePerformanceData('All', location, region, performanceLevel);
+  const sourceMonth = scopedPerformanceApiEnabled ? month : 'All';
+  const scopedTeam = scopedPerformanceApiEnabled && teamName && !['Call Center', 'Pre-Approvals', 'RCM'].includes(teamName)
+    ? teamName
+    : undefined;
+  const { agents: allAgents, loading, dataSource, errorMessage } = usePerformanceData(
+    sourceMonth,
+    location,
+    region,
+    performanceLevel,
+    legacyEnabled,
+    scopedTeam,
+  );
 
   return useMemo(() => {
     let filtered = teamName
@@ -1023,7 +1314,8 @@ export function useAllTeamsSummary(
   region: 'All' | 'EGY' | 'UAE' = 'All',
   location: LocationKey = 'all',
   performanceLevel: PerformanceLevelFilter = 'All',
-  weightsList?: TeamWeightConfig[]
+  weightsList?: TeamWeightConfig[],
+  legacyEnabled = true,
 ) {
   const { data: teamConfigs = [], isLoading: configsLoading } = useAllTeamConfigs();
   const {
@@ -1034,7 +1326,7 @@ export function useAllTeamsSummary(
     loading,
     dataSource,
     errorMessage,
-  } = useTeamData(null, month, region, location, weightsList, performanceLevel);
+  } = useTeamData(null, month, region, location, weightsList, performanceLevel, undefined, 'all', 'all', 'all', 'all', legacyEnabled);
 
   return useMemo(() => {
     const summary = calculatePerformanceSummary(

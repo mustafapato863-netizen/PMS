@@ -54,6 +54,7 @@ export interface InsightDriver {
   impact_points: number;
   direction: 'positive' | 'negative';
   insight_id: string;
+  trend?: Array<{ period: InsightPeriod; impact_points: number | null }>;
 }
 
 export interface InsightRisk {
@@ -140,6 +141,34 @@ export interface InsightKpiTrend {
   points: InsightKpiTrendPoint[];
 }
 
+export interface InsightRoleSummary {
+  role: string;
+  team: string;
+  current_score: number | null;
+  previous_score: number | null;
+  movement: number | null;
+  net_impact: number | null;
+  affected_employees: number;
+  total_employees: number;
+  primary_insight_id: string | null;
+}
+
+export interface InsightKpiOverviewPoint {
+  period: InsightPeriod;
+  total_kpis: number;
+  on_track: number;
+  at_risk: number;
+  critical: number;
+}
+
+export interface InsightKpiOverview {
+  total_kpis: number;
+  on_track: number;
+  at_risk: number;
+  critical: number;
+  points: InsightKpiOverviewPoint[];
+}
+
 export interface InsightOptions {
   periods: InsightPeriod[];
   regions: string[];
@@ -177,6 +206,8 @@ export interface InsightsWorkspace {
   data_issues: InsightItem[];
   people_contribution_analysis: InsightPeopleContributionAnalysis | null;
   kpi_trend: InsightKpiTrend | null;
+  role_summaries?: InsightRoleSummary[];
+  kpi_overview?: InsightKpiOverview;
   team_summaries: Array<{
     team: string;
     current_score: number | null;

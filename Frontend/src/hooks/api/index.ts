@@ -6,4 +6,5 @@
 
 export * from './useEmployeeProfile';
 export * from './usePerformanceData';
+export * from './usePerformanceDashboard';
 export * from './useKpiWeights';

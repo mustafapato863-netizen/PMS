@@ -25,7 +25,6 @@ const ReportBuilderView = lazy(() => import('./pages/ReportBuilderView'));
 const ReportPreviewView = lazy(() => import('./pages/ReportPreviewView'));
 const InsightsView = lazy(() => import('./pages/InsightsView'));
 const PlanningView = lazy(() => import('./pages/PlanningView'));
-const DesignSystemView = lazy(() => import('./pages/DesignSystemView'));
 const CorrectiveActionsView = lazy(() => import('./pages/CorrectiveActionsView'));
 const NotFound = lazy(() => import('./pages/NotFound'));
 
@@ -101,7 +100,7 @@ function AnimatedRoutes() {
         <Route
           path="/reports"
           element={
-            <RouteGuard allowedRoles={['Admin']}>
+            <RouteGuard allowedRoles={['Admin', 'Manager', 'Executive', 'Viewer']}>
               <Suspense fallback={<RouteLoadingFallback />}><ReportsView /></Suspense>
             </RouteGuard>
           }
@@ -125,7 +124,7 @@ function AnimatedRoutes() {
         <Route
           path="/reports/:reportId/preview"
           element={
-            <RouteGuard allowedRoles={['Admin']}>
+            <RouteGuard allowedRoles={['Admin', 'Manager', 'Executive', 'Viewer']}>
               <Suspense fallback={<RouteLoadingFallback />}><ReportPreviewView /></Suspense>
             </RouteGuard>
           }
@@ -148,16 +147,6 @@ function AnimatedRoutes() {
           element={
             <RouteGuard allowedRoles={['Admin', 'Executive']}>
               <Suspense fallback={<RouteLoadingFallback />}><CorrectiveActionsView /></Suspense>
-            </RouteGuard>
-          }
-        />
-
-        {/* Design system laboratory (Admin only) */}
-        <Route
-          path="/design-system"
-          element={
-            <RouteGuard allowedRoles={['Admin']}>
-              <Suspense fallback={<RouteLoadingFallback />}><DesignSystemView /></Suspense>
             </RouteGuard>
           }
         />

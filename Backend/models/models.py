@@ -432,6 +432,56 @@ class User(Base):
     actions_updated = relationship("Action", foreign_keys="Action.updated_by_user_id", back_populates="updated_by_user")
     # ponytail: keep deletes from loading audit rows when the live DB lags schema updates
     audit_logs = relationship("AuditLog", back_populates="performed_by_user", passive_deletes=True)
+    refresh_sessions = relationship(
+        "RefreshSession",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+
+
+class RefreshSession(Base):
+    """Durable, rotating browser refresh session.
+
+    Raw refresh and CSRF values are never persisted. The hashes are enough to
+    validate a browser session while keeping a database read compromise from
+    becoming an immediately usable authentication credential.
+    """
+
+    __tablename__ = "refresh_sessions"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    family_id = Column(UUID(as_uuid=True), nullable=False)
+    token_hash = Column(String(64), nullable=False, unique=True)
+    csrf_token_hash = Column(String(64), nullable=False)
+    parent_session_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("refresh_sessions.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    replaced_by_session_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("refresh_sessions.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    remember_me = Column(Boolean, nullable=False, default=False)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    revoked_at = Column(DateTime(timezone=True), nullable=True)
+    revocation_reason = Column(String(80), nullable=True)
+    user_agent = Column(String(512), nullable=True)
+    ip_address = Column(INET_COMPAT_TYPE, nullable=True)
+    last_used_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    user = relationship("User", back_populates="refresh_sessions", foreign_keys=[user_id])
+
+    __table_args__ = (
+        Index("idx_refresh_session_user_active", "user_id", "revoked_at", "expires_at"),
+        Index("idx_refresh_session_family", "family_id"),
+        Index("idx_refresh_session_parent", "parent_session_id"),
+    )
 
 
 class UserTeamAssignment(Base):

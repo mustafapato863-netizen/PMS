@@ -1,3 +1,4 @@
+import './PageEnhancements.css';
 import { useState, type CSSProperties, type ReactNode } from 'react';
 import {
   Activity,

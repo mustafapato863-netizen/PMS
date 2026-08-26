@@ -19,7 +19,8 @@ from models.report_definitions import (
     ReportTemplateCreate,
     ReportTemplateUpdate,
 )
-from models.report_schemas import ReportConfiguration, SaveReportTemplateRequest
+from models.report_center_schemas import ReportCenterFilters, ReportCenterRecordsResponse, ReportCenterResponse
+from models.report_schemas import DeleteGeneratedReportsRequest, ReportConfiguration, SaveReportTemplateRequest
 from models.schemas import StandardResponse
 from services.report_service import (
     ReportAccessError,
@@ -35,6 +36,7 @@ from services.report_story_service import (
     StoryValidationError,
 )
 from services.processing_job_service import ProcessingJobService, scope_snapshot
+from services.reports_center_service import ReportsCenterService
 
 
 router = APIRouter(prefix="/reports", tags=["Reports"])
@@ -297,6 +299,7 @@ def generate_story_report(
                     "draft_id": draft_id,
                     "request": payload.model_dump(mode="json"),
                     "scope": scope_snapshot(scope),
+                    "idempotency_key": _job_key(scope.get("user_id"), idempotency_key),
                 },
                 requested_by_user_id=scope.get("user_id"),
                 requested_by_name=scope.get("username") or "User",
@@ -357,10 +360,23 @@ def list_reports(
     mine: bool = Query(default=False),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=10, ge=1, le=100),
+    report_type: str | None = Query(default=None, max_length=50),
+    period: str | None = Query(default=None, max_length=100),
+    report_status: str | None = Query(default=None, alias="status", max_length=20),
+    search: str | None = Query(default=None, max_length=100),
     db: Session = Depends(get_db),
     _user=Depends(require_permission("view_reports")),
 ):
-    data = ReportService(db).list_generated(_scope(db, request), mine=mine, page=page, page_size=page_size)
+    data = ReportService(db).list_generated(
+        _scope(db, request),
+        mine=mine,
+        page=page,
+        page_size=page_size,
+        report_type=report_type,
+        period=period,
+        status=report_status,
+        search=search,
+    )
     return StandardResponse(success=True, message="Generated reports retrieved", data=data)
 
 
@@ -391,19 +407,29 @@ def generate_report(
         service = ReportService(db)
         if settings.PMS_ASYNC_JOBS_ENABLED:
             service._validate_scope(configuration, scope)
+            normalized_idempotency_key = _job_key(scope.get("user_id"), idempotency_key)
             job = ProcessingJobService.create(
                 db,
                 kind="report_generation",
                 request_json={
                     "configuration": configuration.model_dump(mode="json"),
                     "scope": scope_snapshot(scope),
+                    "idempotency_key": normalized_idempotency_key,
                 },
                 requested_by_user_id=scope.get("user_id"),
                 requested_by_name=scope.get("username") or "User",
-                idempotency_key=_job_key(scope.get("user_id"), idempotency_key),
+                idempotency_key=normalized_idempotency_key,
             )
             return _queued_response(job, "Report queued for background generation")
-        report = service.generate(configuration, scope)
+        normalized_idempotency_key = _job_key(scope.get("user_id"), idempotency_key)
+        existing = service.find_generated_by_idempotency(scope, normalized_idempotency_key)
+        if existing:
+            return StandardResponse(
+                success=True,
+                message="Report already generated for this request",
+                data=service.serialize_generated(existing),
+            )
+        report = service.generate(configuration, scope, idempotency_key=normalized_idempotency_key)
     except (ReportAccessError, ReportNotFoundError, ReportValidationError) as exc:
         _raise_report_error(exc)
     return StandardResponse(
@@ -439,6 +465,58 @@ def save_report_template(
         success=True,
         message="Report template saved",
         data={"id": str(template.id), "name": template.name},
+    )
+
+
+def _center_response(data: dict, *, message: str, model):
+    validated = model.model_validate(data)
+    return StandardResponse(success=True, message=message, data=validated.model_dump(mode="json"))
+
+
+@router.get("/center", response_model=StandardResponse)
+def get_reports_center(
+    request: Request,
+    filters: ReportCenterFilters = Depends(),
+    db: Session = Depends(get_db),
+    _user=Depends(require_permission("view_reports")),
+):
+    if not settings.PMS_REPORT_CENTER_ENABLED:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Reports Center is disabled")
+    data = ReportsCenterService(db, _scope(db, request)).center(filters)
+    return _center_response(data, message="Reports Center retrieved", model=ReportCenterResponse)
+
+
+@router.get("/center/records", response_model=StandardResponse)
+def get_reports_center_records(
+    request: Request,
+    filters: ReportCenterFilters = Depends(),
+    db: Session = Depends(get_db),
+    _user=Depends(require_permission("view_reports")),
+):
+    if not settings.PMS_REPORT_CENTER_ENABLED:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Reports Center is disabled")
+    data = ReportsCenterService(db, _scope(db, request)).records(filters)
+    return _center_response(data, message="Reports Center records retrieved", model=ReportCenterRecordsResponse)
+
+
+@router.delete("/bulk", response_model=StandardResponse)
+def delete_reports(
+    payload: DeleteGeneratedReportsRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    _user=Depends(require_permission("export_data")),
+):
+    try:
+        data = ReportService(db).delete_generated_many(
+            [str(report_id) for report_id in payload.report_ids],
+            _scope(db, request),
+        )
+    except (ReportAccessError, ReportNotFoundError, ReportValidationError) as exc:
+        _raise_report_error(exc)
+    return StandardResponse(
+        success=True,
+        message=f"{len(data)} generated reports deleted",
+        data={"items": data, "count": len(data)},
     )
 
 

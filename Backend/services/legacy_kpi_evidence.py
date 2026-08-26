@@ -370,7 +370,28 @@ def build_legacy_employee_kpi_values(
         achievement = max(supplied_achievement if supplied_achievement is not None else (row_achievement or 0.0), 0.0)
         weight = _weight(weights, key)
         definition = definitions.get(key, {})
-        explicit_target = _first(row, f"T.{key}%", f"T.{key} %", f"T.{key}", f"Target_{key}")
+        target_keys = [f"T.{key}%", f"T.{key} %", f"T.{key}", f"Target_{key}"]
+        if key == "Rejection":
+            # Offshore source rows use the canonical IP-prefixed target. Read
+            # it before legacy aliases so a stale persisted target cannot win.
+            target_keys = [
+                "T.IPInitialRejection%",
+                "T.InitialRejection%",
+                "T.InitialRejectionRate",
+                "T.InitialRejection",
+                *target_keys,
+            ]
+        elif key == "Submission":
+            # The Offshore workbook names the submission target by its
+            # approval-within-48-hours measure, not by the KPI label.
+            target_keys = [
+                "T.%ofApprovalwithin48hrs",
+                "T.%OfApprovalwithin48HR",
+                "T.%OfApprovalwithin48hrs",
+                "T.%ofApprovalwithin48HR",
+                *target_keys,
+            ]
+        explicit_target = _first(row, *target_keys)
         if explicit_target is not None and explicit_target > 0:
             if key in ("AHT", "WaitingTime") and 0 < explicit_target < 1.0:
                 target = round(explicit_target * 1440.0, 4)

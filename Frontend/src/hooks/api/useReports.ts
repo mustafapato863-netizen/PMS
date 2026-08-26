@@ -5,6 +5,9 @@ import type {
   GeneratedReport,
   PaginatedReports,
   ReportConfiguration,
+  ReportCenterFilters,
+  ReportCenterRecordsResponse,
+  ReportCenterResponse,
   ReportOptions,
   ReportPreview,
   ReportTemplate,
@@ -29,7 +32,9 @@ interface ApiResponse<T> {
 export const reportQueryKeys = {
   templates: ['reports', 'templates'] as const,
   options: ['reports', 'options'] as const,
-  list: (mine: boolean, page: number) => ['reports', 'list', mine, page] as const,
+  list: (mine: boolean, page: number, filters?: object) => ['reports', 'list', mine, page, filters || {}] as const,
+  center: (filters: ReportCenterFilters) => ['reports', 'center', filters] as const,
+  centerRecords: (filters: ReportCenterFilters & { cursor?: string; page_size?: number; include_total?: boolean }) => ['reports', 'center', 'records', filters] as const,
   saved: ['reports', 'saved'] as const,
   storyTemplates: ['reports', 'story', 'templates'] as const,
   storyRegistry: ['reports', 'story', 'registry'] as const,
@@ -53,12 +58,53 @@ export function useReportOptions() {
   });
 }
 
-export function useGeneratedReports(mine: boolean, page = 1) {
+export interface ReportHistoryFilters {
+  report_type?: string;
+  period?: string;
+  status?: string;
+  search?: string;
+}
+
+function queryString(values: object) {
+  const params = new URLSearchParams();
+  Object.entries(values as Record<string, unknown>).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && String(value) !== '') params.set(key, String(value));
+  });
+  return params.toString();
+}
+
+export function useGeneratedReports(mine: boolean, page = 1, filters: ReportHistoryFilters = {}) {
   return useQuery({
-    queryKey: reportQueryKeys.list(mine, page),
+    queryKey: reportQueryKeys.list(mine, page, filters),
     queryFn: async () => (
-      await apiFetch<ApiResponse<PaginatedReports>>(`/api/reports?mine=${mine}&page=${page}&page_size=10`)
+      await apiFetch<ApiResponse<PaginatedReports>>(`/api/reports?${queryString({ mine, page, page_size: 10, ...filters })}`)
     ).data,
+  });
+}
+
+export function useReportsCenter(filters: ReportCenterFilters, enabled = true) {
+  return useQuery({
+    queryKey: reportQueryKeys.center(filters),
+    queryFn: async () => (
+      await apiFetch<ApiResponse<ReportCenterResponse>>(`/api/reports/center?${queryString(filters)}`)
+    ).data,
+    enabled,
+    staleTime: 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+}
+
+export function useReportsCenterRecords(
+  filters: ReportCenterFilters & { cursor?: string; page_size?: number; include_total?: boolean },
+  enabled = true,
+) {
+  return useQuery({
+    queryKey: reportQueryKeys.centerRecords(filters),
+    queryFn: async () => (
+      await apiFetch<ApiResponse<ReportCenterRecordsResponse>>(`/api/reports/center/records?${queryString(filters)}`)
+    ).data,
+    enabled,
+    staleTime: 60 * 1000,
   });
 }
 
@@ -83,9 +129,17 @@ export function usePreviewReport() {
 export function useGenerateReport() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (configuration: ReportConfiguration) => {
+    mutationFn: async (input: ReportConfiguration | { configuration: ReportConfiguration; idempotencyKey?: string }) => {
+      const configuration = 'configuration' in input ? input.configuration : input;
+      const suppliedKey = 'configuration' in input ? input.idempotencyKey : undefined;
+      const generatedKey = suppliedKey || (
+        typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+          ? crypto.randomUUID()
+          : `${Date.now()}-${Math.random().toString(36).slice(2)}`
+      );
       const data = (await apiFetch<ApiResponse<GeneratedReport | ProcessingJobReference>>('/api/reports/generate', {
         method: 'POST',
+        headers: { 'Idempotency-Key': generatedKey },
         body: JSON.stringify(configuration),
       })).data;
       if (!('job_id' in data)) return data;
@@ -105,6 +159,19 @@ export function useDeleteGeneratedReport() {
     mutationFn: async (reportId: string) => (
       await apiFetch<ApiResponse<{ id: string; name: string }>>(`/api/reports/${reportId}`, {
         method: 'DELETE',
+      })
+    ).data,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['reports', 'list'] }),
+  });
+}
+
+export function useDeleteGeneratedReports() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (reportIds: string[]) => (
+      await apiFetch<ApiResponse<{ items: Array<{ id: string; name: string }>; count: number }>>('/api/reports/bulk', {
+        method: 'DELETE',
+        body: JSON.stringify({ report_ids: reportIds }),
       })
     ).data,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['reports', 'list'] }),

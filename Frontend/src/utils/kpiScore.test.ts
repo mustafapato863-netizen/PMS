@@ -110,6 +110,48 @@ describe('resolveDisplayScore', () => {
     expect(error?.achievement).toBe(100);
   });
 
+  it('prefers the canonical Offshore rejection target over a stale persisted target', () => {
+    const agent = weightedRecord(
+      'Pre-Approvals IP Offshore',
+      'July',
+      { 'Rejection Rate': 8.1, 'Initial Error Rate': 0, 'Submission Rate': 90 },
+      {
+        RejectedRequests: '2',
+        AssignedRequest: '84',
+        'T.IPInitialRejection%': '0.03',
+      },
+    );
+    agent.kpi_values![0] = {
+      ...agent.kpi_values![0],
+      actual_value: 2 / 84,
+      target_value: 2 / 84,
+    };
+
+    const rejection = getKPIsForAgent(agent).find((kpi) => kpi.label === 'Rejection Rate');
+    expect(rejection?.target).toBeCloseTo(0.03, 6);
+  });
+
+  it('prefers the canonical Offshore submission target over a stale persisted target', () => {
+    const agent = weightedRecord(
+      'Pre-Approvals IP Offshore',
+      'July',
+      { 'Rejection Rate': 8.1, 'Initial Error Rate': 0, 'Submission Rate': 90 },
+      {
+        ApprovalWithin48HR: '90',
+        ApprovedRequests: '100',
+        'T.%ofApprovalwithin48hrs': '0.90',
+      },
+    );
+    agent.kpi_values![2] = {
+      ...agent.kpi_values![2],
+      actual_value: 0.9,
+      target_value: 1,
+    };
+
+    const submission = getKPIsForAgent(agent).find((kpi) => kpi.label === 'Submission Rate');
+    expect(submission?.target).toBeCloseTo(0.90, 6);
+  });
+
   it('rebuilds the new Pre-Approvals workstream score and ignores stale combined KPIs', () => {
     const agent = {
       identity: {

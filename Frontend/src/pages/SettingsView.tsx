@@ -1,3 +1,4 @@
+import './PageEnhancements.css';
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Settings, ShieldAlert } from 'lucide-react';
@@ -28,8 +29,8 @@ const SettingsView = () => {
   }
 
   return (
-    <motion.main initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="app-page-shell">
-      <header className="flex items-center gap-3">
+    <motion.main initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="app-page-shell rf-page rf-page--settings">
+      <header className="rf-page-hero flex items-center gap-3">
         <div className="rounded-2xl bg-blue-500/10 p-3 text-blue-600 dark:text-blue-400"><Settings size={22} /></div>
         <div><h1 className="text-2xl font-black tracking-tight text-[var(--text-primary)]">Settings & Administration</h1><p className="mt-1 text-xs text-[var(--text-muted)]">Manage data, KPI definitions, users and team onboarding.</p></div>
       </header>

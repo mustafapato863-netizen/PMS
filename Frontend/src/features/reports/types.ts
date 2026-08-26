@@ -9,7 +9,10 @@ export type ReportType =
   | 'data_quality'
   | 'monthly_uae'
   | 'monthly_egypt'
-  | 'team_marketing';
+  | 'team_marketing'
+  | 'insights'
+  | 'executive_group_summary'
+  | 'uae_executive_summary';
 
 export type ReportOutputFormat = 'pptx' | 'pdf' | 'excel';
 
@@ -18,7 +21,7 @@ export interface ReportTemplate {
   category: string;
   name: string;
   description: string;
-  formats: Array<'pptx' | 'pdf'>;
+  formats: Array<'pptx' | 'pdf' | 'excel'>;
   sections: string[];
 }
 
@@ -46,7 +49,12 @@ export interface ReportOptions {
   employees: ReportEmployeeOption[];
   grades: string[];
   statuses: string[];
+  kpis?: string[];
   can_export: boolean;
+  role?: string;
+  can_view_people?: boolean;
+  can_view_actions?: boolean;
+  allowed_formats?: ReportOutputFormat[];
 }
 
 export interface ReportConfiguration {
@@ -56,6 +64,8 @@ export interface ReportConfiguration {
   start_year: number;
   end_month?: string | null;
   end_year?: number | null;
+  comparison_month?: string | null;
+  comparison_year?: number | null;
   region?: string | null;
   team?: string | null;
   position?: string | null;
@@ -63,6 +73,9 @@ export interface ReportConfiguration {
   employee_id?: string | null;
   grade?: string | null;
   status?: string | null;
+  kpi?: string | null;
+  severity?: string | null;
+  insight_type?: string | null;
   included_sections: string[];
   output_format: ReportOutputFormat;
   slides?: ReportSlideSchema[];
@@ -96,6 +109,11 @@ export interface ReportPreview {
   record_count: number;
   warnings: string[];
   table_preview: Array<Record<string, unknown>>;
+  preview_redacted?: boolean;
+  capabilities?: {
+    can_view_people: boolean;
+    can_view_actions: boolean;
+  };
 }
 
 export interface GeneratedReport {
@@ -131,6 +149,71 @@ export interface PaginatedReports {
   total: number;
   page: number;
   page_size: number;
+}
+
+export interface ReportCenterFilters {
+  period?: string;
+  comparison_period?: string;
+  region?: string;
+  team?: string;
+  performance_level?: string;
+  position?: string;
+  employee_id?: string;
+  grade?: string;
+  status?: string;
+  kpi?: string;
+}
+
+export interface ReportCenterCapabilities {
+  role: string;
+  can_export: boolean;
+  can_view_people: boolean;
+  can_view_actions: boolean;
+  allowed_formats: ReportOutputFormat[];
+}
+
+export interface ReportCenterPeriod {
+  key: string;
+  month: string;
+  year: number;
+}
+
+export interface ReportCenterResponse {
+  role: string;
+  filters: Record<string, string | undefined>;
+  period: ReportCenterPeriod | null;
+  comparison_period: ReportCenterPeriod | null;
+  summary: Record<string, number | string | null | undefined>;
+  trend: Array<Record<string, unknown>>;
+  team_comparison: Array<Record<string, unknown>>;
+  kpi_health: Array<Record<string, unknown>>;
+  insights: Record<string, unknown>;
+  corrective_actions: {
+    total: number;
+    open: number;
+    by_status: Record<string, number>;
+    by_team: Record<string, number>;
+    items: Array<Record<string, unknown>>;
+  } | null;
+  options: ReportOptions;
+  capabilities: ReportCenterCapabilities;
+  as_of: string;
+  data_version: number;
+}
+
+export interface ReportCenterRecordsResponse {
+  role: string;
+  period: ReportCenterPeriod | null;
+  comparison_period: ReportCenterPeriod | null;
+  filters: Record<string, string | undefined>;
+  items: Array<Record<string, unknown>>;
+  page_size: number;
+  next_cursor: string | null;
+  has_more: boolean;
+  total: number | null;
+  capabilities: ReportCenterCapabilities;
+  as_of: string;
+  data_version: number;
 }
 
 export interface StoryReportScope {
