@@ -11,6 +11,28 @@ import { refreshManagementData } from './settingsUtils';
 
 type Status = { type: 'success' | 'error'; message: string } | null;
 
+function readableUploadError(value: unknown, fallback: string): string {
+  if (typeof value === 'string' && value.trim()) return value;
+  if (!value || typeof value !== 'object') return fallback;
+
+  const record = value as Record<string, unknown>;
+  if (typeof record.message === 'string' && record.message.trim()) return record.message;
+  if (typeof record.detail === 'string' && record.detail.trim()) return record.detail;
+  if (Array.isArray(record.errors)) {
+    const messages = record.errors
+      .map((item) => {
+        if (typeof item === 'string') return item;
+        if (item && typeof item === 'object' && typeof (item as Record<string, unknown>).msg === 'string') {
+          return (item as Record<string, unknown>).msg as string;
+        }
+        return null;
+      })
+      .filter((item): item is string => Boolean(item));
+    if (messages.length) return messages.join(' · ');
+  }
+  return fallback;
+}
+
 function asArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
 }
@@ -361,7 +383,9 @@ export function DataManagementPanel() {
       body.append('file', file);
       const response = await fetchWithRole(`${API_BASE}/api/uploads/pms`, { method: 'POST', body });
       const result = await response.json().catch(() => ({}));
-      if (!response.ok || !result?.success) throw new Error(result?.detail || result?.message || 'Upload failed');
+      if (!response.ok || !result?.success) {
+        throw new Error(readableUploadError(result?.detail ?? result?.message, 'Upload failed'));
+      }
       let uploadData = result?.data as Record<string, unknown> | undefined;
       const jobId = typeof uploadData?.job_id === 'string' ? uploadData.job_id : null;
       if (jobId) {
@@ -372,7 +396,9 @@ export function DataManagementPanel() {
           }
         });
         if (job.status !== 'succeeded' || !job.result) {
-          throw new Error(job.error?.message || 'Background upload processing failed.');
+          const reason = job.error?.message || 'Background upload processing failed.';
+          const code = job.error?.code ? ` [${job.error.code}]` : '';
+          throw new Error(`${reason}${code} (Job: ${job.job_id})`);
         }
         uploadData = job.result;
       }
@@ -398,7 +424,9 @@ export function DataManagementPanel() {
       body.append('file', file);
       const response = await fetchWithRole(`${API_BASE}/api/performance/balanced-scorecard/template/upload`, { method: 'POST', body });
       const result = await response.json().catch(() => ({}));
-      if (!response.ok || !result?.success) throw new Error(result?.detail || result?.message || 'Upload failed');
+      if (!response.ok || !result?.success) {
+        throw new Error(readableUploadError(result?.detail ?? result?.message, 'Upload failed'));
+      }
       const teams = asArray(result?.data?.teams);
       const periods = asArray(result?.data?.periods);
       setManagementStatus({

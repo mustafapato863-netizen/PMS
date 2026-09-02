@@ -13,6 +13,7 @@ from typing import Any
 from uuid import UUID
 
 from pydantic import ValidationError
+from sqlalchemy.exc import SQLAlchemyError
 
 from config import settings
 from config.database import SessionLocal
@@ -45,6 +46,9 @@ logger = logging.getLogger(__name__)
 NON_RETRYABLE_ERRORS = (
     UploadProcessingError,
     ConfigurationError,
+    FileNotFoundError,
+    PermissionError,
+    MemoryError,
     ValueError,
     ReportAccessError,
     ReportNotFoundError,
@@ -55,6 +59,26 @@ NON_RETRYABLE_ERRORS = (
     StoryValidationError,
     ValidationError,
 )
+
+
+def _safe_processing_error_message(exc: Exception, job_id: str) -> str:
+    """Return an actionable message without exposing database internals."""
+
+    if isinstance(exc, UploadProcessingError):
+        return str(exc) or "The uploaded workbook failed validation."
+    if isinstance(exc, ConfigurationError):
+        return str(exc) or "The upload configuration is invalid."
+    if isinstance(exc, FileNotFoundError):
+        return "The staged upload file was not available to the worker. Check shared storage."
+    if isinstance(exc, PermissionError):
+        return "The worker could not read the staged upload file. Check storage permissions."
+    if isinstance(exc, MemoryError):
+        return "The workbook is too large for the available worker memory."
+    if isinstance(exc, SQLAlchemyError):
+        return "The database was unavailable while processing the upload. Check the worker logs."
+    if isinstance(exc, (ValueError, ValidationError)):
+        return str(exc) or "The uploaded workbook failed validation."
+    return f"Background processing failed. Check the worker logs for job {job_id}."
 
 
 def _safe_uuid(value: str | UUID | None) -> UUID | None:
@@ -239,7 +263,7 @@ def process_job_once(job_id: str, worker_id: str) -> None:
                 db,
                 job_id,
                 error_code=type(exc).__name__.lower()[:80],
-                message=str(exc) if not retryable else "The background operation failed and will be retried.",
+                message=_safe_processing_error_message(exc, job_id),
                 retryable=retryable,
                 worker_id=worker_id,
             )
