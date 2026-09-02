@@ -32,6 +32,9 @@ services:
     command: ["sh", "-c", "python scripts/bootstrap_schema.py && alembic upgrade head"]
     environment: *backend-environment
     restart: "no"
+    networks:
+      - dokploy-network
+      - default
 
   backend:
     build:
@@ -63,6 +66,7 @@ services:
       - migrate
     restart: unless-stopped
     networks:
+      - dokploy-network
       - default
 
 networks:
