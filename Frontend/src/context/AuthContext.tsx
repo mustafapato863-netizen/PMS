@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import type { User } from '../types';
-import { apiFetch, getAccessToken, setAccessToken, terminateClientSession } from '../lib/apiClient';
+import { apiFetch, getAccessToken, refreshAccessToken, setAccessToken, terminateClientSession } from '../lib/apiClient';
 import { AuthContext } from './auth';
 import type { AuthContextProps } from './auth';
 
@@ -29,9 +29,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const token = getAccessToken();
       if (!token) {
         try {
-          const refreshed = await apiFetch<{ success: boolean; data?: { access_token?: string } }>('/api/auth/refresh', { method: 'POST' });
-          if (!refreshed.success || !refreshed.data?.access_token) throw new Error('No session');
-          setAccessToken(refreshed.data.access_token);
+          const refreshed = await refreshAccessToken();
+          if (!refreshed) throw new Error('No session');
         } catch {
           await terminateClientSession();
           setCurrentUser(null);

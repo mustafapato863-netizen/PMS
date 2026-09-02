@@ -1,24 +1,22 @@
 # Authentication and Cookie Decision
 
 Date: 2026-07-29
-Decision status: retain bearer JWT for this optimisation phase; harden immediately and evaluate a cookie migration as a separate security change.
+Decision status: the refresh-cookie flow is now implemented for browser sessions; keep the access token in memory and retain the documented compatibility migration for legacy localStorage tokens.
 
 ## Current design
 
-- Login returns a JWT.
-- Frontend stores the JWT and session object in `localStorage`.
-- `apiFetch` adds `Authorization: Bearer`.
+- Login returns a short-lived JWT and sets refresh/CSRF cookies.
+- Frontend keeps the access JWT in memory and sends it as `Authorization: Bearer`.
+- The refresh token is `HttpOnly`, `Secure`, and configured with an explicit SameSite policy; it is never written to browser storage.
+- The CSRF token is retained in `localStorage` so a split-origin frontend can send the required header; it is not an authentication credential.
+- The cached user/profile and role are stored only to render the shell quickly; `/api/auth/refresh` and `/api/auth/me` remain authoritative on every page load.
+- Refresh requests are coalesced so concurrent requests cannot rotate the same refresh-token family more than once.
 - Backend validates signature/expiry and reloads the active user from PostgreSQL.
-- Redis session presence is enforced only when Redis is available; otherwise a valid JWT is trusted until expiry.
-- Logout clears browser authentication values but not the React Query cache.
+- Logout clears browser authentication values and the React Query cache.
 
 ## Decision rationale
 
-Moving to cookies affects CSRF, CORS, domain topology, local development, refresh, logout, socket authentication and deployment configuration. The current task prohibits speculative authentication changes and requires no security weakening. Therefore:
-
-1. keep the established bearer contract for compatibility,
-2. close its known cache/configuration gaps,
-3. design and test any HttpOnly cookie migration separately.
+The browser session uses a hybrid flow: a short-lived bearer access token remains in memory for API compatibility, while the long-lived refresh credential is protected by an HttpOnly cookie. This avoids persistent authentication tokens in JavaScript-readable storage without requiring a breaking migration of every API request.
 
 ## Immediate requirements
 
@@ -30,9 +28,9 @@ Moving to cookies affects CSRF, CORS, domain topology, local development, refres
 - Keep backend role/team authorization authoritative.
 - Make Redis session semantics explicit: either required and fail closed, or optional revocation with documented maximum JWT lifetime.
 
-## Cookie migration criteria
+## Cookie requirements
 
-Prefer an HttpOnly, Secure, SameSite cookie when:
+The refresh-cookie flow requires:
 
 - frontend and API domains are known,
 - allowed origins are explicit,
@@ -43,13 +41,12 @@ Prefer an HttpOnly, Secure, SameSite cookie when:
 
 If frontend and API are cross-site, `SameSite=None; Secure` requires explicit CSRF defenses and credentialed CORS. Do not enable wildcard origins.
 
-## Recommended target
+## Applied target
 
-- short-lived HttpOnly access/session cookie,
-- server-side revocation or refresh rotation,
-- CSRF token/header for state-changing requests,
+- short-lived bearer access token held only in memory,
+- HttpOnly refresh cookie with server-side rotation and revocation,
+- CSRF token/header for cookie-authenticated refresh and logout requests,
 - explicit Secure/SameSite/domain/path settings by environment,
-- no authentication token readable by JavaScript,
+- no newly issued authentication token written to `localStorage`,
+- cached profile data used only for fast initial rendering,
 - query cache cleared on identity change.
-
-This is a security migration, not a performance optimisation, and requires its own compatibility and rollback gate.

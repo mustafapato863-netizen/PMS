@@ -16,6 +16,7 @@ type AccessTokenResponse = {
 };
 
 let accessToken: string | null = null;
+let tokenRefresh: Promise<boolean> | null = null;
 
 export function getAccessToken(): string | null {
   if (accessToken) return accessToken;
@@ -83,7 +84,7 @@ function getCsrfToken(): string | null {
   return cookie ? decodeURIComponent(cookie.slice(cookieName.length)) : null;
 }
 
-async function refreshAccessToken(): Promise<boolean> {
+async function requestRefreshAccessToken(): Promise<boolean> {
   const csrfToken = getCsrfToken();
   const headers: Record<string, string> = {};
   if (csrfToken) headers['X-CSRF-Token'] = csrfToken;
@@ -102,8 +103,16 @@ async function refreshAccessToken(): Promise<boolean> {
   return true;
 }
 
+export function refreshAccessToken(): Promise<boolean> {
+  if (!tokenRefresh) {
+    tokenRefresh = requestRefreshAccessToken().finally(() => {
+      tokenRefresh = null;
+    });
+  }
+  return tokenRefresh;
+}
+
 let sessionTermination: Promise<void> | null = null;
-let tokenRefresh: Promise<boolean> | null = null;
 
 export function terminateClientSession(): Promise<void> {
   clearStoredAuthentication();
@@ -169,6 +178,9 @@ export async function apiFetch<T>(
   const token = getAccessToken();
   const role = localStorage.getItem('pms_user_role') || 'Viewer';
 
+  // Ensure absolute path if endpoint does not start with "/"
+  const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     'X-User-Role': role,
@@ -179,8 +191,10 @@ export async function apiFetch<T>(
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  // Ensure absolute path if endpoint does not start with "/"
-  const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+  if (cleanEndpoint.includes('/auth/logout')) {
+    const csrfToken = getCsrfToken();
+    if (csrfToken && !headers['X-CSRF-Token']) headers['X-CSRF-Token'] = csrfToken;
+  }
 
   const res = await fetch(`${API_BASE}${cleanEndpoint}`, {
     ...options,
@@ -202,10 +216,7 @@ export async function apiFetch<T>(
     // Access tokens are intentionally short-lived. One refresh attempt is
     // shared by concurrent requests so a tab cannot rotate the cookie family
     // several times at once.
-    if (!tokenRefresh) {
-      tokenRefresh = refreshAccessToken().finally(() => { tokenRefresh = null; });
-    }
-    if (await tokenRefresh) {
+    if (await refreshAccessToken()) {
       const retryHeaders: Record<string, string> = {
         'Content-Type': 'application/json',
         'X-User-Role': localStorage.getItem('pms_user_role') || 'Viewer',
@@ -213,6 +224,10 @@ export async function apiFetch<T>(
       };
       const refreshedToken = getAccessToken();
       if (refreshedToken) retryHeaders['Authorization'] = `Bearer ${refreshedToken}`;
+      if (cleanEndpoint.includes('/auth/logout')) {
+        const csrfToken = getCsrfToken();
+        if (csrfToken && !retryHeaders['X-CSRF-Token']) retryHeaders['X-CSRF-Token'] = csrfToken;
+      }
       const retry = await fetch(`${API_BASE}${cleanEndpoint}`, {
         ...options,
         headers: retryHeaders,

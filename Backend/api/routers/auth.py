@@ -151,11 +151,11 @@ async def login(payload: LoginPayload, request: Request, response: Response, db:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=str(e)
         )
-    except Exception as e:
-        logger.error(f"Login error: {e}")
+    except Exception:
+        logger.exception("Login error")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Login error: {str(e)}"
+            detail="Authentication service unavailable."
         )
 
 
