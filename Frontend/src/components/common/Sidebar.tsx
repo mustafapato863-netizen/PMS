@@ -112,12 +112,11 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed = false, onToggleCollapsed = (
 
   const availableFromData = useMemo(() => {
     const result = new Set<string>();
-    performanceCatalog?.scopes.forEach((scope) => {
+    (performanceCatalog?.scopes || []).forEach((scope) => {
       result.add(`${normalizeTeamName(scope.team)}:${scope.performance_level || 'Employee'}`);
     });
     return result;
   }, [performanceCatalog?.scopes]);
-
   const visibleTeams = (level: PerformanceLevel, region: 'egy' | 'uae') => TEAM_ITEMS.filter((item) => {
     const teamKey = normalizeTeamName(item.team);
     if (item.region !== region || (scopedTeams && !scopedTeams.has(teamKey) && !(
@@ -139,7 +138,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed = false, onToggleCollapsed = (
     .filter((item) => !scopedTeams || scopedTeams.has(normalizeTeamName(item.team))), [managementTeams, scopedTeams]);
 
   const marketingVisible = shouldShowMarketingNavigation(availableFromData, scopedTeams);
-  const rcmVisible = performanceCatalog?.scopes.some((scope) => isRcmTeam(scope.team))
+  const rcmVisible = Boolean(performanceCatalog?.scopes?.some((scope) => isRcmTeam(scope.team)))
     && (!scopedTeams || [...scopedTeams].some((team) => isRcmTeam(team)));
 
   const linkFor = (path: string, performanceLevel?: PerformanceLevel) => {

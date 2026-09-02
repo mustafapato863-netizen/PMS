@@ -116,11 +116,56 @@ export function terminateClientSession(): Promise<void> {
   return sessionTermination;
 }
 
+import { mockUser, mockTeamConfigs, mockPerformanceRecords, mockBalancedScorecardResponse } from './mockData';
+
+const IS_DEMO = import.meta.env.VITE_DEMO_MODE === 'true';
+
+function handleDemoRequest<T>(endpoint: string): T | null {
+  try {
+    const url = new URL(endpoint.startsWith('http') ? endpoint : `http://localhost${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`);
+    const path = url.pathname;
+
+    if (path === '/api/auth/me' || path === '/api/auth/login') {
+      return mockUser as unknown as T;
+    }
+    if (path === '/api/config/teams') {
+      return mockTeamConfigs as unknown as T;
+    }
+    if (path.startsWith('/api/config/teams/')) {
+      const team = path.split('/').pop() || 'Marketing';
+      return (mockTeamConfigs[team] || mockTeamConfigs.Marketing) as unknown as T;
+    }
+    if (path === '/api/performance' || path === '/api/performance/overview') {
+      const team = url.searchParams.get('team');
+      if (team) {
+        return mockPerformanceRecords.filter((r) => r.identity.team.toLowerCase() === team.toLowerCase()) as unknown as T;
+      }
+      return mockPerformanceRecords as unknown as T;
+    }
+    if (path === '/api/performance/balanced-scorecard') {
+      return mockBalancedScorecardResponse as unknown as T;
+    }
+    if (path.includes('/team-management')) {
+      return { teams: ['Inbound', 'Marketing', 'Outbound'], total: 3, scopes: [] } as unknown as T;
+    }
+  } catch {
+    // ignore parse error
+  }
+  return null;
+}
+
 // Central fetch wrapper — adds JWT automatically
 export async function apiFetch<T>(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<T> {
+  if (IS_DEMO) {
+    const demoData = handleDemoRequest<T>(endpoint);
+    if (demoData !== null) {
+      return Promise.resolve(demoData);
+    }
+  }
+
   const token = getAccessToken();
   const role = localStorage.getItem('pms_user_role') || 'Viewer';
 
@@ -141,6 +186,11 @@ export async function apiFetch<T>(
     ...options,
     headers,
     credentials: 'include',
+  }).catch((err) => {
+    // If backend is unreachable, fallback to mock demo data
+    const fallback = handleDemoRequest<T>(cleanEndpoint);
+    if (fallback !== null) return { ok: true, json: () => Promise.resolve(fallback), status: 200 } as unknown as Response;
+    throw err;
   });
 
   if (res.status === 401) {

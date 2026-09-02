@@ -36,3 +36,13 @@ DevOps/*.tmp
 **/.pytest_cache/
 **/__pycache__/
 **/logs/
+
+# Generated reports and presentations (root-level)
+/*.pdf
+/*.pptx
+/*.html
+/output/
+/outputs/
+/.tmp/
+/_review_*/
+.claude/

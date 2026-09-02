@@ -21,3 +21,10 @@ data/*.backup
 data/*.tmp
 data/*.sqlite*
 *.db
+
+# Temporary / generated artifacts
+.tmp/
+scratch/
+.ruff_cache/
+.hypothesis/
+tmp_*/
