@@ -46,6 +46,9 @@ services:
       - redis
       - migrate
     restart: unless-stopped
+    networks:
+      - dokploy-network
+      - default
 
   worker:
     build:
@@ -59,6 +62,13 @@ services:
       - redis
       - migrate
     restart: unless-stopped
+    networks:
+      - default
+
+networks:
+  dokploy-network:
+    external: true
+  default:
 
 volumes:
   redis_data:
