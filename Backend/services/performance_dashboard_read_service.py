@@ -638,8 +638,12 @@ class PerformanceDashboardReadService:
         if len(previous_periods) < 2:
             return {}
         previous_year, previous_month = previous_periods[1]
+        wanted = {str(row.employee_id) for row in rows}
+        if not wanted:
+            return {}
         previous = self.records.list_records(
             periods=[(previous_year, previous_month)],
+            employee_ids=sorted(wanted),
             team=filters.get("team"),
             performance_level=filters.get("performance_level"),
             position=filters.get("position"),
@@ -647,7 +651,6 @@ class PerformanceDashboardReadService:
             employee_search=filters.get("employee_search"),
             scope=self.scope,
         )
-        wanted = {str(row.employee_id) for row in rows}
         return {str(row.employee_id): _score(row) for row in previous if str(row.employee_id) in wanted}
 
     @staticmethod

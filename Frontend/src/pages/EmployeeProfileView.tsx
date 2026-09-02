@@ -174,7 +174,13 @@ const EmployeeProfileView = () => {
   }, [role]);
 
   const { rows, loading: loadingRoster } = useTeamData(null, month, 'All', 'all', weightsList, performanceLevel);
-  const { agents: legacyPerformanceAgents } = usePerformanceData('All', 'all', 'All', performanceLevel);
+  const { agents: legacyPerformanceAgents } = usePerformanceData(
+    'All',
+    'all',
+    'All',
+    performanceLevel,
+    !scopedPerformanceApiEnabled,
+  );
   const scopedHistoryQuery = useScopedEmployeePerformanceHistory(employeeId, {
     months: 24,
     performance_level: performanceLevel !== 'All' ? performanceLevel : undefined,

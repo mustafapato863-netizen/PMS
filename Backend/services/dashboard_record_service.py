@@ -95,6 +95,7 @@ class DashboardRecordService:
         team: str | None = None,
         month: str | None = None,
         employee_id: str | None = None,
+        employee_ids: list[str] | None = None,
         grade: str | None = None,
         status: str | None = None,
         performance_level: str | None = None,
@@ -111,6 +112,7 @@ class DashboardRecordService:
             team=team,
             month=month,
             employee_id=employee_id,
+            employee_ids=employee_ids,
             grade=grade,
             status=status,
             performance_level=performance_level,
@@ -127,6 +129,7 @@ class DashboardRecordService:
     def resolve_records(self, records):
         result = []
         resolved_configs: dict[tuple[str, str, str], dict | None] = {}
+        team_configs: dict[str, dict | None] = {}
         for item in records:
             employee = item.employee
             record_team = getattr(item, "team", None) or employee.team
@@ -140,14 +143,24 @@ class DashboardRecordService:
                 str(item.position_name or employee.position_name or ""),
             )
             if config_key not in resolved_configs:
-                try:
-                    resolved_configs[config_key] = resolve_team_config(
-                        load_team_config(team_name),
-                        config_key[1],
-                        config_key[2] or None,
-                    )
-                except (ConfigurationError, KeyError, TypeError):
+                team_key = team_name.casefold()
+                if team_key not in team_configs:
+                    try:
+                        team_configs[team_key] = load_team_config(team_name)
+                    except (ConfigurationError, KeyError, TypeError):
+                        team_configs[team_key] = None
+                base_config = team_configs[team_key]
+                if base_config is None:
                     resolved_configs[config_key] = None
+                else:
+                    try:
+                        resolved_configs[config_key] = resolve_team_config(
+                            base_config,
+                            config_key[1],
+                            config_key[2] or None,
+                        )
+                    except (ConfigurationError, KeyError, TypeError):
+                        resolved_configs[config_key] = None
             config = resolved_configs[config_key]
             if config:
                 config_by_key = {str(kpi.get("key")): kpi for kpi in config.get("kpis", [])}

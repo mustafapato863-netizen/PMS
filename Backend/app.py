@@ -18,6 +18,7 @@ if sys.stdout and hasattr(sys.stdout, 'buffer') and not os.environ.get("VERCEL")
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.gzip import GZipMiddleware
 from contextlib import asynccontextmanager
 
 # Ensure Backend directory is on the import path
@@ -76,6 +77,11 @@ app.add_middleware(AuthMiddleware)
 
 # Register ErrorHandlingMiddleware (to catch database/internal exceptions)
 app.add_middleware(ErrorHandlingMiddleware)
+
+# Compress JSON responses large enough to benefit from it. CORS remains the
+# outermost middleware so compressed errors and preflight responses keep the
+# same cross-origin behavior.
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 # CORS Middleware — allow frontend dev servers (outermost to wrap errors and auth responses)
 app.add_middleware(

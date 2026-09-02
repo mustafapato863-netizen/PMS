@@ -9,6 +9,8 @@ import math
 from typing import Optional
 from decimal import Decimal
 
+from sqlalchemy import and_, or_
+
 from config.settings import DEFAULT_FILE_PATH
 from models.schemas import (
     Employee, PerformanceRecord, CallsData, GeoBreakdown, GeoData,
@@ -418,6 +420,15 @@ class DatabaseSeeder:
         owns_session = db_session is None
         try:
             teams_by_name = {}
+            team_config_cache: dict[str, dict] = {}
+
+            def get_team_config(team_name: str) -> dict:
+                """Load each team configuration at most once per upload transaction."""
+                cache_key = str(team_name).strip().casefold()
+                if cache_key not in team_config_cache:
+                    team_config_cache[cache_key] = load_team_config(team_name)
+                return team_config_cache[cache_key]
+
             for team in db.query(Team).filter(Team.team_level == "employee").all():
                 teams_by_name[team.name.lower()] = team
                 teams_by_name[team.db_name.lower()] = team
@@ -426,7 +437,7 @@ class DatabaseSeeder:
             teams_to_sync = []
             for team_name in position_scoped_teams:
                 try:
-                    team_config = load_team_config(team_name)
+                    team_config = get_team_config(team_name)
                 except ConfigurationError:
                     continue
 
@@ -453,7 +464,7 @@ class DatabaseSeeder:
             if any(record.team == "Marketing" for record in records):
                 marketing_team = teams_by_name.get("marketing")
                 if not marketing_team:
-                    marketing_config = load_team_config("Marketing")
+                    marketing_config = get_team_config("Marketing")
                     marketing_team = Team(
                         id=uuid.uuid4(),
                         name=marketing_config["team"],
@@ -522,7 +533,24 @@ class DatabaseSeeder:
 
             # Pre-fetch existing performance records to avoid querying inside loop
             db_emp_ids = list({e.id for e in employee_lookup.values()} | {e.id for e in existing_emp_map.values()})
-            existing_perf_list = db.query(DBPerformanceRecord).filter(DBPerformanceRecord.employee_id.in_(db_emp_ids)).all() if db_emp_ids else []
+            current_year = datetime.datetime.now().year
+            uploaded_periods = {
+                (record.month, record.year or current_year)
+                for record in records
+                if record.month
+            }
+            period_filter = or_(
+                *(
+                    and_(DBPerformanceRecord.month == month, DBPerformanceRecord.year == year)
+                    for month, year in uploaded_periods
+                )
+            ) if uploaded_periods else None
+            existing_perf_query = db.query(DBPerformanceRecord).filter(
+                DBPerformanceRecord.employee_id.in_(db_emp_ids),
+            ) if db_emp_ids else None
+            if existing_perf_query is not None and period_filter is not None:
+                existing_perf_query = existing_perf_query.filter(period_filter)
+            existing_perf_list = existing_perf_query.all() if existing_perf_query is not None else []
             existing_perf_map = {
                 (p.employee_id, p.month, p.year): p
                 for p in existing_perf_list
@@ -648,7 +676,7 @@ class DatabaseSeeder:
                 team_config = None
                 try:
                     team_config = resolve_team_config(
-                        load_team_config(record.team),
+                        get_team_config(record.team),
                         record.performance_level,
                         record.position,
                     )

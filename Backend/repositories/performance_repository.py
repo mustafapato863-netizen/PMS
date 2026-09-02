@@ -110,6 +110,7 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
         team: str | None = None,
         month: str | None = None,
         employee_id: str | None = None,
+        employee_ids: list[str] | None = None,
         grade: str | None = None,
         status: str | None = None,
         performance_level: str | None = None,
@@ -126,6 +127,8 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
             query = query.filter(PerformanceRecord.month == month)
         if employee_id:
             query = query.filter(Employee.employee_id == employee_id)
+        if employee_ids is not None:
+            query = query.filter(Employee.employee_id.in_(employee_ids)) if employee_ids else query.filter(false())
         if employee_search:
             pattern = f"%{str(employee_search).strip().casefold()}%"
             query = query.filter(
@@ -286,6 +289,7 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
         team: str | None = None,
         month: str | None = None,
         employee_id: str | None = None,
+        employee_ids: list[str] | None = None,
         grade: str | None = None,
         status: str | None = None,
         performance_level: str | None = None,
@@ -304,6 +308,7 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
             team=team,
             month=month,
             employee_id=employee_id,
+            employee_ids=employee_ids,
             grade=grade,
             status=status,
             performance_level=performance_level,

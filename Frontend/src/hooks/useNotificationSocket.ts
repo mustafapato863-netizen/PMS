@@ -56,7 +56,9 @@ interface ActionRecordedPayload {
 export function useNotificationSocket(enabled = true) {
   const queryClient = useQueryClient();
   const { on, off, socket } = useSocketListener({ autoConnect: enabled });
-  const { addNotification, setNotifications, activeTeam } = useAppStore();
+  const addNotification = useAppStore((state) => state.addNotification);
+  const setNotifications = useAppStore((state) => state.setNotifications);
+  const activeTeam = useAppStore((state) => state.activeTeam);
   const { currentUser, refreshUsers } = useAuth();
   const isGlobalViewer = currentUser?.role === 'Admin' || currentUser?.is_general_manager;
   const scopedTeams = useMemo(() => (
