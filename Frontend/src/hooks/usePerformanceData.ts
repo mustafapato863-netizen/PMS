@@ -361,9 +361,12 @@ async function fetchScopedPerformanceData(
 ): Promise<AgentRecord[]> {
   const catalog = await getScopedCatalog();
   const periods = periodsForRequest(catalog, month, month === 'All' ? 6 : 2);
-  const records: AgentRecord[] = [];
 
-  for (const period of periods) {
+  // Periods are independent. Keep pagination sequential within one period,
+  // but fetch the requested periods together so a six-month view does not
+  // become a six-request waterfall.
+  const recordsByPeriod = await Promise.all(periods.map(async (period) => {
+    const records: AgentRecord[] = [];
     let cursor: string | undefined;
     let pageCount = 0;
     do {
@@ -395,9 +398,10 @@ async function fetchScopedPerformanceData(
         throw new Error('Performance records pagination exceeded the safety limit');
       }
     } while (cursor);
-  }
+    return records;
+  }));
 
-  return records;
+  return recordsByPeriod.flat();
 }
 
 async function fetchPerformanceData(force = false) {

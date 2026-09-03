@@ -23,8 +23,10 @@ export const RoleProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const fetchWithRole = useCallback(async (input: RequestInfo | URL, init?: RequestInit) => {
     const headers = new Headers(init?.headers);
-    headers.set('X-User-Role', role);
     const token = getAccessToken();
+    // Authenticated requests are authorized from the JWT on the backend. The
+    // header remains only for local legacy-mode compatibility.
+    if (!token && import.meta.env.DEV) headers.set('X-User-Role', role);
     if (token) {
       headers.set('Authorization', `Bearer ${token}`);
     }

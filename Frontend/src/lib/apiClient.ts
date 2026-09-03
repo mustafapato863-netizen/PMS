@@ -125,14 +125,21 @@ export function terminateClientSession(): Promise<void> {
   return sessionTermination;
 }
 
-import { mockUser, mockTeamConfigs, mockPerformanceRecords, mockBalancedScorecardResponse } from './mockData';
-
 const IS_DEMO = import.meta.env.VITE_DEMO_MODE === 'true';
 
-function handleDemoRequest<T>(endpoint: string): T | null {
+async function handleDemoRequest<T>(endpoint: string): Promise<T | null> {
   try {
     const url = new URL(endpoint.startsWith('http') ? endpoint : `http://localhost${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`);
     const path = url.pathname;
+
+    // Keep demo fixtures out of the initial bundle. They are only needed in
+    // demo mode or when the backend is unreachable and the fallback is used.
+    const {
+      mockUser,
+      mockTeamConfigs,
+      mockPerformanceRecords,
+      mockBalancedScorecardResponse,
+    } = await import('./mockData');
 
     if (path === '/api/auth/me' || path === '/api/auth/login') {
       return mockUser as unknown as T;
@@ -163,46 +170,60 @@ function handleDemoRequest<T>(endpoint: string): T | null {
   return null;
 }
 
+function buildRequestHeaders(
+  cleanEndpoint: string,
+  options: RequestInit,
+  token: string | null,
+): Headers {
+  const headers = new Headers(options.headers);
+
+  // GET/HEAD requests do not need a JSON content type. Avoiding that header
+  // removes an unnecessary CORS preflight for unauthenticated simple reads.
+  if (typeof options.body === 'string' && !headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json');
+  }
+
+  // The backend derives the role from the authenticated JWT. Keep the legacy
+  // role header only for local development compatibility; never use a
+  // client-supplied role in production requests.
+  if (!token && import.meta.env.DEV && !headers.has('X-User-Role')) {
+    headers.set('X-User-Role', localStorage.getItem('pms_user_role') || 'Viewer');
+  }
+  if (token) headers.set('Authorization', `Bearer ${token}`);
+
+  if (cleanEndpoint.includes('/auth/logout') && !headers.has('X-CSRF-Token')) {
+    const csrfToken = getCsrfToken();
+    if (csrfToken) headers.set('X-CSRF-Token', csrfToken);
+  }
+
+  return headers;
+}
+
 // Central fetch wrapper — adds JWT automatically
 export async function apiFetch<T>(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<T> {
   if (IS_DEMO) {
-    const demoData = handleDemoRequest<T>(endpoint);
+    const demoData = await handleDemoRequest<T>(endpoint);
     if (demoData !== null) {
-      return Promise.resolve(demoData);
+      return demoData;
     }
   }
 
   const token = getAccessToken();
-  const role = localStorage.getItem('pms_user_role') || 'Viewer';
 
   // Ensure absolute path if endpoint does not start with "/"
   const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
-
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    'X-User-Role': role,
-    ...(options.headers as Record<string, string>),
-  };
-
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
-
-  if (cleanEndpoint.includes('/auth/logout')) {
-    const csrfToken = getCsrfToken();
-    if (csrfToken && !headers['X-CSRF-Token']) headers['X-CSRF-Token'] = csrfToken;
-  }
+  const headers = buildRequestHeaders(cleanEndpoint, options, token);
 
   const res = await fetch(`${API_BASE}${cleanEndpoint}`, {
     ...options,
     headers,
     credentials: 'include',
-  }).catch((err) => {
+  }).catch(async (err) => {
     // If backend is unreachable, fallback to mock demo data
-    const fallback = handleDemoRequest<T>(cleanEndpoint);
+    const fallback = await handleDemoRequest<T>(cleanEndpoint);
     if (fallback !== null) return { ok: true, json: () => Promise.resolve(fallback), status: 200 } as unknown as Response;
     throw err;
   });
@@ -217,17 +238,7 @@ export async function apiFetch<T>(
     // shared by concurrent requests so a tab cannot rotate the cookie family
     // several times at once.
     if (await refreshAccessToken()) {
-      const retryHeaders: Record<string, string> = {
-        'Content-Type': 'application/json',
-        'X-User-Role': localStorage.getItem('pms_user_role') || 'Viewer',
-        ...(options.headers as Record<string, string>),
-      };
-      const refreshedToken = getAccessToken();
-      if (refreshedToken) retryHeaders['Authorization'] = `Bearer ${refreshedToken}`;
-      if (cleanEndpoint.includes('/auth/logout')) {
-        const csrfToken = getCsrfToken();
-        if (csrfToken && !retryHeaders['X-CSRF-Token']) retryHeaders['X-CSRF-Token'] = csrfToken;
-      }
+      const retryHeaders = buildRequestHeaders(cleanEndpoint, options, getAccessToken());
       const retry = await fetch(`${API_BASE}${cleanEndpoint}`, {
         ...options,
         headers: retryHeaders,

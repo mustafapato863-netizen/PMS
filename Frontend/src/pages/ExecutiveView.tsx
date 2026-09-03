@@ -91,6 +91,10 @@ const ExecutiveView = () => {
   const teamCountLabel = uniqueTeamCount || new Set(summaries.map((summary) => summary.teamId)).size;
 
   useEffect(() => {
+    // The scoped summary already contains the data needed by this page. The
+    // legacy weights request is only required by the legacy aggregation path.
+    if (scopedPerformanceApiEnabled) return;
+
     apiFetch<{ success: boolean; data: Array<{ team: string; weights: Record<string, number> }> }>('/api/settings/weights')
       .then((res) => {
         if (res?.success && Array.isArray(res.data)) {
