@@ -217,6 +217,42 @@ def test_admin_password_update_clears_existing_lockout(test_client, db_session):
     )
 
 
+def test_admin_can_delete_user_and_revoke_related_sessions(test_client, db_session):
+    headers = _auth_headers(db_session, "admin_delete_editor", "SecurePassword123!")
+    user = AuthenticationService.create_user(
+        db_session,
+        "delete_target",
+        "delete_target@test.com",
+        "SecurePassword123!",
+        "Viewer",
+    )
+    AuthenticationService.authenticate_user_with_session(
+        db_session,
+        "delete_target",
+        "SecurePassword123!",
+    )
+    assert db_session.query(RefreshSession).filter(RefreshSession.user_id == user.id).count() == 1
+
+    response = test_client.delete(f"/api/users/{user.id}", headers=headers)
+
+    assert response.status_code == 200
+    assert db_session.query(User).filter(User.id == user.id).first() is None
+    sessions = db_session.query(RefreshSession).filter(RefreshSession.user_id == user.id).all()
+    assert len(sessions) == 1
+    assert sessions[0].revoked_at is not None
+    assert sessions[0].revocation_reason == "user_deleted"
+
+
+def test_delete_user_rejects_invalid_id_without_corrupting_session(test_client, db_session):
+    headers = _auth_headers(db_session, "admin_invalid_delete", "SecurePassword123!")
+
+    response = test_client.delete("/api/users/not-a-uuid", headers=headers)
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Invalid user ID"
+    assert db_session.query(User).filter(User.username == "admin_invalid_delete").one()
+
+
 def test_admin_cannot_delete_self(test_client, db_session):
     headers = _auth_headers(db_session, "admin_user", "SecurePassword123!")
     admin = db_session.query(User).filter(User.username == "admin_user").first()

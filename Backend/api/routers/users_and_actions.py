@@ -2,7 +2,7 @@ import uuid
 
 import jwt
 from fastapi import APIRouter, Depends, HTTPException, Request
-from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 
 from api.dependencies import require_role
@@ -419,6 +419,11 @@ async def delete_user_route(
     _user=Depends(require_permission("manage_users"))
 ):
     try:
+        try:
+            normalized_user_id = uuid.UUID(str(user_id))
+        except (ValueError, AttributeError, TypeError) as exc:
+            raise HTTPException(status_code=400, detail="Invalid user ID") from exc
+
         auth_header = request.headers.get("Authorization", "")
         current_username = None
         if auth_header.startswith("Bearer "):
@@ -430,7 +435,7 @@ async def delete_user_route(
                 ).get("username")
             except Exception:
                 current_username = None
-        existing = db.query(User).filter(User.id == uuid.UUID(str(user_id))).first()
+        existing = db.query(User).filter(User.id == normalized_user_id).first()
         if not existing:
             raise HTTPException(status_code=404, detail="User not found")
         # Protect Super Admin from deletion
@@ -445,6 +450,11 @@ async def delete_user_route(
         if existing.role == "Admin" and _admin_count(db) <= 1:
             raise HTTPException(status_code=400, detail="Cannot delete the last Admin user")
 
+        AuthenticationService.revoke_all_sessions(
+            db,
+            existing.id,
+            reason="user_deleted",
+        )
         db.delete(existing)
         db.commit()
         return StandardResponse(
@@ -453,7 +463,22 @@ async def delete_user_route(
         )
     except HTTPException as he:
         raise he
-    except Exception as e:
+    except IntegrityError as exc:
+        db.rollback()
+        import logging as _logging
+        _logging.getLogger(__name__).warning(
+            "User deletion blocked by related records for %s: %s",
+            user_id,
+            exc,
+        )
+        raise HTTPException(
+            status_code=409,
+            detail="Cannot delete this user while they own linked records. Disable the account instead.",
+        ) from exc
+    except Exception as exc:
+        db.rollback()
+        import logging as _logging
+        _logging.getLogger(__name__).exception("Failed to delete user %s", user_id)
         return StandardResponse(success=False, message="Failed to delete user.")
 
 @users_router.post("/login", response_model=StandardResponse)

@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { expect, it, vi } from 'vitest';
 
@@ -7,6 +7,7 @@ import { UserManagementPanel } from './UserManagementPanel';
 
 const mocks = vi.hoisted(() => ({
   refreshUsers: vi.fn().mockResolvedValue(undefined),
+  deleteUser: vi.fn().mockResolvedValue({ success: true }),
   fetchWithRole: vi.fn().mockResolvedValue({
     ok: true,
     json: async () => ({ data: [] }),
@@ -23,7 +24,7 @@ vi.mock('../../context/auth', () => ({
     currentUser: { id: 'admin', name: 'Admin', username: 'admin', role: 'Admin' },
     addUser: vi.fn(),
     updateUser: vi.fn(),
-    deleteUser: vi.fn(),
+    deleteUser: mocks.deleteUser,
     toggleUserActive: vi.fn(),
     refreshUsers: mocks.refreshUsers,
   }),
@@ -50,4 +51,20 @@ it('shows presence independently from account status and filters by it', async (
   expect(screen.queryByText('Online Person')).not.toBeInTheDocument();
   expect(screen.getByText('Offline Person')).toBeInTheDocument();
   expect(screen.getByText('Never Seen Person')).toBeInTheDocument();
+});
+
+it('requires confirmation before deleting a user and reports success', async () => {
+  const user = userEvent.setup();
+  render(<UserManagementPanel />);
+
+  await user.click(screen.getByRole('button', { name: 'Actions for Offline Person' }));
+  await user.click(screen.getByRole('button', { name: 'Delete' }));
+
+  expect(screen.getByRole('alertdialog', { name: 'Delete user?' })).toBeInTheDocument();
+  expect(mocks.deleteUser).not.toHaveBeenCalled();
+
+  await user.click(screen.getByRole('button', { name: 'Delete user' }));
+
+  await waitFor(() => expect(mocks.deleteUser).toHaveBeenCalledWith('offline'));
+  expect(screen.getByRole('status')).toHaveTextContent('User deleted successfully.');
 });
