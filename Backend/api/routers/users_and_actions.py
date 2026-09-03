@@ -13,6 +13,7 @@ from config.socket_config import online_user_ids
 from api.middleware.rbac_middleware import require_permission
 from models.models import Employee, Team, User, UserTeamAssignment
 from models.schemas import StandardResponse, UserRecord, UserUpdateRecord, LoginPayload
+from repositories.user_repository import UserRepository
 from services.auth_service import AuthenticationService
 from services.password_service import hash_password
 from services.corrective_action_service import CorrectiveActionService
@@ -327,7 +328,7 @@ async def update_user_route(
                 validate_password_strength(password_value)
             except ValueError as exc:
                 raise HTTPException(status_code=422, detail=str(exc))
-            existing.password_hash = hash_password(password_value)
+            UserRepository.set_password_hash(existing, hash_password(password_value))
             from services.auth_service import AuthenticationService
             AuthenticationService.revoke_all_sessions(db, str(existing.id), reason="admin_password_changed")
 
