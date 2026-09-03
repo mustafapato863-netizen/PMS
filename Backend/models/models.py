@@ -426,10 +426,20 @@ class User(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     # Relationships
-    team_assignments = relationship("UserTeamAssignment", back_populates="user")
-    notifications = relationship("NotificationRecipient", back_populates="user")
-    actions_created = relationship("Action", foreign_keys="Action.created_by_user_id", back_populates="created_by_user")
-    actions_updated = relationship("Action", foreign_keys="Action.updated_by_user_id", back_populates="updated_by_user")
+    team_assignments = relationship("UserTeamAssignment", back_populates="user", passive_deletes=True)
+    notifications = relationship("NotificationRecipient", back_populates="user", passive_deletes=True)
+    actions_created = relationship(
+        "Action",
+        foreign_keys="Action.created_by_user_id",
+        back_populates="created_by_user",
+        passive_deletes=True,
+    )
+    actions_updated = relationship(
+        "Action",
+        foreign_keys="Action.updated_by_user_id",
+        back_populates="updated_by_user",
+        passive_deletes=True,
+    )
     # ponytail: keep deletes from loading audit rows when the live DB lags schema updates
     audit_logs = relationship("AuditLog", back_populates="performed_by_user", passive_deletes=True)
     refresh_sessions = relationship(

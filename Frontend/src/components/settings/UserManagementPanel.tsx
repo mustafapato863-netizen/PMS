@@ -28,6 +28,9 @@ export function UserManagementPanel() {
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [menuState, setMenuState] = useState<{ userId: string; top: number; right: number } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<User | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
@@ -87,6 +90,28 @@ export function UserManagementPanel() {
     else setError(result.error || 'User action failed');
   };
 
+  const requestDelete = (user: User) => {
+    setMenuState(null);
+    setError(null);
+    setSuccess(null);
+    setDeleteError(null);
+    setDeleteTarget(user);
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleteBusy(true);
+    setDeleteError(null);
+    const result = await deleteUser(deleteTarget.id);
+    if (result.success) {
+      setDeleteTarget(null);
+      setSuccess('User deleted successfully.');
+    } else {
+      setDeleteError(result.error || 'Failed to delete user');
+    }
+    setDeleteBusy(false);
+  };
+
   return <div className="space-y-6">
     <header className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-xl font-black text-[var(--text-primary)]">User Management</h2><p className="mt-1 text-xs text-[var(--text-muted)]">Manage accounts, roles and team access.</p></div><button onClick={() => { setEditingUser(null); setError(null); setModalOpen(true); }} className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-bold text-white"><Plus size={15} /> Add user</button></header>
     {error && <div role="alert" className="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-xs font-semibold text-red-600">{error}</div>}{success && <div role="status" className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-xs font-semibold text-emerald-600">{success}</div>}
@@ -98,9 +123,10 @@ export function UserManagementPanel() {
           const rect = e.currentTarget.getBoundingClientRect();
           setMenuState({ userId: user.id, top: rect.bottom + 4, right: window.innerWidth - rect.right });
         }} className="rounded-lg p-2 text-[var(--text-muted)] hover:bg-[var(--bg-sunken)]"><MoreHorizontal size={17} /></button>
-        {menuState?.userId === user.id && createPortal(<div style={{ top: menuState.top, right: menuState.right }} className="fixed z-[9999] w-36 overflow-hidden rounded-xl border border-[var(--border-light)] bg-[var(--bg-surface)] py-1 text-left shadow-xl"><button onClick={() => { setEditingUser(user); setError(null); setModalOpen(true); setMenuState(null); }} className="block w-full px-3 py-2 text-left hover:bg-[var(--bg-sunken)] text-xs">Edit</button><button disabled={self} onClick={() => runAction(() => toggleUserActive(user.id, !active), active ? 'User disabled.' : 'User enabled.')} className="block w-full px-3 py-2 text-left hover:bg-[var(--bg-sunken)] disabled:opacity-40 text-xs">{active ? 'Disable' : 'Enable'}</button><button disabled={self || lastAdmin} onClick={() => { if (window.confirm(`Delete ${safeUserName(user)}?`)) void runAction(() => deleteUser(user.id), 'User deleted.'); }} className="block w-full px-3 py-2 text-left text-red-500 hover:bg-red-500/10 disabled:opacity-40 text-xs">Delete</button></div>, document.body)}
+        {menuState?.userId === user.id && createPortal(<div style={{ top: menuState.top, right: menuState.right }} className="fixed z-[9999] w-36 overflow-hidden rounded-xl border border-[var(--border-light)] bg-[var(--bg-surface)] py-1 text-left shadow-xl"><button onClick={() => { setEditingUser(user); setError(null); setModalOpen(true); setMenuState(null); }} className="block w-full px-3 py-2 text-left hover:bg-[var(--bg-sunken)] text-xs">Edit</button><button disabled={self} onClick={() => runAction(() => toggleUserActive(user.id, !active), active ? 'User disabled.' : 'User enabled.')} className="block w-full px-3 py-2 text-left hover:bg-[var(--bg-sunken)] disabled:opacity-40 text-xs">{active ? 'Disable' : 'Enable'}</button><button disabled={self || lastAdmin || deleteBusy} onClick={() => requestDelete(user)} className="block w-full px-3 py-2 text-left text-red-500 hover:bg-red-500/10 disabled:opacity-40 text-xs">Delete</button></div>, document.body)}
         </td></tr>; })}{!filteredUsers.length && <tr><td colSpan={6} className="px-5 py-12 text-center text-[var(--text-muted)]"><Users size={25} className="mx-auto mb-2" />No users match the current filters.</td></tr>}</tbody></table></div>
     </section>
     {modalOpen && <UserFormModal open user={editingUser} teams={teams} busy={busy} error={error} onClose={() => { setModalOpen(false); setEditingUser(null); setError(null); }} onSubmit={submit} />}
+    {deleteTarget && <div role="presentation" className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm" onMouseDown={(event) => { if (event.target === event.currentTarget && !deleteBusy) setDeleteTarget(null); }}><div role="alertdialog" aria-modal="true" aria-labelledby="delete-user-title" aria-describedby="delete-user-description" className="w-full max-w-md rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] p-6 shadow-2xl"><div className="flex items-start gap-3"><div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-500/10 text-red-600">!</div><div><h3 id="delete-user-title" className="text-base font-black text-[var(--text-primary)]">Delete user?</h3><p id="delete-user-description" className="mt-1 text-xs leading-5 text-[var(--text-secondary)]">This permanently removes <strong>{safeUserName(deleteTarget)}</strong> and revokes their active sessions.</p></div></div>{deleteError && <div role="alert" className="mt-4 rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs font-semibold text-red-600">{deleteError}</div>}<div className="mt-6 flex justify-end gap-2"><button type="button" disabled={deleteBusy} onClick={() => setDeleteTarget(null)} className="rounded-xl border border-[var(--border-light)] px-4 py-2.5 text-xs font-bold text-[var(--text-secondary)] disabled:opacity-50">Cancel</button><button type="button" disabled={deleteBusy} onClick={() => void confirmDelete()} className="rounded-xl bg-red-600 px-4 py-2.5 text-xs font-bold text-white disabled:opacity-50">{deleteBusy ? 'Deleting…' : 'Delete user'}</button></div></div></div>}
   </div>;
 }
