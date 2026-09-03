@@ -73,7 +73,7 @@ export function UserManagementPanel() {
     setBusy(true); setError(null); setSuccess(null);
     const username = value.username.trim().toLowerCase();
     const result = editingUser
-      ? await updateUser(editingUser.id, { name: value.name.trim(), username, password: value.password.trim() || undefined, role: value.role, is_active: editingUser.is_active ?? true, accessible_teams: value.role === 'Manager' ? value.accessibleTeams : [], is_general_manager: value.role === 'Manager' && value.isGeneralManager })
+      ? await updateUser(editingUser.id, { name: value.name.trim(), username, new_password: value.password.trim() || undefined, role: value.role, is_active: editingUser.is_active ?? true, accessible_teams: value.role === 'Manager' ? value.accessibleTeams : [], is_general_manager: value.role === 'Manager' && value.isGeneralManager })
       : await addUser(value.name.trim(), username, value.password, value.role, value.accessibleTeams, value.isGeneralManager);
     setBusy(false);
     if (!result.success) { setError(result.error || 'Failed to save user'); return; }

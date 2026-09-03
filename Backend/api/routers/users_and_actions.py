@@ -320,8 +320,14 @@ async def update_user_route(
         if "is_active" in updates:
             existing.is_active = updates["is_active"]
 
-        if updates.get("password"):
-            existing.password_hash = hash_password(updates["password"])
+        password_value = updates.get("password") or updates.get("new_password")
+        if password_value:
+            from services.password_service import validate_password_strength
+            try:
+                validate_password_strength(password_value)
+            except ValueError as exc:
+                raise HTTPException(status_code=422, detail=str(exc))
+            existing.password_hash = hash_password(password_value)
             from services.auth_service import AuthenticationService
             AuthenticationService.revoke_all_sessions(db, str(existing.id), reason="admin_password_changed")
 
@@ -350,6 +356,12 @@ async def update_user_route(
     except HTTPException as he:
         raise he
     except Exception as e:
+        import logging as _logging
+        _logging.getLogger(__name__).exception("Failed to update user %s", user_id)
+        try:
+            db.rollback()
+        except Exception:
+            pass
         return StandardResponse(success=False, message="Failed to update user.")
 
 @users_router.post("/{user_id}/toggle-active", response_model=StandardResponse)

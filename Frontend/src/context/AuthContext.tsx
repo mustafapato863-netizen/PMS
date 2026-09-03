@@ -173,12 +173,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (error: unknown) { return { success: false, error: error instanceof Error ? error.message : 'Failed to connect to backend' }; }
   };
 
-  const updateUser = async (id: string, patch: Partial<User> & { password?: string }) => {
+  const updateUser = async (id: string, patch: Partial<User> & { password?: string; new_password?: string }) => {
     if (!currentUser || getActiveRole() !== 'Admin') return { success: false, error: 'Only administrators can update users' };
     try {
+      const newPassword = patch.new_password ?? patch.password;
       const res = await apiFetch<{ success: boolean; message?: string }>(`/api/users/${id}`, {
         method: 'PUT',
-        body: JSON.stringify({ id, name: patch.name || '', username: patch.username || '', role: patch.role || 'Viewer', is_active: patch.is_active ?? true, accessible_teams: patch.accessible_teams ?? [], is_general_manager: patch.is_general_manager ?? false, ...(patch.password ? { password: patch.password } : {}) }),
+        body: JSON.stringify({ id, name: patch.name || '', username: patch.username || '', role: patch.role || 'Viewer', is_active: patch.is_active ?? true, accessible_teams: patch.accessible_teams ?? [], is_general_manager: patch.is_general_manager ?? false, ...(newPassword ? { new_password: newPassword } : {}) }),
       });
       if (res.success) { await refreshUsers(); return { success: true }; }
       return { success: false, error: res.message || 'Failed to update user' };

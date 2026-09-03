@@ -164,6 +164,7 @@ class UserUpdateRecord(BaseModel):
     role: str
     is_active: bool = True
     password: Optional[str] = None
+    new_password: Optional[str] = None
     accessible_teams: Optional[List[str]] = None
     accessible_team_levels: Optional[List[tuple[str, str]]] = None
     is_general_manager: bool = False

@@ -12,7 +12,7 @@ export interface AuthContextProps {
   updateProfile: (fullName: string) => Promise<{ success: boolean; error?: string }>;
   changePassword: (currentPassword: string, newPassword: string) => Promise<{ success: boolean; error?: string }>;
   addUser: (name: string, username: string, password: string, role: User['role'], accessibleTeams?: string[], isGeneralManager?: boolean) => Promise<{ success: boolean; error?: string }>;
-  updateUser: (id: string, patch: Partial<User> & { password?: string }) => Promise<{ success: boolean; error?: string }>;
+  updateUser: (id: string, patch: Partial<User> & { password?: string; new_password?: string }) => Promise<{ success: boolean; error?: string }>;
   deleteUser: (id: string) => Promise<{ success: boolean; error?: string }>;
   toggleUserActive: (id: string, isActive: boolean) => Promise<{ success: boolean; error?: string }>;
   refreshUsers: () => Promise<void>;
