@@ -158,14 +158,14 @@ const ExecutiveView = () => {
           <h2 className="heading-2 mb-0">Executive Overview</h2>
           <Breadcrumb
             items={[
-              { label: 'Dashboard', icon: 'home' },
+              { label: 'Dashboard', href: '/executive', icon: 'home' },
               { label: 'Executive Overview', icon: 'dashboard' },
             ]}
           />
         </div>
 
         {/* Selectors */}
-        <div className="flex w-full flex-wrap items-center gap-2.5 sm:gap-3 xl:w-auto xl:justify-end">
+        <div className="rf-filter-bar">
           <PerformanceLevelFilter value={performanceLevel} onChange={setPerformanceLevel} />
           {/* Region Selector */}
           <div className="relative group flex-1 sm:flex-none min-w-[130px] sm:min-w-[150px]">

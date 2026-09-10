@@ -104,19 +104,11 @@ const TeamHeader = ({
   };
   const breadcrumbItems: BreadcrumbItem[] = [
     { label: 'Dashboard', href: '/executive', icon: 'home' },
-    { label: 'Team Performance', icon: 'teams' },
+    { label: 'Team Performance', href: '/team/all', icon: 'teams' },
     ...(displayName && displayName !== 'All Teams'
       ? [{ label: displayName, icon: 'team' as const }]
       : []),
-    ...(month && month !== 'All'
-      ? [{ label: month, icon: 'calendar' as const }]
-      : []),
   ];
-
-  // Make the last item always the actual current page (no href)
-  const finalCrumbs: BreadcrumbItem[] = breadcrumbItems.map((item, idx) =>
-    idx === breadcrumbItems.length - 1 ? { ...item, href: undefined } : item
-  );
 
   return (
     <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
@@ -132,10 +124,10 @@ const TeamHeader = ({
           <h2 className="text-xl sm:text-2xl font-extrabold tracking-tight text-[var(--text-primary)] leading-tight">
             {displayName}{performanceLevel !== 'All' && !disabledPerformanceLevel ? ` · ${performanceLevel}` : ''}
           </h2>
-          <Breadcrumb items={finalCrumbs} />
+          <Breadcrumb items={breadcrumbItems} />
         </div>
       </div>
-      <div className="flex w-full flex-wrap items-center gap-2.5 sm:gap-3 xl:w-auto xl:justify-end shrink-0">
+      <div className="rf-filter-bar shrink-0">
         <PerformanceLevelFilter value={performanceLevel} onChange={setPerformanceLevel} disabled={disabledPerformanceLevel} />
 
         {showPreApprovalsWorkflowFilter && setPreApprovalsWorkflow && (

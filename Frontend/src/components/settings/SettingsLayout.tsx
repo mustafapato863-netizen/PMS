@@ -17,13 +17,13 @@ const navigation = [
 
 export function SettingsLayout({ activeSection, onSectionChange, children }: SettingsLayoutProps) {
   return (
-    <div className="grid gap-6 xl:grid-cols-[280px_minmax(0,1fr)]">
-      <aside className="glass-panel h-fit rounded-3xl border border-[var(--border-light)] p-3 shadow-sm xl:sticky xl:top-24">
-        <div className="px-3 pb-3 pt-2">
+    <div className="grid gap-4 xl:grid-cols-[248px_minmax(0,1fr)]">
+      <aside className="glass-panel h-fit rounded-2xl border border-[var(--border-light)] p-2 shadow-sm xl:sticky xl:top-24">
+        <div className="px-2 pb-2 pt-1">
           <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[var(--text-muted)]">Administration</p>
           <p className="mt-1 text-xs text-[var(--text-secondary)]">Choose a workspace to configure.</p>
         </div>
-        <nav aria-label="Settings sections" className="space-y-1.5">
+        <nav aria-label="Settings sections" className="space-y-1">
           {navigation.map(({ id, label, description, icon: Icon }) => {
             const selected = id === activeSection;
             return (
@@ -32,7 +32,7 @@ export function SettingsLayout({ activeSection, onSectionChange, children }: Set
                 type="button"
                 aria-current={selected ? 'page' : undefined}
                 onClick={() => onSectionChange(id)}
-                className={`flex w-full items-start gap-3 rounded-2xl border px-3 py-3 text-left transition-colors ${
+                className={`flex min-h-11 w-full items-start gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors xl:min-h-10 ${
                   selected
                     ? 'border-blue-500/25 bg-blue-500/10 text-blue-600 dark:text-blue-400'
                     : 'border-transparent text-[var(--text-secondary)] hover:border-[var(--border-light)] hover:bg-[var(--bg-sunken)]'

@@ -29,14 +29,14 @@ const TeamChartsSection = ({ pieData, trendData }: TeamChartsSectionProps) => {
         ? `Score Trend — ${trendData.length} Available Periods`
         : 'Score Trend — Last 6 Months';
   return (
-    <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+    <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
       {/* Grade Distribution Pie */}
-      <div className="glass-panel rounded-xl p-6 shadow-sm">
-        <div className="flex items-center gap-2 mb-4">
+      <div className="glass-panel rounded-xl p-4 shadow-sm sm:p-5">
+        <div className="mb-3 flex items-center gap-2">
           <BarChart2 size={16} className="text-indigo-500" />
           <h3 className="heading-3 text-base">Grade Distribution</h3>
         </div>
-        <ResponsiveContainer width="100%" height={220}>
+        <ResponsiveContainer width="100%" height={200}>
           <PieChart>
             <Pie data={pieData} cx="50%" cy="50%" innerRadius={55} outerRadius={85} paddingAngle={3} dataKey="value">
               {pieData.map((entry) => (
@@ -53,12 +53,12 @@ const TeamChartsSection = ({ pieData, trendData }: TeamChartsSectionProps) => {
       </div>
 
       {/* Trend Line Chart */}
-      <div className="glass-panel rounded-xl p-6 shadow-sm">
-        <div className="flex items-center gap-2 mb-4">
+      <div className="glass-panel rounded-xl p-4 shadow-sm sm:p-5">
+        <div className="mb-3 flex items-center gap-2">
           <LineChartIcon size={16} className="text-blue-500" />
           <h3 className="heading-3 text-base">{trendTitle}</h3>
         </div>
-        <ResponsiveContainer width="100%" height={220}>
+        <ResponsiveContainer width="100%" height={200}>
           <LineChart data={trendData} margin={{ top: 5, right: 8, left: -20, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="var(--border-light)" vertical={false} />
             <XAxis dataKey="month" tick={{ fontSize: 11, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />

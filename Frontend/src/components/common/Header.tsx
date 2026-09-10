@@ -285,11 +285,11 @@ const Header = ({ onMenuClick }: HeaderProps) => {
         className={`sticky top-0 z-30 w-full flex flex-row items-center justify-between
           border-b border-[var(--border-light)]
           transition-[box-shadow,backdrop-filter,background] duration-300 ease-in-out
-          h-14 sm:h-16 px-3 sm:px-4 md:px-6 shadow-sm
+          h-14 sm:h-[60px] px-3 sm:px-4 md:px-6 shadow-sm
           ${isScrolled ? 'shadow-[0_4px_24px_rgba(0,0,0,0.09)] backdrop-blur-xl' : ''}`}
       >
         {/* ── Left: title ── */}
-        <div className="flex min-w-0 items-center gap-2 sm:gap-2.5 shrink-0 max-w-[160px] sm:max-w-[240px] lg:max-w-none lg:w-[220px] xl:w-[260px]">
+        <div className="flex min-w-0 items-center gap-2 sm:gap-2.5 shrink-0 max-w-[160px] sm:max-w-[240px] lg:max-w-none lg:w-[200px] xl:w-[220px]">
           {/* mobile menu trigger */}
           <button
             onClick={onMenuClick}

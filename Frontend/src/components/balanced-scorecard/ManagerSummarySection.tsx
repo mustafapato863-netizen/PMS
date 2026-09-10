@@ -167,7 +167,7 @@ export function ManagerSummarySection({
     <div className="space-y-6 w-full">
       <div className={`grid grid-cols-1 gap-4 ${worstKpi ? 'xl:grid-cols-[minmax(0,1.45fr)_minmax(340px,0.55fr)]' : ''}`}>
       {/* ── 1. Compact executive summary ── */}
-      <section className="glass-card rounded-2xl p-5 border border-slate-200/50 dark:border-slate-800 shadow-sm space-y-4 h-full">
+      <section className="glass-card h-full space-y-3 rounded-2xl border border-slate-200/50 p-4 shadow-sm dark:border-slate-800">
         <div className="flex items-center justify-between gap-4">
           <div>
             <h2 className="text-sm font-extrabold text-[var(--text-primary)]">Executive summary</h2>
@@ -183,9 +183,9 @@ export function ManagerSummarySection({
           </div>
         </div>
 
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 w-full">
+        <div className="grid w-full grid-cols-2 gap-3 lg:grid-cols-4">
           {/* metric 1 */}
-          <div className="bg-[var(--bg-sunken)]/60 dark:bg-slate-900/50 rounded-xl p-3.5 border border-slate-200/20 dark:border-slate-800/40 text-center flex-1 min-w-[125px] flex flex-col justify-between min-h-[98px]">
+          <div className="flex min-h-[92px] min-w-[125px] flex-1 flex-col justify-between rounded-xl border border-slate-200/20 bg-[var(--bg-sunken)]/60 p-3 text-center dark:border-slate-800/40 dark:bg-slate-900/50">
             <p className="text-[9px] font-bold uppercase tracking-wider text-[var(--text-muted)] mb-1">Overall Score</p>
             <div className="text-xl font-extrabold text-[var(--text-primary)] leading-none">{managerScore.toFixed(1)}%</div>
             <div>
@@ -196,7 +196,7 @@ export function ManagerSummarySection({
           </div>
 
           {/* metric 2 */}
-          <div className="bg-[var(--bg-sunken)]/60 dark:bg-slate-900/50 rounded-xl p-3.5 border border-slate-200/20 dark:border-slate-800/40 text-center flex-1 min-w-[125px] flex flex-col justify-between min-h-[98px]">
+          <div className="flex min-h-[92px] min-w-[125px] flex-1 flex-col justify-between rounded-xl border border-slate-200/20 bg-[var(--bg-sunken)]/60 p-3 text-center dark:border-slate-800/40 dark:bg-slate-900/50">
             <p className="text-[9px] font-bold uppercase tracking-wider text-[var(--text-muted)] mb-1">Team Ranking</p>
             <div className="text-xl font-extrabold text-[var(--text-primary)] leading-none">#{rank} / {totalRank}</div>
             <div>
@@ -207,7 +207,7 @@ export function ManagerSummarySection({
           </div>
 
           {/* metric 3 */}
-          <div className="bg-[var(--bg-sunken)]/60 dark:bg-slate-900/50 rounded-xl p-3.5 border border-slate-200/20 dark:border-slate-800/40 text-center flex-1 min-w-[125px] flex flex-col justify-between min-h-[98px]">
+          <div className="flex min-h-[92px] min-w-[125px] flex-1 flex-col justify-between rounded-xl border border-slate-200/20 bg-[var(--bg-sunken)]/60 p-3 text-center dark:border-slate-800/40 dark:bg-slate-900/50">
             <p className="text-[9px] font-bold uppercase tracking-wider text-[var(--text-muted)] mb-1">vs Target ({targetVal}%)</p>
             <div className="text-xl font-extrabold text-[var(--text-primary)] leading-none">
               {targetGap >= 0 ? '+' : ''}{targetGap.toFixed(1)}%
@@ -220,7 +220,7 @@ export function ManagerSummarySection({
           </div>
 
           {/* metric 4 */}
-          <div className="bg-[var(--bg-sunken)]/60 dark:bg-slate-900/50 rounded-xl p-3.5 border border-slate-200/20 dark:border-slate-800/40 text-center flex-1 min-w-[125px] flex flex-col justify-between min-h-[98px]">
+          <div className="flex min-h-[92px] min-w-[125px] flex-1 flex-col justify-between rounded-xl border border-slate-200/20 bg-[var(--bg-sunken)]/60 p-3 text-center dark:border-slate-800/40 dark:bg-slate-900/50">
             <p className="text-[9px] font-bold uppercase tracking-wider text-[var(--text-muted)] mb-1">vs Team Avg ({teamAvg.toFixed(1)}%)</p>
             <div className="text-xl font-extrabold text-[var(--text-primary)] leading-none">
               {teamAvgGap >= 0 ? '+' : ''}{teamAvgGap.toFixed(1)}%
@@ -237,7 +237,7 @@ export function ManagerSummarySection({
 
       {/* ── 2. Priority Attention Section ── */}
       {worstKpi && (
-        <section className="glass-card rounded-2xl border border-amber-200 bg-amber-500/5 dark:border-amber-900/30 p-5 h-full flex flex-col">
+        <section className="glass-card flex h-full flex-col rounded-2xl border border-amber-200 bg-amber-500/5 p-4 dark:border-amber-900/30">
           <div className="flex items-center justify-between mb-3.5">
             <div>
               <h3 className="text-sm font-extrabold text-[var(--text-primary)] flex items-center gap-1.5">

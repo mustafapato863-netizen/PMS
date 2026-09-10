@@ -22,90 +22,73 @@ interface BreadcrumbProps {
   className?: string;
 }
 
-/**
- * Soft Colored Breadcrumb — Option 3 style.
- * - Simple icons on key segments
- * - Blue accent on current (last) page with a soft pill background
- * - No outer card — fits inline below page headers
- * - Supports dark mode
- */
 const Breadcrumb: React.FC<BreadcrumbProps> = ({ items, className = '' }) => {
   if (!items || items.length === 0) return null;
 
   return (
     <nav
       aria-label="Breadcrumb"
-      className={`flex items-center flex-wrap gap-0.5 text-[13px] font-medium ${className}`}
+      className={`breadcrumbs ${className}`}
     >
-      {items.map((item, idx) => {
+      <ol className="breadcrumbs__list">
+        {items.map((item, idx) => {
         const isLast = idx === items.length - 1;
         const IconComponent = item.icon ? ICON_MAP[item.icon] : null;
 
         return (
-          <React.Fragment key={idx}>
+          <li className="breadcrumbs__item" key={`${item.label}-${idx}`}>
             {idx > 0 && (
-              <ChevronRight
-                size={13}
-                className="text-[var(--text-muted)] opacity-50 mx-0.5 shrink-0"
-                aria-hidden
-              />
+              <span className="breadcrumbs__separator" aria-hidden="true">
+                <ChevronRight size={13} />
+              </span>
             )}
 
             {isLast ? (
-              /* Current page — soft blue pill */
               <span
                 aria-current="page"
-                className="inline-flex max-w-full items-center gap-1.5 px-2.5 py-0.5 rounded-full
-                           bg-blue-50 dark:bg-blue-500/10
-                           text-blue-700 dark:text-blue-400
-                           font-semibold tracking-wide min-w-0"
+                className="breadcrumbs__current"
               >
                 {IconComponent && (
                   <IconComponent
                     size={13}
-                    className="shrink-0 text-blue-500 dark:text-blue-400"
+                    className="breadcrumbs__icon"
                     aria-hidden
                   />
                 )}
-                <span className="truncate max-w-[220px] sm:max-w-[360px]">{item.label}</span>
+                <span className="breadcrumbs__label">{item.label}</span>
               </span>
             ) : item.href ? (
-              /* Clickable ancestor */
               <Link
                 to={item.href}
-                className="inline-flex max-w-full items-center gap-1.5 px-1.5 py-0.5 rounded-md
-                           text-[var(--text-secondary)] hover:text-[var(--text-primary)]
-                           hover:bg-[var(--bg-sunken)]
-                           transition-colors duration-150 min-w-0"
+                className="breadcrumbs__link"
               >
                 {IconComponent && (
                   <IconComponent
                     size={13}
-                    className="shrink-0 text-[var(--text-muted)]"
+                    className="breadcrumbs__icon"
                     aria-hidden
                   />
                 )}
-                <span className="truncate max-w-[140px] sm:max-w-[220px]">{item.label}</span>
+                <span className="breadcrumbs__label">{item.label}</span>
               </Link>
             ) : (
-              /* Non-clickable ancestor */
               <span
-                className="inline-flex max-w-full items-center gap-1.5 px-1.5 py-0.5
-                           text-[var(--text-secondary)] min-w-0"
+                className="breadcrumbs__text"
               >
                 {IconComponent && (
                   <IconComponent
                     size={13}
-                    className="shrink-0 text-[var(--text-muted)]"
+                    className="breadcrumbs__icon"
                     aria-hidden
                   />
                 )}
-                <span className="truncate max-w-[140px] sm:max-w-[220px]">{item.label}</span>
+                <span className="breadcrumbs__label">{item.label}</span>
               </span>
             )}
-          </React.Fragment>
+          </li>
         );
-      })}
+        })}
+      </ol>
     </nav>
   );
 };

@@ -1911,11 +1911,11 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
       <Suspense
         fallback={
           <div
-            className="grid grid-cols-1 gap-6 xl:grid-cols-2"
+            className="grid grid-cols-1 gap-4 xl:grid-cols-2"
             aria-label="Loading performance charts"
           >
-            <div className="h-[292px] animate-pulse rounded-xl bg-[var(--bg-sunken)]" />
-            <div className="h-[292px] animate-pulse rounded-xl bg-[var(--bg-sunken)]" />
+            <div className="h-[260px] animate-pulse rounded-xl bg-[var(--bg-sunken)]" />
+            <div className="h-[260px] animate-pulse rounded-xl bg-[var(--bg-sunken)]" />
           </div>
         }
       >
@@ -1955,12 +1955,12 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
 
       {/* Team Performance Summary & Action Needed Cards */}
       {teamId !== 'all' && !isCallCenterAggregate && (
-        <div className={`mt-10 grid w-full grid-cols-1 gap-6 ${teamKpiAnalysis.length > 0 ? 'xl:grid-cols-1' : 'xl:grid-cols-2'}`}>
+        <div className={`mt-6 grid w-full grid-cols-1 gap-4 ${teamKpiAnalysis.length > 0 ? 'xl:grid-cols-1' : 'xl:grid-cols-2'}`}>
           {/* Card 1: Performance Summary */}
           {teamKpiAnalysis.length === 0 && <div className="overflow-hidden rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] shadow-[0_12px_32px_rgba(15,23,42,0.06)] dark:border-slate-800 dark:bg-slate-950/95 dark:shadow-2xl">
             <div className="flex h-full flex-col">
               {/* Header Banner */}
-              <div className="team-summary-header flex items-center justify-between border-b border-[var(--border-light)] px-6 py-4.5">
+              <div className="team-summary-header flex items-center justify-between border-b border-[var(--border-light)] px-4 py-3">
                 <h3 className="flex items-center gap-2 text-base font-extrabold tracking-wide text-[var(--team-summary-header-text)]">
                   {getTeamIcon()}
                   {scoredTeamId === 'outbound' ? 'Call Center – Outbound' :
@@ -1971,8 +1971,8 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
               </div>
 
               {/* Body Content */}
-              <div className="p-6 space-y-4 flex-1">
-                <ul className="space-y-3.5 list-none pl-0 m-0">
+              <div className="flex-1 space-y-3 p-4">
+                <ul className="m-0 list-none space-y-3 pl-0">
                   {performanceBullets.map((bullet, idx) => {
                     const getIconConfig = (status: string) => {
                       switch (status) {
@@ -2013,7 +2013,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
                     return (
                       <li
                         key={idx}
-                        className="flex items-start gap-4.5 rounded-xl border border-[var(--border-light)] bg-[var(--bg-sunken)]/45 p-4 transition-colors hover:border-blue-200 hover:bg-blue-50/40 dark:border-white/[0.05] dark:bg-white/[0.02] dark:hover:border-white/10 dark:hover:bg-white/[0.05]"
+                        className="flex items-start gap-3.5 rounded-xl border border-[var(--border-light)] bg-[var(--bg-sunken)]/45 p-4 transition-colors hover:border-blue-200 hover:bg-blue-50/40 dark:border-white/[0.05] dark:bg-white/[0.02] dark:hover:border-white/10 dark:hover:bg-white/[0.05]"
                       >
                         <div className={`p-2.5 rounded-xl shrink-0 mt-0.5 bg-gradient-to-br ${config.bg} ${config.glow} ${config.iconColor}`}>
                           <BulletIcon size={18} />
@@ -2045,7 +2045,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
           <div className="overflow-hidden rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] shadow-[0_12px_32px_rgba(15,23,42,0.06)] dark:border-slate-800 dark:bg-slate-950/95 dark:shadow-2xl">
             <div className="flex h-full flex-col">
               {/* Header Banner */}
-              <div className="team-summary-header flex items-center justify-between border-b border-[var(--border-light)] px-6 py-4.5">
+              <div className="team-summary-header flex items-center justify-between border-b border-[var(--border-light)] px-4 py-3">
                 <h3 className="flex items-center gap-2 text-base font-extrabold tracking-wide text-[var(--team-summary-header-text)]">
                   <Lightbulb size={18} />
                   {scoredTeamId === 'outbound' ? 'Call Center – Outbound' :
@@ -2065,7 +2065,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
               </div>
 
               {/* Body Content */}
-              <div className="p-6 space-y-5 flex-1 flex flex-col justify-between">
+              <div className="flex flex-1 flex-col justify-between space-y-4 p-4">
                 <div className="space-y-4">
                   {/* Key Action bullet */}
                   <div className="flex items-start gap-4.5 rounded-xl border border-amber-500/20 bg-gradient-to-br from-amber-500/[0.08] to-orange-500/[0.08] p-4 shadow-[0_0_30px_rgba(245,158,11,0.05)] transition-all duration-300 dark:from-amber-500/[0.03] dark:to-orange-500/[0.03]">

@@ -647,11 +647,11 @@ const EmployeeProfileView = () => {
       )}
 
       {employee && (
-        <motion.div layout className="grid grid-cols-1 lg:grid-cols-4 gap-6 items-start relative">
+        <motion.div layout className="relative grid grid-cols-1 items-start gap-4 lg:grid-cols-4">
           {/* LEFT: Profile Card + KPI Panel */}
-          <motion.div layout className="lg:col-span-1 space-y-5">
+          <motion.div layout className="space-y-4 lg:col-span-1">
             {/* Profile Card */}
-            <div className="glass-panel rounded-xl p-6 shadow-sm text-center">
+            <div className="glass-panel rounded-xl p-5 text-center shadow-sm">
               <div className={`w-20 h-20 rounded-full mx-auto mb-4 flex items-center justify-center text-white text-2xl font-extrabold shadow-lg ${employee.gradeClass === 'A' ? 'bg-gradient-to-br from-emerald-400 to-emerald-600'
                 : employee.gradeClass === 'B' ? 'bg-gradient-to-br from-blue-400 to-blue-600'
                   : employee.gradeClass === 'C' ? 'bg-gradient-to-br from-amber-400 to-amber-600'
@@ -739,7 +739,7 @@ const EmployeeProfileView = () => {
           {/* CENTER: Score Trend + Root Cause */}
           <motion.div
             layout
-            className={`${comparisonMode === 'actuals' ? 'lg:col-span-2' : 'lg:col-span-3'} space-y-5`}
+            className={`${comparisonMode === 'actuals' ? 'lg:col-span-2' : 'lg:col-span-3'} space-y-4`}
             transition={{ type: 'spring', stiffness: 300, damping: 30 }}
           >
             {/* Football Stats Card Placement */}

@@ -284,7 +284,7 @@ const EmployeeActionModal = ({ employee, month, teamWeights, onClose, onSaved, e
           </div>
 
           {/* Form */}
-          <form onSubmit={handleSubmit} className="custom-scrollbar min-h-0 flex-1 space-y-5 overflow-y-auto p-6">
+          <form onSubmit={handleSubmit} className="custom-scrollbar min-h-0 flex-1 space-y-4 overflow-y-auto p-4 sm:space-y-5 sm:p-6">
             {/* Auto Root Cause */}
             <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 text-sm">
               <span className="text-xs font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider">Auto Root Cause:</span>

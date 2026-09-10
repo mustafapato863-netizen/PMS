@@ -78,6 +78,15 @@ select option {
 }
 
 :root {
+  --app-sidebar-width: 240px;
+  --app-sidebar-collapsed-width: 68px;
+  --app-header-height: 60px;
+  --app-page-max-width: 1720px;
+  --app-page-gutter: clamp(16px, 1.5vw, 24px);
+  --app-section-gap: 16px;
+  --app-card-padding: 16px;
+  --app-control-height: 40px;
+
   --bg-base: #F8FAFC;
   --bg-surface: #FFFFFF;
   --bg-panel: rgba(255, 255, 255, 0.70);
@@ -1691,20 +1700,48 @@ body {
    used by the Design System showcase. Pages keep their own domain components,
    while this contract makes navigation feel like one product. */
 .app-route-canvas {
-  min-height: calc(100vh - var(--header-height, 64px));
+  min-height: calc(100vh - var(--app-header-height));
   background:
     radial-gradient(circle at 4% -8%, color-mix(in srgb, var(--bsc-blue) 7%, transparent), transparent 34%),
     radial-gradient(circle at 100% 8%, color-mix(in srgb, var(--bsc-purple) 5%, transparent), transparent 30%),
     var(--bg-base);
 }
 
+.app-sidebar {
+  width: var(--app-sidebar-width);
+}
+
+.app-main {
+  width: 100%;
+}
+
+.app-route-padding {
+  padding: 16px var(--app-page-gutter) 32px;
+}
+
+@media (min-width: 1280px) {
+  .app-sidebar.is-collapsed {
+    width: var(--app-sidebar-collapsed-width);
+  }
+
+  .app-main {
+    width: calc(100% - var(--app-sidebar-width));
+    margin-inline-start: var(--app-sidebar-width);
+  }
+
+  .app-main.is-sidebar-collapsed {
+    width: calc(100% - var(--app-sidebar-collapsed-width));
+    margin-inline-start: var(--app-sidebar-collapsed-width);
+  }
+}
+
 .app-page-shell {
   display: grid;
-  gap: 18px;
+  gap: var(--app-section-gap);
   width: 100%;
-  max-width: 1720px;
+  max-width: var(--app-page-max-width);
   margin: 0 auto;
-  padding: 4px 0 34px;
+  padding: 0 0 28px;
   color: var(--text-primary);
 }
 
@@ -1731,6 +1768,94 @@ body {
 
 @media (max-width: 767px) {
   .app-page-shell { gap: 14px; padding-bottom: 24px; }
+  .app-route-padding { padding: 12px 16px 24px; }
+}
+
+.breadcrumbs {
+  min-width: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.breadcrumbs__list {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.breadcrumbs__item {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 2px;
+}
+
+.breadcrumbs__separator {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  margin: 0 2px;
+  color: var(--text-muted);
+  opacity: .55;
+}
+
+.breadcrumbs__link,
+.breadcrumbs__text,
+.breadcrumbs__current {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+  align-items: center;
+  gap: 6px;
+  border-radius: 6px;
+  padding: 3px 5px;
+  line-height: 1.25;
+}
+
+.breadcrumbs__link {
+  color: var(--text-secondary);
+  transition: color 150ms ease, background-color 150ms ease;
+}
+
+.breadcrumbs__link:hover {
+  color: var(--text-primary);
+  background: var(--bg-sunken);
+}
+
+.breadcrumbs__link:focus-visible {
+  outline: 2px solid var(--input-focus);
+  outline-offset: 1px;
+}
+
+.breadcrumbs__text {
+  color: var(--text-secondary);
+}
+
+.breadcrumbs__current {
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+.breadcrumbs__icon {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+}
+
+.breadcrumbs__current .breadcrumbs__icon {
+  color: var(--sidebar-active-text);
+}
+
+.breadcrumbs__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Keep browser-print fallback for the filtered Insights view. The primary

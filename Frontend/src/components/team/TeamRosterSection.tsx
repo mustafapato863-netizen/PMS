@@ -113,7 +113,7 @@ const TeamRosterSection = ({
                 <th
                   key={label}
                   onClick={col ? () => toggleSort(col) : undefined}
-                  className={`px-4 py-4 text-left text-[11px] font-extrabold uppercase tracking-[0.08em] text-[var(--text-faint)] ${
+                    className={`px-4 py-3 text-left text-[11px] font-extrabold uppercase tracking-[0.08em] text-[var(--text-faint)] ${
                     col ? 'cursor-pointer select-none hover:text-[var(--text-primary)]' : ''
                   }`}
                 >
@@ -152,9 +152,9 @@ const TeamRosterSection = ({
                     key={`${row.id}_${row.month}_${idx}`}
                     className="border-b border-[var(--border-light)] transition-colors last:border-b-0 hover:bg-blue-500/[0.035]"
                   >
-                    <td className="px-4 py-4">
+                    <td className="px-4 py-3">
                       <div className="flex min-w-[250px] items-center gap-3">
-                        <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border text-sm font-extrabold ${avatarTones[idx % avatarTones.length]}`}>
+                        <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border text-sm font-extrabold ${avatarTones[idx % avatarTones.length]}`}>
                           {initials}
                         </div>
                         <div className="min-w-0">
@@ -170,7 +170,7 @@ const TeamRosterSection = ({
                       </div>
                     </td>
 
-                    <td className="px-4 py-4">
+                    <td className="px-4 py-3">
                       <div className="flex max-w-[150px] items-center gap-2 text-xs font-bold text-[var(--text-secondary)]">
                         <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-violet-500/10 text-violet-600 dark:text-violet-400">
                           <ArrowLeftRight size={14} />
@@ -179,30 +179,30 @@ const TeamRosterSection = ({
                       </div>
                     </td>
 
-                    <td className="px-4 py-4">
+                    <td className="px-4 py-3">
                       <span className={`score-badge score-grade-${row.gradeClass}`}>
                         {(row.score || 0).toFixed(1)}%
                       </span>
                     </td>
 
-                    <td className="px-4 py-4">
+                    <td className="px-4 py-3">
                       <span className={`grade-badge grade-${row.gradeClass} inline-flex h-8 min-w-8 items-center justify-center rounded-lg px-2 text-xs font-extrabold`}>
                         {row.gradeClass}
                       </span>
                     </td>
 
-                    <td className="px-4 py-4">
+                    <td className="px-4 py-3">
                       <TrendCell row={row} prevRows={prevRows} />
                     </td>
 
-                    <td className="px-4 py-4">
+                    <td className="px-4 py-3">
                       <span className={`grade-status-badge status-grade-${row.gradeClass}`}>
                         <span className="grade-status-dot" />
                         {gradePresentation.statusLabel}
                       </span>
                     </td>
 
-                    <td className="px-4 py-4">
+                    <td className="px-4 py-3">
                       {row.gradeClass === 'A' || row.gradeClass === 'B' ? (
                         <span className="text-xs font-semibold text-[var(--text-faint)]">No gap</span>
                       ) : (
@@ -219,7 +219,7 @@ const TeamRosterSection = ({
                       )}
                     </td>
 
-                    <td className="px-4 py-4">
+                    <td className="px-4 py-3">
                       <EmployeeRowActions
                         row={row}
                         role={role}
@@ -345,10 +345,10 @@ const TeamRosterSection = ({
   const isAllView = !showTopBottomToggle || rosterView === 'all';
 
   return (
-    <div className="glass-panel rounded-xl p-4 shadow-sm sm:p-6">
-      <div className="mb-5 flex flex-col justify-between gap-4 md:flex-row md:items-center">
+    <div className="glass-panel rounded-xl p-4 shadow-sm sm:p-5">
+      <div className="mb-4 flex flex-col justify-between gap-3 md:flex-row md:items-center">
         <div className="flex items-center gap-3">
-          <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl ${
+          <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${
             isAllView
               ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400'
               : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'

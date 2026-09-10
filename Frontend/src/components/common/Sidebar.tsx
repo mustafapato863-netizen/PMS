@@ -178,14 +178,14 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed = false, onToggleCollapsed = (
         title={isCollapsed ? item.name : undefined}
         data-tooltip={isCollapsed ? item.name : undefined}
         onClick={() => setIsOpen(false)}
-        className={`sidebar-tooltip-trigger flex min-h-10 items-center justify-between rounded-xl py-2 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${isCollapsed ? 'xl:justify-center xl:px-2' : nested ? 'pl-9 pr-3' : 'px-3'} ${active ? 'active-nav-item' : 'inactive-nav-item'}`}
+        className={`sidebar-tooltip-trigger flex min-h-11 items-center justify-between rounded-lg py-1.5 text-[13px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 xl:min-h-9 ${isCollapsed ? 'xl:justify-center xl:px-2' : nested ? 'pl-8 pr-3' : 'px-3'} ${active ? 'active-nav-item' : 'inactive-nav-item'}`}
         style={{
           color: active ? 'var(--sidebar-active-text)' : 'var(--sidebar-text)',
           background: active ? 'var(--sidebar-active-bg)' : undefined,
           border: active ? '1px solid var(--sidebar-active-border)' : '1px solid transparent',
         }}
       >
-        <span className={`flex min-w-0 flex-1 items-center gap-3 ${isCollapsed ? 'xl:justify-center' : ''}`}>
+        <span className={`flex min-w-0 flex-1 items-center gap-2.5 ${isCollapsed ? 'xl:justify-center' : ''}`}>
           <span style={{ color: active ? 'var(--sidebar-active-text)' : 'var(--text-faint)' }}>{item.icon}</span>
           <span className={isCollapsed ? 'truncate xl:hidden' : 'truncate'}>{item.name}</span>
         </span>
@@ -217,7 +217,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed = false, onToggleCollapsed = (
   return (
     <aside
       aria-label="Primary navigation"
-      className={`fixed left-0 top-0 z-40 flex h-dvh w-[272px] shrink-0 flex-col transition-[width,transform] duration-300 xl:translate-x-0 ${isCollapsed ? 'xl:w-[84px] is-collapsed' : 'is-expanded'} ${isOpen ? 'translate-x-0' : '-translate-x-full'} sidebar-navigation`}
+      className={`app-sidebar fixed left-0 top-0 z-40 flex h-dvh shrink-0 flex-col transition-[width,transform] duration-300 xl:translate-x-0 ${isCollapsed ? 'is-collapsed' : 'is-expanded'} ${isOpen ? 'translate-x-0' : '-translate-x-full'} sidebar-navigation`}
       style={{ background: 'var(--sidebar-bg)', borderRight: '1px solid var(--sidebar-border)', boxShadow: '4px 0 20px rgba(0,0,0,0.04)' }}
     >
       <div className={`flex items-center justify-between py-5 ${isCollapsed ? 'gap-1 px-1 xl:gap-1' : 'gap-3 px-5'}`}>
@@ -245,7 +245,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed = false, onToggleCollapsed = (
       </div>
 
       <div className={`mb-2 px-5 ${isCollapsed ? 'xl:hidden' : ''}`}><p className="text-label text-[0.625rem] text-[var(--text-faint)]">DASHBOARDS</p></div>
-      <nav className="custom-scrollbar flex-1 space-y-0.5 overflow-y-auto px-3 pb-3">
+      <nav className="custom-scrollbar flex-1 space-y-0.5 overflow-y-auto px-2 pb-2">
         {generalItems.map((item) => renderLink(item))}
 
         {canSeeBroadNavigation && LEVELS.map((level) => {
@@ -256,7 +256,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed = false, onToggleCollapsed = (
           if (!regions.length) return null;
           const isLevelOpen = levelOpen[level.name];
           return (
-            <div key={level.name} className={`sidebar-nav-group mt-3 ${isCollapsed ? 'xl:mt-2' : ''}`}>
+            <div key={level.name} className={`sidebar-nav-group mt-2 ${isCollapsed ? 'xl:mt-1.5' : ''}`}>
               <button
                 type="button"
                 aria-expanded={isLevelOpen}
@@ -304,7 +304,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed = false, onToggleCollapsed = (
         })}
 
         {canSeeBroadNavigation && (marketingVisible || rcmVisible) && (
-          <div className={`sidebar-nav-group mt-3 ${isCollapsed ? 'xl:mt-2' : ''}`}>
+          <div className={`sidebar-nav-group mt-2 ${isCollapsed ? 'xl:mt-1.5' : ''}`}>
             <button
               type="button"
               aria-expanded={sharedOpen}
@@ -347,7 +347,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed = false, onToggleCollapsed = (
         {canSeeBroadNavigation && managementItems.length > 0 && (() => {
           const isLevelOpen = levelOpen.Management;
           return (
-            <div key="Management" className={`sidebar-nav-group mt-3 ${isCollapsed ? 'xl:mt-2' : ''}`}>
+            <div key="Management" className={`sidebar-nav-group mt-2 ${isCollapsed ? 'xl:mt-1.5' : ''}`}>
               <button
                 type="button"
                 aria-expanded={isLevelOpen}
