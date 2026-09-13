@@ -2,21 +2,31 @@ import io
 
 import pytest
 from fastapi import HTTPException, UploadFile
+from openpyxl import Workbook
 
 from config import settings
 from services.upload_security import read_validated_excel
 
 
+def _xlsx_bytes() -> bytes:
+    workbook = Workbook()
+    workbook.active["A1"] = "employee_id"
+    output = io.BytesIO()
+    workbook.save(output)
+    return output.getvalue()
+
+
 @pytest.mark.asyncio
 async def test_accepts_xlsx_signature():
-    upload = UploadFile(filename="performance.xlsx", file=io.BytesIO(b"PK\x03\x04content"))
+    contents = _xlsx_bytes()
+    upload = UploadFile(filename="performance.xlsx", file=io.BytesIO(contents))
 
-    assert await read_validated_excel(upload) == b"PK\x03\x04content"
+    assert await read_validated_excel(upload) == contents
 
 
 @pytest.mark.asyncio
 async def test_sanitizes_client_filename():
-    upload = UploadFile(filename="../../private/performance.xlsx", file=io.BytesIO(b"PK\x03\x04content"))
+    upload = UploadFile(filename="../../private/performance.xlsx", file=io.BytesIO(_xlsx_bytes()))
 
     await read_validated_excel(upload)
 

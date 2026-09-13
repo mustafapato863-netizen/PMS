@@ -39,19 +39,26 @@ class EmployeeUploadService:
     def delete_uploads(self, upload_ids: list[str]) -> dict:
         deleted = 0
         performance_deleted = 0
+        missing_ids: list[str] = []
         try:
-            for upload_id in dict.fromkeys(upload_ids):
+            unique_ids = list(dict.fromkeys(str(upload_id) for upload_id in upload_ids))
+            for upload_id in unique_ids:
                 try:
                     batch_id = UUID(str(upload_id))
                 except (TypeError, ValueError, AttributeError):
+                    missing_ids.append(upload_id)
                     continue
                 batch_deleted, records_deleted = self.repository.delete_batch(batch_id)
                 deleted += batch_deleted
                 performance_deleted += records_deleted
+                if not batch_deleted:
+                    missing_ids.append(upload_id)
             self.db.commit()
             return {
+                "requested": len(unique_ids),
                 "uploads_deleted": deleted,
                 "performance_deleted": performance_deleted,
+                "missing_ids": missing_ids,
             }
         except Exception:
             self.db.rollback()

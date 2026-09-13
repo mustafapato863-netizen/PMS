@@ -162,6 +162,7 @@ def test_error_handling_middleware_runtime_error(test_client, db_session):
     data = response.json()
     assert data["success"] is False
     assert "An internal server error occurred" in data["message"]
+    assert data["detail"] == "An internal server error occurred."
     assert "request_id" in data
     assert response.headers["x-request-id"] == data["request_id"]
     

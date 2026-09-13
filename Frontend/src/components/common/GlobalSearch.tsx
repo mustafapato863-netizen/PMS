@@ -166,7 +166,7 @@ export default function GlobalSearch() {
         <button
           type="button"
           onClick={() => setOpen(true)}
-          className="flex shrink-0 items-center gap-2 rounded-xl border border-[var(--border-light)] bg-[var(--bg-surface)]/86 px-2 py-1.5 text-left shadow-sm backdrop-blur-xl transition-all hover:border-blue-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 sm:px-3 xl:hidden"
+          className="app-header-control flex shrink-0 items-center gap-2 rounded-xl border border-[var(--border-light)] bg-[var(--bg-surface)]/86 px-2 py-1.5 text-left shadow-sm backdrop-blur-xl transition-all hover:border-blue-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 sm:px-3 xl:hidden"
           aria-label="Open global search"
         >
           <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-300 shrink-0">
@@ -240,7 +240,7 @@ export default function GlobalSearch() {
                 <button
                   type="button"
                   onClick={() => setOpen(false)}
-                  className="flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--border-light)] bg-[var(--bg-sunken)]/80 text-[var(--text-muted)]"
+                  className="flex h-11 w-11 items-center justify-center rounded-xl border border-[var(--border-light)] bg-[var(--bg-sunken)]/80 text-[var(--text-muted)]"
                   aria-label="Close search"
                 >
                   <X size={16} />

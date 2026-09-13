@@ -46,9 +46,10 @@ export function useEmployeeProfile(employeeId: string, _userRole?: string) {
   void _userRole;
   return useQuery({
     queryKey: ['employee', employeeId],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const json = await apiFetch<{ success: boolean; data: EmployeeProfile; error?: string }>(
-        `/api/employee/${employeeId}/`
+        `/api/employee/${employeeId}/`,
+        { signal },
       );
       return json.data;
     },

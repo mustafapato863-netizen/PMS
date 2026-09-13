@@ -36,18 +36,29 @@ def _message_from_detail(detail, fallback: str) -> str:
     return fallback
 
 
+def _public_http_error(status_code: int, detail) -> tuple[str, object]:
+    """Keep server-side exception details out of public 5xx responses."""
+
+    if status_code >= 500:
+        message = "An internal server error occurred."
+        return message, message
+    message = _message_from_detail(detail, "Request failed")
+    return message, detail
+
+
 async def canonical_http_exception_handler(
     request: Request,
     exc: FastAPIHTTPException,
 ) -> JSONResponse:
     """Add canonical fields while retaining FastAPI's existing `detail` contract."""
+    error_message, error_detail = _public_http_error(exc.status_code, exc.detail)
     return JSONResponse(
         status_code=exc.status_code,
         headers=exc.headers,
         content=jsonable_encoder({
             "success": False,
-            "message": _message_from_detail(exc.detail, "Request failed"),
-            "detail": exc.detail,
+            "message": error_message,
+            "detail": error_detail,
             "request_id": _request_id(request),
         }),
     )
@@ -134,8 +145,7 @@ class ErrorHandlingMiddleware(BaseHTTPMiddleware):
                 error_message = "An internal server error occurred."
                 error_detail = error_message
                 if isinstance(exc, (FastAPIHTTPException, StarletteHTTPException)):
-                    error_detail = exc.detail
-                    error_message = _message_from_detail(exc.detail, "Request failed")
+                    error_message, error_detail = _public_http_error(status_code, exc.detail)
                 elif isinstance(exc, ValueError):
                     error_message = str(exc)
                     error_detail = error_message

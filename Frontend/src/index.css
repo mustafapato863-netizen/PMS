@@ -1711,6 +1711,57 @@ body {
   width: var(--app-sidebar-width);
 }
 
+.app-header-title-group,
+.app-header-title,
+.app-header-title-group > div {
+  min-width: 0;
+}
+
+.app-header-control {
+  min-height: 44px;
+}
+
+.app-header-title-compact {
+  display: none;
+}
+
+@media (max-width: 1279px) {
+  .app-sidebar {
+    width: min(var(--app-sidebar-width), calc(100vw - 24px));
+  }
+}
+
+@media (max-width: 639px) {
+  .app-header {
+    gap: 4px;
+    padding-inline: 8px !important;
+  }
+
+  .app-header-title-group {
+    flex: 1 1 auto;
+    flex-shrink: 1;
+    max-width: none !important;
+    gap: 4px;
+  }
+
+  .app-header-title-full {
+    display: none;
+  }
+
+  .app-header-title-compact {
+    display: inline;
+  }
+
+  .app-header-actions {
+    gap: 2px;
+  }
+
+  .app-header-actions .app-header-control {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
 .app-main {
   width: 100%;
 }
@@ -1772,17 +1823,26 @@ body {
 }
 
 .breadcrumbs {
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  scrollbar-width: none;
   min-width: 0;
   color: var(--text-secondary);
   font-size: 12px;
   font-weight: 600;
 }
 
+.breadcrumbs::-webkit-scrollbar {
+  display: none;
+}
+
 .breadcrumbs__list {
   display: flex;
-  min-width: 0;
+  width: max-content;
+  min-width: 100%;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 2px;
   margin: 0;
   padding: 0;
@@ -1791,6 +1851,7 @@ body {
 
 .breadcrumbs__item {
   display: inline-flex;
+  flex: 0 0 auto;
   min-width: 0;
   align-items: center;
   gap: 2px;
@@ -1853,9 +1914,27 @@ body {
 
 .breadcrumbs__label {
   min-width: 0;
+  max-width: min(28rem, 60vw);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+@media (max-width: 767px) {
+  .breadcrumbs {
+    font-size: 11px;
+  }
+
+  .breadcrumbs__link,
+  .breadcrumbs__text,
+  .breadcrumbs__current {
+    gap: 5px;
+    padding: 3px 4px;
+  }
+
+  .breadcrumbs__label {
+    max-width: 42vw;
+  }
 }
 
 /* Keep browser-print fallback for the filtered Insights view. The primary

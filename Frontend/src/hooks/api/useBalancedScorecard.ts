@@ -145,7 +145,7 @@ export function useBalancedScorecard(params: {
       params.branch,
       params.view,
     ],
-    queryFn: async (): Promise<BalancedScorecardResponse> => {
+    queryFn: async ({ signal }): Promise<BalancedScorecardResponse> => {
       const search = new URLSearchParams();
       if (params.team) search.set('team', params.team);
       search.set('performance_level', params.performanceLevel);
@@ -161,6 +161,7 @@ export function useBalancedScorecard(params: {
 
       const json = await apiFetch<{ success: boolean; data: BalancedScorecardResponse }>(
         `/api/performance/balanced-scorecard?${search.toString()}`,
+        { signal },
       );
       return json.data;
     },

@@ -43,19 +43,21 @@ function mergeTeamConfigs(teamName: string, configs: TeamConfig[]): TeamConfig {
 export function useTeamConfig(teamName: string) {
   return useQuery({
     queryKey: ['team-config', teamName],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const sources = MERGED_TEAM_SOURCES[teamName];
       if (sources) {
         const sourceConfigs = await Promise.all(sources.map(async (source) => {
           const json = await apiFetch<{ success: boolean; data: unknown; error?: string }>(
-            `/api/config/teams/${source}`
+            `/api/config/teams/${source}`,
+            { signal },
           );
           return validateTeamConfig(json.data);
         }));
         return mergeTeamConfigs(teamName, sourceConfigs);
       }
       const json = await apiFetch<{ success: boolean; data: unknown; error?: string }>(
-        `/api/config/teams/${teamName}`
+        `/api/config/teams/${teamName}`,
+        { signal },
       );
       // Validate response matches schema
       return validateTeamConfig(json.data);
@@ -73,9 +75,10 @@ export function useTeamConfig(teamName: string) {
 export function useAllTeamConfigs() {
   return useQuery({
     queryKey: ['team-configs'],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const json = await apiFetch<{ success: boolean; data: unknown; error?: string }>(
-        '/api/config/teams'
+        '/api/config/teams',
+        { signal },
       );
       // Validate response matches schema
       return validateTeamConfigs(json.data);

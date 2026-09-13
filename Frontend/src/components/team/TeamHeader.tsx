@@ -2,6 +2,7 @@ import { ArrowLeft, Check, ChevronDown } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import CustomDropdown from '../common/CustomDropdown';
 import PerformanceLevelFilter from '../common/PerformanceLevelFilter';
+import ResponsiveFilters from '../common/ResponsiveFilters';
 import Breadcrumb from '../common/Breadcrumb';
 import type { BreadcrumbItem } from '../common/Breadcrumb';
 import type { LocationKey, PerformanceLevelFilter as PerformanceLevel, PreApprovalsWorkflowFilter, CallCenterChannelFilter, RcmDomainFilter, RcmGroupFilter } from '../../types';
@@ -109,25 +110,35 @@ const TeamHeader = ({
       ? [{ label: displayName, icon: 'team' as const }]
       : []),
   ];
+  const activeFilterCount = [
+    !disabledPerformanceLevel && performanceLevel !== 'All',
+    showPreApprovalsWorkflowFilter && preApprovalsWorkflow !== 'all',
+    showCallCenterChannelFilter && callCenterChannel !== 'all',
+    showRcmDomainFilter && rcmDomain !== 'all',
+    showRcmGroupFilter && rcmGroup !== 'all',
+    showRegionFilter && region !== 'All',
+    multiBranchFilter ? selectedBranches.length > 0 : location !== 'all',
+    month !== 'All',
+  ].filter(Boolean).length;
 
   return (
-    <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-      <div className="flex items-start gap-3 min-w-0 flex-1">
+    <div className="team-header-layout flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+      <div className="team-header-heading flex items-start gap-3 min-w-0 flex-1">
         <button
           onClick={onBack}
           aria-label="Go back"
-          className="p-2 hover:bg-[var(--bg-sunken)] rounded-lg text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors cursor-pointer shrink-0 mt-0.5"
+          className="team-header-back flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-sunken)] hover:text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 cursor-pointer"
         >
-          <ArrowLeft size={20} />
+          <ArrowLeft size={19} aria-hidden="true" />
         </button>
-        <div className="flex flex-col gap-1 min-w-0 flex-1">
-          <h2 className="text-xl sm:text-2xl font-extrabold tracking-tight text-[var(--text-primary)] leading-tight">
+        <div className="team-header-copy flex min-w-0 flex-1 flex-col gap-1">
+          <h2 className="team-header-title text-xl font-extrabold leading-tight tracking-tight text-[var(--text-primary)] sm:text-2xl">
             {displayName}{performanceLevel !== 'All' && !disabledPerformanceLevel ? ` · ${performanceLevel}` : ''}
           </h2>
           <Breadcrumb items={breadcrumbItems} />
         </div>
       </div>
-      <div className="rf-filter-bar shrink-0">
+      <ResponsiveFilters activeCount={activeFilterCount} className="team-header-filters shrink-0">
         <PerformanceLevelFilter value={performanceLevel} onChange={setPerformanceLevel} disabled={disabledPerformanceLevel} />
 
         {showPreApprovalsWorkflowFilter && setPreApprovalsWorkflow && (
@@ -233,7 +244,7 @@ const TeamHeader = ({
           size="md"
         />
 
-      </div>
+      </ResponsiveFilters>
     </div>
   );
 };

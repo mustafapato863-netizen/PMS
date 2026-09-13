@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session
 from config import settings
 from config.database import get_db
+from api.middleware.rbac_middleware import require_permission
 from models.schemas import (
     JWTToken,
     LoginPayload,
@@ -349,10 +350,14 @@ async def change_password(
             detail="Failed to change password.",
         ) from exc
 
-# --- Development endpoint to unlock a user account ---
+# --- Administrative endpoint to unlock a user account ---
 @router.post("/unlock/{user_id}", response_model=StandardResponse)
-async def unlock_user(user_id: str, db: Session = Depends(get_db)):
-    """Reset failed login attempts and lockout for a user. Intended for admin use during development/testing."""
+async def unlock_user(
+    user_id: str,
+    db: Session = Depends(get_db),
+    _user=Depends(require_permission("manage_users")),
+):
+    """Reset failed login attempts and lockout for an administrator."""
     try:
         user = db.query(User).filter(User.id == user_id).first()
         if not user:

@@ -20,17 +20,17 @@ import { ProfileSettingsModal } from './ProfileSettingsModal';
 
 // ── route config ──────────────────────────────────────────────────────────────
 
-const ROUTE_TITLES: Record<string, { title: string; subtitle: string }> = {
-  '/executive': { title: 'Executive Summary', subtitle: 'Performance overview across all teams' },
-  '/operational': { title: 'Team Performance', subtitle: 'CRM-style action and tracking' },
-  '/team': { title: 'Team Dashboard', subtitle: 'Deep dive into team performance' },
-  '/employee': { title: 'Employee Profile', subtitle: 'Comprehensive history & records' },
-  '/pi-management': { title: 'PI Management', subtitle: 'Performance Improvement Plans' },
-  '/sip-management': { title: 'SIP Management', subtitle: 'Strict Improvement Plans' },
-  '/rewards': { title: 'Rewards & Promotions', subtitle: 'Top performers and recognition' },
-  '/reports': { title: 'Reports', subtitle: 'Generate and manage performance reports' },
-  '/insights': { title: 'Insights', subtitle: 'Understand what drives performance' },
-  '/planning': { title: 'Planning', subtitle: 'Create, track and manage performance plans' },
+const ROUTE_TITLES: Record<string, { title: string; compactTitle: string; subtitle: string }> = {
+  '/executive': { title: 'Executive Summary', compactTitle: 'Executive', subtitle: 'Performance overview across all teams' },
+  '/operational': { title: 'Team Performance', compactTitle: 'Teams', subtitle: 'CRM-style action and tracking' },
+  '/team': { title: 'Team Dashboard', compactTitle: 'Team', subtitle: 'Deep dive into team performance' },
+  '/employee': { title: 'Employee Profile', compactTitle: 'Employee', subtitle: 'Comprehensive history & records' },
+  '/pi-management': { title: 'PI Management', compactTitle: 'PI', subtitle: 'Performance Improvement Plans' },
+  '/sip-management': { title: 'SIP Management', compactTitle: 'SIP', subtitle: 'Strict Improvement Plans' },
+  '/rewards': { title: 'Rewards & Promotions', compactTitle: 'Rewards', subtitle: 'Top performers and recognition' },
+  '/reports': { title: 'Reports', compactTitle: 'Reports', subtitle: 'Generate and manage performance reports' },
+  '/insights': { title: 'Insights', compactTitle: 'Insights', subtitle: 'Understand what drives performance' },
+  '/planning': { title: 'Planning', compactTitle: 'Planning', subtitle: 'Create, track and manage performance plans' },
 };
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -109,7 +109,7 @@ function ProfileMenu({
         aria-haspopup="true"
         aria-expanded={open}
         aria-label="Open user menu"
-        className="flex items-center gap-1.5 bg-[var(--bg-surface)]/40 backdrop-blur-sm hover:bg-[var(--bg-surface)]/80 border
+        className="app-header-control flex items-center gap-1.5 bg-[var(--bg-surface)]/40 backdrop-blur-sm hover:bg-[var(--bg-surface)]/80 border
           border-[var(--border-light)] rounded-xl px-2 py-1 transition-all shadow-sm"
       >
         <div
@@ -232,7 +232,7 @@ const Header = ({ onMenuClick }: HeaderProps) => {
   const { data: performanceCatalog } = usePerformanceCatalog();
   const uniqueMonths = performanceCatalog?.months || [];
 
-  const { title, subtitle } = resolveRoute(pathname);
+  const { title, compactTitle, subtitle } = resolveRoute(pathname);
   const currentMonth = (searchParams.get('month') || 'All') as MonthKey;
 
   // scroll detection — throttled to animation frame to avoid forced reflow
@@ -282,14 +282,14 @@ const Header = ({ onMenuClick }: HeaderProps) => {
           borderColor: 'var(--border-light)',
           willChange: 'transform, box-shadow',
         }}
-        className={`sticky top-0 z-30 w-full flex flex-row items-center justify-between
+        className={`app-header sticky top-0 z-30 w-full flex flex-row items-center justify-between
           border-b border-[var(--border-light)]
           transition-[box-shadow,backdrop-filter,background] duration-300 ease-in-out
           h-14 sm:h-[60px] px-3 sm:px-4 md:px-6 shadow-sm
           ${isScrolled ? 'shadow-[0_4px_24px_rgba(0,0,0,0.09)] backdrop-blur-xl' : ''}`}
       >
         {/* ── Left: title ── */}
-        <div className="flex min-w-0 items-center gap-2 sm:gap-2.5 shrink-0 max-w-[160px] sm:max-w-[240px] lg:max-w-none lg:w-[200px] xl:w-[220px]">
+        <div className="app-header-title-group flex min-w-0 items-center gap-2 sm:gap-2.5 shrink-0 max-w-[160px] sm:max-w-[240px] lg:max-w-none lg:w-[200px] xl:w-[220px]">
           {/* mobile menu trigger */}
           <button
             onClick={onMenuClick}
@@ -307,10 +307,11 @@ const Header = ({ onMenuClick }: HeaderProps) => {
 
           <div className="min-w-0 flex-1">
             <h1
-              className={`font-bold text-[var(--text-primary)] tracking-tight truncate transition-all duration-300
+              className={`app-header-title font-bold text-[var(--text-primary)] tracking-tight truncate transition-all duration-300
                 ${isScrolled ? 'text-sm lg:text-[15px]' : 'text-[15px] lg:text-base'}`}
             >
-              {title}
+              <span className="app-header-title-full">{title}</span>
+              <span className="app-header-title-compact" aria-hidden="true">{compactTitle}</span>
             </h1>
             <p className="mt-0.5 hidden sm:flex items-center gap-1 truncate text-[10px] font-semibold text-blue-600 dark:text-blue-400">
               <Sparkles size={10} className="text-blue-400 flex-shrink-0" aria-hidden="true" />
@@ -325,7 +326,7 @@ const Header = ({ onMenuClick }: HeaderProps) => {
         </div>
 
         {/* ── Right: controls ── */}
-        <div className="flex items-center justify-end gap-1.5 md:gap-2 shrink-0">
+        <div className="app-header-actions flex items-center justify-end gap-1.5 md:gap-2 shrink-0">
           <div className="hidden sm:block">
             <MonthSelect
               value={currentMonth}

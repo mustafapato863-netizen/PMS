@@ -200,7 +200,11 @@ async def upload_balanced_scorecard_template(
     file: UploadFile = File(...),
     _user=Depends(require_permission("upload_data")),
 ):
-    contents = await read_validated_excel(file, allowed_extensions=(".xlsx",))
+    try:
+        contents = await read_validated_excel(file, allowed_extensions=(".xlsx",))
+    except HTTPException:
+        db.rollback()
+        raise
     uploaded_by = _user.get("username", "Admin") if isinstance(_user, dict) else "Admin"
     try:
         rows = bsc_template_service.parse_upload(contents)

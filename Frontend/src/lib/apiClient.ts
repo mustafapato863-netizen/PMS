@@ -1,9 +1,10 @@
-import { API_BASE } from '../config';
+import { API_BASE, API_TIMEOUT_MS, API_UPLOAD_TIMEOUT_MS } from '../config';
 import { clearAuthenticatedQueryState } from './queryClient';
 
 type ApiErrorPayload = {
   message?: unknown;
   detail?: unknown;
+  request_id?: unknown;
 };
 
 type AccessTokenResponse = {
@@ -56,6 +57,13 @@ function readableIssue(issue: unknown): string | null {
 }
 
 export function apiErrorMessage(payload: unknown, status: number): string {
+  if (status >= 500) {
+    const requestId = payload && typeof payload === 'object'
+      && typeof (payload as ApiErrorPayload).request_id === 'string'
+      ? ` Reference: ${(payload as ApiErrorPayload).request_id}`
+      : '';
+    return `The server could not complete the request. Please try again.${requestId}`;
+  }
   if (!payload || typeof payload !== 'object') return `Request failed (HTTP ${status})`;
   const error = payload as ApiErrorPayload;
   const candidate = error.message ?? error.detail;
@@ -84,23 +92,57 @@ function getCsrfToken(): string | null {
   return cookie ? decodeURIComponent(cookie.slice(cookieName.length)) : null;
 }
 
+function isAbortError(error: unknown): boolean {
+  if (!error || typeof error !== 'object' || !('name' in error)) return false;
+  const name = String((error as { name?: unknown }).name);
+  return name === 'AbortError' || name === 'TimeoutError';
+}
+
+async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutMs = typeof FormData !== 'undefined' && init.body instanceof FormData
+    ? API_UPLOAD_TIMEOUT_MS
+    : API_TIMEOUT_MS;
+  const timeoutId = globalThis.setTimeout(() => {
+    controller.abort(new DOMException('Request timed out', 'TimeoutError'));
+  }, timeoutMs);
+  const onAbort = () => controller.abort(init.signal?.reason);
+
+  if (init.signal?.aborted) {
+    onAbort();
+  } else {
+    init.signal?.addEventListener('abort', onAbort, { once: true });
+  }
+
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } finally {
+    globalThis.clearTimeout(timeoutId);
+    init.signal?.removeEventListener('abort', onAbort);
+  }
+}
+
 async function requestRefreshAccessToken(): Promise<boolean> {
   const csrfToken = getCsrfToken();
   const headers: Record<string, string> = {};
   if (csrfToken) headers['X-CSRF-Token'] = csrfToken;
 
-  const response = await fetch(`${API_BASE}/api/auth/refresh`, {
-    method: 'POST',
-    credentials: 'include',
-    headers,
-  });
-  if (!response.ok) return false;
-  const payload = await response.json() as AccessTokenResponse;
-  const accessToken = payload.data?.access_token;
-  if (!payload.success || !accessToken) return false;
-  setAccessToken(accessToken);
-  if (payload.data?.csrf_token) localStorage.setItem('pms_csrf_token', payload.data.csrf_token);
-  return true;
+  try {
+    const response = await fetchWithTimeout(`${API_BASE}/api/auth/refresh`, {
+      method: 'POST',
+      credentials: 'include',
+      headers,
+    });
+    if (!response.ok) return false;
+    const payload = await response.json() as AccessTokenResponse;
+    const accessToken = payload.data?.access_token;
+    if (!payload.success || !accessToken) return false;
+    setAccessToken(accessToken);
+    if (payload.data?.csrf_token) localStorage.setItem('pms_csrf_token', payload.data.csrf_token);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function refreshAccessToken(): Promise<boolean> {
@@ -217,11 +259,12 @@ export async function apiFetch<T>(
   const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
   const headers = buildRequestHeaders(cleanEndpoint, options, token);
 
-  const res = await fetch(`${API_BASE}${cleanEndpoint}`, {
+  const res = await fetchWithTimeout(`${API_BASE}${cleanEndpoint}`, {
     ...options,
     headers,
     credentials: 'include',
   }).catch(async (err) => {
+    if (options.signal?.aborted || isAbortError(err)) throw err;
     // If backend is unreachable, fallback to mock demo data
     const fallback = await handleDemoRequest<T>(cleanEndpoint);
     if (fallback !== null) return { ok: true, json: () => Promise.resolve(fallback), status: 200 } as unknown as Response;
@@ -239,7 +282,7 @@ export async function apiFetch<T>(
     // several times at once.
     if (await refreshAccessToken()) {
       const retryHeaders = buildRequestHeaders(cleanEndpoint, options, getAccessToken());
-      const retry = await fetch(`${API_BASE}${cleanEndpoint}`, {
+      const retry = await fetchWithTimeout(`${API_BASE}${cleanEndpoint}`, {
         ...options,
         headers: retryHeaders,
         credentials: 'include',

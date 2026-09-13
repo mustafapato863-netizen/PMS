@@ -3,6 +3,7 @@ from fastapi.responses import JSONResponse
 import logging
 import time
 from uuid import uuid4
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from config import settings
@@ -23,6 +24,10 @@ logger = logging.getLogger(__name__)
 
 
 router = APIRouter()
+
+
+class BatchDeleteRequest(BaseModel):
+    upload_ids: list[str] = Field(min_length=1, max_length=100)
 
 @router.get("/", response_model=StandardResponse)
 async def get_upload_history(
@@ -186,7 +191,10 @@ async def upload_pms_file(
                     "report": report,
                 },
             ) from e
-        raise HTTPException(status_code=500, detail=f"Upload processing failed: {type(e).__name__}: {str(e)[:500]}") from e
+        raise HTTPException(
+            status_code=500,
+            detail="Upload processing failed. Check the upload logs using the request ID.",
+        ) from e
 
 @router.delete("/{upload_id}", response_model=StandardResponse)
 async def delete_upload(
@@ -212,12 +220,10 @@ async def delete_upload(
         raise
     except Exception as e:
         logger.exception("Failed to delete upload")
-        raise HTTPException(status_code=500, detail=f"Failed to delete upload: {e}") from e
-
-from pydantic import BaseModel
-
-class BatchDeleteRequest(BaseModel):
-    upload_ids: list[str]
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to delete upload. Check the server logs using the request ID.",
+        ) from e
 
 @router.post("/batch-delete", response_model=StandardResponse)
 async def batch_delete_uploads(
@@ -230,14 +236,21 @@ async def batch_delete_uploads(
         CacheInvalidationService.flush_all()
         clear_serialization_cache()
         
+        missing_ids = result.get("missing_ids", [])
+        message = (
+            f"Successfully deleted {result['uploads_deleted']} uploaded workbooks and "
+            f"{result['performance_deleted']} current performance records."
+        )
+        if missing_ids:
+            message += f" {len(missing_ids)} workbook(s) were not found."
         return StandardResponse(
             success=True,
-            message=(
-                f"Successfully deleted {result['uploads_deleted']} uploaded workbooks and "
-                f"{result['performance_deleted']} current performance records."
-            ),
+            message=message,
             data=result,
         )
     except Exception as e:
         logger.exception("Failed to batch delete uploads")
-        raise HTTPException(status_code=500, detail=f"Failed to batch delete uploads: {e}") from e
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to batch delete uploads. Check the server logs using the request ID.",
+        ) from e

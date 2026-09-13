@@ -1,6 +1,7 @@
 import { ArrowLeft, Download, Megaphone } from 'lucide-react';
 import Breadcrumb from '../common/Breadcrumb';
 import CustomDropdown from '../common/CustomDropdown';
+import ResponsiveFilters from '../common/ResponsiveFilters';
 import type {
   MarketingFilters,
   MarketingPeriod,
@@ -53,11 +54,16 @@ const MarketingFiltersHeader = ({
       size="md"
     />
   );
+  const activeFilterCount = [
+    filters.region !== 'All',
+    filters.month !== 'All',
+    !isPositionView && Boolean(filters.position),
+  ].filter(Boolean).length;
 
   return (
     <header className="rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] p-4 sm:p-5 shadow-sm">
-      <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-        <div className="flex items-center gap-3">
+      <div className="marketing-header-layout flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+        <div className="marketing-header-heading flex items-center gap-3">
           {isPositionView ? (
             <button
               type="button"
@@ -72,7 +78,7 @@ const MarketingFiltersHeader = ({
               <Megaphone size={22} />
             </div>
           )}
-          <div>
+          <div className="marketing-header-copy">
             <h2 className="heading-2 font-extrabold text-[var(--text-primary)] mb-0">
               {isPositionView ? `${positionName} · Employee` : 'Marketing Overview'}
             </h2>
@@ -90,7 +96,8 @@ const MarketingFiltersHeader = ({
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:justify-end">
+        <div className="marketing-header-controls">
+          <ResponsiveFilters activeCount={activeFilterCount} label="Filters">
           {isPositionView && (
             <CustomDropdown
               value="Employee"
@@ -130,15 +137,17 @@ const MarketingFiltersHeader = ({
             />
           )}
 
+          </ResponsiveFilters>
+
           {canExport && (
             <button
               type="button"
               onClick={onExport}
               disabled={exporting}
-              className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-bold text-white shadow-sm transition hover:bg-blue-700 disabled:opacity-50"
+              className="marketing-export-button inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-bold text-white shadow-sm transition hover:bg-blue-700 disabled:opacity-50"
             >
-              <Download size={15} />
-              {exporting ? 'Exporting...' : 'Export Excel'}
+              <Download size={15} aria-hidden="true" />
+              <span>{exporting ? 'Exporting...' : 'Export Excel'}</span>
             </button>
           )}
         </div>

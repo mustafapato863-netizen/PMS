@@ -35,7 +35,7 @@ export function usePerformanceData(
 ) {
   return useQuery({
     queryKey: ['performance', team, month, performanceLevel],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const params = new URLSearchParams();
       if (month && month !== 'All') params.append('month', month);
       if (team) params.append('team', team);
@@ -44,7 +44,7 @@ export function usePerformanceData(
       const queryString = params.toString();
       const endpoint = `/api/performance${queryString ? `?${queryString}` : ''}`;
 
-      const json = await apiFetch<{ success: boolean; data: PerformanceData; error?: string }>(endpoint);
+      const json = await apiFetch<{ success: boolean; data: PerformanceData; error?: string }>(endpoint, { signal });
       return json.data;
     },
     staleTime: 10 * 60 * 1000, // 10 minutes

@@ -159,8 +159,8 @@ function queryString(values: object): string {
   return params.toString();
 }
 
-async function fetchData<T>(endpoint: string): Promise<T> {
-  const response = await apiFetch<{ success: boolean; data?: T; message?: string }>(endpoint);
+async function fetchData<T>(endpoint: string, signal?: AbortSignal): Promise<T> {
+  const response = await apiFetch<{ success: boolean; data?: T; message?: string }>(endpoint, { signal });
   if (!response.success || response.data === undefined) {
     throw new Error(response.message || 'Performance data request failed');
   }
@@ -175,7 +175,7 @@ export function usePerformanceSummary(
   const query = queryString({ ...filters, trend_months: trendMonths });
   return useQuery({
     queryKey: ['performance', 'summary', session, filters, trendMonths],
-    queryFn: () => fetchData<PerformanceSummary>(`/api/performance/summary?${query}`),
+    queryFn: ({ signal }) => fetchData<PerformanceSummary>(`/api/performance/summary?${query}`, signal),
     enabled: scopedPerformanceApiEnabled && Boolean(filters.period),
     placeholderData: keepPreviousData,
     staleTime: 2 * 60 * 1000,
@@ -187,7 +187,7 @@ export function usePerformanceRecords(filters: PerformanceRecordFilters) {
   const query = queryString(filters);
   return useQuery({
     queryKey: ['performance', 'records', session, filters],
-    queryFn: () => fetchData<PerformanceRecordPage>(`/api/performance/records?${query}`),
+    queryFn: ({ signal }) => fetchData<PerformanceRecordPage>(`/api/performance/records?${query}`, signal),
     enabled: scopedPerformanceApiEnabled && Boolean(filters.period),
     placeholderData: keepPreviousData,
     staleTime: 2 * 60 * 1000,
@@ -208,7 +208,7 @@ export function useScopedEmployeePerformanceHistory(
   const query = queryString(options);
   return useQuery({
     queryKey: ['performance', 'employee-history', session, employeeId, options],
-    queryFn: () => fetchData<PerformanceRecordItem[]>(`/api/performance/employee/${encodeURIComponent(employeeId!)}?${query}`),
+    queryFn: ({ signal }) => fetchData<PerformanceRecordItem[]>(`/api/performance/employee/${encodeURIComponent(employeeId!)}?${query}`, signal),
     enabled: scopedPerformanceApiEnabled && Boolean(employeeId),
     placeholderData: keepPreviousData,
     staleTime: 2 * 60 * 1000,

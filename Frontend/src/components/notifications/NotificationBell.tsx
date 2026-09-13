@@ -37,7 +37,7 @@ export function NotificationBell() {
         aria-label={`Notifications — ${unreadCount} unread`}
         aria-expanded={isOpen}
         aria-haspopup="dialog"
-        className="relative p-2 text-[var(--text-secondary)] hover:text-[var(--text-primary)] bg-[var(--bg-surface)]/40 backdrop-blur-sm
+        className="app-header-control relative p-2 text-[var(--text-secondary)] hover:text-[var(--text-primary)] bg-[var(--bg-surface)]/40 backdrop-blur-sm
           rounded-xl border border-[var(--border-light)] hover:bg-[var(--bg-surface)]/80 transition-all"
       >
         <Bell size={16} aria-hidden="true" />

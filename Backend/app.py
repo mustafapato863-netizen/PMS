@@ -16,7 +16,7 @@ if sys.stdout and hasattr(sys.stdout, 'buffer') and not os.environ.get("VERCEL")
     except Exception:
         pass
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.gzip import GZipMiddleware
 from contextlib import asynccontextmanager
@@ -71,6 +71,23 @@ app = FastAPI(
     lifespan=lifespan
 )
 install_api_error_handlers(app)
+
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    """Apply baseline browser protections to every API response."""
+
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+    if settings.APP_ENV in {"production", "staging"}:
+        response.headers.setdefault(
+            "Strict-Transport-Security",
+            "max-age=31536000; includeSubDomains",
+        )
+    return response
 
 # Register AuthMiddleware
 app.add_middleware(AuthMiddleware)

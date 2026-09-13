@@ -11,6 +11,7 @@ import { useMonthParam } from '../hooks/useMonthParam';
 import { useLocationParam } from '../hooks/useLocationParam';
 import TeamSummaryTable from '../components/executive/TeamSummaryTable';
 import PerformanceLevelFilter from '../components/common/PerformanceLevelFilter';
+import ResponsiveFilters from '../components/common/ResponsiveFilters';
 import { usePerformanceLevelParam } from '../hooks/usePerformanceLevelParam';
 import ActionsSummaryCard from '../components/executive/ActionsSummaryCard';
 import ExecutivePerformancePanel from '../components/executive/ExecutivePerformancePanel';
@@ -137,6 +138,12 @@ const ExecutiveView = () => {
   const actionStats = summarizeRootCauses(
     dashboardScopedActions.filter((action) => action.month === activeMonth)
   );
+  const activeFilterCount = [
+    performanceLevel !== 'All',
+    region !== 'All',
+    location !== 'all',
+    month !== 'All',
+  ].filter(Boolean).length;
 
   if (loading) {
     return <ExecutiveViewSkeleton />;
@@ -153,8 +160,8 @@ const ExecutiveView = () => {
       className="app-page-shell rf-page rf-page--executive"
     >
       {/* Page Header */}
-      <div className="rf-page-heading-row flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-        <div className="flex flex-col gap-1">
+      <div className="executive-page-heading rf-page-heading-row flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+        <div className="executive-page-title flex min-w-0 flex-col gap-1">
           <h2 className="heading-2 mb-0">Executive Overview</h2>
           <Breadcrumb
             items={[
@@ -165,7 +172,7 @@ const ExecutiveView = () => {
         </div>
 
         {/* Selectors */}
-        <div className="rf-filter-bar">
+        <ResponsiveFilters activeCount={activeFilterCount}>
           <PerformanceLevelFilter value={performanceLevel} onChange={setPerformanceLevel} />
           {/* Region Selector */}
           <div className="relative group flex-1 sm:flex-none min-w-[130px] sm:min-w-[150px]">
@@ -217,7 +224,7 @@ const ExecutiveView = () => {
             </select>
             <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
           </div>
-        </div>
+        </ResponsiveFilters>
       </div>
 
       {totalAgents === 0 ? (

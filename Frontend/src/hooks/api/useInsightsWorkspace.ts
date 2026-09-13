@@ -38,8 +38,8 @@ export function useInsightsWorkspace(
   const view = options.view ?? 'full';
   return useQuery({
     queryKey: ['insights', 'workspace', view, filters],
-    queryFn: async () => (
-      await apiFetch<ApiResponse<InsightsWorkspace>>(insightsWorkspaceUrl(filters, view))
+    queryFn: async ({ signal }) => (
+      await apiFetch<ApiResponse<InsightsWorkspace>>(insightsWorkspaceUrl(filters, view), { signal })
     ).data,
     placeholderData: (previous) => previous,
     enabled: options.enabled ?? true,

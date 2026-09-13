@@ -46,6 +46,20 @@ if APP_ENV == "production" and "*" in CORS_ORIGINS:
 MAX_UPLOAD_BYTES = int(os.environ.get("MAX_UPLOAD_BYTES", str(25 * 1024 * 1024)))
 if MAX_UPLOAD_BYTES <= 0:
     raise ValueError("MAX_UPLOAD_BYTES must be greater than zero.")
+MAX_UPLOAD_ARCHIVE_BYTES = int(
+    os.environ.get("MAX_UPLOAD_ARCHIVE_BYTES", str(200 * 1024 * 1024))
+)
+MAX_UPLOAD_SHEETS = int(os.environ.get("MAX_UPLOAD_SHEETS", "100"))
+MAX_UPLOAD_ROWS_PER_SHEET = int(os.environ.get("MAX_UPLOAD_ROWS_PER_SHEET", "250000"))
+MAX_UPLOAD_COLUMNS_PER_SHEET = int(os.environ.get("MAX_UPLOAD_COLUMNS_PER_SHEET", "512"))
+if MAX_UPLOAD_ARCHIVE_BYTES < MAX_UPLOAD_BYTES:
+    raise ValueError("MAX_UPLOAD_ARCHIVE_BYTES must be greater than or equal to MAX_UPLOAD_BYTES.")
+if MAX_UPLOAD_SHEETS <= 0:
+    raise ValueError("MAX_UPLOAD_SHEETS must be greater than zero.")
+if MAX_UPLOAD_ROWS_PER_SHEET <= 0:
+    raise ValueError("MAX_UPLOAD_ROWS_PER_SHEET must be greater than zero.")
+if MAX_UPLOAD_COLUMNS_PER_SHEET <= 0:
+    raise ValueError("MAX_UPLOAD_COLUMNS_PER_SHEET must be greater than zero.")
 
 
 def parse_bool(value: str | None, default: bool = False) -> bool:
@@ -146,6 +160,10 @@ class _SettingsCompatibility:
     """Attribute-style access retained for existing runtime/tests callers."""
 
     MAX_UPLOAD_BYTES = MAX_UPLOAD_BYTES
+    MAX_UPLOAD_ARCHIVE_BYTES = MAX_UPLOAD_ARCHIVE_BYTES
+    MAX_UPLOAD_SHEETS = MAX_UPLOAD_SHEETS
+    MAX_UPLOAD_ROWS_PER_SHEET = MAX_UPLOAD_ROWS_PER_SHEET
+    MAX_UPLOAD_COLUMNS_PER_SHEET = MAX_UPLOAD_COLUMNS_PER_SHEET
     PMS_ASYNC_JOBS_ENABLED = PMS_ASYNC_JOBS_ENABLED
     PMS_DATA_DIR = DATA_DIR
     PMS_JOB_DATA_DIR = PMS_JOB_DATA_DIR

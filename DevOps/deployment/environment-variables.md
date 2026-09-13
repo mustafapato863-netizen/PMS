@@ -35,6 +35,11 @@ The following properties configure the FastAPI application server, database mapp
 | `AUTH_COOKIE_SAMESITE` | `lax, strict, or none` | `lax` locally, `none` for split-origin hosting | Cookie cross-site policy; `none` requires `AUTH_COOKIE_SECURE=true`. |
 | `AUTH_COOKIE_DOMAIN` | Hostname | unset | Optional shared cookie domain when frontend/API are under the same parent domain. |
 | `CORS_ALLOWED_ORIGINS` | CSV origins | Local frontend origins | Exact trusted browser origins. Wildcards are rejected in production. |
+| `MAX_UPLOAD_BYTES` | Integer bytes | `26214400` | Maximum compressed request size accepted for uploads. |
+| `MAX_UPLOAD_ARCHIVE_BYTES` | Integer bytes | `209715200` | Maximum uncompressed OOXML workbook size checked before parsing. |
+| `MAX_UPLOAD_SHEETS` | Integer | `100` | Maximum worksheet count accepted in an `.xlsx` upload. |
+| `MAX_UPLOAD_ROWS_PER_SHEET` | Integer | `250000` | Maximum rows accepted in one worksheet. |
+| `MAX_UPLOAD_COLUMNS_PER_SHEET` | Integer | `512` | Maximum columns accepted in one worksheet. |
 | `PMS_DATA_DIR` | Directory Path | `/app/data` | Container storage path preserving uploaded sheets. |
 | `PMS_DEFAULT_FILE_PATH`| File Path | `/app/data/PMS_Trend_All.xlsx` | Default seed workbook fallback file path. |
 | `LOG_LEVEL` | Enum String | `INFO` | Structured logging volume filters (DEBUG/INFO/WARNING/ERROR). |

@@ -3,8 +3,9 @@ Exposes high-performance batch endpoints protected by RBAC permissions.
 """
 
 import logging
-from typing import Dict, List, Any
+from typing import Annotated, Dict, List, Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from pydantic import Field
 from sqlalchemy.orm import Session
 from config.database import get_db
 from models.schemas import StandardResponse
@@ -21,7 +22,7 @@ router = APIRouter(prefix="/bulk", tags=["Bulk Operations"])
 
 @router.post("/performance/records", response_model=StandardResponse, status_code=status.HTTP_201_CREATED)
 async def bulk_insert_performance_records(
-    payload: List[Dict[str, Any]],
+    payload: Annotated[List[Dict[str, Any]], Field(min_length=1, max_length=5000)],
     request: Request,
     db: Session = Depends(get_db),
     user_payload: dict = Depends(require_permission("upload_data"))
@@ -67,7 +68,7 @@ async def bulk_insert_performance_records(
 @router.patch("/teams/{team_id}/kpi-config", response_model=StandardResponse)
 async def bulk_update_kpi_weights(
     team_id: str,
-    payload: List[Dict[str, Any]],
+    payload: Annotated[List[Dict[str, Any]], Field(min_length=1, max_length=500)],
     request: Request,
     db: Session = Depends(get_db),
     user_payload: dict = Depends(require_permission("edit_team_config")),

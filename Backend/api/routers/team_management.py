@@ -5,7 +5,7 @@ API endpoints for managing teams (CRUD operations).
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from typing import List
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from models.team_models import (
     TeamResponse,
@@ -373,7 +373,7 @@ async def delete_management_kpi_upload(
     }
 
 class BatchDeleteManagementRequest(BaseModel):
-    upload_ids: list[str]
+    upload_ids: list[str] = Field(min_length=1, max_length=100)
 
 @router.post("/management-kpi-config/uploads/batch-delete")
 async def batch_delete_management_kpi_uploads(

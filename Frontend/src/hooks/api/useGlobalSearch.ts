@@ -39,13 +39,16 @@ export function useGlobalSearch({
 
   const remoteQuery = useQuery({
     queryKey: ['global-search', debouncedQuery],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const params = new URLSearchParams();
       if (debouncedQuery) {
         params.set('q', debouncedQuery);
       }
       params.set('limit', '8');
-      const result = await apiFetch<{ success: boolean; data: GlobalSearchResponse }>(`/api/search/global?${params.toString()}`);
+      const result = await apiFetch<{ success: boolean; data: GlobalSearchResponse }>(
+        `/api/search/global?${params.toString()}`,
+        { signal },
+      );
       return result.data;
     },
     enabled: open,

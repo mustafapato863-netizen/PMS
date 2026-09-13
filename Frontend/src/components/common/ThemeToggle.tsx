@@ -87,7 +87,7 @@ const ThemeToggle = ({ variant = 'icon' }: ThemeToggleProps) => {
       whileTap={{ scale: 0.92 }}
       aria-label={`Switch to ${isDark ? 'light' : 'dark'} mode`}
       title={`Switch to ${isDark ? 'light' : 'dark'} mode`}
-      className="theme-toggle"
+      className="theme-toggle app-header-control"
     >
       <AnimatePresence mode="wait" initial={false}>
         <motion.div
