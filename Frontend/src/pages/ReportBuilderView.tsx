@@ -95,7 +95,7 @@ export default function ReportBuilderView() {
   };
 
   if (reportId && isLoading && !state.draftId) return <PageLoadingSkeleton variant="builder" label="Opening report workspace" />;
-  if (reportId && error && !state.draftId) return <div className="m-8 rounded-2xl border border-red-200 bg-red-50 p-6 text-red-700"><b>Unable to load this report draft.</b><p className="mt-2 text-sm">{error.message}</p></div>;
+  if (reportId && error && !state.draftId) return <div className="m-8 rounded-2xl border border-rose-500/20 bg-rose-500/10 p-6 text-rose-700 dark:text-rose-300"><b>Unable to load this report draft.</b><p className="mt-2 text-sm">{error.message}</p></div>;
 
   const saveStatus = {
     idle: null,
@@ -109,12 +109,12 @@ export default function ReportBuilderView() {
   return <div className="rf-builder-shell flex h-[calc(100vh-2rem)] min-h-[720px] w-full flex-col overflow-hidden rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] shadow-sm">
     <header className="rf-builder-header flex min-h-16 items-center justify-between gap-4 border-b border-[var(--border-light)] bg-[var(--bg-surface)] px-5">
       <div className="flex items-center gap-4"><button onClick={back} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label="Back"><ArrowLeft size={19} /></button>
-        <div className="hidden items-center gap-2 lg:flex">{STEPS.map((label, index) => { const id = index + 1; return <div key={label} className="flex items-center gap-2"><button onClick={() => id <= state.currentStep && state.setStep(id as BuilderStep)} className={`flex items-center gap-2 text-xs font-extrabold ${id === state.currentStep ? 'text-blue-600' : id < state.currentStep ? 'text-slate-700 dark:text-slate-300' : 'text-slate-400'}`}><span className={`grid h-6 w-6 place-items-center rounded-full border ${id <= state.currentStep ? 'border-blue-600 bg-blue-600 text-white' : 'border-slate-300'}`}>{id}</span>{label}</button>{id < 5 && <span className="h-px w-7 bg-slate-200" />}</div>; })}</div>
+        <div className="hidden items-center gap-2 lg:flex">{STEPS.map((label, index) => { const id = index + 1; return <div key={label} className="flex items-center gap-2"><button onClick={() => id <= state.currentStep && state.setStep(id as BuilderStep)} className={`flex items-center gap-2 text-xs font-extrabold ${id === state.currentStep ? 'text-[var(--sgh-cyan-primary,#00A3E0)]' : id < state.currentStep ? 'text-slate-700 dark:text-slate-300' : 'text-slate-400 dark:text-slate-500'}`}><span className={`grid h-6 w-6 place-items-center rounded-full border ${id <= state.currentStep ? 'border-[var(--sgh-cyan-primary,#00A3E0)] bg-[var(--sgh-cyan-primary,#00A3E0)] text-white' : 'border-slate-300 dark:border-slate-700 text-slate-500'}`}>{id}</span>{label}</button>{id < 5 && <span className="h-px w-7 bg-slate-200 dark:bg-slate-700" />}</div>; })}</div>
       </div>
       <div className="flex items-center gap-3">
-        {saveStatus && <span title={state.saveMessage || undefined} className={`hidden items-center gap-1.5 text-xs font-bold sm:flex ${state.saveState === 'error' || state.saveState === 'conflict' ? 'text-red-600' : 'text-emerald-600'}`}>{saveStatus}</span>}
-        {state.draftId && <button onClick={saveAsTemplate} disabled={saveTemplate.isPending} className="hidden items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold text-slate-600 hover:bg-slate-50 md:flex"><Save size={15} /> Save as Template</button>}
-        <button onClick={next} disabled={state.saveState === 'saving' || state.saveState === 'conflict'} className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-extrabold text-white hover:bg-blue-700 disabled:opacity-50">{state.currentStep === 5 ? 'Finish' : 'Next'}<ArrowRight size={16} /></button>
+        {saveStatus && <span title={state.saveMessage || undefined} className={`hidden items-center gap-1.5 text-xs font-bold sm:flex ${state.saveState === 'error' || state.saveState === 'conflict' ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}`}>{saveStatus}</span>}
+        {state.draftId && <button onClick={saveAsTemplate} disabled={saveTemplate.isPending} className="hidden items-center gap-2 rounded-xl border border-[var(--border-light)] px-3 py-2 text-sm font-bold text-[var(--text-secondary)] hover:bg-[var(--bg-sunken)] md:flex"><Save size={15} /> Save as Template</button>}
+        <button onClick={next} disabled={state.saveState === 'saving' || state.saveState === 'conflict'} className="flex items-center gap-2 rounded-xl bg-[var(--sgh-cyan-primary,#00A3E0)] px-4 py-2 text-sm font-extrabold text-white shadow-md shadow-[var(--sgh-cyan-primary,#00A3E0)]/15 transition hover:bg-[var(--sgh-cyan-dark,#0084CE)] disabled:opacity-50">{state.currentStep === 5 ? 'Finish' : 'Next'}<ArrowRight size={16} /></button>
       </div>
     </header>
     <main className="min-h-0 flex-1 overflow-auto bg-slate-50/70 dark:bg-slate-950/40">

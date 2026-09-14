@@ -5,7 +5,7 @@ import { useInsightsWorkspace } from '../../hooks/api/useInsightsWorkspace';
 import { useCreatePlan } from '../../hooks/api/usePlanning';
 import OverlayPortal from '../common/OverlayPortal';
 
-const input = 'min-h-11 w-full rounded-xl border border-[var(--input-border)] bg-[var(--input-bg)] px-3 text-sm text-[var(--input-text)] outline-none focus:ring-2 focus:ring-blue-500/20';
+const input = 'min-h-11 w-full rounded-xl border border-[var(--input-border)] bg-[var(--input-bg)] px-3 text-sm text-[var(--input-text)] outline-none focus:border-[var(--sgh-cyan-primary)] focus:ring-2 focus:ring-[var(--sgh-cyan-primary)]/20 transition-all';
 const steps = ['Context', 'Evidence', 'Outcomes', 'Execution', 'Review'];
 
 type Props = {
@@ -228,74 +228,75 @@ function PlanFormModalContent({ options, onClose, onCreated }: Props) {
       <div role="dialog" aria-modal="true" aria-label="New performance plan" className="mx-auto flex h-full max-w-3xl flex-col rounded-3xl border border-[var(--border-light)] bg-[var(--bg-surface)] shadow-2xl">
         <header className="flex items-center justify-between border-b border-[var(--border-light)] p-5">
           <div>
-            <h2 className="text-xl font-extrabold">New Plan</h2>
+            <h2 className="text-xl font-extrabold text-[var(--text-primary)]">New Plan</h2>
             <p className="text-sm text-[var(--text-muted)]">Step {step} of 5 · {steps[step - 1]}</p>
           </div>
-          <button type="button" aria-label="Close new plan" onClick={onClose} className="grid h-11 w-11 place-items-center rounded-xl hover:bg-[var(--bg-sunken)]"><X /></button>
+          <button type="button" aria-label="Close new plan" onClick={onClose} className="grid h-11 w-11 place-items-center rounded-xl text-[var(--text-muted)] hover:bg-[var(--bg-sunken)] hover:text-[var(--text-primary)] transition-colors"><X size={20} /></button>
         </header>
 
         <div className="flex gap-1 px-5 pt-4">
-          {steps.map((label, index) => <div key={label} className={`h-1.5 flex-1 rounded-full ${index < step ? 'bg-blue-600' : 'bg-[var(--bg-sunken)]'}`} />)}
+          {steps.map((label, index) => <div key={label} className={`h-1.5 flex-1 rounded-full transition-colors ${index < step ? 'bg-[var(--sgh-cyan-primary)]' : 'bg-[var(--bg-sunken)]'}`} />)}
         </div>
 
         <div className="custom-scrollbar flex-1 overflow-y-auto p-5 md:p-7">
           {step === 1 && (
             <div className="grid gap-4 md:grid-cols-2">
-              <label>Plan name<input className={input} value={form.name} onChange={(event) => set('name', event.target.value)} /></label>
-              <label>Scope type<select className={input} value={form.scopeType} onChange={(event) => set('scopeType', event.target.value)}>{['Team', 'Position', 'Employee', 'Management'].map((value) => <option key={value}>{value}</option>)}</select></label>
-              <label>Team<select className={input} value={form.team} onChange={(event) => set('team', event.target.value)}>{options.teams.map((value) => <option key={value}>{value}</option>)}</select></label>
-              <label>Performance level<select className={input} value={form.level} onChange={(event) => set('level', event.target.value)}>{options.performance_levels.map((value) => <option key={value}>{value}</option>)}</select></label>
-              {form.scopeType === 'Position' && <label>Position<select className={input} value={form.position} onChange={(event) => set('position', event.target.value)}><option value="">Select</option>{options.positions.map((value) => <option key={value}>{value}</option>)}</select></label>}
-              {form.scopeType === 'Employee' && <label>Employee<select className={input} value={form.employee} onChange={(event) => set('employee', event.target.value)}><option value="">Select</option>{options.employees.filter((employee) => employee.team === form.team).map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}</select></label>}
-              <label>Owner<select className={input} value={form.owner} onChange={(event) => set('owner', event.target.value)}>{options.owners.map((owner) => <option key={owner.id} value={owner.id}>{owner.name}</option>)}</select></label>
-              <label>Start<input type="date" className={input} value={form.start} onChange={(event) => set('start', event.target.value)} /></label>
-              <label>End<input type="date" className={input} value={form.end} onChange={(event) => set('end', event.target.value)} /></label>
+              <label className="block"><span className="mb-1.5 block text-xs font-bold text-[var(--text-secondary)]">Plan name</span><input className={input} value={form.name} onChange={(event) => set('name', event.target.value)} /></label>
+              <label className="block"><span className="mb-1.5 block text-xs font-bold text-[var(--text-secondary)]">Scope type</span><select className={input} value={form.scopeType} onChange={(event) => set('scopeType', event.target.value)}>{['Team', 'Position', 'Employee', 'Management'].map((value) => <option key={value}>{value}</option>)}</select></label>
+              <label className="block"><span className="mb-1.5 block text-xs font-bold text-[var(--text-secondary)]">Team</span><select className={input} value={form.team} onChange={(event) => set('team', event.target.value)}>{options.teams.map((value) => <option key={value}>{value}</option>)}</select></label>
+              <label className="block"><span className="mb-1.5 block text-xs font-bold text-[var(--text-secondary)]">Performance level</span><select className={input} value={form.level} onChange={(event) => set('level', event.target.value)}>{options.performance_levels.map((value) => <option key={value}>{value}</option>)}</select></label>
+              {form.scopeType === 'Position' && <label className="block"><span className="mb-1.5 block text-xs font-bold text-[var(--text-secondary)]">Position</span><select className={input} value={form.position} onChange={(event) => set('position', event.target.value)}><option value="">Select</option>{options.positions.map((value) => <option key={value}>{value}</option>)}</select></label>}
+              {form.scopeType === 'Employee' && <label className="block"><span className="mb-1.5 block text-xs font-bold text-[var(--text-secondary)]">Employee</span><select className={input} value={form.employee} onChange={(event) => set('employee', event.target.value)}><option value="">Select</option>{options.employees.filter((employee) => employee.team === form.team).map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}</select></label>}
+              <label className="block"><span className="mb-1.5 block text-xs font-bold text-[var(--text-secondary)]">Owner</span><select className={input} value={form.owner} onChange={(event) => set('owner', event.target.value)}>{options.owners.map((owner) => <option key={owner.id} value={owner.id}>{owner.name}</option>)}</select></label>
+              <label className="block"><span className="mb-1.5 block text-xs font-bold text-[var(--text-secondary)]">Start</span><input type="date" className={input} value={form.start} onChange={(event) => set('start', event.target.value)} /></label>
+              <label className="block"><span className="mb-1.5 block text-xs font-bold text-[var(--text-secondary)]">End</span><input type="date" className={input} value={form.end} onChange={(event) => set('end', event.target.value)} /></label>
             </div>
           )}
 
           {step === 2 && (
             <div>
-              <h3 className="font-extrabold">Link evidence</h3>
-              <div className="mt-3 max-h-72 space-y-2 overflow-y-auto">
+              <h3 className="font-extrabold text-[var(--text-primary)]">Link evidence</h3>
+              <p className="mt-1 text-xs text-[var(--text-muted)]">Select priority insights that substantiate and guide this plan.</p>
+              <div className="mt-3 max-h-72 space-y-2 overflow-y-auto custom-scrollbar">
                 {insights.data?.priority_insights.slice(0, 8).map((item) => (
-                  <label key={item.id} className="flex gap-3 rounded-xl border border-[var(--border-light)] p-3">
-                    <input type="checkbox" checked={linked.includes(item.id)} onChange={() => setLinked((current) => current.includes(item.id) ? current.filter((id) => id !== item.id) : [...current, item.id])} />
-                    <span><strong>{item.title}</strong><small className="block text-[var(--text-muted)]">{item.explanation}</small></span>
+                  <label key={item.id} className="flex cursor-pointer gap-3 rounded-xl border border-[var(--border-light)] bg-[var(--bg-surface)] p-3 transition-colors hover:bg-[var(--bg-sunken)]">
+                    <input type="checkbox" checked={linked.includes(item.id)} onChange={() => setLinked((current) => current.includes(item.id) ? current.filter((id) => id !== item.id) : [...current, item.id])} className="mt-1 h-4 w-4 rounded border-[var(--border-medium)] accent-[#00A3E0]" />
+                    <span><strong className="block text-sm text-[var(--text-primary)]">{item.title}</strong><small className="mt-0.5 block text-xs leading-5 text-[var(--text-muted)]">{item.explanation}</small></span>
                   </label>
                 ))}
               </div>
-              {!linked.length && <label className="mt-4 block">Reason for plan without linked insight<textarea className={`${input} min-h-24 py-3`} value={form.reason} onChange={(event) => set('reason', event.target.value)} /></label>}
+              {!linked.length && <label className="mt-4 block"><span className="mb-1.5 block text-xs font-bold text-[var(--text-secondary)]">Reason for plan without linked insight</span><textarea className={`${input} min-h-24 py-3`} value={form.reason} onChange={(event) => set('reason', event.target.value)} /></label>}
             </div>
           )}
 
           {step === 3 && (
             <div className="grid gap-4 md:grid-cols-2">
-              <label>Baseline<input type="number" className={input} value={form.baseline} onChange={(event) => set('baseline', event.target.value)} /></label>
-              <label>Current result<input type="number" className={input} value={form.current} onChange={(event) => set('current', event.target.value)} /></label>
-              <label>Target<input type="number" className={input} value={form.target} onChange={(event) => set('target', event.target.value)} /></label>
-              <label>Unit<input className={input} value={form.unit} onChange={(event) => set('unit', event.target.value)} /></label>
-              <label>Direction<select className={input} value={form.direction} onChange={(event) => set('direction', event.target.value)}><option value="higher_better">Higher is better</option><option value="lower_better">Lower is better</option></select></label>
-              <label className="md:col-span-2">Measurable objective<input className={input} value={form.objective} onChange={(event) => set('objective', event.target.value)} placeholder="Increase score from baseline to target" /></label>
-              <label>KPI key (optional)<input className={input} value={form.kpiKey} onChange={(event) => set('kpiKey', event.target.value)} /></label>
-              <label>KPI label<input className={input} value={form.kpiLabel} onChange={(event) => set('kpiLabel', event.target.value)} /></label>
+              <label className="block"><span className="mb-1.5 block text-xs font-bold text-[var(--text-secondary)]">Baseline</span><input type="number" className={input} value={form.baseline} onChange={(event) => set('baseline', event.target.value)} /></label>
+              <label className="block"><span className="mb-1.5 block text-xs font-bold text-[var(--text-secondary)]">Current result</span><input type="number" className={input} value={form.current} onChange={(event) => set('current', event.target.value)} /></label>
+              <label className="block"><span className="mb-1.5 block text-xs font-bold text-[var(--text-secondary)]">Target</span><input type="number" className={input} value={form.target} onChange={(event) => set('target', event.target.value)} /></label>
+              <label className="block"><span className="mb-1.5 block text-xs font-bold text-[var(--text-secondary)]">Unit</span><input className={input} value={form.unit} onChange={(event) => set('unit', event.target.value)} /></label>
+              <label className="block"><span className="mb-1.5 block text-xs font-bold text-[var(--text-secondary)]">Direction</span><select className={input} value={form.direction} onChange={(event) => set('direction', event.target.value)}><option value="higher_better">Higher is better</option><option value="lower_better">Lower is better</option></select></label>
+              <label className="block md:col-span-2"><span className="mb-1.5 block text-xs font-bold text-[var(--text-secondary)]">Measurable objective</span><input className={input} value={form.objective} onChange={(event) => set('objective', event.target.value)} placeholder="Increase score from baseline to target" /></label>
+              <label className="block"><span className="mb-1.5 block text-xs font-bold text-[var(--text-secondary)]">KPI key (optional)</span><input className={input} value={form.kpiKey} onChange={(event) => set('kpiKey', event.target.value)} /></label>
+              <label className="block"><span className="mb-1.5 block text-xs font-bold text-[var(--text-secondary)]">KPI label</span><input className={input} value={form.kpiLabel} onChange={(event) => set('kpiLabel', event.target.value)} /></label>
             </div>
           )}
 
           {step === 4 && (
             <div className="grid gap-4">
-              <label>First action (optional)<input className={input} value={form.action} onChange={(event) => set('action', event.target.value)} /></label>
-              <label>First milestone (optional)<input className={input} value={form.milestone} onChange={(event) => set('milestone', event.target.value)} /></label>
-              <label>Due date<input type="date" className={input} value={form.due} onChange={(event) => set('due', event.target.value)} /></label>
+              <label className="block"><span className="mb-1.5 block text-xs font-bold text-[var(--text-secondary)]">First action (optional)</span><input className={input} value={form.action} onChange={(event) => set('action', event.target.value)} /></label>
+              <label className="block"><span className="mb-1.5 block text-xs font-bold text-[var(--text-secondary)]">First milestone (optional)</span><input className={input} value={form.milestone} onChange={(event) => set('milestone', event.target.value)} /></label>
+              <label className="block"><span className="mb-1.5 block text-xs font-bold text-[var(--text-secondary)]">Due date</span><input type="date" className={input} value={form.due} onChange={(event) => set('due', event.target.value)} /></label>
             </div>
           )}
 
           {step === 5 && (
             <div className="space-y-4">
               <div className="rounded-2xl border border-[var(--border-light)] bg-[var(--bg-sunken)] p-5">
-                <CheckCircle2 className="text-emerald-600" />
-                <h3 className="mt-3 font-extrabold">Review plan</h3>
-                <p>{form.name} · {form.team} · {form.start} to {form.end}</p>
-                <p className="text-sm text-[var(--text-muted)]">Baseline {form.baseline} {form.unit} → Current {form.current || form.baseline} {form.unit} → Target {form.target} {form.unit}; {linked.length} linked insight(s).</p>
+                <CheckCircle2 className="text-emerald-500" />
+                <h3 className="mt-3 font-extrabold text-[var(--text-primary)]">Review plan</h3>
+                <p className="mt-1 font-semibold text-[var(--text-primary)]">{form.name} · {form.team} · {form.start} to {form.end}</p>
+                <p className="mt-1 text-sm text-[var(--text-muted)]">Baseline {form.baseline} {form.unit} → Current {form.current || form.baseline} {form.unit} → Target {form.target} {form.unit}; {linked.length} linked insight(s).</p>
                 <p className="mt-2 text-sm text-[var(--text-muted)]">Objective: {form.objective}</p>
               </div>
               <p className="text-sm text-[var(--text-muted)]">Save as Draft keeps the plan inactive. Activate is an explicit choice.</p>
@@ -306,13 +307,13 @@ function PlanFormModalContent({ options, onClose, onCreated }: Props) {
         </div>
 
         <footer className="flex items-center justify-between border-t border-[var(--border-light)] p-4">
-          <button type="button" disabled={step === 1} onClick={() => { setError(''); setStep((current) => current - 1); }} className="inline-flex min-h-11 items-center gap-2 rounded-xl border px-4 disabled:opacity-40"><ArrowLeft size={16} />Back</button>
+          <button type="button" disabled={step === 1} onClick={() => { setError(''); setStep((current) => current - 1); }} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-[var(--border-light)] px-4 font-bold text-[var(--text-secondary)] hover:bg-[var(--bg-sunken)] hover:text-[var(--text-primary)] transition-colors disabled:opacity-40"><ArrowLeft size={16} />Back</button>
           {step < 5 ? (
-            <button type="button" onClick={next} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-blue-600 px-5 font-bold text-white">Next<ArrowRight size={16} /></button>
+            <button type="button" onClick={next} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-[var(--sgh-cyan-primary)] px-5 font-bold text-white shadow-sm hover:brightness-110 active:scale-[0.98] transition-all">Next<ArrowRight size={16} /></button>
           ) : (
             <div className="flex gap-2">
-              <button type="button" disabled={create.isPending} onClick={() => submit(false)} className="min-h-11 rounded-xl border px-4 font-bold">Save Draft</button>
-              <button type="button" disabled={create.isPending} onClick={() => submit(true)} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-blue-600 px-4 font-bold text-white">{create.isPending && <Loader2 size={16} className="animate-spin" />}Activate</button>
+              <button type="button" disabled={create.isPending} onClick={() => submit(false)} className="min-h-11 rounded-xl border border-[var(--border-light)] px-4 font-bold text-[var(--text-secondary)] hover:bg-[var(--bg-sunken)] hover:text-[var(--text-primary)] transition-colors disabled:opacity-50">Save Draft</button>
+              <button type="button" disabled={create.isPending} onClick={() => submit(true)} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-gradient-to-r from-[#00A3E0] to-[#00A859] px-5 font-bold text-white shadow-sm hover:brightness-110 active:scale-[0.98] transition-all disabled:opacity-50">{create.isPending && <Loader2 size={16} className="animate-spin" />}Activate</button>
             </div>
           )}
         </footer>

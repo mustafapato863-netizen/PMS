@@ -75,11 +75,11 @@ export default function Step2Template() {
           const Icon = TEMPLATE_ICON[template.report_type] || FileBarChart;
           const selected = activeTemplate?.id === template.id;
           const metadata = template.definition.story_metadata;
-          return <article key={template.id} className={`relative flex min-h-72 flex-col rounded-2xl border-2 bg-[var(--bg-surface)] p-6 text-left transition hover:-translate-y-0.5 hover:border-blue-400 hover:shadow-lg ${selected ? 'border-blue-600 ring-4 ring-blue-600/10' : 'border-[var(--border-light)]'}`}>
+          return <article key={template.id} className={`relative flex min-h-72 flex-col rounded-2xl border-2 bg-[var(--bg-surface)] p-6 text-left transition hover:-translate-y-0.5 hover:border-[var(--sgh-cyan-primary,#00A3E0)] hover:shadow-lg ${selected ? 'border-[var(--sgh-cyan-primary,#00A3E0)] ring-4 ring-[var(--sgh-cyan-primary,#00A3E0)]/10' : 'border-[var(--border-light)]'}`}>
             <div className="mb-5 flex items-start justify-between gap-3">
-              <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-950/40"><Icon /></span>
+              <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-[var(--sgh-cyan-primary,#00A3E0)]/10 text-[var(--sgh-cyan-primary,#00A3E0)]"><Icon /></span>
               <div className="flex flex-wrap justify-end gap-2">
-                {metadata?.recommended && <span className="rounded-full bg-blue-600 px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wide text-white">Recommended</span>}
+                {metadata?.recommended && <span className="rounded-full bg-[var(--sgh-cyan-primary,#00A3E0)] px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wide text-white">Recommended</span>}
                 {metadata?.mode && metadata.mode !== 'standard' && <span className="rounded-full bg-[var(--bg-sunken)] px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wide text-[var(--text-secondary)]">{metadata.mode}</span>}
               </div>
             </div>
@@ -89,7 +89,7 @@ export default function Step2Template() {
               <div className="flex items-center justify-between font-bold"><span>Estimated story</span><span>{estimatedPages(template)} pages</span></div>
               {metadata?.pages_per_team ? <p className="mt-1 text-[11px] text-[var(--text-muted)]">Includes one filtered page for each team with data.</p> : null}
             </div>
-            <button type="button" onClick={() => setPreview(template)} className="mt-4 inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-blue-500/25 bg-blue-50 px-4 text-sm font-extrabold text-blue-700 transition hover:bg-blue-100 dark:bg-blue-950/30 dark:text-blue-300">
+            <button type="button" onClick={() => setPreview(template)} className="mt-4 inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-[var(--sgh-cyan-primary,#00A3E0)]/30 bg-[var(--sgh-cyan-primary,#00A3E0)]/[0.07] px-4 text-sm font-extrabold text-[var(--sgh-cyan-primary,#00A3E0)] dark:text-[var(--sgh-cyan-light,#38BDF8)] transition hover:bg-[var(--sgh-cyan-primary,#00A3E0)]/15">
               Preview story <ArrowRight size={16} />
             </button>
           </article>;
@@ -105,18 +105,18 @@ export default function Step2Template() {
       {preview !== undefined && <div role="dialog" aria-modal="true" aria-labelledby="template-preview-title" className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
         <div className="w-full max-w-2xl overflow-hidden rounded-3xl border border-[var(--border-light)] bg-[var(--bg-surface)] shadow-2xl">
           <header className="flex items-start justify-between border-b border-[var(--border-light)] p-6">
-            <div><div className="mb-2 flex items-center gap-2 text-xs font-extrabold uppercase tracking-wide text-blue-600"><Sparkles size={15} />Story preview</div><h3 id="template-preview-title" className="text-2xl font-black text-[var(--text-primary)]">{preview?.name || 'Blank Report'}</h3><p className="mt-2 text-sm leading-6 text-[var(--text-muted)]">{preview?.description || 'An empty page ready for governed PMS blocks.'}</p></div>
+            <div><div className="mb-2 flex items-center gap-2 text-xs font-extrabold uppercase tracking-wide text-[var(--sgh-cyan-primary,#00A3E0)]"><Sparkles size={15} />Story preview</div><h3 id="template-preview-title" className="text-2xl font-black text-[var(--text-primary)]">{preview?.name || 'Blank Report'}</h3><p className="mt-2 text-sm leading-6 text-[var(--text-muted)]">{preview?.description || 'An empty page ready for governed PMS blocks.'}</p></div>
             <button type="button" onClick={() => setPreview(undefined)} className="rounded-xl p-2 text-[var(--text-muted)] hover:bg-[var(--bg-sunken)]" aria-label="Close template preview"><X /></button>
           </header>
           <div className="p-6">
-            <div className="mb-5 flex items-center justify-between rounded-2xl border border-blue-500/15 bg-blue-50/70 p-4 dark:bg-blue-950/20"><div><p className="text-xs font-bold uppercase text-[var(--text-muted)]">Generated for this scope</p><p className="mt-1 text-2xl font-black text-[var(--text-primary)]">{estimatedPages(preview)} pages</p></div><p className="max-w-xs text-right text-xs leading-5 text-[var(--text-muted)]">Exact team pages use authorized teams with data in {configuration.start_month} {configuration.start_year}.</p></div>
+            <div className="mb-5 flex items-center justify-between rounded-2xl border border-[var(--sgh-cyan-primary,#00A3E0)]/20 bg-[var(--sgh-cyan-primary,#00A3E0)]/5 p-4"><div><p className="text-xs font-bold uppercase text-[var(--text-muted)]">Generated for this scope</p><p className="mt-1 text-2xl font-black text-[var(--text-primary)]">{estimatedPages(preview)} pages</p></div><p className="max-w-xs text-right text-xs leading-5 text-[var(--text-muted)]">Exact team pages use authorized teams with data in {configuration.start_month} {configuration.start_year}.</p></div>
             <ol className="grid gap-2 sm:grid-cols-2">
-              {(preview?.definition.story_metadata?.outline || ['Empty report page']).map((item, index) => <li key={item} className="flex items-center gap-3 rounded-xl bg-[var(--bg-sunken)] p-3 text-sm font-bold text-[var(--text-secondary)]"><span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-blue-600 text-xs text-white">{index + 1}</span>{item}</li>)}
+              {(preview?.definition.story_metadata?.outline || ['Empty report page']).map((item, index) => <li key={item} className="flex items-center gap-3 rounded-xl bg-[var(--bg-sunken)] p-3 text-sm font-bold text-[var(--text-secondary)]"><span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-[var(--sgh-cyan-primary,#00A3E0)] text-xs text-white">{index + 1}</span>{item}</li>)}
             </ol>
           </div>
           <footer className="flex items-center justify-between gap-3 border-t border-[var(--border-light)] p-5">
             <span className="flex items-center gap-2 text-xs font-semibold text-[var(--text-muted)]"><Check size={15} className="text-emerald-600" />Every page remains editable after generation.</span>
-            <button type="button" disabled={createDraft.isPending} onClick={() => void create(preview)} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-blue-600 px-5 text-sm font-extrabold text-white shadow-lg shadow-blue-600/20 hover:bg-blue-700 disabled:opacity-60">
+            <button type="button" disabled={createDraft.isPending} onClick={() => void create(preview)} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-[var(--sgh-cyan-primary,#00A3E0)] px-5 text-sm font-extrabold text-white shadow-lg shadow-[var(--sgh-cyan-primary,#00A3E0)]/20 hover:bg-[var(--sgh-cyan-dark,#0084CE)] disabled:opacity-60">
               {createDraft.isPending ? <><LoaderCircle size={16} className="animate-spin" />Generating story</> : <>Use Template <ArrowRight size={16} /></>}
             </button>
           </footer>

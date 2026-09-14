@@ -12,7 +12,7 @@ import {
   type ScopeValidationErrors,
 } from '../../../features/reports/reportBuilderValidation';
 
-const selectClass = 'min-h-11 rounded-xl border border-[var(--input-border)] bg-[var(--input-bg)] pl-3 pr-9 text-sm font-semibold text-[var(--input-text)] outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20';
+const selectClass = 'min-h-11 rounded-xl border border-[var(--input-border)] bg-[var(--input-bg)] pl-3 pr-9 text-sm font-semibold text-[var(--input-text)] outline-none focus:border-[var(--sgh-cyan-primary,#00A3E0)] focus:ring-2 focus:ring-[var(--sgh-cyan-primary,#00A3E0)]/20';
 
 function FilterSelect({ label, value, onChange, values, allLabel, required = false, error }: {
   label: string;
@@ -26,7 +26,7 @@ function FilterSelect({ label, value, onChange, values, allLabel, required = fal
   const id = `report-filter-${label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
   return (
     <div className="space-y-1.5">
-      <label htmlFor={id} className="block text-sm font-bold text-slate-700 dark:text-slate-200">
+      <label htmlFor={id} className="block text-sm font-bold text-[var(--text-secondary)]">
         {label} {required && <span className="text-red-500">*</span>}
       </label>
       <div className="relative">
@@ -40,9 +40,9 @@ function FilterSelect({ label, value, onChange, values, allLabel, required = fal
           {allLabel && <option value="">{allLabel}</option>}
           {values.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
         </select>
-        <ChevronDown aria-hidden="true" size={15} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
+        <ChevronDown aria-hidden="true" size={15} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
       </div>
-      {error && <p className="text-xs font-semibold text-red-600">{error}</p>}
+      {error && <p className="text-xs font-semibold text-red-600 dark:text-red-400">{error}</p>}
     </div>
   );
 }
@@ -117,15 +117,15 @@ export default function Step1Scope({ validationErrors = {} }: { validationErrors
   return (
     <div className="max-w-3xl mx-auto py-8">
       <div className="mb-8">
-        <h2 className="text-2xl font-extrabold text-slate-900">Define Report Scope</h2>
-        <p className="text-slate-500 mt-1">Select the parameters for the data you want to include in this report.</p>
+        <h2 className="text-2xl font-extrabold text-[var(--text-primary)]">Define Report Scope</h2>
+        <p className="text-sm text-[var(--text-muted)] mt-1">Select the parameters for the data you want to include in this report.</p>
       </div>
 
-      <div className="space-y-6 bg-white p-6 md:p-8 rounded-2xl border border-slate-200 shadow-sm">
+      <div className="space-y-6 bg-[var(--bg-surface)] p-6 md:p-8 rounded-2xl border border-[var(--border-light)] shadow-sm">
 
         {/* Basic Info */}
         <div className="space-y-1.5">
-          <label htmlFor="report-name" className="block text-sm font-bold text-slate-700 dark:text-slate-200">
+          <label htmlFor="report-name" className="block text-sm font-bold text-[var(--text-secondary)]">
             Report Name <span className="text-red-500">*</span>
           </label>
           <input
@@ -137,7 +137,7 @@ export default function Step1Scope({ validationErrors = {} }: { validationErrors
             aria-invalid={Boolean(validationErrors.report_name)}
             className={`${selectClass} w-full pr-3 ${validationErrors.report_name ? 'border-red-400 focus:border-red-500 focus:ring-red-500/15' : ''}`}
           />
-          {validationErrors.report_name && <p className="text-xs font-semibold text-red-600">{validationErrors.report_name}</p>}
+          {validationErrors.report_name && <p className="text-xs font-semibold text-red-600 dark:text-red-400">{validationErrors.report_name}</p>}
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -169,11 +169,11 @@ export default function Step1Scope({ validationErrors = {} }: { validationErrors
           />
         </div>
 
-        <hr className="border-slate-100" />
+        <hr className="border-[var(--border-light)]" />
 
         {/* Data Filters */}
         <div>
-           <h3 className="text-sm font-bold uppercase tracking-wider text-slate-500 mb-4">Data Filters</h3>
+           <h3 className="text-xs font-extrabold uppercase tracking-wider text-[var(--text-faint)] mb-4">Data Filters</h3>
            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <FilterSelect
                 label="Region"
@@ -209,7 +209,7 @@ export default function Step1Scope({ validationErrors = {} }: { validationErrors
       </div>
 
       {isScopeValid && (
-         <div className="mt-6 flex items-center gap-2 text-green-600 bg-green-50 p-4 rounded-xl border border-green-200">
+         <div className="mt-6 flex items-center gap-2 rounded-xl border border-emerald-500/25 bg-emerald-500/10 p-4 text-emerald-700 dark:text-emerald-300">
            <CheckCircle2 size={20} />
            <span className="font-semibold text-sm">Scope is fully defined. You can proceed to the next step.</span>
          </div>

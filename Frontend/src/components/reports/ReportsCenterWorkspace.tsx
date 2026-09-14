@@ -83,7 +83,7 @@ function SelectFilter({
         value={value || ''}
         disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
-        className="min-h-10 w-full rounded-xl border border-[var(--input-border)] bg-[var(--input-bg)] px-3 text-sm font-semibold text-[var(--input-text)] outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+        className="min-h-10 w-full rounded-xl border border-[var(--input-border)] bg-[var(--input-bg)] px-3 text-sm font-semibold text-[var(--input-text)] outline-none focus:border-[var(--sgh-cyan-primary,#00A3E0)] focus:ring-2 focus:ring-[var(--sgh-cyan-primary,#00A3E0)]/20 disabled:cursor-not-allowed disabled:opacity-60"
       >
         <option value="">{allLabel}</option>
         {values.map((item) => {
@@ -177,8 +177,8 @@ export default function ReportsCenterWorkspace({
   const scopeSummary = selectedScope.join(' / ');
 
   const quickButtonClass = (active: boolean) => `inline-flex min-h-9 items-center justify-center rounded-lg border px-3 text-xs font-extrabold transition-colors ${active
-    ? 'border-blue-500 bg-blue-500/10 text-blue-700 dark:text-blue-300'
-    : 'border-[var(--border-light)] bg-[var(--bg-surface)] text-[var(--text-secondary)] hover:border-blue-400/60 hover:text-blue-600'
+    ? 'border-[var(--sgh-cyan-primary,#00A3E0)] bg-[var(--sgh-cyan-primary,#00A3E0)]/10 text-[var(--sgh-cyan-primary,#00A3E0)] dark:text-[var(--sgh-cyan-light,#38BDF8)]'
+    : 'border-[var(--border-light)] bg-[var(--bg-surface)] text-[var(--text-secondary)] hover:border-[var(--sgh-cyan-primary,#00A3E0)]/60 hover:text-[var(--sgh-cyan-primary,#00A3E0)]'
   }`;
 
   return (
@@ -186,17 +186,17 @@ export default function ReportsCenterWorkspace({
       <section className="rounded-3xl border border-[var(--border-light)] bg-[var(--bg-surface)] p-5 shadow-sm md:p-7">
         <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
           <div>
-            <div className="flex items-center gap-2 text-blue-600"><Sparkles size={16} /><span className="text-[10px] font-extrabold uppercase tracking-[0.18em]">Reports</span></div>
+            <div className="flex items-center gap-2 text-[var(--sgh-cyan-primary,#00A3E0)]"><Sparkles size={16} /><span className="text-[10px] font-extrabold uppercase tracking-[0.18em]">Reports</span></div>
             <h1 className="mt-2 text-3xl font-extrabold tracking-tight text-[var(--text-primary)]">PowerPoint reports</h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--text-muted)]">Choose a report type, apply the filters, and generate a ready-made PowerPoint from the authorized reporting data.</p>
             <div className="mt-4 flex flex-wrap gap-2 text-xs font-bold text-[var(--text-muted)]">
               <span className="rounded-full bg-[var(--bg-sunken)] px-3 py-1.5">Role: {role}</span>
               <span className="rounded-full bg-[var(--bg-sunken)] px-3 py-1.5">Period: {periodLabel(currentPeriod)}</span>
-              <span className="rounded-full bg-blue-500/10 px-3 py-1.5 text-blue-700 dark:text-blue-300" aria-live="polite">{scopeFilterCount === 0 ? 'All authorized scope' : `${scopeFilterCount} scope filter${scopeFilterCount === 1 ? '' : 's'} active`}</span>
+              <span className="rounded-full bg-[var(--sgh-cyan-primary,#00A3E0)]/10 px-3 py-1.5 text-[var(--sgh-cyan-primary,#00A3E0)] dark:text-[var(--sgh-cyan-light,#38BDF8)]" aria-live="polite">{scopeFilterCount === 0 ? 'All authorized scope' : `${scopeFilterCount} scope filter${scopeFilterCount === 1 ? '' : 's'} active`}</span>
             </div>
           </div>
           <div className="flex flex-wrap gap-2 xl:justify-end">
-            <button type="button" onClick={onRefresh} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-[var(--border-light)] px-4 text-sm font-bold text-[var(--text-secondary)] hover:border-blue-400/50 hover:text-blue-600">
+            <button type="button" onClick={onRefresh} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-[var(--border-light)] px-4 text-sm font-bold text-[var(--text-secondary)] hover:border-[var(--sgh-cyan-primary,#00A3E0)]/50 hover:text-[var(--sgh-cyan-primary,#00A3E0)]">
               <RefreshCw size={16} className={isFetching ? 'animate-spin' : ''} /> Refresh
             </button>
           </div>
@@ -206,10 +206,10 @@ export default function ReportsCenterWorkspace({
       <section aria-label="Report filters" className="rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] p-4 shadow-sm md:p-5">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <div className="flex items-center gap-2"><Filter size={16} className="text-blue-600" /><h2 className="font-extrabold text-[var(--text-primary)]">Report filters</h2></div>
+            <div className="flex items-center gap-2"><Filter size={16} className="text-[var(--sgh-cyan-primary,#00A3E0)]" /><h2 className="font-extrabold text-[var(--text-primary)]">Report filters</h2></div>
             <p className="mt-1 max-w-2xl text-xs leading-5 text-[var(--text-muted)]">Set the period first, then narrow the scope. Changes apply immediately to every report type below.</p>
           </div>
-          <button type="button" onClick={onResetFilters} className="self-start text-xs font-extrabold text-blue-600 hover:underline">Clear all</button>
+          <button type="button" onClick={onResetFilters} className="self-start text-xs font-extrabold text-[var(--sgh-cyan-primary,#00A3E0)] hover:underline">Clear all</button>
         </div>
 
         <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
@@ -225,16 +225,16 @@ export default function ReportsCenterWorkspace({
           <SelectFilter label="KPI" value={filters.kpi} values={options.kpis || []} allLabel="All KPIs" onChange={(value) => onFilterChange('kpi', value)} />
         </div>
 
-        <div className="mt-4 rounded-2xl border border-blue-500/20 bg-blue-500/5 p-3">
+        <div className="mt-4 rounded-2xl border border-[var(--sgh-cyan-primary,#00A3E0)]/20 bg-[var(--sgh-cyan-primary,#00A3E0)]/5 p-3">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-start gap-2.5">
-              <span className="rounded-lg bg-blue-500/10 p-2 text-blue-600"><Sparkles size={15} /></span>
+              <span className="rounded-lg bg-[var(--sgh-cyan-primary,#00A3E0)]/10 p-2 text-[var(--sgh-cyan-primary,#00A3E0)]"><Sparkles size={15} /></span>
               <div>
                 <p className="text-sm font-extrabold text-[var(--text-primary)]">Quick setup</p>
                 <p className="mt-0.5 text-xs text-[var(--text-muted)]">Use a shortcut, then refine any filter above.</p>
               </div>
             </div>
-            <span className="text-xs font-extrabold text-blue-700 dark:text-blue-300" aria-live="polite">{scopeFilterCount === 0 ? 'All authorized scope' : `${scopeFilterCount} scope filter${scopeFilterCount === 1 ? '' : 's'} active`}</span>
+            <span className="text-xs font-extrabold text-[var(--sgh-cyan-primary,#00A3E0)] dark:text-[var(--sgh-cyan-light,#38BDF8)]" aria-live="polite">{scopeFilterCount === 0 ? 'All authorized scope' : `${scopeFilterCount} scope filter${scopeFilterCount === 1 ? '' : 's'} active`}</span>
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
             {latestPeriod && <button type="button" aria-pressed={filters.period === latestPeriod.key} onClick={() => onApplyQuickFilter({ period: latestPeriod.key })} className={quickButtonClass(filters.period === latestPeriod.key)}>Latest period</button>}
@@ -247,7 +247,7 @@ export default function ReportsCenterWorkspace({
         <div className="mt-4 flex flex-wrap items-center gap-2" aria-label="Active report filters">
           <span className="text-[11px] font-extrabold uppercase tracking-[0.12em] text-[var(--text-faint)]">Active filters</span>
           {activeFilterEntries.length > 0 ? activeFilterEntries.map((item) => (
-            <button key={item.key} type="button" aria-label={`Remove ${item.label} filter`} onClick={() => onFilterChange(item.key, '')} className="inline-flex min-h-8 items-center gap-1.5 rounded-lg border border-[var(--border-light)] bg-[var(--bg-sunken)] px-2.5 text-[11px] font-bold text-[var(--text-secondary)] hover:border-blue-400/60 hover:text-blue-600">
+            <button key={item.key} type="button" aria-label={`Remove ${item.label} filter`} onClick={() => onFilterChange(item.key, '')} className="inline-flex min-h-8 items-center gap-1.5 rounded-lg border border-[var(--border-light)] bg-[var(--bg-sunken)] px-2.5 text-[11px] font-bold text-[var(--text-secondary)] hover:border-[var(--sgh-cyan-primary,#00A3E0)]/60 hover:text-[var(--sgh-cyan-primary,#00A3E0)]">
               {item.label}: {item.displayValue}<X size={13} />
             </button>
           )) : <span className="text-xs font-semibold text-[var(--text-muted)]">All authorized records</span>}
@@ -264,15 +264,15 @@ export default function ReportsCenterWorkspace({
             <h2 className="font-extrabold text-[var(--text-primary)]">Choose a report type</h2>
             <p className="mt-1 text-xs leading-5 text-[var(--text-muted)]">Generate a ready-made PowerPoint sample using the filters above. The generated file will appear in report history for download.</p>
           </div>
-          <span className="rounded-full bg-blue-500/10 px-3 py-1 text-xs font-extrabold text-blue-700 dark:text-blue-300">{pptxTemplates.length} available</span>
+          <span className="rounded-full bg-[var(--sgh-cyan-primary,#00A3E0)]/10 px-3 py-1 text-xs font-extrabold text-[var(--sgh-cyan-primary,#00A3E0)] dark:text-[var(--sgh-cyan-light,#38BDF8)]">{pptxTemplates.length} available</span>
         </div>
 
-        <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-blue-500/20 bg-blue-500/5 p-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-[var(--sgh-cyan-primary,#00A3E0)]/20 bg-[var(--sgh-cyan-primary,#00A3E0)]/5 p-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex min-w-0 items-start gap-2.5">
-            <span className="rounded-lg bg-blue-500/10 p-2 text-blue-600"><FileBarChart size={16} /></span>
+            <span className="rounded-lg bg-[var(--sgh-cyan-primary,#00A3E0)]/10 p-2 text-[var(--sgh-cyan-primary,#00A3E0)]"><FileBarChart size={16} /></span>
             <div className="min-w-0">
-              <p className="text-xs font-extrabold text-blue-800 dark:text-blue-200">Active filters for report generation</p>
-              <p className="mt-1 truncate text-xs font-semibold text-blue-700 dark:text-blue-300" aria-live="polite" title={scopeSummary}>{scopeSummary}</p>
+              <p className="text-xs font-extrabold text-blue-800 dark:text-[var(--sgh-cyan-light,#38BDF8)]">Active filters for report generation</p>
+              <p className="mt-1 truncate text-xs font-semibold text-blue-700 dark:text-[var(--sgh-cyan-primary,#00A3E0)]" aria-live="polite" title={scopeSummary}>{scopeSummary}</p>
             </div>
           </div>
           <span className="shrink-0 rounded-full bg-[var(--bg-surface)] px-2.5 py-1 text-[11px] font-extrabold text-[var(--text-secondary)]">{scopeFilterCount} scope filter{scopeFilterCount === 1 ? '' : 's'}</span>
@@ -282,9 +282,9 @@ export default function ReportsCenterWorkspace({
           const isGenerating = generatingTemplateType === template.type;
           const canGenerateTemplate = canGeneratePptx;
           const effectiveScope = templateScopeLabel?.(template) || scopeSummary;
-          return <article key={template.type} className="flex flex-col rounded-2xl border border-[var(--border-light)] p-4 transition-colors hover:border-blue-400/50">
+          return <article key={template.type} className="flex flex-col rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] p-4 transition-colors hover:border-[var(--sgh-cyan-primary,#00A3E0)]/50">
             <div className="flex items-start justify-between gap-2">
-              <span className="rounded-xl bg-blue-500/10 p-2 text-blue-600"><FileBarChart size={20} /></span>
+              <span className="rounded-xl bg-[var(--sgh-cyan-primary,#00A3E0)]/10 p-2 text-[var(--sgh-cyan-primary,#00A3E0)]"><FileBarChart size={20} /></span>
               <div className="flex flex-wrap justify-end gap-1">
                 <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-1 text-[10px] font-extrabold text-emerald-700 dark:text-emerald-300"><Presentation size={11} /> PPTX</span>
                 <span className="rounded-full bg-[var(--bg-sunken)] px-2 py-1 text-[10px] font-extrabold text-[var(--text-muted)]">{template.category || template.type}</span>
@@ -293,7 +293,7 @@ export default function ReportsCenterWorkspace({
             <h3 className="mt-4 font-extrabold text-[var(--text-primary)]">{template.name}</h3>
             <p className="mt-1 flex-1 text-xs leading-5 text-[var(--text-muted)]">{template.description}</p>
             <p className="mt-3 rounded-lg bg-[var(--bg-sunken)] px-2.5 py-2 text-[11px] font-semibold text-[var(--text-secondary)]" title={effectiveScope}>Effective sample scope: {effectiveScope}</p>
-            <button type="button" aria-label={canGenerateTemplate ? `Generate PPTX for ${template.name}` : 'Preview only'} title={canGenerateTemplate ? `Generate ${template.name} for ${effectiveScope}` : undefined} disabled={!canGenerateTemplate || Boolean(generatingTemplateType)} onClick={() => onGenerateTemplate(template)} className="mt-4 inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-blue-600 px-3 text-sm font-bold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60">{isGenerating ? <><Loader2 size={16} className="animate-spin" /> Generating PPTX</> : canGenerateTemplate ? 'Generate PPTX' : 'Preview only'}</button>
+            <button type="button" aria-label={canGenerateTemplate ? `Generate PPTX for ${template.name}` : 'Preview only'} title={canGenerateTemplate ? `Generate ${template.name} for ${effectiveScope}` : undefined} disabled={!canGenerateTemplate || Boolean(generatingTemplateType)} onClick={() => onGenerateTemplate(template)} className="mt-4 inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[var(--sgh-cyan-primary,#00A3E0)] px-3 text-sm font-bold text-white shadow-md shadow-[var(--sgh-cyan-primary,#00A3E0)]/15 transition hover:bg-[var(--sgh-cyan-dark,#0084CE)] disabled:cursor-not-allowed disabled:opacity-60">{isGenerating ? <><Loader2 size={16} className="animate-spin" /> Generating PPTX</> : canGenerateTemplate ? 'Generate PPTX' : 'Preview only'}</button>
           </article>;
         })}</div> : <div className="mt-4 rounded-xl border border-dashed border-[var(--border-light)] px-4 py-10 text-center text-sm font-semibold text-[var(--text-muted)]">No PowerPoint report types are available for your role.</div>}
       </section>

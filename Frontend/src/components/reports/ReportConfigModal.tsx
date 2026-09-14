@@ -61,7 +61,7 @@ function SelectField({
         value={value}
         required={required}
         onChange={(event) => onChange(event.target.value)}
-        className="min-h-11 w-full rounded-xl border border-[var(--input-border)] bg-[var(--input-bg)] px-3 text-sm text-[var(--input-text)] outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+        className="min-h-11 w-full rounded-xl border border-[var(--input-border)] bg-[var(--input-bg)] px-3 text-sm text-[var(--input-text)] outline-none focus:border-[var(--sgh-cyan-primary,#00A3E0)] focus:ring-2 focus:ring-[var(--sgh-cyan-primary,#00A3E0)]/20"
       >
         {!required && <option value="">{allLabel}</option>}
         {values.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
@@ -165,7 +165,7 @@ export default function ReportConfigModal({
       >
         <header className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-[var(--border-light)] bg-[var(--bg-surface)]/95 px-5 py-4 backdrop-blur md:px-7">
           <div>
-            <p className="text-[10px] font-extrabold uppercase tracking-[0.18em] text-blue-600">Configure report</p>
+            <p className="text-[10px] font-extrabold uppercase tracking-[0.18em] text-[var(--sgh-cyan-primary,#00A3E0)]">Configure report</p>
             <h2 id="report-dialog-title" className="mt-1 text-xl font-extrabold text-[var(--text-primary)]">{template.name}</h2>
             <p className="mt-1 text-sm text-[var(--text-muted)]">Preview the authorized data before generating a PDF, PowerPoint, or Excel workbook.</p>
           </div>
@@ -182,7 +182,7 @@ export default function ReportConfigModal({
                 value={configuration.report_name}
                 onChange={(event) => update('report_name', event.target.value)}
                 maxLength={180}
-                className="min-h-11 w-full rounded-xl border border-[var(--input-border)] bg-[var(--input-bg)] px-3 text-sm text-[var(--input-text)] outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+                className="min-h-11 w-full rounded-xl border border-[var(--input-border)] bg-[var(--input-bg)] px-3 text-sm text-[var(--input-text)] outline-none focus:border-[var(--sgh-cyan-primary,#00A3E0)] focus:ring-2 focus:ring-[var(--sgh-cyan-primary,#00A3E0)]/20"
               />
             </label>
 
@@ -204,21 +204,21 @@ export default function ReportConfigModal({
               <div className="mt-2 grid gap-2 sm:grid-cols-2">
                 {template.sections.map((section) => (
                   <label key={section} className="flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border border-[var(--border-light)] bg-[var(--bg-sunken)]/60 px-3 text-sm font-semibold text-[var(--text-secondary)]">
-                    <input type="checkbox" checked={configuration.included_sections.includes(section)} onChange={() => toggleSection(section)} className="h-4 w-4 accent-blue-600" />
+                    <input type="checkbox" checked={configuration.included_sections.includes(section)} onChange={() => toggleSection(section)} className="h-4 w-4 accent-[var(--sgh-cyan-primary,#00A3E0)]" />
                     {SECTION_LABELS[section] || section}
                   </label>
                 ))}
               </div>
             </fieldset>
 
-            <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 px-3 py-3">
+            <div className="rounded-xl border border-[var(--sgh-cyan-primary,#00A3E0)]/20 bg-[var(--sgh-cyan-primary,#00A3E0)]/5 px-3 py-3">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="text-xs font-extrabold text-blue-800 dark:text-blue-200">Output format</p>
-                <p className="text-[11px] text-blue-700 dark:text-blue-300">PowerPoint is selected by default.</p>
-                <p className="mt-0.5 text-[11px] text-blue-700 dark:text-blue-300">Preview is required before export.</p>
+                  <p className="text-xs font-extrabold text-blue-800 dark:text-[var(--sgh-cyan-light,#38BDF8)]">Output format</p>
+                <p className="text-[11px] text-blue-700 dark:text-[var(--sgh-cyan-primary,#00A3E0)]">PowerPoint is selected by default.</p>
+                <p className="mt-0.5 text-[11px] text-blue-700 dark:text-[var(--sgh-cyan-primary,#00A3E0)]">Preview is required before export.</p>
                 </div>
-                <Presentation size={20} className="text-blue-600" />
+                <Presentation size={20} className="text-[var(--sgh-cyan-primary,#00A3E0)]" />
               </div>
               <div className="mt-3 grid gap-2 sm:grid-cols-2">
                 {availableFormats.map((format) => {
@@ -231,11 +231,11 @@ export default function ReportConfigModal({
                       onClick={() => update('output_format', format.value)}
                       className={`flex items-center gap-3 rounded-xl border px-3 py-3 text-left transition-colors ${
                         selected
-                          ? 'border-blue-500 bg-blue-500/10 text-blue-700 dark:text-blue-300'
-                          : 'border-[var(--border-light)] bg-[var(--bg-surface)] text-[var(--text-secondary)] hover:border-blue-400/40'
+                          ? 'border-[var(--sgh-cyan-primary,#00A3E0)] bg-[var(--sgh-cyan-primary,#00A3E0)]/10 text-[var(--sgh-cyan-primary,#00A3E0)] dark:text-[var(--sgh-cyan-light,#38BDF8)]'
+                          : 'border-[var(--border-light)] bg-[var(--bg-surface)] text-[var(--text-secondary)] hover:border-[var(--sgh-cyan-primary,#00A3E0)]/40'
                       }`}
                     >
-                      <span className={`rounded-lg p-2 ${selected ? 'bg-blue-500/15' : 'bg-[var(--bg-sunken)]'}`}>
+                      <span className={`rounded-lg p-2 ${selected ? 'bg-[var(--sgh-cyan-primary,#00A3E0)]/15 text-[var(--sgh-cyan-primary,#00A3E0)]' : 'bg-[var(--bg-sunken)]'}`}>
                         <Icon size={16} />
                       </span>
                       <span>
@@ -260,7 +260,7 @@ export default function ReportConfigModal({
                   type="button"
                   disabled={!templateName.trim() || saveMutation.isPending}
                   onClick={() => saveMutation.mutate({ templateName: templateName.trim(), configuration })}
-                  className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-[var(--border-medium)] px-4 text-xs font-bold text-[var(--text-secondary)] disabled:opacity-50"
+                  className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-[var(--border-medium)] px-4 text-xs font-bold text-[var(--text-secondary)] hover:bg-[var(--bg-sunken)] disabled:opacity-50"
                 >
                   <Save size={15} /> {saveMutation.isPending ? 'Saving...' : 'Save configuration'}
                 </button>
@@ -279,7 +279,7 @@ export default function ReportConfigModal({
                 type="button"
                 disabled={isBusy || !configuration.report_name.trim() || configuration.included_sections.length === 0}
                 onClick={() => previewMutation.mutate(configuration)}
-                className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-blue-600 px-4 text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-[var(--sgh-cyan-primary,#00A3E0)] px-4 text-xs font-bold text-white shadow-md shadow-[var(--sgh-cyan-primary,#00A3E0)]/15 transition hover:bg-[var(--sgh-cyan-dark,#0084CE)] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {previewMutation.isPending ? <Loader2 size={15} className="animate-spin" /> : <Eye size={15} />} Preview
               </button>
@@ -287,7 +287,7 @@ export default function ReportConfigModal({
 
             {!previewMutation.data && !previewMutation.isPending && (
               <div className="flex min-h-[270px] flex-col items-center justify-center text-center text-[var(--text-muted)]">
-                <Presentation size={34} className="mb-3 text-blue-500" />
+                <Presentation size={34} className="mb-3 text-[var(--sgh-cyan-primary,#00A3E0)]" />
                 <p className="text-sm font-bold text-[var(--text-secondary)]">Preview is required</p>
                 <p className="mt-1 max-w-xs text-xs">The report is generated only after current filters return authorized data.</p>
               </div>
@@ -295,7 +295,7 @@ export default function ReportConfigModal({
 
             {previewMutation.data && (
               <div className="mt-4 space-y-4">
-                <div className="rounded-xl border border-blue-500/15 bg-blue-500/5 p-3">
+                <div className="rounded-xl border border-[var(--sgh-cyan-primary,#00A3E0)]/20 bg-[var(--sgh-cyan-primary,#00A3E0)]/5 p-3">
                   <p className="font-extrabold text-[var(--text-primary)]">{previewMutation.data.title}</p>
                   <p className="mt-1 text-xs text-[var(--text-muted)]">{previewMutation.data.scope} · {previewMutation.data.period}</p>
                   <div className="mt-2 flex flex-wrap gap-1.5">
@@ -330,13 +330,13 @@ export default function ReportConfigModal({
 
         {error && <div role="alert" className="mx-5 mb-4 flex items-center gap-2 rounded-xl bg-red-500/10 px-4 py-3 text-sm font-semibold text-red-600 md:mx-7"><AlertCircle size={17} /> {error.message}</div>}
         <footer className="sticky bottom-0 flex flex-wrap items-center justify-end gap-3 border-t border-[var(--border-light)] bg-[var(--bg-surface)]/95 px-5 py-4 backdrop-blur md:px-7">
-          <button type="button" onClick={onClose} className="min-h-11 rounded-xl border border-[var(--border-medium)] px-5 text-sm font-bold text-[var(--text-secondary)]">Cancel</button>
+          <button type="button" onClick={onClose} className="min-h-11 rounded-xl border border-[var(--border-medium)] px-5 text-sm font-bold text-[var(--text-secondary)] hover:bg-[var(--bg-sunken)]">Cancel</button>
           <button
             type="button"
             disabled={!previewMutation.data || generateMutation.isPending || !options.can_export}
             title={!options.can_export ? 'Your role can preview reports but cannot export them.' : undefined}
             onClick={() => generateMutation.mutate(configuration, { onSuccess: onGenerated })}
-            className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-5 text-sm font-bold text-white shadow-lg shadow-blue-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-gradient-to-r from-[#0084CE] via-[#00A3E0] to-[#00A859] px-5 text-sm font-bold text-white shadow-lg shadow-[var(--sgh-cyan-primary,#00A3E0)]/20 transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {generateMutation.isPending ? <Loader2 size={17} className="animate-spin" /> : (configuration.output_format === 'pdf' ? <FileText size={17} /> : configuration.output_format === 'excel' ? <Table2 size={17} /> : <Presentation size={17} />)}
             {options.can_export ? `Generate ${configuration.output_format.toUpperCase()}` : 'Export permission required'}
