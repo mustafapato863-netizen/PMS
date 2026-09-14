@@ -1,4 +1,5 @@
 import './PageEnhancements.css';
+import BackToTop from '../components/common/BackToTop';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
@@ -1019,6 +1020,7 @@ export default function InsightsView() {
           <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-0.5 border-4 border-transparent border-t-slate-900/95 dark:border-t-slate-800/95" />
         </div>
       )}
+      <BackToTop />
     </div>
   );
 }

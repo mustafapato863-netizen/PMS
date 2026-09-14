@@ -1,4 +1,6 @@
 import './PageEnhancements.css';
+import BackToTop from '../components/common/BackToTop';
+import { EmployeeHeroStats } from '../components/employee/EmployeeHeroStats';
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -389,6 +391,15 @@ const EmployeeProfileView = () => {
     return 0;
   }, [currentProfileRecord, employee, teamWeights]);
 
+  const previousScore = useMemo(() => {
+    if (!currentProfileRecord || orderedProfileHistory.length < 2) return null;
+    const currentIndex = orderedProfileHistory.findIndex((h) => h.month === currentProfileRecord.month);
+    if (currentIndex !== -1 && currentIndex + 1 < orderedProfileHistory.length) {
+      return resolveDisplayScore(orderedProfileHistory[currentIndex + 1], teamWeights);
+    }
+    return null;
+  }, [currentProfileRecord, orderedProfileHistory, teamWeights]);
+
   // The profile endpoint is the canonical historical source when available;
   // the feed row is the safe fallback while it is still loading.
   const profileAgent = currentProfileRecord || employee?.raw;
@@ -643,6 +654,21 @@ const EmployeeProfileView = () => {
           <button onClick={() => navigate(-1)} className="mt-4 text-blue-600 dark:text-blue-400 font-semibold text-sm hover:underline cursor-pointer">
             Go back
           </button>
+        </div>
+      )}
+
+      {employee && analytics && (
+        <div className="mb-4">
+          <EmployeeHeroStats
+            grade={employee.gradeClass}
+            score={displayScore}
+            previousScore={previousScore}
+            rank={analytics.rank}
+            totalEmployees={analytics.teamCount}
+            percentile={analytics.percentile}
+            stability={analytics.stability}
+            archetype={analytics.archetype}
+          />
         </div>
       )}
 
@@ -1129,6 +1155,7 @@ const EmployeeProfileView = () => {
           onSaved={triggerRefresh}
         />
       )}
+      <BackToTop />
     </motion.div>
   );
 };

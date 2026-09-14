@@ -10,6 +10,7 @@ import { ThemeProvider } from './context/ThemeContext';
 import { useNotificationSocket } from './hooks/useNotificationSocket';
 import { REALTIME_ENABLED } from './config';
 import AppErrorBoundary from './components/common/AppErrorBoundary';
+import { ToastProvider } from './components/common/ToastProvider';
 import WorkspaceLoader from './components/common/WorkspaceLoader';
 import { PageLoadingSkeleton } from './components/common/SkeletonLoader';
 
@@ -259,18 +260,19 @@ function AppContent() {
 function App() {
   return (
     <ThemeProvider>
-      <AuthProvider>
-        <RoleProvider>
-          <AppErrorBoundary>
-            <Router>
-              <AppContent />
-            </Router>
-          </AppErrorBoundary>
-        </RoleProvider>
-      </AuthProvider>
+      <ToastProvider>
+        <AuthProvider>
+          <RoleProvider>
+            <AppErrorBoundary>
+              <Router>
+                <AppContent />
+              </Router>
+            </AppErrorBoundary>
+          </RoleProvider>
+        </AuthProvider>
+      </ToastProvider>
     </ThemeProvider>
   );
 }
 
 export default App;
-

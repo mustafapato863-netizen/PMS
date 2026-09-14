@@ -1,4 +1,5 @@
 import './PageEnhancements.css';
+import BackToTop from '../components/common/BackToTop';
 import { useMemo, useState, type FormEvent } from 'react';
 import {
   AlertCircle, CalendarDays, CheckCircle2, ChevronLeft, ClipboardCheck,
@@ -56,13 +57,13 @@ function PlanCardView({ plan, active, onClick }: { plan: PlanCard; active: boole
           <h3 className="line-clamp-2 text-sm font-extrabold leading-5 text-[var(--text-primary)]">{plan.name}</h3>
           <p className="mt-1 truncate text-xs text-[var(--text-muted)]">{plan.team} · {plan.scope}</p>
         </div>
-        <span className={`shrink-0 rounded-full border px-2 py-1 text-[9px] font-extrabold ${statusStyle[plan.status]}`}>{plan.status}</span>
+        <span className={`shrink-0 rounded-full border px-2 py-1 text-[11px] font-extrabold ${statusStyle[plan.status]}`}>{plan.status}</span>
       </div>
       <div className="mt-4">
-        <div className="flex items-center justify-between text-[10px] font-bold text-[var(--text-muted)]"><span>Plan progress</span><span>{plan.progress.overall}%</span></div>
+        <div className="flex items-center justify-between text-xs font-bold text-[var(--text-muted)]"><span>Plan progress</span><span>{plan.progress.overall}%</span></div>
         <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-[var(--bg-sunken)]"><div className="h-full rounded-full bg-gradient-to-r from-blue-600 to-cyan-500" style={{ width: `${Math.min(100, Math.max(0, plan.progress.overall))}%` }} /></div>
       </div>
-      <div className="mt-4 grid grid-cols-2 gap-x-3 gap-y-2 text-[10px] text-[var(--text-muted)]">
+      <div className="mt-4 grid grid-cols-2 gap-x-3 gap-y-2 text-xs text-[var(--text-muted)]">
         <span className="flex items-center gap-1.5"><UserRound size={12} />{plan.owner.name}</span>
         <span className="flex items-center gap-1.5"><CalendarDays size={12} />{formatDate(plan.due_date)}</span>
         <span>{plan.counts.objectives} objective{plan.counts.objectives === 1 ? '' : 's'}</span>
@@ -75,9 +76,9 @@ function PlanCardView({ plan, active, onClick }: { plan: PlanCard; active: boole
 function SummaryMetric({ label, value, hint, icon: Icon, tone }: { label: string; value: string; hint: string; icon: typeof Gauge; tone: string }) {
   return (
     <article className="rounded-2xl border border-[var(--border-light)] bg-[var(--bg-sunken)]/35 p-4">
-      <div className="flex items-start justify-between gap-3"><span className="text-[10px] font-extrabold uppercase tracking-wide text-[var(--text-faint)]">{label}</span><span className={`grid h-8 w-8 place-items-center rounded-lg ${tone}`}><Icon size={15} /></span></div>
+      <div className="flex items-start justify-between gap-3"><span className="text-[11px] font-extrabold uppercase tracking-wide text-[var(--text-faint)]">{label}</span><span className={`grid h-8 w-8 place-items-center rounded-lg ${tone}`}><Icon size={15} /></span></div>
       <strong className="mt-2 block text-xl font-black text-[var(--text-primary)]">{value}</strong>
-      <span className="mt-1 block text-[10px] text-[var(--text-muted)]">{hint}</span>
+      <span className="mt-1 block text-xs text-[var(--text-muted)]">{hint}</span>
     </article>
   );
 }
@@ -88,8 +89,8 @@ function KpiTable({ detail, limit }: { detail: PlanDetail; limit?: number }) {
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[720px] text-left text-xs">
-        <thead><tr className="border-b border-[var(--border-light)] bg-[var(--bg-sunken)]/45 text-[9px] uppercase tracking-wide text-[var(--text-faint)]"><th className="px-4 py-3">KPI</th><th className="px-3 py-3">Baseline</th><th className="px-3 py-3">Target</th><th className="px-3 py-3">Current</th><th className="px-3 py-3">Achievement</th><th className="px-3 py-3">Gap</th><th className="px-4 py-3">Direction</th></tr></thead>
-        <tbody>{rows.map((kpi) => <tr key={kpi.id} className="border-b border-[var(--border-light)] last:border-0"><td className="px-4 py-3"><strong className="text-[var(--text-primary)]">{kpi.label}</strong><span className="ml-1 text-[10px] text-[var(--text-muted)]">({kpi.unit})</span></td><td className="px-3 py-3 text-[var(--text-secondary)]">{kpi.baseline}</td><td className="px-3 py-3 font-bold text-[var(--text-primary)]">{kpi.target}</td><td className="px-3 py-3 text-[var(--text-secondary)]">{kpi.current ?? 'N/A'}</td><td className="px-3 py-3 font-bold text-blue-600">{kpi.achievement === null ? 'N/A' : `${kpi.achievement}%`}</td><td className={`px-3 py-3 font-bold ${kpi.gap === null ? 'text-[var(--text-muted)]' : kpi.gap >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>{kpi.gap ?? 'N/A'}</td><td className="px-4 py-3 capitalize text-[var(--text-muted)]">{kpi.direction.replace('_', ' ')}</td></tr>)}</tbody>
+        <thead><tr className="border-b border-[var(--border-light)] bg-[var(--bg-sunken)]/45 text-[11px] uppercase tracking-wide text-[var(--text-faint)]"><th className="px-4 py-3">KPI</th><th className="px-3 py-3">Baseline</th><th className="px-3 py-3">Target</th><th className="px-3 py-3">Current</th><th className="px-3 py-3">Achievement</th><th className="px-3 py-3">Gap</th><th className="px-4 py-3">Direction</th></tr></thead>
+        <tbody>{rows.map((kpi) => <tr key={kpi.id} className="border-b border-[var(--border-light)] last:border-0"><td className="px-4 py-3"><strong className="text-[var(--text-primary)]">{kpi.label}</strong><span className="ml-1 text-xs text-[var(--text-muted)]">({kpi.unit})</span></td><td className="px-3 py-3 text-[var(--text-secondary)]">{kpi.baseline}</td><td className="px-3 py-3 font-bold text-[var(--text-primary)]">{kpi.target}</td><td className="px-3 py-3 text-[var(--text-secondary)]">{kpi.current ?? 'N/A'}</td><td className="px-3 py-3 font-bold text-blue-600">{kpi.achievement === null ? 'N/A' : `${kpi.achievement}%`}</td><td className={`px-3 py-3 font-bold ${kpi.gap === null ? 'text-[var(--text-muted)]' : kpi.gap >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>{kpi.gap ?? 'N/A'}</td><td className="px-4 py-3 capitalize text-[var(--text-muted)]">{kpi.direction.replace('_', ' ')}</td></tr>)}</tbody>
       </table>
     </div>
   );
@@ -286,6 +287,7 @@ export default function PlanningView() {
       {newOpen && <PlanFormModal options={options.data} onClose={() => setNewOpen(false)} onCreated={(id) => { setNewOpen(false); setSelected(id); setMobileDetail(true); }} />}
       {editOpen && current && <EditPlanModal detail={current} owners={options.data.owners} statuses={options.data.statuses} onClose={() => setEditOpen(false)} />}
       {deleteOpen && current && <DeletePlanModal detail={current} onClose={() => setDeleteOpen(false)} onDeleted={() => { setDeleteOpen(false); setSelected(''); setMobileDetail(false); }} />}
+      <BackToTop />
     </div>
   );
 }

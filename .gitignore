@@ -13,6 +13,10 @@ DevOps/*.tmp
 /graphify-out/
 /Backend/graphify-out/
 /Frontend/graphify-out/
+/findings.md
+/progress.md
+/task_plan.md
+/*.inspect.ndjson
 
 # Root-level local secrets and runtime state
 /.env
