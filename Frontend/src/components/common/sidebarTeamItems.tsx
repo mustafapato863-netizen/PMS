@@ -57,9 +57,13 @@ export const getTeamIcon = (teamName: string) => {
   return <Briefcase size={17} />;
 };
 
+const HIDDEN_TEAM_NAMES = new Set(['inbound uae']);
+
+export const isHiddenTeam = (teamName: string) =>
+  HIDDEN_TEAM_NAMES.has(teamName.trim().toLowerCase());
+
 export const TEAM_ITEMS = [
   { name: 'Call Center', path: '/team/call-center', icon: <PhoneCall size={17} />, team: 'Call Center', region: 'egy' },
-  { name: 'Inbound UAE', path: '/team/inbound-uae', icon: <HeartPulse size={17} />, team: 'Inbound UAE', region: 'uae' },
   { name: 'Sales', path: '/team/sales', icon: <Target size={17} />, team: 'Sales', region: 'uae' },
   { name: 'CSR', path: '/team/csr', icon: <Headphones size={17} />, team: 'CSR', region: 'uae' },
   { name: 'Pharmacy', path: '/team/pharmacy', icon: <Pill size={17} />, team: 'Pharmacy', region: 'uae' },

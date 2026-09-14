@@ -20,7 +20,7 @@ import { shouldShowMarketingNavigation } from '../../features/marketing/navigati
 import type { PerformanceLevel } from '../../types';
 import { isCallCenterTeam, CALL_CENTER_TEAM, isRcmTeam, RCM_TEAM } from '../../types';
 import ThemeToggle from './ThemeToggle';
-import { TEAM_ITEMS, getTeamIcon } from './sidebarTeamItems';
+import { TEAM_ITEMS, getTeamIcon, isHiddenTeam } from './sidebarTeamItems';
 import { MANAGEMENT_DATA_CHANGED_EVENT } from '../../lib/managementDataEvents';
 import { prepareBalancedScorecardTeamParams } from '../team/balancedScorecardNavigation';
 
@@ -135,7 +135,10 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed = false, onToggleCollapsed = (
       icon: getTeamIcon(teamScope.name),
       team: teamScope.name,
     }))
-    .filter((item) => !scopedTeams || scopedTeams.has(normalizeTeamName(item.team))), [managementTeams, scopedTeams]);
+    .filter(
+      (item) => !isHiddenTeam(item.team)
+        && (!scopedTeams || scopedTeams.has(normalizeTeamName(item.team))),
+    ), [managementTeams, scopedTeams]);
 
   const marketingVisible = shouldShowMarketingNavigation(availableFromData, scopedTeams);
   const rcmVisible = Boolean(performanceCatalog?.scopes?.some((scope) => isRcmTeam(scope.team)))
