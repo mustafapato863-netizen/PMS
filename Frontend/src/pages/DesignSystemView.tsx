@@ -26,6 +26,7 @@ import {
 import PerformanceKpiCard from '../components/common/PerformanceKpiCard';
 import CustomDropdown from '../components/common/CustomDropdown';
 import LineChart from '../components/balanced-scorecard/LineChart';
+import SghHeartSvg from '../components/common/SghHeartSvg';
 import './DesignSystemView.css';
 
 type Token = {
@@ -37,19 +38,23 @@ type Token = {
 };
 
 const tokens: Token[] = [
-  { name: '--bg-base', value: '#F8FAFC', role: 'Application canvas', swatch: 'var(--bg-base)' },
-  { name: '--bg-surface', value: '#FFFFFF', role: 'Cards and panels', swatch: 'var(--bg-surface)', border: 'var(--border-medium)' },
-  { name: '--bg-sunken', value: '#F1F5F9', role: 'Inputs and table headers', swatch: 'var(--bg-sunken)' },
-  { name: '--text-primary', value: '#0F172A', role: 'Headings and key values', swatch: 'var(--text-primary)' },
-  { name: '--text-secondary', value: '#475569', role: 'Body and supporting labels', swatch: 'var(--text-secondary)' },
-  { name: '--text-muted', value: '#64748B', role: 'Metadata and helper copy', swatch: 'var(--text-muted)' },
-  { name: '--input-focus', value: '#3B82F6', role: 'Keyboard focus ring', swatch: 'var(--input-focus)' },
-  { name: '--sidebar-active-text', value: '#1D4ED8', role: 'Selected navigation', swatch: 'var(--sidebar-active-text)' },
-  { name: '--bsc-blue', value: '#2E6FE0', role: 'Financial / primary emphasis', swatch: 'var(--bsc-blue)' },
+  { name: '--sgh-cyan-primary', value: '#00A3E0', role: 'SGH Brand Cyan', swatch: 'var(--sgh-cyan-primary)' },
+  { name: '--sgh-emerald-primary', value: '#00A859', role: 'SGH Brand Emerald', swatch: 'var(--sgh-emerald-primary)' },
+  { name: '--sgh-navy-dark', value: '#0B132B', role: 'SGH Healthcare Space Navy', swatch: 'var(--sgh-navy-dark)' },
+  { name: '--sgh-gradient-brand', value: 'linear-gradient(135deg, #00A3E0, #00A859)', role: 'SGH Dual-Wing Brand Gradient', swatch: 'var(--sgh-gradient-brand)' },
+  { name: '--bg-base', value: '#F8FAFC / #0B132B', role: 'Application canvas', swatch: 'var(--bg-base)' },
+  { name: '--bg-surface', value: '#FFFFFF / #0F1A2E', role: 'Cards and panels', swatch: 'var(--bg-surface)', border: 'var(--border-medium)' },
+  { name: '--bg-sunken', value: '#F1F5F9 / #131D2F', role: 'Inputs and table headers', swatch: 'var(--bg-sunken)' },
+  { name: '--text-primary', value: '#0F172A / #F8FAFC', role: 'Headings and key values', swatch: 'var(--text-primary)' },
+  { name: '--text-secondary', value: '#475569 / #94A3B8', role: 'Body and supporting labels', swatch: 'var(--text-secondary)' },
+  { name: '--text-muted', value: '#64748B / #64748B', role: 'Metadata and helper copy', swatch: 'var(--text-muted)' },
+  { name: '--input-focus', value: '#00A3E0', role: 'Keyboard focus ring', swatch: 'var(--input-focus)' },
+  { name: '--sidebar-active-text', value: '#0069B4', role: 'Selected navigation', swatch: 'var(--sidebar-active-text)' },
+  { name: '--bsc-blue', value: '#0084CE', role: 'Financial / primary emphasis', swatch: 'var(--bsc-blue)' },
   { name: '--bsc-purple', value: '#7C5CE0', role: 'Customer / analysis emphasis', swatch: 'var(--bsc-purple)' },
-  { name: '--bsc-green', value: '#1A9E72', role: 'Positive / measured state', swatch: 'var(--bsc-green)' },
+  { name: '--bsc-green', value: '#00A859', role: 'Positive / measured state', swatch: 'var(--bsc-green)' },
   { name: '--bsc-orange', value: '#E0832E', role: 'Learning / attention state', swatch: 'var(--bsc-orange)' },
-  { name: '--grade-a-text', value: '#0F8A4B', role: 'Exceeds target', swatch: 'var(--grade-a-text)' },
+  { name: '--grade-a-text', value: '#00843D', role: 'Exceeds target', swatch: 'var(--grade-a-text)' },
   { name: '--grade-c-text', value: '#B7791F', role: 'Average result', swatch: 'var(--grade-c-text)' },
   { name: '--grade-e-text', value: '#D92D20', role: 'Critical result', swatch: 'var(--grade-e-text)' },
 ];
@@ -134,7 +139,7 @@ function DesignSystemView() {
           <div className="ds-hero-orb ds-hero-orb-blue animate-blob" />
           <div className="ds-hero-orb ds-hero-orb-indigo animate-blob animation-delay-2000" />
           <div className="ds-hero-orb ds-hero-orb-green animate-blob animation-delay-4000" />
-          <div className="ds-hero-mark"><Activity size={30} /></div>
+          <div className="ds-hero-mark"><SghHeartSvg size={36} glow /></div>
         </div>
       </header>
 

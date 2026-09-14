@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import {
-  Activity, ChevronDown, HeartPulse, LogOut, Settings, User, Users, X, Megaphone,
+  Activity, ChevronDown, LogOut, Settings, User, Users, X, Megaphone,
   FileBarChart,
   Lightbulb,
   ClipboardCheck,
@@ -23,6 +23,7 @@ import ThemeToggle from './ThemeToggle';
 import { TEAM_ITEMS, getTeamIcon, isHiddenTeam } from './sidebarTeamItems';
 import { MANAGEMENT_DATA_CHANGED_EVENT } from '../../lib/managementDataEvents';
 import { prepareBalancedScorecardTeamParams } from '../team/balancedScorecardNavigation';
+import SghHeartSvg from './SghHeartSvg';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -32,7 +33,7 @@ interface SidebarProps {
 }
 
 const LEVELS: Array<{ name: 'Employee'; icon: React.ReactNode; color: string }> = [
-  { name: 'Employee', icon: <Users size={17} />, color: 'bg-blue-500' },
+  { name: 'Employee', icon: <Users size={17} />, color: 'bg-[var(--sgh-cyan-primary)]' },
 ];
 
 const slugifyTeam = (teamName: string) =>
@@ -181,7 +182,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed = false, onToggleCollapsed = (
         title={isCollapsed ? item.name : undefined}
         data-tooltip={isCollapsed ? item.name : undefined}
         onClick={() => setIsOpen(false)}
-        className={`sidebar-tooltip-trigger flex min-h-11 items-center justify-between rounded-lg py-1.5 text-[13px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 xl:min-h-9 ${isCollapsed ? 'xl:justify-center xl:px-2' : nested ? 'pl-8 pr-3' : 'px-3'} ${active ? 'active-nav-item' : 'inactive-nav-item'}`}
+        className={`sidebar-tooltip-trigger flex min-h-11 items-center justify-between rounded-lg py-1.5 text-[13px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--sgh-cyan-primary)] xl:min-h-9 ${isCollapsed ? 'xl:justify-center xl:px-2' : nested ? 'pl-8 pr-3' : 'px-3'} ${active ? 'active-nav-item' : 'inactive-nav-item'}`}
         style={{
           color: active ? 'var(--sidebar-active-text)' : 'var(--sidebar-text)',
           background: active ? 'var(--sidebar-active-bg)' : undefined,
@@ -225,12 +226,12 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed = false, onToggleCollapsed = (
     >
       <div className={`flex items-center justify-between py-5 ${isCollapsed ? 'gap-1 px-1 xl:gap-1' : 'gap-3 px-5'}`}>
         <div className={`flex min-w-0 items-center ${isCollapsed ? 'gap-1 xl:shrink-0' : 'gap-3'}`}>
-          <div className={`shrink-0 rounded-xl border border-blue-400/20 bg-gradient-to-br from-blue-500 to-indigo-600 shadow-[0_4px_12px_rgba(59,130,246,0.30)] ${isCollapsed ? 'p-1.5 xl:rounded-lg' : 'p-2'}`}>
-            <HeartPulse size={isCollapsed ? 20 : 22} className="text-white" />
+          <div className={`shrink-0 rounded-xl border border-[rgba(0,163,224,0.30)] bg-[var(--sgh-gradient-button)] shadow-[var(--sgh-glow-button)] ${isCollapsed ? 'p-1 xl:rounded-lg' : 'p-1.5'}`}>
+            <SghHeartSvg size={isCollapsed ? 22 : 26} glow />
           </div>
           <div className={isCollapsed ? 'xl:hidden' : ''}>
             <h1 className="text-[15px] font-extrabold tracking-tight text-[var(--text-primary)]">SGH Hub</h1>
-            <span className="mt-0.5 block text-[10px] font-bold uppercase tracking-widest text-blue-600">Intelligence</span>
+            <span className="mt-0.5 block text-[10px] font-bold uppercase tracking-widest text-[var(--sgh-cyan-primary)]">Intelligence</span>
           </div>
         </div>
         <button
@@ -238,7 +239,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed = false, onToggleCollapsed = (
           onClick={onToggleCollapsed}
           aria-label={isCollapsed ? 'Expand navigation sidebar' : 'Minimize navigation sidebar'}
           title={isCollapsed ? 'Expand sidebar' : 'Minimize sidebar'}
-          className={`hidden min-h-9 min-w-9 shrink-0 items-center justify-center rounded-lg text-[var(--text-muted)] transition-colors hover:bg-[var(--sidebar-hover-bg)] hover:text-blue-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 xl:flex ${isCollapsed ? 'xl:min-h-8 xl:min-w-8' : ''}`}
+          className={`hidden min-h-9 min-w-9 shrink-0 items-center justify-center rounded-lg text-[var(--text-muted)] transition-colors hover:bg-[var(--sidebar-hover-bg)] hover:text-[var(--sgh-cyan-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--sgh-cyan-primary)] xl:flex ${isCollapsed ? 'xl:min-h-8 xl:min-w-8' : ''}`}
         >
           {isCollapsed ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}
         </button>
@@ -253,8 +254,8 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed = false, onToggleCollapsed = (
 
         {canSeeBroadNavigation && LEVELS.map((level) => {
           const regions = [
-            { id: 'egy' as const, label: 'Offshore EGY', color: 'bg-blue-500' },
-            { id: 'uae' as const, label: 'UAE Region', color: 'bg-emerald-500' },
+            { id: 'egy' as const, label: 'Offshore EGY', color: 'bg-[var(--sgh-cyan-primary)]' },
+            { id: 'uae' as const, label: 'UAE Region', color: 'bg-[var(--sgh-emerald-primary)]' },
           ].map((region) => ({ ...region, teams: visibleTeams(level.name, region.id) })).filter((region) => region.teams.length);
           if (!regions.length) return null;
           const isLevelOpen = levelOpen[level.name];
@@ -267,7 +268,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed = false, onToggleCollapsed = (
                 title={isCollapsed ? level.name : undefined}
                 data-tooltip={isCollapsed ? level.name : undefined}
                 onClick={() => setLevelOpen((state) => ({ ...state, [level.name]: !isLevelOpen }))}
-                className={`sidebar-tooltip-trigger sidebar-nav-group-trigger flex min-h-11 w-full items-center gap-2.5 rounded-xl px-3 text-left text-sm font-extrabold text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-sunken)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${isCollapsed ? 'xl:justify-center xl:px-2' : ''}`}
+                className={`sidebar-tooltip-trigger sidebar-nav-group-trigger flex min-h-11 w-full items-center gap-2.5 rounded-xl px-3 text-left text-sm font-extrabold text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-sunken)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--sgh-cyan-primary)] ${isCollapsed ? 'xl:justify-center xl:px-2' : ''}`}
               >
                 <span className={`h-4 w-1 rounded-full ${level.color}`} />
                 <span className="text-[var(--text-faint)]">{level.icon}</span>
@@ -289,7 +290,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed = false, onToggleCollapsed = (
                             title={isCollapsed ? region.label : undefined}
                             data-tooltip={isCollapsed ? region.label : undefined}
                             onClick={() => setRegionOpen((state) => ({ ...state, [key]: !isRegionOpen }))}
-                            className={`sidebar-tooltip-trigger flex min-h-10 w-full items-center gap-2 px-2 text-left text-[11px] font-extrabold uppercase tracking-wider text-[var(--text-faint)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${isCollapsed ? 'xl:justify-center xl:px-1' : ''}`}
+                            className={`sidebar-tooltip-trigger flex min-h-10 w-full items-center gap-2 px-2 text-left text-[11px] font-extrabold uppercase tracking-wider text-[var(--text-faint)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--sgh-cyan-primary)] ${isCollapsed ? 'xl:justify-center xl:px-1' : ''}`}
                           >
                             <span className={`h-3 w-1 rounded-full ${region.color}`} />
                             <span className={`flex-1 ${isCollapsed ? 'xl:hidden' : ''}`}>{region.label}</span>
@@ -315,7 +316,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed = false, onToggleCollapsed = (
               title={isCollapsed ? 'Shared Functions' : undefined}
               data-tooltip={isCollapsed ? 'Shared Functions' : undefined}
               onClick={() => setSharedOpen((open) => !open)}
-              className={`sidebar-tooltip-trigger sidebar-nav-group-trigger flex min-h-11 w-full items-center gap-2.5 rounded-xl px-3 text-left text-sm font-extrabold text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-sunken)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${isCollapsed ? 'xl:justify-center xl:px-2' : ''}`}
+              className={`sidebar-tooltip-trigger sidebar-nav-group-trigger flex min-h-11 w-full items-center gap-2.5 rounded-xl px-3 text-left text-sm font-extrabold text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-sunken)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--sgh-cyan-primary)] ${isCollapsed ? 'xl:justify-center xl:px-2' : ''}`}
             >
               <span className="h-4 w-1 rounded-full bg-violet-500" />
               <span className="text-[var(--text-faint)]"><Layers size={17} /></span>
@@ -358,7 +359,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed = false, onToggleCollapsed = (
                 title={isCollapsed ? 'Management' : undefined}
                 data-tooltip={isCollapsed ? 'Management' : undefined}
                 onClick={() => setLevelOpen((state) => ({ ...state, Management: !isLevelOpen }))}
-                className={`sidebar-tooltip-trigger sidebar-nav-group-trigger flex min-h-11 w-full items-center gap-2.5 rounded-xl px-3 text-left text-sm font-extrabold text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-sunken)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${isCollapsed ? 'xl:justify-center xl:px-2' : ''}`}
+                className={`sidebar-tooltip-trigger sidebar-nav-group-trigger flex min-h-11 w-full items-center gap-2.5 rounded-xl px-3 text-left text-sm font-extrabold text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-sunken)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--sgh-cyan-primary)] ${isCollapsed ? 'xl:justify-center xl:px-2' : ''}`}
               >
                 <span className="h-4 w-1 rounded-full bg-amber-500" />
                 <span className="text-[var(--text-faint)]"><Building2 size={17} /></span>
@@ -387,7 +388,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed = false, onToggleCollapsed = (
         {role !== 'Agent' && renderLink({ name: 'Settings', path: '/settings', icon: <Settings size={18} /> })}
         <div className={`sidebar-user-menu flex items-center justify-between gap-2 rounded-xl border border-[var(--border-light)] bg-[var(--glass-bg)] p-2.5 ${isCollapsed ? 'xl:justify-center xl:p-2' : ''}`}>
           <div className={`flex min-w-0 items-center gap-2 ${isCollapsed ? 'xl:justify-center' : ''}`}>
-            <div className="sidebar-user-avatar flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 text-[11px] font-bold text-white">
+            <div className="sidebar-user-avatar flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--sgh-gradient-brand)] text-[11px] font-bold text-white shadow-sm">
               {currentUser ? currentUser.name.split(' ').map((name) => name[0]).join('') : 'U'}
             </div>
             <div className={`min-w-0 ${isCollapsed ? 'xl:hidden' : ''}`}>

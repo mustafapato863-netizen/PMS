@@ -49,10 +49,10 @@
 
 .ds-hero-art { position: relative; z-index: 1; width: min(32%, 290px); min-width: 180px; min-height: 160px; }
 .ds-hero-orb { position: absolute; width: 150px; height: 150px; border-radius: 50%; filter: blur(3px); opacity: .75; }
-.ds-hero-orb-blue { top: 5%; right: 34%; background: color-mix(in srgb, var(--bsc-blue) 34%, transparent); }
+.ds-hero-orb-blue { top: 5%; right: 34%; background: color-mix(in srgb, var(--sgh-cyan-primary) 34%, transparent); }
 .ds-hero-orb-indigo { right: -2%; bottom: 2%; background: color-mix(in srgb, var(--bsc-purple) 28%, transparent); }
-.ds-hero-orb-green { bottom: 12%; left: 4%; width: 90px; height: 90px; background: color-mix(in srgb, var(--bsc-green) 24%, transparent); }
-.ds-hero-mark { position: absolute; top: 50%; left: 50%; display: grid; width: 86px; height: 86px; place-items: center; transform: translate(-50%, -50%); border: 1px solid color-mix(in srgb, var(--bsc-blue) 42%, var(--border-medium)); border-radius: 24px; background: linear-gradient(145deg, color-mix(in srgb, var(--bsc-blue) 88%, #fff 12%), color-mix(in srgb, var(--bsc-purple) 82%, #fff 18%)); color: #fff; box-shadow: var(--bsc-glow-blue); }
+.ds-hero-orb-green { bottom: 12%; left: 4%; width: 90px; height: 90px; background: color-mix(in srgb, var(--sgh-emerald-primary) 28%, transparent); }
+.ds-hero-mark { position: absolute; top: 50%; left: 50%; display: grid; width: 86px; height: 86px; place-items: center; transform: translate(-50%, -50%); border: 1px solid rgba(0, 163, 224, 0.40); border-radius: 24px; background: var(--sgh-gradient-button); color: #fff; box-shadow: var(--sgh-glow-button); }
 
 .ds-contract { display: flex; align-items: flex-start; gap: 10px; padding: 13px 16px; border: 1px solid color-mix(in srgb, var(--bsc-green) 25%, var(--border-medium)); border-radius: 13px; background: color-mix(in srgb, var(--bsc-green) 6%, var(--bg-surface)); color: var(--text-secondary); font-size: .78rem; line-height: 1.5; }
 .ds-contract svg { flex: none; margin-top: 1px; color: var(--bsc-green); }

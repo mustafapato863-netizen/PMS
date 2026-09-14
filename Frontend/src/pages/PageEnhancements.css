@@ -22,7 +22,7 @@
 }
 
 .rf-page :is(button, a, input, select, textarea):focus-visible {
-  outline: 2px solid color-mix(in srgb, #2563eb 72%, transparent);
+  outline: 2px solid color-mix(in srgb, #00A3E0 72%, transparent);
   outline-offset: 2px;
 }
 
@@ -31,7 +31,7 @@
 }
 
 .rf-page :is(input, select, textarea):focus {
-  box-shadow: 0 0 0 3px color-mix(in srgb, #2563eb 12%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, #00A3E0 14%, transparent);
 }
 
 .rf-page :is(input:not([type='checkbox']):not([type='radio']), select, textarea) {
@@ -172,8 +172,8 @@
 
   .responsive-filter-trigger:hover,
   .responsive-filter-trigger:focus-visible {
-    border-color: color-mix(in srgb, #2563eb 32%, var(--border-light));
-    box-shadow: 0 0 0 3px color-mix(in srgb, #2563eb 10%, transparent);
+    border-color: color-mix(in srgb, #00A3E0 32%, var(--border-light));
+    box-shadow: 0 0 0 3px color-mix(in srgb, #00A3E0 10%, transparent);
   }
 
   .responsive-filter-trigger > svg:first-child {
@@ -306,7 +306,7 @@
     border: 0;
     border-radius: 12px;
     color: #fff;
-    background: #2563eb;
+    background: var(--sgh-gradient-button, #00A3E0);
     font-size: 0.8125rem;
     font-weight: 800;
     cursor: pointer;
@@ -326,7 +326,7 @@
   border: 1px solid var(--border-light);
   border-radius: 18px;
   background:
-    linear-gradient(135deg, color-mix(in srgb, var(--bg-surface) 96%, #2563eb 4%), var(--bg-surface));
+    linear-gradient(135deg, color-mix(in srgb, var(--bg-surface) 96%, #00A3E0 4%), var(--bg-surface));
   padding: clamp(0.875rem, 1.4vw, 1.25rem);
   box-shadow: var(--rf-panel-shadow);
 }
@@ -340,7 +340,7 @@
   right: -100px;
   top: -130px;
   border-radius: 999px;
-  background: radial-gradient(circle, rgba(37, 99, 235, 0.12), transparent 66%);
+  background: radial-gradient(circle, rgba(0, 163, 224, 0.12), transparent 66%);
   pointer-events: none;
 }
 
@@ -407,14 +407,14 @@
 .rf-action-card:hover {
   transform: translateY(-2px);
   box-shadow: var(--rf-panel-shadow-hover);
-  border-color: color-mix(in srgb, #2563eb 22%, var(--border-light));
+  border-color: color-mix(in srgb, #00A3E0 22%, var(--border-light));
 }
 
 .rf-empty-state {
-  border: 1px dashed color-mix(in srgb, var(--border-light) 82%, #2563eb 18%);
+  border: 1px dashed color-mix(in srgb, var(--border-light) 82%, #00A3E0 18%);
   border-radius: 22px !important;
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--bg-surface) 97%, #2563eb 3%), var(--bg-surface));
+    linear-gradient(180deg, color-mix(in srgb, var(--bg-surface) 97%, #00A3E0 3%), var(--bg-surface));
 }
 
 .rf-page table {
@@ -443,7 +443,7 @@
 }
 
 .rf-page table tbody tr:hover {
-  background: color-mix(in srgb, #2563eb 3%, var(--bg-surface));
+  background: color-mix(in srgb, #00A3E0 3%, var(--bg-surface));
 }
 
 .rf-page table tbody tr:last-child td {
@@ -496,7 +496,7 @@
 .rf-builder-header {
   min-height: 72px !important;
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--bg-surface) 98%, #2563eb 2%), var(--bg-surface)) !important;
+    linear-gradient(180deg, color-mix(in srgb, var(--bg-surface) 98%, #00A3E0 2%), var(--bg-surface)) !important;
 }
 
 .rf-preview-canvas {
@@ -533,8 +533,8 @@
 /* Not found */
 .rf-not-found {
   background:
-    radial-gradient(circle at 18% 20%, rgba(37, 99, 235, 0.08), transparent 34%),
-    radial-gradient(circle at 82% 78%, rgba(79, 70, 229, 0.07), transparent 36%),
+    radial-gradient(circle at 18% 20%, rgba(0, 163, 224, 0.08), transparent 34%),
+    radial-gradient(circle at 82% 78%, rgba(0, 168, 89, 0.07), transparent 36%),
     var(--bg-base) !important;
 }
 
@@ -545,8 +545,8 @@
 /* Login */
 .login-shell {
   background:
-    radial-gradient(circle at 18% 12%, rgba(37, 99, 235, 0.10), transparent 30%),
-    radial-gradient(circle at 82% 88%, rgba(79, 70, 229, 0.08), transparent 34%),
+    radial-gradient(circle at 18% 12%, rgba(0, 163, 224, 0.10), transparent 30%),
+    radial-gradient(circle at 82% 88%, rgba(0, 168, 89, 0.08), transparent 34%),
     var(--bg-base);
 }
 
@@ -559,7 +559,7 @@
 }
 
 .login-field input:focus {
-  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.10) !important;
+  box-shadow: 0 0 0 4px rgba(0, 163, 224, 0.14) !important;
 }
 
 /* Avoid expensive paint work for large off-screen page sections where supported. */
