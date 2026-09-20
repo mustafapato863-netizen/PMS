@@ -387,7 +387,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed = false, onToggleCollapsed = (
         {role !== 'Agent' && renderLink({ name: 'Settings', path: '/settings', icon: <Settings size={18} /> })}
         <div className={`sidebar-user-menu flex items-center justify-between gap-2 rounded-xl border border-[var(--border-light)] bg-[var(--bg-raised)] p-2.5 shadow-sm ${isCollapsed ? 'xl:justify-center xl:p-2' : ''}`}>
           <div className={`flex min-w-0 items-center gap-2 ${isCollapsed ? 'xl:justify-center' : ''}`}>
-            <div className="sidebar-user-avatar flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--sgh-gradient-brand)] text-[11px] font-bold text-white shadow-sm">
+            <div className="sidebar-user-avatar flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[11px] font-bold text-white shadow-sm" style={{ background: 'var(--sidebar-active-text)' }}>
               {currentUser ? currentUser.name.split(' ').map((name) => name[0]).join('') : 'U'}
             </div>
             <div className={`min-w-0 ${isCollapsed ? 'xl:hidden' : ''}`}>

@@ -113,8 +113,9 @@ function ProfileMenu({
           border-[var(--border-light)] rounded-xl px-2 py-1 transition-all shadow-sm"
       >
         <div
-          className="w-7 h-7 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg flex items-center
+          className="w-7 h-7 rounded-lg flex items-center
             justify-center text-[10px] font-bold text-white shadow-sm"
+          style={{ background: 'var(--sidebar-active-text)' }}
           aria-hidden="true"
         >
           {initials}
