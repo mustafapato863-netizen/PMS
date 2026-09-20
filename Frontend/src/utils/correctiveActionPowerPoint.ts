@@ -1,5 +1,20 @@
+/**
+ * correctiveActionPowerPoint.ts
+ * Generates a high-fidelity PowerPoint presentation from scratch (no external template)
+ * that perfectly mirrors the system's UI card layout:
+ * - Enterprise dark navy header with filters and pagination
+ * - Zero vertical clipping (fits 16:9 widescreen with generous breathing margins)
+ * - True horizontal centering with 2-card side-by-side grid
+ * - White cards with subtle 12px rounded corners and soft borders
+ * - Aligned top row: bold employee name and rounded badge pill
+ * - Preserved structured action text paragraphs with bold markdown parsing
+ * - Soft amber root-cause note box with inline bold label
+ * - Crisp footer with calendar date and owner attribution
+ * - Compliant OpenXML schema with theme1.xml and masterClrMapping to guarantee 0 corruption warnings
+ */
 import JSZip from 'jszip';
 import type { PMSAction } from '../types';
+import { THEME_XML } from './pptxTheme';
 
 export const CORRECTIVE_ACTION_TEMPLATE_URL = '/templates/Corrective_Action_Report.pptx';
 
@@ -9,39 +24,41 @@ export interface CorrectiveActionExportFilters {
   type: string;
 }
 
-type CardSlot = {
-  badge: number;
-  badgeText: number;
-  name: number;
-  metadata: number;
-  action: number;
-  rootCause: number;
-  date: number;
-  owner: number;
+// ─── Colour palette (hex without #) ─────────────────────────────────────────
+const BADGE: Record<string, { bg: string; fg: string }> = {
+  Training: { bg: 'DBEAFE', fg: '1D4ED8' },
+  Reward:   { bg: 'D1FAE5', fg: '047857' },
+  PIP:      { bg: 'FCE7F3', fg: 'BE123C' },
+  Monitor:  { bg: 'FEF3C7', fg: 'B45309' },
+  Coaching: { bg: 'F3E8FF', fg: '7C3AED' },
 };
 
-const CARD_SLOTS: CardSlot[] = [
-  { badge: 6, badgeText: 7, name: 8, metadata: 9, action: 10, rootCause: 12, date: 14, owner: 16 },
-  { badge: 18, badgeText: 19, name: 20, metadata: 21, action: 22, rootCause: 24, date: 26, owner: 28 },
-  { badge: 30, badgeText: 31, name: 32, metadata: 33, action: 34, rootCause: 36, date: 38, owner: 40 },
-  { badge: 42, badgeText: 43, name: 44, metadata: 45, action: 46, rootCause: 48, date: 50, owner: 52 },
-];
+// ─── Slide dimensions: 16:9 widescreen ──────────────────────────────────────
+// PowerPoint default: 10 in × 5.625 in → 9144000 × 5143500 EMU
+const SLIDE_CX = 9144000;
+const SLIDE_CY = 5143500;
+const SLIDE_W_IN = 10.0;
 
-// The source template already uses rId1-rId7 for its master, notes, theme,
-// and presentation parts. Keep generated slide relationships outside that
-// range so PowerPoint's package relationship IDs stay unique.
-const SLIDE_RELATIONSHIP_BASE = 100;
+// ─── Layout Geometry (inches) ────────────────────────────────────────────────
+// Header bar
+const TOP_BAR_H = 0.65;
 
-const ACTION_STYLE: Record<string, { fill: string; text: string }> = {
-  Training: { fill: 'DBEAFE', text: '1D4ED8' },
-  Reward: { fill: 'D1FAE5', text: '047857' },
-  PIP: { fill: 'FCE7F3', text: 'BE123C' },
-  Monitor: { fill: 'FEF3C7', text: 'B45309' },
-  Coaching: { fill: 'F3E8FF', text: '7C3AED' },
-};
+// Cards geometry: centered horizontally and vertically with 0.165 in bottom safety margin
+const CARD_W    = 4.64;
+const CARD_H    = 4.68;
+const CARD_Y    = 0.78;
+const CARD_PAD  = 0.22;
+const COL_GAP   = 0.24;
 
-function escapeXml(value: string): string {
-  return value
+// Two column X coordinates: left = 0.24 in, right = 5.12 in (Left margin = 0.24, Right margin = 0.24)
+const COLS = [0.24, 0.24 + CARD_W + COL_GAP];
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+const in2emu = (inches: number) => Math.round(inches * 914400);
+const pt2emu = (pt: number) => Math.round(pt * 12700);
+
+function x(val: string): string {
+  return val
     .replaceAll('&', '&amp;')
     .replaceAll('<', '&lt;')
     .replaceAll('>', '&gt;')
@@ -49,170 +66,493 @@ function escapeXml(value: string): string {
     .replaceAll("'", '&apos;');
 }
 
-function compactText(value: unknown, maxLength: number): string {
-  const text = String(value || '').replace(/\s+/g, ' ').trim();
-  if (!text) return 'Not provided';
-  return text.length > maxLength ? `${text.slice(0, maxLength - 1).trimEnd()}…` : text;
+function trunc(val: unknown, max: number): string {
+  const s = String(val || '').trim() || 'Not provided';
+  return s.length > max ? `${s.slice(0, max - 1).trimEnd()}…` : s;
 }
 
-function formatActionDate(value: string): string {
-  if (!value) return 'Date unavailable';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).format(date);
+function fmtDate(val: string): string {
+  if (!val) return 'Date unavailable';
+  const d = new Date(val);
+  return isNaN(d.getTime()) ? val : new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).format(d);
 }
 
-function cardShape(xml: string, shapeId: number): { start: number; end: number; value: string } | null {
-  const marker = `<p:cNvPr id="${shapeId}"`;
-  const markerIndex = xml.indexOf(marker);
-  if (markerIndex < 0) return null;
-  const start = xml.lastIndexOf('<p:sp>', markerIndex);
-  const closing = xml.indexOf('</p:sp>', markerIndex);
-  if (start < 0 || closing < 0) return null;
-  const end = closing + '</p:sp>'.length;
-  return { start, end, value: xml.slice(start, end) };
+// ─── Low-level XML builders ───────────────────────────────────────────────────
+
+function xfrm(xIn: number, yIn: number, wIn: number, hIn: number, rot = 0): string {
+  const r = rot ? ` rot="${rot}"` : '';
+  return `<a:xfrm${r}><a:off x="${in2emu(xIn)}" y="${in2emu(yIn)}"/><a:ext cx="${in2emu(wIn)}" cy="${in2emu(hIn)}"/></a:xfrm>`;
 }
 
-function replaceShapeText(xml: string, shapeId: number, value: string, run: 'first' | 'last' = 'first'): string {
-  const shape = cardShape(xml, shapeId);
-  if (!shape) return xml;
-  const textRuns = [...shape.value.matchAll(/<a:t>[\s\S]*?<\/a:t>/g)];
-  if (!textRuns.length) return xml;
-  const target = textRuns[run === 'last' ? textRuns.length - 1 : 0];
-  const replacement = `<a:t>${escapeXml(value)}</a:t>`;
-  const nextShape = `${shape.value.slice(0, target.index)}${replacement}${shape.value.slice((target.index || 0) + target[0].length)}`;
-  return `${xml.slice(0, shape.start)}${nextShape}${xml.slice(shape.end)}`;
+function solidFill(hex: string): string {
+  return `<a:solidFill><a:srgbClr val="${hex}"/></a:solidFill>`;
 }
 
-function replaceShapeColors(xml: string, shapeId: number, color: string): string {
-  const shape = cardShape(xml, shapeId);
-  if (!shape) return xml;
-  const nextShape = shape.value.replace(/(<a:srgbClr val=")[0-9A-Fa-f]{6}("\/>)/g, `$1${color}$2`);
-  return `${xml.slice(0, shape.start)}${nextShape}${xml.slice(shape.end)}`;
+function noFill(): string {
+  return '<a:noFill/>';
 }
 
-function replaceTextColor(xml: string, shapeId: number, color: string): string {
-  const shape = cardShape(xml, shapeId);
-  if (!shape) return xml;
-  const nextShape = shape.value.replace(/(<a:srgbClr val=")[0-9A-Fa-f]{6}("\/>)/, `$1${color}$2`);
-  return `${xml.slice(0, shape.start)}${nextShape}${xml.slice(shape.end)}`;
+function ln(hex?: string, wPt = 0.5): string {
+  if (!hex) return '<a:ln><a:noFill/></a:ln>';
+  return `<a:ln w="${pt2emu(wPt)}">${solidFill(hex)}</a:ln>`;
 }
 
-function setSlideNumber(xml: string, pageNumber: number): string {
-  const pageLabel = String(pageNumber).padStart(2, '0');
-  const next = xml.replace(/(<a:fld[^>]*type="slidenum"[^>]*>[\s\S]*?<a:t>)[^<]*(<\/a:t>)/, `$1${pageLabel}$2`);
-  return next === xml ? replaceShapeText(xml, 54, pageLabel) : next;
+/** Build an OpenXML run with explicit Segoe UI typeface */
+function run(
+  text: string,
+  opts: { bold?: boolean; szPt?: number; color?: string; italic?: boolean } = {}
+): string {
+  const { bold = false, szPt = 10, color = '1E293B', italic = false } = opts;
+  const sz = Math.round(szPt * 100);
+  return `<a:r>
+    <a:rPr lang="en-US" sz="${sz}" b="${bold ? 1 : 0}" i="${italic ? 1 : 0}" dirty="0">
+      ${solidFill(color)}
+      <a:latin typeface="Segoe UI"/>
+      <a:ea typeface="Segoe UI"/>
+      <a:cs typeface="Segoe UI"/>
+    </a:rPr>
+    <a:t>${x(text)}</a:t>
+  </a:r>`;
 }
 
-function replaceCard(xml: string, slot: CardSlot, action: PMSAction): string {
-  const style = ACTION_STYLE[action.action_type] || ACTION_STYLE.Coaching;
-  let next = replaceShapeText(xml, slot.badgeText, String(action.action_type || 'Action').toUpperCase());
-  next = replaceShapeColors(next, slot.badge, style.fill);
-  next = replaceTextColor(next, slot.badgeText, style.text);
-  next = replaceShapeText(next, slot.name, compactText(action.employee_name, 42));
-  next = replaceShapeText(next, slot.metadata, `${compactText(action.team || 'Unassigned team', 42)} • ${compactText(action.employee_id, 18)}`);
-  next = replaceShapeText(next, slot.action, compactText(action.action_text, 190));
-  next = replaceShapeText(next, slot.rootCause, compactText(action.root_cause_note, 150), 'last');
-  next = replaceShapeText(next, slot.date, `${compactText(action.month, 18)} – ${formatActionDate(action.created_at)}`);
-  next = replaceShapeText(next, slot.owner, `By ${compactText(action.created_by || 'Unknown', 22)}`);
-  return next;
+/** Single paragraph with one run */
+function para(
+  text: string,
+  opts: {
+    bold?: boolean;
+    szPt?: number;
+    color?: string;
+    align?: 'l' | 'ctr' | 'r';
+    italic?: boolean;
+    spcBefPt?: number;
+  } = {}
+): string {
+  const { align = 'l', spcBefPt } = opts;
+  const spcBefEl = spcBefPt !== undefined ? `<a:spcBef><a:spcPts val="${Math.round(spcBefPt * 100)}"/></a:spcBef>` : '';
+  return `<a:p>
+    <a:pPr algn="${align}">${spcBefEl}</a:pPr>
+    ${run(text, opts)}
+  </a:p>`;
 }
 
-function clearCard(xml: string, slot: CardSlot): string {
-  let next = replaceShapeText(xml, slot.badgeText, '—');
-  next = replaceShapeColors(next, slot.badge, 'E2E8F0');
-  next = replaceTextColor(next, slot.badgeText, '64748B');
-  next = replaceShapeText(next, slot.name, 'No additional action');
-  next = replaceShapeText(next, slot.metadata, 'No matching record');
-  next = replaceShapeText(next, slot.action, 'No additional action in this scope.');
-  next = replaceShapeText(next, slot.rootCause, 'No data', 'last');
-  next = replaceShapeText(next, slot.date, '—');
-  next = replaceShapeText(next, slot.owner, '—');
-  return next;
+/** Paragraph with multiple inline runs (e.g. bold label + normal value) */
+function multiRunPara(
+  runs: Array<{ text: string; bold?: boolean; szPt?: number; color?: string; italic?: boolean }>,
+  opts: { align?: 'l' | 'ctr' | 'r'; spcBefPt?: number } = {}
+): string {
+  const { align = 'l', spcBefPt } = opts;
+  const spcBefEl = spcBefPt !== undefined ? `<a:spcBef><a:spcPts val="${Math.round(spcBefPt * 100)}"/></a:spcBef>` : '';
+  const runsXml = runs.map((r) => run(r.text, r)).join('');
+  return `<a:p>
+    <a:pPr algn="${align}">${spcBefEl}</a:pPr>
+    ${runsXml}
+  </a:p>`;
 }
 
-function updateSlide(xml: string, actions: PMSAction[], pageNumber: number, filters: CorrectiveActionExportFilters): string {
-  let next = xml.replace(/(<p:cSld name=")([^"]*)/i, `$1Slide ${pageNumber}`);
-  next = setSlideNumber(next, pageNumber);
-  next = replaceShapeText(next, 4, `Current actions • ${filters.month} • ${filters.team} • ${filters.type}`);
-  const pageActions = actions.length ? actions : [{
-    id: 'empty', employee_id: '', employee_name: 'No corrective actions found', team: filters.team, month: filters.month,
-    action_type: 'Monitor', action_text: 'No actions matched the selected filters. Try another team, month, or action type.', root_cause_note: 'No matching rows',
-    created_by: 'System', created_at: new Date().toISOString(), synced: true,
-  } as PMSAction];
-  CARD_SLOTS.forEach((slot, index) => {
-    const action = pageActions[index];
-    next = action ? replaceCard(next, slot, action) : clearCard(next, slot);
-  });
-  return next;
+/** Build a <p:sp> shape */
+function sp(
+  id: number,
+  name: string,
+  xIn: number, yIn: number, wIn: number, hIn: number,
+  bodyXml: string,
+  opts: {
+    fill?: string;
+    noFill?: boolean;
+    borderHex?: string;
+    roundAdj?: number;    // 0-50000, set for rounded rect
+    anchor?: 't' | 'm' | 'b';
+    lInsIn?: number;
+    rInsIn?: number;
+    tInsIn?: number;
+    bInsIn?: number;
+    autofit?: boolean;
+  } = {}
+): string {
+  const fillEl = opts.noFill ? noFill() : solidFill(opts.fill || 'FFFFFF');
+  const lineEl = ln(opts.borderHex);
+  const prstGeom = opts.roundAdj !== undefined
+    ? `<a:prstGeom prst="roundRect"><a:avLst><a:gd name="adj" fmla="val ${opts.roundAdj}"/></a:avLst></a:prstGeom>`
+    : `<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>`;
+
+  const lIns = in2emu(opts.lInsIn ?? 0.08);
+  const rIns = in2emu(opts.rInsIn ?? 0.08);
+  const tIns = in2emu(opts.tInsIn ?? 0.05);
+  const bIns = in2emu(opts.bInsIn ?? 0.05);
+  const autofitEl = opts.autofit !== false ? '<a:normAutofit fontScale="90000"/>' : '';
+
+  return `<p:sp>
+  <p:nvSpPr>
+    <p:cNvPr id="${id}" name="${name}"/>
+    <p:cNvSpPr><a:spLocks noGrp="1"/></p:cNvSpPr>
+    <p:nvPr/>
+  </p:nvSpPr>
+  <p:spPr>
+    ${xfrm(xIn, yIn, wIn, hIn)}
+    ${prstGeom}
+    ${fillEl}
+    ${lineEl}
+  </p:spPr>
+  <p:txBody>
+    <a:bodyPr wrap="square" lIns="${lIns}" rIns="${rIns}" tIns="${tIns}" bIns="${bIns}" anchor="${opts.anchor ?? 't'}">${autofitEl}</a:bodyPr>
+    <a:lstStyle/>
+    ${bodyXml}
+  </p:txBody>
+</p:sp>`;
 }
 
-function duplicateRelationship(xml: string, pageNumber: number): string {
-  return xml.replaceAll('slide1', `slide${pageNumber}`).replaceAll('Slide 3', `Slide ${pageNumber}`);
+/** Parses action text into structured paragraphs with bold markdown support */
+function buildActionTextParagraphs(rawText: string): string {
+  const cleaned = String(rawText || '').trim() || 'No action details provided.';
+  const lines = cleaned.split(/\r?\n/);
+  const paragraphs: string[] = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) {
+      continue;
+    }
+
+    // Give section headings or numbered steps slight breathing room
+    const isSectionHeading = /^(Booking|AHT|Attend|Call|QA|Coaching|Training|\d+\.)/i.test(line) && line.length < 50 && !line.includes('. ');
+    const spcBefPt = i > 0 ? (isSectionHeading ? 4 : 2) : 0;
+
+    // Parse markdown **bold**
+    const runs: Array<{ text: string; bold: boolean; color: string; szPt: number }> = [];
+    const parts = line.split(/(\*\*[^*]+\*\*)/g);
+
+    for (const part of parts) {
+      if (!part) continue;
+      if (part.startsWith('**') && part.endsWith('**')) {
+        runs.push({
+          text: part.slice(2, -2),
+          bold: true,
+          color: '0F172A',
+          szPt: 8.5,
+        });
+      } else {
+        runs.push({
+          text: part,
+          bold: isSectionHeading,
+          color: isSectionHeading ? '0F172A' : '334155',
+          szPt: 8.5,
+        });
+      }
+    }
+
+    paragraphs.push(multiRunPara(runs, { align: 'l', spcBefPt }));
+  }
+
+  return paragraphs.length > 0 ? paragraphs.join('\n') : para('No action details provided.', { szPt: 8.5, color: '64748B' });
 }
 
-function updatePresentation(presentationXml: string, pageCount: number): string {
-  const slides = Array.from({ length: pageCount }, (_, index) => `<p:sldId id="${258 + index}" r:id="rId${SLIDE_RELATIONSHIP_BASE + index}"/>`).join('');
-  return presentationXml.replace(/<p:sldIdLst>[\s\S]*?<\/p:sldIdLst>/, `<p:sldIdLst>${slides}</p:sldIdLst>`);
+// ─── Card Builder ─────────────────────────────────────────────────────────────
+
+/** Build one action card matching the UI card layout */
+function buildCard(action: PMSAction, cardX: number, cardY: number, baseId: number): string {
+  const style = BADGE[action.action_type] || BADGE.Coaching;
+
+  const iX = cardX + CARD_PAD;
+  const iW = CARD_W - CARD_PAD * 2;
+
+  // Top header row: Name on left, Badge pill on right
+  const nameY    = cardY + 0.18;
+  const badgeY   = cardY + 0.18;
+  const BADGE_W  = 0.95;
+  const BADGE_H  = 0.26;
+  const badgeX   = cardX + CARD_W - CARD_PAD - BADGE_W;
+  const nameW    = iW - BADGE_W - 0.12;
+
+  // Subtitle line (Team · ID)
+  const metaY    = cardY + 0.50;
+
+  // Action text box
+  const actionY  = cardY + 0.78;
+  const hasRc    = Boolean(action.root_cause_note && action.root_cause_note.trim());
+  const actionH  = hasRc ? 2.45 : 3.25;
+
+  // Root-cause note box (amber)
+  const RC_H     = 0.70;
+  const RC_Y     = cardY + 3.42;
+
+  // Footer row (Date & Owner)
+  const footerY  = cardY + CARD_H - 0.38;
+
+  const shapes: string[] = [
+    // Card background: clean white with subtle 12px rounded corners and soft border
+    sp(baseId + 0, `card-bg-${baseId}`, cardX, cardY, CARD_W, CARD_H, '<a:p/>',
+      { fill: 'FFFFFF', borderHex: 'E2E8F0', roundAdj: 3000, autofit: false }),
+
+    // Employee name: bold title on the left
+    sp(baseId + 1, `name-${baseId}`, iX, nameY, nameW, 0.30,
+      para(trunc(action.employee_name || 'Unknown employee', 50), { bold: true, szPt: 13, color: '0F172A' }),
+      { noFill: true, lInsIn: 0, rInsIn: 0, tInsIn: 0, bInsIn: 0 }),
+
+    // Badge pill: right aligned in top row
+    sp(baseId + 2, `badge-${baseId}`, badgeX, badgeY, BADGE_W, BADGE_H,
+      para(trunc(action.action_type, 12).toUpperCase(), { bold: true, szPt: 7.5, color: style.fg, align: 'ctr' }),
+      { fill: style.bg, roundAdj: 50000, tInsIn: 0.04, bInsIn: 0.04, lInsIn: 0.04, rInsIn: 0.04 }),
+
+    // Meta line (Team · ID)
+    sp(baseId + 3, `meta-${baseId}`, iX, metaY, iW, 0.22,
+      para(`${trunc(action.team || 'Unassigned team', 30)} · ${trunc(action.employee_id, 16)}`, { szPt: 9, color: '64748B' }),
+      { noFill: true, lInsIn: 0, rInsIn: 0, tInsIn: 0, bInsIn: 0 }),
+
+    // Action text: preserved paragraphs and formatted runs
+    sp(baseId + 4, `action-${baseId}`, iX, actionY, iW, actionH,
+      buildActionTextParagraphs(action.action_text),
+      { noFill: true, lInsIn: 0, rInsIn: 0, tInsIn: 0.02, bInsIn: 0.02 }),
+  ];
+
+  // Root-cause note box (amber pill) - only rendered if present
+  if (hasRc) {
+    shapes.push(
+      sp(baseId + 5, `rc-box-${baseId}`, iX, RC_Y, iW, RC_H,
+        multiRunPara([
+          { text: 'Root-cause note: ', bold: true, szPt: 8, color: 'B45309' },
+          { text: trunc(action.root_cause_note, 220), bold: false, szPt: 8, color: '92400E' },
+        ]),
+        { fill: 'FFFBEB', borderHex: 'FDE68A', roundAdj: 3500, tInsIn: 0.08, bInsIn: 0.08, lInsIn: 0.12, rInsIn: 0.12 })
+    );
+  }
+
+  // Footer: Date (left)
+  shapes.push(
+    sp(baseId + 6, `date-${baseId}`, iX, footerY, iW * 0.52, 0.22,
+      para(`📅 ${trunc(action.month, 12)} · ${fmtDate(action.created_at)}`, { szPt: 8, color: '64748B' }),
+      { noFill: true, lInsIn: 0, rInsIn: 0, tInsIn: 0, bInsIn: 0 })
+  );
+
+  // Footer: Owner (right)
+  shapes.push(
+    sp(baseId + 7, `owner-${baseId}`, cardX + CARD_W * 0.45, footerY, CARD_W * 0.55 - CARD_PAD, 0.22,
+      para(`👤 By ${trunc(action.created_by || 'Admin', 26)}`, { szPt: 8, color: '64748B', align: 'r' }),
+      { noFill: true, lInsIn: 0, rInsIn: 0, tInsIn: 0, bInsIn: 0 })
+  );
+
+  return shapes.join('\n');
 }
 
-function updatePresentationRelationships(xml: string, pageCount: number): string {
-  const relationships = Array.from({ length: pageCount }, (_, index) => `<Relationship Id="rId${SLIDE_RELATIONSHIP_BASE + index}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide${index + 1}.xml"/>`).join('');
-  return xml.replace(/<Relationships[^>]*>[\s\S]*?<\/Relationships>/, (block) => {
-    const opening = block.slice(0, block.indexOf('>') + 1);
-    const retained = [...block.matchAll(/<Relationship\b[^>]*\/>/g)]
-      .map((match) => match[0])
-      .filter((relationship) => !relationship.includes('/relationships/slide"'))
-      .join('');
-    return `${opening}${retained}${relationships}</Relationships>`;
-  });
+// ─── Slide XML ────────────────────────────────────────────────────────────────
+
+function buildSlideXml(
+  slideActions: PMSAction[],
+  page: number,
+  pageCount: number,
+  filters: CorrectiveActionExportFilters,
+): string {
+  const filterLine = [
+    filters.month !== 'All months' ? filters.month : '',
+    filters.team  !== 'All teams'  ? filters.team  : '',
+    filters.type  !== 'All types'  ? filters.type  : '',
+  ].filter(Boolean).join(' · ') || 'All Actions';
+
+  // Header bar (dark navy)
+  const header = sp(2, 'header', 0, 0, SLIDE_W_IN, TOP_BAR_H, '<a:p/>', { fill: '0F172A', autofit: false });
+  const headerLine = sp(3, 'header-line', 0, TOP_BAR_H - 0.01, SLIDE_W_IN, 0.01, '<a:p/>', { fill: '1E293B', autofit: false });
+
+  // Title text in header
+  const title = sp(4, 'title', 0.24, 0.10, 6.5, 0.30,
+    para('Corrective Actions Report', { bold: true, szPt: 15, color: 'FFFFFF' }),
+    { noFill: true, lInsIn: 0, rInsIn: 0, tInsIn: 0, bInsIn: 0 });
+
+  // Filter subtitle in header
+  const subtitle = sp(5, 'subtitle', 0.24, 0.38, 6.5, 0.20,
+    para(filterLine, { szPt: 8.5, color: '94A3B8' }),
+    { noFill: true, lInsIn: 0, rInsIn: 0, tInsIn: 0, bInsIn: 0 });
+
+  // Page number right side of header
+  const pageNum = sp(6, 'page-num', 8.0, 0.20, 1.76, 0.30,
+    para(`${String(page).padStart(2, '0')} / ${String(pageCount).padStart(2, '0')}`,
+      { szPt: 9.5, color: '94A3B8', align: 'r' }),
+    { noFill: true, lInsIn: 0, rInsIn: 0, tInsIn: 0, bInsIn: 0 });
+
+  // Cards — up to 2 per slide (left + right). If only 1 card on the slide, center it!
+  const cards = slideActions.map((action, i) => {
+    const colX = slideActions.length === 1 ? (SLIDE_W_IN - CARD_W) / 2 : COLS[i];
+    return buildCard(action, colX, CARD_Y, 10 + i * 20);
+  }).join('\n');
+
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+       xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"
+       xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <p:cSld name="Slide ${page}">
+    <p:bg>
+      <p:bgPr>${solidFill('F8FAFC')}<a:effectLst/></p:bgPr>
+    </p:bg>
+    <p:spTree>
+      <p:nvGrpSpPr>
+        <p:cNvPr id="1" name=""/>
+        <p:cNvGrpSpPr/>
+        <p:nvPr/>
+      </p:nvGrpSpPr>
+      <p:grpSpPr>
+        <a:xfrm>
+          <a:off x="0" y="0"/>
+          <a:ext cx="${SLIDE_CX}" cy="${SLIDE_CY}"/>
+          <a:chOff x="0" y="0"/>
+          <a:chExt cx="${SLIDE_CX}" cy="${SLIDE_CY}"/>
+        </a:xfrm>
+      </p:grpSpPr>
+      ${header}
+      ${headerLine}
+      ${title}
+      ${subtitle}
+      ${pageNum}
+      ${cards}
+    </p:spTree>
+  </p:cSld>
+  <p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr>
+</p:sld>`;
 }
 
-function updateContentTypes(xml: string, pageCount: number): string {
-  const overrides = Array.from({ length: pageCount - 1 }, (_, index) => {
-    const page = index + 2;
-    return `<Override PartName="/ppt/slides/slide${page}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/><Override PartName="/ppt/notesSlides/notesSlide${page}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.notesSlide+xml"/>`;
-  }).join('');
-  return xml.replace('</Types>', `${overrides}</Types>`);
+// ─── Package XML files ────────────────────────────────────────────────────────
+
+function buildRootRels(): string {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="ppt/presentation.xml"/>
+</Relationships>`;
 }
+
+function buildContentTypes(pageCount: number): string {
+  const overrides = Array.from({ length: pageCount }, (_, i) =>
+    `<Override PartName="/ppt/slides/slide${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>`
+  ).join('');
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml"  ContentType="application/xml"/>
+  <Override PartName="/ppt/presentation.xml"              ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>
+  <Override PartName="/ppt/slideMasters/slideMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"/>
+  <Override PartName="/ppt/slideLayouts/slideLayout1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/>
+  <Override PartName="/ppt/theme/theme1.xml"             ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>
+  ${overrides}
+</Types>`;
+}
+
+function buildPresentation(pageCount: number): string {
+  const ids = Array.from({ length: pageCount }, (_, i) =>
+    `<p:sldId id="${256 + i}" r:id="rId${2 + i}"/>`).join('');
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+                xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"
+                xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+                saveSubsetFonts="1">
+  <p:sldMasterIdLst><p:sldMasterId id="2147483648" r:id="rId1"/></p:sldMasterIdLst>
+  <p:sldIdLst>${ids}</p:sldIdLst>
+  <p:sldSz cx="${SLIDE_CX}" cy="${SLIDE_CY}" type="screen16x9"/>
+  <p:notesSz cx="${SLIDE_CY}" cy="${SLIDE_CX}"/>
+</p:presentation>`;
+}
+
+function buildPresentationRels(pageCount: number): string {
+  const rels = Array.from({ length: pageCount }, (_, i) =>
+    `<Relationship Id="rId${2 + i}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide${i + 1}.xml"/>`
+  ).join('');
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster" Target="slideMasters/slideMaster1.xml"/>
+  ${rels}
+</Relationships>`;
+}
+
+function buildTheme(): string {
+  return THEME_XML;
+}
+
+function buildSlideMaster(): string {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<p:sldMaster xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+             xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"
+             xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <p:cSld><p:spTree>
+    <p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>
+    <p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>
+  </p:spTree></p:cSld>
+  <p:clrMap bg1="lt1" tx1="dk1" bg2="lt2" tx2="dk2" accent1="accent1" accent2="accent2" accent3="accent3" accent4="accent4" accent5="accent5" accent6="accent6" hlink="hlink" folHlink="folHlink"/>
+  <p:sldLayoutIdLst><p:sldLayoutId id="2147483649" r:id="rId1"/></p:sldLayoutIdLst>
+  <p:txStyles>
+    <p:titleStyle><a:lvl1pPr><a:defRPr lang="en-US"><a:latin typeface="Segoe UI"/><a:ea typeface="Segoe UI"/><a:cs typeface="Segoe UI"/></a:defRPr></a:lvl1pPr></p:titleStyle>
+    <p:bodyStyle><a:lvl1pPr><a:defRPr lang="en-US"><a:latin typeface="Segoe UI"/><a:ea typeface="Segoe UI"/><a:cs typeface="Segoe UI"/></a:defRPr></a:lvl1pPr></p:bodyStyle>
+    <p:otherStyle><a:lvl1pPr><a:defRPr lang="en-US"><a:latin typeface="Segoe UI"/><a:ea typeface="Segoe UI"/><a:cs typeface="Segoe UI"/></a:defRPr></a:lvl1pPr></p:otherStyle>
+  </p:txStyles>
+</p:sldMaster>`;
+}
+
+function buildSlideMasterRels(): string {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="../theme/theme1.xml"/>
+</Relationships>`;
+}
+
+function buildSlideLayout(): string {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<p:sldLayout xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+             xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <p:cSld name="Blank"><p:spTree>
+    <p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>
+    <p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>
+  </p:spTree></p:cSld>
+  <p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr>
+</p:sldLayout>`;
+}
+
+function buildSlideLayoutRels(): string {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster" Target="../slideMasters/slideMaster1.xml"/>
+</Relationships>`;
+}
+
+function buildSlideRels(): string {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/>
+</Relationships>`;
+}
+
+// ─── Public API ───────────────────────────────────────────────────────────────
+
+const CARDS_PER_SLIDE = 2; // 2 cards side-by-side per slide — matches UI layout
 
 export async function buildCorrectiveActionsPowerPoint(
   actions: PMSAction[],
   filters: CorrectiveActionExportFilters,
-  templateUrl = CORRECTIVE_ACTION_TEMPLATE_URL,
 ): Promise<Blob> {
-  const response = await fetch(templateUrl);
-  if (!response.ok) throw new Error(`PowerPoint template could not be loaded (${response.status}).`);
-  const template = await response.arrayBuffer();
-  const zip = await JSZip.loadAsync(template);
-  const slideTemplate = await zip.file('ppt/slides/slide1.xml')?.async('string');
-  const slideRelsTemplate = await zip.file('ppt/slides/_rels/slide1.xml.rels')?.async('string');
-  const notesTemplate = await zip.file('ppt/notesSlides/notesSlide1.xml')?.async('string');
-  const notesRelsTemplate = await zip.file('ppt/notesSlides/_rels/notesSlide1.xml.rels')?.async('string');
-  const presentationTemplate = await zip.file('ppt/presentation.xml')?.async('string');
-  const presentationRelsTemplate = await zip.file('ppt/_rels/presentation.xml.rels')?.async('string');
-  const contentTypesTemplate = await zip.file('[Content_Types].xml')?.async('string');
-  if (!slideTemplate || !slideRelsTemplate || !notesTemplate || !notesRelsTemplate || !presentationTemplate || !presentationRelsTemplate || !contentTypesTemplate) {
-    throw new Error('The PowerPoint template is missing required slide parts.');
+  const zip = new JSZip();
+  const pageCount = Math.max(1, Math.ceil(actions.length / CARDS_PER_SLIDE));
+
+  zip.file('_rels/.rels', buildRootRels());
+  zip.file('[Content_Types].xml', buildContentTypes(pageCount));
+  zip.file('ppt/presentation.xml', buildPresentation(pageCount));
+  zip.file('ppt/_rels/presentation.xml.rels', buildPresentationRels(pageCount));
+  zip.file('ppt/slideMasters/slideMaster1.xml', buildSlideMaster());
+  zip.file('ppt/slideMasters/_rels/slideMaster1.xml.rels', buildSlideMasterRels());
+  zip.file('ppt/theme/theme1.xml', buildTheme());
+  zip.file('ppt/slideLayouts/slideLayout1.xml', buildSlideLayout());
+  zip.file('ppt/slideLayouts/_rels/slideLayout1.xml.rels', buildSlideLayoutRels());
+
+  for (let page = 1; page <= pageCount; page++) {
+    const pageActions = actions.slice((page - 1) * CARDS_PER_SLIDE, page * CARDS_PER_SLIDE);
+    zip.file(`ppt/slides/slide${page}.xml`, buildSlideXml(pageActions, page, pageCount, filters));
+    zip.file(`ppt/slides/_rels/slide${page}.xml.rels`, buildSlideRels());
   }
 
-  const pageCount = Math.max(1, Math.ceil(actions.length / CARD_SLOTS.length));
-  for (let page = 1; page <= pageCount; page += 1) {
-    const pageActions = actions.slice((page - 1) * CARD_SLOTS.length, page * CARD_SLOTS.length);
-    zip.file(`ppt/slides/slide${page}.xml`, updateSlide(slideTemplate, pageActions, page, filters));
-    zip.file(`ppt/notesSlides/notesSlide${page}.xml`, setSlideNumber(notesTemplate, page));
-    if (page > 1) {
-      zip.file(`ppt/slides/_rels/slide${page}.xml.rels`, duplicateRelationship(slideRelsTemplate, page));
-      zip.file(`ppt/notesSlides/_rels/notesSlide${page}.xml.rels`, duplicateRelationship(notesRelsTemplate, page));
-    }
-  }
-  zip.file('ppt/presentation.xml', updatePresentation(presentationTemplate, pageCount));
-  zip.file('ppt/_rels/presentation.xml.rels', updatePresentationRelationships(presentationRelsTemplate, pageCount));
-  zip.file('[Content_Types].xml', updateContentTypes(contentTypesTemplate, pageCount));
-  return zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' });
+  return zip.generateAsync({
+    type: 'blob',
+    mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    compression: 'DEFLATE',
+    compressionOptions: { level: 6 },
+  });
 }
 
-export async function downloadCorrectiveActionsPowerPoint(actions: PMSAction[], filters: CorrectiveActionExportFilters): Promise<void> {
+export async function downloadCorrectiveActionsPowerPoint(
+  actions: PMSAction[],
+  filters: CorrectiveActionExportFilters,
+): Promise<void> {
   const blob = await buildCorrectiveActionsPowerPoint(actions, filters);
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');

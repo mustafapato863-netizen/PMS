@@ -49,6 +49,21 @@ describe('CorrectiveActionsView', () => {
     expect(screen.getByText('Pending sync').parentElement).toHaveTextContent('1');
   });
 
+  it('opens an Outlook draft addressed with the agent ID and action details', () => {
+    render(<MemoryRouter><CorrectiveActionsView /></MemoryRouter>);
+
+    const forwardLink = screen.getByRole('link', { name: 'Forward corrective action for Agent One in Outlook' });
+    const outlookUrl = new URL(forwardLink.getAttribute('href') || '');
+
+    expect(outlookUrl.origin).toBe('https://outlook.office.com');
+    expect(outlookUrl.pathname).toBe('/mail/deeplink/compose');
+    expect(outlookUrl.searchParams.get('to')).toBe('EMP-1');
+    expect(outlookUrl.searchParams.get('subject')).toBe('Corrective action for Agent One (EMP-1)');
+    expect(outlookUrl.searchParams.get('body')).toContain('Agent ID: EMP-1');
+    expect(outlookUrl.searchParams.get('body')).toContain('Review call handling');
+    expect(forwardLink).toHaveAttribute('target', '_blank');
+  });
+
   it('filters records before exporting a PowerPoint document', async () => {
     render(<MemoryRouter><CorrectiveActionsView /></MemoryRouter>);
 

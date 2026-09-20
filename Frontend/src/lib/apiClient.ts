@@ -257,7 +257,20 @@ export async function apiFetch<T>(
 
   // Ensure absolute path if endpoint does not start with "/"
   const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
-  const headers = buildRequestHeaders(cleanEndpoint, options, token);
+  const isAuthRequest = cleanEndpoint.includes('/auth/login')
+    || cleanEndpoint.includes('/auth/refresh')
+    || cleanEndpoint.includes('/auth/logout');
+
+  // Do not send protected requests with a missing bearer token. This avoids
+  // a burst of predictable 401s while a persisted user session is restored.
+  let requestToken = token;
+  if (!requestToken && !isAuthRequest && !(await refreshAccessToken())) {
+    await terminateClientSession();
+    window.location.href = '/login';
+    throw new Error('Session expired');
+  }
+  requestToken = getAccessToken();
+  const headers = buildRequestHeaders(cleanEndpoint, options, requestToken);
 
   const res = await fetchWithTimeout(`${API_BASE}${cleanEndpoint}`, {
     ...options,

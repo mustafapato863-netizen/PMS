@@ -21,7 +21,10 @@ const ResponsiveFilters = ({
 }: ResponsiveFiltersProps) => {
   const [isOpen, setIsOpen] = useState(false);
   const titleId = useId();
+  const headingId = `${titleId}-heading`;
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
   const safeActiveCount = Math.max(0, activeCount);
 
   const close = useCallback(() => {
@@ -37,11 +40,29 @@ const ResponsiveFilters = ({
       if (event.key === 'Escape') {
         event.preventDefault();
         close();
+        return;
+      }
+      if (event.key !== 'Tab' || !panelRef.current) return;
+
+      const focusable = Array.from(panelRef.current.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), select:not([disabled]), input:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
+      ));
+      if (!focusable.length) return;
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
       }
     };
 
     document.body.style.overflow = 'hidden';
     document.addEventListener('keydown', handleKeyDown);
+    window.requestAnimationFrame(() => closeButtonRef.current?.focus());
     return () => {
       document.body.style.overflow = previousOverflow;
       document.removeEventListener('keydown', handleKeyDown);
@@ -80,19 +101,20 @@ const ResponsiveFilters = ({
 
       <div
         id={titleId}
+        ref={panelRef}
         className="responsive-filter-panel"
         role={isOpen ? 'dialog' : undefined}
         aria-modal={isOpen ? true : undefined}
-        aria-label={isOpen ? label : undefined}
+        aria-labelledby={isOpen ? headingId : undefined}
       >
         <div className="responsive-filter-panel__header">
           <div>
-            <p className="responsive-filter-panel__title">{label}</p>
+            <p id={headingId} className="responsive-filter-panel__title">{label}</p>
             <p className="responsive-filter-panel__hint">
               {safeActiveCount > 0 ? `${safeActiveCount} active filter${safeActiveCount === 1 ? '' : 's'}` : 'Refine the dashboard view'}
             </p>
           </div>
-          <button type="button" className="responsive-filter-panel__close" aria-label={`Close ${label.toLowerCase()}`} onClick={close}>
+          <button ref={closeButtonRef} type="button" className="responsive-filter-panel__close" aria-label={`Close ${label.toLowerCase()}`} onClick={close}>
             <X size={18} aria-hidden="true" />
           </button>
         </div>

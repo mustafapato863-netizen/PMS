@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import {
-  Activity, ChevronDown, LogOut, Settings, User, Users, X, Megaphone,
+  CalendarCheck, ChevronDown, Gauge, LogOut, Settings, ShieldAlert, User, Users, UsersRound, X, Megaphone,
   FileBarChart,
   Lightbulb,
-  ClipboardCheck,
   Building2,
   Layers,
   PanelLeftClose,
@@ -201,19 +200,19 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed = false, onToggleCollapsed = (
   const canSeeBroadNavigation = role !== 'Agent';
   const generalItems = canSeeBroadNavigation
     ? [
-        { name: 'Executive Summary', path: '/executive', icon: <Activity size={18} /> },
+        { name: 'Executive Summary', path: '/executive', icon: <Gauge size={18} /> },
         ...(role === 'Admin' || currentUser?.is_general_manager || currentUser?.accessible_teams?.length
-          ? [{ name: role === 'Manager' ? 'Assigned Teams' : 'All Teams', path: '/team/all', icon: <Users size={18} /> }]
+          ? [{ name: role === 'Manager' ? 'Assigned Teams' : 'All Teams', path: '/team/all', icon: <UsersRound size={18} /> }]
           : []),
         ...(role === 'Admin'
           ? [
               { name: 'Reports', path: '/reports', icon: <FileBarChart size={18} /> },
               { name: 'Insights', path: '/insights', icon: <Lightbulb size={18} /> },
-              { name: 'Planning', path: '/planning', icon: <ClipboardCheck size={18} /> },
+              { name: 'Planning', path: '/planning', icon: <CalendarCheck size={18} /> },
             ]
           : []),
         ...(role === 'Admin' || role === 'Executive'
-          ? [{ name: 'Corrective Actions', path: '/corrective-actions', icon: <ClipboardCheck size={18} /> }]
+          ? [{ name: 'Corrective Actions', path: '/corrective-actions', icon: <ShieldAlert size={18} /> }]
           : []),
       ]
     : [{ name: 'My Profile', path: `/employee/${currentUser?.employee_id || currentUser?.id || ''}`, icon: <User size={18} /> }];
@@ -386,7 +385,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed = false, onToggleCollapsed = (
       <div className={`mt-auto shrink-0 space-y-2 border-t border-[var(--border-light)] p-3 ${isCollapsed ? 'xl:p-2' : ''}`}>
         <div className={isCollapsed ? 'sidebar-collapsed-theme' : ''}><ThemeToggle variant="pill" /></div>
         {role !== 'Agent' && renderLink({ name: 'Settings', path: '/settings', icon: <Settings size={18} /> })}
-        <div className={`sidebar-user-menu flex items-center justify-between gap-2 rounded-xl border border-[var(--border-light)] bg-[var(--glass-bg)] p-2.5 ${isCollapsed ? 'xl:justify-center xl:p-2' : ''}`}>
+        <div className={`sidebar-user-menu flex items-center justify-between gap-2 rounded-xl border border-[var(--border-light)] bg-[var(--bg-raised)] p-2.5 shadow-sm ${isCollapsed ? 'xl:justify-center xl:p-2' : ''}`}>
           <div className={`flex min-w-0 items-center gap-2 ${isCollapsed ? 'xl:justify-center' : ''}`}>
             <div className="sidebar-user-avatar flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--sgh-gradient-brand)] text-[11px] font-bold text-white shadow-sm">
               {currentUser ? currentUser.name.split(' ').map((name) => name[0]).join('') : 'U'}

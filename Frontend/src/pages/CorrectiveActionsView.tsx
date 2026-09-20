@@ -8,6 +8,7 @@ import {
   Download,
   FileText,
   Filter,
+  Mail,
   RefreshCw,
   Search,
   Users,
@@ -32,6 +33,28 @@ function formatDate(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).format(date);
+}
+
+function buildOutlookComposeUrl(action: PMSAction): string {
+  const subject = `Corrective action for ${action.employee_name || 'agent'} (${action.employee_id})`;
+  const body = [
+    `Agent: ${action.employee_name || 'Unknown employee'}`,
+    `Agent ID: ${action.employee_id}`,
+    `Team: ${action.team || 'Unassigned team'}`,
+    `Period: ${action.month}`,
+    `Action type: ${action.action_type}`,
+    '',
+    'Corrective action:',
+    action.action_text || 'No action details provided.',
+    '',
+    'Root-cause note:',
+    action.root_cause_note || 'No note recorded.',
+  ].join('\n');
+
+  // Use encodeURIComponent instead of URLSearchParams — URLSearchParams encodes
+  // spaces as '+' which Outlook deep-links do not decode back to spaces.
+  const enc = encodeURIComponent;
+  return `https://outlook.office.com/mail/deeplink/compose?to=${enc(action.employee_id)}&subject=${enc(subject)}&body=${enc(body)}`;
 }
 
 function ActionCard({ action }: { action: PMSAction }) {
@@ -63,6 +86,16 @@ function ActionCard({ action }: { action: PMSAction }) {
       >
         Open profile <span aria-hidden="true">↗</span>
       </Link>
+      <a
+        href={buildOutlookComposeUrl(action)}
+        target="_blank"
+        rel="noreferrer"
+        className="ml-4 mt-3 inline-flex items-center gap-1 rounded-lg border border-blue-500/25 px-2.5 py-1.5 text-[11px] font-black text-blue-600 transition-colors hover:bg-blue-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:text-blue-400"
+        aria-label={`Forward corrective action for ${action.employee_name || action.employee_id} in Outlook`}
+      >
+        <Mail size={13} aria-hidden="true" />
+        Forward in Outlook
+      </a>
     </article>
   );
 }

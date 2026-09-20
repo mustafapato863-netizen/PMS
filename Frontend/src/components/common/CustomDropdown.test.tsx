@@ -1,12 +1,12 @@
 import { render } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import CustomDropdown from './CustomDropdown';
 
 describe('CustomDropdown', () => {
   it('renders its options when the visual trigger is opened', async () => {
     const user = userEvent.setup();
-    render(
+    const { getByRole } = render(
       <CustomDropdown
         ariaLabel="KPI"
         value=""
@@ -18,12 +18,23 @@ describe('CustomDropdown', () => {
       />,
     );
 
-    const trigger = document.querySelector('button[aria-hidden="true"]');
-    expect(trigger).not.toBeNull();
-    await user.click(trigger as HTMLButtonElement);
+    const trigger = getByRole('button', { name: 'KPI' });
+    expect(trigger).toHaveAttribute('aria-haspopup', 'listbox');
+    await user.click(trigger);
 
     const menu = document.body.querySelector('[data-dropdown-menu="true"]');
     expect(menu).not.toBeNull();
     expect(menu).toHaveTextContent('Initial Error Rate');
+  });
+
+  it('supports keyboard selection from the accessible trigger', async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    const { getByRole } = render(<CustomDropdown ariaLabel="KPI" value="" options={['', 'Initial Error Rate']} onChange={onChange} />);
+
+    getByRole('button', { name: 'KPI' }).focus();
+    await user.keyboard('{Enter}{ArrowDown}{Enter}');
+
+    expect(onChange).toHaveBeenCalledWith('Initial Error Rate');
   });
 });

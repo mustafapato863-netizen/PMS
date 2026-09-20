@@ -5,7 +5,7 @@
  * Gives managers an instant "health check" for any employee: grade, score,
  * rank, stability, and archetype.
  */
-import { TrendingUp, TrendingDown, Minus, Trophy, Activity, Sparkles, Users } from 'lucide-react';
+import { TrendingUp, TrendingDown, Minus, Trophy, Activity, Sparkles } from 'lucide-react';
 import { GRADE_PALETTE, type GradeClass } from '../../constants/grades';
 import type { StabilityCategory, PerformanceArchetype } from '../../services/employeeAnalytics';
 

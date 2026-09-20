@@ -38,7 +38,13 @@ let isFetching = false;
 function loadLocalActions(): PMSAction[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as PMSAction[]) : [];
+    if (!raw) return [];
+    const all = JSON.parse(raw) as PMSAction[];
+    // Strip stale entries that have a null/nan employee_name — these were
+    // written before the XLOOKUP-formula baking fix and are now invalid.
+    return all.filter(
+      (a) => a.employee_name && a.employee_name.trim().toLowerCase() !== 'nan'
+    );
   } catch {
     return [];
   }
@@ -89,6 +95,7 @@ function addDeletedActionId(id: string): string[] {
   }
   return all;
 }
+
 // ─── Fetch Actions from Backend ──────────────────────────────────────────────
 
 export async function fetchActions(role?: string) {
@@ -117,16 +124,16 @@ export async function fetchActions(role?: string) {
       cachedActions = result.data.map((item) => {
         let actionType: ActionType = 'Coaching';
         let actionText = item.manager_action || '';
-        
+
         // Parse "Coaching: action details" if possible
         const sepIdx = actionText.indexOf(': ');
         if (sepIdx > 0) {
           const typeStr = actionText.substring(0, sepIdx);
           actionText = actionText.substring(sepIdx + 2);
-          
+
           const validTypes = ['Coaching', 'Training', 'Reward', 'Monitor', 'PIP'];
           const legacyTypes = ['SOP Review', 'SIP', 'PI', 'Suspension', 'Warning'];
-          
+
           if (validTypes.includes(typeStr) || legacyTypes.includes(typeStr)) {
             if (typeStr === 'SIP' || typeStr === 'PI' || typeStr === 'Suspension' || typeStr === 'Warning') {
               actionType = 'PIP';
@@ -144,10 +151,18 @@ export async function fetchActions(role?: string) {
           (item.id ? localByKey.get(item.id) : undefined) ||
           localByKey.get(`${item.employee_id}|${item.month}|${actionType}|${actionText}`);
 
+        // Sanitise employee_name: treat null / 'nan' as absent so the
+        // localMatch fallback can fill it in with the correct name.
+        const rawName = item.employee_name ?? '';
+        const safeEmployeeName =
+          rawName.trim().toLowerCase() === 'nan' || rawName.trim() === ''
+            ? (localMatch?.employee_name ?? null)
+            : rawName;
+
         return {
           id: item.id || `${item.employee_id}_${item.month}_${item.timestamp}`,
           employee_id: item.employee_id,
-          employee_name: item.employee_name,
+          employee_name: safeEmployeeName,
           team: item.team,
           month: item.month,
           action_type: actionType,
@@ -165,6 +180,14 @@ export async function fetchActions(role?: string) {
     } else {
       throw new Error(result?.message || 'Invalid API response');
     }
+
+    // After a successful backend fetch, purge any stale localStorage entries
+    // that have invalid (nan/empty) employee names so they cannot reappear.
+    const validLocal = loadLocalActions().filter(
+      (a) => a.employee_name && a.employee_name.trim().toLowerCase() !== 'nan'
+    );
+    saveLocalActions(validLocal);
+
     listeners.forEach((listener) => listener(cachedActions!));
   } catch (error) {
     console.warn('Failed to fetch corrective actions from Backend API. Falling back to local data.', error);
@@ -393,10 +416,10 @@ export function useActionStore() {
         await apiFetch(`/api/employee/${employeeId}/corrective-actions/${actionId}`, {
           method: 'DELETE',
         });
-        
+
         // Reload actions list from backend
         await fetchActions();
-        
+
         return true;
       } catch {
         return false;

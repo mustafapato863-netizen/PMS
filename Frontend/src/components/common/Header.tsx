@@ -109,7 +109,7 @@ function ProfileMenu({
         aria-haspopup="true"
         aria-expanded={open}
         aria-label="Open user menu"
-        className="app-header-control flex items-center gap-1.5 bg-[var(--bg-surface)]/40 backdrop-blur-sm hover:bg-[var(--bg-surface)]/80 border
+        className="app-header-control flex items-center gap-1.5 bg-[var(--bg-surface)] backdrop-blur-sm hover:bg-[var(--bg-raised)] border
           border-[var(--border-light)] rounded-xl px-2 py-1 transition-all shadow-sm"
       >
         <div
@@ -122,15 +122,15 @@ function ProfileMenu({
         <div className="hidden sm:flex flex-col text-left">
           <span className="text-xs font-bold text-[var(--text-primary)] leading-none">{name}</span>
           <div className="flex items-center gap-1.5 mt-0.5">
-            <span className="text-[9px] text-[var(--text-muted)] uppercase tracking-wider font-semibold">
+            <span className="text-[11px] text-[var(--text-muted)] uppercase tracking-wider font-semibold">
               {role}
             </span>
             <span
-              className="text-[8px] uppercase tracking-[0.18em] font-extrabold px-1.5 py-0.5 rounded-full border"
+              className="text-[10px] uppercase tracking-[0.14em] font-extrabold px-1.5 py-0.5 rounded-full border"
               style={{
-                color: role === 'Admin' ? 'rgb(109, 40, 217)' : role === 'Manager' ? 'rgb(5, 150, 105)' : role === 'Executive' ? 'rgb(217, 119, 6)' : 'rgb(100, 116, 139)',
-                background: role === 'Admin' ? 'rgba(167, 139, 250, 0.12)' : role === 'Manager' ? 'rgba(16, 185, 129, 0.12)' : role === 'Executive' ? 'rgba(251, 191, 36, 0.12)' : 'rgba(148, 163, 184, 0.12)',
-                borderColor: role === 'Admin' ? 'rgba(167, 139, 250, 0.28)' : role === 'Manager' ? 'rgba(16, 185, 129, 0.28)' : role === 'Executive' ? 'rgba(251, 191, 36, 0.28)' : 'rgba(148, 163, 184, 0.28)',
+                color: role === 'Admin' ? 'rgb(0, 105, 180)' : role === 'Manager' ? 'rgb(5, 150, 105)' : role === 'Executive' ? 'rgb(217, 119, 6)' : 'rgb(100, 116, 139)',
+                background: role === 'Admin' ? 'rgba(0, 163, 224, 0.12)' : role === 'Manager' ? 'rgba(16, 185, 129, 0.12)' : role === 'Executive' ? 'rgba(251, 191, 36, 0.12)' : 'rgba(148, 163, 184, 0.12)',
+                borderColor: role === 'Admin' ? 'rgba(0, 163, 224, 0.28)' : role === 'Manager' ? 'rgba(16, 185, 129, 0.28)' : role === 'Executive' ? 'rgba(251, 191, 36, 0.28)' : 'rgba(148, 163, 184, 0.28)',
               }}
             >
               Active
@@ -174,7 +174,7 @@ function ProfileMenu({
                   <p className="text-[10px] text-[var(--text-muted)] font-mono mt-0.5">@{username}</p>
                 )}
                 <p className="text-[10px] font-bold uppercase tracking-wider mt-1" style={{
-                  color: role === 'Admin' ? 'rgb(109, 40, 217)' : role === 'Manager' ? 'rgb(5, 150, 105)' : role === 'Executive' ? 'rgb(217, 119, 6)' : 'rgb(100, 116, 139)',
+                  color: role === 'Admin' ? 'rgb(0, 105, 180)' : role === 'Manager' ? 'rgb(5, 150, 105)' : role === 'Executive' ? 'rgb(217, 119, 6)' : 'rgb(100, 116, 139)',
                 }}>
                   {role} access
                 </p>

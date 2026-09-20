@@ -120,20 +120,20 @@ select option {
   --app-control-height: 40px;
 
   /* Surfaces & Canvas (Light Theme) */
-  --bg-base: #F8FAFC;
+  --bg-base: #F3F7FA;
   --bg-surface: #FFFFFF;
-  --bg-panel: rgba(255, 255, 255, 0.75);
-  --bg-raised: rgba(255, 255, 255, 0.90);
-  --bg-sunken: #F1F5F9;
+  --bg-panel: rgba(255, 255, 255, 0.90);
+  --bg-raised: #FFFFFF;
+  --bg-sunken: #E9F0F5;
 
   --text-primary: #0F172A;
   --text-secondary: #475569;
   --text-muted: #64748B;
-  --text-faint: #64748B;
+  --text-faint: #526579;
 
-  --border-light: rgba(0, 0, 0, 0.05);
-  --border-medium: rgba(0, 0, 0, 0.10);
-  --border-strong: rgba(0, 0, 0, 0.18);
+  --border-light: rgba(15, 23, 42, 0.10);
+  --border-medium: rgba(15, 23, 42, 0.16);
+  --border-strong: rgba(15, 23, 42, 0.24);
 
   /* Status Colors */
   --color-sip: #DC2626;
@@ -150,8 +150,8 @@ select option {
   --grade-e-text: #DC2626; --grade-e-bg: #FFF0F1; --grade-e-border: #F09290;
 
   /* Glassmorphism */
-  --glass-bg: rgba(255, 255, 255, 0.75);
-  --glass-border: rgba(255, 255, 255, 0.85);
+  --glass-bg: rgba(255, 255, 255, 0.92);
+  --glass-border: rgba(15, 23, 42, 0.10);
   --glass-highlight: rgba(0, 163, 224, 0.03);
   --glass-shadow: 0 8px 32px rgba(11, 19, 43, 0.06);
 
@@ -163,12 +163,12 @@ select option {
   --font-sans: 'Inter', 'Segoe UI', Arial, system-ui, -apple-system, sans-serif;
 
   /* Sidebar */
-  --sidebar-bg: rgba(255, 255, 255, 0.97);
-  --sidebar-border: #E2E8F0;
+  --sidebar-bg: #F7FAFC;
+  --sidebar-border: #D5E0E8;
   --sidebar-active-bg: rgba(0, 163, 224, 0.08);
   --sidebar-active-text: #0069B4;
   --sidebar-active-border: rgba(0, 163, 224, 0.30);
-  --sidebar-hover-bg: #F4F6F8;
+  --sidebar-hover-bg: #E8F1F5;
   --sidebar-text: #475569;
 
   /* Header */

@@ -46,8 +46,8 @@ export default function KpiSixMonthTrend({ trend }: { trend: InsightKpiTrend }) 
       </div>
 
       {measuredMonths ? (
-        <div className="mt-4 h-[250px] w-full" aria-label={`${trend.kpi_label} six month actual and target trend`}>
-          <ResponsiveContainer width="100%" height="100%">
+        <div className="mt-4 h-[250px] min-h-[250px] min-w-0 w-full" aria-label={`${trend.kpi_label} six month actual and target trend`}>
+          <ResponsiveContainer width="100%" height={250} minWidth={0} minHeight={250}>
             <LineChart data={data} margin={{ top: 12, right: 12, left: 0, bottom: 0 }}>
               <CartesianGrid vertical={false} stroke="var(--border-light)" strokeDasharray="4 4" />
               <XAxis dataKey="period" axisLine={false} tickLine={false} tick={{ fill: 'var(--text-muted)', fontSize: 10, fontWeight: 600 }} />

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useLayoutEffect, useCallback, useId } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronDown, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -48,7 +48,11 @@ export function CustomDropdown<T extends string | number = string>({
   const containerRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const optionRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const triggerId = useId();
+  const menuId = `${triggerId}-menu`;
   const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0, width: 180, maxHeight: 240 });
+  const [activeIndex, setActiveIndex] = useState(0);
 
   const parsedOptions: Array<DropdownOption<T>> = options.map((opt) =>
     typeof opt === 'string' || typeof opt === 'number'
@@ -59,6 +63,25 @@ export function CustomDropdown<T extends string | number = string>({
   const selectedOption = parsedOptions.find((opt) => opt.value === value) ?? {
     value,
     label: String(value ?? placeholder ?? 'Select'),
+  };
+  const selectedIndex = Math.max(0, parsedOptions.findIndex((option) => option.value === value));
+
+  const openMenu = useCallback(() => {
+    setActiveIndex(selectedIndex);
+    setIsOpen(true);
+  }, [selectedIndex]);
+
+  const closeMenu = useCallback((restoreFocus = true) => {
+    setIsOpen(false);
+    if (restoreFocus) window.requestAnimationFrame(() => buttonRef.current?.focus());
+  }, []);
+
+  const handleTriggerKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (disabled) return;
+    if (event.key === 'ArrowDown' || event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      openMenu();
+    }
   };
 
   const updateMenuPosition = useCallback(() => {
@@ -110,7 +133,7 @@ export function CustomDropdown<T extends string | number = string>({
       }
     };
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setIsOpen(false);
+      if (e.key === 'Escape') closeMenu();
     };
     document.addEventListener('mousedown', handleClickOutside);
     document.addEventListener('keydown', handleKeyDown);
@@ -118,7 +141,12 @@ export function CustomDropdown<T extends string | number = string>({
       document.removeEventListener('mousedown', handleClickOutside);
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, []);
+  }, [closeMenu]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    optionRefs.current[activeIndex]?.focus();
+  }, [activeIndex, isOpen]);
 
   const sizeClasses = {
     sm: 'px-2.5 py-1 text-xs gap-1.5 rounded-xl',
@@ -129,9 +157,11 @@ export function CustomDropdown<T extends string | number = string>({
   return (
     <div ref={containerRef} className={`relative inline-block text-left ${className}`}>
 
-      {/* ─── Visually‑hidden native <select> for testing & accessibility ─── */}
+      {/* Keep a native select for existing form/test integrations; the visual button is the accessible control. */}
       <select
         aria-label={ariaLabel}
+        aria-hidden="true"
+        tabIndex={-1}
         value={String(value)}
         onChange={(e) => {
           if (disabled) return;
@@ -160,14 +190,17 @@ export function CustomDropdown<T extends string | number = string>({
         ))}
       </select>
 
-      {/* ─── Glassmorphism visual trigger (aria‑hidden) ─── */}
       <button
         type="button"
-        aria-hidden="true"
-        tabIndex={-1}
+        id={triggerId}
+        aria-label={ariaLabel}
+        aria-haspopup="listbox"
+        aria-expanded={isOpen}
+        aria-controls={isOpen ? menuId : undefined}
         ref={buttonRef}
         disabled={disabled}
-        onClick={() => !disabled && setIsOpen((prev) => !prev)}
+        onClick={() => !disabled && (isOpen ? closeMenu(false) : openMenu())}
+        onKeyDown={handleTriggerKeyDown}
         className={`flex items-center justify-between min-w-0 border border-[var(--border-light)] bg-[var(--bg-surface)] text-[var(--text-primary)] shadow-sm backdrop-blur-md transition-all hover:border-blue-300 hover:shadow-md focus:outline-none active:scale-[0.98] ${
           disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
         } ${sizeClasses} ${buttonClassName}`}
@@ -191,7 +224,10 @@ export function CustomDropdown<T extends string | number = string>({
           <AnimatePresence>
             <motion.div
               ref={menuRef}
-              aria-hidden="true"
+              id={menuId}
+              role="listbox"
+              aria-label={ariaLabel || 'Options'}
+              aria-activedescendant={`${menuId}-option-${activeIndex}`}
               data-dropdown-menu="true"
               initial={{ opacity: 0, scale: 0.95, y: -4 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -206,15 +242,34 @@ export function CustomDropdown<T extends string | number = string>({
               }}
               className="fixed z-[9999] overflow-y-auto rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] p-1.5 shadow-[0_16px_40px_rgba(15,23,42,0.18)] backdrop-blur-2xl dark:bg-slate-900/95 custom-scrollbar"
             >
-              {parsedOptions.map((option) => {
+              {parsedOptions.map((option, index) => {
                 const isSelected = option.value === value;
                 return (
                   <button
                     key={String(option.value)}
                     type="button"
+                    id={`${menuId}-option-${index}`}
+                    ref={(element) => { optionRefs.current[index] = element; }}
+                    role="option"
+                    aria-selected={isSelected}
+                    tabIndex={index === activeIndex ? 0 : -1}
+                    onKeyDown={(event) => {
+                      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                        event.preventDefault();
+                        const direction = event.key === 'ArrowDown' ? 1 : -1;
+                        setActiveIndex((current) => (current + direction + parsedOptions.length) % parsedOptions.length);
+                      } else if (event.key === 'Home' || event.key === 'End') {
+                        event.preventDefault();
+                        setActiveIndex(event.key === 'Home' ? 0 : parsedOptions.length - 1);
+                      } else if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        onChange(option.value);
+                        closeMenu();
+                      }
+                    }}
                     onClick={() => {
                       onChange(option.value);
-                      setIsOpen(false);
+                      closeMenu(false);
                     }}
                     className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-xs font-semibold transition-colors ${
                       isSelected
