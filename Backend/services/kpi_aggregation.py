@@ -117,19 +117,14 @@ def aggregate_kpi_metric(
     )
 
 
+from services.scoring.engine import achievement as engine_achievement, ROLLUP_POLICY
+
+
 def capped_achievement(
     metric: AggregatedKpiMetric,
     direction: str | None,
 ) -> float | None:
-    if metric.actual is None or metric.target is None or metric.target <= 0:
-        return None
-    if direction == "lower_better":
-        ratio = 1.0 if metric.actual <= 0 else metric.target / metric.actual
-    elif direction == "higher_better":
-        ratio = metric.actual / metric.target
-    else:
-        return None
-    return min(max(ratio, 0.0), 1.0)
+    return engine_achievement(metric.actual, metric.target, direction, policy=ROLLUP_POLICY).value
 
 
 def configured_weight(value: Any, definition: dict[str, Any] | None = None) -> float | None:

@@ -11,6 +11,13 @@ from config.loader import (
     ConfigurationError,
 )
 from utils.performance_levels import normalize_performance_level
+from services.scoring.engine import (
+    achievement as engine_achievement,
+    contribution as engine_contribution,
+    score as engine_score,
+    grade as engine_grade,
+    EMPLOYEE_POLICY,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -770,7 +777,7 @@ class KPIService:
 
             # Persist the effective achievement so every consumer (cards,
             # analysis, exports, and scorecards) uses the same 0-100 rule.
-            contribution = effective_ratio * weight
+            contribution = engine_contribution(effective_ratio, weight) or 0.0
             stored_achievement_ratio = effective_ratio
             
             kpi_value = {
@@ -940,26 +947,18 @@ class KPIService:
         """
         actual = safe_float(actual)
         target = safe_float(target)
-        
-        if is_inverse:
-            # Lower is better: target/actual
-            if actual == 0:
-                # No division by zero - assume perfect performance
-                achievement = zero_actual_value
-            else:
-                achievement = (target / actual) * 100.0
+        direction = "lower_better" if is_inverse else "higher_better"
+
+        if is_inverse and actual == 0.0 and zero_actual_value != 100.0:
+            achievement = zero_actual_value
         else:
-            # Higher is better: actual/target
-            if target == 0:
-                # Cannot measure achievement if target is zero
-                achievement = 0.0 if actual == 0 else 0.0
-            else:
-                achievement = (actual / target) * 100.0
-        
+            res = engine_achievement(actual, target, direction, policy=EMPLOYEE_POLICY)
+            achievement = (res.value or 0.0) * 100.0
+
         # The product rule caps every KPI achievement at 100%; retain the
         # argument for backwards compatibility with callers.
         achievement = min(max(achievement, 0.0), 100.0)
-        
+
         return achievement
 
     def _calculate_weighted_score(
@@ -982,11 +981,15 @@ class KPIService:
         score = 0.0
         for kpi, achievement in achievements.items():
             weight = weights.get(kpi, 0.0)
-            score += min(max(float(achievement), 0.0), GLOBAL_KPI_ACHIEVEMENT_CAP) * max(float(weight), 0.0)
-        
+            contrib = engine_contribution(
+                min(max(float(achievement), 0.0), GLOBAL_KPI_ACHIEVEMENT_CAP),
+                max(float(weight), 0.0)
+            )
+            score += (contrib or 0.0)
+
         if cap_final_at_100:
             score = min(max(score, 0.0), GLOBAL_KPI_ACHIEVEMENT_CAP)
-        
+
         return score
 
     def _assign_grade_with_thresholds(
@@ -1005,18 +1008,4 @@ class KPIService:
         Returns:
             Grade letter: A, B, C, D, or E
         """
-        threshold_a = float(thresholds.get('A', 95))
-        threshold_b = float(thresholds.get('B', 90))
-        threshold_c = float(thresholds.get('C', 80))
-        threshold_d = float(thresholds.get('D', 70))
-        
-        if score >= threshold_a:
-            return 'A'
-        elif score >= threshold_b:
-            return 'B'
-        elif score >= threshold_c:
-            return 'C'
-        elif score >= threshold_d:
-            return 'D'
-        else:
-            return 'E'
+        return engine_grade(score, thresholds) or "E"

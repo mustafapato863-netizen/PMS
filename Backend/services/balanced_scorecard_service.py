@@ -5,6 +5,8 @@ from datetime import datetime
 from statistics import mean
 from typing import Any, Iterable
 
+from services.scoring.engine import score as engine_score, KPIResult
+
 
 MONTHS = {
     name: index
@@ -116,24 +118,29 @@ class BalancedScorecardService:
         perspectives = []
         for metadata in sorted(bsc["perspectives"], key=lambda item: item.get("display_order", 0)):
             rows = [row for row in kpi_rows if row["perspective"] == metadata["key"]]
-            configured_weight = sum(row["weight"] for row in rows)
+            kpi_inputs = [
+                KPIResult(
+                    achievement=row["raw_achievement_ratio"],
+                    weight=row["weight"],
+                    contribution=row["weighted_contribution"],
+                )
+                for row in rows
+            ]
+            res = engine_score(kpi_inputs)
+            state = "not_configured" if not rows else "measured" if res.state == "measured" else "partial_data" if res.state == "provisional" else "no_data"
             measured = [row for row in rows if row["weighted_contribution"] is not None]
-            measured_weight = sum(row["weight"] for row in measured)
-            contribution = sum(row["weighted_contribution"] for row in measured)
-            score = contribution / measured_weight * 100 if measured_weight else None
-            state = "not_configured" if not rows else "measured" if len(measured) == len(rows) else "partial_data" if measured else "no_data"
             driver = max(measured, key=lambda row: row["weighted_contribution"], default=None)
             risk = max(measured, key=lambda row: row["performance_gap"], default=None)
             perspectives.append({
                 **metadata,
                 "target_score": 100.0,
-                "configured_weight": configured_weight,
-                "measured_weight": measured_weight,
-                "coverage": measured_weight / configured_weight if configured_weight else None,
-                "weighted_contribution": contribution if measured else None,
-                "score": min(score, 100.0) if score is not None else None,
+                "configured_weight": res.configured_weight,
+                "measured_weight": res.measured_weight,
+                "coverage": res.coverage,
+                "weighted_contribution": res.earned if measured else None,
+                "score": min(res.score, 100.0) if res.score is not None else None,
                 "state": state,
-                "status": _status(score, thresholds, state),
+                "status": _status(res.score, thresholds, state),
                 "kpi_count": len(rows),
                 "record_count": sum(row["record_count"] for row in rows),
                 "primary_driver": driver,
@@ -141,22 +148,27 @@ class BalancedScorecardService:
                 "kpis": rows,
             })
 
-        configured_weight = sum(row["weight"] for row in kpi_rows)
+        overall_inputs = [
+            KPIResult(
+                achievement=row["raw_achievement_ratio"],
+                weight=row["weight"],
+                contribution=row["weighted_contribution"],
+            )
+            for row in kpi_rows
+        ]
+        overall_res = engine_score(overall_inputs)
         measured = [row for row in kpi_rows if row["weighted_contribution"] is not None]
-        measured_weight = sum(row["weight"] for row in measured)
-        contribution = sum(row["weighted_contribution"] for row in measured)
-        score = contribution / measured_weight * 100 if measured_weight else None
-        state = "measured" if measured and len(measured) == len(kpi_rows) else "partial_data" if measured else "no_data"
+        state = "measured" if overall_res.state == "measured" else "partial_data" if overall_res.state == "provisional" else "no_data"
         return {
             "scorecard": {
-                "score": min(score, 100.0) if score is not None else None,
+                "score": min(overall_res.score, 100.0) if overall_res.score is not None else None,
                 "target_score": 100.0,
-                "status": _status(score, thresholds, state),
+                "status": _status(overall_res.score, thresholds, state),
                 "state": state,
-                "configured_weight": configured_weight,
-                "measured_weight": measured_weight,
-                "coverage": measured_weight / configured_weight if configured_weight else None,
-                "weighted_contribution": contribution if measured else None,
+                "configured_weight": overall_res.configured_weight,
+                "measured_weight": overall_res.measured_weight,
+                "coverage": overall_res.coverage,
+                "weighted_contribution": overall_res.earned if measured else None,
                 "record_count": len(records),
                 "kpi_count": len(kpi_rows),
             },

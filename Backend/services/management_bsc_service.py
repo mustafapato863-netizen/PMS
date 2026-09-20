@@ -36,16 +36,11 @@ def _period_value(month: str, year: int) -> tuple[int, int]:
     return (int(year), MONTHS.get(str(month), 0))
 
 
+from services.scoring.engine import achievement as engine_achievement, MANAGEMENT_POLICY
+
+
 def _direction_ratio(direction: str, actual_value: float | None, target_value: float | None) -> float | None:
-    if actual_value is None or target_value is None:
-        return None
-    if direction == "lower_better":
-        if actual_value == 0:
-            return 1.0 if target_value == 0 else None
-        return target_value / actual_value
-    if target_value == 0:
-        return 1.0 if actual_value == 0 else None
-    return actual_value / target_value
+    return engine_achievement(actual_value, target_value, direction, policy=MANAGEMENT_POLICY).value
 
 
 def _highest_position(positions: set[str]) -> str | None:
