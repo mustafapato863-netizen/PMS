@@ -138,7 +138,7 @@ class EmployeePolicy(ScoringPolicy):
         if actual_is_missing:
             state = "missing_actual"
         elif target_is_missing or tgt == 0.0:
-            state = "invalid_target" if not is_inverse else ("negative_actual" if act < 0 else "measured")
+            state = "invalid_target"
         elif act < 0:
             state = "negative_actual"
         else:
