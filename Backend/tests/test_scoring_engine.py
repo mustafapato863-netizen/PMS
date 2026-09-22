@@ -303,6 +303,29 @@ class TestPureFunctions:
         assert empty_res.score is None
         assert empty_res.state == "no_data"
 
+    def test_score_can_preserve_persisted_contribution_measurement(self):
+        # Some legacy rows have one persisted field without the other. The
+        # caller can explicitly preserve the contribution-based measurement
+        # decision while the engine still uses the persisted contribution.
+        achievement_only = score([
+            KPIResult(achievement=1.0, weight=0.5, contribution=None, measured=False),
+            KPIResult(achievement=1.0, weight=0.5, contribution=0.5, measured=True),
+        ])
+        assert achievement_only.score == 100.0
+        assert achievement_only.measured_weight == 0.5
+        assert achievement_only.coverage == 0.5
+        assert achievement_only.state == "provisional"
+
+        contribution_only = score([
+            KPIResult(achievement=None, weight=0.5, contribution=0.5, measured=True),
+            KPIResult(achievement=None, weight=0.5, contribution=None, measured=False),
+        ])
+        assert contribution_only.score == 100.0
+        assert contribution_only.earned == 0.5
+        assert contribution_only.measured_weight == 0.5
+        assert contribution_only.coverage == 0.5
+        assert contribution_only.state == "provisional"
+
     def test_status_bands(self):
         assert status(95.0) == "On Track"
         assert status(85.0) == "On Track"

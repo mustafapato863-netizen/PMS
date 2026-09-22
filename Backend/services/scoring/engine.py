@@ -47,6 +47,10 @@ class KPIResult:
     achievement: float | None
     weight: float
     contribution: float | None = None
+    # Callers that already have a persisted contribution can preserve their
+    # legacy measured/unmeasured decision even when the raw achievement field
+    # is absent (or present without a contribution).
+    measured: bool | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -368,30 +372,38 @@ def score(
             ach = item.achievement
             w = float(item.weight)
             c = item.contribution
+            measured_override = item.measured
         elif isinstance(item, Mapping):
             ach = item.get("achievement")
             if ach is None:
                 ach = item.get("achievement_ratio")
             w = float(item.get("weight") or item.get("weight_applied") or 0.0)
             c = item.get("contribution")
+            measured_override = item.get("measured")
         else:
             ach = getattr(item, "achievement", getattr(item, "achievement_ratio", None))
             w = float(getattr(item, "weight", getattr(item, "weight_applied", 0.0)))
             c = getattr(item, "contribution", None)
+            measured_override = getattr(item, "measured", None)
 
         configured_weight += w
 
-        if ach is not None and not _is_none_or_nan(ach):
+        is_measured = (
+            bool(measured_override)
+            if measured_override is not None
+            else ach is not None and not _is_none_or_nan(ach)
+        )
+        if is_measured:
             measured_count += 1
             measured_weight += w
             if c is not None and not _is_none_or_nan(c):
                 earned += float(c)
-            else:
+            elif ach is not None and not _is_none_or_nan(ach):
                 earned += float(ach) * w
 
     coverage = (measured_weight / configured_weight) if configured_weight > 0 else None
 
-    if measured_count == 0 or measured_weight <= 0:
+    if measured_count == 0:
         return ScoreResult(
             score=None,
             earned=None,
@@ -399,6 +411,16 @@ def score(
             configured_weight=configured_weight,
             coverage=coverage,
             state="no_data",
+        )
+
+    if measured_weight <= 0:
+        return ScoreResult(
+            score=None,
+            earned=earned,
+            measured_weight=measured_weight,
+            configured_weight=configured_weight,
+            coverage=coverage,
+            state="measured" if measured_count == len(kpi_results) else "provisional",
         )
 
     raw_score = (earned / measured_weight) * 100.0

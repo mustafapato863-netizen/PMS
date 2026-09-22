@@ -76,6 +76,59 @@ def test_aggregation_uses_contributions_and_preserves_raw_achievement():
     assert revenue["score"] == pytest.approx(90)
 
 
+def test_scorecard_measurement_follows_persisted_contribution_presence():
+    missing_contribution = record("1", "A", 2025, 0.5, 0.3)
+    missing_contribution.kpi_values[0]["contribution"] = None
+    data = BalancedScorecardService.build(
+        [missing_contribution], config(), "Test Team", "Managerial", "May", 2025,
+    )
+
+    # A raw achievement without a persisted contribution was unmeasured in
+    # the legacy BSC rollup and must remain excluded from coverage.
+    assert data["scorecard"]["measured_weight"] == pytest.approx(0.3)
+    assert data["scorecard"]["coverage"] == pytest.approx(0.3)
+    assert data["scorecard"]["score"] == pytest.approx(100.0)
+    assert data["scorecard"]["state"] == "partial_data"
+
+    missing_achievement = record("2", "B", 2025, 0.5, 0.3)
+    missing_achievement.kpi_values[0]["achievement_ratio"] = None
+    data = BalancedScorecardService.build(
+        [missing_achievement], config(), "Test Team", "Managerial", "May", 2025,
+    )
+
+    # Conversely, a persisted contribution was measured even when the raw
+    # achievement field was absent.
+    assert data["scorecard"]["measured_weight"] == pytest.approx(0.8)
+    assert data["scorecard"]["coverage"] == pytest.approx(0.8)
+    assert data["scorecard"]["score"] == pytest.approx(100.0)
+    assert data["scorecard"]["state"] == "partial_data"
+
+
+def test_contributor_score_preserves_legacy_uncapped_display():
+    over_contributed = record("1", "A", 2025, 0.75, 0.3)
+    data = BalancedScorecardService.build(
+        [over_contributed], config(), "Test Team", "Managerial", "May", 2025,
+    )
+
+    # Contributor cards historically displayed contribution / weight without
+    # capping, even though the BSC aggregate caps its persisted contribution.
+    financial = data["contributors"][0]["perspectives"]["Financial"]
+    assert financial["score"] == pytest.approx(150.0)
+
+
+def test_zero_weight_contribution_keeps_measured_state():
+    zero_weight = record("1", "A", 2025, 0.1, None)
+    zero_weight.kpi_values[0]["weight_applied"] = 0.0
+    data = BalancedScorecardService.build(
+        [zero_weight], config(), "Test Team", "Managerial", "May", 2025,
+    )
+
+    financial = next(row for row in data["perspectives"] if row["key"] == "Financial")
+    assert financial["state"] == "measured"
+    assert financial["score"] is None
+    assert financial["measured_weight"] == 0.0
+
+
 def test_no_data_is_not_zero_and_employee_filter_is_applied():
     data = BalancedScorecardService.build(
         [record("1", "A", 2025, 0.5, 0.3), record("2", "B", 2025, 0.1, 0.1)],

@@ -123,6 +123,7 @@ class BalancedScorecardService:
                     achievement=row["raw_achievement_ratio"],
                     weight=row["weight"],
                     contribution=row["weighted_contribution"],
+                    measured=row["weighted_contribution"] is not None,
                 )
                 for row in rows
             ]
@@ -153,6 +154,7 @@ class BalancedScorecardService:
                 achievement=row["raw_achievement_ratio"],
                 weight=row["weight"],
                 contribution=row["weighted_contribution"],
+                measured=row["weighted_contribution"] is not None,
             )
             for row in kpi_rows
         ]
@@ -194,15 +196,30 @@ class BalancedScorecardService:
                 keys = {kpi["kpi_key"] for kpi in perspective["kpis"]}
                 values = [value for value in (_value(record, "kpi_values", []) or []) if _value(value, "kpi_key") in keys]
                 measured = [value for value in values if _value(value, "contribution") is not None]
-                contribution = sum(float(_value(value, "contribution")) for value in measured)
-                weight = sum(float(_value(value, "weight_applied", 0) or 0) for value in measured)
+                contributor_result = engine_score([
+                    KPIResult(
+                        achievement=_value(value, "achievement_ratio"),
+                        weight=float(_value(value, "weight_applied", 0) or 0),
+                        contribution=float(_value(value, "contribution")),
+                        measured=True,
+                    )
+                    for value in measured
+                ])
+                contributor_score = (
+                    contributor_result.earned / contributor_result.measured_weight * 100
+                    if contributor_result.measured_weight
+                    else None
+                )
                 top_value = max(measured, key=lambda value: float(_value(value, "contribution") or 0), default=None)
                 top_key = _value(top_value, "kpi_key") if top_value else None
                 top_kpi = next((kpi for kpi in perspective["kpis"] if kpi["kpi_key"] == top_key), None)
                 person["perspectives"][perspective["key"]] = {
-                    "score": contribution / weight * 100 if weight else None,
-                    "weighted_contribution": contribution if measured else None,
-                    "measured_weight": weight if measured else None,
+                    # Keep this employee-facing display uncapped for
+                    # compatibility; the historical formula exposed raw
+                    # persisted contributions even when they exceeded weight.
+                    "score": contributor_score,
+                    "weighted_contribution": contributor_result.earned if measured else None,
+                    "measured_weight": contributor_result.measured_weight if measured else None,
                     "top_kpi_label": top_kpi["kpi_label"] if top_kpi else None,
                     "trend": None,
                     "kpis": {str(_value(value, "kpi_key")): _value(value, "actual_value") for value in values},
@@ -256,17 +273,21 @@ class BalancedScorecardService:
         perspectives: list[dict[str, Any]] = []
         for template_perspective in template.get("perspectives", []):
             rows = [row for row in kpi_rows if row.get("perspective") == template_perspective.get("key")]
-            configured_weight = sum(float(row.get("weight") or 0) for row in rows)
             measured = [row for row in rows if row.get("weighted_contribution") is not None]
-            measured_weight = sum(float(row.get("weight") or 0) for row in measured)
-            contribution = sum(float(row.get("weighted_contribution") or 0) for row in measured)
-            score = contribution / measured_weight * 100 if measured_weight else None
-            state = (
-                "not_configured" if not rows
-                else "measured" if len(measured) == len(rows)
-                else "partial_data" if measured
-                else "no_data"
-            )
+            perspective_result = engine_score([
+                KPIResult(
+                    achievement=row.get("raw_achievement_ratio"),
+                    weight=float(row.get("weight") or 0),
+                    contribution=row.get("weighted_contribution"),
+                    measured=row.get("weighted_contribution") is not None,
+                )
+                for row in rows
+            ])
+            configured_weight = perspective_result.configured_weight
+            measured_weight = perspective_result.measured_weight
+            contribution = perspective_result.earned or 0.0
+            score = perspective_result.score
+            state = "not_configured" if not rows else "measured" if perspective_result.state == "measured" else "partial_data" if perspective_result.state == "provisional" else "no_data"
             driver = max(measured, key=lambda row: row.get("weighted_contribution") or 0, default=None)
             risk = max(measured, key=lambda row: row.get("performance_gap") or 0, default=None)
             merged = dict(template_perspective)
@@ -274,7 +295,7 @@ class BalancedScorecardService:
                 "target_score": 100.0,
                 "configured_weight": configured_weight,
                 "measured_weight": measured_weight,
-                "coverage": measured_weight / configured_weight if configured_weight else None,
+                "coverage": perspective_result.coverage,
                 "weighted_contribution": contribution if measured else None,
                 "score": min(score, 100.0) if score is not None else None,
                 "state": state,
@@ -293,10 +314,19 @@ class BalancedScorecardService:
             if summary.get("scorecard", {}).get("score") is not None
         ]
         score = mean(score_values) if score_values else None
-        configured_weight = sum(row.get("weight", 0) for row in kpi_rows)
-        measured_weight = sum(row.get("weight", 0) for row in kpi_rows if row.get("weighted_contribution") is not None)
-        contribution = sum(row.get("weighted_contribution", 0) or 0 for row in kpi_rows if row.get("weighted_contribution") is not None)
-        state = "measured" if measured_weight and len([row for row in kpi_rows if row.get("weighted_contribution") is not None]) == len(kpi_rows) else "partial_data" if measured_weight else "no_data"
+        overall_result = engine_score([
+            KPIResult(
+                achievement=row.get("raw_achievement_ratio"),
+                weight=float(row.get("weight") or 0),
+                contribution=row.get("weighted_contribution"),
+                measured=row.get("weighted_contribution") is not None,
+            )
+            for row in kpi_rows
+        ])
+        configured_weight = overall_result.configured_weight
+        measured_weight = overall_result.measured_weight
+        contribution = overall_result.earned or 0.0
+        state = "measured" if overall_result.state == "measured" else "partial_data" if overall_result.state == "provisional" else "no_data"
         return {
             "scorecard": {
                 "score": min(score, 100.0) if score is not None else None,
@@ -305,7 +335,7 @@ class BalancedScorecardService:
                 "state": state,
                 "configured_weight": configured_weight,
                 "measured_weight": measured_weight,
-                "coverage": measured_weight / configured_weight if configured_weight else None,
+                "coverage": overall_result.coverage,
                 "weighted_contribution": contribution if measured_weight else None,
                 "record_count": sum(summary.get("scorecard", {}).get("record_count", 0) for summary in summaries),
                 "kpi_count": len(kpi_rows),
