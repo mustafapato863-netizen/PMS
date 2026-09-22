@@ -36,7 +36,7 @@ def _period_value(month: str, year: int) -> tuple[int, int]:
     return (int(year), MONTHS.get(str(month), 0))
 
 
-from services.scoring.engine import achievement as engine_achievement, MANAGEMENT_POLICY
+from services.scoring.engine import achievement as engine_achievement, contribution as engine_contribution, MANAGEMENT_POLICY
 
 
 def _direction_ratio(direction: str, actual_value: float | None, target_value: float | None) -> float | None:
@@ -787,7 +787,7 @@ class ManagementBSCService:
                         "target_value": target_value,
                         "achievement_ratio": ratio,
                         "weight_applied": weight,
-                        "contribution": weight * ratio if ratio is not None else None,
+                        "contribution": engine_contribution(ratio, weight),
                     }
                 )
         return list(grouped.values())

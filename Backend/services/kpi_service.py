@@ -16,6 +16,7 @@ from services.scoring.engine import (
     contribution as engine_contribution,
     score as engine_score,
     grade as engine_grade,
+    KPIResult,
     EMPLOYEE_POLICY,
 )
 
@@ -979,13 +980,26 @@ class KPIService:
             Weighted score as decimal (0-1 scale)
         """
         score = 0.0
+        kpi_results = []
         for kpi, achievement in achievements.items():
             weight = weights.get(kpi, 0.0)
+            effective_achievement = min(max(float(achievement), 0.0), GLOBAL_KPI_ACHIEVEMENT_CAP)
+            effective_weight = max(float(weight), 0.0)
             contrib = engine_contribution(
-                min(max(float(achievement), 0.0), GLOBAL_KPI_ACHIEVEMENT_CAP),
-                max(float(weight), 0.0)
+                effective_achievement,
+                effective_weight,
             )
-            score += (contrib or 0.0)
+            kpi_results.append(KPIResult(
+                achievement=effective_achievement,
+                weight=effective_weight,
+                contribution=contrib,
+            ))
+
+        # ``earned`` is the legacy weighted sum. ``score`` is intentionally
+        # not used here because this employee helper accepts arbitrary weight
+        # totals and historically did not divide by configured weight.
+        score_result = engine_score(kpi_results)
+        score = score_result.earned or 0.0
 
         if cap_final_at_100:
             score = min(max(score, 0.0), GLOBAL_KPI_ACHIEVEMENT_CAP)
