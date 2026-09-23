@@ -1915,8 +1915,8 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
             className="grid grid-cols-1 gap-4 xl:grid-cols-2"
             aria-label="Loading performance charts"
           >
-            <div className="h-[260px] animate-pulse rounded-xl bg-[var(--bg-sunken)]" />
-            <div className="h-[260px] animate-pulse rounded-xl bg-[var(--bg-sunken)]" />
+            <div className="h-[234px] animate-pulse rounded-xl bg-[var(--bg-sunken)]" />
+            <div className="h-[234px] animate-pulse rounded-xl bg-[var(--bg-sunken)]" />
           </div>
         }
       >

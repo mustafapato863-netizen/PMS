@@ -48,7 +48,7 @@ const CorrectiveActionWorkspace: React.FC<CorrectiveActionWorkspaceProps> = ({ e
             </div>
             <div>
               <label className="block text-xs font-bold text-slate-500 mb-1">Manager Notes</label>
-              <textarea className="w-full bg-slate-50 border border-slate-200 rounded-md px-3 py-2 text-sm text-slate-800 font-medium focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all min-h-[80px]" placeholder="Add specific expectations..."></textarea>
+              <textarea className="w-full bg-slate-50 border border-slate-200 rounded-md px-3 py-2 text-sm text-slate-800 font-medium focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all min-h-[72px]" placeholder="Add specific expectations..."></textarea>
             </div>
             <div className="flex justify-end pt-2">
               <button className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2 rounded-lg text-sm font-semibold transition-colors shadow-sm" onClick={() => setIsCreating(false)}>

@@ -66,12 +66,12 @@ export function KpiCard({
   return (
     <div
       style={backgroundStyle}
-      className={`rounded-xl border border-[var(--border-light)] p-4 shadow-sm flex flex-col justify-between min-h-[96px] transition-all duration-[180ms] ease-out hover:-translate-y-0.5 hover:shadow-md ${variant === 'flat' ? `border-l-4 ${accent}` : ''}`}
+      className={`rounded-xl border border-[var(--border-light)] p-4 shadow-sm flex flex-col justify-between min-h-[86px] transition-all duration-[180ms] ease-out hover:-translate-y-0.5 hover:shadow-md ${variant === 'flat' ? `border-l-4 ${accent}` : ''}`}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
           <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--text-muted)] mb-1.5">{label}</p>
-          <div className="text-[22px] font-extrabold text-[var(--text-primary)] leading-none tracking-tight">{value}</div>
+          <div className="text-[20px] font-extrabold text-[var(--text-primary)] leading-none tracking-tight">{value}</div>
         </div>
         <div
           style={{ backgroundColor: startColor }}

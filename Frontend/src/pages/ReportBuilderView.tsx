@@ -106,7 +106,7 @@ export default function ReportBuilderView() {
     conflict: <><AlertTriangle size={14} /> Version conflict - reload required</>,
   }[state.saveState];
 
-  return <div className="rf-builder-shell flex h-[calc(100vh-2rem)] min-h-[720px] w-full flex-col overflow-hidden rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] shadow-sm">
+  return <div className="rf-builder-shell flex h-[calc(100vh-2rem)] min-h-[648px] w-full flex-col overflow-hidden rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] shadow-sm">
     <header className="rf-builder-header flex min-h-16 items-center justify-between gap-4 border-b border-[var(--border-light)] bg-[var(--bg-surface)] px-5">
       <div className="flex items-center gap-4"><button onClick={back} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label="Back"><ArrowLeft size={19} /></button>
         <div className="hidden items-center gap-2 lg:flex">{STEPS.map((label, index) => { const id = index + 1; return <div key={label} className="flex items-center gap-2"><button onClick={() => id <= state.currentStep && state.setStep(id as BuilderStep)} className={`flex items-center gap-2 text-xs font-extrabold ${id === state.currentStep ? 'text-[var(--sgh-cyan-primary,#00A3E0)]' : id < state.currentStep ? 'text-slate-700 dark:text-slate-300' : 'text-slate-400 dark:text-slate-500'}`}><span className={`grid h-6 w-6 place-items-center rounded-full border ${id <= state.currentStep ? 'border-[var(--sgh-cyan-primary,#00A3E0)] bg-[var(--sgh-cyan-primary,#00A3E0)] text-white' : 'border-slate-300 dark:border-slate-700 text-slate-500'}`}>{id}</span>{label}</button>{id < 5 && <span className="h-px w-7 bg-slate-200 dark:bg-slate-700" />}</div>; })}</div>

@@ -30,7 +30,7 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ columns }) => {
             </span>
           </div>
           
-          <div className="flex-1 flex flex-col gap-3 min-h-[200px]">
+          <div className="flex-1 flex flex-col gap-3 min-h-[180px]">
             {col.items.map((item) => (
               <motion.div
                 key={item.id}

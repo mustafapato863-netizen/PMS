@@ -485,7 +485,7 @@ const TeamRosterSection = ({
 
             {rosterData.allMeetStandards ? (
               /* Encouraging Card */
-              <div className="flex flex-col items-center justify-center p-8 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl text-center min-h-[140px] shadow-sm">
+              <div className="flex flex-col items-center justify-center p-8 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl text-center min-h-[126px] shadow-sm">
                 <div className="w-12 h-12 rounded-full bg-emerald-500/20 flex items-center justify-center text-emerald-600 dark:text-emerald-400 mb-3 shadow-inner">
                   <Award className="w-6 h-6" />
                 </div>

@@ -92,7 +92,7 @@ const LocationProfitabilityChart = ({ data }: LocationProfitabilityChartProps) =
                 borderRadius: '12px',
                 border: '1px solid #e2e8f0',
                 boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1)',
-                padding: '10px 14px',
+                padding: '9px 13px',
                 fontSize: '12px',
               }}
               formatter={(value, name) => {

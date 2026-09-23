@@ -57,7 +57,7 @@ export function NotificationCenter({ onClose }: NotificationCenterProps) {
       {/* Content */}
       <div className="flex-1 overflow-y-auto">
         {sortedNotifications.length === 0 ? (
-          <div className="p-8 flex flex-col items-center justify-center text-center min-h-[200px]">
+          <div className="p-8 flex flex-col items-center justify-center text-center min-h-[180px]">
             <div className="text-3xl mb-2">🎉</div>
             <p className="text-sm text-[var(--text-muted)]">
               No notifications yet

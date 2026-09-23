@@ -30,7 +30,7 @@ export function KpiTrendPanel({
             <div className="bsc-sub">{kpiRow.kpi_label}</div>
           </div>
         </div>
-        <div className="bsc-kpi-trend-table-shell" role="status" style={{ padding: 24, textAlign: 'center' }}>
+        <div className="bsc-kpi-trend-table-shell" role="status" style={{ padding: 22, textAlign: 'center' }}>
           <strong>Not enough data for a real trend</strong>
           <div className="bsc-sub" style={{ marginTop: 6 }}>
             At least two measured periods for this KPI are required.

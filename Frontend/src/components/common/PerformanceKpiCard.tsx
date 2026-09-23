@@ -109,7 +109,7 @@ const PerformanceKpiCard = ({
     )
     : null;
   return (
-    <article className="glass-card group relative flex min-h-[190px] flex-col justify-between overflow-hidden rounded-2xl p-4 shadow-sm transition-all hover:scale-[1.01]">
+    <article className="glass-card group relative flex min-h-[171px] flex-col justify-between overflow-hidden rounded-2xl p-4 shadow-sm transition-all hover:scale-[1.01]">
       <div
         className={`pointer-events-none absolute -right-6 -top-6 h-24 w-24 rounded-full opacity-[0.05] transition-opacity duration-500 group-hover:opacity-[0.1] ${iconAccentColor ? '' : iconBgColor}`}
         style={iconAccentColor ? { backgroundColor: iconAccentColor } : undefined}

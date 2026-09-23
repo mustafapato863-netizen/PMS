@@ -35,7 +35,7 @@ export const PageLoadingSkeleton = ({
       aria-live="polite"
       aria-busy="true"
       aria-label={label}
-      className={`mx-auto w-full max-w-[1700px] space-y-4 p-4 md:p-6 ${compact ? 'min-h-[420px]' : 'min-h-[55vh]'}`}
+      className={`mx-auto w-full max-w-[1700px] space-y-4 p-4 md:p-6 ${compact ? 'min-h-[378px]' : 'min-h-[55vh]'}`}
     >
       <span className="sr-only">{label}</span>
       <SkeletonPanel className="flex items-center justify-between gap-6 p-5">

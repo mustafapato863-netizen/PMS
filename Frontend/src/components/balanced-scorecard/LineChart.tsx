@@ -567,7 +567,7 @@ export function LineChart({
               Score
             </span>
 
-            <strong className="text-[13px] font-bold" style={{ color: 'var(--bsc-panel-text)' }}>
+            <strong className="text-[12px] font-bold" style={{ color: 'var(--bsc-panel-text)' }}>
               {formatScore(activeTooltip.score)}
             </strong>
           </div>

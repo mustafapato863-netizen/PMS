@@ -41,12 +41,12 @@ export function RosterPanel({
           <h2>{selectedPerspectiveRow?.label || 'All Perspectives'} Contributor Roster</h2>
           <div className="bsc-sub">People driving or impacting this perspective</div>
         </div>
-        <span style={{ fontSize: 11, fontWeight: 700, color: '#8A8F99', background: '#EEF0F3', padding: '3px 9px', borderRadius: 99 }}>
+        <span style={{ fontSize: 11, fontWeight: 700, color: '#8A8F99', background: '#EEF0F3', padding: '3px 8px', borderRadius: 99 }}>
           {filtered.length} People
         </span>
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
-        <div style={{ display:'flex', alignItems:'center', gap:7, border:'1px solid #E6E8EC', borderRadius:9, padding:'7px 12px', flex:1, background:'#FAFAFB' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 14 }}>
+        <div style={{ display:'flex', alignItems:'center', gap: 6.5, border:'1px solid #E6E8EC', borderRadius:9, padding: '6.5px 11px', flex:1, background:'#FAFAFB' }}>
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#8A8F99" strokeWidth="2">
             <circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>
           </svg>
@@ -60,7 +60,7 @@ export function RosterPanel({
       </div>
 
       {filtered.length === 0 ? (
-        <div style={{ textAlign:'center', padding:'32px 0', color:'#8A8F99', fontSize:13 }}>
+        <div style={{ textAlign:'center', padding: '29px 0', color:'#8A8F99', fontSize: 12 }}>
           No contributors found for {selectedPerspectiveRow?.label ?? 'this perspective'}.
         </div>
       ) : (

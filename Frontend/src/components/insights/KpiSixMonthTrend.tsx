@@ -46,7 +46,7 @@ export default function KpiSixMonthTrend({ trend }: { trend: InsightKpiTrend }) 
       </div>
 
       {measuredMonths ? (
-        <div className="mt-4 h-[250px] min-h-[250px] min-w-0 w-full" aria-label={`${trend.kpi_label} six month actual and target trend`}>
+        <div className="mt-4 h-[225px] min-h-[225px] min-w-0 w-full" aria-label={`${trend.kpi_label} six month actual and target trend`}>
           <ResponsiveContainer width="100%" height={250} minWidth={0} minHeight={250}>
             <LineChart data={data} margin={{ top: 12, right: 12, left: 0, bottom: 0 }}>
               <CartesianGrid vertical={false} stroke="var(--border-light)" strokeDasharray="4 4" />
@@ -83,7 +83,7 @@ export default function KpiSixMonthTrend({ trend }: { trend: InsightKpiTrend }) 
           </ResponsiveContainer>
         </div>
       ) : (
-        <div className="mt-4 flex min-h-[180px] items-center justify-center gap-2 rounded-xl border border-dashed border-[var(--border-light)] text-sm font-semibold text-[var(--text-muted)]">
+        <div className="mt-4 flex min-h-[162px] items-center justify-center gap-2 rounded-xl border border-dashed border-[var(--border-light)] text-sm font-semibold text-[var(--text-muted)]">
           <CircleAlert size={16} /> No measured history is available for this KPI.
         </div>
       )}

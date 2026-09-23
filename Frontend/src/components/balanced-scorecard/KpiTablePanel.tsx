@@ -46,13 +46,13 @@ export function KpiTablePanel({
           <div className="bsc-sub">Click a row to view its trend analysis below</div>
         </div>
         {selectedPerspective && (
-          <span style={{ fontSize: 11, fontWeight: 700, color: '#8A8F99', background: '#EEF0F3', padding: '3px 9px', borderRadius: 99 }}>
+          <span style={{ fontSize: 11, fontWeight: 700, color: '#8A8F99', background: '#EEF0F3', padding: '3px 8px', borderRadius: 99 }}>
             Filtered: {selectedPerspective}
           </span>
         )}
       </div>
       {kpiTable.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: '32px 0', color: '#8A8F99', fontSize: 13 }}>
+        <div style={{ textAlign: 'center', padding: '29px 0', color: '#8A8F99', fontSize: 12 }}>
           No KPI data available for this selection.
         </div>
       ) : (

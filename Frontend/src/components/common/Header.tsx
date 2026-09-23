@@ -286,7 +286,7 @@ const Header = ({ onMenuClick }: HeaderProps) => {
         className={`app-header sticky top-0 z-30 w-full flex flex-row items-center justify-between
           border-b border-[var(--border-light)]
           transition-[box-shadow,backdrop-filter,background] duration-300 ease-in-out
-          h-14 sm:h-[60px] px-3 sm:px-4 md:px-6 shadow-sm
+          h-14 sm:h-[54px] px-3 sm:px-4 md:px-6 shadow-sm
           ${isScrolled ? 'shadow-[0_4px_24px_rgba(0,0,0,0.09)] backdrop-blur-xl' : ''}`}
       >
         {/* ── Left: title ── */}
@@ -309,7 +309,7 @@ const Header = ({ onMenuClick }: HeaderProps) => {
           <div className="min-w-0 flex-1">
             <h1
               className={`app-header-title font-bold text-[var(--text-primary)] tracking-tight truncate transition-all duration-300
-                ${isScrolled ? 'text-sm lg:text-[15px]' : 'text-[15px] lg:text-base'}`}
+                ${isScrolled ? 'text-sm lg:text-[14px]' : 'text-[14px] lg:text-base'}`}
             >
               <span className="app-header-title-full">{title}</span>
               <span className="app-header-title-compact" aria-hidden="true">{compactTitle}</span>

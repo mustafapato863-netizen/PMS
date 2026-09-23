@@ -36,7 +36,7 @@ function BSCSkeleton() {
     <div className="bsc-workspace">
       <div className="bsc-col-main">
         <div className="bsc-panel bsc-panel-pad">
-          <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:14 }}>
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap: 13 }}>
             {[0,1,2,3].map(i => <div key={i} className="shimmer" style={{ height:200, borderRadius:12 }}/>)}
           </div>
         </div>
@@ -455,7 +455,7 @@ export const BalancedScorecardWorkspace = ({ teamName, displayName }: BalancedSc
   const activeError = isError ? error : rosterError;
 
   const selStyle = {
-    appearance:'none' as const, padding:'7px 32px 7px 12px', borderRadius:9,
+    appearance:'none' as const, padding: '6.5px 29px 6.5px 11px', borderRadius:9,
     border:'1px solid var(--bsc-border)', background:'var(--bsc-panel-bg-solid)', fontSize:12.5, fontWeight:600,
     color:'var(--bsc-panel-text)', cursor:'pointer', fontFamily:'inherit',
   };
@@ -543,7 +543,7 @@ export const BalancedScorecardWorkspace = ({ teamName, displayName }: BalancedSc
 
       {/* ── Workspace Grid ── */}
       {hasNoData ? (
-        <div style={{ maxWidth: 1600, margin: '24px auto', padding: '0 16px' }}>
+        <div style={{ maxWidth: 1600, margin: '22px auto', padding: '0 14px' }}>
           <NoDataEmptyState
             availablePeriods={data?.available_periods || rosterData?.available_periods || []}
             selectedMonth={month}

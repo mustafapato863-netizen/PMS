@@ -7,7 +7,7 @@ describe('shared loading skeletons', () => {
     render(<PageLoadingSkeleton variant="form" label="Preparing report scope" compact />);
     const status = screen.getByRole('status', { name: 'Preparing report scope' });
     expect(status).toHaveAttribute('aria-busy', 'true');
-    expect(status).toHaveClass('min-h-[420px]');
+    expect(status).toHaveClass('min-h-[378px]');
   });
 
   it('supports embedded list and detail loading without blank screens', () => {

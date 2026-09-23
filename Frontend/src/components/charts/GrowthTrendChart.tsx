@@ -81,7 +81,7 @@ const GrowthTrendChart = ({ data }: GrowthTrendChartProps) => {
               borderRadius: '12px',
               border: '1px solid #e2e8f0',
               boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1)',
-              padding: '12px 16px',
+              padding: '11px 14px',
             }}
             formatter={(value, name) => [
               Number(value ?? 0).toLocaleString(),

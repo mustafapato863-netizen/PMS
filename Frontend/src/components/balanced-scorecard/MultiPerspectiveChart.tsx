@@ -221,7 +221,7 @@ export function MultiPerspectiveChart({
             border: '1px solid var(--bsc-border)',
             borderRadius: '12px',
             boxShadow: 'var(--bsc-shadow-lg)',
-            padding: '10px 12px',
+            padding: '9px 11px',
             zIndex: 250,
             pointerEvents: 'none',
             fontFamily: 'inherit',

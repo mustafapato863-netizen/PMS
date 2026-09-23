@@ -93,7 +93,7 @@ const ConversionFunnel = ({ data }: ConversionFunnelProps) => {
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ duration: 0.35, delay: i * 0.1 }}
-              className={`w-full lg:flex-1 ${step.bg} border ${step.border} rounded-2xl p-5 relative overflow-hidden flex flex-col justify-center min-h-[110px]`}
+              className={`w-full lg:flex-1 ${step.bg} border ${step.border} rounded-2xl p-5 relative overflow-hidden flex flex-col justify-center min-h-[99px]`}
             >
               {/* Background bar showing proportion */}
               <div

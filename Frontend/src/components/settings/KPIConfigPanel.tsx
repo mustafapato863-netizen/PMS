@@ -55,7 +55,7 @@ export function KPIConfigPanel() {
     <div className="space-y-6">
       <header><h2 className="text-xl font-black text-[var(--text-primary)]">KPI Configuration</h2><p className="mt-1 text-xs text-[var(--text-muted)]">Select a team to inspect its weights and targets without scanning every configuration.</p></header>
       {error && <div role="alert" className="flex items-center gap-2 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-xs font-semibold text-red-600"><AlertCircle size={16} />{error}</div>}
-      <div className="glass-panel grid min-h-[520px] overflow-hidden rounded-3xl border border-[var(--border-light)] shadow-sm lg:grid-cols-[260px_minmax(0,1fr)]">
+      <div className="glass-panel grid min-h-[468px] overflow-hidden rounded-3xl border border-[var(--border-light)] shadow-sm lg:grid-cols-[260px_minmax(0,1fr)]">
         <aside className="border-b border-[var(--border-light)] bg-[var(--bg-sunken)] p-4 lg:border-b-0 lg:border-r">
           <label className="flex items-center gap-2 rounded-xl border border-[var(--border-light)] bg-[var(--bg-surface)] px-3 py-2"><Search size={14} className="text-[var(--text-muted)]" /><input aria-label="Search teams" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search teams" className="min-w-0 flex-1 bg-transparent text-xs text-[var(--text-primary)] outline-none" /></label>
           <div className="mt-3 max-h-[440px] space-y-1 overflow-auto">

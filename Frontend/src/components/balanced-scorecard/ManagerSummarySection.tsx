@@ -185,7 +185,7 @@ export function ManagerSummarySection({
 
         <div className="grid w-full grid-cols-2 gap-3 lg:grid-cols-4">
           {/* metric 1 */}
-          <div className="flex min-h-[92px] min-w-[125px] flex-1 flex-col justify-between rounded-xl border border-slate-200/20 bg-[var(--bg-sunken)]/60 p-3 text-center dark:border-slate-800/40 dark:bg-slate-900/50">
+          <div className="flex min-h-[83px] min-w-[125px] flex-1 flex-col justify-between rounded-xl border border-slate-200/20 bg-[var(--bg-sunken)]/60 p-3 text-center dark:border-slate-800/40 dark:bg-slate-900/50">
             <p className="text-[9px] font-bold uppercase tracking-wider text-[var(--text-muted)] mb-1">Overall Score</p>
             <div className="text-xl font-extrabold text-[var(--text-primary)] leading-none">{managerScore.toFixed(1)}%</div>
             <div>
@@ -196,7 +196,7 @@ export function ManagerSummarySection({
           </div>
 
           {/* metric 2 */}
-          <div className="flex min-h-[92px] min-w-[125px] flex-1 flex-col justify-between rounded-xl border border-slate-200/20 bg-[var(--bg-sunken)]/60 p-3 text-center dark:border-slate-800/40 dark:bg-slate-900/50">
+          <div className="flex min-h-[83px] min-w-[125px] flex-1 flex-col justify-between rounded-xl border border-slate-200/20 bg-[var(--bg-sunken)]/60 p-3 text-center dark:border-slate-800/40 dark:bg-slate-900/50">
             <p className="text-[9px] font-bold uppercase tracking-wider text-[var(--text-muted)] mb-1">Team Ranking</p>
             <div className="text-xl font-extrabold text-[var(--text-primary)] leading-none">#{rank} / {totalRank}</div>
             <div>
@@ -207,7 +207,7 @@ export function ManagerSummarySection({
           </div>
 
           {/* metric 3 */}
-          <div className="flex min-h-[92px] min-w-[125px] flex-1 flex-col justify-between rounded-xl border border-slate-200/20 bg-[var(--bg-sunken)]/60 p-3 text-center dark:border-slate-800/40 dark:bg-slate-900/50">
+          <div className="flex min-h-[83px] min-w-[125px] flex-1 flex-col justify-between rounded-xl border border-slate-200/20 bg-[var(--bg-sunken)]/60 p-3 text-center dark:border-slate-800/40 dark:bg-slate-900/50">
             <p className="text-[9px] font-bold uppercase tracking-wider text-[var(--text-muted)] mb-1">vs Target ({targetVal}%)</p>
             <div className="text-xl font-extrabold text-[var(--text-primary)] leading-none">
               {targetGap >= 0 ? '+' : ''}{targetGap.toFixed(1)}%
@@ -220,7 +220,7 @@ export function ManagerSummarySection({
           </div>
 
           {/* metric 4 */}
-          <div className="flex min-h-[92px] min-w-[125px] flex-1 flex-col justify-between rounded-xl border border-slate-200/20 bg-[var(--bg-sunken)]/60 p-3 text-center dark:border-slate-800/40 dark:bg-slate-900/50">
+          <div className="flex min-h-[83px] min-w-[125px] flex-1 flex-col justify-between rounded-xl border border-slate-200/20 bg-[var(--bg-sunken)]/60 p-3 text-center dark:border-slate-800/40 dark:bg-slate-900/50">
             <p className="text-[9px] font-bold uppercase tracking-wider text-[var(--text-muted)] mb-1">vs Team Avg ({teamAvg.toFixed(1)}%)</p>
             <div className="text-xl font-extrabold text-[var(--text-primary)] leading-none">
               {teamAvgGap >= 0 ? '+' : ''}{teamAvgGap.toFixed(1)}%
@@ -370,7 +370,7 @@ export function ManagerSummarySection({
                   onClick={() => onSelectKpi(kpi.kpi_key)}
                   onMouseEnter={(e) => onKpiHover?.(kpi, e)}
                   onMouseLeave={onKpiLeave}
-                  className={`glass-card w-full text-left rounded-2xl p-4 border shadow-sm transition-colors duration-200 cursor-pointer flex flex-col justify-between min-h-[154px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+                  className={`glass-card w-full text-left rounded-2xl p-4 border shadow-sm transition-colors duration-200 cursor-pointer flex flex-col justify-between min-h-[139px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
                     active 
                       ? 'border-blue-500 shadow-[0_0_15px_rgba(59,130,246,0.15)] ring-1 ring-blue-500/30 bg-blue-500/[0.02]' 
                       : 'border-slate-200/50 dark:border-slate-800/80 hover:border-blue-400/50 dark:hover:border-blue-500/50 hover:shadow-md'

@@ -130,7 +130,7 @@ export const KpiTrendHoverCard: React.FC<KpiTrendHoverCardProps> = ({ data, posi
         </div>
 
         {/* Line Chart */}
-        <div className="relative mt-2 h-[100px] w-full">
+        <div className="relative mt-2 h-[90px] w-full">
           <svg className="h-full w-full overflow-visible" viewBox={`0 0 ${chartWidth} ${chartHeight}`} preserveAspectRatio="none">
             <defs>
               <linearGradient id="kpiHoverGrad" x1="0" y1="0" x2="0" y2="1">

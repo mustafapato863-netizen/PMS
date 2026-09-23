@@ -246,7 +246,7 @@ const MarketingDashboardView = () => {
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
           {[1, 2, 3, 4].map((item) => <div key={item} className="h-32 rounded-2xl bg-[var(--bg-sunken)]" />)}
         </div>
-        <div className="h-[420px] rounded-2xl bg-[var(--bg-sunken)]" />
+        <div className="h-[378px] rounded-2xl bg-[var(--bg-sunken)]" />
       </div>
     );
   }

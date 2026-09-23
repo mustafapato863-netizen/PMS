@@ -222,17 +222,17 @@ const ActionsSummaryCard = ({ month, stats }: ActionsSummaryCardProps) => {
       </div>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <div className="action-summary-stat action-summary-stat-blue flex min-h-[94px] flex-col items-center justify-center rounded-xl border p-2.5 text-center">
+        <div className="action-summary-stat action-summary-stat-blue flex min-h-[85px] flex-col items-center justify-center rounded-xl border p-2.5 text-center">
           <ClipboardCheck size={16} className="mb-1" />
           <div className="text-2xl font-extrabold leading-none">{visibleStats.total}</div>
           <div className="action-summary-stat-label mt-1.5 text-[11px] font-bold leading-tight">Actions This Month</div>
         </div>
-        <div className="action-summary-stat action-summary-stat-emerald flex min-h-[94px] flex-col items-center justify-center rounded-xl border p-2.5 text-center">
+        <div className="action-summary-stat action-summary-stat-emerald flex min-h-[85px] flex-col items-center justify-center rounded-xl border p-2.5 text-center">
           <UserCheck size={16} className="mb-1" />
           <div className="text-2xl font-extrabold leading-none">{visibleStats.employeesActioned}</div>
           <div className="action-summary-stat-label mt-1.5 text-[11px] font-bold leading-tight">Employees Actioned</div>
         </div>
-        <div className="action-summary-stat action-summary-stat-amber flex min-h-[94px] flex-col items-center justify-center rounded-xl border p-2.5 text-center">
+        <div className="action-summary-stat action-summary-stat-amber flex min-h-[85px] flex-col items-center justify-center rounded-xl border p-2.5 text-center">
           <Clock size={16} className="mb-1" />
           <div className="text-2xl font-extrabold leading-none">{pendingFollowUp.length}</div>
           <div className="action-summary-stat-label mt-1.5 text-[11px] font-bold leading-tight">Pending Sync</div>

@@ -43,7 +43,7 @@ const StatCard = ({ title, value, subtext, icon: Icon, colorClass, delay }: Stat
     </div>
     
     <div>
-      <h4 className="text-[28px] font-black text-[var(--text-primary)] tracking-tight leading-none mb-1">{value}</h4>
+      <h4 className="text-[25px] font-black text-[var(--text-primary)] tracking-tight leading-none mb-1">{value}</h4>
       {subtext && <span className="text-[11px] text-[var(--text-muted)] font-bold">{subtext}</span>}
     </div>
     
@@ -95,8 +95,8 @@ export const EmployeeStatsSummary: React.FC<EmployeeStatsSummaryProps> = ({
               {archetype}
             </div>
             <div>
-              <h3 className="text-[28px] font-black tracking-tight leading-none mb-1.5">
-                Rank #{rank} <span className="text-[16px] font-semibold text-white/60">/ {totalEmployees}</span>
+              <h3 className="text-[25px] font-black tracking-tight leading-none mb-1.5">
+                Rank #{rank} <span className="text-[14px] font-semibold text-white/60">/ {totalEmployees}</span>
               </h3>
               <p className="text-[12px] font-bold text-blue-200 uppercase tracking-wider">
                 Top {percentile}% of Team
@@ -107,7 +107,7 @@ export const EmployeeStatsSummary: React.FC<EmployeeStatsSummaryProps> = ({
           {/* Right Side */}
           <div className="text-right flex flex-col items-end gap-1">
             <div className="text-[11px] font-extrabold text-white/50 uppercase tracking-wider">Consistency</div>
-            <div className="text-[28px] font-black leading-none mb-1.5">{consistencyScore}<span className="text-[14px] text-white/40 font-semibold">/100</span></div>
+            <div className="text-[25px] font-black leading-none mb-1.5">{consistencyScore}<span className="text-[13px] text-white/40 font-semibold">/100</span></div>
             {getStabilityBadge()}
           </div>
         </div>

@@ -4,7 +4,7 @@
 
 :root {
   --rf-page-max: var(--app-page-max-width, 1720px);
-  --rf-page-gap: clamp(0.75rem, 1.1vw, 1.25rem);
+  --rf-page-gap: clamp(0.675rem, 1vw, 1.125rem);
   --rf-card-radius: 16px;
   --rf-panel-shadow: 0 1px 2px rgba(15, 23, 42, 0.03), 0 12px 36px rgba(15, 23, 42, 0.045);
   --rf-panel-shadow-hover: 0 2px 4px rgba(15, 23, 42, 0.04), 0 18px 44px rgba(15, 23, 42, 0.075);
@@ -13,7 +13,7 @@
 .rf-page {
   width: min(100%, var(--rf-page-max));
   margin-inline: auto;
-  padding: clamp(0.75rem, 1vw, 1.25rem);
+  padding: clamp(0.675rem, 1vw, 1.125rem);
   gap: var(--rf-page-gap);
 }
 
@@ -35,7 +35,7 @@
 }
 
 .rf-page :is(input:not([type='checkbox']):not([type='radio']), select, textarea) {
-  min-height: var(--app-control-height, 40px);
+  min-height: var(--app-control-height, 36px);
   border-radius: 10px;
 }
 
@@ -50,7 +50,7 @@
   width: 100%;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.45rem;
 }
 
 .responsive-filter-surface {
@@ -100,7 +100,7 @@
   min-width: 0;
   align-items: center;
   justify-content: flex-end;
-  gap: 0.5rem;
+  gap: 0.45rem;
 }
 
 .marketing-header-layout,
@@ -139,7 +139,7 @@
 
 @media (min-width: 640px) {
   .rf-filter-bar {
-    gap: 0.75rem;
+    gap: 0.675rem;
   }
 }
 
@@ -154,17 +154,17 @@
   .responsive-filter-trigger {
     display: flex;
     width: 100%;
-    min-height: 44px;
+    min-height: 40px;
     align-items: center;
     justify-content: space-between;
-    gap: 0.625rem;
-    padding: 0.625rem 0.75rem;
+    gap: 0.5625rem;
+    padding: 0.5625rem 0.675rem;
     border: 1px solid var(--border-light);
     border-radius: 12px;
     color: var(--text-primary);
     background: var(--bg-surface);
     box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
-    font-size: 0.8125rem;
+    font-size: 0.75rem;
     font-weight: 800;
     cursor: pointer;
     transition: border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
@@ -221,7 +221,7 @@
     display: flex;
     max-height: min(78dvh, 620px);
     flex-direction: column;
-    padding: 1rem;
+    padding: 0.9rem;
     overflow: hidden;
     border: 1px solid var(--border-light);
     border-radius: 20px;
@@ -237,8 +237,8 @@
   .responsive-filter-panel__header {
     align-items: center;
     justify-content: space-between;
-    gap: 1rem;
-    padding-bottom: 0.75rem;
+    gap: 0.9rem;
+    padding-bottom: 0.675rem;
     border-bottom: 1px solid var(--border-light);
   }
 
@@ -249,7 +249,7 @@
 
   .responsive-filter-panel__title {
     color: var(--text-primary);
-    font-size: 1rem;
+    font-size: 0.9rem;
     font-weight: 850;
   }
 
@@ -279,7 +279,7 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
     align-content: start;
     width: 100%;
-    padding-block: 0.875rem;
+    padding-block: 0.7875rem;
     overflow-y: auto;
     overscroll-behavior: contain;
   }
@@ -292,22 +292,22 @@
   .responsive-filter-panel__fields.rf-filter-bar > * > button,
   .responsive-filter-panel__fields.rf-filter-bar > * > select {
     width: 100%;
-    min-height: 44px;
+    min-height: 40px;
   }
 
   .responsive-filter-panel__footer {
-    padding-top: 0.75rem;
+    padding-top: 0.675rem;
     border-top: 1px solid var(--border-light);
   }
 
   .responsive-filter-panel__done {
     width: 100%;
-    min-height: 44px;
+    min-height: 40px;
     border: 0;
     border-radius: 12px;
     color: #fff;
     background: var(--sgh-gradient-button, #00A3E0);
-    font-size: 0.8125rem;
+    font-size: 0.75rem;
     font-weight: 800;
     cursor: pointer;
   }
@@ -327,7 +327,7 @@
   border-radius: 18px;
   background:
     linear-gradient(135deg, color-mix(in srgb, var(--bg-surface) 96%, #00A3E0 4%), var(--bg-surface));
-  padding: clamp(0.875rem, 1.4vw, 1.25rem);
+  padding: clamp(0.7875rem, 1.4vw, 1.125rem);
   box-shadow: var(--rf-panel-shadow);
 }
 
@@ -371,7 +371,7 @@
   position: relative;
   contain: layout paint style;
   overflow: hidden;
-  min-height: 104px;
+  min-height: 94px;
   border-radius: 16px !important;
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.025);
   transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
@@ -431,11 +431,11 @@
 .rf-page table thead th {
   background: color-mix(in srgb, var(--bg-sunken) 88%, var(--bg-surface));
   backdrop-filter: blur(8px);
-  padding-block: 0.625rem;
+  padding-block: 0.5625rem;
 }
 
 .rf-page table tbody td:not(.p-0) {
-  padding-block: 0.75rem;
+  padding-block: 0.675rem;
 }
 
 .rf-page table tbody tr {
@@ -494,7 +494,7 @@
 }
 
 .rf-builder-header {
-  min-height: 72px !important;
+  min-height: 65px !important;
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--bg-surface) 98%, #00A3E0 2%), var(--bg-surface)) !important;
 }
@@ -510,7 +510,7 @@
 }
 
 .rf-page--team-management .rf-toolbar {
-  padding: 0.8rem 0.9rem;
+  padding: 0.72rem 0.81rem;
 }
 
 .rf-modal-backdrop {
@@ -526,7 +526,7 @@
 }
 
 [role='dialog'] :is(input:not([type='checkbox']):not([type='radio']), select, textarea) {
-  min-height: var(--app-control-height, 40px);
+  min-height: var(--app-control-height, 36px);
   border-radius: 10px;
 }
 
@@ -585,12 +585,12 @@
 @media (max-width: 768px) {
   .team-header-layout,
   .executive-page-heading {
-    gap: 0.75rem;
+    gap: 0.675rem;
   }
 
   .team-header-heading {
     align-items: flex-start;
-    gap: 0.5rem;
+    gap: 0.45rem;
   }
 
   .team-header-back {
@@ -603,12 +603,12 @@
   }
 
   .marketing-header-layout {
-    gap: 0.75rem;
+    gap: 0.675rem;
   }
 
   .marketing-header-heading {
     align-items: flex-start;
-    gap: 0.5rem;
+    gap: 0.45rem;
   }
 
   .marketing-header-controls {
@@ -622,7 +622,7 @@
   .marketing-export-button {
     min-width: 44px;
     min-height: 44px;
-    padding-inline: 0.75rem;
+    padding-inline: 0.675rem;
   }
 
   .marketing-export-button > span {
@@ -630,13 +630,13 @@
   }
 
   .rf-page {
-    padding: 0.75rem;
+    padding: 0.675rem;
   }
 
   .rf-page-hero,
   .rf-page-heading-row {
     border-radius: 18px;
-    padding: 1rem;
+    padding: 0.9rem;
   }
 
   .rf-page--insights .insights-filter-shell {

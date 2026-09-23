@@ -49,7 +49,7 @@ const PlayerRadarChart: React.FC<PlayerRadarChartProps> = ({ data, employeeName,
   if (!data || data.length === 0) return null;
 
   return (
-    <div className="w-full h-[320px]">
+    <div className="w-full h-[288px]">
       <ResponsiveContainer width="100%" height={320} minWidth={0}>
         <RadarChart cx="50%" cy="50%" outerRadius="70%" data={data}>
           <PolarGrid stroke="var(--border-light)" />

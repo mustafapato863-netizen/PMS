@@ -106,7 +106,7 @@ const ExecutivePerformancePanel = ({
         <Suspense
           fallback={
             <div
-              className="h-[220px] animate-pulse rounded-lg bg-[var(--bg-sunken)]"
+              className="h-[198px] animate-pulse rounded-lg bg-[var(--bg-sunken)]"
               role="status"
               aria-label="Loading grade distribution"
               aria-busy="true"

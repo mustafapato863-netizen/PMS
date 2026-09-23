@@ -57,7 +57,7 @@ export function StrategyMapView({
   return (
     <div className="bsc-panel bsc-panel-pad">
       <div className="bsc-panel-head" style={{ marginBottom: 20, paddingBottom: 14, borderBottom: '1px solid var(--bsc-border, #E5E7EB)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 13 }}>
           <div style={{
             position: 'relative',
             display: 'flex',
@@ -70,7 +70,7 @@ export function StrategyMapView({
             border: '1px solid rgba(46, 111, 224, 0.3)',
             color: '#2E6FE0',
             fontWeight: 800,
-            fontSize: 20,
+            fontSize: 18,
             boxShadow: '0 3px 10px rgba(46, 111, 224, 0.12)',
             flexShrink: 0,
           }}>
@@ -87,15 +87,15 @@ export function StrategyMapView({
             }} />
           </div>
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-              <h2 style={{ fontSize: 19, fontWeight: 700, margin: 0, letterSpacing: '-0.01em', color: 'var(--bsc-panel-text, #111827)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
+              <h2 style={{ fontSize: 17, fontWeight: 700, margin: 0, letterSpacing: '-0.01em', color: 'var(--bsc-panel-text, #111827)' }}>
                 {primaryTitle}
               </h2>
               {badgeTitle && (
                 <span style={{
                   fontSize: 11,
                   fontWeight: 600,
-                  padding: '3px 12px',
+                  padding: '3px 11px',
                   borderRadius: 99,
                   background: 'rgba(46, 111, 224, 0.08)',
                   color: '#2E6FE0',

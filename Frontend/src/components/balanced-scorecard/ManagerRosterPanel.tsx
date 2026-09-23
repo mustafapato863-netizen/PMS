@@ -115,7 +115,7 @@ export function ManagerRosterPanel({
                             <span style={{
                               fontSize: 10,
                               fontWeight: 600,
-                              padding: '1px 8px',
+                              padding: '1px 7px',
                               borderRadius: 99,
                               background: 'rgba(46, 111, 224, 0.08)',
                               color: '#2E6FE0',

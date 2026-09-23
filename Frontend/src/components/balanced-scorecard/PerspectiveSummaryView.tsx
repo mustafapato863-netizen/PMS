@@ -29,7 +29,7 @@ export function PerspectiveSummaryView({
         {selectedPerspective && (
           <button
             onClick={() => onSelectPerspective(null)}
-            style={{ border:'1px solid #E6E8EC', borderRadius:8, padding:'4px 10px', background:'#fff', fontSize:11, fontWeight:700, cursor:'pointer', color:'#5B616E' }}
+            style={{ border:'1px solid #E6E8EC', borderRadius:8, padding: '4px 9px', background:'#fff', fontSize:11, fontWeight:700, cursor:'pointer', color:'#5B616E' }}
           >
             Clear filter ×
           </button>

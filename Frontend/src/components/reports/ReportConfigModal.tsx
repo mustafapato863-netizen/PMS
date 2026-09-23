@@ -269,7 +269,7 @@ export default function ReportConfigModal({
             </div>
           </div>
 
-          <aside className="min-h-[360px] rounded-2xl border border-[var(--border-light)] bg-[var(--bg-sunken)]/40 p-4">
+          <aside className="min-h-[324px] rounded-2xl border border-[var(--border-light)] bg-[var(--bg-sunken)]/40 p-4">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <h3 className="font-extrabold text-[var(--text-primary)]">Data preview</h3>
@@ -286,7 +286,7 @@ export default function ReportConfigModal({
             </div>
 
             {!previewMutation.data && !previewMutation.isPending && (
-              <div className="flex min-h-[270px] flex-col items-center justify-center text-center text-[var(--text-muted)]">
+              <div className="flex min-h-[243px] flex-col items-center justify-center text-center text-[var(--text-muted)]">
                 <Presentation size={34} className="mb-3 text-[var(--sgh-cyan-primary,#00A3E0)]" />
                 <p className="text-sm font-bold text-[var(--text-secondary)]">Preview is required</p>
                 <p className="mt-1 max-w-xs text-xs">The report is generated only after current filters return authorized data.</p>

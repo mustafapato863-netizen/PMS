@@ -181,7 +181,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed = false, onToggleCollapsed = (
         title={isCollapsed ? item.name : undefined}
         data-tooltip={isCollapsed ? item.name : undefined}
         onClick={() => setIsOpen(false)}
-        className={`sidebar-tooltip-trigger flex min-h-11 items-center justify-between rounded-lg py-1.5 text-[13px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--sgh-cyan-primary)] xl:min-h-9 ${isCollapsed ? 'xl:justify-center xl:px-2' : nested ? 'pl-8 pr-3' : 'px-3'} ${active ? 'active-nav-item' : 'inactive-nav-item'}`}
+        className={`sidebar-tooltip-trigger flex min-h-11 items-center justify-between rounded-lg py-1.5 text-[12px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--sgh-cyan-primary)] xl:min-h-9 ${isCollapsed ? 'xl:justify-center xl:px-2' : nested ? 'pl-8 pr-3' : 'px-3'} ${active ? 'active-nav-item' : 'inactive-nav-item'}`}
         style={{
           color: active ? 'var(--sidebar-active-text)' : 'var(--sidebar-text)',
           background: active ? 'var(--sidebar-active-bg)' : undefined,
@@ -229,7 +229,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed = false, onToggleCollapsed = (
             <SghHeartSvg size={isCollapsed ? 22 : 26} glow />
           </div>
           <div className={isCollapsed ? 'xl:hidden' : ''}>
-            <h1 className="text-[15px] font-extrabold tracking-tight text-[var(--text-primary)]">SGH Hub</h1>
+            <h1 className="text-[14px] font-extrabold tracking-tight text-[var(--text-primary)]">SGH Hub</h1>
             <span className="mt-0.5 block text-[10px] font-bold uppercase tracking-widest text-[var(--sgh-cyan-primary)]">Intelligence</span>
           </div>
         </div>

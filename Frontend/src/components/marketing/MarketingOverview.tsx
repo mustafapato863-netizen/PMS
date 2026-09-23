@@ -187,7 +187,7 @@ const MarketingOverview = ({
             return (
               <article
                 key={summary.position}
-                className={`flex min-h-[240px] flex-col rounded-2xl border bg-[var(--bg-surface)] p-4 shadow-sm transition ${
+                className={`flex min-h-[216px] flex-col rounded-2xl border bg-[var(--bg-surface)] p-4 shadow-sm transition ${
                   noData
                     ? 'border-[var(--border-light)] opacity-60'
                     : status.label === 'At Risk'
@@ -264,7 +264,7 @@ const MarketingOverview = ({
           <PanelTitle id="grade-distribution-title">Marketing Grade Distribution</PanelTitle>
           {analytics.currentRecords.length ? (
             <div className="grid items-center gap-2 sm:grid-cols-[1fr_auto] xl:grid-cols-1">
-              <div className="relative h-[170px]">
+              <div className="relative h-[153px]">
                 <ResponsiveContainer width="100%" height={170} minWidth={0}>
                   <PieChart>
                     <Pie data={gradeData} dataKey="value" nameKey="name" innerRadius={48} outerRadius={70} paddingAngle={2}>
@@ -408,7 +408,7 @@ const InsightRow = ({
 };
 
 const ChartEmpty = ({ message, compact = false }: { message: string; compact?: boolean }) => (
-  <div className={`flex items-center justify-center rounded-xl border border-dashed border-[var(--border-medium)] bg-[var(--bg-sunken)]/30 px-5 text-center text-xs font-semibold text-[var(--text-muted)] ${compact ? 'min-h-32' : 'min-h-[235px]'}`}>
+  <div className={`flex items-center justify-center rounded-xl border border-dashed border-[var(--border-medium)] bg-[var(--bg-sunken)]/30 px-5 text-center text-xs font-semibold text-[var(--text-muted)] ${compact ? 'min-h-32' : 'min-h-[212px]'}`}>
     {message}
   </div>
 );

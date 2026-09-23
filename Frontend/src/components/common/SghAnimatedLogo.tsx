@@ -67,7 +67,7 @@ export const SghAnimatedLogo: React.FC<SghAnimatedLogoProps> = ({
             initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.15 }}
-            className="flex items-center gap-1.5 font-black tracking-tight text-[var(--text-primary,#f8fafc)] text-2xl sm:text-[26px]"
+            className="flex items-center gap-1.5 font-black tracking-tight text-[var(--text-primary,#f8fafc)] text-2xl sm:text-[23px]"
           >
             <span>{title}</span>
           </motion.div>

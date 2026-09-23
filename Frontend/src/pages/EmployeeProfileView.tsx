@@ -787,7 +787,7 @@ const EmployeeProfileView = () => {
             )}
 
             {/* Comparison Controls */}
-            <div className="glass-panel rounded-2xl p-1 shadow-sm flex items-center justify-center max-w-max mx-auto h-[42px] bg-[var(--bg-sunken)] border border-[var(--border-medium)]">
+            <div className="glass-panel rounded-2xl p-1 shadow-sm flex items-center justify-center max-w-max mx-auto h-[38px] bg-[var(--bg-sunken)] border border-[var(--border-medium)]">
               <div className="flex items-center gap-0.5 w-full h-full">
                 {(['actuals', 'team_avg', 'team_best', 'personal_best'] as const).map((mode) => {
                   const label = mode === 'actuals' ? '📊 Actuals' : mode === 'team_avg' ? '📈 Team Avg' : mode === 'team_best' ? '🏆 Team Best' : '⭐ Personal';

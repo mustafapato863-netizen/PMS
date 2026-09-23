@@ -191,7 +191,7 @@ export default function GlobalSearch() {
               onChange={(event) => updateQuery(event.target.value)}
               onKeyDown={onInputKeyDown}
               placeholder="Search employees, teams, pages, or actions…"
-              className="min-w-0 flex-1 bg-transparent text-[13px] font-semibold text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]"
+              className="min-w-0 flex-1 bg-transparent text-[12px] font-semibold text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]"
               aria-label="Search employees, teams, pages, or actions"
             />
             <span className="flex items-center gap-1 rounded-lg border border-[var(--border-light)] bg-[var(--bg-sunken)]/80 px-2 py-1 text-[9px] font-bold uppercase tracking-[0.16em] text-[var(--text-secondary)]">

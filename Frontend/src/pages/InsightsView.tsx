@@ -107,7 +107,7 @@ function DriverChart({ drivers, onSelect, onHoverTooltip }: {
   const maximum = Math.max(1, ...displayed.map((driver) => Math.abs(driver.impact_points)));
 
   if (!displayed.length) {
-    return <div className="grid min-h-[360px] place-items-center px-6 text-center text-sm text-[var(--text-muted)]">No weighted score drivers match the selected scope.</div>;
+    return <div className="grid min-h-[324px] place-items-center px-6 text-center text-sm text-[var(--text-muted)]">No weighted score drivers match the selected scope.</div>;
   }
 
   return (
@@ -162,7 +162,7 @@ function DriverChart({ drivers, onSelect, onHoverTooltip }: {
 }
 
 function InsightSpotlight({ insight, onOpen }: { insight: InsightItem | null; onOpen: () => void }) {
-  if (!insight) return <div className="grid min-h-[360px] place-items-center px-7 text-center text-sm text-[var(--text-muted)]">Select an analysis to inspect its evidence.</div>;
+  if (!insight) return <div className="grid min-h-[324px] place-items-center px-7 text-center text-sm text-[var(--text-muted)]">Select an analysis to inspect its evidence.</div>;
   const Icon = insight.severity === 'critical' ? Target : insight.severity === 'risk' ? AlertTriangle : insight.severity === 'opportunity' ? Sparkles : DatabaseZap;
   const improving = insight.detail.current_value !== null && insight.detail.previous_value !== null && (
     insight.detail.direction === 'lower_better'
@@ -477,7 +477,7 @@ function RecommendedActions({
       </header>
       <div className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-4">
         {actionCards.map(({ title, copy, icon: Icon, tone, onClick }) => (
-          <button key={title} type="button" onClick={onClick} className={`group flex min-h-[132px] flex-col items-start rounded-xl border p-4 text-left transition hover:-translate-y-0.5 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${toneClasses[tone]}`}>
+          <button key={title} type="button" onClick={onClick} className={`group flex min-h-[119px] flex-col items-start rounded-xl border p-4 text-left transition hover:-translate-y-0.5 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${toneClasses[tone]}`}>
             <span className="flex w-full items-start justify-between gap-3"><span className="grid h-9 w-9 place-items-center rounded-xl bg-white/80 shadow-sm dark:bg-white/10"><Icon size={17} /></span><ArrowUpRight size={15} className="opacity-60 transition group-hover:translate-x-0.5 group-hover:-translate-y-0.5" /></span>
             <strong className="mt-4 text-sm font-extrabold text-[var(--text-primary)]">{title}</strong>
             <span className="mt-1 line-clamp-2 text-[11px] leading-5 text-[var(--text-muted)]">{copy}</span>
@@ -830,7 +830,7 @@ export default function InsightsView() {
         </section>
       </>}
 
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Insight summary">{summaryCards.map(({ label, value, copy, icon: Icon, style }) => <article key={label} className={`min-h-[142px] rounded-2xl border p-5 shadow-sm ${style}`}><div className="flex items-start justify-between"><span className="text-sm font-extrabold">{label}</span><span className="grid h-10 w-10 place-items-center rounded-xl bg-current/10"><Icon size={19} /></span></div><p className="mt-3 text-3xl font-black text-[var(--text-primary)]">{value}</p><p className="mt-1 text-xs font-medium text-[var(--text-muted)]">{copy}</p></article>)}</section>
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Insight summary">{summaryCards.map(({ label, value, copy, icon: Icon, style }) => <article key={label} className={`min-h-[128px] rounded-2xl border p-5 shadow-sm ${style}`}><div className="flex items-start justify-between"><span className="text-sm font-extrabold">{label}</span><span className="grid h-10 w-10 place-items-center rounded-xl bg-current/10"><Icon size={19} /></span></div><p className="mt-3 text-3xl font-black text-[var(--text-primary)]">{value}</p><p className="mt-1 text-xs font-medium text-[var(--text-muted)]">{copy}</p></article>)}</section>
 
       <section className="grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(340px,0.75fr)]">
         <article className="overflow-hidden rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] shadow-sm"><header className="border-b border-[var(--border-light)] px-5 py-4"><div className="flex items-center gap-2"><h2 className="text-lg font-extrabold text-[var(--text-primary)]">Weighted Score Contribution</h2><AlertCircle size={14} className="text-[var(--text-faint)]" /></div><p className="mt-1 text-xs text-[var(--text-muted)]">Measured KPI contribution movements—not assumed operational root causes.</p></header><DriverChart drivers={workspace.performance_drivers} onSelect={setFocusedInsightId} onHoverTooltip={setHoverTooltip} /></article>
