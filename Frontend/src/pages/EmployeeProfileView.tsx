@@ -18,7 +18,7 @@ import ActionTimeline from '../components/employee/ActionTimeline';
 import EmployeeActionModal from '../components/team/EmployeeActionModal';
 import type { TeamAgentRow, TeamWeightConfig } from '../hooks/usePerformanceData';
 import { getKPIsForAgent, isPreApprovalsIpElectiveTeam, resolvePreApprovalsWorkstream } from '../types';
-import type { ActionType, AgentRecord } from '../types';
+import type { AgentRecord, EditableCorrectiveAction } from '../types';
 import { getGradeClass } from '../constants/grades';
 import { apiFetch } from '../lib/apiClient';
 import { EmployeeStatsSummary } from '../components/employee/EmployeeStatsSummary';
@@ -50,6 +50,13 @@ interface BackendProfile {
     manager_notes?: string;
     timestamp?: string;
     month?: string;
+    status?: 'Open' | 'In Progress' | 'Completed' | 'Cancelled';
+    due_date?: string | null;
+    days_to_due?: number | null;
+    owner?: { id: string; name: string } | null;
+    priority?: 'Low' | 'Medium' | 'High' | null;
+    linked_kpi_key?: string | null;
+    plan?: { id: string; name: string } | null;
   }>;
 }
 
@@ -277,12 +284,7 @@ const EmployeeProfileView = () => {
   const [backendProfile, setBackendProfile] = useState<BackendProfile | null>(null);
   const [loadingProfile, setLoadingProfile] = useState(false);
   const [showModal, setShowModal] = useState(false);
-  const [editingAction, setEditingAction] = useState<{
-    id: string;
-    action_type: ActionType;
-    action_text: string;
-    root_cause_note: string;
-  } | null>(null);
+  const [editingAction, setEditingAction] = useState<EditableCorrectiveAction | null>(null);
 
   const [comparisonMode, setComparisonMode] = useState<'actuals' | 'team_avg' | 'team_best' | 'personal_best'>('actuals');
 

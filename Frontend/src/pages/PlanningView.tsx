@@ -10,6 +10,8 @@ import OverlayPortal from '../components/common/OverlayPortal';
 import MilestonePanel from '../components/planning/MilestonePanel';
 import PlanFormModal from '../components/planning/PlanFormModal';
 import { PageLoadingSkeleton, PanelLoadingSkeleton } from '../components/common/SkeletonLoader';
+import { ActionFollowUpPanel } from '../components/actions/ActionFollowUpBoard';
+import { dueBadgeLabel } from '../components/actions/dueBadge';
 import type { PlanCard, PlanDetail } from '../features/planning/types';
 import {
   useAddPlanNote, useDeletePlan, usePlan, usePlanningOptions, usePlans,
@@ -92,6 +94,40 @@ function KpiTable({ detail, limit }: { detail: PlanDetail; limit?: number }) {
         <thead><tr className="border-b border-[var(--border-light)] bg-[var(--bg-sunken)]/45 text-[11px] uppercase tracking-wide text-[var(--text-faint)]"><th className="px-4 py-3">KPI</th><th className="px-3 py-3">Baseline</th><th className="px-3 py-3">Target</th><th className="px-3 py-3">Current</th><th className="px-3 py-3">Achievement</th><th className="px-3 py-3">Gap</th><th className="px-4 py-3">Direction</th></tr></thead>
         <tbody>{rows.map((kpi) => <tr key={kpi.id} className="border-b border-[var(--border-light)] last:border-0"><td className="px-4 py-3"><strong className="text-[var(--text-primary)]">{kpi.label}</strong><span className="ml-1 text-xs text-[var(--text-muted)]">({kpi.unit})</span></td><td className="px-3 py-3 text-[var(--text-secondary)]">{kpi.baseline}</td><td className="px-3 py-3 font-bold text-[var(--text-primary)]">{kpi.target}</td><td className="px-3 py-3 text-[var(--text-secondary)]">{kpi.current ?? 'N/A'}</td><td className="px-3 py-3 font-bold text-[var(--sgh-cyan-primary)]">{kpi.achievement === null ? 'N/A' : `${kpi.achievement}%`}</td><td className={`px-3 py-3 font-bold ${kpi.gap === null ? 'text-[var(--text-muted)]' : kpi.gap >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>{kpi.gap ?? 'N/A'}</td><td className="px-4 py-3 capitalize text-[var(--text-muted)]">{kpi.direction.replace('_', ' ')}</td></tr>)}</tbody>
       </table>
+    </div>
+  );
+}
+
+function PlanActionList({ actions, canEdit, onComplete }: { actions: PlanDetail['actions']; canEdit: boolean; onComplete: (id: string) => void }) {
+  if (!actions.length) return <EmptyState icon={ListChecks} title="No actions assigned" copy="Define the work, owner and due date required to move the KPI from baseline to target." />;
+  return (
+    <div className="space-y-3">
+      {actions.map((action) => {
+        const owner = typeof action.owner === 'string' && action.owner ? action.owner : 'Unassigned';
+        const due = typeof action.due_date === 'string' ? action.due_date : null;
+        const dueLabel = dueBadgeLabel(due);
+        return (
+          <article key={action.id} className="rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <strong className="text-[var(--text-primary)]">{action.title}</strong>
+                <p className="mt-1 text-sm text-[var(--text-muted)]">{action.description}</p>
+              </div>
+              <span className="rounded-full bg-[var(--sgh-cyan-primary)]/10 px-2 py-1 text-[10px] font-bold text-[var(--sgh-cyan-primary)]">{action.status}</span>
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-2 text-xs font-semibold text-[var(--text-secondary)]">
+              <span>Owner {owner}</span>
+              <span>Due {due ? formatDate(due) : 'No due date'}</span>
+              <span className={`rounded-full px-2 py-0.5 text-[10px] font-black ${dueLabel.includes('overdue') && action.status !== 'Completed' && action.status !== 'Cancelled' ? 'bg-rose-500/10 text-rose-700 dark:text-rose-300' : 'bg-[var(--bg-sunken)] text-[var(--text-secondary)]'}`}>{dueLabel}</span>
+            </div>
+            {canEdit && action.status !== 'Completed' && (
+              <button type="button" onClick={() => onComplete(action.id)} className="mt-4 inline-flex min-h-10 items-center gap-2 rounded-xl border border-[var(--sgh-cyan-primary)]/30 px-3 text-xs font-bold text-[var(--sgh-cyan-primary)] hover:bg-[var(--sgh-cyan-primary)]/10 transition-colors">
+                <CheckCircle2 size={15} />Mark completed
+              </button>
+            )}
+          </article>
+        );
+      })}
     </div>
   );
 }
@@ -227,6 +263,13 @@ export default function PlanningView() {
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [mobileDetail, setMobileDetail] = useState(false);
+  const [workspace, setWorkspace] = useState<'plans' | 'follow-up'>('plans');
+  const workspaceSwitch = (
+    <div role="tablist" aria-label="Planning workspace" className="flex gap-1 rounded-xl border border-[var(--border-light)] bg-[var(--bg-sunken)] p-1">
+      <button type="button" aria-pressed={workspace === 'plans'} onClick={() => setWorkspace('plans')} className={`min-h-9 rounded-lg px-3 text-xs font-bold ${workspace === 'plans' ? 'bg-[var(--bg-surface)] text-[var(--text-primary)] shadow-sm' : 'text-[var(--text-muted)]'}`}>Plans</button>
+      <button type="button" aria-pressed={workspace === 'follow-up'} onClick={() => setWorkspace('follow-up')} className={`min-h-9 rounded-lg px-3 text-xs font-bold ${workspace === 'follow-up' ? 'bg-[var(--bg-surface)] text-[var(--text-primary)] shadow-sm' : 'text-[var(--text-muted)]'}`}>Action follow-up</button>
+    </div>
+  );
   const params = useMemo(() => { const value = new URLSearchParams(); if (status) value.set('status', status); if (team) value.set('team', team); if (owner) value.set('owner_id', owner); if (search) value.set('search', search); return value; }, [status, team, owner, search]);
   const plans = usePlans(params);
   const effectiveSelected = selected || plans.data?.[0]?.id || '';
@@ -234,6 +277,18 @@ export default function PlanningView() {
   const updateItem = useUpdatePlanItem();
   const addNote = useAddPlanNote();
   const current = detail.data;
+
+  if (workspace === 'follow-up') {
+    return (
+      <div className="app-page-shell rf-page rf-page--planning space-y-4">
+        <header className="flex flex-col gap-3 rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+          <div><h1 className="text-xl font-extrabold text-[var(--text-primary)]">Planning</h1><p className="mt-0.5 text-xs text-[var(--text-muted)]">Follow up open actions across plans and corrective actions.</p></div>
+          {workspaceSwitch}
+        </header>
+        <ActionFollowUpPanel canEdit={options.data?.can_edit !== false} />
+      </div>
+    );
+  }
 
   if (options.isLoading || plans.isLoading) return <PageLoadingSkeleton variant="detail" label="Preparing planning workspace" />;
   if (options.error || plans.error || !options.data) return <div role="alert" className="m-8 rounded-2xl border border-red-500/20 bg-red-500/10 p-6 text-red-600">Unable to load planning workspace.</div>;
@@ -244,7 +299,7 @@ export default function PlanningView() {
   return (
     <div className="app-page-shell rf-page rf-page--planning">
       <header className="flex flex-col gap-3 rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] p-4 shadow-sm xl:flex-row xl:items-center xl:justify-between">
-        <div className="shrink-0"><div className="flex items-center gap-2"><h1 className="text-xl font-extrabold text-[var(--text-primary)]">Planning</h1><ClipboardCheck size={17} className="text-[var(--sgh-cyan-primary)]" /></div><p className="mt-0.5 text-xs text-[var(--text-muted)]">Turn performance insights into owned, measurable actions.</p></div>
+        <div className="shrink-0"><div className="flex items-center gap-2"><h1 className="text-xl font-extrabold text-[var(--text-primary)]">Planning</h1><ClipboardCheck size={17} className="text-[var(--sgh-cyan-primary)]" /></div><p className="mt-0.5 text-xs text-[var(--text-muted)]">Turn performance insights into owned, measurable actions.</p><div className="mt-2">{workspaceSwitch}</div></div>
         <div className="grid gap-2 sm:grid-cols-2 xl:flex xl:items-center"><select aria-label="Team" className="min-h-10 min-w-0 rounded-xl border border-[var(--input-border)] bg-[var(--input-bg)] px-3 text-xs font-semibold text-[var(--input-text)] outline-none focus:border-[var(--sgh-cyan-primary)] focus:ring-2 focus:ring-[var(--sgh-cyan-primary)]/20 transition-all xl:w-44" value={team} onChange={(event) => setTeam(event.target.value)}><option value="">All Teams</option>{options.data.teams.map((value) => <option key={value}>{value}</option>)}</select><select aria-label="Plan owner" className="min-h-10 min-w-0 rounded-xl border border-[var(--input-border)] bg-[var(--input-bg)] px-3 text-xs font-semibold text-[var(--input-text)] outline-none focus:border-[var(--sgh-cyan-primary)] focus:ring-2 focus:ring-[var(--sgh-cyan-primary)]/20 transition-all xl:w-40" value={owner} onChange={(event) => setOwner(event.target.value)}><option value="">All Plan Owners</option>{options.data.owners.map((value) => <option key={value.id} value={value.id}>{value.name}</option>)}</select><select aria-label="Status" className="min-h-10 min-w-0 rounded-xl border border-[var(--input-border)] bg-[var(--input-bg)] px-3 text-xs font-semibold text-[var(--input-text)] outline-none focus:border-[var(--sgh-cyan-primary)] focus:ring-2 focus:ring-[var(--sgh-cyan-primary)]/20 transition-all xl:w-32" value={status} onChange={(event) => setStatus(event.target.value)}><option value="">All Statuses</option>{options.data.statuses.map((value) => <option key={value}>{value}</option>)}</select>{options.data.can_edit && <button type="button" onClick={() => setNewOpen(true)} className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-[#00A3E0] to-[#00A859] px-4 text-xs font-bold text-white shadow-sm hover:brightness-110 active:scale-[0.98] transition-all"><Plus size={16} />New Plan</button>}</div>
       </header>
 
@@ -275,7 +330,7 @@ export default function PlanningView() {
             <section className="bg-[var(--bg-sunken)]/20 p-4 md:p-5">
               {tab === 'Overview' && <Overview detail={current} onOpenKpis={() => setTab('KPIs')} />}
               {tab === 'Objectives' && (current.objectives.length ? <div className="space-y-3">{current.objectives.map((objective) => <article key={objective.id} className="rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] p-4"><div className="flex items-start justify-between gap-3"><div><strong className="text-[var(--text-primary)]">{objective.name}</strong><p className="mt-1 text-xs text-[var(--text-muted)]">Measurable objective linked to the plan outcome.</p></div><span className="rounded-full bg-[var(--sgh-cyan-primary)]/10 px-2 py-1 text-[10px] font-bold text-[var(--sgh-cyan-primary)]">{objective.status}</span></div><div className="mt-4 flex items-center gap-3"><div className="h-2 flex-1 overflow-hidden rounded bg-[var(--bg-sunken)]"><div className="h-full rounded bg-gradient-to-r from-[#00A3E0] to-[#00A859]" style={{ width: `${objective.progress}%` }} /></div><strong className="text-xs text-[var(--text-primary)]">{objective.progress}%</strong></div>{options.data.can_edit && <button type="button" onClick={() => updateItem.mutate({ planId: current.id, kind: 'objective', itemId: objective.id, payload: { status: 'Completed', current_value: (objective as { target?: number }).target } })} className="mt-3 text-xs font-bold text-[var(--sgh-cyan-primary)] hover:underline">Mark completed</button>}</article>)}</div> : <EmptyState icon={Target} title="No objectives defined" copy="Add a measurable objective before activating this plan." />)}
-              {tab === 'Actions' && (current.actions.length ? <div className="space-y-3">{current.actions.map((action) => <article key={action.id} className="rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] p-4"><div className="flex items-start justify-between gap-3"><div><strong className="text-[var(--text-primary)]">{action.title}</strong><p className="mt-1 text-sm text-[var(--text-muted)]">{action.description}</p></div><span className="rounded-full bg-[var(--sgh-cyan-primary)]/10 px-2 py-1 text-[10px] font-bold text-[var(--sgh-cyan-primary)]">{action.status}</span></div>{options.data.can_edit && action.status !== 'Completed' && <button type="button" onClick={() => updateItem.mutate({ planId: current.id, kind: 'action', itemId: action.id, payload: { status: 'Completed', completion_note: 'Completed from planning review' } })} className="mt-4 inline-flex min-h-10 items-center gap-2 rounded-xl border border-[var(--sgh-cyan-primary)]/30 px-3 text-xs font-bold text-[var(--sgh-cyan-primary)] hover:bg-[var(--sgh-cyan-primary)]/10 transition-colors"><CheckCircle2 size={15} />Mark completed</button>}</article>)}</div> : <EmptyState icon={ListChecks} title="No actions assigned" copy="Define the work, owner and due date required to move the KPI from baseline to target." />)}
+              {tab === 'Actions' && <PlanActionList actions={current.actions} canEdit={options.data.can_edit} onComplete={(itemId) => updateItem.mutate({ planId: current.id, kind: 'action', itemId, payload: { status: 'Completed', completion_note: 'Completed from planning review' } })} />}
               {tab === 'KPIs' && <article className="overflow-hidden rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)]"><header className="border-b border-[var(--border-light)] px-4 py-3"><h3 className="font-extrabold text-[var(--text-primary)]">All plan KPIs</h3><p className="mt-1 text-xs text-[var(--text-muted)]">Measured progress against the configured outcome direction.</p></header><KpiTable detail={current} /></article>}
               {tab === 'Milestones' && <MilestonePanel detail={current} owners={options.data.owners} canEdit={options.data.can_edit} />}
               {tab === 'Notes' && <Notes planId={current.id} notes={current.notes} canEdit={options.data.can_edit} add={(text) => addNote.mutate({ id: current.id, text })} />}

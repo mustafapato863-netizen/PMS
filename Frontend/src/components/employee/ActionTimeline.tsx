@@ -1,7 +1,10 @@
 import { useState } from 'react';
 import { Clock, User, CheckCircle2, WifiOff, Edit2, Trash2, AlertTriangle, CalendarDays, List } from 'lucide-react';
-import type { ActionType, PMSAction } from '../../types';
+import type { ActionPriority, ActionStatus, ActionType, EditableCorrectiveAction, PMSAction } from '../../types';
 import { useUserRole } from '../../context/RoleContext';
+import { useUpdateActionStatus } from '../../hooks/useActionStore';
+import { canEditActionFollowUp, dueBadgeLabel } from '../actions/dueBadge';
+import { ActionStatusMenu } from '../actions/ActionStatusMenu';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const ACTION_COLORS: Record<string, { bg: string; text: string; dot: string }> = {
@@ -19,6 +22,13 @@ interface BackendAction {
   manager_notes?: string;
   timestamp?: string;
   month?: string;
+  status?: ActionStatus;
+  due_date?: string | null;
+  days_to_due?: number | null;
+  owner?: { id: string; name: string } | null;
+  priority?: ActionPriority | null;
+  linked_kpi_key?: string | null;
+  plan?: { id: string; name: string } | null;
 }
 
 interface ActionTimelineProps {
@@ -27,12 +37,7 @@ interface ActionTimelineProps {
   localActions: PMSAction[];
   backendActions: BackendAction[];
   isLoading?: boolean;
-  onEditAction?: (action: {
-    id: string;
-    action_type: ActionType;
-    action_text: string;
-    root_cause_note: string;
-  }) => void;
+  onEditAction?: (action: EditableCorrectiveAction) => void;
   onDeleteAction?: (actionId: string) => void;
 }
 
@@ -55,7 +60,8 @@ const ActionTimeline = ({
   onDeleteAction,
 }: ActionTimelineProps) => {
   const { role } = useUserRole();
-  const canModify = role === 'Admin' || role === 'Manager';
+  const canModify = canEditActionFollowUp(role);
+  const updateStatus = useUpdateActionStatus();
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [filterMode, setFilterMode] = useState<'month' | 'all'>('all');
   // Merge and deduplicate: local actions first, then backend-only
@@ -68,6 +74,13 @@ const ActionTimeline = ({
     createdAt: string;
     synced: boolean;
     month?: string;
+    status: string;
+    dueDate: string | null;
+    daysToDue: number | null | undefined;
+    ownerId: string | null;
+    priority: ActionPriority | null;
+    linkedKpi: string | null;
+    planId: string | null;
   }> = [
     ...localActions.map((a) => ({
       id: a.id,
@@ -78,6 +91,13 @@ const ActionTimeline = ({
       createdAt: a.created_at,
       synced: a.synced,
       month: a.month,
+      status: a.status || 'Open',
+      dueDate: a.due_date || null,
+      daysToDue: a.days_to_due,
+      ownerId: a.owner?.id || null,
+      priority: a.priority || null,
+      linkedKpi: a.linked_kpi_key || null,
+      planId: a.plan?.id || null,
     })),
     ...backendActions
       .filter((b) => !localActions.some((l) => l.action_text?.includes(b.manager_action?.split(': ')[1] ?? '')))
@@ -90,6 +110,13 @@ const ActionTimeline = ({
         createdAt: b.timestamp || '',
         synced: true,
         month: b.month,
+        status: b.status || 'Open',
+        dueDate: b.due_date || null,
+        daysToDue: b.days_to_due,
+        ownerId: b.owner?.id || null,
+        priority: b.priority || null,
+        linkedKpi: b.linked_kpi_key || null,
+        planId: b.plan?.id || null,
       })),
   ].sort((a, b) => (b.createdAt > a.createdAt ? 1 : -1));
 
@@ -217,6 +244,19 @@ const ActionTimeline = ({
                     Decision Month: {action.month}
                   </p>
                 )}
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <span className="text-[10px] font-bold text-[var(--text-muted)]">Due {action.dueDate || 'not set'}</span>
+                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-black ${action.daysToDue != null && action.daysToDue < 0 && action.status !== 'Completed' && action.status !== 'Cancelled' ? 'bg-rose-500/10 text-rose-700 dark:text-rose-300' : 'bg-[var(--bg-surface)] text-[var(--text-secondary)]'}`}>
+                    {dueBadgeLabel(action.dueDate, action.daysToDue)}
+                  </span>
+                  <ActionStatusMenu
+                    compact
+                    status={action.status}
+                    canEdit={canModify}
+                    ariaLabel={`Status for ${action.text}`}
+                    onChange={(update) => updateStatus.mutateAsync({ id: action.id, ...update })}
+                  />
+                </div>
                 {action.note && (
                   <p className="text-xs text-[var(--text-secondary)] italic mt-1.5 border-t border-[var(--border-light)] pt-1.5 font-medium">
                     Root cause: {action.note}
@@ -235,6 +275,12 @@ const ActionTimeline = ({
                             action_type: action.type as ActionType,
                             action_text: action.text,
                             root_cause_note: action.note || '',
+                            status: action.status as ActionStatus,
+                            due_date: action.dueDate,
+                            owner_id: action.ownerId,
+                            priority: action.priority,
+                            linked_kpi_key: action.linkedKpi,
+                            plan_id: action.planId,
                           })
                         }
                         aria-label="Edit Action"

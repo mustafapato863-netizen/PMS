@@ -1,9 +1,12 @@
 import { useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Save, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { useActionStore } from '../../hooks/useActionStore';
+import { apiFetch } from '../../lib/apiClient';
 import { useAuth } from '../../context/auth';
-import type { ActionType } from '../../types';
+import type { ActionPriority, ActionType, EditableCorrectiveAction } from '../../types';
+import { todayIso } from '../actions/dueBadge';
 import { getKPIsForAgent } from '../../types';
 import type { TeamAgentRow } from '../../hooks/usePerformanceData';
 import { getWeightForLabel } from '../../utils/kpiScore';
@@ -16,12 +19,7 @@ interface EmployeeActionModalProps {
   teamWeights?: Record<string, number>;
   onClose: () => void;
   onSaved?: () => void;
-  editAction?: {
-    id: string;
-    action_type: ActionType;
-    action_text: string;
-    root_cause_note: string;
-  } | null;
+  editAction?: EditableCorrectiveAction | null;
 }
 
 const ACTION_TYPES: { value: ActionType; label: string; emoji: string; color: string }[] = [
@@ -95,6 +93,12 @@ const EmployeeActionModal = ({ employee, month, teamWeights, onClose, onSaved, e
   const [actionText, setActionText] = useState(editAction ? editAction.action_text : '');
   const [rootCauseNote, setRootCauseNote] = useState(editAction ? editAction.root_cause_note : '');
   const [result, setResult] = useState<{ success: boolean; message: string; synced?: boolean } | null>(null);
+  const [trackPlan, setTrackPlan] = useState(Boolean(editAction?.due_date || editAction?.owner_id || editAction?.priority || editAction?.plan_id));
+  const [ownerId, setOwnerId] = useState(editAction?.owner_id || '');
+  const [dueDate, setDueDate] = useState(editAction?.due_date || '');
+  const [priority, setPriority] = useState<ActionPriority>(editAction?.priority || 'Medium');
+  const [linkedKpi, setLinkedKpi] = useState(editAction?.linked_kpi_key || '');
+  const [planId, setPlanId] = useState(editAction?.plan_id || '');
 
   const getScoreColor = (s: number) =>
     s >= 90 ? 'text-emerald-600 dark:text-emerald-400' : s >= 80 ? 'text-blue-600 dark:text-blue-400' : s >= 70 ? 'text-amber-600 dark:text-amber-400' : 'text-red-600 dark:text-red-400';
@@ -201,8 +205,21 @@ const EmployeeActionModal = ({ employee, month, teamWeights, onClose, onSaved, e
       setResult({ success: false, message: 'Please describe the action to take.' });
       return;
     }
+    if (trackPlan && !dueDate) {
+      setResult({ success: false, message: 'A due date is required to track this action.' });
+      return;
+    }
+    if (trackPlan && dueDate < todayIso()) {
+      setResult({ success: false, message: 'Due date cannot be earlier than today.' });
+      return;
+    }
     setResult(null);
 
+    const tracking = trackPlan
+      ? { due_date: dueDate, owner_user_id: ownerId || null, priority, linked_kpi_key: linkedKpi || null, plan_id: planId || null }
+      : editAction
+        ? { due_date: null, owner_user_id: null, priority: null, linked_kpi_key: null, plan_id: null }
+        : {};
     const creatorLabel = `${currentUser?.name || 'Unknown'} - ${currentUser?.role || localStorage.getItem('pms_user_role') || 'Manager'}`;
     let res;
     if (editAction) {
@@ -212,6 +229,7 @@ const EmployeeActionModal = ({ employee, month, teamWeights, onClose, onSaved, e
           action_type: actionType,
           action_text: actionText.trim(),
           root_cause_note: rootCauseNote.trim(),
+          ...tracking,
         },
         { id: employee.id, name: employee.name, team: employee.team },
         month
@@ -226,6 +244,7 @@ const EmployeeActionModal = ({ employee, month, teamWeights, onClose, onSaved, e
         action_text: actionText.trim(),
         root_cause_note: rootCauseNote.trim(),
         created_by: creatorLabel,
+        ...tracking,
       });
     }
 
@@ -388,6 +407,35 @@ const EmployeeActionModal = ({ employee, month, teamWeights, onClose, onSaved, e
               </p>
             </div>
 
+            <label className="flex items-center gap-2 rounded-xl border border-[var(--border-light)] bg-[var(--bg-sunken)] px-3 py-2 text-sm font-bold text-[var(--text-primary)]">
+              <input
+                type="checkbox"
+                checked={trackPlan}
+                onChange={(event) => {
+                  const next = event.target.checked;
+                  setTrackPlan(next);
+                  if (next && !linkedKpi && failedKpis[0]) setLinkedKpi(failedKpis[0].label);
+                }}
+              />
+              Track as action plan
+            </label>
+            {trackPlan && (
+              <TrackPlanFields
+                team={employee.team}
+                ownerId={ownerId}
+                dueDate={dueDate}
+                priority={priority}
+                linkedKpi={linkedKpi}
+                planId={planId}
+                kpiOptions={failedKpis.map((kpi) => kpi.label)}
+                onOwnerId={setOwnerId}
+                onDueDate={setDueDate}
+                onPriority={setPriority}
+                onLinkedKpi={setLinkedKpi}
+                onPlanId={setPlanId}
+              />
+            )}
+
             {/* Action Text */}
             <div>
               <label className="block text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider mb-1.5">
@@ -438,5 +486,88 @@ const EmployeeActionModal = ({ employee, month, teamWeights, onClose, onSaved, e
     </OverlayPortal>
   );
 };
+
+function TrackPlanFields({
+  team,
+  ownerId,
+  dueDate,
+  priority,
+  linkedKpi,
+  planId,
+  kpiOptions,
+  onOwnerId,
+  onDueDate,
+  onPriority,
+  onLinkedKpi,
+  onPlanId,
+}: {
+  team: string;
+  ownerId: string;
+  dueDate: string;
+  priority: ActionPriority;
+  linkedKpi: string;
+  planId: string;
+  kpiOptions: string[];
+  onOwnerId: (value: string) => void;
+  onDueDate: (value: string) => void;
+  onPriority: (value: ActionPriority) => void;
+  onLinkedKpi: (value: string) => void;
+  onPlanId: (value: string) => void;
+}) {
+  const owners = useQuery({
+    queryKey: ['corrective-actions', 'owners'],
+    queryFn: async () => {
+      const result = await apiFetch<{ success: boolean; data: Array<{ id: string; name: string }> }>('/api/corrective-actions/owners');
+      return result?.data ?? [];
+    },
+  });
+  const plans = useQuery({
+    queryKey: ['planning', 'linkable', team],
+    queryFn: async () => {
+      const result = await apiFetch<{ success: boolean; data: Array<{ id: string; name: string; team: string; status: string }> }>('/api/planning');
+      return (result?.data ?? []).filter((plan) => plan.team === team && plan.status !== 'Completed' && plan.status !== 'Archived');
+    },
+  });
+  const fieldClass = 'mt-1 w-full min-h-10 rounded-xl border border-[var(--border-medium)] bg-[var(--bg-sunken)] px-3 text-sm font-semibold text-[var(--text-primary)]';
+  const kpiChoices = Array.from(new Set([linkedKpi, ...kpiOptions].filter(Boolean)));
+
+  return (
+    <div className="space-y-3 rounded-xl border border-[var(--border-light)] bg-[var(--bg-sunken)] p-3">
+      <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)]">
+        Owner
+        <select aria-label="Owner" value={ownerId} onChange={(event) => onOwnerId(event.target.value)} className={fieldClass}>
+          <option value="">Unassigned</option>
+          {(owners.data ?? []).map((owner) => <option key={owner.id} value={owner.id}>{owner.name}</option>)}
+        </select>
+      </label>
+      <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)]">
+        Due date
+        <input aria-label="Due date" type="date" min={todayIso()} value={dueDate} onChange={(event) => onDueDate(event.target.value)} className={fieldClass} />
+      </label>
+      <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)]">
+        Priority
+        <select aria-label="Priority" value={priority} onChange={(event) => onPriority(event.target.value as ActionPriority)} className={fieldClass}>
+          <option>Low</option>
+          <option>Medium</option>
+          <option>High</option>
+        </select>
+      </label>
+      <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)]">
+        Linked KPI
+        <select aria-label="Linked KPI" value={linkedKpi} onChange={(event) => onLinkedKpi(event.target.value)} className={fieldClass}>
+          <option value="">None</option>
+          {kpiChoices.map((label) => <option key={label} value={label}>{label}</option>)}
+        </select>
+      </label>
+      <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)]">
+        Link to plan
+        <select aria-label="Link to plan" value={planId} onChange={(event) => onPlanId(event.target.value)} className={fieldClass}>
+          <option value="">No linked plan</option>
+          {(plans.data ?? []).map((plan) => <option key={plan.id} value={plan.id}>{plan.name}</option>)}
+        </select>
+      </label>
+    </div>
+  );
+}
 
 export default EmployeeActionModal;

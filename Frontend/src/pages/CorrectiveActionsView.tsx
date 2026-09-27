@@ -13,8 +13,12 @@ import {
   Search,
   Users,
 } from 'lucide-react';
-import { useActionStore } from '../hooks/useActionStore';
+import { useActionStore, useFollowUp } from '../hooks/useActionStore';
+import { useUserRole } from '../context/RoleContext';
 import CustomDropdown from '../components/common/CustomDropdown';
+import { ActionFollowUpPanel } from '../components/actions/ActionFollowUpBoard';
+import { canEditActionFollowUp, dueBadgeLabel } from '../components/actions/dueBadge';
+import { StatusPill } from '../components/actions/ActionStatusMenu';
 import type { ActionType, PMSAction } from '../types';
 import { downloadCorrectiveActionsPowerPoint } from '../utils/correctiveActionPowerPoint';
 
@@ -71,6 +75,14 @@ function ActionCard({ action }: { action: PMSAction }) {
         </span>
       </div>
 
+      {action.due_date && (
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <StatusPill status={action.status || 'Open'} />
+          <span className={`rounded-full px-2 py-0.5 text-[10px] font-black ${action.is_overdue || action.follow_up_state === 'overdue' ? 'bg-rose-500/10 text-rose-700 dark:text-rose-300' : action.follow_up_state === 'due_soon' ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300' : 'bg-[var(--bg-sunken)] text-[var(--text-secondary)]'}`}>
+            {dueBadgeLabel(action.due_date, action.days_to_due)}
+          </span>
+        </div>
+      )}
       <p className="mt-4 whitespace-pre-line text-xs font-semibold leading-5 text-[var(--text-secondary)]">{action.action_text || 'No action details provided.'}</p>
       <div className="mt-4 rounded-xl border border-amber-500/15 bg-amber-500/5 px-3 py-2.5 text-[11px] leading-4 text-[var(--text-secondary)]">
         <span className="font-black text-amber-700 dark:text-amber-300">Root-cause note: </span>
@@ -102,6 +114,10 @@ function ActionCard({ action }: { action: PMSAction }) {
 
 export default function CorrectiveActionsView() {
   const { getAllActions } = useActionStore();
+  const { role } = useUserRole();
+  const followUp = useFollowUp({});
+  const overdueCount = followUp.data?.summary.overdue ?? 0;
+  const [pageTab, setPageTab] = useState<'all' | 'follow-up'>('all');
   const [search, setSearch] = useState('');
   const [teamFilter, setTeamFilter] = useState('All teams');
   const [monthFilter, setMonthFilter] = useState('All months');
@@ -148,26 +164,38 @@ export default function CorrectiveActionsView() {
           <h1 className="mt-2 text-3xl font-black tracking-tight text-[var(--text-primary)]">Corrective Actions</h1>
           <p className="mt-1 max-w-2xl text-sm text-[var(--text-muted)]">Review corrective actions assigned to employees, with their notes and performance period.</p>
         </div>
-        <button
-          type="button"
-          onClick={() => void handlePowerPointExport()}
-          disabled={isExporting}
-          className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-sm font-black text-white shadow-sm transition-colors hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:cursor-wait disabled:opacity-70"
-        >
-          <Download size={17} /> {isExporting ? 'Preparing PowerPoint…' : 'Export PowerPoint'}
-        </button>
+        {pageTab === 'all' && (
+          <button
+            type="button"
+            onClick={() => void handlePowerPointExport()}
+            disabled={isExporting}
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-sm font-black text-white shadow-sm transition-colors hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:cursor-wait disabled:opacity-70"
+          >
+            <Download size={17} /> {isExporting ? 'Preparing PowerPoint…' : 'Export PowerPoint'}
+          </button>
+        )}
       </header>
 
-      {exportError && <p role="alert" className="rounded-xl border border-rose-500/20 bg-rose-500/5 px-3 py-2 text-sm font-semibold text-rose-700 dark:text-rose-300">{exportError}</p>}
+      <div role="tablist" aria-label="Corrective action views" className="flex gap-2">
+        <button type="button" role="tab" aria-selected={pageTab === 'all'} onClick={() => setPageTab('all')} className={`min-h-10 rounded-xl px-4 text-sm font-black ${pageTab === 'all' ? 'bg-blue-600 text-white' : 'border border-[var(--border-light)] bg-[var(--bg-surface)] text-[var(--text-secondary)]'}`}>All actions</button>
+        <button type="button" role="tab" aria-selected={pageTab === 'follow-up'} onClick={() => setPageTab('follow-up')} className={`inline-flex min-h-10 items-center gap-2 rounded-xl px-4 text-sm font-black ${pageTab === 'follow-up' ? 'bg-blue-600 text-white' : 'border border-[var(--border-light)] bg-[var(--bg-surface)] text-[var(--text-secondary)]'}`}>
+          Follow-up
+          {overdueCount > 0 && <span className="rounded-full bg-rose-600 px-2 py-0.5 text-[10px] font-black text-white" aria-label={`${overdueCount} overdue`}>{overdueCount}</span>}
+        </button>
+      </div>
 
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Corrective action summary">
+      {pageTab === 'follow-up' && <ActionFollowUpPanel canEdit={canEditActionFollowUp(role)} />}
+
+      {pageTab === 'all' && exportError && <p role="alert" className="rounded-xl border border-rose-500/20 bg-rose-500/5 px-3 py-2 text-sm font-semibold text-rose-700 dark:text-rose-300">{exportError}</p>}
+
+      {pageTab === 'all' && <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Corrective action summary">
         <article className="rf-stat-card rounded-2xl border border-blue-500/15 bg-blue-500/5 p-4"><p className="text-[10px] font-black uppercase tracking-wider text-blue-700 dark:text-blue-300">Visible actions</p><p className="mt-2 text-3xl font-black text-[var(--text-primary)]">{filteredActions.length}</p></article>
         <article className="rf-stat-card rounded-2xl border border-purple-500/15 bg-purple-500/5 p-4"><p className="text-[10px] font-black uppercase tracking-wider text-purple-700 dark:text-purple-300">Employees actioned</p><p className="mt-2 text-3xl font-black text-[var(--text-primary)]">{employeesActioned}</p></article>
         <article className="rf-stat-card rounded-2xl border border-emerald-500/15 bg-emerald-500/5 p-4"><p className="text-[10px] font-black uppercase tracking-wider text-emerald-700 dark:text-emerald-300">Teams represented</p><p className="mt-2 text-3xl font-black text-[var(--text-primary)]">{teamsRepresented}</p></article>
         <article className="rf-stat-card rounded-2xl border border-amber-500/15 bg-amber-500/5 p-4"><p className="text-[10px] font-black uppercase tracking-wider text-amber-700 dark:text-amber-300">Pending sync</p><p className="mt-2 text-3xl font-black text-[var(--text-primary)]">{pendingSync}</p></article>
-      </section>
+      </section>}
 
-      <section className="glass-panel rf-filter-panel rounded-2xl p-4 shadow-sm" aria-label="Corrective action filters">
+      {pageTab === 'all' && <section className="glass-panel rf-filter-panel rounded-2xl p-4 shadow-sm" aria-label="Corrective action filters">
         <div className="grid gap-3 lg:grid-cols-[minmax(240px,1fr)_repeat(3,minmax(150px,0.7fr))]">
           <label className="relative block">
             <span className="sr-only">Search corrective actions</span>
@@ -178,19 +206,19 @@ export default function CorrectiveActionsView() {
           <CustomDropdown value={monthFilter} options={['All months', ...months]} onChange={setMonthFilter} icon={<CalendarDays size={15} />} ariaLabel="Filter by month" className="w-full" buttonClassName="w-full min-h-11 rounded-xl" size="lg" />
           <CustomDropdown value={typeFilter} options={['All types', ...ACTION_TYPES]} onChange={setTypeFilter} icon={<FileText size={15} />} ariaLabel="Filter by action type" className="w-full" buttonClassName="w-full min-h-11 rounded-xl" size="lg" />
         </div>
-      </section>
+      </section>}
 
-      {filteredActions.length > 0 ? (
+      {pageTab === 'all' && filteredActions.length > 0 ? (
         <section className="grid gap-4 md:grid-cols-2" aria-label="Corrective action records">
           {filteredActions.map((action) => <ActionCard key={action.id} action={action} />)}
         </section>
-      ) : (
+      ) : pageTab === 'all' ? (
         <section className="glass-panel rf-empty-state rounded-2xl p-12 text-center shadow-sm">
           {actions.length === 0 ? <RefreshCw size={32} className="mx-auto text-[var(--text-muted)]" /> : <AlertCircle size={32} className="mx-auto text-[var(--text-muted)]" />}
           <h2 className="mt-4 text-lg font-black text-[var(--text-primary)]">{actions.length === 0 ? 'No corrective actions available' : 'No actions match these filters'}</h2>
           <p className="mt-2 text-sm text-[var(--text-muted)]">{actions.length === 0 ? 'The connected database returned no active actions for your scope.' : 'Try clearing a filter or changing the search term.'}</p>
         </section>
-      )}
+      ) : null}
     </div>
   );
 }

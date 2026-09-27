@@ -3,13 +3,21 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PMSAction } from '../types';
 
-const { getAllActions, downloadCorrectiveActionsPowerPoint } = vi.hoisted(() => ({
+const { getAllActions, downloadCorrectiveActionsPowerPoint, followUpState } = vi.hoisted(() => ({
   getAllActions: vi.fn(),
   downloadCorrectiveActionsPowerPoint: vi.fn(() => Promise.resolve()),
+  followUpState: { overdue: 0 },
 }));
 
 vi.mock('../hooks/useActionStore', () => ({
   useActionStore: () => ({ getAllActions }),
+  useFollowUp: () => ({ data: { summary: { overdue: followUpState.overdue, due_soon: 0, open: 0, in_progress: 0, completed_this_month: 0, completion_rate: 0 }, actions: [] }, isLoading: false, isError: false, refetch: vi.fn() }),
+  useActionOwners: () => ({ data: [] }),
+  useUpdateActionStatus: () => ({ mutateAsync: vi.fn() }),
+}));
+
+vi.mock('../context/RoleContext', () => ({
+  useUserRole: () => ({ role: 'Admin' }),
 }));
 
 vi.mock('../utils/correctiveActionPowerPoint', () => ({
@@ -35,6 +43,7 @@ describe('CorrectiveActionsView', () => {
   beforeEach(() => {
     getAllActions.mockReset();
     getAllActions.mockReturnValue(actions);
+    followUpState.overdue = 0;
     Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: vi.fn(() => 'blob:actions') });
     Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() });
   });
@@ -67,7 +76,8 @@ describe('CorrectiveActionsView', () => {
   it('filters records before exporting a PowerPoint document', async () => {
     render(<MemoryRouter><CorrectiveActionsView /></MemoryRouter>);
 
-    fireEvent.change(screen.getByLabelText('Filter by team'), { target: { value: 'Inbound' } });
+    const teamSelect = screen.getAllByLabelText('Filter by team').find((element) => element.tagName === 'SELECT');
+    fireEvent.change(teamSelect as HTMLSelectElement, { target: { value: 'Inbound' } });
     expect(screen.getByText('Agent One')).toBeInTheDocument();
     expect(screen.queryByText('Agent Two')).not.toBeInTheDocument();
 
@@ -76,5 +86,12 @@ describe('CorrectiveActionsView', () => {
       [actions[0]],
       { team: 'Inbound', month: 'All months', type: 'All types' },
     ));
+  });
+
+  it('shows the overdue count on the Follow-up tab', () => {
+    followUpState.overdue = 4;
+    render(<MemoryRouter><CorrectiveActionsView /></MemoryRouter>);
+    expect(screen.getByRole('tab', { name: /Follow-up/ })).toHaveTextContent('4');
+    expect(screen.getByLabelText('4 overdue')).toBeInTheDocument();
   });
 });

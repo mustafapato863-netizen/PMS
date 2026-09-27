@@ -421,6 +421,14 @@ export const TEAM_DB_NAME_MAP: Record<string, string> = {
 // --- Action / CRM Types ---
 
 export type ActionType = 'Training' | 'Reward' | 'PIP' | 'Monitor' | 'Coaching';
+export type ActionStatus = 'Open' | 'In Progress' | 'Completed' | 'Cancelled';
+export type ActionPriority = 'Low' | 'Medium' | 'High';
+export type FollowUpState = 'overdue' | 'due_soon' | 'upcoming' | 'no_due_date' | 'completed' | 'cancelled';
+
+export interface ActionParty {
+  id: string;
+  name: string;
+}
 
 export interface PMSAction {
   id: string;
@@ -434,6 +442,30 @@ export interface PMSAction {
   created_by: string;
   created_at: string;
   synced: boolean; // false = only in localStorage
+  status?: ActionStatus;
+  due_date?: string | null;
+  owner?: ActionParty | null;
+  priority?: ActionPriority | null;
+  linked_kpi_key?: string | null;
+  plan?: ActionParty | null;
+  completion_note?: string | null;
+  completed_at?: string | null;
+  is_overdue?: boolean;
+  days_to_due?: number | null;
+  follow_up_state?: FollowUpState;
+}
+
+export interface EditableCorrectiveAction {
+  id: string;
+  action_type: ActionType;
+  action_text: string;
+  root_cause_note: string;
+  status?: ActionStatus;
+  due_date?: string | null;
+  owner_id?: string | null;
+  priority?: ActionPriority | null;
+  linked_kpi_key?: string | null;
+  plan_id?: string | null;
 }
 
 // --- CRM & Employee Management Types (legacy, kept for OperationalView) ---

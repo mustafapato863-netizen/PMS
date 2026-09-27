@@ -4,21 +4,23 @@
  * Synchronizes with backend /api/corrective-actions.
  */
 import { useState, useCallback, useEffect } from 'react';
-import type { PMSAction, ActionType } from '../types';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { ActionPriority, ActionStatus, ActionType, FollowUpState, PMSAction } from '../types';
 import { apiFetch } from '../lib/apiClient';
 import { useUserRole } from '../context/RoleContext';
 import { useAuth } from '../context/auth';
 import { summarizeRootCauses } from '../utils/rootCauseInsights';
+import type { FollowUpFilters, FollowUpSummary } from '../components/actions/followUpTypes';
 
 const STORAGE_KEY = 'pms_actions_v2';
 const DELETED_KEY = 'pms_deleted_actions_v2';
 
 interface BackendActionItem {
   id?: string;
-  employee_id: string;
-  employee_name: string;
-  team: string;
-  month: string;
+  employee_id?: string | null;
+  employee_name?: string | null;
+  team?: string | null;
+  month?: string;
   manager_action?: string;
   manager_notes?: string;
   timestamp?: string;
@@ -26,7 +28,39 @@ interface BackendActionItem {
   created_by_role?: string;
   created_by?: string;
   updated_by?: string;
+  status?: ActionStatus;
+  due_date?: string | null;
+  owner?: { id: string; name: string } | null;
+  priority?: ActionPriority | null;
+  linked_kpi_key?: string | null;
+  plan?: { id: string; name: string } | null;
+  completion_note?: string | null;
+  completed_at?: string | null;
+  is_overdue?: boolean;
+  days_to_due?: number | null;
+  follow_up_state?: FollowUpState;
 }
+
+export interface ActionTrackingInput {
+  due_date?: string | null;
+  owner_user_id?: string | null;
+  priority?: ActionPriority | null;
+  linked_kpi_key?: string | null;
+  plan_id?: string | null;
+}
+
+export interface FollowUpPayload {
+  summary: FollowUpSummary;
+  actions: PMSAction[];
+}
+
+export const actionQueryKeys = {
+  all: ['corrective-actions'] as const,
+  followUp: (filters: FollowUpFilters) => ['corrective-actions', 'follow-up', filters] as const,
+  owners: ['corrective-actions', 'owners'] as const,
+};
+
+const ACTION_TYPE_VALUES = ['Coaching', 'Training', 'Reward', 'Monitor', 'PIP'] as const;
 
 // Module-level shared cache and listeners for Backend API data
 let cachedActions: PMSAction[] | null = null;
@@ -96,6 +130,62 @@ function addDeletedActionId(id: string): string[] {
   return all;
 }
 
+export function mapBackendAction(item: BackendActionItem): PMSAction {
+  let actionType: ActionType = 'Coaching';
+  let actionText = item.manager_action || '';
+  const sepIdx = actionText.indexOf(': ');
+  if (sepIdx > 0) {
+    const typeStr = actionText.substring(0, sepIdx);
+    actionText = actionText.substring(sepIdx + 2);
+    const legacyTypes = ['SOP Review', 'SIP', 'PI', 'Suspension', 'Warning'];
+    if (ACTION_TYPE_VALUES.includes(typeStr as ActionType) || legacyTypes.includes(typeStr)) {
+      if (typeStr === 'SIP' || typeStr === 'PI' || typeStr === 'Suspension' || typeStr === 'Warning') actionType = 'PIP';
+      else if (typeStr === 'SOP Review') actionType = 'Training';
+      else actionType = typeStr as ActionType;
+    } else {
+      actionText = item.manager_action || '';
+    }
+  }
+  const rawName = item.employee_name ?? '';
+  return {
+    id: item.id || `${item.employee_id || 'plan'}_${item.month}_${item.timestamp}`,
+    employee_id: item.employee_id || '',
+    employee_name: rawName.trim().toLowerCase() === 'nan' ? '' : rawName,
+    team: item.team || '',
+    month: item.month || '',
+    action_type: actionType,
+    action_text: actionText,
+    root_cause_note: item.manager_notes || '',
+    created_by: item.created_by_name && item.created_by_role ? `${item.created_by_name} - ${item.created_by_role}` : item.created_by || item.updated_by || 'Unknown',
+    created_at: item.timestamp || '',
+    synced: true,
+    status: item.status,
+    due_date: item.due_date,
+    owner: item.owner,
+    priority: item.priority,
+    linked_kpi_key: item.linked_kpi_key,
+    plan: item.plan,
+    completion_note: item.completion_note,
+    completed_at: item.completed_at,
+    is_overdue: item.is_overdue,
+    days_to_due: item.days_to_due,
+    follow_up_state: item.follow_up_state,
+  };
+}
+
+function trackingFrom(input: Partial<ActionTrackingInput> | undefined): ActionTrackingInput | undefined {
+  if (!input) return undefined;
+  const keys: Array<keyof ActionTrackingInput> = ['due_date', 'owner_user_id', 'priority', 'linked_kpi_key', 'plan_id'];
+  if (!keys.some((key) => key in input)) return undefined;
+  return {
+    due_date: input.due_date,
+    owner_user_id: input.owner_user_id,
+    priority: input.priority,
+    linked_kpi_key: input.linked_kpi_key,
+    plan_id: input.plan_id,
+  };
+}
+
 // ─── Fetch Actions from Backend ──────────────────────────────────────────────
 
 export async function fetchActions(role?: string) {
@@ -122,60 +212,23 @@ export async function fetchActions(role?: string) {
         localByKey.set(action.id, action);
       });
       cachedActions = result.data.map((item) => {
-        let actionType: ActionType = 'Coaching';
-        let actionText = item.manager_action || '';
-
-        // Parse "Coaching: action details" if possible
-        const sepIdx = actionText.indexOf(': ');
-        if (sepIdx > 0) {
-          const typeStr = actionText.substring(0, sepIdx);
-          actionText = actionText.substring(sepIdx + 2);
-
-          const validTypes = ['Coaching', 'Training', 'Reward', 'Monitor', 'PIP'];
-          const legacyTypes = ['SOP Review', 'SIP', 'PI', 'Suspension', 'Warning'];
-
-          if (validTypes.includes(typeStr) || legacyTypes.includes(typeStr)) {
-            if (typeStr === 'SIP' || typeStr === 'PI' || typeStr === 'Suspension' || typeStr === 'Warning') {
-              actionType = 'PIP';
-            } else if (typeStr === 'SOP Review') {
-              actionType = 'Training';
-            } else {
-              actionType = typeStr as ActionType;
-            }
-          } else {
-            actionText = item.manager_action || ''; // reset to original if not standard type
-          }
-        }
-
+        const mapped = mapBackendAction(item);
         const localMatch =
           (item.id ? localByKey.get(item.id) : undefined) ||
-          localByKey.get(`${item.employee_id}|${item.month}|${actionType}|${actionText}`);
-
-        // Sanitise employee_name: treat null / 'nan' as absent so the
-        // localMatch fallback can fill it in with the correct name.
+          localByKey.get(`${mapped.employee_id}|${mapped.month}|${mapped.action_type}|${mapped.action_text}`);
         const rawName = item.employee_name ?? '';
         const safeEmployeeName =
           rawName.trim().toLowerCase() === 'nan' || rawName.trim() === ''
-            ? (localMatch?.employee_name ?? null)
+            ? (localMatch?.employee_name || mapped.employee_name)
             : rawName;
-
         return {
-          id: item.id || `${item.employee_id}_${item.month}_${item.timestamp}`,
-          employee_id: item.employee_id,
-          employee_name: safeEmployeeName,
-          team: item.team,
-          month: item.month,
-          action_type: actionType,
-          action_text: actionText,
-          root_cause_note: item.manager_notes || '',
-          created_by: localMatch?.created_by
-            || (item.created_by_name && item.created_by_role ? `${item.created_by_name} - ${item.created_by_role}` : null)
-            || item.created_by
-            || item.updated_by
-            || 'Unknown',
-          created_at: item.timestamp,
-          synced: true,
-        } as PMSAction;
+          ...mapped,
+          employee_id: mapped.employee_id,
+          employee_name: safeEmployeeName || '',
+          team: mapped.team || localMatch?.team || '',
+          created_by: localMatch?.created_by || mapped.created_by,
+          created_at: mapped.created_at || localMatch?.created_at || '',
+        };
       });
     } else {
       throw new Error(result?.message || 'Invalid API response');
@@ -202,7 +255,8 @@ export async function fetchActions(role?: string) {
 async function postActionToBackend(
   employeeId: string,
   month: string,
-  action: PMSAction
+  action: PMSAction,
+  tracking?: ActionTrackingInput,
 ): Promise<boolean> {
   try {
     await apiFetch(
@@ -214,6 +268,7 @@ async function postActionToBackend(
           month,
           manager_action: `${action.action_type}: ${action.action_text}`,
           manager_notes: action.root_cause_note,
+          ...tracking,
         }),
       }
     );
@@ -223,9 +278,66 @@ async function postActionToBackend(
   }
 }
 
+export async function fetchFollowUp(filters: FollowUpFilters = {}): Promise<FollowUpPayload> {
+  const params = new URLSearchParams();
+  if (filters.state) params.set('state', filters.state);
+  if (filters.team) params.set('team', filters.team);
+  if (filters.owner) params.set('owner', filters.owner);
+  if (filters.month) params.set('month', filters.month);
+  const query = params.toString();
+  const result = await apiFetch<{ success: boolean; data: { summary: FollowUpSummary; actions: BackendActionItem[] }; message?: string }>(
+    `/api/corrective-actions/follow-up${query ? `?${query}` : ''}`,
+  );
+  if (!result?.success || !result.data) throw new Error(result?.message || 'Follow-up could not be loaded.');
+  return {
+    summary: result.data.summary,
+    actions: result.data.actions.map((item) => mapBackendAction(item)),
+  };
+}
+
+export function useFollowUp(filters: FollowUpFilters) {
+  return useQuery({
+    queryKey: actionQueryKeys.followUp(filters),
+    queryFn: () => fetchFollowUp(filters),
+  });
+}
+
+export function useActionOwners(enabled = true) {
+  return useQuery({
+    queryKey: actionQueryKeys.owners,
+    enabled,
+    queryFn: async () => {
+      const result = await apiFetch<{ success: boolean; data: Array<{ id: string; name: string; role?: string }> }>('/api/corrective-actions/owners');
+      return result?.success ? result.data : [];
+    },
+  });
+}
+
+export function useUpdateActionStatus() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { id: string; status: ActionStatus | string; completion_note?: string; due_date?: string }) => {
+      const result = await apiFetch<{ success: boolean; message?: string }>(`/api/corrective-actions/${input.id}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          status: input.status,
+          completion_note: input.completion_note,
+          due_date: input.due_date,
+        }),
+      });
+      if (result && result.success === false) throw new Error(result.message || 'Status update failed.');
+      return result;
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: actionQueryKeys.all });
+      await fetchActions();
+    },
+  });
+}
+
 // ─── Exported Hook ────────────────────────────────────────────────────────────
 
-export interface SaveActionInput {
+export interface SaveActionInput extends ActionTrackingInput {
   employee_id: string;
   employee_name: string;
   team: string;
@@ -282,7 +394,8 @@ export function useActionStore() {
       const synced = await postActionToBackend(
         input.employee_id,
         input.month,
-        action
+        action,
+        trackingFrom(input),
       );
       action.synced = synced;
 
@@ -305,10 +418,11 @@ export function useActionStore() {
     [currentUser]
   );
 
+  const updateStatus = useUpdateActionStatus();
   const updateAction = useCallback(
     async (
       actionId: string,
-      updates: Partial<PMSAction>,
+      updates: Partial<PMSAction> & Partial<ActionTrackingInput>,
       employeeInfo?: { id: string; name: string; team: string },
       monthStr?: string
     ): Promise<ActionStoreResult> => {
@@ -334,7 +448,8 @@ export function useActionStore() {
         const synced = await postActionToBackend(
           updated.employee_id,
           updated.month,
-          updated
+          updated,
+          trackingFrom(updates),
         );
         updated.synced = synced;
 
@@ -374,7 +489,8 @@ export function useActionStore() {
         const synced = await postActionToBackend(
           employeeInfo.id,
           monthStr,
-          updated
+          updated,
+          trackingFrom(updates),
         );
         updated.synced = synced;
 
@@ -454,6 +570,7 @@ export function useActionStore() {
   return {
     saveAction,
     updateAction,
+    updateActionStatus: updateStatus.mutateAsync,
     deleteAction,
     getActionsForEmployee,
     getAllActions,

@@ -1,14 +1,28 @@
-import { render, screen } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { fireEvent, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { TeamAgentRow } from '../../hooks/usePerformanceData';
 import EmployeeActionModal from './EmployeeActionModal';
 
+const { saveAction } = vi.hoisted(() => ({
+  saveAction: vi.fn(async () => ({ success: true, synced: true, message: 'Action saved successfully.' })),
+}));
+
 vi.mock('../../hooks/useActionStore', () => ({
   useActionStore: () => ({
-    saveAction: vi.fn(),
+    saveAction,
     updateAction: vi.fn(),
     isSaving: false,
+  }),
+}));
+
+vi.mock('../../lib/apiClient', () => ({
+  apiFetch: vi.fn(async (url: string) => {
+    if (String(url).includes('/owners')) return { success: true, data: [{ id: 'owner-1', name: 'Ada Owner' }] };
+    if (String(url).includes('/planning')) return { success: true, data: [{ id: 'plan-1', name: 'Inbound recovery', team: 'Inbound', status: 'In Progress' }] };
+    return { success: true, data: [] };
   }),
 }));
 
@@ -58,5 +72,38 @@ describe('EmployeeActionModal', () => {
     expect(dialog).toHaveClass('flex', 'flex-col', 'overflow-hidden', 'sm:max-h-[94vh]');
     expect(screen.getByRole('heading', { name: 'Test Agent' }).parentElement?.parentElement).toHaveClass('shrink-0');
     expect(dialog.querySelector('form')).toHaveClass('min-h-0', 'flex-1', 'overflow-y-auto');
+  });
+
+  it('reveals tracking fields and requires a due date before saving', async () => {
+    const user = userEvent.setup();
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <EmployeeActionModal employee={employee} month="June" onClose={vi.fn()} />
+      </QueryClientProvider>,
+    );
+
+    await user.click(screen.getByRole('checkbox', { name: 'Track as action plan' }));
+    expect(screen.getByLabelText('Owner')).toBeInTheDocument();
+    expect(screen.getByLabelText('Due date')).toBeInTheDocument();
+    expect(screen.getByLabelText('Priority')).toBeInTheDocument();
+    expect(screen.getByLabelText('Linked KPI')).toBeInTheDocument();
+    expect(await screen.findByRole('option', { name: 'Ada Owner' })).toBeInTheDocument();
+
+    await user.type(screen.getByPlaceholderText('Describe the Coaching action in detail...'), 'Coach the booking script');
+    await user.click(screen.getByRole('button', { name: 'Save Action' }));
+    expect(screen.getByText('A due date is required to track this action.')).toBeInTheDocument();
+    expect(saveAction).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByLabelText('Due date'), { target: { value: '2026-10-01' } });
+    await user.selectOptions(screen.getByLabelText('Owner'), 'owner-1');
+    await user.selectOptions(screen.getByLabelText('Priority'), 'High');
+    await user.click(screen.getByRole('button', { name: 'Save Action' }));
+    expect(saveAction).toHaveBeenCalledWith(expect.objectContaining({
+      due_date: '2026-10-01',
+      owner_user_id: 'owner-1',
+      priority: 'High',
+      action_text: 'Coach the booking script',
+    }));
   });
 });
