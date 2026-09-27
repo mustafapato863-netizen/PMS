@@ -1,7 +1,9 @@
+import datetime as dt
 import uuid
 
 import jwt
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 
@@ -16,7 +18,12 @@ from models.schemas import StandardResponse, UserRecord, UserUpdateRecord, Login
 from repositories.user_repository import UserRepository
 from services.auth_service import AuthenticationService
 from services.password_service import hash_password
-from services.corrective_action_service import CorrectiveActionService
+from services.corrective_action_service import (
+    CorrectiveActionAccessError,
+    CorrectiveActionNotFoundError,
+    CorrectiveActionService,
+    CorrectiveActionValidationError,
+)
 from services.user_identity_service import UserIdentityService
 from utils.performance_levels import PERFORMANCE_LEVELS
 from utils.team_identity import (
@@ -527,6 +534,90 @@ async def get_all_corrective_actions(
         )
     except Exception as e:
         return StandardResponse(success=False, message="Failed to fetch corrective actions.")
+
+
+class ActionStatusUpdate(BaseModel):
+    status: str
+    completion_note: str | None = None
+    due_date: dt.date | None = None
+
+
+def _action_error(exc: Exception) -> HTTPException:
+    if isinstance(exc, CorrectiveActionNotFoundError):
+        return HTTPException(status_code=404, detail=str(exc))
+    if isinstance(exc, CorrectiveActionAccessError):
+        return HTTPException(status_code=403, detail=str(exc))
+    if isinstance(exc, CorrectiveActionValidationError):
+        return HTTPException(status_code=400, detail=str(exc))
+    raise exc
+
+
+@actions_router.get("/follow-up", response_model=StandardResponse)
+async def get_action_follow_up(
+    request: Request,
+    state: str | None = Query(default=None),
+    team: str | None = Query(default=None),
+    owner: str | None = Query(default=None),
+    month: str | None = Query(default=None),
+    db: Session = Depends(get_db),
+    role: str = Depends(require_role(["Admin", "Manager", "Executive"])),
+):
+    try:
+        data = CorrectiveActionService(db).list_follow_up(
+            get_current_user_scope(db, request),
+            state=state,
+            team=team,
+            owner=owner,
+            month=month,
+        )
+        return StandardResponse(success=True, message="Retrieved action follow-up successfully", data=data)
+    except (CorrectiveActionAccessError, CorrectiveActionValidationError) as exc:
+        raise _action_error(exc) from exc
+    except Exception:
+        return StandardResponse(success=False, message="Failed to fetch action follow-up.")
+
+
+@actions_router.get("/owners", response_model=StandardResponse)
+async def get_action_owners(
+    request: Request,
+    db: Session = Depends(get_db),
+    role: str = Depends(require_role(["Admin", "Manager", "Executive"])),
+):
+    try:
+        owners = CorrectiveActionService(db).list_owners(get_current_user_scope(db, request))
+        return StandardResponse(success=True, message="Retrieved assignable action owners", data=owners)
+    except Exception:
+        return StandardResponse(success=False, message="Failed to fetch action owners.")
+
+
+@actions_router.patch("/{action_id}/status", response_model=StandardResponse)
+async def update_corrective_action_status(
+    action_id: str,
+    payload: ActionStatusUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
+    role: str = Depends(require_role(["Admin", "Manager", "Executive", "Viewer", "Agent"])),
+):
+    try:
+        current_user = getattr(request.state, "user", None) or {}
+        scope = get_current_user_scope(db, request)
+        if not scope.get("role"):
+            scope["role"] = role
+        updated = CorrectiveActionService(db).update_status(
+            action_id,
+            status=payload.status,
+            completion_note=payload.completion_note,
+            due_date=payload.due_date,
+            scope=scope,
+            user_id=current_user.get("user_id") or scope.get("user_id"),
+        )
+        return StandardResponse(success=True, message="Action status updated", data=updated)
+    except (CorrectiveActionNotFoundError, CorrectiveActionAccessError, CorrectiveActionValidationError) as exc:
+        raise _action_error(exc) from exc
+    except HTTPException:
+        raise
+    except Exception:
+        return StandardResponse(success=False, message="Failed to update action status.")
 
 
 @users_router.get("/notifications", response_model=StandardResponse)

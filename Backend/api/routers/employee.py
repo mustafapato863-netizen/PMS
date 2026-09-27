@@ -1,7 +1,7 @@
 import datetime
 from services.socket_service import SocketNotificationService
 from fastapi import APIRouter, Depends, Query, HTTPException, Request
-from typing import Dict, List
+from typing import Any, Dict, List
 from uuid import UUID
 
 from api.dependencies import (
@@ -12,6 +12,7 @@ from config.database import get_db
 from sqlalchemy.orm import Session
 from models.schemas import StandardResponse, ManagerNote
 from services.corrective_action_service import (
+    CorrectiveActionAccessError,
     CorrectiveActionNotFoundError,
     CorrectiveActionService,
     CorrectiveActionValidationError,
@@ -479,10 +480,29 @@ def  save_notes(
     except Exception as e:
         return StandardResponse(success=False, message="Failed to save manager notes.")
 
+def _tracking_fields(payload: Dict[str, Any]) -> dict[str, Any]:
+    """Pass only tracking fields the caller actually sent.
+
+    Legacy saves omit them and must keep creating an untracked Open action.
+    """
+    fields: dict[str, Any] = {}
+    if "due_date" in payload:
+        raw_due = payload.get("due_date")
+        if raw_due in (None, ""):
+            fields["due_date"] = None
+        else:
+            fields["due_date"] = datetime.date.fromisoformat(str(raw_due)[:10])
+    for key in ("owner_user_id", "priority", "linked_kpi_key", "plan_id"):
+        if key in payload:
+            raw_value = payload.get(key)
+            fields[key] = None if raw_value in (None, "") else str(raw_value)
+    return fields
+
+
 @router.post("/{employee_id}/corrective-actions", response_model=StandardResponse)
 async def  save_corrective_action(
     employee_id: str,
-    payload: Dict[str, str],
+    payload: Dict[str, Any],
     request: Request,
     db: Session = Depends(get_db),
     role: str = Depends(require_role(["Admin", "Manager"]))
@@ -509,6 +529,8 @@ async def  save_corrective_action(
             action_id=action_id,
             year=int(payload["year"]) if payload.get("year") else None,
             user_id=current_user.get("user_id"),
+            scope=scope,
+            **_tracking_fields(payload),
         )
 
         await SocketNotificationService.notify_action_assigned(
@@ -529,7 +551,7 @@ async def  save_corrective_action(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except (CorrectiveActionValidationError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except PermissionError as exc:
+    except (CorrectiveActionAccessError, PermissionError) as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except HTTPException as he:
         raise he

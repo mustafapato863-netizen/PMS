@@ -36,6 +36,8 @@ class ActionRepository(BaseRepository[Action]):
                 joinedload(Action.employee),
                 joinedload(Action.team),
                 joinedload(Action.created_by_user),
+                joinedload(Action.owner),
+                joinedload(Action.plan),
             )
             .filter(Action.id == action_id, Action.is_active.is_(True))
             .first()

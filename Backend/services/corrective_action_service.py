@@ -9,16 +9,39 @@ from typing import Any
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, joinedload
 
-from models.models import Action, Employee, PerformancePlan, PerformanceRecord, PlanObjective, Team, User
+from models.models import (
+    Action,
+    Employee,
+    PerformancePlan,
+    PerformanceRecord,
+    PlanObjective,
+    Team,
+    User,
+    UserTeamAssignment,
+)
 from repositories.action_repository import ActionRepository
-from utils.report_scope import user_can_access_team_level
+from services.audit_service import AuditService
+from utils.report_scope import user_can_access_team, user_can_access_team_level
 from utils.team_identity import logical_team_name
 
 
 ACTION_TYPES = {"Training", "Reward", "PIP", "Monitor", "Coaching", "Warning", "Promotion"}
+ACTION_STATUSES = {"Open", "In Progress", "Completed", "Cancelled"}
+ACTION_PRIORITIES = {"Low", "Medium", "High"}
+OPEN_ACTION_STATUSES = {"Open", "In Progress"}
+DUE_SOON_WINDOW_DAYS = 7
+FOLLOW_UP_STATE_ORDER = {
+    "overdue": 0,
+    "due_soon": 1,
+    "upcoming": 2,
+    "no_due_date": 3,
+    "completed": 4,
+    "cancelled": 5,
+}
 ACTION_ID_NAMESPACE = uuid.UUID("d752dc8d-2cae-4e7e-9efd-447550c27cf8")
 TRANSFER_FORMAT = "pms.corrective-actions"
 TRANSFER_VERSION = 1
+_UNSET = object()
 
 
 class CorrectiveActionNotFoundError(ValueError):
@@ -29,10 +52,15 @@ class CorrectiveActionValidationError(ValueError):
     pass
 
 
+class CorrectiveActionAccessError(PermissionError):
+    pass
+
+
 class CorrectiveActionService:
-    def __init__(self, db: Session):
+    def __init__(self, db: Session, *, today: dt.date | None = None):
         self.db = db
         self.actions = ActionRepository(db)
+        self.today = today or dt.date.today()
 
     @staticmethod
     def split_manager_action(manager_action: str) -> tuple[str, str]:
@@ -142,7 +170,7 @@ class CorrectiveActionService:
         created_by = action.created_by_user
         timestamp = action.created_at or dt.datetime.now(dt.timezone.utc)
         display_team = effective_team or self._effective_action_team(action, performance_record)
-        return {
+        payload = {
             "id": str(action.id),
             "employee_id": action.employee.employee_id if action.employee else None,
             "employee_name": action.employee.name if action.employee else None,
@@ -160,6 +188,8 @@ class CorrectiveActionService:
             "created_by_role": created_by.role if created_by else None,
             "status": action.status,
         }
+        payload.update(self._follow_up_metadata(action))
+        return payload
 
     def list_all(self) -> list[dict[str, Any]]:
         # Planning reuses Action, while this legacy workspace remains
@@ -212,6 +242,12 @@ class CorrectiveActionService:
         action_id: str | None = None,
         year: int | None = None,
         user_id: str | None = None,
+        scope: dict | None = None,
+        due_date: Any = _UNSET,
+        owner_user_id: Any = _UNSET,
+        priority: Any = _UNSET,
+        linked_kpi_key: Any = _UNSET,
+        plan_id: Any = _UNSET,
     ) -> tuple[dict[str, Any], bool]:
         month = month.strip()
         if not month:
@@ -264,12 +300,440 @@ class CorrectiveActionService:
                     created_by_user_id=actor_id,
                 )
                 self.actions.add(action)
+            self._apply_tracking(
+                action,
+                employee=employee,
+                period_team=period_team,
+                scope=scope,
+                due_date=due_date,
+                owner_user_id=owner_user_id,
+                priority=priority,
+                linked_kpi_key=linked_kpi_key,
+                plan_id=plan_id,
+            )
             self.db.commit()
             self.db.refresh(action)
             return self.serialize(action), is_update
         except Exception:
             self.db.rollback()
             raise
+
+    def update_status(
+        self,
+        action_id: str,
+        *,
+        status: str,
+        scope: dict,
+        completion_note: str | None = None,
+        due_date: Any = _UNSET,
+        user_id: str | None = None,
+    ) -> dict[str, Any]:
+        parsed_action_id = self._uuid(action_id)
+        action = self.actions.get_active(parsed_action_id) if parsed_action_id else None
+        if not action:
+            raise CorrectiveActionNotFoundError("Corrective Action not found")
+        self._assert_can_update_status(action, scope)
+
+        normalized = (status or "").strip()
+        if normalized not in ACTION_STATUSES:
+            raise CorrectiveActionValidationError("Status must be Open, In Progress, Completed, or Cancelled")
+        note = (completion_note or "").strip()
+        if normalized in {"Completed", "Cancelled"} and len(note) < 3:
+            requirement = "completion note" if normalized == "Completed" else "cancellation reason"
+            raise CorrectiveActionValidationError(f"A {requirement} of at least 3 characters is required")
+
+        if due_date is not _UNSET and due_date not in (None, ""):
+            parsed_due = self._coerce_date(due_date, "due_date")
+            self._validate_due_not_before_creation(parsed_due, action)
+            action.due_date = parsed_due
+
+        previous_status = action.status
+        previous = {
+            "status": previous_status,
+            "completed_at": self._iso(action.completed_at),
+            "completion_note": action.completion_note,
+            "due_date": self._iso(action.due_date),
+        }
+        action.status = normalized
+        if normalized == "Completed":
+            action.completion_note = note
+            if previous_status != "Completed" or action.completed_at is None:
+                action.completed_at = dt.datetime.now(dt.timezone.utc)
+        elif normalized == "Cancelled":
+            action.completion_note = note
+        elif previous_status in {"Completed", "Cancelled"}:
+            action.completed_at = None
+
+        actor_id = self._uuid(user_id) or self._uuid(str(scope.get("user_id") or ""))
+        action.updated_by_user_id = actor_id
+        action.updated_at = dt.datetime.now(dt.timezone.utc)
+        try:
+            self.db.flush()
+            AuditService.log_operation(
+                self.db,
+                table_name="actions",
+                operation="UPDATE",
+                record_id=str(action.id),
+                old_values=previous,
+                new_values={
+                    "status": action.status,
+                    "completed_at": self._iso(action.completed_at),
+                    "completion_note": action.completion_note,
+                    "due_date": self._iso(action.due_date),
+                },
+                performed_by_user_id=str(actor_id) if actor_id else None,
+            )
+            self.db.refresh(action)
+            return self.serialize(action)
+        except Exception:
+            self.db.rollback()
+            raise
+
+    def list_follow_up(
+        self,
+        scope: dict,
+        *,
+        state: str | None = None,
+        team: str | None = None,
+        owner: str | None = None,
+        month: str | None = None,
+    ) -> dict[str, Any]:
+        matched: list[dict[str, Any]] = []
+        seen: set[uuid.UUID] = set()
+        for action in self.actions.list_active():
+            serialized = self._follow_up_candidate(action, scope)
+            if serialized is None or action.id in seen:
+                continue
+            if team and str(serialized.get("team") or "").casefold() != team.strip().casefold():
+                continue
+            owner_id = (serialized.get("owner") or {}).get("id")
+            if owner and owner_id != owner:
+                continue
+            if month and str(serialized.get("month") or "").casefold() != month.strip().casefold():
+                continue
+            seen.add(action.id)
+            matched.append(serialized)
+
+        summary = self._follow_up_summary(matched)
+        selected = matched
+        if state:
+            selected = [item for item in matched if item.get("follow_up_state") == state.strip()]
+        selected.sort(key=self._follow_up_sort_key)
+        return {"summary": summary, "actions": selected}
+
+    def list_owners(self, scope: dict) -> list[dict[str, str]]:
+        users = (
+            self.db.query(User)
+            .filter(User.is_active.is_(True))
+            .order_by(User.full_name.asc(), User.username.asc())
+            .all()
+        )
+        owners = [user for user in users if self._caller_may_assign(user, scope)]
+        return [
+            {"id": str(user.id), "name": self._person_name(user), "role": user.role}
+            for user in owners
+        ]
+
+    def _follow_up_candidate(self, action: Action, scope: dict) -> dict[str, Any] | None:
+        record = None
+        effective_team = None
+        if action.employee_id is not None and action.due_date is not None and action.employee is not None:
+            record = self._performance_record_for_action(action)
+            effective_team = self._effective_action_team(action, record)
+            if not effective_team or not user_can_access_team_level(
+                scope,
+                logical_team_name(effective_team),
+                action.employee.performance_level,
+            ):
+                return None
+        elif (
+            action.employee_id is None
+            and action.plan_id is not None
+            and action.plan is not None
+            and action.plan.is_active
+            and self._can_access_plan(action.plan, scope)
+        ):
+            effective_team = action.team
+        else:
+            return None
+        return self.serialize(action, effective_team=effective_team, performance_record=record)
+
+    def _follow_up_summary(self, actions: list[dict[str, Any]]) -> dict[str, Any]:
+        open_count = sum(item.get("status") == "Open" for item in actions)
+        in_progress = sum(item.get("status") == "In Progress" for item in actions)
+        completed = sum(item.get("status") == "Completed" for item in actions)
+        denominator = open_count + in_progress + completed
+        rate = round((completed / denominator) * 100, 1) if denominator else 0
+        return {
+            "overdue": sum(item.get("follow_up_state") == "overdue" for item in actions),
+            "due_soon": sum(item.get("follow_up_state") == "due_soon" for item in actions),
+            "open": open_count,
+            "in_progress": in_progress,
+            "completed_this_month": sum(self._completed_this_month(item) for item in actions),
+            "completion_rate": rate,
+        }
+
+    def _completed_this_month(self, item: dict[str, Any]) -> bool:
+        if item.get("status") != "Completed" or not item.get("completed_at"):
+            return False
+        try:
+            completed = dt.datetime.fromisoformat(str(item["completed_at"]).replace("Z", "+00:00"))
+        except ValueError:
+            return False
+        if completed.tzinfo is not None:
+            completed = completed.astimezone(dt.timezone.utc)
+        return completed.year == self.today.year and completed.month == self.today.month
+
+    @staticmethod
+    def _follow_up_sort_key(item: dict[str, Any]) -> tuple:
+        state = str(item.get("follow_up_state") or "no_due_date")
+        days = item.get("days_to_due")
+        days_key = days if isinstance(days, int) else 10**9
+        return (FOLLOW_UP_STATE_ORDER.get(state, 99), days_key, str(item.get("employee_name") or ""), str(item.get("id") or ""))
+
+    def _follow_up_metadata(self, action: Action) -> dict[str, Any]:
+        due = action.due_date
+        days = (due - self.today).days if isinstance(due, dt.date) else None
+        state = self._follow_up_state(action.status, due if isinstance(due, dt.date) else None)
+        owner = None
+        if action.owner is not None:
+            owner = {"id": str(action.owner.id), "name": self._person_name(action.owner)}
+        plan = None
+        if action.plan is not None:
+            plan = {"id": str(action.plan.id), "name": action.plan.name}
+        return {
+            "due_date": due.isoformat() if isinstance(due, dt.date) else None,
+            "owner": owner,
+            "priority": action.priority,
+            "linked_kpi_key": action.linked_kpi_key,
+            "plan": plan,
+            "completion_note": action.completion_note,
+            "completed_at": self._iso(action.completed_at),
+            "is_overdue": state == "overdue",
+            "days_to_due": days,
+            "follow_up_state": state,
+        }
+
+    def _follow_up_state(self, status: str | None, due: dt.date | None) -> str:
+        normalized = (status or "").strip()
+        if normalized == "Completed":
+            return "completed"
+        if normalized == "Cancelled":
+            return "cancelled"
+        if due is None:
+            return "no_due_date"
+        days = (due - self.today).days
+        if normalized in OPEN_ACTION_STATUSES and days < 0:
+            return "overdue"
+        if normalized in OPEN_ACTION_STATUSES and days <= DUE_SOON_WINDOW_DAYS:
+            return "due_soon"
+        return "upcoming"
+
+    def _apply_tracking(
+        self,
+        action: Action,
+        *,
+        employee: Employee,
+        period_team: Team,
+        scope: dict | None,
+        due_date: Any = _UNSET,
+        owner_user_id: Any = _UNSET,
+        priority: Any = _UNSET,
+        linked_kpi_key: Any = _UNSET,
+        plan_id: Any = _UNSET,
+    ) -> None:
+        supplied = {
+            key: value
+            for key, value in {
+                "due_date": due_date,
+                "owner_user_id": owner_user_id,
+                "priority": priority,
+                "linked_kpi_key": linked_kpi_key,
+                "plan_id": plan_id,
+            }.items()
+            if value is not _UNSET
+        }
+        if not supplied:
+            return
+
+        if "due_date" in supplied:
+            supplied["due_date"] = None if self._blank(supplied["due_date"]) else self._coerce_date(supplied["due_date"], "due_date")
+        resulting_due = supplied["due_date"] if "due_date" in supplied else action.due_date
+        owner_sent = "owner_user_id" in supplied and not self._blank(supplied["owner_user_id"])
+        priority_sent = "priority" in supplied and not self._blank(supplied["priority"])
+        plan_sent = "plan_id" in supplied and not self._blank(supplied["plan_id"])
+        if (owner_sent or priority_sent) and resulting_due is None:
+            raise CorrectiveActionValidationError("A due date is required when an owner or priority is provided")
+        if (owner_sent or plan_sent) and scope is None:
+            raise CorrectiveActionValidationError("A user scope is required to assign an owner or plan")
+        if "due_date" in supplied and supplied["due_date"] is not None:
+            self._validate_due_not_before_creation(supplied["due_date"], action)
+
+        if owner_sent:
+            owner = self._active_user(supplied["owner_user_id"])
+            team_name = logical_team_name(period_team or employee.team)
+            if not self._assignable_owner(owner, scope or {}, team_name, employee.performance_level):
+                raise CorrectiveActionValidationError("The selected owner must be an active user who can access the employee's team")
+            action.owner_user_id = owner.id
+        elif "owner_user_id" in supplied:
+            action.owner_user_id = None
+
+        if priority_sent:
+            chosen = str(supplied["priority"]).strip()
+            if chosen not in ACTION_PRIORITIES:
+                raise CorrectiveActionValidationError("Priority must be Low, Medium, or High")
+            action.priority = chosen
+        elif "priority" in supplied:
+            action.priority = None
+
+        if "linked_kpi_key" in supplied:
+            action.linked_kpi_key = None if self._blank(supplied["linked_kpi_key"]) else str(supplied["linked_kpi_key"]).strip()[:100]
+
+        if plan_sent:
+            plan = self._accessible_plan(supplied["plan_id"], scope or {}, employee, period_team)
+            action.plan_id = plan.id
+        elif "plan_id" in supplied:
+            action.plan_id = None
+
+        if "due_date" in supplied:
+            action.due_date = supplied["due_date"]
+
+    def _assert_can_update_status(self, action: Action, scope: dict) -> None:
+        role = scope.get("role")
+        if role in {"Executive", "Viewer"} or not scope:
+            raise CorrectiveActionAccessError("You do not have permission to update this action")
+        if role == "Admin" or scope.get("is_general_manager"):
+            return
+        if action.owner_user_id and str(action.owner_user_id) == str(scope.get("user_id") or ""):
+            return
+        if role == "Manager" and self._action_in_manager_scope(action, scope):
+            return
+        raise CorrectiveActionAccessError("You do not have permission to update this action")
+
+    def _action_in_manager_scope(self, action: Action, scope: dict) -> bool:
+        if action.employee is not None:
+            record = self._performance_record_for_action(action)
+            team = self._effective_action_team(action, record)
+            if team and user_can_access_team_level(scope, logical_team_name(team), action.employee.performance_level):
+                return True
+        if action.plan is not None and self._can_access_plan(action.plan, scope):
+            return True
+        if action.team is not None:
+            return user_can_access_team(scope, logical_team_name(action.team))
+        return False
+
+    def _assignable_owner(self, owner: User, scope: dict, team_name: str, performance_level: str | None) -> bool:
+        if not owner.is_active:
+            return False
+        if not self._caller_may_assign(owner, scope, team_name):
+            return False
+        return self._owner_covers_team(owner, scope, team_name, performance_level)
+
+    def _caller_may_assign(self, owner: User, scope: dict, team_name: str | None = None) -> bool:
+        if not owner.is_active:
+            return False
+        if scope.get("role") == "Admin" or scope.get("is_general_manager"):
+            return True
+        if str(owner.id) == str(scope.get("user_id") or ""):
+            return True
+        assignments = (
+            self.db.query(UserTeamAssignment)
+            .filter(UserTeamAssignment.user_id == owner.id)
+            .all()
+        )
+        return any(
+            assignment.team is not None
+            and user_can_access_team(scope, logical_team_name(assignment.team))
+            and (
+                team_name is None
+                or logical_team_name(assignment.team).casefold() == team_name.casefold()
+            )
+            for assignment in assignments
+        )
+
+    def _owner_covers_team(self, owner: User, scope: dict, team_name: str, performance_level: str | None) -> bool:
+        level = performance_level or "Employee"
+        if owner.role == "Admin":
+            return True
+        if str(owner.id) == str(scope.get("user_id") or "") and user_can_access_team_level(scope, team_name, level):
+            return True
+        assignments = (
+            self.db.query(UserTeamAssignment)
+            .filter(UserTeamAssignment.user_id == owner.id)
+            .all()
+        )
+        owner_scope = {
+            "role": "Admin" if owner.role == "Admin" else "Manager",
+            "accessible_teams": [logical_team_name(item.team) for item in assignments if item.team is not None],
+            "accessible_team_levels": [
+                (logical_team_name(item.team), item.performance_level or level)
+                for item in assignments
+                if item.team is not None
+            ],
+            "legacy_unscoped": False,
+            "is_general_manager": False,
+        }
+        return user_can_access_team_level(owner_scope, team_name, level)
+
+    def _can_access_plan(self, plan: PerformancePlan, scope: dict) -> bool:
+        if scope.get("role") == "Admin" or scope.get("is_general_manager"):
+            return True
+        team_name = logical_team_name(plan.team) if plan.team is not None else ""
+        if scope.get("role") == "Manager":
+            return user_can_access_team_level(scope, team_name, plan.performance_level)
+        return bool(plan.employee and str(plan.employee.employee_id) == str(scope.get("employee_id") or ""))
+
+    def _accessible_plan(self, plan_id: Any, scope: dict, employee: Employee, period_team: Team) -> PerformancePlan:
+        parsed = self._uuid(str(plan_id))
+        plan = self.db.query(PerformancePlan).filter(PerformancePlan.id == parsed, PerformancePlan.is_active.is_(True)).first() if parsed else None
+        if plan is None:
+            raise CorrectiveActionValidationError("The linked plan was not found")
+        if not self._can_access_plan(plan, scope):
+            raise CorrectiveActionAccessError("The linked plan is outside your authorized scope")
+        plan_team = logical_team_name(plan.team) if plan.team is not None else ""
+        allowed = {logical_team_name(employee.team).casefold(), logical_team_name(period_team).casefold()}
+        if plan_team.casefold() not in allowed:
+            raise CorrectiveActionValidationError("The linked plan must belong to the employee's team")
+        return plan
+
+    def _active_user(self, user_id: Any) -> User:
+        parsed = self._uuid(str(user_id))
+        user = self.db.query(User).filter(User.id == parsed).first() if parsed else None
+        if user is None or not user.is_active:
+            raise CorrectiveActionValidationError("The selected owner must be an active user who can access the employee's team")
+        return user
+
+    def _validate_due_not_before_creation(self, due: dt.date, action: Action) -> None:
+        created = self._creation_date(action)
+        if due < created:
+            raise CorrectiveActionValidationError("Due date cannot be earlier than the date the action was created")
+
+    def _creation_date(self, action: Action) -> dt.date:
+        created = action.created_at
+        if isinstance(created, dt.datetime):
+            return created.date()
+        if isinstance(created, dt.date):
+            return created
+        return self.today
+
+    def _coerce_date(self, value: Any, field_name: str) -> dt.date:
+        if isinstance(value, dt.datetime):
+            return value.date()
+        if isinstance(value, dt.date):
+            return value
+        try:
+            return dt.date.fromisoformat(str(value)[:10])
+        except ValueError as exc:
+            raise CorrectiveActionValidationError(f"Invalid {field_name}") from exc
+
+    @staticmethod
+    def _blank(value: Any) -> bool:
+        return value is None or (isinstance(value, str) and not str(value).strip())
+
+    @staticmethod
+    def _person_name(user: User) -> str:
+        full_name = str(user.full_name or "").strip()
+        return full_name or user.username
 
     def deactivate(self, *, employee_identifier: str, action_id: str, user_id: str | None = None) -> dict[str, Any]:
         employee = self._employee(employee_identifier)

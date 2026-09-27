@@ -728,6 +728,7 @@ class Action(Base):
     priority = Column(String(20), nullable=True)
     linked_kpi_key = Column(String(100), nullable=True)
     completion_note = Column(Text, nullable=True)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
     evidence_reference = Column(String(500), nullable=True)
     is_active = Column(Boolean, nullable=False, default=True)
     created_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
