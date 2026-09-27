@@ -9,36 +9,10 @@
  *   toast.success('Report exported successfully');
  *   toast.error('Upload failed — please try again');
  */
-import { createContext, useCallback, useState, type ReactNode } from 'react';
+import { useCallback, useState, type ReactNode } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { CheckCircle2, AlertCircle, AlertTriangle, Info, X } from 'lucide-react';
-
-/* ── Types ──────────────────────────────────────────────────── */
-
-export type ToastType = 'success' | 'error' | 'warning' | 'info';
-
-export interface ToastItem {
-  id: string;
-  type: ToastType;
-  message: string;
-  duration: number;
-}
-
-export interface ToastActions {
-  success: (message: string, duration?: number) => void;
-  error: (message: string, duration?: number) => void;
-  warning: (message: string, duration?: number) => void;
-  info: (message: string, duration?: number) => void;
-  dismiss: (id: string) => void;
-}
-
-export interface ToastContextValue {
-  toast: ToastActions;
-}
-
-/* ── Context ────────────────────────────────────────────────── */
-
-export const ToastContext = createContext<ToastContextValue | null>(null);
+import { ToastContext, type ToastActions, type ToastItem, type ToastType } from './toastContext';
 
 /* ── Constants ──────────────────────────────────────────────── */
 

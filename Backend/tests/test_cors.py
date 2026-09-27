@@ -5,6 +5,10 @@ from config import settings
 from config.settings import parse_cors_origins
 
 client = TestClient(app)
+PRODUCTION_ORIGIN = next(
+    (origin for origin in settings.CORS_ORIGINS if origin.startswith("https://")),
+    settings.CORS_ORIGINS[0],
+)
 
 def test_cors_allowed_origins_parsing():
     origins = parse_cors_origins(
@@ -19,13 +23,13 @@ def test_preflight_allowed_production_origin():
     response = client.options(
         "/api/auth/login",
         headers={
-            "Origin": "https://pms-frontend-iota-dusky.vercel.app",
+            "Origin": PRODUCTION_ORIGIN,
             "Access-Control-Request-Method": "POST",
             "Access-Control-Request-Headers": "authorization, content-type"
         }
     )
     assert response.status_code == 200
-    assert response.headers.get("access-control-allow-origin") == "https://pms-frontend-iota-dusky.vercel.app"
+    assert response.headers.get("access-control-allow-origin") == PRODUCTION_ORIGIN
     assert "POST" in response.headers.get("access-control-allow-methods", "")
     assert response.headers.get("access-control-allow-credentials") == "true"
 
@@ -46,10 +50,10 @@ def test_login_post_cors_headers():
     response = client.post(
         "/api/auth/login",
         json={"username": "test", "password": "password"},
-        headers={"Origin": "https://pms-frontend-iota-dusky.vercel.app"}
+        headers={"Origin": PRODUCTION_ORIGIN}
     )
     # Even if auth fails, the CORS headers should be present
-    assert response.headers.get("access-control-allow-origin") == "https://pms-frontend-iota-dusky.vercel.app"
+    assert response.headers.get("access-control-allow-origin") == PRODUCTION_ORIGIN
     assert response.headers.get("access-control-allow-credentials") == "true"
 
 def test_rejected_unknown_origin():

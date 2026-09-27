@@ -160,7 +160,6 @@ export function CustomDropdown<T extends string | number = string>({
       {/* Keep a native select for existing form/test integrations; the visual button is the accessible control. */}
       <select
         aria-label={ariaLabel}
-        aria-hidden="true"
         tabIndex={-1}
         value={String(value)}
         onChange={(e) => {
@@ -193,7 +192,6 @@ export function CustomDropdown<T extends string | number = string>({
       <button
         type="button"
         id={triggerId}
-        aria-label={ariaLabel}
         aria-haspopup="listbox"
         aria-expanded={isOpen}
         aria-controls={isOpen ? menuId : undefined}
@@ -205,9 +203,10 @@ export function CustomDropdown<T extends string | number = string>({
           disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
         } ${sizeClasses} ${buttonClassName}`}
       >
+        {ariaLabel && <span className="sr-only">{ariaLabel}</span>}
         <div className="flex items-center gap-2 min-w-0 truncate">
           {icon && <span className="text-[var(--text-muted)] shrink-0">{icon}</span>}
-          <span className="truncate">{selectedOption.label}</span>
+          <span className="truncate" aria-hidden="true">{selectedOption.label}</span>
         </div>
         <ChevronDown
           size={13}

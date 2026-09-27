@@ -1,4 +1,5 @@
 import io
+import os
 from pathlib import Path
 
 import pandas as pd
@@ -179,7 +180,10 @@ async def test_config_api_resolves_one_marketing_position_without_mixing_kpis():
     assert all(kpi["key"].startswith("mb_") for kpi in response["data"]["kpis"])
 
 
-@pytest.mark.skipif(not REAL_WORKBOOK.exists(), reason="User acceptance workbook is not available")
+@pytest.mark.skipif(
+    os.environ.get("CI") == "true" or not REAL_WORKBOOK.exists(),
+    reason="User acceptance workbook is only available in the local acceptance environment",
+)
 def test_real_marketing_workbook_imports_with_incomplete_rows_excluded():
     result = MarketingImportService().parse_excel(pd.ExcelFile(REAL_WORKBOOK))
     scores = {

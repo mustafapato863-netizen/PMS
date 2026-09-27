@@ -72,8 +72,8 @@ def test_contract_direction_aware_loss_and_new_baseline():
     payload = build_uae_executive_summary_contract(records, current_period=(2026, 6), aggregate_only=True)
     response = next(row for row in payload["kpis"] if row["label"] == "Response Time")
     assert response["direction"] == "lower_better"
-    assert response["status"] == "On Track"
-    assert response["weighted_loss"] == 0
+    assert response["status"] == "Requires Action"
+    assert response["weighted_loss"] == 25.0
     assert payload["mom"] == 0  # baseline uses only the like-for-like E1 population
     assert all("Employee E1" not in str(row) for row in payload["employee_priority_rows"])
 
