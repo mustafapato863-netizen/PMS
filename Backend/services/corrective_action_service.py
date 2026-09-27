@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import logging
 import uuid
 from decimal import Decimal
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, joinedload
@@ -213,13 +216,16 @@ class CorrectiveActionService:
                 action.employee.performance_level,
             ):
                 continue
-            scoped_actions.append(
-                self.serialize(
-                    action,
-                    effective_team=effective_team,
-                    performance_record=performance_record,
+            try:
+                scoped_actions.append(
+                    self.serialize(
+                        action,
+                        effective_team=effective_team,
+                        performance_record=performance_record,
+                    )
                 )
-            )
+            except Exception:
+                logger.exception("Skipping unreadable corrective action %s", action.id)
         return scoped_actions
 
     def ensure_employee_scope(self, employee_identifier: str, scope: dict) -> Employee:

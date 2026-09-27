@@ -1,7 +1,10 @@
 from datetime import date, datetime, timezone
 from decimal import Decimal
+import logging
 import uuid
 from typing import List, Dict, Any
+
+logger = logging.getLogger(__name__)
 
 from sqlalchemy.orm import Session
 
@@ -194,15 +197,30 @@ class PlanningService:
             "explanation": "50% objectives, 30% actions and 20% milestones; absent components are excluded and remaining weights are normalized.",
         }
 
+    @staticmethod
+    def _as_date(value) -> date | None:
+        if isinstance(value, datetime):
+            return value.date()
+        if isinstance(value, date):
+            return value
+        return None
+
     @classmethod
     def risk_reasons(cls, plan: PerformancePlan, progress: float, today: date | None = None) -> list[str]:
         today = today or date.today()
         reasons = []
-        days_left = (plan.due_date - today).days
-        if plan.status not in {"Completed", "Archived"} and 0 <= days_left <= 14 and progress < 70:
+        due = cls._as_date(plan.due_date)
+        days_left = (due - today).days if due is not None else None
+        if days_left is not None and plan.status not in {"Completed", "Archived"} and 0 <= days_left <= 14 and progress < 70:
             reasons.append(f"Due in {days_left} days with only {progress:.0f}% progress")
-        overdue_actions = sum(bool(item.due_date and item.due_date < today and item.status not in {"Completed", "Cancelled"}) for item in plan.actions)
-        overdue_milestones = sum(item.due_date < today and item.status != "Completed" for item in plan.milestones)
+        overdue_actions = sum(
+            bool((due_on := cls._as_date(item.due_date)) and due_on < today and item.status not in {"Completed", "Cancelled"})
+            for item in plan.actions
+        )
+        overdue_milestones = sum(
+            bool((due_on := cls._as_date(item.due_date)) and due_on < today and item.status != "Completed")
+            for item in plan.milestones
+        )
         if overdue_actions: reasons.append(f"{overdue_actions} required action(s) overdue")
         if overdue_milestones: reasons.append(f"{overdue_milestones} milestone(s) overdue")
         current, baseline, target = map(cls._number, (plan.current_value, plan.baseline_value, plan.target_value))
@@ -341,11 +359,19 @@ class PlanningService:
     def _serialize_card(self, plan: PerformancePlan) -> dict[str, Any]:
         progress = self.progress(plan); risks = self.risk_reasons(plan, progress["overall"])
         effective = "At Risk" if risks and plan.status == "In Progress" else plan.status
-        return {"id": str(plan.id), "name": plan.name, "scope": plan.employee.name if plan.employee else plan.position_name or logical_team_name(plan.team), "scope_type": plan.scope_type, "team": logical_team_name(plan.team), "performance_level": plan.performance_level, "status": effective, "stored_status": plan.status, "risk_reasons": risks, "progress": progress, "owner": {"id": str(plan.owner.id), "name": plan.owner.username}, "period": f"{plan.period_start:%d %b %Y} – {plan.period_end:%d %b %Y}", "due_date": plan.due_date.isoformat(), "counts": {"objectives": len(plan.objectives), "actions": len(plan.actions), "kpis": len(plan.kpis), "milestones": len(plan.milestones), "notes": len(plan.notes)}, "updated_at": plan.updated_at.isoformat() if plan.updated_at else None}
+        owner = plan.owner
+        due = self._as_date(plan.due_date)
+        scope_name = plan.employee.name if plan.employee else plan.position_name or (logical_team_name(plan.team) if plan.team else "Unassigned")
+        return {"id": str(plan.id), "name": plan.name, "scope": scope_name, "scope_type": plan.scope_type, "team": logical_team_name(plan.team) if plan.team else "Unassigned", "performance_level": plan.performance_level, "status": effective, "stored_status": plan.status, "risk_reasons": risks, "progress": progress, "owner": {"id": str(owner.id), "name": owner.username} if owner else {"id": "", "name": "Unassigned"}, "period": f"{plan.period_start:%d %b %Y} – {plan.period_end:%d %b %Y}" if plan.period_start and plan.period_end else "", "due_date": due.isoformat() if due else None, "counts": {"objectives": len(plan.objectives), "actions": len(plan.actions), "kpis": len(plan.kpis), "milestones": len(plan.milestones), "notes": len(plan.notes)}, "updated_at": plan.updated_at.isoformat() if plan.updated_at else None}
 
     def list(self, scope: dict, team=None, owner_id=None, status=None, search=None) -> list[dict[str, Any]]:
         rows = [plan for plan in self.plans.list_active() if self._can_access(plan, scope)]
-        cards = [self._serialize_card(plan) for plan in rows]
+        cards = []
+        for plan in rows:
+            try:
+                cards.append(self._serialize_card(plan))
+            except Exception:
+                logger.exception("Skipping unreadable performance plan %s", getattr(plan, "id", None))
         return [card for card in cards if (not team or card["team"].casefold() == team.casefold()) and (not owner_id or card["owner"]["id"] == owner_id) and (not status or card["status"] == status) and (not search or search.casefold() in card["name"].casefold() or search.casefold() in card["scope"].casefold())]
 
     def get(self, plan_id: str, scope: dict) -> dict[str, Any]:

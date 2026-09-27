@@ -1,5 +1,8 @@
 import datetime as dt
+import logging
 import uuid
+
+logger = logging.getLogger(__name__)
 
 import jwt
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -532,7 +535,10 @@ async def get_all_corrective_actions(
             message="Retrieved all corrective actions successfully",
             data=actions
         )
-    except Exception as e:
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Failed to fetch corrective actions")
         return StandardResponse(success=False, message="Failed to fetch corrective actions.")
 
 

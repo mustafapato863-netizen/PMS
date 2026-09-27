@@ -2,7 +2,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session, joinedload
 from repositories.base_repository import BaseRepository
-from models.models import Action, PerformancePlan
+from models.models import Action
 import logging
 
 logger = logging.getLogger(__name__)
@@ -22,7 +22,7 @@ class ActionRepository(BaseRepository[Action]):
                 joinedload(Action.team),
                 joinedload(Action.created_by_user),
                 joinedload(Action.owner),
-                joinedload(Action.plan).selectinload(PerformancePlan.milestones),
+                joinedload(Action.plan),
             )
             .filter(Action.is_active.is_(True))
             .order_by(Action.created_at.desc())

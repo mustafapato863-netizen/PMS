@@ -1,5 +1,6 @@
 import uuid
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
+from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import create_engine
@@ -14,6 +15,26 @@ from services.planning_service import PlanningAccessError, PlanningNotFoundError
 
 class StubRepo:
     def get_all(self): return []
+
+
+def test_risk_reasons_accept_datetime_due_dates_and_skip_blank_ones():
+    plan = SimpleNamespace(
+        due_date=datetime(2026, 9, 20, tzinfo=timezone.utc),
+        status="In Progress",
+        actions=[SimpleNamespace(due_date=None, status="Open")],
+        milestones=[
+            SimpleNamespace(due_date=None, status="Pending"),
+            SimpleNamespace(due_date=datetime(2026, 9, 1), status="Pending"),
+        ],
+        current_value=1,
+        baseline_value=2,
+        target_value=3,
+        outcome_direction="higher_better",
+    )
+
+    reasons = PlanningService.risk_reasons(plan, 10, today=date(2026, 9, 27))
+
+    assert "1 milestone(s) overdue" in reasons
 
 
 @pytest.fixture()
