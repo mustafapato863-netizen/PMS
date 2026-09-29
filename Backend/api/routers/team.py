@@ -79,5 +79,3 @@ async def save_team_action(
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except HTTPException:
         raise
-    except Exception:
-        return StandardResponse(success=False, message="Failed to save team action.")

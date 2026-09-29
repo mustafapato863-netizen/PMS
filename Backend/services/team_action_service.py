@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from models.models import Action, Team, User
 from repositories.action_repository import ActionRepository
 from utils.report_scope import user_can_access_team
-from utils.team_identity import logical_team_name
+from utils.team_identity import get_scoped_team, logical_team_name
 
 
 class TeamActionService:
@@ -20,6 +20,7 @@ class TeamActionService:
     _SLUG_ALIASES: dict[str, str] = {
         "inbound": "Inbound",
         "outbound": "Outbound",
+        "call-center": "Call Center",
         "inbound-uae": "Inbound UAE",
         "pre-approvals": "Pre-Approvals IP Offshore",
         "sales": "Sales",
@@ -62,6 +63,20 @@ class TeamActionService:
                 candidates.add(resolved_display.replace(" ", "-").replace("_", "-"))
             if normalized in candidates or reference.strip().casefold() in candidates:
                 return team
+
+        # Call Center is a merged dashboard backed by Inbound and Outbound.
+        # Its employee-level identity may be inactive after the source teams
+        # were split, but the dashboard still stores a parent-level action.
+        if normalized == "call-center":
+            parent = get_scoped_team(
+                self.db,
+                "Call Center",
+                "employee",
+                include_inactive=True,
+            )
+            if parent:
+                return parent
+
         raise ValueError("Team not found")
 
     @staticmethod
