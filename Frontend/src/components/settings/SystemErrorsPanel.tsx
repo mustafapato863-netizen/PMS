@@ -40,28 +40,49 @@ export function SystemErrorsPanel() {
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  const fetchErrors = useCallback(async (filter = ''): Promise<SystemError[]> => {
+    const query = new URLSearchParams({ limit: '50' });
+    if (filter.trim()) query.set('request_id', filter.trim());
+    const response = await fetchWithRole(`${API_BASE}/api/settings/system-errors?${query}`);
+    if (!response.ok) throw new Error(await readError(response, 'Could not load system errors.'));
+    const result = await response.json() as ApiResult<SystemError[]>;
+    return result.data || [];
+  }, [fetchWithRole]);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadInitialErrors = async () => {
+      try {
+        const result = await fetchErrors();
+        if (active) setErrors(result);
+      } catch (error) {
+        if (active) {
+          setErrorMessage(error instanceof Error ? error.message : 'Could not load system errors.');
+          setErrors([]);
+        }
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+
+    void loadInitialErrors();
+    return () => { active = false; };
+  }, [fetchErrors]);
+
   const loadErrors = useCallback(async (filter = '') => {
     setLoading(true);
     setErrorMessage(null);
     setSelectedError(null);
     try {
-      const query = new URLSearchParams({ limit: '50' });
-      if (filter.trim()) query.set('request_id', filter.trim());
-      const response = await fetchWithRole(`${API_BASE}/api/settings/system-errors?${query}`);
-      if (!response.ok) throw new Error(await readError(response, 'Could not load system errors.'));
-      const result = await response.json() as ApiResult<SystemError[]>;
-      setErrors(result.data || []);
+      setErrors(await fetchErrors(filter));
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Could not load system errors.');
       setErrors([]);
     } finally {
       setLoading(false);
     }
-  }, [fetchWithRole]);
-
-  useEffect(() => {
-    void loadErrors();
-  }, [loadErrors]);
+  }, [fetchErrors]);
 
   const openDetails = async (item: SystemError) => {
     setSelectedError(item);
