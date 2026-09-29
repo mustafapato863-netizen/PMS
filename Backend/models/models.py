@@ -716,7 +716,7 @@ class Action(Base):
     team_id = Column(UUID(as_uuid=True), ForeignKey("teams.id", ondelete="RESTRICT"), nullable=False)
     month = Column(String(20), nullable=False)
     year = Column(SmallInteger, nullable=False)
-    action_type = Column(String(50), nullable=False)  # Training, Reward, PIP, Monitor, Coaching, Warning, Promotion
+    action_type = Column(String(50), nullable=False)  # Training, Reward, PIP, Monitor, Coaching, Warning, Promotion, Team Action
     plan_title = Column(String(255), nullable=True)
     action_text = Column(Text, nullable=False)
     root_cause_note = Column(Text, nullable=True)

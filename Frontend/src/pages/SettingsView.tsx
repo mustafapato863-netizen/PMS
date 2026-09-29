@@ -8,6 +8,7 @@ import { DataManagementPanel } from '../components/settings/DataManagementPanel'
 import { KPIConfigPanel } from '../components/settings/KPIConfigPanel';
 import { UserManagementPanel } from '../components/settings/UserManagementPanel';
 import { CorrectiveActionDataPanel } from '../components/settings/CorrectiveActionDataPanel';
+import { SystemErrorsPanel } from '../components/settings/SystemErrorsPanel';
 import type { SettingsSection } from '../components/settings/types';
 import TeamManagementView from './TeamManagementView';
 
@@ -40,6 +41,7 @@ const SettingsView = () => {
         {activeSection === 'kpis' && <KPIConfigPanel />}
         {activeSection === 'users' && <UserManagementPanel />}
         {activeSection === 'teams' && <div className="glass-panel rounded-3xl p-5 shadow-sm"><TeamManagementView /></div>}
+        {activeSection === 'system_errors' && <SystemErrorsPanel />}
       </SettingsLayout>
     </motion.main>
   );

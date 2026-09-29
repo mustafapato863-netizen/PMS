@@ -550,6 +550,10 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
   const [isEditingAction, setIsEditingAction] = useState<boolean>(false);
   const [actionInput, setActionInput] = useState<string>('');
   const [savingAction, setSavingAction] = useState<boolean>(false);
+  const [teamActionSaveError, setTeamActionSaveError] = useState<{
+    message: string;
+    requestId: string | null;
+  } | null>(null);
 
   useEffect(() => {
     const fetchTeamAction = async () => {
@@ -577,6 +581,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
 
   const handleSaveTeamAction = async () => {
     setSavingAction(true);
+    setTeamActionSaveError(null);
     try {
       const result = await apiFetch<{ success: boolean; message?: string }>(
         '/api/team-actions/',
@@ -593,12 +598,24 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
       if (result.success) {
         setTeamAction(actionInput);
         setIsEditingAction(false);
+        setTeamActionSaveError(null);
       } else {
-        alert('Failed to save: ' + (result.message || 'Unknown error'));
+        setTeamActionSaveError({
+          message: result.message || 'Please try again. Your text is still in the editor.',
+          requestId: null,
+        });
       }
     } catch (err) {
       console.error('Failed to save team action', err);
-      alert('Failed to save action: check permissions.');
+      const rawMessage = err instanceof Error ? err.message : '';
+      const requestId = rawMessage.match(/Reference:\s*([\da-f-]+)/i)?.[1] ?? null;
+      const message = rawMessage.replace(/\s*Reference:\s*[\da-f-]+/i, '').trim();
+      setTeamActionSaveError({
+        message: requestId
+          ? 'Your text is still here. Retry in a moment. If it keeps failing, share this reference with IT.'
+          : message || 'Your text is still here. Please try again.',
+        requestId,
+      });
     } finally {
       setSavingAction(false);
     }
@@ -2087,9 +2104,43 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
                       <div className="text-xs leading-relaxed text-[var(--text-secondary)] dark:text-slate-200">
                         {isEditingAction ? (
                           <div className="space-y-3.5 mt-2">
+                            {teamActionSaveError && (
+                              <div
+                                role="alert"
+                                aria-live="assertive"
+                                className="flex items-start gap-3 rounded-xl border border-rose-300 bg-rose-50 px-3.5 py-3 text-rose-900 dark:border-rose-900/70 dark:bg-rose-950/40 dark:text-rose-100"
+                              >
+                                <AlertCircle size={17} className="mt-0.5 shrink-0 text-rose-600 dark:text-rose-300" />
+                                <div className="min-w-0 flex-1 space-y-1">
+                                  <p className="text-xs font-extrabold">Couldn’t save this key action</p>
+                                  <p className="text-xs leading-relaxed text-rose-800 dark:text-rose-200">
+                                    {teamActionSaveError.message}
+                                  </p>
+                                  {teamActionSaveError.requestId && (
+                                    <p className="pt-1 text-xs font-semibold">
+                                      Reference:{' '}
+                                      <code className="select-all rounded bg-white/70 px-1.5 py-0.5 font-mono text-[11px] dark:bg-black/20">
+                                        {teamActionSaveError.requestId}
+                                      </code>
+                                    </p>
+                                  )}
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => setTeamActionSaveError(null)}
+                                  aria-label="Dismiss save error"
+                                  className="rounded-md p-1 text-rose-700 transition hover:bg-rose-100 dark:text-rose-200 dark:hover:bg-rose-900/50"
+                                >
+                                  <X size={15} />
+                                </button>
+                              </div>
+                            )}
                             <textarea
                               value={actionInput}
-                              onChange={(e) => setActionInput(e.target.value)}
+                              onChange={(e) => {
+                                setActionInput(e.target.value);
+                                setTeamActionSaveError(null);
+                              }}
                               placeholder="Specify the key action needed for this team..."
                               rows={3}
                               className="w-full rounded-xl border border-amber-500/30 bg-[var(--bg-surface)] px-4 py-3 text-xs font-semibold text-[var(--text-primary)] transition-all placeholder:text-[var(--text-faint)] focus:border-amber-400 focus:outline-none focus:ring-1 focus:ring-amber-500/20 dark:bg-slate-950/90 dark:text-slate-100 dark:placeholder:text-slate-600"
@@ -2100,6 +2151,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
                                 onClick={() => {
                                   setIsEditingAction(false);
                                   setActionInput(teamAction);
+                                  setTeamActionSaveError(null);
                                 }}
                                 className="flex cursor-pointer items-center gap-1.5 rounded-lg border border-[var(--border-light)] bg-[var(--bg-sunken)] px-3.5 py-1.5 text-xs font-bold text-[var(--text-secondary)] transition-all hover:bg-[var(--bg-surface)] dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
                               >

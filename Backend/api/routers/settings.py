@@ -1,19 +1,77 @@
 import json
 from datetime import datetime, timezone
+from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile
 
+from api.dependencies import clear_serialization_cache, require_role
 from api.middleware.rbac_middleware import require_permission
 from config.database import get_db
 from config import settings
+from models.models import ErrorLog
 from models.schemas import StandardResponse, KPIWeight, Target
 from services.cache_invalidation_service import CacheInvalidationService
-from api.dependencies import clear_serialization_cache
 from services.corrective_action_service import CorrectiveActionService, CorrectiveActionValidationError
 from services.kpi_configuration_service import KPIConfigurationService
 from sqlalchemy.orm import Session
 
 router = APIRouter()
+
+
+@router.get("/system-errors", response_model=StandardResponse)
+async def list_system_errors(
+    limit: int = Query(default=50, ge=1, le=100),
+    request_id: str | None = Query(default=None, min_length=1, max_length=100),
+    db: Session = Depends(get_db),
+    _role: str = Depends(require_role(["Admin"])),
+):
+    """List recent server errors for administrators without exposing stack traces."""
+    query = db.query(ErrorLog)
+    if request_id:
+        query = query.filter(ErrorLog.request_id == request_id.strip())
+    rows = query.order_by(ErrorLog.occurred_at.desc()).limit(limit).all()
+    return StandardResponse(
+        success=True,
+        message="System errors retrieved successfully",
+        data=[
+            {
+                "id": str(row.id),
+                "request_id": row.request_id,
+                "endpoint": row.endpoint,
+                "method": row.method,
+                "error_class": row.error_class,
+                "occurred_at": row.occurred_at,
+            }
+            for row in rows
+        ],
+    )
+
+
+@router.get("/system-errors/{error_id}", response_model=StandardResponse)
+async def get_system_error_details(
+    error_id: UUID,
+    db: Session = Depends(get_db),
+    _role: str = Depends(require_role(["Admin"])),
+):
+    """Return full diagnostic details for one error log, restricted to Admins."""
+    row = db.query(ErrorLog).filter(ErrorLog.id == error_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="System error not found")
+    return StandardResponse(
+        success=True,
+        message="System error details retrieved successfully",
+        data={
+            "id": str(row.id),
+            "request_id": row.request_id,
+            "endpoint": row.endpoint,
+            "method": row.method,
+            "error_class": row.error_class,
+            "error_message": row.error_message,
+            "stack_trace": row.stack_trace,
+            "occurred_at": row.occurred_at,
+        },
+    )
+
 
 @router.get("/weights", response_model=StandardResponse)
 async def get_weights(db: Session = Depends(get_db)):
