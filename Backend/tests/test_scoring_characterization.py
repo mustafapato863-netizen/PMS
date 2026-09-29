@@ -5,6 +5,7 @@ from services.kpi_service import KPIService
 from services.kpi_aggregation import capped_achievement, AggregatedKpiMetric
 from services.management_bsc_service import _direction_ratio
 from repositories.json_repos import JSONKPIWeightsRepository, JSONTargetsRepository
+from config.loader import load_team_config
 
 
 @pytest.fixture
@@ -128,10 +129,14 @@ class TestScoringCharacterization:
 
     # 9. Precomputed achievement column handling (kpi_service row evaluation)
     def test_kpi_service_precomputed_achievement(self, kpi_service):
-        data_path = os.path.join(os.path.dirname(__file__), "..", "data", "performance_records.json")
-        with open(data_path, "r", encoding="utf-8") as f:
-            all_records = json.load(f)
-        base_row = dict(next(r for r in all_records if r.get("team") == "Inbound")["raw_data"])
+        inbound_config = load_team_config("Inbound")
+        base_row = {
+            column: 0
+            for kpi in inbound_config["kpis"]
+            for column in (kpi.get("actual_col"), kpi.get("target_col"))
+            if column
+        }
+        base_row.update({"A.Attend%": "80%", "T.Attend%": "75%"})
 
         # Test row evaluation with precomputed achievement column present
         row = dict(base_row)
@@ -173,6 +178,9 @@ class TestRegressionSnapshot:
         data_path = os.path.join(os.path.dirname(__file__), "..", "data", "performance_records.json")
 
         assert os.path.exists(fixture_path), f"Fixture not found: {fixture_path}"
+        if not os.path.exists(data_path):
+            pytest.skip("Regression snapshot requires the local performance dataset, excluded from source control.")
+
         with open(fixture_path, "r", encoding="utf-8") as f:
             expected_records = json.load(f)
 
