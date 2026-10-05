@@ -48,11 +48,13 @@ export interface GradePresentation {
  * Hex mirror of the light-theme `--pms-grade-*` tokens for consumers that
  * cannot resolve CSS variables (chart libraries, alpha math, exports).
  * Kept in lock-step with `src/index.css` by `grades.test.ts`.
+ * Grade B is light green per Figma csZO4wbWLnLOcHHmGUnQ0X ("PMS grade palette");
+ * its solid-text is dark green, not white, because #A3D977 is too light for white text.
  * Prefer `getGradeTone()` / `gradeTokenVar()` for DOM styling so dark mode applies.
  */
 export const GRADE_PALETTE: Record<GradeClass, GradePresentation> = {
   A: { label: 'Excellent', statusLabel: 'Excellent', text: '#0A6B3C', background: '#E3F6EC', border: '#8FD6AE', solid: '#0E8749', solidText: '#FFFFFF', gauge: '#0E8749', glow: 'rgba(14, 135, 73, 0.16)' },
-  B: { label: 'Meet Expectations', statusLabel: 'Meet', text: '#0A5F6E', background: '#E3F4F6', border: '#8BC9D2', solid: '#0E7A8A', solidText: '#FFFFFF', gauge: '#0E7A8A', glow: 'rgba(14, 122, 138, 0.16)' },
+  B: { label: 'Meet Expectations', statusLabel: 'Meet', text: '#3F6F20', background: '#EFF8E8', border: '#B8D99A', solid: '#A3D977', solidText: '#3F6F20', gauge: '#A3D977', glow: 'rgba(163, 217, 119, 0.16)' },
   C: { label: 'Average', statusLabel: 'Average', text: '#8A5200', background: '#FFF4DC', border: '#E6C06A', solid: '#A66800', solidText: '#FFFFFF', gauge: '#A66800', glow: 'rgba(166, 104, 0, 0.16)' },
   D: { label: 'Below Average', statusLabel: 'Below', text: '#A84808', background: '#FFEDE0', border: '#E8A878', solid: '#C35410', solidText: '#FFFFFF', gauge: '#C35410', glow: 'rgba(195, 84, 16, 0.16)' },
   E: { label: 'Unsatisfactory', statusLabel: 'Critical', text: '#B42318', background: '#FEECEC', border: '#F0A0A0', solid: '#D92D20', solidText: '#FFFFFF', gauge: '#D92D20', glow: 'rgba(217, 45, 32, 0.16)' },

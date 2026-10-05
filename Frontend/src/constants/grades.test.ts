@@ -13,9 +13,10 @@ import {
 } from './grades';
 
 // Approved palette (pms-grade-palette/tokens.json, light UI).
+// Grade B updated to light green by Figma csZO4wbWLnLOcHHmGUnQ0X ("PMS grade palette", node 2:3).
 const APPROVED: Record<GradeClass, { label: string; text: string; gauge: string }> = {
   A: { label: 'Excellent', text: '#0A6B3C', gauge: '#0E8749' },
-  B: { label: 'Meet Expectations', text: '#0A5F6E', gauge: '#0E7A8A' },
+  B: { label: 'Meet Expectations', text: '#3F6F20', gauge: '#A3D977' },
   C: { label: 'Average', text: '#8A5200', gauge: '#A66800' },
   D: { label: 'Below Average', text: '#A84808', gauge: '#C35410' },
   E: { label: 'Unsatisfactory', text: '#B42318', gauge: '#D92D20' },
@@ -116,6 +117,16 @@ describe('grade color mapping', () => {
     expect(gradeTokenVar('D', 'gauge')).toBe('var(--pms-grade-d-gauge)');
     expect(gradeTokenVar('A', 'badge-bg')).toBe('var(--pms-grade-a-badge-bg)');
     expect(gradeTokenVar(null, 'text')).toBe('var(--pms-grade-na-text)');
+  });
+
+  it('uses Figma light green for grade B with dark (AA) solid text', () => {
+    expect(GRADE_PALETTE.B).toMatchObject({
+      text: '#3F6F20',
+      background: '#EFF8E8',
+      solid: '#A3D977',
+      solidText: '#3F6F20',
+      gauge: '#A3D977',
+    });
   });
 
   it('maps 70.3% to the D / Below Average orange tokens', () => {

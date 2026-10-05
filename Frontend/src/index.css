@@ -206,15 +206,17 @@ select option {
   --pms-grade-a-gauge: #0E8749;
   --pms-grade-a-border: #8FD6AE;
   --pms-grade-a-glow: rgba(14, 135, 73, 0.16);
-  /* B — Meet Expectations (teal) */
-  --pms-grade-b-text: #0A5F6E;
-  --pms-grade-b-badge-bg: #E3F4F6;
-  --pms-grade-b-badge-text: #0A5F6E;
-  --pms-grade-b-solid: #0E7A8A;
-  --pms-grade-b-solid-text: #FFFFFF;
-  --pms-grade-b-gauge: #0E7A8A;
-  --pms-grade-b-border: #8BC9D2;
-  --pms-grade-b-glow: rgba(14, 122, 138, 0.16);
+  /* B — Meet Expectations (light green). Figma csZO4wbWLnLOcHHmGUnQ0X
+     "PMS grade palette": text #3F6F20, gauge/solid #A3D977, badge bg #EFF8E8.
+     solid-text stays dark (#3F6F20) because white on #A3D977 fails AA. */
+  --pms-grade-b-text: #3F6F20;
+  --pms-grade-b-badge-bg: #EFF8E8;
+  --pms-grade-b-badge-text: #3F6F20;
+  --pms-grade-b-solid: #A3D977;
+  --pms-grade-b-solid-text: #3F6F20;
+  --pms-grade-b-gauge: #A3D977;
+  --pms-grade-b-border: #B8D99A;
+  --pms-grade-b-glow: rgba(163, 217, 119, 0.16);
   /* C — Average (amber) */
   --pms-grade-c-text: #8A5200;
   --pms-grade-c-badge-bg: #FFF4DC;
@@ -327,12 +329,13 @@ select option {
   --border-strong: rgba(255, 255, 255, 0.24);
 
   /* PMS grade palette — dark UI. The handoff tokens are light-only; these keep
-     the same hue order (green → teal → amber → orange → red) with lighter
+     the same hue order (green → light green → amber → orange → red) with lighter
      text/gauge tints for contrast on dark surfaces. Solid fills reuse light. */
   --pms-grade-a-text: #34D399; --pms-grade-a-badge-bg: rgba(16, 185, 129, 0.18); --pms-grade-a-badge-text: #34D399;
   --pms-grade-a-gauge: #10B981; --pms-grade-a-border: rgba(52, 211, 153, 0.45); --pms-grade-a-glow: rgba(16, 185, 129, 0.22);
-  --pms-grade-b-text: #22D3EE; --pms-grade-b-badge-bg: rgba(6, 182, 212, 0.18); --pms-grade-b-badge-text: #22D3EE;
-  --pms-grade-b-gauge: #06B6D4; --pms-grade-b-border: rgba(34, 211, 238, 0.45); --pms-grade-b-glow: rgba(6, 182, 212, 0.22);
+  /* B — Meet Expectations (light green) */
+  --pms-grade-b-text: #A3D977; --pms-grade-b-badge-bg: rgba(163, 217, 119, 0.18); --pms-grade-b-badge-text: #A3D977;
+  --pms-grade-b-gauge: #A3D977; --pms-grade-b-border: rgba(163, 217, 119, 0.45); --pms-grade-b-glow: rgba(163, 217, 119, 0.22);
   --pms-grade-c-text: #FBBF24; --pms-grade-c-badge-bg: rgba(245, 158, 11, 0.18); --pms-grade-c-badge-text: #FBBF24;
   --pms-grade-c-gauge: #F59E0B; --pms-grade-c-border: rgba(251, 191, 36, 0.45); --pms-grade-c-glow: rgba(245, 158, 11, 0.22);
   --pms-grade-d-text: #FB923C; --pms-grade-d-badge-bg: rgba(249, 115, 22, 0.18); --pms-grade-d-badge-text: #FB923C;
