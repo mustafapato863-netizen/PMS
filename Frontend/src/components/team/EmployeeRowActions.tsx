@@ -69,7 +69,7 @@ const EmployeeRowActions = ({
   const [isSaving, setIsSaving] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
   const isAdmin = role === 'Admin';
-  const canManageActions = role === 'Admin' || role === 'Manager';
+  const canManageActions = role === 'Admin' || role === 'General Manager' || role === 'Manager';
 
   const profileUrl = `/employee/${row.id}?month=${encodeURIComponent(month)}&performance_level=${encodeURIComponent(performanceLevel)}`;
   const kpis = useMemo(() => {

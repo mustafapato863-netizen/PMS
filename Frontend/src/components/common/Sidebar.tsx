@@ -21,6 +21,12 @@ import { isCallCenterTeam, CALL_CENTER_TEAM, isRcmTeam, RCM_TEAM } from '../../t
 import ThemeToggle from './ThemeToggle';
 import { TEAM_ITEMS, getTeamIcon, isHiddenTeam } from './sidebarTeamItems';
 import { MANAGEMENT_DATA_CHANGED_EVENT } from '../../lib/managementDataEvents';
+import {
+  canAccessBroadAppPages,
+  canAccessCorrectiveActions,
+  getRoleDisplayLabel,
+  hasAllTeamsScope,
+} from '../../lib/access';
 import { prepareBalancedScorecardTeamParams } from '../team/balancedScorecardNavigation';
 import SghHeartSvg from './SghHeartSvg';
 
@@ -106,7 +112,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed = false, onToggleCollapsed = (
   }, [loadManagementTeams]);
 
   const scopedTeams = useMemo(() => {
-    if (currentUser?.is_general_manager || role === 'Admin') return null;
+    if (hasAllTeamsScope(role, { is_general_manager: currentUser?.is_general_manager })) return null;
     return new Set((currentUser?.accessible_teams || []).map(normalizeTeamName));
   }, [currentUser?.accessible_teams, currentUser?.is_general_manager, role]);
 
@@ -198,20 +204,24 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed = false, onToggleCollapsed = (
   };
 
   const canSeeBroadNavigation = role !== 'Agent';
+  // Admin and General Manager (stored role string) share the broad product pages.
+  const canSeeBroadAppPages = canAccessBroadAppPages(role);
+  const canSeeCorrectiveActions = canAccessCorrectiveActions(role);
+  const roleLabel = getRoleDisplayLabel(role);
   const generalItems = canSeeBroadNavigation
     ? [
         { name: 'Executive Summary', path: '/executive', icon: <Gauge size={18} /> },
-        ...(role === 'Admin' || currentUser?.is_general_manager || currentUser?.accessible_teams?.length
+        ...(hasAllTeamsScope(role, currentUser) || currentUser?.accessible_teams?.length
           ? [{ name: role === 'Manager' ? 'Assigned Teams' : 'All Teams', path: '/team/all', icon: <UsersRound size={18} /> }]
           : []),
-        ...(role === 'Admin'
+        ...(canSeeBroadAppPages
           ? [
               { name: 'Reports', path: '/reports', icon: <FileBarChart size={18} /> },
               { name: 'Insights', path: '/insights', icon: <Lightbulb size={18} /> },
               { name: 'Planning', path: '/planning', icon: <CalendarCheck size={18} /> },
             ]
           : []),
-        ...(role === 'Admin' || role === 'Executive'
+        ...(canSeeCorrectiveActions
           ? [{ name: 'Corrective Actions', path: '/corrective-actions', icon: <ShieldAlert size={18} /> }]
           : []),
       ]
@@ -384,6 +394,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed = false, onToggleCollapsed = (
 
       <div className={`mt-auto shrink-0 space-y-2 border-t border-[var(--border-light)] p-3 ${isCollapsed ? 'xl:p-2' : ''}`}>
         <div className={isCollapsed ? 'sidebar-collapsed-theme' : ''}><ThemeToggle variant="pill" /></div>
+        {/* Settings link for all non-Agent roles; SettingsView soft-locks non-Admins (General Manager included). */}
         {role !== 'Agent' && renderLink({ name: 'Settings', path: '/settings', icon: <Settings size={18} /> })}
         <div className={`sidebar-user-menu flex items-center justify-between gap-2 rounded-xl border border-[var(--border-light)] bg-[var(--bg-raised)] p-2.5 shadow-sm ${isCollapsed ? 'xl:justify-center xl:p-2' : ''}`}>
           <div className={`flex min-w-0 items-center gap-2 ${isCollapsed ? 'xl:justify-center' : ''}`}>
@@ -392,7 +403,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed = false, onToggleCollapsed = (
             </div>
             <div className={`min-w-0 ${isCollapsed ? 'xl:hidden' : ''}`}>
               <p className="truncate text-xs font-bold text-[var(--text-primary)]">{currentUser?.name}</p>
-              <p className="mt-0.5 truncate text-[10px] font-semibold uppercase tracking-wider text-[var(--text-faint)]">{role}</p>
+              <p className="mt-0.5 truncate text-[10px] font-semibold uppercase tracking-wider text-[var(--text-faint)]">{roleLabel}</p>
             </div>
           </div>
           <button onClick={logout} aria-label="Log out" title="Log out" data-tooltip="Log out" className="sidebar-logout-button sidebar-tooltip-trigger min-h-9 min-w-9 rounded-lg text-[var(--text-muted)] transition-colors hover:bg-red-100 hover:text-red-600">

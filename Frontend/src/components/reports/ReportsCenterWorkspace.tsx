@@ -127,7 +127,7 @@ export default function ReportsCenterWorkspace({
   const capabilities = {
     role,
     can_export: options.can_export,
-    can_view_people: options.can_view_people ?? (role === 'Admin' || role === 'Manager'),
+    can_view_people: options.can_view_people ?? (role === 'Admin' || role === 'General Manager' || role === 'Manager'),
     can_view_actions: options.can_view_actions ?? false,
     allowed_formats: options.allowed_formats || [],
   };

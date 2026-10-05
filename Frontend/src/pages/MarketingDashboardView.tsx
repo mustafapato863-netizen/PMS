@@ -215,7 +215,7 @@ const MarketingDashboardView = () => {
   const { config, records, loading, error, refetch } = useMarketingData();
   const { getActionsForEmployee } = useActionStore();
   const [modalEmployee, setModalEmployee] = useState<TeamAgentRow | null>(null);
-  const canExport = role === 'Admin' || role === 'Manager';
+  const canExport = role === 'Admin' || role === 'General Manager' || role === 'Manager';
 
   const exportMarketing = async (filters: MarketingFilters) => {
     const params = new URLSearchParams({

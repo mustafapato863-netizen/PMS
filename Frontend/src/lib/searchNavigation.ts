@@ -1,4 +1,10 @@
 import { TEAM_ID_MAP, type User } from '../types';
+import {
+  canAccessBroadAppPages,
+  canAccessCorrectiveActions,
+  canAccessSettingsContent,
+  canAccessTeamManagement,
+} from './access';
 
 export type SearchGroupId = 'navigation' | 'employees' | 'teams' | 'actions';
 export type SearchIconKey =
@@ -74,7 +80,7 @@ const baseNavigation = ({
 }): SearchResultItem[] => {
   const items: SearchResultItem[] = [];
 
-  if (role === 'Admin' || role === 'Manager' || role === 'Executive') {
+  if (role === 'Admin' || role === 'General Manager' || role === 'Manager' || role === 'Executive') {
     items.push({
       id: 'nav-executive',
       group: 'navigation',
@@ -82,6 +88,19 @@ const baseNavigation = ({
       subtitle: 'Performance overview across all teams',
       icon: 'layout',
       path: '/executive',
+    });
+  }
+
+  // Same visibility as the sidebar: Admin + General Manager (stored role string). The
+  // Insights/Planning RouteGuards only admit these roles, so other roles are not offered them.
+  if (canAccessBroadAppPages(role)) {
+    items.push({
+      id: 'nav-reports',
+      group: 'navigation',
+      label: 'Reports',
+      subtitle: 'Reports center, story builder and generated files',
+      icon: 'chart',
+      path: '/reports',
     });
     items.push({
       id: 'nav-insights',
@@ -94,7 +113,18 @@ const baseNavigation = ({
     items.push({ id: 'nav-planning', group: 'navigation', label: 'Planning', subtitle: 'Create and track measurable performance plans', icon: 'planning', path: '/planning' });
   }
 
-  if (role === 'Admin' || role === 'Manager') {
+  if (canAccessCorrectiveActions(role)) {
+    items.push({
+      id: 'nav-corrective-actions',
+      group: 'navigation',
+      label: 'Corrective Actions',
+      subtitle: 'Review and follow up corrective actions',
+      icon: 'shield',
+      path: '/corrective-actions',
+    });
+  }
+
+  if (role === 'Admin' || role === 'General Manager' || role === 'Manager') {
     items.push({
       id: 'nav-teams',
       group: 'navigation',
@@ -129,7 +159,9 @@ const baseNavigation = ({
 
 
 
-  if (role !== 'Agent') {
+  // Settings shortcuts are Admin-only (design §6.4). Non-Admins, General Manager included,
+  // still reach the soft-locked Settings page from the sidebar.
+  if (canAccessSettingsContent(role)) {
     items.push({
       id: 'nav-settings',
       group: 'navigation',
@@ -140,7 +172,7 @@ const baseNavigation = ({
     });
   }
 
-  if (role === 'Admin') {
+  if (canAccessTeamManagement(role)) {
     items.push({
       id: 'nav-team-management',
       group: 'navigation',
@@ -149,6 +181,9 @@ const baseNavigation = ({
       icon: 'briefcase',
       path: '/team-management',
     });
+  }
+
+  if (canAccessSettingsContent(role)) {
     items.push({
       id: 'nav-user-management',
       group: 'navigation',
@@ -171,7 +206,7 @@ const baseActions = ({
 }): SearchResultItem[] => {
   const items: SearchResultItem[] = [];
 
-  if (role === 'Admin') {
+  if (canAccessSettingsContent(role)) {
     items.push({
       id: 'action-upload-workbook',
       group: 'actions',
@@ -203,7 +238,7 @@ const baseActions = ({
     });
   }
 
-  if (role === 'Admin') {
+  if (canAccessTeamManagement(role)) {
     items.push({
       id: 'action-manage-team',
       group: 'actions',

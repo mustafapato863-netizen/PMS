@@ -4,6 +4,7 @@ import { useSocketListener } from './useSocketListener';
 import { useAppStore, type Notification } from '../store/appStore';
 import { useAuth } from '../context/auth';
 import { apiFetch } from '../lib/apiClient';
+import { hasAllTeamsScope } from '../lib/access';
 
 interface NotificationPayload {
   id?: string;
@@ -60,7 +61,7 @@ export function useNotificationSocket(enabled = true) {
   const setNotifications = useAppStore((state) => state.setNotifications);
   const activeTeam = useAppStore((state) => state.activeTeam);
   const { currentUser, refreshUsers } = useAuth();
-  const isGlobalViewer = currentUser?.role === 'Admin' || currentUser?.is_general_manager;
+  const isGlobalViewer = hasAllTeamsScope(currentUser?.role, currentUser);
   const scopedTeams = useMemo(() => (
     isGlobalViewer ? [] : (currentUser?.accessible_teams || [])
   ), [isGlobalViewer, currentUser?.accessible_teams]);

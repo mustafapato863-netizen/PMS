@@ -508,7 +508,7 @@ export interface User {
   name: string;
   username: string;
   password?: string;
-  role: 'Admin' | 'Manager' | 'Executive' | 'Viewer' | 'Agent';
+  role: 'Admin' | 'General Manager' | 'Manager' | 'Executive' | 'Viewer' | 'Agent';
   is_active?: boolean;
   is_online?: boolean;
   last_seen_at?: string | null;

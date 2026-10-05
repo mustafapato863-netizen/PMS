@@ -5,7 +5,7 @@ import Sidebar from './components/common/Sidebar';
 import Header from './components/common/Header';
 import { AuthProvider } from './context/AuthContext';
 import { useAuth } from './context/auth';
-import { RoleProvider, useUserRole } from './context/RoleContext';
+import { RoleProvider } from './context/RoleContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { useNotificationSocket } from './hooks/useNotificationSocket';
 import { REALTIME_ENABLED } from './config';
@@ -13,6 +13,7 @@ import AppErrorBoundary from './components/common/AppErrorBoundary';
 import { ToastProvider } from './components/common/ToastProvider';
 import WorkspaceLoader from './components/common/WorkspaceLoader';
 import { PageLoadingSkeleton } from './components/common/SkeletonLoader';
+import RouteGuard from './components/common/RouteGuard';
 
 const ExecutiveView = lazy(() => import('./pages/ExecutiveView'));
 const MarketingTeamRoute = lazy(() => import('./pages/MarketingTeamRoute'));
@@ -30,19 +31,6 @@ const CorrectiveActionsView = lazy(() => import('./pages/CorrectiveActionsView')
 const NotFound = lazy(() => import('./pages/NotFound'));
 
 const RouteLoadingFallback = () => <PageLoadingSkeleton variant="dashboard" label="Loading page" />;
-
-interface RouteGuardProps {
-  children: React.ReactNode;
-  allowedRoles: string[];
-}
-
-function RouteGuard({ children, allowedRoles }: RouteGuardProps) {
-  const { role } = useUserRole();
-  if (!allowedRoles.includes(role)) {
-    return <Navigate to="/executive" replace />;
-  }
-  return <>{children}</>;
-}
 
 function AnimatedRoutes() {
   const location = useLocation();
@@ -84,24 +72,24 @@ function AnimatedRoutes() {
         {/* Page 3: Employee Profile */}
         <Route path="/employee/:employeeId" element={<Suspense fallback={<RouteLoadingFallback />}><EmployeeProfileView /></Suspense>} />
 
-        {/* Team Management (Admin only) */}
+        {/* Team Management: Admin and General Manager. */}
         <Route
           path="/team-management"
           element={
-            <RouteGuard allowedRoles={['Admin']}>
+            <RouteGuard allowedRoles={['Admin', 'General Manager']}>
               <Suspense fallback={<RouteLoadingFallback />}><TeamManagementView /></Suspense>
             </RouteGuard>
           }
         />
 
-        {/* Settings */}
+        {/* Settings: unguarded; SettingsView soft-locks every non-Admin role, General Manager included. */}
         <Route path="/settings" element={<Suspense fallback={<RouteLoadingFallback />}><SettingsView /></Suspense>} />
 
         {/* Reporting workspace */}
         <Route
           path="/reports"
           element={
-            <RouteGuard allowedRoles={['Admin', 'Manager', 'Executive', 'Viewer']}>
+            <RouteGuard allowedRoles={['Admin', 'General Manager', 'Manager', 'Executive', 'Viewer']}>
               <Suspense fallback={<RouteLoadingFallback />}><ReportsView /></Suspense>
             </RouteGuard>
           }
@@ -109,7 +97,7 @@ function AnimatedRoutes() {
         <Route
           path="/reports/new"
           element={
-            <RouteGuard allowedRoles={['Admin']}>
+            <RouteGuard allowedRoles={['Admin', 'General Manager']}>
               <Suspense fallback={<RouteLoadingFallback />}><ReportBuilderView /></Suspense>
             </RouteGuard>
           }
@@ -117,7 +105,7 @@ function AnimatedRoutes() {
         <Route
           path="/reports/:reportId/edit"
           element={
-            <RouteGuard allowedRoles={['Admin']}>
+            <RouteGuard allowedRoles={['Admin', 'General Manager']}>
               <Suspense fallback={<RouteLoadingFallback />}><ReportBuilderView /></Suspense>
             </RouteGuard>
           }
@@ -125,7 +113,7 @@ function AnimatedRoutes() {
         <Route
           path="/reports/:reportId/preview"
           element={
-            <RouteGuard allowedRoles={['Admin', 'Manager', 'Executive', 'Viewer']}>
+            <RouteGuard allowedRoles={['Admin', 'General Manager', 'Manager', 'Executive', 'Viewer']}>
               <Suspense fallback={<RouteLoadingFallback />}><ReportPreviewView /></Suspense>
             </RouteGuard>
           }
@@ -135,18 +123,18 @@ function AnimatedRoutes() {
         <Route
           path="/insights"
           element={
-            <RouteGuard allowedRoles={['Admin']}>
+            <RouteGuard allowedRoles={['Admin', 'General Manager']}>
               <Suspense fallback={<RouteLoadingFallback />}><InsightsView /></Suspense>
             </RouteGuard>
           }
         />
-        <Route path="/planning" element={<RouteGuard allowedRoles={['Admin']}><Suspense fallback={<RouteLoadingFallback />}><PlanningView /></Suspense></RouteGuard>} />
+        <Route path="/planning" element={<RouteGuard allowedRoles={['Admin', 'General Manager']}><Suspense fallback={<RouteLoadingFallback />}><PlanningView /></Suspense></RouteGuard>} />
 
-        {/* Corrective action review is intentionally restricted to Admin and Executive users. */}
+        {/* Corrective action review is restricted to Admin, Executive and General Manager users. */}
         <Route
           path="/corrective-actions"
           element={
-            <RouteGuard allowedRoles={['Admin', 'Executive']}>
+            <RouteGuard allowedRoles={['Admin', 'Executive', 'General Manager']}>
               <Suspense fallback={<RouteLoadingFallback />}><CorrectiveActionsView /></Suspense>
             </RouteGuard>
           }

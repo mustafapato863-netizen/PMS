@@ -3,7 +3,7 @@ import type { ActionStatus } from '../../types';
 export const ACTION_STATUSES: ActionStatus[] = ['Open', 'In Progress', 'Completed', 'Cancelled'];
 
 export function canEditActionFollowUp(role: string | null | undefined): boolean {
-  return role === 'Admin' || role === 'Manager';
+  return role === 'Admin' || role === 'General Manager' || role === 'Manager';
 }
 
 export function daysUntilDue(dueDate: string, today = new Date()): number {

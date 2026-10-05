@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Settings, ShieldAlert } from 'lucide-react';
 import { useUserRole } from '../context/RoleContext';
+import { canAccessSettingsContent } from '../lib/access';
 import { SettingsLayout } from '../components/settings/SettingsLayout';
 import { DataManagementPanel } from '../components/settings/DataManagementPanel';
 import { KPIConfigPanel } from '../components/settings/KPIConfigPanel';
@@ -15,7 +16,8 @@ import TeamManagementView from './TeamManagementView';
 const SettingsView = () => {
   const { role } = useUserRole();
   const [activeSection, setActiveSection] = useState<SettingsSection>('upload');
-  const isAdmin = role === 'Admin';
+  // Admin-only content. Every other role, General Manager included, gets the soft-lock panel.
+  const isAdmin = canAccessSettingsContent(role);
 
   if (!isAdmin) {
     return (
