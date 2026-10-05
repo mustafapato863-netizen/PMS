@@ -45,7 +45,7 @@ function formatCreatedBy(label: string): string {
   const value = label.trim();
   if (!value) return 'Unknown';
   if (value.includes(' - ')) return value;
-  if (value === 'Admin' || value === 'Manager' || value === 'Executive' || value === 'Viewer' || value === 'Agent') {
+  if (value === 'Admin' || value === 'General Manager' || value === 'Manager' || value === 'Executive' || value === 'Viewer' || value === 'Agent') {
     return `Unknown - ${value}`;
   }
   return value;

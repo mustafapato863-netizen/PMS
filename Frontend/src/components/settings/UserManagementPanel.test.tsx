@@ -8,6 +8,7 @@ import { UserManagementPanel } from './UserManagementPanel';
 const mocks = vi.hoisted(() => ({
   refreshUsers: vi.fn().mockResolvedValue(undefined),
   deleteUser: vi.fn().mockResolvedValue({ success: true }),
+  addUser: vi.fn().mockResolvedValue({ success: true }),
   fetchWithRole: vi.fn().mockResolvedValue({
     ok: true,
     json: async () => ({ data: [] }),
@@ -22,7 +23,7 @@ vi.mock('../../context/auth', () => ({
       { id: 'never', name: 'Never Seen Person', username: 'never', role: 'Viewer', is_active: true, is_online: false, last_seen_at: null },
     ],
     currentUser: { id: 'admin', name: 'Admin', username: 'admin', role: 'Admin' },
-    addUser: vi.fn(),
+    addUser: mocks.addUser,
     updateUser: vi.fn(),
     deleteUser: mocks.deleteUser,
     toggleUserActive: vi.fn(),
@@ -67,4 +68,24 @@ it('requires confirmation before deleting a user and reports success', async () 
 
   await waitFor(() => expect(mocks.deleteUser).toHaveBeenCalledWith('offline'));
   expect(screen.getByRole('status')).toHaveTextContent('User deleted successfully.');
+});
+
+it('creates a General Manager with the role string, no per-team list and the all-teams flag', async () => {
+  const user = userEvent.setup();
+  render(<UserManagementPanel />);
+
+  await user.click(screen.getByRole('button', { name: /Add user/ }));
+  await user.type(screen.getByRole('textbox', { name: 'Full name' }), 'Gina Grant');
+  await user.type(screen.getByRole('textbox', { name: 'Username' }), 'Gina');
+  await user.type(screen.getByLabelText(/Password/), 'secret-pass');
+  await user.selectOptions(screen.getByRole('combobox', { name: 'Role' }), 'General Manager');
+  await user.click(screen.getByRole('button', { name: 'Create user' }));
+
+  await waitFor(() => expect(mocks.addUser).toHaveBeenCalledWith('Gina Grant', 'gina', 'secret-pass', 'General Manager', [], true));
+});
+
+it('lists General Manager in the role filter', () => {
+  render(<UserManagementPanel />);
+  const filter = screen.getByRole('combobox', { name: 'Filter by role' });
+  expect(Array.from((filter as HTMLSelectElement).options).map((option) => option.value)).toContain('General Manager');
 });

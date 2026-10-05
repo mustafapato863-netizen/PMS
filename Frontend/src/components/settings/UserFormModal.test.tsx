@@ -37,3 +37,37 @@ it('submits an edited full name independently from the login username', async ()
     username: 'dr_ahmed_essa',
   }));
 });
+
+it('offers the General Manager role and hides the per-team checklist for it', async () => {
+  const onSubmit = vi.fn().mockResolvedValue(undefined);
+  const user = userEvent.setup();
+
+  render(
+    <UserFormModal
+      open
+      teams={[{ name: 'Marketing' }, { name: 'RCM' }]}
+      onClose={vi.fn()}
+      onSubmit={onSubmit}
+    />,
+  );
+
+  const roleSelect = screen.getByRole('combobox', { name: 'Role' });
+  expect(screen.getByRole('option', { name: 'General Manager' })).toBeInTheDocument();
+
+  await user.selectOptions(roleSelect, 'Manager');
+  expect(screen.getByRole('checkbox', { name: 'All-teams manager' })).toBeInTheDocument();
+  expect(screen.queryByText(/General manager \(all teams\)/)).not.toBeInTheDocument();
+  expect(screen.getByRole('checkbox', { name: 'Marketing' })).toBeInTheDocument();
+
+  await user.selectOptions(roleSelect, 'General Manager');
+  expect(screen.queryByRole('checkbox', { name: 'All-teams manager' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('checkbox', { name: 'Marketing' })).not.toBeInTheDocument();
+  expect(screen.getByText('General Managers have access to all teams.')).toBeInTheDocument();
+
+  await user.type(screen.getByRole('textbox', { name: 'Full name' }), 'Gina Grant');
+  await user.type(screen.getByRole('textbox', { name: 'Username' }), 'gina');
+  await user.type(screen.getByLabelText(/Password/), 'secret-pass');
+  await user.click(screen.getByRole('button', { name: 'Create user' }));
+
+  expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ role: 'General Manager', username: 'gina' }));
+});

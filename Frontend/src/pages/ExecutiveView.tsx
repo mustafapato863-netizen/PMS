@@ -22,6 +22,7 @@ import { summarizeRootCauses } from '../utils/rootCauseInsights';
 import type { LocationKey } from '../types';
 import { apiFetch } from '../lib/apiClient';
 import { filterActionsByPerformanceScope } from '../features/executive/actionScope';
+import { readHasUnrestrictedTeamAccess } from '../lib/access';
 
 const ExecutiveView = () => {
   const [region, setRegion] = useState<'All' | 'EGY' | 'UAE'>('All');
@@ -124,7 +125,7 @@ const ExecutiveView = () => {
   }, [month, region, location, totalAgents, summaries, teamCountLabel, overallAvgScore, allClassCounts, pctAB, pctDE]);
 
   const allActions = getAllActions();
-  const scopedActions = currentUser?.role === 'Manager' && !currentUser.is_general_manager
+  const scopedActions = currentUser?.role === 'Manager' && !readHasUnrestrictedTeamAccess(currentUser)
     ? allActions.filter((action) => {
         const team = (action.team || '').toLowerCase();
         return (currentUser.accessible_teams || []).some((assignedTeam) => assignedTeam.toLowerCase() === team);

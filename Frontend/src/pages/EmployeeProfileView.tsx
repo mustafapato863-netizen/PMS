@@ -735,7 +735,7 @@ const EmployeeProfileView = () => {
               )}
 
               {/* Add Action Button */}
-              {(role === 'Admin' || role === 'Manager') && (
+              {(role === 'Admin' || role === 'General Manager' || role === 'Manager') && (
                 <button
                   onClick={() => setShowModal(true)}
                   className="mt-5 w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-4 rounded-xl text-sm transition-colors shadow-sm cursor-pointer"
@@ -1111,7 +1111,7 @@ const EmployeeProfileView = () => {
               >
                 <div className="flex items-center justify-between mb-5">
                   <h3 className="text-sm font-bold text-[var(--text-muted)] uppercase tracking-wider">Action History</h3>
-                  {(role === 'Admin' || role === 'Manager') && (
+                  {(role === 'Admin' || role === 'General Manager' || role === 'Manager') && (
                     <button
                       onClick={() => setShowModal(true)}
                       className="flex items-center gap-1 text-xs font-bold text-blue-600 dark:text-blue-400 hover:underline transition-colors cursor-pointer"

@@ -45,6 +45,7 @@ import { buildTeamKpiAnalysis } from '../features/team/teamKpiAnalysis';
 import { aggregatePreApprovalsIpMetrics } from '../features/team/preApprovalsIpMetrics';
 import { aggregateConfiguredTeamKpis, calculateAggregatedTeamPerformance } from '../features/team/teamKpiAggregator';
 import { resolveAvailableTeamPeriods } from '../features/team/teamPeriods';
+import { canAccessBroadAppPages, hasAllTeamsScope } from '../lib/access';
 
 const TeamChartsSection = lazy(() => import('../components/team/TeamChartsSection'));
 
@@ -169,7 +170,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
   const { domain: rcmDomain, setDomain: setRcmDomain } = useRcmDomainParam('all');
   const { group: rcmGroup, setGroup: setRcmGroup } = useRcmGroupParam('all');
 
-  const canExport = role === 'Manager' || role === 'Admin';
+  const canExport = role === 'Manager' || role === 'Admin' || role === 'General Manager';
   const [hoverTooltip, setHoverTooltip] = useState<{ text: string; x: number; y: number } | null>(null);
   const [weightsList, setWeightsList] = useState<TeamWeightConfig[]>([]);
 
@@ -228,7 +229,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
 
   const isTeamAccessRestricted = useMemo(() => {
     if (!currentUser) return false;
-    if (role === 'Admin' || currentUser.is_general_manager) return false;
+    if (hasAllTeamsScope(role, currentUser)) return false;
     if (!teamName) return false; // 'all' view has its own scoping
     
     const normTeam = normalizeTeamName(teamName);
@@ -516,7 +517,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
   const insightPeriodKey = insightYear && MONTH_NUMBER[activeMonth]
     ? `${insightYear}-${String(MONTH_NUMBER[activeMonth]).padStart(2, '0')}`
     : undefined;
-  const canViewTeamInsights = ['Admin', 'Manager', 'Executive'].includes(role || '');
+  const canViewTeamInsights = ['Admin', 'General Manager', 'Manager', 'Executive'].includes(role || '');
   const teamInsightsQuery = useInsightsWorkspace(
     {
       periodKey: insightPeriodKey,
@@ -2071,7 +2072,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
                       scoredTeamId === 'inbound-uae' ? 'Call Center – Inbound' :
                         displayName} – Development & Actions
                 </h3>
-                {role === 'Admin' && !isEditingAction && (
+                {canAccessBroadAppPages(role) && !isEditingAction && (
                   <button
                     onClick={() => setIsEditingAction(true)}
                     className="team-summary-edit-button flex cursor-pointer items-center gap-1.5 rounded-lg border px-3.5 py-1.5 text-xs font-bold shadow-sm transition-all hover:shadow-md"

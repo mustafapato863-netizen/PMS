@@ -9,7 +9,7 @@ export const mockUser = {
   username: 'sarah.m',
   role: 'Admin',
   accessible_teams: ['Inbound', 'Marketing', 'Outbound', 'CSR', 'Coding', 'Pharmacy'],
-  is_general_manager: true,
+  has_unrestricted_team_access: true,
   accessible_team_count: 6,
   total_team_count: 6,
 };

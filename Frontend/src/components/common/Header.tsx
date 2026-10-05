@@ -17,6 +17,7 @@ import { useAuth } from '../../context/auth';
 import { NotificationBell } from '../notifications';
 import { usePerformanceCatalog } from '../../hooks/api/usePerformanceCatalog';
 import { ProfileSettingsModal } from './ProfileSettingsModal';
+import { getRoleDisplayLabel, isGeneralManagerRole, readHasUnrestrictedTeamAccess } from '../../lib/access';
 
 // ── route config ──────────────────────────────────────────────────────────────
 
@@ -83,7 +84,7 @@ function ProfileMenu({
   role,
   accessibleTeamCount,
   totalTeamCount,
-  isGeneralManager,
+  hasUnrestrictedTeamAccess,
   onEditProfile,
   onLogout,
 }: {
@@ -92,7 +93,7 @@ function ProfileMenu({
   role: string;
   accessibleTeamCount?: number;
   totalTeamCount?: number;
-  isGeneralManager?: boolean;
+  hasUnrestrictedTeamAccess?: boolean;
   onEditProfile: () => void;
   onLogout: () => void;
 }) {
@@ -124,14 +125,14 @@ function ProfileMenu({
           <span className="text-xs font-bold text-[var(--text-primary)] leading-none">{name}</span>
           <div className="flex items-center gap-1.5 mt-0.5">
             <span className="text-[11px] text-[var(--text-muted)] uppercase tracking-wider font-semibold">
-              {role}
+              {getRoleDisplayLabel(role)}
             </span>
             <span
               className="text-[10px] uppercase tracking-[0.14em] font-extrabold px-1.5 py-0.5 rounded-full border"
               style={{
-                color: role === 'Admin' ? 'rgb(0, 105, 180)' : role === 'Manager' ? 'rgb(5, 150, 105)' : role === 'Executive' ? 'rgb(217, 119, 6)' : 'rgb(100, 116, 139)',
-                background: role === 'Admin' ? 'rgba(0, 163, 224, 0.12)' : role === 'Manager' ? 'rgba(16, 185, 129, 0.12)' : role === 'Executive' ? 'rgba(251, 191, 36, 0.12)' : 'rgba(148, 163, 184, 0.12)',
-                borderColor: role === 'Admin' ? 'rgba(0, 163, 224, 0.28)' : role === 'Manager' ? 'rgba(16, 185, 129, 0.28)' : role === 'Executive' ? 'rgba(251, 191, 36, 0.28)' : 'rgba(148, 163, 184, 0.28)',
+                color: role === 'Admin' ? 'rgb(0, 105, 180)' : isGeneralManagerRole(role) ? 'rgb(79, 70, 229)' : role === 'Manager' ? 'rgb(5, 150, 105)' : role === 'Executive' ? 'rgb(217, 119, 6)' : 'rgb(100, 116, 139)',
+                background: role === 'Admin' ? 'rgba(0, 163, 224, 0.12)' : isGeneralManagerRole(role) ? 'rgba(99, 102, 241, 0.12)' : role === 'Manager' ? 'rgba(16, 185, 129, 0.12)' : role === 'Executive' ? 'rgba(251, 191, 36, 0.12)' : 'rgba(148, 163, 184, 0.12)',
+                borderColor: role === 'Admin' ? 'rgba(0, 163, 224, 0.28)' : isGeneralManagerRole(role) ? 'rgba(99, 102, 241, 0.28)' : role === 'Manager' ? 'rgba(16, 185, 129, 0.28)' : role === 'Executive' ? 'rgba(251, 191, 36, 0.28)' : 'rgba(148, 163, 184, 0.28)',
               }}
             >
               Active
@@ -175,14 +176,17 @@ function ProfileMenu({
                   <p className="text-[10px] text-[var(--text-muted)] font-mono mt-0.5">@{username}</p>
                 )}
                 <p className="text-[10px] font-bold uppercase tracking-wider mt-1" style={{
-                  color: role === 'Admin' ? 'rgb(0, 105, 180)' : role === 'Manager' ? 'rgb(5, 150, 105)' : role === 'Executive' ? 'rgb(217, 119, 6)' : 'rgb(100, 116, 139)',
+                  color: role === 'Admin' ? 'rgb(0, 105, 180)' : isGeneralManagerRole(role) ? 'rgb(79, 70, 229)' : role === 'Manager' ? 'rgb(5, 150, 105)' : role === 'Executive' ? 'rgb(217, 119, 6)' : 'rgb(100, 116, 139)',
                 }}>
-                  {role} access
+                  {getRoleDisplayLabel(role)} access
                 </p>
+                {isGeneralManagerRole(role) && (
+                  <p className="text-[10px] text-[var(--text-muted)] mt-1">General Manager: all teams</p>
+                )}
                 {role === 'Manager' && (
                   <p className="text-[10px] text-[var(--text-muted)] mt-1">
-                    {isGeneralManager
-                      ? 'General manager: full team access'
+                    {hasUnrestrictedTeamAccess
+                      ? 'All-teams manager: full team access'
                       : `${accessibleTeamCount || 0} / ${totalTeamCount || 0} teams accessible`}
                   </p>
                 )}
@@ -350,7 +354,7 @@ const Header = ({ onMenuClick }: HeaderProps) => {
               role={role}
               accessibleTeamCount={currentUser.accessible_team_count}
               totalTeamCount={currentUser.total_team_count}
-              isGeneralManager={currentUser.is_general_manager}
+              hasUnrestrictedTeamAccess={readHasUnrestrictedTeamAccess(currentUser)}
               onEditProfile={() => setProfileOpen(true)}
               onLogout={handleLogout}
             />

@@ -2,7 +2,7 @@ import React, { createContext, useContext, useCallback } from 'react';
 import { useAuth } from './auth';
 import { getAccessToken } from '../lib/apiClient';
 
-export type UserRole = 'Admin' | 'Manager' | 'Executive' | 'Viewer' | 'Agent';
+export type UserRole = 'Admin' | 'General Manager' | 'Manager' | 'Executive' | 'Viewer' | 'Agent';
 
 interface RoleContextProps {
   role: UserRole;

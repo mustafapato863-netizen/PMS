@@ -11,6 +11,13 @@ const ROLE_DETAILS: Record<UserRole, { label: string; icon: React.ComponentType<
     bg: 'bg-violet-600',
     desc: 'Full read/write access + config settings',
   },
+  'General Manager': {
+    label: 'General Manager',
+    icon: ShieldCheck,
+    color: 'text-indigo-600 border-indigo-200 bg-indigo-50',
+    bg: 'bg-indigo-600',
+    desc: 'All teams + reports, insights & planning (no Settings admin)',
+  },
   Manager: {
     label: 'Manager',
     icon: ShieldCheck,
@@ -83,7 +90,7 @@ const RoleSelector = () => {
                 <p className="text-[10px] font-bold uppercase tracking-wider">Role controls what you can see</p>
               </div>
               <p className="text-[11px] text-slate-500 mt-1 leading-snug">
-                Admin shows user management and upload actions. Manager keeps planning tools. Viewer stays read-only.
+                Admin shows user management and upload actions. General Manager opens reports, insights and planning for all teams. Manager keeps planning tools. Viewer stays read-only.
               </p>
             </div>
             

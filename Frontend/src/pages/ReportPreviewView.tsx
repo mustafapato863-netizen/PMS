@@ -5,6 +5,7 @@ import { AlertCircle, ArrowLeft, ChevronLeft, ChevronRight, CheckCircle2, Loader
 import BlockRenderer from '../components/reports/builder/BlockRenderer';
 import { PanelLoadingSkeleton } from '../components/common/SkeletonLoader';
 import { useUserRole } from '../context/RoleContext';
+import { canAccessBroadAppPages } from '../lib/access';
 import { useStoryDraft, useStoryPage } from '../hooks/api/useReports';
 
 export default function ReportPreviewView() {
@@ -34,7 +35,7 @@ export default function ReportPreviewView() {
       <header className="rf-page-hero rounded-3xl border border-[var(--border-light)] bg-[var(--bg-surface)] p-5 shadow-sm md:p-7">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div><button type="button" onClick={() => navigate('/reports')} className="inline-flex items-center gap-2 text-xs font-extrabold text-[var(--sgh-cyan-primary)] hover:underline"><ArrowLeft size={14} /> Reports Center</button><h1 className="mt-3 text-3xl font-black text-[var(--text-primary)]">{draft.name}</h1><p className="mt-2 text-sm text-[var(--text-muted)]">Read-only evidence preview · {draft.primary_period.month} {draft.primary_period.year}{draft.comparison_period ? ` compared with ${draft.comparison_period.month} ${draft.comparison_period.year}` : ''}</p><div className="mt-3 flex flex-wrap gap-2 text-xs font-bold text-[var(--text-muted)]"><span className="rounded-full bg-[var(--bg-sunken)] px-3 py-1.5">{draft.definition.language.toUpperCase()}</span><span className="rounded-full bg-[var(--bg-sunken)] px-3 py-1.5">{pages.length} pages</span><span className={`rounded-full px-3 py-1.5 ${draft.validation?.valid ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300' : 'bg-amber-500/10 text-amber-700 dark:text-amber-300'}`}>{draft.validation?.valid ? 'Validated' : 'Draft preview'}</span></div></div>
-          {role === 'Admin' && <button type="button" onClick={() => navigate(`/reports/${reportId}/edit`)} className="min-h-11 rounded-xl border border-[var(--border-light)] px-4 text-sm font-bold text-[var(--text-secondary)] hover:bg-[var(--bg-sunken)] hover:text-[var(--text-primary)] transition-colors">Edit draft</button>}
+          {canAccessBroadAppPages(role) && <button type="button" onClick={() => navigate(`/reports/${reportId}/edit`)} className="min-h-11 rounded-xl border border-[var(--border-light)] px-4 text-sm font-bold text-[var(--text-secondary)] hover:bg-[var(--bg-sunken)] hover:text-[var(--text-primary)] transition-colors">Edit draft</button>}
         </div>
       </header>
 

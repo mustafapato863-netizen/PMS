@@ -6,20 +6,42 @@ import { apiFetch } from '../../lib/apiClient';
 import Sidebar from './Sidebar';
 import { TEAM_ITEMS } from './sidebarTeamItems';
 
+type MockUser = {
+  id: string;
+  name: string;
+  username: string;
+  role: 'Admin' | 'General Manager' | 'Manager' | 'Executive' | 'Viewer' | 'Agent';
+  has_unrestricted_team_access?: boolean;
+  accessible_teams?: string[];
+};
+
+const authState = vi.hoisted(() => ({
+  user: {
+    id: 'admin-1',
+    name: 'Admin',
+    username: 'admin',
+    role: 'Admin',
+    has_unrestricted_team_access: true,
+    accessible_teams: [],
+  } as MockUser,
+}));
+
+const ADMIN_USER: MockUser = {
+  id: 'admin-1',
+  name: 'Admin',
+  username: 'admin',
+  role: 'Admin',
+  has_unrestricted_team_access: true,
+  accessible_teams: [],
+};
+
 vi.mock('../../context/RoleContext', () => ({
-  useUserRole: () => ({ role: 'Admin' }),
+  useUserRole: () => ({ role: authState.user.role }),
 }));
 
 vi.mock('../../context/auth', () => ({
   useAuth: () => ({
-    currentUser: {
-      id: 'admin-1',
-      name: 'Admin',
-      username: 'admin',
-      role: 'Admin',
-      is_general_manager: true,
-      accessible_teams: [],
-    },
+    currentUser: authState.user,
     logout: vi.fn(),
   }),
 }));
@@ -53,24 +75,29 @@ const renderSidebar = (initialEntry = '/') => render(
   </MemoryRouter>,
 );
 
+const mockTeamConfigFetch = () => {
+  mockedApiFetch.mockImplementation(async (path) => {
+    if (path === '/api/config/teams') {
+      return {
+        success: true,
+        data: [{ team: 'Marketing', performance_levels: { Employee: {} } }],
+      } as never;
+    }
+    if (path === '/api/team-management/management-kpi-config/teams') {
+      return {
+        success: true,
+        data: ['Marketing'],
+        scopes: [{ id: 'marketing-management', name: 'Marketing', team_level: 'management' }],
+      } as never;
+    }
+    return { success: true, data: [] } as never;
+  });
+};
+
 describe('Sidebar team icons', () => {
   beforeEach(() => {
-    mockedApiFetch.mockImplementation(async (path) => {
-      if (path === '/api/config/teams') {
-        return {
-          success: true,
-          data: [{ team: 'Marketing', performance_levels: { Employee: {} } }],
-        } as never;
-      }
-      if (path === '/api/team-management/management-kpi-config/teams') {
-        return {
-          success: true,
-          data: ['Marketing'],
-          scopes: [{ id: 'marketing-management', name: 'Marketing', team_level: 'management' }],
-        } as never;
-      }
-      return { success: true, data: [] } as never;
-    });
+    authState.user = ADMIN_USER;
+    mockTeamConfigFetch();
   });
 
   it('uses a distinct icon for every known team', () => {
@@ -140,5 +167,88 @@ describe('Sidebar team icons', () => {
 
     expect(employeeLink).toHaveAttribute('href', '/team/marketing?performance_level=Employee');
     expect(employeeLink).toHaveAttribute('aria-current', 'page');
+  });
+});
+
+describe('Sidebar General Manager navigation (stored role string)', () => {
+  beforeEach(() => {
+    mockTeamConfigFetch();
+  });
+
+  it('gives a General Manager Reports, Insights, Planning, Corrective Actions, All Teams and the Settings link', () => {
+    authState.user = {
+      id: 'gm-1',
+      name: 'Gina Grant',
+      username: 'gm',
+      role: 'General Manager',
+      accessible_teams: [],
+    };
+    renderSidebar();
+
+    for (const name of ['Reports', 'Insights', 'Planning', 'Corrective Actions', 'All Teams']) {
+      expect(screen.getByRole('link', { name })).toBeInTheDocument();
+    }
+    // Settings stays visible like for other non-Agent roles; SettingsView soft-locks the content.
+    expect(screen.getByRole('link', { name: 'Settings' })).toBeInTheDocument();
+    expect(screen.getByText('General Manager')).toBeInTheDocument();
+  });
+
+  it('does not treat a Manager with has_unrestricted_team_access as a General Manager', () => {
+    authState.user = {
+      id: 'mgr-all',
+      name: 'Alma Teams',
+      username: 'mgr-all',
+      role: 'Manager',
+      has_unrestricted_team_access: true,
+      accessible_teams: [],
+    };
+    renderSidebar();
+
+    for (const name of ['Reports', 'Insights', 'Planning', 'Corrective Actions']) {
+      expect(screen.queryByRole('link', { name })).not.toBeInTheDocument();
+    }
+    expect(screen.getByRole('link', { name: 'Assigned Teams' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Settings' })).toBeInTheDocument();
+    expect(screen.queryByText('General Manager')).not.toBeInTheDocument();
+  });
+
+  it('keeps product pages away from a scoped Manager but still shows the soft-locked Settings link', () => {
+    authState.user = {
+      id: 'mgr-1',
+      name: 'Mo Scoped',
+      username: 'mgr',
+      role: 'Manager',
+      has_unrestricted_team_access: false,
+      accessible_teams: ['Marketing'],
+    };
+    renderSidebar();
+
+    for (const name of ['Reports', 'Insights', 'Planning', 'Corrective Actions']) {
+      expect(screen.queryByRole('link', { name })).not.toBeInTheDocument();
+    }
+    expect(screen.getByRole('link', { name: 'Settings' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Assigned Teams' })).toBeInTheDocument();
+    expect(screen.getByText('Manager')).toBeInTheDocument();
+  });
+
+  it('still shows Settings and every product page to Admin', () => {
+    authState.user = ADMIN_USER;
+    renderSidebar();
+
+    for (const name of ['Reports', 'Insights', 'Planning', 'Corrective Actions', 'Settings', 'All Teams']) {
+      expect(screen.getByRole('link', { name })).toBeInTheDocument();
+    }
+    expect(screen.queryByText('General Manager')).not.toBeInTheDocument();
+  });
+
+  it('shows Corrective Actions and Settings but not Admin/GM product pages to Executive', () => {
+    authState.user = { id: 'exec-1', name: 'Eve Exec', username: 'exec', role: 'Executive', accessible_teams: [] };
+    renderSidebar();
+
+    expect(screen.getByRole('link', { name: 'Corrective Actions' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Settings' })).toBeInTheDocument();
+    for (const name of ['Reports', 'Insights', 'Planning']) {
+      expect(screen.queryByRole('link', { name })).not.toBeInTheDocument();
+    }
   });
 });
