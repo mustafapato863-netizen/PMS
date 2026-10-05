@@ -354,6 +354,7 @@ describe('InsightsView', () => {
     expect(within(rows[0]).getByText('-30.1%')).toBeInTheDocument();
     expect(within(rows[0]).getByRole('img', { name: 'Score moved from 90.0% to 69.9%' })).toBeInTheDocument();
     expect(within(rows[2]).getByText('B · Meet Expectations')).toHaveAttribute('data-grade', 'B');
+    expect(within(rows[2]).getByText('B · Meet Expectations')).toHaveStyle({ background: 'var(--pms-grade-b-badge-bg)', color: 'var(--pms-grade-b-badge-text)' });
 
     await user.click(rows[0]);
     expect(latestFilters.current.team).toBe('Marketing');

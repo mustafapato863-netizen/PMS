@@ -470,7 +470,7 @@ select option {
   --insights-trend-down-text: #B42318;    /* 6.05:1 */
   --insights-trend-up-bg: #ECFDF3;        /* derived: Figma only shows the negative badge */
   --insights-trend-up-text: #0A6B3C;      /* derived, 6.26:1 */
-  --insights-subtle-text: #7B8794;        /* Figma exact; 3.50:1 on #F8FAFC FAILS AA (needs Mustafa decision; closest pass #687481) */
+  --insights-subtle-text: #687481;        /* Figma #7B8794 (3.50:1) darkened to the closest same-hue AA pass: 4.56:1 on #F8FAFC (approved) */
   --insights-muted-surface: #F8FAFC;      /* More analysis card */
   --insights-muted-surface-border: #E6ECF2;
   --insights-accordion-border: #E7ECF2;
