@@ -121,9 +121,9 @@ export function GeographySection({ summaries, regionFilter, onSelectRegion }: {
   const visible = showAll ? summaries : summaries.slice(0, GEOGRAPHY_LIMIT);
   const hasMore = summaries.length > GEOGRAPHY_LIMIT;
   const viewAll = regionFilter
-    ? <ViewAllButton onClick={() => onSelectRegion('')} />
+    ? <ViewAllButton variant="link" onClick={() => onSelectRegion('')} />
     : hasMore
-      ? <ViewAllButton label={showAll ? 'Show less' : 'View all'} expanded={showAll} controls="geography-list" onClick={() => setShowAll((value) => !value)} />
+      ? <ViewAllButton variant="link" label={showAll ? 'Show less' : 'View all'} expanded={showAll} controls="geography-list" onClick={() => setShowAll((value) => !value)} />
       : undefined;
   return (
     <SectionCard labelledBy="geography-title" className="gap-[12px] self-stretch py-[20px]">
@@ -213,7 +213,7 @@ export function TeamsNeedingAttentionSection({ teams, onSelectTeam }: {
         icon={<Users className="size-[18px]" strokeWidth={1.5} />}
         iconBackground="var(--insights-icon-teams)"
         title="Teams needing attention"
-        action={ranked.length > TEAM_LIMIT ? <ViewAllButton label={showAll ? 'Show less' : 'View all'} expanded={showAll} controls="teams-attention-list" onClick={() => setShowAll((value) => !value)} /> : undefined}
+        action={ranked.length > TEAM_LIMIT ? <ViewAllButton variant="link" label={showAll ? 'Show less' : 'View all'} expanded={showAll} controls="teams-attention-list" onClick={() => setShowAll((value) => !value)} /> : undefined}
       />
       {visible.length ? (
         <div className={scrollX}>
@@ -271,9 +271,9 @@ export function PeopleToReviewSection({ analysis, onOpenEmployee, onViewAll }: {
   const all = peopleToReview(analysis, Number.POSITIVE_INFINITY);
   const visible = showAll ? all : all.slice(0, PEOPLE_LIMIT);
   const viewAll = onViewAll && analysis
-    ? <ViewAllButton onClick={onViewAll} />
+    ? <ViewAllButton variant="link" onClick={onViewAll} />
     : all.length > PEOPLE_LIMIT
-      ? <ViewAllButton label={showAll ? 'Show less' : 'View all'} expanded={showAll} controls="people-review-list" onClick={() => setShowAll((value) => !value)} />
+      ? <ViewAllButton variant="link" label={showAll ? 'Show less' : 'View all'} expanded={showAll} controls="people-review-list" onClick={() => setShowAll((value) => !value)} />
       : undefined;
   return (
     <SectionCard labelledBy="people-review-title" className="gap-[14px] pb-[12px] pt-[20px]">
@@ -440,7 +440,7 @@ export function MoreAnalysisSection({ open, onToggle, onToggleAll, panels }: {
 }) {
   const allOpen = MORE_ANALYSIS_KEYS.every((key) => open[key]);
   return (
-    <SectionCard labelledBy="more-analysis-title" className="gap-[14px] py-[20px]">
+    <SectionCard labelledBy="more-analysis-title" tone="muted" className="gap-[14px] py-[20px]">
       <SectionHeader
         id="more-analysis-title"
         align="center"
@@ -448,6 +448,7 @@ export function MoreAnalysisSection({ open, onToggle, onToggleAll, panels }: {
         iconBackground="var(--insights-icon-more)"
         title="More analysis (optional)"
         subtitle="Explore detailed breakdowns and KPIs."
+        subtitleTone="subtle"
         action={(
           <button
             type="button"
@@ -465,7 +466,7 @@ export function MoreAnalysisSection({ open, onToggle, onToggleAll, panels }: {
           const isOpen = open[key];
           const panelId = `more-analysis-${key}`;
           return (
-            <div key={key} className="overflow-hidden rounded-[10px] border border-[var(--insights-card-border)] bg-[var(--bg-surface)]">
+            <div key={key} className="overflow-hidden rounded-[10px] border border-[var(--insights-accordion-border)] bg-[var(--bg-surface)]">
               <h3>
                 <button
                   type="button"
@@ -481,7 +482,7 @@ export function MoreAnalysisSection({ open, onToggle, onToggleAll, panels }: {
                 </button>
               </h3>
               {isOpen && (
-                <div id={panelId} role="region" aria-label={meta.title} className="border-t border-[var(--insights-card-border)]">
+                <div id={panelId} role="region" aria-label={meta.title} className="border-t border-[var(--insights-accordion-border)]">
                   {panels[key]}
                 </div>
               )}

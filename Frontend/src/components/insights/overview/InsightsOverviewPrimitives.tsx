@@ -6,16 +6,22 @@ import { getGradeTone } from '../../../constants/grades';
 export function SectionCard({
   labelledBy,
   className = '',
+  tone = 'default',
   children,
 }: {
   labelledBy: string;
   className?: string;
+  /** `muted` = the tinted "More analysis" surface (Figma 18:491). */
+  tone?: 'default' | 'muted';
   children: ReactNode;
 }) {
+  const surface = tone === 'muted'
+    ? 'border-[var(--insights-muted-surface-border)] bg-[var(--insights-muted-surface)]'
+    : 'border-[var(--insights-card-border)] bg-[var(--bg-surface)]';
   return (
     <section
       aria-labelledby={labelledBy}
-      className={`flex min-w-0 flex-col rounded-[12px] border border-[var(--insights-card-border)] bg-[var(--bg-surface)] px-[24px] ${className}`}
+      className={`flex min-w-0 flex-col rounded-[12px] border px-[24px] ${surface} ${className}`}
     >
       {children}
     </section>
@@ -31,6 +37,7 @@ export function SectionHeader({
   subtitle,
   action,
   align = 'start',
+  subtitleTone = 'muted',
 }: {
   id: string;
   icon: ReactNode;
@@ -39,6 +46,8 @@ export function SectionHeader({
   subtitle?: ReactNode;
   action?: ReactNode;
   align?: 'start' | 'center';
+  /** `subtle` = lighter helper copy used on the optional "More analysis" card (Figma #7B8794). */
+  subtitleTone?: 'muted' | 'subtle';
 }) {
   return (
     <div className={`flex w-full gap-[12px] ${align === 'center' ? 'items-center' : 'items-start'}`}>
@@ -51,7 +60,7 @@ export function SectionHeader({
       </span>
       <div className="flex min-w-0 flex-1 flex-col gap-[2px] leading-normal">
         <h2 id={id} className="truncate text-[16px] font-bold text-[var(--insights-heading)]">{title}</h2>
-        {subtitle && <p className="truncate text-[13px] font-normal text-[var(--text-muted)]">{subtitle}</p>}
+        {subtitle && <p className={`truncate text-[13px] font-normal ${subtitleTone === 'subtle' ? 'text-[var(--insights-subtle-text)]' : 'text-[var(--text-muted)]'}`}>{subtitle}</p>}
       </div>
       {action}
     </div>
@@ -63,19 +72,26 @@ export function ViewAllButton({
   onClick,
   expanded,
   controls,
+  variant = 'button',
 }: {
   label?: string;
   onClick: () => void;
   expanded?: boolean;
   controls?: string;
+  /** `button` = tinted "View all drivers" button; `link` = borderless text link (Figma 18:208 / 18:248 / 18:380). */
+  variant?: 'button' | 'link';
 }) {
+  const look = variant === 'link'
+    ? 'text-[11px] text-[var(--insights-link)] hover:bg-[var(--insights-link-hover-bg)] hover:underline'
+    : 'border border-[var(--insights-accent-border)] bg-[var(--insights-accent-soft)] text-[12px] text-[var(--insights-accent-text)] hover:border-[var(--insights-accent)]';
   return (
     <button
       type="button"
       onClick={onClick}
       aria-expanded={expanded}
       aria-controls={controls}
-      className="inline-flex h-[32px] shrink-0 items-center gap-[6px] rounded-[8px] border border-[var(--insights-accent-border)] bg-[var(--insights-accent-soft)] pl-[14px] pr-[12px] text-[12px] font-semibold leading-normal text-[var(--insights-accent-text)] transition hover:border-[var(--insights-accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--insights-accent)]"
+      data-variant={variant}
+      className={`inline-flex h-[32px] shrink-0 items-center gap-[6px] rounded-[8px] pl-[14px] pr-[12px] font-semibold leading-normal transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--insights-accent)] ${look}`}
     >
       {label}
       <ArrowRight aria-hidden="true" className="size-[14px]" strokeWidth={1.75} />

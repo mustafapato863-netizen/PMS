@@ -265,13 +265,24 @@ describe('InsightsView', () => {
     const summary = section('Executive Summary');
 
     expect(within(summary).getByTestId('executive-headline')).toHaveTextContent('June 2026 performance is 22.5% below target.');
-    expect(within(summary).getByText('Review CPL in Marketing · Media Buyer first.')).toBeInTheDocument();
+    const priority = within(summary).getByTestId('executive-priority-focus');
+    expect(within(priority).getByText('Priority focus')).toBeInTheDocument();
+    expect(within(priority).getByText('Review CPL first — largest weighted gap.')).toBeInTheDocument();
+    expect(priority).toHaveAttribute('title', 'Review CPL in Marketing · Media Buyer first.');
+    const status = within(summary).getByTestId('executive-status-row');
+    expect(within(status).getByText('D · Below Average')).toHaveAttribute('data-grade', 'D');
+    const trendBadge = within(status).getByTestId('executive-trend-badge');
+    expect(trendBadge).toHaveAttribute('data-tone', 'down');
+    expect(trendBadge).toHaveTextContent('↓ 1.9%');
+    expect(trendBadge).toHaveTextContent('Down 1.9% vs. previous month');
     expect(within(summary).getByText('77.5%')).toBeInTheDocument();
     expect(within(summary).getByText('100.0%')).toBeInTheDocument();
     expect(within(summary).getByText('-22.5%')).toBeInTheDocument();
     expect(within(summary).getByText('vs. Previous Month')).toBeInTheDocument();
     expect(within(summary).getByText('-1.9%')).toBeInTheDocument();
-    const currentGrade = within(summary).getByText('D · Below Average');
+    const grades = within(summary).getAllByText('D · Below Average');
+    expect(grades).toHaveLength(2);
+    const currentGrade = grades[1];
     expect(currentGrade).toHaveAttribute('data-grade', 'D');
     expect(currentGrade).toHaveStyle({ background: 'var(--pms-grade-d-badge-bg)', color: 'var(--pms-grade-d-badge-text)' });
 
@@ -365,6 +376,18 @@ describe('InsightsView', () => {
 
     await user.click(rows[0]);
     expect(screen.getByText('Employee profile page')).toBeInTheDocument();
+  });
+
+  it('orders sections as in Figma 18:3 v2 and renders section "View all" actions as text links', () => {
+    renderInsights();
+    const headings = screen.getAllByRole('heading', { level: 2 }).map((heading) => heading.textContent);
+    const order = ['Executive Summary', 'Key drivers of the gap', 'Recommended actions', 'People to review', 'More analysis (optional)'];
+    const positions = order.map((title) => headings.indexOf(title));
+    expect(positions.every((position) => position >= 0)).toBe(true);
+    expect([...positions].sort((a, b) => a - b)).toEqual(positions);
+
+    expect(within(section('People to review')).getByRole('button', { name: /View all/ })).toHaveAttribute('data-variant', 'link');
+    expect(within(section('Key drivers of the gap')).getByRole('button', { name: /View all drivers/ })).toHaveAttribute('data-variant', 'button');
   });
 
   it('opens the full people contribution analysis for the leading KPI from "View all"', async () => {

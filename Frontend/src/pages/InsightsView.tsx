@@ -612,6 +612,14 @@ export default function InsightsView() {
         <TeamsNeedingAttentionSection teams={workspace.team_summaries} onSelectTeam={selectTeam} />
       </section>
 
+      <RecommendedActionsSection
+        drivers={workspace.performance_drivers}
+        teams={workspace.team_summaries}
+        onOpenDriver={openDriverInsight}
+        onSelectTeam={selectTeam}
+        onCoach={() => navigate('/planning')}
+      />
+
       <PeopleToReviewSection
         analysis={workspace.people_contribution_analysis}
         onOpenEmployee={openEmployee}
@@ -754,14 +762,6 @@ export default function InsightsView() {
         </article>
         <article className="rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] p-5 shadow-sm"><div className="flex items-center gap-2"><Target size={17} className="text-blue-600" /><h2 className="text-base font-extrabold text-[var(--text-primary)]">Decision Support Notes</h2></div><div className="mt-4 space-y-3">{workspace.risks.map((risk) => <button type="button" key={risk.key} onClick={() => update('insightType', filters.insightType === risk.filter_type ? '' : risk.filter_type)} className="flex w-full items-center gap-3 rounded-xl border border-[var(--border-light)] bg-[var(--bg-sunken)]/35 p-3 text-left hover:border-blue-500/30"><span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-rose-500/10 text-rose-600"><AlertTriangle size={16} /></span><span className="min-w-0 flex-1"><strong className="text-sm text-[var(--text-primary)]">{risk.count} {risk.label}</strong><span className="mt-0.5 block text-xs text-[var(--text-muted)]">{risk.explanation}</span></span><ArrowRight size={15} className="text-[var(--text-faint)]" /></button>)}</div>{workspace.deferred_capabilities.length > 0 && <p className="mt-4 rounded-xl bg-[var(--bg-sunken)] p-3 text-xs leading-5 text-[var(--text-muted)]">{workspace.deferred_capabilities.join(' ')}</p>}</article>
       </section>}
-
-      <RecommendedActionsSection
-        drivers={workspace.performance_drivers}
-        teams={workspace.team_summaries}
-        onOpenDriver={openDriverInsight}
-        onSelectTeam={selectTeam}
-        onCoach={() => navigate('/planning')}
-      />
 
       <div ref={moreAnalysisRef} className="scroll-mt-4">
         <MoreAnalysisSection

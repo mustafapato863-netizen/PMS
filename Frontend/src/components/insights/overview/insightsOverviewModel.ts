@@ -9,6 +9,7 @@
 import { GRADE_THRESHOLDS } from '../../../constants/grades';
 import type {
   InsightDriver,
+  InsightExecutiveStory,
   InsightKpiTrend,
   InsightPeopleContributionAnalysis,
   InsightPersonContribution,
@@ -161,3 +162,10 @@ export function sparklinePoints(values: Array<number | null>): Array<{ x: number
 export type MoreAnalysisKey = 'kpi' | 'role' | 'weighted' | 'alerts';
 
 export const MORE_ANALYSIS_KEYS: MoreAnalysisKey[] = ['kpi', 'role', 'weighted', 'alerts'];
+
+/** "Review <KPI> first — largest weighted gap." (Figma 29:2), from the executive story's primary driver. */
+export function priorityFocusText(story: InsightExecutiveStory | null | undefined) {
+  if (!story) return 'Review data coverage before making a performance decision.';
+  if (story.primary_driver) return `Review ${cleanScope(story.primary_driver)} first — largest weighted gap.`;
+  return cleanScope(story.recommended_focus);
+}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { InsightDriver, InsightKpiTrend, InsightPeopleContributionAnalysis } from '../../../features/insights/types';
+import type { InsightDriver, InsightExecutiveStory, InsightKpiTrend, InsightPeopleContributionAnalysis } from '../../../features/insights/types';
 import {
   achievementPercent,
   barShare,
@@ -8,6 +8,7 @@ import {
   geographyGap,
   lowPerformingTeams,
   peopleToReview,
+  priorityFocusText,
   sparklinePoints,
   splitDrivers,
   teamGap,
@@ -103,5 +104,23 @@ describe('insightsOverviewModel', () => {
     expect(formatSignedPercent(2.44)).toBe('+2.4%');
     expect(formatSignedPercent(-22.5)).toBe('-22.5%');
     expect(formatSignedPercent(null)).toBe('N/A');
+  });
+});
+
+describe('priorityFocusText', () => {
+  const story = (extra: Partial<InsightExecutiveStory>): InsightExecutiveStory => ({
+    headline: '', scope_label: '', current_score: 77.5, target_score: 100, gap_points: -22.5, score_change: -1.9,
+    primary_scope: null, primary_scope_contribution_percent: null, primary_driver: null, primary_driver_impact: null,
+    recommended_focus: 'Review the highest-impact team and KPI drivers first.', confidence: 'high', evidence: [], ...extra,
+  });
+
+  it('names the primary weighted driver like Figma 29:2', () => {
+    expect(priorityFocusText(story({ primary_driver: 'Case Management Referral Value (AED)' })))
+      .toBe('Review Case Management Referral Value (AED) first — largest weighted gap.');
+  });
+
+  it('falls back to the API recommendation, then to a coverage prompt', () => {
+    expect(priorityFocusText(story({}))).toBe('Review the highest-impact team and KPI drivers first.');
+    expect(priorityFocusText(null)).toBe('Review data coverage before making a performance decision.');
   });
 });

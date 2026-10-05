@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { ArrowDownRight, ArrowUpRight, Calendar, Info, Link2 } from 'lucide-react';
 import type { InsightExecutiveStory, InsightKpiTrend, InsightsWorkspace } from '../../../features/insights/types';
 import { GradeBadge } from './InsightsOverviewPrimitives';
-import { buildPerformanceTrend, cleanScope, formatPercent, formatSignedPercent, type TrendPoint } from './insightsOverviewModel';
+import { buildPerformanceTrend, cleanScope, formatPercent, formatSignedPercent, priorityFocusText, type TrendPoint } from './insightsOverviewModel';
 
 const PLOT = { left: 40, right: 384, top: 10, bottom: 140, firstX: 68, lastX: 351.3 } as const;
 
@@ -115,6 +115,25 @@ function PerformanceTrend({ trend }: { trend: InsightKpiTrend | null | undefined
   );
 }
 
+/** "↓ 1.9%" month-over-month pill next to the grade badge (Figma 34:8). */
+function TrendBadge({ change, previousLabel }: { change: number | null; previousLabel: string }) {
+  if (change === null || !Number.isFinite(change)) return null;
+  const tone = change < 0 ? 'down' : change > 0 ? 'up' : 'flat';
+  const glyph = tone === 'down' ? '↓' : tone === 'up' ? '↑' : '→';
+  const styles = {
+    down: 'bg-[var(--insights-trend-down-bg)] text-[var(--insights-trend-down-text)]',
+    up: 'bg-[var(--insights-trend-up-bg)] text-[var(--insights-trend-up-text)]',
+    flat: 'bg-[var(--insights-chip-bg)] text-[var(--insights-chip-text)]',
+  }[tone];
+  const spoken = `${tone === 'down' ? 'Down' : tone === 'up' ? 'Up' : 'No change'} ${Math.abs(change).toFixed(1)}% ${previousLabel.toLowerCase()}`;
+  return (
+    <span data-testid="executive-trend-badge" data-tone={tone} className={`inline-flex shrink-0 items-center whitespace-nowrap rounded-full px-[8px] py-[3px] text-[11px] font-semibold leading-normal ${styles}`}>
+      <span aria-hidden="true">{`${glyph} ${Math.abs(change).toFixed(1)}%`}</span>
+      <span className="sr-only">{spoken}</span>
+    </span>
+  );
+}
+
 function SummaryKpi({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="flex min-w-0 flex-1 flex-col items-start gap-[6px]">
@@ -164,17 +183,33 @@ export default function ExecutiveSummary({
       aria-labelledby="executive-summary-title"
       className="flex min-w-0 flex-col gap-[28px] rounded-[14px] border border-[var(--insights-summary-border)] bg-[var(--insights-summary-bg)] py-[24px] pl-[28px] pr-[24px] shadow-[var(--insights-summary-shadow)] xl:flex-row xl:items-start"
     >
-      <div className="flex min-w-0 flex-1 flex-col">
-        <div className="flex items-center gap-[12px]">
+      <div className="flex min-w-0 flex-1 flex-col gap-[20px]">
+        <div className="flex w-full items-center gap-[12px]">
           <span aria-hidden="true" className="grid size-[32px] place-items-center rounded-[8px] bg-[var(--insights-icon-summary)] text-white">
             <Link2 className="size-[18px]" strokeWidth={1.5} />
           </span>
           <h2 id="executive-summary-title" className="text-[15px] font-semibold leading-normal text-[var(--insights-heading)]">Executive Summary</h2>
         </div>
-        <p data-testid="executive-headline" className="mt-[18px] text-[28px] font-bold leading-tight tracking-[-0.28px] text-[var(--insights-heading)]">{headline}</p>
-        <p className="mt-[8px] text-[14px] leading-normal text-[var(--text-secondary)]">{story ? cleanScope(story.recommended_focus) : 'Review data coverage before making a performance decision.'}</p>
-        <span aria-hidden="true" className="mt-[28px] h-px w-full bg-[var(--insights-card-border)]" />
-        <div className="mt-[20px] grid w-full grid-cols-2 gap-[20px] sm:flex sm:items-start">
+        <div className="flex w-full flex-col gap-[10px]">
+          {story && story.current_score !== null && (
+            <div className="flex w-full flex-wrap items-center gap-[8px]" data-testid="executive-status-row">
+              <GradeBadge score={story.current_score} />
+              <TrendBadge change={change} previousLabel={previousLabel} />
+            </div>
+          )}
+          <p data-testid="executive-headline" className="w-full text-[28px] font-bold leading-tight tracking-[-0.28px] text-[var(--insights-heading)]">{headline}</p>
+        </div>
+        <div
+          data-testid="executive-priority-focus"
+          className="flex w-full items-center gap-[12px] rounded-[9px] border border-[var(--insights-info-border)] bg-[var(--insights-info-bg)] px-[12px] py-[10px]"
+          title={story ? cleanScope(story.recommended_focus) : undefined}
+        >
+          <span className="shrink-0 whitespace-nowrap rounded-full bg-[var(--insights-info-pill-bg)] px-[10px] py-[4px] text-[10px] font-semibold uppercase leading-normal tracking-[0.4px] text-[var(--insights-info-pill-text)]">Priority focus</span>
+          <p className="min-w-0 flex-1 text-[13px] font-semibold leading-normal text-[var(--insights-info-text)]">{priorityFocusText(story)}</p>
+        </div>
+        <div className="flex w-full flex-col gap-[12px]">
+          <span aria-hidden="true" className="h-px w-full bg-[var(--insights-card-border)]" />
+        <div className="grid w-full grid-cols-2 gap-[20px] sm:flex sm:items-start">
           <SummaryKpi label="Current">
             <p className="text-[26px] font-bold leading-normal text-[var(--insights-heading)]">{formatPercent(story?.current_score)}</p>
             <GradeBadge score={story?.current_score} />
@@ -196,6 +231,7 @@ export default function ExecutiveSummary({
                 : <ArrowUpRight aria-hidden="true" className="size-[18px]" strokeWidth={1.875} />)}
             </p>
           </SummaryKpi>
+        </div>
         </div>
       </div>
       <PerformanceTrend trend={trend} />

@@ -44,7 +44,7 @@ function LabeledFilter({
         className="w-full"
         chevronClassName={`size-[16px]! ${primary ? 'text-[var(--insights-accent-text)]!' : ''}`}
         buttonClassName={[
-          'h-[38px] w-full rounded-[8px]! py-0! pl-[12px]! pr-[10px]! gap-[8px]! text-[13px]! font-medium! shadow-none!',
+          'h-[34px] w-full rounded-[8px]! py-0! pl-[12px]! pr-[10px]! gap-[8px]! text-[13px]! font-medium! shadow-none!',
           'bg-[var(--bg-surface)]! text-[var(--insights-heading)]!',
           primary
             ? 'border-[1.5px]! border-[var(--insights-accent)]! shadow-[0_0_0_3px_var(--insights-accent-ring)]!'
