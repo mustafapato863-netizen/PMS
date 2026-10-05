@@ -20,6 +20,8 @@ interface CustomDropdownProps<T extends string | number = string> {
   size?: 'sm' | 'md' | 'lg';
   ariaLabel?: string;
   disabled?: boolean;
+  /** Extra classes for the trigger chevron (e.g. size / colour overrides). */
+  chevronClassName?: string;
 }
 
 /**
@@ -43,6 +45,7 @@ export function CustomDropdown<T extends string | number = string>({
   size = 'md',
   ariaLabel,
   disabled = false,
+  chevronClassName = '',
 }: CustomDropdownProps<T>) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -212,7 +215,7 @@ export function CustomDropdown<T extends string | number = string>({
           size={13}
           className={`text-[var(--text-muted)] shrink-0 transition-transform duration-200 ${
             isOpen ? 'rotate-180 text-blue-500' : ''
-          }`}
+          } ${chevronClassName}`}
         />
       </button>
 
