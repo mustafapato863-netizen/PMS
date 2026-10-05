@@ -54,9 +54,11 @@ const tokens: Token[] = [
   { name: '--bsc-purple', value: '#7C5CE0', role: 'Customer / analysis emphasis', swatch: 'var(--bsc-purple)' },
   { name: '--bsc-green', value: '#00A859', role: 'Positive / measured state', swatch: 'var(--bsc-green)' },
   { name: '--bsc-orange', value: '#E0832E', role: 'Learning / attention state', swatch: 'var(--bsc-orange)' },
-  { name: '--grade-a-text', value: '#00843D', role: 'Exceeds target', swatch: 'var(--grade-a-text)' },
-  { name: '--grade-c-text', value: '#B7791F', role: 'Average result', swatch: 'var(--grade-c-text)' },
-  { name: '--grade-e-text', value: '#D92D20', role: 'Critical result', swatch: 'var(--grade-e-text)' },
+  { name: '--pms-grade-a-text', value: '#0A6B3C', role: 'A · Excellent (≥95)', swatch: 'var(--pms-grade-a-text)' },
+  { name: '--pms-grade-b-text', value: '#0A5F6E', role: 'B · Meet Expectations (≥90)', swatch: 'var(--pms-grade-b-text)' },
+  { name: '--pms-grade-c-text', value: '#8A5200', role: 'C · Average (≥80)', swatch: 'var(--pms-grade-c-text)' },
+  { name: '--pms-grade-d-text', value: '#A84808', role: 'D · Below Average (≥70)', swatch: 'var(--pms-grade-d-text)' },
+  { name: '--pms-grade-e-text', value: '#B42318', role: 'E · Unsatisfactory (<70)', swatch: 'var(--pms-grade-e-text)' },
 ];
 
 const metricCards = [
@@ -243,9 +245,9 @@ function DesignSystemView() {
           <div className="ds-score-card-wrap">
             <span className="text-label">Overall score card</span>
             <article className="ds-score-card glass-card">
-              <div className="ds-score-card-top"><div><span className="text-label">Overall performance</span><strong>66.4%</strong></div><span className="pms-below">Needs attention</span></div>
-              <div className="ds-score-card-meter"><span style={{ width: '66.4%' }} /></div>
-              <div className="ds-score-card-foot"><span>Current<strong>66.4%</strong></span><span>Monthly change<strong className="ds-negative"><TrendingDown size={12} /> -1.6%</strong></span></div>
+              <div className="ds-score-card-top"><div><span className="text-label">Overall performance</span><strong>70.3%</strong></div><span className="pms-below">Below Average</span></div>
+              <div className="ds-score-card-meter"><span style={{ width: '70.3%' }} /></div>
+              <div className="ds-score-card-foot"><span>Current<strong>70.3%</strong></span><span>Monthly change<strong className="ds-negative"><TrendingDown size={12} /> -1.6%</strong></span></div>
             </article>
           </div>
           <div className="ds-real-kpi-wrap">
