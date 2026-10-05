@@ -55,7 +55,7 @@ const tokens: Token[] = [
   { name: '--bsc-green', value: '#00A859', role: 'Positive / measured state', swatch: 'var(--bsc-green)' },
   { name: '--bsc-orange', value: '#E0832E', role: 'Learning / attention state', swatch: 'var(--bsc-orange)' },
   { name: '--pms-grade-a-text', value: '#0A6B3C', role: 'A · Excellent (≥95)', swatch: 'var(--pms-grade-a-text)' },
-  { name: '--pms-grade-b-text', value: '#0A5F6E', role: 'B · Meet Expectations (≥90)', swatch: 'var(--pms-grade-b-text)' },
+  { name: '--pms-grade-b-text', value: '#3F6F20', role: 'B · Meet Expectations (≥90)', swatch: 'var(--pms-grade-b-text)' },
   { name: '--pms-grade-c-text', value: '#8A5200', role: 'C · Average (≥80)', swatch: 'var(--pms-grade-c-text)' },
   { name: '--pms-grade-d-text', value: '#A84808', role: 'D · Below Average (≥70)', swatch: 'var(--pms-grade-d-text)' },
   { name: '--pms-grade-e-text', value: '#B42318', role: 'E · Unsatisfactory (<70)', swatch: 'var(--pms-grade-e-text)' },
