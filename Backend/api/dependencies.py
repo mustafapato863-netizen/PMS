@@ -265,7 +265,7 @@ def get_current_user_scope(db, request: Request) -> dict:
                 "role": payload.get("role", "Admin"),
                 "employee_id": payload.get("employee_id") or "",
                 "accessible_teams": [],
-                "is_general_manager": True,
+                "has_unrestricted_team_access": True,
                 "is_self_only": False,
                 "active_team_names": [],
                 "legacy_unscoped": True,
@@ -279,7 +279,7 @@ def get_current_user_scope(db, request: Request) -> dict:
             "role": payload.get("role", "Viewer"),
             "employee_id": payload.get("employee_id") or "",
             "accessible_teams": [],
-            "is_general_manager": False,
+            "has_unrestricted_team_access": False,
             "is_self_only": payload.get("role") == "Agent",
             "active_team_names": [],
             "legacy_unscoped": True,
@@ -304,11 +304,13 @@ def get_current_user_scope(db, request: Request) -> dict:
         for assignment, team in assignments
         if assignment.performance_level is None
     }
-    is_general_manager = user.role == "Admin" or (
+    # has_unrestricted_team_access replaces the old is_general_manager flag.
+    # True for Admin, the General Manager role, or a Manager assigned to all teams.
+    has_unrestricted_team_access = user.role in {"Admin", "General Manager"} or (
         user.role == "Manager" and bool(active_team_names) and unrestricted_teams >= set(active_team_names)
     )
 
-    if user.role == "Admin" or is_general_manager:
+    if user.role in {"Admin", "General Manager"} or has_unrestricted_team_access:
         accessible_teams = active_team_names
     elif user.role == "Manager":
         accessible_teams = assigned_teams
@@ -322,7 +324,7 @@ def get_current_user_scope(db, request: Request) -> dict:
         "employee_id": user.employee_id,
         "accessible_teams": accessible_teams,
         "accessible_team_levels": accessible_team_levels,
-        "is_general_manager": is_general_manager,
+        "has_unrestricted_team_access": has_unrestricted_team_access,
         "is_self_only": user.role == "Agent",
         "active_team_names": active_team_names,
         "legacy_unscoped": False,

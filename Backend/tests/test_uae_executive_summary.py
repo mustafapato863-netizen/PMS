@@ -165,7 +165,7 @@ def test_catalogue_route_persistence_and_filename_for_new_type():
         "role": "Admin",
         "accessible_teams": [],
         "accessible_team_levels": [],
-        "is_general_manager": True,
+        "has_unrestricted_team_access": True,
         "legacy_unscoped": False,
     }
     template = next(item for item in service.templates() if item["type"] == "uae_executive_summary")

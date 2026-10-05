@@ -214,7 +214,7 @@ def test_executive_report_is_live_comparable_direction_aware_and_integrated():
         "role": "Admin",
         "accessible_teams": [],
         "accessible_team_levels": [],
-        "is_general_manager": True,
+        "has_unrestricted_team_access": True,
         "legacy_unscoped": False,
     }
     configuration = ReportConfiguration(

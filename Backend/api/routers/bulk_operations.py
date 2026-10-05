@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from config.database import get_db
 from models.schemas import StandardResponse
 from api.middleware.rbac_middleware import require_permission
+from api.dependencies import require_role
 from services.batch_processor import BatchProcessor
 from services.soft_delete_service import SoftDeleteService
 from services.cache_service import redis_client
@@ -115,10 +116,13 @@ async def bulk_delete_employees(
     payload: Dict[str, List[str]],
     request: Request,
     db: Session = Depends(get_db),
-    user_payload: dict = Depends(require_permission("delete_team"))
+    _role: str = Depends(require_role(["Admin"])),
 ):
     """
     Bulk soft-delete employee records (limit 100).
+
+    Admin-only — aligned with single-employee delete (GM has delete_team but
+    must not bulk-delete employees).
     """
     try:
         employee_ids = payload.get("employee_ids", [])
@@ -133,8 +137,9 @@ async def bulk_delete_employees(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Cannot bulk delete more than 100 employees at a time"
             )
-            
-        performed_by_user_id = user_payload.get("user_id")
+
+        user_payload = getattr(request.state, "user", None) or {}
+        performed_by_user_id = user_payload.get("user_id") if isinstance(user_payload, dict) else None
         success_count = 0
         failed_ids = []
         

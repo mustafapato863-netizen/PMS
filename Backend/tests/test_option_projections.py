@@ -157,7 +157,7 @@ def test_planning_projection_reuses_team_and_level_scope():
             "user_id": str(uuid.uuid4()),
             "accessible_teams": ["Marketing"],
             "accessible_team_levels": [("Marketing", "Employee")],
-            "is_general_manager": False,
+            "has_unrestricted_team_access": False,
             "legacy_unscoped": False,
         }
 
@@ -185,7 +185,7 @@ def test_report_options_use_projection_without_loading_full_records(monkeypatch)
             "role": "Admin",
             "accessible_teams": [],
             "accessible_team_levels": [],
-            "is_general_manager": True,
+            "has_unrestricted_team_access": True,
             "legacy_unscoped": False,
         }
 

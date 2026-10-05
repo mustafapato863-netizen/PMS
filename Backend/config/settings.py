@@ -104,11 +104,12 @@ if PMS_JOB_MAX_ATTEMPTS <= 0:
 
 # Security Roles definitions
 ROLE_ADMIN = "Admin"
+ROLE_GENERAL_MANAGER = "General Manager"
 ROLE_MANAGER = "Manager"
 ROLE_EXECUTIVE = "Executive"
 ROLE_VIEWER = "Viewer"
 
-ROLES = [ROLE_ADMIN, ROLE_MANAGER, ROLE_EXECUTIVE, ROLE_VIEWER]
+ROLES = [ROLE_ADMIN, ROLE_GENERAL_MANAGER, ROLE_MANAGER, ROLE_EXECUTIVE, ROLE_VIEWER]
 
 # JWT & Security settings
 JWT_SECRET = resolve_jwt_secret(os.environ.get("JWT_SECRET"), APP_ENV)

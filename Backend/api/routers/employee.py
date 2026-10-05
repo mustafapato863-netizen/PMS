@@ -190,7 +190,7 @@ def  create_employee(
     name: str = Query(...),
     team: str = Query(...),
     region: str = Query("UAE"),
-    role: str = Depends(require_role(["Admin", "Manager"])),
+    role: str = Depends(require_role(["Admin", "General Manager", "Manager"])),
     db: Session = Depends(get_db),
 ):
     """
@@ -267,7 +267,7 @@ def get_employee_profile(employee_id: str, request: Request, db: Session = Depen
         }
 
         scope = get_current_user_scope(db, request)
-        if not scope.get("legacy_unscoped") and scope.get("role") == "Manager" and not scope.get("is_general_manager"):
+        if not scope.get("legacy_unscoped") and scope.get("role") == "Manager" and not scope.get("has_unrestricted_team_access"):
             if not user_can_access_team(scope, emp["team"]):
                 raise HTTPException(status_code=403, detail="Access denied for this employee")
         elif not scope.get("legacy_unscoped") and scope.get("role") in {"Agent", "Executive"}:
@@ -307,7 +307,7 @@ def  update_employee(
     name: str = Query(None),
     team: str = Query(None),
     region: str = Query(None),
-    role: str = Depends(require_role(["Admin", "Manager"]))
+    role: str = Depends(require_role(["Admin", "General Manager", "Manager"]))
 ):
     """
     Update an employee.
@@ -328,7 +328,7 @@ def  update_employee(
             raise HTTPException(status_code=404, detail="Employee not found")
 
         scope = get_current_user_scope(db, request)
-        if not scope.get("legacy_unscoped") and scope.get("role") == "Manager" and not scope.get("is_general_manager"):
+        if not scope.get("legacy_unscoped") and scope.get("role") == "Manager" and not scope.get("has_unrestricted_team_access"):
             if not user_can_access_team(scope, str(emp.team.display_name or emp.team.name)):
                 raise HTTPException(status_code=403, detail="Access denied for this employee")
         elif not scope.get("legacy_unscoped") and scope.get("role") in {"Agent", "Executive"}:
@@ -416,7 +416,7 @@ def  delete_employee(
 def  restore_employee(
     employee_id: str,
     request: Request,
-    role: str = Depends(require_role(["Admin", "Manager"]))
+    role: str = Depends(require_role(["Admin", "General Manager", "Manager"]))
 ):
     """
     Restore a soft-deleted employee.
@@ -451,7 +451,7 @@ def  restore_employee(
 def  save_notes(
     employee_id: str,
     payload: Dict[str, str],
-    role: str = Depends(require_role(["Admin", "Manager"]))
+    role: str = Depends(require_role(["Admin", "General Manager", "Manager"]))
 ):
     try:
         month = payload.get("month", "")
@@ -505,7 +505,7 @@ async def  save_corrective_action(
     payload: Dict[str, Any],
     request: Request,
     db: Session = Depends(get_db),
-    role: str = Depends(require_role(["Admin", "Manager"]))
+    role: str = Depends(require_role(["Admin", "General Manager", "Manager"]))
 ):
     try:
         month = payload.get("month", "")
@@ -564,7 +564,7 @@ async def delete_corrective_action(
     action_id: str,
     request: Request,
     db: Session = Depends(get_db),
-    role: str = Depends(require_role(["Admin", "Manager"]))
+    role: str = Depends(require_role(["Admin", "General Manager", "Manager"]))
 ):
     try:
         current_user = getattr(request.state, "user", None) or {}

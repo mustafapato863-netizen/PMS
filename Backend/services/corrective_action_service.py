@@ -608,7 +608,7 @@ class CorrectiveActionService:
         role = scope.get("role")
         if role in {"Executive", "Viewer"} or not scope:
             raise CorrectiveActionAccessError("You do not have permission to update this action")
-        if role == "Admin" or scope.get("is_general_manager"):
+        if role in {"Admin", "General Manager"} or scope.get("has_unrestricted_team_access"):
             return
         if action.owner_user_id and str(action.owner_user_id) == str(scope.get("user_id") or ""):
             return
@@ -638,7 +638,7 @@ class CorrectiveActionService:
     def _caller_may_assign(self, owner: User, scope: dict, team_name: str | None = None) -> bool:
         if not owner.is_active:
             return False
-        if scope.get("role") == "Admin" or scope.get("is_general_manager"):
+        if scope.get("role") in {"Admin", "General Manager"} or scope.get("has_unrestricted_team_access"):
             return True
         if str(owner.id) == str(scope.get("user_id") or ""):
             return True
@@ -677,12 +677,12 @@ class CorrectiveActionService:
                 if item.team is not None
             ],
             "legacy_unscoped": False,
-            "is_general_manager": False,
+            "has_unrestricted_team_access": False,
         }
         return user_can_access_team_level(owner_scope, team_name, level)
 
     def _can_access_plan(self, plan: PerformancePlan, scope: dict) -> bool:
-        if scope.get("role") == "Admin" or scope.get("is_general_manager"):
+        if scope.get("role") in {"Admin", "General Manager"} or scope.get("has_unrestricted_team_access"):
             return True
         team_name = logical_team_name(plan.team) if plan.team is not None else ""
         if scope.get("role") == "Manager":

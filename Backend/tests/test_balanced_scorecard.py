@@ -331,7 +331,7 @@ def test_level_specific_access_to_all_teams_does_not_become_general_manager():
         session,
         SimpleNamespace(state=SimpleNamespace(user={"user_id": str(user.id), "role": "Manager"})),
     )
-    assert scope["is_general_manager"] is False
+    assert scope["has_unrestricted_team_access"] is False
     assert user_can_access_team_level(scope, "Finance", "Managerial") is True
     assert user_can_access_team_level(scope, "Finance", "Corporate") is False
     session.close()

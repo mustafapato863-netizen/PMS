@@ -280,7 +280,7 @@ class TestPerformanceRouter:
                 "role": "Manager",
                 "accessible_teams": ["Sales"],
                 "accessible_team_levels": [("Sales", "Employee")],
-                "is_general_manager": False,
+                "has_unrestricted_team_access": False,
                 "legacy_unscoped": False,
             }
 
@@ -358,7 +358,7 @@ class TestSearchRouter:
                 "role": "Manager",
                 "accessible_teams": ["Sales"],
                 "active_team_names": ["Sales", "Inbound"],
-                "is_general_manager": False,
+                "has_unrestricted_team_access": False,
                 "employee_id": None,
                 "user_id": "manager-1",
             }
@@ -385,7 +385,7 @@ class TestSearchRouter:
                 "role": "Admin",
                 "accessible_teams": [],
                 "active_team_names": ["Sales", "Inbound"],
-                "is_general_manager": True,
+                "has_unrestricted_team_access": True,
                 "employee_id": None,
                 "user_id": "admin-1",
             }

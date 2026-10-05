@@ -166,7 +166,7 @@ def _scope(user):
         "role": "Admin",
         "accessible_teams": [],
         "accessible_team_levels": [],
-        "is_general_manager": True,
+        "has_unrestricted_team_access": True,
         "legacy_unscoped": False,
     }
 

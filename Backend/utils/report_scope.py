@@ -88,7 +88,7 @@ def _team_keys(value: str) -> set[str]:
 def user_can_access_team(scope: dict, team_name: str) -> bool:
     if scope.get("legacy_unscoped"):
         return True
-    if scope.get("role") == "Admin" or scope.get("is_general_manager"):
+    if scope.get("role") in {"Admin", "General Manager"} or scope.get("has_unrestricted_team_access"):
         return True
     accessible = set().union(*(_team_keys(str(team)) for team in scope.get("accessible_teams", [])))
     return bool(_team_keys(team_name) & accessible)
@@ -97,7 +97,7 @@ def user_can_access_team(scope: dict, team_name: str) -> bool:
 def user_can_access_team_level(scope: dict, team_name: str, performance_level: str) -> bool:
     if scope.get("legacy_unscoped"):
         return False
-    if scope.get("role") == "Admin" or scope.get("is_general_manager"):
+    if scope.get("role") in {"Admin", "General Manager"} or scope.get("has_unrestricted_team_access"):
         return True
     if not user_can_access_team(scope, team_name):
         return False
@@ -117,7 +117,7 @@ def filter_records_by_scope(records, scope: dict):
     if role in {"Agent", "Executive"}:
         self_id = str(scope.get("employee_id") or scope.get("user_id") or "")
         return [record for record in records if str(_record_value(record, "employee_id")) == self_id]
-    if role == "Manager" and not scope.get("is_general_manager"):
+    if role == "Manager" and not scope.get("has_unrestricted_team_access"):
         accessible = set().union(*(_team_keys(str(team)) for team in scope.get("accessible_teams", [])))
         return [record for record in records if str(_record_value(record, "team")).lower() in accessible]
     return records
@@ -125,7 +125,7 @@ def filter_records_by_scope(records, scope: dict):
 
 def filter_records_by_team_levels(records, scope: dict):
     """Apply explicit team/level assignments after the broader role scope filter."""
-    if scope.get("role") == "Admin" or scope.get("is_general_manager") or scope.get("legacy_unscoped"):
+    if scope.get("role") == "Admin" or scope.get("has_unrestricted_team_access") or scope.get("legacy_unscoped"):
         return records
     configured = {
         (team_key, str(level))

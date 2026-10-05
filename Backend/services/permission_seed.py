@@ -19,6 +19,20 @@ PERMISSION_MATRIX = {
         "manage_batch_operations", "configure_kpi",
         "manage_alerts", "view_system_metrics", "view_plans", "manage_plans"
     ],
+    # General Manager: Admin operational set minus Settings-admin powers
+    # (manage_users, manage_permissions, restore_data, view_system_metrics).
+    # Includes team-management perms for /team-management.
+    # Settings-locked: no upload_data / delete_performance (Admin retains both).
+    "General Manager": [
+        "create_team", "delete_team", "edit_team_config",
+        "edit_performance",
+        "view_reports", "export_data",
+        "view_audit_logs",
+        "manage_batch_operations", "configure_kpi",
+        "manage_alerts", "view_plans", "manage_plans",
+        "manage_team_members", "view_actions", "create_actions", "manage_team_kpi",
+        "view_aggregated_analytics",
+    ],
     "Manager": [
         "upload_data", "edit_performance", "view_reports",
         "export_data", "manage_team_members", "view_actions",
@@ -59,6 +73,20 @@ def seed_role_permissions(db: Session) -> None:
                 db.add(role_perm)
                 seeded_count += 1
         
+        # Retract Settings-locked GM perms if previously seeded (F4).
+        obsolete_gm = (
+            db.query(RolePermission)
+            .filter(
+                RolePermission.role == "General Manager",
+                RolePermission.permission.in_(("upload_data", "delete_performance")),
+            )
+            .all()
+        )
+        for row in obsolete_gm:
+            db.delete(row)
+        if obsolete_gm:
+            logger.info("Removed %s obsolete General Manager permission(s).", len(obsolete_gm))
+
         db.commit()
         logger.info("Seeded %s missing role permission mapping(s).", seeded_count)
     except Exception as e:

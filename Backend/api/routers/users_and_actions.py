@@ -38,6 +38,24 @@ from utils.team_identity import (
 users_router = APIRouter()
 
 
+def _manager_has_unrestricted_team_access(db: Session, user: User) -> bool:
+    """True only when Manager assignments cover every active team with performance_level IS NULL.
+
+    Matches get_current_user_scope — assignment to one or more teams is not enough.
+    """
+    active_team_names = list(dict.fromkeys(logical_team_name(team) for team in _active_teams(db)))
+    if not active_team_names:
+        return False
+    unrestricted_teams = {
+        logical_team_name(assignment.team)
+        for assignment in user.team_assignments
+        if assignment.team
+        and getattr(assignment.team, "is_active", True)
+        and assignment.performance_level is None
+    }
+    return unrestricted_teams >= set(active_team_names)
+
+
 def _user_to_public_dict(db: Session, user: User) -> dict:
     online_ids = online_user_ids()
     accessible_teams = list(dict.fromkeys(
@@ -62,7 +80,11 @@ def _user_to_public_dict(db: Session, user: User) -> dict:
         "accessible_teams": accessible_teams,
         "accessible_team_levels": accessible_team_levels,
         "accessible_team_count": len(accessible_teams),
-        "is_general_manager": user.role == "Manager" and len(accessible_teams) > 0,
+        # Renamed from is_general_manager. True for Admin, General Manager role,
+        # or Manager whose NULL-level assignments cover every active team.
+        "has_unrestricted_team_access": user.role in {"Admin", "General Manager"} or (
+            user.role == "Manager" and _manager_has_unrestricted_team_access(db, user)
+        ),
     }
 
 
@@ -139,6 +161,60 @@ def _replace_team_assignments(
                 access_level="admin",
                 assigned_by="Admin",
             ))
+
+
+def _merge_team_assignments_preserving_levels(
+    db: Session,
+    user_id,
+    team_names: list[str] | None,
+) -> None:
+    """Apply a teams-only edit (``accessible_teams`` without ``accessible_team_levels``).
+
+    SEC-F1-R1: the Settings user form re-sends the current team list without
+    levels on every edit (rename, password, ...). Replacing assignments here
+    would recreate them as all-levels (performance_level IS NULL) and silently
+    widen a level-restricted Manager — possibly flipping
+    ``has_unrestricted_team_access`` to True. Instead:
+
+    * teams that remain keep their existing assignment rows/levels untouched;
+    * teams no longer listed are removed;
+    * only teams newly added by name get all-levels (NULL) assignments, which is
+      the explicit "grant this team" request.
+
+    Levels are never widened implicitly for an already-assigned team.
+    """
+    requested_keys: list[str] = list(dict.fromkeys(
+        str(name).strip().casefold() for name in (team_names or []) if str(name).strip()
+    ))
+    requested_set = set(requested_keys)
+
+    existing_assignments = (
+        db.query(UserTeamAssignment).filter(UserTeamAssignment.user_id == user_id).all()
+    )
+    retained_keys: set[str] = set()
+    for assignment in existing_assignments:
+        team = assignment.team or db.query(Team).filter(Team.id == assignment.team_id).first()
+        key = logical_team_name(team).casefold() if team else None
+        if key is not None and key in requested_set:
+            retained_keys.add(key)
+        else:
+            db.delete(assignment)
+
+    added_keys = [key for key in requested_keys if key not in retained_keys]
+    if not added_keys:
+        return
+    teams = _active_teams(db)
+    for key in added_keys:
+        for team in teams:
+            if logical_team_name(team).casefold() == key:
+                db.add(UserTeamAssignment(
+                    id=uuid.uuid4(),
+                    user_id=user_id,
+                    team_id=team.id,
+                    performance_level=None,
+                    access_level="admin",
+                    assigned_by="Admin",
+                ))
 
 
 def _current_user_id(request: Request) -> str | None:
@@ -249,8 +325,16 @@ async def create_user(
         )
         db.add(new_user)
         db.commit()
-        if new_user.role == "Manager":
-            if payload.is_general_manager:
+        if new_user.role == "General Manager":
+            # GM always gets unrestricted access to all active teams.
+            _replace_team_assignments(
+                db,
+                new_user.id,
+                list(dict.fromkeys(logical_team_name(team) for team in _active_teams(db))),
+            )
+            db.commit()
+        elif new_user.role == "Manager":
+            if payload.has_unrestricted_team_access:
                 _replace_team_assignments(
                     db,
                     new_user.id,
@@ -325,6 +409,7 @@ async def update_user_route(
         if "name" in updates:
             existing.full_name = updates["name"].strip()
 
+        previous_role = existing.role
         if "role" in updates:
             existing.role = updates["role"]
 
@@ -342,19 +427,41 @@ async def update_user_route(
             from services.auth_service import AuthenticationService
             AuthenticationService.revoke_all_sessions(db, str(existing.id), reason="admin_password_changed")
 
-        if "accessible_teams" in updates or "accessible_team_levels" in updates or "is_general_manager" in updates:
-            if updates.get("is_general_manager") and existing.role == "Manager":
+        if existing.role == "General Manager":
+            # Keep GM assigned to all active teams whenever role is GM.
+            _replace_team_assignments(
+                db,
+                existing.id,
+                list(dict.fromkeys(logical_team_name(team) for team in _active_teams(db))),
+            )
+        elif existing.role == "Manager":
+            # Widen only when flag is explicitly True. Omit/null/false must not
+            # expand or wipe assignments (Admin rename/password must be safe).
+            unrestricted_requested = updates.get("has_unrestricted_team_access")
+            if unrestricted_requested is True:
                 _replace_team_assignments(
                     db,
                     existing.id,
                     list(dict.fromkeys(logical_team_name(team) for team in _active_teams(db))),
                 )
-            elif existing.role == "Manager":
+            elif "accessible_team_levels" in updates:
+                # Explicit per-level scope: authoritative replace.
                 _replace_team_assignments(
                     db,
                     existing.id,
                     updates.get("accessible_teams"),
                     updates.get("accessible_team_levels"),
+                )
+            elif previous_role == "General Manager":
+                # P3: GM assignments are synthetic all-teams/all-levels rows.
+                # On demote, start from a clean slate so the Manager is not
+                # left unrestricted; only explicitly listed teams are granted.
+                _replace_team_assignments(db, existing.id, updates.get("accessible_teams") or [])
+            elif "accessible_teams" in updates:
+                # SEC-F1-R1: teams-only edit must preserve existing level
+                # restrictions; never widen levels implicitly.
+                _merge_team_assignments_preserving_levels(
+                    db, existing.id, updates.get("accessible_teams")
                 )
 
         db.commit()
@@ -526,7 +633,7 @@ actions_router = APIRouter()
 async def get_all_corrective_actions(
     request: Request,
     db: Session = Depends(get_db),
-    role: str = Depends(require_role(["Admin", "Manager", "Executive"]))
+    role: str = Depends(require_role(["Admin", "General Manager", "Manager", "Executive"]))
 ):
     try:
         actions = CorrectiveActionService(db).list_scoped(get_current_user_scope(db, request))
@@ -566,7 +673,7 @@ async def get_action_follow_up(
     owner: str | None = Query(default=None),
     month: str | None = Query(default=None),
     db: Session = Depends(get_db),
-    role: str = Depends(require_role(["Admin", "Manager", "Executive"])),
+    role: str = Depends(require_role(["Admin", "General Manager", "Manager", "Executive"])),
 ):
     try:
         data = CorrectiveActionService(db).list_follow_up(
@@ -587,7 +694,7 @@ async def get_action_follow_up(
 async def get_action_owners(
     request: Request,
     db: Session = Depends(get_db),
-    role: str = Depends(require_role(["Admin", "Manager", "Executive"])),
+    role: str = Depends(require_role(["Admin", "General Manager", "Manager", "Executive"])),
 ):
     try:
         owners = CorrectiveActionService(db).list_owners(get_current_user_scope(db, request))
@@ -602,7 +709,7 @@ async def update_corrective_action_status(
     payload: ActionStatusUpdate,
     request: Request,
     db: Session = Depends(get_db),
-    role: str = Depends(require_role(["Admin", "Manager", "Executive", "Viewer", "Agent"])),
+    role: str = Depends(require_role(["Admin", "General Manager", "Manager", "Executive", "Viewer", "Agent"])),
 ):
     try:
         current_user = getattr(request.state, "user", None) or {}

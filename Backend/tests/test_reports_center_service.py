@@ -116,7 +116,7 @@ def _service(role: str) -> ReportsCenterService:
         "active_team_names": ["Inbound", "Outbound"],
         "accessible_teams": ["Inbound"] if role == "Manager" else [],
         "accessible_team_levels": [("Inbound", "Employee")],
-        "is_general_manager": False,
+        "has_unrestricted_team_access": False,
         "is_self_only": False,
         "legacy_unscoped": False,
     }
