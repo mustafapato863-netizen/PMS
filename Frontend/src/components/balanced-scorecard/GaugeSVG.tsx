@@ -60,16 +60,17 @@ export function GaugeSVG({
 
       <defs>
         <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="0%">
-          <stop offset="0%" stopColor={tone.color} stopOpacity="0.56" />
-          <stop offset="58%" stopColor={tone.color} stopOpacity="0.84" />
-          <stop offset="100%" stopColor={tone.color} stopOpacity="1" />
+          {/* Grade tokens are CSS variables, so colors go through `style` (not presentation attributes). */}
+          <stop offset="0%" style={{ stopColor: tone.color }} stopOpacity="0.56" />
+          <stop offset="58%" style={{ stopColor: tone.color }} stopOpacity="0.84" />
+          <stop offset="100%" style={{ stopColor: tone.color }} stopOpacity="1" />
         </linearGradient>
         <filter id={filterId} x="-35%" y="-40%" width="170%" height="180%">
           <feDropShadow
             dx="0"
             dy="1.5"
             stdDeviation="2.2"
-            floodColor={tone.color}
+            style={{ floodColor: tone.color }}
             floodOpacity="0.28"
           />
         </filter>
@@ -102,15 +103,15 @@ export function GaugeSVG({
       <path
         d={ARC_PATH}
         fill="none"
-        stroke={tone.glow}
+        style={{
+          stroke: tone.glow,
+          transition: "stroke-dasharray 420ms cubic-bezier(.22,1,.36,1)",
+        }}
         strokeWidth="12"
         strokeLinecap="round"
         opacity={hasScore ? 0.74 : 0.34}
         pathLength="100"
         strokeDasharray={`${hasScore ? normalizedScore : 0} 100`}
-        style={{
-          transition: "stroke-dasharray 420ms cubic-bezier(.22,1,.36,1)",
-        }}
       />
 
       <path
@@ -144,11 +145,11 @@ export function GaugeSVG({
             y1={CENTER.y}
             x2={needle.x}
             y2={needle.y}
-            stroke={tone.glow}
             strokeWidth="5.6"
             strokeLinecap="round"
             opacity="0.7"
             style={{
+              stroke: tone.glow,
               transition:
                 "x2 420ms cubic-bezier(.22,1,.36,1), y2 420ms cubic-bezier(.22,1,.36,1)",
             }}
@@ -174,7 +175,7 @@ export function GaugeSVG({
         cy={CENTER.y}
         r="5.7"
         fill="var(--bsc-panel-bg, #FFFFFF)"
-        stroke={tone.color}
+        style={{ stroke: tone.color }}
         strokeWidth="1.55"
         opacity={hasScore ? 0.7 : 0.45}
       />

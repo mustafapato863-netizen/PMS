@@ -108,7 +108,7 @@ export function RosterPanel({
                     </td>
                     <td style={{ fontSize:12, fontWeight:600 }}>{perspData?.top_kpi_label ?? '—'}</td>
                     <td><Sparkline points={pts} up={trendUp}/></td>
-                    <td><StatusPill status={score == null ? 'na' : score >= 90 ? 'excellent' : score >= 75 ? 'good' : score >= 60 ? 'attention' : 'poor'}/></td>
+                    <td><StatusPill status={cls}/></td>
                   </tr>
                 );
               })}
