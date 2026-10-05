@@ -2,13 +2,13 @@
 """
 
 import logging
-from uuid import UUID
+import uuid
 from fastapi import Request, HTTPException, Depends
 from starlette.status import HTTP_403_FORBIDDEN
 from sqlalchemy.orm import Session
 from config.database import get_db
 from services.auth_service import redis_client
-from models.models import User, RolePermission, UserTeamAssignment
+from models.models import User, UserTeamAssignment
 from services.permission_seed import PERMISSION_MATRIX
 
 logger = logging.getLogger(__name__)
@@ -22,23 +22,21 @@ class AuthorizationMiddleware:
         db: Session,
         user_id: str,
         permission: str,
-        team_id: str = None
+        team_id: str = None,
+        role: str = None,
     ) -> bool:
         """
         Check if a user has the required permission, with optional team scope check.
+
+        Role is taken from ``role`` (typically request.state.user from AuthMiddleware,
+        which loads a fresh DB role per request) or, when omitted, loaded fresh from
+        the database. Redis is never used for role — the former ``session:{user_id}``
+        role cache caused demoted Admins to retain privileges for up to 1h and
+        collided with legacy token-validity keys.
         """
         try:
-            # 1. Fetch user role from Redis cache, fallback to database
-            role = None
-            if redis_client:
-                try:
-                    role = redis_client.get(f"session:{user_id}")
-                except Exception as ex:
-                    logger.warning(f"Redis error fetching session: {ex}")
-
+            # 1. Resolve role from caller or fresh DB — never Redis
             if not role:
-                # Fallback to DB
-                import uuid
                 try:
                     u_id = uuid.UUID(user_id) if isinstance(user_id, str) else user_id
                 except ValueError:
@@ -47,12 +45,6 @@ class AuthorizationMiddleware:
                 if not user:
                     return False
                 role = user.role
-                # Cache user role for 1 hour
-                if redis_client:
-                    try:
-                        redis_client.set(f"session:{user_id}", role, ex=3600)
-                    except Exception as ex:
-                        logger.warning(f"Redis error caching session: {ex}")
 
             # 2. Check permission for the role
             # Admin has unrestricted access to everything
@@ -66,7 +58,7 @@ class AuthorizationMiddleware:
 
             # 3. For team-scoped operations, verify team assignment
             if team_id:
-                # Check team assignment cache in Redis
+                # Check team assignment cache in Redis (separate from role)
                 cache_key = f"team_assignment:{user_id}:{team_id}"
                 has_assignment = None
                 if redis_client:
@@ -79,7 +71,6 @@ class AuthorizationMiddleware:
 
                 if has_assignment is None:
                     # Fallback to DB
-                    import uuid
                     try:
                         u_id = uuid.UUID(user_id) if isinstance(user_id, str) else user_id
                         t_id = uuid.UUID(team_id) if isinstance(team_id, str) else team_id
@@ -121,11 +112,13 @@ def require_permission(permission: str):
         # Extract team_id if present in path or query
         team_id = request.path_params.get("team_id") or request.query_params.get("team_id")
 
+        # Prefer fresh DB role from AuthMiddleware (request.state.user), not Redis.
         has_perm = await AuthorizationMiddleware.check_permission(
             db=db,
             user_id=user_id,
             permission=permission,
-            team_id=team_id
+            team_id=team_id,
+            role=user_payload.get("role"),
         )
 
         if not has_perm:

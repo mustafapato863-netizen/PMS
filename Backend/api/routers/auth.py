@@ -244,7 +244,7 @@ async def me(request: Request, db: Session = Depends(get_db)):
         assignments = (
             db.query(UserTeamAssignment, Team)
             .join(Team, Team.id == UserTeamAssignment.team_id)
-            .filter(UserTeamAssignment.user_id == user.id)
+            .filter(UserTeamAssignment.user_id == user.id, Team.is_active.is_(True))
             .all()
         )
         accessible_teams = list(dict.fromkeys(logical_team_name(team) for _, team in assignments))
@@ -264,8 +264,9 @@ async def me(request: Request, db: Session = Depends(get_db)):
             if assignment.performance_level is None
         }
         # Renamed from is_general_manager — see Frontend contract.
+        # F1-correct: every active team must have a NULL performance_level assignment.
         has_unrestricted_team_access = user.role in {"Admin", "General Manager"} or (
-            user.role == "Manager" and active_team_count > 0 and len(unrestricted_teams) >= active_team_count
+            user.role == "Manager" and bool(active_team_names) and unrestricted_teams >= active_team_names
         )
 
         return StandardResponse(

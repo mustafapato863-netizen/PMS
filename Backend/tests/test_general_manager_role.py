@@ -45,9 +45,7 @@ GM_TEAM_MGMT = {
 }
 
 GM_PRODUCT = {
-    "upload_data",
     "edit_performance",
-    "delete_performance",
     "view_reports",
     "export_data",
     "manage_team_members",
@@ -60,6 +58,12 @@ GM_PRODUCT = {
     "view_audit_logs",
     "manage_batch_operations",
     "manage_alerts",
+}
+
+# Settings-locked for GM (F4)
+GM_SETTINGS_LOCKED = {
+    "upload_data",
+    "delete_performance",
 }
 
 
@@ -151,6 +155,18 @@ def test_client(db_session):
     async def performance_edit_route(role: str = Depends(require_role(["Admin", "General Manager", "Manager"]))):
         return {"success": True, "role": role}
 
+    @test_app.post("/api/uploads/pms")
+    async def upload_pms_route(user=Depends(require_permission("upload_data"))):
+        return {"success": True}
+
+    @test_app.delete("/api/uploads/1")
+    async def delete_upload_route(user=Depends(require_permission("delete_performance"))):
+        return {"success": True}
+
+    @test_app.post("/api/uploads/batch-delete")
+    async def batch_delete_route(user=Depends(require_permission("delete_performance"))):
+        return {"success": True}
+
     client = TestClient(test_app)
     yield client
     test_app.dependency_overrides.clear()
@@ -186,8 +202,13 @@ class TestGeneralManagerConstantsAndSeed:
     def test_permission_matrix_excludes_settings_admin_powers(self):
         gm_perms = set(PERMISSION_MATRIX["General Manager"])
         assert GM_DENIED.isdisjoint(gm_perms)
+        assert GM_SETTINGS_LOCKED.isdisjoint(gm_perms)
         assert GM_TEAM_MGMT.issubset(gm_perms)
         assert GM_PRODUCT.issubset(gm_perms)
+        # Manager retains upload_data; only GM lost Settings-locked perms.
+        assert "upload_data" in PERMISSION_MATRIX["Manager"]
+        assert "upload_data" in PERMISSION_MATRIX["Admin"]
+        assert "delete_performance" in PERMISSION_MATRIX["Admin"]
 
     def test_seed_persists_gm_permissions(self, db_session):
         rows = {
@@ -211,6 +232,12 @@ class TestGeneralManagerPermissions:
     async def test_gm_denied_settings_admin_permissions(self, db_session):
         user = _create_gm(db_session)
         for perm in sorted(GM_DENIED):
+            assert not await AuthorizationMiddleware.check_permission(db_session, str(user.id), perm), perm
+
+    @pytest.mark.asyncio
+    async def test_gm_denied_upload_and_delete_performance(self, db_session):
+        user = _create_gm(db_session)
+        for perm in sorted(GM_SETTINGS_LOCKED):
             assert not await AuthorizationMiddleware.check_permission(db_session, str(user.id), perm), perm
 
     @pytest.mark.asyncio
@@ -247,6 +274,13 @@ class TestGeneralManagerHttpAccess:
         assert test_client.post("/api/settings/weights", headers=headers).status_code == 403
         assert test_client.post("/api/settings/restore", headers=headers).status_code == 403
         assert test_client.get("/api/settings/system-errors", headers=headers).status_code == 403
+
+    def test_gm_denied_upload_and_data_delete_routes(self, db_session, test_client):
+        _create_gm(db_session)
+        headers = _login_headers(db_session, "gm_user")
+        assert test_client.post("/api/uploads/pms", headers=headers).status_code == 403
+        assert test_client.delete("/api/uploads/1", headers=headers).status_code == 403
+        assert test_client.post("/api/uploads/batch-delete", headers=headers).status_code == 403
 
     def test_admin_still_passes_settings_admin_endpoints(self, db_session, test_client):
         AuthenticationService.create_user(

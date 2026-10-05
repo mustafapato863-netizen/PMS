@@ -38,6 +38,24 @@ from utils.team_identity import (
 users_router = APIRouter()
 
 
+def _manager_has_unrestricted_team_access(db: Session, user: User) -> bool:
+    """True only when Manager assignments cover every active team with performance_level IS NULL.
+
+    Matches get_current_user_scope — assignment to one or more teams is not enough.
+    """
+    active_team_names = list(dict.fromkeys(logical_team_name(team) for team in _active_teams(db)))
+    if not active_team_names:
+        return False
+    unrestricted_teams = {
+        logical_team_name(assignment.team)
+        for assignment in user.team_assignments
+        if assignment.team
+        and getattr(assignment.team, "is_active", True)
+        and assignment.performance_level is None
+    }
+    return unrestricted_teams >= set(active_team_names)
+
+
 def _user_to_public_dict(db: Session, user: User) -> dict:
     online_ids = online_user_ids()
     accessible_teams = list(dict.fromkeys(
@@ -63,9 +81,9 @@ def _user_to_public_dict(db: Session, user: User) -> dict:
         "accessible_team_levels": accessible_team_levels,
         "accessible_team_count": len(accessible_teams),
         # Renamed from is_general_manager. True for Admin, General Manager role,
-        # or Manager with unrestricted all-teams assignments.
+        # or Manager whose NULL-level assignments cover every active team.
         "has_unrestricted_team_access": user.role in {"Admin", "General Manager"} or (
-            user.role == "Manager" and len(accessible_teams) > 0
+            user.role == "Manager" and _manager_has_unrestricted_team_access(db, user)
         ),
     }
 
@@ -361,14 +379,17 @@ async def update_user_route(
                 existing.id,
                 list(dict.fromkeys(logical_team_name(team) for team in _active_teams(db))),
             )
-        elif "accessible_teams" in updates or "accessible_team_levels" in updates or "has_unrestricted_team_access" in updates:
-            if updates.get("has_unrestricted_team_access") and existing.role == "Manager":
+        elif existing.role == "Manager":
+            # Widen only when flag is explicitly True. Omit/null/false must not
+            # expand or wipe assignments (Admin rename/password must be safe).
+            unrestricted_requested = updates.get("has_unrestricted_team_access")
+            if unrestricted_requested is True:
                 _replace_team_assignments(
                     db,
                     existing.id,
                     list(dict.fromkeys(logical_team_name(team) for team in _active_teams(db))),
                 )
-            elif existing.role == "Manager":
+            elif "accessible_teams" in updates or "accessible_team_levels" in updates:
                 _replace_team_assignments(
                     db,
                     existing.id,
