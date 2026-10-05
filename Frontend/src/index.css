@@ -395,6 +395,114 @@ select option {
 }
 
 /* ────────────────────────────────────────────────────────────── */
+/*  INSIGHTS OVERVIEW (redesign B, Figma 18:3)                     */
+/*  Section accents that the shared tokens cannot express. Score   */
+/*  colours still come from the --pms-grade-* palette only.        */
+/* ────────────────────────────────────────────────────────────── */
+:root {
+  --insights-card-border: #E2E8F0;
+  --insights-row-border: #EEF2F6;
+  --insights-track: #EEF2F6;
+  --insights-heading: #0B132B;
+  --insights-accent: #00A3E0;
+  --insights-accent-text: #0B6FA4;
+  --insights-accent-soft: #F0F9FE;
+  --insights-accent-border: #BFE3F5;
+  --insights-accent-tag: #E6F6FD;
+  --insights-accent-ring: rgba(0, 163, 224, 0.15);
+  --insights-summary-bg: #F8FBFE;
+  --insights-summary-border: #D9E7F2;
+  --insights-summary-shadow: 0 2px 8px rgba(11, 19, 43, 0.05);
+  --insights-chip-bg: #F8FAFC;
+  --insights-chip-text: #334155;
+  --insights-negative: #D92D20;
+  --insights-positive: #0E8749;
+  --insights-target: #F59E0B;
+  --insights-negative-panel-bg: #FEF5F4;
+  --insights-negative-panel-border: #F9D2CE;
+  --insights-negative-icon-bg: #FDE2DF;
+  --insights-negative-title: #B42318;
+  --insights-positive-panel-bg: #F1FAF5;
+  --insights-positive-panel-border: #C9EBD8;
+  --insights-positive-icon-bg: #D5F1E2;
+  --insights-positive-title: #0A6B3C;
+  --insights-positive-divider: #D8EFE2;
+  --insights-bar-track: #FFFFFF;
+  --insights-actions-bg: #FFFBEF;
+  --insights-actions-border: #F3E4BC;
+  --insights-action-tile-border: #EDE3C8;
+  --insights-action-tile-shadow: 0 1px 3px rgba(11, 19, 43, 0.04);
+  --insights-icon-summary: #00A3E0;
+  --insights-icon-drivers: #E5484D;
+  --insights-icon-geography: #00A3E0;
+  --insights-icon-teams: #1D6FE0;
+  --insights-icon-people: #F04438;
+  --insights-icon-actions: #F2B21B;
+  --insights-icon-more: #8B5CF6;
+  --insights-tile-focus-bg: #FEECEC;
+  --insights-tile-focus-icon: #D92D20;
+  --insights-tile-teams-bg: #E6F6FD;
+  --insights-tile-teams-icon: #0B6FA4;
+  --insights-tile-coach-bg: #E3F6EC;
+  --insights-tile-coach-icon: #0E8749;
+  --insights-acc-kpi-bg: #F1EBFE;
+  --insights-acc-role-bg: #E6F0FD;
+  --insights-acc-role-icon: #1D6FE0;
+  --insights-acc-weighted-bg: #FFF1E5;
+  --insights-acc-alerts-bg: #FEECEC;
+  --insights-acc-alerts-icon: #D92D20;
+  --insights-chevron: #94A3B8;
+}
+
+.dark {
+  --insights-card-border: rgba(255, 255, 255, 0.08);
+  --insights-row-border: rgba(255, 255, 255, 0.06);
+  --insights-track: rgba(255, 255, 255, 0.08);
+  --insights-heading: #F8FAFC;
+  --insights-accent: #38BDF8;
+  --insights-accent-text: #7DD3FC;
+  --insights-accent-soft: rgba(56, 189, 248, 0.10);
+  --insights-accent-border: rgba(56, 189, 248, 0.30);
+  --insights-accent-tag: rgba(56, 189, 248, 0.16);
+  --insights-accent-ring: rgba(56, 189, 248, 0.20);
+  --insights-summary-bg: #10203A;
+  --insights-summary-border: rgba(56, 189, 248, 0.16);
+  --insights-summary-shadow: 0 2px 8px rgba(0, 0, 0, 0.30);
+  --insights-chip-bg: rgba(255, 255, 255, 0.04);
+  --insights-chip-text: #CBD5E1;
+  --insights-negative: #F87171;
+  --insights-positive: #34D399;
+  --insights-target: #FBBF24;
+  --insights-negative-panel-bg: rgba(239, 68, 68, 0.08);
+  --insights-negative-panel-border: rgba(248, 113, 113, 0.25);
+  --insights-negative-icon-bg: rgba(239, 68, 68, 0.18);
+  --insights-negative-title: #FCA5A5;
+  --insights-positive-panel-bg: rgba(16, 185, 129, 0.08);
+  --insights-positive-panel-border: rgba(52, 211, 153, 0.25);
+  --insights-positive-icon-bg: rgba(16, 185, 129, 0.18);
+  --insights-positive-title: #6EE7B7;
+  --insights-positive-divider: rgba(52, 211, 153, 0.15);
+  --insights-bar-track: rgba(255, 255, 255, 0.08);
+  --insights-actions-bg: rgba(245, 158, 11, 0.06);
+  --insights-actions-border: rgba(251, 191, 36, 0.22);
+  --insights-action-tile-border: rgba(251, 191, 36, 0.16);
+  --insights-action-tile-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  --insights-tile-focus-bg: rgba(239, 68, 68, 0.16);
+  --insights-tile-focus-icon: #F87171;
+  --insights-tile-teams-bg: rgba(56, 189, 248, 0.16);
+  --insights-tile-teams-icon: #7DD3FC;
+  --insights-tile-coach-bg: rgba(16, 185, 129, 0.16);
+  --insights-tile-coach-icon: #34D399;
+  --insights-acc-kpi-bg: rgba(139, 92, 246, 0.18);
+  --insights-acc-role-bg: rgba(29, 111, 224, 0.20);
+  --insights-acc-role-icon: #93C5FD;
+  --insights-acc-weighted-bg: rgba(227, 108, 10, 0.18);
+  --insights-acc-alerts-bg: rgba(239, 68, 68, 0.16);
+  --insights-acc-alerts-icon: #F87171;
+  --insights-chevron: #64748B;
+}
+
+/* ────────────────────────────────────────────────────────────── */
 /*  SAUDI GERMAN HEALTH (SGH) BRAND UTILITIES                     */
 /* ────────────────────────────────────────────────────────────── */
 .sgh-gradient-text {
