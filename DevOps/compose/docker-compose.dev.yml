@@ -78,6 +78,12 @@ services:
       context: ../..
       dockerfile: DevOps/docker/Dockerfile.backend
     command: ["sh", "-c", "exec python worker.py"]
+    healthcheck:
+      test: ["CMD", "python", "-m", "scripts.worker_healthcheck"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
     environment:
       - APP_ENV=development
       - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD}@db:5432/PMS_Sys
