@@ -1,4 +1,5 @@
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Legend } from 'recharts';
+import { getGradeTone } from '../../constants/grades';
 
 interface ScoreTrendChartProps {
   data: Array<{ month: string; score: number; benchmarkScore?: number; isPeak?: boolean }>;
@@ -36,7 +37,7 @@ const CustomTooltip = ({ active, payload, label }: CustomTooltipProps) => {
         const score = entry.value;
         let color = entry.color;
         if (entry.dataKey === 'score') {
-          color = score >= 90 ? 'var(--color-exceeds)' : score >= 80 ? 'var(--color-meet)' : score >= 70 ? 'var(--color-average)' : 'var(--color-sip)';
+          color = getGradeTone(score).text;
         }
         
         return (

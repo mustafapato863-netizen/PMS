@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import { ArrowUpRight } from 'lucide-react';
 import type { PerformanceLevelFilter, TeamSummary } from '../../types';
+import { getGradeTone, gradeTokenVar, type GradeClass } from '../../constants/grades';
 
 interface TeamSummaryTableProps {
   teams: TeamSummary[];
@@ -8,10 +9,10 @@ interface TeamSummaryTableProps {
   performanceLevel: PerformanceLevelFilter;
 }
 
-const GradeCell = ({ count, total, colorClass }: { count: number; total: number; colorClass: string }) => (
+const GradeCell = ({ count, total, grade }: { count: number; total: number; grade: GradeClass }) => (
   <td className="px-3 py-3 text-center">
     <div className={`inline-flex flex-col items-center`}>
-      <span className={`text-sm font-bold ${colorClass}`}>{count}</span>
+      <span className="text-sm font-bold" style={{ color: gradeTokenVar(grade, 'text') }}>{count}</span>
       {total > 0 && (
         <span className="text-[10px] text-[var(--text-muted)] font-medium">
           {((count / total) * 100).toFixed(0)}%
@@ -28,12 +29,7 @@ const TeamSummaryTable = ({ teams, currentMonth, performanceLevel }: TeamSummary
     navigate(`/team/${teamId}?month=${encodeURIComponent(currentMonth)}&performance_level=${encodeURIComponent(performanceLevel)}`);
   };
 
-  const getScoreColor = (score: number) => {
-    if (score >= 90) return 'text-emerald-700 dark:text-emerald-400';
-    if (score >= 80) return 'text-blue-600 dark:text-blue-400';
-    if (score >= 70) return 'text-amber-600 dark:text-amber-400';
-    return 'text-red-600 dark:text-red-400';
-  };
+  const getScoreColor = (score: number) => getGradeTone(score).text;
 
   return (
     <div className="w-full overflow-x-auto">
@@ -43,11 +39,11 @@ const TeamSummaryTable = ({ teams, currentMonth, performanceLevel }: TeamSummary
             <th className="px-4 py-3 text-left text-xs font-bold text-[var(--text-muted)] uppercase tracking-wider">Team</th>
             <th className="px-3 py-3 text-center text-xs font-bold text-[var(--text-muted)] uppercase tracking-wider">Agents</th>
             <th className="px-3 py-3 text-center text-xs font-bold text-[var(--text-muted)] uppercase tracking-wider">Avg Score</th>
-            <th className="px-3 py-3 text-center text-xs font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wider">A</th>
-            <th className="px-3 py-3 text-center text-xs font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wider">B</th>
-            <th className="px-3 py-3 text-center text-xs font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider">C</th>
-            <th className="px-3 py-3 text-center text-xs font-bold text-orange-500 dark:text-orange-400 uppercase tracking-wider">D</th>
-            <th className="px-3 py-3 text-center text-xs font-bold text-red-500 dark:text-red-400 uppercase tracking-wider">E</th>
+            <th className="px-3 py-3 text-center text-xs font-bold uppercase tracking-wider" style={{ color: gradeTokenVar('A', 'text') }}>A</th>
+            <th className="px-3 py-3 text-center text-xs font-bold uppercase tracking-wider" style={{ color: gradeTokenVar('B', 'text') }}>B</th>
+            <th className="px-3 py-3 text-center text-xs font-bold uppercase tracking-wider" style={{ color: gradeTokenVar('C', 'text') }}>C</th>
+            <th className="px-3 py-3 text-center text-xs font-bold uppercase tracking-wider" style={{ color: gradeTokenVar('D', 'text') }}>D</th>
+            <th className="px-3 py-3 text-center text-xs font-bold uppercase tracking-wider" style={{ color: gradeTokenVar('E', 'text') }}>E</th>
             <th className="px-3 py-3 text-center text-xs font-bold text-[var(--text-muted)] uppercase tracking-wider"></th>
           </tr>
         </thead>
@@ -79,15 +75,15 @@ const TeamSummaryTable = ({ teams, currentMonth, performanceLevel }: TeamSummary
                   <span className="text-sm font-bold text-[var(--text-secondary)]">{team.agentCount}</span>
                 </td>
                 <td className="px-3 py-3 text-center">
-                  <span className={`text-sm font-extrabold ${getScoreColor(team.avgScore)}`}>
+                  <span className="text-sm font-extrabold" style={{ color: getScoreColor(team.avgScore) }}>
                     {team.avgScore.toFixed(1)}%
                   </span>
                 </td>
-                <GradeCell count={team.classA} total={team.agentCount} colorClass="text-emerald-700 dark:text-emerald-400" />
-                <GradeCell count={team.classB} total={team.agentCount} colorClass="text-blue-600 dark:text-blue-400" />
-                <GradeCell count={team.classC} total={team.agentCount} colorClass="text-amber-600 dark:text-amber-400" />
-                <GradeCell count={team.classD} total={team.agentCount} colorClass="text-orange-500 dark:text-orange-400" />
-                <GradeCell count={team.classE} total={team.agentCount} colorClass="text-red-500 dark:text-red-400" />
+                <GradeCell count={team.classA} total={team.agentCount} grade="A" />
+                <GradeCell count={team.classB} total={team.agentCount} grade="B" />
+                <GradeCell count={team.classC} total={team.agentCount} grade="C" />
+                <GradeCell count={team.classD} total={team.agentCount} grade="D" />
+                <GradeCell count={team.classE} total={team.agentCount} grade="E" />
                 <td className="px-3 py-3 text-center">
                   <ArrowUpRight size={14} className="text-[var(--text-faint)] group-hover:text-blue-500 transition-colors" />
                 </td>

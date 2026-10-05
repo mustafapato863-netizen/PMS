@@ -6,7 +6,7 @@
  * rank, stability, and archetype.
  */
 import { TrendingUp, TrendingDown, Minus, Trophy, Activity, Sparkles } from 'lucide-react';
-import { GRADE_PALETTE, type GradeClass } from '../../constants/grades';
+import { GRADE_PALETTE, gradeTokenVar, type GradeClass } from '../../constants/grades';
 import type { StabilityCategory, PerformanceArchetype } from '../../services/employeeAnalytics';
 
 export interface EmployeeHeroStatsProps {
@@ -55,13 +55,13 @@ export function EmployeeHeroStats({
       <div
         className="flex items-center gap-3 rounded-2xl border p-4"
         style={{
-          borderColor: palette.border,
-          backgroundColor: palette.background,
+          borderColor: gradeTokenVar(grade, 'border'),
+          backgroundColor: gradeTokenVar(grade, 'badge-bg'),
         }}
       >
         <span
           className="grid h-11 w-11 shrink-0 place-items-center rounded-xl text-lg font-black"
-          style={{ color: palette.text, backgroundColor: `${palette.text}15` }}
+          style={{ color: gradeTokenVar(grade, 'solid-text'), backgroundColor: gradeTokenVar(grade, 'solid') }}
         >
           {grade}
         </span>
@@ -71,7 +71,7 @@ export function EmployeeHeroStats({
           </p>
           <p
             className="truncate text-sm font-extrabold"
-            style={{ color: palette.text }}
+            style={{ color: gradeTokenVar(grade, 'text') }}
           >
             {palette.label}
           </p>

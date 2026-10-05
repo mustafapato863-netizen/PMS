@@ -56,11 +56,11 @@ const MONTH_NUMBER: Record<string, number> = {
 };
 
 const GRADE_PIE_COLORS = {
-  A: GRADE_PALETTE.A.text,
-  B: GRADE_PALETTE.B.text,
-  C: GRADE_PALETTE.C.text,
-  D: GRADE_PALETTE.D.text,
-  E: GRADE_PALETTE.E.text,
+  A: GRADE_PALETTE.A.gauge,
+  B: GRADE_PALETTE.B.gauge,
+  C: GRADE_PALETTE.C.gauge,
+  D: GRADE_PALETTE.D.gauge,
+  E: GRADE_PALETTE.E.gauge,
 };
 
 const getActionTypeIcon = (type: string) => {

@@ -10,6 +10,7 @@ import {
 import type { TeamKpiAnalysis } from '../../features/team/teamKpiAnalysis';
 import type { TeamAgentRow } from '../../hooks/usePerformanceData';
 import { CALL_CENTER_CHANNEL_LABELS, callCenterChannelForTeam, type CallCenterChannelFilter } from '../../types';
+import { GRADE_PALETTE, getGradeClassOrNull } from '../../constants/grades';
 
 type CallCenterChannel = Exclude<CallCenterChannelFilter, 'all'>;
 
@@ -52,22 +53,16 @@ type ChannelSnapshot = {
   score: number | null;
 };
 
+// Channel score signal follows the employee A–E grade palette (global `.grade-A` … `.grade-E`).
 const getSignal = (score: number | null) => {
-  if (score === null) return {
+  const grade = getGradeClassOrNull(score);
+  if (!grade) return {
     label: 'No data',
     tone: 'border-[var(--border-light)] bg-[var(--bg-sunken)] text-[var(--text-muted)]',
   };
-  if (score >= 90) return {
-    label: 'Strong',
-    tone: 'border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
-  };
-  if (score >= 80) return {
-    label: 'On track',
-    tone: 'border-blue-500/20 bg-blue-500/10 text-blue-700 dark:text-blue-300',
-  };
   return {
-    label: 'Needs attention',
-    tone: 'border-rose-500/20 bg-rose-500/10 text-rose-700 dark:text-rose-300',
+    label: GRADE_PALETTE[grade].label,
+    tone: `grade-${grade}`,
   };
 };
 

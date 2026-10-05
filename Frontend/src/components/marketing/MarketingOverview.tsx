@@ -96,7 +96,7 @@ const MarketingOverview = ({
     name: `Grade ${grade}`,
     grade,
     value,
-    color: GRADE_PALETTE[grade as keyof typeof GRADE_PALETTE].text,
+    color: GRADE_PALETTE[grade as keyof typeof GRADE_PALETTE].gauge,
   }));
   const gradeTotal = gradeData.reduce((total, item) => total + item.value, 0);
   const performanceData = visiblePositions
