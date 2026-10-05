@@ -160,7 +160,7 @@ def _scope(user: User, team_name: str, role: str | None = None) -> dict:
         "accessible_teams": [team_name],
         "accessible_team_levels": [(team_name, "Employee")],
         "legacy_unscoped": False,
-        "is_general_manager": chosen == "Admin",
+        "has_unrestricted_team_access": chosen == "Admin",
     }
 
 

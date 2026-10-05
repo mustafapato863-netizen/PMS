@@ -653,7 +653,7 @@ def get_by_status(
 def get_planning_categories(
     month: str = Query(...),
     performance_level: str = Query(None),
-    role: str = Depends(require_role(["Admin", "Manager", "Executive"]))
+    role: str = Depends(require_role(["Admin", "General Manager", "Manager", "Executive"]))
 ):
     try:
         categories = planning_service.classify_all(month, _level_filter(performance_level))
@@ -674,7 +674,7 @@ def get_planning_categories(
 def get_insights(
     month: str = Query(...),
     performance_level: str = Query(None),
-    role: str = Depends(require_role(["Admin", "Manager", "Executive"]))
+    role: str = Depends(require_role(["Admin", "General Manager", "Manager", "Executive"]))
 ):
     try:
         insights = insights_service.generate_insights(month, _level_filter(performance_level))
@@ -702,7 +702,7 @@ def export_report(
     channel: str | None = Query(None),
     domain: str | None = Query(None),
     group: str | None = Query(None),
-    role: str = Depends(require_role(["Admin", "Manager"]))
+    role: str = Depends(require_role(["Admin", "General Manager", "Manager"]))
 ):
     try:
         scope = get_current_user_scope(db, request)

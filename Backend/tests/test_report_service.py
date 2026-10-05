@@ -97,7 +97,7 @@ def _admin_scope(user: User) -> dict:
         "employee_id": user.employee_id,
         "accessible_teams": [],
         "accessible_team_levels": [],
-        "is_general_manager": True,
+        "has_unrestricted_team_access": True,
         "legacy_unscoped": False,
     }
 
@@ -129,7 +129,7 @@ def test_options_are_restricted_to_manager_team_and_level(db):
         "role": "Manager",
         "accessible_teams": ["Marketing"],
         "accessible_team_levels": [("Marketing", "Managerial")],
-        "is_general_manager": False,
+        "has_unrestricted_team_access": False,
         "legacy_unscoped": False,
     }
 
@@ -675,7 +675,7 @@ def test_generate_rejects_team_outside_scope(db):
     service = ReportService(session, StubRecordService([_record("EMP1", "Marketing", "Employee")]))
     scope = _admin_scope(user) | {
         "role": "Manager",
-        "is_general_manager": False,
+        "has_unrestricted_team_access": False,
         "accessible_teams": ["Sales"],
     }
 

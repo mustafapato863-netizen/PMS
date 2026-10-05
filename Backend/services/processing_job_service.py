@@ -51,7 +51,7 @@ def scope_snapshot(scope: dict[str, Any]) -> dict[str, Any]:
         "employee_id",
         "accessible_teams",
         "accessible_team_levels",
-        "is_general_manager",
+        "has_unrestricted_team_access",
         "is_self_only",
         "active_team_names",
         "legacy_unscoped",

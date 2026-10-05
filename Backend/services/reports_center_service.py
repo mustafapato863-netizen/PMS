@@ -33,7 +33,7 @@ class ReportsCenterService:
     """
 
     _AGGREGATE_ROLES = {"Executive", "Viewer"}
-    _PEOPLE_ROLES = {"Admin", "Manager"}
+    _PEOPLE_ROLES = {"Admin", "General Manager", "Manager"}
 
     def __init__(self, db: Session, scope: dict[str, Any]):
         self.db = db
@@ -64,7 +64,7 @@ class ReportsCenterService:
         return {
             **self.scope,
             "role": "Admin",
-            "is_general_manager": True,
+            "has_unrestricted_team_access": True,
             "is_self_only": False,
             "accessible_teams": list(self.scope.get("active_team_names") or self.scope.get("accessible_teams") or []),
             "accessible_team_levels": [],
@@ -391,7 +391,7 @@ class ReportsCenterService:
         if actions is None:
             actions = (
                 CorrectiveActionService(self.db).list_all()
-                if self.role == "Admin"
+                if self.role in {"Admin", "General Manager"}
                 else CorrectiveActionService(self.db).list_scoped(self.scope)
             )
             if period:

@@ -75,7 +75,7 @@ def _scope():
         "employee_id": None,
         "accessible_teams": ["Inbound"],
         "accessible_team_levels": [("Inbound", "Employee")],
-        "is_general_manager": False,
+        "has_unrestricted_team_access": False,
         "is_self_only": False,
         "legacy_unscoped": False,
     }

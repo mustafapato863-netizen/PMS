@@ -62,7 +62,11 @@ def _user_to_public_dict(db: Session, user: User) -> dict:
         "accessible_teams": accessible_teams,
         "accessible_team_levels": accessible_team_levels,
         "accessible_team_count": len(accessible_teams),
-        "is_general_manager": user.role == "Manager" and len(accessible_teams) > 0,
+        # Renamed from is_general_manager. True for Admin, General Manager role,
+        # or Manager with unrestricted all-teams assignments.
+        "has_unrestricted_team_access": user.role in {"Admin", "General Manager"} or (
+            user.role == "Manager" and len(accessible_teams) > 0
+        ),
     }
 
 
@@ -249,8 +253,16 @@ async def create_user(
         )
         db.add(new_user)
         db.commit()
-        if new_user.role == "Manager":
-            if payload.is_general_manager:
+        if new_user.role == "General Manager":
+            # GM always gets unrestricted access to all active teams.
+            _replace_team_assignments(
+                db,
+                new_user.id,
+                list(dict.fromkeys(logical_team_name(team) for team in _active_teams(db))),
+            )
+            db.commit()
+        elif new_user.role == "Manager":
+            if payload.has_unrestricted_team_access:
                 _replace_team_assignments(
                     db,
                     new_user.id,
@@ -342,8 +354,15 @@ async def update_user_route(
             from services.auth_service import AuthenticationService
             AuthenticationService.revoke_all_sessions(db, str(existing.id), reason="admin_password_changed")
 
-        if "accessible_teams" in updates or "accessible_team_levels" in updates or "is_general_manager" in updates:
-            if updates.get("is_general_manager") and existing.role == "Manager":
+        if existing.role == "General Manager":
+            # Keep GM assigned to all active teams whenever role is GM.
+            _replace_team_assignments(
+                db,
+                existing.id,
+                list(dict.fromkeys(logical_team_name(team) for team in _active_teams(db))),
+            )
+        elif "accessible_teams" in updates or "accessible_team_levels" in updates or "has_unrestricted_team_access" in updates:
+            if updates.get("has_unrestricted_team_access") and existing.role == "Manager":
                 _replace_team_assignments(
                     db,
                     existing.id,
@@ -526,7 +545,7 @@ actions_router = APIRouter()
 async def get_all_corrective_actions(
     request: Request,
     db: Session = Depends(get_db),
-    role: str = Depends(require_role(["Admin", "Manager", "Executive"]))
+    role: str = Depends(require_role(["Admin", "General Manager", "Manager", "Executive"]))
 ):
     try:
         actions = CorrectiveActionService(db).list_scoped(get_current_user_scope(db, request))
@@ -566,7 +585,7 @@ async def get_action_follow_up(
     owner: str | None = Query(default=None),
     month: str | None = Query(default=None),
     db: Session = Depends(get_db),
-    role: str = Depends(require_role(["Admin", "Manager", "Executive"])),
+    role: str = Depends(require_role(["Admin", "General Manager", "Manager", "Executive"])),
 ):
     try:
         data = CorrectiveActionService(db).list_follow_up(
@@ -587,7 +606,7 @@ async def get_action_follow_up(
 async def get_action_owners(
     request: Request,
     db: Session = Depends(get_db),
-    role: str = Depends(require_role(["Admin", "Manager", "Executive"])),
+    role: str = Depends(require_role(["Admin", "General Manager", "Manager", "Executive"])),
 ):
     try:
         owners = CorrectiveActionService(db).list_owners(get_current_user_scope(db, request))
@@ -602,7 +621,7 @@ async def update_corrective_action_status(
     payload: ActionStatusUpdate,
     request: Request,
     db: Session = Depends(get_db),
-    role: str = Depends(require_role(["Admin", "Manager", "Executive", "Viewer", "Agent"])),
+    role: str = Depends(require_role(["Admin", "General Manager", "Manager", "Executive", "Viewer", "Agent"])),
 ):
     try:
         current_user = getattr(request.state, "user", None) or {}

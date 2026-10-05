@@ -155,7 +155,7 @@ class UserRecord(BaseModel):
     is_active: bool = True
     accessible_teams: Optional[List[str]] = None
     accessible_team_levels: Optional[List[tuple[str, str]]] = None
-    is_general_manager: bool = False
+    has_unrestricted_team_access: bool = False
 
 class UserUpdateRecord(BaseModel):
     id: str
@@ -167,7 +167,7 @@ class UserUpdateRecord(BaseModel):
     new_password: Optional[str] = None
     accessible_teams: Optional[List[str]] = None
     accessible_team_levels: Optional[List[tuple[str, str]]] = None
-    is_general_manager: bool = False
+    has_unrestricted_team_access: bool = False
 
 class LoginPayload(BaseModel):
     username: str

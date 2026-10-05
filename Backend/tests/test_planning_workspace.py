@@ -45,7 +45,7 @@ def workspace():
     team = Team(id=uuid.uuid4(), name="Marketing", db_name="marketing", display_name="Marketing", region="EGY", team_level="employee", is_active=True)
     user = User(id=uuid.uuid4(), username="manager", email="manager@example.com", password_hash="x", role="Manager", is_active=True)
     db.add_all([team, user]); db.commit()
-    scope = {"user_id": str(user.id), "role": "Admin", "is_general_manager": True, "legacy_unscoped": False, "accessible_teams": ["Marketing"], "accessible_team_levels": [("Marketing", "Employee")]}
+    scope = {"user_id": str(user.id), "role": "Admin", "has_unrestricted_team_access": True, "legacy_unscoped": False, "accessible_teams": ["Marketing"], "accessible_team_levels": [("Marketing", "Employee")]}
     yield db, user, scope
     db.close()
 

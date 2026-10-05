@@ -51,7 +51,7 @@ def _service(records):
 def _scope():
     return {
         "role": "Admin",
-        "is_general_manager": True,
+        "has_unrestricted_team_access": True,
         "legacy_unscoped": False,
         "accessible_teams": [],
         "accessible_team_levels": [],
@@ -491,7 +491,7 @@ def test_selected_team_outside_scope_is_rejected():
     service = _service([_record("June", 80, 55, 60, .08)])
     manager_scope = _scope() | {
         "role": "Manager",
-        "is_general_manager": False,
+        "has_unrestricted_team_access": False,
         "accessible_teams": ["Sales"],
     }
 

@@ -72,7 +72,7 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
             return query
 
         role = str(scope.get("role") or "")
-        if role in {"Admin", "Viewer"} or scope.get("is_general_manager"):
+        if role in {"Admin", "General Manager", "Viewer"} or scope.get("has_unrestricted_team_access"):
             return query
 
         if role in {"Agent", "Executive"}:

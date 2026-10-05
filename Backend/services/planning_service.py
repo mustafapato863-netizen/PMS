@@ -230,7 +230,7 @@ class PlanningService:
         return reasons
 
     def _can_access(self, plan: PerformancePlan, scope: dict) -> bool:
-        if scope.get("role") == "Admin" or scope.get("is_general_manager"):
+        if scope.get("role") in {"Admin", "General Manager"} or scope.get("has_unrestricted_team_access"):
             return True
         team = logical_team_name(plan.team)
         if scope.get("role") == "Manager":
@@ -250,7 +250,7 @@ class PlanningService:
             if not employee or employee.team_id != team.id:
                 raise PlanningValidationError("The selected employee does not belong to the plan team scope")
         owner = self.db.query(User).filter(User.id == payload.owner_user_id, User.is_active.is_(True)).first()
-        if not owner or owner.role not in {"Admin", "Manager"}:
+        if not owner or owner.role not in {"Admin", "General Manager", "Manager"}:
             raise PlanningValidationError("Plan owner is not an active planning owner")
         if not self._owner_allowed(owner, scope, payload.team):
             raise PlanningAccessError("The selected plan owner is outside your authorized team scope")
@@ -259,7 +259,7 @@ class PlanningService:
         return team, employee, owner
 
     def _owner_allowed(self, owner: User, scope: dict, team_name: str | None = None) -> bool:
-        if scope.get("role") == "Admin" or scope.get("is_general_manager"):
+        if scope.get("role") in {"Admin", "General Manager"} or scope.get("has_unrestricted_team_access"):
             return True
         if str(owner.id) == str(scope.get("user_id")):
             return True
@@ -291,7 +291,7 @@ class PlanningService:
         records = filter_records_by_team_levels(records, scope)
         value = lambda record, key: record.get(key) if isinstance(record, dict) else getattr(record, key, None)
         teams = sorted({str(value(record, "team")) for record in records if value(record, "team")})
-        users = self.db.query(User).filter(User.is_active.is_(True), User.role.in_(["Admin", "Manager"])).order_by(User.username).all()
+        users = self.db.query(User).filter(User.is_active.is_(True), User.role.in_(["Admin", "General Manager", "Manager"])).order_by(User.username).all()
         users = [user for user in users if self._owner_allowed(user, scope)]
         employees = {
             str(value(record, "employee_id")): {
@@ -310,7 +310,7 @@ class PlanningService:
             "employees": sorted(employees.values(), key=lambda item: item["name"]),
             "owners": [{"id": str(user.id), "name": user.username, "role": user.role} for user in users],
             "statuses": ["Draft", "In Progress", "At Risk", "Completed", "Archived"],
-            "can_edit": scope.get("role") in {"Admin", "Manager"},
+            "can_edit": scope.get("role") in {"Admin", "General Manager", "Manager"},
         }
 
     def create(self, payload: PlanCreate, scope: dict) -> PerformancePlan:
@@ -406,12 +406,12 @@ class PlanningService:
 
     def update(self, plan_id: str, payload: PlanUpdate, scope: dict) -> dict[str, Any]:
         data = self.get(plan_id, scope); plan = self.plans.get(uuid.UUID(plan_id))
-        if scope.get("role") not in {"Admin", "Manager"}: raise PlanningAccessError("Plan editing is not permitted")
+        if scope.get("role") not in {"Admin", "General Manager", "Manager"}: raise PlanningAccessError("Plan editing is not permitted")
         try:
             values = payload.model_dump(exclude_none=True)
             if "owner_user_id" in values:
                 owner = self.db.query(User).filter(User.id == values["owner_user_id"], User.is_active.is_(True)).first()
-                if not owner or owner.role not in {"Admin", "Manager"}:
+                if not owner or owner.role not in {"Admin", "General Manager", "Manager"}:
                     raise PlanningValidationError("Plan owner is not an active planning owner")
                 if not self._owner_allowed(owner, scope, logical_team_name(plan.team)):
                     raise PlanningAccessError("The selected plan owner is outside your authorized team scope")
@@ -433,7 +433,7 @@ class PlanningService:
 
     def delete(self, plan_id: str, scope: dict) -> dict[str, str]:
         self.get(plan_id, scope)
-        if scope.get("role") not in {"Admin", "Manager"}:
+        if scope.get("role") not in {"Admin", "General Manager", "Manager"}:
             raise PlanningAccessError("Plan deletion is not permitted")
         plan = self.plans.get(uuid.UUID(plan_id))
         result = {"id": str(plan.id), "name": plan.name}
@@ -450,13 +450,13 @@ class PlanningService:
 
     def _editable_plan(self, plan_id: str, scope: dict) -> PerformancePlan:
         self.get(plan_id, scope)
-        if scope.get("role") not in {"Admin", "Manager"}:
+        if scope.get("role") not in {"Admin", "General Manager", "Manager"}:
             raise PlanningAccessError("Plan editing is not permitted")
         return self.plans.get(uuid.UUID(plan_id))
 
     def _validate_milestone_owner(self, owner_user_id, plan: PerformancePlan, scope: dict) -> User:
         owner = self.db.query(User).filter(User.id == owner_user_id, User.is_active.is_(True)).first()
-        if not owner or owner.role not in {"Admin", "Manager"}:
+        if not owner or owner.role not in {"Admin", "General Manager", "Manager"}:
             raise PlanningValidationError("Milestone owner is not an active planning owner")
         if not self._owner_allowed(owner, scope, logical_team_name(plan.team)):
             raise PlanningAccessError("The milestone owner is outside your authorized team scope")
@@ -556,7 +556,7 @@ class PlanningService:
                 scope,
             )
         self.get(plan_id, scope)
-        if scope.get("role") not in {"Admin", "Manager"}: raise PlanningAccessError("Plan editing is not permitted")
+        if scope.get("role") not in {"Admin", "General Manager", "Manager"}: raise PlanningAccessError("Plan editing is not permitted")
         item = self.plans.get_item(kind, uuid.UUID(item_id))
         if not item or str(getattr(item, "plan_id", "")) != plan_id: raise PlanningNotFoundError("Plan item not found")
         allowed = {"objective": {"status", "current_value"}, "kpi": {"current_value"}, "action": {"status", "completion_note"}, "milestone": {"status", "note"}}[kind]
@@ -567,6 +567,6 @@ class PlanningService:
 
     def add_note(self, plan_id: str, payload: PlanNoteCreate, scope: dict) -> dict[str, Any]:
         self.get(plan_id, scope)
-        if scope.get("role") not in {"Admin", "Manager"}: raise PlanningAccessError("Adding plan notes is not permitted")
+        if scope.get("role") not in {"Admin", "General Manager", "Manager"}: raise PlanningAccessError("Adding plan notes is not permitted")
         self.db.add(PlanNote(plan_id=uuid.UUID(plan_id), author_user_id=uuid.UUID(scope["user_id"]), **payload.model_dump())); self.db.commit()
         return self.get(plan_id, scope)

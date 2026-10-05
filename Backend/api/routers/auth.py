@@ -263,7 +263,8 @@ async def me(request: Request, db: Session = Depends(get_db)):
             for assignment, team in assignments
             if assignment.performance_level is None
         }
-        is_general_manager = user.role == "Admin" or (
+        # Renamed from is_general_manager — see Frontend contract.
+        has_unrestricted_team_access = user.role in {"Admin", "General Manager"} or (
             user.role == "Manager" and active_team_count > 0 and len(unrestricted_teams) >= active_team_count
         )
 
@@ -280,7 +281,7 @@ async def me(request: Request, db: Session = Depends(get_db)):
                 "accessible_team_levels": accessible_team_levels,
                 "accessible_team_count": len(accessible_teams),
                 "total_team_count": active_team_count,
-                "is_general_manager": is_general_manager,
+                "has_unrestricted_team_access": has_unrestricted_team_access,
                 "is_self_only": user.role == "Agent",
             },
         )

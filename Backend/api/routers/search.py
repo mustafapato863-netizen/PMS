@@ -25,7 +25,7 @@ def global_search(
     query = q.strip().lower()
     role = scope.get("role")
 
-    if role in {"Admin", "Executive"} or scope.get("is_general_manager"):
+    if role in {"Admin", "General Manager", "Executive"} or scope.get("has_unrestricted_team_access"):
         allowed_teams = list(dict.fromkeys(scope.get("active_team_names", [])))
     elif role == "Manager":
         allowed_teams = list(dict.fromkeys(scope.get("accessible_teams", [])))
@@ -44,7 +44,7 @@ def global_search(
     employees = []
     if query:
         all_employees = EmployeeDirectoryService(db).list(name=query)
-        if role in {"Admin", "Manager", "Executive"}:
+        if role in {"Admin", "General Manager", "Manager", "Executive"}:
             visible = [
                 employee for employee in all_employees
                 if employee["status"] == "Active" and employee["team"] in allowed_teams

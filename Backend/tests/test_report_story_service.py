@@ -72,7 +72,7 @@ def story_db():
 
 def scope(user):
     return {"user": user, "user_id": str(user.id), "username": user.username, "role": "Admin", "accessible_teams": [],
-            "accessible_team_levels": [], "is_general_manager": True, "legacy_unscoped": False}
+            "accessible_team_levels": [], "has_unrestricted_team_access": True, "legacy_unscoped": False}
 
 
 def service(session, records):
@@ -203,7 +203,7 @@ def test_management_blocks_respect_action_permission_without_hiding_performance_
     session, user = story_db
     records = [record("A", "Inbound", month, score) for month, score in [("April", 60), ("May", 59), ("June", 58)]]
     result = service(session, records)
-    viewer_scope = scope(user) | {"role": "Viewer", "accessible_teams": ["Inbound"], "is_general_manager": False}
+    viewer_scope = scope(user) | {"role": "Viewer", "accessible_teams": ["Inbound"], "has_unrestricted_team_access": False}
     template = next(item for item in result.list_templates(viewer_scope) if item["template_key"] == "offshore_monthly_performance_review")
     payload = draft_payload(template["id"], "Permission Scoped Story")
     payload.scope = ReportScope(team="Inbound")
@@ -366,7 +366,7 @@ def test_scope_authorization_is_revalidated_on_draft_creation(story_db):
     session, user = story_db
     result = service(session, [record("A", "Outbound", "June", 70)])
     template = next(item for item in result.list_templates(scope(user)) if item["template_key"] == "team_performance_review")
-    manager_scope = scope(user) | {"role": "Manager", "accessible_teams": ["Inbound"], "is_general_manager": False}
+    manager_scope = scope(user) | {"role": "Manager", "accessible_teams": ["Inbound"], "has_unrestricted_team_access": False}
     payload = draft_payload(template["id"], "Unauthorized Review")
     payload.scope = ReportScope(team="Outbound")
     with pytest.raises(StoryAccessError):

@@ -289,7 +289,7 @@ class ReportService:
         return {
             **scope,
             "role": "Admin",
-            "is_general_manager": True,
+            "has_unrestricted_team_access": True,
             "is_self_only": False,
             "accessible_teams": list(scope.get("active_team_names") or scope.get("accessible_teams") or []),
             "accessible_team_levels": [],
@@ -350,9 +350,9 @@ class ReportService:
         # Aggregate-capable roles need an explicit way to request the full
         # team scope even when the current snapshot has rows for only one
         # level. Managers keep only levels present in their authorized rows.
-        if role in {"Admin", "Executive", "Viewer"} or scope.get("is_general_manager"):
+        if role in {"Admin", "General Manager", "Executive", "Viewer"} or scope.get("has_unrestricted_team_access"):
             performance_levels.update(PERFORMANCE_LEVELS)
-        can_view_people = role in {"Admin", "Manager"}
+        can_view_people = role in {"Admin", "General Manager", "Manager"}
         can_view_actions = role == "Admin" or "view_actions" in PERMISSION_MATRIX.get(role, [])
         can_export = "export_data" in PERMISSION_MATRIX.get(role, [])
         return {
@@ -388,7 +388,7 @@ class ReportService:
     def _validate_scope(self, configuration: ReportConfiguration, scope: dict) -> None:
         original_role = str(scope.get("report_role") or scope.get("role") or "Viewer")
         effective_scope = self._effective_scope(scope)
-        if configuration.employee_id and original_role not in {"Admin", "Manager"}:
+        if configuration.employee_id and original_role not in {"Admin", "General Manager", "Manager"}:
             raise ReportAccessError("This role can only view aggregate reporting data")
         if configuration.report_type == "corrective_actions" and original_role != "Admin" and "view_actions" not in PERMISSION_MATRIX.get(original_role, []):
             raise ReportAccessError("This role cannot view corrective-action details")
@@ -556,7 +556,7 @@ class ReportService:
 
             if scope.get("role") in {"Agent", "Executive"} and employee_identifier != str(scope.get("employee_id") or ""):
                 continue
-            if scope.get("role") == "Manager" and not scope.get("is_general_manager") and not user_can_access_team(scope, team_name):
+            if scope.get("role") == "Manager" and not scope.get("has_unrestricted_team_access") and not user_can_access_team(scope, team_name):
                 continue
 
             # `status` in the Reports Center is the performance status.  Do
@@ -653,7 +653,7 @@ class ReportService:
                 continue
             if configuration.performance_level and str(getattr(employee, "performance_level", "") or "").casefold() != configuration.performance_level.casefold():
                 continue
-            if scope.get("role") == "Manager" and not scope.get("is_general_manager") and not user_can_access_team(scope, team_name):
+            if scope.get("role") == "Manager" and not scope.get("has_unrestricted_team_access") and not user_can_access_team(scope, team_name):
                 continue
 
             if configuration.grade and not any(
@@ -1311,7 +1311,7 @@ class ReportService:
                     continue
             if scope.get("role") in {"Agent", "Executive"} and employee_identifier != str(scope.get("employee_id") or ""):
                 continue
-            if scope.get("role") == "Manager" and not scope.get("is_general_manager") and not user_can_access_team(scope, team_name):
+            if scope.get("role") == "Manager" and not scope.get("has_unrestricted_team_access") and not user_can_access_team(scope, team_name):
                 continue
             filtered.append(action)
         if not filtered:
@@ -1848,7 +1848,7 @@ class ReportService:
             "table_preview": data.rows[:5],
             "preview_redacted": self._is_aggregate_scope(scope),
             "capabilities": {
-                "can_view_people": str(scope.get("role") or "") in {"Admin", "Manager"},
+                "can_view_people": str(scope.get("role") or "") in {"Admin", "General Manager", "Manager"},
                 "can_view_actions": (
                     str(scope.get("role") or "Viewer") == "Admin"
                     or "view_actions" in PERMISSION_MATRIX.get(str(scope.get("role") or "Viewer"), [])
@@ -2053,7 +2053,7 @@ class ReportService:
         search: str | None = None,
     ) -> dict[str, Any]:
         user_id = _safe_uuid(scope.get("user_id"))
-        owner = user_id if mine or scope.get("role") != "Admin" else None
+        owner = user_id if mine or scope.get("role") not in {"Admin", "General Manager"} else None
         rows, total = self.reports.list_generated(
             owner_user_id=owner,
             offset=(page - 1) * page_size,
@@ -2073,7 +2073,7 @@ class ReportService:
         report = self.reports.get_generated(parsed_id)
         if not report:
             raise ReportNotFoundError("Report was not found")
-        if scope.get("role") != "Admin" and str(report.created_by_user_id) != str(scope.get("user_id")):
+        if scope.get("role") not in {"Admin", "General Manager"} and str(report.created_by_user_id) != str(scope.get("user_id")):
             raise ReportAccessError("This report belongs to another user")
         return report
 

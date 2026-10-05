@@ -19,6 +19,19 @@ PERMISSION_MATRIX = {
         "manage_batch_operations", "configure_kpi",
         "manage_alerts", "view_system_metrics", "view_plans", "manage_plans"
     ],
+    # General Manager: Admin operational set minus Settings-admin powers
+    # (manage_users, manage_permissions, restore_data, view_system_metrics).
+    # Includes team-management perms for /team-management.
+    "General Manager": [
+        "create_team", "delete_team", "edit_team_config",
+        "upload_data", "edit_performance", "delete_performance",
+        "view_reports", "export_data",
+        "view_audit_logs",
+        "manage_batch_operations", "configure_kpi",
+        "manage_alerts", "view_plans", "manage_plans",
+        "manage_team_members", "view_actions", "create_actions", "manage_team_kpi",
+        "view_aggregated_analytics",
+    ],
     "Manager": [
         "upload_data", "edit_performance", "view_reports",
         "export_data", "manage_team_members", "view_actions",
