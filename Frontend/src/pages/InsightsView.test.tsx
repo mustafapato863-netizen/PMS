@@ -3,8 +3,11 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import InsightsView from './InsightsView';
+import { insightsWorkspaceUrl } from '../hooks/api/useInsightsWorkspace';
+import type { InsightFilters } from '../features/insights/types';
 
 const query = vi.hoisted(() => ({ refetch: vi.fn() }));
+const latestFilters = vi.hoisted(() => ({ current: {} as InsightFilters }));
 const actionMocks = vi.hoisted(() => ({
   getActionsForEmployee: vi.fn(() => []),
   refreshPerformanceData: vi.fn(),
@@ -79,8 +82,13 @@ const extraAnalyses = Array.from({ length: 10 }, (_, index) => ({
   planning_context: { source_insight_id: `extra-${index + 1}`, team: index % 2 === 0 ? 'Inbound' : 'Outbound', kpi_key: 'cpl' },
 }));
 
-vi.mock('../hooks/api/useInsightsWorkspace', () => ({
-  useInsightsWorkspace: () => ({
+vi.mock('../hooks/api/useInsightsWorkspace', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../hooks/api/useInsightsWorkspace')>();
+  return {
+  ...actual,
+  useInsightsWorkspace: (filters: InsightFilters) => {
+    latestFilters.current = filters;
+    return ({
     data: {
       summary: {
         critical: 1, at_risk: 0, opportunities: 0, data_issues: 1,
@@ -143,8 +151,10 @@ vi.mock('../hooks/api/useInsightsWorkspace', () => ({
       deferred_capabilities: ['Overdue corrective actions require a persisted due date.'],
     },
     isLoading: false, isFetching: false, error: null, refetch: query.refetch,
-  }),
-}));
+  });
+  },
+  };
+});
 
 vi.mock('../context/RoleContext', () => ({
   useUserRole: () => ({ role: 'Admin' }),
@@ -235,12 +245,12 @@ describe('InsightsView', () => {
     const user = userEvent.setup();
     render(<MemoryRouter><InsightsView /></MemoryRouter>);
 
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Team' }), 'Marketing');
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Function' }), 'Marketing');
     expect(screen.getByRole('heading', { name: 'Team KPI Analysis' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Team Risk Matrix' })).toBeInTheDocument();
-    expect(screen.getAllByText('Sales').length).toBeGreaterThan(1);
+    expect(screen.getAllByText('Sales').length).toBeGreaterThan(0);
     expect(screen.getByText('No measured issue')).toBeInTheDocument();
-    expect(screen.getAllByText('Outbound').length).toBeGreaterThan(1);
+    expect(screen.getAllByText('Outbound').length).toBeGreaterThan(0);
     expect(screen.getByText(/Showing 1–10 of 13 analyses/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '2' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '11' })).not.toBeInTheDocument();
@@ -281,4 +291,31 @@ describe('InsightsView', () => {
     expect(screen.getByRole('menuitem', { name: 'Compare with Team Average' })).toBeInTheDocument();
     expect(screen.getByRole('menuitem', { name: 'Edit Employee Assignment' })).toBeInTheDocument();
   });
+
+  it('exposes Function options and wires Call Center into team filter and workspace URL', async () => {
+    const user = userEvent.setup();
+    render(<MemoryRouter><InsightsView /></MemoryRouter>);
+
+    expect(screen.queryByRole('combobox', { name: 'Team' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /More filters/i }));
+    expect(screen.queryByRole('combobox', { name: 'Employee' })).not.toBeInTheDocument();
+
+    const functionSelect = screen.getByRole('combobox', { name: 'Function' });
+    expect(functionSelect).toBeInTheDocument();
+    const optionLabels = Array.from(functionSelect.querySelectorAll('option')).map((option) => option.textContent);
+    expect(optionLabels).toEqual([
+      'All functions',
+      'Call Center',
+      'RCM',
+      'Pre-Approvals',
+      'Marketing',
+    ]);
+
+    await user.selectOptions(functionSelect, 'Call Center');
+    expect(latestFilters.current.team).toBe('Call Center');
+    const workspaceUrl = insightsWorkspaceUrl(latestFilters.current);
+    expect(workspaceUrl).toMatch(/team=Call(\+|%20)Center/);
+    expect(workspaceUrl.replace(/\+/g, '%20')).toContain('team=Call%20Center');
+  });
+
 });

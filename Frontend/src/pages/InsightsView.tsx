@@ -55,6 +55,13 @@ function FilterSelect({ label, value, onChange, options, allLabel }: {
 // layout continues to evolve without changing the workspace contract.
 const SHOW_EXECUTIVE_STORY = true;
 
+const FUNCTION_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: 'Call Center', label: 'Call Center' },
+  { value: 'RCM', label: 'RCM' },
+  { value: 'Pre-Approvals', label: 'Pre-Approvals' },
+  { value: 'Marketing', label: 'Marketing' },
+];
+
 const severityStyles: Record<InsightSeverity, string> = {
   critical: 'border-rose-200 bg-rose-50 text-rose-600 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300',
   risk: 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300',
@@ -585,11 +592,6 @@ export default function InsightsView() {
       setSearchParams(next, { replace: true });
     }
   }, [filters, searchParams, setSearchParams]);
-  const filteredEmployees = useMemo(() => workspace?.options.employees.filter((employee) => (
-    (!filters.team || employee.team === filters.team)
-    && (!filters.position || employee.position === filters.position)
-    && (!filters.performanceLevel || employee.performance_level === filters.performanceLevel)
-  )) || [], [workspace?.options.employees, filters.team, filters.position, filters.performanceLevel]);
   const analysisItems = Array.from(new Map([...(workspace?.team_analyses ?? []), ...(workspace?.priority_insights ?? [])].map((item) => [item.id, item])).values());
   const visibleAnalyses = analysisTab === 'all' ? analysisItems : analysisItems.filter((item) => item.severity === analysisTab);
   const analysesPerPage = 10;
@@ -646,7 +648,7 @@ export default function InsightsView() {
           : 'Executive overview';
   const activeFilterEntries = [
     filters.region ? { key: 'region' as const, label: 'Region', value: filters.region } : null,
-    filters.team ? { key: 'team' as const, label: 'Team', value: filters.team } : null,
+    filters.team ? { key: 'team' as const, label: 'Function', value: filters.team } : null,
     filters.performanceLevel ? { key: 'performanceLevel' as const, label: 'Level', value: filters.performanceLevel } : null,
     filters.position ? { key: 'position' as const, label: 'Position', value: filters.position } : null,
     filters.employeeId ? { key: 'employeeId' as const, label: 'Employee', value: filters.employeeId } : null,
@@ -780,7 +782,7 @@ export default function InsightsView() {
         <div className="grid gap-2 border-t border-[var(--border-light)] p-4 sm:grid-cols-2 xl:grid-cols-5">
           <FilterSelect label="Insight period" value={effectivePeriod} onChange={(value) => update('periodKey', value)} options={workspace.options.periods.map((period) => ({ value: period.key, label: `${period.month} ${period.year}` }))} />
           <FilterSelect label="Region" value={filters.region || ''} onChange={selectRegion} allLabel="All regions" options={workspace.options.regions.map((value) => ({ value, label: value }))} />
-          <FilterSelect label="Team" value={filters.team || ''} onChange={(value) => {
+          <FilterSelect label="Function" value={filters.team || ''} onChange={(value) => {
             setAnalysisPage(1);
             setFilters((current) => ({
               ...current,
@@ -789,7 +791,13 @@ export default function InsightsView() {
               employeeId: undefined,
               kpi: undefined,
             }));
-          }} allLabel="All teams" options={workspace.options.teams.map((value) => ({ value, label: value }))} />
+          }} allLabel="All functions" options={(() => {
+            const options = [...FUNCTION_OPTIONS];
+            if (filters.team && !options.some((option) => option.value === filters.team)) {
+              options.push({ value: filters.team, label: filters.team });
+            }
+            return options;
+          })()} />
           <FilterSelect label="Performance level" value={filters.performanceLevel || ''} onChange={(value) => {
             setAnalysisPage(1);
             setFilters((current) => ({
@@ -802,7 +810,7 @@ export default function InsightsView() {
           }} allLabel="All levels" options={workspace.options.performance_levels.map((value) => ({ value, label: value }))} />
           <button type="button" aria-expanded={showAdditional} onClick={() => setShowAdditional((value) => !value)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-[var(--input-border)] bg-[var(--input-bg)] px-4 text-sm font-bold text-[var(--text-secondary)] hover:border-blue-500/40"><Filter size={16} /> More filters {activeFilterEntries.length > 0 && <span className="grid h-5 min-w-5 place-items-center rounded-full bg-blue-600 px-1 text-[10px] text-white">{activeFilterEntries.length}</span>}</button>
         </div>
-        {showAdditional && <div className="grid gap-2 border-t border-[var(--border-light)] bg-[var(--bg-sunken)]/40 p-4 sm:grid-cols-2 xl:grid-cols-7"><FilterSelect label="Position" value={filters.position || ''} onChange={(value) => { update('position', value); update('employeeId', ''); }} allLabel="All positions" options={workspace.options.positions.map((value) => ({ value, label: value }))} /><FilterSelect label="Employee" value={filters.employeeId || ''} onChange={(value) => { update('employeeId', value); const employeeInsight = [...workspace.priority_insights, ...workspace.team_analyses].find((insight) => insight.employee_id === value); if (employeeInsight) { setFocusedInsightId(employeeInsight.id); setDrawerInsight(employeeInsight); } }} allLabel="All employees" options={filteredEmployees.map((employee) => ({ value: employee.id, label: `${employee.name} (${employee.id})` }))} /><FilterSelect label="KPI" value={filters.kpi || ''} onChange={(value) => update('kpi', value)} allLabel="All KPIs" options={workspace.options.kpis.map((kpi) => ({ value: kpi.key, label: kpi.label }))} /><FilterSelect label="Severity" value={filters.severity || ''} onChange={(value) => update('severity', value)} allLabel="All severities" options={workspace.options.severities.map((value) => ({ value, label: value.replace('_', ' ') }))} /><FilterSelect label="Insight type" value={filters.insightType || ''} onChange={(value) => update('insightType', value)} allLabel="All types" options={workspace.options.insight_types.map((value) => ({ value, label: value.replace('_', ' ') }))} /><FilterSelect label="Status" value={filters.status || ''} onChange={(value) => update('status', value)} allLabel="All statuses" options={workspace.options.statuses.map((value) => ({ value, label: value.replace('_', ' ') }))} /><button type="button" onClick={clearAnalysis} className="min-h-11 rounded-xl border border-[var(--input-border)] px-4 text-sm font-bold text-[var(--text-secondary)] hover:text-red-600">Clear analysis</button></div>}
+        {showAdditional && <div className="grid gap-2 border-t border-[var(--border-light)] bg-[var(--bg-sunken)]/40 p-4 sm:grid-cols-2 xl:grid-cols-6"><FilterSelect label="Position" value={filters.position || ''} onChange={(value) => { update('position', value); update('employeeId', ''); }} allLabel="All positions" options={workspace.options.positions.map((value) => ({ value, label: value }))} /><FilterSelect label="KPI" value={filters.kpi || ''} onChange={(value) => update('kpi', value)} allLabel="All KPIs" options={workspace.options.kpis.map((kpi) => ({ value: kpi.key, label: kpi.label }))} /><FilterSelect label="Severity" value={filters.severity || ''} onChange={(value) => update('severity', value)} allLabel="All severities" options={workspace.options.severities.map((value) => ({ value, label: value.replace('_', ' ') }))} /><FilterSelect label="Insight type" value={filters.insightType || ''} onChange={(value) => update('insightType', value)} allLabel="All types" options={workspace.options.insight_types.map((value) => ({ value, label: value.replace('_', ' ') }))} /><FilterSelect label="Status" value={filters.status || ''} onChange={(value) => update('status', value)} allLabel="All statuses" options={workspace.options.statuses.map((value) => ({ value, label: value.replace('_', ' ') }))} /><button type="button" onClick={clearAnalysis} className="min-h-11 rounded-xl border border-[var(--input-border)] px-4 text-sm font-bold text-[var(--text-secondary)] hover:text-red-600">Clear analysis</button></div>}
         {activeFilterEntries.length > 0 && <div className="flex flex-wrap items-center gap-2 border-t border-[var(--border-light)] px-4 py-3"><span className="mr-1 text-[10px] font-black uppercase tracking-[0.14em] text-[var(--text-faint)]">{analysisDepth}</span>{activeFilterEntries.map((entry) => <button key={entry.key} type="button" onClick={() => clearFilter(entry.key)} className="inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-[11px] font-bold text-blue-700 hover:border-blue-400 dark:border-blue-500/25 dark:bg-blue-500/10 dark:text-blue-200">{entry.label}: {entry.value}<X size={12} /></button>)}<button type="button" onClick={clearAnalysis} className="ml-auto text-[11px] font-bold text-[var(--text-muted)] hover:text-rose-600">Reset analysis</button></div>}
       </section>
 
