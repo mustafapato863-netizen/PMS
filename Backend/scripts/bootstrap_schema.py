@@ -8,7 +8,15 @@ guess when a database contains tables but has no Alembic history.
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
+
+# Running as `python scripts/bootstrap_schema.py` puts scripts/ on sys.path[0],
+# which hides the backend root (`config`, `models`). Ensure /app (backend root)
+# is importable regardless of invocation style.
+_BACKEND_ROOT = Path(__file__).resolve().parents[1]
+if str(_BACKEND_ROOT) not in sys.path:
+    sys.path.insert(0, str(_BACKEND_ROOT))
 
 from alembic import command
 from alembic.config import Config

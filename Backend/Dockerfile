@@ -30,6 +30,7 @@ FROM python:3.11-slim AS runner
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PATH="/opt/venv/bin:$PATH" \
+    PYTHONPATH="/app" \
     PMS_DATA_DIR="/app/data" \
     PMS_DEFAULT_FILE_PATH="/app/data/PMS_Trend_All.xlsx" \
     PORT=7860
