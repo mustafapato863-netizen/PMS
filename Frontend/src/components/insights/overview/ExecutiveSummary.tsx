@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { ArrowDownRight, ArrowUpRight, Calendar, Info, Link2 } from 'lucide-react';
 import type { InsightExecutiveStory, InsightKpiTrend, InsightsWorkspace } from '../../../features/insights/types';
 import { GradeBadge } from './InsightsOverviewPrimitives';
@@ -7,6 +7,9 @@ import { buildPerformanceTrend, cleanScope, formatPercent, formatSignedPercent, 
 const PLOT = { left: 40, right: 384, top: 10, bottom: 140, firstX: 68, lastX: 351.3 } as const;
 
 function PerformanceTrendChart({ points, kpiLabel }: { points: TrendPoint[]; kpiLabel: string | null }) {
+  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
+  const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
+  const [pinnedIndex, setPinnedIndex] = useState<number | null>(null);
   const measured = points.filter((point) => point.actual !== null);
   if (!points.length || !measured.length) {
     return (
@@ -22,17 +25,23 @@ function PerformanceTrendChart({ points, kpiLabel }: { points: TrendPoint[]; kpi
   const x = (index: number) => PLOT.firstX + index * step;
   const ticks = Array.from({ length: 6 }, (_, index) => (yMax / 5) * (5 - index));
 
-  const actualSegments: string[] = [];
-  let segment: string[] = [];
+  const actualSegments: Array<Array<{ index: number; value: number }>> = [];
+  let segment: Array<{ index: number; value: number }> = [];
   points.forEach((point, index) => {
     if (point.actual === null) {
-      if (segment.length > 1) actualSegments.push(segment.join(' '));
+      if (segment.length > 1) actualSegments.push(segment);
       segment = [];
       return;
     }
-    segment.push(`${segment.length ? 'L' : 'M'}${x(index).toFixed(1)} ${y(point.actual).toFixed(2)}`);
+    segment.push({ index, value: point.actual });
   });
-  if (segment.length > 1) actualSegments.push(segment.join(' '));
+  if (segment.length > 1) actualSegments.push(segment);
+
+  const activeIndex = pinnedIndex ?? hoveredIndex ?? focusedIndex;
+  const activePoint = activeIndex === null ? null : points[activeIndex];
+  const activeValue = activePoint?.actual ?? null;
+  const activeX = activeIndex === null ? null : x(activeIndex);
+  const activeY = activeValue === null ? null : y(activeValue);
 
   const targetIndexes = points.map((point, index) => (point.target !== null ? index : -1)).filter((index) => index >= 0);
   const description = points
@@ -40,13 +49,15 @@ function PerformanceTrendChart({ points, kpiLabel }: { points: TrendPoint[]; kpi
     .join(', ');
 
   return (
-    <svg
-      role="img"
-      aria-label={`Performance trend${kpiLabel ? ` for ${kpiLabel}` : ''}, % of target: ${description}`}
-      viewBox="0 0 388 166"
-      className="block h-auto w-full"
-      data-testid="performance-trend-chart"
-    >
+    <div className="relative w-full">
+      <svg
+        role="group"
+        aria-label={`Performance trend${kpiLabel ? ` for ${kpiLabel}` : ''}, % of target: ${description}`}
+        viewBox="0 0 388 166"
+        className="block h-auto w-full"
+        data-testid="performance-trend-chart"
+        onMouseLeave={() => setHoveredIndex(null)}
+      >
       {ticks.map((tick, index) => {
         const gridY = PLOT.top + index * ((PLOT.bottom - PLOT.top) / 5);
         return (
@@ -67,18 +78,112 @@ function PerformanceTrendChart({ points, kpiLabel }: { points: TrendPoint[]; kpi
           fill="none"
         />
       )}
-      {actualSegments.map((d) => (
-        <path key={d} d={d} stroke="var(--insights-accent)" strokeWidth={2.25} strokeLinejoin="round" fill="none" />
-      ))}
+      {activeX !== null && activeY !== null && (
+        <line
+          data-testid="performance-trend-crosshair"
+          x1={activeX}
+          x2={activeX}
+          y1={PLOT.top}
+          y2={PLOT.bottom}
+          stroke="var(--insights-card-border)"
+          strokeWidth={1}
+          vectorEffect="non-scaling-stroke"
+          pointerEvents="none"
+        />
+      )}
+      {actualSegments.map((segmentPoints) => {
+        const d = segmentPoints.reduce((path, point, index) => {
+          const pointX = x(point.index);
+          const pointY = y(point.value);
+          if (index === 0) return `M${pointX.toFixed(1)} ${pointY.toFixed(2)}`;
+          const previous = segmentPoints[index - 1];
+          const previousX = x(previous.index);
+          const previousY = y(previous.value);
+          const controlOffset = (pointX - previousX) / 3;
+          return `${path} C${(previousX + controlOffset).toFixed(1)} ${previousY.toFixed(2)}, ${(pointX - controlOffset).toFixed(1)} ${pointY.toFixed(2)}, ${pointX.toFixed(1)} ${pointY.toFixed(2)}`;
+        }, '');
+        return (
+          <path
+            key={segmentPoints[0].index}
+            d={d}
+            stroke="var(--insights-accent)"
+            strokeWidth={2.5}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            vectorEffect="non-scaling-stroke"
+            fill="none"
+          />
+        );
+      })}
       {points.map((point, index) => point.actual !== null && (
-        <circle key={point.key} cx={x(index)} cy={y(point.actual)} r={3.5} fill="var(--insights-accent)" stroke="var(--bg-surface)" strokeWidth={1.5}>
-          <title>{`${point.label}: ${point.actual.toFixed(1)}% of target`}</title>
-        </circle>
+        <g
+          key={point.key}
+          role="button"
+          tabIndex={0}
+          aria-label={`${point.label}: ${point.actual.toFixed(1)}% of target`}
+          className="cursor-pointer outline-none"
+          onMouseEnter={() => {
+            setPinnedIndex(null);
+            setHoveredIndex(index);
+          }}
+          onMouseLeave={() => setHoveredIndex((current) => current === index ? null : current)}
+          onFocus={() => setFocusedIndex(index)}
+          onBlur={() => setFocusedIndex((current) => current === index ? null : current)}
+          onClick={() => setPinnedIndex((current) => current === index ? null : index)}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') {
+              setHoveredIndex(null);
+              setFocusedIndex(null);
+              setPinnedIndex(null);
+            } else if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              setPinnedIndex((current) => current === index ? null : index);
+            }
+          }}
+        >
+          <circle cx={x(index)} cy={y(point.actual)} r={12} fill="transparent" pointerEvents="all" />
+          {activeIndex === index && (
+            <circle cx={x(index)} cy={y(point.actual)} r={7} fill="none" stroke="var(--insights-accent)" strokeOpacity={0.35} strokeWidth={2} />
+          )}
+          <circle
+            cx={x(index)}
+            cy={y(point.actual)}
+            r={activeIndex === index ? 4.5 : 3.5}
+            fill="var(--insights-accent)"
+            stroke="var(--bg-surface)"
+            strokeWidth={activeIndex === index ? 2 : 1.5}
+          />
+        </g>
       ))}
       {points.map((point, index) => (
         <text key={`${point.key}-label`} x={x(index)} y={150} dominantBaseline="hanging" textAnchor="middle" fontSize={10} fill="var(--text-muted)">{point.label}</text>
       ))}
-    </svg>
+      </svg>
+      {activePoint && activeValue !== null && activeIndex !== null && activeY !== null && (
+        <div
+          role="status"
+          aria-live="polite"
+          aria-label={`${activePoint.label}: actual ${activeValue.toFixed(1)}% of target`}
+          data-testid="performance-trend-tooltip"
+          className="pointer-events-none absolute z-10 w-[176px] rounded-[16px] border border-[var(--insights-card-border)] bg-[var(--bg-surface)] px-[14px] py-[10px] shadow-[0_10px_24px_rgba(15,23,42,0.16)]"
+          style={{
+            left: `${Math.min(68, Math.max(32, ((activeX ?? PLOT.firstX) / 388) * 100))}%`,
+            top: `${(activeY / 166) * 100}%`,
+            transform: activeY < 62 ? 'translate(-50%, 12px)' : 'translate(-50%, calc(-100% - 12px))',
+          }}
+        >
+          <p className="mb-[6px] border-b border-[var(--insights-row-border)] pb-[6px] text-[11px] font-extrabold uppercase tracking-[0.08em] text-[var(--text-muted)]">{activePoint.label}</p>
+          <div className="flex items-center justify-between gap-3 text-[12px]">
+            <span className="inline-flex items-center gap-[7px] font-semibold text-[var(--text-secondary)]">
+              <span aria-hidden="true" className="size-[9px] rounded-full bg-[var(--insights-accent)]" />
+              Actual
+            </span>
+            <strong className="font-bold tabular-nums text-[var(--insights-heading)]">{activeValue.toFixed(1)}%</strong>
+          </div>
+          <span className="sr-only">of target</span>
+        </div>
+      )}
+    </div>
   );
 }
 

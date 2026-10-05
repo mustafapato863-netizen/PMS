@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
@@ -294,6 +294,29 @@ describe('InsightsView', () => {
     expect(chart).toHaveAccessibleName(/Jun 44\.1%/);
     expect(chart).toHaveAccessibleName(/Feb no data/);
     expect(within(summary).getByTestId('performance-trend-target')).toBeInTheDocument();
+  });
+
+  it('shows an interactive trend tooltip and crosshair for pointer and keyboard users', async () => {
+    const user = userEvent.setup();
+    renderInsights();
+
+    const chart = screen.getByTestId('performance-trend-chart');
+    const junePoint = screen.getByRole('button', { name: 'Jun: 44.1% of target' });
+
+    await user.hover(junePoint);
+    expect(screen.getByRole('status', { name: 'Jun: actual 44.1% of target' })).toBeInTheDocument();
+    expect(within(chart).getByTestId('performance-trend-crosshair')).toBeInTheDocument();
+
+    await user.unhover(junePoint);
+    expect(screen.queryByTestId('performance-trend-tooltip')).not.toBeInTheDocument();
+
+    fireEvent.focus(junePoint);
+    expect(screen.getByTestId('performance-trend-tooltip')).toBeInTheDocument();
+    fireEvent.keyDown(junePoint, { key: 'Escape' });
+    expect(screen.queryByTestId('performance-trend-tooltip')).not.toBeInTheDocument();
+
+    await user.click(junePoint);
+    expect(screen.getByTestId('performance-trend-tooltip')).toBeInTheDocument();
   });
 
   it('splits weighted drivers into negative and positive panels and links them to the insight drawer', async () => {
