@@ -64,6 +64,10 @@ class TeamCreateRequest(BaseModel):
     
     name: str = Field(..., min_length=1, max_length=100)
     display_name: str = Field(...)
+    # Optional dataset/database name. TeamService.create_team reads this to
+    # resolve a team config and populate Team.db_name; it falls back to the
+    # normalized team name when omitted (the frontend does not send it).
+    db_name: Optional[str] = Field(default=None, max_length=100)
     region: Literal['EGY', 'UAE', 'Other'] = Field(default='EGY')
     description: Optional[str] = None
     kpi_keys: Optional[List[str]] = Field(default_factory=list)
