@@ -206,17 +206,19 @@ select option {
   --pms-grade-a-gauge: #0E8749;
   --pms-grade-a-border: #8FD6AE;
   --pms-grade-a-glow: rgba(14, 135, 73, 0.16);
-  /* B — Meet Expectations (light green). Figma csZO4wbWLnLOcHHmGUnQ0X
-     "PMS grade palette": text #3F6F20, gauge/solid #A3D977, badge bg #EFF8E8.
-     solid-text stays dark (#3F6F20) because white on #A3D977 fails AA. */
+  /* B — Meet Expectations (light green, approved by Mustafa). Figma
+     csZO4wbWLnLOcHHmGUnQ0X "PMS grade palette": text #3F6F20, badge bg #EFF8E8;
+     the Figma fill #A3D977 (1.65:1 on white) is deepened to #5C992B, the
+     smallest same-hue shift reaching 3:1 on white/page/sunken surfaces.
+     Text on the fill is #14240A (4.70:1); white on #5C992B fails AA. */
   --pms-grade-b-text: #3F6F20;
   --pms-grade-b-badge-bg: #EFF8E8;
   --pms-grade-b-badge-text: #3F6F20;
-  --pms-grade-b-solid: #A3D977;
-  --pms-grade-b-solid-text: #3F6F20;
-  --pms-grade-b-gauge: #A3D977;
+  --pms-grade-b-solid: #5C992B;
+  --pms-grade-b-solid-text: #14240A;
+  --pms-grade-b-gauge: #5C992B;
   --pms-grade-b-border: #B8D99A;
-  --pms-grade-b-glow: rgba(163, 217, 119, 0.16);
+  --pms-grade-b-glow: rgba(92, 153, 43, 0.16);
   /* C — Average (amber) */
   --pms-grade-c-text: #8A5200;
   --pms-grade-c-badge-bg: #FFF4DC;
@@ -333,7 +335,8 @@ select option {
      text/gauge tints for contrast on dark surfaces. Solid fills reuse light. */
   --pms-grade-a-text: #34D399; --pms-grade-a-badge-bg: rgba(16, 185, 129, 0.18); --pms-grade-a-badge-text: #34D399;
   --pms-grade-a-gauge: #10B981; --pms-grade-a-border: rgba(52, 211, 153, 0.45); --pms-grade-a-glow: rgba(16, 185, 129, 0.22);
-  /* B — Meet Expectations (light green) */
+  /* B — Meet Expectations (light green). Solid/solid-text reuse light
+     (#5C992B / #14240A: 5.01:1 on the dark card, 4.70:1 text). */
   --pms-grade-b-text: #A3D977; --pms-grade-b-badge-bg: rgba(163, 217, 119, 0.18); --pms-grade-b-badge-text: #A3D977;
   --pms-grade-b-gauge: #A3D977; --pms-grade-b-border: rgba(163, 217, 119, 0.45); --pms-grade-b-glow: rgba(163, 217, 119, 0.22);
   --pms-grade-c-text: #FBBF24; --pms-grade-c-badge-bg: rgba(245, 158, 11, 0.18); --pms-grade-c-badge-text: #FBBF24;
