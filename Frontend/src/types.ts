@@ -516,6 +516,9 @@ export interface User {
   accessible_teams?: string[];
   accessible_team_count?: number;
   total_team_count?: number;
+  /** All-teams scope (Admin / GM / Manager with unrestricted assignments). Not the GM role. */
+  has_unrestricted_team_access?: boolean;
+  /** @deprecated Backend PR #9 renamed to has_unrestricted_team_access. Kept for read fallback. */
   is_general_manager?: boolean;
   is_self_only?: boolean;
 }

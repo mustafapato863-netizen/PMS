@@ -17,7 +17,7 @@ import { useAuth } from '../../context/auth';
 import { NotificationBell } from '../notifications';
 import { usePerformanceCatalog } from '../../hooks/api/usePerformanceCatalog';
 import { ProfileSettingsModal } from './ProfileSettingsModal';
-import { getRoleDisplayLabel, isGeneralManagerRole } from '../../lib/access';
+import { getRoleDisplayLabel, isGeneralManagerRole, readHasUnrestrictedTeamAccess } from '../../lib/access';
 
 // ── route config ──────────────────────────────────────────────────────────────
 
@@ -84,7 +84,7 @@ function ProfileMenu({
   role,
   accessibleTeamCount,
   totalTeamCount,
-  isGeneralManager,
+  hasUnrestrictedTeamAccess,
   onEditProfile,
   onLogout,
 }: {
@@ -93,7 +93,7 @@ function ProfileMenu({
   role: string;
   accessibleTeamCount?: number;
   totalTeamCount?: number;
-  isGeneralManager?: boolean;
+  hasUnrestrictedTeamAccess?: boolean;
   onEditProfile: () => void;
   onLogout: () => void;
 }) {
@@ -185,7 +185,7 @@ function ProfileMenu({
                 )}
                 {role === 'Manager' && (
                   <p className="text-[10px] text-[var(--text-muted)] mt-1">
-                    {isGeneralManager
+                    {hasUnrestrictedTeamAccess
                       ? 'All-teams manager: full team access'
                       : `${accessibleTeamCount || 0} / ${totalTeamCount || 0} teams accessible`}
                   </p>
@@ -354,7 +354,7 @@ const Header = ({ onMenuClick }: HeaderProps) => {
               role={role}
               accessibleTeamCount={currentUser.accessible_team_count}
               totalTeamCount={currentUser.total_team_count}
-              isGeneralManager={currentUser.is_general_manager}
+              hasUnrestrictedTeamAccess={readHasUnrestrictedTeamAccess(currentUser)}
               onEditProfile={() => setProfileOpen(true)}
               onLogout={handleLogout}
             />

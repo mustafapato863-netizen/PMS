@@ -11,7 +11,7 @@ type MockUser = {
   name: string;
   username: string;
   role: 'Admin' | 'General Manager' | 'Manager' | 'Executive' | 'Viewer' | 'Agent';
-  is_general_manager?: boolean;
+  has_unrestricted_team_access?: boolean;
   accessible_teams?: string[];
 };
 
@@ -21,7 +21,7 @@ const authState = vi.hoisted(() => ({
     name: 'Admin',
     username: 'admin',
     role: 'Admin',
-    is_general_manager: true,
+    has_unrestricted_team_access: true,
     accessible_teams: [],
   } as MockUser,
 }));
@@ -31,7 +31,7 @@ const ADMIN_USER: MockUser = {
   name: 'Admin',
   username: 'admin',
   role: 'Admin',
-  is_general_manager: true,
+  has_unrestricted_team_access: true,
   accessible_teams: [],
 };
 
@@ -193,13 +193,13 @@ describe('Sidebar General Manager navigation (stored role string)', () => {
     expect(screen.getByText('General Manager')).toBeInTheDocument();
   });
 
-  it('does not treat a Manager with the legacy is_general_manager flag as a General Manager', () => {
+  it('does not treat a Manager with has_unrestricted_team_access as a General Manager', () => {
     authState.user = {
       id: 'mgr-all',
       name: 'Alma Teams',
       username: 'mgr-all',
       role: 'Manager',
-      is_general_manager: true,
+      has_unrestricted_team_access: true,
       accessible_teams: [],
     };
     renderSidebar();
@@ -218,7 +218,7 @@ describe('Sidebar General Manager navigation (stored role string)', () => {
       name: 'Mo Scoped',
       username: 'mgr',
       role: 'Manager',
-      is_general_manager: false,
+      has_unrestricted_team_access: false,
       accessible_teams: ['Marketing'],
     };
     renderSidebar();

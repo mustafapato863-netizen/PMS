@@ -5,9 +5,10 @@ import type { User } from '../types';
  *
  * Option A: "General Manager" is a **stored role string** (`User.role === 'General Manager'`),
  * aligned with the Backend constant `ROLE_GENERAL_MANAGER = "General Manager"`.
- * Access decisions key off the role string only. The legacy `is_general_manager`
- * flag (Admin, or Manager whose assignments cover all teams) stays on the User type
- * for API compatibility and team scoping, but does not grant these pages.
+ * Access decisions key off the role string only. The boolean
+ * `has_unrestricted_team_access` (renamed from `is_general_manager` in Backend PR #9)
+ * means all-teams scope for Admin / GM / Manager with unrestricted assignments — it is
+ * **not** the General Manager role. Use `role === "General Manager"` for role checks.
  *
  * Matrix (see docs/GENERAL_MANAGER_ROLE_DESIGN.md §4):
  * - General Manager ≈ Admin for product pages (Reports list/preview/builder, Insights,
@@ -22,6 +23,11 @@ import type { User } from '../types';
 export type AppRole = User['role'];
 
 type RoleInput = string | null | undefined;
+
+export type UnrestrictedTeamAccessUser = Pick<
+  User,
+  'has_unrestricted_team_access' | 'is_general_manager'
+> | null | undefined;
 
 export const ROLE_ADMIN = 'Admin' as const;
 export const ROLE_GENERAL_MANAGER = 'General Manager' as const;
@@ -67,11 +73,19 @@ export const canAccessRoute = ({
 export const getRoleDisplayLabel = (role: RoleInput): string => role ?? '';
 
 /**
- * Team *scope* (not page access): Admin and General Manager see all teams. The legacy
- * `is_general_manager` flag (Manager whose assignments cover every team) also means
- * all-teams scope, so it is honoured here for API compatibility.
+ * Read all-teams boolean from a user payload.
+ * Prefers `has_unrestricted_team_access`; falls back to legacy `is_general_manager`
+ * so older backends do not blank the flag during transition.
+ */
+export const readHasUnrestrictedTeamAccess = (user?: UnrestrictedTeamAccessUser): boolean =>
+  Boolean(user?.has_unrestricted_team_access ?? user?.is_general_manager);
+
+/**
+ * Team *scope* (not page access): Admin and General Manager see all teams.
+ * `has_unrestricted_team_access` (Manager whose assignments cover every team, etc.)
+ * also means all-teams scope.
  */
 export const hasAllTeamsScope = (
   role: RoleInput,
-  user?: Pick<User, 'is_general_manager'> | null,
-): boolean => isAdminRole(role) || isGeneralManagerRole(role) || Boolean(user?.is_general_manager);
+  user?: UnrestrictedTeamAccessUser,
+): boolean => isAdminRole(role) || isGeneralManagerRole(role) || readHasUnrestrictedTeamAccess(user);

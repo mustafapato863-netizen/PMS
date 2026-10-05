@@ -112,9 +112,9 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed = false, onToggleCollapsed = (
   }, [loadManagementTeams]);
 
   const scopedTeams = useMemo(() => {
-    if (hasAllTeamsScope(role, { is_general_manager: currentUser?.is_general_manager })) return null;
+    if (hasAllTeamsScope(role, currentUser)) return null;
     return new Set((currentUser?.accessible_teams || []).map(normalizeTeamName));
-  }, [currentUser?.accessible_teams, currentUser?.is_general_manager, role]);
+  }, [currentUser, role]);
 
   const availableFromData = useMemo(() => {
     const result = new Set<string>();

@@ -12,6 +12,7 @@ import {
   hasAllTeamsScope,
   isAdminRole,
   isGeneralManagerRole,
+  readHasUnrestrictedTeamAccess,
 } from './access';
 
 describe('access helpers (Option A: stored "General Manager" role)', () => {
@@ -71,11 +72,20 @@ describe('access helpers (Option A: stored "General Manager" role)', () => {
     expect(getRoleDisplayLabel(undefined)).toBe('');
   });
 
-  it('treats Admin, General Manager and the legacy all-teams flag as all-teams scope', () => {
+  it('treats Admin, General Manager and has_unrestricted_team_access as all-teams scope', () => {
     expect(hasAllTeamsScope('Admin')).toBe(true);
     expect(hasAllTeamsScope('General Manager')).toBe(true);
-    expect(hasAllTeamsScope('Manager', { is_general_manager: true })).toBe(true);
-    expect(hasAllTeamsScope('Manager', { is_general_manager: false })).toBe(false);
+    expect(hasAllTeamsScope('Manager', { has_unrestricted_team_access: true })).toBe(true);
+    expect(hasAllTeamsScope('Manager', { has_unrestricted_team_access: false })).toBe(false);
     expect(hasAllTeamsScope('Executive', null)).toBe(false);
+  });
+
+  it('prefers has_unrestricted_team_access and falls back to legacy is_general_manager', () => {
+    expect(readHasUnrestrictedTeamAccess({ has_unrestricted_team_access: true })).toBe(true);
+    expect(readHasUnrestrictedTeamAccess({ has_unrestricted_team_access: false, is_general_manager: true })).toBe(false);
+    expect(readHasUnrestrictedTeamAccess({ is_general_manager: true })).toBe(true);
+    expect(readHasUnrestrictedTeamAccess({ is_general_manager: false })).toBe(false);
+    expect(readHasUnrestrictedTeamAccess(null)).toBe(false);
+    expect(hasAllTeamsScope('Manager', { is_general_manager: true })).toBe(true);
   });
 });

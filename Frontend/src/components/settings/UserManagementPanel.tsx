@@ -76,13 +76,12 @@ export function UserManagementPanel() {
   const submit = async (value: UserFormValue) => {
     setBusy(true); setError(null); setSuccess(null);
     const username = value.username.trim().toLowerCase();
-    // General Manager is all-teams: send no per-team list and keep `is_general_manager: true`
-    // so Backends that still derive all-teams scope from the flag keep working.
+    // General Manager is all-teams: send no per-team list and set has_unrestricted_team_access.
     const isGeneralManagerRole = value.role === 'General Manager';
-    const isGeneralManager = isGeneralManagerRole || (value.role === 'Manager' && value.isGeneralManager);
+    const hasUnrestrictedTeamAccess = isGeneralManagerRole || (value.role === 'Manager' && value.isGeneralManager);
     const result = editingUser
-      ? await updateUser(editingUser.id, { name: value.name.trim(), username, new_password: value.password.trim() || undefined, role: value.role, is_active: editingUser.is_active ?? true, accessible_teams: value.role === 'Manager' ? value.accessibleTeams : [], is_general_manager: isGeneralManager })
-      : await addUser(value.name.trim(), username, value.password, value.role, isGeneralManagerRole ? [] : value.accessibleTeams, isGeneralManager);
+      ? await updateUser(editingUser.id, { name: value.name.trim(), username, new_password: value.password.trim() || undefined, role: value.role, is_active: editingUser.is_active ?? true, accessible_teams: value.role === 'Manager' ? value.accessibleTeams : [], has_unrestricted_team_access: hasUnrestrictedTeamAccess })
+      : await addUser(value.name.trim(), username, value.password, value.role, isGeneralManagerRole ? [] : value.accessibleTeams, hasUnrestrictedTeamAccess);
     setBusy(false);
     if (!result.success) { setError(result.error || 'Failed to save user'); return; }
     setModalOpen(false); setEditingUser(null); setSuccess(editingUser ? 'User updated successfully.' : 'User created successfully.');

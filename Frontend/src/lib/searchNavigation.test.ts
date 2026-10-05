@@ -2,12 +2,12 @@ import { describe, expect, it } from 'vitest';
 import type { User } from '../types';
 import { buildLocalSearchResults } from './searchNavigation';
 
-const user = (role: User['role'], isGeneralManager = false): User => ({
+const user = (role: User['role'], hasUnrestrictedTeamAccess = false): User => ({
   id: `${role.toLowerCase().replace(/\s+/g, '-')}-1`,
   name: role,
   username: role.toLowerCase().replace(/\s+/g, '-'),
   role,
-  is_general_manager: isGeneralManager,
+  has_unrestricted_team_access: hasUnrestrictedTeamAccess,
   accessible_teams: [],
 });
 
@@ -30,7 +30,7 @@ describe('buildLocalSearchResults access (General Manager role string)', () => {
     for (const path of SETTINGS_SHORTCUTS) expect(paths).not.toContain(path);
   });
 
-  it('does not treat a Manager with the legacy is_general_manager flag as a General Manager', () => {
+  it('does not treat a Manager with has_unrestricted_team_access as a General Manager', () => {
     const paths = pathsFor(user('Manager', true));
     for (const path of [...BROAD_PATHS, '/corrective-actions', '/team-management', ...SETTINGS_SHORTCUTS]) {
       expect(paths).not.toContain(path);

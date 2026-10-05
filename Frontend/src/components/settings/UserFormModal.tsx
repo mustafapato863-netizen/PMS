@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { X } from 'lucide-react';
 import type { User } from '../../types';
 import type { TeamConfigItem } from './types';
-import { USER_ROLE_OPTIONS } from '../../lib/access';
+import { USER_ROLE_OPTIONS, readHasUnrestrictedTeamAccess } from '../../lib/access';
 
 export interface UserFormValue {
   name: string;
@@ -29,7 +29,7 @@ export function UserFormModal({ open, user, teams, busy, error, onClose, onSubmi
   const [form, setForm] = useState<UserFormValue>(() => user ? {
       name: user.name || '', username: user.username || '', password: '', role: user.role || 'Viewer',
       accessibleTeams: Array.isArray(user.accessible_teams) ? user.accessible_teams : [],
-      isGeneralManager: Boolean(user.is_general_manager),
+      isGeneralManager: readHasUnrestrictedTeamAccess(user),
     } : emptyForm);
 
   if (!open) return null;

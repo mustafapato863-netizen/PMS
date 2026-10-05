@@ -8,12 +8,28 @@ const SESSION_KEY = 'pms_session_v1';
 
 const getActiveRole = () => localStorage.getItem('pms_user_role') || 'Viewer';
 
+/** Map /me and user-list payloads onto User, preferring the renamed all-teams field. */
+const normalizeUserPayload = (data: Partial<User> & Record<string, unknown>, fallback?: Partial<User> | null): User => {
+  const legacy = data.is_general_manager ?? fallback?.is_general_manager;
+  const has_unrestricted_team_access = Boolean(
+    data.has_unrestricted_team_access ?? legacy ?? fallback?.has_unrestricted_team_access ?? false,
+  );
+  return {
+    ...(fallback ?? {}),
+    ...data,
+    id: String(data.id || fallback?.id || ''),
+    has_unrestricted_team_access,
+  } as User;
+};
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [users, setUsers] = useState<User[]>([]);
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
     const saved = localStorage.getItem(SESSION_KEY);
     if (saved) {
-      try { return JSON.parse(saved) as User; } catch { /* Ignore invalid legacy session data. */ }
+      try {
+        return normalizeUserPayload(JSON.parse(saved) as Partial<User> & Record<string, unknown>);
+      } catch { /* Ignore invalid legacy session data. */ }
     }
     return null;
   });
@@ -53,7 +69,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const meRes = await apiFetch<{ success: boolean; data?: Partial<User> }>('/api/auth/me');
         if (meRes.success && meRes.data) {
           setCurrentUser((previousUser) => {
-            const user: User = { ...(previousUser ?? {}), ...meRes.data, id: meRes.data?.id || previousUser?.id || '' } as User;
+            const user = normalizeUserPayload(meRes.data as Partial<User> & Record<string, unknown>, previousUser);
             localStorage.setItem(SESSION_KEY, JSON.stringify(user));
             localStorage.setItem('pms_user_role', user.role);
             return user;
@@ -92,7 +108,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setInitializationStatus('loadingProfile');
       const me = await apiFetch<{ success: boolean; data?: Partial<User> }>('/api/auth/me');
       if (me.success && me.data) {
-        const fullUser = { ...user, ...me.data, id: me.data.id || user.id } as User;
+        const fullUser = normalizeUserPayload(me.data as Partial<User> & Record<string, unknown>, user);
         setCurrentUser(fullUser);
         localStorage.setItem(SESSION_KEY, JSON.stringify(fullUser));
         localStorage.setItem('pms_user_role', fullUser.role);
@@ -119,7 +135,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const refreshUsers = useCallback(async () => {
     try {
       const res = await apiFetch<{ success: boolean; data?: User[] }>('/api/users/');
-      if (res.success && res.data) setUsers(res.data);
+      if (res.success && res.data) setUsers(res.data.map((entry) => normalizeUserPayload(entry as Partial<User> & Record<string, unknown>)));
     } catch (err) {
       console.error('Failed to refresh users', err);
     }
@@ -135,7 +151,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
       const me = await apiFetch<{ success: boolean; data?: Partial<User> }>('/api/auth/me');
       if (!me.success || !me.data) return { success: false, error: 'Profile updated, but refresh failed' };
-      const refreshed = { ...currentUser, ...me.data, id: me.data.id || currentUser?.id || '' } as User;
+      const refreshed = normalizeUserPayload(me.data as Partial<User> & Record<string, unknown>, currentUser);
       setCurrentUser(refreshed);
       localStorage.setItem(SESSION_KEY, JSON.stringify(refreshed));
       return { success: true };
@@ -159,14 +175,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const addUser = async (name: string, username: string, password: string, role: User['role'], accessibleTeams: string[] = [], isGeneralManager = false) => {
+  const addUser = async (name: string, username: string, password: string, role: User['role'], accessibleTeams: string[] = [], hasUnrestrictedTeamAccess = false) => {
     const trimmed = username.trim().toLowerCase();
     if (!name || !trimmed || !password) return { success: false, error: 'All fields required' };
     if (!currentUser || getActiveRole() !== 'Admin') return { success: false, error: 'Only administrators can add users' };
     try {
       const res = await apiFetch<{ success: boolean; message?: string }>('/api/users/', {
         method: 'POST',
-        body: JSON.stringify({ id: `user-${Date.now()}`, name: name.trim(), username: trimmed, password, role, accessible_teams: accessibleTeams, is_general_manager: isGeneralManager }),
+        body: JSON.stringify({ id: `user-${Date.now()}`, name: name.trim(), username: trimmed, password, role, accessible_teams: accessibleTeams, has_unrestricted_team_access: hasUnrestrictedTeamAccess }),
       });
       if (res.success) { await refreshUsers(); return { success: true }; }
       return { success: false, error: res.message || 'Failed to create user' };
@@ -179,7 +195,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const newPassword = patch.new_password ?? patch.password;
       const res = await apiFetch<{ success: boolean; message?: string }>(`/api/users/${id}`, {
         method: 'PUT',
-        body: JSON.stringify({ id, name: patch.name || '', username: patch.username || '', role: patch.role || 'Viewer', is_active: patch.is_active ?? true, accessible_teams: patch.accessible_teams ?? [], is_general_manager: patch.is_general_manager ?? false, ...(newPassword ? { new_password: newPassword } : {}) }),
+        body: JSON.stringify({ id, name: patch.name || '', username: patch.username || '', role: patch.role || 'Viewer', is_active: patch.is_active ?? true, accessible_teams: patch.accessible_teams ?? [], has_unrestricted_team_access: patch.has_unrestricted_team_access ?? false, ...(newPassword ? { new_password: newPassword } : {}) }),
       });
       if (res.success) { await refreshUsers(); return { success: true }; }
       return { success: false, error: res.message || 'Failed to update user' };
