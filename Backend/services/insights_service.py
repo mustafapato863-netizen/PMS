@@ -39,6 +39,7 @@ from services.kpi_aggregation import aggregate_kpi_metric, capped_achievement, c
 from services.management_bsc_service import ManagementBSCService
 from services.planning_service import PlanningService, MONTH_ORDER
 from utils.report_scope import (
+    _team_keys,
     filter_records_by_scope,
     filter_records_by_team_levels,
     user_can_access_team,
@@ -566,13 +567,22 @@ class InsightsService:
     def _filter_records(records: list[Any], filters: dict[str, Any]) -> list[Any]:
         mapping = {
             "region": "region",
-            "team": "team",
             "performance_level": "performance_level",
             "position": "position",
             "employee_id": "employee_id",
             "status": "status",
         }
         result = records
+        selected_team = filters.get("team")
+        if selected_team:
+            # Parent domains such as Call Center / RCM / Pre-Approvals expand to
+            # every underlying source team so domain averages include the full
+            # rollup rather than an exact-name match that finds no rows.
+            team_values = _team_keys(str(selected_team))
+            result = [
+                record for record in result
+                if str(_value(record, "team", "")).casefold() in team_values
+            ]
         for filter_key, record_key in mapping.items():
             selected = filters.get(filter_key)
             if selected:

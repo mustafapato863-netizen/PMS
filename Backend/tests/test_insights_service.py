@@ -563,3 +563,103 @@ def test_legacy_call_center_records_resolve_configured_weighted_kpis():
     assert set(analyses) >= {"Attendance", "Booking", "Quality", "Other"}
     assert any(evidence.value == "0.0%" for evidence in analyses["Quality"].detail.evidence if evidence.label == "Applied KPI weight")
     assert any(evidence.value == "20.0%" for evidence in analyses["Other"].detail.evidence if evidence.label == "Applied KPI weight")
+
+def _call_center_record(
+    employee_id: str,
+    team: str,
+    level: str,
+    score: float,
+    *,
+    month: str = "June",
+    actual: float = .9,
+    target: float = .95,
+    contribution: float = .2,
+) -> PerformanceRecord:
+    return PerformanceRecord(
+        id=f"{employee_id}_2026_{month}",
+        employee_id=employee_id,
+        employee_name=employee_id,
+        team=team,
+        month=month,
+        year=2026,
+        region="EGY",
+        position="Agent",
+        performance_level=level,
+        status="Below",
+        evaluation=EvaluationData(score=score, grade="C"),
+        kpi_values=[{
+            "kpi_key": "Attendance",
+            "label": "Attendance",
+            "direction": "higher_better",
+            "unit": "%",
+            "actual_value": actual,
+            "target_value": target,
+            "weight_applied": .25,
+            "contribution": contribution,
+        }],
+    )
+
+
+def test_call_center_domain_rolls_up_all_teams_and_levels():
+    """Call Center parent filter must average every channel and every level."""
+    records = [
+        _call_center_record("I1", "Inbound", "Employee", 80),
+        _call_center_record("I2", "Inbound", "Managerial", 90),
+        _call_center_record("O1", "Outbound", "Employee", 70),
+        _call_center_record("O2", "Outbound", "Corporate", 100),
+        _call_center_record("I1", "Inbound", "Employee", 75, month="May"),
+        _call_center_record("I2", "Inbound", "Managerial", 85, month="May"),
+        _call_center_record("O1", "Outbound", "Employee", 65, month="May"),
+        _call_center_record("O2", "Outbound", "Corporate", 95, month="May"),
+    ]
+
+    workspace = _service(records).generate_workspace(
+        _scope(), month="June", year=2026, team="Call Center"
+    )
+
+    # Domain avg = (80 + 90 + 70 + 100) / 4 across Inbound+Outbound and all levels.
+    assert workspace.executive_story is not None
+    assert workspace.executive_story.current_score == 85.0
+    assert {summary.team for summary in workspace.team_summaries} == {"Inbound", "Outbound"}
+    assert {summary.current_score for summary in workspace.team_summaries} == {85.0}
+    assert sum(summary.total_employees for summary in workspace.team_summaries) == 4
+    assert workspace.options.performance_levels == ["Corporate", "Employee", "Managerial"]
+    assert not any(item.title == "Required period data is missing" for item in workspace.data_issues)
+
+
+def test_call_center_domain_level_filter_still_narrows_to_one_level():
+    records = [
+        _call_center_record("I1", "Inbound", "Employee", 80),
+        _call_center_record("I2", "Inbound", "Managerial", 90),
+        _call_center_record("O1", "Outbound", "Employee", 70),
+        _call_center_record("O2", "Outbound", "Corporate", 100),
+    ]
+
+    workspace = _service(records).generate_workspace(
+        _scope(),
+        month="June",
+        year=2026,
+        team="Call Center",
+        performance_level="Employee",
+    )
+
+    # Only the Employee rows under Call Center: (80 + 70) / 2 = 75.
+    assert workspace.executive_story is not None
+    assert workspace.executive_story.current_score == 75.0
+    assert sum(summary.total_employees for summary in workspace.team_summaries) == 2
+
+
+def test_all_teams_view_rolls_up_every_team_and_level():
+    records = [
+        _call_center_record("I1", "Inbound", "Employee", 80),
+        _call_center_record("I2", "Inbound", "Managerial", 90),
+        _call_center_record("O1", "Outbound", "Employee", 70),
+        _call_center_record("M1", "Marketing", "Employee", 60),
+    ]
+
+    workspace = _service(records).generate_workspace(_scope(), month="June", year=2026)
+
+    assert workspace.executive_story is not None
+    assert workspace.executive_story.current_score == 75.0
+    assert {summary.team for summary in workspace.team_summaries} == {"Inbound", "Outbound", "Marketing"}
+
