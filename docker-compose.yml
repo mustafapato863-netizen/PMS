@@ -29,7 +29,7 @@ services:
     build:
       context: .
       dockerfile: DevOps/docker/Dockerfile.backend
-    command: ["sh", "-c", "python scripts/bootstrap_schema.py && alembic upgrade head"]
+    command: ["sh", "-c", "python -m scripts.bootstrap_schema && alembic upgrade head"]
     environment: *backend-environment
     restart: "no"
     networks:
@@ -64,6 +64,12 @@ services:
     depends_on:
       - redis
       - migrate
+    healthcheck:
+      test: ["CMD", "python", "-m", "scripts.worker_healthcheck"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
     restart: unless-stopped
     networks:
       - dokploy-network
