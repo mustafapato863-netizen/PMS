@@ -452,6 +452,22 @@ select option {
   --insights-acc-alerts-bg: #FEECEC;
   --insights-acc-alerts-icon: #D92D20;
   --insights-chevron: #94A3B8;
+  /* v2 palette (Figma 18:3 refined, 2026-10-06). Raw Figma values, no Figma variables exist. */
+  --insights-info-bg: #EFF6FF;            /* Priority recommendation row */
+  --insights-info-border: #BFDBFE;
+  --insights-info-pill-bg: #DBEAFE;       /* PRIORITY FOCUS pill */
+  --insights-info-pill-text: #1D4ED8;     /* 5.49:1 on pill */
+  --insights-info-text: #1E3A5F;          /* 10.57:1 on info bg */
+  --insights-link: #2563EB;               /* "View all" text links, 5.17:1 on white */
+  --insights-link-hover-bg: #EFF6FF;      /* derived (no Figma hover state) */
+  --insights-trend-down-bg: #FEF3F2;      /* "↓ 1.9%" trend badge */
+  --insights-trend-down-text: #B42318;    /* 6.05:1 */
+  --insights-trend-up-bg: #ECFDF3;        /* derived: Figma only shows the negative badge */
+  --insights-trend-up-text: #0A6B3C;      /* derived, 6.26:1 */
+  --insights-subtle-text: #7B8794;        /* Figma exact; 3.50:1 on #F8FAFC FAILS AA (needs Mustafa decision; closest pass #687481) */
+  --insights-muted-surface: #F8FAFC;      /* More analysis card */
+  --insights-muted-surface-border: #E6ECF2;
+  --insights-accordion-border: #E7ECF2;
 }
 
 .dark {
@@ -500,6 +516,22 @@ select option {
   --insights-acc-alerts-bg: rgba(239, 68, 68, 0.16);
   --insights-acc-alerts-icon: #F87171;
   --insights-chevron: #64748B;
+  /* v2 palette, dark: all values derived (Figma has no dark mode). */
+  --insights-info-bg: rgba(59, 130, 246, 0.12);
+  --insights-info-border: rgba(96, 165, 250, 0.32);
+  --insights-info-pill-bg: rgba(96, 165, 250, 0.20);
+  --insights-info-pill-text: #BFDBFE;
+  --insights-info-text: #DBEAFE;
+  --insights-link: #60A5FA;
+  --insights-link-hover-bg: rgba(96, 165, 250, 0.10);
+  --insights-trend-down-bg: rgba(239, 68, 68, 0.16);
+  --insights-trend-down-text: #FCA5A5;
+  --insights-trend-up-bg: rgba(16, 185, 129, 0.16);
+  --insights-trend-up-text: #6EE7B7;
+  --insights-subtle-text: #8B97A8;
+  --insights-muted-surface: #0D1729;
+  --insights-muted-surface-border: rgba(255, 255, 255, 0.07);
+  --insights-accordion-border: rgba(255, 255, 255, 0.08);
 }
 
 /* ────────────────────────────────────────────────────────────── */
