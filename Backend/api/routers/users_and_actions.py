@@ -163,6 +163,60 @@ def _replace_team_assignments(
             ))
 
 
+def _merge_team_assignments_preserving_levels(
+    db: Session,
+    user_id,
+    team_names: list[str] | None,
+) -> None:
+    """Apply a teams-only edit (``accessible_teams`` without ``accessible_team_levels``).
+
+    SEC-F1-R1: the Settings user form re-sends the current team list without
+    levels on every edit (rename, password, ...). Replacing assignments here
+    would recreate them as all-levels (performance_level IS NULL) and silently
+    widen a level-restricted Manager — possibly flipping
+    ``has_unrestricted_team_access`` to True. Instead:
+
+    * teams that remain keep their existing assignment rows/levels untouched;
+    * teams no longer listed are removed;
+    * only teams newly added by name get all-levels (NULL) assignments, which is
+      the explicit "grant this team" request.
+
+    Levels are never widened implicitly for an already-assigned team.
+    """
+    requested_keys: list[str] = list(dict.fromkeys(
+        str(name).strip().casefold() for name in (team_names or []) if str(name).strip()
+    ))
+    requested_set = set(requested_keys)
+
+    existing_assignments = (
+        db.query(UserTeamAssignment).filter(UserTeamAssignment.user_id == user_id).all()
+    )
+    retained_keys: set[str] = set()
+    for assignment in existing_assignments:
+        team = assignment.team or db.query(Team).filter(Team.id == assignment.team_id).first()
+        key = logical_team_name(team).casefold() if team else None
+        if key is not None and key in requested_set:
+            retained_keys.add(key)
+        else:
+            db.delete(assignment)
+
+    added_keys = [key for key in requested_keys if key not in retained_keys]
+    if not added_keys:
+        return
+    teams = _active_teams(db)
+    for key in added_keys:
+        for team in teams:
+            if logical_team_name(team).casefold() == key:
+                db.add(UserTeamAssignment(
+                    id=uuid.uuid4(),
+                    user_id=user_id,
+                    team_id=team.id,
+                    performance_level=None,
+                    access_level="admin",
+                    assigned_by="Admin",
+                ))
+
+
 def _current_user_id(request: Request) -> str | None:
     payload = getattr(request.state, "user", None) or {}
     if hasattr(payload, "get"):
@@ -355,6 +409,7 @@ async def update_user_route(
         if "name" in updates:
             existing.full_name = updates["name"].strip()
 
+        previous_role = existing.role
         if "role" in updates:
             existing.role = updates["role"]
 
@@ -389,12 +444,24 @@ async def update_user_route(
                     existing.id,
                     list(dict.fromkeys(logical_team_name(team) for team in _active_teams(db))),
                 )
-            elif "accessible_teams" in updates or "accessible_team_levels" in updates:
+            elif "accessible_team_levels" in updates:
+                # Explicit per-level scope: authoritative replace.
                 _replace_team_assignments(
                     db,
                     existing.id,
                     updates.get("accessible_teams"),
                     updates.get("accessible_team_levels"),
+                )
+            elif previous_role == "General Manager":
+                # P3: GM assignments are synthetic all-teams/all-levels rows.
+                # On demote, start from a clean slate so the Manager is not
+                # left unrestricted; only explicitly listed teams are granted.
+                _replace_team_assignments(db, existing.id, updates.get("accessible_teams") or [])
+            elif "accessible_teams" in updates:
+                # SEC-F1-R1: teams-only edit must preserve existing level
+                # restrictions; never widen levels implicitly.
+                _merge_team_assignments_preserving_levels(
+                    db, existing.id, updates.get("accessible_teams")
                 )
 
         db.commit()
