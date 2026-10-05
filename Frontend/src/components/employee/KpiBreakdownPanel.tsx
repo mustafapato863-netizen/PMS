@@ -3,6 +3,7 @@ import type { AgentRecord } from '../../types';
 import { getKPIsForAgent, isPreApprovalsIpElectiveTeam, resolvePreApprovalsWorkstream } from '../../types';
 import { getProgressColor, getProgressFill } from '../../utils/progressColor';
 import { getWeightForLabel, resolveDisplayScore } from '../../utils/kpiScore';
+import { getGradeTone } from '../../constants/grades';
 
 interface KpiBreakdownPanelProps {
   score: number;          // 0-100
@@ -150,7 +151,8 @@ const KpiBreakdownPanel = ({ score: propScore, agent, teamWeights }: KpiBreakdow
   const calculatedScore = resolveDisplayScore(agent, teamWeights);
   const isScopedPreApprovalsTeam = isPreApprovalsIpElectiveTeam(agent.identity.team);
   const displayScore = isScopedPreApprovalsTeam ? calculatedScore : (calculatedScore || propScore);
-  const scoreColor = displayScore >= 90 ? 'var(--color-exceeds)' : displayScore >= 80 ? 'var(--color-meet)' : displayScore >= 70 ? 'var(--color-average)' : 'var(--color-sip)';
+  const scoreTone = getGradeTone(displayScore);
+  const scoreColor = scoreTone.gauge;
 
   // Dynamic root cause / issue detection
   const issues = Array.from(
@@ -196,7 +198,7 @@ const KpiBreakdownPanel = ({ score: propScore, agent, teamWeights }: KpiBreakdow
             <circle cx="18" cy="18" r="15.9" fill="none" stroke="var(--border-light)" strokeWidth="3" />
             <circle
               cx="18" cy="18" r="15.9" fill="none"
-              stroke={scoreColor} strokeWidth="3"
+              style={{ stroke: scoreColor }} strokeWidth="3"
               strokeDasharray={`${displayScore} 100`}
               strokeLinecap="round"
             />
@@ -209,7 +211,7 @@ const KpiBreakdownPanel = ({ score: propScore, agent, teamWeights }: KpiBreakdow
         </div>
         <div>
           <div className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)] mb-1">Performance Score</div>
-          <div className="text-2xl font-extrabold" style={{ color: scoreColor }}>{displayScore.toFixed(1)}%</div>
+          <div className="text-2xl font-extrabold" style={{ color: scoreTone.text }}>{displayScore.toFixed(1)}%</div>
           {issues.length === 0
             ? <div className="text-xs text-emerald-600 dark:text-emerald-400 font-semibold mt-1 flex items-center gap-1"><Minus size={10} /> All KPIs on target</div>
             : <div className="text-xs text-red-500 dark:text-red-400 font-semibold mt-1">⚠ {issues.join(' · ')}</div>

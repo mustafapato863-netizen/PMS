@@ -197,7 +197,7 @@ export function BSCRightRail({
 
           <div className="flex items-center justify-between gap-3">
             <div>
-              <div className="text-3xl font-black tracking-tight leading-none" style={{ color: tone.color }}>
+              <div className="text-3xl font-black tracking-tight leading-none" style={{ color: tone.text }} data-grade={tone.grade ?? "na"}>
                 {score != null ? `${score.toFixed(1)}%` : "N/A"}
               </div>
               <div className="mt-2 flex items-center gap-2">
@@ -205,8 +205,8 @@ export function BSCRightRail({
                   className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-extrabold"
                   style={{
                     background: tone.background,
-                    color: tone.color,
-                    border: `1px solid color-mix(in srgb, ${tone.color} 17%, transparent)`,
+                    color: tone.badgeText,
+                    border: `1px solid ${tone.border}`,
                   }}
                 >
                   <span className="w-1.5 h-1.5 rounded-full" style={{ background: tone.color, boxShadow: `0 0 6px ${tone.color}` }} />
@@ -222,7 +222,7 @@ export function BSCRightRail({
         </div>
 
         <div className="mt-3 pt-2.5 border-t border-[var(--border-light)] grid grid-cols-2 gap-2">
-          <MicroStat label={isAllMonths ? "Average" : "Current"} value={score != null ? `${score.toFixed(1)}%` : "N/A"} tone={tone.color} />
+          <MicroStat label={isAllMonths ? "Average" : "Current"} value={score != null ? `${score.toFixed(1)}%` : "N/A"} tone={tone.text} />
           <MicroStat
             label={isAllMonths ? "Period" : scoreDelta != null ? "Monthly change" : "Data status"}
             value={isAllMonths ? "All months average" : scoreDelta != null ? <TrendBadge delta={scoreDelta} compact /> : "No comparison"}
@@ -310,7 +310,7 @@ export function BSCRightRail({
               {(rosterManagers || []).slice(0, 3).map((m, idx) => (
                 <div key={m.employeeId} className="flex items-center justify-between text-[11px] p-1.5 rounded-lg bg-[var(--bg-sunken)]/60">
                   <span className="font-bold text-[var(--text-primary)] truncate max-w-[140px]">{idx + 1}. {m.employeeName}</span>
-                  <span className="font-extrabold text-blue-600 dark:text-blue-400">{(m.score ?? 0).toFixed(1)}%</span>
+                  <span className="font-extrabold" style={{ color: getGaugeTone(m.score).text }}>{(m.score ?? 0).toFixed(1)}%</span>
                 </div>
               ))}
             </div>

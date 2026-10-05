@@ -143,7 +143,7 @@
 .ds-score-card-top > div { display: grid; gap: 5px; }
 .ds-score-card-top strong { font-size: 1.8rem; line-height: 1; letter-spacing: -.05em; }
 .ds-score-card-meter { height: 6px; overflow: hidden; border-radius: 999px; background: var(--bg-sunken); }
-.ds-score-card-meter span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--bsc-orange), color-mix(in srgb, var(--bsc-orange) 45%, #fff)); transition: width .45s cubic-bezier(.22,1,.36,1); }
+.ds-score-card-meter span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--pms-grade-d-gauge), color-mix(in srgb, var(--pms-grade-d-gauge) 45%, #fff)); transition: width .45s cubic-bezier(.22,1,.36,1); }
 .ds-score-card-foot { display: flex; justify-content: space-between; gap: 11px; color: var(--text-muted); font-size: .64rem; }
 .ds-score-card-foot span, .ds-score-card-foot strong { display: grid; gap: 3px; }
 .ds-score-card-foot strong { color: var(--text-primary); font-size: .74rem; }

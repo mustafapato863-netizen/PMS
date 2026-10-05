@@ -1,6 +1,6 @@
 import type { CSSProperties } from 'react';
 import type { BscKpiRow, BscPerson } from '../../hooks/api/useBalancedScorecard';
-import { ck, initials, pc, scoreClass, statusClass, statusLabel } from './types';
+import { ck, initials, pc, scoreClass, statusLabel } from './types';
 
 interface ManagerKpiHighlightsProps {
   manager: BscPerson | null;
@@ -61,7 +61,9 @@ function ArrowIcon({ direction }: { direction: 'up' | 'down' | 'flat' }) {
 function KpiCard({ kpi, isSelected, onSelect }: { kpi: BscKpiRow; isSelected: boolean; onSelect: () => void }) {
   const color = pc(kpi.perspective);
   const scoreTone = scoreClass(kpi.score);
-  const statusTone = statusClass(kpi.status) === 'na' ? scoreTone : statusClass(kpi.status);
+  // Pill color + label follow the score's A–E grade; backend status text is only a no-score fallback.
+  const statusTone = scoreTone;
+  const statusText = scoreTone === 'na' ? statusLabel(kpi.status || 'na') : statusLabel(scoreTone);
   const gap = kpi.score == null ? null : kpi.score - 100;
   const direction = gap == null ? 'flat' : gap > 0 ? 'up' : gap < 0 ? 'down' : 'flat';
   const meter = kpi.score == null ? 0 : Math.min(Math.max(kpi.score, 0), 100);
@@ -101,7 +103,7 @@ function KpiCard({ kpi, isSelected, onSelect }: { kpi: BscKpiRow; isSelected: bo
       <div className="bsc-manager-kpi-meter" aria-hidden="true"><span style={{ width: `${meter}%` }} /></div>
 
       <div className="bsc-manager-kpi-bottom">
-        <span className={`bsc-status-pill ${statusTone}`}><i />{statusLabel(kpi.status || statusTone)}</span>
+        <span className={`bsc-status-pill ${statusTone}`}><i />{statusText}</span>
         {kpi.weight != null && (
           <span className="bsc-manager-kpi-weight">{(kpi.weight * 100).toFixed(0)}% weight</span>
         )}

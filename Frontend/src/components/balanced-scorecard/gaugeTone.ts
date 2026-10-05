@@ -1,22 +1,39 @@
+import { getGradeTone, type GradeClass } from '../../constants/grades';
+
+/**
+ * Score tone for BSC gauges and the Overall Performance card.
+ * Maps score → getGradeClass(score) → `--pms-grade-*` tokens (A–E palette).
+ * All values are CSS-variable references so light/dark themes both apply.
+ */
 export interface GaugeTone {
+  /** A–E grade, or null when there is no usable score. */
+  grade: GradeClass | null;
+  /** Gauge arc / fill / accent color (`--pms-grade-*-gauge`). */
   color: string;
+  /** Score % and label text color (`--pms-grade-*-text`). */
+  text: string;
+  /** Glow used for arc halo and panel shadow (`--pms-grade-*-glow`). */
   glow: string;
+  /** Grade label, e.g. "Below Average"; "No data" when score is missing. */
   label: string;
+  /** Soft badge background (`--pms-grade-*-badge-bg`). */
   background: string;
+  /** Soft badge text (`--pms-grade-*-badge-text`). */
+  badgeText: string;
+  /** Soft badge border (`--pms-grade-*-border`). */
+  border: string;
 }
 
 export function getGaugeTone(score: number | null | undefined): GaugeTone {
-  if (score == null || !Number.isFinite(score)) {
-    return { color: '#8C96A5', glow: 'rgba(140, 150, 165, 0.14)', label: 'No data', background: 'var(--bsc-na-bg)' };
-  }
-  if (score >= 90) {
-    return { color: '#1A8C53', glow: 'rgba(26, 140, 83, 0.18)', label: 'Excellent', background: 'var(--bsc-excellent-bg)' };
-  }
-  if (score >= 70) {
-    return { color: '#1A9E72', glow: 'rgba(26, 158, 114, 0.16)', label: 'Good', background: 'var(--bsc-good-bg)' };
-  }
-  if (score >= 50) {
-    return { color: '#C2740A', glow: 'rgba(194, 116, 10, 0.16)', label: 'Needs attention', background: 'var(--bsc-attention-bg)' };
-  }
-  return { color: '#D03B3B', glow: 'rgba(208, 59, 59, 0.16)', label: 'Poor', background: 'var(--bsc-poor-bg)' };
+  const tone = getGradeTone(score);
+  return {
+    grade: tone.grade,
+    color: tone.gauge,
+    text: tone.text,
+    glow: tone.glow,
+    label: tone.label,
+    background: tone.badgeBg,
+    badgeText: tone.badgeText,
+    border: tone.border,
+  };
 }

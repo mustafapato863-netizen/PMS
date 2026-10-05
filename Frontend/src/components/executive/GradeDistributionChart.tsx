@@ -1,23 +1,24 @@
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LabelList
 } from 'recharts';
-import { GRADE_PALETTE } from '../../constants/grades';
+import { GRADE_PALETTE, gradeTokenVar, type GradeClass } from '../../constants/grades';
 
 interface GradeDistributionChartProps {
   classCounts: { A: number; B: number; C: number; D: number; E: number };
   displayMode?: 'headcount' | 'percentage';
 }
 
-const GRADE_CONFIG = [
-  { key: 'A', label: 'Class A', color: GRADE_PALETTE.A.text, desc: GRADE_PALETTE.A.label },
-  { key: 'B', label: 'Class B', color: GRADE_PALETTE.B.text, desc: GRADE_PALETTE.B.label },
-  { key: 'C', label: 'Class C', color: GRADE_PALETTE.C.text, desc: GRADE_PALETTE.C.label },
-  { key: 'D', label: 'Class D', color: GRADE_PALETTE.D.text, desc: GRADE_PALETTE.D.label },
-  { key: 'E', label: 'Class E', color: GRADE_PALETTE.E.text, desc: GRADE_PALETTE.E.label },
+const GRADE_CONFIG: Array<{ key: GradeClass; label: string; color: string; desc: string }> = [
+  { key: 'A', label: 'Class A', color: GRADE_PALETTE.A.gauge, desc: GRADE_PALETTE.A.label },
+  { key: 'B', label: 'Class B', color: GRADE_PALETTE.B.gauge, desc: GRADE_PALETTE.B.label },
+  { key: 'C', label: 'Class C', color: GRADE_PALETTE.C.gauge, desc: GRADE_PALETTE.C.label },
+  { key: 'D', label: 'Class D', color: GRADE_PALETTE.D.gauge, desc: GRADE_PALETTE.D.label },
+  { key: 'E', label: 'Class E', color: GRADE_PALETTE.E.gauge, desc: GRADE_PALETTE.E.label },
 ];
 
 interface GradeTooltipPayload {
   payload: {
+    key: GradeClass;
     label: string;
     desc: string;
     color: string;
@@ -33,7 +34,7 @@ const CustomTooltip = ({ active, payload }: { active?: boolean; payload?: GradeT
     <div className="bg-[var(--bg-surface)] border border-[var(--border-medium)] rounded-xl p-3 shadow-lg text-sm">
       <div className="font-bold text-[var(--text-primary)] mb-1">{d.label}</div>
       <div className="text-[var(--text-secondary)] text-xs mb-2">{d.desc}</div>
-      <div className="font-extrabold text-xl" style={{ color: d.color }}>
+      <div className="font-extrabold text-xl" style={{ color: gradeTokenVar(d.key, 'text') }}>
         {d.count} {d.count === 1 ? 'agent' : 'agents'}
       </div>
       <div className="mt-0.5 text-xs font-semibold text-[var(--text-muted)]">{d.percentage.toFixed(1)}% of headcount</div>

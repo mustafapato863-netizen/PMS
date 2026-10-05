@@ -112,7 +112,7 @@ const MarketingPositionDetail = ({
   const gradeData = Object.entries(grades).map(([grade, value]) => ({
     name: `Grade ${grade}`,
     value,
-    color: GRADE_PALETTE[grade as keyof typeof GRADE_PALETTE].text,
+    color: GRADE_PALETTE[grade as keyof typeof GRADE_PALETTE].gauge,
   }));
   const trendData = analytics.trend.map((point) => ({ month: point.period, score: point.score }));
   const filteredEmployees = useMemo(() => {

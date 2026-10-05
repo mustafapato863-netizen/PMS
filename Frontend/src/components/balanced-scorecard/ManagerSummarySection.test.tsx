@@ -100,4 +100,25 @@ describe('ManagerSummarySection', () => {
     expect(onKpiLeave).toHaveBeenCalledOnce();
     expect(onSelectKpi).toHaveBeenCalledWith('response-time');
   });
+
+  it('colors score pills with the A–E grade palette instead of Good / Poor', () => {
+    render(
+      <ManagerSummarySection
+        activeManager={manager}
+        rosterManagers={[manager]}
+        kpiTable={kpis}
+        history={history}
+        onSelectKpi={() => undefined}
+        selectedKpi={null}
+      />,
+    );
+
+    const excellent = screen.getAllByText('Excellent');
+    expect(excellent.length).toBeGreaterThan(0);
+    expect(excellent[0]).toHaveClass('grade-A');
+    const unsatisfactory = screen.getAllByText('Unsatisfactory');
+    expect(unsatisfactory[0]).toHaveClass('grade-E');
+    expect(screen.queryByText('Good')).not.toBeInTheDocument();
+    expect(screen.queryByText('Poor')).not.toBeInTheDocument();
+  });
 });

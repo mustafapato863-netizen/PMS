@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import type { BscKpiRow } from '../../hooks/api/useBalancedScorecard';
-import { ck, fmtScore, statusClass, scoreClass, fmtVal } from './types';
+import { ck, fmtScore, scoreClass, fmtVal } from './types';
+import { getGradeClassOrNull, gradeTokenVar } from '../../constants/grades';
 import StatusPill from './StatusPill';
 
 interface KpiTablePanelProps {
@@ -74,16 +75,18 @@ export function KpiTablePanel({
             <tbody>
               {kpiTable.map((row) => {
                 const colorKey = ck(row.perspective);
-                const pill = statusClass(row.state ?? row.status);
-                const statusValue = row.state === 'not_configured'
+                const isConfigured = row.state !== 'not_configured';
+                // Score color always comes from the A–E grade of the score itself.
+                const pill = isConfigured ? scoreClass(row.score) : 'na';
+                const statusValue = !isConfigured
                   ? row.state
                   : row.score != null
-                    ? scoreClass(row.score)
+                    ? pill
                     : row.status ?? row.state;
                 const isDimmed = !!(selectedPerspective && selectedPerspective !== row.perspective);
                 const isSel = row.kpi_key === selectedKpi;
                 const barPct = row.score != null ? Math.min(100, row.score) : 0;
-                const barColor = { excellent: '#1A8C53', good: '#1A9E72', attention: '#C2740A', poor: '#D03B3B', na: '#8A8F99' }[pill] ?? '#8A8F99';
+                const barColor = gradeTokenVar(isConfigured ? getGradeClassOrNull(row.score) : null, 'gauge');
                 return (
                   <tr
                     key={row.kpi_key}

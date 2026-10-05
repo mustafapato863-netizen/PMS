@@ -189,12 +189,75 @@ select option {
   --color-meet: #0084CE;
   --color-exceeds: #00A859;
 
-  /* Unified grade palette */
-  --grade-a-text: #00843D; --grade-a-bg: #E8FAF2; --grade-a-border: #6DD5A0;
-  --grade-b-text: #0069B4; --grade-b-bg: #E6F4FB; --grade-b-border: #87C8F0;
-  --grade-c-text: #B45309; --grade-c-bg: #FFF7E8; --grade-c-border: #F0C070;
-  --grade-d-text: #C2410C; --grade-d-bg: #FFF1E8; --grade-d-border: #EDAC7A;
-  --grade-e-text: #DC2626; --grade-e-bg: #FFF0F1; --grade-e-border: #F09290;
+  /* ── PMS grade palette (A–E) ─────────────────────────────────────
+     Source: pms-grade-palette/tokens.css (light UI, WCAG AA).
+     score → getGradeClass(score) → --pms-grade-<a..e>-*.
+       text        score % / label text
+       badge-*     soft badge (bg + text + border)
+       solid*      filled badge
+       gauge/glow  arcs, bars, chart fills, panel glow
+     Mirrored in src/constants/grades.ts (GRADE_PALETTE). */
+  /* A — Excellent (deep green) */
+  --pms-grade-a-text: #0A6B3C;
+  --pms-grade-a-badge-bg: #E3F6EC;
+  --pms-grade-a-badge-text: #0A6B3C;
+  --pms-grade-a-solid: #0E8749;
+  --pms-grade-a-solid-text: #FFFFFF;
+  --pms-grade-a-gauge: #0E8749;
+  --pms-grade-a-border: #8FD6AE;
+  --pms-grade-a-glow: rgba(14, 135, 73, 0.16);
+  /* B — Meet Expectations (teal) */
+  --pms-grade-b-text: #0A5F6E;
+  --pms-grade-b-badge-bg: #E3F4F6;
+  --pms-grade-b-badge-text: #0A5F6E;
+  --pms-grade-b-solid: #0E7A8A;
+  --pms-grade-b-solid-text: #FFFFFF;
+  --pms-grade-b-gauge: #0E7A8A;
+  --pms-grade-b-border: #8BC9D2;
+  --pms-grade-b-glow: rgba(14, 122, 138, 0.16);
+  /* C — Average (amber) */
+  --pms-grade-c-text: #8A5200;
+  --pms-grade-c-badge-bg: #FFF4DC;
+  --pms-grade-c-badge-text: #8A5200;
+  --pms-grade-c-solid: #A66800;
+  --pms-grade-c-solid-text: #FFFFFF;
+  --pms-grade-c-gauge: #A66800;
+  --pms-grade-c-border: #E6C06A;
+  --pms-grade-c-glow: rgba(166, 104, 0, 0.16);
+  /* D — Below Average (orange) */
+  --pms-grade-d-text: #A84808;
+  --pms-grade-d-badge-bg: #FFEDE0;
+  --pms-grade-d-badge-text: #A84808;
+  --pms-grade-d-solid: #C35410;
+  --pms-grade-d-solid-text: #FFFFFF;
+  --pms-grade-d-gauge: #C35410;
+  --pms-grade-d-border: #E8A878;
+  --pms-grade-d-glow: rgba(195, 84, 16, 0.16);
+  /* E — Unsatisfactory (red) */
+  --pms-grade-e-text: #B42318;
+  --pms-grade-e-badge-bg: #FEECEC;
+  --pms-grade-e-badge-text: #B42318;
+  --pms-grade-e-solid: #D92D20;
+  --pms-grade-e-solid-text: #FFFFFF;
+  --pms-grade-e-gauge: #D92D20;
+  --pms-grade-e-border: #F0A0A0;
+  --pms-grade-e-glow: rgba(217, 45, 32, 0.16);
+  /* N/A — no score */
+  --pms-grade-na-text: #5B616E;
+  --pms-grade-na-badge-bg: #EEF0F3;
+  --pms-grade-na-badge-text: #5B616E;
+  --pms-grade-na-solid: #5B616E;
+  --pms-grade-na-solid-text: #FFFFFF;
+  --pms-grade-na-gauge: #8C96A5;
+  --pms-grade-na-border: #C9CED6;
+  --pms-grade-na-glow: rgba(140, 150, 165, 0.14);
+
+  /* Legacy grade aliases (kept for existing .grade-*, .status-*, .pms-* classes) */
+  --grade-a-text: var(--pms-grade-a-text); --grade-a-bg: var(--pms-grade-a-badge-bg); --grade-a-border: var(--pms-grade-a-border);
+  --grade-b-text: var(--pms-grade-b-text); --grade-b-bg: var(--pms-grade-b-badge-bg); --grade-b-border: var(--pms-grade-b-border);
+  --grade-c-text: var(--pms-grade-c-text); --grade-c-bg: var(--pms-grade-c-badge-bg); --grade-c-border: var(--pms-grade-c-border);
+  --grade-d-text: var(--pms-grade-d-text); --grade-d-bg: var(--pms-grade-d-badge-bg); --grade-d-border: var(--pms-grade-d-border);
+  --grade-e-text: var(--pms-grade-e-text); --grade-e-bg: var(--pms-grade-e-badge-bg); --grade-e-border: var(--pms-grade-e-border);
 
   /* Glassmorphism */
   --glass-bg: rgba(255, 255, 255, 0.92);
@@ -263,11 +326,27 @@ select option {
   --border-medium: rgba(255, 255, 255, 0.14);
   --border-strong: rgba(255, 255, 255, 0.24);
 
-  --grade-a-text: #34D399; --grade-a-bg: rgba(0, 168, 89, 0.18); --grade-a-border: rgba(52, 211, 153, 0.45);
-  --grade-b-text: #38BDF8; --grade-b-bg: rgba(0, 163, 224, 0.18); --grade-b-border: rgba(56, 189, 248, 0.45);
-  --grade-c-text: #FBBF24; --grade-c-bg: rgba(245, 158, 11, 0.18); --grade-c-border: rgba(251, 191, 36, 0.45);
-  --grade-d-text: #FB923C; --grade-d-bg: rgba(234, 88, 12, 0.18); --grade-d-border: rgba(251, 146, 60, 0.45);
-  --grade-e-text: #F87171; --grade-e-bg: rgba(239, 68, 68, 0.18); --grade-e-border: rgba(248, 113, 113, 0.45);
+  /* PMS grade palette — dark UI. The handoff tokens are light-only; these keep
+     the same hue order (green → teal → amber → orange → red) with lighter
+     text/gauge tints for contrast on dark surfaces. Solid fills reuse light. */
+  --pms-grade-a-text: #34D399; --pms-grade-a-badge-bg: rgba(16, 185, 129, 0.18); --pms-grade-a-badge-text: #34D399;
+  --pms-grade-a-gauge: #10B981; --pms-grade-a-border: rgba(52, 211, 153, 0.45); --pms-grade-a-glow: rgba(16, 185, 129, 0.22);
+  --pms-grade-b-text: #22D3EE; --pms-grade-b-badge-bg: rgba(6, 182, 212, 0.18); --pms-grade-b-badge-text: #22D3EE;
+  --pms-grade-b-gauge: #06B6D4; --pms-grade-b-border: rgba(34, 211, 238, 0.45); --pms-grade-b-glow: rgba(6, 182, 212, 0.22);
+  --pms-grade-c-text: #FBBF24; --pms-grade-c-badge-bg: rgba(245, 158, 11, 0.18); --pms-grade-c-badge-text: #FBBF24;
+  --pms-grade-c-gauge: #F59E0B; --pms-grade-c-border: rgba(251, 191, 36, 0.45); --pms-grade-c-glow: rgba(245, 158, 11, 0.22);
+  --pms-grade-d-text: #FB923C; --pms-grade-d-badge-bg: rgba(249, 115, 22, 0.18); --pms-grade-d-badge-text: #FB923C;
+  --pms-grade-d-gauge: #F97316; --pms-grade-d-border: rgba(251, 146, 60, 0.45); --pms-grade-d-glow: rgba(249, 115, 22, 0.22);
+  --pms-grade-e-text: #F87171; --pms-grade-e-badge-bg: rgba(239, 68, 68, 0.18); --pms-grade-e-badge-text: #F87171;
+  --pms-grade-e-gauge: #EF4444; --pms-grade-e-border: rgba(248, 113, 113, 0.45); --pms-grade-e-glow: rgba(239, 68, 68, 0.22);
+  --pms-grade-na-text: #CBD5E1; --pms-grade-na-badge-bg: rgba(148, 163, 184, 0.14); --pms-grade-na-badge-text: #CBD5E1;
+  --pms-grade-na-gauge: #94A3B8; --pms-grade-na-border: rgba(148, 163, 184, 0.35); --pms-grade-na-glow: rgba(148, 163, 184, 0.14);
+
+  --grade-a-text: var(--pms-grade-a-text); --grade-a-bg: var(--pms-grade-a-badge-bg); --grade-a-border: var(--pms-grade-a-border);
+  --grade-b-text: var(--pms-grade-b-text); --grade-b-bg: var(--pms-grade-b-badge-bg); --grade-b-border: var(--pms-grade-b-border);
+  --grade-c-text: var(--pms-grade-c-text); --grade-c-bg: var(--pms-grade-c-badge-bg); --grade-c-border: var(--pms-grade-c-border);
+  --grade-d-text: var(--pms-grade-d-text); --grade-d-bg: var(--pms-grade-d-badge-bg); --grade-d-border: var(--pms-grade-d-border);
+  --grade-e-text: var(--pms-grade-e-text); --grade-e-bg: var(--pms-grade-e-badge-bg); --grade-e-border: var(--pms-grade-e-border);
 
   /* Glassmorphism */
   --glass-bg: rgba(15, 26, 46, 0.75);
@@ -421,10 +500,9 @@ select option {
   --bsc-orange-glow:   rgba(217, 119, 6, 0.22);
   --bsc-orange-glow-strong: rgba(217, 119, 6, 0.40);
 
-  /* BSC Status */
+  /* BSC trend direction (up / down deltas only — NOT score grades;
+     score color uses --pms-grade-* via scoreClass / getGaugeTone) */
   --bsc-excellent-bg:  #E5F6EC;  --bsc-excellent-fg: #1A8C53;
-  --bsc-good-bg:       #E9F7F1;  --bsc-good-fg:      #1A9E72;
-  --bsc-attention-bg:  #FDF1E2;  --bsc-attention-fg: #C2740A;
   --bsc-poor-bg:       #FCEAEA;  --bsc-poor-fg:      #D03B3B;
   --bsc-na-bg:         #EEF0F3;  --bsc-na-fg:        #6B7280;
 
@@ -477,8 +555,6 @@ select option {
   --bsc-orange-glow: rgba(224, 131, 46, 0.30);
   --bsc-orange-glow-strong: rgba(224, 131, 46, 0.50);
   --bsc-excellent-bg: rgba(26, 140, 83, 0.20);
-  --bsc-good-bg: rgba(26, 158, 114, 0.18);
-  --bsc-attention-bg: rgba(194, 116, 10, 0.20);
   --bsc-poor-bg: rgba(208, 59, 59, 0.20);
   --bsc-na-bg: rgba(148, 163, 184, 0.14);
   --bsc-na-fg: #CBD5E1;
@@ -889,10 +965,12 @@ select option {
   display: flex; align-items: center; gap: 4px; white-space: nowrap;
 }
 .bsc-status-pill .dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
-.bsc-status-pill.excellent { background: var(--bsc-excellent-bg); color: var(--bsc-excellent-fg); }
-.bsc-status-pill.good      { background: var(--bsc-good-bg);      color: var(--bsc-good-fg); }
-.bsc-status-pill.attention { background: var(--bsc-attention-bg); color: var(--bsc-attention-fg); }
-.bsc-status-pill.poor      { background: var(--bsc-poor-bg);      color: var(--bsc-poor-fg); }
+/* Score-derived pills use the A–E grade palette (scoreClass → grade-a..grade-e). */
+.bsc-status-pill.grade-a { background: var(--pms-grade-a-badge-bg); color: var(--pms-grade-a-badge-text); }
+.bsc-status-pill.grade-b { background: var(--pms-grade-b-badge-bg); color: var(--pms-grade-b-badge-text); }
+.bsc-status-pill.grade-c { background: var(--pms-grade-c-badge-bg); color: var(--pms-grade-c-badge-text); }
+.bsc-status-pill.grade-d { background: var(--pms-grade-d-badge-bg); color: var(--pms-grade-d-badge-text); }
+.bsc-status-pill.grade-e { background: var(--pms-grade-e-badge-bg); color: var(--pms-grade-e-badge-text); }
 .bsc-status-pill.na        { background: var(--bsc-na-bg);        color: var(--bsc-na-fg); }
 
 .bsc-score-row { display: flex; align-items: baseline; gap: 7px; margin: 5.5px 0 3px; }
@@ -1211,10 +1289,11 @@ select option {
 
 /* score colors */
 .bsc-score-val { font-weight: 800; }
-.bsc-score-val.excellent { color: var(--bsc-excellent-fg); }
-.bsc-score-val.good      { color: var(--bsc-good-fg); }
-.bsc-score-val.attention { color: var(--bsc-attention-fg); }
-.bsc-score-val.poor      { color: var(--bsc-poor-fg); }
+.bsc-score-val.grade-a { color: var(--pms-grade-a-text); }
+.bsc-score-val.grade-b { color: var(--pms-grade-b-text); }
+.bsc-score-val.grade-c { color: var(--pms-grade-c-text); }
+.bsc-score-val.grade-d { color: var(--pms-grade-d-text); }
+.bsc-score-val.grade-e { color: var(--pms-grade-e-text); }
 .bsc-score-val.na        { color: var(--bsc-panel-muted); }
 
 /* emp avatar */
@@ -1687,11 +1766,11 @@ body {
 .grade-E, .score-grade-E, .status-grade-E { background: var(--grade-e-bg); color: var(--grade-e-text); border-color: var(--grade-e-border); }
 
 /* Per-grade shadow for score and status badges */
-.score-badge.score-grade-A, .grade-status-badge.status-grade-A { box-shadow: 0 1px 4px rgba(15,138,75,0.14), inset 0 1px 0 rgba(255,255,255,0.6); }
-.score-badge.score-grade-B, .grade-status-badge.status-grade-B { box-shadow: 0 1px 4px rgba(37,99,235,0.14), inset 0 1px 0 rgba(255,255,255,0.6); }
-.score-badge.score-grade-C, .grade-status-badge.status-grade-C { box-shadow: 0 1px 4px rgba(183,121,31,0.14), inset 0 1px 0 rgba(255,255,255,0.6); }
-.score-badge.score-grade-D, .grade-status-badge.status-grade-D { box-shadow: 0 1px 4px rgba(197,106,26,0.14), inset 0 1px 0 rgba(255,255,255,0.6); }
-.score-badge.score-grade-E, .grade-status-badge.status-grade-E { box-shadow: 0 1px 4px rgba(217,45,32,0.14), inset 0 1px 0 rgba(255,255,255,0.6); }
+.score-badge.score-grade-A, .grade-status-badge.status-grade-A { box-shadow: 0 1px 4px var(--pms-grade-a-glow), inset 0 1px 0 rgba(255,255,255,0.6); }
+.score-badge.score-grade-B, .grade-status-badge.status-grade-B { box-shadow: 0 1px 4px var(--pms-grade-b-glow), inset 0 1px 0 rgba(255,255,255,0.6); }
+.score-badge.score-grade-C, .grade-status-badge.status-grade-C { box-shadow: 0 1px 4px var(--pms-grade-c-glow), inset 0 1px 0 rgba(255,255,255,0.6); }
+.score-badge.score-grade-D, .grade-status-badge.status-grade-D { box-shadow: 0 1px 4px var(--pms-grade-d-glow), inset 0 1px 0 rgba(255,255,255,0.6); }
+.score-badge.score-grade-E, .grade-status-badge.status-grade-E { box-shadow: 0 1px 4px var(--pms-grade-e-glow), inset 0 1px 0 rgba(255,255,255,0.6); }
 
 .score-badge {
   display: inline-flex; align-items: center; justify-content: center;
@@ -2475,10 +2554,11 @@ body {
   line-height: 1;
   font-variant-numeric: tabular-nums;
 }
-.bsc-manager-kpi-score.excellent { color: var(--bsc-excellent-fg); }
-.bsc-manager-kpi-score.good { color: var(--bsc-good-fg); }
-.bsc-manager-kpi-score.attention { color: var(--bsc-attention-fg); }
-.bsc-manager-kpi-score.poor { color: var(--bsc-poor-fg); }
+.bsc-manager-kpi-score.grade-a { color: var(--pms-grade-a-text); }
+.bsc-manager-kpi-score.grade-b { color: var(--pms-grade-b-text); }
+.bsc-manager-kpi-score.grade-c { color: var(--pms-grade-c-text); }
+.bsc-manager-kpi-score.grade-d { color: var(--pms-grade-d-text); }
+.bsc-manager-kpi-score.grade-e { color: var(--pms-grade-e-text); }
 .bsc-manager-kpi-score.na { color: var(--bsc-panel-muted); font-size: 19px; }
 .bsc-manager-kpi-gap { display: inline-flex; align-items: center; gap: 2px; font-size: 9.5px; font-weight: 800; white-space: nowrap; }
 .bsc-manager-kpi-gap svg { width: 11px; height: 11px; }
@@ -2545,10 +2625,11 @@ body {
 .bsc-manager-radio.checked i { transform: scale(1); }
 .bsc-manager-roster-team { color: var(--bsc-panel-subtle); font-size: 10.5px; font-weight: 750; white-space: nowrap; }
 .bsc-manager-roster-score { font-size: 12px; font-weight: 900; font-variant-numeric: tabular-nums; }
-.bsc-manager-roster-score.excellent { color: var(--bsc-excellent-fg); }
-.bsc-manager-roster-score.good { color: var(--bsc-good-fg); }
-.bsc-manager-roster-score.attention { color: var(--bsc-attention-fg); }
-.bsc-manager-roster-score.poor { color: var(--bsc-poor-fg); }
+.bsc-manager-roster-score.grade-a { color: var(--pms-grade-a-text); }
+.bsc-manager-roster-score.grade-b { color: var(--pms-grade-b-text); }
+.bsc-manager-roster-score.grade-c { color: var(--pms-grade-c-text); }
+.bsc-manager-roster-score.grade-d { color: var(--pms-grade-d-text); }
+.bsc-manager-roster-score.grade-e { color: var(--pms-grade-e-text); }
 .bsc-manager-roster-score.na { color: var(--bsc-panel-muted); }
 .bsc-manager-roster-contribution { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .bsc-manager-roster-top-kpi { display: block; max-width: 174px; overflow: hidden; color: var(--bsc-panel-subtle); text-overflow: ellipsis; white-space: nowrap; }

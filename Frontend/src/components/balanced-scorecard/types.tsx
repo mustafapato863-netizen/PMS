@@ -1,4 +1,5 @@
 import React from 'react';
+import { GRADE_PALETTE, getGradeClassOrNull, type GradeClass } from '../../constants/grades';
 
 // ─── Types & Interfaces ─────────────────────────────────────────
 export type ViewKey = 'strategy_map' | 'perspective_summary';
@@ -160,27 +161,49 @@ export const fmtVariance = (v?: number | null, unit?: string) => {
   return fmtVal(v, unit);
 };
 
-export const statusClass = (s?: string) => {
-  const t = (s ?? '').toLowerCase();
-  if (t.includes('excellent')) return 'excellent';
-  if (t.includes('good'))      return 'good';
-  if (t.includes('attention') || t.includes('warning')) return 'attention';
-  if (t.includes('poor'))      return 'poor';
-  return 'na';
+// ─── Score tone (A–E grade palette) ─────────────────────────────
+// Every score-derived color in the BSC goes through the employee grade
+// scale (constants/grades.ts) and `--pms-grade-*` tokens. The legacy
+// Excellent / Good / Needs attention / Poor score-color scheme is retired.
+export type ScoreTone = 'grade-a' | 'grade-b' | 'grade-c' | 'grade-d' | 'grade-e' | 'na';
+
+const GRADE_TONE_PATTERN = /^grade-([a-e])$/;
+
+const toneToGrade = (tone: string): GradeClass | null => {
+  const match = GRADE_TONE_PATTERN.exec(tone.trim().toLowerCase());
+  return match ? (match[1].toUpperCase() as GradeClass) : null;
+};
+
+/** CSS tone class for a score: `grade-a` … `grade-e`, or `na` without a usable score. */
+export const scoreClass = (v?: number | null): ScoreTone => {
+  const grade = getGradeClassOrNull(v);
+  return grade ? (`grade-${grade.toLowerCase()}` as ScoreTone) : 'na';
+};
+
+/** Grade label for a score ("Excellent" … "Unsatisfactory"), or "N/A". */
+export const scoreLabel = (v?: number | null) => {
+  const grade = getGradeClassOrNull(v);
+  return grade ? GRADE_PALETTE[grade].label : 'N/A';
+};
+
+/**
+ * Pill class for a status value. Grade tones (from `scoreClass`) pass through;
+ * free-text backend statuses never pick a score color — callers must derive
+ * color from the score via `scoreClass`. Anything else renders neutral.
+ */
+export const statusClass = (s?: string): ScoreTone => {
+  const grade = toneToGrade(s ?? '');
+  return grade ? (`grade-${grade.toLowerCase()}` as ScoreTone) : 'na';
 };
 
 export const statusLabel = (s?: string) => {
+  const grade = toneToGrade(s ?? '');
+  if (grade) return GRADE_PALETTE[grade].label;
   const t = (s ?? '').toLowerCase();
-  if (t.includes('excellent'))  return 'Excellent';
-  if (t.includes('good'))       return 'Good';
-  if (t.includes('attention'))  return 'Needs Attention';
-  if (t.includes('poor'))       return 'Poor';
   if (t.includes('not_configured') || t.includes('not configured')) return 'Not Configured';
+  if (t === 'na' || t === 'no_data' || t.includes('no data')) return 'No Data';
   return s || 'N/A';
 };
-
-export const scoreClass = (v?: number | null) =>
-  v == null ? 'na' : v >= 90 ? 'excellent' : v >= 75 ? 'good' : v >= 60 ? 'attention' : 'poor';
 
 export const initials = (n: string) =>
   n.split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();

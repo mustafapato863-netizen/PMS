@@ -3,6 +3,7 @@ import { AlertTriangle, ArrowUpRight } from 'lucide-react';
 import type { BscHistoryPoint, BscKpiRow } from '../../hooks/api/useBalancedScorecard';
 import type { ManagerSnapshot } from './managerSnapshots';
 import { fmtVal as fmtValFromTypes } from './types';
+import { GRADE_PALETTE, getGradeClassOrNull } from '../../constants/grades';
 
 interface ManagerSummarySectionProps {
   activeManager: ManagerSnapshot | null;
@@ -119,12 +120,11 @@ export function ManagerSummarySection({
   const worstKpi = [...configuredKpis].sort((a, b) => (a.score ?? 100) - (b.score ?? 100))[0];
 
   // Helper for status pill styles
+  // Score pills use the A–E grade palette (global `.grade-A` … `.grade-E` → --pms-grade-* tokens).
   const getStatusPill = (score: number | null | undefined) => {
-    if (score == null) return { text: 'N/A', cls: 'bg-slate-500/10 text-slate-500 dark:bg-slate-500/20 dark:text-slate-400' };
-    if (score >= 90) return { text: 'Excellent', cls: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20' };
-    if (score >= 70) return { text: 'Good', cls: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20' };
-    if (score >= 50) return { text: 'Needs Attention', cls: 'bg-amber-500/10 text-amber-600 dark:text-amber-450 border border-amber-500/20' };
-    return { text: 'Poor', cls: 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20' };
+    const grade = getGradeClassOrNull(score);
+    if (!grade) return { text: 'N/A', cls: 'bg-slate-500/10 text-slate-500 dark:bg-slate-500/20 dark:text-slate-400' };
+    return { text: GRADE_PALETTE[grade].label, cls: `grade-${grade} border` };
   };
 
   // Helper for perspective formatting
