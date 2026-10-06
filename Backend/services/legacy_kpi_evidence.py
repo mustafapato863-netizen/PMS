@@ -245,6 +245,37 @@ def _sales_activity_totals(row: Mapping[str, Any]) -> tuple[float, float]:
     )
 
 
+def _inbound_row_uses_utz(
+    row: Mapping[str, Any],
+    achievements: Mapping[str, Any] | None = None,
+    persisted_achievements: Mapping[str, Any] | None = None,
+) -> bool:
+    """Whether an Inbound row was scored on Utilization (else Abandon Rate).
+
+    ``KPIService.calculate_performance`` scores ``Other`` on UTZ only when the
+    source row supplies ``A.UTZ%``; otherwise it uses the Abandon Rate. Older
+    versions of that method then wrote ``A.UTZ% = 0.0`` back into the row when
+    the column was absent, so a stored ``0`` does not prove UTZ data existed
+    (production check: 157 Inbound records saved ``Other`` as Utilization /
+    higher_better). Disambiguate a zero with the achievement that was actually
+    scored: an Abandon achievement is always positive (1.0 at/below target,
+    target/actual above it), whereas 0% utilisation scores exactly 0.
+    """
+    utz = _first(row, "A.UTZ%", "UTZ%")
+    if utz is None:
+        return False
+    if utz > 0:
+        return True
+    for source in (achievements, persisted_achievements):
+        scored = _number((source or {}).get("Other"))
+        if scored is not None:
+            return scored <= 0
+    # No scored achievement available: a positive Abandon achievement on the
+    # row means the zero UTZ value was the injected placeholder.
+    abandon_achievement = _first(row, "AbandonRate%Ach%")
+    return not (abandon_achievement is not None and abandon_achievement > 0)
+
+
 def build_legacy_employee_kpi_values(
     team: str,
     row: Mapping[str, Any],
@@ -252,6 +283,7 @@ def build_legacy_employee_kpi_values(
     achievements: Mapping[str, float] | None = None,
     weights: Mapping[str, float] | None = None,
     config: Mapping[str, Any] | None = None,
+    persisted_achievements: Mapping[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """Build the canonical KPI evidence for legacy formula-based teams.
 
@@ -260,6 +292,10 @@ def build_legacy_employee_kpi_values(
     columns previously stored Excel time fractions and zero/mismatched
     targets. This builder is shared by ingestion and the compatibility read
     path so existing rows and future uploads expose the same evidence.
+
+    ``persisted_achievements`` (``kpi_key -> stored achievement``) is only used
+    to tell which Inbound ``Other`` variant (Utilization vs Abandon Rate) the
+    record was scored on; it never overrides the rebuilt achievements.
     """
 
     if team == PRE_APPROVALS_IP_ELECTIVE_TEAM:
@@ -291,7 +327,7 @@ def build_legacy_employee_kpi_values(
     }
 
     if team == "Inbound":
-        has_utz = _first(row, "A.UTZ%", "UTZ%") is not None
+        has_utz = _inbound_row_uses_utz(row, achievements, persisted_achievements)
         specs = [
             ("Attendance", "Attendance Rate", "higher_better", _first(row, "A.Attend%"), _first(row, "Attend%Ach%"), 0.75),
             ("Booking", "Booking Rate", "higher_better", _first(row, "A.Booking%"), _first(row, "Booking%Ach%"), 0.45),

@@ -11,7 +11,10 @@ Precedence (highest first):
    documented legacy source variants in ``LEGACY_VARIANT_DIRECTIONS``)
 2. ``team_config``   - the same KPI anywhere in the team's file config (all
    levels/positions); merged/logical teams fall back to their source teams via
-   ``utils.report_scope._team_keys``; ambiguous matches are ignored
+   ``utils.report_scope._team_keys``, and a config's
+   ``kpi_direction_source_teams`` list supplies directions for KPI rows
+   inherited from another team (own definitions win); ambiguous matches are
+   ignored
 3. ``persisted``     - a valid direction stored on the KPI row
 4. ``global_config`` - a single unambiguous key/label match across all team
    configs. Identities configured with different directions in different
@@ -137,9 +140,19 @@ def _load_config(name: str) -> dict[str, Any] | None:
         return find_team_config_by_db_name(name)
 
 
+SOURCE_TEAMS_CONFIG_KEY = "kpi_direction_source_teams"
+
+
 @lru_cache(maxsize=128)
 def team_direction_index(team: str) -> dict[str, str]:
-    """Every KPI direction configured for a team, across all levels/positions."""
+    """Every KPI direction configured for a team, across all levels/positions.
+
+    A team config may also list ``kpi_direction_source_teams``: teams whose KPI
+    rows can legitimately be attached to this team's records (see the
+    Pre-Approvals IP Elective Dubai config note). Their directions fill in
+    identities the team itself does not configure; the team's own (and merged
+    alias) definitions always win.
+    """
     configs: list[dict[str, Any]] = []
     for name in [team, *sorted(_team_keys(team))]:
         if not name:
@@ -147,7 +160,16 @@ def team_direction_index(team: str) -> dict[str, str]:
         config = _load_config(name)
         if config and config not in configs:
             configs.append(config)
-    return _direction_index(configs)
+    index = _direction_index(configs)
+    source_configs: list[dict[str, Any]] = []
+    for config in configs:
+        for source_team in config.get(SOURCE_TEAMS_CONFIG_KEY) or []:
+            source = _load_config(str(source_team))
+            if source and source not in configs and source not in source_configs:
+                source_configs.append(source)
+    for identity, direction in _direction_index(source_configs).items():
+        index.setdefault(identity, direction)
+    return index
 
 
 @lru_cache(maxsize=1)

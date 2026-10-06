@@ -10,6 +10,9 @@
     "C": 75,
     "D": 65
   },
+  "kpi_direction_source_teams": [
+    "Pre-Approvals IP Final Dubai"
+  ],
   "workstream_target_pairs": {
     "IP Elective": [
       {
@@ -36,7 +39,8 @@
     "Workstream is selected per active row from the complete target pair: T.Initial Rejection % plus T.% Of Approval within 48 HR/1.5 HR. The approved pairs are (3%, 75%) and (6%, 75%) for IP Elective, and (1%, 100%) and (3%, 100%) for ER / IP Approval. The turnaround numerator must agree with that pair; both or neither populated, a missing target, or an unsupported pair fails ingestion with employee identifiers instead of guessing.",
     "Rows whose Status or Performance Grade is Leave, New Staff, or - are excluded before scoring. Resigned is not excluded because it was not supplied as a business rule.",
     "The ER source table says within 48 hours in its target header, but its KPI and source numerator are 1.5 hours. The canonical target is 100% within 1.5 hours. Row-level target values are preserved to support historical target revisions in the source workbook.",
-    "The product scorecard caps each KPI achievement and final score at 100%; presentation and stored scoring use the same cap."
+    "The product scorecard caps each KPI achievement and final score at 100%; presentation and stored scoring use the same cap.",
+    "kpi_direction_source_teams: performance records are unique per employee and month, so an agent who appears on both the IP Final Dubai and IP Elective Dubai sheets of the same upload is saved as ONE record (team = IP Elective Dubai, the later sheet) that also carries the IP Final Dubai KPI rows (combined_*, ip_approval_*, ip_discharge_*). Those keys resolve their direction from the IP Final Dubai config instead of a cross-team guess or a default. Dashboards still show only the Elective KPIs for these records."
   ],
   "performance_levels": {
     "Employee": {

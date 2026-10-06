@@ -135,6 +135,8 @@ Why: Rejection is a defect outcome, while handled queries and attended contacts 
 
 Legacy source note: when the source row contains `A.UTZ%`, the legacy evidence builder presents `Other` as **Utilization**, changes its direction to higher-is-better, and uses the utilization target. The checked-in JSON label is the normal Abandon Rate definition.
 
+A UTZ value counts only when the source actually supplied one. Older uploads wrote a placeholder `A.UTZ% = 0` into rows whose sheet had no UTZ column, so those Abandon-scored records were saved as Utilization / higher_better (production check, 2026-10-06: 157 records). Their stored score was already Abandon-based. The evidence builder now treats a zero UTZ as Abandon Rate when the scored `Other` achievement is positive, because an Abandon achievement is never 0 while 0% utilization scores exactly 0. So dashboards show those records as Abandon Rate (lower_better) and match the stored score. New uploads no longer write the placeholder. Rows with real UTZ data stay Utilization / higher_better.
+
 #### Managerial level
 
 | KPI key | Label | Weight | Direction / unit | Perspective | Rollup |
@@ -283,6 +285,8 @@ Workstream selection uses the complete source target pair, not one target column
 - IP Elective: `(initial rejection 3%, turnaround 75%)` or `(6%, 75%)`.
 - ER / IP Approval: `(initial rejection 1%, turnaround 100%)` or `(3%, 100%)`.
 
+Records carrying IP Final Dubai keys: performance records are unique per employee and month, so an agent on both the IP Final Dubai and IP Elective Dubai sheets of the same upload is saved as one Elective record that also holds the IP Final Dubai KPI rows (`combined_*`, `ip_approval_*`, `ip_discharge_*`). The config lists `"kpi_direction_source_teams": ["Pre-Approvals IP Final Dubai"]`, so those keys resolve from the IP Final Dubai config (all higher_better) and never through a cross-team guess or a default. Dashboards show only the Elective KPIs for these records, but the stored score column of such a merged record is the capped sum of both KPI sets. That is a record-key issue, not a direction issue (see live check #2, B1/B2).
+
 Missing/unsupported pairs fail ingestion so the system does not guess the workstream. Rows with Status or Performance Grade `Leave`, `New Staff`, or `-` are excluded before scoring. The source ER header says 48 hours, but the canonical KPI is **1.5 hours** and uses `ApprovalWithin1.5HR`.
 
 ### 3.9 Pre-Approvals IP Final Dubai — [pre_approvals_ip_final_dubai.json](../Backend/config/teams/pre_approvals_ip_final_dubai.json)
@@ -429,12 +433,12 @@ Before adding or changing a KPI, confirm all of the following:
 Every reader resolves `higher_better` / `lower_better` through [Backend/utils/kpi_direction.py](../Backend/utils/kpi_direction.py) (`resolve_kpi_direction`), in this order:
 
 1. **Record config** (`direction_source = "config"`): the KPI definition of the record's own resolved team/level/position config (plus the documented Inbound `Other` = Utilization legacy variant).
-2. **Team config** (`team_config`): the same key/label anywhere in the team's file config; merged/logical teams resolve through their source teams. Ambiguous matches inside a team are ignored.
+2. **Team config** (`team_config`): the same key/label anywhere in the team's file config; merged/logical teams resolve through their source teams. A team config may list `kpi_direction_source_teams` for KPI rows legitimately inherited from another team; their directions only fill identities the team does not define. Ambiguous matches inside a team are ignored.
 3. **Persisted** (`persisted`): a valid direction stored on the KPI row (written from the record's config at upload).
 4. **Global** (`global_config`): a single unambiguous key/label match across all teams. Keys that carry different directions in different teams — `TAT` (Coding lower vs Re-Submission higher) and `Other` (Inbound / Inbound UAE abandon rate lower vs Outbound reachability higher) — are excluded, so they only resolve by team.
 5. **Default** (`default`): `higher_better`, logged once as a warning and flagged with `direction_source = "default"` (Insights and reporting evidence exclude it from ranking).
 
-A KPI that was saved under the opposite direction (Marketing `cw_error_free` before it became `higher_better`) has its contribution re-scored at read time in `DashboardRecordService` and reporting evidence, so record scores and grades shown on pages are direction-correct. SQL aggregates that read the stored `performance_records.score` column still need `Backend/scripts/fix_cw_error_free_direction.py --apply` to rewrite stored values.
+A KPI that was saved under the opposite direction (Marketing `cw_error_free` before it became `higher_better`) has its contribution re-scored at read time in `DashboardRecordService` and reporting evidence, so record scores and grades shown on pages are direction-correct. SQL aggregates that read the stored `performance_records.score` column still need `Backend/scripts/fix_cw_error_free_direction.py --apply` to rewrite stored values. The Inbound `Other` placeholder-UTZ records above do not need it, because their stored score was already Abandon-based. Only their dashboard rebuild was wrong.
 
 Management (Managerial/Corporate) uploads: a blank Direction cell still defaults to `higher_better`, but the upload response now lists a `BLANK_DIRECTION` warning naming the KPI and row. The period-applied management DB config remains authoritative for managerial rows.
 

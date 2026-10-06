@@ -261,6 +261,13 @@ class DashboardRecordService:
                 )
                 for value in item.kpi_values
             }
+            # Stored achievements only disambiguate the Inbound Other variant
+            # (Utilization vs Abandon Rate) in the legacy rebuild.
+            persisted_achievements = {
+                str(value.kpi_key): float(value.achievement_ratio)
+                for value in item.kpi_values
+                if value.achievement_ratio is not None
+            }
             payload_raw_data: dict = {}
             if isinstance(payload, dict):
                 candidate_raw_data = payload.get("raw_data")
@@ -273,6 +280,7 @@ class DashboardRecordService:
                         rich_record.raw_data,
                         weights=persisted_weights,
                         config=config,
+                        persisted_achievements=persisted_achievements,
                     )
                     scoped_kpis = (
                         [value for value in kpi_values if value["kpi_key"] in config_by_key]
@@ -356,6 +364,7 @@ class DashboardRecordService:
                 payload_raw_data,
                 weights=persisted_weights,
                 config=config,
+                persisted_achievements=persisted_achievements,
             ) if payload_raw_data else []
             fallback_kpis = repaired_fallback_kpis or (
                 [value for value in kpi_values if value["kpi_key"] in config_by_key]

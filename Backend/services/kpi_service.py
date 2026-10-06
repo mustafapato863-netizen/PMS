@@ -276,7 +276,10 @@ class KPIService:
 
             # 4. Swappable UTZ / Abandon metric logic
             utz_raw = row.get("A.UTZ%")
-            if utz_raw is None or (isinstance(utz_raw, float) and np.isnan(utz_raw)) or pd.isna(utz_raw):
+            utz_supplied = not (
+                utz_raw is None or (isinstance(utz_raw, float) and np.isnan(utz_raw)) or pd.isna(utz_raw)
+            )
+            if not utz_supplied:
                 other_ach = abandon_ach
             else:
                 other_ach = utz_ach
@@ -315,14 +318,18 @@ class KPIService:
             row["A.Booking%"] = actual_booking_cr
             row["A.Attend%"] = actual_attend_cr
             row["A.AbandonRate%"] = actual_abandon_rate
-            row["A.UTZ%"] = actual_utz
+            # Never write a placeholder 0.0 UTZ when the source had none: the
+            # KPI evidence builder and root-cause analysis read a present UTZ
+            # value as "Other = Utilization (higher_better)", which mislabelled
+            # Abandon-scored records.
+            row["A.UTZ%"] = actual_utz if utz_supplied else np.nan
             row["A.QualityScore"] = actual_quality
             row["AHT_Minutes"] = aht_minutes
             row["Booking%Ach%"] = booking_ach
             row["Attend%Ach%"] = attend_ach
             row["QualityTargetAch%"] = quality_ach
             row["AHTAch%"] = aht_ach
-            row["UTZ%Ach%"] = utz_ach
+            row["UTZ%Ach%"] = utz_ach if utz_supplied else np.nan
             row["AbandonRate%Ach%"] = abandon_ach
 
         elif team == "Outbound":
