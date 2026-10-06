@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { Target } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import type { ExecutiveKpiRow, ExecutivePeriod } from '../../../features/executive/types';
@@ -6,9 +7,9 @@ import { gapTone } from './execModel';
 import { DirectionTag, ExecCard, ExecCardHeader, GradeSquare, ScoreText, SoftEmpty } from './ExecPrimitives';
 
 
-export default function TeamKpiTable({ rows, effective, previous, score, reportHref, title = 'Team KPIs — worst first', subtitle, showTeams = false }: {
+export default function TeamKpiTable({ rows, effective, previous, score, reportHref, title = 'Team KPIs — worst first', subtitle, showTeams = false, headerAction = null }: {
   rows: ExecutiveKpiRow[]; effective: ExecutivePeriod | null; previous: ExecutivePeriod | null; score: number | null; reportHref?: string | null;
-  title?: string; subtitle?: string; showTeams?: boolean;
+  title?: string; subtitle?: string; showTeams?: boolean; headerAction?: ReactNode;
 }) {
   const head = 'text-[10px] font-semibold uppercase tracking-[0.6px] text-[var(--text-muted)]';
   const vs = previous ? `vs ${previous.month.slice(0, 3)}` : 'vs last';
@@ -22,7 +23,8 @@ export default function TeamKpiTable({ rows, effective, previous, score, reportH
         title={title}
         subtitle={subtitle ?? `Sorted by achievement${effective ? ` · ${effective.month} ${effective.year}` : ''}`}
         action={(
-          <div className="flex items-center gap-[8px]">
+          <div className="flex flex-wrap items-center justify-end gap-[8px]">
+            {headerAction}
             <span className="rounded-full bg-[var(--exec-chip-bg)] px-[8px] py-[2px] text-[11px] font-semibold text-[var(--exec-chip-text)]">{rows.length} KPIs</span>
             {reportHref && <Link to={reportHref} className="inline-flex items-center rounded-[8px] border border-[var(--insights-accent-border)] bg-[var(--insights-accent-soft)] px-[10px] py-[6px] text-[12px] font-semibold text-[var(--insights-accent-text)]">Open team report</Link>}
           </div>
