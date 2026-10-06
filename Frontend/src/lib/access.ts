@@ -40,7 +40,7 @@ export const ROLE_MANAGER = 'Manager' as const;
 export const ROLE_FUNCTION_VIEWER = 'Function Viewer' as const;
 
 /** Role options offered in the Admin user form / filters, in display order. */
-export const USER_ROLE_OPTIONS: readonly AppRole[] = ['Admin', 'General Manager', 'Manager', 'Executive', 'Viewer', 'Agent'];
+export const USER_ROLE_OPTIONS: readonly AppRole[] = ['Admin', 'General Manager', 'Manager', ROLE_FUNCTION_VIEWER, 'Executive', 'Viewer', 'Agent'];
 
 export const isAdminRole = (role: RoleInput): boolean => role === ROLE_ADMIN;
 

@@ -85,6 +85,9 @@ def _team_keys(value: str) -> set[str]:
     return {normalized}
 
 
+FUNCTION_VIEWER_FUNCTIONS = ("Call Center", "RCM", "Pre-Approvals", "Marketing")
+
+
 # "Functions" are the parent domains that ``_team_keys`` already expands into
 # their source teams (the same values the Insights ``team`` filter accepts as
 # rollups). A team that is not part of any parent domain (Marketing, Sales,
@@ -126,6 +129,14 @@ def function_team_keys(function_name: str) -> set[str]:
 
 
 def user_can_access_team(scope: dict, team_name: str) -> bool:
+    if scope.get("role") == "Function Viewer":
+        allowed_functions = {
+            str(name).strip().casefold()
+            for name in scope.get("accessible_functions", [])
+            if str(name).strip()
+        }
+        team_functions = {name.casefold() for name in functions_for_team(team_name)}
+        return bool(allowed_functions & team_functions)
     if scope.get("legacy_unscoped"):
         return True
     if scope.get("role") in {"Admin", "General Manager"} or scope.get("has_unrestricted_team_access"):
@@ -135,6 +146,8 @@ def user_can_access_team(scope: dict, team_name: str) -> bool:
 
 
 def user_can_access_team_level(scope: dict, team_name: str, performance_level: str) -> bool:
+    if scope.get("role") == "Function Viewer":
+        return user_can_access_team(scope, team_name)
     if scope.get("legacy_unscoped"):
         return False
     if scope.get("role") in {"Admin", "General Manager"} or scope.get("has_unrestricted_team_access"):
@@ -151,9 +164,22 @@ def user_can_access_team_level(scope: dict, team_name: str, performance_level: s
 
 
 def filter_records_by_scope(records, scope: dict):
+    role = scope.get("role")
+    if role == "Function Viewer":
+        allowed_functions = {
+            str(name).strip().casefold()
+            for name in scope.get("accessible_functions", [])
+            if str(name).strip()
+        }
+        return [
+            record for record in records
+            if any(
+                function.casefold() in allowed_functions
+                for function in functions_for_team(str(_record_value(record, "team", "") or ""))
+            )
+        ]
     if scope.get("legacy_unscoped"):
         return records
-    role = scope.get("role")
     if role in {"Agent", "Executive"}:
         self_id = str(scope.get("employee_id") or scope.get("user_id") or "")
         return [record for record in records if str(_record_value(record, "employee_id")) == self_id]
@@ -165,6 +191,8 @@ def filter_records_by_scope(records, scope: dict):
 
 def filter_records_by_team_levels(records, scope: dict):
     """Apply explicit team/level assignments after the broader role scope filter."""
+    if scope.get("role") == "Function Viewer":
+        return filter_records_by_scope(records, scope)
     if scope.get("role") == "Admin" or scope.get("has_unrestricted_team_access") or scope.get("legacy_unscoped"):
         return records
     configured = {

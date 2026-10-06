@@ -4,13 +4,15 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from starlette.requests import Request
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 from api.middleware.auth_middleware import AuthMiddleware
+from api.dependencies import get_current_user_scope
 from api.routers.users_and_actions import users_router
 from config.database import get_db
-from models.models import Base, Employee, RefreshSession, RolePermission, Team, User, UserTeamAssignment
+from models.models import Base, Employee, RefreshSession, RolePermission, Team, User, UserTeamAssignment, UserFunctionAssignment
 from services.auth_service import AuthenticationService
 from services.permission_seed import seed_role_permissions
 from services.password_service import verify_password
@@ -30,6 +32,7 @@ def db_session():
             Employee.__table__,
             User.__table__,
             UserTeamAssignment.__table__,
+            UserFunctionAssignment.__table__,
             RolePermission.__table__,
             RefreshSession.__table__,
         ],
@@ -302,3 +305,178 @@ def test_admin_cannot_deactivate_self(test_client, db_session):
     print("DEBUG DEACTIVATE SELF RESPONSE:", response.json())
     assert response.status_code == 400
     assert "own account" in response.json()["detail"]
+
+
+def test_admin_create_function_viewer_with_selected_functions(test_client, db_session):
+    headers = _auth_headers(db_session, "function_admin", "SecurePassword123!")
+
+    response = test_client.post(
+        "/api/users/",
+        headers=headers,
+        json={
+            "id": "function-viewer",
+            "name": "Function Viewer",
+            "username": "function_viewer",
+            "password": "SecurePassword123!",
+            "role": "Function Viewer",
+            "accessible_functions": [" rcm ", "Marketing", "RCM"],
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["accessible_functions"] == ["RCM", "Marketing"]
+    created = db_session.query(User).filter(User.username == "function_viewer").first()
+    assert created is not None
+    assert {
+        assignment.function_name for assignment in created.function_assignments
+    } == {"RCM", "Marketing"}
+
+
+def test_admin_function_permissions_are_replaced_and_cleared_on_role_change(test_client, db_session):
+    headers = _auth_headers(db_session, "function_editor", "SecurePassword123!")
+    user = AuthenticationService.create_user(
+        db_session,
+        "function_target",
+        "function_target@test.com",
+        "SecurePassword123!",
+        "Function Viewer",
+    )
+    db_session.add(UserFunctionAssignment(user_id=user.id, function_name="RCM", assigned_by="Admin"))
+    db_session.commit()
+
+    updated = test_client.put(
+        f"/api/users/{user.id}",
+        headers=headers,
+        json={
+            "id": str(user.id),
+            "name": "Function Target",
+            "username": "function_target",
+            "role": "Function Viewer",
+            "is_active": True,
+            "accessible_functions": ["Pre-Approvals"],
+        },
+    )
+
+    assert updated.status_code == 200
+    assert updated.json()["data"]["accessible_functions"] == ["Pre-Approvals"]
+
+    demoted = test_client.put(
+        f"/api/users/{user.id}",
+        headers=headers,
+        json={
+            "id": str(user.id),
+            "name": "Function Target",
+            "username": "function_target",
+            "role": "Viewer",
+            "is_active": True,
+            "accessible_functions": [],
+        },
+    )
+
+    assert demoted.status_code == 200
+    assert demoted.json()["data"]["accessible_functions"] == []
+    assert db_session.query(UserFunctionAssignment).filter(
+        UserFunctionAssignment.user_id == user.id
+    ).count() == 0
+
+
+def test_admin_cannot_assign_unknown_function(test_client, db_session):
+    headers = _auth_headers(db_session, "invalid_function_admin", "SecurePassword123!")
+
+    response = test_client.post(
+        "/api/users/",
+        headers=headers,
+        json={
+            "id": "bad-function",
+            "name": "Bad Function",
+            "username": "bad_function",
+            "password": "SecurePassword123!",
+            "role": "Function Viewer",
+            "accessible_functions": ["Finance"],
+        },
+    )
+
+    assert response.status_code == 422
+    assert db_session.query(User).filter(User.username == "bad_function").first() is None
+
+
+def test_function_assignments_load_into_authoritative_request_scope(db_session):
+    user = AuthenticationService.create_user(
+        db_session,
+        "scoped_function_user",
+        "scoped_function_user@test.com",
+        "SecurePassword123!",
+        "Function Viewer",
+    )
+    db_session.add(UserFunctionAssignment(
+        user_id=user.id,
+        function_name="Call Center",
+        assigned_by="admin_user",
+    ))
+    db_session.commit()
+
+    request = Request({
+        "type": "http",
+        "method": "GET",
+        "path": "/api/performance/records",
+        "headers": [],
+        "query_string": b"",
+    })
+    request.state.user = {
+        "user_id": str(user.id),
+        "role": "Function Viewer",
+        "employee_id": user.employee_id,
+    }
+
+    scope = get_current_user_scope(db_session, request)
+
+    assert scope["accessible_functions"] == ["Call Center"]
+
+
+@pytest.mark.parametrize("role", ["Function Viewer", "Manager", "General Manager"])
+def test_non_admin_cannot_change_permissions_even_with_forged_role_header(test_client, db_session, role):
+    user = AuthenticationService.create_user(
+        db_session, "permission_attacker", "attacker@test.com", "SecurePassword123!", role,
+    )
+    token = AuthenticationService.authenticate_user(db_session, user.username, "SecurePassword123!")
+    headers = {"Authorization": f"Bearer {token}", "X-User-Role": "Admin"}
+    payload = {
+        "id": str(user.id), "name": "Attacker", "username": user.username,
+        "password": "SecurePassword123!", "role": "Admin",
+        "accessible_functions": ["RCM", "Marketing"], "has_unrestricted_team_access": True,
+    }
+    assert test_client.get("/api/users/", headers=headers).status_code == 403
+    assert test_client.post("/api/users/", headers=headers, json=payload).status_code == 403
+    assert test_client.put(f"/api/users/{user.id}", headers=headers, json=payload).status_code == 403
+    assert test_client.delete(f"/api/users/{user.id}", headers=headers).status_code == 403
+    db_session.refresh(user)
+    assert user.role == role
+    assert db_session.query(UserFunctionAssignment).filter_by(user_id=user.id).count() == 0
+
+
+def test_role_changes_do_not_restore_historical_branch_permissions(test_client, db_session):
+    headers = _auth_headers(db_session, "branch_security_admin", "SecurePassword123!")
+    team = Team(name="Coding", db_name="coding", display_name="Coding", region="EGY", is_active=True)
+    user = AuthenticationService.create_user(
+        db_session, "former_manager", "former@test.com", "SecurePassword123!", "Manager",
+    )
+    db_session.add(team)
+    db_session.flush()
+    db_session.add(UserTeamAssignment(user_id=user.id, team_id=team.id, assigned_by="Admin"))
+    db_session.commit()
+    payload = {"id": str(user.id), "name": "Former Manager", "username": user.username}
+    demoted = test_client.put(
+        f"/api/users/{user.id}", headers=headers,
+        json={**payload, "role": "Function Viewer", "accessible_functions": ["Marketing"]},
+    )
+    assert demoted.status_code == 200
+    assert db_session.query(UserTeamAssignment).filter_by(user_id=user.id).count() == 0
+    # Also handle historical rows left behind before role changes cleared grants.
+    db_session.add(UserTeamAssignment(user_id=user.id, team_id=team.id, assigned_by="Admin"))
+    db_session.commit()
+    promoted = test_client.put(
+        f"/api/users/{user.id}", headers=headers, json={**payload, "role": "Manager"},
+    )
+    assert promoted.status_code == 200
+    assert promoted.json()["data"]["accessible_teams"] == []
+    assert promoted.json()["data"]["has_unrestricted_team_access"] is False

@@ -16,7 +16,7 @@ from config.database import get_db
 from config import settings
 from config.socket_config import online_user_ids
 from api.middleware.rbac_middleware import require_permission
-from models.models import Employee, Team, User, UserTeamAssignment
+from models.models import Employee, Team, User, UserTeamAssignment, UserFunctionAssignment
 from models.schemas import StandardResponse, UserRecord, UserUpdateRecord, LoginPayload
 from repositories.user_repository import UserRepository
 from services.auth_service import AuthenticationService
@@ -30,6 +30,7 @@ from services.corrective_action_service import (
 from services.user_identity_service import UserIdentityService
 from services.user_presence_service import UserPresenceService
 from utils.performance_levels import PERFORMANCE_LEVELS
+from utils.report_scope import FUNCTION_VIEWER_FUNCTIONS
 from utils.team_identity import (
     create_management_team_identity,
     logical_team_name,
@@ -70,6 +71,19 @@ def _user_to_public_dict(db: Session, user: User) -> dict:
         if assignment.team
         for level in ([assignment.performance_level] if assignment.performance_level else PERFORMANCE_LEVELS)
     ]
+    if user.role == "Function Viewer":
+        assigned_functions = {
+            function_name
+            for (function_name,) in db.query(UserFunctionAssignment.function_name)
+            .filter(UserFunctionAssignment.user_id == user.id)
+            .all()
+        }
+        accessible_functions = [
+            function_name for function_name in FUNCTION_VIEWER_FUNCTIONS
+            if function_name in assigned_functions
+        ]
+    else:
+        accessible_functions = []
     return {
         "id": str(user.id),
         "name": UserIdentityService.display_name(db, user),
@@ -83,6 +97,7 @@ def _user_to_public_dict(db: Session, user: User) -> dict:
         "last_seen_at": user.last_seen_at.isoformat() if user.last_seen_at else None,
         "accessible_teams": accessible_teams,
         "accessible_team_levels": accessible_team_levels,
+        "accessible_functions": accessible_functions,
         "accessible_team_count": len(accessible_teams),
         # Renamed from is_general_manager. True for Admin, General Manager role,
         # or Manager whose NULL-level assignments cover every active team.
@@ -98,6 +113,44 @@ def _admin_count(db: Session) -> int:
 
 def _active_teams(db: Session) -> list[Team]:
     return db.query(Team).filter(Team.is_active.is_(True)).order_by(Team.name.asc()).all()
+
+
+def _normalize_function_names(function_names: list[str] | None) -> list[str]:
+    if not function_names:
+        return []
+    by_key = {function_name.casefold(): function_name for function_name in FUNCTION_VIEWER_FUNCTIONS}
+    normalized: list[str] = []
+    for raw_name in function_names:
+        name = str(raw_name).strip()
+        if not name:
+            continue
+        canonical = by_key.get(name.casefold())
+        if canonical is None:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Unknown function permission: {name}",
+            )
+        if canonical not in normalized:
+            normalized.append(canonical)
+    return normalized
+
+
+def _replace_function_assignments(
+    db: Session,
+    user_id,
+    function_names: list[str] | None,
+    assigned_by: str = "Admin",
+) -> None:
+    db.query(UserFunctionAssignment).filter(
+        UserFunctionAssignment.user_id == user_id
+    ).delete(synchronize_session=False)
+    for function_name in _normalize_function_names(function_names):
+        db.add(UserFunctionAssignment(
+            id=uuid.uuid4(),
+            user_id=user_id,
+            function_name=function_name,
+            assigned_by=assigned_by,
+        ))
 
 
 def _linked_employee_id(db: Session, display_name: str) -> str | None:
@@ -120,6 +173,7 @@ def _replace_team_assignments(
     user_id,
     team_names: list[str] | None,
     team_levels: list[tuple[str, str]] | None = None,
+    assigned_by: str = "Admin",
 ) -> None:
     db.query(UserTeamAssignment).filter(UserTeamAssignment.user_id == user_id).delete(synchronize_session=False)
     if not team_names and not team_levels:
@@ -148,7 +202,7 @@ def _replace_team_assignments(
             if team:
                 db.add(UserTeamAssignment(
                     id=uuid.uuid4(), user_id=user_id, team_id=team.id,
-                    performance_level=level, access_level="admin", assigned_by="Admin",
+                    performance_level=level, access_level="admin", assigned_by=assigned_by,
                 ))
         return
     for team_name in team_names:
@@ -163,7 +217,7 @@ def _replace_team_assignments(
                 team_id=team.id,
                 performance_level=None,
                 access_level="admin",
-                assigned_by="Admin",
+                assigned_by=assigned_by,
             ))
 
 
@@ -171,6 +225,7 @@ def _merge_team_assignments_preserving_levels(
     db: Session,
     user_id,
     team_names: list[str] | None,
+    assigned_by: str = "Admin",
 ) -> None:
     """Apply a teams-only edit (``accessible_teams`` without ``accessible_team_levels``).
 
@@ -217,7 +272,7 @@ def _merge_team_assignments_preserving_levels(
                     team_id=team.id,
                     performance_level=None,
                     access_level="admin",
-                    assigned_by="Admin",
+                    assigned_by=assigned_by,
                 ))
 
 
@@ -308,6 +363,7 @@ async def create_user(
     _user=Depends(require_permission("manage_users"))
 ):
     try:
+        assigned_by = str(_user.get("username") or "Admin") if isinstance(_user, dict) else "Admin"
         full_name = payload.name.strip()
         if not full_name:
             raise HTTPException(status_code=422, detail="Full name is required")
@@ -316,6 +372,7 @@ async def create_user(
         if existing_username or existing_email:
             raise HTTPException(status_code=409, detail="Username already exists")
 
+        function_names = _normalize_function_names(payload.accessible_functions)
         new_user = User(
             id=uuid.uuid4(),
             employee_id=_linked_employee_id(db, full_name),
@@ -335,6 +392,7 @@ async def create_user(
                 db,
                 new_user.id,
                 list(dict.fromkeys(logical_team_name(team) for team in _active_teams(db))),
+                assigned_by=assigned_by,
             )
             db.commit()
         elif new_user.role == "Manager":
@@ -343,9 +401,13 @@ async def create_user(
                     db,
                     new_user.id,
                     list(dict.fromkeys(logical_team_name(team) for team in _active_teams(db))),
+                    assigned_by=assigned_by,
                 )
             else:
-                _replace_team_assignments(db, new_user.id, payload.accessible_teams, payload.accessible_team_levels)
+                _replace_team_assignments(db, new_user.id, payload.accessible_teams, payload.accessible_team_levels, assigned_by=assigned_by)
+            db.commit()
+        if new_user.role == "Function Viewer":
+            _replace_function_assignments(db, new_user.id, function_names, assigned_by=assigned_by)
             db.commit()
         db.refresh(new_user)
         return StandardResponse(
@@ -367,6 +429,7 @@ async def update_user_route(
     _user=Depends(require_permission("manage_users"))
 ):
     try:
+        assigned_by = str(_user.get("username") or "Admin") if isinstance(_user, dict) else "Admin"
         auth_header = request.headers.get("Authorization", "")
         current_username = None
         if auth_header.startswith("Bearer "):
@@ -387,6 +450,10 @@ async def update_user_route(
 
         updates = payload.model_dump(exclude_none=True)
         updates.pop("id", None)
+        function_names = (
+            _normalize_function_names(updates["accessible_functions"])
+            if "accessible_functions" in updates else None
+        )
         if "name" in updates:
             updates["name"] = updates["name"].strip()
             if not updates["name"]:
@@ -437,6 +504,7 @@ async def update_user_route(
                 db,
                 existing.id,
                 list(dict.fromkeys(logical_team_name(team) for team in _active_teams(db))),
+                assigned_by=assigned_by,
             )
         elif existing.role == "Manager":
             # Widen only when flag is explicitly True. Omit/null/false must not
@@ -447,6 +515,7 @@ async def update_user_route(
                     db,
                     existing.id,
                     list(dict.fromkeys(logical_team_name(team) for team in _active_teams(db))),
+                    assigned_by=assigned_by,
                 )
             elif "accessible_team_levels" in updates:
                 # Explicit per-level scope: authoritative replace.
@@ -455,18 +524,28 @@ async def update_user_route(
                     existing.id,
                     updates.get("accessible_teams"),
                     updates.get("accessible_team_levels"),
+                    assigned_by=assigned_by,
                 )
-            elif previous_role == "General Manager":
-                # P3: GM assignments are synthetic all-teams/all-levels rows.
-                # On demote, start from a clean slate so the Manager is not
-                # left unrestricted; only explicitly listed teams are granted.
-                _replace_team_assignments(db, existing.id, updates.get("accessible_teams") or [])
+            elif previous_role != "Manager":
+                # Entering Manager must start from explicitly granted branches.
+                # Historical assignments from another role must not reappear.
+                _replace_team_assignments(db, existing.id, updates.get("accessible_teams") or [], assigned_by=assigned_by)
             elif "accessible_teams" in updates:
                 # SEC-F1-R1: teams-only edit must preserve existing level
                 # restrictions; never widen levels implicitly.
                 _merge_team_assignments_preserving_levels(
-                    db, existing.id, updates.get("accessible_teams")
+                    db, existing.id, updates.get("accessible_teams"), assigned_by=assigned_by
                 )
+        elif previous_role in {"Manager", "General Manager"}:
+            _replace_team_assignments(db, existing.id, [], assigned_by=assigned_by)
+
+        if existing.role == "Function Viewer":
+            if function_names is not None:
+                _replace_function_assignments(db, existing.id, function_names, assigned_by=assigned_by)
+            elif previous_role != "Function Viewer":
+                _replace_function_assignments(db, existing.id, [], assigned_by=assigned_by)
+        elif previous_role == "Function Viewer":
+            _replace_function_assignments(db, existing.id, [], assigned_by=assigned_by)
 
         db.commit()
         db.refresh(existing)

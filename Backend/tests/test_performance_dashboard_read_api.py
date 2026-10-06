@@ -99,6 +99,76 @@ def test_summary_is_period_bounded_and_sql_scoped():
         db.close()
 
 
+def test_function_viewer_http_scope_tampering_and_revocation(monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from api.middleware.auth_middleware import AuthMiddleware
+    from api.routers.performance import router
+    from api.routers.users_and_actions import users_router
+    from config import settings
+    from config.database import get_db
+    from models.models import UserFunctionAssignment
+    from services.auth_service import AuthenticationService
+    from services.cache_service import CacheService
+
+    db = _session()
+    try:
+        _seed(db)
+        marketing = Team(id=uuid.uuid4(), name="Marketing", db_name="marketing", region="EGY", is_active=True)
+        employee = Employee(id=uuid.uuid4(), employee_id="EMP-M", name="Hidden", team_id=marketing.id, region="EGY")
+        db.add_all([marketing, employee])
+        db.flush()
+        db.add(PerformanceRecord(
+            id=uuid.uuid4(), year=2026, month="June", employee_id=employee.id, team_id=marketing.id,
+            performance_level="Employee", region="EGY", score=99, grade="A", status="Exceeds",
+        ))
+        admin = AuthenticationService.create_user(db, "scope_admin", "scope-admin@test.com", "SecurePassword123!", "Admin")
+        viewer = AuthenticationService.create_user(db, "scope_viewer", "scope-viewer@test.com", "SecurePassword123!", "Function Viewer")
+        db.add(UserFunctionAssignment(user_id=viewer.id, function_name="Call Center", assigned_by=admin.username))
+        db.commit()
+        viewer_headers = {"Authorization": f"Bearer {AuthenticationService.authenticate_user(db, viewer.username, 'SecurePassword123!')}", "X-User-Role": "Admin"}
+        admin_headers = {"Authorization": f"Bearer {AuthenticationService.authenticate_user(db, admin.username, 'SecurePassword123!')}"}
+        monkeypatch.setattr(settings, "PMS_SCOPED_PERFORMANCE_API_ENABLED", True)
+        monkeypatch.setattr(settings, "PMS_SCOPED_PERFORMANCE_ALLOWED_ROLES", ("Admin",))
+        monkeypatch.setattr("api.middleware.auth_middleware._legacy_access_allowed", lambda: False)
+        cache = {}
+        monkeypatch.setattr(CacheService, "get_json", lambda key, **kwargs: cache.get(key))
+        monkeypatch.setattr(CacheService, "set_json", lambda key, value, **kwargs: cache.setdefault(key, value))
+        app = FastAPI()
+        app.add_middleware(AuthMiddleware)
+
+        def override_db():
+            yield db
+
+        app.dependency_overrides[get_db] = override_db
+        app.include_router(router, prefix="/api")
+        app.include_router(users_router, prefix="/api/users")
+        with TestClient(app) as client:
+            assert client.get("/api/performance/records?period=2026-06", headers={"X-User-Role": "Admin"}).status_code == 401
+            page = client.get("/api/performance/records?period=2026-06", headers=viewer_headers)
+            assert page.status_code == 200
+            assert {item["team"] for item in page.json()["data"]["items"]} == {"Inbound", "Outbound"}
+            assert client.get("/api/performance/records?period=2026-06&team=Marketing", headers=viewer_headers).json()["data"]["items"] == []
+            assert client.get("/api/performance/employee/EMP-M?period_end=2026-06", headers=viewer_headers).json()["data"] == []
+            assert client.get("/api/performance/team/Marketing", headers=viewer_headers).status_code == 403
+            catalog = client.get("/api/performance/catalog", headers=viewer_headers).json()["data"]
+            assert {item["team"] for item in catalog["scopes"]} == {"Inbound", "Outbound"}
+            summary_url = "/api/performance/summary?period=2026-06"
+            assert client.get(summary_url, headers=viewer_headers).json()["data"]["current"]["total_agents"] == 3
+            assert cache
+            revoked = client.put(f"/api/users/{viewer.id}", headers=admin_headers, json={
+                "id": str(viewer.id), "name": "Scope Viewer", "username": viewer.username,
+                "role": "Function Viewer", "accessible_functions": [],
+            })
+            assert revoked.status_code == 200
+            assert revoked.json()["data"]["accessible_functions"] == []
+            assert client.get(summary_url, headers=viewer_headers).json()["data"]["current"]["total_agents"] == 0
+            assert client.get("/api/performance/records?period=2026-06", headers=viewer_headers).json()["data"]["items"] == []
+            assert client.get("/api/performance/catalog", headers=viewer_headers).json()["data"]["scopes"] == []
+    finally:
+        db.close()
+
+
 def test_records_use_stable_cursor_pages_and_keep_scope_out_of_results():
     db = _session()
     try:

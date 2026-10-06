@@ -345,7 +345,10 @@ def _require_scoped_read_api(scope: dict) -> None:
     if not settings.PMS_SCOPED_PERFORMANCE_API_ENABLED:
         raise HTTPException(status_code=404, detail="Scoped performance API is disabled")
     allowed_roles = set(settings.PMS_SCOPED_PERFORMANCE_ALLOWED_ROLES or ())
-    if allowed_roles and str(scope.get("role") or "") not in allowed_roles:
+    role = str(scope.get("role") or "")
+    # Function Viewer is always eligible for the read API once globally enabled;
+    # repository-level scope checks restrict every query to assigned functions.
+    if allowed_roles and role not in allowed_roles and role != "Function Viewer":
         raise HTTPException(status_code=404, detail="Scoped performance API is not enabled for this role")
 
 
@@ -553,6 +556,8 @@ def get_team_yearly_records(
             message=f"Retrieved {len(team_records)} performance records for team",
             data=[serialize_performance_record(r) for r in team_records]
         )
+    except HTTPException:
+        raise
     except Exception as e:
         return StandardResponse(
             success=False,

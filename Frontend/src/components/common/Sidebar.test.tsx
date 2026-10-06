@@ -301,12 +301,12 @@ describe('Function Viewer sidebar (Figma 48:3)', () => {
     expect(screen.getByText('Read-only')).toHaveAttribute('title', 'Function Viewer');
   });
 
-  it('falls back to all four functions when /auth/me has no accessible_functions', async () => {
+  it('shows no function links when /auth/me has no accessible_functions', async () => {
     authState.user = { ...authState.user, accessible_functions: undefined };
     renderSidebar('/function-summary/call-center');
-    await screen.findByRole('link', { name: 'Call Center' });
+    expect(await screen.findByRole('link', { name: 'Function Summary' })).toBeInTheDocument();
     for (const name of ['Call Center', 'RCM', 'Pre-Approvals', 'Marketing']) {
-      expect(screen.getAllByRole('link', { name }).length).toBeGreaterThan(0);
+      expect(screen.queryByRole('link', { name })).not.toBeInTheDocument();
     }
   });
 });

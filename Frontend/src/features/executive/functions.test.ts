@@ -12,9 +12,10 @@ describe('allowedFunctionsFor', () => {
     expect(allowedFunctionsFor('Function Viewer', ['pre-approvals', ' RCM '])).toEqual(['RCM', 'Pre-Approvals']);
   });
 
-  it('drops unknown names and falls back to all four only when the list is absent', () => {
+  it('drops unknown names and fails closed when no function is assigned', () => {
     expect(allowedFunctionsFor('Function Viewer', ['Finance'])).toEqual([]);
-    expect(allowedFunctionsFor('Function Viewer', [])).toHaveLength(4);
+    expect(allowedFunctionsFor('Function Viewer', [])).toEqual([]);
+    expect(allowedFunctionsFor('Function Viewer')).toEqual([]);
   });
 });
 

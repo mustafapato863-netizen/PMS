@@ -68,10 +68,17 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
 
     @staticmethod
     def _apply_scope(query, scope: dict | None):
-        if not scope or scope.get("legacy_unscoped"):
+        if not scope:
             return query
 
         role = str(scope.get("role") or "")
+        if role == "Function Viewer":
+            accessible_functions = scope.get("accessible_functions") or []
+            accessible_teams = _expanded_scope_team_values(accessible_functions)
+            return query.filter(_team_name_clause(accessible_teams)) if accessible_teams else query.filter(false())
+
+        if scope.get("legacy_unscoped"):
+            return query
         if role in {"Admin", "General Manager", "Viewer"} or scope.get("has_unrestricted_team_access"):
             return query
 

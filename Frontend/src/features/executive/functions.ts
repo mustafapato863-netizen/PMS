@@ -60,12 +60,12 @@ export function teamPath(team: string): string {
 
 /**
  * Functions a viewer may open on the Function Summary. Admin / GM: all four.
- * Function Viewer: `accessible_functions` from /auth/me when the backend sends
- * it (unknown names dropped), otherwise all four (backend scopes the data).
+ * Function Viewer: only the functions explicitly returned in /auth/me; an empty
+ * or missing assignment grants no function access.
  */
-export function allowedFunctionsFor(role: string | null | undefined, accessibleFunctions: string[] = []): ExecutiveFunction[] {
-  if (!isFunctionViewerRole(role) || !accessibleFunctions.length) return [...EXECUTIVE_FUNCTIONS];
-  const wanted = new Set(accessibleFunctions.map((name) => name.trim().toLowerCase()));
+export function allowedFunctionsFor(role: string | null | undefined, accessibleFunctions?: string[]): ExecutiveFunction[] {
+  if (!isFunctionViewerRole(role)) return [...EXECUTIVE_FUNCTIONS];
+  const wanted = new Set((accessibleFunctions ?? []).map((name) => name.trim().toLowerCase()));
   return EXECUTIVE_FUNCTIONS.filter((fn) => wanted.has(fn.toLowerCase()));
 }
 

@@ -2,9 +2,8 @@
  * /function-summary[/:functionSlug] — Function Summary v1 (Figma 48:3).
  *
  * Access (ROUTE_ROLES.functionSummary): Admin, GM, Function Viewer. A
- * Function Viewer only sees the functions in /auth/me `accessible_functions`
- * (all four when the backend doesn't send the list yet); an unknown or
- * disallowed slug redirects to the first allowed function. Function Viewer is
+ * Function Viewer only sees functions in /auth/me `accessible_functions`;
+ * an unknown or disallowed slug redirects to the first allowed function. Function Viewer is
  * read-only. The backend must enforce the same scope on its data endpoints.
  */
 import { useCallback, useMemo, type ReactNode } from 'react';

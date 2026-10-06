@@ -156,6 +156,7 @@ class UserRecord(BaseModel):
     accessible_teams: Optional[List[str]] = None
     accessible_team_levels: Optional[List[tuple[str, str]]] = None
     has_unrestricted_team_access: bool = False
+    accessible_functions: Optional[List[str]] = None
 
 class UserUpdateRecord(BaseModel):
     id: str
@@ -169,6 +170,7 @@ class UserUpdateRecord(BaseModel):
     accessible_team_levels: Optional[List[tuple[str, str]]] = None
     # None = omitted (do not widen/wipe). Only True explicitly widens Manager to all teams.
     has_unrestricted_team_access: Optional[bool] = None
+    accessible_functions: Optional[List[str]] = None
 
 class LoginPayload(BaseModel):
     username: str
