@@ -9,7 +9,13 @@ from typing import Any, Iterable, List, Dict
 
 from sqlalchemy.orm import Session
 
-from config.loader import ConfigurationError, find_team_config_by_db_name, load_team_config, resolve_team_config
+from config.loader import (
+    ConfigurationError,
+    find_team_config_by_db_name,
+    load_all_team_configs,
+    load_team_config,
+    resolve_team_config,
+)
 from models.insight_schemas import (
     InsightComparison,
     InsightDetail,
@@ -158,6 +164,217 @@ def _analysis_config(team: str, level: str, position: str) -> dict[str, Any] | N
         return None
 
 
+VALID_DIRECTIONS = {"higher_better", "lower_better"}
+DEFAULT_DIRECTION = "higher_better"
+_DIRECTION_ALIASES = {
+    "higher_better": "higher_better",
+    "higher_is_better": "higher_better",
+    "higher": "higher_better",
+    "high": "higher_better",
+    "increase": "higher_better",
+    "max": "higher_better",
+    "maximize": "higher_better",
+    "up": "higher_better",
+    "asc": "higher_better",
+    "lower_better": "lower_better",
+    "lower_is_better": "lower_better",
+    "lower": "lower_better",
+    "low": "lower_better",
+    "decrease": "lower_better",
+    "min": "lower_better",
+    "minimize": "lower_better",
+    "down": "lower_better",
+    "desc": "lower_better",
+    "inverse": "lower_better",
+}
+
+
+def _normalize_direction(value: Any) -> str | None:
+    """Map stored direction spellings onto ``higher_better`` / ``lower_better``."""
+    if value is None:
+        return None
+    normalized = "_".join(str(value).strip().casefold().replace("-", " ").split())
+    return _DIRECTION_ALIASES.get(normalized)
+
+
+def _collect_kpi_definitions(node: Any, sink: list[dict[str, Any]]) -> None:
+    if isinstance(node, dict):
+        for key, child in node.items():
+            if key == "kpis" and isinstance(child, list):
+                sink.extend(item for item in child if isinstance(item, dict))
+            else:
+                _collect_kpi_definitions(child, sink)
+    elif isinstance(node, list):
+        for child in node:
+            _collect_kpi_definitions(child, sink)
+
+
+def _direction_index(configs: Iterable[dict[str, Any]]) -> dict[str, str]:
+    """Identity (casefolded key/label) -> direction, unambiguous entries only."""
+    seen: dict[str, set[str]] = defaultdict(set)
+    for config in configs:
+        definitions: list[dict[str, Any]] = []
+        _collect_kpi_definitions(config, definitions)
+        for definition in definitions:
+            direction = _normalize_direction(definition.get("direction"))
+            if not direction:
+                continue
+            for identity in (definition.get("key"), definition.get("label")):
+                if identity:
+                    seen[str(identity).strip().casefold()].add(direction)
+    return {identity: next(iter(directions)) for identity, directions in seen.items() if len(directions) == 1}
+
+
+@lru_cache(maxsize=128)
+def _team_direction_index(team: str) -> dict[str, str]:
+    """Every KPI direction configured for a team, across all levels/positions.
+
+    Used when the record's own level/position config cannot be resolved (an
+    unknown position, a merged/logical team name, a management record), so
+    the configured direction still wins over a defaulted persisted value.
+    Merged teams (e.g. Pre-Approvals OP Final) fall back to their source
+    teams via ``_team_keys``; conflicting directions are ignored.
+    """
+    configs: list[dict[str, Any]] = []
+    for name in [team, *sorted(_team_keys(team))]:
+        if not name:
+            continue
+        config = None
+        try:
+            config = load_team_config(name)
+        except ConfigurationError:
+            config = find_team_config_by_db_name(name)
+        if config and config not in configs:
+            configs.append(config)
+    return _direction_index(configs)
+
+
+@lru_cache(maxsize=1)
+def _global_direction_index() -> dict[str, str]:
+    try:
+        return _direction_index(load_all_team_configs())
+    except ConfigurationError:
+        return {}
+
+
+def _resolve_kpi_direction(
+    team: str,
+    value: Any,
+    definition: dict[str, Any] | None,
+) -> tuple[str, str]:
+    """Return ``(direction, source)`` for one KPI row.
+
+    Precedence: the record's resolved KPI definition, then any definition of
+    the same KPI in the team's config, then a valid persisted direction, then
+    an unambiguous match in any team config, and finally the documented
+    ``higher_better`` default. Configuration beats the persisted value because
+    the dashboard resolver writes ``higher_better`` whenever its exact-key
+    config lookup misses, which made lower-is-better KPIs read as positive.
+    """
+    configured = _normalize_direction((definition or {}).get("direction"))
+    if configured:
+        return configured, "config"
+    identities = [
+        str(identity).strip().casefold()
+        for identity in (_value(value, "kpi_key"), _value(value, "label"))
+        if identity
+    ]
+    team_index = _team_direction_index(str(team or ""))
+    for identity in identities:
+        if identity in team_index:
+            return team_index[identity], "team_config"
+    persisted = _normalize_direction(_value(value, "direction"))
+    if persisted:
+        return persisted, "persisted"
+    global_index = _global_direction_index()
+    for identity in identities:
+        if identity in global_index:
+            return global_index[identity], "global_config"
+    return DEFAULT_DIRECTION, "default"
+
+
+def _persisted_kpi_item(value: Any, key: str) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return dict(value)
+    item = {
+        "kpi_key": key,
+        "actual_value": _value(value, "actual_value"),
+        "target_value": _value(value, "target_value"),
+        "achievement_ratio": _value(value, "achievement_ratio"),
+        "weight_applied": _value(value, "weight_applied"),
+        "contribution": _value(value, "contribution"),
+    }
+    for optional in ("label", "direction", "unit", "aggregation"):
+        if _value(value, optional) is not None:
+            item[optional] = _value(value, optional)
+    return item
+
+
+def _apply_direction(item: dict[str, Any], team: str, definition: dict[str, Any] | None) -> dict[str, Any]:
+    direction, source = _resolve_kpi_direction(team, item, definition)
+    item["direction"] = direction
+    item["direction_source"] = source
+    return item
+
+
+def _directional_gap(actual: float | None, target: float | None, direction: str | None) -> float | None:
+    """Gap vs target where positive is better than target and negative is worse."""
+    if actual is None or target is None or direction not in VALID_DIRECTIONS:
+        return None
+    return (actual - target) if direction == "higher_better" else (target - actual)
+
+
+def _directional_change(actual: float | None, previous: float | None, direction: str | None) -> float | None:
+    """Change vs previous where positive is an improvement and negative a decline."""
+    if actual is None or previous is None or direction not in VALID_DIRECTIONS:
+        return None
+    return (actual - previous) if direction == "higher_better" else (previous - actual)
+
+
+def _trend_status(change: float | None) -> str | None:
+    if change is None:
+        return None
+    if abs(change) < 1e-9:
+        return "stable"
+    return "improving" if change > 0 else "declining"
+
+
+def _target_status(actual: float | None, target: float | None, direction: str | None) -> str | None:
+    gap = _directional_gap(actual, target, direction)
+    if gap is None or not target:
+        return None
+    return "met" if gap >= 0 else "missed"
+
+
+def _directional_fields(
+    actual: float | None,
+    previous: float | None,
+    target: float | None,
+    direction: str | None,
+) -> dict[str, Any]:
+    achievement = _target_achievement(actual, target, direction)
+    change = _directional_change(actual, previous, direction)
+    return {
+        "gap_value": _directional_gap(actual, target, direction),
+        "achievement_percent": round(achievement * 100, 2) if achievement is not None else None,
+        "change_value": change,
+        "raw_change": (actual - previous) if actual is not None and previous is not None else None,
+        "trend_status": _trend_status(change),
+        "target_status": _target_status(actual, target, direction),
+    }
+
+
+def _kpi_status(achievement_percent: float | None) -> str | None:
+    """Same thresholds as the KPI overview: 100%+ on track, 70-99.9% at risk, <70% critical."""
+    if achievement_percent is None:
+        return None
+    if achievement_percent >= 100:
+        return "on_track"
+    if achievement_percent >= 70:
+        return "at_risk"
+    return "critical"
+
+
 def _configured_kpi_values(record: Any) -> list[Any]:
     persisted = list(_value(record, "kpi_values", []) or [])
     team = str(_value(record, "team", ""))
@@ -166,7 +383,10 @@ def _configured_kpi_values(record: Any) -> list[Any]:
     config = _analysis_config(team, level, position)
     if persisted:
         if not config:
-            return persisted
+            return [
+                _apply_direction(_persisted_kpi_item(value, str(_value(value, "kpi_key", ""))), team, None)
+                for value in persisted
+            ]
         metadata = {}
         for kpi in config.get("kpis", []) or []:
             for identity in (kpi.get("key"), kpi.get("label")):
@@ -199,19 +419,12 @@ def _configured_kpi_values(record: Any) -> list[Any]:
                 # Persisted evidence is retained on the record, but unknown/stale
                 # keys are not interpreted as scored KPIs for this applied config.
                 continue
-            if isinstance(value, dict):
-                item = dict(value)
-            else:
-                item = {
-                    "kpi_key": key,
-                    "actual_value": _value(value, "actual_value"),
-                    "target_value": _value(value, "target_value"),
-                    "achievement_ratio": _value(value, "achievement_ratio"),
-                    "weight_applied": _value(value, "weight_applied"),
-                    "contribution": _value(value, "contribution"),
-                }
-            item.setdefault("label", kpi.get("label") or key)
-            item.setdefault("direction", kpi.get("direction") or "higher_better")
+            item = _persisted_kpi_item(value, key)
+            if not item.get("label"):
+                item["label"] = kpi.get("label") or key
+            # The configured direction is canonical; a persisted value is only a
+            # fallback (see ``_resolve_kpi_direction``).
+            _apply_direction(item, team, kpi)
             item.setdefault("unit", kpi.get("unit") or "number")
             item.setdefault("aggregation", kpi.get("aggregation"))
             item.setdefault("weight_applied", kpi.get("weight"))
@@ -256,7 +469,7 @@ def _configured_kpi_values(record: Any) -> list[Any]:
         key = str(kpi.get("key") or kpi.get("label") or "")
         label = str(kpi.get("label") or key)
         unit = str(kpi.get("unit") or "number")
-        direction = str(kpi.get("direction") or "higher_better")
+        direction, direction_source = _resolve_kpi_direction(team, {"kpi_key": key, "label": label}, kpi)
         raw_actual = _value(raw_data, str(kpi.get("actual_col") or ""))
         raw_target = _value(raw_data, str(kpi.get("target_col") or ""))
         normalized_key = "".join(character for character in f"{key}{label}".casefold() if character.isalnum())
@@ -298,6 +511,7 @@ def _configured_kpi_values(record: Any) -> list[Any]:
             "kpi_key": key,
             "label": label,
             "direction": direction,
+            "direction_source": direction_source,
             "unit": unit,
             "aggregation": kpi.get("aggregation"),
             "actual_value": actual,
@@ -363,10 +577,20 @@ def _analysis_narrative(
     return f"{movement_text} {target_text}", movement_positive, target_missed, target_exceeded
 
 
-def _kpi_recommended_focus(label: str, direction: str | None, *, target_missed: bool) -> str:
+def _kpi_recommended_focus(
+    label: str,
+    direction: str | None,
+    *,
+    target_missed: bool,
+    worsening: bool = False,
+) -> str:
     if target_missed:
         verb = "Reduce" if direction == "lower_better" else "Increase" if direction == "higher_better" else "Improve"
         return f"{verb} {label} and review the affected employees with the largest gap."
+    if worsening and direction in VALID_DIRECTIONS:
+        if direction == "lower_better":
+            return f"{label} is rising toward its maximum allowed level; bring it back down before it breaches target."
+        return f"{label} is falling toward its target; restore the previous level before it drops below target."
     return f"Maintain {label} performance and monitor the next-period movement."
 
 
@@ -782,18 +1006,24 @@ class InsightsService:
                 achievement = _target_achievement(actual, target, direction) or 0.0
                 severity = "opportunity" if target_met else ("critical" if achievement < .8 else "risk")
                 relation = "above" if direction == "lower_better" else "below"
+                worsening_on_target = target_met and movement_positive is False
+                if worsening_on_target:
+                    severity = "information"
                 if movement_positive and target_missed:
                     title = f"{label} is improving but remains {relation} target"
                     trend_label = f"Improving · Still {relation} target"
                 elif target_missed:
                     title = f"{label} remains {relation} target"
                     trend_label = "Target gap requires attention"
+                elif worsening_on_target:
+                    title = f"{label} is on target but worsening"
+                    trend_label = "Target achieved · Worsening"
                 else:
                     title = f"{label} is on target"
                     trend_label = "Target achieved"
                 items.append(self._make_item(
                     severity=severity,
-                    insight_type="opportunity" if target_met else "kpi_driver",
+                    insight_type="opportunity" if target_met and not worsening_on_target else "kpi_driver",
                     title=title,
                     explanation=narrative,
                     scope_label=f"{team} · {position}",
@@ -822,7 +1052,10 @@ class InsightsService:
                             InsightEvidence(label="Weight", value="0%"),
                             InsightEvidence(label="Included in final score", value="No"),
                         ],
-                        recommended_focus=_kpi_recommended_focus(label, direction, target_missed=target_missed),
+                        recommended_focus=_kpi_recommended_focus(
+                            label, direction, target_missed=target_missed, worsening=movement_positive is False,
+                        ),
+                        **_directional_fields(actual, previous_actual, target, direction),
                     ),
                 ))
         return items
@@ -842,11 +1075,13 @@ class InsightsService:
                         continue
                     bucket_key = (team, position, level, key)
                     target[bucket_key].append(kpi)
+                    defaulted = _value(kpi, "direction_source") == "default"
                     metadata[bucket_key] = {
                         "label": str(_value(kpi, "label", key)),
                         "direction": _value(kpi, "direction"),
                         "unit": _value(kpi, "unit"),
                         "aggregation": _value(kpi, "aggregation"),
+                        "direction_defaulted": defaulted or bool(metadata.get(bucket_key, {}).get("direction_defaulted")),
                     }
 
         items: list[InsightItem] = []
@@ -899,6 +1134,10 @@ class InsightsService:
                         target_value=None,
                         unit=unit,
                         direction=direction,
+                        change_value=_directional_change(actual, previous_actual, direction),
+                        raw_change=(actual - previous_actual) if actual is not None and previous_actual is not None else None,
+                        trend_status=_trend_status(_directional_change(actual, previous_actual, direction)),
+                        direction_defaulted=bool(meta.get("direction_defaulted")),
                         warnings=["Target is missing or zero; calculated results are unavailable."],
                         recommended_focus="Correct the effective KPI target before using this KPI in performance interpretation.",
                     ),
@@ -929,7 +1168,9 @@ class InsightsService:
                 movement_positive = (actual > previous_actual) if direction == "higher_better" else (actual < previous_actual)
 
             achievement = _target_achievement(actual, target, direction)
-            is_positive = impact > 0 or (exceeds_target and impact >= 0)
+            # On target but moving the wrong way (e.g. a lower-is-better rate that
+            # rose while still under its maximum) is not a positive driver.
+            is_positive = impact > 0 or (exceeds_target and impact >= 0 and movement_positive is not False)
             # A high KPI weight increases priority, but a near-target result is not
             # automatically a critical failure. Critical is reserved for results
             # below 80% target achievement (or an unmeasurable severe score loss).
@@ -947,6 +1188,10 @@ class InsightsService:
             narrative, movement_positive, target_missed, exceeds_target = _analysis_narrative(
                 label, actual, previous_actual, target, unit, direction
             )
+            if not target_missed and movement_positive is False:
+                # Still within target, but the direction-aware movement is a
+                # decline: surface it as a watch item rather than an opportunity.
+                severity = "information"
             impact_text = (
                 f"Its weighted contribution moved the overall score by {impact:+.1f}% versus the comparison period."
                 if previous_contribution is not None
@@ -959,6 +1204,9 @@ class InsightsService:
             elif target_missed:
                 title = f"{label} contributed to the performance gap"
                 trend_label = "Compared with previous available period" if previous_values else "Current-period gap"
+            elif movement_positive is False:
+                title = f"{label} is on target but worsening"
+                trend_label = "Target achieved · Worsening"
             else:
                 title = f"{label} is a positive score driver" if is_positive else f"{label} is on target"
                 trend_label = "Target achieved"
@@ -1000,7 +1248,11 @@ class InsightsService:
                         InsightEvidence(label="Measured KPI rows", value=str(len(values))),
                     ],
                     warnings=["Zero targets are not converted into achievement percentages."] if target == 0 else [],
-                    recommended_focus=_kpi_recommended_focus(label, direction, target_missed=target_missed),
+                    recommended_focus=_kpi_recommended_focus(
+                        label, direction, target_missed=target_missed, worsening=movement_positive is False,
+                    ),
+                    direction_defaulted=bool(meta.get("direction_defaulted")),
+                    **_directional_fields(actual, previous_actual, target, direction),
                 ),
             )
             analyses.append(item)
@@ -1016,6 +1268,7 @@ class InsightsService:
                     impact_points=round(impact, 2),
                     direction="positive" if impact > 0 else "negative",
                     insight_id=item.id,
+                    kpi_direction=direction,
                 ))
         return items, analyses, drivers, high_weight_misses
 
@@ -1088,6 +1341,9 @@ class InsightsService:
             gap = None
             weighted_impact = None
             trend = None
+            achievement_percent = None
+            change_value = None
+            target_status = None
             severity = "Data issue"
             classification = "data_issue"
 
@@ -1107,9 +1363,15 @@ class InsightsService:
                 weight_points = weight_value * (100 if abs(weight_value) <= 1 else 1)
                 weighted_impact = (contribution_points - weight_points) / represented_records
                 if previous_actual is not None:
+                    # ``trend`` keeps the raw delta (existing contract);
+                    # ``change_value`` carries the direction-adjusted meaning.
                     trend = (actual_value - float(previous_actual)) * percentage_scale
+                    directional_change = _directional_change(actual_value, float(previous_actual), row_direction)
+                    change_value = directional_change * percentage_scale if directional_change is not None else None
+                target_status = _target_status(actual_value, target_value, row_direction)
 
                 achievement = _target_achievement(actual_value, target_value, row_direction)
+                achievement_percent = round(achievement * 100, 2) if achievement is not None else None
                 if achievement is None:
                     severity = "Data issue"
                     classification = "data_issue"
@@ -1140,6 +1402,10 @@ class InsightsService:
                 trend=round(trend, 2) if trend is not None else None,
                 severity=severity,
                 classification=classification,
+                achievement_percent=achievement_percent,
+                change_value=round(change_value, 2) if change_value is not None else None,
+                trend_status=_trend_status(change_value),
+                target_status=target_status,
             ))
 
         rows.sort(key=lambda row: (
@@ -1191,6 +1457,8 @@ class InsightsService:
                 direction = _value(value, "direction")
 
         points = []
+        previous_actual: float | None = None
+        last_change: float | None = None
         for period in window:
             values = values_by_period.get(period, [])
             definition = {
@@ -1199,6 +1467,13 @@ class InsightsService:
                 "aggregation": _value(values[0], "aggregation") if values else None,
             }
             metric = aggregate_kpi_metric(values, definition)
+            achievement = capped_achievement(metric, direction)
+            achievement_percent = round(achievement * 100, 2) if achievement is not None else None
+            change = _directional_change(metric.actual, previous_actual, direction)
+            if metric.actual is not None:
+                if change is not None:
+                    last_change = change
+                previous_actual = metric.actual
             points.append(InsightKpiTrendPoint(
                 period=_period_schema(period),
                 actual_value=(
@@ -1215,6 +1490,10 @@ class InsightsService:
                     value for value in values
                     if _value(value, "actual_value") is not None
                 ]),
+                achievement_percent=achievement_percent,
+                status=_kpi_status(achievement_percent),
+                change_value=round(change, 4) if change is not None else None,
+                trend_status=_trend_status(change),
             ))
 
         return InsightKpiTrend(
@@ -1223,6 +1502,7 @@ class InsightsService:
             unit=unit,
             direction=direction,
             points=points,
+            trend_status=_trend_status(last_change),
         )
 
     def _employee_risks(self, current: list[Any], previous: list[Any]) -> list[InsightItem]:
@@ -1328,14 +1608,15 @@ class InsightsService:
             )
         missing_direction = sum(
             1 for record in current for kpi in _configured_kpi_values(record)
-            if _value(kpi, "direction") not in {"higher_better", "lower_better"}
+            if _value(kpi, "direction") not in VALID_DIRECTIONS or _value(kpi, "direction_source") == "default"
         )
         if missing_direction:
             add(
                 "KPI direction is missing or invalid",
-                f"{missing_direction} KPI row{'s cannot' if missing_direction != 1 else ' cannot'} be interpreted safely as positive or negative movement.",
+                f"{missing_direction} KPI row{'s have' if missing_direction != 1 else ' has'} no configured direction and "
+                f"{'were' if missing_direction != 1 else 'was'} treated as higher-is-better.",
                 missing_direction,
-                "Direction-dependent narratives were omitted for these rows.",
+                "Direction defaulted to higher-is-better; confirm the KPI configuration.",
             )
         record_keys = [
             (str(_value(record, "employee_id")), str(_value(record, "team")), str(_value(record, "performance_level")), _period(record))

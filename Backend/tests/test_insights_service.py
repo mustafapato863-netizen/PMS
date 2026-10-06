@@ -211,12 +211,20 @@ def test_near_target_high_weight_kpi_is_at_risk_not_critical():
     previous = _record("May", 90, 57.7, 65, .621)
     current = _record("June", 89, 58, 65, .625)
     for record in (previous, current):
-        record.kpi_values[0]["direction"] = "higher_better"
-        record.kpi_values[0]["weight_applied"] = .7
+        # Use a KPI that is configured higher-is-better (Media Buyer "Leads").
+        # The configured direction is canonical, so overriding CPL's persisted
+        # direction would no longer turn that lower-is-better KPI around.
+        record.kpi_values[0].update({
+            "kpi_key": "mb_leads",
+            "label": "Leads",
+            "unit": "count",
+            "direction": "higher_better",
+            "weight_applied": .7,
+        })
 
     workspace = _service([previous, current]).generate_workspace(_scope(), month="June", year=2026)
 
-    cpl = next(item for item in workspace.team_analyses if item.kpi_key == "cpl")
+    cpl = next(item for item in workspace.team_analyses if item.kpi_key == "mb_leads")
     assert cpl.severity == "risk"
     assert workspace.summary.critical_issues == 0
     assert workspace.summary.positive_weighted_drivers == 1

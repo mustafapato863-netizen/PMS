@@ -6,6 +6,9 @@ from pydantic import BaseModel, Field
 
 
 InsightSeverity = Literal["critical", "risk", "opportunity", "information"]
+InsightTrendStatus = Literal["improving", "declining", "stable"]
+InsightTargetStatus = Literal["met", "missed"]
+InsightKpiStatus = Literal["on_track", "at_risk", "critical"]
 InsightType = Literal["performance", "kpi_driver", "employee_risk", "opportunity", "data_quality"]
 
 
@@ -33,6 +36,19 @@ class InsightDetail(BaseModel):
     evidence: list[InsightEvidence] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     recommended_focus: str
+    # Direction-aware values (additive). Raw ``current/previous/target`` above
+    # are unchanged; these already account for ``direction``:
+    # - gap_value: + better than target, - worse (KPI units, same scale as values)
+    # - achievement_percent: capped 0-100 (higher: actual/target, lower: target/actual)
+    # - change_value: + improvement vs previous, - decline
+    # - raw_change: unadjusted current - previous
+    gap_value: float | None = None
+    achievement_percent: float | None = None
+    change_value: float | None = None
+    raw_change: float | None = None
+    trend_status: InsightTrendStatus | None = None
+    target_status: InsightTargetStatus | None = None
+    direction_defaulted: bool = False
 
 
 class InsightItem(BaseModel):
@@ -65,6 +81,7 @@ class InsightDriver(BaseModel):
     impact_points: float
     direction: Literal["positive", "negative"]
     insight_id: str
+    kpi_direction: str | None = None
     trend: list["InsightDriverTrendPoint"] = Field(default_factory=list)
 
 
@@ -159,6 +176,13 @@ class InsightPersonContribution(BaseModel):
     trend: float | None = None
     severity: str
     classification: Literal["negative", "positive", "affected", "data_issue"]
+    # ``gap`` is already direction-adjusted (+ better than target). ``trend``
+    # stays the raw current - previous delta for compatibility; ``change_value``
+    # is the direction-adjusted delta (+ improvement) and ``trend_status`` its meaning.
+    achievement_percent: float | None = None
+    change_value: float | None = None
+    trend_status: InsightTrendStatus | None = None
+    target_status: InsightTargetStatus | None = None
 
 
 class InsightPeopleContributionAnalysis(BaseModel):
@@ -178,6 +202,10 @@ class InsightKpiTrendPoint(BaseModel):
     actual_value: float | None = None
     target_value: float | None = None
     measured_records: int = 0
+    achievement_percent: float | None = None
+    status: InsightKpiStatus | None = None
+    change_value: float | None = None
+    trend_status: InsightTrendStatus | None = None
 
 
 class InsightKpiTrend(BaseModel):
@@ -186,6 +214,7 @@ class InsightKpiTrend(BaseModel):
     unit: str | None = None
     direction: str | None = None
     points: list[InsightKpiTrendPoint] = Field(default_factory=list)
+    trend_status: InsightTrendStatus | None = None
 
 
 class InsightRoleSummary(BaseModel):
