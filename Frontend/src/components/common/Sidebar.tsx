@@ -150,6 +150,11 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed = false, onToggleCollapsed = (
   const rcmVisible = Boolean(performanceCatalog?.scopes?.some((scope) => isRcmTeam(scope.team)))
     && (!scopedTeams || [...scopedTeams].some((team) => isRcmTeam(team)));
 
+  // Dashboard links carry the current query string so the global Header month
+  // filter (`?month=`, read by Executive, Team, Employee and Balanced Scorecard
+  // pages through useMonthParam) and the selected `performance_level` survive
+  // moving between dashboards. Pages that own their own URL filters opt out
+  // with `resetQuery` (Insights: QA BUG-1b, its link must open default filters).
   const linkFor = (path: string, performanceLevel?: PerformanceLevel) => {
     const params = performanceLevel === 'Managerial' || performanceLevel === 'Corporate'
       ? prepareBalancedScorecardTeamParams(searchParams, performanceLevel)
@@ -208,7 +213,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed = false, onToggleCollapsed = (
   const canSeeBroadAppPages = canAccessBroadAppPages(role);
   const canSeeCorrectiveActions = canAccessCorrectiveActions(role);
   const roleLabel = getRoleDisplayLabel(role);
-  const generalItems = canSeeBroadNavigation
+  const generalItems: Array<{ name: string; path: string; icon: React.ReactNode; resetQuery?: boolean }> = canSeeBroadNavigation
     ? [
         { name: 'Executive Summary', path: '/executive', icon: <Gauge size={18} /> },
         ...(hasAllTeamsScope(role, currentUser) || currentUser?.accessible_teams?.length
@@ -217,7 +222,10 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed = false, onToggleCollapsed = (
         ...(canSeeBroadAppPages
           ? [
               { name: 'Reports', path: '/reports', icon: <FileBarChart size={18} /> },
-              { name: 'Insights', path: '/insights', icon: <Lightbulb size={18} /> },
+              // Plain /insights: Insights keeps its own filters in the URL
+              // (period/region/function/team/level), and the sidebar link is the
+              // way back to the default view, so never carry the query (BUG-1b).
+              { name: 'Insights', path: '/insights', icon: <Lightbulb size={18} />, resetQuery: true },
               { name: 'Planning', path: '/planning', icon: <CalendarCheck size={18} /> },
             ]
           : []),
@@ -259,7 +267,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed = false, onToggleCollapsed = (
 
       <div className={`mb-2 px-5 ${isCollapsed ? 'xl:hidden' : ''}`}><p className="text-label text-[0.625rem] text-[var(--text-faint)]">DASHBOARDS</p></div>
       <nav className="custom-scrollbar flex-1 space-y-0.5 overflow-y-auto px-2 pb-2">
-        {generalItems.map((item) => renderLink(item))}
+        {generalItems.map((item) => renderLink(item, undefined, false, item.resetQuery))}
 
         {canSeeBroadNavigation && LEVELS.map((level) => {
           const regions = [

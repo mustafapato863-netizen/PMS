@@ -7,7 +7,7 @@ import {
   teamBelongsToFunction,
   teamOptionsFor,
 } from './filterCascade';
-import { pr14Options } from './pr14Options.fixture';
+import { pr14Options, pr17FunctionOptions } from './pr14Options.fixture';
 
 const apiTeams = [
   'Call Center', 'Coding', 'Inbound', 'Marketing', 'Outbound', 'Pre-Approvals IP Offshore',
@@ -37,13 +37,18 @@ describe('insights filter cascade', () => {
     expect(teamOptionsFor(apiTeams)).toContain('Sales');
   });
 
-  it('sends the team, else the function, as the single API team param', () => {
+  it('keeps the single team param for team-only endpoints and sends function= to the workspace API', () => {
     expect(apiTeamParam({ teamFunction: 'RCM' })).toBe('RCM');
     expect(apiTeamParam({ teamFunction: 'RCM', team: 'Coding' })).toBe('Coding');
     expect(apiTeamParam({})).toBeUndefined();
     const url = insightsWorkspaceUrl({ teamFunction: 'Call Center', team: 'Inbound', region: 'UAE', performanceLevel: 'Employee' });
     const params = new URL(url, 'http://pms.test').searchParams;
-    expect(Object.fromEntries(params)).toEqual({ region: 'UAE', team: 'Inbound', performance_level: 'Employee' });
+    expect(Object.fromEntries(params)).toEqual({ region: 'UAE', function: 'Call Center', team: 'Inbound', performance_level: 'Employee' });
+    // Function only: sent as `function`, never as `team` (PR #14 param).
+    const functionOnly = new URL(insightsWorkspaceUrl({ teamFunction: 'Pre-Approvals' }), 'http://pms.test').searchParams;
+    expect(Object.fromEntries(functionOnly)).toEqual({ function: 'Pre-Approvals' });
+    // Team only (e.g. after "All functions"): just `team`.
+    expect(Object.fromEntries(new URL(insightsWorkspaceUrl({ team: 'Coding' }), 'http://pms.test').searchParams)).toEqual({ team: 'Coding' });
   });
 
   it('prefers PR #14 team_functions (team → functions[]) and lists multi-function teams under each', () => {
@@ -155,5 +160,61 @@ describe('insights filter cascade against real PR #14 option responses', () => {
     expect(reconcileCascade({ region: 'EGY', team: 'Sales' }, mutable(pr14Options.egySales)))
       .toMatchObject({ region: 'EGY', team: undefined });
     expect(reconcileCascade({ region: 'EGY' }, mutable(pr14Options.egyNoFilters))).toBeNull();
+  });
+});
+
+describe('function= responses where teams are narrowed by the function (QA BUG-5)', () => {
+  const mutable = <T,>(value: T) => JSON.parse(JSON.stringify(value)) as {
+    regions: string[]; teams: string[]; performance_levels: string[]; functions: string[]; team_functions: Record<string, string[]>;
+  };
+
+  it('keeps all four functions listed, in fixed order, whichever function is selected', () => {
+    Object.values(pr17FunctionOptions).forEach((options) => {
+      expect(functionOptionsFor(mutable(options))).toEqual(['Call Center', 'RCM', 'Pre-Approvals', 'Marketing']);
+    });
+  });
+
+  it('builds functions from options.functions, not from the narrowed teams list', () => {
+    // Call Center selected: teams only hold Call Center teams, functions are complete.
+    const options = mutable(pr17FunctionOptions.functionCallCenter);
+    expect(options.teams).toEqual(['Call Center', 'Inbound', 'Outbound']);
+    expect(functionOptionsFor(options)).toEqual(['Call Center', 'RCM', 'Pre-Approvals', 'Marketing']);
+    // Standalone backend functions (Sales) are never shown; missing ones are hidden.
+    expect(functionOptionsFor({ ...options, functions: ['RCM', 'Sales', 'Call Center'] })).toEqual(['Call Center', 'RCM']);
+    expect(functionOptionsFor({ ...options, functions: [] })).toEqual([]);
+  });
+
+  it('falls back to team membership when the API has no options.functions', () => {
+    expect(functionOptionsFor({ teams: ['Inbound', 'Coding', 'Marketing'] })).toEqual(['Call Center', 'RCM', 'Marketing']);
+  });
+
+  it('still narrows the Teams list to the selected function', () => {
+    const rcm = mutable(pr17FunctionOptions.functionRcm);
+    expect(teamOptionsFor(rcm.teams, 'RCM', rcm.team_functions)).toEqual([
+      'Coding', 'Pre-Approvals IP Elective Dubai', 'Pre-Approvals IP Final', 'Pre-Approvals IP Offshore', 'Pre-Approvals OP Final',
+    ]);
+    const pa = mutable(pr17FunctionOptions.functionPreApprovals);
+    expect(teamOptionsFor(pa.teams, 'Pre-Approvals', pa.team_functions)).toEqual([
+      'Pre-Approvals IP Elective Dubai', 'Pre-Approvals IP Final', 'Pre-Approvals OP Final',
+    ]);
+  });
+
+  it('does not auto-clear a valid function or team because of the narrowed lists', () => {
+    expect(reconcileCascade({ teamFunction: 'Call Center' }, mutable(pr17FunctionOptions.functionCallCenter))).toBeNull();
+    expect(reconcileCascade({ teamFunction: 'RCM', team: 'Coding' }, mutable(pr17FunctionOptions.functionRcmTeamCoding))).toBeNull();
+    expect(reconcileCascade({ teamFunction: 'Pre-Approvals', team: 'Pre-Approvals OP Final' }, mutable(pr17FunctionOptions.functionPreApprovals))).toBeNull();
+  });
+
+  it('blames the function, not the region, when the narrowed teams list is empty because of the function', () => {
+    // ?region=EGY&function=Pre-Approvals: no UAE Pre-Approvals teams in EGY.
+    expect(reconcileCascade(
+      { region: 'EGY', teamFunction: 'Pre-Approvals' },
+      { regions: ['UAE'], teams: [], performance_levels: [], functions: ['Call Center', 'RCM'], team_functions: {} },
+    )).toMatchObject({ region: 'EGY', teamFunction: undefined, team: undefined });
+    // A region with no data at all is still the culprit.
+    expect(reconcileCascade(
+      { region: 'KSA', teamFunction: 'RCM' },
+      { regions: ['EGY', 'UAE'], teams: [], performance_levels: [], functions: [], team_functions: {} },
+    )).toMatchObject({ region: undefined, teamFunction: 'RCM' });
   });
 });

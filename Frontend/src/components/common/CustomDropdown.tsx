@@ -126,8 +126,11 @@ export function CustomDropdown<T extends string | number = string>({
   }, [isOpen, updateMenuPosition]);
 
   /* Close popover on outside click or Escape. The menu lives in a portal, so
-     both the trigger and menu refs must be treated as inside the control. */
+     both the trigger and menu refs must be treated as inside the control.
+     Listen only while open: a closed dropdown must not react to Escape, or it
+     would steal focus from whatever the user is working in (e.g. a chart). */
   useEffect(() => {
+    if (!isOpen) return undefined;
     const handleClickOutside = (e: MouseEvent) => {
       const target = e.target as Node;
       if (
@@ -147,7 +150,7 @@ export function CustomDropdown<T extends string | number = string>({
       document.removeEventListener('mousedown', handleClickOutside);
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [closeMenu]);
+  }, [isOpen, closeMenu]);
 
   useEffect(() => {
     if (!isOpen) return;
