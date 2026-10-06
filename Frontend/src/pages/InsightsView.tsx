@@ -6,11 +6,12 @@ import {
   AlertCircle, AlertTriangle, ArrowRight, ArrowUpRight,
   ChevronLeft, ChevronRight, DatabaseZap,
   Download, Eye, Filter, Loader2, RefreshCw, SearchX,
-  Share2, Sparkles, Target, TrendingDown, X,
+  Share2, Sparkles, Target, TrendingDown, TrendingUp, X,
 } from 'lucide-react';
 import InsightDetailDrawer from '../components/insights/InsightDetailDrawer';
 import KpiSixMonthTrend from '../components/insights/KpiSixMonthTrend';
 import PeopleContributionAnalysis from '../components/insights/PeopleContributionAnalysis';
+import { SEVERITY_LABELS, SEVERITY_STYLES, severityDisplay } from '../features/insights/severity';
 import ExecutiveSummary from '../components/insights/overview/ExecutiveSummary';
 import InsightsHeader from '../components/insights/overview/InsightsHeader';
 import {
@@ -21,7 +22,7 @@ import {
   RecommendedActionsSection,
   TeamsNeedingAttentionSection,
 } from '../components/insights/overview/OverviewSections';
-import { MORE_ANALYSIS_KEYS, type MoreAnalysisKey } from '../components/insights/overview/insightsOverviewModel';
+import { MORE_ANALYSIS_KEYS, resolveMovementTone, type MoreAnalysisKey } from '../components/insights/overview/insightsOverviewModel';
 import EmployeeActionModal from '../components/team/EmployeeActionModal';
 import EmployeeRowActions from '../components/team/EmployeeRowActions';
 import type { InsightFilters, InsightItem, InsightSeverity, InsightKpiOverview, InsightRoleSummary } from '../features/insights/types';
@@ -70,16 +71,9 @@ function FilterSelect({ label, value, onChange, options, allLabel }: {
   );
 }
 
-const severityStyles: Record<InsightSeverity, string> = {
-  critical: 'border-rose-200 bg-rose-50 text-rose-600 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300',
-  risk: 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300',
-  opportunity: 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300',
-  information: 'border-blue-200 bg-blue-50 text-blue-600 dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-300',
-};
-
-const severityLabels: Record<InsightSeverity, string> = {
-  critical: 'Critical', risk: 'At risk', opportunity: 'Opportunity', information: 'Data issue',
-};
+// `information` splits into "Watch" (on target but worsening, PR #15) and "Data issue" (data quality).
+const severityStyle = (insight: InsightItem) => SEVERITY_STYLES[severityDisplay(insight)];
+const severityLabel = (insight: InsightItem) => SEVERITY_LABELS[severityDisplay(insight)];
 
 function cleanScope(value: string) {
   return value.replace(/Â/g, '');
@@ -178,18 +172,24 @@ function DriverChart({ drivers, onSelect, onHoverTooltip }: {
 
 function InsightSpotlight({ insight, onOpen }: { insight: InsightItem | null; onOpen: () => void }) {
   if (!insight) return <div className="grid min-h-[324px] place-items-center px-7 text-center text-sm text-[var(--text-muted)]">Select an analysis to inspect its evidence.</div>;
-  const Icon = insight.severity === 'critical' ? Target : insight.severity === 'risk' ? AlertTriangle : insight.severity === 'opportunity' ? Sparkles : DatabaseZap;
-  const improving = insight.detail.current_value !== null && insight.detail.previous_value !== null && (
-    insight.detail.direction === 'lower_better'
-      ? insight.detail.current_value < insight.detail.previous_value
-      : insight.detail.direction === 'higher_better' && insight.detail.current_value > insight.detail.previous_value
-  );
+  const display = severityDisplay(insight);
+  const Icon = display === 'critical' ? Target : display === 'risk' ? AlertTriangle : display === 'opportunity' ? Sparkles : display === 'watch' ? Eye : DatabaseZap;
+  // Direction-aware: for lower-is-better KPIs a falling value is the improvement.
+  // Colour = good / bad (API trend_status / change_value first); arrow = raw movement direction.
+  const { detail } = insight;
+  const rawDelta = detail.raw_change ?? (detail.current_value !== null && detail.previous_value !== null
+    ? detail.current_value - detail.previous_value
+    : null);
+  const movement = resolveMovementTone({
+    trendStatus: detail.trend_status, changeValue: detail.change_value, rawDelta, direction: detail.direction,
+  });
+  const MovementIcon = rawDelta !== null && rawDelta > 0 ? TrendingUp : rawDelta !== null && rawDelta < 0 ? TrendingDown : null;
   return (
     <div className="p-5 md:p-6">
       <div className="flex items-start gap-4">
-        <span className={`grid h-12 w-12 shrink-0 place-items-center rounded-2xl border ${severityStyles[insight.severity]}`}><Icon size={21} /></span>
+        <span className={`grid h-12 w-12 shrink-0 place-items-center rounded-2xl border ${severityStyle(insight)}`}><Icon size={21} /></span>
         <div className="min-w-0">
-          <span className={`inline-flex rounded-full border px-2 py-1 text-[9px] font-black uppercase ${severityStyles[insight.severity]}`}>{severityLabels[insight.severity]}</span>
+          <span className={`inline-flex rounded-full border px-2 py-1 text-[9px] font-black uppercase ${severityStyle(insight)}`}>{severityLabel(insight)}</span>
           <h3 className="mt-2 text-base font-extrabold leading-6 text-[var(--text-primary)]">{insight.title}</h3>
         </div>
       </div>
@@ -201,7 +201,7 @@ function InsightSpotlight({ insight, onOpen }: { insight: InsightItem | null; on
           <div><span className="text-[10px] text-[var(--text-muted)]">Current</span><strong className="mt-1 block text-sm text-[var(--text-primary)]">{formatMetric(insight.detail.current_value, insight.detail.unit)}</strong></div>
           <div><span className="text-[10px] text-[var(--text-muted)]">Target</span><strong className="mt-1 block text-sm text-[var(--text-primary)]">{formatMetric(insight.detail.target_value, insight.detail.unit)}</strong></div>
           <div><span className="text-[10px] text-[var(--text-muted)]">Score impact</span><strong className={`mt-1 block text-sm ${insight.impact_points !== null && insight.impact_points >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>{impactLabel(insight.impact_points)}</strong></div>
-          <div><span className="text-[10px] text-[var(--text-muted)]">Trend</span><strong className={`mt-1 flex items-center gap-1 text-sm ${improving ? 'text-emerald-600' : 'text-[var(--text-primary)]'}`}>{improving && <TrendingDown size={14} />}{insight.trend_label}</strong></div>
+          <div><span className="text-[10px] text-[var(--text-muted)]">Trend</span><strong data-testid="spotlight-trend" data-tone={movement} className={`mt-1 flex items-center gap-1 text-sm ${movement === 'good' ? 'text-emerald-600' : movement === 'bad' ? 'text-rose-600' : 'text-[var(--text-primary)]'}`}>{(movement === 'good' || movement === 'bad') && MovementIcon && <MovementIcon size={14} aria-hidden="true" />}{insight.trend_label}</strong></div>
         </div>
       </div>
       <div className="mt-5">
@@ -258,7 +258,7 @@ function KpiOverviewBody({ overview, summary }: { overview: InsightKpiOverview |
 
 function CriticalAlertsBody({ insights, onOpen }: { insights: InsightItem[]; onOpen: (insight: InsightItem) => void }) {
   const alerts = insights.filter((insight) => insight.severity === 'critical' || insight.severity === 'risk').slice(0, 4);
-  return alerts.length ? <div className="divide-y divide-[var(--border-light)]">{alerts.map((insight) => <button key={insight.id} type="button" onClick={() => onOpen(insight)} className="flex w-full items-center gap-3 px-5 py-3 text-left transition hover:bg-rose-500/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"><span className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg border ${severityStyles[insight.severity]}`}><AlertTriangle size={14} /></span><span className="min-w-0 flex-1"><strong className="block truncate text-xs font-extrabold text-[var(--text-primary)]">{insight.title}</strong><span className="mt-0.5 block truncate text-[10px] text-[var(--text-muted)]">{cleanScope(insight.scope)}</span></span><ArrowRight size={14} className="text-[var(--text-faint)]" /></button>)}</div> : <p className="px-5 py-8 text-center text-sm text-[var(--text-muted)]">No critical alerts in this scope.</p>;
+  return alerts.length ? <div className="divide-y divide-[var(--border-light)]">{alerts.map((insight) => <button key={insight.id} type="button" onClick={() => onOpen(insight)} className="flex w-full items-center gap-3 px-5 py-3 text-left transition hover:bg-rose-500/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"><span className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg border ${severityStyle(insight)}`}><AlertTriangle size={14} /></span><span className="min-w-0 flex-1"><strong className="block truncate text-xs font-extrabold text-[var(--text-primary)]">{insight.title}</strong><span className="mt-0.5 block truncate text-[10px] text-[var(--text-muted)]">{cleanScope(insight.scope)}</span></span><ArrowRight size={14} className="text-[var(--text-faint)]" /></button>)}</div> : <p className="px-5 py-8 text-center text-sm text-[var(--text-muted)]">No critical alerts in this scope.</p>;
 }
 
 const insightUrlFilters: Array<[keyof InsightFilters, string]> = [
@@ -441,7 +441,8 @@ export default function InsightsView() {
     { key: 'critical', label: 'Critical', count: workspace.summary.critical },
     { key: 'risk', label: 'At risk', count: workspace.summary.at_risk },
     { key: 'opportunity', label: 'Opportunities', count: workspace.summary.opportunities },
-    { key: 'information', label: 'Data issues', count: workspace.summary.data_issues },
+    // `information` = Watch items (on target but worsening) plus data-quality issues.
+    { key: 'information', label: 'Watch & data issues', count: analysisItems.filter((item) => item.severity === 'information').length },
   ];
   const showDiagnosticAnalysis = Boolean(filters.team || filters.teamFunction || filters.kpi || filters.employeeId);
   const analysisDepth = filters.employeeId
@@ -656,7 +657,15 @@ export default function InsightsView() {
         {activeFilterEntries.length > 0 && <div className="flex flex-wrap items-center gap-2"><span className="mr-1 text-[10px] font-black uppercase tracking-[0.14em] text-[var(--text-faint)]">{analysisDepth}</span>{activeFilterEntries.map((entry) => <button key={entry.key} type="button" onClick={() => clearFilter(entry.key)} className="inline-flex items-center gap-1.5 rounded-full border border-[var(--insights-accent-border)] bg-[var(--insights-accent-soft)] px-2.5 py-1 text-[11px] font-bold text-[var(--insights-accent-text)] hover:border-[var(--insights-accent)]">{entry.label}: {entry.value}<X size={12} /></button>)}<button type="button" onClick={clearAnalysis} className="ml-auto text-[11px] font-bold text-[var(--text-muted)] hover:text-rose-600">Reset analysis</button></div>}
       </div>
 
-      <ExecutiveSummary story={workspace.executive_story} comparison={workspace.comparison} trend={selectedKpiTrend} filterKey={filterKey} />
+      <ExecutiveSummary
+        story={workspace.executive_story}
+        comparison={workspace.comparison}
+        trend={selectedKpiTrend}
+        overallTrend={workspace.overall_trend}
+        // Placeholder data belongs to the previous filters: show a skeleton, not a stale or empty trend.
+        trendLoading={Boolean(query.isPlaceholderData || (filters.kpi && !selectedKpiTrend && query.isFetching))}
+        filterKey={filterKey}
+      />
 
       <KeyDriversSection drivers={workspace.performance_drivers} onSelectDriver={openDriverInsight} onViewAll={viewAllDrivers} />
 
@@ -718,7 +727,7 @@ export default function InsightsView() {
           <div><h2 id="team-analysis-title" className="text-lg font-extrabold text-[var(--text-primary)]">Team KPI Analysis</h2><p className="mt-1 text-xs text-[var(--text-muted)]">Weighted score factors and operational diagnostics from the same authorized evidence.</p></div>
           <div className="flex max-w-full gap-1 overflow-x-auto">{tabs.map((tab) => <button key={tab.key} type="button" onClick={() => { setAnalysisPage(1); setAnalysisTab(tab.key); }} className={`whitespace-nowrap border-b-2 px-3 py-3 text-xs font-extrabold ${analysisTab === tab.key ? 'border-blue-600 text-blue-600' : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text-primary)]'}`}>{tab.label} ({tab.count})</button>)}</div>
         </div>
-        {visibleAnalyses.length ? <div><div className="overflow-x-auto"><table className="w-full min-w-[980px] text-left"><thead><tr className="border-b border-[var(--border-light)] bg-[var(--bg-sunken)]/50 text-[9px] font-extrabold uppercase tracking-wide text-[var(--text-faint)]"><th className="px-5 py-3">Insight</th><th className="px-4 py-3">Team / role</th><th className="px-4 py-3">Current</th><th className="px-4 py-3">Target</th><th className="px-4 py-3">Impact</th><th className="px-4 py-3">Trend</th><th className="px-5 py-3 text-right">Action</th></tr></thead><tbody>{pagedAnalyses.map((insight) => <tr key={insight.id} onClick={() => setFocusedInsightId(insight.id)} className="cursor-pointer border-b border-[var(--border-light)] last:border-0 hover:bg-[var(--bg-sunken)]/55"><td className="px-5 py-4"><div className="flex items-start gap-3"><span className={`mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg border ${severityStyles[insight.severity]}`}>{insight.severity === 'opportunity' ? <ArrowUpRight size={14} /> : <AlertTriangle size={14} />}</span><span><span className={`inline-flex rounded-full border px-1.5 py-0.5 text-[8px] font-black uppercase ${severityStyles[insight.severity]}`}>{severityLabels[insight.severity]}</span><strong className="mt-1 block max-w-[360px] text-xs text-[var(--text-primary)]">{insight.title}</strong><span className="mt-1 block text-[10px] text-[var(--text-muted)]">{insight.detail.direction?.replace('_', ' ') || 'Operational diagnostic'}</span></span></div></td><td className="px-4 py-4 text-xs text-[var(--text-secondary)]">{cleanScope(insight.scope)}</td><td className="px-4 py-4 text-xs font-extrabold text-[var(--text-primary)]">{formatMetric(insight.detail.current_value, insight.detail.unit)}</td><td className="px-4 py-4 text-xs text-[var(--text-secondary)]">{formatMetric(insight.detail.target_value, insight.detail.unit)}</td><td className={`px-4 py-4 text-xs font-extrabold ${insight.impact_points === null ? 'text-[var(--text-muted)]' : insight.impact_points >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>{impactLabel(insight.impact_points)}</td><td className="max-w-[180px] px-4 py-4 text-xs text-[var(--text-secondary)]">{insight.trend_label}</td><td className="px-5 py-4 text-right"><button type="button" aria-label={`View ${insight.title}`} onClick={(event) => { event.stopPropagation(); setDrawerInsight(insight); }} className="inline-grid h-9 w-9 place-items-center rounded-lg border border-[var(--border-light)] text-blue-600 hover:bg-blue-500/10"><Eye size={15} /></button></td></tr>)}</tbody></table></div><div className="flex flex-col gap-3 border-t border-[var(--border-light)] px-5 py-4 sm:flex-row sm:items-center sm:justify-between"><p className="text-sm font-semibold text-[var(--text-muted)]">Showing {analysisStart}–{analysisEnd} of {visibleAnalyses.length} analyses</p><div className="flex items-center gap-2"><button type="button" aria-label="Previous page" disabled={currentAnalysisPage === 1} onClick={() => setAnalysisPage((page) => Math.max(1, page - 1))} className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-[var(--border-light)] text-[var(--text-secondary)] transition hover:border-blue-500/40 hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-40"><ChevronLeft size={16} /></button>{pageNumbers.map((page) => <button key={page} type="button" aria-current={page === currentAnalysisPage ? 'page' : undefined} onClick={() => setAnalysisPage(page)} className={`min-h-10 min-w-10 rounded-xl border px-3 text-sm font-bold transition ${page === currentAnalysisPage ? 'border-blue-600 bg-blue-600 text-white shadow-sm shadow-blue-500/20' : 'border-[var(--border-light)] text-[var(--text-secondary)] hover:border-blue-500/40 hover:text-blue-600'}`}>{page}</button>)}<button type="button" aria-label="Next page" disabled={currentAnalysisPage === totalAnalysisPages} onClick={() => setAnalysisPage((page) => Math.min(totalAnalysisPages, page + 1))} className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-[var(--border-light)] text-[var(--text-secondary)] transition hover:border-blue-500/40 hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-40"><ChevronRight size={16} /></button></div></div></div> : <div className="px-6 py-14 text-center"><SearchX className="mx-auto text-[var(--text-faint)]" /><p className="mt-3 font-extrabold text-[var(--text-primary)]">No analyses match this view</p></div>}
+        {visibleAnalyses.length ? <div><div className="overflow-x-auto"><table className="w-full min-w-[980px] text-left"><thead><tr className="border-b border-[var(--border-light)] bg-[var(--bg-sunken)]/50 text-[9px] font-extrabold uppercase tracking-wide text-[var(--text-faint)]"><th className="px-5 py-3">Insight</th><th className="px-4 py-3">Team / role</th><th className="px-4 py-3">Current</th><th className="px-4 py-3">Target</th><th className="px-4 py-3">Impact</th><th className="px-4 py-3">Trend</th><th className="px-5 py-3 text-right">Action</th></tr></thead><tbody>{pagedAnalyses.map((insight) => <tr key={insight.id} onClick={() => setFocusedInsightId(insight.id)} className="cursor-pointer border-b border-[var(--border-light)] last:border-0 hover:bg-[var(--bg-sunken)]/55"><td className="px-5 py-4"><div className="flex items-start gap-3"><span className={`mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg border ${severityStyle(insight)}`}>{insight.severity === 'opportunity' ? <ArrowUpRight size={14} /> : <AlertTriangle size={14} />}</span><span><span className={`inline-flex rounded-full border px-1.5 py-0.5 text-[8px] font-black uppercase ${severityStyle(insight)}`}>{severityLabel(insight)}</span><strong className="mt-1 block max-w-[360px] text-xs text-[var(--text-primary)]">{insight.title}</strong><span className="mt-1 block text-[10px] text-[var(--text-muted)]">{insight.detail.direction?.replace('_', ' ') || 'Operational diagnostic'}</span></span></div></td><td className="px-4 py-4 text-xs text-[var(--text-secondary)]">{cleanScope(insight.scope)}</td><td className="px-4 py-4 text-xs font-extrabold text-[var(--text-primary)]">{formatMetric(insight.detail.current_value, insight.detail.unit)}</td><td className="px-4 py-4 text-xs text-[var(--text-secondary)]">{formatMetric(insight.detail.target_value, insight.detail.unit)}</td><td className={`px-4 py-4 text-xs font-extrabold ${insight.impact_points === null ? 'text-[var(--text-muted)]' : insight.impact_points >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>{impactLabel(insight.impact_points)}</td><td className="max-w-[180px] px-4 py-4 text-xs text-[var(--text-secondary)]">{insight.trend_label}</td><td className="px-5 py-4 text-right"><button type="button" aria-label={`View ${insight.title}`} onClick={(event) => { event.stopPropagation(); setDrawerInsight(insight); }} className="inline-grid h-9 w-9 place-items-center rounded-lg border border-[var(--border-light)] text-blue-600 hover:bg-blue-500/10"><Eye size={15} /></button></td></tr>)}</tbody></table></div><div className="flex flex-col gap-3 border-t border-[var(--border-light)] px-5 py-4 sm:flex-row sm:items-center sm:justify-between"><p className="text-sm font-semibold text-[var(--text-muted)]">Showing {analysisStart}–{analysisEnd} of {visibleAnalyses.length} analyses</p><div className="flex items-center gap-2"><button type="button" aria-label="Previous page" disabled={currentAnalysisPage === 1} onClick={() => setAnalysisPage((page) => Math.max(1, page - 1))} className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-[var(--border-light)] text-[var(--text-secondary)] transition hover:border-blue-500/40 hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-40"><ChevronLeft size={16} /></button>{pageNumbers.map((page) => <button key={page} type="button" aria-current={page === currentAnalysisPage ? 'page' : undefined} onClick={() => setAnalysisPage(page)} className={`min-h-10 min-w-10 rounded-xl border px-3 text-sm font-bold transition ${page === currentAnalysisPage ? 'border-blue-600 bg-blue-600 text-white shadow-sm shadow-blue-500/20' : 'border-[var(--border-light)] text-[var(--text-secondary)] hover:border-blue-500/40 hover:text-blue-600'}`}>{page}</button>)}<button type="button" aria-label="Next page" disabled={currentAnalysisPage === totalAnalysisPages} onClick={() => setAnalysisPage((page) => Math.min(totalAnalysisPages, page + 1))} className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-[var(--border-light)] text-[var(--text-secondary)] transition hover:border-blue-500/40 hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-40"><ChevronRight size={16} /></button></div></div></div> : <div className="px-6 py-14 text-center"><SearchX className="mx-auto text-[var(--text-faint)]" /><p className="mt-3 font-extrabold text-[var(--text-primary)]">No analyses match this view</p></div>}
       </section>}
 
       {showDiagnosticAnalysis && <section className="grid gap-5 xl:grid-cols-2">
@@ -828,7 +837,7 @@ export default function InsightsView() {
               <div className="grid xl:grid-cols-[minmax(0,1.35fr)_minmax(340px,0.75fr)]">
                 <div className="min-w-0"><p className="px-5 pt-3 text-[11px] text-[var(--text-muted)]">Measured KPI contribution movements—not assumed operational root causes.</p><DriverChart drivers={workspace.performance_drivers} onSelect={setFocusedInsightId} onHoverTooltip={setHoverTooltip} /></div>
                 <div className="min-w-0 border-t border-[var(--border-light)] xl:border-l xl:border-t-0">
-                  <div className="flex items-center justify-between px-5 pt-4"><h4 className="text-sm font-extrabold text-[var(--text-primary)]">Insight summary</h4>{focusedInsight && <span className={`rounded-full border px-2 py-1 text-[9px] font-black uppercase ${severityStyles[focusedInsight.severity]}`}>{severityLabels[focusedInsight.severity]}</span>}</div>
+                  <div className="flex items-center justify-between px-5 pt-4"><h4 className="text-sm font-extrabold text-[var(--text-primary)]">Insight summary</h4>{focusedInsight && <span className={`rounded-full border px-2 py-1 text-[9px] font-black uppercase ${severityStyle(focusedInsight)}`}>{severityLabel(focusedInsight)}</span>}</div>
                   <InsightSpotlight insight={focusedInsight} onOpen={() => focusedInsight && setDrawerInsight(focusedInsight)} />
                 </div>
               </div>

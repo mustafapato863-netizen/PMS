@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -33,6 +33,11 @@ const scopeMock = vi.hoisted(() => ({
     { region: 'UAE', team: 'Pharmacy', level: 'Employee', period: '2026-05' },
     { region: 'UAE', team: 'Marketing', level: 'Employee', period: '2026-05' },
   ],
+}));
+// Per-test overrides for the workspace payload and query state.
+const workspaceMock = vi.hoisted(() => ({
+  overrides: {} as Record<string, unknown>,
+  query: {} as Record<string, unknown>,
 }));
 const actionMocks = vi.hoisted(() => ({
   getActionsForEmployee: vi.fn(() => []),
@@ -202,8 +207,10 @@ vi.mock('../hooks/api/useInsightsWorkspace', async (importOriginal) => {
       options: { ...scopedOptions, positions: ['Media Buyer'], employees: [], kpis: [{ key: 'cpl', label: 'CPL' }], severities: ['critical', 'risk', 'opportunity', 'information'], insight_types: ['performance', 'kpi_driver', 'employee_risk', 'opportunity', 'data_quality'], statuses: ['open'] },
       comparison: { current: currentPeriod, previous: { year: 2026, month: 'May', key: '2026-05' }, is_adjacent: true, note: null },
       deferred_capabilities: ['Overdue corrective actions require a persisted due date.'],
+      ...workspaceMock.overrides,
     },
     isLoading: false, isFetching: false, isPlaceholderData: false, error: null, refetch: query.refetch,
+    ...workspaceMock.query,
   });
   },
   };
@@ -292,6 +299,8 @@ describe('InsightsView', () => {
   beforeEach(() => {
     scopeMock.mode = 'pr14';
     scopeMock.teamFunctionsOverride = null;
+    workspaceMock.overrides = {};
+    workspaceMock.query = {};
   });
 
   it('renders the header with labelled Date, Regions, primary Functions, Teams and Levels filters in order', () => {
@@ -312,7 +321,7 @@ describe('InsightsView', () => {
     expect(within(filters).getByRole('combobox', { name: 'Performance level' })).toBeInTheDocument();
   });
 
-  it('builds the executive summary from executive_story and the leading KPI trend', () => {
+  it('builds the executive summary from executive_story', () => {
     renderInsights();
     const summary = section('Executive Summary');
 
@@ -337,130 +346,335 @@ describe('InsightsView', () => {
     const currentGrade = grades[1];
     expect(currentGrade).toHaveAttribute('data-grade', 'D');
     expect(currentGrade).toHaveStyle({ background: 'var(--pms-grade-d-badge-bg)', color: 'var(--pms-grade-d-badge-text)' });
-
-    expect(within(summary).getByRole('heading', { name: 'Performance trend' })).toBeInTheDocument();
-    expect(within(summary).getByText('Last 6 months')).toBeInTheDocument();
-    expect(within(summary).getByText('Leading KPI · CPL · % of target')).toBeInTheDocument();
-    const chart = within(summary).getByTestId('performance-trend-chart');
-    // CPL is lower-better: target 60 / actual 136 = 44.1% of target in June; February has no data.
-    expect(chart).toHaveAccessibleName(/Jun 44\.1%/);
-    expect(chart).toHaveAccessibleName(/Feb no data/);
-    expect(within(summary).getByTestId('performance-trend-target')).toBeInTheDocument();
   });
 
-  it('shows an interactive trend tooltip and crosshair for pointer and keyboard users', async () => {
+  describe('performance trend', () => {
+    // Chart geometry in jsdom (no ResizeObserver → 388px fallback): month x = 58 + 59.6 * index.
+    const monthX = (index: number) => 58 + 59.6 * index;
+    const hoverMonth = (index: number) => fireEvent.mouseMove(screen.getByTestId('performance-trend-hover-area'), { clientX: monthX(index) });
+    const overallTrend = [81.2, 79.0, 80.4, 78.6, 79.4, 77.5].map((score, index) => ({
+      period: { year: 2026, month: ['January', 'February', 'March', 'April', 'May', 'June'][index], key: `2026-0${index + 1}` },
+      score, target: 100, measured_records: 10,
+    }));
+
+    it('plots the overall score series so the latest month equals the Current score', () => {
+      workspaceMock.overrides = { overall_trend: overallTrend };
+      renderInsights();
+      const summary = section('Executive Summary');
+
+      expect(within(summary).getByRole('heading', { name: 'Performance trend' })).toBeInTheDocument();
+      expect(within(summary).getByTestId('performance-trend-subtitle')).toHaveTextContent('Overall score · % of target');
+      const chart = within(summary).getByTestId('performance-trend-chart');
+      expect(chart).toHaveAttribute('data-source', 'overall');
+      expect(chart).toHaveAccessibleName(/^Overall score trend/);
+      // Executive Summary Current = 77.5%, and so is June on the trend.
+      expect(chart).toHaveAccessibleName(/Jun 77\.5%/);
+      expect(within(summary).getByText('Overall score')).toBeInTheDocument();
+      expect(within(summary).getByTestId('performance-trend-target-label')).toHaveTextContent('Target 100%');
+
+      hoverMonth(5);
+      const tooltip = screen.getByTestId('performance-trend-tooltip');
+      expect(within(tooltip).getByText('Score')).toBeInTheDocument();
+      expect(within(tooltip).getByText('77.5%')).toBeInTheDocument();
+      // Overall score is always higher-is-better: 79.4 → 77.5 is a decline.
+      const movement = within(tooltip).getByTestId('performance-trend-tooltip-movement');
+      expect(movement).toHaveAttribute('data-tone', 'bad');
+      expect(movement).toHaveTextContent('▼-1.9 pts vs May');
+    });
+
+    it('labels the leading-KPI fallback honestly when the API has no overall series', () => {
+      renderInsights();
+      const summary = section('Executive Summary');
+
+      expect(within(summary).getByRole('heading', { name: 'Leading KPI trend' })).toBeInTheDocument();
+      expect(within(summary).queryByRole('heading', { name: 'Performance trend' })).not.toBeInTheDocument();
+      expect(within(summary).getByTestId('performance-trend-subtitle')).toHaveTextContent('CPL · % of target · lower is better');
+      expect(within(summary).getByText(/It is not the overall score\./)).toBeInTheDocument();
+      expect(within(summary).getByText('KPI actual')).toBeInTheDocument();
+      const chart = within(summary).getByTestId('performance-trend-chart');
+      expect(chart).toHaveAttribute('data-source', 'kpi');
+      // CPL is lower-better: target 60 / actual 136 = 44.1% of target in June; February has no data.
+      expect(chart).toHaveAccessibleName(/Jun 44\.1%/);
+      expect(chart).toHaveAccessibleName(/Feb no data/);
+      expect(within(summary).getByTestId('performance-trend-target')).toHaveAttribute('stroke-dasharray', '4 4');
+    });
+
+    it('shows the tooltip on hover without a click and hides it on mouse leave', () => {
+      renderInsights();
+      const chart = screen.getByTestId('performance-trend-chart');
+      expect(screen.queryByTestId('performance-trend-tooltip')).not.toBeInTheDocument();
+
+      hoverMonth(2);
+      let tooltip = screen.getByTestId('performance-trend-tooltip');
+      expect(tooltip).toHaveTextContent('Mar');
+      expect(within(tooltip).getByText('Actual')).toBeInTheDocument();
+      expect(within(tooltip).getByText('115.4%')).toBeInTheDocument();
+      expect(within(tooltip).getByTestId('performance-trend-tooltip-target')).toHaveTextContent('Target100%');
+      expect(within(tooltip).getByTestId('performance-trend-tooltip-raw')).toHaveTextContent('52 AED vs 60 AED target');
+      expect(within(chart).getByTestId('performance-trend-crosshair')).toBeInTheDocument();
+
+      // Moving across the plot follows the nearest measured month (February has no data).
+      fireEvent.mouseMove(screen.getByTestId('performance-trend-hover-area'), { clientX: monthX(1) + 5 });
+      expect(screen.getByTestId('performance-trend-tooltip')).toHaveTextContent('Mar');
+      hoverMonth(5);
+      tooltip = screen.getByTestId('performance-trend-tooltip');
+      expect(tooltip).toHaveTextContent('Jun');
+
+      fireEvent.mouseLeave(screen.getByTestId('performance-trend-hover-area'));
+      expect(screen.queryByTestId('performance-trend-tooltip')).not.toBeInTheDocument();
+      expect(within(chart).queryByTestId('performance-trend-crosshair')).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /^Jun:/ })).not.toBeInTheDocument();
+    });
+
+    it('colours tooltip movement by KPI direction (lower is better)', () => {
+      renderInsights();
+      // CPL 55 → 136 AED: an increase of a lower-is-better KPI is bad.
+      hoverMonth(5);
+      const movement = screen.getByTestId('performance-trend-tooltip-movement');
+      expect(movement).toHaveAttribute('data-tone', 'bad');
+      expect(movement).toHaveTextContent('▲+81 AED vs May');
+      expect(movement).toHaveStyle({ color: 'var(--insights-negative)' });
+
+      // 52 → 55 AED in April is also worse; 55 → 55 in May is flat.
+      hoverMonth(3);
+      expect(screen.getByTestId('performance-trend-tooltip-movement')).toHaveAttribute('data-tone', 'bad');
+      hoverMonth(4);
+      expect(screen.getByTestId('performance-trend-tooltip-movement')).toHaveAttribute('data-tone', 'flat');
+    });
+
+    it('shows a falling lower-is-better KPI as an improvement with a down arrow', () => {
+      workspaceMock.overrides = {
+        kpi_trend: {
+          kpi_key: 'rejection_rate', kpi_label: 'Rejection Rate', unit: '%', direction: 'lower_better',
+          points: [
+            { period: { year: 2026, month: 'May', key: '2026-05' }, actual_value: 0.12, target_value: 0.05, measured_records: 3 },
+            { period: { year: 2026, month: 'June', key: '2026-06' }, actual_value: 0.08, target_value: 0.05, measured_records: 3 },
+          ],
+        },
+      };
+      renderInsights();
+      fireEvent.focus(screen.getByTestId('performance-trend-point-2026-06'));
+      const movement = screen.getByTestId('performance-trend-tooltip-movement');
+      expect(movement).toHaveAttribute('data-tone', 'good');
+      expect(movement).toHaveTextContent('▼-4 pts vs May');
+      expect(movement).toHaveStyle({ color: 'var(--insights-positive)' });
+      expect(screen.getByTestId('performance-trend-point-2026-06')).toHaveAccessibleName(/-4 pts vs May, improving/);
+    });
+
+    it('shows the tooltip for keyboard focus, hides it with Escape and keeps a single roving tab stop', () => {
+      renderInsights();
+      const points = ['01', '03', '04', '05', '06'].map((month) => screen.getByTestId(`performance-trend-point-2026-${month}`));
+      expect(points.map((point) => point.getAttribute('tabindex'))).toEqual(['-1', '-1', '-1', '-1', '0']);
+      expect(points[4]).toHaveAccessibleName('Jun: actual 44.1% of target, target 100%, value 136 AED, +81 AED vs May, worsening');
+
+      const junePoint = points[4];
+      fireEvent.focus(junePoint);
+      expect(screen.getByTestId('performance-trend-tooltip')).toHaveTextContent('Jun');
+      fireEvent.keyDown(junePoint, { key: 'Escape' });
+      expect(screen.queryByTestId('performance-trend-tooltip')).not.toBeInTheDocument();
+
+      fireEvent.keyDown(junePoint, { key: 'ArrowLeft' });
+      expect(points[3]).toHaveFocus();
+      expect(screen.getByTestId('performance-trend-tooltip')).toHaveTextContent('May');
+      expect(points[3]).toHaveAttribute('tabindex', '0');
+      expect(junePoint).toHaveAttribute('tabindex', '-1');
+      fireEvent.keyDown(points[3], { key: 'Home' });
+      expect(points[0]).toHaveFocus();
+      fireEvent.keyDown(points[0], { key: 'End' });
+      expect(junePoint).toHaveFocus();
+    });
+
+    it('closes a hover tooltip with Escape anywhere or a tap outside the chart', async () => {
+      const user = userEvent.setup();
+      renderInsights();
+      hoverMonth(5);
+      fireEvent.keyDown(document.body, { key: 'Escape' });
+      expect(screen.queryByTestId('performance-trend-tooltip')).not.toBeInTheDocument();
+
+      hoverMonth(5);
+      fireEvent.mouseDown(screen.getByTestId('performance-trend-chart'));
+      expect(screen.getByTestId('performance-trend-tooltip')).toBeInTheDocument();
+      await user.click(screen.getByRole('heading', { level: 1, name: 'Insights' }));
+      expect(screen.queryByTestId('performance-trend-tooltip')).not.toBeInTheDocument();
+    });
+
+    it('resets the tooltip when a filter changes', async () => {
+      const user = userEvent.setup();
+      renderInsights();
+      hoverMonth(5);
+      expect(screen.getByTestId('performance-trend-tooltip')).toBeInTheDocument();
+      await user.selectOptions(screen.getByRole('combobox', { name: 'Function' }), 'Call Center');
+      expect(screen.queryByTestId('performance-trend-tooltip')).not.toBeInTheDocument();
+    });
+
+    it('keeps the focus ring subtle and on the keyboard-focused point only', () => {
+      renderInsights();
+      const rings = screen.getAllByTestId('performance-trend-focus-ring');
+      expect(rings).toHaveLength(5);
+      rings.forEach((ring) => {
+        expect(ring).toHaveClass('opacity-0', 'group-focus-visible:opacity-100');
+        expect(ring).toHaveAttribute('stroke-opacity', '0.55');
+      });
+      // Minimal chart: no grid lines, only a baseline and sensible % ticks.
+      const chart = screen.getByTestId('performance-trend-chart');
+      expect(chart.querySelectorAll('[data-testid="performance-trend-grid"]')).toHaveLength(0);
+      expect(within(chart).getAllByTestId('performance-trend-tick').map((tick) => tick.textContent)).toEqual(['0%', '50%', '100%', '125%']);
+      expect(within(chart).getByTestId('performance-trend-baseline')).toBeInTheDocument();
+    });
+
+    it('shows an honest empty state when the scope has no measured months', () => {
+      workspaceMock.overrides = { overall_trend: [] };
+      renderInsights();
+      const empty = screen.getByTestId('performance-trend-empty');
+      expect(empty).toHaveTextContent('No trend data for this scope');
+      expect(empty).toHaveTextContent('No measured score in the last six months for the selected filters.');
+      expect(screen.queryByTestId('performance-trend-chart')).not.toBeInTheDocument();
+      // An empty overall series never silently falls back to the leading KPI.
+      expect(screen.getByRole('heading', { name: 'Performance trend' })).toBeInTheDocument();
+    });
+
+    it('shows a KPI empty state when the leading KPI has no trend', () => {
+      workspaceMock.overrides = { kpi_trend: null };
+      renderInsights();
+      expect(screen.getByTestId('performance-trend-empty')).toHaveTextContent('No measured leading-KPI value');
+    });
+
+    it('shows a skeleton while placeholder data from the previous filters is displayed', () => {
+      workspaceMock.query = { isPlaceholderData: true, isFetching: true };
+      renderInsights();
+      const loading = screen.getByTestId('performance-trend-loading');
+      expect(loading).toHaveAttribute('role', 'status');
+      expect(loading).toHaveAccessibleName('Loading performance trend');
+      expect(screen.queryByTestId('performance-trend-chart')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('performance-trend-empty')).not.toBeInTheDocument();
+    });
+  });
+
+  it('colours the insight summary trend by KPI direction', async () => {
     const user = userEvent.setup();
     renderInsights();
+    await user.click(screen.getByRole('button', { name: 'Expand all' }));
+    const weighted = section('Weighted score contribution');
+    // CPL rose 55 → 136 AED (lower is better): worsening, red, up arrow.
+    let trend = within(weighted).getByTestId('spotlight-trend');
+    expect(trend).toHaveAttribute('data-tone', 'bad');
+    expect(trend).toHaveClass('text-rose-600');
+    expect(trend.querySelector('svg')).toHaveClass('lucide-trending-up');
 
-    const chart = screen.getByTestId('performance-trend-chart');
-    const junePoint = screen.getByRole('button', { name: 'Jun: actual 44.1% of target, target 100%' });
-
-    await user.hover(junePoint);
-    expect(screen.getByTestId('performance-trend-tooltip')).toHaveTextContent('Jun');
-    expect(within(chart).getByTestId('performance-trend-crosshair')).toBeInTheDocument();
-
-    await user.unhover(junePoint);
-    expect(screen.queryByTestId('performance-trend-tooltip')).not.toBeInTheDocument();
-
-    fireEvent.focus(junePoint);
-    expect(screen.getByTestId('performance-trend-tooltip')).toBeInTheDocument();
-    fireEvent.keyDown(junePoint, { key: 'Escape' });
-    expect(screen.queryByTestId('performance-trend-tooltip')).not.toBeInTheDocument();
-    fireEvent.blur(junePoint);
-
-    await user.click(junePoint);
-    expect(screen.getByTestId('performance-trend-tooltip')).toBeInTheDocument();
+    // No Show Rate fell 52% → 51% (lower is better): improving, green, down arrow.
+    await user.click(within(weighted).getByRole('button', { name: 'No Show Rate for Outbound · Agent' }));
+    trend = within(weighted).getByTestId('spotlight-trend');
+    expect(trend).toHaveAttribute('data-tone', 'good');
+    expect(trend).toHaveClass('text-emerald-600');
+    expect(trend.querySelector('svg')).toHaveClass('lucide-trending-down');
   });
 
-  it('shows Target as well as Actual in the trend tooltip', async () => {
-    const user = userEvent.setup();
-    renderInsights();
-    await user.hover(screen.getByRole('button', { name: /^Mar:/ }));
-    const tooltip = screen.getByTestId('performance-trend-tooltip');
-    expect(within(tooltip).getByText('Actual')).toBeInTheDocument();
-    expect(within(tooltip).getByText('115.4%')).toBeInTheDocument();
-    expect(within(tooltip).getByTestId('performance-trend-tooltip-target')).toHaveTextContent('Target100%');
-  });
+  describe('PR #15 direction fields', () => {
+    const spotlightInsight = (detail: Record<string, unknown>, extra: Record<string, unknown> = {}) => ({
+      ...insight,
+      id: 'spot',
+      title: 'Spotlight KPI',
+      trend_label: 'Spotlight trend',
+      ...extra,
+      detail: { ...insight.detail, ...detail },
+    });
+    const renderSpotlight = async (item: ReturnType<typeof spotlightInsight>) => {
+      workspaceMock.overrides = {
+        team_analyses: [item],
+        priority_insights: [item],
+        performance_drivers: [{ id: 'spot-driver', driver: 'Spotlight KPI', scope: 'Marketing · Media Buyer', impact_points: -4, direction: 'negative', insight_id: 'spot' }],
+      };
+      const user = userEvent.setup();
+      renderInsights();
+      await user.click(screen.getByRole('button', { name: 'Expand all' }));
+      return within(section('Weighted score contribution'));
+    };
+    const arrow = (trend: HTMLElement) => trend.querySelector('svg')?.getAttribute('class') ?? '';
 
-  it('unpins a pinned trend point when it is clicked again', async () => {
-    const user = userEvent.setup();
-    renderInsights();
-    const junePoint = screen.getByRole('button', { name: /^Jun:/ });
+    it('higher-better without PR #15 fields: a rise is green with an up arrow, a fall red with a down arrow', async () => {
+      let panel = await renderSpotlight(spotlightInsight({ direction: 'higher_better', current_value: 0.8, previous_value: 0.7, target_value: 0.9 }));
+      let trend = panel.getByTestId('spotlight-trend');
+      expect(trend).toHaveAttribute('data-tone', 'good');
+      expect(arrow(trend)).toContain('lucide-trending-up');
+      cleanup();
 
-    await user.click(junePoint);
-    expect(junePoint).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByTestId('performance-trend-tooltip')).toHaveAttribute('data-pinned', 'true');
-    expect(screen.getByTestId('performance-trend-live')).toHaveTextContent('Pinned Jun: actual 44.1% of target, target 100%');
-    // A mouse click pins without moving focus, so focus can't keep the tooltip open.
-    expect(junePoint).not.toHaveFocus();
+      panel = await renderSpotlight(spotlightInsight({ direction: 'higher_better', current_value: 0.6, previous_value: 0.7, target_value: 0.9 }));
+      trend = panel.getByTestId('spotlight-trend');
+      expect(trend).toHaveAttribute('data-tone', 'bad');
+      expect(arrow(trend)).toContain('lucide-trending-down');
+    });
 
-    await user.click(junePoint);
-    expect(junePoint).toHaveAttribute('aria-pressed', 'false');
-    expect(screen.queryByTestId('performance-trend-tooltip')).not.toBeInTheDocument();
-    expect(screen.getByTestId('performance-trend-live')).toBeEmptyDOMElement();
+    it('uses trend_status for the colour and raw_change for the arrow when the API sends them', async () => {
+      // Lower-better improving: raw value fell, so a DOWN arrow in GREEN.
+      let panel = await renderSpotlight(spotlightInsight({
+        direction: 'lower_better', current_value: 0.08, previous_value: 0.12, raw_change: -0.04, change_value: 0.04, trend_status: 'improving',
+      }));
+      let trend = panel.getByTestId('spotlight-trend');
+      expect(trend).toHaveAttribute('data-tone', 'good');
+      expect(trend).toHaveClass('text-emerald-600');
+      expect(arrow(trend)).toContain('lucide-trending-down');
+      cleanup();
 
-    // Hovering other points while one is pinned keeps the pinned month.
-    await user.click(junePoint);
-    await user.hover(screen.getByRole('button', { name: /^Mar:/ }));
-    expect(screen.getByTestId('performance-trend-tooltip')).toHaveTextContent('Jun');
-  });
+      // Unknown direction locally, but the API knows it is declining (rising lower-better KPI): red, up arrow.
+      panel = await renderSpotlight(spotlightInsight({
+        direction: null, current_value: null, previous_value: null, raw_change: 0.03, change_value: -0.03, trend_status: 'declining',
+      }));
+      trend = panel.getByTestId('spotlight-trend');
+      expect(trend).toHaveAttribute('data-tone', 'bad');
+      expect(trend).toHaveClass('text-rose-600');
+      expect(arrow(trend)).toContain('lucide-trending-up');
+      cleanup();
 
-  it('dismisses a pinned trend point with Escape anywhere or a click outside the chart', async () => {
-    const user = userEvent.setup();
-    renderInsights();
-    const junePoint = screen.getByRole('button', { name: /^Jun:/ });
+      // Stable stays neutral without an arrow.
+      panel = await renderSpotlight(spotlightInsight({ direction: 'higher_better', raw_change: 0, change_value: 0, trend_status: 'stable' }));
+      trend = panel.getByTestId('spotlight-trend');
+      expect(trend).toHaveAttribute('data-tone', 'flat');
+      expect(trend.querySelector('svg')).toBeNull();
+    });
 
-    await user.click(junePoint);
-    await user.unhover(junePoint);
-    expect(screen.getByTestId('performance-trend-tooltip')).toBeInTheDocument();
-    fireEvent.keyDown(document.body, { key: 'Escape' });
-    expect(screen.queryByTestId('performance-trend-tooltip')).not.toBeInTheDocument();
-    expect(junePoint).toHaveAttribute('aria-pressed', 'false');
+    it('labels on-target-but-worsening `information` items as Watch, and data-quality items as Data issue', async () => {
+      let panel = await renderSpotlight(spotlightInsight(
+        { direction: 'lower_better', current_value: 0.04, previous_value: 0.03, target_value: 0.05, trend_status: 'declining', target_status: 'met' },
+        { severity: 'information', insight_type: 'kpi_driver' },
+      ));
+      const watch = panel.getAllByText('Watch')[0];
+      expect(watch).toHaveClass('bg-slate-50');
+      expect(panel.queryByText('Data issue')).not.toBeInTheDocument();
+      cleanup();
 
-    await user.click(junePoint);
-    await user.unhover(junePoint);
-    expect(screen.getByTestId('performance-trend-tooltip')).toBeInTheDocument();
-    // A click inside the chart (not on a point) keeps the pin.
-    fireEvent.mouseDown(screen.getByTestId('performance-trend-chart'));
-    expect(screen.getByTestId('performance-trend-tooltip')).toBeInTheDocument();
-    await user.click(screen.getByRole('heading', { level: 1, name: 'Insights' }));
-    expect(screen.queryByTestId('performance-trend-tooltip')).not.toBeInTheDocument();
-    expect(junePoint).toHaveAttribute('aria-pressed', 'false');
-  });
+      panel = await renderSpotlight(spotlightInsight({}, { severity: 'information', insight_type: 'data_quality' }));
+      expect(panel.getAllByText('Data issue')[0]).toHaveClass('bg-blue-50');
+      expect(panel.queryByText('Watch')).not.toBeInTheDocument();
+    });
 
-  it('clears the pinned trend point when a filter changes', async () => {
-    const user = userEvent.setup();
-    renderInsights();
+    it('names the information tab "Watch & data issues" and counts its rows', () => {
+      const watchItem = { ...noShowInsight, id: 'watch-1', severity: 'information', insight_type: 'kpi_driver' };
+      const dataItem = { ...noShowInsight, id: 'data-1', severity: 'information', insight_type: 'data_quality' };
+      workspaceMock.overrides = { team_analyses: [insight, watchItem, dataItem] };
+      renderInsights('/insights?function=Marketing&period=2026-06');
+      expect(screen.getByRole('button', { name: 'Watch & data issues (2)' })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /^Data issues/ })).not.toBeInTheDocument();
+    });
 
-    await user.click(screen.getByRole('button', { name: /^Jun:/ }));
-    expect(screen.getByTestId('performance-trend-tooltip')).toBeInTheDocument();
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Function' }), 'Call Center');
-    expect(screen.queryByTestId('performance-trend-tooltip')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /^Jun:/ })).toHaveAttribute('aria-pressed', 'false');
-  });
-
-  it('gives trend points a visible keyboard focus ring and a single roving tab stop', () => {
-    renderInsights();
-    const points = screen.getAllByRole('button', { name: /% of target, target 100%$/ });
-    expect(points.map((point) => point.getAttribute('tabindex'))).toEqual(['-1', '-1', '-1', '-1', '0']);
-
-    const junePoint = points[4];
-    fireEvent.click(junePoint);
-    expect(junePoint).toHaveAttribute('aria-pressed', 'true');
-    // Focus ring is independent of the pinned halo (QA BUG-2).
-    fireEvent.focus(junePoint);
-    expect(within(junePoint).getByTestId('performance-trend-focus-ring')).toHaveAttribute('stroke', 'var(--insights-heading)');
-    fireEvent.keyDown(junePoint, { key: 'ArrowLeft' });
-    const mayPoint = points[3];
-    expect(mayPoint).toHaveFocus();
-    expect(within(mayPoint).getByTestId('performance-trend-focus-ring')).toBeInTheDocument();
-    expect(within(junePoint).queryByTestId('performance-trend-focus-ring')).not.toBeInTheDocument();
-    // The pinned tooltip stays on June while focus moves.
-    expect(screen.getByTestId('performance-trend-tooltip')).toHaveTextContent('Jun');
-    fireEvent.keyDown(mayPoint, { key: 'Home' });
-    expect(points[0]).toHaveFocus();
-    fireEvent.keyDown(points[0], { key: 'End' });
-    expect(junePoint).toHaveFocus();
+    it('plots the API achievement_percent on the leading-KPI trend and colours movement by trend_status', () => {
+      workspaceMock.overrides = {
+        kpi_trend: {
+          kpi_key: 'rejection_rate', kpi_label: 'Rejection Rate', unit: '%', direction: 'lower_better', trend_status: 'declining',
+          points: [
+            { period: { year: 2026, month: 'May', key: '2026-05' }, actual_value: 0.04, target_value: 0.05, measured_records: 3, achievement_percent: 100, status: 'on_track', change_value: null, trend_status: null },
+            { period: { year: 2026, month: 'June', key: '2026-06' }, actual_value: 0.1, target_value: 0.05, measured_records: 3, achievement_percent: 50, status: 'critical', change_value: -0.06, trend_status: 'declining' },
+          ],
+        },
+      };
+      renderInsights();
+      const chart = screen.getByTestId('performance-trend-chart');
+      // API values (capped at 100) are used as-is: May 100%, not the uncapped 125%.
+      expect(chart).toHaveAccessibleName(/May 100\.0%, Jun 50\.0%/);
+      fireEvent.focus(screen.getByTestId('performance-trend-point-2026-06'));
+      const movement = screen.getByTestId('performance-trend-tooltip-movement');
+      expect(movement).toHaveAttribute('data-tone', 'bad');
+      expect(movement).toHaveTextContent('▲+6 pts vs May');
+    });
   });
 
   it('splits weighted drivers into negative and positive panels and links them to the insight drawer', async () => {
