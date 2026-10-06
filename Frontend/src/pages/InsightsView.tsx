@@ -494,7 +494,7 @@ export default function InsightsView() {
     setFilters((current) => ({
       ...current,
       team: team || undefined,
-      teamFunction: team && current.teamFunction && !teamBelongsToFunction(team, current.teamFunction)
+      teamFunction: team && current.teamFunction && !teamBelongsToFunction(team, current.teamFunction, workspace.options.team_functions)
         ? undefined
         : current.teamFunction,
       position: undefined,
@@ -602,15 +602,15 @@ export default function InsightsView() {
     setFilters((current) => ({
       ...current,
       teamFunction: value || undefined,
-      team: current.team && value && teamBelongsToFunction(current.team, value) ? current.team : undefined,
+      team: current.team && value && teamBelongsToFunction(current.team, value, workspace.options.team_functions) ? current.team : undefined,
       position: undefined,
       employeeId: undefined,
       kpi: undefined,
     }));
   };
   const leadingPeopleKpi = workspace.people_contribution_analysis?.kpi_key;
-  const functionOptions = functionOptionsFor(workspace.options.teams).map((value) => ({ value, label: value }));
-  const teamOptions = teamOptionsFor(workspace.options.teams, filters.teamFunction).map((value) => ({ value, label: value }));
+  const functionOptions = functionOptionsFor(workspace.options).map((value) => ({ value, label: value }));
+  const teamOptions = teamOptionsFor(workspace.options.teams, filters.teamFunction, workspace.options.team_functions).map((value) => ({ value, label: value }));
   const filterKey = JSON.stringify(filters);
 
   return (

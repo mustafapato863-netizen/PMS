@@ -1,5 +1,9 @@
 import type { InsightOptions, InsightFilters } from './types';
 import {
+  MERGED_IP_FINAL_SOURCE_TEAMS,
+  MERGED_IP_FINAL_TEAM,
+  MERGED_OP_FINAL_SOURCE_TEAMS,
+  MERGED_OP_FINAL_TEAM,
   canonicalTeamName,
   isCallCenterTeam,
   isPreApprovalsUaeTeam,
@@ -7,34 +11,71 @@ import {
 } from '../../types';
 
 /**
- * Header "Functions" are the parent domains the backend already understands
- * as `team` values: `Backend/utils/report_scope.py::_team_keys` expands
- * Call Center / RCM / Pre-Approvals to their source teams, and any other value
- * (Marketing) is an exact team match. This list is unchanged from the
- * previous Function filter.
+ * The header Functions list is fixed to these four parent domains (Mustafa's
+ * decision on PR #13), in this order. A function is hidden only when the
+ * current option scope has none of its teams. The backend (PR #14) may list
+ * more `options.functions` (standalone teams such as Sales or CSR are their
+ * own function there); those are never shown here.
  */
 export const INSIGHT_FUNCTIONS = ['Call Center', 'RCM', 'Pre-Approvals', 'Marketing'] as const;
 
-const identity = (value: string | null | undefined) => canonicalTeamName(value).toLowerCase();
+/** `options.team_functions` from PR #14: source team name → every function it rolls up into. */
+export type TeamFunctionMap = Record<string, string[]>;
+
+type CascadeOptions = Pick<InsightOptions, 'regions' | 'teams' | 'performance_levels' | 'functions' | 'team_functions'>;
+
+const identity = (value: string | null | undefined) => canonicalTeamName(value).trim().toLowerCase();
+
+/** Merged branch teams are shown by their canonical name; membership is defined on the source names. */
+function sourceNames(team: string): string[] {
+  const canonical = canonicalTeamName(team);
+  if (canonical === MERGED_OP_FINAL_TEAM) return [team, MERGED_OP_FINAL_TEAM, ...MERGED_OP_FINAL_SOURCE_TEAMS];
+  if (canonical === MERGED_IP_FINAL_TEAM) return [team, MERGED_IP_FINAL_TEAM, ...MERGED_IP_FINAL_SOURCE_TEAMS];
+  return [team];
+}
+
+function mappedFunctions(team: string, teamFunctions: TeamFunctionMap | undefined): string[] | null {
+  if (!teamFunctions) return null;
+  const keys = Object.keys(teamFunctions);
+  const matches = sourceNames(team).flatMap((name) => {
+    const key = keys.find((candidate) => candidate === name)
+      ?? keys.find((candidate) => candidate.trim().toLowerCase() === name.trim().toLowerCase());
+    return key ? teamFunctions[key] : [];
+  });
+  return matches.length ? matches : null;
+}
 
 /**
- * Team → function membership reuses the existing team-family helpers in
- * `src/types.ts`, which mirror the backend `_team_keys` sets
- * (Call Center = Call Center/Inbound/Outbound; RCM = RCM, Coding, Submission,
- * Re-Submission and every Pre-Approvals team incl. IP Offshore;
- * Pre-Approvals = UAE pre-approvals only). No new mapping is introduced.
+ * Fallback when the API has no `team_functions` (backend without PR #14):
+ * the existing team-family helpers in `src/types.ts`, which mirror backend
+ * `report_scope._team_keys` (Call Center = Call Center/Inbound/Outbound;
+ * RCM = RCM, Coding, Submission, Re-Submission and every Pre-Approvals team
+ * incl. IP Offshore; Pre-Approvals = UAE pre-approvals only).
  */
-export function teamBelongsToFunction(team: string, teamFunction: string): boolean {
-  switch (identity(teamFunction)) {
-    case 'call center':
-      return isCallCenterTeam(team);
-    case 'rcm':
-      return isRcmTeam(team);
-    case 'pre-approvals':
-      return isPreApprovalsUaeTeam(team);
-    default:
-      return identity(team) === identity(teamFunction);
-  }
+function helperBelongs(team: string, teamFunction: string): boolean {
+  return sourceNames(team).some((name) => {
+    switch (identity(teamFunction)) {
+      case 'call center':
+        return isCallCenterTeam(name);
+      case 'rcm':
+        return isRcmTeam(name);
+      case 'pre-approvals':
+        return isPreApprovalsUaeTeam(name);
+      default:
+        return identity(name) === identity(teamFunction);
+    }
+  });
+}
+
+/**
+ * Team → function membership. `options.team_functions` (PR #14) wins when the
+ * response has it; a team may map to several functions (UAE Pre-Approvals
+ * teams are `["RCM", "Pre-Approvals"]`) and is then listed under each.
+ */
+export function teamBelongsToFunction(team: string, teamFunction: string, teamFunctions?: TeamFunctionMap): boolean {
+  const mapped = mappedFunctions(team, teamFunctions);
+  if (mapped) return mapped.some((name) => identity(name) === identity(teamFunction));
+  return helperBelongs(team, teamFunction);
 }
 
 function uniqueCanonical(teams: string[]): string[] {
@@ -47,19 +88,30 @@ function uniqueCanonical(teams: string[]): string[] {
 }
 
 /**
- * Teams available for the header Teams dropdown. `apiTeams` is
- * `workspace.options.teams`, which the API scopes to the selected region and
- * the caller's authorized records. Membership is tested on the source team
- * names first, then merged branch teams are collapsed to their canonical name.
+ * Teams for the header Teams dropdown: `options.teams` (scoped by the API to
+ * the region, and with PR #14 also to the level and the current period),
+ * narrowed to the selected function on the source names, then merged branch
+ * teams collapsed to their canonical name.
  */
-export function teamOptionsFor(apiTeams: string[], teamFunction?: string): string[] {
-  const scoped = teamFunction ? apiTeams.filter((team) => teamBelongsToFunction(team, teamFunction)) : apiTeams;
+export function teamOptionsFor(apiTeams: string[], teamFunction?: string, teamFunctions?: TeamFunctionMap): string[] {
+  const scoped = teamFunction
+    ? apiTeams.filter((team) => teamBelongsToFunction(team, teamFunction, teamFunctions))
+    : apiTeams;
   return uniqueCanonical(scoped);
 }
 
-/** Functions that still have at least one team in the API-provided scope. */
-export function functionOptionsFor(apiTeams: string[]): string[] {
-  return INSIGHT_FUNCTIONS.filter((teamFunction) => apiTeams.some((team) => teamBelongsToFunction(team, teamFunction)));
+/**
+ * The fixed four functions, minus any with no team in the current scope.
+ * With PR #14 the API's own `options.functions` must also contain it.
+ */
+export function functionOptionsFor(options: Pick<CascadeOptions, 'teams' | 'functions' | 'team_functions'>): string[] {
+  const apiFunctions = options.team_functions && Array.isArray(options.functions)
+    ? new Set(options.functions.map((name) => identity(name)))
+    : null;
+  return INSIGHT_FUNCTIONS.filter((teamFunction) => (
+    (!apiFunctions || apiFunctions.has(identity(teamFunction)))
+    && options.teams.some((team) => teamBelongsToFunction(team, teamFunction, options.team_functions))
+  ));
 }
 
 /** The API's `team` param: a selected team is always a subset of its function. */
@@ -70,25 +122,45 @@ export function apiTeamParam(filters: Pick<InsightFilters, 'team' | 'teamFunctio
 const includesValue = (values: string[], value: string) => values.some((item) => item.toLowerCase() === value.toLowerCase());
 
 /**
- * Clear header selections that the current API option lists no longer
- * support. Upstream selections are validated first; when one is cleared the
- * downstream ones are left for the next response, because the API computed
- * their option lists against the now-invalid upstream value.
+ * Clear header selections the current API option lists no longer support.
+ *
+ * With PR #14 every list is faceted (it ignores only its own filter), so in a
+ * contradictory combination several lists can disagree at once. To keep the
+ * Region → Function → Team → Level cascade, the most upstream selection the
+ * user made is kept and the downstream ones are cleared first; Region is only
+ * cleared when it is the culprit (no teams at all, or everything downstream is
+ * valid). One selection is cleared per response; the next response re-checks.
  */
-export function reconcileCascade(
-  filters: InsightFilters,
-  options: Pick<InsightOptions, 'regions' | 'teams' | 'performance_levels'>,
-): InsightFilters | null {
+export function reconcileCascade(filters: InsightFilters, options: CascadeOptions): InsightFilters | null {
+  const teamFunctions = options.team_functions;
+  const regionInvalid = Boolean(filters.region && !includesValue(options.regions, filters.region));
+  const functionInvalid = Boolean(filters.teamFunction && !includesValue(functionOptionsFor(options), filters.teamFunction));
+  const teamInvalid = Boolean(filters.team
+    && !includesValue(teamOptionsFor(options.teams, filters.teamFunction, teamFunctions), canonicalTeamName(filters.team)));
+  const levelInvalid = Boolean(filters.performanceLevel && !includesValue(options.performance_levels, filters.performanceLevel));
+  // No teams at all means the region (or, with PR #14, the level) has no data
+  // in this period, so team-dimension checks are inconclusive. Likewise an
+  // empty level list means the team/function itself has no data, so a level
+  // mismatch is not the level's fault.
+  const teamsEmpty = options.teams.length === 0;
+  const levelsEmpty = options.performance_levels.length === 0;
+
   const cleared: Partial<Record<keyof InsightFilters, undefined>> = {};
-  if (filters.region && !includesValue(options.regions, filters.region)) {
+  if (teamsEmpty && regionInvalid) {
     cleared.region = undefined;
-  } else if (filters.teamFunction && !includesValue(functionOptionsFor(options.teams), filters.teamFunction)) {
+  } else if (levelInvalid && !levelsEmpty && (teamsEmpty || teamInvalid || functionInvalid)) {
+    // PR #14 narrows teams by level: the team/function has data here, just
+    // not at this level, so the downstream level is what goes.
+    cleared.performanceLevel = undefined;
+  } else if (functionInvalid) {
     // A team is always a subset of its function, so it goes with it.
     Object.assign(cleared, { teamFunction: undefined, team: undefined });
-  } else if (filters.team && !includesValue(teamOptionsFor(options.teams, filters.teamFunction), canonicalTeamName(filters.team))) {
+  } else if (teamInvalid) {
     cleared.team = undefined;
-  } else if (filters.performanceLevel && !includesValue(options.performance_levels, filters.performanceLevel)) {
+  } else if (levelInvalid) {
     cleared.performanceLevel = undefined;
+  } else if (regionInvalid) {
+    cleared.region = undefined;
   }
   if (!Object.keys(cleared).length) return null;
   return { ...filters, ...cleared, position: undefined, employeeId: undefined, kpi: undefined };

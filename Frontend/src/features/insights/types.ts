@@ -180,6 +180,10 @@ export interface InsightOptions {
   severities: InsightSeverity[];
   insight_types: InsightType[];
   statuses: string[];
+  /** PR #14: parent functions present in the narrowed scope (may include standalone teams). */
+  functions?: string[];
+  /** PR #14: each team in `teams` → every function it rolls up into (e.g. UAE Pre-Approvals → RCM + Pre-Approvals). */
+  team_functions?: Record<string, string[]>;
 }
 
 export interface InsightsWorkspace {

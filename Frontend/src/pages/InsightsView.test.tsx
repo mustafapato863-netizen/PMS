@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import InsightsView from './InsightsView';
 import { insightsWorkspaceUrl } from '../hooks/api/useInsightsWorkspace';
 import type { InsightFilters } from '../features/insights/types';
@@ -9,22 +9,31 @@ import type { InsightFilters } from '../features/insights/types';
 const query = vi.hoisted(() => ({ refetch: vi.fn() }));
 const latestFilters = vi.hoisted(() => ({ current: {} as InsightFilters }));
 const teamDataCalls = vi.hoisted(() => ({ calls: [] as unknown[][] }));
-// Authorized records behind the mocked workspace options. The mock scopes the
-// option lists the same way `InsightsService._options` does: regions from all
-// records, teams by region, levels by region + (expanded) team.
-const scopeRecords = vi.hoisted(() => [
-  { region: 'UAE', team: 'Call Center', level: 'Managerial' },
-  { region: 'UAE', team: 'Inbound', level: 'Employee' },
-  { region: 'UAE', team: 'Outbound', level: 'Employee' },
-  { region: 'UAE', team: 'Marketing', level: 'Employee' },
-  { region: 'UAE', team: 'Sales', level: 'Employee' },
-  { region: 'UAE', team: 'Pre-Approvals OP Dubai', level: 'Employee' },
-  { region: 'UAE', team: 'Pre-Approvals OP Final SHJAJM', level: 'Managerial' },
-  { region: 'UAE', team: 'RCM', level: 'Corporate' },
-  { region: 'EGY', team: 'Inbound', level: 'Employee' },
-  { region: 'EGY', team: 'Coding', level: 'Employee' },
-  { region: 'EGY', team: 'Pre-Approvals IP Offshore', level: 'Employee' },
-]);
+// Authorized records behind the mocked workspace options. By default the
+// mock scopes options like PR #14 (`InsightsService._options`); tests can
+// switch to the main @ 0d4d48d shape (no `team_functions`).
+const scopeMock = vi.hoisted(() => ({
+  mode: 'pr14' as 'pr14' | 'legacy',
+  teamFunctionsOverride: null as Record<string, string[]> | null,
+  records: [
+    { region: 'UAE', team: 'Call Center', level: 'Managerial', period: '2026-06' },
+    { region: 'UAE', team: 'Inbound', level: 'Employee', period: '2026-06' },
+    { region: 'UAE', team: 'Outbound', level: 'Employee', period: '2026-06' },
+    { region: 'UAE', team: 'Marketing', level: 'Employee', period: '2026-06' },
+    { region: 'UAE', team: 'Sales', level: 'Employee', period: '2026-06' },
+    { region: 'UAE', team: 'Pre-Approvals OP Dubai', level: 'Employee', period: '2026-06' },
+    { region: 'UAE', team: 'Pre-Approvals OP Final SHJAJM', level: 'Managerial', period: '2026-06' },
+    { region: 'UAE', team: 'Pre-Approvals IP Final Dubai', level: 'Employee', period: '2026-06' },
+    { region: 'UAE', team: 'Pre-Approvals IP Elective Dubai', level: 'Employee', period: '2026-06' },
+    { region: 'UAE', team: 'RCM', level: 'Corporate', period: '2026-06' },
+    { region: 'EGY', team: 'Inbound', level: 'Employee', period: '2026-06' },
+    { region: 'EGY', team: 'Coding', level: 'Employee', period: '2026-06' },
+    { region: 'EGY', team: 'Pre-Approvals IP Offshore', level: 'Employee', period: '2026-06' },
+    // Pharmacy only has data in May, so it is outside the latest-month options.
+    { region: 'UAE', team: 'Pharmacy', level: 'Employee', period: '2026-05' },
+    { region: 'UAE', team: 'Marketing', level: 'Employee', period: '2026-05' },
+  ],
+}));
 const actionMocks = vi.hoisted(() => ({
   getActionsForEmployee: vi.fn(() => []),
   refreshPerformanceData: vi.fn(),
@@ -101,22 +110,16 @@ const extraAnalyses = Array.from({ length: 10 }, (_, index) => ({
 
 vi.mock('../hooks/api/useInsightsWorkspace', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../hooks/api/useInsightsWorkspace')>();
-  const { apiTeamParam, teamBelongsToFunction } = await import('../features/insights/filterCascade');
-  const unique = (values: string[]) => Array.from(new Set(values)).sort();
-  const scopedOptions = (filters: InsightFilters) => {
-    const regionRecords = scopeRecords.filter((record) => !filters.region || record.region === filters.region);
-    const team = apiTeamParam(filters);
-    const levelRecords = regionRecords.filter((record) => !team || teamBelongsToFunction(record.team, team));
-    return {
-      regions: unique(scopeRecords.map((record) => record.region)),
-      teams: unique(regionRecords.map((record) => record.team)),
-      performance_levels: unique(levelRecords.map((record) => record.level)),
-    };
-  };
+  const { scopedInsightOptions, periodFromKey } = await import('../test/insightsScopeOptions');
   return {
   ...actual,
   useInsightsWorkspace: (filters: InsightFilters) => {
     latestFilters.current = filters;
+    const scoped = scopedInsightOptions(scopeMock.records, filters, scopeMock.mode);
+    const scopedOptions = scopeMock.teamFunctionsOverride
+      ? { ...scoped.options, team_functions: { ...scoped.options.team_functions, ...scopeMock.teamFunctionsOverride } }
+      : scoped.options;
+    const currentPeriod = periodFromKey(scoped.currentPeriod || '2026-06');
     return ({
     data: {
       summary: {
@@ -196,8 +199,8 @@ vi.mock('../hooks/api/useInsightsWorkspace', async (importOriginal) => {
         { team: 'Outbound', current_score: 86, previous_score: 84, score_change: 2, impacted_employees: 1, total_employees: 8, critical: 0, at_risk: 1, opportunities: 1, main_insight_id: 'outbound-no-show', main_cause: 'No Show Rate is improving but remains above target' },
         { team: 'Sales', current_score: 90, previous_score: 89, score_change: 1, impacted_employees: 0, total_employees: 4, critical: 0, at_risk: 0, opportunities: 0, main_insight_id: null, main_cause: null },
       ],
-      options: { periods: [{ year: 2026, month: 'June', key: '2026-06' }, { year: 2026, month: 'May', key: '2026-05' }], ...scopedOptions(filters), positions: ['Media Buyer'], employees: [], kpis: [{ key: 'cpl', label: 'CPL' }], severities: ['critical', 'risk', 'opportunity', 'information'], insight_types: ['performance', 'kpi_driver', 'employee_risk', 'opportunity', 'data_quality'], statuses: ['open'] },
-      comparison: { current: { year: 2026, month: 'June', key: '2026-06' }, previous: { year: 2026, month: 'May', key: '2026-05' }, is_adjacent: true, note: null },
+      options: { ...scopedOptions, positions: ['Media Buyer'], employees: [], kpis: [{ key: 'cpl', label: 'CPL' }], severities: ['critical', 'risk', 'opportunity', 'information'], insight_types: ['performance', 'kpi_driver', 'employee_risk', 'opportunity', 'data_quality'], statuses: ['open'] },
+      comparison: { current: currentPeriod, previous: { year: 2026, month: 'May', key: '2026-05' }, is_adjacent: true, note: null },
       deferred_capabilities: ['Overdue corrective actions require a persisted due date.'],
     },
     isLoading: false, isFetching: false, isPlaceholderData: false, error: null, refetch: query.refetch,
@@ -286,6 +289,11 @@ function section(name: string) {
 }
 
 describe('InsightsView', () => {
+  beforeEach(() => {
+    scopeMock.mode = 'pr14';
+    scopeMock.teamFunctionsOverride = null;
+  });
+
   it('renders the header with labelled Date, Regions, primary Functions, Teams and Levels filters in order', () => {
     renderInsights();
 
@@ -688,9 +696,10 @@ describe('InsightsView', () => {
     const user = userEvent.setup();
     renderInsights();
 
+    // Latest month (June): Pharmacy only has May data, so it is not offered.
     expect(optionValues('Team')).toEqual([
       'All teams', 'Call Center', 'Coding', 'Inbound', 'Marketing', 'Outbound',
-      'Pre-Approvals IP Offshore', 'Pre-Approvals OP Final', 'RCM', 'Sales',
+      'Pre-Approvals IP Elective Dubai', 'Pre-Approvals IP Final', 'Pre-Approvals IP Offshore', 'Pre-Approvals OP Final', 'RCM', 'Sales',
     ]);
     await user.selectOptions(screen.getByRole('combobox', { name: 'Function' }), 'Call Center');
     expect(optionValues('Team')).toEqual(['All teams', 'Call Center', 'Inbound', 'Outbound']);
@@ -705,11 +714,18 @@ describe('InsightsView', () => {
     // Outbound is not an RCM team, so it is dropped with the function change.
     expect(latestFilters.current.team).toBeUndefined();
     expect(currentSearch().get('team')).toBeNull();
-    expect(optionValues('Team')).toEqual(['All teams', 'Coding', 'Pre-Approvals IP Offshore', 'Pre-Approvals OP Final', 'RCM']);
+    // UAE Pre-Approvals teams are listed under RCM too (team_functions: ["RCM", "Pre-Approvals"]).
+    expect(optionValues('Team')).toEqual([
+      'All teams', 'Coding', 'Pre-Approvals IP Elective Dubai', 'Pre-Approvals IP Final',
+      'Pre-Approvals IP Offshore', 'Pre-Approvals OP Final', 'RCM',
+    ]);
 
     await user.selectOptions(screen.getByRole('combobox', { name: 'Function' }), 'Pre-Approvals');
-    // UAE Pre-Approvals only: IP Offshore belongs to RCM, OP branches merge into OP Final.
-    expect(optionValues('Team')).toEqual(['All teams', 'Pre-Approvals OP Final']);
+    // Every UAE Pre-Approvals sub-team; IP Offshore is RCM-only in team_functions.
+    // OP Dubai + OP Final SHJAJM and IP Final Dubai merge into their canonical teams.
+    expect(optionValues('Team')).toEqual([
+      'All teams', 'Pre-Approvals IP Elective Dubai', 'Pre-Approvals IP Final', 'Pre-Approvals OP Final',
+    ]);
 
     await user.selectOptions(screen.getByRole('combobox', { name: 'Team' }), 'Pre-Approvals OP Final');
     await user.selectOptions(screen.getByRole('combobox', { name: 'Team' }), '');
@@ -718,10 +734,10 @@ describe('InsightsView', () => {
   });
 
   it('restores Function and Team from the URL', () => {
-    renderInsights('/insights?function=Call%20Center&team=Inbound&period=2026-05');
+    renderInsights('/insights?function=Call%20Center&team=Inbound&period=2026-06');
     expect(screen.getByRole('combobox', { name: 'Function' })).toHaveValue('Call Center');
     expect(screen.getByRole('combobox', { name: 'Team' })).toHaveValue('Inbound');
-    expect(latestFilters.current).toMatchObject({ teamFunction: 'Call Center', team: 'Inbound', periodKey: '2026-05' });
+    expect(latestFilters.current).toMatchObject({ teamFunction: 'Call Center', team: 'Inbound', periodKey: '2026-06' });
     expect(currentSearch().get('team')).toBe('Inbound');
   });
 
@@ -750,7 +766,8 @@ describe('InsightsView', () => {
     expect(optionValues('Performance level')).toEqual(['All levels', 'Employee']);
   });
 
-  it('auto-clears selections that become invalid after a cascade change', async () => {
+  it('auto-clears selections that become invalid after a cascade change (main backend, regions not faceted)', async () => {
+    scopeMock.mode = 'legacy';
     const user = userEvent.setup();
     renderInsights();
 
@@ -799,21 +816,113 @@ describe('InsightsView', () => {
     renderInsights();
     teamDataCalls.calls = [];
 
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Insight period' }), '2026-05');
     await user.selectOptions(screen.getByRole('combobox', { name: 'Region' }), 'EGY');
     await user.selectOptions(screen.getByRole('combobox', { name: 'Function' }), 'Call Center');
     await user.selectOptions(screen.getByRole('combobox', { name: 'Team' }), 'Inbound');
     await user.selectOptions(screen.getByRole('combobox', { name: 'Performance level' }), 'Employee');
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Insight period' }), '2026-06');
 
     // Summary, trend, drivers, geography, teams, people and More analysis all
     // render from this one workspace response, so its params scope every section.
     const params = new URL(insightsWorkspaceUrl(latestFilters.current), 'http://pms.test').searchParams;
     expect(Object.fromEntries(params)).toEqual({
-      year: '2026', month: 'May', region: 'EGY', team: 'Inbound', performance_level: 'Employee',
+      year: '2026', month: 'June', region: 'EGY', team: 'Inbound', performance_level: 'Employee',
     });
     expect(teamDataCalls.calls.at(-1)?.slice(0, 3)).toEqual(['Inbound', 'June', 'EGY']);
     expect(Object.fromEntries(currentSearch())).toEqual({
-      period: '2026-05', region: 'EGY', function: 'Call Center', team: 'Inbound', performance_level: 'Employee',
+      period: '2026-06', region: 'EGY', function: 'Call Center', team: 'Inbound', performance_level: 'Employee',
+    });
+  });
+  it('keeps the Functions list fixed to the four functions even when PR #14 lists more', async () => {
+    const user = userEvent.setup();
+    renderInsights();
+    // PR #14 options.functions also contains standalone teams (Sales); they are never shown.
+    expect(optionValues('Function')).toEqual(['All functions', 'Call Center', 'RCM', 'Pre-Approvals', 'Marketing']);
+    expect(optionValues('Function')).not.toContain('Sales');
+    // Hide-when-empty is kept: EGY has no Marketing or UAE Pre-Approvals teams.
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Region' }), 'EGY');
+    expect(optionValues('Function')).toEqual(['All functions', 'Call Center', 'RCM']);
+  });
+
+  it('prefers options.team_functions over the built-in team helper', async () => {
+    scopeMock.teamFunctionsOverride = { Sales: ['Marketing'] };
+    const user = userEvent.setup();
+    renderInsights();
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Function' }), 'Marketing');
+    // The helper alone would only list Marketing; the API mapping adds Sales.
+    expect(optionValues('Team')).toEqual(['All teams', 'Marketing', 'Sales']);
+  });
+
+  it('falls back to the team helper when the response has no team_functions', async () => {
+    scopeMock.mode = 'legacy';
+    const user = userEvent.setup();
+    renderInsights();
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Function' }), 'Pre-Approvals');
+    expect(optionValues('Team')).toEqual([
+      'All teams', 'Pre-Approvals IP Elective Dubai', 'Pre-Approvals IP Final', 'Pre-Approvals OP Final',
+    ]);
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Function' }), 'RCM');
+    expect(optionValues('Team')).toContain('Pre-Approvals OP Final');
+    expect(optionValues('Team')).toContain('Pre-Approvals IP Offshore');
+  });
+
+  it('keeps a UAE Pre-Approvals team when switching between RCM and Pre-Approvals', async () => {
+    const user = userEvent.setup();
+    renderInsights();
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Function' }), 'RCM');
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Team' }), 'Pre-Approvals IP Final');
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Function' }), 'Pre-Approvals');
+    expect(latestFilters.current).toMatchObject({ teamFunction: 'Pre-Approvals', team: 'Pre-Approvals IP Final' });
+    expect(screen.getByRole('combobox', { name: 'Team' })).toHaveValue('Pre-Approvals IP Final');
+  });
+
+  describe('with PR #14 latest-month options', () => {
+    it('clears a URL team that has no data in the selected month and keeps the month', () => {
+      renderInsights('/insights?period=2026-06&team=Pharmacy');
+      expect(latestFilters.current.team).toBeUndefined();
+      expect(latestFilters.current.periodKey).toBe('2026-06');
+      expect(currentSearch().get('team')).toBeNull();
+      expect(currentSearch().get('period')).toBe('2026-06');
+      expect(screen.getByRole('combobox', { name: 'Team' })).toHaveValue('');
+    });
+
+    it('clears a URL function that has no teams in the selected month', () => {
+      renderInsights('/insights?period=2026-05&function=Call%20Center&team=Inbound');
+      expect(latestFilters.current).toMatchObject({ periodKey: '2026-05' });
+      expect(latestFilters.current.teamFunction).toBeUndefined();
+      expect(latestFilters.current.team).toBeUndefined();
+      expect(Object.fromEntries(currentSearch())).toEqual({ period: '2026-05' });
+    });
+
+    it('follows the backend default period for a URL team without a month instead of clearing it', () => {
+      // PR #14 resolves the default period from the filtered scope, so Pharmacy
+      // (May only) loads May; the URL stays free of an explicit period.
+      renderInsights('/insights?team=Pharmacy');
+      expect(latestFilters.current.team).toBe('Pharmacy');
+      expect(screen.getByRole('combobox', { name: 'Insight period' })).toHaveValue('2026-05');
+      expect(currentSearch().get('period')).toBeNull();
+      expect(currentSearch().get('team')).toBe('Pharmacy');
+    });
+
+    it('auto-clears the team when a month without its data is picked', async () => {
+      const user = userEvent.setup();
+      renderInsights();
+      await user.selectOptions(screen.getByRole('combobox', { name: 'Function' }), 'Call Center');
+      await user.selectOptions(screen.getByRole('combobox', { name: 'Team' }), 'Inbound');
+      await user.selectOptions(screen.getByRole('combobox', { name: 'Insight period' }), '2026-05');
+      // May has no Call Center teams: the function and its team clear, the month stays.
+      expect(latestFilters.current).toMatchObject({ periodKey: '2026-05' });
+      expect(latestFilters.current.teamFunction).toBeUndefined();
+      expect(latestFilters.current.team).toBeUndefined();
+      expect(optionValues('Function')).toEqual(['All functions', 'Marketing']);
+      expect(optionValues('Team')).toEqual(['All teams', 'Marketing', 'Pharmacy']);
+    });
+
+    it('clears the level, not the team, when PR #14 narrows teams by an invalid level', () => {
+      renderInsights('/insights?function=Call%20Center&team=Outbound&performance_level=Managerial');
+      expect(latestFilters.current).toMatchObject({ teamFunction: 'Call Center', team: 'Outbound' });
+      expect(latestFilters.current.performanceLevel).toBeUndefined();
+      expect(currentSearch().get('performance_level')).toBeNull();
     });
   });
 });
