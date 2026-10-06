@@ -431,3 +431,52 @@ def test_function_assignments_load_into_authoritative_request_scope(db_session):
     scope = get_current_user_scope(db_session, request)
 
     assert scope["accessible_functions"] == ["Call Center"]
+
+
+@pytest.mark.parametrize("role", ["Function Viewer", "Manager", "General Manager"])
+def test_non_admin_cannot_change_permissions_even_with_forged_role_header(test_client, db_session, role):
+    user = AuthenticationService.create_user(
+        db_session, "permission_attacker", "attacker@test.com", "SecurePassword123!", role,
+    )
+    token = AuthenticationService.authenticate_user(db_session, user.username, "SecurePassword123!")
+    headers = {"Authorization": f"Bearer {token}", "X-User-Role": "Admin"}
+    payload = {
+        "id": str(user.id), "name": "Attacker", "username": user.username,
+        "password": "SecurePassword123!", "role": "Admin",
+        "accessible_functions": ["RCM", "Marketing"], "has_unrestricted_team_access": True,
+    }
+    assert test_client.get("/api/users/", headers=headers).status_code == 403
+    assert test_client.post("/api/users/", headers=headers, json=payload).status_code == 403
+    assert test_client.put(f"/api/users/{user.id}", headers=headers, json=payload).status_code == 403
+    assert test_client.delete(f"/api/users/{user.id}", headers=headers).status_code == 403
+    db_session.refresh(user)
+    assert user.role == role
+    assert db_session.query(UserFunctionAssignment).filter_by(user_id=user.id).count() == 0
+
+
+def test_role_changes_do_not_restore_historical_branch_permissions(test_client, db_session):
+    headers = _auth_headers(db_session, "branch_security_admin", "SecurePassword123!")
+    team = Team(name="Coding", db_name="coding", display_name="Coding", region="EGY", is_active=True)
+    user = AuthenticationService.create_user(
+        db_session, "former_manager", "former@test.com", "SecurePassword123!", "Manager",
+    )
+    db_session.add(team)
+    db_session.flush()
+    db_session.add(UserTeamAssignment(user_id=user.id, team_id=team.id, assigned_by="Admin"))
+    db_session.commit()
+    payload = {"id": str(user.id), "name": "Former Manager", "username": user.username}
+    demoted = test_client.put(
+        f"/api/users/{user.id}", headers=headers,
+        json={**payload, "role": "Function Viewer", "accessible_functions": ["Marketing"]},
+    )
+    assert demoted.status_code == 200
+    assert db_session.query(UserTeamAssignment).filter_by(user_id=user.id).count() == 0
+    # Also handle historical rows left behind before role changes cleared grants.
+    db_session.add(UserTeamAssignment(user_id=user.id, team_id=team.id, assigned_by="Admin"))
+    db_session.commit()
+    promoted = test_client.put(
+        f"/api/users/{user.id}", headers=headers, json={**payload, "role": "Manager"},
+    )
+    assert promoted.status_code == 200
+    assert promoted.json()["data"]["accessible_teams"] == []
+    assert promoted.json()["data"]["has_unrestricted_team_access"] is False

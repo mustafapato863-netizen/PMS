@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   refreshUsers: vi.fn().mockResolvedValue(undefined),
   deleteUser: vi.fn().mockResolvedValue({ success: true }),
   addUser: vi.fn().mockResolvedValue({ success: true }),
+  updateUser: vi.fn().mockResolvedValue({ success: true }),
   fetchWithRole: vi.fn().mockResolvedValue({
     ok: true,
     json: async () => ({ data: [] }),
@@ -29,7 +30,7 @@ vi.mock('../../context/auth', () => ({
     ],
     currentUser: { id: 'admin', name: 'Admin', username: 'admin', role: 'Admin' },
     addUser: mocks.addUser,
-    updateUser: vi.fn(),
+    updateUser: mocks.updateUser,
     deleteUser: mocks.deleteUser,
     toggleUserActive: vi.fn(),
     refreshUsers: mocks.refreshUsers,
@@ -102,6 +103,23 @@ it('lists General Manager in the role filter', () => {
   const filter = screen.getByRole('combobox', { name: 'Filter by role' });
   expect(Array.from((filter as HTMLSelectElement).options).map((option) => option.value)).toContain('General Manager');
   expect(Array.from((filter as HTMLSelectElement).options).map((option) => option.value)).toContain('Function Viewer');
+});
+
+it('saves edited function grants through the admin panel', async () => {
+  const user = userEvent.setup();
+  render(<UserManagementPanel />);
+  await user.click(screen.getByRole('button', { name: 'Actions for Function User' }));
+  await user.click(screen.getByRole('button', { name: 'Edit' }));
+  expect(screen.getByRole('checkbox', { name: 'RCM' })).toBeChecked();
+  expect(screen.getByRole('checkbox', { name: 'Marketing' })).toBeChecked();
+  await user.click(screen.getByRole('checkbox', { name: 'Marketing' }));
+  await user.click(screen.getByRole('checkbox', { name: 'Call Center' }));
+  await user.click(screen.getByRole('button', { name: 'Save changes' }));
+  await waitFor(() => expect(mocks.updateUser).toHaveBeenCalledWith('functions', expect.objectContaining({
+    role: 'Function Viewer', accessible_functions: ['RCM', 'Call Center'],
+    accessible_teams: [], has_unrestricted_team_access: false,
+  })));
+  expect(screen.getByRole('status')).toHaveTextContent('User updated successfully.');
 });
 
 it('refreshes presence while User Management is open', async () => {

@@ -100,3 +100,20 @@ it('assigns selected functions to a Function Viewer', async () => {
     accessibleFunctions: ['Marketing'],
   }));
 });
+
+it('replaces a Manager branch selection without granting all branches', async () => {
+  const user = userEvent.setup();
+  const onSubmit = vi.fn().mockResolvedValue(undefined);
+  render(<UserFormModal open
+    user={{ id: 'manager', name: 'Manager', username: 'manager', role: 'Manager', accessible_teams: ['Coding'] }}
+    teams={[{ name: 'Coding' }, { name: 'Submission' }]}
+    onClose={vi.fn()} onSubmit={onSubmit} />);
+  expect(screen.getByRole('checkbox', { name: 'Coding' })).toBeChecked();
+  expect(screen.getByRole('checkbox', { name: 'All branches' })).not.toBeChecked();
+  await user.click(screen.getByRole('checkbox', { name: 'Coding' }));
+  await user.click(screen.getByRole('checkbox', { name: 'Submission' }));
+  await user.click(screen.getByRole('button', { name: 'Save changes' }));
+  expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({
+    role: 'Manager', accessibleTeams: ['Submission'], isGeneralManager: false,
+  }));
+});

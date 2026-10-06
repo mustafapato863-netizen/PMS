@@ -556,6 +556,8 @@ def get_team_yearly_records(
             message=f"Retrieved {len(team_records)} performance records for team",
             data=[serialize_performance_record(r) for r in team_records]
         )
+    except HTTPException:
+        raise
     except Exception as e:
         return StandardResponse(
             success=False,

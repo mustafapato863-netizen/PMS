@@ -526,10 +526,9 @@ async def update_user_route(
                     updates.get("accessible_team_levels"),
                     assigned_by=assigned_by,
                 )
-            elif previous_role == "General Manager":
-                # P3: GM assignments are synthetic all-teams/all-levels rows.
-                # On demote, start from a clean slate so the Manager is not
-                # left unrestricted; only explicitly listed teams are granted.
+            elif previous_role != "Manager":
+                # Entering Manager must start from explicitly granted branches.
+                # Historical assignments from another role must not reappear.
                 _replace_team_assignments(db, existing.id, updates.get("accessible_teams") or [], assigned_by=assigned_by)
             elif "accessible_teams" in updates:
                 # SEC-F1-R1: teams-only edit must preserve existing level
@@ -537,6 +536,8 @@ async def update_user_route(
                 _merge_team_assignments_preserving_levels(
                     db, existing.id, updates.get("accessible_teams"), assigned_by=assigned_by
                 )
+        elif previous_role in {"Manager", "General Manager"}:
+            _replace_team_assignments(db, existing.id, [], assigned_by=assigned_by)
 
         if existing.role == "Function Viewer":
             if function_names is not None:
