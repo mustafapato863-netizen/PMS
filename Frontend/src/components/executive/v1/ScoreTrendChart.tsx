@@ -192,6 +192,9 @@ export default function ScoreTrendChart({ points, comparisonLabel, title }: {
             {comparisonSegments.map((segment, index) => segment.length > 1 && (
               <path key={'comparison-' + index} d={straightPath(segment, x, y)} stroke="var(--exec-comparison-line)" strokeWidth={1.75} strokeDasharray="2 3" strokeLinecap="round" fill="none" data-series="comparison" data-testid="executive-trend-series" />
             ))}
+            {points.map((point, index) => point.comparison_score !== null && (
+              <circle key={point.period.key + '-comparison'} cx={x(index)} cy={y(point.comparison_score)} r={2.5} fill="var(--exec-comparison-line)" />
+            ))}
             {points.map((point, index) => point.score !== null && (
               <g
                 key={point.period.key}
