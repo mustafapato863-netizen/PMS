@@ -63,7 +63,7 @@
         "Web Developer": {
           "kpis": [
             {"key": "wd_uptime", "label": "Website uptime (%)", "perspective": "Internal Process", "weight": 0.25, "direction": "higher_better", "unit": "%", "color": "#2563EB", "actual_col": "Actual Value", "target_col": "Target Value", "aggregation": {"method": "weighted_average", "weight_col": "Target Value"}, "display_order": 1},
-            {"key": "wd_page_speed", "label": "Page load speed", "perspective": "Internal Process", "weight": 0.25, "direction": "lower_better", "unit": "sec", "color": "#0D9488", "actual_col": "Actual Value", "target_col": "Target Value", "aggregation": {"method": "weighted_average", "weight_col": "Target Value"}, "display_order": 2},
+            {"key": "wd_page_speed", "label": "Page load time", "aliases": ["Page load speed"], "perspective": "Internal Process", "weight": 0.25, "direction": "lower_better", "unit": "sec", "color": "#0D9488", "actual_col": "Actual Value", "target_col": "Target Value", "aggregation": {"method": "weighted_average", "weight_col": "Target Value"}, "display_order": 2},
             {"key": "wd_bug_resolution", "label": "Error / bug resolution rate", "perspective": "Internal Process", "weight": 0.25, "direction": "higher_better", "unit": "%", "color": "#D97706", "actual_col": "Actual Value", "target_col": "Target Value", "aggregation": {"method": "weighted_average", "weight_col": "Target Value"}, "display_order": 3},
             {"key": "wd_delivery_timeliness", "label": "Request delivery timeliness", "perspective": "Internal Process", "weight": 0.25, "direction": "higher_better", "unit": "%", "color": "#7C3AED", "actual_col": "Actual Value", "target_col": "Target Value", "aggregation": {"method": "weighted_average", "weight_col": "Target Value"}, "display_order": 4}
           ]
@@ -72,7 +72,7 @@
           "kpis": [
             {"key": "cw_organic_traffic", "label": "Organic traffic from content", "perspective": "Customer", "weight": 0.40, "direction": "higher_better", "unit": "%", "color": "#2563EB", "actual_col": "Actual Value", "target_col": "Target Value", "aggregation": {"method": "weighted_average", "weight_col": "Target Value"}, "display_order": 1},
             {"key": "cw_delivery_timeliness", "label": "Content delivery timeliness", "perspective": "Internal Process", "weight": 0.30, "direction": "higher_better", "unit": "%", "color": "#0D9488", "actual_col": "Actual Value", "target_col": "Target Value", "aggregation": {"method": "weighted_average", "weight_col": "Target Value"}, "display_order": 2},
-            {"key": "cw_error_free", "label": "Error-free content ratio", "perspective": "Internal Process", "weight": 0.30, "direction": "lower_better", "unit": "%", "color": "#D97706", "actual_col": "Actual Value", "target_col": "Target Value", "aggregation": {"method": "weighted_average", "weight_col": "Target Value"}, "display_order": 3}
+            {"key": "cw_error_free", "label": "Error-free content ratio", "perspective": "Internal Process", "weight": 0.30, "direction": "higher_better", "unit": "%", "color": "#D97706", "actual_col": "Actual Value", "target_col": "Target Value", "aggregation": {"method": "weighted_average", "weight_col": "Target Value"}, "display_order": 3}
           ]
         }
       }

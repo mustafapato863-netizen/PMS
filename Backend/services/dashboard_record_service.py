@@ -14,12 +14,19 @@ from config.loader import (
 from models.schemas import PerformanceRecord as SchemaPerformanceRecord
 from pydantic import ValidationError
 from services.legacy_kpi_evidence import build_legacy_employee_kpi_values
+from utils.kpi_direction import (
+    find_kpi_definition,
+    flipped_contribution_fix,
+    resolve_kpi_direction,
+)
 
 
 def _normalise_kpi_values(
     values: list[dict],
     config: dict | None,
     config_by_key: dict[str, dict],
+    team: str | None = None,
+    persisted_directions: dict[str, str] | None = None,
 ) -> list[dict]:
     """Return KPI evidence on one consistent 0-1 achievement/contribution scale.
 
@@ -27,11 +34,30 @@ def _normalise_kpi_values(
     the configured KPI weight.  The product-wide contract now caps every KPI,
     including rows written by an older ``uncapped`` configuration, so cards,
     analysis, exports, and score calculations cannot disagree.
+
+    Direction is resolved through ``utils.kpi_direction`` (record config ->
+    team config -> persisted -> unambiguous global match -> flagged default)
+    and returned with ``direction_source``. A KPI saved under the opposite
+    direction (e.g. Marketing ``cw_error_free`` scored lower-is-better before
+    the config fix) has its contribution corrected here, so the reconciled
+    record score is direction-correct at read time.
     """
     result: list[dict] = []
+    persisted_directions = persisted_directions or {}
     for raw_value in values:
         value = dict(raw_value)
-        definition = config_by_key.get(str(value.get("kpi_key")))
+        kpi_key = str(value.get("kpi_key"))
+        definition = config_by_key.get(kpi_key) or find_kpi_definition(
+            config, value.get("kpi_key"), value.get("label")
+        )
+        persisted_direction = value.get("direction") or persisted_directions.get(kpi_key)
+        direction, direction_source = resolve_kpi_direction(
+            team,
+            {**value, "direction": persisted_direction},
+            definition,
+        )
+        value["direction"] = direction
+        value["direction_source"] = direction_source
         def _number(key: str, default: float = 0.0) -> float:
             try:
                 number = float(value.get(key, default))
@@ -57,8 +83,8 @@ def _normalise_kpi_values(
                 actual = target = 0.0
             if target > 0:
                 ratio = (
-                    target / actual if definition.get("direction") == "lower_better" and actual > 0
-                    else actual / target if definition.get("direction") != "lower_better"
+                    target / actual if direction == "lower_better" and actual > 0
+                    else actual / target if direction != "lower_better"
                     else 1.0
                 )
                 ratio = max(ratio, 0.0)
@@ -69,6 +95,18 @@ def _normalise_kpi_values(
             contribution /= 100.0
         contribution = max(contribution, 0.0)
         contribution = min(contribution, max(weight, 0.0))
+        if definition is not None and definition.get("score_formula", "target_ratio") == "target_ratio":
+            corrected = flipped_contribution_fix(
+                value.get("actual_value"),
+                value.get("target_value"),
+                weight,
+                contribution,
+                direction,
+                persisted_direction,
+            )
+            if corrected is not None:
+                contribution = corrected
+                value["direction_corrected"] = True
 
         value["achievement_ratio"] = ratio
         value["weight_applied"] = weight
@@ -76,6 +114,17 @@ def _normalise_kpi_values(
         value["cap_achievement"] = True
         result.append(value)
     return result
+
+
+def _payload_directions(payload) -> dict[str, str]:
+    """``kpi_key -> direction`` as persisted in ``record_payload.kpi_values``."""
+    if not isinstance(payload, dict):
+        return {}
+    directions: dict[str, str] = {}
+    for value in payload.get("kpi_values") or []:
+        if isinstance(value, dict) and value.get("kpi_key") and value.get("direction"):
+            directions[str(value["kpi_key"])] = str(value["direction"])
+    return directions
 
 
 class DashboardRecordService:
@@ -175,7 +224,9 @@ class DashboardRecordService:
                     "perspective": config_by_key.get(value.kpi_key, {}).get("perspective"),
                     "unit": config_by_key.get(value.kpi_key, {}).get("unit", "number"),
                     "color": config_by_key.get(value.kpi_key, {}).get("color", "#3B82F6"),
-                    "direction": config_by_key.get(value.kpi_key, {}).get("direction", "higher_better"),
+                    # KPIValue has no direction column; the resolver in
+                    # _normalise_kpi_values decides (never a silent default).
+                    "direction": None,
                     "actual_value": float(value.actual_value),
                     "target_value": float(value.target_value),
                     "achievement_ratio": (
@@ -192,7 +243,11 @@ class DashboardRecordService:
                 }
                 for value in item.kpi_values
             ]
-            kpi_values = _normalise_kpi_values(kpi_values, config, config_by_key)
+            payload = getattr(item, "record_payload", None)
+            persisted_directions = _payload_directions(payload)
+            kpi_values = _normalise_kpi_values(
+                kpi_values, config, config_by_key, team_name, persisted_directions
+            )
 
             # Keep normalized persisted weights available for both the rich
             # payload and compatibility paths. If the JSON payload is
@@ -206,7 +261,6 @@ class DashboardRecordService:
                 )
                 for value in item.kpi_values
             }
-            payload = getattr(item, "record_payload", None)
             payload_raw_data: dict = {}
             if isinstance(payload, dict):
                 candidate_raw_data = payload.get("raw_data")
@@ -229,6 +283,8 @@ class DashboardRecordService:
                         repaired_kpis or scoped_kpis or rich_record.kpi_values,
                         config,
                         config_by_key,
+                        team_name,
+                        persisted_directions,
                     )
                     reconciled_score = float(item.score)
                     reconciled_grade = item.grade
@@ -306,7 +362,9 @@ class DashboardRecordService:
                 if team_name == "Pre-Approvals IP Elective Dubai" and config_by_key
                 else kpi_values
             )
-            fallback_kpis = _normalise_kpi_values(fallback_kpis, config, config_by_key)
+            fallback_kpis = _normalise_kpi_values(
+                fallback_kpis, config, config_by_key, team_name, persisted_directions
+            )
             fallback_score = float(item.score)
             fallback_grade = item.grade
             if fallback_kpis and any(

@@ -12,7 +12,6 @@ from sqlalchemy.orm import Session
 from config.loader import (
     ConfigurationError,
     find_team_config_by_db_name,
-    load_all_team_configs,
     load_team_config,
     resolve_team_config,
 )
@@ -45,6 +44,7 @@ from services.dashboard_record_service import DashboardRecordService
 from services.kpi_aggregation import aggregate_kpi_metric, capped_achievement, configured_weight
 from services.management_bsc_service import ManagementBSCService
 from services.planning_service import PlanningService, MONTH_ORDER
+import utils.kpi_direction as _kd
 from utils.report_scope import (
     _team_keys,
     filter_records_by_scope,
@@ -191,133 +191,18 @@ def _analysis_config(team: str, level: str, position: str) -> dict[str, Any] | N
         return None
 
 
-VALID_DIRECTIONS = {"higher_better", "lower_better"}
-DEFAULT_DIRECTION = "higher_better"
-_DIRECTION_ALIASES = {
-    "higher_better": "higher_better",
-    "higher_is_better": "higher_better",
-    "higher": "higher_better",
-    "high": "higher_better",
-    "increase": "higher_better",
-    "max": "higher_better",
-    "maximize": "higher_better",
-    "up": "higher_better",
-    "asc": "higher_better",
-    "lower_better": "lower_better",
-    "lower_is_better": "lower_better",
-    "lower": "lower_better",
-    "low": "lower_better",
-    "decrease": "lower_better",
-    "min": "lower_better",
-    "minimize": "lower_better",
-    "down": "lower_better",
-    "desc": "lower_better",
-    "inverse": "lower_better",
-}
-
-
-def _normalize_direction(value: Any) -> str | None:
-    """Map stored direction spellings onto ``higher_better`` / ``lower_better``."""
-    if value is None:
-        return None
-    normalized = "_".join(str(value).strip().casefold().replace("-", " ").split())
-    return _DIRECTION_ALIASES.get(normalized)
-
-
-def _collect_kpi_definitions(node: Any, sink: list[dict[str, Any]]) -> None:
-    if isinstance(node, dict):
-        for key, child in node.items():
-            if key == "kpis" and isinstance(child, list):
-                sink.extend(item for item in child if isinstance(item, dict))
-            else:
-                _collect_kpi_definitions(child, sink)
-    elif isinstance(node, list):
-        for child in node:
-            _collect_kpi_definitions(child, sink)
-
-
-def _direction_index(configs: Iterable[dict[str, Any]]) -> dict[str, str]:
-    """Identity (casefolded key/label) -> direction, unambiguous entries only."""
-    seen: dict[str, set[str]] = defaultdict(set)
-    for config in configs:
-        definitions: list[dict[str, Any]] = []
-        _collect_kpi_definitions(config, definitions)
-        for definition in definitions:
-            direction = _normalize_direction(definition.get("direction"))
-            if not direction:
-                continue
-            for identity in (definition.get("key"), definition.get("label")):
-                if identity:
-                    seen[str(identity).strip().casefold()].add(direction)
-    return {identity: next(iter(directions)) for identity, directions in seen.items() if len(directions) == 1}
-
-
-@lru_cache(maxsize=128)
-def _team_direction_index(team: str) -> dict[str, str]:
-    """Every KPI direction configured for a team, across all levels/positions.
-
-    Used when the record's own level/position config cannot be resolved (an
-    unknown position, a merged/logical team name, a management record), so
-    the configured direction still wins over a defaulted persisted value.
-    Merged teams (e.g. Pre-Approvals OP Final) fall back to their source
-    teams via ``_team_keys``; conflicting directions are ignored.
-    """
-    configs: list[dict[str, Any]] = []
-    for name in [team, *sorted(_team_keys(team))]:
-        if not name:
-            continue
-        config = None
-        try:
-            config = load_team_config(name)
-        except ConfigurationError:
-            config = find_team_config_by_db_name(name)
-        if config and config not in configs:
-            configs.append(config)
-    return _direction_index(configs)
-
-
-@lru_cache(maxsize=1)
-def _global_direction_index() -> dict[str, str]:
-    try:
-        return _direction_index(load_all_team_configs())
-    except ConfigurationError:
-        return {}
-
-
-def _resolve_kpi_direction(
-    team: str,
-    value: Any,
-    definition: dict[str, Any] | None,
-) -> tuple[str, str]:
-    """Return ``(direction, source)`` for one KPI row.
-
-    Precedence: the record's resolved KPI definition, then any definition of
-    the same KPI in the team's config, then a valid persisted direction, then
-    an unambiguous match in any team config, and finally the documented
-    ``higher_better`` default. Configuration beats the persisted value because
-    the dashboard resolver writes ``higher_better`` whenever its exact-key
-    config lookup misses, which made lower-is-better KPIs read as positive.
-    """
-    configured = _normalize_direction((definition or {}).get("direction"))
-    if configured:
-        return configured, "config"
-    identities = [
-        str(identity).strip().casefold()
-        for identity in (_value(value, "kpi_key"), _value(value, "label"))
-        if identity
-    ]
-    team_index = _team_direction_index(str(team or ""))
-    for identity in identities:
-        if identity in team_index:
-            return team_index[identity], "team_config"
-    persisted = _normalize_direction(_value(value, "direction"))
-    if persisted:
-        return persisted, "persisted"
-    global_index = _global_direction_index()
-    for identity in identities:
-        if identity in global_index:
-            return global_index[identity], "global_config"
-    return DEFAULT_DIRECTION, "default"
+# KPI direction resolution lives in utils.kpi_direction (single source of
+# truth shared with the dashboard record service, reports and exports). The
+# private names below are kept as aliases for existing callers/tests.
+VALID_DIRECTIONS = _kd.VALID_DIRECTIONS
+DEFAULT_DIRECTION = _kd.DEFAULT_DIRECTION
+_DIRECTION_ALIASES = _kd._DIRECTION_ALIASES
+_normalize_direction = _kd.normalize_direction
+_collect_kpi_definitions = _kd._collect_kpi_definitions
+_direction_index = _kd._direction_index
+_team_direction_index = _kd.team_direction_index
+_global_direction_index = _kd.global_direction_index
+_resolve_kpi_direction = _kd.resolve_kpi_direction
 
 
 def _persisted_kpi_item(value: Any, key: str) -> dict[str, Any]:
@@ -337,11 +222,7 @@ def _persisted_kpi_item(value: Any, key: str) -> dict[str, Any]:
     return item
 
 
-def _apply_direction(item: dict[str, Any], team: str, definition: dict[str, Any] | None) -> dict[str, Any]:
-    direction, source = _resolve_kpi_direction(team, item, definition)
-    item["direction"] = direction
-    item["direction_source"] = source
-    return item
+_apply_direction = _kd.apply_kpi_direction
 
 
 def _directional_gap(actual: float | None, target: float | None, direction: str | None) -> float | None:

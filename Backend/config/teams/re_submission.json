@@ -39,7 +39,8 @@
     },
     {
       "key": "tat",
-      "label": "TAT",
+      "label": "TAT compliance %",
+      "aliases": ["TAT"],
       "weight": 0.3,
       "direction": "higher_better",
       "unit": "%",

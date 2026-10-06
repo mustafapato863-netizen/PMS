@@ -6,6 +6,7 @@ from statistics import mean
 from typing import Any, Iterable
 
 from services.scoring.engine import score as engine_score, KPIResult
+from utils.kpi_direction import kpi_direction
 
 
 MONTHS = {
@@ -99,7 +100,11 @@ class BalancedScorecardService:
                 "kpi_key": definition["key"],
                 "kpi_label": definition.get("label", definition["key"]),
                 "perspective": definition["perspective"],
-                "direction": definition.get("direction", "higher_better"),
+                "direction": kpi_direction(
+                    config.get("team") or (_value(records[0], "team") if records else None),
+                    {"kpi_key": definition["key"], "label": definition.get("label")},
+                    definition,
+                ),
                 "unit": definition.get("unit", "%"),
                 "color": definition.get("color"),
                 "rollup": mode,

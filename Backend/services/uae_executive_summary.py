@@ -18,7 +18,7 @@ from datetime import date, datetime
 from statistics import mean
 from typing import Any, Iterable
 
-from services.insights_report_service import kpi_achievement, weighted_impact
+from services.insights_report_service import _resolved_kpi_rows, kpi_achievement, weighted_impact
 from services.kpi_aggregation import aggregate_kpi_metric, configured_weight
 
 
@@ -131,10 +131,13 @@ def _normalize_record(record: Any) -> dict[str, Any]:
         _value(record, "position") or _value(record, "position_name"),
         "Function not available",
     )
-    kpis: list[dict[str, Any]] = []
-    for raw in raw_kpis or []:
-        if isinstance(raw, dict):
-            kpis.append(dict(raw))
+    # Direction is resolved per record team through the shared resolver so
+    # stale/defaulted saved directions are corrected at read time.
+    kpis: list[dict[str, Any]] = _resolved_kpi_rows(
+        _text(_value(record, "team")),
+        _value(record, "performance_level"),
+        raw_kpis,
+    )
     return {
         "employee_id": employee_id,
         "employee_name": employee_name,

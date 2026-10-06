@@ -16,6 +16,7 @@ from config.loader import (
     load_team_config,
 )
 from repositories.team_repository import TeamRepository
+from utils.kpi_direction import kpi_direction
 from models.models import Team, TeamKPIConfig
 from models.team_models import TeamCreateRequest, TeamUpdateRequest
 from data_cleaning import CleanerFactory
@@ -220,7 +221,9 @@ class TeamService:
                         kpi_key=kpi_key,
                         kpi_label=kpi_key.title(),
                         weight=float(weight),
-                        direction='higher_better',
+                        # Resolve from config when the team/KPI is known; a
+                        # true miss defaults to higher_better and is logged.
+                        direction=kpi_direction(team.name, {"kpi_key": kpi_key}),
                         unit='%',
                         color='#10B981',
                         actual_col=f'{kpi_key}_actual',
@@ -289,7 +292,9 @@ class TeamService:
                         kpi_key=kpi_key,
                         kpi_label=kpi_key.title(),
                         weight=float(weight),
-                        direction='higher_better',
+                        # Resolve from config when the team/KPI is known; a
+                        # true miss defaults to higher_better and is logged.
+                        direction=kpi_direction(team.name, {"kpi_key": kpi_key}),
                         unit='%',
                         color='#10B981',
                         actual_col=f'{kpi_key}_actual',

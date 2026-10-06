@@ -13,6 +13,7 @@ from collections import Counter, defaultdict
 from statistics import mean
 from typing import Any, Iterable
 
+from utils.kpi_direction import DEFAULT_DIRECTION, apply_kpi_direction, normalize_direction
 from services.kpi_aggregation import (
     AggregatedKpiMetric,
     aggregate_kpi_metric,
@@ -234,33 +235,67 @@ def _trend_state(scores: list[float]) -> dict[str, Any]:
 def _definition_for(raw: dict[str, Any], definitions: list[dict[str, Any]]) -> dict[str, Any]:
     key = _text(raw.get("kpi_key") or raw.get("key") or raw.get("label") or "KPI")
     label = _text(raw.get("label") or key)
-    match = next(
-        (
-            definition
-            for definition in definitions
-            if _text(definition.get("key")) == key
-            or _text(definition.get("label")).casefold() == label.casefold()
-        ),
-        None,
-    )
+    # Prefer a key+label match, then label, then key: one key can mean
+    # different KPIs in different teams (``Other``, ``TAT``).
+    candidates = [
+        lambda definition: _text(definition.get("key")) == key
+        and _text(definition.get("label")).casefold() == label.casefold(),
+        lambda definition: _text(definition.get("label")).casefold() == label.casefold(),
+        lambda definition: _text(definition.get("key")) == key,
+    ]
+    match = None
+    for predicate in candidates:
+        match = next((definition for definition in definitions if predicate(definition)), None)
+        if match:
+            break
+    # ``raw`` was resolved per record/team in ``_normalize_record``; that
+    # direction wins over a cross-team definition list.
+    raw_direction = normalize_direction(raw.get("direction"))
+    team_resolved = raw.get("direction_source") in {"config", "team_config"} and raw_direction
     if match:
-        return {
+        merged = {
             "key": key,
             "label": label,
             "unit": raw.get("unit") or "",
-            "direction": raw.get("direction") or "higher_better",
+            "direction": raw_direction or DEFAULT_DIRECTION,
             "aggregation": raw.get("aggregation"),
             "weight": raw.get("weight") or raw.get("weight_applied"),
             **dict(match),
         }
+        if team_resolved or not normalize_direction(merged.get("direction")):
+            merged["direction"] = raw_direction or DEFAULT_DIRECTION
+        return merged
     return {
         "key": key,
         "label": label,
         "unit": raw.get("unit") or "",
-        "direction": raw.get("direction") or "higher_better",
+        "direction": raw_direction or DEFAULT_DIRECTION,
         "aggregation": raw.get("aggregation"),
         "weight": raw.get("weight") or raw.get("weight_applied"),
     }
+
+
+def _resolved_kpi_rows(team: str, level: Any, raw_kpis: Iterable[Any]) -> list[dict[str, Any]]:
+    """KPI rows with direction resolved for the record's team (shared resolver).
+
+    Rows already resolved against their record config upstream
+    (``DashboardRecordService``) and managerial/corporate rows, whose
+    period-applied DB configuration is authoritative, keep a valid direction.
+    """
+    authoritative_level = _text(level).casefold() in {"managerial", "corporate"}
+    rows = []
+    for value in raw_kpis or []:
+        if not isinstance(value, dict):
+            continue
+        row = dict(value)
+        persisted = normalize_direction(row.get("direction"))
+        if persisted and (authoritative_level or row.get("direction_source") == "config"):
+            row["direction"] = persisted
+            row["direction_source"] = "config"
+        else:
+            apply_kpi_direction(row, team)
+        rows.append(row)
+    return rows
 
 
 def _normalize_record(record: Any) -> dict[str, Any]:
@@ -286,7 +321,11 @@ def _normalize_record(record: Any) -> dict[str, Any]:
         "manager_notes": _text(_record_value(record, "manager_notes")),
         "suggested_action": _text(_record_value(record, "suggested_action")),
         "corrective_action": _text(_record_value(record, "corrective_action")),
-        "kpis": [dict(value) for value in (raw_kpis or []) if isinstance(value, dict)],
+        "kpis": _resolved_kpi_rows(
+            _text(_record_value(record, "team")),
+            _record_value(record, "performance_level"),
+            raw_kpis,
+        ),
     }
 
 
@@ -326,7 +365,7 @@ def _kpi_summary(
     definition = _definition_for(raw, definitions)
     key = _text(raw.get("kpi_key") or raw.get("key") or raw.get("label") or "KPI")
     label = _text(definition.get("label") or raw.get("label") or key)
-    direction = _text(definition.get("direction") or raw.get("direction") or "higher_better")
+    direction = _text(definition.get("direction") or raw.get("direction") or DEFAULT_DIRECTION)
     unit = _text(definition.get("unit") or raw.get("unit"))
     metric = aggregate_kpi_metric(rows, definition)
     achievement = kpi_achievement(

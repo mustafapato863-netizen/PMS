@@ -386,7 +386,7 @@ class _RollbackOnlyDB:
 @pytest.mark.asyncio
 async def test_upload_endpoint_returns_400_for_invalid_template(monkeypatch):
     db = _RollbackOnlyDB()
-    monkeypatch.setattr("api.routers.performance.bsc_template_service.parse_upload", lambda contents: (_ for _ in ()).throw(ValueError("bad row")))
+    monkeypatch.setattr("api.routers.performance.bsc_template_service.parse_upload_with_warnings", lambda contents: (_ for _ in ()).throw(ValueError("bad row")))
 
     file = UploadFile(filename="management.xlsx", file=io.BytesIO(b"PK\x03\x04invalid workbook body"))
 

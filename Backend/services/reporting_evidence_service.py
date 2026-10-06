@@ -6,6 +6,7 @@ from statistics import mean
 from typing import Any, Iterable
 
 from config.loader import ConfigurationError, find_team_config_by_db_name, load_team_config, resolve_team_config
+from utils.kpi_direction import FLIP_TOLERANCE, flipped_contribution_fix, normalize_direction, resolve_kpi_direction
 
 
 MONTHS = {name: index for index, name in enumerate(
@@ -183,13 +184,32 @@ class ReportingEvidenceService:
             persisted_weight = _normalized_percent(number(raw.get("weight_applied")))
             configured_weight = _normalized_percent(number(configured_item.get("weight")))
             weight = persisted_weight if persisted_weight is not None else configured_weight
-            direction = str(configured_item.get("direction") or raw.get("direction") or "").strip()
+            # Configured direction (DB/file config) first, then the shared
+            # resolver's team/persisted/global fallbacks. An unresolved
+            # (defaulted) direction stays excluded as ``invalid_direction``.
+            # Managerial/corporate rows carry the period-applied DB config,
+            # which stays authoritative (a blank direction is not guessed).
+            if source == "period_applied_record_configuration":
+                direction = normalize_direction(configured_item.get("direction")) or ""
+            else:
+                direction, direction_source = resolve_kpi_direction(_record_value(record, "team"), raw, configured_item)
+                if direction_source == "default":
+                    direction = ""
             unit = str(configured_item.get("unit") or raw.get("unit") or "").strip()
             target = number(raw.get("target_value"))
             actual = number(raw.get("actual_value"))
             contribution = _normalized_percent(number(raw.get("contribution")))
             if contribution is not None:
                 contribution = min(max(contribution, 0.0), max(weight or 0.0, 0.0))
+                if direction and weight:
+                    # Rows saved under the opposite direction (e.g. Marketing
+                    # cw_error_free before the config fix) are re-scored here.
+                    corrected = flipped_contribution_fix(
+                        actual, target, float(weight), contribution, direction, raw.get("direction"),
+                        tolerance=FLIP_TOLERANCE * 100,
+                    )
+                    if corrected is not None:
+                        contribution = corrected
             diagnostic = (weight or 0) == 0
             invalid_target = target is None or target == 0
             valid_direction = direction in {"higher_better", "lower_better"}

@@ -30,6 +30,7 @@ from services.dashboard_record_service import DashboardRecordService
 from services.management_bsc_service import ManagementBSCService, ManagementBSCSchemaError
 from services.insights_report_service import build_insights_snapshot
 from services.permission_seed import PERMISSION_MATRIX
+from utils.kpi_direction import kpi_direction
 from utils.performance_levels import PERFORMANCE_LEVELS
 from utils.report_scope import (
     filter_records_by_scope,
@@ -889,7 +890,7 @@ class ReportService:
             }
             return bool(requested & actual)
 
-        def raw_has_gap(raw: dict[str, Any]) -> bool:
+        def raw_has_gap(raw: dict[str, Any], team: Any = None) -> bool:
             ratio = raw.get("achievement_ratio")
             try:
                 ratio = float(ratio)
@@ -906,8 +907,10 @@ class ReportService:
                 target = float(target)
             except (TypeError, ValueError):
                 return False
-            direction = str(raw.get("direction") or "higher_better").casefold()
-            return actual > target if direction in {"lower_better", "lower is better"} else actual < target
+            # Saved rows can carry a stale/defaulted direction; resolve it
+            # through the shared resolver (team config first) at read time.
+            direction = kpi_direction(team, raw)
+            return actual > target if direction == "lower_better" else actual < target
 
         baseline_period_for_groups = comparison_period or max(
             (period for period in periods if period < latest_period),
@@ -997,7 +1000,7 @@ class ReportService:
             affected_regions: set[str] = set()
             affected_teams: set[str] = set()
             for record in current_serialized:
-                if any(raw_kpi_matches(driver, raw) and raw_has_gap(raw) for raw in record.get("kpis") or []):
+                if any(raw_kpi_matches(driver, raw) and raw_has_gap(raw, record.get("team")) for raw in record.get("kpis") or []):
                     affected_regions.add(display_region(record.get("region")))
                     affected_teams.add(str(record.get("team") or "Team not available"))
             driver["affected_regions"] = sorted(affected_regions)
@@ -1206,8 +1209,12 @@ class ReportService:
                 continue
             for definition in resolved.get("kpis", []) or []:
                 key = str(definition.get("key") or definition.get("label") or "").strip()
-                if key and key not in definitions:
-                    definitions[key] = dict(definition)
+                # Key + label: the same key can mean different KPIs in different
+                # teams (``Other``: Inbound abandon vs Outbound reachability),
+                # so a cross-team report must keep both definitions.
+                identity = f"{key}|{str(definition.get('label') or '').strip().casefold()}"
+                if key and identity not in definitions:
+                    definitions[identity] = dict(definition)
 
         if not definitions:
             definitions.update(

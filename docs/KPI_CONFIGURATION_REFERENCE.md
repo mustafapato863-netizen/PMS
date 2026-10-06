@@ -224,7 +224,7 @@ Effective from `2026-05-01`; this period variant replaces the default Account Ma
 | KPI key | Label | Weight | Direction / unit | Perspective | Aggregation |
 |---|---|---:|---|---|---|
 | `wd_uptime` | Website uptime (%) | 0.25 | H / % | Internal Process | weighted average by Target Value |
-| `wd_page_speed` | Page load speed | 0.25 | L / sec | Internal Process | weighted average by Target Value |
+| `wd_page_speed` | Page load time (alias: Page load speed) | 0.25 | L / sec | Internal Process | weighted average by Target Value |
 | `wd_bug_resolution` | Error / bug resolution rate | 0.25 | H / % | Internal Process | weighted average by Target Value |
 | `wd_delivery_timeliness` | Request delivery timeliness | 0.25 | H / % | Internal Process | weighted average by Target Value |
 
@@ -234,9 +234,11 @@ Effective from `2026-05-01`; this period variant replaces the default Account Ma
 |---|---|---:|---|---|---|
 | `cw_organic_traffic` | Organic traffic from content | 0.40 | H / % | Customer | weighted average by Target Value |
 | `cw_delivery_timeliness` | Content delivery timeliness | 0.30 | H / % | Internal Process | weighted average by Target Value |
-| `cw_error_free` | Error-free content ratio | 0.30 | L / % | Internal Process | weighted average by Target Value |
+| `cw_error_free` | Error-free content ratio | 0.30 | H / % | Internal Process | weighted average by Target Value |
 
-Configuration caution: `cw_error_free` is currently marked `lower_better` even though its label sounds like a positive quality ratio. Treat the JSON direction as the current contract and verify the intended business meaning before changing it.
+`cw_error_free` is `higher_better`: a larger share of error-free content is better (this matches the Content Writer workbook's "Higher Better"). It was previously configured `lower_better`; Marketing records imported under that rule are re-scored at read time (see "KPI direction resolution" below), and `Backend/scripts/fix_cw_error_free_direction.py` (dry-run by default) can rewrite the stored values. Uploads that still say "Lower Better" for this KPI (old templates) are accepted and scored `higher_better`.
+
+Web Developer `wd_page_speed` is labelled **Page load time** (a duration, lower is better); the previous label "Page load speed" remains an upload alias.
 
 Why: Marketing uses volume sums for additive outputs such as leads and revenue. Rate, cost, quality, and timeliness KPIs use target-volume-weighted averages so one small campaign does not have the same influence as a large campaign.
 
@@ -354,9 +356,9 @@ Employee/default configuration; all positions.
 |---|---|---:|---|---|
 | `quality_errors_rate` | Quality Errors Rate | 0.20 | L / % | `FinalErrorsClaims(RaisedbyQualitySameMonth) / QltySamples` |
 | `rejection_rate_after_resubmission` | Rejection Rate After Re-Submission | 0.50 | L / % | `RejectedClaims3MonthsPrevious(byInsurance) / RemittanceAmount` |
-| `tat` | TAT | 0.30 | H / % | `TotalSubmittedWithin(TAT) / Allocatedclaims` |
+| `tat` | TAT compliance % (alias: TAT) | 0.30 | H / % | `TotalSubmittedWithin(TAT) / Allocatedclaims` |
 
-The Re-Submission `tat` value is a **within-TAT completion rate**, not a duration; therefore higher is better.
+The Re-Submission `tat` value is a **within-TAT completion rate**, not a duration; therefore higher is better. It is labelled **TAT compliance %** to distinguish it from Coding `TAT` (Turnaround Time, hours, lower is better). The key `tat`/`TAT` exists in both teams with opposite directions, so it is always resolved by team, never by key alone.
 
 ### 3.15 Sales — [sales.json](../Backend/config/teams/sales.json)
 
@@ -422,9 +424,26 @@ Before adding or changing a KPI, confirm all of the following:
 - A level override does not accidentally inherit or mix KPIs from another level.
 - A position-scoped KPI has a `perspective` when it participates in Balanced Scorecard reporting.
 
+### KPI direction resolution (read time)
+
+Every reader resolves `higher_better` / `lower_better` through [Backend/utils/kpi_direction.py](../Backend/utils/kpi_direction.py) (`resolve_kpi_direction`), in this order:
+
+1. **Record config** (`direction_source = "config"`): the KPI definition of the record's own resolved team/level/position config (plus the documented Inbound `Other` = Utilization legacy variant).
+2. **Team config** (`team_config`): the same key/label anywhere in the team's file config; merged/logical teams resolve through their source teams. Ambiguous matches inside a team are ignored.
+3. **Persisted** (`persisted`): a valid direction stored on the KPI row (written from the record's config at upload).
+4. **Global** (`global_config`): a single unambiguous key/label match across all teams. Keys that carry different directions in different teams — `TAT` (Coding lower vs Re-Submission higher) and `Other` (Inbound / Inbound UAE abandon rate lower vs Outbound reachability higher) — are excluded, so they only resolve by team.
+5. **Default** (`default`): `higher_better`, logged once as a warning and flagged with `direction_source = "default"` (Insights and reporting evidence exclude it from ranking).
+
+A KPI that was saved under the opposite direction (Marketing `cw_error_free` before it became `higher_better`) has its contribution re-scored at read time in `DashboardRecordService` and reporting evidence, so record scores and grades shown on pages are direction-correct. SQL aggregates that read the stored `performance_records.score` column still need `Backend/scripts/fix_cw_error_free_direction.py --apply` to rewrite stored values.
+
+Management (Managerial/Corporate) uploads: a blank Direction cell still defaults to `higher_better`, but the upload response now lists a `BLANK_DIRECTION` warning naming the KPI and row. The period-applied management DB config remains authoritative for managerial rows.
+
+`Attrition Control %` (CSR) and `Shrinkage Control %` (Inbound) in the management template (`Backend/data/templates/Template_Managment.xlsx`) are `Higher Better` on the assumption that they are control/retention rates (higher means better control), not raw attrition/shrinkage rates.
+
 ## 5. Source map
 
 - Configuration loading, validation, level and position resolution: [Backend/config/loader.py](../Backend/config/loader.py)
+- KPI direction resolution (single source of truth for every reader): [Backend/utils/kpi_direction.py](../Backend/utils/kpi_direction.py)
 - Shared aggregation and direction-aware achievement: [Backend/services/kpi_aggregation.py](../Backend/services/kpi_aggregation.py)
 - Percent-scale legacy achievement helper: [Backend/data_cleaning/standard_mappings.py](../Backend/data_cleaning/standard_mappings.py)
 - Legacy operational KPI evidence and source-counter fallbacks: [Backend/services/legacy_kpi_evidence.py](../Backend/services/legacy_kpi_evidence.py)

@@ -128,7 +128,10 @@ def test_marketing_config_covers_all_employee_positions_and_kpis():
         kpi["key"]: kpi["direction"]
         for kpi in positions["Content Writer"]["kpis"]
     }
-    assert content_writer_directions["cw_error_free"] == "lower_better"
+    assert content_writer_directions["cw_error_free"] == "higher_better"
+    web_developer_by_key = {kpi["key"]: kpi for kpi in positions["Web Developer"]["kpis"]}
+    assert web_developer_by_key["wd_page_speed"]["label"] == "Page load time"
+    assert web_developer_by_key["wd_page_speed"]["direction"] == "lower_better"
 
 
 def test_all_marketing_positions_and_directions_are_calculated():
@@ -324,6 +327,54 @@ def test_account_manager_legacy_kpi_names_remain_upload_compatible():
         "am_edit_rate",
         "am_projects_ontime",
     }
+
+
+def _content_writer_frame(error_free_actual: float, error_free_direction: str) -> pd.DataFrame:
+    frame = _valid_frame(positions=["Content Writer"])
+    mask = frame["KPI"] == "Error-free content ratio"
+    frame.loc[mask, "Actual Value"] = error_free_actual
+    frame.loc[mask, "Direction"] = error_free_direction
+    frame["Achievement %"] = None
+    frame["Weighted Score %"] = None
+    frame["Performance Score"] = None
+    return frame
+
+
+@pytest.mark.parametrize("uploaded_direction", ["Higher Better", "Lower Better"])
+def test_cw_error_free_is_scored_higher_better(uploaded_direction):
+    # 80% error-free content against a 100% target is 0.8 achievement when
+    # higher is better (the old lower_better rule gave 1.0 = full credit).
+    frame = _content_writer_frame(80.0, uploaded_direction)
+
+    result = MarketingImportService().parse_frame(frame)
+
+    assert len(result.records) == 1
+    value = next(v for v in result.records[0].kpi_values if v["kpi_key"] == "cw_error_free")
+    assert value["direction"] == "higher_better"
+    assert value["achievement_ratio"] == pytest.approx(0.8)
+    assert value["contribution"] == pytest.approx(0.8 * 0.30)
+    # cw_organic_traffic 0.40 + cw_delivery_timeliness 0.30 (both 120/100 capped) + 0.24
+    assert result.records[0].evaluation.score == pytest.approx(94.0)
+
+
+def test_cw_error_free_rewards_more_error_free_content():
+    low = MarketingImportService().parse_frame(_content_writer_frame(60.0, "Higher Better"))
+    high = MarketingImportService().parse_frame(_content_writer_frame(95.0, "Higher Better"))
+
+    assert high.records[0].evaluation.score > low.records[0].evaluation.score
+
+
+def test_web_developer_old_page_load_speed_label_remains_upload_compatible():
+    frame = _valid_frame(positions=["Web Developer"])
+    assert "Page load time" in set(frame["KPI"])
+    frame["KPI"] = frame["KPI"].replace({"Page load time": "Page load speed"})
+
+    result = MarketingImportService().parse_frame(frame)
+
+    assert len(result.records) == 1
+    value = next(v for v in result.records[0].kpi_values if v["kpi_key"] == "wd_page_speed")
+    assert value["label"] == "Page load time"
+    assert value["direction"] == "lower_better"
 
 
 def test_marketing_grade_uses_the_canonical_system_rule_not_uploaded_data(monkeypatch):
