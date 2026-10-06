@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Calendar, Layers } from 'lucide-react';
+import { Calendar, Layers, Lock } from 'lucide-react';
 import CustomDropdown from '../../common/CustomDropdown';
 
 export interface FilterOption {
@@ -18,6 +18,7 @@ function LabeledFilter({
   icon,
   primary = false,
   menuMinWidth,
+  locked = false,
 }: {
   label: string;
   ariaLabel: string;
@@ -29,6 +30,8 @@ function LabeledFilter({
   icon?: ReactNode;
   primary?: boolean;
   menuMinWidth?: number;
+  /** Fixed by the viewer's role (Manager): shows a lock + "Scoped" and cannot be changed. */
+  locked?: boolean;
 }) {
   const dropdownOptions = [...(allLabel ? [{ value: '', label: allLabel }] : []), ...options];
   return (
@@ -36,7 +39,29 @@ function LabeledFilter({
       <div className="flex items-center gap-[6px]" aria-hidden="true">
         <span className={`text-[10px] font-semibold uppercase leading-normal tracking-[0.6px] ${primary ? 'text-[var(--insights-accent-text)]' : 'text-[var(--text-muted)]'}`}>{label}</span>
         {primary && <span className="rounded-full bg-[var(--insights-accent-tag)] px-[6px] py-px text-[9px] font-semibold leading-normal text-[var(--insights-accent-text)]">Primary</span>}
+        {locked && (
+          <span className="inline-flex items-center gap-[3px] text-[9px] font-semibold leading-normal text-[var(--text-muted)]">
+            <Lock className="size-[10px]" strokeWidth={2} />
+            Scoped
+          </span>
+        )}
       </div>
+      {locked ? (
+        <div
+          role="group"
+          aria-label={`${ariaLabel}: ${dropdownOptions.find((option) => option.value === value)?.label ?? value} (fixed by your role)`}
+          data-locked="true"
+          className={[
+            'flex h-[34px] w-full items-center gap-[8px] rounded-[8px] border pl-[12px] pr-[10px] text-[13px] font-medium',
+            'bg-[var(--exec-tile-bg,var(--bg-sunken))] text-[var(--text-secondary)]',
+            primary ? 'border-[1.5px] border-[var(--insights-accent)]' : 'border-[var(--insights-card-border)]',
+          ].join(' ')}
+        >
+          {icon}
+          <span className="min-w-0 flex-1 truncate">{dropdownOptions.find((option) => option.value === value)?.label ?? value}</span>
+          <Lock aria-hidden="true" className="size-[13px] text-[var(--text-muted)]" strokeWidth={1.75} />
+        </div>
+      ) : (
       <CustomDropdown
         ariaLabel={ariaLabel}
         value={value}
@@ -54,6 +79,7 @@ function LabeledFilter({
             : 'border-[var(--insights-card-border)]!',
         ].join(' ')}
       />
+      )}
     </div>
   );
 }
@@ -78,6 +104,14 @@ export default function InsightsHeader({
   level,
   levelOptions,
   onLevelChange,
+  title = 'Insights',
+  subtitle = 'Understand what happened, why it happened, and what to do next.',
+  titleBadge,
+  locked,
+  functionSlot,
+  groupLabel = 'Insights filters',
+  periodAriaLabel = 'Insight period',
+  rowFrom = 'xl',
 }: {
   period: string;
   periodOptions: FilterOption[];
@@ -94,25 +128,40 @@ export default function InsightsHeader({
   level: string;
   levelOptions: FilterOption[];
   onLevelChange: (value: string) => void;
+  /** Page title / subtitle (Executive + Function Summary reuse this header). */
+  title?: string;
+  subtitle?: ReactNode;
+  titleBadge?: ReactNode;
+  locked?: { region?: boolean; function?: boolean; team?: boolean };
+  /** Replaces the Functions dropdown (Function Viewer's function switcher). */
+  functionSlot?: ReactNode;
+  groupLabel?: string;
+  periodAriaLabel?: string;
+  /** Breakpoint where title and filters share one row (longer titles need 2xl). */
+  rowFrom?: 'xl' | '2xl';
 }) {
   return (
-    <header className="flex flex-col gap-[16px] pb-[4px] xl:flex-row xl:items-end">
+    <header className={`flex flex-col gap-[16px] pb-[4px] ${rowFrom === '2xl' ? '2xl:flex-row 2xl:items-end' : 'xl:flex-row xl:items-end'}`}>
       <div className="flex min-w-0 flex-1 flex-col gap-[4px] leading-normal">
-        <h1 className="text-[32px] font-bold leading-normal tracking-[-0.48px] text-[var(--insights-heading)]">Insights</h1>
-        <p className="text-[14px] font-normal text-[var(--text-secondary)]">Understand what happened, why it happened, and what to do next.</p>
+        <div className="flex flex-wrap items-center gap-[10px]">
+          <h1 className="text-[32px] font-bold leading-normal tracking-[-0.48px] text-[var(--insights-heading)]">{title}</h1>
+          {titleBadge}
+        </div>
+        <p className="text-[14px] font-normal text-[var(--text-secondary)]">{subtitle}</p>
       </div>
-      <div className="flex flex-wrap items-end gap-[10px]" role="group" aria-label="Insights filters">
+      <div className="flex flex-wrap items-end gap-[10px]" role="group" aria-label={groupLabel}>
         <LabeledFilter
           label="Date"
-          ariaLabel="Insight period"
+          ariaLabel={periodAriaLabel}
           value={period}
           options={periodOptions}
           onChange={onPeriodChange}
           widthClass="w-[140px]"
           icon={<Calendar className="size-[16px] text-[var(--text-secondary)]" strokeWidth={1.5} />}
         />
-        <LabeledFilter label="Regions" ariaLabel="Region" value={region} options={regionOptions} allLabel="All regions" onChange={onRegionChange} widthClass="w-[136px]" />
-        <LabeledFilter
+        <LabeledFilter label="Regions" ariaLabel="Region" value={region} options={regionOptions} allLabel="All regions" onChange={onRegionChange} widthClass="w-[136px]" locked={locked?.region} />
+        {functionSlot ?? <LabeledFilter
+          locked={locked?.function}
           primary
           label="Functions"
           ariaLabel="Function"
@@ -122,8 +171,8 @@ export default function InsightsHeader({
           onChange={onFunctionChange}
           widthClass="w-[168px]"
           icon={<Layers className="size-[16px] text-[var(--insights-accent)]" strokeWidth={1.5} />}
-        />
-        <LabeledFilter label="Teams" ariaLabel="Team" value={team} options={teamOptions} allLabel="All teams" onChange={onTeamChange} widthClass="w-[168px]" menuMinWidth={260} />
+        />}
+        <LabeledFilter label="Teams" ariaLabel="Team" value={team} options={teamOptions} allLabel="All teams" onChange={onTeamChange} widthClass="w-[168px]" menuMinWidth={260} locked={locked?.team} />
         <LabeledFilter label="Levels" ariaLabel="Performance level" value={level} options={levelOptions} allLabel="All levels" onChange={onLevelChange} widthClass="w-[132px]" />
       </div>
     </header>

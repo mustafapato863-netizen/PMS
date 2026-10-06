@@ -31,6 +31,13 @@ export type UnrestrictedTeamAccessUser = Pick<
 
 export const ROLE_ADMIN = 'Admin' as const;
 export const ROLE_GENERAL_MANAGER = 'General Manager' as const;
+export const ROLE_MANAGER = 'Manager' as const;
+/**
+ * Read-only role scoped to one or more functions (Executive + Function Summary v1).
+ * Backend is adding it; CoS default: the stored string is "Function Viewer".
+ * Change it here only — every check goes through this constant.
+ */
+export const ROLE_FUNCTION_VIEWER = 'Function Viewer' as const;
 
 /** Role options offered in the Admin user form / filters, in display order. */
 export const USER_ROLE_OPTIONS: readonly AppRole[] = ['Admin', 'General Manager', 'Manager', 'Executive', 'Viewer', 'Agent'];
@@ -43,9 +50,67 @@ export const isGeneralManagerRole = (role: RoleInput): boolean => role === ROLE_
 export const canAccessBroadAppPages = (role: RoleInput): boolean =>
   isAdminRole(role) || isGeneralManagerRole(role);
 
-/** Corrective Actions review: Admin, Executive or General Manager. */
+export const isManagerRole = (role: RoleInput): boolean => role === ROLE_MANAGER;
+
+export const isFunctionViewerRole = (role: RoleInput): boolean => role === ROLE_FUNCTION_VIEWER;
+
+/**
+ * Corrective Actions: Admin, Executive, General Manager and Manager (Mustafa,
+ * Executive v1: Managers see their own team's actions; the backend already
+ * scopes `/api/corrective-actions/*` to the manager's teams).
+ */
 export const canAccessCorrectiveActions = (role: RoleInput): boolean =>
-  role === 'Executive' || canAccessBroadAppPages(role);
+  role === 'Executive' || isManagerRole(role) || canAccessBroadAppPages(role);
+
+/** Planning: Admin, General Manager and Manager (team-scoped by the backend `view_plans` scope). */
+export const canAccessPlanning = (role: RoleInput): boolean =>
+  canAccessBroadAppPages(role) || isManagerRole(role);
+
+/** Reports list: Admin, General Manager and Manager in the sidebar (route also admits Executive / Viewer). */
+export const canSeeReportsNav = (role: RoleInput): boolean =>
+  canAccessBroadAppPages(role) || isManagerRole(role);
+
+/** Insights stays Admin / General Manager only (Mustafa, Executive v1). */
+export const canAccessInsights = (role: RoleInput): boolean => canAccessBroadAppPages(role);
+
+/** Function Summary page: Admin, General Manager and Function Viewer (limited to its functions). */
+export const canAccessFunctionSummary = (role: RoleInput): boolean =>
+  canAccessBroadAppPages(role) || isFunctionViewerRole(role);
+
+/**
+ * Route guard role lists (App.tsx). Kept here so the sidebar, search and the
+ * guards cannot drift apart; access.test.ts pins them.
+ */
+export const ROUTE_ROLES = {
+  insights: ['Admin', 'General Manager'],
+  planning: ['Admin', 'General Manager', 'Manager'],
+  correctiveActions: ['Admin', 'Executive', 'General Manager', 'Manager'],
+  functionSummary: ['Admin', 'General Manager', ROLE_FUNCTION_VIEWER],
+} as const satisfies Record<string, readonly AppRole[]>;
+
+/** Which Executive Summary layout a role gets on `/executive`. */
+export type ExecutiveViewForRole = 'corporate' | 'managerial' | 'function';
+
+/**
+ * Admin / GM → Corporate (full); Executive / Viewer → Corporate read-only;
+ * Manager → Managerial (own team); Function Viewer → Function Summary.
+ */
+export const executiveViewForRole = (role: RoleInput): ExecutiveViewForRole => {
+  if (isManagerRole(role)) return 'managerial';
+  if (isFunctionViewerRole(role)) return 'function';
+  return 'corporate';
+};
+
+/** Corporate is read-only for Executive and Viewer (no upload / manage actions). */
+export const isCorporateReadOnly = (role: RoleInput): boolean => !canAccessBroadAppPages(role);
+
+type FunctionScopedUser = { accessible_functions?: string[] | null } | null | undefined;
+
+/** `accessible_functions` from `/api/auth/me` (Function Viewer); empty when the backend does not send it. */
+export const readAccessibleFunctions = (user: FunctionScopedUser): string[] =>
+  Array.isArray(user?.accessible_functions)
+    ? user!.accessible_functions!.map((name) => String(name ?? '').trim()).filter(Boolean)
+    : [];
 
 /**
  * Settings *content* (panels, admin APIs) is Admin-only. Every other non-Agent role,

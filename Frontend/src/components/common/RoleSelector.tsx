@@ -18,6 +18,13 @@ const ROLE_DETAILS: Record<UserRole, { label: string; icon: React.ComponentType<
     bg: 'bg-indigo-600',
     desc: 'All teams + reports, insights & planning (no Settings admin)',
   },
+  'Function Viewer': {
+    label: 'Function Viewer',
+    icon: Eye,
+    color: 'text-sky-600 border-sky-200 bg-sky-50',
+    bg: 'bg-sky-600',
+    desc: 'Read-only access to assigned functions',
+  },
   Manager: {
     label: 'Manager',
     icon: ShieldCheck,

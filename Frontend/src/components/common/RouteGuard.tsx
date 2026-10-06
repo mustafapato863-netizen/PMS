@@ -6,7 +6,7 @@ import { canAccessRoute } from '../../lib/access';
 export interface RouteGuardProps {
   children: ReactNode;
   /** Stored role strings allowed on this route (e.g. `['Admin', 'General Manager']`). */
-  allowedRoles: string[];
+  allowedRoles: readonly string[];
   redirectTo?: string;
 }
 

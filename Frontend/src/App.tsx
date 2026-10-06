@@ -14,6 +14,7 @@ import { ToastProvider } from './components/common/ToastProvider';
 import WorkspaceLoader from './components/common/WorkspaceLoader';
 import { PageLoadingSkeleton } from './components/common/SkeletonLoader';
 import RouteGuard from './components/common/RouteGuard';
+import { ROUTE_ROLES } from './lib/access';
 
 const ExecutiveView = lazy(() => import('./pages/ExecutiveView'));
 const MarketingTeamRoute = lazy(() => import('./pages/MarketingTeamRoute'));
@@ -123,18 +124,18 @@ function AnimatedRoutes() {
         <Route
           path="/insights"
           element={
-            <RouteGuard allowedRoles={['Admin', 'General Manager']}>
+            <RouteGuard allowedRoles={ROUTE_ROLES.insights}>
               <Suspense fallback={<RouteLoadingFallback />}><InsightsView /></Suspense>
             </RouteGuard>
           }
         />
-        <Route path="/planning" element={<RouteGuard allowedRoles={['Admin', 'General Manager']}><Suspense fallback={<RouteLoadingFallback />}><PlanningView /></Suspense></RouteGuard>} />
+        <Route path="/planning" element={<RouteGuard allowedRoles={ROUTE_ROLES.planning}><Suspense fallback={<RouteLoadingFallback />}><PlanningView /></Suspense></RouteGuard>} />
 
-        {/* Corrective action review is restricted to Admin, Executive and General Manager users. */}
+        {/* Corrective actions: Admin, Executive, General Manager and Manager (own team, backend-scoped). */}
         <Route
           path="/corrective-actions"
           element={
-            <RouteGuard allowedRoles={['Admin', 'Executive', 'General Manager']}>
+            <RouteGuard allowedRoles={ROUTE_ROLES.correctiveActions}>
               <Suspense fallback={<RouteLoadingFallback />}><CorrectiveActionsView /></Suspense>
             </RouteGuard>
           }

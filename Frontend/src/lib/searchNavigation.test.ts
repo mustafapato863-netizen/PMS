@@ -32,10 +32,11 @@ describe('buildLocalSearchResults access (General Manager role string)', () => {
 
   it('does not treat a Manager with has_unrestricted_team_access as a General Manager', () => {
     const paths = pathsFor(user('Manager', true));
-    for (const path of [...BROAD_PATHS, '/corrective-actions', '/team-management', ...SETTINGS_SHORTCUTS]) {
+    // Executive v1 (Mustafa): Manager gets Reports, Planning and Corrective Actions, never Insights.
+    for (const path of ['/insights', '/team-management', ...SETTINGS_SHORTCUTS]) {
       expect(paths).not.toContain(path);
     }
-    expect(paths).toContain('/executive');
+    for (const path of ['/executive', '/reports', '/planning', '/corrective-actions']) expect(paths).toContain(path);
   });
 
   it('keeps Settings, user and team management search items for Admin', () => {

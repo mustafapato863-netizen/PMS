@@ -204,15 +204,17 @@ describe('Sidebar General Manager navigation (stored role string)', () => {
     };
     renderSidebar();
 
-    for (const name of ['Reports', 'Insights', 'Planning', 'Corrective Actions']) {
-      expect(screen.queryByRole('link', { name })).not.toBeInTheDocument();
+    // Executive v1 (Mustafa): Manager gets Reports, Corrective Actions and Planning — never Insights.
+    expect(screen.queryByRole('link', { name: 'Insights' })).not.toBeInTheDocument();
+    for (const name of ['Reports', 'Planning', 'Corrective Actions']) {
+      expect(screen.getByRole('link', { name })).toBeInTheDocument();
     }
     expect(screen.getByRole('link', { name: 'Assigned Teams' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Settings' })).toBeInTheDocument();
     expect(screen.queryByText('General Manager')).not.toBeInTheDocument();
   });
 
-  it('keeps product pages away from a scoped Manager but still shows the soft-locked Settings link', () => {
+  it('gives a scoped Manager the Executive v1 menu (no Insights) and the soft-locked Settings link', () => {
     authState.user = {
       id: 'mgr-1',
       name: 'Mo Scoped',
@@ -223,11 +225,14 @@ describe('Sidebar General Manager navigation (stored role string)', () => {
     };
     renderSidebar();
 
-    for (const name of ['Reports', 'Insights', 'Planning', 'Corrective Actions']) {
-      expect(screen.queryByRole('link', { name })).not.toBeInTheDocument();
-    }
+    expect(screen.queryByRole('link', { name: 'Insights' })).not.toBeInTheDocument();
+    const general = ['Executive Summary', 'My Team · Marketing', 'Reports', 'Corrective Actions', 'Planning'];
+    const links = screen.getAllByRole('link').map((link) => link.textContent?.trim());
+    const positions = general.map((name) => links.indexOf(name));
+    expect(positions.every((position) => position >= 0)).toBe(true);
+    expect([...positions].sort((l, r) => l - r)).toEqual(positions);
+    expect(screen.getByRole('link', { name: 'My Team · Marketing' })).toHaveAttribute('href', '/team/marketing');
     expect(screen.getByRole('link', { name: 'Settings' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Assigned Teams' })).toBeInTheDocument();
     expect(screen.getByText('Manager')).toBeInTheDocument();
   });
 

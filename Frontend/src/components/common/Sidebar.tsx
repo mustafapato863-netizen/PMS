@@ -22,10 +22,13 @@ import ThemeToggle from './ThemeToggle';
 import { TEAM_ITEMS, getTeamIcon, isHiddenTeam } from './sidebarTeamItems';
 import { MANAGEMENT_DATA_CHANGED_EVENT } from '../../lib/managementDataEvents';
 import {
-  canAccessBroadAppPages,
   canAccessCorrectiveActions,
+  canAccessInsights,
+  canAccessPlanning,
+  canSeeReportsNav,
   getRoleDisplayLabel,
   hasAllTeamsScope,
+  isManagerRole,
 } from '../../lib/access';
 import { prepareBalancedScorecardTeamParams } from '../team/balancedScorecardNavigation';
 import SghHeartSvg from './SghHeartSvg';
@@ -209,29 +212,31 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed = false, onToggleCollapsed = (
   };
 
   const canSeeBroadNavigation = role !== 'Agent';
-  // Admin and General Manager (stored role string) share the broad product pages.
-  const canSeeBroadAppPages = canAccessBroadAppPages(role);
   const canSeeCorrectiveActions = canAccessCorrectiveActions(role);
   const roleLabel = getRoleDisplayLabel(role);
+  const isManager = isManagerRole(role);
+  const managerTeams = currentUser?.accessible_teams ?? [];
+  // Manager (Mustafa, binding): Executive, their team, Reports, Corrective Actions, Planning — no Insights.
+  const teamsItem = hasAllTeamsScope(role, currentUser) || managerTeams.length
+    ? [isManager && managerTeams.length === 1
+      ? { name: `My Team · ${managerTeams[0]}`, path: `/team/${slugifyTeam(managerTeams[0])}`, icon: <UsersRound size={18} /> }
+      : { name: isManager ? 'Assigned Teams' : 'All Teams', path: '/team/all', icon: <UsersRound size={18} /> }]
+    : [];
+  const planningItem = { name: 'Planning', path: '/planning', icon: <CalendarCheck size={18} /> };
   const generalItems: Array<{ name: string; path: string; icon: React.ReactNode; resetQuery?: boolean }> = canSeeBroadNavigation
     ? [
         { name: 'Executive Summary', path: '/executive', icon: <Gauge size={18} /> },
-        ...(hasAllTeamsScope(role, currentUser) || currentUser?.accessible_teams?.length
-          ? [{ name: role === 'Manager' ? 'Assigned Teams' : 'All Teams', path: '/team/all', icon: <UsersRound size={18} /> }]
-          : []),
-        ...(canSeeBroadAppPages
-          ? [
-              { name: 'Reports', path: '/reports', icon: <FileBarChart size={18} /> },
-              // Plain /insights: Insights keeps its own filters in the URL
-              // (period/region/function/team/level), and the sidebar link is the
-              // way back to the default view, so never carry the query (BUG-1b).
-              { name: 'Insights', path: '/insights', icon: <Lightbulb size={18} />, resetQuery: true },
-              { name: 'Planning', path: '/planning', icon: <CalendarCheck size={18} /> },
-            ]
-          : []),
+        ...teamsItem,
+        ...(canSeeReportsNav(role) ? [{ name: 'Reports', path: '/reports', icon: <FileBarChart size={18} /> }] : []),
+        // Plain /insights: Insights keeps its own filters in the URL
+        // (period/region/function/team/level), and the sidebar link is the
+        // way back to the default view, so never carry the query (BUG-1b).
+        ...(canAccessInsights(role) ? [{ name: 'Insights', path: '/insights', icon: <Lightbulb size={18} />, resetQuery: true }] : []),
+        ...(canAccessPlanning(role) && !isManager ? [planningItem] : []),
         ...(canSeeCorrectiveActions
           ? [{ name: 'Corrective Actions', path: '/corrective-actions', icon: <ShieldAlert size={18} /> }]
           : []),
+        ...(canAccessPlanning(role) && isManager ? [planningItem] : []),
       ]
     : [{ name: 'My Profile', path: `/employee/${currentUser?.employee_id || currentUser?.id || ''}`, icon: <User size={18} /> }];
 

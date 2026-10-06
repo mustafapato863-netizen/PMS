@@ -541,6 +541,67 @@ select option {
 }
 
 /* ────────────────────────────────────────────────────────────── */
+/*  EXECUTIVE + FUNCTION SUMMARY v1 (Figma 44:2)                   */
+/*  Direction tags, table header and warning tones. Scores still   */
+/*  use --pms-grade-*; cards reuse the --insights-* surfaces.      */
+/* ────────────────────────────────────────────────────────────── */
+:root {
+  --exec-page-bg: #F3F7FA;
+  --exec-card-border: rgba(15, 23, 42, 0.10);
+  --exec-card-shadow: 0 2px 8px rgba(11, 19, 43, 0.05);
+  --exec-table-head-bg: #EEF3F7;
+  --exec-chip-bg: #EEF3F7;
+  --exec-chip-text: #475569;
+  --exec-tile-bg: #F8FAFC;
+  --exec-dir-higher-bg: #E8F6FD;   /* ↑ better */
+  --exec-dir-higher-text: #075985;
+  --exec-dir-lower-bg: #F3EEFF;    /* ↓ better */
+  --exec-dir-lower-text: #5B21B6;
+  --exec-warning: #B45309;
+  --exec-warning-bg: #FEF3C7;
+  --exec-warning-text: #92400E;
+  --exec-info-bg: #E0F4FC;
+  --exec-info-text: #0069B4;
+  --exec-neg-bg: #FEECEC;
+  --exec-neg-text: #B42318;
+  --exec-pos-bg: #E3F6EC;
+  --exec-pos-text: #0A6B3C;
+  --exec-function-call-center: rgba(0, 163, 224, 0.10);
+  --exec-function-rcm: rgba(0, 105, 180, 0.10);
+  --exec-function-pre-approvals: rgba(0, 168, 89, 0.10);
+  --exec-function-marketing: rgba(124, 58, 237, 0.10);
+  --exec-comparison-line: #7C3AED;
+}
+
+.dark {
+  --exec-page-bg: #0B132B;
+  --exec-card-border: rgba(255, 255, 255, 0.08);
+  --exec-card-shadow: 0 2px 8px rgba(0, 0, 0, 0.30);
+  --exec-table-head-bg: rgba(255, 255, 255, 0.05);
+  --exec-chip-bg: rgba(255, 255, 255, 0.06);
+  --exec-chip-text: #CBD5E1;
+  --exec-tile-bg: rgba(255, 255, 255, 0.03);
+  --exec-dir-higher-bg: rgba(56, 189, 248, 0.16);
+  --exec-dir-higher-text: #7DD3FC;
+  --exec-dir-lower-bg: rgba(167, 139, 250, 0.18);
+  --exec-dir-lower-text: #C4B5FD;
+  --exec-warning: #FBBF24;
+  --exec-warning-bg: rgba(251, 191, 36, 0.16);
+  --exec-warning-text: #FCD34D;
+  --exec-info-bg: rgba(56, 189, 248, 0.14);
+  --exec-info-text: #7DD3FC;
+  --exec-neg-bg: rgba(217, 45, 32, 0.22);
+  --exec-neg-text: #F87171;
+  --exec-pos-bg: rgba(14, 135, 73, 0.22);
+  --exec-pos-text: #34D399;
+  --exec-function-call-center: rgba(56, 189, 248, 0.16);
+  --exec-function-rcm: rgba(96, 165, 250, 0.16);
+  --exec-function-pre-approvals: rgba(52, 211, 153, 0.16);
+  --exec-function-marketing: rgba(167, 139, 250, 0.18);
+  --exec-comparison-line: #A78BFA;
+}
+
+/* ────────────────────────────────────────────────────────────── */
 /*  SAUDI GERMAN HEALTH (SGH) BRAND UTILITIES                     */
 /* ────────────────────────────────────────────────────────────── */
 .sgh-gradient-text {

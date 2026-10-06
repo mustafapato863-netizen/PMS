@@ -1,7 +1,9 @@
 import { TEAM_ID_MAP, type User } from '../types';
 import {
-  canAccessBroadAppPages,
   canAccessCorrectiveActions,
+  canAccessInsights,
+  canAccessPlanning,
+  canSeeReportsNav,
   canAccessSettingsContent,
   canAccessTeamManagement,
 } from './access';
@@ -91,9 +93,9 @@ const baseNavigation = ({
     });
   }
 
-  // Same visibility as the sidebar: Admin + General Manager (stored role string). The
-  // Insights/Planning RouteGuards only admit these roles, so other roles are not offered them.
-  if (canAccessBroadAppPages(role)) {
+  // Same visibility as the sidebar and the RouteGuards (access.ts): Reports and
+  // Planning for Admin / General Manager / Manager, Insights for Admin / GM only.
+  if (canSeeReportsNav(role)) {
     items.push({
       id: 'nav-reports',
       group: 'navigation',
@@ -102,6 +104,8 @@ const baseNavigation = ({
       icon: 'chart',
       path: '/reports',
     });
+  }
+  if (canAccessInsights(role)) {
     items.push({
       id: 'nav-insights',
       group: 'navigation',
@@ -110,6 +114,8 @@ const baseNavigation = ({
       icon: 'planning',
       path: '/insights',
     });
+  }
+  if (canAccessPlanning(role)) {
     items.push({ id: 'nav-planning', group: 'navigation', label: 'Planning', subtitle: 'Create and track measurable performance plans', icon: 'planning', path: '/planning' });
   }
 
