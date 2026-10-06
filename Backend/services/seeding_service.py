@@ -46,6 +46,12 @@ from models.models import (
 from data_cleaning.standard_mappings import calculate_achievement, calculate_grade
 from utils.performance_levels import normalize_performance_level
 from services.marketing_import_service import MarketingImportResult, MarketingImportService
+from utils.performance_status import status_for_grade
+from services.upload_record_collisions import (
+    colliding_employee_ids,
+    resolve_employee_month_collisions,
+    stored_assignments,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -306,14 +312,27 @@ class DatabaseSeeder:
         return levels
 
     @staticmethod
+    def _score_from_kpi_rows(kv_list) -> float:
+        """0-100 record score from capped KPI contributions.
+
+        Contributions arrive on the ratio scale (``achievement(0-1) x weight``,
+        so each one is at most its weight) or on the percent scale
+        (``achievement(0-100) x weight``). The scale is decided per record from
+        that invariant, not from the total: a total above 1.0 on the ratio scale
+        used to be stored unscaled (1.51-2.72 for the merged IP Elective records).
+        """
+        contributions = [float(kv.contribution or 0) for kv in kv_list]
+        weights = [float(kv.weight_applied or 0) for kv in kv_list]
+        total = sum(contributions)
+        ratio_scale = all(c <= w * 1.0001 + 1e-9 for c, w in zip(contributions, weights)) and all(w <= 1.0 for w in weights)
+        score = min(total, 1.0) * 100.0 if ratio_scale else min(total, 100.0)
+        return round(max(score, 0.0), 2)
+
+    @staticmethod
     def _status_for_record(record: PerformanceRecord) -> str:
         if record.status:
             return record.status
-        if record.evaluation.grade == "A":
-            return "Exceeds"
-        if record.evaluation.grade in {"B", "C"}:
-            return "Meets"
-        return "Below"
+        return status_for_grade(record.evaluation.grade)
 
     @staticmethod
     def _sync_marketing_config(db, team: Team) -> None:
@@ -411,14 +430,25 @@ class DatabaseSeeder:
         employees: list[Employee],
         db_session=None,
         upload_id: str | None = None,
-    ) -> None:
-        """Mirror processed JSON records into the relational DB so upload persistence is verifiable."""
+    ) -> list[dict]:
+        """Mirror processed JSON records into the relational DB so upload persistence is verifiable.
+
+        Returns the duplicate employee-month warnings (one record per employee
+        per month; see ``services.upload_record_collisions``).
+        """
         if not records:
-            return
+            return []
 
         db = db_session or SessionLocal()
         owns_session = db_session is None
         try:
+            # Defensive: direct callers bypass _process_and_save_excel.
+            collision_ids = colliding_employee_ids(records)
+            records, employees, collision_warnings = resolve_employee_month_collisions(
+                records, employees, stored_assignments(db, collision_ids) if collision_ids else {}
+            )
+            for warning in collision_warnings:
+                logger.warning("upload_duplicate_employee_month: %s", warning["message"])
             teams_by_name = {}
             team_config_cache: dict[str, dict] = {}
 
@@ -564,6 +594,7 @@ class DatabaseSeeder:
 
             records_to_clean_kpis = []
             kpis_to_insert = []
+            record_thresholds: dict = {}
 
             # Build all workbook scope logs in memory. IDs are explicit, so
             # performance rows can reference them without one remote flush per
@@ -682,6 +713,7 @@ class DatabaseSeeder:
                     )
                 except Exception:
                     team_config = None
+                record_thresholds[db_record.id] = team_config.get("grade_thresholds") if team_config else None
 
                 if record.kpi_values:
                     for value in record.kpi_values:
@@ -768,34 +800,32 @@ class DatabaseSeeder:
                             contribution=safe_decimal(min(float(achievement_ratio), 100.0) * float(kpi.get("weight", 0.0))),
                         ))
 
+            # Deduplicate kpis_to_insert by (record_id, kpi_key) BEFORE scoring so a
+            # KPI that reached the same record twice is neither stored nor
+            # summed twice (also prevents uq_kpi_value_record_key violations).
+            if kpis_to_insert:
+                deduped_map = {}
+                for kv in kpis_to_insert:
+                    deduped_map[(kv.record_id, kv.kpi_key)] = kv
+                kpis_to_insert = list(deduped_map.values())
+
             # Recalculate PerformanceRecord scores strictly as the sum of capped KPI contributions
             if kpis_to_insert:
                 rec_map = {r.id: r for r in existing_perf_map.values()}
                 kpi_by_rec = {}
                 for kv in kpis_to_insert:
                     kpi_by_rec.setdefault(kv.record_id, []).append(kv)
-                
+
                 for rec_id, kv_list in kpi_by_rec.items():
                     rec = rec_map.get(rec_id)
                     if rec:
-                        capped_sum = sum(float(kv.contribution or 0) for kv in kv_list)
-                        if capped_sum <= 1.0 and sum(float(kv.weight_applied or 0) for kv in kv_list) <= 1.0 and capped_sum > 0:
-                            capped_sum = capped_sum * 100.0
-                        final_score = min(round(capped_sum, 2), 100.0)
-                        thresholds = team_config.get("grade_thresholds") if team_config else None
-                        final_grade = calculate_grade(final_score, thresholds)
+                        final_score = self._score_from_kpi_rows(kv_list)
+                        final_grade = calculate_grade(final_score, record_thresholds.get(rec_id))
                         rec.score = safe_decimal(final_score)
                         rec.grade = final_grade
                         if isinstance(rec.record_payload, dict) and "evaluation" in rec.record_payload:
                             rec.record_payload["evaluation"]["score"] = float(final_score)
                             rec.record_payload["evaluation"]["grade"] = final_grade
-
-            # Deduplicate kpis_to_insert by (record_id, kpi_key) to prevent uq_kpi_value_record_key constraint violation
-            if kpis_to_insert:
-                deduped_map = {}
-                for kv in kpis_to_insert:
-                    deduped_map[(kv.record_id, kv.kpi_key)] = kv
-                kpis_to_insert = list(deduped_map.values())
 
             # Batch delete old KPIValues in 1 SQL query
             if records_to_clean_kpis:
@@ -807,6 +837,7 @@ class DatabaseSeeder:
 
             if owns_session:
                 db.commit()
+            return collision_warnings
         except Exception as exc:
             if owns_session:
                 db.rollback()
@@ -1156,6 +1187,18 @@ class DatabaseSeeder:
                         },
                     ) from exc
 
+        # One record per employee per month: never merge two sheets' (or two
+        # rows') KPIs into one score. Score the employee's assigned team and
+        # report every ignored row as an upload warning.
+        collision_ids = colliding_employee_ids(all_new_records)
+        collision_assignments = (
+            stored_assignments(db_session, collision_ids) if collision_ids and db_session is not None else {}
+        )
+        all_new_records, all_new_employees, upload_warnings = resolve_employee_month_collisions(
+            all_new_records, all_new_employees, collision_assignments
+        )
+        for warning in upload_warnings:
+            logger.warning("upload_duplicate_employee_month: %s", warning["message"])
         all_new_employees = list({employee.id: employee for employee in all_new_employees}.values())
         imported_teams = list(dict.fromkeys([team_name for team_name, _, _, _ in sheet_mappings]))
         if marketing_result is not None:
@@ -1171,6 +1214,7 @@ class DatabaseSeeder:
                 "persisted_teams": sorted(persisted_teams),
                 "failed_teams": failed_teams,
                 "marketing": marketing_report,
+                "warnings": upload_warnings,
             }
 
         # Vercel Production Safety: Do not write to JSON repositories. DB is the sole runtime persistence.
@@ -1232,4 +1276,5 @@ class DatabaseSeeder:
             "persisted_teams": sorted(persisted_teams),
             "failed_teams": failed_teams,
             "marketing": marketing_report,
+            "warnings": upload_warnings,
         }

@@ -113,6 +113,28 @@ def _direction_value(raw: Any) -> str:
     return "lower_better" if "lower" in text else "higher_better"
 
 
+def _direction_warning(raw: Any, *, row: int, kpi_label: str, employee_id: str, sheet: str) -> dict[str, Any] | None:
+    """Visible warning when ``_direction_value`` had to fall back to higher_better."""
+    text = "" if raw is None else str(raw).strip()
+    lowered = text.lower()
+    if text and ("lower" in lowered or "higher" in lowered):
+        return None
+    code = "BLANK_DIRECTION" if not text else "UNRECOGNIZED_DIRECTION"
+    detail = "is blank" if not text else f"value {text!r} is not 'Higher Better' or 'Lower Better'"
+    return {
+        "sheet": sheet,
+        "row": row,
+        "column": "Direction",
+        "code": code,
+        "kpi": kpi_label,
+        "employee_id": employee_id,
+        "message": (
+            f"Row {row}: Direction {detail} for KPI '{kpi_label}'; "
+            "defaulted to higher_better (higher is better). Fill in the Direction column to confirm."
+        ),
+    }
+
+
 def _is_instruction_row(item: dict[str, Any]) -> bool:
     markers = {
         "Employee ID": {"keep employee code"},
@@ -152,10 +174,19 @@ class BSCTemplateService:
         return _TEMPLATE_PATH
 
     def parse_upload(self, contents: bytes) -> list[dict[str, Any]]:
-        rows = self._read_template_rows(contents)
+        return self.parse_upload_with_warnings(contents)[0]
+
+    def parse_upload_with_warnings(self, contents: bytes) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        """Parse the template and return ``(rows, warnings)``.
+
+        Warnings are non-blocking (the row is imported) but must be shown to
+        the uploader, e.g. a blank Direction cell defaulted to higher_better.
+        """
+        warnings: list[dict[str, Any]] = []
+        rows = self._read_template_rows(contents, warnings=warnings)
         if not rows:
             raise ValueError("No rows found in sheet KPI's Data")
-        return rows
+        return rows, warnings
 
     def summarize_rows(self, rows: list[dict[str, Any]]) -> dict[str, Any]:
         levels = sorted({row["performance_level"] for row in rows})
@@ -310,7 +341,11 @@ class BSCTemplateService:
             },
         }
 
-    def _read_template_rows(self, contents: bytes) -> list[dict[str, Any]]:
+    def _read_template_rows(
+        self,
+        contents: bytes,
+        warnings: list[dict[str, Any]] | None = None,
+    ) -> list[dict[str, Any]]:
         try:
             workbook = load_workbook(io.BytesIO(contents), data_only=True)
         except Exception as exc:
@@ -376,6 +411,16 @@ class BSCTemplateService:
             if not is_valid_weight:
                 issues.append(f"Row {index} has invalid Weight '{item.get('Weight')}'. Weight must be 'View' or a positive number > 0.")
                 continue
+            if warnings is not None:
+                warning = _direction_warning(
+                    item.get("Direction"),
+                    row=index,
+                    kpi_label=parsed["kpi_label"],
+                    employee_id=parsed["employee_id"],
+                    sheet=self.sheet_name,
+                )
+                if warning:
+                    warnings.append(warning)
             parsed_rows.append(parsed)
         if issues:
             raise ValueError(issues[0])

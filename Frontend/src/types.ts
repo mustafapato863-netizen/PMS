@@ -923,7 +923,7 @@ export function getKPIsForAgent(agent: AgentRecord): KPIConfig[] {
 
     return [
       { label: 'Rejection', actual: actualRejection, target: targetRejection, unit: '%', isLowerBetter: true, color: '#EF4444', achievement: rejectionAch },
-      { label: 'Queries Handled', actual: actualQueries, target: targetQueries, unit: '%', isLowerBetter: true, color: '#10B981', achievement: queriesAch },
+      { label: 'Queries Handled', actual: actualQueries, target: targetQueries, unit: '%', color: '#10B981', achievement: queriesAch },
       { label: 'Attended CR', actual: actualAttendedCR, target: targetAttendedCR, unit: '%', color: '#8B5CF6', achievement: attendedAch },
     ];
   }

@@ -135,6 +135,10 @@ Why: Rejection is a defect outcome, while handled queries and attended contacts 
 
 Legacy source note: when the source row contains `A.UTZ%`, the legacy evidence builder presents `Other` as **Utilization**, changes its direction to higher-is-better, and uses the utilization target. The checked-in JSON label is the normal Abandon Rate definition.
 
+A UTZ value counts only when the source actually supplied one: the KPI service no longer writes a placeholder `A.UTZ% = 0` into rows whose sheet has no UTZ value, so such rows are saved as Abandon Rate / lower_better. A stored UTZ value (including a real 0) always means Utilization. Production check #2 (2026-10-06) showed that all 157 records saved as Utilization / higher_better carry a real UTZ (0.68-0.93) and stored scores that match, so they are correct and are not direction mismatches; the live-check SQL exempts them.
+
+Aggregate views (Insights team analysis, KPI overview, the Insights snapshot and PPTX) group KPI rows by key **and** documented variant (`utils.kpi_direction.kpi_variant`), so a scope that mixes no-UTZ Abandon Rate records with real-UTZ Utilization records shows two separate KPIs and never averages them.
+
 #### Managerial level
 
 | KPI key | Label | Weight | Direction / unit | Perspective | Rollup |
@@ -224,7 +228,7 @@ Effective from `2026-05-01`; this period variant replaces the default Account Ma
 | KPI key | Label | Weight | Direction / unit | Perspective | Aggregation |
 |---|---|---:|---|---|---|
 | `wd_uptime` | Website uptime (%) | 0.25 | H / % | Internal Process | weighted average by Target Value |
-| `wd_page_speed` | Page load speed | 0.25 | L / sec | Internal Process | weighted average by Target Value |
+| `wd_page_speed` | Page load time (alias: Page load speed) | 0.25 | L / sec | Internal Process | weighted average by Target Value |
 | `wd_bug_resolution` | Error / bug resolution rate | 0.25 | H / % | Internal Process | weighted average by Target Value |
 | `wd_delivery_timeliness` | Request delivery timeliness | 0.25 | H / % | Internal Process | weighted average by Target Value |
 
@@ -234,9 +238,11 @@ Effective from `2026-05-01`; this period variant replaces the default Account Ma
 |---|---|---:|---|---|---|
 | `cw_organic_traffic` | Organic traffic from content | 0.40 | H / % | Customer | weighted average by Target Value |
 | `cw_delivery_timeliness` | Content delivery timeliness | 0.30 | H / % | Internal Process | weighted average by Target Value |
-| `cw_error_free` | Error-free content ratio | 0.30 | L / % | Internal Process | weighted average by Target Value |
+| `cw_error_free` | Error-free content ratio | 0.30 | H / % | Internal Process | weighted average by Target Value |
 
-Configuration caution: `cw_error_free` is currently marked `lower_better` even though its label sounds like a positive quality ratio. Treat the JSON direction as the current contract and verify the intended business meaning before changing it.
+`cw_error_free` is `higher_better`: a larger share of error-free content is better (this matches the Content Writer workbook's "Higher Better"). It was previously configured `lower_better`; Marketing records imported under that rule are re-scored at read time (see "KPI direction resolution" below), and `Backend/scripts/fix_cw_error_free_direction.py` (dry-run by default) can rewrite the stored values. Uploads that still say "Lower Better" for this KPI (old templates) are accepted and scored `higher_better`.
+
+Web Developer `wd_page_speed` is labelled **Page load time** (a duration, lower is better); the previous label "Page load speed" remains an upload alias.
 
 Why: Marketing uses volume sums for additive outputs such as leads and revenue. Rate, cost, quality, and timeliness KPIs use target-volume-weighted averages so one small campaign does not have the same influence as a large campaign.
 
@@ -280,6 +286,8 @@ Workstream selection uses the complete source target pair, not one target column
 
 - IP Elective: `(initial rejection 3%, turnaround 75%)` or `(6%, 75%)`.
 - ER / IP Approval: `(initial rejection 1%, turnaround 100%)` or `(3%, 100%)`.
+
+Records carrying IP Final Dubai keys (legacy): before the upload fix, an agent on both the IP Final Dubai and IP Elective Dubai sheets of one upload (or on both Elective workstream tables) was saved as one Elective record holding every duplicate's KPI rows, with an unscaled summed score (live check #2, B1/B2: 16 records). Uploads now keep one record per employee and month scored only on the employee's assigned team (stored team, else the team the upload assigns; within it the stored position) and report each ignored row as a `DUPLICATE_EMPLOYEE_MONTH` upload warning (`services/upload_record_collisions.py`). `Backend/scripts/fix_merged_ip_elective_records.py` (dry run by default, `--apply`, idempotent) re-scores the existing records from their own position's KPIs and moves the other rows to `record_payload.reference_kpi_values` (`"scoring": false`, never scored). `"kpi_direction_source_teams": ["Pre-Approvals IP Final Dubai"]` stays so any remaining reference/legacy rows resolve from the IP Final Dubai config, never a default.
 
 Missing/unsupported pairs fail ingestion so the system does not guess the workstream. Rows with Status or Performance Grade `Leave`, `New Staff`, or `-` are excluded before scoring. The source ER header says 48 hours, but the canonical KPI is **1.5 hours** and uses `ApprovalWithin1.5HR`.
 
@@ -354,9 +362,9 @@ Employee/default configuration; all positions.
 |---|---|---:|---|---|
 | `quality_errors_rate` | Quality Errors Rate | 0.20 | L / % | `FinalErrorsClaims(RaisedbyQualitySameMonth) / QltySamples` |
 | `rejection_rate_after_resubmission` | Rejection Rate After Re-Submission | 0.50 | L / % | `RejectedClaims3MonthsPrevious(byInsurance) / RemittanceAmount` |
-| `tat` | TAT | 0.30 | H / % | `TotalSubmittedWithin(TAT) / Allocatedclaims` |
+| `tat` | TAT compliance % (alias: TAT) | 0.30 | H / % | `TotalSubmittedWithin(TAT) / Allocatedclaims` |
 
-The Re-Submission `tat` value is a **within-TAT completion rate**, not a duration; therefore higher is better.
+The Re-Submission `tat` value is a **within-TAT completion rate**, not a duration; therefore higher is better. It is labelled **TAT compliance %** to distinguish it from Coding `TAT` (Turnaround Time, hours, lower is better). The key `tat`/`TAT` exists in both teams with opposite directions, so it is always resolved by team, never by key alone.
 
 ### 3.15 Sales — [sales.json](../Backend/config/teams/sales.json)
 
@@ -422,9 +430,26 @@ Before adding or changing a KPI, confirm all of the following:
 - A level override does not accidentally inherit or mix KPIs from another level.
 - A position-scoped KPI has a `perspective` when it participates in Balanced Scorecard reporting.
 
+### KPI direction resolution (read time)
+
+Every reader resolves `higher_better` / `lower_better` through [Backend/utils/kpi_direction.py](../Backend/utils/kpi_direction.py) (`resolve_kpi_direction`), in this order:
+
+1. **Record config** (`direction_source = "config"`): the KPI definition of the record's own resolved team/level/position config (plus the documented Inbound `Other` = Utilization legacy variant).
+2. **Team config** (`team_config`): the same key/label anywhere in the team's file config; merged/logical teams resolve through their source teams. A team config may list `kpi_direction_source_teams` for KPI rows legitimately inherited from another team; their directions only fill identities the team does not define. Ambiguous matches inside a team are ignored.
+3. **Persisted** (`persisted`): a valid direction stored on the KPI row (written from the record's config at upload).
+4. **Global** (`global_config`): a single unambiguous key/label match across all teams. Keys that carry different directions in different teams — `TAT` (Coding lower vs Re-Submission higher) and `Other` (Inbound / Inbound UAE abandon rate lower vs Outbound reachability higher) — are excluded, so they only resolve by team.
+5. **Default** (`default`): `higher_better`, logged once as a warning and flagged with `direction_source = "default"` (Insights and reporting evidence exclude it from ranking).
+
+A KPI that was saved under the opposite direction (Marketing `cw_error_free` before it became `higher_better`) has its contribution re-scored at read time in `DashboardRecordService` and reporting evidence, so record scores and grades shown on pages are direction-correct. SQL aggregates that read the stored `performance_records.score` column still need `Backend/scripts/fix_cw_error_free_direction.py --apply` to rewrite stored values. The read-time correction also recomputes `status` from the corrected grade with the same rule as imports (A = Exceeds, B/C = Meets, else Below; a custom stored status is kept), and the script rewrites the stored status. The Inbound Utilization records above need no fix.
+
+Management (Managerial/Corporate) uploads: a blank Direction cell still defaults to `higher_better`, but the upload response now lists a `BLANK_DIRECTION` warning naming the KPI and row. The period-applied management DB config remains authoritative for managerial rows.
+
+`Attrition Control %` (CSR) and `Shrinkage Control %` (Inbound) in the management template (`Backend/data/templates/Template_Managment.xlsx`) are `Higher Better` on the assumption that they are control/retention rates (higher means better control), not raw attrition/shrinkage rates.
+
 ## 5. Source map
 
 - Configuration loading, validation, level and position resolution: [Backend/config/loader.py](../Backend/config/loader.py)
+- KPI direction resolution (single source of truth for every reader): [Backend/utils/kpi_direction.py](../Backend/utils/kpi_direction.py)
 - Shared aggregation and direction-aware achievement: [Backend/services/kpi_aggregation.py](../Backend/services/kpi_aggregation.py)
 - Percent-scale legacy achievement helper: [Backend/data_cleaning/standard_mappings.py](../Backend/data_cleaning/standard_mappings.py)
 - Legacy operational KPI evidence and source-counter fallbacks: [Backend/services/legacy_kpi_evidence.py](../Backend/services/legacy_kpi_evidence.py)

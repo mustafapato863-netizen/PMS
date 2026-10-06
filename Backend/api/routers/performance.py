@@ -207,7 +207,7 @@ async def upload_balanced_scorecard_template(
         raise
     uploaded_by = _user.get("username", "Admin") if isinstance(_user, dict) else "Admin"
     try:
-        rows = bsc_template_service.parse_upload(contents)
+        rows, warnings = bsc_template_service.parse_upload_with_warnings(contents)
         result = ManagementBSCService(db).import_template_rows(
             rows=rows,
             updated_by=uploaded_by,
@@ -227,6 +227,7 @@ async def upload_balanced_scorecard_template(
             "sheet_name": bsc_template_service.sheet_name,
             **bsc_template_service.summarize_rows(rows),
             **result,
+            "warnings": warnings,
         },
     )
 

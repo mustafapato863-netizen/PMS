@@ -16,6 +16,7 @@ from config.loader import (
 from data_cleaning.standard_mappings import calculate_grade
 from models.schemas import Employee, EvaluationData, PerformanceRecord
 from utils.performance_levels import normalize_performance_level
+from utils.performance_status import status_for_grade
 
 
 SHEET_NAME = "Marketing"
@@ -125,11 +126,7 @@ def _is_blank(value: Any) -> bool:
 
 
 def _status(grade: str) -> str:
-    if grade == "A":
-        return "Exceeds"
-    if grade in {"B", "C"}:
-        return "Meets"
-    return "Below"
+    return status_for_grade(grade)
 
 
 class MarketingImportService:
@@ -475,12 +472,14 @@ class MarketingImportService:
 
                 item["kpi"] = kpi_definition
                 uploaded_direction = _direction(item.get("direction"))
-                # The Content Writer workbook predates the current scoring rule
-                # for error-free content. Keep that legacy label uploadable while
-                # using the configured direction as the canonical scoring source.
+                # cw_error_free ("Error-free content ratio") is scored
+                # higher_better (more error-free content is better), matching
+                # the Content Writer workbook. Templates exported while the
+                # config said lower_better are still accepted; the configured
+                # direction is always the scoring source.
                 legacy_direction = (
                     kpi_definition["key"] == "cw_error_free"
-                    and uploaded_direction == "higher_better"
+                    and uploaded_direction == "lower_better"
                 )
                 if uploaded_direction != kpi_definition["direction"] and not legacy_direction:
                     self._error(

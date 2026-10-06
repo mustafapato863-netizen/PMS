@@ -3,6 +3,8 @@ from __future__ import annotations
 import math
 from typing import Any, Mapping
 
+from utils.kpi_direction import kpi_direction
+
 
 LEGACY_EMPLOYEE_TEAMS = {
     "Inbound",
@@ -200,7 +202,11 @@ def build_pre_approvals_ip_elective_kpi_values(
             "perspective": definition.get("perspective"),
             "unit": definition.get("unit", "%"),
             "color": definition.get("color", "#3B82F6"),
-            "direction": definition.get("direction", "higher_better"),
+            "direction": kpi_direction(
+                (config or {}).get("team"),
+                {"kpi_key": key, "label": definition.get("label")},
+                definition,
+            ),
             "actual_value": actual,
             "target_value": target,
             "achievement_ratio": min(max(achievement, 0.0), 1.0),
