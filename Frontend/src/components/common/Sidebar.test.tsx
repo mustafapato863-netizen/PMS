@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ThemeProvider } from '../../context/ThemeContext';
@@ -10,9 +10,10 @@ type MockUser = {
   id: string;
   name: string;
   username: string;
-  role: 'Admin' | 'General Manager' | 'Manager' | 'Executive' | 'Viewer' | 'Agent';
+  role: 'Admin' | 'General Manager' | 'Manager' | 'Executive' | 'Viewer' | 'Agent' | 'Function Viewer';
   has_unrestricted_team_access?: boolean;
   accessible_teams?: string[];
+  accessible_functions?: string[];
 };
 
 const authState = vi.hoisted(() => ({
@@ -24,6 +25,11 @@ const authState = vi.hoisted(() => ({
     has_unrestricted_team_access: true,
     accessible_teams: [],
   } as MockUser,
+}));
+
+const DEFAULT_SCOPES = [{ team: 'Marketing', region: 'EGY', performance_level: 'Employee', position: 'Media Buyer' }];
+const catalogState = vi.hoisted(() => ({
+  scopes: [{ team: 'Marketing', region: 'EGY', performance_level: 'Employee', position: 'Media Buyer' }] as Array<{ team: string; region: string; performance_level: string; position: string }>,
 }));
 
 const ADMIN_USER: MockUser = {
@@ -51,12 +57,7 @@ vi.mock('../../hooks/api/usePerformanceCatalog', () => ({
     data: {
       months: ['June'],
       periods: [{ year: 2026, month: 'June', key: '2026-06' }],
-      scopes: [{
-        team: 'Marketing',
-        region: 'EGY',
-        performance_level: 'Employee',
-        position: 'Media Buyer',
-      }],
+      scopes: catalogState.scopes,
     },
   }),
 }));
@@ -97,6 +98,7 @@ const mockTeamConfigFetch = () => {
 describe('Sidebar team icons', () => {
   beforeEach(() => {
     authState.user = ADMIN_USER;
+    catalogState.scopes = DEFAULT_SCOPES;
     mockTeamConfigFetch();
   });
 
@@ -204,15 +206,17 @@ describe('Sidebar General Manager navigation (stored role string)', () => {
     };
     renderSidebar();
 
-    for (const name of ['Reports', 'Insights', 'Planning', 'Corrective Actions']) {
-      expect(screen.queryByRole('link', { name })).not.toBeInTheDocument();
+    // Executive v1 (Mustafa): Manager gets Reports, Corrective Actions and Planning — never Insights.
+    expect(screen.queryByRole('link', { name: 'Insights' })).not.toBeInTheDocument();
+    for (const name of ['Reports', 'Planning', 'Corrective Actions']) {
+      expect(screen.getByRole('link', { name })).toBeInTheDocument();
     }
     expect(screen.getByRole('link', { name: 'Assigned Teams' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Settings' })).toBeInTheDocument();
     expect(screen.queryByText('General Manager')).not.toBeInTheDocument();
   });
 
-  it('keeps product pages away from a scoped Manager but still shows the soft-locked Settings link', () => {
+  it('gives a scoped Manager the Executive v1 menu (no Insights) and the soft-locked Settings link', () => {
     authState.user = {
       id: 'mgr-1',
       name: 'Mo Scoped',
@@ -223,11 +227,14 @@ describe('Sidebar General Manager navigation (stored role string)', () => {
     };
     renderSidebar();
 
-    for (const name of ['Reports', 'Insights', 'Planning', 'Corrective Actions']) {
-      expect(screen.queryByRole('link', { name })).not.toBeInTheDocument();
-    }
+    expect(screen.queryByRole('link', { name: 'Insights' })).not.toBeInTheDocument();
+    const general = ['Executive Summary', 'My Team · Marketing', 'Reports', 'Corrective Actions', 'Planning'];
+    const links = screen.getAllByRole('link').map((link) => link.textContent?.trim());
+    const positions = general.map((name) => links.indexOf(name));
+    expect(positions.every((position) => position >= 0)).toBe(true);
+    expect([...positions].sort((l, r) => l - r)).toEqual(positions);
+    expect(screen.getByRole('link', { name: 'My Team · Marketing' })).toHaveAttribute('href', '/team/marketing');
     expect(screen.getByRole('link', { name: 'Settings' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Assigned Teams' })).toBeInTheDocument();
     expect(screen.getByText('Manager')).toBeInTheDocument();
   });
 
@@ -249,6 +256,57 @@ describe('Sidebar General Manager navigation (stored role string)', () => {
     expect(screen.getByRole('link', { name: 'Settings' })).toBeInTheDocument();
     for (const name of ['Reports', 'Insights', 'Planning']) {
       expect(screen.queryByRole('link', { name })).not.toBeInTheDocument();
+    }
+  });
+});
+
+describe('Function Viewer sidebar (Figma 48:3)', () => {
+  beforeEach(() => {
+    mockTeamConfigFetch();
+    catalogState.scopes = ['Coding', 'Submission', 'Pre-Approvals IP Offshore', 'Pre-Approvals OP Final', 'Inbound', 'Marketing', 'CSR']
+      .map((team) => ({ team, region: 'EGY', performance_level: 'Employee', position: 'Agent' }));
+    authState.user = {
+      id: 'fv-1', name: 'Laila Ashraf', username: 'laila', role: 'Function Viewer',
+      accessible_teams: [], accessible_functions: ['RCM', 'Pre-Approvals'],
+    };
+  });
+
+  it('shows Function Summary, only the assigned functions with their teams, and Reports', async () => {
+    renderSidebar('/function-summary/rcm');
+    expect(screen.getByText('FUNCTION VIEWER')).toBeInTheDocument();
+    await screen.findByRole('link', { name: 'Function Summary' });
+    expect(screen.getByRole('link', { name: 'Function Summary' })).toHaveAttribute('href', '/function-summary');
+    expect(screen.getByRole('link', { name: 'RCM' })).toHaveAttribute('href', '/function-summary/rcm');
+    expect(screen.getByRole('link', { name: 'Pre-Approvals' })).toHaveAttribute('href', '/function-summary/pre-approvals');
+    expect(screen.getByRole('link', { name: 'Reports' })).toHaveAttribute('href', '/reports');
+    expect(screen.queryByRole('link', { name: 'Call Center' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Marketing' })).not.toBeInTheDocument();
+
+    // First function expanded: its teams (IP Offshore counts under RCM) link to read-only team dashboards.
+    const rcmTeams = screen.getByRole('group', { name: 'RCM teams' });
+    expect(within(rcmTeams).getByRole('link', { name: 'Coding' })).toHaveAttribute('href', '/team/coding');
+    expect(within(rcmTeams).getByRole('link', { name: 'Pre-Approvals IP Offshore' })).toBeInTheDocument();
+    expect(within(rcmTeams).queryByRole('link', { name: 'Inbound' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Show Pre-Approvals teams' }));
+    expect(within(screen.getByRole('group', { name: 'Pre-Approvals teams' })).getByRole('link', { name: 'Pre-Approvals OP Final' })).toBeInTheDocument();
+  });
+
+  it('hides the employee tree, Shared Functions, product pages and Settings, and shows Read-only', () => {
+    renderSidebar('/function-summary/rcm');
+    for (const name of ['Executive Summary', 'Insights', 'Planning', 'Corrective Actions', 'Settings', 'All Teams', 'Inbound', 'CSR']) {
+      expect(screen.queryByRole('link', { name })).not.toBeInTheDocument();
+    }
+    expect(screen.queryByText('Shared Functions')).not.toBeInTheDocument();
+    expect(screen.queryByText('Employee')).not.toBeInTheDocument();
+    expect(screen.getByText('Read-only')).toHaveAttribute('title', 'Function Viewer');
+  });
+
+  it('falls back to all four functions when /auth/me has no accessible_functions', async () => {
+    authState.user = { ...authState.user, accessible_functions: undefined };
+    renderSidebar('/function-summary/call-center');
+    await screen.findByRole('link', { name: 'Call Center' });
+    for (const name of ['Call Center', 'RCM', 'Pre-Approvals', 'Marketing']) {
+      expect(screen.getAllByRole('link', { name }).length).toBeGreaterThan(0);
     }
   });
 });

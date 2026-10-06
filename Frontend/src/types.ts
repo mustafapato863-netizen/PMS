@@ -508,7 +508,9 @@ export interface User {
   name: string;
   username: string;
   password?: string;
-  role: 'Admin' | 'General Manager' | 'Manager' | 'Executive' | 'Viewer' | 'Agent';
+  role: 'Admin' | 'General Manager' | 'Manager' | 'Executive' | 'Viewer' | 'Agent' | 'Function Viewer';
+  /** Function Viewer: functions it may read (Call Center, RCM, Pre-Approvals, Marketing). */
+  accessible_functions?: string[];
   is_active?: boolean;
   is_online?: boolean;
   last_seen_at?: string | null;
@@ -923,6 +925,7 @@ export function getKPIsForAgent(agent: AgentRecord): KPIConfig[] {
 
     return [
       { label: 'Rejection', actual: actualRejection, target: targetRejection, unit: '%', isLowerBetter: true, color: '#EF4444', achievement: rejectionAch },
+      // More queries handled is better (CoS): not lower-is-better.
       { label: 'Queries Handled', actual: actualQueries, target: targetQueries, unit: '%', color: '#10B981', achievement: queriesAch },
       { label: 'Attended CR', actual: actualAttendedCR, target: targetAttendedCR, unit: '%', color: '#8B5CF6', achievement: attendedAch },
     ];

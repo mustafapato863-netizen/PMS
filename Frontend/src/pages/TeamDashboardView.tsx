@@ -39,15 +39,16 @@ import { useRcmGroupParam } from '../hooks/useRcmGroupParam';
 import { resolveDisplayScore } from '../utils/kpiScore';
 import { matchesTeamConfig, normalizeTeamName } from '../hooks/api/useKpiWeights';
 import { useTeamConfig } from '../hooks/useTeamConfig';
-import BalancedScorecardWorkspace from '../components/team/BalancedScorecardWorkspace';
 import { GRADE_PALETTE } from '../constants/grades';
 import { buildTeamKpiAnalysis } from '../features/team/teamKpiAnalysis';
 import { aggregatePreApprovalsIpMetrics } from '../features/team/preApprovalsIpMetrics';
 import { aggregateConfiguredTeamKpis, calculateAggregatedTeamPerformance } from '../features/team/teamKpiAggregator';
 import { resolveAvailableTeamPeriods } from '../features/team/teamPeriods';
 import { canAccessBroadAppPages, hasAllTeamsScope } from '../lib/access';
+import { useFunctionScope } from '../features/executive/useFunctionScope';
 
 const TeamChartsSection = lazy(() => import('../components/team/TeamChartsSection'));
+const BalancedScorecardWorkspace = lazy(() => import('../components/team/BalancedScorecardWorkspace'));
 
 const PAGE_SIZE = 15;
 
@@ -126,6 +127,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
   const teamId = teamIdOverride ?? routeTeamId;
   const navigate = useNavigate();
   const { role, fetchWithRole } = useUserRole();
+  const functionScope = useFunctionScope();
   const { currentUser } = useAuth();
 
   // Resolve team identity before loading config-driven defaults. New teams should
@@ -228,6 +230,8 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
   const showBscFallbackMessage = isBscContext && !hasBalancedScorecard;
 
   const isTeamAccessRestricted = useMemo(() => {
+    // Function Viewer: scoped by accessible_functions, not accessible_teams; no all-teams view.
+    if (functionScope.restricted) return teamId === 'all' || !functionScope.allowsTeam(teamName);
     if (!currentUser) return false;
     if (hasAllTeamsScope(role, currentUser)) return false;
     if (!teamName) return false; // 'all' view has its own scoping
@@ -260,7 +264,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
       return !(hasParentAccess || hasCallCenterParentAccess || hasSourceAccess || allowed.includes(normalizeTeamName(mergedTeamName)));
     }
     return !allowed.includes(normTeam);
-  }, [currentUser, role, teamName, isMergedTeam, isPreApprovalsParent, isCallCenterParent, isRcmParent, isMergedOpFinal, mergedTeamName]);
+  }, [currentUser, role, teamName, teamId, functionScope, isMergedTeam, isPreApprovalsParent, isCallCenterParent, isRcmParent, isMergedOpFinal, mergedTeamName]);
 
   const isCallCenterView = teamId?.toLowerCase() === 'inbound' || teamId?.toLowerCase() === 'inbound-uae' || teamId?.toLowerCase() === 'outbound'
     || (isCallCenterParent && callCenterChannel !== 'all');
@@ -1657,13 +1661,22 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
     }
   };
 
+  if (functionScope.restricted && functionScope.loadError) {
+    return <div className="app-page-shell rf-page rf-page--team-dashboard flex min-h-[40vh] items-center justify-center"><p role="alert">Unable to verify your function access. Refresh and try again.</p></div>;
+  }
+  if (functionScope.restricted && !functionScope.ready) {
+    return <div className="app-page-shell rf-page rf-page--team-dashboard flex min-h-[40vh] items-center justify-center"><p role="status">Checking your function access…</p></div>;
+  }
+
   if (!isTeamAccessRestricted && hasBalancedScorecard && teamName) {
     return (
-      <BalancedScorecardWorkspace
-        teamName={teamName}
-        displayName={displayName}
-        config={teamConfig}
-      />
+      <Suspense fallback={<div className="app-page-shell rf-page rf-page--team-dashboard flex min-h-[40vh] items-center justify-center" role="status">Loading scorecard…</div>}>
+        <BalancedScorecardWorkspace
+          teamName={teamName}
+          displayName={displayName}
+          config={teamConfig}
+        />
+      </Suspense>
     );
   }
 
@@ -1730,7 +1743,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
           availablePeriods={isTeamAccessRestricted ? [] : availableTeamPeriods}
           selectedMonth={month}
           dataSource={dataSource}
-          errorMessage={isTeamAccessRestricted ? '403: Access Denied for this team.' : errorMessage}
+          errorMessage={isTeamAccessRestricted ? (functionScope.restricted ? `403: Not in your functions (${functionScope.allowed.join(', ') || 'none assigned'}).` : '403: Access Denied for this team.') : errorMessage}
           emptyTitle={hasEmptyBranchSelection ? 'No Performance Data for Selected Branch' : undefined}
           emptyDescription={hasEmptyBranchSelection
             ? `No KPI numbers are available for ${emptyBranchLabel} in the selected period. Try another branch or choose All Branches.`

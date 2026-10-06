@@ -32,10 +32,11 @@ describe('buildLocalSearchResults access (General Manager role string)', () => {
 
   it('does not treat a Manager with has_unrestricted_team_access as a General Manager', () => {
     const paths = pathsFor(user('Manager', true));
-    for (const path of [...BROAD_PATHS, '/corrective-actions', '/team-management', ...SETTINGS_SHORTCUTS]) {
+    // Executive v1 (Mustafa): Manager gets Reports, Planning and Corrective Actions, never Insights.
+    for (const path of ['/insights', '/team-management', ...SETTINGS_SHORTCUTS]) {
       expect(paths).not.toContain(path);
     }
-    expect(paths).toContain('/executive');
+    for (const path of ['/executive', '/reports', '/planning', '/corrective-actions']) expect(paths).toContain(path);
   });
 
   it('keeps Settings, user and team management search items for Admin', () => {
@@ -64,5 +65,23 @@ describe('buildLocalSearchResults access (General Manager role string)', () => {
       .find((item) => item.id === 'nav-teams')?.label;
     expect(label('General Manager')).toBe('All Teams');
     expect(label('Manager')).toBe('Assigned Teams');
+  });
+});
+
+describe('buildLocalSearchResults for Function Viewer', () => {
+  it('offers Function Summary and Reports but no Executive Summary or broad pages', () => {
+    const paths = pathsFor(user('Function Viewer'));
+    expect(paths).toContain('/function-summary');
+    expect(paths).toContain('/reports');
+    for (const path of ['/executive', '/insights', '/planning', '/corrective-actions', '/team/all', ...SETTINGS_SHORTCUTS]) {
+      expect(paths).not.toContain(path);
+    }
+  });
+
+  it('offers Function Summary to Admin and General Manager, not to Manager or Executive', () => {
+    expect(pathsFor(user('Admin', true))).toContain('/function-summary');
+    expect(pathsFor(user('General Manager', true))).toContain('/function-summary');
+    expect(pathsFor(user('Manager'))).not.toContain('/function-summary');
+    expect(pathsFor(user('Executive'))).not.toContain('/function-summary');
   });
 });

@@ -37,11 +37,12 @@ describe('access helpers (Option A: stored "General Manager" role)', () => {
     }
   });
 
-  it('opens Corrective Actions to Admin, Executive and General Manager', () => {
+  it('opens Corrective Actions to Admin, Executive, General Manager and Manager (Executive v1)', () => {
     expect(canAccessCorrectiveActions('Admin')).toBe(true);
     expect(canAccessCorrectiveActions('Executive')).toBe(true);
     expect(canAccessCorrectiveActions('General Manager')).toBe(true);
-    expect(canAccessCorrectiveActions('Manager')).toBe(false);
+    expect(canAccessCorrectiveActions('Manager')).toBe(true);
+    expect(canAccessCorrectiveActions('Function Viewer')).toBe(false);
     expect(canAccessCorrectiveActions('Viewer')).toBe(false);
   });
 
