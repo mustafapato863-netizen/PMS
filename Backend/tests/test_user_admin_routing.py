@@ -111,6 +111,33 @@ def test_admin_create_user_persists_to_db(test_client, db_session):
     assert response.json()["data"]["last_seen_at"] is None
 
 
+def test_user_list_reports_online_offline_and_never_seen_from_activity_timestamp(test_client, db_session):
+    headers = _auth_headers(db_session, "presence_admin", "SecurePassword123!")
+    now = datetime.now(timezone.utc)
+    recently_active = AuthenticationService.create_user(
+        db_session, "recent_user", "recent@test.com", "SecurePassword123!", "Viewer"
+    )
+    stale_user = AuthenticationService.create_user(
+        db_session, "stale_user", "stale@test.com", "SecurePassword123!", "Viewer"
+    )
+    never_seen = AuthenticationService.create_user(
+        db_session, "never_user", "never@test.com", "SecurePassword123!", "Viewer"
+    )
+    recently_active.last_seen_at = now - timedelta(seconds=90)
+    stale_user.last_seen_at = now - timedelta(days=22)
+    db_session.commit()
+
+    response = test_client.get("/api/users/", headers=headers)
+
+    assert response.status_code == 200
+    users = {entry["username"]: entry for entry in response.json()["data"]}
+    assert users["recent_user"]["is_online"] is True
+    assert users["stale_user"]["is_online"] is False
+    assert users["stale_user"]["last_seen_at"] is not None
+    assert users["never_user"]["is_online"] is False
+    assert users["never_user"]["last_seen_at"] is None
+
+
 def test_admin_can_update_full_name_without_changing_username(test_client, db_session):
     headers = _auth_headers(db_session, "admin_editor", "SecurePassword123!")
     user = AuthenticationService.create_user(

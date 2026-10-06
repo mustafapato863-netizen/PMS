@@ -28,6 +28,7 @@ from services.corrective_action_service import (
     CorrectiveActionValidationError,
 )
 from services.user_identity_service import UserIdentityService
+from services.user_presence_service import UserPresenceService
 from utils.performance_levels import PERFORMANCE_LEVELS
 from utils.team_identity import (
     create_management_team_identity,
@@ -75,7 +76,10 @@ def _user_to_public_dict(db: Session, user: User) -> dict:
         "username": user.username,
         "role": user.role,
         "is_active": user.is_active,
-        "is_online": str(user.id) in online_ids,
+        "is_online": bool(
+            user.is_active
+            and (str(user.id) in online_ids or UserPresenceService.is_online(user.last_seen_at))
+        ),
         "last_seen_at": user.last_seen_at.isoformat() if user.last_seen_at else None,
         "accessible_teams": accessible_teams,
         "accessible_team_levels": accessible_team_levels,

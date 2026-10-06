@@ -48,6 +48,11 @@ export function UserManagementPanel() {
 
   useEffect(() => { void Promise.resolve().then(load).catch((caught) => setError(caught instanceof Error ? caught.message : 'Failed to load users')); }, [load]);
 
+  useEffect(() => {
+    const intervalId = window.setInterval(() => { void refreshUsers(); }, 30_000);
+    return () => window.clearInterval(intervalId);
+  }, [refreshUsers]);
+
   // Close menu on scroll or resize
   useEffect(() => {
     if (!menuState) return;

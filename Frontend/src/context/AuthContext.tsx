@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import type { User } from '../types';
+import { usePresenceHeartbeat } from '../hooks/usePresenceHeartbeat';
 import { apiFetch, getAccessToken, refreshAccessToken, setAccessToken, terminateClientSession } from '../lib/apiClient';
 import { AuthContext } from './auth';
 import type { AuthContextProps } from './auth';
@@ -36,6 +37,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [initializationStatus, setInitializationStatus] = useState<AuthContextProps['initializationStatus']>('authenticating');
   const [initializationError, setInitializationError] = useState<string | null>(null);
   const [authReady, setAuthReady] = useState(false);
+
+  usePresenceHeartbeat(Boolean(currentUser) && initializationStatus === 'ready');
 
   // Bootstrap from the HttpOnly refresh cookie. A legacy localStorage access
   // token is accepted once during migration, but no new long-lived token is

@@ -457,6 +457,31 @@ class TestAuthRouterAndMiddleware:
         assert response.status_code == 200
         assert response.json()["success"] is True
 
+    def test_presence_heartbeat_updates_authenticated_user_for_any_role(self, test_client, db_session):
+        user = AuthenticationService.create_user(
+            db_session,
+            "presence_viewer",
+            "presence_viewer@test.com",
+            "SecurePassword123!",
+            "Viewer",
+        )
+        token = AuthenticationService.authenticate_user(db_session, "presence_viewer", "SecurePassword123!")
+
+        response = test_client.post(
+            "/api/auth/presence/heartbeat",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["success"] is True
+        db_session.refresh(user)
+        assert user.last_seen_at is not None
+
+    def test_presence_heartbeat_requires_authentication(self, test_client):
+        response = test_client.post("/api/auth/presence/heartbeat")
+
+        assert response.status_code == 401
+
     def test_user_can_update_own_full_name_without_changing_username(self, test_client, db_session):
         AuthenticationService.create_user(
             db_session,

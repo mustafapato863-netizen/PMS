@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import uuid
 
 from sqlalchemy import create_engine
@@ -101,3 +101,42 @@ def test_record_last_seen_rolls_back_when_commit_fails(monkeypatch):
     assert result is None
     assert session.rolled_back is True
     assert session.closed is True
+
+
+def test_record_heartbeat_persists_activity_and_throttles_database_writes():
+    session_factory = _session_factory()
+    user_id = uuid.uuid4()
+    db = session_factory()
+    db.add(
+        User(
+            id=user_id,
+            username="heartbeat_user",
+            email="heartbeat@test.com",
+            full_name="Heartbeat User",
+            password_hash="not-used",
+            role="Viewer",
+        )
+    )
+    db.commit()
+
+    first_heartbeat = datetime(2026, 10, 6, 9, 0, tzinfo=timezone.utc)
+    second_heartbeat = first_heartbeat + timedelta(seconds=30)
+    third_heartbeat = first_heartbeat + timedelta(seconds=60)
+
+    assert UserPresenceService.record_heartbeat(db, str(user_id), first_heartbeat) == first_heartbeat
+    assert UserPresenceService.record_heartbeat(db, str(user_id), second_heartbeat) == first_heartbeat
+    assert UserPresenceService.record_heartbeat(db, str(user_id), third_heartbeat) == third_heartbeat
+
+    db.refresh(db.query(User).filter(User.id == user_id).one())
+    user = db.query(User).filter(User.id == user_id).one()
+    assert user.last_seen_at.replace(tzinfo=timezone.utc) == third_heartbeat
+    db.close()
+
+
+def test_online_status_uses_two_minute_window_and_handles_naive_database_timestamps():
+    now = datetime(2026, 10, 6, 9, 0, tzinfo=timezone.utc)
+
+    assert UserPresenceService.is_online(now - timedelta(seconds=119), now)
+    assert not UserPresenceService.is_online(now - timedelta(seconds=121), now)
+    assert UserPresenceService.is_online((now - timedelta(seconds=30)).replace(tzinfo=None), now)
+    assert not UserPresenceService.is_online(None, now)

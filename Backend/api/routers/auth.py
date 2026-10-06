@@ -26,6 +26,7 @@ from services.auth_service import (
     RefreshTokenReuseError,
 )
 from services.user_identity_service import UserIdentityService
+from services.user_presence_service import UserPresenceService
 from services.user_profile_service import (
     CurrentPasswordInvalidError,
     PasswordReuseError,
@@ -291,6 +292,30 @@ async def me(request: Request, db: Session = Depends(get_db)):
     except Exception as e:
         logger.error(f"Me lookup error: {e}")
         return StandardResponse(success=False, message="Failed to fetch current user.")
+
+
+@router.post("/presence/heartbeat", response_model=StandardResponse)
+async def presence_heartbeat(request: Request, db: Session = Depends(get_db)):
+    """Record authenticated activity for presence across serverless instances."""
+    user_id = _current_user_payload(request).get("user_id")
+    if not user_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
+
+    try:
+        seen_at = UserPresenceService.record_heartbeat(db, str(user_id))
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Presence could not be updated.",
+        ) from exc
+    if seen_at is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authenticated user is unavailable")
+
+    return StandardResponse(
+        success=True,
+        message="Presence updated",
+        data={"last_seen_at": seen_at.isoformat()},
+    )
 
 
 @router.put("/profile", response_model=StandardResponse)

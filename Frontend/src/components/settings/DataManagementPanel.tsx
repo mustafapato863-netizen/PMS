@@ -3,8 +3,8 @@ import { useQueryClient } from '@tanstack/react-query';
 import { AlertCircle, CheckCircle2, Download, FileSpreadsheet, Loader2, Trash2, Upload, X } from 'lucide-react';
 import { API_BASE } from '../../config';
 import { useUserRole } from '../../context/RoleContext';
+import { useUploadJob } from '../../context/uploadJobState';
 import { refreshPerformanceData } from '../../hooks/usePerformanceData';
-import { waitForProcessingJob } from '../../hooks/api/useProcessingJobs';
 import OverlayPortal from '../common/OverlayPortal';
 import type { ManagementUploadItem, UploadHistoryItem } from './types';
 import { refreshManagementData } from './settingsUtils';
@@ -330,6 +330,7 @@ function UploadHistory({ items, management = false, loading = false, busy, onDel
 export function DataManagementPanel() {
   const queryClient = useQueryClient();
   const { fetchWithRole } = useUserRole();
+  const { activeJobId, trackJob } = useUploadJob();
   const employeeInput = useRef<HTMLInputElement>(null);
   const managementInput = useRef<HTMLInputElement>(null);
   const [uploads, setUploads] = useState<UploadHistoryItem[]>([]);
@@ -386,21 +387,11 @@ export function DataManagementPanel() {
       if (!response.ok || !result?.success) {
         throw new Error(readableUploadError(result?.detail ?? result?.message, 'Upload failed'));
       }
-      let uploadData = result?.data as Record<string, unknown> | undefined;
+      const uploadData = result?.data as Record<string, unknown> | undefined;
       const jobId = typeof uploadData?.job_id === 'string' ? uploadData.job_id : null;
       if (jobId) {
-        setEmployeeStatus({ type: 'success', message: 'Upload queued. Processing will continue in the background…' });
-        const job = await waitForProcessingJob(jobId, (state) => {
-          if (state.status === 'queued' || state.status === 'running') {
-            setEmployeeStatus({ type: 'success', message: `Upload ${state.status} (${state.progress}%).` });
-          }
-        });
-        if (job.status !== 'succeeded' || !job.result) {
-          const reason = job.error?.message || 'Background upload processing failed.';
-          const code = job.error?.code ? ` [${job.error.code}]` : '';
-          throw new Error(`${reason}${code} (Job: ${job.job_id})`);
-        }
-        uploadData = job.result;
+        trackJob(jobId);
+        return;
       }
       setEmployeeStatus({
         type: 'success',
@@ -511,12 +502,12 @@ export function DataManagementPanel() {
           </div>
           <button
             onClick={() => employeeInput.current?.click()}
-            disabled={busy !== null}
+            disabled={busy !== null || activeJobId !== null}
             className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-bold text-white shadow-sm transition-all hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            {isEmployeeBusy ? (
+            {isEmployeeBusy || activeJobId ? (
               <>
-                <Loader2 size={15} className="animate-spin" /> Processing…
+                <Loader2 size={15} className="animate-spin" /> {activeJobId ? 'Processing in background…' : 'Processing…'}
               </>
             ) : (
               <>

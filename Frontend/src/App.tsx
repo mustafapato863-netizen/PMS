@@ -11,6 +11,7 @@ import { useNotificationSocket } from './hooks/useNotificationSocket';
 import { REALTIME_ENABLED } from './config';
 import AppErrorBoundary from './components/common/AppErrorBoundary';
 import { ToastProvider } from './components/common/ToastProvider';
+import { UploadJobProvider } from './context/UploadJobContext';
 import WorkspaceLoader from './components/common/WorkspaceLoader';
 import { PageLoadingSkeleton } from './components/common/SkeletonLoader';
 import RouteGuard from './components/common/RouteGuard';
@@ -251,6 +252,18 @@ function AppContent() {
   );
 }
 
+function AppRouter() {
+  const { currentUser } = useAuth();
+
+  return (
+    <Router>
+      <UploadJobProvider key={currentUser?.id || 'anonymous'}>
+        <AppContent />
+      </UploadJobProvider>
+    </Router>
+  );
+}
+
 function App() {
   return (
     <ThemeProvider>
@@ -258,9 +271,7 @@ function App() {
         <AuthProvider>
           <RoleProvider>
             <AppErrorBoundary>
-              <Router>
-                <AppContent />
-              </Router>
+              <AppRouter />
             </AppErrorBoundary>
           </RoleProvider>
         </AuthProvider>
