@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import type { AgentRecord } from '../../../types';
+import type { AgentRecord, PerformanceLevelFilter } from '../../../types';
 import { canonicalTeamName } from '../../../types';
 import { kpiRows, toExecRecords } from '../../../features/executive/compose';
 import { executiveFunctionForTeam } from '../../../features/executive/functions';
@@ -39,7 +39,7 @@ export default function AffectedAgentKpiBreakdown({
   performanceLevel: string;
   teamFunctions?: TeamFunctionMap;
 }) {
-  const options = useMemo(() => affectedAgentOptions(summary), [summary.people]);
+  const options = affectedAgentOptions(summary);
   const [requestedEmployeeId, setRequestedEmployeeId] = useState('');
   const selectedEmployeeId = options.some((option) => option.person.employee_id === requestedEmployeeId)
     ? requestedEmployeeId
@@ -54,7 +54,7 @@ export default function AffectedAgentKpiBreakdown({
     'All',
     'all',
     region,
-    performanceLevel || 'All',
+    (performanceLevel || 'All') as PerformanceLevelFilter,
     legacyEnabled,
     summary.scope.team ?? undefined,
   );
@@ -87,8 +87,14 @@ export default function AffectedAgentKpiBreakdown({
     return true;
   }), [performanceLevel, records, selectedEmployeeId, summary.scope.function, summary.scope.region, summary.scope.team, teamFunctions]);
 
-  const current = effective ? inScope.filter((record) => record.period.key === effective.key) : [];
-  const previous = previousPeriod ? inScope.filter((record) => record.period.key === previousPeriod.key) : [];
+  const current = useMemo(
+    () => (effective ? inScope.filter((record) => record.period.key === effective.key) : []),
+    [effective?.key, inScope],
+  );
+  const previous = useMemo(
+    () => (previousPeriod ? inScope.filter((record) => record.period.key === previousPeriod.key) : []),
+    [inScope, previousPeriod?.key],
+  );
   const rows = useMemo(() => (current.length ? kpiRows(current, previous) : []), [current, previous]);
   const loading = scopedPerformanceApiEnabled
     ? Boolean(selectedEmployeeId && history.isFetching)
