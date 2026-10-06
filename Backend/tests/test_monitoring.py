@@ -215,12 +215,15 @@ def test_validation_error_keeps_detail_and_adds_canonical_fields(test_client):
 
 
 @patch("urllib.request.urlopen")
-def test_error_rate_alerting(mock_urlopen, test_client):
+def test_error_rate_alerting(mock_urlopen, test_client, monkeypatch):
     """Verify critical error rate calculations trigger Slack alerting"""
     # Reset in-memory trackers
-    from services.error_tracker import _in_memory_requests, _in_memory_errors, _last_alert_time
-    _in_memory_requests.clear()
-    _in_memory_errors.clear()
+    from services import error_tracker
+    # This test exercises the in-memory fallback; don't share Redis cooldown state.
+    monkeypatch.setattr(error_tracker, "redis_client", None)
+    error_tracker._in_memory_requests.clear()
+    error_tracker._in_memory_errors.clear()
+    error_tracker._last_alert_time = 0.0
     
     # Mock Slack webhook URL to run alert code
     with patch.dict("os.environ", {"SLACK_WEBHOOK_URL": "http://mock-slack-webhook"}):

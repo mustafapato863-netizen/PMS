@@ -136,9 +136,9 @@ describe('Corporate sections', () => {
     const negatives = screen.getAllByTestId('driver-negative');
     const rejection = negatives.find((row) => row.textContent?.includes('Initial Rejection %'))!;
     expect(within(rejection).getByText('↓ better')).toBeInTheDocument();
-    expect(within(rejection).getByText('↑ +1.6 pp')).toHaveAttribute('data-tone', 'bad');
+    expect(within(rejection).getByText('↓ −1.6 pp')).toHaveAttribute('data-tone', 'bad');
     const denial = screen.getAllByTestId('driver-positive').find((row) => row.textContent?.includes('Denial Rate'))!;
-    expect(within(denial).getByText('↓ −0.8 pp')).toHaveAttribute('data-tone', 'good');
+    expect(within(denial).getByText('↑ +0.8 pp')).toHaveAttribute('data-tone', 'good');
   });
 
   it('hides function links and the Insights link for Executive (no Function Summary / Insights access)', () => {

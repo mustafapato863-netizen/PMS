@@ -1,7 +1,7 @@
 import { Activity, TrendingDown, TrendingUp } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import type { ExecutiveDriver, ExecutiveSummary } from '../../../features/executive/types';
-import { arrow, fmtKpiDelta, fmtKpiValue, kpiMovementTone, toneColor } from '../../../features/executive/format';
+import { arrow, fmtKpiDelta, fmtKpiValue, kpiChangeDelta, kpiMovementTone, toneColor } from '../../../features/executive/format';
 import { driverImpact } from './execModel';
 import { DirectionTag, ExecCard, ExecCardHeader, Footnote, SoftEmpty } from './ExecPrimitives';
 
@@ -13,6 +13,7 @@ const fmtPts = (value: number | null) => (value === null ? '—' : `${value > 0 
 function DriverRow({ driver, side, metric, max }: { driver: ExecutiveDriver; side: 'negative' | 'positive'; metric: Metric; max: number }) {
   const impact = driverImpact(driver, side, metric);
   const movement = kpiMovementTone(driver);
+  const changeDelta = kpiChangeDelta(driver);
   const barColor = side === 'negative' ? 'var(--insights-negative)' : 'var(--insights-positive)';
   const width = impact === null || max <= 0 ? 0 : Math.max(6, Math.round((Math.abs(impact) / max) * 100));
   const sub = [driver.team, driver.function].filter(Boolean).join(' · ');
@@ -25,9 +26,9 @@ function DriverRow({ driver, side, metric, max }: { driver: ExecutiveDriver; sid
           <div className="flex flex-wrap items-center gap-[6px]">
             <DirectionTag direction={driver.kpi_direction} />
             {driver.current_value !== null && <span className="text-[12px] font-bold text-[var(--insights-heading)]">{fmtKpiValue(driver.current_value, driver.unit)}</span>}
-            {driver.raw_change !== null && (
+            {changeDelta !== null && (
               <span data-tone={movement} className="text-[11px] font-semibold" style={{ color: toneColor(movement) }}>
-                {arrow(driver.raw_change)} {fmtKpiDelta(driver.raw_change, driver.unit)}
+                {arrow(changeDelta)} {fmtKpiDelta(changeDelta, driver.unit)}
               </span>
             )}
           </div>

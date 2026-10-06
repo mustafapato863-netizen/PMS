@@ -4,7 +4,7 @@ import { AlertTriangle, BarChart3, CheckCircle2, Clock, FileText, Users, type Lu
 import type { GradeClass } from '../../../constants/grades';
 import type { ExecutiveActionItem, ExecutiveDriver, ExecutiveFunction, ExecutiveKpiRow, ExecutiveSummary, ExecutiveTeam, ExecutiveTeamFlag } from '../../../features/executive/types';
 import { isAtRisk, formatPeriod } from '../../../features/executive/compose';
-import { fmtSigned, type Tone } from '../../../features/executive/format';
+import { fmtSigned, kpiGapDelta, type Tone } from '../../../features/executive/format';
 
 type Metric = ExecutiveSummary['meta']['driver_metric'];
 const HEALTHY: GradeClass[] = ['A', 'B'];
@@ -93,9 +93,10 @@ export function movementTone(grade: GradeClass, movement: number): 'good' | 'bad
   return HEALTHY.includes(grade) === up ? 'good' : 'bad';
 }
 
-export function gapTone(row: Pick<ExecutiveKpiRow, 'gap_value'>): Tone {
-  if (row.gap_value === null) return 'neutral';
-  return row.gap_value >= 0 ? 'good' : 'bad';
+export function gapTone(row: Pick<ExecutiveKpiRow, 'gap_value' | 'raw_gap' | 'kpi_direction'>): Tone {
+  const gap = kpiGapDelta(row);
+  if (gap === null) return 'neutral';
+  return gap >= 0 ? 'good' : 'bad';
 }
 
 export const FLAG_LABEL: Record<ExecutiveTeamFlag, string> = {

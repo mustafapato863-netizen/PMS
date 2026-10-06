@@ -102,7 +102,9 @@ export function resolveMovementTone({
   if (trendStatus === 'declining') return 'bad';
   if (trendStatus === 'stable') return 'flat';
   if (changeValue !== null && changeValue !== undefined && Number.isFinite(changeValue)) {
-    return movementTone(changeValue, 'higher_better');
+    // changeValue is already normalized so positive always means improvement.
+    if (Math.abs(changeValue) < 1e-9) return 'flat';
+    return changeValue > 0 ? 'good' : 'bad';
   }
   return movementTone(rawDelta, direction);
 }

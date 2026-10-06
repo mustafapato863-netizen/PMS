@@ -6,6 +6,7 @@ import { resolveMovementTone } from '../../components/insights/overview/insights
 import type { InsightTrendStatus } from '../insights/types';
 
 export type Tone = 'good' | 'bad' | 'neutral';
+export type KpiDirection = 'higher_better' | 'lower_better';
 const MINUS = '\u2212';
 
 export function fmtScore(value: number | null | undefined, digits = 1): string {
@@ -38,8 +39,34 @@ export function toneColor(tone: Tone): string {
 }
 
 export function isLowerBetter(direction: string | null | undefined): boolean {
-  const value = String(direction ?? '').toLowerCase();
-  return value === 'lower_better' || value === 'lower_is_better' || value === 'lower';
+  return normalizeKpiDirection(direction) === 'lower_better';
+}
+
+export function normalizeKpiDirection(direction: string | null | undefined): KpiDirection | null {
+  const value = String(direction ?? '').trim().toLowerCase();
+  if (value === 'lower_better' || value === 'lower_is_better' || value === 'lower') return 'lower_better';
+  if (value === 'higher_better' || value === 'higher_is_better' || value === 'higher') return 'higher_better';
+  return null;
+}
+
+/** Normalize a raw KPI delta so positive always means better performance. */
+export function directionAdjustedDelta(delta: number | null | undefined, direction: string | null | undefined): number | null {
+  if (delta === null || delta === undefined || !Number.isFinite(delta)) return null;
+  const normalizedDirection = normalizeKpiDirection(direction);
+  if (normalizedDirection === null) return null;
+  return normalizedDirection === 'lower_better' ? -delta : delta;
+}
+
+/** Direction-normalized gap; falls back to raw gap only when direction is known. */
+export function kpiGapDelta(row: { gap_value?: number | null; raw_gap?: number | null; kpi_direction?: string | null }): number | null {
+  if (row.gap_value !== null && row.gap_value !== undefined && Number.isFinite(row.gap_value)) return row.gap_value;
+  return directionAdjustedDelta(row.raw_gap, row.kpi_direction);
+}
+
+/** Direction-normalized month-over-month change; unknown direction stays unavailable. */
+export function kpiChangeDelta(row: { change_value?: number | null; raw_change?: number | null; kpi_direction?: string | null }): number | null {
+  if (row.change_value !== null && row.change_value !== undefined && Number.isFinite(row.change_value)) return row.change_value;
+  return directionAdjustedDelta(row.raw_change, row.kpi_direction);
 }
 
 const unitKind = (unit: string | null | undefined) => String(unit ?? '').trim().toLowerCase();
@@ -80,9 +107,9 @@ export function fmtKpiDelta(value: number | null | undefined, unit: string | nul
 export function kpiMovementTone(row: { trend_status?: InsightTrendStatus | null; change_value?: number | null; raw_change?: number | null; kpi_direction?: string | null }): Tone {
   const tone = resolveMovementTone({
     trendStatus: row.trend_status ?? null,
-    changeValue: row.change_value ?? null,
+    changeValue: kpiChangeDelta(row),
     rawDelta: row.raw_change ?? null,
-    direction: isLowerBetter(row.kpi_direction) ? 'lower_better' : 'higher_better',
+    direction: normalizeKpiDirection(row.kpi_direction),
   });
   return tone === 'good' || tone === 'bad' ? tone : 'neutral';
 }
