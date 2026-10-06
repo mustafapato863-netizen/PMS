@@ -6,8 +6,9 @@ import { gapTone } from './execModel';
 import { DirectionTag, ExecCard, ExecCardHeader, GradeSquare, ScoreText, SoftEmpty } from './ExecPrimitives';
 
 
-export default function TeamKpiTable({ rows, effective, previous, score, reportHref }: {
+export default function TeamKpiTable({ rows, effective, previous, score, reportHref, title = 'Team KPIs — worst first', subtitle, showTeams = false }: {
   rows: ExecutiveKpiRow[]; effective: ExecutivePeriod | null; previous: ExecutivePeriod | null; score: number | null; reportHref?: string | null;
+  title?: string; subtitle?: string; showTeams?: boolean;
 }) {
   const head = 'text-[10px] font-semibold uppercase tracking-[0.6px] text-[var(--text-muted)]';
   const vs = previous ? `vs ${previous.month.slice(0, 3)}` : 'vs last';
@@ -18,8 +19,8 @@ export default function TeamKpiTable({ rows, effective, previous, score, reportH
         icon={Target}
         iconBg="var(--exec-info-bg)"
         iconColor="var(--exec-info-text)"
-        title="Team KPIs — worst first"
-        subtitle={`Sorted by achievement${effective ? ` · ${effective.month} ${effective.year}` : ''}`}
+        title={title}
+        subtitle={subtitle ?? `Sorted by achievement${effective ? ` · ${effective.month} ${effective.year}` : ''}`}
         action={(
           <div className="flex items-center gap-[8px]">
             <span className="rounded-full bg-[var(--exec-chip-bg)] px-[8px] py-[2px] text-[11px] font-semibold text-[var(--exec-chip-text)]">{rows.length} KPIs</span>
@@ -29,7 +30,7 @@ export default function TeamKpiTable({ rows, effective, previous, score, reportH
       />
       {rows.length ? (
         <div className="overflow-x-auto">
-          <div role="table" aria-label="Team KPIs" className="flex min-w-[640px] flex-col">
+          <div role="table" aria-label={title} className={`flex flex-col ${showTeams ? 'min-w-[760px]' : 'min-w-[640px]'}`}>
             <div role="row" className="flex items-center gap-[12px] rounded-[8px] bg-[var(--exec-table-head-bg)] px-[12px] py-[9px]">
               <span role="columnheader" className={`${head} min-w-0 flex-1`}>KPI</span>
               <span role="columnheader" className={`${head} w-[84px]`}>Direction</span>
@@ -39,6 +40,7 @@ export default function TeamKpiTable({ rows, effective, previous, score, reportH
               <span role="columnheader" className={`${head} w-[80px] text-right`}>{vs}</span>
               <span role="columnheader" className={`${head} hidden w-[56px] text-right lg:block`}>Weight</span>
               <span role="columnheader" className={`${head} w-[96px] text-right`}>Achievement</span>
+              {showTeams && <span role="columnheader" className={`${head} w-[150px]`}>Teams</span>}
             </div>
             {rows.map((row, index) => {
               const movement = kpiMovementTone(row);
@@ -59,6 +61,7 @@ export default function TeamKpiTable({ rows, effective, previous, score, reportH
                     <ScoreText score={row.achievement_percent} className="text-[13px]">{fmtScore(row.achievement_percent)}</ScoreText>
                     <GradeSquare score={row.achievement_percent} />
                   </span>
+                  {showTeams && <span role="cell" className="w-[150px] truncate text-[12px] text-[var(--text-secondary)]" title={row.teams.join(', ')}>{row.teams.join(', ')}</span>}
                 </div>
               );
             })}
@@ -71,7 +74,8 @@ export default function TeamKpiTable({ rows, effective, previous, score, reportH
           <DirectionTag direction="lower_better" /> lower is better
           <span>· Colour = good / bad for that KPI; arrow = actual movement.</span>
         </span>
-        {score !== null && <span>Team score = Σ weight × achievement (capped 100%) = {fmtScore(score)}</span>}
+        {score !== null && !showTeams && <span>Team score = Σ weight × achievement (capped 100%) = {fmtScore(score)}</span>}
+        {showTeams && <span>Headcount-weighted across the function&apos;s teams.</span>}
       </div>
     </ExecCard>
   );

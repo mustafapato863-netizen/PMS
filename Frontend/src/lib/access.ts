@@ -68,7 +68,7 @@ export const canAccessPlanning = (role: RoleInput): boolean =>
 
 /** Reports list: Admin, General Manager and Manager in the sidebar (route also admits Executive / Viewer). */
 export const canSeeReportsNav = (role: RoleInput): boolean =>
-  canAccessBroadAppPages(role) || isManagerRole(role);
+  canAccessBroadAppPages(role) || isManagerRole(role) || isFunctionViewerRole(role);
 
 /** Insights stays Admin / General Manager only (Mustafa, Executive v1). */
 export const canAccessInsights = (role: RoleInput): boolean => canAccessBroadAppPages(role);
@@ -86,6 +86,8 @@ export const ROUTE_ROLES = {
   planning: ['Admin', 'General Manager', 'Manager'],
   correctiveActions: ['Admin', 'Executive', 'General Manager', 'Manager'],
   functionSummary: ['Admin', 'General Manager', ROLE_FUNCTION_VIEWER],
+  /** Saved-report library + preview (read). Function Viewer: backend must scope to its functions. */
+  reports: ['Admin', 'General Manager', 'Manager', 'Executive', 'Viewer', ROLE_FUNCTION_VIEWER],
 } as const satisfies Record<string, readonly AppRole[]>;
 
 /** Which Executive Summary layout a role gets on `/executive`. */

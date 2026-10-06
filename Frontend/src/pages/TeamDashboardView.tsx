@@ -46,6 +46,7 @@ import { aggregatePreApprovalsIpMetrics } from '../features/team/preApprovalsIpM
 import { aggregateConfiguredTeamKpis, calculateAggregatedTeamPerformance } from '../features/team/teamKpiAggregator';
 import { resolveAvailableTeamPeriods } from '../features/team/teamPeriods';
 import { canAccessBroadAppPages, hasAllTeamsScope } from '../lib/access';
+import { useFunctionScope } from '../features/executive/useFunctionScope';
 
 const TeamChartsSection = lazy(() => import('../components/team/TeamChartsSection'));
 
@@ -126,6 +127,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
   const teamId = teamIdOverride ?? routeTeamId;
   const navigate = useNavigate();
   const { role, fetchWithRole } = useUserRole();
+  const functionScope = useFunctionScope();
   const { currentUser } = useAuth();
 
   // Resolve team identity before loading config-driven defaults. New teams should
@@ -228,6 +230,8 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
   const showBscFallbackMessage = isBscContext && !hasBalancedScorecard;
 
   const isTeamAccessRestricted = useMemo(() => {
+    // Function Viewer: scoped by accessible_functions, not accessible_teams; no all-teams view.
+    if (functionScope.restricted) return teamId === 'all' || !functionScope.allowsTeam(teamName);
     if (!currentUser) return false;
     if (hasAllTeamsScope(role, currentUser)) return false;
     if (!teamName) return false; // 'all' view has its own scoping
@@ -260,7 +264,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
       return !(hasParentAccess || hasCallCenterParentAccess || hasSourceAccess || allowed.includes(normalizeTeamName(mergedTeamName)));
     }
     return !allowed.includes(normTeam);
-  }, [currentUser, role, teamName, isMergedTeam, isPreApprovalsParent, isCallCenterParent, isRcmParent, isMergedOpFinal, mergedTeamName]);
+  }, [currentUser, role, teamName, teamId, functionScope, isMergedTeam, isPreApprovalsParent, isCallCenterParent, isRcmParent, isMergedOpFinal, mergedTeamName]);
 
   const isCallCenterView = teamId?.toLowerCase() === 'inbound' || teamId?.toLowerCase() === 'inbound-uae' || teamId?.toLowerCase() === 'outbound'
     || (isCallCenterParent && callCenterChannel !== 'all');
@@ -1730,7 +1734,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
           availablePeriods={isTeamAccessRestricted ? [] : availableTeamPeriods}
           selectedMonth={month}
           dataSource={dataSource}
-          errorMessage={isTeamAccessRestricted ? '403: Access Denied for this team.' : errorMessage}
+          errorMessage={isTeamAccessRestricted ? (functionScope.restricted ? `403: Not in your functions (${functionScope.allowed.join(', ') || 'none assigned'}).` : '403: Access Denied for this team.') : errorMessage}
           emptyTitle={hasEmptyBranchSelection ? 'No Performance Data for Selected Branch' : undefined}
           emptyDescription={hasEmptyBranchSelection
             ? `No KPI numbers are available for ${emptyBranchLabel} in the selected period. Try another branch or choose All Branches.`

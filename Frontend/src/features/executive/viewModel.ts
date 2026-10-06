@@ -23,6 +23,11 @@ export function subtitleFor(summary: ExecutiveSummary | null, view: ExecutiveVie
   if (!summary?.period.effective) return `${prefix} · target 100%`;
   const team = view === 'managerial' && summary.scope.team ? ` · ${summary.scope.team}` : '';
   const vs = summary.period.previous ? ` vs ${formatPeriod(summary.period.previous)}` : '';
+  if (view === 'function') {
+    const { hero } = summary;
+    const people = `${hero.teams_count} ${hero.teams_count === 1 ? 'team' : 'teams'} · ${hero.employees.toLocaleString('en-US')} people`;
+    return `${summary.scope.function ?? hero.label} · ${formatPeriod(summary.period.effective)}${vs} · ${people}`;
+  }
   return `${prefix}${team} · ${formatPeriod(summary.period.effective)}${vs} · target 100%`;
 }
 

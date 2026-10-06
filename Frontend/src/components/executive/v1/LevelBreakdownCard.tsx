@@ -4,10 +4,10 @@ import type { ExecutiveLevel } from '../../../features/executive/types';
 import { arrow, fmtScore, fmtSigned, scoreTone, toneColor } from '../../../features/executive/format';
 import { ExecCard, ExecCardHeader, GradeSquare, ScoreText, SoftEmpty } from './ExecPrimitives';
 
-export default function LevelBreakdownCard({ levels }: { levels: ExecutiveLevel[] }) {
+export default function LevelBreakdownCard({ levels, title = 'Level breakdown', subtitle = 'Score, grade and headcount by performance level' }: { levels: ExecutiveLevel[]; title?: string; subtitle?: string }) {
   return (
     <ExecCard aria-labelledby="exec-levels-title">
-      <ExecCardHeader titleId="exec-levels-title" icon={Layers} iconBg="var(--exec-info-bg)" iconColor="var(--exec-info-text)" title="Level breakdown" subtitle="Score, grade and headcount by performance level" />
+      <ExecCardHeader titleId="exec-levels-title" icon={Layers} iconBg="var(--exec-info-bg)" iconColor="var(--exec-info-text)" title={title} subtitle={subtitle} />
       {levels.length ? (
         <ul className="flex flex-col">
           {levels.map((level) => {

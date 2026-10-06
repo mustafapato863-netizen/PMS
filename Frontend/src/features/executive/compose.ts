@@ -619,6 +619,12 @@ export function composeExecutiveSummary(input: ComposeInput): ExecutiveSummary {
   const actions = input.actions ? summarizeActions(input.actions, input.today, effective) : null;
   if (!actions) unavailable.add('corrective_actions');
 
+  // Function view: "most improved" compares against the other functions, which
+  // needs all-teams records; without them, never claim it.
+  if (view === 'function') {
+    const leader = comparison && effective ? functionCards(comparison, effective, previous, teamFunctions).find((card) => card.is_most_improved) : null;
+    functions.forEach((card) => { card.is_most_improved = Boolean(leader && leader.function === card.function); });
+  }
   const mostImproved = functions.find((card) => card.is_most_improved) ?? null;
   const lowestTeam = view === 'function' ? teams.find((team) => team.flags.includes('lowest_in_function')) ?? null : null;
   const worstFunction = [...functions].sort((l, r) => (
