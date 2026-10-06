@@ -21,6 +21,7 @@ from models.insight_schemas import (
     InsightKpiTrendPoint,
     InsightKpiOverview,
     InsightKpiOverviewPoint,
+    InsightOverallTrendPoint,
     InsightPeriod,
     InsightPeopleContributionAnalysis,
     InsightPersonContribution,
@@ -92,6 +93,30 @@ def _stable_id(*parts: Any) -> str:
 def _average(values: Iterable[Any]) -> float | None:
     measured = [float(value) for value in values if value is not None]
     return mean(measured) if measured else None
+
+
+def _score_stats(records: Iterable[Any]) -> tuple[float | None, int]:
+    """Mean overall score and the number of records that carried a score.
+
+    Single averaging rule for ``executive_story.current_score`` and
+    ``overall_trend``: records without a score are excluded.
+    """
+    measured = [float(score) for score in (_evaluation_value(record, "score") for record in records) if score is not None]
+    return (mean(measured) if measured else None), len(measured)
+
+
+def _records_in_period(records: Iterable[Any], period: tuple[int, int] | None) -> list[Any]:
+    return [record for record in records if period and _period(record) == period]
+
+
+def _trailing_periods(current_period: tuple[int, int], size: int = 6) -> list[tuple[int, int]]:
+    """``size`` consecutive months ending at ``current_period``, oldest first."""
+    year, month = current_period
+    window = []
+    for offset in range(size - 1, -1, -1):
+        absolute_month = year * 12 + month - 1 - offset
+        window.append((absolute_month // 12, (absolute_month % 12) + 1))
+    return window
 
 
 def _target_achievement(actual: float | None, target: float | None, direction: str | None) -> float | None:
@@ -1199,6 +1224,25 @@ class InsightsService:
         )
 
     @staticmethod
+    def _overall_trend(records: list[Any], current_period: tuple[int, int]) -> list[InsightOverallTrendPoint]:
+        """Six-month overall score trend ending at the workspace's current period.
+
+        ``records`` is the same filtered, access-checked list that produces
+        ``current`` for ``executive_story``; each month is selected with the
+        same ``_records_in_period`` helper and averaged with ``_score_stats``,
+        so the last point always equals ``executive_story.current_score``.
+        """
+        points = []
+        for period in _trailing_periods(current_period):
+            score, measured = _score_stats(_records_in_period(records, period))
+            points.append(InsightOverallTrendPoint(
+                period=_period_schema(period),
+                score=round(score, 1) if score is not None else None,
+                measured_records=measured,
+            ))
+        return points
+
+    @staticmethod
     def _kpi_trend(
         selected_kpi: str | None,
         records: list[Any],
@@ -1486,8 +1530,8 @@ class InsightsService:
         drivers: list[InsightDriver],
         scope_label: str | None = None,
     ) -> InsightExecutiveStory:
-        current_score = _average(_evaluation_value(record, "score") for record in current)
-        previous_score = _average(_evaluation_value(record, "score") for record in previous)
+        current_score = _score_stats(current)[0]
+        previous_score = _score_stats(previous)[0]
         gap_points = current_score - 100.0 if current_score is not None else None
         score_change = current_score - previous_score if current_score is not None and previous_score is not None else None
         primary_scope = geography_summaries[0] if geography_summaries else None
@@ -1694,8 +1738,8 @@ class InsightsService:
 
         adjacent_period = (current_period[0] - 1, 12) if current_period[1] == 1 else (current_period[0], current_period[1] - 1)
         previous_period = adjacent_period if adjacent_period in explicit_periods else None
-        current = [record for record in records if _period(record) == current_period]
-        previous = [record for record in records if previous_period and _period(record) == previous_period]
+        current = _records_in_period(records, current_period)
+        previous = _records_in_period(records, previous_period)
 
         items = self._score_insights(current, previous, current_period, previous_period)
         kpi_items, team_analyses, drivers, high_weight_misses = self._kpi_insights(current, previous)
@@ -1944,6 +1988,8 @@ class InsightsService:
             ])),
         )
 
+        overall_trend = self._overall_trend(records, current_period)
+
         repeated_employees = {item.employee_id for item in employee_items if item.employee_id}
         declining_teams = {
             item.team for item in items
@@ -1981,6 +2027,7 @@ class InsightsService:
             executive_story=executive_story,
             people_contribution_analysis=people_contribution_analysis,
             kpi_trend=kpi_trend,
+            overall_trend=overall_trend,
             role_summaries=role_summaries,
             kpi_overview=kpi_overview,
             options=options,

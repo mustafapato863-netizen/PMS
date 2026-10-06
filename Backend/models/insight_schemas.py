@@ -188,6 +188,20 @@ class InsightKpiTrend(BaseModel):
     points: list[InsightKpiTrendPoint] = Field(default_factory=list)
 
 
+class InsightOverallTrendPoint(BaseModel):
+    """Overall average score for one month of the Insights trend window.
+
+    ``score`` uses the same filtered, access-checked record set and averaging
+    rule as ``executive_story.current_score`` so the last point always equals
+    the Executive Summary's current score.
+    """
+
+    period: InsightPeriod
+    score: float | None = None
+    target: float | None = 100.0
+    measured_records: int = 0
+
+
 class InsightRoleSummary(BaseModel):
     role: str
     team: str
@@ -254,6 +268,7 @@ class InsightsWorkspace(BaseModel):
     executive_story: InsightExecutiveStory | None = None
     people_contribution_analysis: InsightPeopleContributionAnalysis | None = None
     kpi_trend: InsightKpiTrend | None = None
+    overall_trend: list[InsightOverallTrendPoint] = Field(default_factory=list)
     role_summaries: list[InsightRoleSummary] = Field(default_factory=list)
     kpi_overview: InsightKpiOverview = Field(default_factory=InsightKpiOverview)
     options: InsightFilterOptions
