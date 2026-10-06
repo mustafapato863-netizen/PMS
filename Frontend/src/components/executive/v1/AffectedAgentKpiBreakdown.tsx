@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import type { AgentRecord, PerformanceLevelFilter } from '../../../types';
 import { canonicalTeamName } from '../../../types';
 import { kpiRows, toExecRecords } from '../../../features/executive/compose';
@@ -68,34 +68,26 @@ export default function AffectedAgentKpiBreakdown({
     },
   );
 
-  const records = useMemo(() => {
-    let agents: AgentRecord[] = [];
-    if (scopedPerformanceApiEnabled) {
-      agents = (history.data ?? []).map((record) => mapScopedPerformanceRecord(record as never));
-    } else if (source === 'composed') {
-      agents = legacy.agents as never as AgentRecord[];
-    }
-    return toExecRecords(agents, effective?.year ?? new Date().getFullYear());
-  }, [effective?.year, history.data, legacy.agents, source]);
+  let agents: AgentRecord[] = [];
+  if (scopedPerformanceApiEnabled) {
+    agents = (history.data ?? []).map((record) => mapScopedPerformanceRecord(record as never));
+  } else if (source === 'composed') {
+    agents = legacy.agents as never as AgentRecord[];
+  }
+  const records = toExecRecords(agents, effective?.year ?? new Date().getFullYear());
 
-  const inScope = useMemo(() => records.filter((record) => {
+  const inScope = records.filter((record) => {
     if (record.employeeId !== selectedEmployeeId) return false;
     if (summary.scope.team && canonicalTeamName(record.team) !== canonicalTeamName(summary.scope.team)) return false;
     if (summary.scope.region && (record.region ?? '').toUpperCase() !== summary.scope.region.toUpperCase()) return false;
     if (summary.scope.function && executiveFunctionForTeam(record.team, teamFunctions) !== summary.scope.function) return false;
     if (performanceLevel !== 'All' && record.level !== performanceLevel) return false;
     return true;
-  }), [performanceLevel, records, selectedEmployeeId, summary.scope.function, summary.scope.region, summary.scope.team, teamFunctions]);
+  });
 
-  const current = useMemo(
-    () => (effective ? inScope.filter((record) => record.period.key === effective.key) : []),
-    [effective?.key, inScope],
-  );
-  const previous = useMemo(
-    () => (previousPeriod ? inScope.filter((record) => record.period.key === previousPeriod.key) : []),
-    [inScope, previousPeriod?.key],
-  );
-  const rows = useMemo(() => (current.length ? kpiRows(current, previous) : []), [current, previous]);
+  const current = effective ? inScope.filter((record) => record.period.key === effective.key) : [];
+  const previous = previousPeriod ? inScope.filter((record) => record.period.key === previousPeriod.key) : [];
+  const rows = current.length ? kpiRows(current, previous) : [];
   const loading = scopedPerformanceApiEnabled
     ? Boolean(selectedEmployeeId && history.isFetching)
     : legacy.loading;
