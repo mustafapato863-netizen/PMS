@@ -164,8 +164,9 @@ export default function ScoreTrendChart({ points, comparisonLabel, title }: {
         {range && <span className="rounded-[6px] bg-[var(--exec-chip-bg)] px-[8px] py-[3px] text-[11px] font-medium text-[var(--exec-chip-text)]">{range}</span>}
       </div>
 
+      <div ref={boxRef} className="w-full" style={{ height: CHART_HEIGHT }}>
       {measuredIndexes.length ? (
-        <div ref={boxRef} className="relative w-full" style={{ height: CHART_HEIGHT }}>
+        <div className="relative w-full" style={{ height: CHART_HEIGHT }}>
           <svg
             role="group"
             aria-label={description}
@@ -316,6 +317,7 @@ export default function ScoreTrendChart({ points, comparisonLabel, title }: {
           <p className="max-w-[260px] text-[11px] text-[var(--text-muted)]">No measured score in the last six months.</p>
         </div>
       )}
+      </div>
 
       <div className="flex flex-wrap items-center gap-[14px] text-[11px] text-[var(--text-secondary)]">
         <span className="inline-flex items-center gap-[6px]"><span className="size-[8px] rounded-full bg-[var(--insights-accent)]" />Score</span>
