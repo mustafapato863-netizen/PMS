@@ -663,3 +663,333 @@ def test_all_teams_view_rolls_up_every_team_and_level():
     assert workspace.executive_story.current_score == 75.0
     assert {summary.team for summary in workspace.team_summaries} == {"Inbound", "Outbound", "Marketing"}
 
+
+
+# --- Dependent (cascading) filter options, functions and the function param ---
+
+from fastapi import HTTPException
+
+import api.routers.insights as insights_router_module
+from utils.report_scope import (
+    filter_records_by_scope,
+    filter_records_by_team_levels,
+    function_for_team,
+    functions_for_team,
+)
+
+
+def _scoped_record(
+    employee_id: str,
+    team: str,
+    *,
+    region: str = "UAE",
+    level: str = "Employee",
+    month: str = "June",
+    score: float = 80,
+) -> PerformanceRecord:
+    record = _call_center_record(employee_id, team, level, score, month=month)
+    record.region = region
+    return record
+
+
+def _scope_enforcing_service(records):
+    """Service whose authorized records go through the real scope filters."""
+    repository = StubRepository(records)
+    service = InsightsService(repository, PlanningService(repository))
+
+    def authorized(scope):
+        scoped = filter_records_by_scope(records, scope)
+        return filter_records_by_team_levels(scoped, scope), 0
+
+    service._authorized_records = authorized
+    return service
+
+
+def _manager_scope(*teams: str, levels: list[tuple[str, str]] | None = None) -> dict:
+    return _scope() | {
+        "role": "Manager",
+        "has_unrestricted_team_access": False,
+        "accessible_teams": list(teams),
+        "accessible_team_levels": levels or [],
+    }
+
+
+def _cascade_records() -> list[PerformanceRecord]:
+    return [
+        _scoped_record("I1", "Inbound", region="EGY", level="Employee"),
+        _scoped_record("O1", "Outbound", region="EGY", level="Managerial"),
+        _scoped_record("C1", "Coding", region="UAE", level="Employee"),
+        _scoped_record("P1", "Pre-Approvals OP Dubai", region="UAE", level="Corporate"),
+        _scoped_record("M1", "Marketing", region="EGY", level="Corporate"),
+    ]
+
+
+def _freeze_today(monkeypatch, year: int = 2026, month: int = 10, day: int = 6) -> None:
+    class FakeDate(date):
+        @classmethod
+        def today(cls):
+            return cls(year, month, day)
+
+    monkeypatch.setattr(insights_service_module, "date", FakeDate)
+
+
+def test_function_for_team_maps_source_teams_to_parent_domains():
+    assert function_for_team("Inbound") == "Call Center"
+    assert function_for_team("Outbound") == "Call Center"
+    assert function_for_team("Call Center") == "Call Center"
+    assert function_for_team("Coding") == "RCM"
+    assert function_for_team("Re-Submission") == "RCM"
+    assert function_for_team("Pre-Approvals IP Offshore") == "RCM"
+    assert function_for_team("Pre-Approvals OP Dubai") == "RCM"
+    assert function_for_team("Marketing") == "Marketing"
+    assert function_for_team("") is None
+    # UAE pre-approvals roll up into RCM and the narrower Pre-Approvals function.
+    assert functions_for_team("pre-approvals ip final dubai") == ["RCM", "Pre-Approvals"]
+    assert functions_for_team("Pre-Approvals IP Offshore") == ["RCM"]
+    assert functions_for_team("Inbound UAE") == ["Inbound UAE"]
+
+
+def test_region_options_follow_selected_team_and_level():
+    service = _service(_cascade_records())
+
+    unfiltered = service.generate_workspace(_scope(), month="June", year=2026)
+    by_team = service.generate_workspace(_scope(), month="June", year=2026, team="Coding")
+    by_level = service.generate_workspace(_scope(), month="June", year=2026, performance_level="Corporate")
+    own_region = service.generate_workspace(_scope(), month="June", year=2026, region="EGY")
+
+    assert unfiltered.options.regions == ["EGY", "UAE"]
+    assert by_team.options.regions == ["UAE"]
+    assert by_level.options.regions == ["EGY", "UAE"]
+    # The region list ignores its own selection so the user can switch regions.
+    assert own_region.options.regions == ["EGY", "UAE"]
+    level_and_team = service.generate_workspace(
+        _scope(), month="June", year=2026, team="Call Center", performance_level="Managerial"
+    )
+    assert level_and_team.options.regions == ["EGY"]
+
+
+def test_team_options_follow_selected_region_and_level_but_not_team():
+    service = _service(_cascade_records())
+
+    by_region_level = service.generate_workspace(
+        _scope(), month="June", year=2026, region="EGY", performance_level="Corporate"
+    )
+    by_level = service.generate_workspace(_scope(), month="June", year=2026, performance_level="Employee")
+    own_team = service.generate_workspace(_scope(), month="June", year=2026, team="Coding")
+
+    assert by_region_level.options.teams == ["Marketing"]
+    assert by_level.options.teams == ["Coding", "Inbound"]
+    assert own_team.options.teams == ["Coding", "Inbound", "Marketing", "Outbound", "Pre-Approvals OP Dubai"]
+
+
+def test_level_options_follow_selected_region_and_team_but_not_level():
+    service = _service(_cascade_records())
+
+    by_region = service.generate_workspace(_scope(), month="June", year=2026, region="UAE")
+    by_region_team = service.generate_workspace(
+        _scope(), month="June", year=2026, region="EGY", team="Call Center"
+    )
+    own_level = service.generate_workspace(_scope(), month="June", year=2026, performance_level="Employee")
+
+    assert by_region.options.performance_levels == ["Corporate", "Employee"]
+    assert by_region_team.options.performance_levels == ["Employee", "Managerial"]
+    assert own_level.options.performance_levels == ["Corporate", "Employee", "Managerial"]
+
+
+def test_options_are_limited_to_current_period_while_periods_stay_unrestricted(monkeypatch):
+    _freeze_today(monkeypatch)
+    records = [
+        _scoped_record("I1", "Inbound", region="EGY", level="Employee", month="May"),
+        _scoped_record("S1", "Sales", region="UAE", level="Managerial", month="May"),
+        _scoped_record("I1", "Inbound", region="EGY", level="Employee", month="June"),
+    ]
+    records[1].position = "Closer"
+    service = _service(records)
+
+    default_period = service.generate_workspace(_scope())
+    may = service.generate_workspace(_scope(), month="May", year=2026)
+
+    # Default period resolves to the latest completed month, like the workspace body.
+    assert default_period.comparison.current.month == "June"
+    assert [period.month for period in default_period.options.periods] == ["June", "May"]
+    assert default_period.options.regions == ["EGY"]
+    assert default_period.options.teams == ["Inbound"]
+    assert default_period.options.performance_levels == ["Employee"]
+    assert default_period.options.positions == ["Agent"]
+    assert default_period.options.functions == ["Call Center"]
+    assert [item["id"] for item in default_period.options.employees] == ["I1"]
+
+    assert [period.month for period in may.options.periods] == ["June", "May"]
+    assert may.options.regions == ["EGY", "UAE"]
+    assert may.options.teams == ["Inbound", "Sales"]
+    assert may.options.performance_levels == ["Employee", "Managerial"]
+    assert may.options.positions == ["Agent", "Closer"]
+    assert may.options.functions == ["Call Center", "Sales"]
+
+
+def test_default_period_follows_selected_scope_like_the_workspace(monkeypatch):
+    _freeze_today(monkeypatch)
+    records = [
+        _scoped_record("S1", "Sales", region="UAE", level="Managerial", month="May"),
+        _scoped_record("I1", "Inbound", region="EGY", level="Employee", month="June"),
+    ]
+
+    workspace = _service(records).generate_workspace(_scope(), team="Sales")
+
+    assert workspace.comparison.current.month == "May"
+    assert workspace.options.performance_levels == ["Managerial"]
+    assert workspace.options.regions == ["UAE"]
+
+
+def test_functions_and_team_functions_are_reported_for_available_teams():
+    workspace = _service(_cascade_records()).generate_workspace(_scope(), month="June", year=2026)
+
+    assert workspace.options.functions == ["Call Center", "Marketing", "Pre-Approvals", "RCM"]
+    assert workspace.options.team_functions == {
+        "Coding": ["RCM"],
+        "Inbound": ["Call Center"],
+        "Marketing": ["Marketing"],
+        "Outbound": ["Call Center"],
+        "Pre-Approvals OP Dubai": ["RCM", "Pre-Approvals"],
+    }
+    assert set(workspace.options.team_functions) == set(workspace.options.teams)
+
+
+def test_functions_follow_region_and_level_but_not_team_or_function():
+    service = _service(_cascade_records())
+
+    by_region = service.generate_workspace(_scope(), month="June", year=2026, region="EGY")
+    by_level = service.generate_workspace(_scope(), month="June", year=2026, performance_level="Employee")
+    by_team = service.generate_workspace(_scope(), month="June", year=2026, team="Coding")
+    by_function = service.generate_workspace(_scope(), month="June", year=2026, function="RCM")
+
+    assert by_region.options.functions == ["Call Center", "Marketing"]
+    assert by_level.options.functions == ["Call Center", "RCM"]
+    assert by_team.options.functions == ["Call Center", "Marketing", "Pre-Approvals", "RCM"]
+    assert by_function.options.functions == ["Call Center", "Marketing", "Pre-Approvals", "RCM"]
+
+
+def test_function_param_filters_workspace_and_narrows_dependent_options():
+    service = _service(_cascade_records())
+
+    workspace = service.generate_workspace(_scope(), month="June", year=2026, function="Call Center")
+
+    assert {summary.team for summary in workspace.team_summaries} == {"Inbound", "Outbound"}
+    assert workspace.options.teams == ["Inbound", "Outbound"]
+    assert workspace.options.regions == ["EGY"]
+    assert workspace.options.performance_levels == ["Employee", "Managerial"]
+    assert {item["id"] for item in workspace.options.employees} == {"I1", "O1"}
+
+    rcm = service.generate_workspace(_scope(), month="June", year=2026, function="RCM")
+    assert {summary.team for summary in rcm.team_summaries} == {"Coding", "Pre-Approvals OP Dubai"}
+
+    pre_approvals = service.generate_workspace(_scope(), month="June", year=2026, function="Pre-Approvals")
+    assert {summary.team for summary in pre_approvals.team_summaries} == {"Pre-Approvals OP Dubai"}
+
+    # A team and a function combine as an intersection.
+    coding_in_rcm = service.generate_workspace(
+        _scope(), month="June", year=2026, function="RCM", team="Coding"
+    )
+    assert {summary.team for summary in coding_in_rcm.team_summaries} == {"Coding"}
+    mismatch = service.generate_workspace(
+        _scope(), month="June", year=2026, function="Call Center", team="Coding"
+    )
+    assert mismatch.team_summaries == []
+
+
+def test_manager_function_param_is_limited_to_assigned_teams():
+    service = _scope_enforcing_service(_cascade_records())
+    manager = _manager_scope("Coding")
+
+    workspace = service.generate_workspace(manager, month="June", year=2026, function="RCM")
+
+    # RCM also covers Pre-Approvals OP Dubai, but the manager only owns Coding.
+    assert {summary.team for summary in workspace.team_summaries} == {"Coding"}
+    assert workspace.options.teams == ["Coding"]
+    assert workspace.options.functions == ["RCM"]
+    assert workspace.options.team_functions == {"Coding": ["RCM"]}
+    assert {item["id"] for item in workspace.options.employees} == {"C1"}
+    assert all(item.team in {None, "Coding"} for item in workspace.priority_insights)
+
+
+def test_manager_function_outside_assigned_teams_is_rejected():
+    service = _scope_enforcing_service(_cascade_records())
+
+    for blocked in ("Call Center", "Marketing", "Pre-Approvals"):
+        try:
+            service.generate_workspace(_manager_scope("Coding"), month="June", year=2026, function=blocked)
+        except InsightAccessError:
+            continue
+        raise AssertionError(f"Expected function {blocked!r} to be rejected for a Coding manager")
+
+
+def test_manager_function_respects_assigned_team_levels():
+    records = [
+        _scoped_record("C1", "Coding", level="Employee"),
+        _scoped_record("C2", "Coding", level="Managerial"),
+        _scoped_record("P1", "Pre-Approvals OP Dubai", level="Employee"),
+    ]
+    service = _scope_enforcing_service(records)
+    manager = _manager_scope("Coding", levels=[("Coding", "Employee")])
+
+    workspace = service.generate_workspace(manager, month="June", year=2026, function="RCM")
+
+    assert sum(summary.total_employees for summary in workspace.team_summaries) == 1
+    assert workspace.options.performance_levels == ["Employee"]
+    assert {item["id"] for item in workspace.options.employees} == {"C1"}
+
+
+def test_unrestricted_users_see_every_team_in_a_function():
+    service = _scope_enforcing_service(_cascade_records())
+    general_manager = _scope() | {"role": "General Manager", "has_unrestricted_team_access": True}
+    unrestricted_manager = _manager_scope("Coding") | {"has_unrestricted_team_access": True}
+
+    for scope in (general_manager, unrestricted_manager):
+        workspace = service.generate_workspace(scope, month="June", year=2026, function="RCM")
+        assert {summary.team for summary in workspace.team_summaries} == {"Coding", "Pre-Approvals OP Dubai"}
+        assert workspace.options.functions == ["Call Center", "Marketing", "Pre-Approvals", "RCM"]
+        call_center = service.generate_workspace(scope, month="June", year=2026, function="Call Center")
+        assert {summary.team for summary in call_center.team_summaries} == {"Inbound", "Outbound"}
+
+
+def test_filter_options_new_fields_default_empty_for_backward_compatibility():
+    from models.insight_schemas import InsightFilterOptions
+
+    options = InsightFilterOptions()
+
+    assert options.functions == []
+    assert options.team_functions == {}
+    assert {"periods", "regions", "teams", "performance_levels", "positions", "employees", "kpis"} <= set(options.model_dump())
+
+
+def test_router_forwards_function_and_maps_scope_errors(monkeypatch):
+    captured: dict = {}
+
+    class FakeService:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def generate_workspace(self, scope, **filters):
+            captured.update(filters)
+            if filters.get("function") == "Call Center":
+                raise InsightAccessError("The selected function is outside the authorized insights scope")
+            return _service(_cascade_records()).generate_workspace(_scope(), **filters)
+
+    monkeypatch.setattr(insights_router_module, "InsightsService", FakeService)
+    monkeypatch.setattr(insights_router_module, "require_authenticated_scope", lambda _db, _request: _manager_scope("Coding"))
+    params = dict(
+        month="June", year=2026, region=None, team=None, performance_level=None, position=None,
+        employee_id=None, kpi=None, severity=None, insight_type=None, status_filter=None,
+        view="full", _role="Manager",
+    )
+
+    response = insights_router_module.get_insights_workspace(request=None, db=None, function="RCM", **params)
+
+    assert captured["function"] == "RCM"
+    assert response.data.options.functions
+    try:
+        insights_router_module.get_insights_workspace(request=None, db=None, function="Call Center", **params)
+    except HTTPException as exc:
+        assert exc.status_code == 403
+    else:
+        raise AssertionError("Expected a 403 for a function outside the caller's scope")

@@ -188,6 +188,20 @@ class InsightKpiTrend(BaseModel):
     points: list[InsightKpiTrendPoint] = Field(default_factory=list)
 
 
+class InsightOverallTrendPoint(BaseModel):
+    """Overall average score for one month of the Insights trend window.
+
+    ``score`` uses the same filtered, access-checked record set and averaging
+    rule as ``executive_story.current_score`` so the last point always equals
+    the Executive Summary's current score.
+    """
+
+    period: InsightPeriod
+    score: float | None = None
+    target: float | None = 100.0
+    measured_records: int = 0
+
+
 class InsightRoleSummary(BaseModel):
     role: str
     team: str
@@ -227,6 +241,11 @@ class InsightFilterOptions(BaseModel):
     severities: list[str] = Field(default_factory=lambda: ["critical", "risk", "opportunity", "information"])
     insight_types: list[str] = Field(default_factory=lambda: ["performance", "kpi_driver", "employee_risk", "opportunity", "data_quality"])
     statuses: list[str] = Field(default_factory=lambda: ["open"])
+    # Parent domains (Call Center / RCM / Pre-Approvals, or a standalone team)
+    # resolved through ``utils.report_scope.functions_for_team``. Additive and
+    # empty by default so existing consumers keep working unchanged.
+    functions: list[str] = Field(default_factory=list)
+    team_functions: dict[str, list[str]] = Field(default_factory=dict)
 
 
 class InsightComparison(BaseModel):
@@ -249,6 +268,7 @@ class InsightsWorkspace(BaseModel):
     executive_story: InsightExecutiveStory | None = None
     people_contribution_analysis: InsightPeopleContributionAnalysis | None = None
     kpi_trend: InsightKpiTrend | None = None
+    overall_trend: list[InsightOverallTrendPoint] = Field(default_factory=list)
     role_summaries: list[InsightRoleSummary] = Field(default_factory=list)
     kpi_overview: InsightKpiOverview = Field(default_factory=InsightKpiOverview)
     options: InsightFilterOptions
