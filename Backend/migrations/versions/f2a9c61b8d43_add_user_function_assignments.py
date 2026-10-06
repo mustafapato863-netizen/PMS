@@ -1,7 +1,7 @@
 """Add persisted per-user function access grants.
 
 Revision ID: f2a9c61b8d43
-Revises: a6d4e8f1c220, e8c1a7d4b920
+Revises: d7a4c8b1e650, e8c1a7d4b920
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ from sqlalchemy.dialects import postgresql
 
 
 revision = "f2a9c61b8d43"
-down_revision = ("a6d4e8f1c220", "e8c1a7d4b920")
+down_revision = ("d7a4c8b1e650", "e8c1a7d4b920")
 branch_labels = None
 depends_on = None
 
