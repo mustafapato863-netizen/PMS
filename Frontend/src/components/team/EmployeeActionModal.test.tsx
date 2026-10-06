@@ -76,6 +76,7 @@ describe('EmployeeActionModal', () => {
 
   it('reveals tracking fields and requires a due date before saving', async () => {
     const user = userEvent.setup();
+    const dueDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(
       <QueryClientProvider client={client}>
@@ -95,12 +96,12 @@ describe('EmployeeActionModal', () => {
     expect(screen.getByText('A due date is required to track this action.')).toBeInTheDocument();
     expect(saveAction).not.toHaveBeenCalled();
 
-    fireEvent.change(screen.getByLabelText('Due date'), { target: { value: '2026-10-01' } });
+    fireEvent.change(screen.getByLabelText('Due date'), { target: { value: dueDate } });
     await user.selectOptions(screen.getByLabelText('Owner'), 'owner-1');
     await user.selectOptions(screen.getByLabelText('Priority'), 'High');
     await user.click(screen.getByRole('button', { name: 'Save Action' }));
     expect(saveAction).toHaveBeenCalledWith(expect.objectContaining({
-      due_date: '2026-10-01',
+      due_date: dueDate,
       owner_user_id: 'owner-1',
       priority: 'High',
       action_text: 'Coach the booking script',
