@@ -1,5 +1,5 @@
-import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { act, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ExecutiveTrendPoint } from '../../../features/executive/types';
 import ScoreTrendChart from './ScoreTrendChart';
 
@@ -23,6 +23,25 @@ const points = [
 ];
 
 describe('ScoreTrendChart', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('keeps observing the chart container when an empty filter gains data', () => {
+    const observed: Element[] = [];
+    let resize: ResizeObserverCallback | undefined;
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(callback: ResizeObserverCallback) { resize = callback; }
+      observe(element: Element) { observed.push(element); }
+      disconnect() {}
+    });
+    const { rerender } = render(<ScoreTrendChart points={[]} title="Performance" />);
+    expect(observed).toHaveLength(1);
+    rerender(<ScoreTrendChart points={points} title="Performance" />);
+    const chart = screen.getByTestId('executive-trend-chart');
+    expect(observed[0]).toContainElement(chart);
+    act(() => resize?.([{ contentRect: { width: 320 } } as ResizeObserverEntry], {} as ResizeObserver));
+    expect(chart).toHaveAttribute('width', '320');
+  });
+
   it('shows a point tooltip and moves between measured months with the keyboard', () => {
     render(<ScoreTrendChart points={points} title="Performance" comparisonLabel="Company average" />);
 
