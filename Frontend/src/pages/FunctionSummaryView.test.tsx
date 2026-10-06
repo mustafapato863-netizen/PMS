@@ -31,6 +31,15 @@ vi.mock('../features/executive/useExecutiveSummary', () => ({
   },
 }));
 
+vi.mock('../hooks/usePerformanceData', () => ({
+  usePerformanceData: () => ({ agents: [], loading: false }),
+  mapScopedPerformanceRecord: (record: unknown) => record,
+}));
+vi.mock('../hooks/api/usePerformanceDashboard', () => ({
+  scopedPerformanceApiEnabled: false,
+  useScopedEmployeePerformanceHistory: () => ({ data: undefined, isFetching: false, isError: false }),
+}));
+
 const TODAY = new Date(2026, 6, 6);
 const records = toExecRecords(fixtureAgentRecords());
 const build = (patch: Partial<ComposeInput> = {}) => composeExecutiveSummary({
