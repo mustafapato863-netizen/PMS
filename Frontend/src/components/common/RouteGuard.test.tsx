@@ -11,20 +11,20 @@ vi.mock('../../context/RoleContext', () => ({
 }));
 
 const PRODUCT = ['Admin', 'General Manager'];
-const REPORTS = ['Admin', 'General Manager', 'Manager', 'Executive', 'Viewer'];
 
 /** Mirrors the guard configuration used in App.tsx for the routes under test. */
 const renderAt = (path: string) => render(
   <MemoryRouter initialEntries={[path]}>
     <Routes>
       <Route path="/executive" element={<p>Executive page</p>} />
-      <Route path="/reports" element={<RouteGuard allowedRoles={REPORTS}><p>Reports page</p></RouteGuard>} />
+      <Route path="/reports" element={<RouteGuard allowedRoles={ROUTE_ROLES.reports}><p>Reports page</p></RouteGuard>} />
       <Route path="/reports/new" element={<RouteGuard allowedRoles={PRODUCT}><p>Report builder</p></RouteGuard>} />
       <Route path="/reports/:reportId/edit" element={<RouteGuard allowedRoles={PRODUCT}><p>Report editor</p></RouteGuard>} />
       <Route path="/insights" element={<RouteGuard allowedRoles={ROUTE_ROLES.insights}><p>Insights page</p></RouteGuard>} />
       <Route path="/planning" element={<RouteGuard allowedRoles={ROUTE_ROLES.planning}><p>Planning page</p></RouteGuard>} />
       <Route path="/corrective-actions" element={<RouteGuard allowedRoles={ROUTE_ROLES.correctiveActions}><p>Corrective actions page</p></RouteGuard>} />
       <Route path="/team-management" element={<RouteGuard allowedRoles={PRODUCT}><p>Team management page</p></RouteGuard>} />
+      <Route path="/function-summary/:functionSlug" element={<RouteGuard allowedRoles={ROUTE_ROLES.functionSummary}><p>Function summary page</p></RouteGuard>} />
     </Routes>
   </MemoryRouter>,
 );
@@ -72,5 +72,31 @@ describe('RouteGuard with the General Manager role string', () => {
     roleState.role = 'Executive';
     renderAt('/corrective-actions');
     expect(screen.getByText('Corrective actions page')).toBeInTheDocument();
+  });
+});
+
+describe('Function Summary route (PR B)', () => {
+  it.each(['Admin', 'General Manager', 'Function Viewer'])('%s opens /function-summary/:slug', (role) => {
+    roleState.role = role;
+    renderAt('/function-summary/rcm');
+    expect(screen.getByText('Function summary page')).toBeInTheDocument();
+  });
+
+  it.each(['Manager', 'Executive', 'Viewer', 'Agent'])('%s is redirected away from /function-summary', (role) => {
+    roleState.role = role;
+    renderAt('/function-summary/rcm');
+    expect(screen.queryByText('Function summary page')).not.toBeInTheDocument();
+  });
+
+  it('lets a Function Viewer open the reports library but not the builder, planning or corrective actions', () => {
+    roleState.role = 'Function Viewer';
+    const { unmount } = renderAt('/reports');
+    expect(screen.getByText('Reports page')).toBeInTheDocument();
+    unmount();
+    for (const path of ['/reports/new', '/planning', '/corrective-actions', '/team-management']) {
+      const view = renderAt(path);
+      expect(screen.getByText('Executive page')).toBeInTheDocument();
+      view.unmount();
+    }
   });
 });

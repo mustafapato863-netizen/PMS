@@ -75,7 +75,7 @@ function driverImpactOrZero(driver: ExecutiveDriver, side: 'negative' | 'positiv
   return driverImpact(driver, side, metric) ?? 0;
 }
 
-export default function DriversCard({ summary, viewAllHref }: { summary: ExecutiveSummary; viewAllHref: string | null }) {
+export default function DriversCard({ summary, viewAllHref, title }: { summary: ExecutiveSummary; viewAllHref: string | null; title?: string }) {
   const { drivers, meta, period } = summary;
   const previous = period.previous ? period.previous.month : 'last month';
   const unavailable = meta.unavailable.includes('drivers');
@@ -87,7 +87,7 @@ export default function DriversCard({ summary, viewAllHref }: { summary: Executi
         icon={Activity}
         iconBg="var(--exec-neg-bg)"
         iconColor="var(--insights-negative)"
-        title={`What moved the score vs ${previous.slice(0, 3)}`}
+        title={title ?? `What moved the score vs ${previous.slice(0, 3)}`}
         subtitle="Direction-aware: colour shows good/bad, arrow shows the KPI's actual movement"
         action={viewAllHref ? <Link to={viewAllHref} className="inline-flex shrink-0 items-center rounded-[8px] border border-[var(--insights-accent-border)] bg-[var(--insights-accent-soft)] px-[10px] py-[6px] text-[12px] font-semibold text-[var(--insights-accent-text)]">View all drivers</Link> : null}
       />

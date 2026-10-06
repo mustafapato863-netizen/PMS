@@ -1,10 +1,10 @@
-import { Activity, Calendar, Layers, Upload, Users, type LucideIcon } from 'lucide-react';
+import { Activity, Calendar, Layers, TrendingUp, Upload, Users, type LucideIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { getGradeTone } from '../../../constants/grades';
 import type { ExecutiveSummary } from '../../../features/executive/types';
 import { arrow, fmtDate, fmtScore, fmtSigned, scoreTone, toneColor } from '../../../features/executive/format';
 import { formatPeriod } from '../../../features/executive/compose';
-import { Chip, GradePill } from './ExecPrimitives';
+import { Chip, GradePill, StatusPill } from './ExecPrimitives';
 import ScoreTrendChart from './ScoreTrendChart';
 import { heroHeadline, heroNarrative } from './execModel';
 
@@ -38,7 +38,8 @@ export default function ExecutiveHero({ summary }: { summary: ExecutiveSummary }
   const previousLabel = period.previous ? `vs ${formatPeriod(period.previous)}` : 'vs last month';
   const comparison = hero.comparison;
   const upload = !meta.unavailable.includes('upload_meta') ? status.last_upload : null;
-  const chartTitle = scope.view === 'corporate' ? 'Company score — last 6 months' : scope.view === 'managerial' ? 'Team score — last 6 months' : 'Function score — last 6 months';
+  const isFunction = scope.view === 'function';
+  const chartTitle = scope.view === 'corporate' ? 'Company score — last 6 months' : scope.view === 'managerial' ? 'Team score — last 6 months' : `${hero.label} score — last 6 months`;
 
   return (
     <section aria-labelledby="exec-hero-title" className="grid gap-[24px] rounded-[12px] border border-[var(--insights-summary-border)] bg-[var(--insights-summary-bg)] px-[28px] py-[24px] shadow-[var(--insights-summary-shadow)] xl:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
@@ -47,17 +48,23 @@ export default function ExecutiveHero({ summary }: { summary: ExecutiveSummary }
           <span aria-hidden="true" className="flex size-[26px] items-center justify-center rounded-[7px] bg-[var(--insights-accent-tag)]">
             <EyebrowIcon className="size-[14px] text-[var(--insights-accent)]" strokeWidth={2} />
           </span>
-          <span className="text-[10px] font-semibold uppercase tracking-[0.6px] text-[var(--insights-accent-text)]">{eyebrow.label}</span>
+          <span className="text-[10px] font-semibold uppercase tracking-[0.6px] text-[var(--insights-accent-text)]">{scope.view === 'function' ? `${hero.label} function` : eyebrow.label}</span>
           <GradePill score={hero.score} />
+          {scope.view === 'function' && summary.highlights.most_improved?.name === hero.label && <StatusPill tone="success" icon={TrendingUp}>Most improved</StatusPill>}
         </div>
         <h2 id="exec-hero-title" className="text-[26px] font-bold leading-[1.3] text-[var(--insights-heading)]">{heroHeadline(summary)}</h2>
         {narrative && <p className="text-[13px] leading-[1.5] text-[var(--text-secondary)]">{narrative}</p>}
         <div className="flex flex-wrap items-start gap-x-[18px] gap-y-[12px]">
-          <Stat label="Current" value={fmtScore(hero.score)} valueColor={tone.text} sub={tone.grade ? `${tone.grade} · ${tone.label}` : 'No grade'} subColor={tone.text} />
+          <Stat label={isFunction ? 'Function score' : 'Current'} value={fmtScore(hero.score)} valueColor={tone.text} sub={tone.grade ? `${tone.grade} · ${tone.label}` : 'No grade'} subColor={tone.text} />
           <Divider />
-          <Stat label="Target" value={fmtScore(hero.target, 1)} valueColor="var(--insights-heading)" sub={scope.view === 'corporate' ? 'Company-wide' : 'Score target'} />
-          <Divider />
-          <Stat label="Gap" value={fmtSigned(hero.gap)} valueColor={hero.gap !== null && hero.gap < 0 ? 'var(--insights-negative)' : 'var(--insights-positive)'} sub="score − target" />
+          {/* Function view (Figma 48:3): no separate Target tile; the gap names the target. */}
+          {!isFunction && (
+            <>
+              <Stat label="Target" value={fmtScore(hero.target, 1)} valueColor="var(--insights-heading)" sub={scope.view === 'corporate' ? 'Company-wide' : 'Score target'} />
+              <Divider />
+            </>
+          )}
+          <Stat label="Gap" value={fmtSigned(hero.gap)} valueColor={hero.gap !== null && hero.gap < 0 ? 'var(--insights-negative)' : 'var(--insights-positive)'} sub={isFunction ? `vs target ${fmtScore(hero.target, 0)}` : 'score − target'} />
           <Divider />
           <Stat
             label={previousLabel}
@@ -70,7 +77,7 @@ export default function ExecutiveHero({ summary }: { summary: ExecutiveSummary }
             <>
               <Divider />
               <Stat
-                label={`vs ${comparison.label}`}
+                label={isFunction ? 'vs Company' : `vs ${comparison.label}`}
                 value={fmtSigned(comparison.difference)}
                 valueColor={toneColor(scoreTone(comparison.difference))}
                 sub={`${comparison.label}: ${fmtScore(comparison.score)}`}

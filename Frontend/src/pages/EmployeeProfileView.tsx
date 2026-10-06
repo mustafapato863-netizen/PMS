@@ -12,6 +12,8 @@ import { useActionStore } from '../hooks/useActionStore';
 import { useMonthParam } from '../hooks/useMonthParam';
 import { usePerformanceLevelParam } from '../hooks/usePerformanceLevelParam';
 import { useUserRole } from '../context/RoleContext';
+import { useFunctionScope } from '../features/executive/useFunctionScope';
+import FunctionScopeNotice from '../components/common/FunctionScopeNotice';
 import ScoreTrendChart from '../components/employee/ScoreTrendChart';
 import KpiBreakdownPanel from '../components/employee/KpiBreakdownPanel';
 import ActionTimeline from '../components/employee/ActionTimeline';
@@ -172,6 +174,7 @@ const EmployeeProfileView = () => {
   const { month } = useMonthParam('All');
   const { performanceLevel } = usePerformanceLevelParam('All');
   const { role } = useUserRole();
+  const functionScope = useFunctionScope();
 
   const [weightsList, setWeightsList] = useState<TeamWeightConfig[]>([]);
   useEffect(() => {
@@ -523,6 +526,11 @@ const EmployeeProfileView = () => {
   const activeMonth = month === 'All'
     ? (orderedProfileHistory[0]?.month || 'January')
     : month;
+
+  // Function Viewer: read-only, and only employees whose team is in its functions.
+  if (employee && !functionScope.allowsTeam(employee.team)) {
+    return <FunctionScopeNotice subject={`${employee.name || 'This employee'} (${employee.team})`} allowed={functionScope.allowed} />;
+  }
 
   return (
     <motion.div

@@ -1,6 +1,7 @@
 import { INSIGHT_FUNCTIONS, teamBelongsToFunction, type TeamFunctionMap } from '../insights/filterCascade';
 import type { ExecutiveFunction } from './types';
 import { isPreApprovalsUaeTeam } from '../../types';
+import { isFunctionViewerRole } from '../../lib/access';
 
 const IP_OFFSHORE_TEAM = 'Pre-Approvals IP Offshore';
 const normalizeTeamIdentity = (value: string | null | undefined) => String(value ?? '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '');
@@ -50,4 +51,34 @@ export function functionFromSlug(slug: string | null | undefined): ExecutiveFunc
 
 export function isExecutiveFunction(value: string | null | undefined): value is ExecutiveFunction {
   return EXECUTIVE_FUNCTIONS.some((name) => name === value);
+}
+
+/** Team dashboard path, same slug rule as the sidebar team links. */
+export function teamPath(team: string): string {
+  return `/team/${team.trim().toLowerCase().replace(/&/g, 'and').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')}`;
+}
+
+/**
+ * Functions a viewer may open on the Function Summary. Admin / GM: all four.
+ * Function Viewer: `accessible_functions` from /auth/me when the backend sends
+ * it (unknown names dropped), otherwise all four (backend scopes the data).
+ */
+export function allowedFunctionsFor(role: string | null | undefined, accessibleFunctions: string[] = []): ExecutiveFunction[] {
+  if (!isFunctionViewerRole(role) || !accessibleFunctions.length) return [...EXECUTIVE_FUNCTIONS];
+  const wanted = new Set(accessibleFunctions.map((name) => name.trim().toLowerCase()));
+  return EXECUTIVE_FUNCTIONS.filter((fn) => wanted.has(fn.toLowerCase()));
+}
+
+/**
+ * Function Viewer page scope (team dashboard / employee profile). Lenient on
+ * purpose: a team is in scope when its disjoint executive function OR any
+ * backend `team_functions` membership matches an allowed function (so an RCM
+ * viewer can still open a UAE Pre-Approvals team the backend lists under RCM).
+ * The backend must enforce the same rule on the data endpoints.
+ */
+export function isTeamInFunctions(team: string | null | undefined, allowed: readonly ExecutiveFunction[], teamFunctions?: TeamFunctionMap): boolean {
+  if (!team) return false;
+  const primary = executiveFunctionForTeam(team, teamFunctions);
+  if (primary && allowed.includes(primary)) return true;
+  return allowed.some((fn) => teamBelongsToFunction(team, fn, teamFunctions));
 }

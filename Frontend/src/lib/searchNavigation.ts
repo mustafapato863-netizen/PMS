@@ -1,6 +1,7 @@
 import { TEAM_ID_MAP, type User } from '../types';
 import {
   canAccessCorrectiveActions,
+  canAccessFunctionSummary,
   canAccessInsights,
   canAccessPlanning,
   canSeeReportsNav,
@@ -90,6 +91,17 @@ const baseNavigation = ({
       subtitle: 'Performance overview across all teams',
       icon: 'layout',
       path: '/executive',
+    });
+  }
+
+  if (canAccessFunctionSummary(role)) {
+    items.push({
+      id: 'nav-function-summary',
+      group: 'navigation',
+      label: 'Function Summary',
+      subtitle: 'Function score, teams, KPIs and drivers',
+      icon: 'layout',
+      path: '/function-summary',
     });
   }
 

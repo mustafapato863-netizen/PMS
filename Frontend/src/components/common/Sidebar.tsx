@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import {
-  CalendarCheck, ChevronDown, Gauge, LogOut, Settings, ShieldAlert, User, Users, UsersRound, X, Megaphone,
+  CalendarCheck, ChevronDown, Eye, Gauge, LogOut, Settings, ShieldAlert, User, Users, UsersRound, X, Megaphone,
   FileBarChart,
   Lightbulb,
   Building2,
@@ -28,8 +28,11 @@ import {
   canSeeReportsNav,
   getRoleDisplayLabel,
   hasAllTeamsScope,
+  isFunctionViewerRole,
   isManagerRole,
 } from '../../lib/access';
+import FunctionViewerNav from './FunctionViewerNav';
+import { useFunctionScope } from '../../features/executive/useFunctionScope';
 import { prepareBalancedScorecardTeamParams } from '../team/balancedScorecardNavigation';
 import SghHeartSvg from './SghHeartSvg';
 
@@ -64,6 +67,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed = false, onToggleCollapsed = (
   const { role } = useUserRole();
   const { currentUser, logout } = useAuth();
   const { data: performanceCatalog } = usePerformanceCatalog();
+  const functionScope = useFunctionScope();
   const [configured, setConfigured] = useState<Record<string, string[]>>({});
   const [managementTeams, setManagementTeams] = useState<Array<{
     id: string;
@@ -211,7 +215,9 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed = false, onToggleCollapsed = (
     );
   };
 
-  const canSeeBroadNavigation = role !== 'Agent';
+  // Function Viewer gets its own read-only navigation (FunctionViewerNav).
+  const isFunctionViewer = isFunctionViewerRole(role);
+  const canSeeBroadNavigation = role !== 'Agent' && !isFunctionViewer;
   const canSeeCorrectiveActions = canAccessCorrectiveActions(role);
   const roleLabel = getRoleDisplayLabel(role);
   const isManager = isManagerRole(role);
@@ -270,9 +276,16 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed = false, onToggleCollapsed = (
         </button>
       </div>
 
-      <div className={`mb-2 px-5 ${isCollapsed ? 'xl:hidden' : ''}`}><p className="text-label text-[0.625rem] text-[var(--text-faint)]">DASHBOARDS</p></div>
+      <div className={`mb-2 px-5 ${isCollapsed ? 'xl:hidden' : ''}`}><p className="text-label text-[0.625rem] text-[var(--text-faint)]">{isFunctionViewer ? 'FUNCTION VIEWER' : 'DASHBOARDS'}</p></div>
       <nav className="custom-scrollbar flex-1 space-y-0.5 overflow-y-auto px-2 pb-2">
-        {generalItems.map((item) => renderLink(item, undefined, false, item.resetQuery))}
+        {isFunctionViewer ? (
+          <FunctionViewerNav
+            allowed={functionScope.allowed}
+            catalogTeams={(performanceCatalog?.scopes || []).map((scope) => scope.team)}
+            renderLink={(item, nested) => renderLink(item, undefined, nested, true)}
+            isCollapsed={isCollapsed}
+          />
+        ) : generalItems.map((item) => renderLink(item, undefined, false, item.resetQuery))}
 
         {canSeeBroadNavigation && LEVELS.map((level) => {
           const regions = [
@@ -408,7 +421,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed = false, onToggleCollapsed = (
       <div className={`mt-auto shrink-0 space-y-2 border-t border-[var(--border-light)] p-3 ${isCollapsed ? 'xl:p-2' : ''}`}>
         <div className={isCollapsed ? 'sidebar-collapsed-theme' : ''}><ThemeToggle variant="pill" /></div>
         {/* Settings link for all non-Agent roles; SettingsView soft-locks non-Admins (General Manager included). */}
-        {role !== 'Agent' && renderLink({ name: 'Settings', path: '/settings', icon: <Settings size={18} /> })}
+        {role !== 'Agent' && !isFunctionViewer && renderLink({ name: 'Settings', path: '/settings', icon: <Settings size={18} /> })}
         <div className={`sidebar-user-menu flex items-center justify-between gap-2 rounded-xl border border-[var(--border-light)] bg-[var(--bg-raised)] p-2.5 shadow-sm ${isCollapsed ? 'xl:justify-center xl:p-2' : ''}`}>
           <div className={`flex min-w-0 items-center gap-2 ${isCollapsed ? 'xl:justify-center' : ''}`}>
             <div className="sidebar-user-avatar flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[11px] font-bold text-white shadow-sm" style={{ background: 'var(--sidebar-active-text)' }}>
@@ -416,7 +429,9 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed = false, onToggleCollapsed = (
             </div>
             <div className={`min-w-0 ${isCollapsed ? 'xl:hidden' : ''}`}>
               <p className="truncate text-xs font-bold text-[var(--text-primary)]">{currentUser?.name}</p>
-              <p className="mt-0.5 truncate text-[10px] font-semibold uppercase tracking-wider text-[var(--text-faint)]">{roleLabel}</p>
+              {isFunctionViewer
+                ? <p className="mt-0.5 flex items-center gap-1 truncate text-[10px] font-semibold uppercase tracking-wider text-[var(--text-faint)]"><Eye size={11} aria-hidden="true" /><span title={roleLabel}>Read-only</span><span className="sr-only"> · {roleLabel}</span></p>
+                : <p className="mt-0.5 truncate text-[10px] font-semibold uppercase tracking-wider text-[var(--text-faint)]">{roleLabel}</p>}
             </div>
           </div>
           <button onClick={logout} aria-label="Log out" title="Log out" data-tooltip="Log out" className="sidebar-logout-button sidebar-tooltip-trigger min-h-9 min-w-9 rounded-lg text-[var(--text-muted)] transition-colors hover:bg-red-100 hover:text-red-600">

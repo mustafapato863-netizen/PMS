@@ -38,7 +38,10 @@ export function heroHeadline(summary: ExecutiveSummary): string {
   if (hero.gap === null) return `${subject}: no score yet.`;
   const position = Math.abs(hero.gap) < 0.05 ? 'is on target' : `is ${Math.abs(hero.gap).toFixed(1)}% ${hero.gap < 0 ? 'below' : 'above'} target`;
   if (scope.view !== 'corporate' && hero.change !== null && period.previous && Math.abs(hero.change) >= 0.05) {
-    return `${hero.label} ${position} and ${hero.change < 0 ? 'slipped' : 'improved'} ${Math.abs(hero.change).toFixed(1)}% vs ${period.previous.month.slice(0, 3)}.`;
+    const vs = `${Math.abs(hero.change).toFixed(1)}% vs ${period.previous.month.slice(0, 3)}`;
+    if (scope.view === 'managerial') return `${hero.label} ${position} and ${hero.change < 0 ? 'slipped' : 'improved'} ${vs}.`;
+    const connector = (hero.gap < 0) === (hero.change < 0) ? 'and' : 'but';
+    return `${hero.label} ${position} ${connector} ${hero.change < 0 ? 'down' : 'up'} ${vs}.`;
   }
   return `${subject} ${position}.`;
 }
@@ -59,6 +62,17 @@ export function heroNarrative(summary: ExecutiveSummary): string | null {
     parts.unshift(Math.abs(comparison.difference) < 0.05
       ? `In line with the ${comparison.label}.`
       : `${Math.abs(comparison.difference).toFixed(1)}% ${comparison.difference > 0 ? 'above' : 'below'} the ${comparison.label}.`);
+  }
+  // Function view without driver analysis: name the leading and the lagging team.
+  if (summary.scope.view === 'function' && !drag?.kpi_label) {
+    const ranked = summary.teams.filter((team) => team.score !== null).sort((l, r) => (r.score ?? 0) - (l.score ?? 0));
+    const leader = ranked[0];
+    const laggard = ranked.length > 1 ? ranked[ranked.length - 1] : null;
+    if (leader) {
+      parts.push(laggard
+        ? `${leader.team} leads at ${(leader.score ?? 0).toFixed(1)}%; ${laggard.team}${laggard.flag_detail ? ` (${laggard.flag_detail.kpi_label})` : ''} is holding the function back.`
+        : `${leader.team} is at ${(leader.score ?? 0).toFixed(1)}%.`);
+    }
   }
   if (story?.most_improved && story.most_improved.change > 0 && summary.scope.view === 'corporate') {
     parts.push(`${story.most_improved.function} is the most improved function (${fmtSigned(story.most_improved.change)}).`);

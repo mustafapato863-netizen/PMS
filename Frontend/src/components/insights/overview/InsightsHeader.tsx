@@ -109,6 +109,7 @@ export default function InsightsHeader({
   titleBadge,
   locked,
   functionSlot,
+  teamAllLabel = 'All teams',
   groupLabel = 'Insights filters',
   periodAriaLabel = 'Insight period',
   rowFrom = 'xl',
@@ -135,6 +136,8 @@ export default function InsightsHeader({
   locked?: { region?: boolean; function?: boolean; team?: boolean };
   /** Replaces the Functions dropdown (Function Viewer's function switcher). */
   functionSlot?: ReactNode;
+  /** "All" entry of the Teams filter (Function Summary: "All RCM teams"). */
+  teamAllLabel?: string;
   groupLabel?: string;
   periodAriaLabel?: string;
   /** Breakpoint where title and filters share one row (longer titles need 2xl). */
@@ -172,7 +175,7 @@ export default function InsightsHeader({
           widthClass="w-[168px]"
           icon={<Layers className="size-[16px] text-[var(--insights-accent)]" strokeWidth={1.5} />}
         />}
-        <LabeledFilter label="Teams" ariaLabel="Team" value={team} options={teamOptions} allLabel="All teams" onChange={onTeamChange} widthClass="w-[168px]" menuMinWidth={260} locked={locked?.team} />
+        <LabeledFilter label="Teams" ariaLabel="Team" value={team} options={teamOptions} allLabel={teamAllLabel} onChange={onTeamChange} widthClass="w-[168px]" menuMinWidth={260} locked={locked?.team} />
         <LabeledFilter label="Levels" ariaLabel="Performance level" value={level} options={levelOptions} allLabel="All levels" onChange={onLevelChange} widthClass="w-[132px]" />
       </div>
     </header>

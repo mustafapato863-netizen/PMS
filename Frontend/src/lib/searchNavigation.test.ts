@@ -67,3 +67,21 @@ describe('buildLocalSearchResults access (General Manager role string)', () => {
     expect(label('Manager')).toBe('Assigned Teams');
   });
 });
+
+describe('buildLocalSearchResults for Function Viewer', () => {
+  it('offers Function Summary and Reports but no Executive Summary or broad pages', () => {
+    const paths = pathsFor(user('Function Viewer'));
+    expect(paths).toContain('/function-summary');
+    expect(paths).toContain('/reports');
+    for (const path of ['/executive', '/insights', '/planning', '/corrective-actions', '/team/all', ...SETTINGS_SHORTCUTS]) {
+      expect(paths).not.toContain(path);
+    }
+  });
+
+  it('offers Function Summary to Admin and General Manager, not to Manager or Executive', () => {
+    expect(pathsFor(user('Admin', true))).toContain('/function-summary');
+    expect(pathsFor(user('General Manager', true))).toContain('/function-summary');
+    expect(pathsFor(user('Manager'))).not.toContain('/function-summary');
+    expect(pathsFor(user('Executive'))).not.toContain('/function-summary');
+  });
+});

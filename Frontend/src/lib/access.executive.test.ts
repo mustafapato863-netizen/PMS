@@ -41,6 +41,13 @@ describe('Executive v1 access (Mustafa / CoS defaults)', () => {
     expect(canAccessInsights('Manager')).toBe(false);
   });
 
+  it('gives Function Viewer the Reports library but no Insights, Planning or Corrective Actions', () => {
+    expect(canSeeReportsNav('Function Viewer')).toBe(true);
+    expect(canAccessInsights('Function Viewer')).toBe(false);
+    expect(canAccessPlanning('Function Viewer')).toBe(false);
+    expect(canAccessCorrectiveActions('Function Viewer')).toBe(false);
+  });
+
   it('opens Function Summary to Admin, General Manager and Function Viewer only', () => {
     for (const role of ['Admin', 'General Manager', 'Function Viewer']) expect(canAccessFunctionSummary(role)).toBe(true);
     for (const role of ['Manager', 'Executive', 'Viewer', 'Agent']) expect(canAccessFunctionSummary(role)).toBe(false);
