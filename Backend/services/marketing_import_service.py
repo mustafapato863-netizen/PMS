@@ -16,6 +16,7 @@ from config.loader import (
 from data_cleaning.standard_mappings import calculate_grade
 from models.schemas import Employee, EvaluationData, PerformanceRecord
 from utils.performance_levels import normalize_performance_level
+from utils.performance_status import status_for_grade
 
 
 SHEET_NAME = "Marketing"
@@ -125,11 +126,7 @@ def _is_blank(value: Any) -> bool:
 
 
 def _status(grade: str) -> str:
-    if grade == "A":
-        return "Exceeds"
-    if grade in {"B", "C"}:
-        return "Meets"
-    return "Below"
+    return status_for_grade(grade)
 
 
 class MarketingImportService:

@@ -85,6 +85,27 @@ LEGACY_VARIANT_DIRECTIONS: dict[tuple[str, str], str] = {
 _WARNED_DEFAULTS: set[tuple[str, tuple[str, ...]]] = set()
 
 
+def kpi_variant(value: Any) -> str:
+    """Variant id for a KPI row whose key is shared by documented variants.
+
+    Inbound ``Other`` is "Utilization" (higher_better) when the source row has
+    a real UTZ value and "Abandon Rate" (lower_better) otherwise. Aggregations
+    must never pool the two, so callers group by ``(kpi_key, kpi_variant)``.
+    Returns the casefolded label for a documented variant, else ``""`` (so
+    ordinary KPIs keep grouping by key alone and a renamed label does not
+    split a key's history).
+    """
+    key = str(_get(value, "kpi_key") or _get(value, "key") or "").strip().casefold()
+    label = str(_get(value, "label") or "").strip().casefold()
+    return label if (key, label) in LEGACY_VARIANT_DIRECTIONS else ""
+
+
+def kpi_group_key(value: Any) -> tuple[str, str]:
+    """``(kpi_key, variant)`` grouping key for aggregate KPI views."""
+    key = str(_get(value, "kpi_key") or _get(value, "key") or _get(value, "label") or "")
+    return key, kpi_variant(value)
+
+
 def _get(item: Any, key: str, default: Any = None) -> Any:
     if isinstance(item, dict):
         return item.get(key, default)

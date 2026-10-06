@@ -14,6 +14,7 @@ from config.loader import (
 from models.schemas import PerformanceRecord as SchemaPerformanceRecord
 from pydantic import ValidationError
 from services.legacy_kpi_evidence import build_legacy_employee_kpi_values
+from utils.performance_status import reconciled_status
 from utils.kpi_direction import (
     find_kpi_definition,
     flipped_contribution_fix,
@@ -261,13 +262,6 @@ class DashboardRecordService:
                 )
                 for value in item.kpi_values
             }
-            # Stored achievements only disambiguate the Inbound Other variant
-            # (Utilization vs Abandon Rate) in the legacy rebuild.
-            persisted_achievements = {
-                str(value.kpi_key): float(value.achievement_ratio)
-                for value in item.kpi_values
-                if value.achievement_ratio is not None
-            }
             payload_raw_data: dict = {}
             if isinstance(payload, dict):
                 candidate_raw_data = payload.get("raw_data")
@@ -280,7 +274,6 @@ class DashboardRecordService:
                         rich_record.raw_data,
                         weights=persisted_weights,
                         config=config,
-                        persisted_achievements=persisted_achievements,
                     )
                     scoped_kpis = (
                         [value for value in kpi_values if value["kpi_key"] in config_by_key]
@@ -344,7 +337,10 @@ class DashboardRecordService:
                         "region": item.region or employee.region,
                         "performance_level": str(item.performance_level),
                         "position": item.position_name or employee.position_name,
-                        "status": item.status,
+                        # Same grade->status rule as imports, so a record whose
+                        # grade was corrected at read time (e.g. cw_error_free
+                        # saved lower_better) no longer shows the stale status.
+                        "status": reconciled_status(item.status, item.grade, reconciled_grade),
                         "upload_id": str(item.upload_id) if getattr(item, "upload_id", None) else None,
                         "evaluation": rich_evaluation,
                         "kpi_values": canonical_kpis,
@@ -364,7 +360,6 @@ class DashboardRecordService:
                 payload_raw_data,
                 weights=persisted_weights,
                 config=config,
-                persisted_achievements=persisted_achievements,
             ) if payload_raw_data else []
             fallback_kpis = repaired_fallback_kpis or (
                 [value for value in kpi_values if value["kpi_key"] in config_by_key]
@@ -400,7 +395,7 @@ class DashboardRecordService:
                 region=item.region or employee.region,
                 performance_level=str(item.performance_level),
                 position=item.position_name or employee.position_name,
-                status=item.status,
+                status=reconciled_status(item.status, item.grade, fallback_grade),
                 evaluation={"score": fallback_score, "grade": fallback_grade},
                 raw_data=payload_raw_data,
                 kpi_values=fallback_kpis,

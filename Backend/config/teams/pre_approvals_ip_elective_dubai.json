@@ -40,7 +40,7 @@
     "Rows whose Status or Performance Grade is Leave, New Staff, or - are excluded before scoring. Resigned is not excluded because it was not supplied as a business rule.",
     "The ER source table says within 48 hours in its target header, but its KPI and source numerator are 1.5 hours. The canonical target is 100% within 1.5 hours. Row-level target values are preserved to support historical target revisions in the source workbook.",
     "The product scorecard caps each KPI achievement and final score at 100%; presentation and stored scoring use the same cap.",
-    "kpi_direction_source_teams: performance records are unique per employee and month, so an agent who appears on both the IP Final Dubai and IP Elective Dubai sheets of the same upload is saved as ONE record (team = IP Elective Dubai, the later sheet) that also carries the IP Final Dubai KPI rows (combined_*, ip_approval_*, ip_discharge_*). Those keys resolve their direction from the IP Final Dubai config instead of a cross-team guess or a default. Dashboards still show only the Elective KPIs for these records."
+    "kpi_direction_source_teams: legacy uploads merged an agent who appeared on both the IP Final Dubai and IP Elective Dubai sheets into ONE Elective record carrying the IP Final Dubai KPI rows (combined_*, ip_approval_*, ip_discharge_*). Uploads now score one record per employee-month on the assigned team and warn (DUPLICATE_EMPLOYEE_MONTH); scripts/fix_merged_ip_elective_records.py re-scores the legacy records. Any remaining inherited keys resolve their direction from the IP Final Dubai config instead of a cross-team guess or a default."
   ],
   "performance_levels": {
     "Employee": {

@@ -40,6 +40,7 @@ from sqlalchemy.orm import Session  # noqa: E402
 from config.loader import load_team_config  # noqa: E402
 from data_cleaning.standard_mappings import calculate_grade  # noqa: E402
 from models.models import KPIValue, PerformanceRecord, Team, TeamKPIConfig  # noqa: E402
+from utils.performance_status import status_for_grade  # noqa: E402
 
 KPI_KEY = "cw_error_free"
 TEAM_NAME = "Marketing"
@@ -67,11 +68,7 @@ def _q4(value: Decimal) -> Decimal:
 
 
 def _status(grade: str) -> str:
-    if grade == "A":
-        return "Exceeds"
-    if grade in {"B", "C"}:
-        return "Meets"
-    return "Below"
+    return status_for_grade(grade)
 
 
 def _patched_payload(payload: Any, *, ratio: float, contribution: float, score: float, grade: str, status: str) -> Any:

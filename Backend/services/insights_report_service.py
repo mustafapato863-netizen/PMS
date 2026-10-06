@@ -13,7 +13,7 @@ from collections import Counter, defaultdict
 from statistics import mean
 from typing import Any, Iterable
 
-from utils.kpi_direction import DEFAULT_DIRECTION, apply_kpi_direction, normalize_direction
+from utils.kpi_direction import DEFAULT_DIRECTION, apply_kpi_direction, kpi_variant, normalize_direction
 from services.kpi_aggregation import (
     AggregatedKpiMetric,
     aggregate_kpi_metric,
@@ -241,8 +241,12 @@ def _definition_for(raw: dict[str, Any], definitions: list[dict[str, Any]]) -> d
         lambda definition: _text(definition.get("key")) == key
         and _text(definition.get("label")).casefold() == label.casefold(),
         lambda definition: _text(definition.get("label")).casefold() == label.casefold(),
-        lambda definition: _text(definition.get("key")) == key,
     ]
+    # A documented variant row (Inbound ``Other`` presented as Utilization)
+    # must not fall back to the key-only definition (``Other`` = Abandon
+    # Rate): that would relabel it and swap in the other variant's metadata.
+    if not kpi_variant(raw):
+        candidates.append(lambda definition: _text(definition.get("key")) == key)
     match = None
     for predicate in candidates:
         match = next((definition for definition in definitions if predicate(definition)), None)
@@ -339,6 +343,10 @@ def _period_for_record(record: dict[str, Any]) -> tuple[int, int] | None:
 
 def _record_kpi_key(raw: dict[str, Any]) -> str:
     return _text(raw.get("kpi_key") or raw.get("key") or raw.get("label") or "KPI")
+
+
+def _record_kpi_group(raw: dict[str, Any]) -> tuple[str, str]:
+    return _record_kpi_key(raw), kpi_variant(raw)
 
 
 def _kpi_rows(record: dict[str, Any], selected_kpi: str = "") -> list[dict[str, Any]]:
@@ -861,17 +869,19 @@ def build_insights_snapshot(report_data: dict[str, Any]) -> dict[str, Any]:
     all_kpi_keys: set[str] = set()
     for period in history_periods:
         rows = history_grouped[period]
-        by_key: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        # Group by KPI key + documented variant: Inbound ``Other`` Utilization
+        # (real UTZ) and Abandon Rate (no UTZ) rows must never average together.
+        by_key: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
         for record in rows:
             for raw in _kpi_rows(record, selected_kpi):
-                by_key[_record_kpi_key(raw)].append(raw)
+                by_key[_record_kpi_group(raw)].append(raw)
         kpi_summaries = []
         for key, values in by_key.items():
             affected = []
             by_employee: dict[str, list[dict[str, Any]]] = defaultdict(list)
             for record in rows:
                 employee = _employee_key(record)
-                employee_values = [raw for raw in _kpi_rows(record, selected_kpi) if _record_kpi_key(raw) == key]
+                employee_values = [raw for raw in _kpi_rows(record, selected_kpi) if _record_kpi_group(raw) == key]
                 if employee_values:
                     by_employee[employee].extend(employee_values)
             definition = _definition_for(values[0], definitions)

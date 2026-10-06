@@ -239,10 +239,28 @@ def _directional_change(actual: float | None, previous: float | None, direction:
     return (actual - previous) if direction == "higher_better" else (previous - actual)
 
 
+# A move smaller than this is "stable": it rounds to 0 at the 4-decimal raw
+# precision used for KPI trend points and to 0.00 at the 2-decimal percentage
+# precision used for people ``change_value``.
+MOVEMENT_TOLERANCE = 5e-5
+
+
+def _movement_positive(actual: float | None, previous: float | None, direction: str | None) -> bool | None:
+    """Direction-aware movement: True improved, False worsened, None stable/unknown.
+
+    Equality (within ``MOVEMENT_TOLERANCE``) and a missing previous value are
+    ``None`` so an unchanged KPI is never described as improving or worsening.
+    """
+    change = _directional_change(actual, previous, direction)
+    if change is None or abs(change) < MOVEMENT_TOLERANCE:
+        return None
+    return change > 0
+
+
 def _trend_status(change: float | None) -> str | None:
     if change is None:
         return None
-    if abs(change) < 1e-9:
+    if abs(change) < MOVEMENT_TOLERANCE:
         return "stable"
     return "improving" if change > 0 else "declining"
 
@@ -443,18 +461,24 @@ def _analysis_narrative(
     movement_positive: bool | None = None
     movement_text = "Previous-period value is unavailable."
     if actual is not None and previous is not None and valid_direction:
-        movement_positive = actual > previous if direction == "higher_better" else actual < previous
+        movement_positive = _movement_positive(actual, previous, direction)
         movement_delta = abs(actual - previous)
         relative_delta = abs((actual - previous) / previous) * 100 if previous else None
-        movement_word = "improved" if movement_positive else "declined" if actual != previous else "remained stable"
+        movement_word = (
+            "remained stable" if movement_positive is None else "improved" if movement_positive else "declined"
+        )
         movement_suffix = ""
-        if relative_delta is not None and actual != previous:
+        if relative_delta is not None and movement_positive is not None:
             movement_noun = "improvement" if movement_positive else "decline"
             movement_suffix = f" ({relative_delta:.1f}% {movement_noun})"
         movement_text = (
-            f"{label} {movement_word} by {_format_gap(movement_delta, unit)}, moving from "
-            f"{_format_value(previous, unit)} to {_format_value(actual, unit)}"
-            f"{movement_suffix}."
+            f"{label} remained stable at {_format_value(actual, unit)}."
+            if movement_positive is None
+            else (
+                f"{label} {movement_word} by {_format_gap(movement_delta, unit)}, moving from "
+                f"{_format_value(previous, unit)} to {_format_value(actual, unit)}"
+                f"{movement_suffix}."
+            )
         )
 
     target_missed = bool(
@@ -1006,9 +1030,11 @@ class InsightsService:
         return items
 
     def _kpi_insights(self, current: list[Any], previous: list[Any]) -> tuple[list[InsightItem], list[InsightItem], list[InsightDriver], set[tuple[str, str]]]:
-        buckets: dict[tuple[str, str, str, str], list[Any]] = defaultdict(list)
-        previous_buckets: dict[tuple[str, str, str, str], list[Any]] = defaultdict(list)
-        metadata: dict[tuple[str, str, str, str], dict[str, Any]] = {}
+        # Buckets are keyed by KPI key + documented variant so Inbound ``Other``
+        # Utilization (real UTZ) and Abandon Rate (no UTZ) rows never average.
+        buckets: dict[tuple[str, str, str, str, str], list[Any]] = defaultdict(list)
+        previous_buckets: dict[tuple[str, str, str, str, str], list[Any]] = defaultdict(list)
+        metadata: dict[tuple[str, str, str, str, str], dict[str, Any]] = {}
         for target, records in ((buckets, current), (previous_buckets, previous)):
             for record in records:
                 team = str(_value(record, "team", ""))
@@ -1018,7 +1044,7 @@ class InsightsService:
                     key = str(_value(kpi, "kpi_key", ""))
                     if not key:
                         continue
-                    bucket_key = (team, position, level, key)
+                    bucket_key = (team, position, level, key, _kd.kpi_variant(kpi))
                     target[bucket_key].append(kpi)
                     defaulted = _value(kpi, "direction_source") == "default"
                     metadata[bucket_key] = {
@@ -1034,7 +1060,7 @@ class InsightsService:
         drivers: list[InsightDriver] = []
         high_weight_misses: set[tuple[str, str]] = set()
         for bucket_key, values in sorted(buckets.items()):
-            team, position, level, key = bucket_key
+            team, position, level, key, _variant = bucket_key
             previous_values = previous_buckets.get(bucket_key, [])
             meta = metadata[bucket_key]
             label, direction, unit = meta["label"], meta["direction"], meta["unit"]
@@ -1108,9 +1134,7 @@ class InsightsService:
                 actual is not None and target is not None and direction in {"higher_better", "lower_better"}
                 and ((direction == "higher_better" and actual > target) or (direction == "lower_better" and actual < target))
             )
-            movement_positive = None
-            if actual is not None and previous_actual is not None and direction in {"higher_better", "lower_better"}:
-                movement_positive = (actual > previous_actual) if direction == "higher_better" else (actual < previous_actual)
+            movement_positive = _movement_positive(actual, previous_actual, direction)
 
             achievement = _target_achievement(actual, target, direction)
             # On target but moving the wrong way (e.g. a lower-is-better rate that
@@ -1826,7 +1850,7 @@ class InsightsService:
         points: list[InsightKpiOverviewPoint] = []
         for period in available_periods[-6:]:
             period_records = [record for record in records if _period(record) == period]
-            grouped: dict[tuple[str, str, str, str], list[Any]] = defaultdict(list)
+            grouped: dict[tuple[str, str, str, str, str], list[Any]] = defaultdict(list)
             for record in period_records:
                 for kpi in _configured_kpi_values(record):
                     key = str(_value(kpi, "kpi_key", "") or "")
@@ -1836,6 +1860,7 @@ class InsightsService:
                             str(_value(record, "position", "") or ""),
                             str(_value(record, "performance_level", "")),
                             key,
+                            _kd.kpi_variant(kpi),
                         )].append(kpi)
             statuses: list[float] = []
             for values in grouped.values():

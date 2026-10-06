@@ -211,6 +211,33 @@ def test_dashboard_records_correct_old_saved_scores_at_read_time(db_session):
     assert sum(1 for v in record.kpi_values if v.get("direction_corrected")) == 1
 
 
+def test_dashboard_read_time_correction_recomputes_status_with_score_and_grade(db_session):
+    # QA BUG-1: QA-MKT-COW-01 read back as 94 / B but still "Exceeds".
+    _seed_old_record(db_session)
+    stored = db_session.query(DBPerformanceRecord).one()
+    assert (stored.grade, stored.status) == ("A", "Exceeds")
+
+    record = DashboardRecordService(db_session).list_records(team="Marketing")[0]
+
+    assert record.evaluation.grade == "B"
+    assert record.status == "Meets"
+    # Same rule as a record imported with the fixed config.
+    fresh = MarketingImportService().parse_frame(_content_writer_frame(80.0, "Higher Better")).records[0]
+    assert (record.evaluation.score, record.evaluation.grade) == (fresh.evaluation.score, fresh.evaluation.grade)
+    assert record.status == (fresh.status or "Meets")
+
+
+def test_dashboard_read_time_correction_keeps_a_custom_status(db_session):
+    _seed_old_record(db_session)
+    db_session.query(DBPerformanceRecord).one().status = "Under Review"
+    db_session.flush()
+
+    record = DashboardRecordService(db_session).list_records(team="Marketing")[0]
+
+    assert record.evaluation.grade == "B"
+    assert record.status == "Under Review"
+
+
 def test_dashboard_does_not_touch_correctly_saved_records(db_session):
     parsed = MarketingImportService().parse_frame(_content_writer_frame(80.0, "Higher Better"))
     DatabaseSeeder()._sync_to_database(parsed.records, parsed.employees, db_session=db_session)
@@ -369,6 +396,7 @@ def test_data_fix_script_dry_run_apply_and_idempotent(db_session):
     stored = db_session.query(DBPerformanceRecord).one()
     assert float(stored.score) == pytest.approx(94.0)
     assert stored.grade == "B"
+    assert stored.status == "Meets"  # the script recomputes status too (BUG-1)
     value = db_session.query(KPIValue).filter(KPIValue.kpi_key == "cw_error_free").one()
     assert float(value.contribution) == pytest.approx(0.24)
     assert float(value.achievement_ratio) == pytest.approx(0.8)
