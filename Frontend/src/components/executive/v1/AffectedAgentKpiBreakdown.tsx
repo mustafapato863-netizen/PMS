@@ -88,7 +88,7 @@ export default function AffectedAgentKpiBreakdown({
   const previous = previousPeriod ? inScope.filter((record) => record.period.key === previousPeriod.key) : [];
   const rows = useMemo(() => (current.length ? kpiRows(current, previous) : []), [current, previous]);
   const loading = scopedPerformanceApiEnabled
-    ? Boolean(selectedEmployeeId && history.isFetching && !history.data)
+    ? Boolean(selectedEmployeeId && history.isFetching)
     : legacy.loading;
   const historyUnavailable = source !== 'composed' && !scopedPerformanceApiEnabled;
   const emptyMessage = loading
@@ -137,6 +137,7 @@ export default function AffectedAgentKpiBreakdown({
       subtitle={subtitle}
       headerAction={headerAction}
       emptyMessage={emptyMessage}
+      scoreLabel="Agent score"
     />
   );
 }
