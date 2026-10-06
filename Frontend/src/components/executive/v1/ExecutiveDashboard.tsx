@@ -27,7 +27,7 @@ export interface ExecutiveDashboardPermissions {
   canCreateActions: boolean;
 }
 
-export default function ExecutiveDashboard({ summary, permissions, exportSlot = null }: { summary: ExecutiveSummary; permissions: ExecutiveDashboardPermissions; exportSlot?: ReactNode }) {
+export default function ExecutiveDashboard({ summary, permissions, exportSlot = null, functionBreakdownSlot = null }: { summary: ExecutiveSummary; permissions: ExecutiveDashboardPermissions; exportSlot?: ReactNode; functionBreakdownSlot?: ReactNode }) {
   const { period, scope } = summary;
   const previous = period.previous;
   const notice = period.fallback_applied && period.notice ? <FallbackNotice notice={period.notice} /> : null;
@@ -78,6 +78,7 @@ export default function ExecutiveDashboard({ summary, permissions, exportSlot = 
           subtitle={`Headcount-weighted across ${fn} teams${period.effective ? ` · ${period.effective.month} ${period.effective.year}` : ''}`}
           showTeams
         />
+        {functionBreakdownSlot}
         <div className="grid gap-[16px] xl:grid-cols-[minmax(0,1fr)_minmax(0,400px)]">
           <DriversCard summary={summary} viewAllHref={permissions.canOpenInsights ? `/insights?function=${encodeURIComponent(fn)}${period.effective ? `&period=${period.effective.key}` : ''}` : null} title={`What moved ${fn}${vs}`} />
           <RegionSplitCard regions={summary.regions} previous={previous} />

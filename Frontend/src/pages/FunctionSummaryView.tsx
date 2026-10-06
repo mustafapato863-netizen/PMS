@@ -14,6 +14,7 @@ import InsightsHeader, { type FilterOption } from '../components/insights/overvi
 import { ExecutiveViewSkeleton } from '../components/common/SkeletonLoader';
 import ExecutiveDashboard from '../components/executive/v1/ExecutiveDashboard';
 import FunctionExportCard from '../components/executive/v1/FunctionExportCard';
+import AffectedAgentKpiBreakdown from '../components/executive/v1/AffectedAgentKpiBreakdown';
 import FunctionSwitcher from '../components/executive/v1/FunctionSwitcher';
 import { ExecutiveEmptyState, ReadOnlyBadge, ScopeBanner } from '../components/executive/v1/ExecutiveStates';
 import { canAccessInsights, canAccessSettingsContent, isFunctionViewerRole, readAccessibleFunctions } from '../lib/access';
@@ -58,7 +59,7 @@ function FunctionSummaryPage({ fn, allowed }: { fn: ExecutiveFunction; allowed: 
     navigate(`/function-summary/${functionSlug(next)}${query ? `?${query}` : ''}`);
   }, [filters.performanceLevel, filters.periodKey, navigate]);
 
-  const { summary, options, isLoading, error } = useExecutiveSummary({
+  const { summary, options, isLoading, error, source } = useExecutiveSummary({
     view: 'function',
     role,
     filters,
@@ -125,6 +126,7 @@ function FunctionSummaryPage({ fn, allowed }: { fn: ExecutiveFunction; allowed: 
           summary={summary}
           permissions={{ canOpenFunctions: false, canOpenInsights: canAccessInsights(role), canSeeActions: false, canCreateActions: false }}
           exportSlot={<FunctionExportCard fn={fn} period={summary.period.effective ? `${summary.period.effective.month} ${summary.period.effective.year}` : ''} otherFunctions={allowed.filter((name) => name !== fn)} />}
+          functionBreakdownSlot={<AffectedAgentKpiBreakdown summary={summary} source={source} performanceLevel={filters.performanceLevel ?? 'All'} teamFunctions={options.team_functions} />}
         />
       </>
     );
