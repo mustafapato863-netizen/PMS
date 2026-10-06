@@ -127,7 +127,7 @@ function FunctionSummaryPage({ fn, allowed }: { fn: ExecutiveFunction; allowed: 
           summary={summary}
           permissions={{ canOpenFunctions: false, canOpenInsights: canAccessInsights(role), canSeeActions: false, canCreateActions: false }}
           exportSlot={<FunctionExportCard fn={fn} period={summary.period.effective ? `${summary.period.effective.month} ${summary.period.effective.year}` : ''} otherFunctions={allowed.filter((name) => name !== fn)} />}
-          functionBreakdownSlot={<AffectedAgentKpiBreakdown summary={summary} source={source} performanceLevel={filters.performanceLevel ?? 'All'} />}
+          functionBreakdownSlot={<AffectedAgentKpiBreakdown summary={summary} source={source} performanceLevel={filters.performanceLevel ?? 'All'} teamFunctions={options.team_functions} />}
         />
       </>
     );
