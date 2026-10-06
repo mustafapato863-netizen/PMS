@@ -3,6 +3,7 @@ import type { AgentRecord } from '../../../types';
 import { canonicalTeamName } from '../../../types';
 import { kpiRows, toExecRecords } from '../../../features/executive/compose';
 import { executiveFunctionForTeam } from '../../../features/executive/functions';
+import type { TeamFunctionMap } from '../../../features/insights/filterCascade';
 import type { ExecutivePerson, ExecutiveSummary } from '../../../features/executive/types';
 import { usePerformanceData, mapScopedPerformanceRecord } from '../../../hooks/usePerformanceData';
 import { scopedPerformanceApiEnabled, useScopedEmployeePerformanceHistory } from '../../../hooks/api/usePerformanceDashboard';
@@ -31,10 +32,12 @@ export default function AffectedAgentKpiBreakdown({
   summary,
   source,
   performanceLevel,
+  teamFunctions,
 }: {
   summary: ExecutiveSummary;
   source: 'api' | 'composed' | null;
   performanceLevel: string;
+  teamFunctions?: TeamFunctionMap;
 }) {
   const options = useMemo(() => affectedAgentOptions(summary), [summary.people]);
   const [requestedEmployeeId, setRequestedEmployeeId] = useState('');
@@ -79,10 +82,10 @@ export default function AffectedAgentKpiBreakdown({
     if (record.employeeId !== selectedEmployeeId) return false;
     if (summary.scope.team && canonicalTeamName(record.team) !== canonicalTeamName(summary.scope.team)) return false;
     if (summary.scope.region && (record.region ?? '').toUpperCase() !== summary.scope.region.toUpperCase()) return false;
-    if (summary.scope.function && executiveFunctionForTeam(record.team) !== summary.scope.function) return false;
+    if (summary.scope.function && executiveFunctionForTeam(record.team, teamFunctions) !== summary.scope.function) return false;
     if (performanceLevel !== 'All' && record.level !== performanceLevel) return false;
     return true;
-  }), [performanceLevel, records, selectedEmployeeId, summary.scope.function, summary.scope.region, summary.scope.team]);
+  }), [performanceLevel, records, selectedEmployeeId, summary.scope.function, summary.scope.region, summary.scope.team, teamFunctions]);
 
   const current = effective ? inScope.filter((record) => record.period.key === effective.key) : [];
   const previous = previousPeriod ? inScope.filter((record) => record.period.key === previousPeriod.key) : [];
