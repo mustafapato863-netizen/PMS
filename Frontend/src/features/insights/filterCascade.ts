@@ -101,16 +101,23 @@ export function teamOptionsFor(apiTeams: string[], teamFunction?: string, teamFu
 }
 
 /**
- * The fixed four functions, minus any with no team in the current scope.
- * With PR #14 the API's own `options.functions` must also contain it.
+ * The fixed four functions, in fixed order, minus any with no data in scope.
+ *
+ * With PR #14 this is `options.functions` (computed ignoring both the team and
+ * the function selection, so the other functions stay listed and the user can
+ * switch directly between them) intersected with the fixed four. It must not
+ * be derived from `options.teams`: since PR #17 sends `function=`, the backend
+ * narrows `teams` to the selected function (QA BUG-5). Older APIs without
+ * `options.functions` fall back to the functions that have a team in
+ * `options.teams` (not narrowed by function there).
  */
 export function functionOptionsFor(options: Pick<CascadeOptions, 'teams' | 'functions' | 'team_functions'>): string[] {
-  const apiFunctions = options.team_functions && Array.isArray(options.functions)
-    ? new Set(options.functions.map((name) => identity(name)))
-    : null;
+  if (Array.isArray(options.functions)) {
+    const apiFunctions = new Set(options.functions.map((name) => identity(name)));
+    return INSIGHT_FUNCTIONS.filter((teamFunction) => apiFunctions.has(identity(teamFunction)));
+  }
   return INSIGHT_FUNCTIONS.filter((teamFunction) => (
-    (!apiFunctions || apiFunctions.has(identity(teamFunction)))
-    && options.teams.some((team) => teamBelongsToFunction(team, teamFunction, options.team_functions))
+    options.teams.some((team) => teamBelongsToFunction(team, teamFunction, options.team_functions))
   ));
 }
 
@@ -149,8 +156,13 @@ export function reconcileCascade(filters: InsightFilters, options: CascadeOption
   const teamsEmpty = options.teams.length === 0;
   const levelsEmpty = options.performance_levels.length === 0;
 
+  // Since PR #17 `teams` is also narrowed by the function, so an empty team
+  // list only blames the region when the API's function list (which ignores
+  // the function) does not show the selected function as the culprit.
+  const functionIsCulprit = functionInvalid && Array.isArray(options.functions) && options.functions.length > 0;
+
   const cleared: Partial<Record<keyof InsightFilters, undefined>> = {};
-  if (teamsEmpty && regionInvalid) {
+  if (teamsEmpty && regionInvalid && !functionIsCulprit) {
     cleared.region = undefined;
   } else if (levelInvalid && !levelsEmpty && (teamsEmpty || teamInvalid || functionInvalid)) {
     // PR #14 narrows teams by level: the team/function has data here, just

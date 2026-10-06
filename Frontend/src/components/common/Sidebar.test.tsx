@@ -252,3 +252,31 @@ describe('Sidebar General Manager navigation (stored role string)', () => {
     }
   });
 });
+
+describe('Sidebar query carry-over (QA BUG-1b)', () => {
+  beforeEach(() => {
+    mockTeamConfigFetch();
+    authState.user = ADMIN_USER;
+  });
+
+  it('links Insights to plain /insights from a filtered Insights URL', () => {
+    renderSidebar('/insights?period=2026-06&region=UAE&function=Call%20Center&team=Inbound&performance_level=Employee');
+
+    const insights = screen.getByRole('link', { name: 'Insights' });
+    expect(insights).toHaveAttribute('href', '/insights');
+    expect(insights).toHaveAttribute('aria-current', 'page');
+  });
+
+  it('links Insights to plain /insights from another dashboard with a month filter', () => {
+    renderSidebar('/executive?month=June&performance_level=Employee');
+
+    expect(screen.getByRole('link', { name: 'Insights' })).toHaveAttribute('href', '/insights');
+  });
+
+  it('still carries the Header month filter to the other dashboards', () => {
+    renderSidebar('/team/all?month=June');
+
+    expect(screen.getByRole('link', { name: 'Executive Summary' })).toHaveAttribute('href', '/executive?month=June');
+    expect(screen.getByRole('link', { name: 'Reports' })).toHaveAttribute('href', '/reports?month=June');
+  });
+});

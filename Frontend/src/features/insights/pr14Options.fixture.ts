@@ -202,3 +202,181 @@ export const pr14Options = {
     }
   }
 } as const;
+
+/**
+ * Real `options` from merged main (8d0aa42) when the app sends `function=`
+ * (PR #17): `teams` / `team_functions` are narrowed to the function, while
+ * `functions` ignores the function and team. Same record set; regenerate with
+ * /workspace/pms-insights-p3-review/pr17_shape.py.
+ */
+export const pr17FunctionOptions = {
+  "functionCallCenter": {
+    "regions": [
+      "EGY",
+      "UAE"
+    ],
+    "teams": [
+      "Call Center",
+      "Inbound",
+      "Outbound"
+    ],
+    "performance_levels": [
+      "Employee",
+      "Managerial"
+    ],
+    "functions": [
+      "Call Center",
+      "Marketing",
+      "Pre-Approvals",
+      "RCM",
+      "Sales"
+    ],
+    "team_functions": {
+      "Call Center": [
+        "Call Center"
+      ],
+      "Inbound": [
+        "Call Center"
+      ],
+      "Outbound": [
+        "Call Center"
+      ]
+    }
+  },
+  "functionRcm": {
+    "regions": [
+      "EGY",
+      "UAE"
+    ],
+    "teams": [
+      "Coding",
+      "Pre-Approvals IP Elective Dubai",
+      "Pre-Approvals IP Final Dubai",
+      "Pre-Approvals IP Offshore",
+      "Pre-Approvals OP Dubai",
+      "Pre-Approvals OP Final SHJAJM"
+    ],
+    "performance_levels": [
+      "Employee",
+      "Managerial"
+    ],
+    "functions": [
+      "Call Center",
+      "Marketing",
+      "Pre-Approvals",
+      "RCM",
+      "Sales"
+    ],
+    "team_functions": {
+      "Coding": [
+        "RCM"
+      ],
+      "Pre-Approvals IP Elective Dubai": [
+        "RCM",
+        "Pre-Approvals"
+      ],
+      "Pre-Approvals IP Final Dubai": [
+        "RCM",
+        "Pre-Approvals"
+      ],
+      "Pre-Approvals IP Offshore": [
+        "RCM"
+      ],
+      "Pre-Approvals OP Dubai": [
+        "RCM",
+        "Pre-Approvals"
+      ],
+      "Pre-Approvals OP Final SHJAJM": [
+        "RCM",
+        "Pre-Approvals"
+      ]
+    }
+  },
+  "functionRcmTeamCoding": {
+    "regions": [
+      "EGY"
+    ],
+    "teams": [
+      "Coding",
+      "Pre-Approvals IP Elective Dubai",
+      "Pre-Approvals IP Final Dubai",
+      "Pre-Approvals IP Offshore",
+      "Pre-Approvals OP Dubai",
+      "Pre-Approvals OP Final SHJAJM"
+    ],
+    "performance_levels": [
+      "Employee"
+    ],
+    "functions": [
+      "Call Center",
+      "Marketing",
+      "Pre-Approvals",
+      "RCM",
+      "Sales"
+    ],
+    "team_functions": {
+      "Coding": [
+        "RCM"
+      ],
+      "Pre-Approvals IP Elective Dubai": [
+        "RCM",
+        "Pre-Approvals"
+      ],
+      "Pre-Approvals IP Final Dubai": [
+        "RCM",
+        "Pre-Approvals"
+      ],
+      "Pre-Approvals IP Offshore": [
+        "RCM"
+      ],
+      "Pre-Approvals OP Dubai": [
+        "RCM",
+        "Pre-Approvals"
+      ],
+      "Pre-Approvals OP Final SHJAJM": [
+        "RCM",
+        "Pre-Approvals"
+      ]
+    }
+  },
+  "functionPreApprovals": {
+    "regions": [
+      "UAE"
+    ],
+    "teams": [
+      "Pre-Approvals IP Elective Dubai",
+      "Pre-Approvals IP Final Dubai",
+      "Pre-Approvals OP Dubai",
+      "Pre-Approvals OP Final SHJAJM"
+    ],
+    "performance_levels": [
+      "Employee",
+      "Managerial"
+    ],
+    "functions": [
+      "Call Center",
+      "Marketing",
+      "Pre-Approvals",
+      "RCM",
+      "Sales"
+    ],
+    "team_functions": {
+      "Pre-Approvals IP Elective Dubai": [
+        "RCM",
+        "Pre-Approvals"
+      ],
+      "Pre-Approvals IP Final Dubai": [
+        "RCM",
+        "Pre-Approvals"
+      ],
+      "Pre-Approvals OP Dubai": [
+        "RCM",
+        "Pre-Approvals"
+      ],
+      "Pre-Approvals OP Final SHJAJM": [
+        "RCM",
+        "Pre-Approvals"
+      ]
+    }
+  }
+} as const;

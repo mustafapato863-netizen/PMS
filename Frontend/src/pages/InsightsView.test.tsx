@@ -3,6 +3,8 @@ import userEvent from '@testing-library/user-event';
 import { Link, MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import InsightsView from './InsightsView';
+import Sidebar from '../components/common/Sidebar';
+import { ThemeProvider } from '../context/ThemeContext';
 import { insightsWorkspaceUrl } from '../hooks/api/useInsightsWorkspace';
 import type { InsightFilters } from '../features/insights/types';
 
@@ -220,6 +222,23 @@ vi.mock('../context/RoleContext', () => ({
   useUserRole: () => ({ role: 'Admin' }),
 }));
 
+// The real Sidebar (QA BUG-1b) needs auth, the performance catalog and apiFetch.
+vi.mock('../context/auth', () => ({
+  useAuth: () => ({
+    currentUser: { id: 'admin-1', name: 'Admin', username: 'admin', role: 'Admin', has_unrestricted_team_access: true, accessible_teams: [] },
+    logout: vi.fn(),
+  }),
+}));
+
+vi.mock('../hooks/api/usePerformanceCatalog', () => ({
+  usePerformanceCatalog: () => ({ data: { months: ['June'], periods: [], scopes: [] } }),
+}));
+
+vi.mock('../lib/apiClient', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../lib/apiClient')>()),
+  apiFetch: vi.fn().mockResolvedValue({ success: true, data: [], scopes: [] }),
+}));
+
 vi.mock('../hooks/useActionStore', () => ({
   useActionStore: () => ({
     getActionsForEmployee: actionMocks.getActionsForEmployee,
@@ -287,6 +306,24 @@ function HistoryProbe() {
     </nav>
   );
 }
+
+/** The production Sidebar next to Insights / Executive, inside one router. */
+function renderWithRealSidebar(entries: string[]) {
+  const sidebar = <Sidebar isOpen setIsOpen={vi.fn()} />;
+  return render(
+    <MemoryRouter initialEntries={entries} initialIndex={entries.length - 1}>
+      <ThemeProvider>
+        <Routes>
+          <Route path="/insights" element={<>{sidebar}<InsightsView /><LocationProbe /><HistoryProbe /></>} />
+          <Route path="/executive" element={<>{sidebar}<p>Executive page</p><LocationProbe /></>} />
+        </Routes>
+      </ThemeProvider>
+    </MemoryRouter>,
+  );
+}
+
+const realSidebarInsightsLink = () => within(screen.getByRole('complementary', { name: 'Primary navigation' }))
+  .getByRole('link', { name: 'Insights' });
 
 /** Router with a page before Insights, so Back can leave the page. */
 function renderWithHistory(entries: string[], initialIndex = entries.length - 1) {
@@ -1025,6 +1062,37 @@ describe('InsightsView', () => {
       expect(screen.getByRole('combobox', { name: 'Function' })).toHaveValue('RCM');
     });
 
+    it('resets filters through the REAL Sidebar Insights link (QA BUG-1b)', async () => {
+      const user = userEvent.setup();
+      renderWithRealSidebar(['/executive', '/insights?function=RCM&team=Coding&performance_level=Employee']);
+      expect(screen.getByRole('combobox', { name: 'Team' })).toHaveValue('Coding');
+      expect(realSidebarInsightsLink()).toHaveAttribute('href', '/insights');
+
+      await user.click(realSidebarInsightsLink());
+      expect(currentSearch().toString()).toBe('');
+      expect(screen.getByRole('combobox', { name: 'Function' })).toHaveValue('');
+      expect(screen.getByRole('combobox', { name: 'Team' })).toHaveValue('');
+      expect(latestFilters.current).toEqual({});
+
+      // Filters picked in the page do not leak into the sidebar link either.
+      await user.selectOptions(screen.getByRole('combobox', { name: 'Function' }), 'Call Center');
+      expect(Object.fromEntries(currentSearch())).toEqual({ function: 'Call Center' });
+      expect(realSidebarInsightsLink()).toHaveAttribute('href', '/insights');
+      await user.click(realSidebarInsightsLink());
+      expect(latestFilters.current).toEqual({});
+
+      await back(user);
+      expect(latestFilters.current).toEqual({ teamFunction: 'Call Center' });
+    });
+
+    it('opens default Insights from another dashboard through the REAL Sidebar, even with ?month=', async () => {
+      const user = userEvent.setup();
+      renderWithRealSidebar(['/executive?month=June&performance_level=Managerial']);
+      await user.click(realSidebarInsightsLink());
+      expect(currentSearch().toString()).toBe('');
+      expect(latestFilters.current).toEqual({});
+    });
+
     it('adopts an in-app navigation to new filter params instead of reverting it', async () => {
       const user = userEvent.setup();
       renderWithHistory(['/insights?function=RCM']);
@@ -1089,6 +1157,46 @@ describe('InsightsView', () => {
     expect(screen.queryByTestId('performance-trend-tooltip')).not.toBeInTheDocument();
     await user.keyboard('{ArrowLeft}');
     expect(screen.getByTestId('performance-trend-point-2026-04')).toHaveFocus();
+  });
+
+  describe('switching functions directly (QA BUG-5)', () => {
+    it('keeps every function listed after one is selected, so the user can switch directly', async () => {
+      const user = userEvent.setup();
+      renderInsights();
+      const all = ['All functions', 'Call Center', 'RCM', 'Pre-Approvals', 'Marketing'];
+
+      await user.selectOptions(screen.getByRole('combobox', { name: 'Function' }), 'Call Center');
+      expect(optionValues('Function')).toEqual(all);
+      expect(optionValues('Team')).toEqual(['All teams', 'Call Center', 'Inbound', 'Outbound']);
+
+      await user.selectOptions(screen.getByRole('combobox', { name: 'Function' }), 'RCM');
+      expect(latestFilters.current).toMatchObject({ teamFunction: 'RCM' });
+      expect(optionValues('Function')).toEqual(all);
+      expect(optionValues('Team')).toEqual([
+        'All teams', 'Coding', 'Pre-Approvals IP Elective Dubai', 'Pre-Approvals IP Final',
+        'Pre-Approvals IP Offshore', 'Pre-Approvals OP Final', 'RCM',
+      ]);
+
+      await user.selectOptions(screen.getByRole('combobox', { name: 'Function' }), 'Marketing');
+      expect(latestFilters.current).toMatchObject({ teamFunction: 'Marketing' });
+      expect(optionValues('Function')).toEqual(all);
+      expect(optionValues('Team')).toEqual(['All teams', 'Marketing']);
+    });
+
+    it('keeps the function and team selected (no auto-clear) with function-narrowed lists', async () => {
+      const user = userEvent.setup();
+      renderInsights();
+      await user.selectOptions(screen.getByRole('combobox', { name: 'Function' }), 'RCM');
+      await user.selectOptions(screen.getByRole('combobox', { name: 'Team' }), 'Pre-Approvals OP Final');
+      expect(optionValues('Function')).toEqual(['All functions', 'Call Center', 'RCM', 'Pre-Approvals', 'Marketing']);
+      expect(latestFilters.current).toMatchObject({ teamFunction: 'RCM', team: 'Pre-Approvals OP Final' });
+
+      // Directly to Pre-Approvals: the UAE PA team belongs to both, so it stays.
+      await user.selectOptions(screen.getByRole('combobox', { name: 'Function' }), 'Pre-Approvals');
+      expect(latestFilters.current).toMatchObject({ teamFunction: 'Pre-Approvals', team: 'Pre-Approvals OP Final' });
+      expect(screen.getByRole('combobox', { name: 'Team' })).toHaveValue('Pre-Approvals OP Final');
+      expect(Object.fromEntries(currentSearch())).toEqual({ function: 'Pre-Approvals', team: 'Pre-Approvals OP Final' });
+    });
   });
 
   describe('All functions keeps a valid team (QA BUG-4)', () => {
@@ -1233,12 +1341,15 @@ describe('InsightsView', () => {
   });
 
   it('prefers options.team_functions over the built-in team helper', async () => {
-    scopeMock.teamFunctionsOverride = { Sales: ['Marketing'] };
+    // The backend narrows `teams` by function; the frontend then applies the
+    // API mapping, which wins over the helper (the helper puts IP Offshore in RCM).
+    scopeMock.teamFunctionsOverride = { 'Pre-Approvals IP Offshore': ['Call Center'] };
     const user = userEvent.setup();
     renderInsights();
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Function' }), 'Marketing');
-    // The helper alone would only list Marketing; the API mapping adds Sales.
-    expect(optionValues('Team')).toEqual(['All teams', 'Marketing', 'Sales']);
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Function' }), 'RCM');
+    expect(optionValues('Team')).toEqual([
+      'All teams', 'Coding', 'Pre-Approvals IP Elective Dubai', 'Pre-Approvals IP Final', 'Pre-Approvals OP Final', 'RCM',
+    ]);
   });
 
   it('falls back to the team helper when the response has no team_functions', async () => {
