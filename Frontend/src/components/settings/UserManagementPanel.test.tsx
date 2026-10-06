@@ -25,7 +25,7 @@ vi.mock('../../context/auth', () => ({
       { id: 'twenty-two-days', name: 'Twenty Two Days Offline', username: 'twenty-two-days', role: 'Viewer', is_active: true, is_online: false, last_seen_at: mocks.timestampDaysAgo(22) },
       { id: 'two-months', name: 'Two Months Offline', username: 'two-months', role: 'Viewer', is_active: true, is_online: false, last_seen_at: mocks.timestampDaysAgo(62) },
       { id: 'never', name: 'Never Seen Person', username: 'never', role: 'Viewer', is_active: true, is_online: false, last_seen_at: null },
-      { id: 'functions', name: 'Function User', username: 'functions', role: 'Function Viewer', accessible_functions: ['RCM', 'Marketing'], is_active: true, is_online: false, last_seen_at: null },
+      { id: 'functions', name: 'Function User', username: 'functions', role: 'Function Viewer', accessible_functions: ['RCM', 'Marketing'], is_active: true, is_online: false, last_seen_at: mocks.timestampDaysAgo(3) },
     ],
     currentUser: { id: 'admin', name: 'Admin', username: 'admin', role: 'Admin' },
     addUser: mocks.addUser,
