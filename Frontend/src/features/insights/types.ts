@@ -234,6 +234,8 @@ export interface InsightsWorkspace {
 export interface InsightFilters {
   periodKey?: string;
   region?: string;
+  /** Header "Functions" selection (URL `function`); sent to the API as `team` when no team is chosen. */
+  teamFunction?: string;
   team?: string;
   performanceLevel?: string;
   position?: string;

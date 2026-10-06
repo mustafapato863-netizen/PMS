@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ArrowDownRight, ArrowUpRight, Calendar, Info, Link2 } from 'lucide-react';
 import type { InsightExecutiveStory, InsightKpiTrend, InsightsWorkspace } from '../../../features/insights/types';
 import { GradeBadge } from './InsightsOverviewPrimitives';
@@ -10,6 +10,37 @@ function PerformanceTrendChart({ points, kpiLabel }: { points: TrendPoint[]; kpi
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
   const [pinnedIndex, setPinnedIndex] = useState<number | null>(null);
+  // Escape hides the tooltip without moving keyboard focus off the point.
+  const [dismissed, setDismissed] = useState(false);
+  const [rovingIndex, setRovingIndex] = useState<number | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const pointRefs = useRef<Array<SVGGElement | null>>([]);
+
+  // While a point is pinned, Escape anywhere or a click outside the chart
+  // dismisses it (QA BUG-1).
+  useEffect(() => {
+    if (pinnedIndex === null) return undefined;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      setPinnedIndex(null);
+      setHoveredIndex(null);
+      setDismissed(true);
+    };
+    const onPointerDown = (event: Event) => {
+      if (containerRef.current && event.target instanceof Node && containerRef.current.contains(event.target)) return;
+      setPinnedIndex(null);
+      setHoveredIndex(null);
+    };
+    document.addEventListener('keydown', onKeyDown);
+    document.addEventListener('mousedown', onPointerDown);
+    document.addEventListener('touchstart', onPointerDown);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      document.removeEventListener('mousedown', onPointerDown);
+      document.removeEventListener('touchstart', onPointerDown);
+    };
+  }, [pinnedIndex]);
+
   const measured = points.filter((point) => point.actual !== null);
   if (!points.length || !measured.length) {
     return (
@@ -37,22 +68,52 @@ function PerformanceTrendChart({ points, kpiLabel }: { points: TrendPoint[]; kpi
   });
   if (segment.length > 1) actualSegments.push(segment);
 
-  const activeIndex = pinnedIndex ?? hoveredIndex ?? focusedIndex;
+  const measuredIndexes = points.map((point, index) => (point.actual !== null ? index : -1)).filter((index) => index >= 0);
+  // Roving tabindex: the chart is one tab stop; arrow keys move between points.
+  const tabStop = [pinnedIndex, rovingIndex].find((index) => index !== null && measuredIndexes.includes(index))
+    ?? measuredIndexes[measuredIndexes.length - 1];
+  const activeIndex = dismissed ? null : (pinnedIndex ?? hoveredIndex ?? focusedIndex);
   const activePoint = activeIndex === null ? null : points[activeIndex];
   const activeValue = activePoint?.actual ?? null;
   const activeX = activeIndex === null ? null : x(activeIndex);
   const activeY = activeValue === null ? null : y(activeValue);
+  const pinnedPoint = pinnedIndex === null ? null : points[pinnedIndex];
 
   const targetIndexes = points.map((point, index) => (point.target !== null ? index : -1)).filter((index) => index >= 0);
   const description = points
     .map((point) => `${point.label} ${point.actual === null ? 'no data' : `${point.actual.toFixed(1)}%`}`)
     .join(', ');
+  const pointSummary = (point: TrendPoint) => `${point.label}: actual ${point.actual?.toFixed(1)}% of target${point.target !== null ? `, target ${point.target.toFixed(0)}%` : ''}`;
+
+  const togglePin = (index: number) => {
+    if (pinnedIndex === index) {
+      // Unpinning must visibly close the tooltip even though the pointer
+      // (or focus) is still on the point.
+      setPinnedIndex(null);
+      setHoveredIndex(null);
+      setDismissed(true);
+      return;
+    }
+    setDismissed(false);
+    setPinnedIndex(index);
+  };
+  const moveFocus = (from: number, offset: number | 'first' | 'last') => {
+    const position = measuredIndexes.indexOf(from);
+    const nextPosition = offset === 'first'
+      ? 0
+      : offset === 'last'
+        ? measuredIndexes.length - 1
+        : Math.min(measuredIndexes.length - 1, Math.max(0, position + offset));
+    const next = measuredIndexes[nextPosition];
+    setRovingIndex(next);
+    pointRefs.current[next]?.focus();
+  };
 
   return (
-    <div className="relative w-full">
+    <div ref={containerRef} className="relative w-full">
       <svg
         role="group"
-        aria-label={`Performance trend${kpiLabel ? ` for ${kpiLabel}` : ''}, % of target: ${description}`}
+        aria-label={`Performance trend${kpiLabel ? ` for ${kpiLabel}` : ''}, % of target: ${description}. Use arrow keys to move between months and Enter to pin a month.`}
         viewBox="0 0 388 166"
         className="block h-auto w-full"
         data-testid="performance-trend-chart"
@@ -118,32 +179,69 @@ function PerformanceTrendChart({ points, kpiLabel }: { points: TrendPoint[]; kpi
       {points.map((point, index) => point.actual !== null && (
         <g
           key={point.key}
+          ref={(node) => { pointRefs.current[index] = node; }}
           role="button"
-          tabIndex={0}
-          aria-label={`${point.label}: ${point.actual.toFixed(1)}% of target`}
+          tabIndex={index === tabStop ? 0 : -1}
+          aria-pressed={pinnedIndex === index}
+          aria-label={pointSummary(point)}
+          data-testid={`performance-trend-point-${point.key}`}
           className="cursor-pointer outline-none"
+          // Mouse clicks pin without moving focus, so a stale focus can't
+          // keep the tooltip open after unpinning (QA BUG-1).
+          onMouseDown={(event) => event.preventDefault()}
           onMouseEnter={() => {
-            setPinnedIndex(null);
+            setDismissed(false);
             setHoveredIndex(index);
           }}
           onMouseLeave={() => setHoveredIndex((current) => current === index ? null : current)}
-          onFocus={() => setFocusedIndex(index)}
+          onFocus={() => {
+            setDismissed(false);
+            setFocusedIndex(index);
+            setRovingIndex(index);
+          }}
           onBlur={() => setFocusedIndex((current) => current === index ? null : current)}
-          onClick={() => setPinnedIndex((current) => current === index ? null : index)}
+          onClick={() => togglePin(index)}
           onKeyDown={(event) => {
             if (event.key === 'Escape') {
-              setHoveredIndex(null);
-              setFocusedIndex(null);
               setPinnedIndex(null);
+              setHoveredIndex(null);
+              setDismissed(true);
             } else if (event.key === 'Enter' || event.key === ' ') {
               event.preventDefault();
-              setPinnedIndex((current) => current === index ? null : index);
+              togglePin(index);
+            } else if (event.key === 'ArrowRight' || event.key === 'ArrowUp') {
+              event.preventDefault();
+              moveFocus(index, 1);
+            } else if (event.key === 'ArrowLeft' || event.key === 'ArrowDown') {
+              event.preventDefault();
+              moveFocus(index, -1);
+            } else if (event.key === 'Home') {
+              event.preventDefault();
+              moveFocus(index, 'first');
+            } else if (event.key === 'End') {
+              event.preventDefault();
+              moveFocus(index, 'last');
             }
           }}
         >
           <circle cx={x(index)} cy={y(point.actual)} r={12} fill="transparent" pointerEvents="all" />
           {activeIndex === index && (
             <circle cx={x(index)} cy={y(point.actual)} r={7} fill="none" stroke="var(--insights-accent)" strokeOpacity={0.35} strokeWidth={2} />
+          )}
+          {focusedIndex === index && (
+            // Keyboard focus ring, independent of the hover/pin halo
+            // (QA BUG-2, WCAG 2.4.7 / 1.4.11: heading colour on surface).
+            <circle
+              data-testid="performance-trend-focus-ring"
+              cx={x(index)}
+              cy={y(point.actual)}
+              r={9.5}
+              fill="none"
+              stroke="var(--insights-heading)"
+              strokeWidth={2}
+              vectorEffect="non-scaling-stroke"
+              pointerEvents="none"
+            />
           )}
           <circle
             cx={x(index)}
@@ -159,12 +257,15 @@ function PerformanceTrendChart({ points, kpiLabel }: { points: TrendPoint[]; kpi
         <text key={`${point.key}-label`} x={x(index)} y={150} dominantBaseline="hanging" textAnchor="middle" fontSize={10} fill="var(--text-muted)">{point.label}</text>
       ))}
       </svg>
+      {/* Announce pin changes only; hover/focus are conveyed by the point labels. */}
+      <span role="status" aria-live="polite" className="sr-only" data-testid="performance-trend-live">
+        {pinnedPoint && pinnedPoint.actual !== null ? `Pinned ${pointSummary(pinnedPoint)}` : ''}
+      </span>
       {activePoint && activeValue !== null && activeIndex !== null && activeY !== null && (
         <div
-          role="status"
-          aria-live="polite"
-          aria-label={`${activePoint.label}: actual ${activeValue.toFixed(1)}% of target`}
+          aria-hidden="true"
           data-testid="performance-trend-tooltip"
+          data-pinned={pinnedIndex === activeIndex ? 'true' : 'false'}
           className="pointer-events-none absolute z-10 w-[176px] rounded-[16px] border border-[var(--insights-card-border)] bg-[var(--bg-surface)] px-[14px] py-[10px] shadow-[0_10px_24px_rgba(15,23,42,0.16)]"
           style={{
             left: `${Math.min(68, Math.max(32, ((activeX ?? PLOT.firstX) / 388) * 100))}%`,
@@ -172,22 +273,33 @@ function PerformanceTrendChart({ points, kpiLabel }: { points: TrendPoint[]; kpi
             transform: activeY < 62 ? 'translate(-50%, 12px)' : 'translate(-50%, calc(-100% - 12px))',
           }}
         >
-          <p className="mb-[6px] border-b border-[var(--insights-row-border)] pb-[6px] text-[11px] font-extrabold uppercase tracking-[0.08em] text-[var(--text-muted)]">{activePoint.label}</p>
+          <p className="mb-[6px] flex items-center justify-between border-b border-[var(--insights-row-border)] pb-[6px] text-[11px] font-extrabold uppercase tracking-[0.08em] text-[var(--text-muted)]">
+            {activePoint.label}
+            {pinnedIndex === activeIndex && <span className="text-[9px] font-bold tracking-[0.06em] text-[var(--insights-accent-text)]">Pinned</span>}
+          </p>
           <div className="flex items-center justify-between gap-3 text-[12px]">
             <span className="inline-flex items-center gap-[7px] font-semibold text-[var(--text-secondary)]">
-              <span aria-hidden="true" className="size-[9px] rounded-full bg-[var(--insights-accent)]" />
+              <span className="size-[9px] rounded-full bg-[var(--insights-accent)]" />
               Actual
             </span>
             <strong className="font-bold tabular-nums text-[var(--insights-heading)]">{activeValue.toFixed(1)}%</strong>
           </div>
-          <span className="sr-only">of target</span>
+          {activePoint.target !== null && (
+            <div className="mt-[4px] flex items-center justify-between gap-3 text-[12px]" data-testid="performance-trend-tooltip-target">
+              <span className="inline-flex items-center gap-[7px] font-semibold text-[var(--text-secondary)]">
+                <svg width="10" height="4" viewBox="0 0 10 4"><path d="M0 2H4M6 2H10" stroke="var(--insights-target)" strokeWidth={2} /></svg>
+                Target
+              </span>
+              <strong className="font-bold tabular-nums text-[var(--insights-heading)]">{activePoint.target.toFixed(0)}%</strong>
+            </div>
+          )}
         </div>
       )}
     </div>
   );
 }
 
-function PerformanceTrend({ trend }: { trend: InsightKpiTrend | null | undefined }) {
+function PerformanceTrend({ trend, filterKey }: { trend: InsightKpiTrend | null | undefined; filterKey?: string }) {
   const points = buildPerformanceTrend(trend);
   const kpiLabel = trend?.kpi_label ?? null;
   const explanation = kpiLabel
@@ -208,7 +320,8 @@ function PerformanceTrend({ trend }: { trend: InsightKpiTrend | null | undefined
         </span>
       </div>
       {kpiLabel && <p className="-mt-[4px] truncate text-[11px] text-[var(--text-muted)]" title={explanation}>Leading KPI · {kpiLabel} · % of target</p>}
-      <PerformanceTrendChart points={points} kpiLabel={kpiLabel} />
+      {/* Remount on any filter or series change so a pin never survives into a different scope. */}
+      <PerformanceTrendChart key={`${filterKey ?? ''}|${trend?.kpi_key ?? ''}|${points.map((point) => point.key).join(',')}`} points={points} kpiLabel={kpiLabel} />
       <div className="flex w-full items-center justify-center gap-[20px] text-[12px] leading-normal text-[var(--text-secondary)]">
         <span className="inline-flex items-center gap-[6px]"><span aria-hidden="true" className="size-[8px] rounded-full bg-[var(--insights-accent)]" />Actual</span>
         <span className="inline-flex items-center gap-[6px]">
@@ -261,10 +374,13 @@ export default function ExecutiveSummary({
   story,
   comparison,
   trend,
+  filterKey,
 }: {
   story: InsightExecutiveStory | null | undefined;
   comparison: InsightsWorkspace['comparison'];
   trend: InsightKpiTrend | null | undefined;
+  /** Serialized active filters; any change resets the pinned trend point. */
+  filterKey?: string;
 }) {
   const period = comparison.current ? `${comparison.current.month} ${comparison.current.year}` : 'The selected period';
   const gap = story?.gap_points ?? null;
@@ -339,7 +455,7 @@ export default function ExecutiveSummary({
         </div>
         </div>
       </div>
-      <PerformanceTrend trend={trend} />
+      <PerformanceTrend trend={trend} filterKey={filterKey} />
     </section>
   );
 }

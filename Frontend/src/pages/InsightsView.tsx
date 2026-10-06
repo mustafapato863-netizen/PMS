@@ -26,11 +26,19 @@ import EmployeeActionModal from '../components/team/EmployeeActionModal';
 import EmployeeRowActions from '../components/team/EmployeeRowActions';
 import type { InsightFilters, InsightItem, InsightSeverity, InsightKpiOverview, InsightRoleSummary } from '../features/insights/types';
 import { useInsightsWorkspace } from '../hooks/api/useInsightsWorkspace';
+import {
+  INSIGHT_FUNCTIONS,
+  apiTeamParam,
+  functionOptionsFor,
+  reconcileCascade,
+  teamBelongsToFunction,
+  teamOptionsFor,
+} from '../features/insights/filterCascade';
 import { PageLoadingSkeleton } from '../components/common/SkeletonLoader';
 import { refreshPerformanceData, useTeamData, type TeamAgentRow } from '../hooks/usePerformanceData';
 import { useActionStore } from '../hooks/useActionStore';
 import { useUserRole } from '../context/RoleContext';
-import type { PerformanceLevelFilter } from '../types';
+import { canonicalTeamName, type PerformanceLevelFilter } from '../types';
 import CustomDropdown from '../components/common/CustomDropdown';
 import { API_BASE } from '../config';
 import { waitForProcessingJob } from '../hooks/api/useProcessingJobs';
@@ -61,13 +69,6 @@ function FilterSelect({ label, value, onChange, options, allLabel }: {
     </div>
   );
 }
-
-const FUNCTION_OPTIONS: Array<{ value: string; label: string }> = [
-  { value: 'Call Center', label: 'Call Center' },
-  { value: 'RCM', label: 'RCM' },
-  { value: 'Pre-Approvals', label: 'Pre-Approvals' },
-  { value: 'Marketing', label: 'Marketing' },
-];
 
 const severityStyles: Record<InsightSeverity, string> = {
   critical: 'border-rose-200 bg-rose-50 text-rose-600 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300',
@@ -262,6 +263,7 @@ function CriticalAlertsBody({ insights, onOpen }: { insights: InsightItem[]; onO
 
 const insightUrlFilters: Array<[keyof InsightFilters, string]> = [
   ['region', 'region'],
+  ['teamFunction', 'function'],
   ['team', 'team'],
   ['performanceLevel', 'performance_level'],
   ['position', 'position'],
@@ -280,8 +282,21 @@ function filtersFromUrl(params: URLSearchParams): InsightFilters {
     const value = params.get(parameter);
     if (value) filters[key] = value;
   });
+  // Links shared before the Teams filter existed stored the Function filter
+  // in `team`; read those as a function selection.
+  const legacyFunction = !filters.teamFunction && filters.team
+    ? INSIGHT_FUNCTIONS.find((teamFunction) => teamFunction.toLowerCase() === filters.team?.toLowerCase())
+    : undefined;
+  if (legacyFunction) {
+    filters.teamFunction = legacyFunction;
+    delete filters.team;
+  } else if (filters.team) {
+    filters.team = canonicalTeamName(filters.team);
+  }
   return filters;
 }
+
+const INSIGHT_SCOPE_ERROR = /outside the authorized insights scope/i;
 
 export default function InsightsView() {
   const navigate = useNavigate();
@@ -304,6 +319,36 @@ export default function InsightsView() {
   const moreAnalysisRef = useRef<HTMLDivElement>(null);
   const query = useInsightsWorkspace(filters);
   const workspace = query.data;
+  // Cascade auto-clear: once the API has answered for the *current* filters
+  // (not placeholder data from the previous request), drop any header
+  // selection its option lists no longer support, including invalid URL
+  // combos. Adjusting state during render (instead of in an effect) avoids
+  // ever rendering the contradictory selection.
+  const reconciledFilters = query.data && !query.isPlaceholderData
+    ? reconcileCascade(filters, query.data.options)
+    : null;
+  // A team / level outside a manager's scope is rejected with 403 before any
+  // options are returned; clear the cascade instead of leaving an error state.
+  const scopeRejected = Boolean(
+    query.error
+    && INSIGHT_SCOPE_ERROR.test(query.error.message)
+    && (filters.team || filters.teamFunction || filters.performanceLevel),
+  );
+  if (reconciledFilters) {
+    setAnalysisPage(1);
+    setFilters(reconciledFilters);
+  } else if (scopeRejected) {
+    setAnalysisPage(1);
+    setFilters({
+      ...filters,
+      teamFunction: undefined,
+      team: undefined,
+      performanceLevel: undefined,
+      position: undefined,
+      employeeId: undefined,
+      kpi: undefined,
+    });
+  }
   // Keep placeholder data from showing the previous KPI's trend while a new
   // KPI-only filter request is in flight. The chart must identify the KPI the
   // user selected, not merely display whatever trend was cached previously.
@@ -314,7 +359,7 @@ export default function InsightsView() {
   const quickActionLevel = (filters.performanceLevel || 'All') as PerformanceLevelFilter;
   const quickActionRegion = filters.region === 'EGY' || filters.region === 'UAE' ? filters.region : 'All';
   const quickActionData = useTeamData(
-    filters.team || null,
+    apiTeamParam(filters) || null,
     quickActionMonth,
     quickActionRegion,
     'all',
@@ -398,19 +443,20 @@ export default function InsightsView() {
     { key: 'opportunity', label: 'Opportunities', count: workspace.summary.opportunities },
     { key: 'information', label: 'Data issues', count: workspace.summary.data_issues },
   ];
-  const showDiagnosticAnalysis = Boolean(filters.team || filters.kpi || filters.employeeId);
+  const showDiagnosticAnalysis = Boolean(filters.team || filters.teamFunction || filters.kpi || filters.employeeId);
   const analysisDepth = filters.employeeId
     ? 'Employee evidence'
     : filters.kpi
       ? 'KPI diagnosis'
-      : filters.team
+      : filters.team || filters.teamFunction
         ? 'Team contribution'
         : filters.region
           ? 'Geography contribution'
           : 'Executive overview';
   const activeFilterEntries = [
     filters.region ? { key: 'region' as const, label: 'Region', value: filters.region } : null,
-    filters.team ? { key: 'team' as const, label: 'Function', value: filters.team } : null,
+    filters.teamFunction ? { key: 'teamFunction' as const, label: 'Function', value: filters.teamFunction } : null,
+    filters.team ? { key: 'team' as const, label: 'Team', value: filters.team } : null,
     filters.performanceLevel ? { key: 'performanceLevel' as const, label: 'Level', value: filters.performanceLevel } : null,
     filters.position ? { key: 'position' as const, label: 'Position', value: filters.position } : null,
     filters.employeeId ? { key: 'employeeId' as const, label: 'Employee', value: filters.employeeId } : null,
@@ -421,7 +467,8 @@ export default function InsightsView() {
   ].filter(Boolean) as Array<{ key: keyof InsightFilters; label: string; value: string }>;
   const clearFilter = (key: keyof InsightFilters) => {
     setAnalysisPage(1);
-    setFilters((current) => ({ ...current, [key]: undefined }));
+    // A team only exists inside its function, so clearing the function clears it too.
+    setFilters((current) => ({ ...current, [key]: undefined, ...(key === 'teamFunction' ? { team: undefined } : {}) }));
   };
   const clearAnalysis = () => {
     setAnalysisPage(1);
@@ -432,18 +479,24 @@ export default function InsightsView() {
     setAnalysisPage(1);
     setFilters((current) => ({
       ...current,
+      // Function / team / level stay selected and are auto-cleared by the
+      // cascade only if the new region's options no longer contain them.
       region: scope || undefined,
-      team: undefined,
       position: undefined,
       employeeId: undefined,
       kpi: undefined,
     }));
   };
-  const selectTeam = (team: string) => {
+  const selectTeam = (value: string) => {
+    // Merged branch teams (e.g. OP Dubai + OP Final SHJAJM) are one header option.
+    const team = canonicalTeamName(value);
     setAnalysisPage(1);
     setFilters((current) => ({
       ...current,
       team: team || undefined,
+      teamFunction: team && current.teamFunction && !teamBelongsToFunction(team, current.teamFunction)
+        ? undefined
+        : current.teamFunction,
       position: undefined,
       employeeId: undefined,
       kpi: undefined,
@@ -483,7 +536,7 @@ export default function InsightsView() {
           start_month: period.month,
           start_year: period.year,
           region: filters.region || null,
-          team: filters.team || null,
+          team: apiTeamParam(filters) || null,
           position: filters.position || null,
           performance_level: filters.performanceLevel || null,
           employee_id: filters.employeeId || null,
@@ -548,20 +601,17 @@ export default function InsightsView() {
     setAnalysisPage(1);
     setFilters((current) => ({
       ...current,
-      team: value || undefined,
+      teamFunction: value || undefined,
+      team: current.team && value && teamBelongsToFunction(current.team, value) ? current.team : undefined,
       position: undefined,
       employeeId: undefined,
       kpi: undefined,
     }));
   };
   const leadingPeopleKpi = workspace.people_contribution_analysis?.kpi_key;
-  const functionOptions = (() => {
-    const options = [...FUNCTION_OPTIONS];
-    if (filters.team && !options.some((option) => option.value === filters.team)) {
-      options.push({ value: filters.team, label: filters.team });
-    }
-    return options;
-  })();
+  const functionOptions = functionOptionsFor(workspace.options.teams).map((value) => ({ value, label: value }));
+  const teamOptions = teamOptionsFor(workspace.options.teams, filters.teamFunction).map((value) => ({ value, label: value }));
+  const filterKey = JSON.stringify(filters);
 
   return (
     <div className="app-page-shell rf-page rf-page--insights insights-page [--app-section-gap:16px] [--rf-page-gap:16px]">
@@ -572,9 +622,12 @@ export default function InsightsView() {
         region={filters.region || ''}
         regionOptions={workspace.options.regions.map((value) => ({ value, label: value }))}
         onRegionChange={selectRegion}
-        functionValue={filters.team || ''}
+        functionValue={filters.teamFunction || ''}
         functionOptions={functionOptions}
         onFunctionChange={selectFunction}
+        team={filters.team || ''}
+        teamOptions={teamOptions}
+        onTeamChange={selectTeam}
         level={filters.performanceLevel || ''}
         levelOptions={workspace.options.performance_levels.map((value) => ({ value, label: value }))}
         onLevelChange={(value) => {
@@ -603,7 +656,7 @@ export default function InsightsView() {
         {activeFilterEntries.length > 0 && <div className="flex flex-wrap items-center gap-2"><span className="mr-1 text-[10px] font-black uppercase tracking-[0.14em] text-[var(--text-faint)]">{analysisDepth}</span>{activeFilterEntries.map((entry) => <button key={entry.key} type="button" onClick={() => clearFilter(entry.key)} className="inline-flex items-center gap-1.5 rounded-full border border-[var(--insights-accent-border)] bg-[var(--insights-accent-soft)] px-2.5 py-1 text-[11px] font-bold text-[var(--insights-accent-text)] hover:border-[var(--insights-accent)]">{entry.label}: {entry.value}<X size={12} /></button>)}<button type="button" onClick={clearAnalysis} className="ml-auto text-[11px] font-bold text-[var(--text-muted)] hover:text-rose-600">Reset analysis</button></div>}
       </div>
 
-      <ExecutiveSummary story={workspace.executive_story} comparison={workspace.comparison} trend={selectedKpiTrend} />
+      <ExecutiveSummary story={workspace.executive_story} comparison={workspace.comparison} trend={selectedKpiTrend} filterKey={filterKey} />
 
       <KeyDriversSection drivers={workspace.performance_drivers} onSelectDriver={openDriverInsight} onViewAll={viewAllDrivers} />
 

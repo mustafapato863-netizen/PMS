@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import InsightsView from './InsightsView';
 import { insightsWorkspaceUrl } from '../hooks/api/useInsightsWorkspace';
@@ -8,6 +8,23 @@ import type { InsightFilters } from '../features/insights/types';
 
 const query = vi.hoisted(() => ({ refetch: vi.fn() }));
 const latestFilters = vi.hoisted(() => ({ current: {} as InsightFilters }));
+const teamDataCalls = vi.hoisted(() => ({ calls: [] as unknown[][] }));
+// Authorized records behind the mocked workspace options. The mock scopes the
+// option lists the same way `InsightsService._options` does: regions from all
+// records, teams by region, levels by region + (expanded) team.
+const scopeRecords = vi.hoisted(() => [
+  { region: 'UAE', team: 'Call Center', level: 'Managerial' },
+  { region: 'UAE', team: 'Inbound', level: 'Employee' },
+  { region: 'UAE', team: 'Outbound', level: 'Employee' },
+  { region: 'UAE', team: 'Marketing', level: 'Employee' },
+  { region: 'UAE', team: 'Sales', level: 'Employee' },
+  { region: 'UAE', team: 'Pre-Approvals OP Dubai', level: 'Employee' },
+  { region: 'UAE', team: 'Pre-Approvals OP Final SHJAJM', level: 'Managerial' },
+  { region: 'UAE', team: 'RCM', level: 'Corporate' },
+  { region: 'EGY', team: 'Inbound', level: 'Employee' },
+  { region: 'EGY', team: 'Coding', level: 'Employee' },
+  { region: 'EGY', team: 'Pre-Approvals IP Offshore', level: 'Employee' },
+]);
 const actionMocks = vi.hoisted(() => ({
   getActionsForEmployee: vi.fn(() => []),
   refreshPerformanceData: vi.fn(),
@@ -84,6 +101,18 @@ const extraAnalyses = Array.from({ length: 10 }, (_, index) => ({
 
 vi.mock('../hooks/api/useInsightsWorkspace', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../hooks/api/useInsightsWorkspace')>();
+  const { apiTeamParam, teamBelongsToFunction } = await import('../features/insights/filterCascade');
+  const unique = (values: string[]) => Array.from(new Set(values)).sort();
+  const scopedOptions = (filters: InsightFilters) => {
+    const regionRecords = scopeRecords.filter((record) => !filters.region || record.region === filters.region);
+    const team = apiTeamParam(filters);
+    const levelRecords = regionRecords.filter((record) => !team || teamBelongsToFunction(record.team, team));
+    return {
+      regions: unique(scopeRecords.map((record) => record.region)),
+      teams: unique(regionRecords.map((record) => record.team)),
+      performance_levels: unique(levelRecords.map((record) => record.level)),
+    };
+  };
   return {
   ...actual,
   useInsightsWorkspace: (filters: InsightFilters) => {
@@ -167,11 +196,11 @@ vi.mock('../hooks/api/useInsightsWorkspace', async (importOriginal) => {
         { team: 'Outbound', current_score: 86, previous_score: 84, score_change: 2, impacted_employees: 1, total_employees: 8, critical: 0, at_risk: 1, opportunities: 1, main_insight_id: 'outbound-no-show', main_cause: 'No Show Rate is improving but remains above target' },
         { team: 'Sales', current_score: 90, previous_score: 89, score_change: 1, impacted_employees: 0, total_employees: 4, critical: 0, at_risk: 0, opportunities: 0, main_insight_id: null, main_cause: null },
       ],
-      options: { periods: [{ year: 2026, month: 'June', key: '2026-06' }], regions: ['EGY'], teams: ['Inbound', 'Marketing', 'Outbound', 'Sales'], performance_levels: ['Employee'], positions: ['Media Buyer'], employees: [], kpis: [{ key: 'cpl', label: 'CPL' }], severities: ['critical', 'risk', 'opportunity', 'information'], insight_types: ['performance', 'kpi_driver', 'employee_risk', 'opportunity', 'data_quality'], statuses: ['open'] },
+      options: { periods: [{ year: 2026, month: 'June', key: '2026-06' }, { year: 2026, month: 'May', key: '2026-05' }], ...scopedOptions(filters), positions: ['Media Buyer'], employees: [], kpis: [{ key: 'cpl', label: 'CPL' }], severities: ['critical', 'risk', 'opportunity', 'information'], insight_types: ['performance', 'kpi_driver', 'employee_risk', 'opportunity', 'data_quality'], statuses: ['open'] },
       comparison: { current: { year: 2026, month: 'June', key: '2026-06' }, previous: { year: 2026, month: 'May', key: '2026-05' }, is_adjacent: true, note: null },
       deferred_capabilities: ['Overdue corrective actions require a persisted due date.'],
     },
-    isLoading: false, isFetching: false, error: null, refetch: query.refetch,
+    isLoading: false, isFetching: false, isPlaceholderData: false, error: null, refetch: query.refetch,
   });
   },
   };
@@ -220,19 +249,31 @@ vi.mock('../hooks/usePerformanceData', () => {
     },
   });
   return {
-    useTeamData: () => ({
+    useTeamData: (...args: unknown[]) => {
+      teamDataCalls.calls.push(args);
+      return {
       rows: [row('E1', 'Analyst One', 69.9), row('E2', 'Analyst Two', 82)],
       avgScore: 75.95,
-    }),
+      };
+    },
     refreshPerformanceData: actionMocks.refreshPerformanceData,
   };
 });
 
-function renderInsights() {
+function LocationProbe() {
+  const location = useLocation();
+  return <output data-testid="location-search">{location.search}</output>;
+}
+
+function currentSearch() {
+  return new URLSearchParams(screen.getByTestId('location-search').textContent || '');
+}
+
+function renderInsights(entry = '/insights') {
   return render(
-    <MemoryRouter initialEntries={['/insights']}>
+    <MemoryRouter initialEntries={[entry]}>
       <Routes>
-        <Route path="/insights" element={<InsightsView />} />
+        <Route path="/insights" element={<><InsightsView /><LocationProbe /></>} />
         <Route path="/employee/:employeeId" element={<p>Employee profile page</p>} />
         <Route path="/planning" element={<p>Planning page</p>} />
       </Routes>
@@ -245,15 +286,18 @@ function section(name: string) {
 }
 
 describe('InsightsView', () => {
-  it('renders the Figma 18:3 header with labelled Date, Regions, primary Functions and Levels filters', () => {
+  it('renders the header with labelled Date, Regions, primary Functions, Teams and Levels filters in order', () => {
     renderInsights();
 
     expect(screen.getByRole('heading', { level: 1, name: 'Insights' })).toBeInTheDocument();
     expect(screen.getByText('Understand what happened, why it happened, and what to do next.')).toBeInTheDocument();
     const filters = screen.getByRole('group', { name: 'Insights filters' });
-    ['Date', 'Regions', 'Functions', 'Levels'].forEach((label) => {
+    ['Date', 'Regions', 'Functions', 'Teams', 'Levels'].forEach((label) => {
       expect(within(filters).getByText(label)).toBeInTheDocument();
     });
+    const order = within(filters).getAllByRole('combobox').map((select) => select.getAttribute('aria-label'));
+    expect(order).toEqual(['Insight period', 'Region', 'Function', 'Team', 'Performance level']);
+    expect(within(filters).getByRole('combobox', { name: 'Team' })).toHaveValue('');
     expect(within(filters).getByText('Primary')).toBeInTheDocument();
     expect(within(filters).getByRole('combobox', { name: 'Insight period' })).toHaveValue('2026-06');
     expect(within(filters).getByRole('combobox', { name: 'Function' })).toHaveValue('');
@@ -301,10 +345,10 @@ describe('InsightsView', () => {
     renderInsights();
 
     const chart = screen.getByTestId('performance-trend-chart');
-    const junePoint = screen.getByRole('button', { name: 'Jun: 44.1% of target' });
+    const junePoint = screen.getByRole('button', { name: 'Jun: actual 44.1% of target, target 100%' });
 
     await user.hover(junePoint);
-    expect(screen.getByRole('status', { name: 'Jun: actual 44.1% of target' })).toBeInTheDocument();
+    expect(screen.getByTestId('performance-trend-tooltip')).toHaveTextContent('Jun');
     expect(within(chart).getByTestId('performance-trend-crosshair')).toBeInTheDocument();
 
     await user.unhover(junePoint);
@@ -314,9 +358,101 @@ describe('InsightsView', () => {
     expect(screen.getByTestId('performance-trend-tooltip')).toBeInTheDocument();
     fireEvent.keyDown(junePoint, { key: 'Escape' });
     expect(screen.queryByTestId('performance-trend-tooltip')).not.toBeInTheDocument();
+    fireEvent.blur(junePoint);
 
     await user.click(junePoint);
     expect(screen.getByTestId('performance-trend-tooltip')).toBeInTheDocument();
+  });
+
+  it('shows Target as well as Actual in the trend tooltip', async () => {
+    const user = userEvent.setup();
+    renderInsights();
+    await user.hover(screen.getByRole('button', { name: /^Mar:/ }));
+    const tooltip = screen.getByTestId('performance-trend-tooltip');
+    expect(within(tooltip).getByText('Actual')).toBeInTheDocument();
+    expect(within(tooltip).getByText('115.4%')).toBeInTheDocument();
+    expect(within(tooltip).getByTestId('performance-trend-tooltip-target')).toHaveTextContent('Target100%');
+  });
+
+  it('unpins a pinned trend point when it is clicked again', async () => {
+    const user = userEvent.setup();
+    renderInsights();
+    const junePoint = screen.getByRole('button', { name: /^Jun:/ });
+
+    await user.click(junePoint);
+    expect(junePoint).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByTestId('performance-trend-tooltip')).toHaveAttribute('data-pinned', 'true');
+    expect(screen.getByTestId('performance-trend-live')).toHaveTextContent('Pinned Jun: actual 44.1% of target, target 100%');
+    // A mouse click pins without moving focus, so focus can't keep the tooltip open.
+    expect(junePoint).not.toHaveFocus();
+
+    await user.click(junePoint);
+    expect(junePoint).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.queryByTestId('performance-trend-tooltip')).not.toBeInTheDocument();
+    expect(screen.getByTestId('performance-trend-live')).toBeEmptyDOMElement();
+
+    // Hovering other points while one is pinned keeps the pinned month.
+    await user.click(junePoint);
+    await user.hover(screen.getByRole('button', { name: /^Mar:/ }));
+    expect(screen.getByTestId('performance-trend-tooltip')).toHaveTextContent('Jun');
+  });
+
+  it('dismisses a pinned trend point with Escape anywhere or a click outside the chart', async () => {
+    const user = userEvent.setup();
+    renderInsights();
+    const junePoint = screen.getByRole('button', { name: /^Jun:/ });
+
+    await user.click(junePoint);
+    await user.unhover(junePoint);
+    expect(screen.getByTestId('performance-trend-tooltip')).toBeInTheDocument();
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    expect(screen.queryByTestId('performance-trend-tooltip')).not.toBeInTheDocument();
+    expect(junePoint).toHaveAttribute('aria-pressed', 'false');
+
+    await user.click(junePoint);
+    await user.unhover(junePoint);
+    expect(screen.getByTestId('performance-trend-tooltip')).toBeInTheDocument();
+    // A click inside the chart (not on a point) keeps the pin.
+    fireEvent.mouseDown(screen.getByTestId('performance-trend-chart'));
+    expect(screen.getByTestId('performance-trend-tooltip')).toBeInTheDocument();
+    await user.click(screen.getByRole('heading', { level: 1, name: 'Insights' }));
+    expect(screen.queryByTestId('performance-trend-tooltip')).not.toBeInTheDocument();
+    expect(junePoint).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('clears the pinned trend point when a filter changes', async () => {
+    const user = userEvent.setup();
+    renderInsights();
+
+    await user.click(screen.getByRole('button', { name: /^Jun:/ }));
+    expect(screen.getByTestId('performance-trend-tooltip')).toBeInTheDocument();
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Function' }), 'Call Center');
+    expect(screen.queryByTestId('performance-trend-tooltip')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Jun:/ })).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('gives trend points a visible keyboard focus ring and a single roving tab stop', () => {
+    renderInsights();
+    const points = screen.getAllByRole('button', { name: /% of target, target 100%$/ });
+    expect(points.map((point) => point.getAttribute('tabindex'))).toEqual(['-1', '-1', '-1', '-1', '0']);
+
+    const junePoint = points[4];
+    fireEvent.click(junePoint);
+    expect(junePoint).toHaveAttribute('aria-pressed', 'true');
+    // Focus ring is independent of the pinned halo (QA BUG-2).
+    fireEvent.focus(junePoint);
+    expect(within(junePoint).getByTestId('performance-trend-focus-ring')).toHaveAttribute('stroke', 'var(--insights-heading)');
+    fireEvent.keyDown(junePoint, { key: 'ArrowLeft' });
+    const mayPoint = points[3];
+    expect(mayPoint).toHaveFocus();
+    expect(within(mayPoint).getByTestId('performance-trend-focus-ring')).toBeInTheDocument();
+    expect(within(junePoint).queryByTestId('performance-trend-focus-ring')).not.toBeInTheDocument();
+    // The pinned tooltip stays on June while focus moves.
+    expect(screen.getByTestId('performance-trend-tooltip')).toHaveTextContent('Jun');
+    fireEvent.keyDown(mayPoint, { key: 'Home' });
+    expect(points[0]).toHaveFocus();
+    fireEvent.keyDown(points[0], { key: 'End' });
+    expect(junePoint).toHaveFocus();
   });
 
   it('splits weighted drivers into negative and positive panels and links them to the insight drawer', async () => {
@@ -365,7 +501,7 @@ describe('InsightsView', () => {
     expect(latestFilters.current.region).toBe('UAE');
   });
 
-  it('lists teams needing attention with A–E grades and drills into a team through the Function filter', async () => {
+  it('lists teams needing attention with A–E grades and drills into a team through the Team filter', async () => {
     const user = userEvent.setup();
     renderInsights();
     const teams = section('Teams needing attention');
@@ -381,7 +517,8 @@ describe('InsightsView', () => {
 
     await user.click(rows[0]);
     expect(latestFilters.current.team).toBe('Marketing');
-    expect(screen.getByRole('combobox', { name: 'Function' })).toHaveValue('Marketing');
+    expect(screen.getByRole('combobox', { name: 'Team' })).toHaveValue('Marketing');
+    expect(currentSearch().get('team')).toBe('Marketing');
   });
 
   it('shows people to review from the leading KPI and opens the employee profile', async () => {
@@ -526,29 +663,157 @@ describe('InsightsView', () => {
     expect(screen.getByRole('menuitem', { name: 'Edit Employee Assignment' })).toBeInTheDocument();
   });
 
-  it('exposes Function options and wires Call Center into team filter and workspace URL', async () => {
+  const optionValues = (name: string) => Array.from(
+    (screen.getByRole('combobox', { name }) as HTMLSelectElement).querySelectorAll('option'),
+  ).map((option) => option.textContent);
+
+  it('lists only functions with teams in scope and sends the function as the API team filter', async () => {
     const user = userEvent.setup();
     renderInsights();
 
-    expect(screen.queryByRole('combobox', { name: 'Team' })).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /More filters/i }));
     expect(screen.queryByRole('combobox', { name: 'Employee' })).not.toBeInTheDocument();
+    expect(optionValues('Function')).toEqual(['All functions', 'Call Center', 'RCM', 'Pre-Approvals', 'Marketing']);
 
-    const functionSelect = screen.getByRole('combobox', { name: 'Function' });
-    expect(functionSelect).toBeInTheDocument();
-    const optionLabels = Array.from(functionSelect.querySelectorAll('option')).map((option) => option.textContent);
-    expect(optionLabels).toEqual([
-      'All functions',
-      'Call Center',
-      'RCM',
-      'Pre-Approvals',
-      'Marketing',
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Function' }), 'Call Center');
+    expect(latestFilters.current).toMatchObject({ teamFunction: 'Call Center' });
+    expect(latestFilters.current.team).toBeUndefined();
+    expect(currentSearch().get('function')).toBe('Call Center');
+    const workspaceUrl = insightsWorkspaceUrl(latestFilters.current).replace(/\+/g, '%20');
+    expect(workspaceUrl).toContain('team=Call%20Center');
+    expect(workspaceUrl).not.toContain('function=');
+  });
+
+  it('narrows Teams to the selected function and syncs the Team filter with the URL', async () => {
+    const user = userEvent.setup();
+    renderInsights();
+
+    expect(optionValues('Team')).toEqual([
+      'All teams', 'Call Center', 'Coding', 'Inbound', 'Marketing', 'Outbound',
+      'Pre-Approvals IP Offshore', 'Pre-Approvals OP Final', 'RCM', 'Sales',
     ]);
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Function' }), 'Call Center');
+    expect(optionValues('Team')).toEqual(['All teams', 'Call Center', 'Inbound', 'Outbound']);
 
-    await user.selectOptions(functionSelect, 'Call Center');
-    expect(latestFilters.current.team).toBe('Call Center');
-    const workspaceUrl = insightsWorkspaceUrl(latestFilters.current);
-    expect(workspaceUrl).toMatch(/team=Call(\+|%20)Center/);
-    expect(workspaceUrl.replace(/\+/g, '%20')).toContain('team=Call%20Center');
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Team' }), 'Outbound');
+    expect(latestFilters.current).toMatchObject({ teamFunction: 'Call Center', team: 'Outbound' });
+    expect(currentSearch().get('function')).toBe('Call Center');
+    expect(currentSearch().get('team')).toBe('Outbound');
+    expect(insightsWorkspaceUrl(latestFilters.current)).toContain('team=Outbound');
+
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Function' }), 'RCM');
+    // Outbound is not an RCM team, so it is dropped with the function change.
+    expect(latestFilters.current.team).toBeUndefined();
+    expect(currentSearch().get('team')).toBeNull();
+    expect(optionValues('Team')).toEqual(['All teams', 'Coding', 'Pre-Approvals IP Offshore', 'Pre-Approvals OP Final', 'RCM']);
+
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Function' }), 'Pre-Approvals');
+    // UAE Pre-Approvals only: IP Offshore belongs to RCM, OP branches merge into OP Final.
+    expect(optionValues('Team')).toEqual(['All teams', 'Pre-Approvals OP Final']);
+
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Team' }), 'Pre-Approvals OP Final');
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Team' }), '');
+    expect(currentSearch().get('team')).toBeNull();
+    expect(insightsWorkspaceUrl(latestFilters.current)).toContain('team=Pre-Approvals');
+  });
+
+  it('restores Function and Team from the URL', () => {
+    renderInsights('/insights?function=Call%20Center&team=Inbound&period=2026-05');
+    expect(screen.getByRole('combobox', { name: 'Function' })).toHaveValue('Call Center');
+    expect(screen.getByRole('combobox', { name: 'Team' })).toHaveValue('Inbound');
+    expect(latestFilters.current).toMatchObject({ teamFunction: 'Call Center', team: 'Inbound', periodKey: '2026-05' });
+    expect(currentSearch().get('team')).toBe('Inbound');
+  });
+
+  it('reads legacy team=<function> links as a Function selection', () => {
+    renderInsights('/insights?team=Call%20Center');
+    expect(screen.getByRole('combobox', { name: 'Function' })).toHaveValue('Call Center');
+    expect(screen.getByRole('combobox', { name: 'Team' })).toHaveValue('');
+    expect(currentSearch().get('function')).toBe('Call Center');
+    expect(currentSearch().get('team')).toBeNull();
+  });
+
+  it('narrows Functions, Teams and Levels by Region and Levels by Function and Team', async () => {
+    const user = userEvent.setup();
+    renderInsights();
+
+    expect(optionValues('Performance level')).toEqual(['All levels', 'Corporate', 'Employee', 'Managerial']);
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Region' }), 'EGY');
+    expect(optionValues('Function')).toEqual(['All functions', 'Call Center', 'RCM']);
+    expect(optionValues('Team')).toEqual(['All teams', 'Coding', 'Inbound', 'Pre-Approvals IP Offshore']);
+    expect(optionValues('Performance level')).toEqual(['All levels', 'Employee']);
+
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Region' }), '');
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Function' }), 'Call Center');
+    expect(optionValues('Performance level')).toEqual(['All levels', 'Employee', 'Managerial']);
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Team' }), 'Inbound');
+    expect(optionValues('Performance level')).toEqual(['All levels', 'Employee']);
+  });
+
+  it('auto-clears selections that become invalid after a cascade change', async () => {
+    const user = userEvent.setup();
+    renderInsights();
+
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Function' }), 'Call Center');
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Team' }), 'Outbound');
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Region' }), 'EGY');
+    // Outbound has no EGY data; Call Center still does (Inbound).
+    expect(latestFilters.current).toMatchObject({ region: 'EGY', teamFunction: 'Call Center' });
+    expect(latestFilters.current.team).toBeUndefined();
+    expect(screen.getByRole('combobox', { name: 'Team' })).toHaveValue('');
+    expect(currentSearch().get('team')).toBeNull();
+
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Region' }), '');
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Function' }), 'Marketing');
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Region' }), 'EGY');
+    expect(latestFilters.current.teamFunction).toBeUndefined();
+    expect(screen.getByRole('combobox', { name: 'Function' })).toHaveValue('');
+    expect(currentSearch().get('function')).toBeNull();
+
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Region' }), '');
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Function' }), 'Call Center');
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Performance level' }), 'Managerial');
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Team' }), 'Inbound');
+    // Inbound has no Managerial records, so the level clears instead of showing an empty scope.
+    expect(latestFilters.current).toMatchObject({ teamFunction: 'Call Center', team: 'Inbound' });
+    expect(latestFilters.current.performanceLevel).toBeUndefined();
+    expect(screen.getByRole('combobox', { name: 'Performance level' })).toHaveValue('');
+  });
+
+  it.each([
+    ['a team outside the function', '/insights?function=Call%20Center&team=Coding', { teamFunction: 'Call Center' }, ['team']],
+    ['a function with no data in the region', '/insights?region=EGY&function=Marketing&team=Marketing', { region: 'EGY' }, ['function', 'team']],
+    ['an unknown region', '/insights?region=Mars&function=RCM', { teamFunction: 'RCM' }, ['region']],
+    ['an unknown function', '/insights?function=Logistics', {}, ['function']],
+    ['a level the team does not have', '/insights?team=Inbound&performance_level=Corporate', { team: 'Inbound' }, ['performance_level']],
+    ['a team with no data in the region', '/insights?region=EGY&team=Sales&performance_level=Employee', { region: 'EGY', performanceLevel: 'Employee' }, ['team']],
+  ])('auto-clears an invalid URL combination: %s', (_label, entry, expected, clearedParams) => {
+    renderInsights(entry);
+    expect(latestFilters.current).toMatchObject(expected);
+    clearedParams.forEach((parameter) => expect(currentSearch().get(parameter)).toBeNull());
+    expect(screen.getByRole('heading', { level: 1, name: 'Insights' })).toBeInTheDocument();
+  });
+
+  it('sends every header filter to the workspace API and the quick-action team data', async () => {
+    const user = userEvent.setup();
+    renderInsights();
+    teamDataCalls.calls = [];
+
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Insight period' }), '2026-05');
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Region' }), 'EGY');
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Function' }), 'Call Center');
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Team' }), 'Inbound');
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Performance level' }), 'Employee');
+
+    // Summary, trend, drivers, geography, teams, people and More analysis all
+    // render from this one workspace response, so its params scope every section.
+    const params = new URL(insightsWorkspaceUrl(latestFilters.current), 'http://pms.test').searchParams;
+    expect(Object.fromEntries(params)).toEqual({
+      year: '2026', month: 'May', region: 'EGY', team: 'Inbound', performance_level: 'Employee',
+    });
+    expect(teamDataCalls.calls.at(-1)?.slice(0, 3)).toEqual(['Inbound', 'June', 'EGY']);
+    expect(Object.fromEntries(currentSearch())).toEqual({
+      period: '2026-05', region: 'EGY', function: 'Call Center', team: 'Inbound', performance_level: 'Employee',
+    });
   });
 });
