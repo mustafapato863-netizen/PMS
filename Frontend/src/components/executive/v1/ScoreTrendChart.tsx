@@ -127,6 +127,8 @@ export default function ScoreTrendChart({ points, comparisonLabel, title }: {
       : Math.min(measuredIndexes.length - 1, Math.max(0, position + offset));
     const next = measuredIndexes[nextPosition];
     if (next === undefined) return;
+    setDismissed(false);
+    setFocusedIndex(next);
     setRovingIndex(next);
     pointRefs.current[next]?.focus();
   };
