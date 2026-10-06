@@ -17,6 +17,7 @@ function LabeledFilter({
   widthClass,
   icon,
   primary = false,
+  menuMinWidth,
 }: {
   label: string;
   ariaLabel: string;
@@ -27,6 +28,7 @@ function LabeledFilter({
   widthClass: string;
   icon?: ReactNode;
   primary?: boolean;
+  menuMinWidth?: number;
 }) {
   const dropdownOptions = [...(allLabel ? [{ value: '', label: allLabel }] : []), ...options];
   return (
@@ -41,6 +43,7 @@ function LabeledFilter({
         options={dropdownOptions}
         onChange={(next) => onChange(String(next))}
         icon={icon}
+        menuMinWidth={menuMinWidth}
         className="w-full"
         chevronClassName={`size-[16px]! ${primary ? 'text-[var(--insights-accent-text)]!' : ''}`}
         buttonClassName={[
@@ -120,7 +123,7 @@ export default function InsightsHeader({
           widthClass="w-[168px]"
           icon={<Layers className="size-[16px] text-[var(--insights-accent)]" strokeWidth={1.5} />}
         />
-        <LabeledFilter label="Teams" ariaLabel="Team" value={team} options={teamOptions} allLabel="All teams" onChange={onTeamChange} widthClass="w-[168px]" />
+        <LabeledFilter label="Teams" ariaLabel="Team" value={team} options={teamOptions} allLabel="All teams" onChange={onTeamChange} widthClass="w-[168px]" menuMinWidth={260} />
         <LabeledFilter label="Levels" ariaLabel="Performance level" value={level} options={levelOptions} allLabel="All levels" onChange={onLevelChange} widthClass="w-[132px]" />
       </div>
     </header>

@@ -7,6 +7,7 @@ import {
   teamBelongsToFunction,
   teamOptionsFor,
 } from './filterCascade';
+import { pr14Options } from './pr14Options.fixture';
 
 const apiTeams = [
   'Call Center', 'Coding', 'Inbound', 'Marketing', 'Outbound', 'Pre-Approvals IP Offshore',
@@ -125,5 +126,34 @@ describe('insights filter cascade', () => {
       { region: 'EGY', team: 'Sales' },
       { regions: ['UAE'], teams: ['Inbound', 'Coding'], performance_levels: [], functions: ['Call Center', 'RCM'], team_functions: { Inbound: ['Call Center'], Coding: ['RCM'] } },
     )).toMatchObject({ region: 'EGY', team: undefined });
+  });
+});
+
+describe('insights filter cascade against real PR #14 option responses', () => {
+  const mutable = <T,>(value: T) => JSON.parse(JSON.stringify(value)) as {
+    regions: string[]; teams: string[]; performance_levels: string[]; functions: string[]; team_functions: Record<string, string[]>;
+  };
+
+  it('narrows Pre-Approvals to all UAE sub-teams and lists them under RCM too', () => {
+    const options = mutable(pr14Options.default);
+    expect(functionOptionsFor(options)).toEqual(['Call Center', 'RCM', 'Pre-Approvals', 'Marketing']);
+    expect(options.functions).toContain('Sales');
+    expect(teamOptionsFor(options.teams, 'Pre-Approvals', options.team_functions)).toEqual([
+      'Pre-Approvals IP Elective Dubai', 'Pre-Approvals IP Final', 'Pre-Approvals OP Final',
+    ]);
+    expect(teamOptionsFor(options.teams, 'RCM', options.team_functions)).toEqual([
+      'Coding', 'Pre-Approvals IP Elective Dubai', 'Pre-Approvals IP Final', 'Pre-Approvals IP Offshore', 'Pre-Approvals OP Final',
+    ]);
+    expect(teamOptionsFor(options.teams, 'Call Center', options.team_functions)).toEqual(['Call Center', 'Inbound', 'Outbound']);
+  });
+
+  it('auto-clears the real narrowed responses one selection at a time', () => {
+    expect(reconcileCascade({ periodKey: '2026-06', team: 'Pharmacy' }, mutable(pr14Options.juneTeamPharmacy)))
+      .toMatchObject({ periodKey: '2026-06', team: undefined });
+    expect(reconcileCascade({ team: 'Inbound', performanceLevel: 'Corporate' }, mutable(pr14Options.inboundCorporate)))
+      .toMatchObject({ team: 'Inbound', performanceLevel: undefined });
+    expect(reconcileCascade({ region: 'EGY', team: 'Sales' }, mutable(pr14Options.egySales)))
+      .toMatchObject({ region: 'EGY', team: undefined });
+    expect(reconcileCascade({ region: 'EGY' }, mutable(pr14Options.egyNoFilters))).toBeNull();
   });
 });
