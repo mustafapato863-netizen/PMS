@@ -416,7 +416,7 @@ class User(Base):
     username = Column(String(100), nullable=False, unique=True)
     email = Column(String(255), nullable=False, unique=True)
     password_hash = Column(Text, nullable=False)
-    role = Column(String(50), nullable=False, default="Viewer")  # Admin, General Manager, Manager, Executive, Viewer, Agent
+    role = Column(String(50), nullable=False, default="Viewer")  # Admin, General Manager, Manager, Function Viewer, Executive, Viewer, Agent
     is_active = Column(Boolean, nullable=False, default=True)
     failed_login_attempts = Column(Integer, nullable=False, default=0)
     locked_until = Column(DateTime(timezone=True), nullable=True)
@@ -427,6 +427,7 @@ class User(Base):
 
     # Relationships
     team_assignments = relationship("UserTeamAssignment", back_populates="user", passive_deletes=True)
+    function_assignments = relationship("UserFunctionAssignment", back_populates="user", passive_deletes=True)
     notifications = relationship("NotificationRecipient", back_populates="user", passive_deletes=True)
     actions_created = relationship(
         "Action",
@@ -515,6 +516,27 @@ class UserTeamAssignment(Base):
             name="ck_user_team_assignment_performance_level",
         ),
         Index("idx_user_team_assignment_scope", "user_id", "team_id", "performance_level"),
+    )
+
+
+class UserFunctionAssignment(Base):
+    __tablename__ = "user_function_assignments"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    function_name = Column(String(50), nullable=False)
+    assigned_at = Column(DateTime(timezone=True), server_default=func.now())
+    assigned_by = Column(String(100), nullable=False, default="Admin")
+
+    user = relationship("User", back_populates="function_assignments")
+
+    __table_args__ = (
+        CheckConstraint(
+            "function_name IN ('Call Center', 'RCM', 'Pre-Approvals', 'Marketing')",
+            name="ck_user_function_assignment_name",
+        ),
+        UniqueConstraint("user_id", "function_name", name="uq_user_function_assignment"),
+        Index("idx_user_function_assignment_scope", "user_id", "function_name"),
     )
 
 

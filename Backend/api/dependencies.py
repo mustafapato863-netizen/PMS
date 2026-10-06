@@ -17,7 +17,7 @@ from services.learning_service import LearningService
 from services.planning_service import PlanningService
 from services.trend_service import TrendService
 from services.insights_service import InsightsService
-from models.models import User, Team, UserTeamAssignment
+from models.models import User, Team, UserTeamAssignment, UserFunctionAssignment
 from utils.performance_levels import PERFORMANCE_LEVELS
 from utils.team_identity import logical_team_name
 from utils.report_scope import (
@@ -265,6 +265,7 @@ def get_current_user_scope(db, request: Request) -> dict:
                 "role": payload.get("role", "Admin"),
                 "employee_id": payload.get("employee_id") or "",
                 "accessible_teams": [],
+                "accessible_functions": [],
                 "has_unrestricted_team_access": True,
                 "is_self_only": False,
                 "active_team_names": [],
@@ -279,6 +280,7 @@ def get_current_user_scope(db, request: Request) -> dict:
             "role": payload.get("role", "Viewer"),
             "employee_id": payload.get("employee_id") or "",
             "accessible_teams": [],
+            "accessible_functions": [],
             "has_unrestricted_team_access": False,
             "is_self_only": payload.get("role") == "Agent",
             "active_team_names": [],
@@ -317,12 +319,26 @@ def get_current_user_scope(db, request: Request) -> dict:
     else:
         accessible_teams = []
 
+    if user.role == "Function Viewer":
+        accessible_functions = [
+            function_name
+            for (function_name,) in (
+                db.query(UserFunctionAssignment.function_name)
+                .filter(UserFunctionAssignment.user_id == user.id)
+                .order_by(UserFunctionAssignment.function_name.asc())
+                .all()
+            )
+        ]
+    else:
+        accessible_functions = []
+
     return {
         "user": user,
         "user_id": str(user.id),
         "role": user.role,
         "employee_id": user.employee_id,
         "accessible_teams": accessible_teams,
+        "accessible_functions": accessible_functions,
         "accessible_team_levels": accessible_team_levels,
         "has_unrestricted_team_access": has_unrestricted_team_access,
         "is_self_only": user.role == "Agent",

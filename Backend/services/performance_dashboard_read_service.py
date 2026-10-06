@@ -78,6 +78,7 @@ def _scope_identity(scope: dict) -> dict[str, Any]:
         "has_unrestricted_team_access": bool(scope.get("has_unrestricted_team_access")),
         "is_self_only": bool(scope.get("is_self_only")),
         "accessible_teams": sorted(str(item) for item in scope.get("accessible_teams") or []),
+        "accessible_functions": sorted(str(item) for item in scope.get("accessible_functions") or []),
         "accessible_team_levels": sorted(
             (str(team), str(level))
             for team, level in scope.get("accessible_team_levels") or []

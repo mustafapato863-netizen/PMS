@@ -269,6 +269,16 @@ async def me(request: Request, db: Session = Depends(get_db)):
         has_unrestricted_team_access = user.role in {"Admin", "General Manager"} or (
             user.role == "Manager" and bool(active_team_names) and unrestricted_teams >= active_team_names
         )
+        if user.role == "Function Viewer":
+            assigned_functions = {
+                assignment.function_name for assignment in user.function_assignments
+            }
+            accessible_functions = [
+                function_name for function_name in FUNCTION_VIEWER_FUNCTIONS
+                if function_name in assigned_functions
+            ]
+        else:
+            accessible_functions = []
 
         return StandardResponse(
             success=True,
@@ -281,6 +291,7 @@ async def me(request: Request, db: Session = Depends(get_db)):
                 "employee_id": user.employee_id,
                 "accessible_teams": accessible_teams,
                 "accessible_team_levels": accessible_team_levels,
+                "accessible_functions": accessible_functions,
                 "accessible_team_count": len(accessible_teams),
                 "total_team_count": active_team_count,
                 "has_unrestricted_team_access": has_unrestricted_team_access,

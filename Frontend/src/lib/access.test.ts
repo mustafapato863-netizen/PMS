@@ -19,6 +19,7 @@ describe('access helpers (Option A: stored "General Manager" role)', () => {
   it('uses the Backend role string', () => {
     expect(ROLE_GENERAL_MANAGER).toBe('General Manager');
     expect(USER_ROLE_OPTIONS).toContain('General Manager');
+    expect(USER_ROLE_OPTIONS).toContain('Function Viewer');
   });
 
   it('identifies Admin and General Manager by role string only', () => {

@@ -18,7 +18,7 @@ export interface FunctionScope {
   allowsTeam: (team: string | null | undefined) => boolean;
 }
 
-/** Function Viewer scope from /auth/me `accessible_functions` (all four when absent). */
+/** Function Viewer scope from /auth/me `accessible_functions` (none when absent). */
 export function useFunctionScope(): FunctionScope {
   const { role } = useUserRole();
   const { currentUser } = useAuth();
