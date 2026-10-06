@@ -27,7 +27,7 @@ describe('ScoreTrendChart', () => {
     render(<ScoreTrendChart points={points} title="Performance" comparisonLabel="Company average" />);
 
     const june = screen.getByTestId('executive-trend-point-2026-06');
-    june.focus();
+    fireEvent.focus(june);
     expect(screen.getByTestId('executive-trend-tooltip')).toHaveTextContent('Jun 2026');
     expect(screen.getByTestId('executive-trend-tooltip')).toHaveTextContent('87.0%');
 
