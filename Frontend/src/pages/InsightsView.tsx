@@ -6,11 +6,12 @@ import {
   AlertCircle, AlertTriangle, ArrowRight, ArrowUpRight,
   ChevronLeft, ChevronRight, DatabaseZap,
   Download, Eye, Filter, Loader2, RefreshCw, SearchX,
-  Share2, Sparkles, Target, TrendingDown, X,
+  Share2, Sparkles, Target, TrendingDown, TrendingUp, X,
 } from 'lucide-react';
 import InsightDetailDrawer from '../components/insights/InsightDetailDrawer';
 import KpiSixMonthTrend from '../components/insights/KpiSixMonthTrend';
 import PeopleContributionAnalysis from '../components/insights/PeopleContributionAnalysis';
+import { SEVERITY_LABELS, SEVERITY_STYLES, severityDisplay } from '../features/insights/severity';
 import ExecutiveSummary from '../components/insights/overview/ExecutiveSummary';
 import InsightsHeader from '../components/insights/overview/InsightsHeader';
 import {
@@ -21,16 +22,24 @@ import {
   RecommendedActionsSection,
   TeamsNeedingAttentionSection,
 } from '../components/insights/overview/OverviewSections';
-import { MORE_ANALYSIS_KEYS, type MoreAnalysisKey } from '../components/insights/overview/insightsOverviewModel';
+import { MORE_ANALYSIS_KEYS, resolveMovementTone, type MoreAnalysisKey } from '../components/insights/overview/insightsOverviewModel';
 import EmployeeActionModal from '../components/team/EmployeeActionModal';
 import EmployeeRowActions from '../components/team/EmployeeRowActions';
 import type { InsightFilters, InsightItem, InsightSeverity, InsightKpiOverview, InsightRoleSummary } from '../features/insights/types';
 import { useInsightsWorkspace } from '../hooks/api/useInsightsWorkspace';
+import {
+  INSIGHT_FUNCTIONS,
+  apiTeamParam,
+  functionOptionsFor,
+  reconcileCascade,
+  teamBelongsToFunction,
+  teamOptionsFor,
+} from '../features/insights/filterCascade';
 import { PageLoadingSkeleton } from '../components/common/SkeletonLoader';
 import { refreshPerformanceData, useTeamData, type TeamAgentRow } from '../hooks/usePerformanceData';
 import { useActionStore } from '../hooks/useActionStore';
 import { useUserRole } from '../context/RoleContext';
-import type { PerformanceLevelFilter } from '../types';
+import { canonicalTeamName, type PerformanceLevelFilter } from '../types';
 import CustomDropdown from '../components/common/CustomDropdown';
 import { API_BASE } from '../config';
 import { waitForProcessingJob } from '../hooks/api/useProcessingJobs';
@@ -62,23 +71,9 @@ function FilterSelect({ label, value, onChange, options, allLabel }: {
   );
 }
 
-const FUNCTION_OPTIONS: Array<{ value: string; label: string }> = [
-  { value: 'Call Center', label: 'Call Center' },
-  { value: 'RCM', label: 'RCM' },
-  { value: 'Pre-Approvals', label: 'Pre-Approvals' },
-  { value: 'Marketing', label: 'Marketing' },
-];
-
-const severityStyles: Record<InsightSeverity, string> = {
-  critical: 'border-rose-200 bg-rose-50 text-rose-600 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300',
-  risk: 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300',
-  opportunity: 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300',
-  information: 'border-blue-200 bg-blue-50 text-blue-600 dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-300',
-};
-
-const severityLabels: Record<InsightSeverity, string> = {
-  critical: 'Critical', risk: 'At risk', opportunity: 'Opportunity', information: 'Data issue',
-};
+// `information` splits into "Watch" (on target but worsening, PR #15) and "Data issue" (data quality).
+const severityStyle = (insight: InsightItem) => SEVERITY_STYLES[severityDisplay(insight)];
+const severityLabel = (insight: InsightItem) => SEVERITY_LABELS[severityDisplay(insight)];
 
 function cleanScope(value: string) {
   return value.replace(/Â/g, '');
@@ -177,18 +172,24 @@ function DriverChart({ drivers, onSelect, onHoverTooltip }: {
 
 function InsightSpotlight({ insight, onOpen }: { insight: InsightItem | null; onOpen: () => void }) {
   if (!insight) return <div className="grid min-h-[324px] place-items-center px-7 text-center text-sm text-[var(--text-muted)]">Select an analysis to inspect its evidence.</div>;
-  const Icon = insight.severity === 'critical' ? Target : insight.severity === 'risk' ? AlertTriangle : insight.severity === 'opportunity' ? Sparkles : DatabaseZap;
-  const improving = insight.detail.current_value !== null && insight.detail.previous_value !== null && (
-    insight.detail.direction === 'lower_better'
-      ? insight.detail.current_value < insight.detail.previous_value
-      : insight.detail.direction === 'higher_better' && insight.detail.current_value > insight.detail.previous_value
-  );
+  const display = severityDisplay(insight);
+  const Icon = display === 'critical' ? Target : display === 'risk' ? AlertTriangle : display === 'opportunity' ? Sparkles : display === 'watch' ? Eye : DatabaseZap;
+  // Direction-aware: for lower-is-better KPIs a falling value is the improvement.
+  // Colour = good / bad (API trend_status / change_value first); arrow = raw movement direction.
+  const { detail } = insight;
+  const rawDelta = detail.raw_change ?? (detail.current_value !== null && detail.previous_value !== null
+    ? detail.current_value - detail.previous_value
+    : null);
+  const movement = resolveMovementTone({
+    trendStatus: detail.trend_status, changeValue: detail.change_value, rawDelta, direction: detail.direction,
+  });
+  const MovementIcon = rawDelta !== null && rawDelta > 0 ? TrendingUp : rawDelta !== null && rawDelta < 0 ? TrendingDown : null;
   return (
     <div className="p-5 md:p-6">
       <div className="flex items-start gap-4">
-        <span className={`grid h-12 w-12 shrink-0 place-items-center rounded-2xl border ${severityStyles[insight.severity]}`}><Icon size={21} /></span>
+        <span className={`grid h-12 w-12 shrink-0 place-items-center rounded-2xl border ${severityStyle(insight)}`}><Icon size={21} /></span>
         <div className="min-w-0">
-          <span className={`inline-flex rounded-full border px-2 py-1 text-[9px] font-black uppercase ${severityStyles[insight.severity]}`}>{severityLabels[insight.severity]}</span>
+          <span className={`inline-flex rounded-full border px-2 py-1 text-[9px] font-black uppercase ${severityStyle(insight)}`}>{severityLabel(insight)}</span>
           <h3 className="mt-2 text-base font-extrabold leading-6 text-[var(--text-primary)]">{insight.title}</h3>
         </div>
       </div>
@@ -200,7 +201,7 @@ function InsightSpotlight({ insight, onOpen }: { insight: InsightItem | null; on
           <div><span className="text-[10px] text-[var(--text-muted)]">Current</span><strong className="mt-1 block text-sm text-[var(--text-primary)]">{formatMetric(insight.detail.current_value, insight.detail.unit)}</strong></div>
           <div><span className="text-[10px] text-[var(--text-muted)]">Target</span><strong className="mt-1 block text-sm text-[var(--text-primary)]">{formatMetric(insight.detail.target_value, insight.detail.unit)}</strong></div>
           <div><span className="text-[10px] text-[var(--text-muted)]">Score impact</span><strong className={`mt-1 block text-sm ${insight.impact_points !== null && insight.impact_points >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>{impactLabel(insight.impact_points)}</strong></div>
-          <div><span className="text-[10px] text-[var(--text-muted)]">Trend</span><strong className={`mt-1 flex items-center gap-1 text-sm ${improving ? 'text-emerald-600' : 'text-[var(--text-primary)]'}`}>{improving && <TrendingDown size={14} />}{insight.trend_label}</strong></div>
+          <div><span className="text-[10px] text-[var(--text-muted)]">Trend</span><strong data-testid="spotlight-trend" data-tone={movement} className={`mt-1 flex items-center gap-1 text-sm ${movement === 'good' ? 'text-emerald-600' : movement === 'bad' ? 'text-rose-600' : 'text-[var(--text-primary)]'}`}>{(movement === 'good' || movement === 'bad') && MovementIcon && <MovementIcon size={14} aria-hidden="true" />}{insight.trend_label}</strong></div>
         </div>
       </div>
       <div className="mt-5">
@@ -257,11 +258,12 @@ function KpiOverviewBody({ overview, summary }: { overview: InsightKpiOverview |
 
 function CriticalAlertsBody({ insights, onOpen }: { insights: InsightItem[]; onOpen: (insight: InsightItem) => void }) {
   const alerts = insights.filter((insight) => insight.severity === 'critical' || insight.severity === 'risk').slice(0, 4);
-  return alerts.length ? <div className="divide-y divide-[var(--border-light)]">{alerts.map((insight) => <button key={insight.id} type="button" onClick={() => onOpen(insight)} className="flex w-full items-center gap-3 px-5 py-3 text-left transition hover:bg-rose-500/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"><span className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg border ${severityStyles[insight.severity]}`}><AlertTriangle size={14} /></span><span className="min-w-0 flex-1"><strong className="block truncate text-xs font-extrabold text-[var(--text-primary)]">{insight.title}</strong><span className="mt-0.5 block truncate text-[10px] text-[var(--text-muted)]">{cleanScope(insight.scope)}</span></span><ArrowRight size={14} className="text-[var(--text-faint)]" /></button>)}</div> : <p className="px-5 py-8 text-center text-sm text-[var(--text-muted)]">No critical alerts in this scope.</p>;
+  return alerts.length ? <div className="divide-y divide-[var(--border-light)]">{alerts.map((insight) => <button key={insight.id} type="button" onClick={() => onOpen(insight)} className="flex w-full items-center gap-3 px-5 py-3 text-left transition hover:bg-rose-500/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"><span className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg border ${severityStyle(insight)}`}><AlertTriangle size={14} /></span><span className="min-w-0 flex-1"><strong className="block truncate text-xs font-extrabold text-[var(--text-primary)]">{insight.title}</strong><span className="mt-0.5 block truncate text-[10px] text-[var(--text-muted)]">{cleanScope(insight.scope)}</span></span><ArrowRight size={14} className="text-[var(--text-faint)]" /></button>)}</div> : <p className="px-5 py-8 text-center text-sm text-[var(--text-muted)]">No critical alerts in this scope.</p>;
 }
 
 const insightUrlFilters: Array<[keyof InsightFilters, string]> = [
   ['region', 'region'],
+  ['teamFunction', 'function'],
   ['team', 'team'],
   ['performanceLevel', 'performance_level'],
   ['position', 'position'],
@@ -272,7 +274,31 @@ const insightUrlFilters: Array<[keyof InsightFilters, string]> = [
   ['status', 'status'],
 ];
 
-function filtersFromUrl(params: URLSearchParams): InsightFilters {
+/** Write the filter params into `base` (other params are kept). */
+function filtersToSearch(filters: InsightFilters, base: URLSearchParams): URLSearchParams {
+  const next = new URLSearchParams(base);
+  next.delete('period');
+  insightUrlFilters.forEach(([, parameter]) => next.delete(parameter));
+  if (filters.periodKey) next.set('period', filters.periodKey);
+  insightUrlFilters.forEach(([key, parameter]) => {
+    const value = filters[key];
+    if (value) next.set(parameter, value);
+  });
+  return next;
+}
+
+/** Canonical identity of a filter set, as it would appear in the URL. */
+function filtersKey(filters: InsightFilters): string {
+  return filtersToSearch(filters, new URLSearchParams()).toString();
+}
+
+/**
+ * Read filters from the URL. `legacy` (initial load only) maps pre-Teams links
+ * that stored a function in `team` (e.g. `?team=Call Center`). In-app history
+ * entries are always written in the current format, where `team=Marketing`
+ * really means the Marketing team, so navigation reads them strictly.
+ */
+function filtersFromUrl(params: URLSearchParams, { legacy = true }: { legacy?: boolean } = {}): InsightFilters {
   const filters: InsightFilters = {};
   const period = params.get('period');
   if (period) filters.periodKey = period;
@@ -280,14 +306,41 @@ function filtersFromUrl(params: URLSearchParams): InsightFilters {
     const value = params.get(parameter);
     if (value) filters[key] = value;
   });
+  // Links shared before the Teams filter existed stored the Function filter
+  // in `team`; read those as a function selection.
+  const legacyFunction = legacy && !filters.teamFunction && filters.team
+    ? INSIGHT_FUNCTIONS.find((teamFunction) => teamFunction.toLowerCase() === filters.team?.toLowerCase())
+    : undefined;
+  if (legacyFunction) {
+    filters.teamFunction = legacyFunction;
+    delete filters.team;
+  } else if (filters.team) {
+    filters.team = canonicalTeamName(filters.team);
+  }
   return filters;
 }
+
+const INSIGHT_SCOPE_ERROR = /outside the authorized insights scope/i;
 
 export default function InsightsView() {
   const navigate = useNavigate();
   const { role, fetchWithRole } = useUserRole();
   const [searchParams, setSearchParams] = useSearchParams();
   const [filters, setFilters] = useState<InsightFilters>(() => filtersFromUrl(searchParams));
+  // URL → filters (QA BUG-1): Back/Forward, the sidebar "Insights" link
+  // (/insights with no params) and any other navigation re-derive the filters
+  // from the URL. Our own writes are recognised because the URL then already
+  // matches `filters`, so state and URL never ping-pong.
+  const urlFiltersKey = filtersKey(filtersFromUrl(searchParams, { legacy: false }));
+  const [syncedUrlKey, setSyncedUrlKey] = useState(urlFiltersKey);
+  const urlNavigated = urlFiltersKey !== syncedUrlKey;
+  // User-initiated filter changes add a history entry; automatic corrections
+  // (cascade auto-clear, scope rejection, canonical names) replace it.
+  const historyMode = useRef<'push' | 'replace'>('replace');
+  const setUserFilters: typeof setFilters = (value) => {
+    historyMode.current = 'push';
+    setFilters(value);
+  };
   const [showAdditional, setShowAdditional] = useState(false);
   const [drawerInsight, setDrawerInsight] = useState<InsightItem | null>(null);
   const [focusedInsightId, setFocusedInsightId] = useState<string | null>(null);
@@ -304,6 +357,43 @@ export default function InsightsView() {
   const moreAnalysisRef = useRef<HTMLDivElement>(null);
   const query = useInsightsWorkspace(filters);
   const workspace = query.data;
+  // Cascade auto-clear: once the API has answered for the *current* filters
+  // (not placeholder data from the previous request), drop any header
+  // selection its option lists no longer support, including invalid URL
+  // combos. Adjusting state during render (instead of in an effect) avoids
+  // ever rendering the contradictory selection.
+  const reconciledFilters = query.data && !query.isPlaceholderData
+    ? reconcileCascade(filters, query.data.options)
+    : null;
+  // A team / level outside a manager's scope is rejected with 403 before any
+  // options are returned; clear the cascade instead of leaving an error state.
+  const scopeRejected = Boolean(
+    query.error
+    && INSIGHT_SCOPE_ERROR.test(query.error.message)
+    && (filters.team || filters.teamFunction || filters.performanceLevel),
+  );
+  if (urlNavigated) {
+    setSyncedUrlKey(urlFiltersKey);
+    if (urlFiltersKey !== filtersKey(filters)) {
+      setAnalysisPage(1);
+      setFocusedInsightId(null);
+      setFilters(filtersFromUrl(searchParams, { legacy: false }));
+    }
+  } else if (reconciledFilters) {
+    setAnalysisPage(1);
+    setFilters(reconciledFilters);
+  } else if (scopeRejected) {
+    setAnalysisPage(1);
+    setFilters({
+      ...filters,
+      teamFunction: undefined,
+      team: undefined,
+      performanceLevel: undefined,
+      position: undefined,
+      employeeId: undefined,
+      kpi: undefined,
+    });
+  }
   // Keep placeholder data from showing the previous KPI's trend while a new
   // KPI-only filter request is in flight. The chart must identify the KPI the
   // user selected, not merely display whatever trend was cached previously.
@@ -314,7 +404,7 @@ export default function InsightsView() {
   const quickActionLevel = (filters.performanceLevel || 'All') as PerformanceLevelFilter;
   const quickActionRegion = filters.region === 'EGY' || filters.region === 'UAE' ? filters.region : 'All';
   const quickActionData = useTeamData(
-    filters.team || null,
+    apiTeamParam(filters) || null,
     quickActionMonth,
     quickActionRegion,
     'all',
@@ -346,19 +436,15 @@ export default function InsightsView() {
   const effectivePeriod = filters.periodKey || workspace?.comparison.current?.key || '';
   const update = (key: keyof InsightFilters, value: string) => {
     setAnalysisPage(1);
-    setFilters((current) => ({ ...current, [key]: value || undefined }));
+    setUserFilters((current) => ({ ...current, [key]: value || undefined }));
   };
+  // Filters → URL. Only writes when the URL differs (no duplicate entries).
   useEffect(() => {
-    const next = new URLSearchParams(searchParams);
-    next.delete('period');
-    insightUrlFilters.forEach(([, parameter]) => next.delete(parameter));
-    if (filters.periodKey) next.set('period', filters.periodKey);
-    insightUrlFilters.forEach(([key, parameter]) => {
-      const value = filters[key];
-      if (value) next.set(parameter, value);
-    });
+    const replace = historyMode.current !== 'push';
+    historyMode.current = 'replace';
+    const next = filtersToSearch(filters, searchParams);
     if (next.toString() !== searchParams.toString()) {
-      setSearchParams(next, { replace: true });
+      setSearchParams(next, { replace });
     }
   }, [filters, searchParams, setSearchParams]);
   const analysisItems = Array.from(new Map([...(workspace?.team_analyses ?? []), ...(workspace?.priority_insights ?? [])].map((item) => [item.id, item])).values());
@@ -396,21 +482,23 @@ export default function InsightsView() {
     { key: 'critical', label: 'Critical', count: workspace.summary.critical },
     { key: 'risk', label: 'At risk', count: workspace.summary.at_risk },
     { key: 'opportunity', label: 'Opportunities', count: workspace.summary.opportunities },
-    { key: 'information', label: 'Data issues', count: workspace.summary.data_issues },
+    // `information` = Watch items (on target but worsening) plus data-quality issues.
+    { key: 'information', label: 'Watch & data issues', count: analysisItems.filter((item) => item.severity === 'information').length },
   ];
-  const showDiagnosticAnalysis = Boolean(filters.team || filters.kpi || filters.employeeId);
+  const showDiagnosticAnalysis = Boolean(filters.team || filters.teamFunction || filters.kpi || filters.employeeId);
   const analysisDepth = filters.employeeId
     ? 'Employee evidence'
     : filters.kpi
       ? 'KPI diagnosis'
-      : filters.team
+      : filters.team || filters.teamFunction
         ? 'Team contribution'
         : filters.region
           ? 'Geography contribution'
           : 'Executive overview';
   const activeFilterEntries = [
     filters.region ? { key: 'region' as const, label: 'Region', value: filters.region } : null,
-    filters.team ? { key: 'team' as const, label: 'Function', value: filters.team } : null,
+    filters.teamFunction ? { key: 'teamFunction' as const, label: 'Function', value: filters.teamFunction } : null,
+    filters.team ? { key: 'team' as const, label: 'Team', value: filters.team } : null,
     filters.performanceLevel ? { key: 'performanceLevel' as const, label: 'Level', value: filters.performanceLevel } : null,
     filters.position ? { key: 'position' as const, label: 'Position', value: filters.position } : null,
     filters.employeeId ? { key: 'employeeId' as const, label: 'Employee', value: filters.employeeId } : null,
@@ -421,29 +509,36 @@ export default function InsightsView() {
   ].filter(Boolean) as Array<{ key: keyof InsightFilters; label: string; value: string }>;
   const clearFilter = (key: keyof InsightFilters) => {
     setAnalysisPage(1);
-    setFilters((current) => ({ ...current, [key]: undefined }));
+    // Clearing the function keeps a team, like picking "All functions" (QA BUG-4).
+    setUserFilters((current) => ({ ...current, [key]: undefined }));
   };
   const clearAnalysis = () => {
     setAnalysisPage(1);
     setFocusedInsightId(null);
-    setFilters({ periodKey: filters.periodKey });
+    setUserFilters({ periodKey: filters.periodKey });
   };
   const selectRegion = (scope: string) => {
     setAnalysisPage(1);
-    setFilters((current) => ({
+    setUserFilters((current) => ({
       ...current,
+      // Function / team / level stay selected and are auto-cleared by the
+      // cascade only if the new region's options no longer contain them.
       region: scope || undefined,
-      team: undefined,
       position: undefined,
       employeeId: undefined,
       kpi: undefined,
     }));
   };
-  const selectTeam = (team: string) => {
+  const selectTeam = (value: string) => {
+    // Merged branch teams (e.g. OP Dubai + OP Final SHJAJM) are one header option.
+    const team = canonicalTeamName(value);
     setAnalysisPage(1);
-    setFilters((current) => ({
+    setUserFilters((current) => ({
       ...current,
       team: team || undefined,
+      teamFunction: team && current.teamFunction && !teamBelongsToFunction(team, current.teamFunction, workspace.options.team_functions)
+        ? undefined
+        : current.teamFunction,
       position: undefined,
       employeeId: undefined,
       kpi: undefined,
@@ -483,7 +578,7 @@ export default function InsightsView() {
           start_month: period.month,
           start_year: period.year,
           region: filters.region || null,
-          team: filters.team || null,
+          team: apiTeamParam(filters) || null,
           position: filters.position || null,
           performance_level: filters.performanceLevel || null,
           employee_id: filters.employeeId || null,
@@ -546,22 +641,22 @@ export default function InsightsView() {
   };
   const selectFunction = (value: string) => {
     setAnalysisPage(1);
-    setFilters((current) => ({
+    setUserFilters((current) => ({
       ...current,
-      team: value || undefined,
+      teamFunction: value || undefined,
+      // "All functions" keeps the team (it is valid on its own; the cascade still
+      // drops it if the options no longer list it). A specific function keeps it
+      // only when the team belongs to that function.
+      team: current.team && (!value || teamBelongsToFunction(current.team, value, workspace.options.team_functions)) ? current.team : undefined,
       position: undefined,
       employeeId: undefined,
       kpi: undefined,
     }));
   };
   const leadingPeopleKpi = workspace.people_contribution_analysis?.kpi_key;
-  const functionOptions = (() => {
-    const options = [...FUNCTION_OPTIONS];
-    if (filters.team && !options.some((option) => option.value === filters.team)) {
-      options.push({ value: filters.team, label: filters.team });
-    }
-    return options;
-  })();
+  const functionOptions = functionOptionsFor(workspace.options).map((value) => ({ value, label: value }));
+  const teamOptions = teamOptionsFor(workspace.options.teams, filters.teamFunction, workspace.options.team_functions).map((value) => ({ value, label: value }));
+  const filterKey = JSON.stringify(filters);
 
   return (
     <div className="app-page-shell rf-page rf-page--insights insights-page [--app-section-gap:16px] [--rf-page-gap:16px]">
@@ -572,14 +667,17 @@ export default function InsightsView() {
         region={filters.region || ''}
         regionOptions={workspace.options.regions.map((value) => ({ value, label: value }))}
         onRegionChange={selectRegion}
-        functionValue={filters.team || ''}
+        functionValue={filters.teamFunction || ''}
         functionOptions={functionOptions}
         onFunctionChange={selectFunction}
+        team={filters.team || ''}
+        teamOptions={teamOptions}
+        onTeamChange={selectTeam}
         level={filters.performanceLevel || ''}
         levelOptions={workspace.options.performance_levels.map((value) => ({ value, label: value }))}
         onLevelChange={(value) => {
           setAnalysisPage(1);
-          setFilters((current) => ({
+          setUserFilters((current) => ({
             ...current,
             performanceLevel: value || undefined,
             position: undefined,
@@ -603,7 +701,15 @@ export default function InsightsView() {
         {activeFilterEntries.length > 0 && <div className="flex flex-wrap items-center gap-2"><span className="mr-1 text-[10px] font-black uppercase tracking-[0.14em] text-[var(--text-faint)]">{analysisDepth}</span>{activeFilterEntries.map((entry) => <button key={entry.key} type="button" onClick={() => clearFilter(entry.key)} className="inline-flex items-center gap-1.5 rounded-full border border-[var(--insights-accent-border)] bg-[var(--insights-accent-soft)] px-2.5 py-1 text-[11px] font-bold text-[var(--insights-accent-text)] hover:border-[var(--insights-accent)]">{entry.label}: {entry.value}<X size={12} /></button>)}<button type="button" onClick={clearAnalysis} className="ml-auto text-[11px] font-bold text-[var(--text-muted)] hover:text-rose-600">Reset analysis</button></div>}
       </div>
 
-      <ExecutiveSummary story={workspace.executive_story} comparison={workspace.comparison} trend={selectedKpiTrend} />
+      <ExecutiveSummary
+        story={workspace.executive_story}
+        comparison={workspace.comparison}
+        trend={selectedKpiTrend}
+        overallTrend={workspace.overall_trend}
+        // Placeholder data belongs to the previous filters: show a skeleton, not a stale or empty trend.
+        trendLoading={Boolean(query.isPlaceholderData || (filters.kpi && !selectedKpiTrend && query.isFetching))}
+        filterKey={filterKey}
+      />
 
       <KeyDriversSection drivers={workspace.performance_drivers} onSelectDriver={openDriverInsight} onViewAll={viewAllDrivers} />
 
@@ -665,7 +771,7 @@ export default function InsightsView() {
           <div><h2 id="team-analysis-title" className="text-lg font-extrabold text-[var(--text-primary)]">Team KPI Analysis</h2><p className="mt-1 text-xs text-[var(--text-muted)]">Weighted score factors and operational diagnostics from the same authorized evidence.</p></div>
           <div className="flex max-w-full gap-1 overflow-x-auto">{tabs.map((tab) => <button key={tab.key} type="button" onClick={() => { setAnalysisPage(1); setAnalysisTab(tab.key); }} className={`whitespace-nowrap border-b-2 px-3 py-3 text-xs font-extrabold ${analysisTab === tab.key ? 'border-blue-600 text-blue-600' : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text-primary)]'}`}>{tab.label} ({tab.count})</button>)}</div>
         </div>
-        {visibleAnalyses.length ? <div><div className="overflow-x-auto"><table className="w-full min-w-[980px] text-left"><thead><tr className="border-b border-[var(--border-light)] bg-[var(--bg-sunken)]/50 text-[9px] font-extrabold uppercase tracking-wide text-[var(--text-faint)]"><th className="px-5 py-3">Insight</th><th className="px-4 py-3">Team / role</th><th className="px-4 py-3">Current</th><th className="px-4 py-3">Target</th><th className="px-4 py-3">Impact</th><th className="px-4 py-3">Trend</th><th className="px-5 py-3 text-right">Action</th></tr></thead><tbody>{pagedAnalyses.map((insight) => <tr key={insight.id} onClick={() => setFocusedInsightId(insight.id)} className="cursor-pointer border-b border-[var(--border-light)] last:border-0 hover:bg-[var(--bg-sunken)]/55"><td className="px-5 py-4"><div className="flex items-start gap-3"><span className={`mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg border ${severityStyles[insight.severity]}`}>{insight.severity === 'opportunity' ? <ArrowUpRight size={14} /> : <AlertTriangle size={14} />}</span><span><span className={`inline-flex rounded-full border px-1.5 py-0.5 text-[8px] font-black uppercase ${severityStyles[insight.severity]}`}>{severityLabels[insight.severity]}</span><strong className="mt-1 block max-w-[360px] text-xs text-[var(--text-primary)]">{insight.title}</strong><span className="mt-1 block text-[10px] text-[var(--text-muted)]">{insight.detail.direction?.replace('_', ' ') || 'Operational diagnostic'}</span></span></div></td><td className="px-4 py-4 text-xs text-[var(--text-secondary)]">{cleanScope(insight.scope)}</td><td className="px-4 py-4 text-xs font-extrabold text-[var(--text-primary)]">{formatMetric(insight.detail.current_value, insight.detail.unit)}</td><td className="px-4 py-4 text-xs text-[var(--text-secondary)]">{formatMetric(insight.detail.target_value, insight.detail.unit)}</td><td className={`px-4 py-4 text-xs font-extrabold ${insight.impact_points === null ? 'text-[var(--text-muted)]' : insight.impact_points >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>{impactLabel(insight.impact_points)}</td><td className="max-w-[180px] px-4 py-4 text-xs text-[var(--text-secondary)]">{insight.trend_label}</td><td className="px-5 py-4 text-right"><button type="button" aria-label={`View ${insight.title}`} onClick={(event) => { event.stopPropagation(); setDrawerInsight(insight); }} className="inline-grid h-9 w-9 place-items-center rounded-lg border border-[var(--border-light)] text-blue-600 hover:bg-blue-500/10"><Eye size={15} /></button></td></tr>)}</tbody></table></div><div className="flex flex-col gap-3 border-t border-[var(--border-light)] px-5 py-4 sm:flex-row sm:items-center sm:justify-between"><p className="text-sm font-semibold text-[var(--text-muted)]">Showing {analysisStart}–{analysisEnd} of {visibleAnalyses.length} analyses</p><div className="flex items-center gap-2"><button type="button" aria-label="Previous page" disabled={currentAnalysisPage === 1} onClick={() => setAnalysisPage((page) => Math.max(1, page - 1))} className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-[var(--border-light)] text-[var(--text-secondary)] transition hover:border-blue-500/40 hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-40"><ChevronLeft size={16} /></button>{pageNumbers.map((page) => <button key={page} type="button" aria-current={page === currentAnalysisPage ? 'page' : undefined} onClick={() => setAnalysisPage(page)} className={`min-h-10 min-w-10 rounded-xl border px-3 text-sm font-bold transition ${page === currentAnalysisPage ? 'border-blue-600 bg-blue-600 text-white shadow-sm shadow-blue-500/20' : 'border-[var(--border-light)] text-[var(--text-secondary)] hover:border-blue-500/40 hover:text-blue-600'}`}>{page}</button>)}<button type="button" aria-label="Next page" disabled={currentAnalysisPage === totalAnalysisPages} onClick={() => setAnalysisPage((page) => Math.min(totalAnalysisPages, page + 1))} className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-[var(--border-light)] text-[var(--text-secondary)] transition hover:border-blue-500/40 hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-40"><ChevronRight size={16} /></button></div></div></div> : <div className="px-6 py-14 text-center"><SearchX className="mx-auto text-[var(--text-faint)]" /><p className="mt-3 font-extrabold text-[var(--text-primary)]">No analyses match this view</p></div>}
+        {visibleAnalyses.length ? <div><div className="overflow-x-auto"><table className="w-full min-w-[980px] text-left"><thead><tr className="border-b border-[var(--border-light)] bg-[var(--bg-sunken)]/50 text-[9px] font-extrabold uppercase tracking-wide text-[var(--text-faint)]"><th className="px-5 py-3">Insight</th><th className="px-4 py-3">Team / role</th><th className="px-4 py-3">Current</th><th className="px-4 py-3">Target</th><th className="px-4 py-3">Impact</th><th className="px-4 py-3">Trend</th><th className="px-5 py-3 text-right">Action</th></tr></thead><tbody>{pagedAnalyses.map((insight) => <tr key={insight.id} onClick={() => setFocusedInsightId(insight.id)} className="cursor-pointer border-b border-[var(--border-light)] last:border-0 hover:bg-[var(--bg-sunken)]/55"><td className="px-5 py-4"><div className="flex items-start gap-3"><span className={`mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg border ${severityStyle(insight)}`}>{insight.severity === 'opportunity' ? <ArrowUpRight size={14} /> : <AlertTriangle size={14} />}</span><span><span className={`inline-flex rounded-full border px-1.5 py-0.5 text-[8px] font-black uppercase ${severityStyle(insight)}`}>{severityLabel(insight)}</span><strong className="mt-1 block max-w-[360px] text-xs text-[var(--text-primary)]">{insight.title}</strong><span className="mt-1 block text-[10px] text-[var(--text-muted)]">{insight.detail.direction?.replace('_', ' ') || 'Operational diagnostic'}</span></span></div></td><td className="px-4 py-4 text-xs text-[var(--text-secondary)]">{cleanScope(insight.scope)}</td><td className="px-4 py-4 text-xs font-extrabold text-[var(--text-primary)]">{formatMetric(insight.detail.current_value, insight.detail.unit)}</td><td className="px-4 py-4 text-xs text-[var(--text-secondary)]">{formatMetric(insight.detail.target_value, insight.detail.unit)}</td><td className={`px-4 py-4 text-xs font-extrabold ${insight.impact_points === null ? 'text-[var(--text-muted)]' : insight.impact_points >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>{impactLabel(insight.impact_points)}</td><td className="max-w-[180px] px-4 py-4 text-xs text-[var(--text-secondary)]">{insight.trend_label}</td><td className="px-5 py-4 text-right"><button type="button" aria-label={`View ${insight.title}`} onClick={(event) => { event.stopPropagation(); setDrawerInsight(insight); }} className="inline-grid h-9 w-9 place-items-center rounded-lg border border-[var(--border-light)] text-blue-600 hover:bg-blue-500/10"><Eye size={15} /></button></td></tr>)}</tbody></table></div><div className="flex flex-col gap-3 border-t border-[var(--border-light)] px-5 py-4 sm:flex-row sm:items-center sm:justify-between"><p className="text-sm font-semibold text-[var(--text-muted)]">Showing {analysisStart}–{analysisEnd} of {visibleAnalyses.length} analyses</p><div className="flex items-center gap-2"><button type="button" aria-label="Previous page" disabled={currentAnalysisPage === 1} onClick={() => setAnalysisPage((page) => Math.max(1, page - 1))} className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-[var(--border-light)] text-[var(--text-secondary)] transition hover:border-blue-500/40 hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-40"><ChevronLeft size={16} /></button>{pageNumbers.map((page) => <button key={page} type="button" aria-current={page === currentAnalysisPage ? 'page' : undefined} onClick={() => setAnalysisPage(page)} className={`min-h-10 min-w-10 rounded-xl border px-3 text-sm font-bold transition ${page === currentAnalysisPage ? 'border-blue-600 bg-blue-600 text-white shadow-sm shadow-blue-500/20' : 'border-[var(--border-light)] text-[var(--text-secondary)] hover:border-blue-500/40 hover:text-blue-600'}`}>{page}</button>)}<button type="button" aria-label="Next page" disabled={currentAnalysisPage === totalAnalysisPages} onClick={() => setAnalysisPage((page) => Math.min(totalAnalysisPages, page + 1))} className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-[var(--border-light)] text-[var(--text-secondary)] transition hover:border-blue-500/40 hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-40"><ChevronRight size={16} /></button></div></div></div> : <div className="px-6 py-14 text-center"><SearchX className="mx-auto text-[var(--text-faint)]" /><p className="mt-3 font-extrabold text-[var(--text-primary)]">No analyses match this view</p></div>}
       </section>}
 
       {showDiagnosticAnalysis && <section className="grid gap-5 xl:grid-cols-2">
@@ -775,7 +881,7 @@ export default function InsightsView() {
               <div className="grid xl:grid-cols-[minmax(0,1.35fr)_minmax(340px,0.75fr)]">
                 <div className="min-w-0"><p className="px-5 pt-3 text-[11px] text-[var(--text-muted)]">Measured KPI contribution movements—not assumed operational root causes.</p><DriverChart drivers={workspace.performance_drivers} onSelect={setFocusedInsightId} onHoverTooltip={setHoverTooltip} /></div>
                 <div className="min-w-0 border-t border-[var(--border-light)] xl:border-l xl:border-t-0">
-                  <div className="flex items-center justify-between px-5 pt-4"><h4 className="text-sm font-extrabold text-[var(--text-primary)]">Insight summary</h4>{focusedInsight && <span className={`rounded-full border px-2 py-1 text-[9px] font-black uppercase ${severityStyles[focusedInsight.severity]}`}>{severityLabels[focusedInsight.severity]}</span>}</div>
+                  <div className="flex items-center justify-between px-5 pt-4"><h4 className="text-sm font-extrabold text-[var(--text-primary)]">Insight summary</h4>{focusedInsight && <span className={`rounded-full border px-2 py-1 text-[9px] font-black uppercase ${severityStyle(focusedInsight)}`}>{severityLabel(focusedInsight)}</span>}</div>
                   <InsightSpotlight insight={focusedInsight} onOpen={() => focusedInsight && setDrawerInsight(focusedInsight)} />
                 </div>
               </div>

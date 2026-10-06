@@ -11,6 +11,7 @@ import type {
   InsightDriver,
   InsightExecutiveStory,
   InsightKpiTrend,
+  InsightOverallTrendPoint,
   InsightPeopleContributionAnalysis,
   InsightPersonContribution,
   InsightScopeSummary,
@@ -57,26 +58,155 @@ export function achievementPercent(
   return null;
 }
 
-export interface TrendPoint {
-  label: string;
-  key: string;
-  actual: number | null;
-  target: number | null;
+/**
+ * Achievement % for display: prefers the API's PR #15 `achievement_percent`
+ * (direction-aware, capped 0–100) and only recomputes it for older APIs.
+ */
+export function resolveAchievement(
+  apiPercent: number | null | undefined,
+  actual: number | null | undefined,
+  target: number | null | undefined,
+  direction: string | null | undefined,
+): number | null {
+  if (apiPercent !== null && apiPercent !== undefined && Number.isFinite(apiPercent)) return apiPercent;
+  return achievementPercent(actual, target, direction);
+}
+
+export type KpiStatus = 'on_track' | 'at_risk' | 'critical';
+
+/** Per-point KPI status: the API's PR #15 `status`, else the same 100% / 70% thresholds. */
+export function resolveKpiStatus(apiStatus: string | null | undefined, achievement: number | null): KpiStatus | null {
+  if (apiStatus === 'on_track' || apiStatus === 'at_risk' || apiStatus === 'critical') return apiStatus;
+  if (achievement === null) return null;
+  if (achievement >= 100) return 'on_track';
+  if (achievement >= 70) return 'at_risk';
+  return 'critical';
+}
+
+export type MovementTone = 'good' | 'bad' | 'flat' | 'unknown';
+
+/**
+ * Good / bad meaning of a movement. Prefers the API's PR #15 `trend_status`,
+ * then its direction-adjusted `change_value` (+ = improvement), and only then
+ * recomputes from the raw delta and the KPI direction.
+ */
+export function resolveMovementTone({
+  trendStatus, changeValue, rawDelta, direction,
+}: {
+  trendStatus?: string | null;
+  changeValue?: number | null;
+  rawDelta?: number | null;
+  direction?: string | null;
+}): MovementTone {
+  if (trendStatus === 'improving') return 'good';
+  if (trendStatus === 'declining') return 'bad';
+  if (trendStatus === 'stable') return 'flat';
+  if (changeValue !== null && changeValue !== undefined && Number.isFinite(changeValue)) {
+    return movementTone(changeValue, 'higher_better');
+  }
+  return movementTone(rawDelta, direction);
 }
 
 /**
- * Six-month "Performance trend" series. The workspace exposes a six-month
- * series only for the leading KPI (`kpi_trend`), so actual and target are
- * normalised to "% of target" (target line = 100%).
+ * Whether a change in a KPI's raw value is an improvement, using the KPI
+ * `direction` the API already returns (`higher_better` / `lower_better`).
+ * For lower-is-better KPIs (e.g. Rejection Rate, CPL) an increase is bad.
+ * Unknown directions stay neutral instead of being guessed.
+ */
+export function movementTone(delta: number | null | undefined, direction: string | null | undefined): MovementTone {
+  if (delta === null || delta === undefined || !Number.isFinite(delta)) return 'unknown';
+  if (Math.abs(delta) < 1e-9) return 'flat';
+  if (direction === 'lower_better') return delta < 0 ? 'good' : 'bad';
+  if (direction === 'higher_better') return delta > 0 ? 'good' : 'bad';
+  return 'unknown';
+}
+
+export interface TrendPoint {
+  label: string;
+  key: string;
+  /** Plotted value in % (overall score, or KPI achievement as % of target). Higher is always better. */
+  actual: number | null;
+  /** Target in the same % scale. */
+  target: number | null;
+  /** Raw KPI values for the leading-KPI fallback (direction-aware movement in the tooltip). */
+  raw?: {
+    actual: number | null;
+    target: number | null;
+    previous: number | null;
+    unit: string | null;
+    direction: string | null;
+    /** PR #15 per-point fields, when the API sends them. */
+    trendStatus?: string | null;
+    changeValue?: number | null;
+    status?: string | null;
+  };
+}
+
+export interface TrendSeries {
+  source: 'overall' | 'kpi';
+  points: TrendPoint[];
+  kpiLabel: string | null;
+  direction: string | null;
+  unit: string | null;
+}
+
+/**
+ * Six-month "Performance trend" series for the leading-KPI fallback. The
+ * workspace only exposes a six-month series for the leading KPI
+ * (`kpi_trend`), so actual and target are normalised to "% of target"
+ * (target line = 100%), honouring the KPI direction.
  */
 export function buildPerformanceTrend(trend: InsightKpiTrend | null | undefined): TrendPoint[] {
   if (!trend) return [];
-  return trend.points.map((point) => ({
+  return trend.points.map((point, index) => ({
     label: point.period.month.slice(0, 3),
     key: point.period.key,
-    actual: achievementPercent(point.actual_value, point.target_value, trend.direction),
+    actual: resolveAchievement(point.achievement_percent, point.actual_value, point.target_value, trend.direction),
     target: point.target_value !== null && point.target_value > 0 ? 100 : null,
+    raw: {
+      actual: point.actual_value,
+      target: point.target_value,
+      previous: index > 0 ? trend.points[index - 1].actual_value : null,
+      unit: trend.unit,
+      direction: trend.direction,
+      trendStatus: point.trend_status ?? null,
+      changeValue: point.change_value ?? null,
+      status: point.status ?? null,
+    },
   }));
+}
+
+/** Overall score series (`overall_trend`, proposed backend field), same scale as the summary's Current score. */
+export function buildOverallTrend(points: InsightOverallTrendPoint[] | null | undefined): TrendPoint[] {
+  if (!points?.length) return [];
+  return points.map((point) => ({
+    label: point.period.month.slice(0, 3),
+    key: point.period.key,
+    actual: point.score,
+    target: point.target,
+  }));
+}
+
+/**
+ * Prefer the overall score series. Once the API sends `overall_trend` (even an
+ * empty one) it is the only source, so the latest month always matches the
+ * Current score and an empty scope shows an empty state, never a KPI. Only an
+ * older API without the field falls back to the leading KPI, clearly labelled.
+ */
+export function selectTrendSeries(
+  overall: InsightOverallTrendPoint[] | null | undefined,
+  kpiTrend: InsightKpiTrend | null | undefined,
+): TrendSeries {
+  if (Array.isArray(overall)) {
+    return { source: 'overall', points: buildOverallTrend(overall), kpiLabel: null, direction: 'higher_better', unit: '%' };
+  }
+  return {
+    source: 'kpi',
+    points: buildPerformanceTrend(kpiTrend),
+    kpiLabel: kpiTrend?.kpi_label ?? null,
+    direction: kpiTrend?.direction ?? null,
+    unit: kpiTrend?.unit ?? null,
+  };
 }
 
 export interface DriverSplit {
@@ -142,7 +272,7 @@ export function peopleToReview(
     .slice(0, limit)
     .map((row) => ({
       ...row,
-      achievement: achievementPercent(row.current_value, row.target_value, row.direction ?? analysis.direction),
+      achievement: resolveAchievement(row.achievement_percent, row.current_value, row.target_value, row.direction ?? analysis.direction),
     }));
 }
 

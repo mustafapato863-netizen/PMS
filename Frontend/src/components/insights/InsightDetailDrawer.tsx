@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { AlertTriangle, ArrowRight, CheckCircle2, ClipboardList, ExternalLink, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import type { InsightItem } from '../../features/insights/types';
+import { SEVERITY_LABELS, SEVERITY_STYLES, severityDisplay } from '../../features/insights/severity';
 import { buildTeamPath } from '../../lib/searchNavigation';
 import OverlayPortal from '../common/OverlayPortal';
 
@@ -46,7 +47,7 @@ export default function InsightDetailDrawer({ insight, onClose }: { insight: Ins
       <aside role="dialog" aria-modal="true" aria-labelledby="insight-drawer-title" className="absolute inset-y-0 right-0 flex w-full max-w-xl flex-col border-l border-[var(--border-light)] bg-[var(--bg-surface)] shadow-2xl">
         <header className="flex items-start justify-between gap-4 border-b border-[var(--border-light)] p-5 md:p-6">
           <div>
-            <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-extrabold uppercase tracking-wide ${insight.severity === 'critical' ? 'bg-red-500/10 text-red-600' : insight.severity === 'risk' ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300' : insight.severity === 'opportunity' ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300' : 'bg-blue-500/10 text-blue-600'}`}>{insight.severity}</span>
+            <span data-testid="insight-drawer-severity" className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-extrabold uppercase tracking-wide ${SEVERITY_STYLES[severityDisplay(insight)]}`}>{SEVERITY_LABELS[severityDisplay(insight)]}</span>
             <h2 id="insight-drawer-title" className="mt-3 text-xl font-extrabold text-[var(--text-primary)]">{insight.title}</h2>
             <p className="mt-1 text-sm text-[var(--text-muted)]">{insight.scope} · {insight.trend_label}</p>
           </div>

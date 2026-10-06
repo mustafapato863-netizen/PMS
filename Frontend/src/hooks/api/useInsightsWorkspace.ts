@@ -17,8 +17,15 @@ export function insightsWorkspaceUrl(filters: InsightFilters, view: 'full' | 'pr
     params.set('year', String(year));
     params.set('month', month);
   }
+  if (filters.region) params.set('region', filters.region);
+  // `function` (live since PR #14) expands to the function's source teams with
+  // the same `_team_keys` rules and access checks as a parent `team` value; a
+  // selected team narrows further. Report export and quick-action team data
+  // only accept `team`, so they keep `apiTeamParam` (identical expansion).
+  if (filters.teamFunction) params.set('function', filters.teamFunction);
+  if (filters.team) params.set('team', filters.team);
   const mappings: Array<[keyof InsightFilters, string]> = [
-    ['region', 'region'], ['team', 'team'], ['performanceLevel', 'performance_level'],
+    ['performanceLevel', 'performance_level'],
     ['position', 'position'], ['employeeId', 'employee_id'], ['kpi', 'kpi'],
     ['severity', 'severity'], ['insightType', 'insight_type'], ['status', 'status'],
   ];

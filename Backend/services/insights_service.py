@@ -27,6 +27,7 @@ from models.insight_schemas import (
     InsightKpiTrendPoint,
     InsightKpiOverview,
     InsightKpiOverviewPoint,
+    InsightOverallTrendPoint,
     InsightPeriod,
     InsightPeopleContributionAnalysis,
     InsightPersonContribution,
@@ -48,6 +49,8 @@ from utils.report_scope import (
     _team_keys,
     filter_records_by_scope,
     filter_records_by_team_levels,
+    function_team_keys,
+    functions_for_team,
     user_can_access_team,
     user_can_access_team_level,
 )
@@ -96,6 +99,30 @@ def _stable_id(*parts: Any) -> str:
 def _average(values: Iterable[Any]) -> float | None:
     measured = [float(value) for value in values if value is not None]
     return mean(measured) if measured else None
+
+
+def _score_stats(records: Iterable[Any]) -> tuple[float | None, int]:
+    """Mean overall score and the number of records that carried a score.
+
+    Single averaging rule for ``executive_story.current_score`` and
+    ``overall_trend``: records without a score are excluded.
+    """
+    measured = [float(score) for score in (_evaluation_value(record, "score") for record in records) if score is not None]
+    return (mean(measured) if measured else None), len(measured)
+
+
+def _records_in_period(records: Iterable[Any], period: tuple[int, int] | None) -> list[Any]:
+    return [record for record in records if period and _period(record) == period]
+
+
+def _trailing_periods(current_period: tuple[int, int], size: int = 6) -> list[tuple[int, int]]:
+    """``size`` consecutive months ending at ``current_period``, oldest first."""
+    year, month = current_period
+    window = []
+    for offset in range(size - 1, -1, -1):
+        absolute_month = year * 12 + month - 1 - offset
+        window.append((absolute_month // 12, (absolute_month % 12) + 1))
+    return window
 
 
 def _target_achievement(actual: float | None, target: float | None, direction: str | None) -> float | None:
@@ -690,14 +717,66 @@ class InsightsService:
         return self._authorized_records(scope)
 
     @staticmethod
-    def _options(records: list[Any], filters: dict[str, Any] | None = None) -> InsightFilterOptions:
+    def _resolve_current_period(records: list[Any], filters: dict[str, Any]) -> tuple[int, int] | None:
+        """Resolve the reporting period exactly as the workspace does.
+
+        An explicit month/year selection wins; otherwise the latest completed
+        month in ``records`` is used, falling back to the latest explicit period.
+        ``records`` must already be narrowed by the active filters so options and
+        the workspace body always describe the same period.
+        """
+        if filters.get("year") and filters.get("month"):
+            month_number = MONTH_ORDER.get(str(filters["month"]))
+            if not month_number:
+                raise InsightValidationError("Unknown insight month")
+            return (int(filters["year"]), month_number)
+        explicit_periods = sorted({_period(record) for record in records if _period(record)})
+        today = date.today()
+        completed_periods = [period for period in explicit_periods if period < (today.year, today.month)]
+        if completed_periods:
+            return completed_periods[-1]
+        return explicit_periods[-1] if explicit_periods else None
+
+    @staticmethod
+    def _options(
+        records: list[Any],
+        filters: dict[str, Any] | None = None,
+        current_period: tuple[int, int] | None = None,
+    ) -> InsightFilterOptions:
         today = date.today()
         active_filters = filters or {}
-        selected_region = str(active_filters.get("region") or "").casefold()
-        region_records = [
-            record for record in records
-            if not selected_region or str(_value(record, "region", "")).casefold() == selected_region
+        if current_period is None:
+            current_period = InsightsService._resolve_current_period(
+                InsightsService._filter_records(records, active_filters),
+                active_filters,
+            )
+        # The period selector is the only list that spans every completed
+        # period; every other list describes the period currently on screen.
+        completed_periods = [
+            period for period in sorted({_period(record) for record in records if _period(record)}, reverse=True)
+            if period < (today.year, today.month)
         ]
+        period_records = (
+            records
+            if current_period is None
+            else [record for record in records if _period(record) == current_period]
+        )
+
+        def narrowed(*filter_keys: str) -> list[Any]:
+            # Each selector is narrowed by the *other* selections only, so the
+            # user can still switch within the dimension they already picked.
+            return InsightsService._filter_records(
+                period_records,
+                {key: value for key, value in active_filters.items() if key in filter_keys},
+            )
+
+        region_records = narrowed("team", "function", "performance_level")
+        team_records = narrowed("region", "function", "performance_level")
+        level_records = narrowed("region", "team", "function")
+        # A function is the parent of a team, so the function list ignores both
+        # team-dimension selections (the frontend may send a function as `team`).
+        function_records = narrowed("region", "performance_level")
+        position_records = narrowed("region", "team", "function", "performance_level")
         # KPI choices must reflect the currently selected operational scope.
         # The KPI selector itself is deliberately excluded so a user can switch
         # directly from one KPI to another without first clearing the filter.
@@ -706,47 +785,7 @@ class InsightsService:
             for key, value in active_filters.items()
             if key not in {"kpi", "severity", "insight_type", "insight_status", "status"}
         }
-        kpi_records = InsightsService._filter_records(records, kpi_scope_filters)
-        selected_month = active_filters.get("month")
-        selected_year = active_filters.get("year")
-        if selected_month and selected_year:
-            kpi_records = [
-                record for record in kpi_records
-                if str(_value(record, "month", "")).casefold() == str(selected_month).casefold()
-                and _value(record, "year") == selected_year
-            ]
-        # The performance-level selector follows the selected team and period,
-        # while excluding its own current value so a user can switch between
-        # every level that actually exists in that team.
-        level_scope_filters = {
-            key: value
-            for key, value in active_filters.items()
-            if key in {"region", "team"}
-        }
-        level_records = InsightsService._filter_records(records, level_scope_filters)
-        if selected_month and selected_year:
-            level_records = [
-                record for record in level_records
-                if str(_value(record, "month", "")).casefold() == str(selected_month).casefold()
-                and _value(record, "year") == selected_year
-            ]
-        position_scope_filters = {
-            key: value
-            for key, value in active_filters.items()
-            if key in {"region", "team", "performance_level"}
-        }
-        position_records = InsightsService._filter_records(records, position_scope_filters)
-        if selected_month and selected_year:
-            position_records = [
-                record for record in position_records
-                if str(_value(record, "month", "")).casefold() == str(selected_month).casefold()
-                and _value(record, "year") == selected_year
-            ]
-        completed_periods = [
-            period for period in sorted({_period(record) for record in records if _period(record)}, reverse=True)
-            if period < (today.year, today.month)
-        ]
-        periods = completed_periods
+        kpi_records = InsightsService._filter_records(period_records, kpi_scope_filters)
         employees: dict[str, dict[str, str]] = {}
         kpis: dict[str, str] = {}
         for record in kpi_records:
@@ -768,23 +807,41 @@ class InsightsService:
                 kpis["no_show_rate"] = "No Show Rate"
             if team == "Outbound":
                 kpis["aht"] = "AHT (Handle Time)"
+        teams = sorted({str(_value(record, "team")) for record in team_records if _value(record, "team")})
+        functions = sorted({
+            function
+            for record in function_records
+            if _value(record, "team")
+            for function in functions_for_team(str(_value(record, "team")))
+        })
         return InsightFilterOptions(
-            periods=[_period_schema(period) for period in periods if _period_schema(period)],
-            regions=sorted({str(_value(record, "region")) for record in records if _value(record, "region")}),
-            teams=sorted({str(_value(record, "team")) for record in region_records if _value(record, "team")}),
+            periods=[_period_schema(period) for period in completed_periods if _period_schema(period)],
+            regions=sorted({str(_value(record, "region")) for record in region_records if _value(record, "region")}),
+            teams=teams,
             performance_levels=sorted({str(_value(record, "performance_level")) for record in level_records if _value(record, "performance_level")}),
             positions=sorted({str(_value(record, "position")) for record in position_records if _value(record, "position")}),
             employees=sorted(employees.values(), key=lambda item: (item["name"], item["id"])),
             kpis=[{"key": key, "label": label} for key, label in sorted(kpis.items(), key=lambda item: item[1])],
+            functions=functions,
+            team_functions={team: functions_for_team(team) for team in teams},
         )
 
     @staticmethod
     def _validate_scope(filters: dict[str, Any], scope: dict) -> None:
         team = filters.get("team")
+        team_function = filters.get("function")
         level = filters.get("performance_level")
         if team and not user_can_access_team(scope, team):
             raise InsightAccessError("The selected team is outside the authorized insights scope")
+        # A function expands to its source teams; it is only allowed when at
+        # least one of them is inside the caller's scope. The records the
+        # workspace reads are already scope-filtered, so the expansion is
+        # effectively intersected with the caller's assigned teams.
+        if team_function and not user_can_access_team(scope, team_function):
+            raise InsightAccessError("The selected function is outside the authorized insights scope")
         if team and level and not user_can_access_team_level(scope, team, level):
+            raise InsightAccessError("The selected performance level is outside the authorized insights scope")
+        if team_function and level and not team and not user_can_access_team_level(scope, team_function, level):
             raise InsightAccessError("The selected performance level is outside the authorized insights scope")
 
     @staticmethod
@@ -797,6 +854,13 @@ class InsightsService:
             "status": "status",
         }
         result = records
+        selected_function = filters.get("function")
+        if selected_function:
+            function_values = function_team_keys(str(selected_function))
+            result = [
+                record for record in result
+                if str(_value(record, "team", "")).casefold() in function_values
+            ]
         selected_team = filters.get("team")
         if selected_team:
             # Parent domains such as Call Center / RCM / Pre-Approvals expand to
@@ -1426,6 +1490,25 @@ class InsightsService:
         )
 
     @staticmethod
+    def _overall_trend(records: list[Any], current_period: tuple[int, int]) -> list[InsightOverallTrendPoint]:
+        """Six-month overall score trend ending at the workspace's current period.
+
+        ``records`` is the same filtered, access-checked list that produces
+        ``current`` for ``executive_story``; each month is selected with the
+        same ``_records_in_period`` helper and averaged with ``_score_stats``,
+        so the last point always equals ``executive_story.current_score``.
+        """
+        points = []
+        for period in _trailing_periods(current_period):
+            score, measured = _score_stats(_records_in_period(records, period))
+            points.append(InsightOverallTrendPoint(
+                period=_period_schema(period),
+                score=round(score, 1) if score is not None else None,
+                measured_records=measured,
+            ))
+        return points
+
+    @staticmethod
     def _kpi_trend(
         selected_kpi: str | None,
         records: list[Any],
@@ -1728,8 +1811,8 @@ class InsightsService:
         drivers: list[InsightDriver],
         scope_label: str | None = None,
     ) -> InsightExecutiveStory:
-        current_score = _average(_evaluation_value(record, "score") for record in current)
-        previous_score = _average(_evaluation_value(record, "score") for record in previous)
+        current_score = _score_stats(current)[0]
+        previous_score = _score_stats(previous)[0]
         gap_points = current_score - 100.0 if current_score is not None else None
         score_change = current_score - previous_score if current_score is not None and previous_score is not None else None
         primary_scope = geography_summaries[0] if geography_summaries else None
@@ -1910,23 +1993,14 @@ class InsightsService:
     ) -> InsightsWorkspace:
         self._validate_scope(filters, scope)
         authorized_records, missing_year_count = self._authorized_records(scope)
+        records = self._filter_records(authorized_records, filters)
+        explicit_periods = sorted({_period(record) for record in records if _period(record)})
+        current_period = self._resolve_current_period(records, filters)
         options = (
             InsightFilterOptions()
             if priority_only
-            else self._options(authorized_records, filters)
+            else self._options(authorized_records, filters, current_period)
         )
-        records = self._filter_records(authorized_records, filters)
-        explicit_periods = sorted({_period(record) for record in records if _period(record)})
-        today = date.today()
-        completed_periods = [period for period in explicit_periods if period < (today.year, today.month)]
-
-        requested_period = None
-        if filters.get("year") and filters.get("month"):
-            month_number = MONTH_ORDER.get(str(filters["month"]))
-            if not month_number:
-                raise InsightValidationError("Unknown insight month")
-            requested_period = (int(filters["year"]), month_number)
-        current_period = requested_period or (completed_periods[-1] if completed_periods else (explicit_periods[-1] if explicit_periods else None))
         if current_period is None:
             data_issues = self._data_quality_items(records, [], None, missing_year_count)
             return InsightsWorkspace(
@@ -1945,8 +2019,8 @@ class InsightsService:
 
         adjacent_period = (current_period[0] - 1, 12) if current_period[1] == 1 else (current_period[0], current_period[1] - 1)
         previous_period = adjacent_period if adjacent_period in explicit_periods else None
-        current = [record for record in records if _period(record) == current_period]
-        previous = [record for record in records if previous_period and _period(record) == previous_period]
+        current = _records_in_period(records, current_period)
+        previous = _records_in_period(records, previous_period)
 
         items = self._score_insights(current, previous, current_period, previous_period)
         kpi_items, team_analyses, drivers, high_weight_misses = self._kpi_insights(current, previous)
@@ -2195,6 +2269,8 @@ class InsightsService:
             ])),
         )
 
+        overall_trend = self._overall_trend(records, current_period)
+
         repeated_employees = {item.employee_id for item in employee_items if item.employee_id}
         declining_teams = {
             item.team for item in items
@@ -2232,6 +2308,7 @@ class InsightsService:
             executive_story=executive_story,
             people_contribution_analysis=people_contribution_analysis,
             kpi_trend=kpi_trend,
+            overall_trend=overall_trend,
             role_summaries=role_summaries,
             kpi_overview=kpi_overview,
             options=options,

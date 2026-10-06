@@ -1,4 +1,9 @@
 export type InsightSeverity = 'critical' | 'risk' | 'opportunity' | 'information';
+/** PR #15: direction-aware movement / target meaning computed by the API. */
+export type InsightTrendStatus = 'improving' | 'declining' | 'stable';
+export type InsightTargetStatus = 'met' | 'missed';
+/** PR #15: per-point KPI status (100%+ on track, 70–99.9% at risk, <70% critical). */
+export type InsightKpiStatus = 'on_track' | 'at_risk' | 'critical';
 export type InsightType = 'performance' | 'kpi_driver' | 'employee_risk' | 'opportunity' | 'data_quality';
 
 export interface InsightPeriod {
@@ -25,6 +30,18 @@ export interface InsightDetail {
   evidence: InsightEvidence[];
   warnings: string[];
   recommended_focus: string;
+  // PR #15 (optional; older APIs omit them). Raw values above are unchanged.
+  /** + better than target, - worse (KPI units). */
+  gap_value?: number | null;
+  /** Capped 0–100; lower-better = target / actual. */
+  achievement_percent?: number | null;
+  /** + improvement vs previous, - decline. */
+  change_value?: number | null;
+  /** Unadjusted current - previous (drives the arrow direction). */
+  raw_change?: number | null;
+  trend_status?: InsightTrendStatus | null;
+  target_status?: InsightTargetStatus | null;
+  direction_defaulted?: boolean;
 }
 
 export interface InsightItem {
@@ -54,6 +71,8 @@ export interface InsightDriver {
   impact_points: number;
   direction: 'positive' | 'negative';
   insight_id: string;
+  /** PR #15: the KPI's higher/lower-better direction (`direction` above is the impact sign). */
+  kpi_direction?: string | null;
   trend?: Array<{ period: InsightPeriod; impact_points: number | null }>;
 }
 
@@ -112,6 +131,12 @@ export interface InsightPersonContribution {
   trend: number | null;
   severity: string;
   classification: PersonContributionClassification;
+  // PR #15 (optional). `trend` stays the raw current - previous delta.
+  achievement_percent?: number | null;
+  /** Direction-adjusted delta: + improvement. */
+  change_value?: number | null;
+  trend_status?: InsightTrendStatus | null;
+  target_status?: InsightTargetStatus | null;
 }
 
 export interface InsightPeopleContributionAnalysis {
@@ -131,6 +156,11 @@ export interface InsightKpiTrendPoint {
   actual_value: number | null;
   target_value: number | null;
   measured_records: number;
+  // PR #15 (optional).
+  achievement_percent?: number | null;
+  status?: InsightKpiStatus | null;
+  change_value?: number | null;
+  trend_status?: InsightTrendStatus | null;
 }
 
 export interface InsightKpiTrend {
@@ -139,6 +169,20 @@ export interface InsightKpiTrend {
   unit: string | null;
   direction: string | null;
   points: InsightKpiTrendPoint[];
+  /** PR #15: direction-aware movement of the latest measured month. */
+  trend_status?: InsightTrendStatus | null;
+}
+
+/**
+ * Proposed backend field (not on main or PR #14 yet): the overall score per
+ * month, computed exactly like `executive_story.current_score` for the same
+ * filters and access scope. The frontend consumes it when present.
+ */
+export interface InsightOverallTrendPoint {
+  period: InsightPeriod;
+  score: number | null;
+  target: number | null;
+  measured_records: number;
 }
 
 export interface InsightRoleSummary {
@@ -180,6 +224,10 @@ export interface InsightOptions {
   severities: InsightSeverity[];
   insight_types: InsightType[];
   statuses: string[];
+  /** PR #14: parent functions present in the narrowed scope (may include standalone teams). */
+  functions?: string[];
+  /** PR #14: each team in `teams` → every function it rolls up into (e.g. UAE Pre-Approvals → RCM + Pre-Approvals). */
+  team_functions?: Record<string, string[]>;
 }
 
 export interface InsightsWorkspace {
@@ -206,6 +254,7 @@ export interface InsightsWorkspace {
   data_issues: InsightItem[];
   people_contribution_analysis: InsightPeopleContributionAnalysis | null;
   kpi_trend: InsightKpiTrend | null;
+  overall_trend?: InsightOverallTrendPoint[] | null;
   role_summaries?: InsightRoleSummary[];
   kpi_overview?: InsightKpiOverview;
   team_summaries: Array<{
@@ -234,6 +283,8 @@ export interface InsightsWorkspace {
 export interface InsightFilters {
   periodKey?: string;
   region?: string;
+  /** Header "Functions" selection (URL `function`); sent to the API as `team` when no team is chosen. */
+  teamFunction?: string;
   team?: string;
   performanceLevel?: string;
   position?: string;

@@ -85,6 +85,46 @@ def _team_keys(value: str) -> set[str]:
     return {normalized}
 
 
+# "Functions" are the parent domains that ``_team_keys`` already expands into
+# their source teams (the same values the Insights ``team`` filter accepts as
+# rollups). A team that is not part of any parent domain (Marketing, Sales,
+# CSR, Pharmacy, Inbound UAE, ...) is its own function, mirroring the
+# ``_team_keys`` fallback of an exact team match. Order is broadest first:
+# UAE Pre-Approvals teams belong to RCM *and* to the narrower Pre-Approvals
+# function, exactly as ``_RCM_KEYS`` and ``_PRE_APPROVALS_UAE_KEYS`` overlap.
+_FUNCTION_TEAM_KEYS: dict[str, set[str]] = {
+    "Call Center": _CALL_CENTER_KEYS,
+    "RCM": _RCM_KEYS,
+    "Pre-Approvals": _PRE_APPROVALS_UAE_KEYS,
+}
+
+
+def functions_for_team(team_name: str) -> list[str]:
+    """Return every function (parent domain) the given team rolls up into."""
+    normalized = str(team_name or "").strip()
+    if not normalized:
+        return []
+    key = normalized.casefold()
+    parents = [function for function, keys in _FUNCTION_TEAM_KEYS.items() if key in keys]
+    return parents or [normalized]
+
+
+def function_for_team(team_name: str) -> str | None:
+    """Map a team to its primary (broadest) function.
+
+    ``Inbound`` -> ``Call Center``, ``Coding`` -> ``RCM``,
+    ``Pre-Approvals OP Dubai`` -> ``RCM`` (also listed under ``Pre-Approvals``
+    by :func:`functions_for_team`), ``Marketing`` -> ``Marketing``.
+    """
+    functions = functions_for_team(team_name)
+    return functions[0] if functions else None
+
+
+def function_team_keys(function_name: str) -> set[str]:
+    """Casefolded source-team keys covered by a function selection."""
+    return _team_keys(str(function_name))
+
+
 def user_can_access_team(scope: dict, team_name: str) -> bool:
     if scope.get("legacy_unscoped"):
         return True

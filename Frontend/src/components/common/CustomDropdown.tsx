@@ -22,6 +22,8 @@ interface CustomDropdownProps<T extends string | number = string> {
   disabled?: boolean;
   /** Extra classes for the trigger chevron (e.g. size / colour overrides). */
   chevronClassName?: string;
+  /** Minimum popover width in px (defaults to 180); long option labels can opt into a wider menu. */
+  menuMinWidth?: number;
 }
 
 /**
@@ -46,6 +48,7 @@ export function CustomDropdown<T extends string | number = string>({
   ariaLabel,
   disabled = false,
   chevronClassName = '',
+  menuMinWidth = 180,
 }: CustomDropdownProps<T>) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -93,7 +96,7 @@ export function CustomDropdown<T extends string | number = string>({
 
     const rect = trigger.getBoundingClientRect();
     const viewportPadding = 8;
-    const menuWidth = Math.max(rect.width, 180);
+    const menuWidth = Math.min(Math.max(rect.width, menuMinWidth), window.innerWidth - viewportPadding * 2);
     const availableBelow = window.innerHeight - rect.bottom - viewportPadding;
     const availableAbove = rect.top - viewportPadding;
     const openAbove = availableBelow < 180 && availableAbove > availableBelow;
@@ -107,7 +110,7 @@ export function CustomDropdown<T extends string | number = string>({
     );
 
     setMenuPosition({ top, left, width: menuWidth, maxHeight });
-  }, []);
+  }, [menuMinWidth]);
 
   /* Keep the portalled menu attached to its trigger while the page scrolls. */
   useLayoutEffect(() => {
@@ -123,8 +126,11 @@ export function CustomDropdown<T extends string | number = string>({
   }, [isOpen, updateMenuPosition]);
 
   /* Close popover on outside click or Escape. The menu lives in a portal, so
-     both the trigger and menu refs must be treated as inside the control. */
+     both the trigger and menu refs must be treated as inside the control.
+     Listen only while open: a closed dropdown must not react to Escape, or it
+     would steal focus from whatever the user is working in (e.g. a chart). */
   useEffect(() => {
+    if (!isOpen) return undefined;
     const handleClickOutside = (e: MouseEvent) => {
       const target = e.target as Node;
       if (
@@ -144,7 +150,7 @@ export function CustomDropdown<T extends string | number = string>({
       document.removeEventListener('mousedown', handleClickOutside);
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [closeMenu]);
+  }, [isOpen, closeMenu]);
 
   useEffect(() => {
     if (!isOpen) return;

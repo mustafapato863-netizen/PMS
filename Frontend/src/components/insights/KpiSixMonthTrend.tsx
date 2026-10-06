@@ -10,11 +10,19 @@ import {
   YAxis,
 } from 'recharts';
 import type { InsightKpiTrend } from '../../features/insights/types';
+import type { KpiStatus } from './overview/insightsOverviewModel';
+import { kpiTrendRows } from './kpiTrendRows';
 
-function displayValue(value: number | null, unit: string | null) {
-  if (value === null) return null;
-  return unit === '%' && Math.abs(value) <= 1 ? value * 100 : value;
-}
+const STATUS_COLOR: Record<KpiStatus, string> = {
+  on_track: '#059669',
+  at_risk: '#d97706',
+  critical: '#e11d48',
+};
+const STATUS_LABEL: Record<KpiStatus, string> = {
+  on_track: 'On track',
+  at_risk: 'At risk',
+  critical: 'Critical',
+};
 
 function formatDisplayValue(value: number | null, unit: string | null) {
   if (value === null) return 'No data';
@@ -22,12 +30,8 @@ function formatDisplayValue(value: number | null, unit: string | null) {
 }
 
 export default function KpiSixMonthTrend({ trend }: { trend: InsightKpiTrend }) {
-  const data = trend.points.map((point) => ({
-    period: `${point.period.month.slice(0, 3)} ${String(point.period.year).slice(-2)}`,
-    actual: displayValue(point.actual_value, trend.unit),
-    target: displayValue(point.target_value, trend.unit),
-    records: point.measured_records,
-  }));
+  const data = kpiTrendRows(trend);
+  const lowerBetter = trend.direction === 'lower_better';
   const measuredMonths = trend.points.filter((point) => point.actual_value !== null).length;
 
   return (
@@ -37,7 +41,11 @@ export default function KpiSixMonthTrend({ trend }: { trend: InsightKpiTrend }) 
           <span className="grid h-8 w-8 place-items-center rounded-lg bg-blue-500/10 text-blue-600"><Activity size={16} /></span>
           <div>
             <h3 id="selected-kpi-trend-title" className="text-sm font-extrabold text-[var(--text-primary)]">6-Month KPI Trend</h3>
-            <p className="text-xs font-semibold text-[var(--text-muted)]">{trend.kpi_label} · Actual vs target</p>
+            <p className="text-xs font-semibold text-[var(--text-muted)]">
+              {trend.kpi_label} · Actual vs target
+              {/* The Y axis is reversed for lower-is-better KPIs so "up" always reads as better. */}
+              {lowerBetter && <span data-testid="kpi-trend-direction" className="ml-1 text-[var(--text-faint)]">· Lower is better (axis reversed)</span>}
+            </p>
           </div>
         </div>
         <span className="rounded-full bg-[var(--bg-sunken)] px-3 py-1 text-[10px] font-bold text-[var(--text-muted)]">
@@ -54,7 +62,7 @@ export default function KpiSixMonthTrend({ trend }: { trend: InsightKpiTrend }) 
               <YAxis
                 axisLine={false}
                 tickLine={false}
-                reversed={trend.direction === 'lower_better'}
+                reversed={lowerBetter}
                 width={46}
                 tick={{ fill: 'var(--text-muted)', fontSize: 10 }}
                 tickFormatter={(value) => `${value}${trend.unit === '%' ? '%' : ''}`}
@@ -72,12 +80,19 @@ export default function KpiSixMonthTrend({ trend }: { trend: InsightKpiTrend }) 
                   name === 'actual' ? 'Actual' : 'Target',
                 ]}
                 labelFormatter={(label, payload) => {
-                  const records = payload?.[0]?.payload?.records ?? 0;
-                  return `${label} · ${records} measured record${records === 1 ? '' : 's'}`;
+                  const row = payload?.[0]?.payload as ReturnType<typeof kpiTrendRows>[number] | undefined;
+                  const records = row?.records ?? 0;
+                  const status = row?.status ? ` · ${STATUS_LABEL[row.status]}${row.achievement !== null ? ` (${row.achievement.toFixed(0)}% of target)` : ''}` : '';
+                  return `${label} · ${records} measured record${records === 1 ? '' : 's'}${status}`;
                 }}
               />
               <Legend iconType="circle" wrapperStyle={{ fontSize: 11, fontWeight: 700 }} formatter={(value) => value === 'actual' ? 'Actual' : 'Target'} />
-              <Line type="monotone" dataKey="actual" name="actual" stroke="#2563eb" strokeWidth={3} connectNulls={false} dot={{ r: 4, fill: '#2563eb', strokeWidth: 2, stroke: 'var(--bg-surface)' }} activeDot={{ r: 6 }} />
+              <Line type="monotone" dataKey="actual" name="actual" stroke="#2563eb" strokeWidth={3} connectNulls={false} dot={(props: { cx?: number; cy?: number; index?: number; payload?: { status: KpiStatus | null } }) => {
+                  // Dot colour = per-point status (on track / at risk / critical), consistent with the axis direction.
+                  if (props.cx === undefined || props.cy === undefined || props.payload?.status === undefined) return <g key={props.index} />;
+                  const fill = props.payload.status ? STATUS_COLOR[props.payload.status] : '#2563eb';
+                  return <circle key={props.index} cx={props.cx} cy={props.cy} r={4} fill={fill} strokeWidth={2} stroke="var(--bg-surface)" data-status={props.payload.status ?? 'unknown'} />;
+                }} activeDot={{ r: 6 }} />
               <Line type="monotone" dataKey="target" name="target" stroke="#f59e0b" strokeWidth={2} strokeDasharray="6 5" connectNulls={false} dot={{ r: 3, fill: '#f59e0b', strokeWidth: 1, stroke: 'var(--bg-surface)' }} />
             </LineChart>
           </ResponsiveContainer>
