@@ -114,7 +114,11 @@ export function functionOptionsFor(options: Pick<CascadeOptions, 'teams' | 'func
   ));
 }
 
-/** The API's `team` param: a selected team is always a subset of its function. */
+/**
+ * Single `team` value for endpoints without a `function` param (report export,
+ * quick-action team data). A selected team is always a subset of its function,
+ * and the backend expands a function name to its source teams.
+ */
 export function apiTeamParam(filters: Pick<InsightFilters, 'team' | 'teamFunction'>): string | undefined {
   return filters.team || filters.teamFunction || undefined;
 }

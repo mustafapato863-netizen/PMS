@@ -37,13 +37,18 @@ describe('insights filter cascade', () => {
     expect(teamOptionsFor(apiTeams)).toContain('Sales');
   });
 
-  it('sends the team, else the function, as the single API team param', () => {
+  it('keeps the single team param for team-only endpoints and sends function= to the workspace API', () => {
     expect(apiTeamParam({ teamFunction: 'RCM' })).toBe('RCM');
     expect(apiTeamParam({ teamFunction: 'RCM', team: 'Coding' })).toBe('Coding');
     expect(apiTeamParam({})).toBeUndefined();
     const url = insightsWorkspaceUrl({ teamFunction: 'Call Center', team: 'Inbound', region: 'UAE', performanceLevel: 'Employee' });
     const params = new URL(url, 'http://pms.test').searchParams;
-    expect(Object.fromEntries(params)).toEqual({ region: 'UAE', team: 'Inbound', performance_level: 'Employee' });
+    expect(Object.fromEntries(params)).toEqual({ region: 'UAE', function: 'Call Center', team: 'Inbound', performance_level: 'Employee' });
+    // Function only: sent as `function`, never as `team` (PR #14 param).
+    const functionOnly = new URL(insightsWorkspaceUrl({ teamFunction: 'Pre-Approvals' }), 'http://pms.test').searchParams;
+    expect(Object.fromEntries(functionOnly)).toEqual({ function: 'Pre-Approvals' });
+    // Team only (e.g. after "All functions"): just `team`.
+    expect(Object.fromEntries(new URL(insightsWorkspaceUrl({ team: 'Coding' }), 'http://pms.test').searchParams)).toEqual({ team: 'Coding' });
   });
 
   it('prefers PR #14 team_functions (team → functions[]) and lists multi-function teams under each', () => {

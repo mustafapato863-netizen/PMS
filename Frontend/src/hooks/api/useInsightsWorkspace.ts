@@ -1,7 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import type { InsightFilters, InsightsWorkspace } from '../../features/insights/types';
 import { apiFetch } from '../../lib/apiClient';
-import { apiTeamParam } from '../../features/insights/filterCascade';
 
 interface ApiResponse<T> {
   success: boolean;
@@ -19,10 +18,12 @@ export function insightsWorkspaceUrl(filters: InsightFilters, view: 'full' | 'pr
     params.set('month', month);
   }
   if (filters.region) params.set('region', filters.region);
-  // The backend has no `function` param: a function is a parent `team` value
-  // that `_team_keys` expands, and a selected team is a subset of it.
-  const team = apiTeamParam(filters);
-  if (team) params.set('team', team);
+  // `function` (live since PR #14) expands to the function's source teams with
+  // the same `_team_keys` rules and access checks as a parent `team` value; a
+  // selected team narrows further. Report export and quick-action team data
+  // only accept `team`, so they keep `apiTeamParam` (identical expansion).
+  if (filters.teamFunction) params.set('function', filters.teamFunction);
+  if (filters.team) params.set('team', filters.team);
   const mappings: Array<[keyof InsightFilters, string]> = [
     ['performanceLevel', 'performance_level'],
     ['position', 'position'], ['employeeId', 'employee_id'], ['kpi', 'kpi'],

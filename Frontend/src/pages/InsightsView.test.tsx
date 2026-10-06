@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
+import { Link, MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import InsightsView from './InsightsView';
 import { insightsWorkspaceUrl } from '../hooks/api/useInsightsWorkspace';
@@ -273,6 +273,31 @@ vi.mock('../hooks/usePerformanceData', () => {
 function LocationProbe() {
   const location = useLocation();
   return <output data-testid="location-search">{location.search}</output>;
+}
+
+function HistoryProbe() {
+  const navigate = useNavigate();
+  return (
+    <nav aria-label="Test navigation">
+      <button type="button" onClick={() => navigate(-1)}>Browser back</button>
+      <button type="button" onClick={() => navigate(1)}>Browser forward</button>
+      {/* Same target as the sidebar "Insights" link. */}
+      <Link to="/insights">Sidebar Insights</Link>
+      <button type="button" onClick={() => navigate('/insights?function=Marketing')}>Open Marketing link</button>
+    </nav>
+  );
+}
+
+/** Router with a page before Insights, so Back can leave the page. */
+function renderWithHistory(entries: string[], initialIndex = entries.length - 1) {
+  return render(
+    <MemoryRouter initialEntries={entries} initialIndex={initialIndex}>
+      <Routes>
+        <Route path="/insights" element={<><InsightsView /><LocationProbe /><HistoryProbe /></>} />
+        <Route path="/executive" element={<><p>Executive page</p><HistoryProbe /></>} />
+      </Routes>
+    </MemoryRouter>,
+  );
 }
 
 function currentSearch() {
@@ -889,7 +914,7 @@ describe('InsightsView', () => {
     (screen.getByRole('combobox', { name }) as HTMLSelectElement).querySelectorAll('option'),
   ).map((option) => option.textContent);
 
-  it('lists only functions with teams in scope and sends the function as the API team filter', async () => {
+  it('lists only functions with teams in scope and sends the function as the API function filter', async () => {
     const user = userEvent.setup();
     renderInsights();
 
@@ -902,8 +927,8 @@ describe('InsightsView', () => {
     expect(latestFilters.current.team).toBeUndefined();
     expect(currentSearch().get('function')).toBe('Call Center');
     const workspaceUrl = insightsWorkspaceUrl(latestFilters.current).replace(/\+/g, '%20');
-    expect(workspaceUrl).toContain('team=Call%20Center');
-    expect(workspaceUrl).not.toContain('function=');
+    expect(workspaceUrl).toContain('function=Call%20Center');
+    expect(workspaceUrl).not.toContain('team=');
   });
 
   it('narrows Teams to the selected function and syncs the Team filter with the URL', async () => {
@@ -944,7 +969,155 @@ describe('InsightsView', () => {
     await user.selectOptions(screen.getByRole('combobox', { name: 'Team' }), 'Pre-Approvals OP Final');
     await user.selectOptions(screen.getByRole('combobox', { name: 'Team' }), '');
     expect(currentSearch().get('team')).toBeNull();
-    expect(insightsWorkspaceUrl(latestFilters.current)).toContain('team=Pre-Approvals');
+    expect(insightsWorkspaceUrl(latestFilters.current)).toContain('function=Pre-Approvals');
+    expect(insightsWorkspaceUrl(latestFilters.current)).not.toContain('team=');
+  });
+
+  describe('URL history (QA BUG-1)', () => {
+    const back = (user: ReturnType<typeof userEvent.setup>) => user.click(screen.getByRole('button', { name: 'Browser back' }));
+    const forward = (user: ReturnType<typeof userEvent.setup>) => user.click(screen.getByRole('button', { name: 'Browser forward' }));
+
+    it('steps Back and Forward through filter changes instead of leaving the page', async () => {
+      const user = userEvent.setup();
+      renderWithHistory(['/executive', '/insights']);
+
+      await user.selectOptions(screen.getByRole('combobox', { name: 'Function' }), 'RCM');
+      await user.selectOptions(screen.getByRole('combobox', { name: 'Team' }), 'Coding');
+      expect(Object.fromEntries(currentSearch())).toEqual({ function: 'RCM', team: 'Coding' });
+
+      await back(user);
+      expect(Object.fromEntries(currentSearch())).toEqual({ function: 'RCM' });
+      expect(screen.getByRole('combobox', { name: 'Function' })).toHaveValue('RCM');
+      expect(screen.getByRole('combobox', { name: 'Team' })).toHaveValue('');
+      expect(latestFilters.current).toEqual({ teamFunction: 'RCM' });
+
+      await back(user);
+      expect(currentSearch().toString()).toBe('');
+      expect(screen.getByRole('combobox', { name: 'Function' })).toHaveValue('');
+      expect(latestFilters.current).toEqual({});
+
+      await back(user);
+      expect(screen.getByText('Executive page')).toBeInTheDocument();
+
+      await forward(user);
+      await forward(user);
+      expect(Object.fromEntries(currentSearch())).toEqual({ function: 'RCM' });
+      await forward(user);
+      expect(Object.fromEntries(currentSearch())).toEqual({ function: 'RCM', team: 'Coding' });
+      expect(screen.getByRole('combobox', { name: 'Team' })).toHaveValue('Coding');
+      expect(latestFilters.current).toEqual({ teamFunction: 'RCM', team: 'Coding' });
+    });
+
+    it('resets to defaults when the sidebar Insights link (/insights, no params) is clicked', async () => {
+      const user = userEvent.setup();
+      renderWithHistory(['/executive', '/insights?function=RCM&performance_level=Employee']);
+      expect(screen.getByRole('combobox', { name: 'Function' })).toHaveValue('RCM');
+
+      await user.click(screen.getByRole('link', { name: 'Sidebar Insights' }));
+      expect(currentSearch().toString()).toBe('');
+      expect(screen.getByRole('combobox', { name: 'Function' })).toHaveValue('');
+      expect(screen.getByRole('combobox', { name: 'Performance level' })).toHaveValue('');
+      expect(latestFilters.current).toEqual({});
+
+      // The previous filtered view is one Back away.
+      await back(user);
+      expect(Object.fromEntries(currentSearch())).toEqual({ function: 'RCM', performance_level: 'Employee' });
+      expect(screen.getByRole('combobox', { name: 'Function' })).toHaveValue('RCM');
+    });
+
+    it('adopts an in-app navigation to new filter params instead of reverting it', async () => {
+      const user = userEvent.setup();
+      renderWithHistory(['/insights?function=RCM']);
+      await user.click(screen.getByRole('button', { name: 'Open Marketing link' }));
+      expect(Object.fromEntries(currentSearch())).toEqual({ function: 'Marketing' });
+      expect(screen.getByRole('combobox', { name: 'Function' })).toHaveValue('Marketing');
+      expect(latestFilters.current).toEqual({ teamFunction: 'Marketing' });
+    });
+
+    it('keeps a Team=Marketing history entry as a team (legacy function links are read on first load only)', async () => {
+      const user = userEvent.setup();
+      renderWithHistory(['/executive', '/insights']);
+      await user.click(within(within(section('Teams needing attention')).getByRole('list', { name: 'Teams needing attention' })).getAllByRole('button')[0]);
+      expect(Object.fromEntries(currentSearch())).toEqual({ team: 'Marketing' });
+      expect(latestFilters.current).toEqual({ team: 'Marketing' });
+      await user.selectOptions(screen.getByRole('combobox', { name: 'Performance level' }), 'Employee');
+      await back(user);
+      expect(Object.fromEntries(currentSearch())).toEqual({ team: 'Marketing' });
+      expect(latestFilters.current).toEqual({ team: 'Marketing' });
+      expect(screen.getByRole('combobox', { name: 'Team' })).toHaveValue('Marketing');
+    });
+
+    it('does not add history entries for automatic corrections or unchanged selections', async () => {
+      const user = userEvent.setup();
+      // Coding is not a Call Center team: the cascade clears it with a replace.
+      renderWithHistory(['/executive', '/insights?function=Call%20Center&team=Coding']);
+      expect(Object.fromEntries(currentSearch())).toEqual({ function: 'Call Center' });
+      await back(user);
+      expect(screen.getByText('Executive page')).toBeInTheDocument();
+      cleanup();
+
+      // A legacy link is normalised in place too.
+      renderWithHistory(['/executive', '/insights?team=Call%20Center']);
+      expect(Object.fromEntries(currentSearch())).toEqual({ function: 'Call Center' });
+      await back(user);
+      expect(screen.getByText('Executive page')).toBeInTheDocument();
+      cleanup();
+
+      // Re-selecting the current value is not a new entry.
+      renderWithHistory(['/executive', '/insights']);
+      await user.selectOptions(screen.getByRole('combobox', { name: 'Function' }), 'RCM');
+      await user.selectOptions(screen.getByRole('combobox', { name: 'Function' }), 'RCM');
+      await back(user);
+      expect(currentSearch().toString()).toBe('');
+      await back(user);
+      expect(screen.getByText('Executive page')).toBeInTheDocument();
+    });
+  });
+
+  it('keeps focus on the chart point when Escape hides its tooltip (QA BUG-2)', async () => {
+    const user = userEvent.setup();
+    renderInsights();
+    const june = screen.getByTestId('performance-trend-point-2026-06');
+    june.focus();
+    await user.keyboard('{ArrowLeft}');
+    const may = screen.getByTestId('performance-trend-point-2026-05');
+    expect(may).toHaveFocus();
+    await user.keyboard('{Escape}');
+    // Closed header dropdowns used to restore focus to their trigger on the next frame.
+    await new Promise((resolve) => window.requestAnimationFrame(() => resolve(null)));
+    expect(may).toHaveFocus();
+    expect(screen.queryByTestId('performance-trend-tooltip')).not.toBeInTheDocument();
+    await user.keyboard('{ArrowLeft}');
+    expect(screen.getByTestId('performance-trend-point-2026-04')).toHaveFocus();
+  });
+
+  describe('All functions keeps a valid team (QA BUG-4)', () => {
+    it('keeps the team when Functions is set to All functions', async () => {
+      const user = userEvent.setup();
+      renderInsights('/insights?function=Pre-Approvals&team=Pre-Approvals%20OP%20Final');
+      expect(screen.getByRole('combobox', { name: 'Team' })).toHaveValue('Pre-Approvals OP Final');
+
+      await user.selectOptions(screen.getByRole('combobox', { name: 'Function' }), '');
+      expect(latestFilters.current).toEqual({ team: 'Pre-Approvals OP Final' });
+      expect(screen.getByRole('combobox', { name: 'Team' })).toHaveValue('Pre-Approvals OP Final');
+      expect(Object.fromEntries(currentSearch())).toEqual({ team: 'Pre-Approvals OP Final' });
+      expect(Object.fromEntries(new URL(insightsWorkspaceUrl(latestFilters.current), 'http://pms.test').searchParams)).toEqual({ team: 'Pre-Approvals OP Final' });
+    });
+
+    it('keeps the team when the Function filter chip is removed', async () => {
+      const user = userEvent.setup();
+      renderInsights('/insights?function=RCM&team=Coding');
+      await user.click(screen.getByRole('button', { name: 'Function: RCM' }));
+      expect(latestFilters.current).toEqual({ team: 'Coding' });
+      expect(Object.fromEntries(currentSearch())).toEqual({ team: 'Coding' });
+    });
+
+    it('still drops a team that does not belong to a newly picked function', async () => {
+      const user = userEvent.setup();
+      renderInsights('/insights?function=Call%20Center&team=Inbound');
+      await user.selectOptions(screen.getByRole('combobox', { name: 'Function' }), 'RCM');
+      expect(latestFilters.current).toEqual({ teamFunction: 'RCM' });
+    });
   });
 
   it('restores Function and Team from the URL', () => {
@@ -1040,8 +1213,9 @@ describe('InsightsView', () => {
     // render from this one workspace response, so its params scope every section.
     const params = new URL(insightsWorkspaceUrl(latestFilters.current), 'http://pms.test').searchParams;
     expect(Object.fromEntries(params)).toEqual({
-      year: '2026', month: 'June', region: 'EGY', team: 'Inbound', performance_level: 'Employee',
+      year: '2026', month: 'June', region: 'EGY', function: 'Call Center', team: 'Inbound', performance_level: 'Employee',
     });
+    // Quick-action team data (team-only endpoint) still gets the single effective team.
     expect(teamDataCalls.calls.at(-1)?.slice(0, 3)).toEqual(['Inbound', 'June', 'EGY']);
     expect(Object.fromEntries(currentSearch())).toEqual({
       period: '2026-06', region: 'EGY', function: 'Call Center', team: 'Inbound', performance_level: 'Employee',

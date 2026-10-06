@@ -274,7 +274,31 @@ const insightUrlFilters: Array<[keyof InsightFilters, string]> = [
   ['status', 'status'],
 ];
 
-function filtersFromUrl(params: URLSearchParams): InsightFilters {
+/** Write the filter params into `base` (other params are kept). */
+function filtersToSearch(filters: InsightFilters, base: URLSearchParams): URLSearchParams {
+  const next = new URLSearchParams(base);
+  next.delete('period');
+  insightUrlFilters.forEach(([, parameter]) => next.delete(parameter));
+  if (filters.periodKey) next.set('period', filters.periodKey);
+  insightUrlFilters.forEach(([key, parameter]) => {
+    const value = filters[key];
+    if (value) next.set(parameter, value);
+  });
+  return next;
+}
+
+/** Canonical identity of a filter set, as it would appear in the URL. */
+function filtersKey(filters: InsightFilters): string {
+  return filtersToSearch(filters, new URLSearchParams()).toString();
+}
+
+/**
+ * Read filters from the URL. `legacy` (initial load only) maps pre-Teams links
+ * that stored a function in `team` (e.g. `?team=Call Center`). In-app history
+ * entries are always written in the current format, where `team=Marketing`
+ * really means the Marketing team, so navigation reads them strictly.
+ */
+function filtersFromUrl(params: URLSearchParams, { legacy = true }: { legacy?: boolean } = {}): InsightFilters {
   const filters: InsightFilters = {};
   const period = params.get('period');
   if (period) filters.periodKey = period;
@@ -284,7 +308,7 @@ function filtersFromUrl(params: URLSearchParams): InsightFilters {
   });
   // Links shared before the Teams filter existed stored the Function filter
   // in `team`; read those as a function selection.
-  const legacyFunction = !filters.teamFunction && filters.team
+  const legacyFunction = legacy && !filters.teamFunction && filters.team
     ? INSIGHT_FUNCTIONS.find((teamFunction) => teamFunction.toLowerCase() === filters.team?.toLowerCase())
     : undefined;
   if (legacyFunction) {
@@ -303,6 +327,20 @@ export default function InsightsView() {
   const { role, fetchWithRole } = useUserRole();
   const [searchParams, setSearchParams] = useSearchParams();
   const [filters, setFilters] = useState<InsightFilters>(() => filtersFromUrl(searchParams));
+  // URL → filters (QA BUG-1): Back/Forward, the sidebar "Insights" link
+  // (/insights with no params) and any other navigation re-derive the filters
+  // from the URL. Our own writes are recognised because the URL then already
+  // matches `filters`, so state and URL never ping-pong.
+  const urlFiltersKey = filtersKey(filtersFromUrl(searchParams, { legacy: false }));
+  const [syncedUrlKey, setSyncedUrlKey] = useState(urlFiltersKey);
+  const urlNavigated = urlFiltersKey !== syncedUrlKey;
+  // User-initiated filter changes add a history entry; automatic corrections
+  // (cascade auto-clear, scope rejection, canonical names) replace it.
+  const historyMode = useRef<'push' | 'replace'>('replace');
+  const setUserFilters: typeof setFilters = (value) => {
+    historyMode.current = 'push';
+    setFilters(value);
+  };
   const [showAdditional, setShowAdditional] = useState(false);
   const [drawerInsight, setDrawerInsight] = useState<InsightItem | null>(null);
   const [focusedInsightId, setFocusedInsightId] = useState<string | null>(null);
@@ -334,7 +372,14 @@ export default function InsightsView() {
     && INSIGHT_SCOPE_ERROR.test(query.error.message)
     && (filters.team || filters.teamFunction || filters.performanceLevel),
   );
-  if (reconciledFilters) {
+  if (urlNavigated) {
+    setSyncedUrlKey(urlFiltersKey);
+    if (urlFiltersKey !== filtersKey(filters)) {
+      setAnalysisPage(1);
+      setFocusedInsightId(null);
+      setFilters(filtersFromUrl(searchParams, { legacy: false }));
+    }
+  } else if (reconciledFilters) {
     setAnalysisPage(1);
     setFilters(reconciledFilters);
   } else if (scopeRejected) {
@@ -391,19 +436,15 @@ export default function InsightsView() {
   const effectivePeriod = filters.periodKey || workspace?.comparison.current?.key || '';
   const update = (key: keyof InsightFilters, value: string) => {
     setAnalysisPage(1);
-    setFilters((current) => ({ ...current, [key]: value || undefined }));
+    setUserFilters((current) => ({ ...current, [key]: value || undefined }));
   };
+  // Filters → URL. Only writes when the URL differs (no duplicate entries).
   useEffect(() => {
-    const next = new URLSearchParams(searchParams);
-    next.delete('period');
-    insightUrlFilters.forEach(([, parameter]) => next.delete(parameter));
-    if (filters.periodKey) next.set('period', filters.periodKey);
-    insightUrlFilters.forEach(([key, parameter]) => {
-      const value = filters[key];
-      if (value) next.set(parameter, value);
-    });
+    const replace = historyMode.current !== 'push';
+    historyMode.current = 'replace';
+    const next = filtersToSearch(filters, searchParams);
     if (next.toString() !== searchParams.toString()) {
-      setSearchParams(next, { replace: true });
+      setSearchParams(next, { replace });
     }
   }, [filters, searchParams, setSearchParams]);
   const analysisItems = Array.from(new Map([...(workspace?.team_analyses ?? []), ...(workspace?.priority_insights ?? [])].map((item) => [item.id, item])).values());
@@ -468,17 +509,17 @@ export default function InsightsView() {
   ].filter(Boolean) as Array<{ key: keyof InsightFilters; label: string; value: string }>;
   const clearFilter = (key: keyof InsightFilters) => {
     setAnalysisPage(1);
-    // A team only exists inside its function, so clearing the function clears it too.
-    setFilters((current) => ({ ...current, [key]: undefined, ...(key === 'teamFunction' ? { team: undefined } : {}) }));
+    // Clearing the function keeps a team, like picking "All functions" (QA BUG-4).
+    setUserFilters((current) => ({ ...current, [key]: undefined }));
   };
   const clearAnalysis = () => {
     setAnalysisPage(1);
     setFocusedInsightId(null);
-    setFilters({ periodKey: filters.periodKey });
+    setUserFilters({ periodKey: filters.periodKey });
   };
   const selectRegion = (scope: string) => {
     setAnalysisPage(1);
-    setFilters((current) => ({
+    setUserFilters((current) => ({
       ...current,
       // Function / team / level stay selected and are auto-cleared by the
       // cascade only if the new region's options no longer contain them.
@@ -492,7 +533,7 @@ export default function InsightsView() {
     // Merged branch teams (e.g. OP Dubai + OP Final SHJAJM) are one header option.
     const team = canonicalTeamName(value);
     setAnalysisPage(1);
-    setFilters((current) => ({
+    setUserFilters((current) => ({
       ...current,
       team: team || undefined,
       teamFunction: team && current.teamFunction && !teamBelongsToFunction(team, current.teamFunction, workspace.options.team_functions)
@@ -600,10 +641,13 @@ export default function InsightsView() {
   };
   const selectFunction = (value: string) => {
     setAnalysisPage(1);
-    setFilters((current) => ({
+    setUserFilters((current) => ({
       ...current,
       teamFunction: value || undefined,
-      team: current.team && value && teamBelongsToFunction(current.team, value, workspace.options.team_functions) ? current.team : undefined,
+      // "All functions" keeps the team (it is valid on its own; the cascade still
+      // drops it if the options no longer list it). A specific function keeps it
+      // only when the team belongs to that function.
+      team: current.team && (!value || teamBelongsToFunction(current.team, value, workspace.options.team_functions)) ? current.team : undefined,
       position: undefined,
       employeeId: undefined,
       kpi: undefined,
@@ -633,7 +677,7 @@ export default function InsightsView() {
         levelOptions={workspace.options.performance_levels.map((value) => ({ value, label: value }))}
         onLevelChange={(value) => {
           setAnalysisPage(1);
-          setFilters((current) => ({
+          setUserFilters((current) => ({
             ...current,
             performanceLevel: value || undefined,
             position: undefined,
