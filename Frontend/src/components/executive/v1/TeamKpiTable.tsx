@@ -7,9 +7,9 @@ import { gapTone } from './execModel';
 import { DirectionTag, ExecCard, ExecCardHeader, GradeSquare, ScoreText, SoftEmpty } from './ExecPrimitives';
 
 
-export default function TeamKpiTable({ rows, effective, previous, score, reportHref, title = 'Team KPIs — worst first', subtitle, showTeams = false, headerAction = null }: {
+export default function TeamKpiTable({ rows, effective, previous, score, reportHref, title = 'Team KPIs — worst first', subtitle, showTeams = false, headerAction = null, emptyMessage = 'No KPI breakdown for this month.', scoreLabel = 'Team score' }: {
   rows: ExecutiveKpiRow[]; effective: ExecutivePeriod | null; previous: ExecutivePeriod | null; score: number | null; reportHref?: string | null;
-  title?: string; subtitle?: string; showTeams?: boolean; headerAction?: ReactNode;
+  title?: string; subtitle?: string; showTeams?: boolean; headerAction?: ReactNode; emptyMessage?: ReactNode; scoreLabel?: string;
 }) {
   const head = 'text-[10px] font-semibold uppercase tracking-[0.6px] text-[var(--text-muted)]';
   const vs = previous ? `vs ${previous.month.slice(0, 3)}` : 'vs last';
@@ -71,14 +71,14 @@ export default function TeamKpiTable({ rows, effective, previous, score, reportH
             })}
           </div>
         </div>
-      ) : <SoftEmpty>No KPI breakdown for this month.</SoftEmpty>}
+      ) : <SoftEmpty>{emptyMessage}</SoftEmpty>}
       <div className="flex flex-wrap items-center justify-between gap-[8px] text-[11px] text-[var(--text-muted)]">
         <span className="flex flex-wrap items-center gap-[8px]">
           <DirectionTag direction="higher_better" /> higher is better
           <DirectionTag direction="lower_better" /> lower is better
           <span>· Gap, change, colour and arrows are adjusted to each KPI&apos;s direction (positive = better).</span>
         </span>
-        {score !== null && !showTeams && <span>Team score = Σ weight × achievement (capped 100%) = {fmtScore(score)}</span>}
+        {score !== null && !showTeams && <span>{scoreLabel} = Σ weight × achievement (capped 100%) = {fmtScore(score)}</span>}
         {showTeams && <span>Headcount-weighted across the function&apos;s teams.</span>}
       </div>
     </ExecCard>
