@@ -1,4 +1,4 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { LineChart } from 'lucide-react';
 import type { ExecutiveTrendPoint } from '../../../features/executive/types';
 import { fmtScore, shortMonth } from '../../../features/executive/format';
@@ -59,7 +59,6 @@ export default function ScoreTrendChart({ points, comparisonLabel, title }: {
   title: string;
 }) {
   const [boxRef, width] = useElementWidth<HTMLDivElement>(510);
-  const gradientId = useId().replace(/:/g, '');
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
   const [rovingIndex, setRovingIndex] = useState<number | null>(null);
@@ -109,7 +108,6 @@ export default function ScoreTrendChart({ points, comparisonLabel, title }: {
   const range = points.length
     ? shortMonth(points[0].period) + ' – ' + shortMonth(points[points.length - 1].period) + ' ' + points[points.length - 1].period.year
     : '';
-  const summary = points.map((point) => shortMonth(point.period) + ' ' + fmtScore(point.score)).join(', ');
   const description = title + ' trend, last six months: ' + points.map((point) => {
     const label = shortMonth(point.period);
     return label + ' ' + (point.score === null ? 'no data' : fmtScore(point.score));
