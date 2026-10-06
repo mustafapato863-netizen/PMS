@@ -40,6 +40,13 @@ def get_insights_workspace(
     year: int | None = Query(default=None, ge=2000, le=2100),
     region: str | None = Query(default=None),
     team: str | None = Query(default=None),
+    function: str | None = Query(
+        default=None,
+        description=(
+            "Parent function (Call Center, RCM, Pre-Approvals, or a standalone team). "
+            "Expands to the function's source teams intersected with the caller's authorized scope."
+        ),
+    ),
     performance_level: str | None = Query(default=None),
     position: str | None = Query(default=None),
     employee_id: str | None = Query(default=None),
@@ -68,6 +75,7 @@ def get_insights_workspace(
             year=year,
             region=region,
             team=team,
+            function=function,
             performance_level=performance_level,
             position=position,
             employee_id=employee_id,

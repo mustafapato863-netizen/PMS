@@ -227,6 +227,11 @@ class InsightFilterOptions(BaseModel):
     severities: list[str] = Field(default_factory=lambda: ["critical", "risk", "opportunity", "information"])
     insight_types: list[str] = Field(default_factory=lambda: ["performance", "kpi_driver", "employee_risk", "opportunity", "data_quality"])
     statuses: list[str] = Field(default_factory=lambda: ["open"])
+    # Parent domains (Call Center / RCM / Pre-Approvals, or a standalone team)
+    # resolved through ``utils.report_scope.functions_for_team``. Additive and
+    # empty by default so existing consumers keep working unchanged.
+    functions: list[str] = Field(default_factory=list)
+    team_functions: dict[str, list[str]] = Field(default_factory=dict)
 
 
 class InsightComparison(BaseModel):
