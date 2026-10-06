@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import type { InsightFilters, InsightsWorkspace } from '../../features/insights/types';
 import { apiFetch } from '../../lib/apiClient';
+import { apiTeamParam } from '../../features/insights/filterCascade';
 
 interface ApiResponse<T> {
   success: boolean;
@@ -17,8 +18,13 @@ export function insightsWorkspaceUrl(filters: InsightFilters, view: 'full' | 'pr
     params.set('year', String(year));
     params.set('month', month);
   }
+  if (filters.region) params.set('region', filters.region);
+  // The backend has no `function` param: a function is a parent `team` value
+  // that `_team_keys` expands, and a selected team is a subset of it.
+  const team = apiTeamParam(filters);
+  if (team) params.set('team', team);
   const mappings: Array<[keyof InsightFilters, string]> = [
-    ['region', 'region'], ['team', 'team'], ['performanceLevel', 'performance_level'],
+    ['performanceLevel', 'performance_level'],
     ['position', 'position'], ['employeeId', 'employee_id'], ['kpi', 'kpi'],
     ['severity', 'severity'], ['insightType', 'insight_type'], ['status', 'status'],
   ];

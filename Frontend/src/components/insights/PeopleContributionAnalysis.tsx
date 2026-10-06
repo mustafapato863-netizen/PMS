@@ -6,6 +6,7 @@ import type {
   PersonContributionClassification,
 } from '../../features/insights/types';
 import { formatContributionMetric } from './peopleContributionFormatters';
+import { resolveMovementTone } from './overview/insightsOverviewModel';
 
 type ContributionTab = 'negative' | 'positive' | 'affected' | 'data_issue';
 
@@ -176,9 +177,14 @@ export default function PeopleContributionAnalysis({
                   </thead>
                   <tbody>
                     {pagedRows.map((row, index) => {
-                      const trendPositive = row.trend !== null && (
-                        row.direction === 'lower_better' ? row.trend < 0 : row.trend > 0
-                      );
+                      // Direction-aware colour (API trend_status first): a rising lower-is-better KPI is red;
+                      // flat / unknown stays neutral. The arrow always follows the raw `trend` sign.
+                      const trendTone = resolveMovementTone({
+                        trendStatus: row.trend_status,
+                        changeValue: row.change_value,
+                        rawDelta: row.trend,
+                        direction: row.direction ?? analysis.direction,
+                      });
                       return (
                         <tr key={`${row.team}-${row.employee_id}-${row.performance_level}-${row.position}`} className="border-t border-[var(--border-light)] text-[10px]">
                           <td className="px-3 py-3 font-bold text-[var(--text-muted)]">{(currentPage - 1) * pageSize + index + 1}</td>
@@ -191,10 +197,10 @@ export default function PeopleContributionAnalysis({
                           <td className="px-3 py-3 text-[var(--text-secondary)]">{formatContributionMetric(row.target_value, row.target_value, row.unit)}</td>
                           <td className={`px-3 py-3 font-extrabold ${impactColor(row.gap)}`}>{formatContributionMetric(row.gap, row.target_value, row.unit, true)}</td>
                           <td className={`px-3 py-3 font-extrabold ${impactColor(row.weighted_impact)}`}>{signedValue(row.weighted_impact)}</td>
-                          <td className={`px-3 py-3 font-bold ${row.trend === null ? 'text-[var(--text-muted)]' : trendPositive ? 'text-emerald-600' : 'text-rose-600'}`}>
+                          <td data-testid="contribution-trend" data-tone={trendTone} className={`px-3 py-3 font-bold ${trendTone === 'good' ? 'text-emerald-600' : trendTone === 'bad' ? 'text-rose-600' : 'text-[var(--text-muted)]'}`}>
                             {row.trend === null ? 'N/A' : (
                               <span className="inline-flex items-center gap-1">
-                                {row.trend > 0 ? <ArrowUp size={11} /> : <ArrowDown size={11} />}
+                                {row.trend > 0 ? <ArrowUp size={11} aria-hidden="true" /> : row.trend < 0 ? <ArrowDown size={11} aria-hidden="true" /> : null}
                                 {signedValue(row.trend, row.unit === '%' ? '%' : '')}
                               </span>
                             )}

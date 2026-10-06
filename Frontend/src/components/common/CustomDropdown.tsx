@@ -22,6 +22,8 @@ interface CustomDropdownProps<T extends string | number = string> {
   disabled?: boolean;
   /** Extra classes for the trigger chevron (e.g. size / colour overrides). */
   chevronClassName?: string;
+  /** Minimum popover width in px (defaults to 180); long option labels can opt into a wider menu. */
+  menuMinWidth?: number;
 }
 
 /**
@@ -46,6 +48,7 @@ export function CustomDropdown<T extends string | number = string>({
   ariaLabel,
   disabled = false,
   chevronClassName = '',
+  menuMinWidth = 180,
 }: CustomDropdownProps<T>) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -93,7 +96,7 @@ export function CustomDropdown<T extends string | number = string>({
 
     const rect = trigger.getBoundingClientRect();
     const viewportPadding = 8;
-    const menuWidth = Math.max(rect.width, 180);
+    const menuWidth = Math.min(Math.max(rect.width, menuMinWidth), window.innerWidth - viewportPadding * 2);
     const availableBelow = window.innerHeight - rect.bottom - viewportPadding;
     const availableAbove = rect.top - viewportPadding;
     const openAbove = availableBelow < 180 && availableAbove > availableBelow;
@@ -107,7 +110,7 @@ export function CustomDropdown<T extends string | number = string>({
     );
 
     setMenuPosition({ top, left, width: menuWidth, maxHeight });
-  }, []);
+  }, [menuMinWidth]);
 
   /* Keep the portalled menu attached to its trigger while the page scrolls. */
   useLayoutEffect(() => {

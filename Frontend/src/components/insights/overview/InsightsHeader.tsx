@@ -17,6 +17,7 @@ function LabeledFilter({
   widthClass,
   icon,
   primary = false,
+  menuMinWidth,
 }: {
   label: string;
   ariaLabel: string;
@@ -27,6 +28,7 @@ function LabeledFilter({
   widthClass: string;
   icon?: ReactNode;
   primary?: boolean;
+  menuMinWidth?: number;
 }) {
   const dropdownOptions = [...(allLabel ? [{ value: '', label: allLabel }] : []), ...options];
   return (
@@ -41,6 +43,7 @@ function LabeledFilter({
         options={dropdownOptions}
         onChange={(next) => onChange(String(next))}
         icon={icon}
+        menuMinWidth={menuMinWidth}
         className="w-full"
         chevronClassName={`size-[16px]! ${primary ? 'text-[var(--insights-accent-text)]!' : ''}`}
         buttonClassName={[
@@ -55,7 +58,10 @@ function LabeledFilter({
   );
 }
 
-/** Figma 18:12 — title block + DATE / REGIONS / FUNCTIONS (primary) / LEVELS filters. */
+/**
+ * Figma 18:12 — title block + DATE / REGIONS / FUNCTIONS (primary) / TEAMS / LEVELS
+ * filters. Options arrive already cascaded (Region → Function → Team → Level).
+ */
 export default function InsightsHeader({
   period,
   periodOptions,
@@ -66,6 +72,9 @@ export default function InsightsHeader({
   functionValue,
   functionOptions,
   onFunctionChange,
+  team,
+  teamOptions,
+  onTeamChange,
   level,
   levelOptions,
   onLevelChange,
@@ -79,6 +88,9 @@ export default function InsightsHeader({
   functionValue: string;
   functionOptions: FilterOption[];
   onFunctionChange: (value: string) => void;
+  team: string;
+  teamOptions: FilterOption[];
+  onTeamChange: (value: string) => void;
   level: string;
   levelOptions: FilterOption[];
   onLevelChange: (value: string) => void;
@@ -96,10 +108,10 @@ export default function InsightsHeader({
           value={period}
           options={periodOptions}
           onChange={onPeriodChange}
-          widthClass="w-[150px]"
+          widthClass="w-[140px]"
           icon={<Calendar className="size-[16px] text-[var(--text-secondary)]" strokeWidth={1.5} />}
         />
-        <LabeledFilter label="Regions" ariaLabel="Region" value={region} options={regionOptions} allLabel="All regions" onChange={onRegionChange} widthClass="w-[150px]" />
+        <LabeledFilter label="Regions" ariaLabel="Region" value={region} options={regionOptions} allLabel="All regions" onChange={onRegionChange} widthClass="w-[136px]" />
         <LabeledFilter
           primary
           label="Functions"
@@ -108,10 +120,11 @@ export default function InsightsHeader({
           options={functionOptions}
           allLabel="All functions"
           onChange={onFunctionChange}
-          widthClass="w-[176px]"
+          widthClass="w-[168px]"
           icon={<Layers className="size-[16px] text-[var(--insights-accent)]" strokeWidth={1.5} />}
         />
-        <LabeledFilter label="Levels" ariaLabel="Performance level" value={level} options={levelOptions} allLabel="All levels" onChange={onLevelChange} widthClass="w-[140px]" />
+        <LabeledFilter label="Teams" ariaLabel="Team" value={team} options={teamOptions} allLabel="All teams" onChange={onTeamChange} widthClass="w-[168px]" menuMinWidth={260} />
+        <LabeledFilter label="Levels" ariaLabel="Performance level" value={level} options={levelOptions} allLabel="All levels" onChange={onLevelChange} widthClass="w-[132px]" />
       </div>
     </header>
   );
