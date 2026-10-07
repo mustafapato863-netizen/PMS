@@ -8,6 +8,7 @@ from typing import List, Dict, Any, Tuple
 from sqlalchemy.orm import Session
 from models.models import PerformanceRecord, KPIValue, Team, Employee, TeamKPIConfig
 from utils.performance_levels import normalize_performance_level
+from utils.branch_scope import explicit_branch_key
 from services.audit_service import AuditService
 
 logger = logging.getLogger(__name__)
@@ -141,6 +142,7 @@ class BatchProcessor:
                                     team_id=team.id,
                                     month=rec["month"],
                                     year=rec["year"],
+                                    branch_key=explicit_branch_key(rec),
                                     score=rec["score"],
                                     grade=rec["grade"],
                                     status=rec["status"]

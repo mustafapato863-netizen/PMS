@@ -71,12 +71,21 @@ function FunctionSummaryPage({ fn, allowed }: { fn: ExecutiveFunction; allowed: 
     document.querySelector<HTMLElement>('[aria-label="Function period"]')?.focus();
   }, []);
 
+  const clearFilters = useCallback(() => update({
+    region: undefined,
+    branch: undefined,
+    team: undefined,
+    position: undefined,
+    performanceLevel: undefined,
+  }), [update]);
+
   const header = (
     <InsightsHeader
       title="Function Summary"
       subtitle={subtitleFor(summary, 'function')}
       titleBadge={readOnly ? <ReadOnlyBadge /> : null}
       groupLabel="Function filters"
+      onClearFilters={clearFilters}
       periodAriaLabel="Function period"
       rowFrom="2xl"
       period={filters.periodKey ?? summary?.period.effective?.key ?? ''}

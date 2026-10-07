@@ -115,6 +115,7 @@ export default function InsightsHeader({
   functionSlot,
   additionalFilters,
   additionalActiveCount = 0,
+  onClearFilters,
   teamAllLabel = 'All teams',
   teamLabel = 'Teams',
   groupLabel = 'Insights filters',
@@ -149,6 +150,8 @@ export default function InsightsHeader({
   /** Additional page-specific filters displayed in the same floating panel. */
   additionalFilters?: ReactNode;
   additionalActiveCount?: number;
+  /** Clear optional filters without changing the selected reporting period. */
+  onClearFilters?: () => void;
   /** "All" entry of the Teams filter (Function Summary: "All RCM teams"). */
   teamAllLabel?: string;
   teamLabel?: string;
@@ -158,6 +161,13 @@ export default function InsightsHeader({
   rowFrom?: 'xl' | '2xl';
 }) {
   const activeCount = [region, branch, functionValue, team, level].filter(Boolean).length + additionalActiveCount;
+  const clearableCount = [
+    !locked?.region && region,
+    branch,
+    !locked?.function && !functionSlot && functionValue,
+    !locked?.team && team,
+    level,
+  ].filter(Boolean).length + additionalActiveCount;
 
   return (
     <header className={`flex flex-col gap-[16px] pb-[4px] ${rowFrom === '2xl' ? '2xl:flex-row 2xl:items-end' : 'xl:flex-row xl:items-end'}`}>
@@ -168,7 +178,7 @@ export default function InsightsHeader({
         </div>
         <p className="text-[14px] font-normal text-[var(--text-secondary)]">{subtitle}</p>
       </div>
-      <ResponsiveFilters activeCount={activeCount} label={groupLabel}>
+      <ResponsiveFilters activeCount={activeCount} clearableCount={clearableCount} onClear={onClearFilters} label={groupLabel}>
         <div className="responsive-filter-content responsive-filter-content--insights" role="group" aria-label={groupLabel}>
           <LabeledFilter
             label="Date"

@@ -67,6 +67,15 @@ function ExecutiveSummaryPage({ view }: { view: Exclude<ExecutiveViewKind, 'func
     document.querySelector<HTMLElement>('[aria-label="Executive period"]')?.focus();
   }, []);
 
+  const clearFilters = useCallback(() => update({
+    region: undefined,
+    branch: undefined,
+    teamFunction: undefined,
+    team: undefined,
+    position: undefined,
+    performanceLevel: undefined,
+  }), [update]);
+
   const scope = summary?.scope;
   const managerial = view === 'managerial';
   const teamValues = managerial
@@ -80,6 +89,7 @@ function ExecutiveSummaryPage({ view }: { view: Exclude<ExecutiveViewKind, 'func
         ? <span className="rounded-full bg-[var(--insights-accent-tag)] px-[8px] py-[2px] text-[11px] font-semibold text-[var(--insights-accent-text)]">Team scope</span>
         : isCorporateReadOnly(role) ? <ReadOnlyBadge /> : null}
       groupLabel="Executive filters"
+      onClearFilters={clearFilters}
       periodAriaLabel="Executive period"
       rowFrom="2xl"
       period={filters.periodKey ?? summary?.period.effective?.key ?? ''}

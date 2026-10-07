@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { Filter, X } from 'lucide-react';
+import { Eraser, Filter, X } from 'lucide-react';
 import './ResponsiveFilters.css';
 
 interface ResponsiveFiltersProps {
   children: ReactNode;
   activeCount?: number;
+  clearableCount?: number;
+  onClear?: () => void;
   label?: string;
   className?: string;
 }
@@ -59,6 +61,8 @@ function initialFilterPosition(): FloatingPosition {
 const ResponsiveFilters = ({
   children,
   activeCount = 0,
+  clearableCount,
+  onClear,
   label = 'Filters',
   className = '',
 }: ResponsiveFiltersProps) => {
@@ -74,6 +78,7 @@ const ResponsiveFilters = ({
   const suppressClickRef = useRef(false);
   const reduceMotion = useReducedMotion();
   const safeActiveCount = Math.max(0, activeCount);
+  const safeClearableCount = Math.max(0, clearableCount ?? safeActiveCount);
   const isCompact = typeof window !== 'undefined' && window.innerWidth <= 639;
   const buttonSize = isCompact ? 50 : 54;
   const accessibleLabel = safeActiveCount > 0
@@ -290,15 +295,31 @@ const ResponsiveFilters = ({
                       : 'Refine this view · changes apply as you choose'}
                   </p>
                 </div>
-                <button
-                  ref={closeButtonRef}
-                  type="button"
-                  className="responsive-filter-panel__close"
-                  aria-label={`Close ${label.toLowerCase()}`}
-                  onClick={close}
-                >
-                  <X size={19} aria-hidden="true" />
-                </button>
+                <div className="flex shrink-0 items-center gap-1">
+                  {onClear && safeClearableCount > 0 && (
+                    <button
+                      type="button"
+                      className="responsive-filter-panel__clear"
+                      aria-label="Clear filters"
+                      title="Clear filters"
+                      onClick={() => {
+                        onClear();
+                        window.requestAnimationFrame(() => closeButtonRef.current?.focus());
+                      }}
+                    >
+                      <Eraser size={18} aria-hidden="true" />
+                    </button>
+                  )}
+                  <button
+                    ref={closeButtonRef}
+                    type="button"
+                    className="responsive-filter-panel__close"
+                    aria-label={`Close ${label.toLowerCase()}`}
+                    onClick={close}
+                  >
+                    <X size={19} aria-hidden="true" />
+                  </button>
+                </div>
               </div>
 
               <div className="responsive-filter-panel__fields">

@@ -139,6 +139,13 @@ def get_balanced_scorecard(
         raise HTTPException(status_code=422, detail="Branch filtering is not configured for this team")
 
     scope = require_authenticated_scope(db, request)
+    if scope.get("role") == "Branch Director":
+        # Management scorecards are not yet attributed to individual branches.
+        # A team-level check alone must never widen this role beyond its branch.
+        raise HTTPException(
+            status_code=403,
+            detail="Branch-scoped management scorecards are unavailable until branch attribution is recorded.",
+        )
     if not user_can_access_team_level(scope, team, level):
         raise HTTPException(status_code=403, detail="Access denied for this team and performance level")
 
@@ -315,7 +322,7 @@ def get_performance_catalog(
     rows = DashboardRecordService(
         db,
         sql_repository_cls=SQLPerformanceRepository,
-    ).list_option_rows()
+    ).list_option_rows(scope)
     rows = filter_records_by_scope(rows, scope)
     rows = filter_records_by_team_levels(rows, scope)
 
@@ -429,6 +436,8 @@ def get_monthly_records(
     performance_level: str | None = Query(None),
     position: str | None = Query(None),
     region: str | None = Query(None),
+    branch: str | None = Query(None, max_length=30),
+    score_lt: float | None = Query(None, ge=0, le=100),
     location: str = Query("all"),
     employee_search: str | None = Query(None, max_length=100),
     grade: str | None = Query(None, max_length=20),
@@ -479,6 +488,8 @@ def get_monthly_records(
         region=region,
         position=position,
         location=location,
+        branch=branch,
+        score_lt=score_lt,
         employee_search=employee_search,
         grade=grade,
         status=status,

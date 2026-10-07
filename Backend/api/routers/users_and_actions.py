@@ -16,7 +16,15 @@ from config.database import get_db
 from config import settings
 from config.socket_config import online_user_ids
 from api.middleware.rbac_middleware import require_permission
-from models.models import Employee, Team, User, UserTeamAssignment, UserFunctionAssignment
+from models.models import (
+    Employee,
+    Team,
+    User,
+    UserTeamAssignment,
+    UserFunctionAssignment,
+    UserRegionAssignment,
+    UserBranchAssignment,
+)
 from models.schemas import StandardResponse, UserRecord, UserUpdateRecord, LoginPayload
 from repositories.user_repository import UserRepository
 from services.auth_service import AuthenticationService
@@ -71,7 +79,7 @@ def _user_to_public_dict(db: Session, user: User) -> dict:
         if assignment.team
         for level in ([assignment.performance_level] if assignment.performance_level else PERFORMANCE_LEVELS)
     ]
-    if user.role == "Function Viewer":
+    if user.role in {"Function Viewer", "Function Director"}:
         assigned_functions = {
             function_name
             for (function_name,) in db.query(UserFunctionAssignment.function_name)
@@ -98,6 +106,9 @@ def _user_to_public_dict(db: Session, user: User) -> dict:
         "accessible_teams": accessible_teams,
         "accessible_team_levels": accessible_team_levels,
         "accessible_functions": accessible_functions,
+        "accessible_regions": [row.region_code for row in user.region_assignments] if user.role == "Regional Manager" else [],
+        "accessible_branches": [row.branch_key for row in user.branch_assignments] if user.role == "Branch Director" else [],
+        "legacy_role_needs_reassignment": user.role in settings.LEGACY_ROLES,
         "accessible_team_count": len(accessible_teams),
         # Renamed from is_general_manager. True for Admin, General Manager role,
         # or Manager whose NULL-level assignments cover every active team.
@@ -135,6 +146,30 @@ def _normalize_function_names(function_names: list[str] | None) -> list[str]:
     return normalized
 
 
+def _normalize_region_codes(region_codes: list[str] | None) -> list[str]:
+    canonical = {value.casefold(): value for value in ("UAE", "EGY", "Other")}
+    result: list[str] = []
+    for raw in region_codes or []:
+        value = canonical.get(str(raw).strip().casefold())
+        if value is None:
+            raise HTTPException(status_code=422, detail=f"Unknown region: {raw}")
+        if value not in result:
+            result.append(value)
+    return result
+
+
+def _normalize_branch_keys(branch_keys: list[str] | None) -> list[str]:
+    canonical = {value.casefold(): value for value in ("dubai", "sharjah", "ajman", "clinics")}
+    result: list[str] = []
+    for raw in branch_keys or []:
+        value = canonical.get(str(raw).strip().casefold())
+        if value is None:
+            raise HTTPException(status_code=422, detail=f"Unknown branch: {raw}")
+        if value not in result:
+            result.append(value)
+    return result
+
+
 def _replace_function_assignments(
     db: Session,
     user_id,
@@ -149,6 +184,42 @@ def _replace_function_assignments(
             id=uuid.uuid4(),
             user_id=user_id,
             function_name=function_name,
+            assigned_by=assigned_by,
+        ))
+
+
+def _replace_region_assignments(
+    db: Session,
+    user_id,
+    region_codes: list[str] | None,
+    assigned_by: str = "Admin",
+) -> None:
+    db.query(UserRegionAssignment).filter(UserRegionAssignment.user_id == user_id).delete(
+        synchronize_session=False
+    )
+    for region_code in _normalize_region_codes(region_codes):
+        db.add(UserRegionAssignment(
+            id=uuid.uuid4(),
+            user_id=user_id,
+            region_code=region_code,
+            assigned_by=assigned_by,
+        ))
+
+
+def _replace_branch_assignments(
+    db: Session,
+    user_id,
+    branch_keys: list[str] | None,
+    assigned_by: str = "Admin",
+) -> None:
+    db.query(UserBranchAssignment).filter(UserBranchAssignment.user_id == user_id).delete(
+        synchronize_session=False
+    )
+    for branch_key in _normalize_branch_keys(branch_keys):
+        db.add(UserBranchAssignment(
+            id=uuid.uuid4(),
+            user_id=user_id,
+            branch_key=branch_key,
             assigned_by=assigned_by,
         ))
 
@@ -367,15 +438,29 @@ async def create_user(
         full_name = payload.name.strip()
         if not full_name:
             raise HTTPException(status_code=422, detail="Full name is required")
+        if payload.role not in settings.ROLES:
+            raise HTTPException(status_code=422, detail="New users must use a current role")
         existing_username = db.query(User).filter(User.username == payload.username.lower()).first()
         existing_email = db.query(User).filter(User.email == f"{payload.username.lower()}@pms.local").first()
         if existing_username or existing_email:
             raise HTTPException(status_code=409, detail="Username already exists")
 
         function_names = _normalize_function_names(payload.accessible_functions)
+        employee_id = _linked_employee_id(db, full_name)
+        if payload.role == "Employee" and not employee_id:
+            raise HTTPException(status_code=422, detail="Employee role requires a matching employee profile")
+        region_codes = _normalize_region_codes(payload.accessible_regions)
+        branch_keys = _normalize_branch_keys(payload.accessible_branches)
+        if payload.role == "Function Director" and not function_names:
+            raise HTTPException(status_code=422, detail="Function Director requires at least one function")
+        if payload.role == "Regional Manager" and not region_codes:
+            raise HTTPException(status_code=422, detail="Regional Manager requires at least one region")
+        if payload.role == "Branch Director" and not branch_keys:
+            raise HTTPException(status_code=422, detail="Branch Director requires at least one branch")
+
         new_user = User(
             id=uuid.uuid4(),
-            employee_id=_linked_employee_id(db, full_name),
+            employee_id=employee_id,
             full_name=full_name,
             username=payload.username.lower(),
             email=f"{payload.username.lower()}@pms.local",
@@ -385,7 +470,6 @@ async def create_user(
             failed_login_attempts=0,
         )
         db.add(new_user)
-        db.commit()
         if new_user.role == "General Manager":
             # GM always gets unrestricted access to all active teams.
             _replace_team_assignments(
@@ -394,7 +478,6 @@ async def create_user(
                 list(dict.fromkeys(logical_team_name(team) for team in _active_teams(db))),
                 assigned_by=assigned_by,
             )
-            db.commit()
         elif new_user.role == "Manager":
             if payload.has_unrestricted_team_access:
                 _replace_team_assignments(
@@ -405,10 +488,13 @@ async def create_user(
                 )
             else:
                 _replace_team_assignments(db, new_user.id, payload.accessible_teams, payload.accessible_team_levels, assigned_by=assigned_by)
-            db.commit()
-        if new_user.role == "Function Viewer":
+        if new_user.role in {"Function Viewer", "Function Director"}:
             _replace_function_assignments(db, new_user.id, function_names, assigned_by=assigned_by)
-            db.commit()
+        if new_user.role == "Regional Manager":
+            _replace_region_assignments(db, new_user.id, region_codes, assigned_by=assigned_by)
+        if new_user.role == "Branch Director":
+            _replace_branch_assignments(db, new_user.id, branch_keys, assigned_by=assigned_by)
+        db.commit()
         db.refresh(new_user)
         return StandardResponse(
             success=True,
@@ -416,8 +502,11 @@ async def create_user(
             data=_user_to_public_dict(db, new_user)
         )
     except HTTPException as he:
+        db.rollback()
         raise he
-    except Exception as e:
+    except Exception:
+        db.rollback()
+        logger.exception("Failed to create user")
         return StandardResponse(success=False, message="Failed to create user.")
 
 @users_router.put("/{user_id}", response_model=StandardResponse)
@@ -450,6 +539,12 @@ async def update_user_route(
 
         updates = payload.model_dump(exclude_none=True)
         updates.pop("id", None)
+        previous_role = existing.role
+        target_role = updates.get("role", previous_role)
+        if target_role not in settings.ROLES and target_role != previous_role:
+            raise HTTPException(status_code=422, detail="Legacy roles cannot be assigned; select a current role")
+        if target_role in settings.LEGACY_ROLES and target_role != previous_role:
+            raise HTTPException(status_code=422, detail="Legacy roles cannot be assigned")
         function_names = (
             _normalize_function_names(updates["accessible_functions"])
             if "accessible_functions" in updates else None
@@ -480,7 +575,6 @@ async def update_user_route(
         if "name" in updates:
             existing.full_name = updates["name"].strip()
 
-        previous_role = existing.role
         if "role" in updates:
             existing.role = updates["role"]
 
@@ -539,13 +633,44 @@ async def update_user_route(
         elif previous_role in {"Manager", "General Manager"}:
             _replace_team_assignments(db, existing.id, [], assigned_by=assigned_by)
 
-        if existing.role == "Function Viewer":
+        if existing.role == "Employee":
+            resolved_employee_id = existing.employee_id or _linked_employee_id(
+                db, updates.get("name", existing.full_name)
+            )
+            if not resolved_employee_id:
+                raise HTTPException(status_code=422, detail="Employee role requires a matching employee profile")
+            existing.employee_id = resolved_employee_id
+
+        if existing.role == "Function Director" and previous_role != existing.role:
+            function_names = _normalize_function_names(updates.get("accessible_functions"))
+            if not function_names:
+                raise HTTPException(status_code=422, detail="Function Director requires at least one function")
+            _replace_function_assignments(db, existing.id, function_names, assigned_by=assigned_by)
+        elif existing.role in {"Function Viewer", "Function Director"}:
             if function_names is not None:
                 _replace_function_assignments(db, existing.id, function_names, assigned_by=assigned_by)
-            elif previous_role != "Function Viewer":
+            elif previous_role != existing.role:
                 _replace_function_assignments(db, existing.id, [], assigned_by=assigned_by)
-        elif previous_role == "Function Viewer":
+        elif previous_role in {"Function Viewer", "Function Director"}:
             _replace_function_assignments(db, existing.id, [], assigned_by=assigned_by)
+
+        if existing.role == "Regional Manager":
+            region_codes = _normalize_region_codes(updates.get("accessible_regions"))
+            if previous_role != existing.role and not region_codes:
+                raise HTTPException(status_code=422, detail="Regional Manager requires at least one region")
+            if "accessible_regions" in updates or previous_role != existing.role:
+                _replace_region_assignments(db, existing.id, region_codes, assigned_by=assigned_by)
+        elif previous_role == "Regional Manager":
+            _replace_region_assignments(db, existing.id, [], assigned_by=assigned_by)
+
+        if existing.role == "Branch Director":
+            branch_keys = _normalize_branch_keys(updates.get("accessible_branches"))
+            if previous_role != existing.role and not branch_keys:
+                raise HTTPException(status_code=422, detail="Branch Director requires at least one branch")
+            if "accessible_branches" in updates or previous_role != existing.role:
+                _replace_branch_assignments(db, existing.id, branch_keys, assigned_by=assigned_by)
+        elif previous_role == "Branch Director":
+            _replace_branch_assignments(db, existing.id, [], assigned_by=assigned_by)
 
         db.commit()
         db.refresh(existing)
@@ -555,6 +680,7 @@ async def update_user_route(
             data=_user_to_public_dict(db, existing)
         )
     except HTTPException as he:
+        db.rollback()
         raise he
     except Exception as e:
         import logging as _logging
@@ -716,7 +842,7 @@ actions_router = APIRouter()
 async def get_all_corrective_actions(
     request: Request,
     db: Session = Depends(get_db),
-    role: str = Depends(require_role(["Admin", "General Manager", "Manager", "Executive"]))
+    role: str = Depends(require_role(["Admin", "General Manager", "Manager", "Executive", "Performance Team", "Regional Manager", "Branch Director", "Function Director"]))
 ):
     try:
         actions = CorrectiveActionService(db).list_scoped(get_current_user_scope(db, request))
@@ -756,7 +882,7 @@ async def get_action_follow_up(
     owner: str | None = Query(default=None),
     month: str | None = Query(default=None),
     db: Session = Depends(get_db),
-    role: str = Depends(require_role(["Admin", "General Manager", "Manager", "Executive"])),
+    role: str = Depends(require_role(["Admin", "General Manager", "Manager", "Executive", "Performance Team", "Regional Manager", "Branch Director", "Function Director"])),
 ):
     try:
         data = CorrectiveActionService(db).list_follow_up(
@@ -777,7 +903,7 @@ async def get_action_follow_up(
 async def get_action_owners(
     request: Request,
     db: Session = Depends(get_db),
-    role: str = Depends(require_role(["Admin", "General Manager", "Manager", "Executive"])),
+    role: str = Depends(require_role(["Admin", "General Manager", "Manager", "Executive", "Performance Team", "Regional Manager", "Branch Director", "Function Director"])),
 ):
     try:
         owners = CorrectiveActionService(db).list_owners(get_current_user_scope(db, request))
@@ -792,7 +918,7 @@ async def update_corrective_action_status(
     payload: ActionStatusUpdate,
     request: Request,
     db: Session = Depends(get_db),
-    role: str = Depends(require_role(["Admin", "General Manager", "Manager", "Executive", "Viewer", "Agent"])),
+    role: str = Depends(require_role(["Admin", "General Manager", "Manager", "Performance Team", "Executive", "Viewer", "Agent"])),
 ):
     try:
         current_user = getattr(request.state, "user", None) or {}

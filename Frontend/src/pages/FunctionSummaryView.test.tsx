@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -41,6 +42,12 @@ vi.mock('../hooks/api/usePerformanceDashboard', () => ({
   scopedPerformanceApiEnabled: false,
   useScopedEmployeePerformanceHistory: () => ({ data: undefined, isFetching: false, isError: false }),
 }));
+vi.mock('../lib/apiClient', () => ({
+  apiFetch: vi.fn().mockResolvedValue({
+    success: true,
+    data: { items: [], page_size: 8, next_cursor: null, has_more: false, total: 0 },
+  }),
+}));
 
 const TODAY = new Date(2026, 6, 6);
 const records = toExecRecords(fixtureAgentRecords());
@@ -55,14 +62,17 @@ function Where() {
 }
 
 function renderAt(path: string) {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const rendered = render(
-    <MemoryRouter initialEntries={[path]}>
-      <Routes>
-        <Route path="/function-summary" element={<FunctionSummaryView />} />
-        <Route path="/function-summary/:functionSlug" element={<FunctionSummaryView />} />
-      </Routes>
-      <Where />
-    </MemoryRouter>,
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={[path]}>
+        <Routes>
+          <Route path="/function-summary" element={<FunctionSummaryView />} />
+          <Route path="/function-summary/:functionSlug" element={<FunctionSummaryView />} />
+        </Routes>
+        <Where />
+      </MemoryRouter>
+    </QueryClientProvider>,
   );
   const launcher = screen.queryByRole('button', { name: /Function filters/i });
   if (launcher) fireEvent.click(launcher);

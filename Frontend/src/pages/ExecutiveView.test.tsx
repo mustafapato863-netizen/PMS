@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -32,6 +33,12 @@ vi.mock('../features/executive/useExecutiveSummary', () => ({
     };
   },
 }));
+vi.mock('../lib/apiClient', () => ({
+  apiFetch: vi.fn().mockResolvedValue({
+    success: true,
+    data: { items: [], page_size: 8, next_cursor: null, has_more: false, total: 0 },
+  }),
+}));
 
 const TODAY = new Date(2026, 6, 6);
 const records = toExecRecords(fixtureAgentRecords());
@@ -41,13 +48,16 @@ const build = (patch: Partial<ComposeInput> = {}) => composeExecutiveSummary({
 });
 
 function renderAt(path = '/executive') {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const rendered = render(
-    <MemoryRouter initialEntries={[path]}>
-      <Routes>
-        <Route path="/executive" element={<ExecutiveView />} />
-        <Route path="/function-summary" element={<div>Function Summary page</div>} />
-      </Routes>
-    </MemoryRouter>,
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={[path]}>
+        <Routes>
+          <Route path="/executive" element={<ExecutiveView />} />
+          <Route path="/function-summary" element={<div>Function Summary page</div>} />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
   );
   const launcher = screen.queryByRole('button', { name: /Executive filters/i });
   if (launcher) fireEvent.click(launcher);
@@ -98,6 +108,14 @@ describe('ExecutiveView role routing', () => {
     expect(state.lastArgs?.filters).toMatchObject({ teamFunction: 'Call Center', team: 'Inbound' });
   });
 
+  it('clears scope filters from the icon while preserving the selected period', () => {
+    renderAt('/executive?period=2026-06&region=UAE&branch=Dubai&function=RCM&team=Inbound&level=Employee');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
+
+    expect(state.lastArgs?.filters).toEqual({ periodKey: '2026-06' });
+  });
+
   it('Function Viewer is redirected to /function-summary', () => {
     state.role = 'Function Viewer';
     renderAt();
@@ -125,7 +143,8 @@ describe('Corporate sections', () => {
     expect(screen.getByRole('link', { name: 'View RCM function' })).toHaveAttribute('href', '/function-summary/rcm');
     expect(screen.getByRole('heading', { name: 'What moved the score vs May' })).toBeInTheDocument();
     expect(screen.getAllByTestId('region-box')).toHaveLength(2);
-    expect(screen.getByRole('heading', { name: 'Teams at risk' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'All teams' })).toBeInTheDocument();
+    expect(screen.getAllByTestId('risk-row')).toHaveLength(state.summary?.teams.length ?? 0);
     expect(screen.getByRole('heading', { name: 'Grade distribution' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Corrective actions' })).toBeInTheDocument();
     expect(screen.getByTestId('corrective-action-insights')).toBeInTheDocument();
@@ -180,7 +199,7 @@ describe('fallback and empty states', () => {
   it('shows the fallback notice when the requested month has no data', () => {
     state.summary = build({ requestedPeriodKey: '2026-07' });
     renderAt('/executive?period=2026-07');
-    expect(screen.getByRole('status')).toHaveTextContent('No performance data for July 2026 yet — showing June 2026, the latest month with data.');
+    expect(screen.getByText('No performance data for July 2026 yet — showing June 2026, the latest month with data.')).toBeInTheDocument();
     expect(screen.getByTestId('executive-corporate')).toBeInTheDocument();
     expect(state.lastArgs?.filters.periodKey).toBe('2026-07');
   });

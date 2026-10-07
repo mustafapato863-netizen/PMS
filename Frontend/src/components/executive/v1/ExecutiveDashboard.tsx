@@ -106,7 +106,7 @@ export default function ExecutiveDashboard({ summary, permissions, functionBreak
         <RegionSplitCard regions={summary.regions} previous={previous} />
       </div>
       <div className="grid gap-[16px] xl:grid-cols-[minmax(0,1fr)_minmax(0,400px)]">
-        <TeamsAtRiskCard teams={summary.teams} viewAllHref="/team/all" />
+        <TeamsAtRiskCard teams={summary.teams} viewAllHref="/team/all" showAllTeams={scope.team === null} />
         <GradeDistributionCard distribution={summary.grade_distribution} previous={previous} />
       </div>
       {permissions.canSeeActions && (

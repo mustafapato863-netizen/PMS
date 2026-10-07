@@ -84,25 +84,31 @@ it('requires confirmation before deleting a user and reports success', async () 
   expect(screen.getByRole('status')).toHaveTextContent('User deleted successfully.');
 });
 
-it('creates a General Manager with the role string, no per-team list and the all-teams flag', async () => {
+it('creates a Performance Team account using the current role set', async () => {
   const user = userEvent.setup();
   render(<UserManagementPanel />);
 
   await user.click(screen.getByRole('button', { name: /Add user/ }));
-  await user.type(screen.getByRole('textbox', { name: 'Full name' }), 'Gina Grant');
-  await user.type(screen.getByRole('textbox', { name: 'Username' }), 'Gina');
+  await user.type(screen.getByRole('textbox', { name: 'Full name' }), 'Pat Performance');
+  await user.type(screen.getByRole('textbox', { name: 'Username' }), 'Pat');
   await user.type(screen.getByLabelText(/Password/), 'secret-pass');
-  await user.selectOptions(screen.getByRole('combobox', { name: 'Role' }), 'General Manager');
+  await user.selectOptions(screen.getByRole('combobox', { name: 'Role' }), 'Performance Team');
   await user.click(screen.getByRole('button', { name: 'Create user' }));
 
-  await waitFor(() => expect(mocks.addUser).toHaveBeenCalledWith('Gina Grant', 'gina', 'secret-pass', 'General Manager', [], true, []));
+  await waitFor(() => expect(mocks.addUser).toHaveBeenCalledWith('Pat Performance', 'pat', 'secret-pass', 'Performance Team', [], false, [], [], []));
 });
 
-it('lists General Manager in the role filter', () => {
+it('filters legacy roles for existing accounts without offering them for new assignments', async () => {
   render(<UserManagementPanel />);
   const filter = screen.getByRole('combobox', { name: 'Filter by role' });
-  expect(Array.from((filter as HTMLSelectElement).options).map((option) => option.value)).toContain('General Manager');
-  expect(Array.from((filter as HTMLSelectElement).options).map((option) => option.value)).toContain('Function Viewer');
+  const roles = Array.from((filter as HTMLSelectElement).options).map((option) => option.value);
+  expect(roles).toContain('Employee');
+  expect(roles).toContain('Function Viewer');
+  expect(roles).toContain('Viewer');
+  await userEvent.setup().click(screen.getByRole('button', { name: /Add user/ }));
+  const assignmentRoles = Array.from(screen.getByRole('combobox', { name: 'Role' }).querySelectorAll('option')).map((option) => option.value);
+  expect(assignmentRoles).not.toContain('General Manager');
+  expect(assignmentRoles).not.toContain('Function Viewer');
 });
 
 it('saves edited function grants through the admin panel', async () => {
@@ -114,9 +120,10 @@ it('saves edited function grants through the admin panel', async () => {
   expect(screen.getByRole('checkbox', { name: 'Marketing' })).toBeChecked();
   await user.click(screen.getByRole('checkbox', { name: 'Marketing' }));
   await user.click(screen.getByRole('checkbox', { name: 'Call Center' }));
+  await user.selectOptions(screen.getByRole('combobox', { name: 'Role' }), 'Function Director');
   await user.click(screen.getByRole('button', { name: 'Save changes' }));
   await waitFor(() => expect(mocks.updateUser).toHaveBeenCalledWith('functions', expect.objectContaining({
-    role: 'Function Viewer', accessible_functions: ['RCM', 'Call Center'],
+    role: 'Function Director', accessible_functions: ['RCM', 'Call Center'],
     accessible_teams: [], has_unrestricted_team_access: false,
   })));
   expect(screen.getByRole('status')).toHaveTextContent('User updated successfully.');

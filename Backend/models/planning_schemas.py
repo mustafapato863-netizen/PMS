@@ -81,6 +81,7 @@ class PlanCreate(BaseModel):
     team: str
     performance_level: Literal["Employee", "Managerial", "Corporate"]
     region: str | None = None
+    branch_key: str | None = None
     position_name: str | None = None
     employee_identifier: str | None = None
     period_start: date

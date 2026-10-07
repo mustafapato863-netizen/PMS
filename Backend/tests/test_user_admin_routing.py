@@ -12,7 +12,18 @@ from api.middleware.auth_middleware import AuthMiddleware
 from api.dependencies import get_current_user_scope
 from api.routers.users_and_actions import users_router
 from config.database import get_db
-from models.models import Base, Employee, RefreshSession, RolePermission, Team, User, UserTeamAssignment, UserFunctionAssignment
+from models.models import (
+    Base,
+    Employee,
+    RefreshSession,
+    RolePermission,
+    Team,
+    User,
+    UserBranchAssignment,
+    UserFunctionAssignment,
+    UserRegionAssignment,
+    UserTeamAssignment,
+)
 from services.auth_service import AuthenticationService
 from services.permission_seed import seed_role_permissions
 from services.password_service import verify_password
@@ -33,6 +44,8 @@ def db_session():
             User.__table__,
             UserTeamAssignment.__table__,
             UserFunctionAssignment.__table__,
+            UserRegionAssignment.__table__,
+            UserBranchAssignment.__table__,
             RolePermission.__table__,
             RefreshSession.__table__,
         ],
@@ -98,7 +111,7 @@ def test_admin_create_user_persists_to_db(test_client, db_session):
             "name": "New User",
             "username": "newuser",
             "password": "SecurePassword123!",
-            "role": "Viewer",
+            "role": "Performance Team",
             "is_active": True,
         },
     )
@@ -307,7 +320,7 @@ def test_admin_cannot_deactivate_self(test_client, db_session):
     assert "own account" in response.json()["detail"]
 
 
-def test_admin_create_function_viewer_with_selected_functions(test_client, db_session):
+def test_admin_create_function_director_with_selected_functions(test_client, db_session):
     headers = _auth_headers(db_session, "function_admin", "SecurePassword123!")
 
     response = test_client.post(
@@ -315,21 +328,78 @@ def test_admin_create_function_viewer_with_selected_functions(test_client, db_se
         headers=headers,
         json={
             "id": "function-viewer",
-            "name": "Function Viewer",
-            "username": "function_viewer",
+            "name": "Function Director",
+            "username": "function_director",
             "password": "SecurePassword123!",
-            "role": "Function Viewer",
+            "role": "Function Director",
             "accessible_functions": [" rcm ", "Marketing", "RCM"],
         },
     )
 
     assert response.status_code == 200
     assert response.json()["data"]["accessible_functions"] == ["RCM", "Marketing"]
-    created = db_session.query(User).filter(User.username == "function_viewer").first()
+    created = db_session.query(User).filter(User.username == "function_director").first()
     assert created is not None
     assert {
         assignment.function_name for assignment in created.function_assignments
     } == {"RCM", "Marketing"}
+
+
+@pytest.mark.parametrize(
+    ("role", "assignment_field", "assignment_values", "response_field", "model"),
+    [
+        ("Regional Manager", "accessible_regions", ["uae", "EGY"], "accessible_regions", UserRegionAssignment),
+        ("Branch Director", "accessible_branches", ["Dubai", "Sharjah"], "accessible_branches", UserBranchAssignment),
+    ],
+)
+def test_admin_create_scoped_director_persists_explicit_assignments(
+    test_client, db_session, role, assignment_field, assignment_values, response_field, model,
+):
+    headers = _auth_headers(db_session, f"{role.lower().replace(' ', '_')}_admin", "SecurePassword123!")
+    response = test_client.post(
+        "/api/users/",
+        headers=headers,
+        json={
+            "id": "scoped-director",
+            "name": "Scoped Director",
+            "username": "scoped_director",
+            "password": "SecurePassword123!",
+            "role": role,
+            assignment_field: assignment_values,
+        },
+    )
+
+    assert response.status_code == 200
+    assignments = response.json()["data"][response_field]
+    expected = ["UAE", "EGY"] if role == "Regional Manager" else ["dubai", "sharjah"]
+    assert set(assignments) == set(expected)
+    created = db_session.query(User).filter(User.username == "scoped_director").one()
+    persisted = db_session.query(model).filter(model.user_id == created.id).all()
+    persisted_values = [row.region_code if role == "Regional Manager" else row.branch_key for row in persisted]
+    assert set(persisted_values) == set(expected)
+
+
+@pytest.mark.parametrize(
+    ("role", "assignment_field"),
+    [("Regional Manager", "accessible_regions"), ("Branch Director", "accessible_branches")],
+)
+def test_admin_cannot_create_scoped_director_without_assignment(test_client, db_session, role, assignment_field):
+    headers = _auth_headers(db_session, f"missing_{role.lower().replace(' ', '_')}", "SecurePassword123!")
+    response = test_client.post(
+        "/api/users/",
+        headers=headers,
+        json={
+            "id": "missing-scope",
+            "name": "Missing Scope",
+            "username": "missing_scope",
+            "password": "SecurePassword123!",
+            "role": role,
+            assignment_field: [],
+        },
+    )
+
+    assert response.status_code == 422
+    assert db_session.query(User).filter(User.username == "missing_scope").count() == 0
 
 
 def test_admin_function_permissions_are_replaced_and_cleared_on_role_change(test_client, db_session):
@@ -351,7 +421,7 @@ def test_admin_function_permissions_are_replaced_and_cleared_on_role_change(test
             "id": str(user.id),
             "name": "Function Target",
             "username": "function_target",
-            "role": "Function Viewer",
+            "role": "Function Director",
             "is_active": True,
             "accessible_functions": ["Pre-Approvals"],
         },
@@ -367,9 +437,9 @@ def test_admin_function_permissions_are_replaced_and_cleared_on_role_change(test
             "id": str(user.id),
             "name": "Function Target",
             "username": "function_target",
-            "role": "Viewer",
+            "role": "Manager",
             "is_active": True,
-            "accessible_functions": [],
+            "accessible_teams": [],
         },
     )
 
@@ -380,7 +450,7 @@ def test_admin_function_permissions_are_replaced_and_cleared_on_role_change(test
     ).count() == 0
 
 
-def test_admin_cannot_assign_unknown_function(test_client, db_session):
+def test_admin_cannot_create_legacy_function_viewer_or_assign_unknown_function(test_client, db_session):
     headers = _auth_headers(db_session, "invalid_function_admin", "SecurePassword123!")
 
     response = test_client.post(
@@ -398,6 +468,21 @@ def test_admin_cannot_assign_unknown_function(test_client, db_session):
 
     assert response.status_code == 422
     assert db_session.query(User).filter(User.username == "bad_function").first() is None
+
+    current_role_response = test_client.post(
+        "/api/users/",
+        headers=headers,
+        json={
+            "id": "bad-function-grant",
+            "name": "Bad Function Grant",
+            "username": "bad_function_grant",
+            "password": "SecurePassword123!",
+            "role": "Function Director",
+            "accessible_functions": ["Finance"],
+        },
+    )
+    assert current_role_response.status_code == 422
+    assert db_session.query(User).filter(User.username == "bad_function_grant").first() is None
 
 
 def test_function_assignments_load_into_authoritative_request_scope(db_session):
@@ -467,7 +552,7 @@ def test_role_changes_do_not_restore_historical_branch_permissions(test_client, 
     payload = {"id": str(user.id), "name": "Former Manager", "username": user.username}
     demoted = test_client.put(
         f"/api/users/{user.id}", headers=headers,
-        json={**payload, "role": "Function Viewer", "accessible_functions": ["Marketing"]},
+        json={**payload, "role": "Function Director", "accessible_functions": ["Marketing"]},
     )
     assert demoted.status_code == 200
     assert db_session.query(UserTeamAssignment).filter_by(user_id=user.id).count() == 0

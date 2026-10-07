@@ -108,8 +108,24 @@ ROLE_GENERAL_MANAGER = "General Manager"
 ROLE_MANAGER = "Manager"
 ROLE_EXECUTIVE = "Executive"
 ROLE_VIEWER = "Viewer"
+ROLE_EMPLOYEE = "Employee"
+ROLE_PERFORMANCE_TEAM = "Performance Team"
+ROLE_REGIONAL_MANAGER = "Regional Manager"
+ROLE_BRANCH_DIRECTOR = "Branch Director"
+ROLE_FUNCTION_DIRECTOR = "Function Director"
 
-ROLES = [ROLE_ADMIN, ROLE_GENERAL_MANAGER, ROLE_MANAGER, ROLE_EXECUTIVE, ROLE_VIEWER]
+# Roles currently assignable by Admin. Legacy role strings remain defined above
+# for existing accounts during the explicit reassignment transition.
+ROLES = [
+    ROLE_ADMIN,
+    ROLE_MANAGER,
+    ROLE_EMPLOYEE,
+    ROLE_PERFORMANCE_TEAM,
+    ROLE_REGIONAL_MANAGER,
+    ROLE_BRANCH_DIRECTOR,
+    ROLE_FUNCTION_DIRECTOR,
+]
+LEGACY_ROLES = frozenset({ROLE_GENERAL_MANAGER, ROLE_EXECUTIVE, ROLE_VIEWER, "Agent", "Function Viewer"})
 
 # JWT & Security settings
 JWT_SECRET = resolve_jwt_secret(os.environ.get("JWT_SECRET"), APP_ENV)

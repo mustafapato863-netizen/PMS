@@ -246,18 +246,21 @@ def get_employee_profile(employee_id: str, request: Request, db: Session = Depen
         if not records:
             raise HTTPException(status_code=404, detail="Employee not found")
 
-        # Employee identity is derived from the same canonical SQL-backed
-        # records as the dashboard, avoiding a split between Supabase data and
-        # the legacy JSON repository on serverless deployments.
-        latest_record = max(
-            records,
-            key=lambda record: (
-                record.year or 0,
-                MONTH_ORDER.get(record.month, 0),
-            ),
-        )
+        scope = get_current_user_scope(db, request)
+        # Resolve authorization against the stable identity, then derive every
+        # displayed profile field from the authorized rows only. A cross-branch
+        # employee must not leak their latest out-of-scope team or region.
+        employee_identifier = str(records[0].employee_id)
+        CorrectiveActionService(db).ensure_employee_scope(employee_identifier, scope)
+        records = filter_records_by_scope(records, scope)
+        emp_records = [r for r in records if str(r.employee_id) == employee_identifier]
+        if not emp_records:
+            raise HTTPException(status_code=403, detail="No employee performance records are available in your authorized scope")
+
+        emp_records.sort(key=lambda x: (x.year or 0, MONTH_ORDER.get(x.month, 0)))
+        latest_record = emp_records[-1]
         emp = {
-            "id": str(latest_record.employee_id),
+            "id": employee_identifier,
             "name": latest_record.employee_name,
             "team": latest_record.team,
             "region": latest_record.region,
@@ -266,21 +269,7 @@ def get_employee_profile(employee_id: str, request: Request, db: Session = Depen
             "status": latest_record.status or "Active",
         }
 
-        scope = get_current_user_scope(db, request)
-        if not scope.get("legacy_unscoped") and scope.get("role") == "Manager" and not scope.get("has_unrestricted_team_access"):
-            if not user_can_access_team(scope, emp["team"]):
-                raise HTTPException(status_code=403, detail="Access denied for this employee")
-        elif not scope.get("legacy_unscoped") and scope.get("role") in {"Agent", "Executive"}:
-            self_id = str(scope.get("employee_id") or scope.get("user_id") or "")
-            if str(emp["id"]) != self_id:
-                raise HTTPException(status_code=403, detail="Access denied for this employee")
-
-        records = filter_records_by_scope(records, scope)
-        emp_records = [r for r in records if str(r.employee_id) == str(emp["id"])]
-        
-        emp_records.sort(key=lambda x: (x.year or 0, MONTH_ORDER.get(x.month, 0)))
-
-        history = CorrectiveActionService(db).get_history(str(emp["id"]))
+        history = CorrectiveActionService(db).get_history(str(emp["id"]), scope)
 
         profile_data = {
             "employee": emp,
@@ -505,7 +494,7 @@ async def  save_corrective_action(
     payload: Dict[str, Any],
     request: Request,
     db: Session = Depends(get_db),
-    role: str = Depends(require_role(["Admin", "General Manager", "Manager"]))
+    role: str = Depends(require_role(["Admin", "General Manager", "Manager", "Performance Team"]))
 ):
     try:
         month = payload.get("month", "")

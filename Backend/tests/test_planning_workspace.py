@@ -37,6 +37,20 @@ def test_risk_reasons_accept_datetime_due_dates_and_skip_blank_ones():
     assert "1 milestone(s) overdue" in reasons
 
 
+def test_regional_manager_plan_listing_uses_explicit_region_attribution():
+    service = PlanningService(StubRepo(), db=None)
+    team = SimpleNamespace(name="Inbound", display_name="Inbound")
+    scope = {
+        "role": "Regional Manager",
+        "accessible_regions": ["UAE"],
+        "accessible_teams": ["Inbound"],
+        "legacy_unscoped": False,
+    }
+
+    assert service._can_access(SimpleNamespace(region="UAE", team=team), scope)
+    assert not service._can_access(SimpleNamespace(region="EGY", team=team), scope)
+
+
 @pytest.fixture()
 def workspace():
     engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool)

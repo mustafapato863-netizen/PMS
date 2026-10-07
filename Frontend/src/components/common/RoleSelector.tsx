@@ -1,29 +1,18 @@
 import { useState } from 'react';
-import { Shield, ShieldAlert, ShieldCheck, Eye, ChevronDown, Lock, User } from 'lucide-react';
+import { Shield, ShieldAlert, ShieldCheck, Eye, ChevronDown, Lock, User, MapPin, Building2 } from 'lucide-react';
 import { useUserRole, type UserRole } from '../../context/RoleContext';
 import { refreshPerformanceData } from '../../hooks/usePerformanceData';
+import { USER_ROLE_OPTIONS } from '../../lib/access';
 
-const ROLE_DETAILS: Record<UserRole, { label: string; icon: React.ComponentType<{ size?: number; className?: string }>; color: string; bg: string; desc: string }> = {
+type RoleDetails = { label: string; icon: React.ComponentType<{ size?: number; className?: string }>; color: string; bg: string; desc: string };
+
+const ROLE_DETAILS: Partial<Record<UserRole, RoleDetails>> = {
   Admin: {
     label: 'Admin',
     icon: Shield,
     color: 'text-violet-600 border-violet-200 bg-violet-50',
     bg: 'bg-violet-600',
     desc: 'Full read/write access + config settings',
-  },
-  'General Manager': {
-    label: 'General Manager',
-    icon: ShieldCheck,
-    color: 'text-indigo-600 border-indigo-200 bg-indigo-50',
-    bg: 'bg-indigo-600',
-    desc: 'All teams + reports, insights & planning (no Settings admin)',
-  },
-  'Function Viewer': {
-    label: 'Function Viewer',
-    icon: Eye,
-    color: 'text-sky-600 border-sky-200 bg-sky-50',
-    bg: 'bg-sky-600',
-    desc: 'Read-only access to assigned functions',
   },
   Manager: {
     label: 'Manager',
@@ -32,27 +21,49 @@ const ROLE_DETAILS: Record<UserRole, { label: string; icon: React.ComponentType<
     bg: 'bg-emerald-600',
     desc: 'Read/write planning, notes & corrective actions',
   },
-  Executive: {
-    label: 'Executive',
-    icon: ShieldAlert,
-    color: 'text-amber-600 border-amber-200 bg-amber-50',
-    bg: 'bg-amber-600',
-    desc: 'Read-only + performance planning & insights',
-  },
-  Viewer: {
-    label: 'Viewer',
-    icon: Eye,
-    color: 'text-slate-600 border-slate-200 bg-slate-50',
-    bg: 'bg-slate-600',
-    desc: 'Read-only access (no planning/insights)',
-  },
-  Agent: {
-    label: 'Agent',
+  Employee: {
+    label: 'Employee',
     icon: User,
     color: 'text-blue-600 border-blue-200 bg-blue-50',
     bg: 'bg-blue-600',
-    desc: 'Access to the assigned employee profile',
+    desc: 'Access to the employee’s own profile and performance',
   },
+  'Performance Team': {
+    label: 'Performance Team',
+    icon: ShieldCheck,
+    color: 'text-indigo-600 border-indigo-200 bg-indigo-50',
+    bg: 'bg-indigo-600',
+    desc: 'Operational access across functions; no Admin settings',
+  },
+  'Regional Manager': {
+    label: 'Regional Manager',
+    icon: MapPin,
+    color: 'text-amber-600 border-amber-200 bg-amber-50',
+    bg: 'bg-amber-600',
+    desc: 'Read-only access within assigned regions',
+  },
+  'Branch Director': {
+    label: 'Branch Director',
+    icon: Building2,
+    color: 'text-sky-600 border-sky-200 bg-sky-50',
+    bg: 'bg-sky-600',
+    desc: 'Read-only access within assigned branches',
+  },
+  'Function Director': {
+    label: 'Function Director',
+    icon: Eye,
+    color: 'text-cyan-600 border-cyan-200 bg-cyan-50',
+    bg: 'bg-cyan-600',
+    desc: 'Read-only access across assigned function teams',
+  },
+};
+
+const LEGACY_ROLE_DETAILS: RoleDetails = {
+  label: 'Legacy role',
+  icon: ShieldAlert,
+  color: 'text-slate-600 border-slate-200 bg-slate-50',
+  bg: 'bg-slate-600',
+  desc: 'Temporary access retained until an Admin reassigns this account',
 };
 
 const RoleSelector = () => {
@@ -66,14 +77,15 @@ const RoleSelector = () => {
     refreshPerformanceData();
   };
 
-  const ActiveIcon = ROLE_DETAILS[role].icon;
+  const activeRoleDetails = ROLE_DETAILS[role] ?? LEGACY_ROLE_DETAILS;
+  const ActiveIcon = activeRoleDetails.icon;
 
   return (
     <div className="relative z-40">
       <button
         id="btn-role-selector"
         onClick={() => setIsOpen(!isOpen)}
-        className={`flex items-center gap-2 px-3 py-2 text-xs md:text-sm font-bold rounded-xl border shadow-sm transition-all duration-300 hover:scale-[1.02] active:scale-[0.98] ${ROLE_DETAILS[role].color}`}
+        className={`flex items-center gap-2 px-3 py-2 text-xs md:text-sm font-bold rounded-xl border shadow-sm transition-all duration-300 hover:scale-[1.02] active:scale-[0.98] ${activeRoleDetails.color}`}
       >
         <ActiveIcon size={16} className="shrink-0" />
         <span className="hidden sm:inline">Role: {role}</span>
@@ -97,13 +109,14 @@ const RoleSelector = () => {
                 <p className="text-[10px] font-bold uppercase tracking-wider">Role controls what you can see</p>
               </div>
               <p className="text-[11px] text-slate-500 mt-1 leading-snug">
-                Admin shows user management and upload actions. General Manager opens reports, insights and planning for all teams. Manager keeps planning tools. Viewer stays read-only.
+                Admin manages settings. Managers keep their current team access. Employee access is self-only; director access follows assigned regions, branches or functions.
               </p>
             </div>
             
             <div className="space-y-1">
-              {(Object.keys(ROLE_DETAILS) as UserRole[]).map((r) => {
+              {USER_ROLE_OPTIONS.map((r) => {
                 const item = ROLE_DETAILS[r];
+                if (!item) return null;
                 const ItemIcon = item.icon;
                 const isSelected = r === role;
                 

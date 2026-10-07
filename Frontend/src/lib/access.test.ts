@@ -15,11 +15,15 @@ import {
   readHasUnrestrictedTeamAccess,
 } from './access';
 
-describe('access helpers (Option A: stored "General Manager" role)', () => {
-  it('uses the Backend role string', () => {
+describe('access helpers (current roles and legacy transition)', () => {
+  it('offers only current roles for new assignments while preserving legacy role identity', () => {
     expect(ROLE_GENERAL_MANAGER).toBe('General Manager');
-    expect(USER_ROLE_OPTIONS).toContain('General Manager');
-    expect(USER_ROLE_OPTIONS).toContain('Function Viewer');
+    expect(USER_ROLE_OPTIONS).toEqual([
+      'Admin', 'Manager', 'Employee', 'Performance Team',
+      'Regional Manager', 'Branch Director', 'Function Director',
+    ]);
+    expect(USER_ROLE_OPTIONS).not.toContain('General Manager');
+    expect(USER_ROLE_OPTIONS).not.toContain('Function Viewer');
   });
 
   it('identifies Admin and General Manager by role string only', () => {
@@ -30,10 +34,11 @@ describe('access helpers (Option A: stored "General Manager" role)', () => {
     expect(isGeneralManagerRole(null)).toBe(false);
   });
 
-  it('opens broad product pages to Admin and General Manager only', () => {
+  it('opens broad product pages to Admin, transitional General Manager, and Performance Team', () => {
     expect(canAccessBroadAppPages('Admin')).toBe(true);
     expect(canAccessBroadAppPages('General Manager')).toBe(true);
-    for (const role of ['Manager', 'Executive', 'Viewer', 'Agent', undefined]) {
+    expect(canAccessBroadAppPages('Performance Team')).toBe(true);
+    for (const role of ['Manager', 'Employee', 'Regional Manager', 'Branch Director', 'Function Director', 'Executive', 'Viewer', 'Agent', undefined]) {
       expect(canAccessBroadAppPages(role)).toBe(false);
     }
   });
@@ -44,6 +49,10 @@ describe('access helpers (Option A: stored "General Manager" role)', () => {
     expect(canAccessCorrectiveActions('General Manager')).toBe(true);
     expect(canAccessCorrectiveActions('Manager')).toBe(true);
     expect(canAccessCorrectiveActions('Function Viewer')).toBe(false);
+    expect(canAccessCorrectiveActions('Function Director')).toBe(true);
+    expect(canAccessCorrectiveActions('Branch Director')).toBe(true);
+    expect(canAccessCorrectiveActions('Regional Manager')).toBe(true);
+    expect(canAccessCorrectiveActions('Performance Team')).toBe(true);
     expect(canAccessCorrectiveActions('Viewer')).toBe(false);
   });
 
@@ -57,6 +66,7 @@ describe('access helpers (Option A: stored "General Manager" role)', () => {
   it('allows Team Management for Admin and General Manager', () => {
     expect(canAccessTeamManagement('Admin')).toBe(true);
     expect(canAccessTeamManagement('General Manager')).toBe(true);
+    expect(canAccessTeamManagement('Performance Team')).toBe(true);
     expect(canAccessTeamManagement('Manager')).toBe(false);
     expect(canAccessTeamManagement('Executive')).toBe(false);
   });
@@ -77,6 +87,7 @@ describe('access helpers (Option A: stored "General Manager" role)', () => {
   it('treats Admin, General Manager and has_unrestricted_team_access as all-teams scope', () => {
     expect(hasAllTeamsScope('Admin')).toBe(true);
     expect(hasAllTeamsScope('General Manager')).toBe(true);
+    expect(hasAllTeamsScope('Performance Team')).toBe(true);
     expect(hasAllTeamsScope('Manager', { has_unrestricted_team_access: true })).toBe(true);
     expect(hasAllTeamsScope('Manager', { has_unrestricted_team_access: false })).toBe(false);
     expect(hasAllTeamsScope('Executive', null)).toBe(false);

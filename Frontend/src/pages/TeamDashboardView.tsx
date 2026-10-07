@@ -232,6 +232,11 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
     // Function Viewer: scoped by accessible_functions, not accessible_teams; no all-teams view.
     if (functionScope.restricted) return teamId === 'all' || !functionScope.allowsTeam(teamName);
     if (!currentUser) return false;
+    // Branch Directors are scoped by branch assignments rather than a static
+    // team list. The backend enforces that branch scope on every data request.
+    if (currentUser.role === 'Branch Director') {
+      return !(currentUser.accessible_branches?.length);
+    }
     if (hasAllTeamsScope(role, currentUser)) return false;
     if (!teamName) return false; // 'all' view has its own scoping
     

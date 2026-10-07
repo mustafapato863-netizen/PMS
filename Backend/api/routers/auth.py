@@ -18,7 +18,13 @@ from models.schemas import (
     ProfileUpdatePayload,
     StandardResponse,
 )
-from models.models import Team, User, UserTeamAssignment
+from models.models import (
+    Team,
+    User,
+    UserTeamAssignment,
+    UserRegionAssignment,
+    UserBranchAssignment,
+)
 from services.auth_service import (
     AuthenticationService,
     InvalidCsrfTokenError,
@@ -266,10 +272,10 @@ async def me(request: Request, db: Session = Depends(get_db)):
         }
         # Renamed from is_general_manager — see Frontend contract.
         # F1-correct: every active team must have a NULL performance_level assignment.
-        has_unrestricted_team_access = user.role in {"Admin", "General Manager"} or (
+        has_unrestricted_team_access = user.role in {"Admin", "General Manager", "Performance Team"} or (
             user.role == "Manager" and bool(active_team_names) and unrestricted_teams >= active_team_names
         )
-        if user.role == "Function Viewer":
+        if user.role in {"Function Viewer", "Function Director"}:
             assigned_functions = {
                 assignment.function_name for assignment in user.function_assignments
             }
@@ -279,6 +285,28 @@ async def me(request: Request, db: Session = Depends(get_db)):
             ]
         else:
             accessible_functions = []
+        accessible_regions = []
+        if user.role == "Regional Manager":
+            accessible_regions = [
+                str(region_code)
+                for (region_code,) in (
+                    db.query(UserRegionAssignment.region_code)
+                    .filter(UserRegionAssignment.user_id == user.id)
+                    .order_by(UserRegionAssignment.region_code.asc())
+                    .all()
+                )
+            ]
+        accessible_branches = []
+        if user.role == "Branch Director":
+            accessible_branches = [
+                str(branch_key)
+                for (branch_key,) in (
+                    db.query(UserBranchAssignment.branch_key)
+                    .filter(UserBranchAssignment.user_id == user.id)
+                    .order_by(UserBranchAssignment.branch_key.asc())
+                    .all()
+                )
+            ]
 
         return StandardResponse(
             success=True,
@@ -292,10 +320,12 @@ async def me(request: Request, db: Session = Depends(get_db)):
                 "accessible_teams": accessible_teams,
                 "accessible_team_levels": accessible_team_levels,
                 "accessible_functions": accessible_functions,
+                "accessible_regions": accessible_regions,
+                "accessible_branches": accessible_branches,
                 "accessible_team_count": len(accessible_teams),
                 "total_team_count": active_team_count,
                 "has_unrestricted_team_access": has_unrestricted_team_access,
-                "is_self_only": user.role == "Agent",
+                "is_self_only": user.role in {"Agent", "Employee"},
             },
         )
     except HTTPException:

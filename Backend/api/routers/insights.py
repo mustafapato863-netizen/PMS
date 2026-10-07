@@ -55,7 +55,10 @@ def get_insights_workspace(
     insight_type: str | None = Query(default=None),
     status_filter: str | None = Query(default=None, alias="status"),
     view: Literal["full", "priority"] = Query(default="full"),
-    _role: str = Depends(require_role(["Admin", "General Manager", "Manager", "Executive"])),
+    _role: str = Depends(require_role([
+        "Admin", "General Manager", "Manager", "Executive", "Performance Team",
+        "Regional Manager", "Branch Director", "Function Director",
+    ])),
 ):
     if bool(month) != bool(year):
         raise HTTPException(

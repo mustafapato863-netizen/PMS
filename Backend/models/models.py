@@ -345,6 +345,9 @@ class PerformanceRecord(Base):
     performance_level = Column(String(20), nullable=False, default=PerformanceLevel.EMPLOYEE.value, server_default=PerformanceLevel.EMPLOYEE.value)
     position_name = Column(String(255), nullable=True)
     region = Column(String(10), nullable=True)
+    # Canonicalized only from an unambiguous explicit source branch marker.
+    # Legacy or mixed-branch rows remain NULL and are hidden from branch scopes.
+    branch_key = Column(String(30), nullable=True)
     score = Column(Numeric(6, 2), nullable=False)
     grade = Column(String(5), nullable=False)  # A, B, C, D, E
     status = Column(String(20), nullable=False)  # Exceeds, Meets, Below
@@ -363,6 +366,7 @@ class PerformanceRecord(Base):
     __table_args__ = (
         CheckConstraint(f"performance_level IN ('{PerformanceLevel.EMPLOYEE.value}', '{PerformanceLevel.MANAGERIAL.value}', '{PerformanceLevel.CORPORATE.value}')", name='ck_performance_record_level'),
         Index('idx_perf_record_filters', 'team_id', 'performance_level', 'month', 'year'),
+        Index('idx_perf_record_branch_scope', 'branch_key', 'year', 'month'),
     )
 
 
@@ -416,7 +420,7 @@ class User(Base):
     username = Column(String(100), nullable=False, unique=True)
     email = Column(String(255), nullable=False, unique=True)
     password_hash = Column(Text, nullable=False)
-    role = Column(String(50), nullable=False, default="Viewer")  # Admin, General Manager, Manager, Function Viewer, Executive, Viewer, Agent
+    role = Column(String(50), nullable=False, default="Employee")  # Current roles are defined in config.settings.ROLES; old strings remain for existing accounts during migration.
     is_active = Column(Boolean, nullable=False, default=True)
     failed_login_attempts = Column(Integer, nullable=False, default=0)
     locked_until = Column(DateTime(timezone=True), nullable=True)
@@ -428,6 +432,8 @@ class User(Base):
     # Relationships
     team_assignments = relationship("UserTeamAssignment", back_populates="user", passive_deletes=True)
     function_assignments = relationship("UserFunctionAssignment", back_populates="user", passive_deletes=True)
+    region_assignments = relationship("UserRegionAssignment", back_populates="user", passive_deletes=True)
+    branch_assignments = relationship("UserBranchAssignment", back_populates="user", passive_deletes=True)
     notifications = relationship("NotificationRecipient", back_populates="user", passive_deletes=True)
     actions_created = relationship(
         "Action",
@@ -540,6 +546,46 @@ class UserFunctionAssignment(Base):
     )
 
 
+class UserRegionAssignment(Base):
+    """Explicit geographic-region grants for Regional Managers."""
+
+    __tablename__ = "user_region_assignments"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    region_code = Column(String(10), nullable=False)
+    assigned_at = Column(DateTime(timezone=True), server_default=func.now())
+    assigned_by = Column(String(100), nullable=False, default="Admin")
+
+    user = relationship("User", back_populates="region_assignments")
+
+    __table_args__ = (
+        CheckConstraint("region_code IN ('UAE', 'EGY', 'Other')", name="ck_user_region_assignment_code"),
+        UniqueConstraint("user_id", "region_code", name="uq_user_region_assignment"),
+        Index("idx_user_region_assignment_scope", "user_id", "region_code"),
+    )
+
+
+class UserBranchAssignment(Base):
+    """Explicit branch grants; geo-activity totals are never authorization evidence."""
+
+    __tablename__ = "user_branch_assignments"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    branch_key = Column(String(30), nullable=False)
+    assigned_at = Column(DateTime(timezone=True), server_default=func.now())
+    assigned_by = Column(String(100), nullable=False, default="Admin")
+
+    user = relationship("User", back_populates="branch_assignments")
+
+    __table_args__ = (
+        CheckConstraint("branch_key IN ('dubai', 'sharjah', 'ajman', 'clinics')", name="ck_user_branch_assignment_key"),
+        UniqueConstraint("user_id", "branch_key", name="uq_user_branch_assignment"),
+        Index("idx_user_branch_assignment_scope", "user_id", "branch_key"),
+    )
+
+
 # ============================================================
 # 5. CONFIGURATION - GRADE THRESHOLDS
 # ============================================================
@@ -589,6 +635,7 @@ class PerformancePlan(Base):
     team_id = Column(UUID(as_uuid=True), ForeignKey("teams.id", ondelete="RESTRICT"), nullable=False)
     performance_level = Column(String(20), nullable=False)
     region = Column(String(10), nullable=True)
+    branch_key = Column(String(30), nullable=True)
     position_name = Column(String(255), nullable=True)
     employee_id = Column(UUID(as_uuid=True), ForeignKey("employees.id", ondelete="RESTRICT"), nullable=True)
     period_start = Column(Date, nullable=False)
@@ -633,6 +680,7 @@ class PerformancePlan(Base):
         CheckConstraint("outcome_direction IN ('higher_better', 'lower_better')", name="ck_performance_plan_direction"),
         CheckConstraint("period_end >= period_start", name="ck_performance_plan_period"),
         Index("idx_performance_plan_scope_status", "team_id", "performance_level", "status"),
+        Index("idx_performance_plan_branch_scope", "branch_key", "team_id"),
     )
 
 
@@ -736,6 +784,7 @@ class Action(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     employee_id = Column(UUID(as_uuid=True), ForeignKey("employees.id", ondelete="RESTRICT"), nullable=True)
     team_id = Column(UUID(as_uuid=True), ForeignKey("teams.id", ondelete="RESTRICT"), nullable=False)
+    branch_key = Column(String(30), nullable=True)
     month = Column(String(20), nullable=False)
     year = Column(SmallInteger, nullable=False)
     action_type = Column(String(50), nullable=False)  # Training, Reward, PIP, Monitor, Coaching, Warning, Promotion, Team Action
@@ -766,6 +815,10 @@ class Action(Base):
     owner = relationship("User", foreign_keys=[owner_user_id])
     plan = relationship("PerformancePlan", back_populates="actions")
     objective = relationship("PlanObjective", back_populates="actions")
+
+    __table_args__ = (
+        Index("idx_action_branch_scope", "branch_key", "team_id", "year", "month"),
+    )
 
 
 class ReportTemplate(Base):

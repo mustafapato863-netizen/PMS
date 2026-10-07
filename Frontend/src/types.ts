@@ -508,9 +508,12 @@ export interface User {
   name: string;
   username: string;
   password?: string;
-  role: 'Admin' | 'General Manager' | 'Manager' | 'Executive' | 'Viewer' | 'Agent' | 'Function Viewer';
-  /** Function Viewer: functions it may read (Call Center, RCM, Pre-Approvals, Marketing). */
+  role: 'Admin' | 'Manager' | 'Employee' | 'Performance Team' | 'Regional Manager' | 'Branch Director' | 'Function Director' | 'General Manager' | 'Executive' | 'Viewer' | 'Agent' | 'Function Viewer';
+  /** Function Director (and transitional Function Viewer): functions it may read. */
   accessible_functions?: string[];
+  accessible_regions?: string[];
+  accessible_branches?: string[];
+  legacy_role_needs_reassignment?: boolean;
   is_active?: boolean;
   is_online?: boolean;
   last_seen_at?: string | null;
