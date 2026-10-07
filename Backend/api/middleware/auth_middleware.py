@@ -126,12 +126,28 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 user = db.query(User).filter(User.id == user_id).first()
                 if not user or not user.is_active:
                     raise ValueError("User account is disabled")
+                # A restricted token must never become an unrestricted token
+                # simply because another request completed the password change.
+                if payload.get("must_change_password") and not user.must_change_password:
+                    raise ValueError("Sign in again after changing your password")
+                if user.must_change_password and (request.method, path.rstrip("/")) not in {
+                    ("GET", "/api/auth/me"),
+                    ("POST", "/api/auth/profile/password"),
+                    ("POST", "/api/auth/logout"),
+                }:
+                    return JSONResponse(status_code=403, content={
+                        "success": False,
+                        "code": "PASSWORD_CHANGE_REQUIRED",
+                        "message": "Change your temporary password before accessing the system.",
+                        "detail": "Change your temporary password before accessing the system.",
+                    })
                 request.state.user = {
                     "user_id": str(user.id),
                     "username": user.username,
                     "role": user.role,
                     "employee_id": getattr(user, "employee_id", None),
                     "session_id": payload.get("sid"),
+                    "must_change_password": user.must_change_password,
                 }
         except Exception:
             logger.warning("Authentication token validation failed")

@@ -1,7 +1,7 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { ChevronDown, FileBarChart, LayoutGrid } from 'lucide-react';
 import { canonicalTeamName } from '../../types';
-import { executiveFunctionForTeam, functionSlug, teamPath } from '../../features/executive/functions';
+import { executiveFunctionForTeam, functionSlug, isTeamInFunctions, teamPath } from '../../features/executive/functions';
 import type { ExecutiveFunction } from '../../features/executive/types';
 import { getTeamIcon, isHiddenTeam } from './sidebarTeamItems';
 
@@ -28,7 +28,8 @@ export default function FunctionViewerNav({ allowed, catalogTeams, renderLink, i
       const team = canonicalTeamName(raw) || raw;
       const key = team.toLowerCase();
       if (!team || seen.has(key) || isHiddenTeam(team)) return;
-      const fn = executiveFunctionForTeam(team);
+      const primary = executiveFunctionForTeam(team);
+      const fn = primary && allowed.includes(primary) ? primary : allowed.find((fn) => isTeamInFunctions(team, [fn]));
       if (!fn || !allowed.includes(fn)) return;
       seen.add(key);
       map.set(fn, [...(map.get(fn) ?? []), team]);

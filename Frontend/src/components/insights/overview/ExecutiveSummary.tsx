@@ -41,7 +41,7 @@ function formatRaw(value: number | null, unit: string | null) {
 function formatRawDelta(delta: number, unit: string | null, reference: number | null) {
   const scale = unit === '%' && reference !== null && Math.abs(reference) <= 1 ? 100 : 1;
   const value = delta * scale;
-  const suffix = unit === '%' ? ' pts' : unit ? ` ${unit}` : '';
+  const suffix = unit === '%' ? '%' : unit ? ` ${unit}` : '';
   return `${value > 0 ? '+' : ''}${value.toLocaleString(undefined, { maximumFractionDigits: 1 })}${suffix}`;
 }
 
@@ -59,7 +59,7 @@ function pointMovement(series: TrendSeries, index: number) {
   }
   if (point.actual === null || previousPoint.actual === null) return null;
   const delta = point.actual - previousPoint.actual;
-  return { delta, tone: movementTone(delta, 'higher_better'), text: `${delta > 0 ? '+' : ''}${delta.toFixed(1)} pts`, against: previousPoint.label };
+  return { delta, tone: movementTone(delta, 'higher_better'), text: `${delta > 0 ? '+' : ''}${delta.toFixed(1)}%`, against: previousPoint.label };
 }
 
 function TrendSkeleton() {

@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from models.models import User
 from repositories.user_repository import UserRepository
 from services.password_service import hash_password, validate_password_strength, verify_password
+from services.auth_service import AuthenticationService
 
 
 class UserProfileNotFoundError(ValueError):
@@ -57,6 +58,8 @@ class UserProfileService:
                 raise PasswordReuseError("New password must be different from the current password.")
 
             self.users.set_password_hash(user, hash_password(new_password))
+            user.must_change_password = False
+            AuthenticationService.revoke_all_sessions(self.db, user_id, reason="password_changed", commit=False)
             self.db.commit()
         except Exception:
             self.db.rollback()

@@ -43,7 +43,8 @@ import { buildTeamKpiAnalysis } from '../features/team/teamKpiAnalysis';
 import { aggregatePreApprovalsIpMetrics } from '../features/team/preApprovalsIpMetrics';
 import { aggregateConfiguredTeamKpis, calculateAggregatedTeamPerformance } from '../features/team/teamKpiAggregator';
 import { resolveAvailableTeamPeriods } from '../features/team/teamPeriods';
-import { canAccessBroadAppPages, hasAllTeamsScope } from '../lib/access';
+import { canAccessBroadAppPages, hasAllTeamsScope, isScopedDirectorRole } from '../lib/access';
+import { directorScope } from '../lib/directorScope';
 import { useFunctionScope } from '../features/executive/useFunctionScope';
 
 const TeamChartsSection = lazy(() => import('../components/team/TeamChartsSection'));
@@ -161,8 +162,12 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
     value: 'All' | 'EGY' | 'UAE';
   } | null>(null);
   const { location: requestedLocation, setLocation: setRequestedLocation } = useLocationParam('all');
-  const { locations: branchSelections, setLocations: setBranchSelections } = useLocationsParam(['all']);
-  const location = isMergedTeam ? 'all' : requestedLocation;
+  const assigned = directorScope(role, currentUser);
+  const { locations: requestedBranches, setLocations: setBranchSelections } = useLocationsParam(['all']);
+  const branchSelections: LocationKey[] = assigned.branchLocked
+    ? assigned.branches.filter((value): value is LocationKey => ['dubai', 'sharjah', 'ajman', 'clinics'].includes(value))
+    : requestedBranches;
+  const location: LocationKey = assigned.branchLocked ? (assigned.branch as LocationKey | undefined) ?? 'all' : isMergedTeam ? 'all' : requestedLocation;
   const setLocation = setRequestedLocation;
   const { month, setMonth } = useMonthParam('All');
   const { performanceLevel, setPerformanceLevel } = usePerformanceLevelParam('All');
@@ -211,7 +216,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
   const { data: teamConfig } = useTeamConfig(workflowConfigTeam);
   const { data: inboundTeamConfig } = useTeamConfig(isCallCenterParent ? 'Inbound' : '');
   const { data: outboundTeamConfig } = useTeamConfig(isCallCenterParent ? 'Outbound' : '');
-  const region = regionSelection?.teamName === teamName
+  const region = assigned.regionLocked ? (assigned.region === 'EGY' || assigned.region === 'UAE' ? assigned.region : 'All') : regionSelection?.teamName === teamName
     ? regionSelection.value
     : isPreApprovalsParent ? 'UAE' : isCallCenterParent ? 'EGY' : teamName ? (teamConfig?.region ?? 'All') : 'All';
   const setRegion = useCallback((value: 'All' | 'EGY' | 'UAE') => {
@@ -229,6 +234,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
   const showBscFallbackMessage = isBscContext && !hasBalancedScorecard;
 
   const isTeamAccessRestricted = useMemo(() => {
+    if (isScopedDirectorRole(role) && teamId === 'all') return true;
     // Function Viewer: scoped by accessible_functions, not accessible_teams; no all-teams view.
     if (functionScope.restricted) return teamId === 'all' || !functionScope.allowsTeam(teamName);
     if (!currentUser) return false;
@@ -237,6 +243,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
     if (currentUser.role === 'Branch Director') {
       return !(currentUser.accessible_branches?.length);
     }
+    if (currentUser.role === 'Regional Manager') return !(currentUser.accessible_regions?.length);
     if (hasAllTeamsScope(role, currentUser)) return false;
     if (!teamName) return false; // 'all' view has its own scoping
     
@@ -310,7 +317,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
     isRcmParent ? rcmGroup : 'all',
   );
 
-  const { uniqueMonths, agents: allAgentsRaw } = usePerformanceData('All', location, region, performanceLevel);
+  const { uniqueMonths, agents: allAgentsRaw } = usePerformanceData('All', location, region, performanceLevel, true, teamName ?? undefined);
   const allAgents = useMemo(
     () => isMergedTeam && !isCallCenterParent && !branchSelections.includes('all')
       ? allAgentsRaw.filter((agent) => branchSelections.some((branch) => agentMatchesLocation(agent, branch)))
@@ -1701,6 +1708,9 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
         <TeamHeader
           displayName={displayName}
           month={month}
+          lockedBranch={assigned.branchLocked ? assigned.branchLabel : undefined}
+          lockedRegion={assigned.regionLocked ? assigned.regionLabel : undefined}
+          scopedNavigation={isScopedDirectorRole(role)}
           uniqueMonths={dashboardMonths}
           setMonth={(m) => {
             setMonth(m);
@@ -1842,6 +1852,9 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
       <TeamHeader
         displayName={displayName}
         month={month}
+        lockedBranch={assigned.branchLocked ? assigned.branchLabel : undefined}
+        lockedRegion={assigned.regionLocked ? assigned.regionLabel : undefined}
+        scopedNavigation={isScopedDirectorRole(role)}
         uniqueMonths={dashboardMonths}
         setMonth={(m) => {
           setMonth(m);

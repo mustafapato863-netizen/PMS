@@ -69,3 +69,15 @@ async def test_presence_rejects_unauthenticated_connections():
 
     assert await namespace.on_connect("sid-1", {}, None) is False
     assert connected_clients == {}
+
+
+@pytest.mark.asyncio
+async def test_pending_password_change_cannot_connect_to_notifications(monkeypatch):
+    monkeypatch.setattr(AuthenticationService, 'validate_token', lambda token: {
+        'user_id': 'new-user', 'role': 'Admin', 'must_change_password': True,
+    })
+    namespace = NotificationNamespace('/notifications')
+    namespace.enter_room = AsyncMock()
+    assert await namespace.on_connect('sid-new', {}, {'token': 'restricted'}) is False
+    assert connected_clients == {}
+    namespace.enter_room.assert_not_called()

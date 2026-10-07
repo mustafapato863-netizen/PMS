@@ -335,6 +335,7 @@ class DashboardRecordService:
                         "month": str(item.month),
                         "year": int(item.year),
                         "region": item.region or employee.region,
+                        "branch_key": getattr(item, "branch_key", None),
                         "performance_level": str(item.performance_level),
                         "position": item.position_name or employee.position_name,
                         # Same grade->status rule as imports, so a record whose
@@ -393,6 +394,7 @@ class DashboardRecordService:
                 month=str(item.month),
                 year=int(item.year),
                 region=item.region or employee.region,
+                branch_key=getattr(item, "branch_key", None),
                 performance_level=str(item.performance_level),
                 position=item.position_name or employee.position_name,
                 status=reconciled_status(item.status, item.grade, fallback_grade),

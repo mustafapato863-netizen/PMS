@@ -399,10 +399,10 @@ class ReportingEvidenceService:
         strongest_negative = next((row for row in movement_rows if row["score_point_change"] < 0), None)
         strongest_positive = next((row for row in movement_rows if row["score_point_change"] > 0), None)
         verb = "increased" if reported > 0 else "declined" if reported < 0 else "was unchanged"
-        narrative = f"Overall PMS Score {verb} from {summary['previous_score']:.1f}% to {summary['average_score']:.1f}%, a movement of {abs(reported):.1f} score points."
+        narrative = f"Overall PMS Score {verb} from {summary['previous_score']:.1f}% to {summary['average_score']:.1f}%, a movement of {abs(reported):.1f}%."
         if strongest_negative: narrative += f" {strongest_negative['label']} contributed to the decline."
         if strongest_positive: narrative += f" {strongest_positive['label']} partially offset negative movement."
-        if abs(residual) > ROUNDING_TOLERANCE: narrative += f" A residual of {residual:+.1f} points remains attributable to population, configuration, or incomparable evidence."
+        if abs(residual) > ROUNDING_TOLERANCE: narrative += f" A residual of {residual:+.1f}% remains attributable to population, configuration, or incomparable evidence."
         warnings = []
         if config_effect: warnings.append("Compared records used different applied KPI configurations.")
         if missing_effect: warnings.append("Some matched records lacked comparable KPI contribution evidence.")

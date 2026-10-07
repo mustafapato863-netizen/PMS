@@ -48,6 +48,25 @@ class StubRecordService:
         return list(self.records)
 
 
+def test_movement_and_recommendations_display_percent_units():
+    story = object.__new__(ReportStoryService)
+    movement = story._movement({"evidence": {"movement": {
+        "total_score_point_change": -2.4,
+        "kpi_contribution_movements": [{"label": "Quality", "score_point_change": -2.4}],
+        "reconciliation_state": "reconciled", "residual": 0,
+    }}}, [])
+    assert movement["contributions"][0]["display"] == "-2.4%"
+    assert movement["score_change"] == -2.4
+    assert "declined by 2.4%" in movement["narrative"]
+    assert "score points" not in movement["narrative"]
+    recommendations = story._recommendations([
+        {"name": "Quality", "status": "below target", "lost_points": 8.5},
+        {"name": "Attendance", "status": "below target", "lost_points": None},
+    ], "decisions")
+    assert "8.5% score gap" in recommendations
+    assert "unquantified score gap" in recommendations
+
+
 def record(employee_id: str, team: str, month: str, score: float, *, target: float = 90, contribution: float = 0.25):
     return PerformanceRecord(
         id=f"{employee_id}-2026-{month}", employee_id=employee_id, employee_name=f"Employee {employee_id}",

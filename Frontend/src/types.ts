@@ -7,6 +7,7 @@ export type RawData = Record<string, string>;
 export interface AgentRecord {
   raw_data?: RawData;
   region?: string;
+  branch_key?: string | null;
   year?: number;
   position?: string | null;
   status?: 'Exceeds' | 'Meets' | 'Below' | string | null;
@@ -199,6 +200,8 @@ const RCM_DOMAIN_TEAMS: Record<Exclude<RcmDomainFilter, 'all'>, readonly string[
     'Pre-Approvals',
     'Pre-Approvals IP Offshore',
     ...PRE_APPROVALS_UAE_SOURCE_TEAMS,
+    'Pre-Approvals OP Final',
+    'Pre-Approvals IP Final',
     'Pre-Approvals IP Elective',
   ],
   submission: ['Submission'],
@@ -507,6 +510,7 @@ export interface User {
   id: string;
   name: string;
   username: string;
+  must_change_password?: boolean;
   password?: string;
   role: 'Admin' | 'Manager' | 'Employee' | 'Performance Team' | 'Regional Manager' | 'Branch Director' | 'Function Director' | 'General Manager' | 'Executive' | 'Viewer' | 'Agent' | 'Function Viewer';
   /** Function Director (and transitional Function Viewer): functions it may read. */

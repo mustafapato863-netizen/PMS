@@ -1,31 +1,13 @@
-import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
-import { LineChart } from 'lucide-react';
+import { useEffect, useId, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { Calendar, LineChart } from 'lucide-react';
 import type { ExecutiveTrendPoint } from '../../../features/executive/types';
 import { fmtScore, shortMonth } from '../../../features/executive/format';
 import { useElementWidth } from './execModel';
+import { smoothPath, splitSeries, type SegmentPoint } from './trendGeometry';
 
-const CHART_HEIGHT = 170;
 const TOOLTIP_WIDTH = 194;
-
-interface SegmentPoint {
-  index: number;
-  value: number;
-}
-
-function splitSeries(values: Array<number | null>): SegmentPoint[][] {
-  const result: SegmentPoint[][] = [];
-  let current: SegmentPoint[] = [];
-  values.forEach((value, index) => {
-    if (value === null || !Number.isFinite(value)) {
-      if (current.length) result.push(current);
-      current = [];
-      return;
-    }
-    current.push({ index, value });
-  });
-  if (current.length) result.push(current);
-  return result;
-}
+const CHART_HEIGHT = 260;
+const lineColor = 'var(--insights-accent)';
 
 function straightPath(points: SegmentPoint[], x: (index: number) => number, y: (value: number) => number): string {
   return points.map((point, index) => {
@@ -34,22 +16,9 @@ function straightPath(points: SegmentPoint[], x: (index: number) => number, y: (
   }).join(' ');
 }
 
-function smoothPath(points: SegmentPoint[], x: (index: number) => number, y: (value: number) => number): string {
-  return points.reduce((path, point, index) => {
-    const pointX = x(point.index);
-    const pointY = y(point.value);
-    if (index === 0) return 'M' + pointX.toFixed(1) + ' ' + pointY.toFixed(1);
-    const previous = points[index - 1];
-    const controlOffset = (pointX - x(previous.index)) / 3;
-    return path + ' C' + (x(previous.index) + controlOffset).toFixed(1) + ' ' + y(previous.value).toFixed(1)
-      + ', ' + (pointX - controlOffset).toFixed(1) + ' ' + pointY.toFixed(1)
-      + ', ' + pointX.toFixed(1) + ' ' + pointY.toFixed(1);
-  }, '');
-}
-
 function formatMovement(delta: number): string {
   const rounded = Number(delta.toFixed(1));
-  return (rounded > 0 ? '+' : '') + rounded.toFixed(1) + ' pts';
+  return (rounded > 0 ? '+' : '') + rounded.toFixed(1) + '%';
 }
 
 /** Score trend with the hover, keyboard, and empty-state behaviour used in Insights. */
@@ -58,6 +27,7 @@ export default function ScoreTrendChart({ points, comparisonLabel, title }: {
   comparisonLabel?: string | null;
   title: string;
 }) {
+  const gradientId = useId();
   const [boxRef, width] = useElementWidth<HTMLDivElement>(510);
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
@@ -89,12 +59,12 @@ export default function ScoreTrendChart({ points, comparisonLabel, title }: {
     if (height && height !== tooltipHeight) setTooltipHeight(height);
   }, [hoveredIndex, focusedIndex, dismissed, tooltipHeight]);
 
-  const measuredIndexes = points.map((point, index) => (point.score !== null ? index : -1)).filter((index) => index >= 0);
+  const measuredIndexes = points.map((point, index) => (point.score !== null && Number.isFinite(point.score) ? index : -1)).filter((index) => index >= 0);
   const values = points.flatMap((point) => [point.score, point.comparison_score, point.target])
     .filter((value): value is number => value !== null && Number.isFinite(value));
   const maximum = Math.max(100, ...values);
   const yMax = Math.max(100, Math.ceil(maximum / 25) * 25);
-  const plot = { left: 36, right: Math.max(46, width - 10), top: 16, bottom: CHART_HEIGHT - 25 };
+  const plot = { left: 40, right: Math.max(46, width - 12), top: 24, bottom: CHART_HEIGHT - 28 };
   const inset = Math.min(18, (plot.right - plot.left) / 12);
   const x = (index: number) => points.length > 1
     ? plot.left + inset + index * ((plot.right - plot.left - inset * 2) / (points.length - 1))
@@ -158,10 +128,10 @@ export default function ScoreTrendChart({ points, comparisonLabel, title }: {
     : Math.min(Math.max(activeY - tooltipHeight / 2, 0), Math.max(0, CHART_HEIGHT - tooltipHeight));
 
   return (
-    <section className="flex min-w-0 flex-col gap-[10px] rounded-[12px] border border-[var(--exec-card-border)] bg-[var(--bg-surface)] p-[16px]">
-      <div className="flex items-center justify-between gap-[8px]">
-        <h3 className="text-[13px] font-semibold text-[var(--insights-heading)]">{title}</h3>
-        {range && <span className="rounded-[6px] bg-[var(--exec-chip-bg)] px-[8px] py-[3px] text-[11px] font-medium text-[var(--exec-chip-text)]">{range}</span>}
+    <section className="flex min-w-0 flex-col justify-between gap-[20px] rounded-[18px] border border-[var(--exec-card-border)] bg-[var(--bg-surface)] p-[16px] sm:p-[20px]">
+      <div className="flex flex-wrap items-center justify-between gap-[10px]">
+        <h3 className="text-[16px] font-bold text-[var(--insights-heading)]">{title}</h3>
+        {range && <span className="inline-flex items-center gap-[6px] rounded-[9px] border border-[var(--exec-card-border)] bg-[var(--exec-chip-bg)] px-[10px] py-[7px] text-[11px] font-semibold text-[var(--exec-chip-text)]"><Calendar aria-hidden="true" className="size-[14px]" />{range}</span>}
       </div>
 
       <div ref={boxRef} className="w-full" style={{ height: CHART_HEIGHT }}>
@@ -176,6 +146,8 @@ export default function ScoreTrendChart({ points, comparisonLabel, title }: {
             className="block overflow-visible"
             data-testid="executive-trend-chart"
           >
+            <defs><linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={lineColor} stopOpacity={0.2} /><stop offset="100%" stopColor={lineColor} stopOpacity={0.015} /></linearGradient></defs>
+            {ticks.map((tick) => <line key={'grid-' + tick} x1={plot.left} x2={plot.right} y1={y(tick)} y2={y(tick)} stroke="var(--exec-card-border)" strokeOpacity={0.7} />)}
             {ticks.map((tick) => (
               <text key={tick} x={plot.left - 8} y={y(tick)} dominantBaseline="middle" textAnchor="end" fontSize={10} fill="var(--text-muted)" data-testid="executive-trend-tick">
                 {tick + '%'}
@@ -186,19 +158,22 @@ export default function ScoreTrendChart({ points, comparisonLabel, title }: {
             <text x={plot.right} y={y(target) - 6} textAnchor="end" fontSize={10} fontWeight={600} fill="var(--text-muted)" data-testid="executive-trend-target-label">
               {'Target ' + target.toFixed(0) + '%'}
             </text>
+            {actualSegments.map((segment, index) => segment.length > 1 && (
+              <path key={'area-' + index} d={smoothPath(segment, x, y) + ' L' + x(segment[segment.length - 1].index).toFixed(1) + ' ' + plot.bottom + ' L' + x(segment[0].index).toFixed(1) + ' ' + plot.bottom + ' Z'} fill={`url(#${gradientId})`} pointerEvents="none" data-testid="executive-trend-area" />
+            ))}
             {activeX !== null && (
               <line data-testid="executive-trend-crosshair" x1={activeX} x2={activeX} y1={plot.top} y2={plot.bottom} stroke="var(--exec-card-border)" strokeWidth={1} pointerEvents="none" />
             )}
             {actualSegments.map((segment, index) => segment.length > 1 && (
-              <path key={'actual-' + index} d={smoothPath(segment, x, y)} stroke="var(--insights-accent)" strokeWidth={2.25} strokeLinecap="round" strokeLinejoin="round" fill="none" data-series="actual" data-testid="executive-trend-series" />
+              <path key={'actual-' + index} d={smoothPath(segment, x, y)} stroke={lineColor} strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" fill="none" data-series="actual" data-testid="executive-trend-series" />
             ))}
             {comparisonSegments.map((segment, index) => segment.length > 1 && (
               <path key={'comparison-' + index} d={straightPath(segment, x, y)} stroke="var(--exec-comparison-line)" strokeWidth={1.75} strokeDasharray="2 3" strokeLinecap="round" fill="none" data-series="comparison" data-testid="executive-trend-series" />
             ))}
-            {points.map((point, index) => point.comparison_score !== null && (
+            {points.map((point, index) => point.comparison_score !== null && Number.isFinite(point.comparison_score) && (
               <circle key={point.period.key + '-comparison'} cx={x(index)} cy={y(point.comparison_score)} r={2.5} fill="var(--exec-comparison-line)" />
             ))}
-            {points.map((point, index) => point.score !== null && (
+            {points.map((point, index) => point.score !== null && Number.isFinite(point.score) && (
               <g
                 key={point.period.key}
                 ref={(node) => { pointRefs.current[index] = node; }}
@@ -243,10 +218,10 @@ export default function ScoreTrendChart({ points, comparisonLabel, title }: {
                 <circle
                   cx={x(index)}
                   cy={y(point.score)}
-                  r={activeIndex === index ? 4.5 : 3}
-                  fill="var(--insights-accent)"
+                  r={activeIndex === index ? 5.5 : 4}
+                  fill={lineColor}
                   stroke="var(--bg-surface)"
-                  strokeWidth={activeIndex === index ? 2 : 1.5}
+                  strokeWidth={2.5}
                 />
               </g>
             ))}
@@ -281,7 +256,7 @@ export default function ScoreTrendChart({ points, comparisonLabel, title }: {
                 {shortMonth(activePoint.period) + ' ' + activePoint.period.year}
               </p>
               <div className="flex items-center justify-between gap-3 text-[12px]">
-                <span className="inline-flex items-center gap-[7px] font-medium text-[var(--text-secondary)]"><span className="size-[8px] rounded-full bg-[var(--insights-accent)]" />Score</span>
+                <span className="inline-flex items-center gap-[7px] font-medium text-[var(--text-secondary)]"><span className="size-[8px] rounded-full" style={{ background: lineColor }} />Score</span>
                 <strong className="font-semibold tabular-nums text-[var(--insights-heading)]">{fmtScore(activeScore)}</strong>
               </div>
               {activePoint.comparison_score !== null && (
@@ -319,8 +294,8 @@ export default function ScoreTrendChart({ points, comparisonLabel, title }: {
       )}
       </div>
 
-      <div className="flex flex-wrap items-center gap-[14px] text-[11px] text-[var(--text-secondary)]">
-        <span className="inline-flex items-center gap-[6px]"><span className="size-[8px] rounded-full bg-[var(--insights-accent)]" />Score</span>
+      <div className="flex flex-wrap items-center gap-[14px] text-[12px] text-[var(--text-secondary)]">
+        <span className="inline-flex items-center gap-[6px]"><span className="size-[9px] rounded-full" style={{ background: lineColor }} />Score</span>
         {hasComparison && comparisonLabel && (
           <span className="inline-flex items-center gap-[6px]"><span className="h-0 w-[14px] border-t-2 border-dotted border-[var(--exec-comparison-line)]" />{comparisonLabel}</span>
         )}

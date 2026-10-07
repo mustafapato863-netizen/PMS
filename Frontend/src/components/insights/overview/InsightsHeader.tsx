@@ -50,6 +50,7 @@ function LabeledFilter({
       {locked ? (
         <div
           role="group"
+          aria-disabled="true"
           aria-label={`${ariaLabel}: ${dropdownOptions.find((option) => option.value === value)?.label ?? value} (fixed by your role)`}
           data-locked="true"
           className={[
@@ -105,6 +106,9 @@ export default function InsightsHeader({
   team,
   teamOptions,
   onTeamChange,
+  subTeam,
+  subTeamOptions = [],
+  onSubTeamChange,
   level,
   levelOptions,
   onLevelChange,
@@ -137,6 +141,9 @@ export default function InsightsHeader({
   team: string;
   teamOptions: FilterOption[];
   onTeamChange: (value: string) => void;
+  subTeam?: string;
+  subTeamOptions?: FilterOption[];
+  onSubTeamChange?: (value: string) => void;
   level: string;
   levelOptions: FilterOption[];
   onLevelChange: (value: string) => void;
@@ -144,7 +151,7 @@ export default function InsightsHeader({
   title?: string;
   subtitle?: ReactNode;
   titleBadge?: ReactNode;
-  locked?: { region?: boolean; function?: boolean; team?: boolean };
+  locked?: { region?: boolean; branch?: boolean; function?: boolean; team?: boolean };
   /** Replaces the Functions dropdown (Function Viewer's function switcher). */
   functionSlot?: ReactNode;
   /** Additional page-specific filters displayed in the same floating panel. */
@@ -160,12 +167,13 @@ export default function InsightsHeader({
   /** Breakpoint where title and filters share one row (longer titles need 2xl). */
   rowFrom?: 'xl' | '2xl';
 }) {
-  const activeCount = [region, branch, functionValue, team, level].filter(Boolean).length + additionalActiveCount;
+  const activeCount = [region, branch, functionValue, team, subTeam, level].filter(Boolean).length + additionalActiveCount;
   const clearableCount = [
     !locked?.region && region,
-    branch,
+    !locked?.branch && branch,
     !locked?.function && !functionSlot && functionValue,
     !locked?.team && team,
+    subTeam,
     level,
   ].filter(Boolean).length + additionalActiveCount;
 
@@ -190,7 +198,7 @@ export default function InsightsHeader({
             icon={<Calendar className="size-[16px] text-[var(--text-secondary)]" strokeWidth={1.5} />}
           />
           <LabeledFilter label="Regions" ariaLabel="Region" value={region} options={regionOptions} allLabel="All regions" onChange={onRegionChange} widthClass="w-[136px]" locked={locked?.region} />
-          {onBranchChange && <LabeledFilter label="Branches" ariaLabel="Branch" value={branch ?? ''} options={branchOptions} allLabel="All Branches" onChange={onBranchChange} widthClass="w-[156px]" />}
+          {onBranchChange && <LabeledFilter label="Branches" ariaLabel="Branch" value={branch ?? ''} options={branchOptions} allLabel="All Branches" onChange={onBranchChange} widthClass="w-[156px]" locked={locked?.branch} />}
           {functionSlot ? <div className="responsive-filter-function-switcher">{functionSlot}</div> : <LabeledFilter
             locked={locked?.function}
             primary
@@ -204,6 +212,7 @@ export default function InsightsHeader({
             icon={<Layers className="size-[16px] text-[var(--insights-accent)]" strokeWidth={1.5} />}
           />}
           <LabeledFilter label={teamLabel} ariaLabel={teamLabel === 'Roles' ? 'Marketing role' : 'Team'} value={team} options={teamOptions} allLabel={teamAllLabel} onChange={onTeamChange} widthClass="w-[168px]" menuMinWidth={260} locked={locked?.team} />
+          {onSubTeamChange && <LabeledFilter label="Sub-teams" ariaLabel="Sub-team" value={subTeam ?? ''} options={subTeamOptions} allLabel="All Pre-Approvals sub-teams" onChange={onSubTeamChange} widthClass="w-[168px]" menuMinWidth={260} />}
           <LabeledFilter label="Levels" ariaLabel="Performance level" value={level} options={levelOptions} allLabel="All levels" onChange={onLevelChange} widthClass="w-[132px]" />
         </div>
         {additionalFilters}

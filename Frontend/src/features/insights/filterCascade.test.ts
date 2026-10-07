@@ -27,7 +27,7 @@ describe('insights filter cascade', () => {
   });
 
   it('builds function and team options from the API team list', () => {
-    expect(functionOptionsFor({ teams: apiTeams })).toEqual(['Call Center', 'RCM', 'Pre-Approvals', 'Marketing']);
+    expect(functionOptionsFor({ teams: apiTeams })).toEqual(['Call Center', 'RCM', 'Marketing']);
     expect(functionOptionsFor({ teams: ['Inbound', 'Sales'] })).toEqual(['Call Center']);
     expect(teamOptionsFor(apiTeams, 'Call Center')).toEqual(['Call Center', 'Inbound', 'Outbound']);
     expect(teamOptionsFor(apiTeams, 'RCM')).toEqual([
@@ -141,7 +141,7 @@ describe('insights filter cascade against real PR #14 option responses', () => {
 
   it('narrows Pre-Approvals to all UAE sub-teams and lists them under RCM too', () => {
     const options = mutable(pr14Options.default);
-    expect(functionOptionsFor(options)).toEqual(['Call Center', 'RCM', 'Pre-Approvals', 'Marketing']);
+    expect(functionOptionsFor(options)).toEqual(['Call Center', 'RCM', 'Marketing']);
     expect(options.functions).toContain('Sales');
     expect(teamOptionsFor(options.teams, 'Pre-Approvals', options.team_functions)).toEqual([
       'Pre-Approvals IP Elective Dubai', 'Pre-Approvals IP Final', 'Pre-Approvals OP Final',
@@ -170,7 +170,7 @@ describe('function= responses where teams are narrowed by the function (QA BUG-5
 
   it('keeps all four functions listed, in fixed order, whichever function is selected', () => {
     Object.values(pr17FunctionOptions).forEach((options) => {
-      expect(functionOptionsFor(mutable(options))).toEqual(['Call Center', 'RCM', 'Pre-Approvals', 'Marketing']);
+      expect(functionOptionsFor(mutable(options))).toEqual(['Call Center', 'RCM', 'Marketing']);
     });
   });
 
@@ -178,7 +178,7 @@ describe('function= responses where teams are narrowed by the function (QA BUG-5
     // Call Center selected: teams only hold Call Center teams, functions are complete.
     const options = mutable(pr17FunctionOptions.functionCallCenter);
     expect(options.teams).toEqual(['Call Center', 'Inbound', 'Outbound']);
-    expect(functionOptionsFor(options)).toEqual(['Call Center', 'RCM', 'Pre-Approvals', 'Marketing']);
+    expect(functionOptionsFor(options)).toEqual(['Call Center', 'RCM', 'Marketing']);
     // Standalone backend functions (Sales) are never shown; missing ones are hidden.
     expect(functionOptionsFor({ ...options, functions: ['RCM', 'Sales', 'Call Center'] })).toEqual(['Call Center', 'RCM']);
     expect(functionOptionsFor({ ...options, functions: [] })).toEqual([]);

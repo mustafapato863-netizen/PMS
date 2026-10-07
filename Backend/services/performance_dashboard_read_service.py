@@ -79,6 +79,8 @@ def _scope_identity(scope: dict) -> dict[str, Any]:
         "is_self_only": bool(scope.get("is_self_only")),
         "accessible_teams": sorted(str(item) for item in scope.get("accessible_teams") or []),
         "accessible_functions": sorted(str(item) for item in scope.get("accessible_functions") or []),
+        "accessible_regions": sorted(str(item) for item in scope.get("accessible_regions") or []),
+        "accessible_branches": sorted(str(item) for item in scope.get("accessible_branches") or []),
         "accessible_team_levels": sorted(
             (str(team), str(level))
             for team, level in scope.get("accessible_team_levels") or []
@@ -339,6 +341,7 @@ class PerformanceDashboardReadService:
         data_version = CacheInvalidationService.get_data_version()
         config_version = CacheInvalidationService.get_config_version()
         payload = {
+            "hierarchy_version": 2,
             "endpoint": endpoint,
             "filters": filters,
             "scope": _scope_identity(self.scope),
@@ -707,6 +710,7 @@ class PerformanceDashboardReadService:
             "month": record.month,
             "year": record.year,
             "region": record.region,
+            "branch_key": record.branch_key,
             "performance_level": record.performance_level,
             "position": record.position,
             "status": record.status,

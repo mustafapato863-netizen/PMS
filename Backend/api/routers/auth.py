@@ -32,6 +32,7 @@ from services.auth_service import (
     RefreshTokenReuseError,
 )
 from services.user_identity_service import UserIdentityService
+from repositories.user_repository import UserRepository
 from services.user_presence_service import UserPresenceService
 from services.user_profile_service import (
     CurrentPasswordInvalidError,
@@ -140,6 +141,7 @@ async def login(payload: LoginPayload, request: Request, response: Response, db:
             username=tokens.user.username,
             expires_in=tokens.access_expires_in,
             csrf_token=tokens.csrf_token,
+            must_change_password=tokens.user.must_change_password,
         )
         _set_session_cookies(response, tokens)
         
@@ -191,6 +193,7 @@ async def refresh(request: Request, response: Response, db: Session = Depends(ge
                 username=tokens.user.username,
                 expires_in=tokens.access_expires_in,
                 csrf_token=tokens.csrf_token,
+                must_change_password=tokens.user.must_change_password,
             ).model_dump(),
         )
     except InvalidCsrfTokenError as exc:
@@ -244,9 +247,16 @@ async def me(request: Request, db: Session = Depends(get_db)):
     try:
         payload = _current_user_payload(request)
         user_id = payload.get("user_id")
-        user = db.query(User).filter(User.id == user_id).first()
+        user = UserRepository(db, User).get_by_id(user_id, include_deleted=True)
         if not user:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+        if user.must_change_password:
+            return StandardResponse(success=True, message="Password change required", data={
+                "id": str(user.id), "username": user.username,
+                "name": user.full_name, "role": user.role,
+                "must_change_password": True,
+            })
 
         assignments = (
             db.query(UserTeamAssignment, Team)
@@ -317,6 +327,7 @@ async def me(request: Request, db: Session = Depends(get_db)):
                 "name": UserIdentityService.display_name(db, user),
                 "role": user.role,
                 "employee_id": user.employee_id,
+                "must_change_password": user.must_change_password,
                 "accessible_teams": accessible_teams,
                 "accessible_team_levels": accessible_team_levels,
                 "accessible_functions": accessible_functions,
@@ -393,6 +404,7 @@ async def update_profile(
 async def change_password(
     payload: PasswordChangePayload,
     request: Request,
+    response: Response,
     db: Session = Depends(get_db),
 ):
     user_id = _current_user_payload(request).get("user_id")
@@ -402,7 +414,7 @@ async def change_password(
             payload.current_password,
             payload.new_password,
         )
-        AuthenticationService.revoke_all_sessions(db, str(user_id), reason="password_changed")
+        _clear_session_cookies(response)
         return StandardResponse(
             success=True,
             message="Password changed successfully",

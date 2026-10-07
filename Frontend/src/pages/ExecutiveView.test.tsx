@@ -25,7 +25,7 @@ vi.mock('../features/executive/useExecutiveSummary', () => ({
     state.lastArgs = args;
     return {
       summary: state.summary,
-      options: { regions: ['EGY', 'UAE'], functions: ['Call Center', 'RCM', 'Pre-Approvals', 'Marketing'], teams: ['Inbound', 'Outbound'], levels: ['Employee'] },
+      options: { regions: ['EGY', 'UAE'], functions: ['Call Center', 'RCM', 'Pre-Approvals', 'Marketing'], teams: ['Inbound', 'Outbound', 'Pre-Approvals IP Offshore', 'Pre-Approvals OP Dubai'], levels: ['Employee'] },
       isLoading: state.loading,
       error: null,
       source: 'composed',
@@ -73,6 +73,27 @@ beforeEach(() => {
 });
 
 describe('ExecutiveView role routing', () => {
+  it('treats legacy All filter values as unfiltered when returning from other dashboards', () => {
+    renderAt('/executive?region=All&branch=all&function=ALL&team=All&level=All');
+    expect(state.lastArgs?.filters).toMatchObject({
+      region: undefined, branch: undefined, teamFunction: undefined, team: undefined, performanceLevel: undefined,
+    });
+    expect(screen.getByLabelText('Region')).toHaveValue('');
+  });
+  it.each([
+    { role: 'Branch Director', grant: { accessible_branches: ['dubai'] }, url: 'branch=sharjah&region=UAE', filter: 'branch', value: 'dubai', label: /Branch: Dubai \(fixed by your role\)/ },
+    { role: 'Regional Manager', grant: { accessible_regions: ['UAE'] }, url: 'region=EGY&branch=dubai', filter: 'region', value: 'UAE', label: /Region: UAE \(fixed by your role\)/ },
+  ])('locks $role grant even with a contradictory URL and clear', ({ role, grant, url, filter, value, label }) => {
+    state.role = role;
+    state.user = { id: 'director', ...grant };
+    renderAt(`/executive?period=2026-06&${url}&level=Corporate`);
+    expect(state.lastArgs?.filters[filter as 'branch' | 'region']).toBe(value);
+    expect(screen.getByRole('group', { name: label })).toHaveAttribute('aria-disabled', 'true');
+    fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
+    expect(state.lastArgs?.filters[filter as 'branch' | 'region']).toBe(value);
+    expect(state.lastArgs?.filters.periodKey).toBe('2026-06');
+    expect(state.lastArgs?.filters.performanceLevel).toBeUndefined();
+  });
   it.each(['Admin', 'General Manager', 'Executive', 'Viewer'])('%s gets the Corporate view', (role) => {
     state.role = role;
     renderAt();
@@ -116,6 +137,26 @@ describe('ExecutiveView role routing', () => {
     expect(state.lastArgs?.filters).toEqual({ periodKey: '2026-06' });
   });
 
+  it('restores a sub-team link under RCM and clears both hierarchy selections', () => {
+    renderAt('/executive?period=2026-06&function=RCM&team=Pre-Approvals&sub_team=Pre-Approvals%20IP%20Offshore&level=Corporate');
+    expect(state.lastArgs?.filters).toMatchObject({ teamFunction: 'RCM', team: 'Pre-Approvals IP Offshore', performanceLevel: 'Corporate' });
+    expect(screen.getByLabelText('Team')).toHaveValue('Pre-Approvals');
+    expect(screen.getByLabelText('Sub-team')).toHaveValue('Pre-Approvals IP Offshore');
+    fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
+    expect(state.lastArgs?.filters).toEqual({ periodKey: '2026-06' });
+    expect(screen.queryByLabelText('Sub-team')).not.toBeInTheDocument();
+  });
+
+  it('ignores a sub-team URL value outside the selected parent', () => {
+    renderAt('/executive?function=RCM&team=Pre-Approvals&sub_team=Coding');
+    expect(state.lastArgs?.filters.team).toBe('Pre-Approvals');
+  });
+
+  it('ignores a contradictory legacy function/team link when restoring its new parent', () => {
+    renderAt('/executive?function=Pre-Approvals&team=Coding');
+    expect(state.lastArgs?.filters).toMatchObject({ teamFunction: 'RCM', team: 'Pre-Approvals' });
+  });
+
   it('Function Viewer is redirected to /function-summary', () => {
     state.role = 'Function Viewer';
     renderAt();
@@ -138,11 +179,14 @@ describe('Corporate sections', () => {
     renderAt();
     expect(screen.getByRole('heading', { name: /^June 2026 company performance is \d+\.\d% below target\.$/ })).toBeInTheDocument();
     expect(screen.getAllByRole('article').map((card) => card.getAttribute('aria-label'))).toEqual([
-      'Call Center function', 'RCM function', 'Pre-Approvals function', 'Marketing function',
+      'Call Center function', 'RCM function', 'Marketing function',
     ]);
     expect(screen.getByRole('link', { name: 'View RCM function' })).toHaveAttribute('href', '/function-summary/rcm');
     expect(screen.getByRole('heading', { name: 'What moved the score vs May' })).toBeInTheDocument();
     expect(screen.getAllByTestId('region-box')).toHaveLength(2);
+    expect(screen.getByRole('heading', { name: 'Teams at risk' })).toBeInTheDocument();
+    expect(screen.getAllByTestId('risk-row')).toHaveLength(state.summary?.teams.filter((team) => team.score !== null && team.score < 90).length ?? 0);
+    fireEvent.click(screen.getByRole('button', { name: 'Show all teams' }));
     expect(screen.getByRole('heading', { name: 'All teams' })).toBeInTheDocument();
     expect(screen.getAllByTestId('risk-row')).toHaveLength(state.summary?.teams.length ?? 0);
     expect(screen.getByRole('heading', { name: 'Grade distribution' })).toBeInTheDocument();
@@ -160,7 +204,7 @@ describe('Corporate sections', () => {
   it('switches the driver footnote to weight × gap when the backend sends it', () => {
     state.summary = build({ drivers: fixtureDrivers({ weightedGap: true }) });
     renderAt();
-    expect(screen.getByText('Impact = KPI weight × gap to target, in score points.')).toBeInTheDocument();
+    expect(screen.getByText('Impact = KPI weight × gap to target (%).')).toBeInTheDocument();
   });
 
   it('renders direction-aware driver rows: a rising lower-is-better KPI is red, a falling one is green', () => {
@@ -168,9 +212,10 @@ describe('Corporate sections', () => {
     const negatives = screen.getAllByTestId('driver-negative');
     const rejection = negatives.find((row) => row.textContent?.includes('Initial Rejection %'))!;
     expect(within(rejection).getByText('↓ better')).toBeInTheDocument();
-    expect(within(rejection).getByText('↓ −1.6 pp')).toHaveAttribute('data-tone', 'bad');
+    expect(within(rejection).getByText('↓ −1.6%')).toHaveAttribute('data-tone', 'bad');
     const denial = screen.getAllByTestId('driver-positive').find((row) => row.textContent?.includes('Denial Rate'))!;
-    expect(within(denial).getByText('↑ +0.8 pp')).toHaveAttribute('data-tone', 'good');
+    expect(within(denial).getByText('↑ +0.8%')).toHaveAttribute('data-tone', 'good');
+    expect(negatives.every((row) => !/\b(?:pp|pts)\b/.test(row.textContent ?? ''))).toBe(true);
   });
 
   it('hides function links and the Insights link for Executive (no Function Summary / Insights access)', () => {

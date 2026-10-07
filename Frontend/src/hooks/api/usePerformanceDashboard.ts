@@ -1,5 +1,6 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { apiFetch } from '../../lib/apiClient';
+import { performanceSessionKey } from '../../lib/performanceSessionKey';
 import { usePerformanceCatalog } from './usePerformanceCatalog';
 
 export const scopedPerformanceApiEnabled = String(import.meta.env.VITE_SCOPED_PERFORMANCE_API || '').toLowerCase() === 'true';
@@ -140,16 +141,7 @@ export interface ScopedExecutiveSummary {
   errorMessage: string | null;
 }
 
-function sessionCacheKey(): string {
-  try {
-    const saved = localStorage.getItem('pms_session_v1');
-    if (!saved) return 'anonymous';
-    const user = JSON.parse(saved) as { id?: string; username?: string };
-    return user.id || user.username || 'anonymous';
-  } catch {
-    return 'anonymous';
-  }
-}
+const sessionCacheKey = performanceSessionKey;
 
 function queryString(values: object): string {
   const params = new URLSearchParams();

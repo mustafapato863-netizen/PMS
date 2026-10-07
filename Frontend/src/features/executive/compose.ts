@@ -17,7 +17,7 @@ import { summarizeActionAnalytics } from './actionAnalytics';
 import type { InsightDriver, InsightItem, InsightTrendStatus } from '../insights/types';
 import type { TeamFunctionMap } from '../insights/filterCascade';
 import { teamBelongsToFunction } from '../insights/filterCascade';
-import { EXECUTIVE_FUNCTIONS, executiveFunctionForTeam } from './functions';
+import { EXECUTIVE_FUNCTIONS, executiveFunctionForTeam, summaryFunctionMatches, summaryTeamMatches } from './functions';
 import type {
   ExecutiveActionItem,
   ExecutiveCorrectiveActions,
@@ -608,9 +608,9 @@ function applyFilters(records: ExecRecord[], input: ComposeInput, teamFunctions?
     && (!position || record.position === position)
     && (!performanceLevel || record.level === performanceLevel)
     && (!teamFunction || (input.view === 'function'
-      ? executiveFunctionForTeam(record.team, teamFunctions) === teamFunction
+      ? summaryFunctionMatches(record.team, teamFunction, teamFunctions)
       : teamBelongsToFunction(record.team, teamFunction, teamFunctions)))
-    && (!team || record.team === canonicalTeamName(team))
+    && (!team || summaryTeamMatches(record.team, team))
   ));
 }
 
@@ -675,8 +675,8 @@ export function composeExecutiveSummary(input: ComposeInput): ExecutiveSummary {
   const driverSplit = rawSplit && view === 'function' && input.functionName
     ? {
       ...rawSplit,
-      negative: rawSplit.negative.filter((driver) => driver.function === input.functionName).slice(0, 3),
-      positive: rawSplit.positive.filter((driver) => driver.function === input.functionName).slice(0, 3),
+      negative: rawSplit.negative.filter((driver) => input.functionName === 'Pre-Approvals' ? teamBelongsToFunction(driver.team ?? '', 'Pre-Approvals') : driver.function === input.functionName).slice(0, 3),
+      positive: rawSplit.positive.filter((driver) => input.functionName === 'Pre-Approvals' ? teamBelongsToFunction(driver.team ?? '', 'Pre-Approvals') : driver.function === input.functionName).slice(0, 3),
     }
     : rawSplit;
   if (!driverSplit) unavailable.add('drivers');

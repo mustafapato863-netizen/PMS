@@ -2,7 +2,7 @@ import uuid
 from sqlalchemy import Column, String, Integer, SmallInteger, Numeric, Boolean, Date, DateTime, ForeignKey, Text, LargeBinary, ForeignKeyConstraint, UniqueConstraint, CheckConstraint, Enum as SQLEnum, JSON, Index
 from sqlalchemy.dialects.postgresql import UUID, JSONB, INET
 from sqlalchemy.orm import relationship
-from sqlalchemy.sql import func
+from sqlalchemy.sql import func, false
 from config.database import Base
 from utils.performance_levels import PerformanceLevel
 from utils.user_identity import default_user_full_name
@@ -420,6 +420,7 @@ class User(Base):
     username = Column(String(100), nullable=False, unique=True)
     email = Column(String(255), nullable=False, unique=True)
     password_hash = Column(Text, nullable=False)
+    must_change_password = Column(Boolean, nullable=False, default=False, server_default=false())
     role = Column(String(50), nullable=False, default="Employee")  # Current roles are defined in config.settings.ROLES; old strings remain for existing accounts during migration.
     is_active = Column(Boolean, nullable=False, default=True)
     failed_login_attempts = Column(Integer, nullable=False, default=0)

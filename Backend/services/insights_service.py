@@ -46,11 +46,11 @@ from services.management_bsc_service import ManagementBSCService
 from services.planning_service import PlanningService, MONTH_ORDER
 import utils.kpi_direction as _kd
 from utils.report_scope import (
-    _team_keys,
     filter_records_by_scope,
     filter_records_by_team_levels,
     function_team_keys,
     functions_for_team,
+    selection_team_keys,
     user_can_access_team,
     user_can_access_team_level,
 )
@@ -771,7 +771,7 @@ class InsightsService:
             # Parent domains such as Call Center / RCM / Pre-Approvals expand to
             # every underlying source team so domain averages include the full
             # rollup rather than an exact-name match that finds no rows.
-            team_values = _team_keys(str(selected_team))
+            team_values = selection_team_keys(str(selected_team))
             result = [
                 record for record in result
                 if str(_value(record, "team", "")).casefold() in team_values

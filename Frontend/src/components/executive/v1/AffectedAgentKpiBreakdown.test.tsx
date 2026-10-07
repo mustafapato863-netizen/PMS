@@ -70,7 +70,7 @@ describe('AffectedAgentKpiBreakdown', () => {
     const cells = within(kpiRow as HTMLElement).getAllByRole('cell');
     expect(cells[2]).toHaveTextContent('95%');
     expect(cells[3]).toHaveTextContent('90%');
-    expect(cells[4]).toHaveTextContent('↑ +5 pp');
+    expect(cells[4]).toHaveTextContent('↑ +5%');
     expect(screen.getByRole('link', { name: /Open 360 profile/ })).toHaveAttribute('href', '/employee/agent-2?month=March&year=2026');
   });
 });

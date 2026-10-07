@@ -4,8 +4,8 @@ import { FIXTURE_TEAM_FUNCTIONS } from './executive.fixture';
 
 describe('allowedFunctionsFor', () => {
   it('gives Admin and General Manager all four functions regardless of accessible_functions', () => {
-    expect(allowedFunctionsFor('Admin', ['RCM'])).toEqual(['Call Center', 'RCM', 'Pre-Approvals', 'Marketing']);
-    expect(allowedFunctionsFor('General Manager')).toHaveLength(4);
+    expect(allowedFunctionsFor('Admin', ['RCM'])).toEqual(['Call Center', 'RCM', 'Marketing']);
+    expect(allowedFunctionsFor('General Manager')).toHaveLength(3);
   });
 
   it('limits a Function Viewer to accessible_functions, case-insensitively, in display order', () => {
@@ -42,5 +42,12 @@ describe('isTeamInFunctions (Function Viewer page scope)', () => {
   it('also allows a backend team_functions overlap (UAE pre-approvals listed under RCM)', () => {
     expect(isTeamInFunctions('Pre-Approvals OP Final', ['RCM'], FIXTURE_TEAM_FUNCTIONS)).toBe(true);
     expect(isTeamInFunctions(null, ['RCM'])).toBe(false);
+  });
+
+  it('preserves the narrow legacy grant without upgrading it to RCM', () => {
+    expect(allowedFunctionsFor('Function Director', ['Pre-Approvals'])).toEqual(['Pre-Approvals']);
+    expect(isTeamInFunctions('Pre-Approvals OP Final', ['Pre-Approvals'])).toBe(true);
+    expect(isTeamInFunctions('Coding', ['Pre-Approvals'])).toBe(false);
+    expect(isTeamInFunctions('Pre-Approvals IP Offshore', ['Pre-Approvals'], FIXTURE_TEAM_FUNCTIONS)).toBe(false);
   });
 });

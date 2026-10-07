@@ -11,13 +11,14 @@ import {
 } from '../../types';
 
 /**
- * The header Functions list is fixed to these four parent domains (Mustafa's
- * decision on PR #13), in this order. A function is hidden only when the
+ * Current parent domains, in fixed display order. Pre-Approvals is an RCM
+ * team; its old function value remains supported for legacy scopes.
+ * A function is hidden only when the
  * current option scope has none of its teams. The backend (PR #14) may list
  * more `options.functions` (standalone teams such as Sales or CSR are their
  * own function there); those are never shown here.
  */
-export const INSIGHT_FUNCTIONS = ['Call Center', 'RCM', 'Pre-Approvals', 'Marketing'] as const;
+export const INSIGHT_FUNCTIONS = ['Call Center', 'RCM', 'Marketing'] as const;
 
 /** `options.team_functions` from PR #14: source team name → every function it rolls up into. */
 export type TeamFunctionMap = Record<string, string[]>;
@@ -145,7 +146,8 @@ const includesValue = (values: string[], value: string) => values.some((item) =>
 export function reconcileCascade(filters: InsightFilters, options: CascadeOptions): InsightFilters | null {
   const teamFunctions = options.team_functions;
   const regionInvalid = Boolean(filters.region && !includesValue(options.regions, filters.region));
-  const functionInvalid = Boolean(filters.teamFunction && !includesValue(functionOptionsFor(options), filters.teamFunction));
+  const functionInvalid = Boolean(filters.teamFunction && !includesValue(functionOptionsFor(options), filters.teamFunction)
+    && !(filters.teamFunction === 'Pre-Approvals' && options.teams.some((team) => teamBelongsToFunction(team, 'Pre-Approvals', teamFunctions))));
   const teamInvalid = Boolean(filters.team
     && !includesValue(teamOptionsFor(options.teams, filters.teamFunction, teamFunctions), canonicalTeamName(filters.team)));
   const levelInvalid = Boolean(filters.performanceLevel && !includesValue(options.performance_levels, filters.performanceLevel));

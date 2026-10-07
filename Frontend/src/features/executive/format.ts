@@ -87,13 +87,13 @@ export function fmtKpiValue(value: number | null | undefined, unit: string | nul
   return Number.isInteger(value) ? value.toLocaleString('en-US') : Number(value.toFixed(2)).toLocaleString('en-US');
 }
 
-/** Raw KPI change in its own unit (pp for percentages). */
+/** Raw KPI change in its own unit; percentage deltas display with %. */
 export function fmtKpiDelta(value: number | null | undefined, unit: string | null | undefined): string {
   if (value === null || value === undefined || !Number.isFinite(value)) return '—';
   const kind = unitKind(unit);
   const sign = value > 0 ? '+' : value < 0 ? MINUS : '';
   const abs = Math.abs(value);
-  if (kind === '%' || kind === 'percent' || kind === 'percentage') return `${sign}${Number(abs.toFixed(1))} pp`;
+  if (kind === '%' || kind === 'percent' || kind === 'percentage') return `${sign}${Number(abs.toFixed(1))}%`;
   if (kind === 's' || kind === 'sec' || kind === 'seconds') return `${sign}${Math.round(abs)} s`;
   if (kind === 'min' || kind === 'minutes') return `${sign}${Number(abs.toFixed(1))} min`;
   if (kind === 'days' || kind === 'day') return `${sign}${Number(abs.toFixed(1))} d`;

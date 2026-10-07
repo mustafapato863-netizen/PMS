@@ -9,6 +9,7 @@
 import { useCallback, useMemo, type ReactNode } from 'react';
 import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/auth';
+import { directorScope } from '../lib/directorScope';
 import { useUserRole } from '../context/RoleContext';
 import InsightsHeader, { type FilterOption } from '../components/insights/overview/InsightsHeader';
 import { ExecutiveViewSkeleton } from '../components/common/SkeletonLoader';
@@ -16,32 +17,41 @@ import ExecutiveDashboard from '../components/executive/v1/ExecutiveDashboard';
 import AffectedAgentKpiBreakdown from '../components/executive/v1/AffectedAgentKpiBreakdown';
 import FunctionSwitcher from '../components/executive/v1/FunctionSwitcher';
 import { ExecutiveEmptyState, ReadOnlyBadge, ScopeBanner } from '../components/executive/v1/ExecutiveStates';
-import { canAccessCorrectiveActions, canAccessInsights, canAccessSettingsContent, isFunctionViewerRole, readAccessibleFunctions } from '../lib/access';
+import { canSeeSummaryActionAnalytics, canAccessInsights, canAccessSettingsContent, isFunctionViewerRole, readAccessibleFunctions } from '../lib/access';
 import { canEditActionFollowUp } from '../components/actions/dueBadge';
 import { MONTHS, SUMMARY_BRANCHES, SUMMARY_LEVELS } from '../features/executive/compose';
-import { allowedFunctionsFor, functionFromSlug, functionSlug } from '../features/executive/functions';
+import { allowedFunctionsFor, functionFromSlug, functionSlug, isPreApprovalsSubTeam, preApprovalsSubTeamOptions, summaryTeamOptions } from '../features/executive/functions';
 import { currentPeriodKey, periodOptionsFor, subtitleFor } from '../features/executive/viewModel';
 import { useExecutiveSummary, type ExecutiveFilterState } from '../features/executive/useExecutiveSummary';
 import type { ExecutiveFunction } from '../features/executive/types';
+import { summaryFilterValue } from '../features/executive/filterState';
 
-const PARAM: Record<Exclude<keyof ExecutiveFilterState, 'teamFunction'>, string> = {
+type PageFilters = ExecutiveFilterState & { subTeam?: string };
+const PARAM: Record<Exclude<keyof PageFilters, 'teamFunction'>, string> = {
   periodKey: 'period', region: 'region', branch: 'branch', team: 'team', position: 'position', performanceLevel: 'level',
+  subTeam: 'sub_team',
 };
 
 const toOptions = (values: string[]): FilterOption[] => values.map((value) => ({ value, label: value }));
 
 function FunctionSummaryPage({ fn, allowed }: { fn: ExecutiveFunction; allowed: ExecutiveFunction[] }) {
   const { role } = useUserRole();
+  const { currentUser } = useAuth();
+  const assigned = directorScope(role, currentUser);
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const readOnly = isFunctionViewerRole(role);
 
-  const filters: ExecutiveFilterState = useMemo(() => {
-    const read = (key: keyof typeof PARAM) => searchParams.get(PARAM[key]) || undefined;
-    return { periodKey: read('periodKey'), region: read('region'), branch: read('branch'), team: read('team'), position: read('position'), performanceLevel: read('performanceLevel') };
-  }, [searchParams]);
+  const filters: PageFilters = useMemo(() => {
+    const read = (key: keyof typeof PARAM) => summaryFilterValue(searchParams.get(PARAM[key]));
+    const rawTeam = read('team');
+    const approvals = isPreApprovalsSubTeam(rawTeam);
+    const rawSubTeam = read('subTeam');
+    const selectedSubTeam = rawSubTeam && rawSubTeam !== 'Pre-Approvals' && isPreApprovalsSubTeam(rawSubTeam) ? rawSubTeam : undefined;
+    return { periodKey: read('periodKey'), region: assigned.regionLocked ? assigned.region : read('region'), branch: assigned.branchLocked ? assigned.branch : read('branch'), team: approvals ? 'Pre-Approvals' : rawTeam, subTeam: approvals ? selectedSubTeam || (rawTeam !== 'Pre-Approvals' ? rawTeam : undefined) : undefined, position: read('position'), performanceLevel: read('performanceLevel') };
+  }, [searchParams, assigned.regionLocked, assigned.region, assigned.branchLocked, assigned.branch]);
 
-  const update = useCallback((patch: Partial<ExecutiveFilterState>) => {
+  const update = useCallback((patch: Partial<PageFilters>) => {
     const next = new URLSearchParams(searchParams);
     (Object.keys(patch) as Array<keyof typeof PARAM>).forEach((key) => {
       const value = patch[key];
@@ -62,7 +72,7 @@ function FunctionSummaryPage({ fn, allowed }: { fn: ExecutiveFunction; allowed: 
   const { summary, options, isLoading, error, source } = useExecutiveSummary({
     view: 'function',
     role,
-    filters,
+    filters: { ...filters, team: filters.subTeam || filters.team },
     functionName: fn,
     accessibleFunctions: allowed,
   });
@@ -75,6 +85,7 @@ function FunctionSummaryPage({ fn, allowed }: { fn: ExecutiveFunction; allowed: 
     region: undefined,
     branch: undefined,
     team: undefined,
+    subTeam: undefined,
     position: undefined,
     performanceLevel: undefined,
   }), [update]);
@@ -91,21 +102,25 @@ function FunctionSummaryPage({ fn, allowed }: { fn: ExecutiveFunction; allowed: 
       period={filters.periodKey ?? summary?.period.effective?.key ?? ''}
       periodOptions={periodOptionsFor(summary, filters.periodKey)}
       onPeriodChange={(value) => update({ periodKey: value })}
-      region={filters.region ?? ''}
-      regionOptions={toOptions(options.regions)}
-      onRegionChange={(value) => update({ region: value, branch: undefined, team: undefined, position: undefined })}
-      branch={filters.branch ?? ''}
-      branchOptions={SUMMARY_BRANCHES}
-      onBranchChange={(value) => update({ branch: value, team: undefined, position: undefined })}
+      region={assigned.regionLocked ? assigned.regionLabel : filters.region ?? ''}
+      regionOptions={toOptions(assigned.regionLocked ? [assigned.regionLabel] : options.regions)}
+      onRegionChange={(value) => update({ region: value, branch: undefined, team: undefined, subTeam: undefined, position: undefined })}
+      branch={assigned.branchLocked ? assigned.branch ?? assigned.branchLabel : filters.branch ?? ''}
+      branchOptions={assigned.branchLocked && !assigned.branch ? toOptions([assigned.branchLabel]) : SUMMARY_BRANCHES}
+      onBranchChange={(value) => update({ branch: value, team: undefined, subTeam: undefined, position: undefined })}
       functionValue={fn}
       functionOptions={toOptions(allowed)}
       onFunctionChange={(value) => switchFunction(value as ExecutiveFunction)}
-      functionSlot={<FunctionSwitcher functions={allowed} value={fn} onChange={switchFunction} assigned={readOnly} />}
+      functionSlot={assigned.functionLocked ? undefined : <FunctionSwitcher functions={allowed} value={fn} onChange={switchFunction} assigned={readOnly} />}
+      locked={{ function: assigned.functionLocked, branch: assigned.branchLocked, region: assigned.regionLocked }}
       team={fn === 'Marketing' ? filters.position ?? '' : filters.team ?? ''}
-      teamOptions={toOptions(fn === 'Marketing' ? options.roles ?? [] : options.teams)}
+      teamOptions={toOptions(fn === 'Marketing' ? options.roles ?? [] : summaryTeamOptions(options.teams))}
       teamLabel={fn === 'Marketing' ? 'Roles' : 'Teams'}
       teamAllLabel={fn === 'Marketing' ? 'All Marketing roles' : `All ${fn} teams`}
-      onTeamChange={(value) => update(fn === 'Marketing' ? { position: value, team: undefined } : { team: value })}
+      onTeamChange={(value) => update(fn === 'Marketing' ? { position: value, team: undefined, subTeam: undefined } : { team: value, subTeam: undefined })}
+      subTeam={filters.subTeam ?? ''}
+      subTeamOptions={toOptions(preApprovalsSubTeamOptions(options.teams))}
+      onSubTeamChange={filters.team === 'Pre-Approvals' ? (value) => update({ team: 'Pre-Approvals', subTeam: value }) : undefined}
       level={filters.performanceLevel ?? ''}
       levelOptions={toOptions([...SUMMARY_LEVELS])}
       onLevelChange={(value) => update({ performanceLevel: value, position: undefined })}
@@ -137,7 +152,7 @@ function FunctionSummaryPage({ fn, allowed }: { fn: ExecutiveFunction; allowed: 
         )}
         <ExecutiveDashboard
           summary={summary}
-          permissions={{ canOpenFunctions: false, canOpenInsights: canAccessInsights(role), canSeeActions: canAccessCorrectiveActions(role), canCreateActions: canEditActionFollowUp(role) }}
+          permissions={{ canOpenFunctions: false, canOpenInsights: canAccessInsights(role), canSeeActions: canSeeSummaryActionAnalytics(role), canCreateActions: canEditActionFollowUp(role) }}
           functionBreakdownSlot={<AffectedAgentKpiBreakdown summary={summary} source={source} performanceLevel={filters.performanceLevel ?? 'All'} teamFunctions={options.team_functions} />}
         />
       </>
@@ -159,6 +174,11 @@ const FunctionSummaryView = () => {
   const [searchParams] = useSearchParams();
   const allowed = useMemo(() => allowedFunctionsFor(role, readAccessibleFunctions(currentUser)), [currentUser, role]);
   const requested = functionFromSlug(slug);
+  if (requested === 'Pre-Approvals' && !allowed.includes(requested) && allowed.includes('RCM')) {
+    const params = new URLSearchParams(searchParams);
+    params.set('team', 'Pre-Approvals');
+    return <Navigate to={`/function-summary/rcm?${params}`} replace />;
+  }
   if (!allowed.length) {
     return (
       <div className="app-page-shell rf-page">

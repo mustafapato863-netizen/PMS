@@ -100,6 +100,18 @@ def test_matched_bridge_reconciles_and_separates_population(monkeypatch):
     assert result["current_only_employee_count"] == result["previous_only_employee_count"] == 1
 
 
+def test_score_movement_narrative_displays_percent_without_changing_the_delta(monkeypatch):
+    monkeypatch.setattr(module, "_config", lambda _record: config())
+    records = [
+        make_record("A", "May", 80, kpis=[value(actual=80, contribution=.32)]),
+        make_record("A", "June", 85, kpis=[value(actual=85, contribution=.34)]),
+    ]
+    movement = ReportingEvidenceService().build(records, (2026, 6))["movement"]
+    assert movement["total_score_point_change"] == 5
+    assert "movement of 5.0%" in movement["narrative"]
+    assert "score points" not in movement["narrative"]
+
+
 def test_lowest_kpis_rank_by_weighted_lost_points_and_exclude_invalid_targets(monkeypatch):
     monkeypatch.setattr(module, "_config", lambda _record: {"grade_thresholds": config()["grade_thresholds"], "kpis": [
         {"key": "A", "label": "KPI A", "weight": .6, "direction": "higher_better", "unit": "%"},

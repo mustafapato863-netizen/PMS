@@ -255,3 +255,70 @@ def test_invalid_cursor_and_unbounded_history_are_rejected():
             service.records_page(period="2026-06", location="mars")
     finally:
         db.close()
+
+
+@pytest.mark.parametrize("role,scope_field,scope_value,tampered_filter,expected", [
+    ("Branch Director", "branch_key", "dubai", "branch=sharjah", {"EMP-A", "EMP-B"}),
+    ("Regional Manager", "region_code", "EGY", "region=UAE", {"EMP-A", "EMP-B", "EMP-C"}),
+    ("Function Director", "function_name", "Call Center", "team=Marketing", {"EMP-A", "EMP-B", "EMP-C"}),
+])
+def test_director_http_reads_intersect_grants_and_revocation(role, scope_field, scope_value, tampered_filter, expected, monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from api.middleware.auth_middleware import AuthMiddleware
+    from api.routers.performance import router
+    from config import settings
+    from config.database import get_db
+    from models.models import UserBranchAssignment, UserRegionAssignment, UserFunctionAssignment
+    from services.auth_service import AuthenticationService
+    from services.cache_service import CacheService
+
+    db = _session()
+    try:
+        _seed(db)
+        hidden_team = Team(id=uuid.uuid4(), name="Marketing", db_name="marketing", region="UAE", is_active=True)
+        hidden_employee = Employee(id=uuid.uuid4(), employee_id="EMP-H", name="Outside scope", team_id=hidden_team.id, region="UAE")
+        db.add_all([hidden_team, hidden_employee])
+        db.flush()
+        db.add(PerformanceRecord(id=uuid.uuid4(), year=2026, month="June", employee_id=hidden_employee.id,
+            team_id=hidden_team.id, performance_level="Employee", region="UAE", branch_key="sharjah", score=99, grade="A", status="Exceeds"))
+        user = AuthenticationService.create_user(db, "scoped_director", "director@test.com", "SecurePassword123!", role)
+        assignment_type = {"branch_key": UserBranchAssignment, "region_code": UserRegionAssignment, "function_name": UserFunctionAssignment}[scope_field]
+        assignment = assignment_type(user_id=user.id, **{scope_field: scope_value})
+        db.add(assignment)
+        db.commit()
+        headers = {"Authorization": f"Bearer {AuthenticationService.authenticate_user(db, user.username, 'SecurePassword123!')}", "X-User-Role": "Admin"}
+        monkeypatch.setattr(settings, "PMS_SCOPED_PERFORMANCE_API_ENABLED", True)
+        monkeypatch.setattr(settings, "PMS_SCOPED_PERFORMANCE_ALLOWED_ROLES", ("Admin",))
+        monkeypatch.setattr("api.middleware.auth_middleware._legacy_access_allowed", lambda: False)
+        cache = {}
+        monkeypatch.setattr(CacheService, "get_json", lambda key, **kwargs: cache.get(key))
+        monkeypatch.setattr(CacheService, "set_json", lambda key, value, **kwargs: cache.setdefault(key, value))
+        app = FastAPI()
+        app.add_middleware(AuthMiddleware)
+
+        def override_db():
+            yield db
+
+        app.dependency_overrides[get_db] = override_db
+        app.include_router(router, prefix="/api")
+        with TestClient(app) as client:
+            url = "/api/performance/records?period=2026-06"
+            result = client.get(url, headers=headers)
+            assert result.status_code == 200
+            assert {row["employee_id"] for row in result.json()["data"]["items"]} == expected
+            team_page = client.get("/api/performance/team/Inbound", headers=headers)
+            assert team_page.status_code == 200
+            assert team_page.json()["data"]
+            assert client.get(f"{url}&{tampered_filter}", headers=headers).json()["data"]["items"] == []
+            assert client.get("/api/performance/employee/EMP-H?period_end=2026-06", headers=headers).json()["data"] == []
+            summary_url = "/api/performance/summary?period=2026-06"
+            assert client.get(summary_url, headers=headers).json()["data"]["current"]["total_agents"] == len(expected)
+            assert cache
+            db.delete(assignment)
+            db.commit()
+            assert client.get(url, headers=headers).json()["data"]["items"] == []
+            assert client.get(summary_url, headers=headers).json()["data"]["current"]["total_agents"] == 0
+            assert client.get("/api/performance/catalog", headers=headers).json()["data"]["scopes"] == []
+    finally:
+        db.close()

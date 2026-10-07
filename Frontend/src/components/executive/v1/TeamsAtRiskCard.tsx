@@ -1,23 +1,23 @@
+import { useState } from 'react';
 import { AlertTriangle, TrendingDown, Users } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
 import type { ExecutiveTeam } from '../../../features/executive/types';
 import { teamPath } from '../../../features/executive/functions';
-import { FLAG_LABEL, FLAG_ORDER, atRiskTeams } from './execModel';
+import { FLAG_LABEL, FLAG_ORDER } from './execModel';
 import { arrow, fmtScore, fmtSigned } from '../../../features/executive/format';
 import { ExecCard, ExecCardHeader, GradeSquare, ScoreText, SoftEmpty, Sparkline, StatusPill } from './ExecPrimitives';
 
 const TEAM_BRANCHES = new Set(['dubai', 'sharjah', 'ajman', 'clinics']);
 const TEAM_LEVELS = new Set(['All', 'Employee', 'Managerial', 'Corporate']);
 
-export default function TeamsAtRiskCard({ teams, viewAllHref, limit = 4, showAllTeams = false }: { teams: ExecutiveTeam[]; viewAllHref?: string | null; limit?: number; showAllTeams?: boolean }) {
+export default function TeamsAtRiskCard({ teams }: { teams: ExecutiveTeam[] }) {
+  const [showAllTeams, setShowAllTeams] = useState(false);
   const [searchParams] = useSearchParams();
-  const rows = showAllTeams
-    ? [...teams].sort((left, right) => {
+  const rows = (showAllTeams ? [...teams] : teams.filter((team) => team.score !== null && team.score < 90)).sort((left, right) => {
       if (left.score === null) return right.score === null ? left.team.localeCompare(right.team) : 1;
       if (right.score === null) return -1;
       return left.score - right.score || left.team.localeCompare(right.team);
-    })
-    : atRiskTeams(teams, limit);
+    });
   const head = 'text-[10px] font-semibold uppercase tracking-[0.6px] text-[var(--text-muted)]';
   const teamHref = (team: string) => {
     const params = new URLSearchParams();
@@ -37,8 +37,8 @@ export default function TeamsAtRiskCard({ teams, viewAllHref, limit = 4, showAll
         iconBg={showAllTeams ? 'var(--insights-accent-soft)' : 'var(--pms-grade-d-badge-bg)'}
         iconColor={showAllTeams ? 'var(--insights-accent-text)' : 'var(--pms-grade-d-text)'}
         title={showAllTeams ? 'All teams' : 'Teams at risk'}
-        subtitle={showAllTeams ? 'Every team in the selected scope, including healthy grades' : 'Grade C/D/E, or score falling 2 consecutive months'}
-        action={viewAllHref ? <Link to={viewAllHref} className="inline-flex shrink-0 items-center rounded-[8px] border border-[var(--insights-accent-border)] bg-[var(--insights-accent-soft)] px-[10px] py-[6px] text-[12px] font-semibold text-[var(--insights-accent-text)]">View all teams</Link> : null}
+        subtitle={showAllTeams ? 'Every team in the selected scope, including healthy grades' : 'Grade C/D/E teams in the selected scope'}
+        action={<button type="button" aria-expanded={showAllTeams} onClick={() => setShowAllTeams((value) => !value)} className="inline-flex shrink-0 items-center rounded-[8px] border border-[var(--insights-accent-border)] bg-[var(--insights-accent-soft)] px-[10px] py-[6px] text-[12px] font-semibold text-[var(--insights-accent-text)]">{showAllTeams ? 'Show at-risk teams' : 'Show all teams'}</button>}
       />
       {rows.length ? (
         <div role="table" aria-label={showAllTeams ? 'All teams' : 'Teams at risk'} className="flex flex-col">

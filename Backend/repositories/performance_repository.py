@@ -3,7 +3,7 @@ from repositories.base_repository import BaseRepository
 from sqlalchemy import String, and_, case, cast, false, func, or_
 
 from models.models import PerformanceRecord, Employee, KPIValue, Team
-from utils.report_scope import FUNCTION_SCOPED_ROLES, _team_keys
+from utils.report_scope import FUNCTION_SCOPED_ROLES, _team_keys, selection_team_keys
 import logging
 
 logger = logging.getLogger(__name__)
@@ -28,7 +28,9 @@ def _team_filter_values(team: str) -> tuple[str, ...]:
     if normalized == MERGED_IP_FINAL_TEAM:
         return MERGED_IP_FINAL_SOURCES
     if normalized == PRE_APPROVALS_UAE_TEAM:
-        return PRE_APPROVALS_UAE_SOURCES
+        return tuple(sorted(selection_team_keys(team)))
+    if normalized == 'rcm':
+        return tuple(sorted(selection_team_keys(team)))
     if normalized == CALL_CENTER_TEAM:
         return CALL_CENTER_SOURCES
     return (normalized,)

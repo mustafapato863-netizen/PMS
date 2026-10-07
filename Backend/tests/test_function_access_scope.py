@@ -7,6 +7,54 @@ def record(team: str):
     return SimpleNamespace(team=team, employee_id="E-1")
 
 
+def test_permission_reassignment_changes_performance_cache_identity():
+    from services.performance_dashboard_read_service import _scope_identity
+
+    scope = {"user_id": "director", "role": "Branch Director", "accessible_branches": ["dubai"]}
+    assert _scope_identity(scope) != _scope_identity({**scope, "accessible_branches": ["sharjah"]})
+    regional = {"user_id": "regional", "role": "Regional Manager", "accessible_regions": ["UAE"]}
+    assert _scope_identity(regional) != _scope_identity({**regional, "accessible_regions": ["EGY"]})
+    assert _scope_identity({**scope, "accessible_branches": ["dubai", "sharjah"]}) == _scope_identity({**scope, "accessible_branches": ["sharjah", "dubai"]})
+
+
+def test_rcm_parent_selection_does_not_broaden_legacy_pre_approvals_grants():
+    from repositories.performance_repository import PerformanceRepository, _team_filter_values
+    from utils.report_scope import selection_team_keys
+
+    rows = [record("Pre-Approvals OP Dubai"), record("Pre-Approvals IP Offshore"), record("Coding"), record("Inbound")]
+    rcm_scope = {"role": "Function Director", "accessible_functions": ["RCM"]}
+    legacy_scope = {"role": "Function Director", "accessible_functions": ["Pre-Approvals"]}
+    manager_scope = {"role": "Manager", "accessible_teams": ["Pre-Approvals OP Final"], "has_unrestricted_team_access": False}
+    assert [row.team for row in filter_records_by_scope(rows, rcm_scope)] == [row.team for row in rows[:3]]
+    assert [row.team for row in filter_records_by_scope(rows, legacy_scope)] == [rows[0].team]
+    assert [row.team for row in filter_records_by_scope(rows, manager_scope)] == [rows[0].team]
+    assert user_can_access_team(legacy_scope, "Coding") is False
+    assert user_can_access_team(legacy_scope, "Pre-Approvals IP Offshore") is False
+    selected = selection_team_keys("Pre-Approvals")
+    assert "pre-approvals ip offshore" in selected
+    assert "coding" not in selected
+    assert set(_team_filter_values("Pre-Approvals")) == selected
+    assert "coding" in _team_filter_values("RCM")
+
+    class QueryCapture:
+        def __init__(self):
+            self.predicates = []
+
+        def filter(self, predicate):
+            self.predicates.append(predicate)
+            return self
+
+    query = QueryCapture()
+    PerformanceRepository._apply_scope(query, legacy_scope)
+    PerformanceRepository._apply_dashboard_filters(query, team="Pre-Approvals")
+    # Both predicates apply; the broader user selection cannot bypass the grant.
+    assert len(query.predicates) == 2
+    grant_sql = str(query.predicates[0].compile(compile_kwargs={"literal_binds": True})).casefold()
+    assert "pre-approvals op dubai" in grant_sql
+    assert "pre-approvals ip offshore" not in grant_sql
+    assert "coding" not in grant_sql
+
+
 def test_function_viewer_scope_filters_records_and_team_drilldowns():
     scope = {
         "role": "Function Viewer",
@@ -135,7 +183,7 @@ def test_branch_director_requires_one_explicit_branch_and_ignores_geo_totals():
     assert filter_records_by_scope([dubai, geo_only, ambiguous], scope) == [dubai]
 
 
-def test_regional_manager_scope_intersects_region_and_assigned_teams():
+def test_regional_manager_scope_includes_every_team_in_region_not_static_team_assignments():
     scope = {
         "role": "Regional Manager",
         "accessible_regions": ["UAE"],
@@ -148,9 +196,10 @@ def test_regional_manager_scope_intersects_region_and_assigned_teams():
         SimpleNamespace(team="Coding", region="UAE"),
     ]
 
-    assert filter_records_by_scope(records, scope) == [records[0]]
+    assert filter_records_by_scope(records, scope) == [records[0], records[2]]
     assert user_can_access_team(scope, "Inbound") is True
-    assert user_can_access_team(scope, "Coding") is False
+    assert user_can_access_team(scope, "Coding") is True
+    assert filter_records_by_scope(records, {**scope, "accessible_regions": []}) == []
 
 
 def test_regional_manager_uses_employee_or_team_region_when_record_region_is_missing():

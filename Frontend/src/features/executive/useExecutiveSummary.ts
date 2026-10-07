@@ -10,18 +10,19 @@
  *    listed in `meta.unavailable` so widgets hide or soften.
  */
 import { useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { apiFetch } from '../../lib/apiClient';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { ApiError, apiFetch } from '../../lib/apiClient';
+import { performanceSessionKey } from '../../lib/performanceSessionKey';
 import { usePerformanceData } from '../../hooks/usePerformanceData';
 import { useInsightsWorkspace } from '../../hooks/api/useInsightsWorkspace';
 import { fetchFollowUp, mapBackendAction } from '../../hooks/useActionStore';
-import { canAccessBroadAppPages, canAccessCorrectiveActions } from '../../lib/access';
+import { canAccessBroadAppPages, canSeeSummaryActionAnalytics } from '../../lib/access';
 import { canonicalTeamName } from '../../types';
 import { teamBelongsToFunction, type TeamFunctionMap } from '../insights/filterCascade';
 import type { InsightFilters } from '../insights/types';
 import { composeExecutiveSummary, SUMMARY_BRANCHES, SUMMARY_LEVELS, toExecRecords, type ExecRecord, type FollowUpAction } from './compose';
 import { useSummaryRecords } from './useSummaryRecords';
-import { EXECUTIVE_FUNCTIONS, executiveFunctionForTeam } from './functions';
+import { EXECUTIVE_FUNCTIONS, summaryFunctionMatches, summaryTeamMatches } from './functions';
 import type { ExecutiveFunction, ExecutiveSummary, ExecutiveView } from './types';
 
 export interface ExecutiveFilterState {
@@ -113,7 +114,7 @@ function toFollowUp(action: Awaited<ReturnType<typeof fetchFollowUp>>['actions']
 export function buildExecutiveOptions(records: ExecRecord[], filters: ExecutiveFilterState, view: ExecutiveView, teamFunctions?: TeamFunctionMap, functionName?: string | null): ExecutiveOptions {
   const fn = view === 'function' ? functionName : filters.teamFunction;
   const inFunction = (team: string) => (!fn ? true : view === 'function'
-    ? executiveFunctionForTeam(team, teamFunctions) === fn
+    ? summaryFunctionMatches(team, fn, teamFunctions)
     : teamBelongsToFunction(team, fn, teamFunctions));
   return {
     regions: uniqueSorted(records.map((record) => record.region)),
@@ -129,10 +130,27 @@ export function buildExecutiveOptions(records: ExecRecord[], filters: ExecutiveF
 export function useExecutiveSummary({
   view, role, filters, managerTeams, functionName = null, accessibleFunctions, enabled = true, today,
 }: UseExecutiveSummaryArgs): ExecutiveSummaryResult {
+  const queryClient = useQueryClient();
+  const unavailableKey = ['executive', 'summary-endpoint-unavailable', performanceSessionKey()];
   const apiQuery = useQuery({
-    queryKey: ['executive', 'summary', view, filters, functionName],
+    queryKey: ['executive', 'summary', view, filters, functionName, performanceSessionKey()],
     queryFn: async ({ signal }) => {
-      const payload = await apiFetch<ApiEnvelope<ExecutiveSummary & { options?: ExecutiveOptions }>>(executiveSummaryUrl(view, filters, functionName), { signal });
+      // The deployed backend may not implement this optional endpoint yet.
+      // Cache only HTTP 404 for five minutes, scoped to this authenticated session.
+      // Never treat authorization, network, or server failures as absent capability.
+      const unavailableSince = queryClient.getQueryData<number>(unavailableKey);
+      if (unavailableSince !== undefined && Date.now() - unavailableSince < 5 * 60_000) {
+        throw new ApiError('Executive summary endpoint unavailable.', 404);
+      }
+      let payload: ApiEnvelope<ExecutiveSummary & { options?: ExecutiveOptions }>;
+      try {
+        payload = await apiFetch(executiveSummaryUrl(view, filters, functionName), { signal });
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 404) {
+          queryClient.setQueryData(unavailableKey, Date.now());
+        }
+        throw error;
+      }
       if (!payload?.data?.hero) throw new Error('Executive summary payload missing.');
       return payload.data;
     },
@@ -184,9 +202,9 @@ export function useExecutiveSummary({
   const driversEnabled = composeEnabled && Boolean(effectiveKey) && DRIVER_ROLES.has(role) && !filters.branch && !filters.position;
   const workspace = useInsightsWorkspace(insightFilters, { enabled: driversEnabled });
 
-  const actionsEnabled = composeEnabled && canAccessCorrectiveActions(role);
+  const actionsEnabled = composeEnabled && canSeeSummaryActionAnalytics(role);
   const followUp = useQuery({
-    queryKey: ['corrective-actions', 'executive', 'follow-up'],
+    queryKey: ['corrective-actions', 'executive', 'follow-up', performanceSessionKey()],
     queryFn: async () => {
       // Existing employee actions without due dates remain visible in the summary.
       // Follow-up also supplies tracked plan/team actions and current due metadata.
@@ -223,9 +241,9 @@ export function useExecutiveSummary({
     if (!preliminary) return null;
     const scopeAction = (action: FollowUpAction) => {
       const team = canonicalTeamName(action.team);
-      if (view === 'managerial' && managerTeam && team !== managerTeam) return false;
-      if (filters.team && team !== canonicalTeamName(filters.team)) return false;
-      if (view === 'function' && functionName && executiveFunctionForTeam(team, teamFunctions) !== functionName) return false;
+      if (view === 'managerial' && managerTeam && !summaryTeamMatches(team, managerTeam)) return false;
+      if (filters.team && !summaryTeamMatches(team, filters.team)) return false;
+      if (view === 'function' && functionName && !summaryFunctionMatches(team, functionName, teamFunctions)) return false;
       if (filters.teamFunction && team && !teamBelongsToFunction(team, filters.teamFunction, teamFunctions)) return false;
       if (filters.region || filters.branch || filters.performanceLevel || filters.position) {
         const matches = records.filter((record) => action.employee_id ? record.employeeId === action.employee_id : record.team === team);

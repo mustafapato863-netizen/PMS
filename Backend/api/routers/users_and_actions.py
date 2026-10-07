@@ -98,6 +98,7 @@ def _user_to_public_dict(db: Session, user: User) -> dict:
         "username": user.username,
         "role": user.role,
         "is_active": user.is_active,
+        "must_change_password": user.must_change_password,
         "is_online": bool(
             user.is_active
             and (str(user.id) in online_ids or UserPresenceService.is_online(user.last_seen_at))
@@ -465,6 +466,7 @@ async def create_user(
             username=payload.username.lower(),
             email=f"{payload.username.lower()}@pms.local",
             password_hash=hash_password(payload.password),
+            must_change_password=True,
             role=payload.role,
             is_active=payload.is_active,
             failed_login_attempts=0,

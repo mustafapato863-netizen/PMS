@@ -67,7 +67,8 @@ it('offers only current roles and explains Performance Team scope', async () => 
 
   await user.type(screen.getByRole('textbox', { name: 'Full name' }), 'Gina Grant');
   await user.type(screen.getByRole('textbox', { name: 'Username' }), 'gina');
-  await user.type(screen.getByLabelText(/Password/), 'secret-pass');
+  expect(screen.getByText(/must set a new password on first sign-in/)).toBeInTheDocument();
+  await user.type(screen.getByLabelText(/Temporary password/), 'secret-pass');
   await user.click(screen.getByRole('button', { name: 'Create user' }));
 
   expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ role: 'Performance Team', username: 'gina' }));
@@ -90,16 +91,43 @@ it('assigns selected functions to a Function Director', async () => {
   const roleSelect = screen.getByRole('combobox', { name: 'Role' });
   expect(screen.getByRole('option', { name: 'Function Director' })).toBeInTheDocument();
   await user.selectOptions(roleSelect, 'Function Director');
+  expect(screen.queryByRole('checkbox', { name: 'Pre-Approvals' })).not.toBeInTheDocument();
   await user.click(screen.getByRole('checkbox', { name: 'Marketing' }));
   await user.type(screen.getByRole('textbox', { name: 'Full name' }), 'Gina Grant');
   await user.type(screen.getByRole('textbox', { name: 'Username' }), 'gina');
-  await user.type(screen.getByLabelText(/Password/), 'secret-pass');
+  await user.type(screen.getByLabelText(/Temporary password/), 'secret-pass');
   await user.click(screen.getByRole('button', { name: 'Create user' }));
 
   expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({
     role: 'Function Director',
     accessibleFunctions: ['Marketing'],
   }));
+});
+
+it('grants Pre-Approvals sub-teams explicitly without selecting other RCM teams', async () => {
+  const user = userEvent.setup();
+  const onSubmit = vi.fn().mockResolvedValue(undefined);
+  render(<UserFormModal open
+    user={{ id: 'manager', name: 'Manager', username: 'manager', role: 'Manager', accessible_teams: [] }}
+    teams={[{ name: 'Pre-Approvals OP Dubai' }, { name: 'Pre-Approvals IP Offshore' }, { name: 'Coding' }]}
+    onClose={vi.fn()} onSubmit={onSubmit} />);
+  await user.click(screen.getByRole('checkbox', { name: 'All Pre-Approvals sub-teams' }));
+  expect(screen.getByRole('checkbox', { name: 'Coding' })).not.toBeChecked();
+  expect(screen.getByRole('checkbox', { name: 'All branches' })).not.toBeChecked();
+  await user.click(screen.getByRole('button', { name: 'Save changes' }));
+  expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ accessibleTeams: ['Pre-Approvals OP Dubai', 'Pre-Approvals IP Offshore'], isGeneralManager: false }));
+});
+
+it('does not replace a legacy Pre-Approvals grant with RCM on a profile edit', async () => {
+  const user = userEvent.setup();
+  const onSubmit = vi.fn().mockResolvedValue(undefined);
+  render(<UserFormModal open
+    user={{ id: 'director', name: 'Director', username: 'director', role: 'Function Director', accessible_functions: ['Pre-Approvals'] }}
+    teams={[]} onClose={vi.fn()} onSubmit={onSubmit} />);
+  expect(screen.getByRole('checkbox', { name: 'RCM' })).not.toBeChecked();
+  expect(screen.getByText(/existing legacy Pre-Approvals grant is retained with UAE-only access/)).toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: 'Save changes' }));
+  expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ accessibleFunctions: ['Pre-Approvals'] }));
 });
 
 it('replaces a Manager branch selection without granting all branches', async () => {

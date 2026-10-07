@@ -508,13 +508,13 @@ class ReportStoryService:
 
     def _movement(self, ctx, kpis) -> dict[str, Any]:
         movement = dict(ctx["evidence"]["movement"])
-        items = [{"label": item["label"], "impact": item["score_point_change"], "display": f"{item['score_point_change']:+.1f} score points"} for item in movement["kpi_contribution_movements"]]
+        items = [{"label": item["label"], "impact": item["score_point_change"], "display": f"{item['score_point_change']:+.1f}%"} for item in movement["kpi_contribution_movements"]]
         delta = movement["total_score_point_change"]
         if delta is None:
             narrative = "Previous-calendar-month comparison is unavailable."
         else:
             direction = "increased" if delta > 0 else "declined" if delta < 0 else "was unchanged"
-            narrative = f"Overall PMS Score {direction} by {abs(delta):.1f} score points. Measured KPI contribution and population effects produce a {movement['reconciliation_state']} matched-cohort bridge with a {movement['residual']:+.1f} score-point residual."
+            narrative = f"Overall PMS Score {direction} by {abs(delta):.1f}%. Measured KPI contribution and population effects produce a {movement['reconciliation_state']} matched-cohort bridge with a {movement['residual']:+.1f}% residual."
         movement.update({"score_change": delta, "contributions": items, "reconciled_total": round(delta - movement["residual"], 2) if delta is not None else None, "is_exact": movement["reconciliation_state"] == "reconciled", "narrative": narrative})
         return movement
 
@@ -714,7 +714,7 @@ class ReportStoryService:
         material = [item for item in kpis if item["status"] == "below target"][:3]
         if not material: return "No material below-target KPI requires a management decision in this scope."
         prefix = "Management decision required:" if provider == "decisions" else "Recommended focus:"
-        return prefix + " " + "; ".join(f"{item['name']} ({item['lost_points'] if item['lost_points'] is not None else 'unquantified'} lost points)" for item in material) + "."
+        return prefix + " " + "; ".join(f"{item['name']} ({str(item['lost_points']) + '%' if item['lost_points'] is not None else 'unquantified'} score gap)" for item in material) + "."
 
     def resolve_slide(self, draft_id: str, slide_id: str, scope: dict, *, _context_cache: dict[str, Any] | None = None) -> dict[str, Any]:
         draft = self._get_draft(draft_id, scope); definition = ReportDraftDefinition.model_validate(draft.definition_json)

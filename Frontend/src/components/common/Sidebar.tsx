@@ -1,5 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   CalendarCheck, ChevronDown, Eye, Gauge, LogOut, Settings, ShieldAlert, User, Users, UsersRound, X, Megaphone,
   FileBarChart,
@@ -14,10 +15,12 @@ import { useUserRole } from '../../context/RoleContext';
 import { useAuth } from '../../context/auth';
 import { usePerformanceCatalog } from '../../hooks/api/usePerformanceCatalog';
 import { apiFetch } from '../../lib/apiClient';
+import { performanceSessionKey } from '../../lib/performanceSessionKey';
 import { normalizeTeamName } from '../../hooks/api/useKpiWeights';
 import { shouldShowMarketingNavigation } from '../../features/marketing/navigation';
 import type { PerformanceLevel } from '../../types';
-import { isCallCenterTeam, CALL_CENTER_TEAM, isRcmTeam, RCM_TEAM } from '../../types';
+import { canonicalTeamName, isCallCenterTeam, CALL_CENTER_TEAM, isRcmTeam, RCM_TEAM } from '../../types';
+import { directorScope } from '../../lib/directorScope';
 import ThemeToggle from './ThemeToggle';
 import { TEAM_ITEMS, getTeamIcon, isHiddenTeam } from './sidebarTeamItems';
 import { MANAGEMENT_DATA_CHANGED_EVENT } from '../../lib/managementDataEvents';
@@ -48,6 +51,12 @@ const LEVELS: Array<{ name: 'Employee'; icon: React.ReactNode; color: string }> 
   { name: 'Employee', icon: <Users size={17} />, color: 'bg-[var(--sgh-cyan-primary)]' },
 ];
 
+const DIRECTOR_LEVELS: Array<{ name: PerformanceLevel; icon: React.ReactNode; color: string }> = [
+  { name: 'Employee', icon: <Users size={17} />, color: 'bg-[var(--sgh-cyan-primary)]' },
+  { name: 'Managerial', icon: <UsersRound size={17} />, color: 'bg-[var(--sgh-emerald-primary)]' },
+  { name: 'Corporate', icon: <Building2 size={17} />, color: 'bg-[var(--sgh-cyan-deep)]' },
+];
+
 const slugifyTeam = (teamName: string) =>
   teamName
     .trim()
@@ -67,17 +76,46 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed = false, onToggleCollapsed = (
   const selectedLevel = searchParams.get('performance_level');
   const { role } = useUserRole();
   const { currentUser, logout } = useAuth();
+  const assigned = directorScope(role, currentUser);
+  const scopedDirector = isScopedDirectorRole(role);
   const { data: performanceCatalog } = usePerformanceCatalog();
   const functionScope = useFunctionScope();
-  const [configured, setConfigured] = useState<Record<string, string[]>>({});
-  const [managementTeams, setManagementTeams] = useState<Array<{
-    id: string;
-    name: string;
-    team_level: 'management';
-  }>>([]);
-  const [levelOpen, setLevelOpen] = useState<Record<'Employee' | 'Management', boolean>>({
+  const queryClient = useQueryClient();
+  const session = performanceSessionKey();
+  const { data: configured = {} } = useQuery({
+    queryKey: ['team-configs', 'sidebar', session],
+    // Small config reads can finish across StrictMode remounts: the query cache
+    // shares their in-flight promise instead of sending the request twice.
+    queryFn: async () => {
+      const result = await apiFetch<{ success: boolean; data: Array<{ team: string; performance_levels?: Record<string, unknown> }> }>('/api/config/teams');
+      if (!result.success) throw new Error('Team configuration unavailable');
+      return Object.fromEntries((Array.isArray(result.data) ? result.data : []).map((config) => [
+        normalizeTeamName(config.team), Object.keys(config.performance_levels || {}),
+      ]));
+    },
+    staleTime: Infinity,
+    retry: false,
+  });
+  const { data: managementTeams = [] } = useQuery({
+    queryKey: ['management-team-configs', 'sidebar', session],
+    queryFn: async () => {
+      const result = await apiFetch<{
+        success: boolean;
+        data: string[];
+        scopes?: Array<{ id: string; name: string; team_level: 'management' }>;
+      }>('/api/team-management/management-kpi-config/teams');
+      if (!result.success || !Array.isArray(result.data)) throw new Error('Management teams unavailable');
+      return Array.isArray(result.scopes) ? result.scopes
+        : result.data.map((name) => ({ id: name, name, team_level: 'management' as const }));
+    },
+    staleTime: Infinity,
+    retry: false,
+  });
+  const [levelOpen, setLevelOpen] = useState<Record<PerformanceLevel | 'Management', boolean>>({
     Employee: !selectedLevel || selectedLevel === 'All' || selectedLevel === 'Employee',
     Management: selectedLevel === 'Managerial' || selectedLevel === 'Corporate',
+    Managerial: selectedLevel === 'Managerial',
+    Corporate: selectedLevel === 'Corporate',
   });
   const [regionOpen, setRegionOpen] = useState<Record<string, boolean>>({
     'Employee-egy': true,
@@ -86,43 +124,27 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed = false, onToggleCollapsed = (
   const [sharedOpen, setSharedOpen] = useState(true);
 
   const loadManagementTeams = useCallback(() => {
-    apiFetch<{
-      success: boolean;
-      data: string[];
-      scopes?: Array<{ id: string; name: string; team_level: 'management' }>;
-    }>('/api/team-management/management-kpi-config/teams')
-      .then((result) => {
-        if (!result.success || !Array.isArray(result.data)) return;
-        setManagementTeams(
-          Array.isArray(result.scopes)
-            ? result.scopes
-            : result.data.map((name) => ({ id: name, name, team_level: 'management' as const })),
-        );
-      })
-      .catch(() => {});
-  }, []);
+    void queryClient.invalidateQueries({ queryKey: ['management-team-configs', 'sidebar', session] });
+  }, [queryClient, session]);
 
   useEffect(() => {
-    apiFetch<{ success: boolean; data: Array<{ team: string; performance_levels?: Record<string, unknown> }> }>('/api/config/teams')
-      .then((result) => {
-        if (!result.success) return;
-        const teamConfigs = Array.isArray(result.data) ? result.data : [];
-        setConfigured(Object.fromEntries(teamConfigs.map((config) => [
-          normalizeTeamName(config.team),
-          Object.keys(config.performance_levels || {}),
-        ])));
-      })
-      .catch(() => {});
-
-    loadManagementTeams();
     window.addEventListener(MANAGEMENT_DATA_CHANGED_EVENT, loadManagementTeams);
     return () => window.removeEventListener(MANAGEMENT_DATA_CHANGED_EVENT, loadManagementTeams);
   }, [loadManagementTeams]);
 
   const scopedTeams = useMemo(() => {
     if (hasAllTeamsScope(role, currentUser)) return null;
+    if (isScopedDirectorRole(role)) return new Set((performanceCatalog?.scopes ?? []).map((scope) => normalizeTeamName(scope.team)));
     return new Set((currentUser?.accessible_teams || []).map(normalizeTeamName));
-  }, [currentUser, role]);
+  }, [currentUser, role, performanceCatalog?.scopes]);
+
+  const directorTeams = scopedDirector ? [...new Map((performanceCatalog?.scopes ?? [])
+    .filter((scope) => !isHiddenTeam(scope.team))
+    .map((scope) => {
+      const team = canonicalTeamName(scope.team);
+      const level = scope.performance_level as PerformanceLevel;
+      return [`${team}:${level}`, { team, level }] as const;
+    })).values()].sort((a, b) => a.team.localeCompare(b.team) || a.level.localeCompare(b.level)) : [];
 
   const availableFromData = useMemo(() => {
     const result = new Set<string>();
@@ -158,17 +180,27 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed = false, onToggleCollapsed = (
   const rcmVisible = Boolean(performanceCatalog?.scopes?.some((scope) => isRcmTeam(scope.team)))
     && (!scopedTeams || [...scopedTeams].some((team) => isRcmTeam(team)));
 
-  // Dashboard links carry the current query string so the global Header month
-  // filter (`?month=`, read by Executive, Team, Employee and Balanced Scorecard
-  // pages through useMonthParam) and the selected `performance_level` survive
-  // moving between dashboards. Pages that own their own URL filters opt out
-  // with `resetQuery` (Insights: QA BUG-1b, its link must open default filters).
+  // Team drilldowns retain their context. Returning home carries dates only:
+  // page-specific team/function/level filters must not narrow the company view.
+  // Assigned director boundaries are applied separately below.
   const linkFor = (path: string, performanceLevel?: PerformanceLevel) => {
-    const params = performanceLevel === 'Managerial' || performanceLevel === 'Corporate'
+    const params = path === '/executive'
+      ? new URLSearchParams([...searchParams].filter(([key]) => ['period', 'month', 'year'].includes(key)))
+      : performanceLevel === 'Managerial' || performanceLevel === 'Corporate'
       ? prepareBalancedScorecardTeamParams(searchParams, performanceLevel)
       : new URLSearchParams(searchParams);
     if (performanceLevel && performanceLevel !== 'Managerial' && performanceLevel !== 'Corporate') {
       params.set('performance_level', performanceLevel);
+    }
+    if (assigned.branchLocked) {
+      params.delete('branches');
+      params.delete('location');
+      params.delete('branch');
+      if (assigned.branch) params.set('branch', assigned.branch);
+    }
+    if (assigned.regionLocked) {
+      params.delete('region');
+      if (assigned.region) params.set('region', assigned.region);
     }
     const query = params.toString();
     return `${path}${query ? `?${query}` : ''}`;
@@ -197,7 +229,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed = false, onToggleCollapsed = (
         to={destination}
         aria-current={active ? 'page' : undefined}
         aria-label={isCollapsed ? item.name : undefined}
-        title={isCollapsed ? item.name : undefined}
+        title={isCollapsed || scopedDirector ? item.name : undefined}
         data-tooltip={isCollapsed ? item.name : undefined}
         onClick={() => setIsOpen(false)}
         className={`sidebar-tooltip-trigger flex min-h-11 items-center justify-between rounded-lg py-1.5 text-[12px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--sgh-cyan-primary)] xl:min-h-9 ${isCollapsed ? 'xl:justify-center xl:px-2' : nested ? 'pl-8 pr-3' : 'px-3'} ${active ? 'active-nav-item' : 'inactive-nav-item'}`}
@@ -236,8 +268,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed = false, onToggleCollapsed = (
   const generalItems: Array<{ name: string; path: string; icon: React.ReactNode; resetQuery?: boolean }> = canSeeBroadNavigation
     ? [
         { name: 'Executive Summary', path: '/executive', icon: <Gauge size={18} /> },
-        ...teamsItem,
-        ...(role === 'Function Director' ? [{ name: 'Function Summary', path: '/function-summary', icon: <Layers size={18} /> }] : []),
+        ...(!scopedDirector ? teamsItem : []),
         ...(canSeeReportsNav(role) ? [{ name: 'Reports', path: '/reports', icon: <FileBarChart size={18} /> }] : []),
         // Plain /insights: Insights keeps its own filters in the URL
         // (period/region/function/team/level), and the sidebar link is the
@@ -300,7 +331,40 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed = false, onToggleCollapsed = (
           )
         ) : generalItems.map((item) => renderLink(item, undefined, false, item.resetQuery))}
 
-        {canSeeBroadNavigation && LEVELS.map((level) => {
+        {scopedDirector && DIRECTOR_LEVELS.map((level) => {
+          const teams = directorTeams.filter((team) => team.level === level.name);
+          if (!teams.length) return null;
+          const isLevelOpen = levelOpen[level.name];
+          const groupId = `director-teams-${level.name.toLowerCase()}`;
+          return (
+            <div key={level.name} className={`sidebar-nav-group mt-2 ${isCollapsed ? 'xl:mt-1.5' : ''}`}>
+              <button
+                type="button"
+                aria-label={`${level.name} teams`}
+                aria-expanded={isLevelOpen}
+                aria-controls={isLevelOpen ? groupId : undefined}
+                title={isCollapsed ? level.name : undefined}
+                data-tooltip={isCollapsed ? level.name : undefined}
+                onClick={() => setLevelOpen((state) => ({ ...state, [level.name]: !state[level.name] }))}
+                className={`sidebar-tooltip-trigger sidebar-nav-group-trigger flex min-h-11 w-full items-center gap-2.5 rounded-xl px-3 text-left text-sm font-extrabold text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-sunken)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--sgh-cyan-primary)] ${isCollapsed ? 'xl:justify-center xl:px-2' : ''}`}
+              >
+                <span className={`h-4 w-1 rounded-full ${level.color}`} />
+                <span className="text-[var(--text-faint)]">{level.icon}</span>
+                <span className={`flex-1 ${isCollapsed ? 'xl:hidden' : ''}`}>{level.name}</span>
+                <span aria-hidden="true" className={`rounded-md bg-[var(--bg-sunken)] px-1.5 py-0.5 text-[10px] text-[var(--text-muted)] ${isCollapsed ? 'xl:hidden' : ''}`}>{teams.length}</span>
+                <ChevronDown size={14} className={`transition-transform ${isLevelOpen ? '' : '-rotate-90'} ${isCollapsed ? 'xl:hidden' : ''}`} />
+              </button>
+              <AnimatePresence initial={false}>
+                {isLevelOpen && (
+                  <motion.div id={groupId} role="group" aria-label={`${level.name} teams`} initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="space-y-0.5 overflow-hidden">
+                    {teams.map(({ team }) => renderLink({ name: team, path: `/team/${slugifyTeam(team)}`, icon: getTeamIcon(team) }, level.name, true))}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          );
+        })}
+        {canSeeBroadNavigation && !scopedDirector && LEVELS.map((level) => {
           const regions = [
             { id: 'egy' as const, label: 'Offshore EGY', color: 'bg-[var(--sgh-cyan-primary)]' },
             { id: 'uae' as const, label: 'UAE Region', color: 'bg-[var(--sgh-emerald-primary)]' },
@@ -355,7 +419,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed = false, onToggleCollapsed = (
           );
         })}
 
-        {canSeeBroadNavigation && (marketingVisible || rcmVisible) && (
+        {canSeeBroadNavigation && !scopedDirector && (marketingVisible || rcmVisible) && (
           <div className={`sidebar-nav-group mt-2 ${isCollapsed ? 'xl:mt-1.5' : ''}`}>
             <button
               type="button"
@@ -396,7 +460,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed = false, onToggleCollapsed = (
           </div>
         )}
 
-        {canSeeBroadNavigation && managementItems.length > 0 && (() => {
+        {canSeeBroadNavigation && !scopedDirector && managementItems.length > 0 && (() => {
           const isLevelOpen = levelOpen.Management;
           return (
             <div key="Management" className={`sidebar-nav-group mt-2 ${isCollapsed ? 'xl:mt-1.5' : ''}`}>

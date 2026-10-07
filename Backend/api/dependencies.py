@@ -165,6 +165,7 @@ def serialize_performance_record(r) -> Dict[str, Any]:
         "month": r.month,
         "year": record_year,
         "region": getattr(r, "region", "EGY") or "EGY",
+        "branch_key": getattr(r, "branch_key", None),
         "performance_level": getattr(r, "performance_level", "Employee") or "Employee",
         "position": record_position,
         "status": record_status,

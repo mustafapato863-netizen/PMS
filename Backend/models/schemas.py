@@ -84,6 +84,7 @@ class PerformanceRecord(BaseModel):
     month: str
     year: Optional[int] = None
     region: Optional[str] = "EGY"
+    branch_key: Optional[str] = None
     performance_level: str = "Employee"
     position: Optional[str] = None
     status: Optional[str] = None
@@ -212,4 +213,5 @@ class JWTToken(BaseModel):
     username: str
     expires_in: int
     csrf_token: str
+    must_change_password: bool = False
 
