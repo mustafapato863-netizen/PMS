@@ -38,6 +38,20 @@ PERMISSION_MATRIX = {
         "export_data", "manage_team_members", "view_actions",
         "create_actions", "manage_team_kpi", "view_plans", "manage_plans"
     ],
+    # Performance Team: broad operational access, but no Admin Settings powers
+    # (user/permission administration, uploads/deletes, KPI configuration,
+    # restore, batch administration, alerts, or system metrics).
+    "Performance Team": [
+        "create_team", "delete_team", "edit_team_config", "edit_performance",
+        "view_reports", "export_data", "view_audit_logs",
+        "manage_team_members", "view_actions", "create_actions", "manage_team_kpi",
+        "view_aggregated_analytics", "view_plans", "manage_plans",
+    ],
+    # Scoped leaders are read-only until write access is explicitly approved.
+    "Regional Manager": ["view_reports", "view_aggregated_analytics", "view_actions", "view_plans"],
+    "Branch Director": ["view_reports", "view_aggregated_analytics", "view_actions", "view_plans"],
+    "Function Director": ["view_reports", "view_aggregated_analytics", "view_actions", "view_plans"],
+    "Employee": [],
     "Executive": [
         "view_reports", "export_data", "view_aggregated_analytics",
         "view_audit_logs", "view_plans"

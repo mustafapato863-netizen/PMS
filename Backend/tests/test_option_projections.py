@@ -128,6 +128,7 @@ def test_sql_option_rows_preserve_employee_and_management_dimensions():
             "region": "EGY",
             "performance_level": "Employee",
             "position": "Designer",
+            "branch_key": None,
             "grade": "B",
             "status": "Meets",
         }]

@@ -33,7 +33,15 @@ class ReportsCenterService:
     """
 
     _AGGREGATE_ROLES = {"Executive", "Viewer"}
-    _PEOPLE_ROLES = {"Admin", "General Manager", "Manager"}
+    _PEOPLE_ROLES = {
+        "Admin",
+        "General Manager",
+        "Manager",
+        "Performance Team",
+        "Regional Manager",
+        "Branch Director",
+        "Function Director",
+    }
 
     def __init__(self, db: Session, scope: dict[str, Any]):
         self.db = db

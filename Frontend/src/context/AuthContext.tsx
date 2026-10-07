@@ -178,14 +178,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const addUser = async (name: string, username: string, password: string, role: User['role'], accessibleTeams: string[] = [], hasUnrestrictedTeamAccess = false, accessibleFunctions: string[] = []) => {
+  const addUser = async (name: string, username: string, password: string, role: User['role'], accessibleTeams: string[] = [], hasUnrestrictedTeamAccess = false, accessibleFunctions: string[] = [], accessibleRegions: string[] = [], accessibleBranches: string[] = []) => {
     const trimmed = username.trim().toLowerCase();
     if (!name || !trimmed || !password) return { success: false, error: 'All fields required' };
     if (!currentUser || getActiveRole() !== 'Admin') return { success: false, error: 'Only administrators can add users' };
     try {
       const res = await apiFetch<{ success: boolean; message?: string }>('/api/users/', {
         method: 'POST',
-        body: JSON.stringify({ id: `user-${Date.now()}`, name: name.trim(), username: trimmed, password, role, accessible_teams: accessibleTeams, has_unrestricted_team_access: hasUnrestrictedTeamAccess, accessible_functions: accessibleFunctions }),
+        body: JSON.stringify({ id: `user-${Date.now()}`, name: name.trim(), username: trimmed, password, role, accessible_teams: accessibleTeams, has_unrestricted_team_access: hasUnrestrictedTeamAccess, accessible_functions: accessibleFunctions, accessible_regions: accessibleRegions, accessible_branches: accessibleBranches }),
       });
       if (res.success) { await refreshUsers(); return { success: true }; }
       return { success: false, error: res.message || 'Failed to create user' };
@@ -198,7 +198,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const newPassword = patch.new_password ?? patch.password;
       const res = await apiFetch<{ success: boolean; message?: string }>(`/api/users/${id}`, {
         method: 'PUT',
-        body: JSON.stringify({ id, name: patch.name || '', username: patch.username || '', role: patch.role || 'Viewer', is_active: patch.is_active ?? true, accessible_teams: patch.accessible_teams ?? [], has_unrestricted_team_access: patch.has_unrestricted_team_access ?? false, ...(patch.accessible_functions !== undefined ? { accessible_functions: patch.accessible_functions } : {}), ...(newPassword ? { new_password: newPassword } : {}) }),
+        body: JSON.stringify({ id, name: patch.name || '', username: patch.username || '', role: patch.role || 'Employee', is_active: patch.is_active ?? true, accessible_teams: patch.accessible_teams ?? [], has_unrestricted_team_access: patch.has_unrestricted_team_access ?? false, ...(patch.accessible_functions !== undefined ? { accessible_functions: patch.accessible_functions } : {}), ...(patch.accessible_regions !== undefined ? { accessible_regions: patch.accessible_regions } : {}), ...(patch.accessible_branches !== undefined ? { accessible_branches: patch.accessible_branches } : {}), ...(newPassword ? { new_password: newPassword } : {}) }),
       });
       if (res.success) { await refreshUsers(); return { success: true }; }
       return { success: false, error: res.message || 'Failed to update user' };

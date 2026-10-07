@@ -137,6 +137,48 @@ def test_team_action_is_persisted_once_per_team_period(db, employee):
     assert db.query(Action).filter(Action.action_type == "Team Action").count() == 1
 
 
+def test_branch_director_cannot_read_unscoped_team_action(db, employee):
+    service = TeamActionService(db)
+    admin_scope = {"role": "Admin", "legacy_unscoped": False}
+    branch_scope = {
+        "role": "Branch Director",
+        "accessible_branches": ["dubai"],
+        "legacy_unscoped": False,
+    }
+    service.save(
+        team_reference="Inbound",
+        month="June",
+        year=2026,
+        overall_action="Review attendance gaps",
+        scope=admin_scope,
+        user_id=None,
+    )
+
+    with pytest.raises(PermissionError, match="unscoped team actions"):
+        service.get(team_reference="Inbound", month="June", year=2026, scope=branch_scope)
+
+
+def test_branch_director_cannot_create_unscoped_team_action(db, employee):
+    service = TeamActionService(db)
+    branch_scope = {
+        "role": "Branch Director",
+        "accessible_branches": ["dubai"],
+        "legacy_unscoped": False,
+    }
+
+    with pytest.raises(PermissionError, match="unscoped team actions"):
+        service.save(
+            team_reference="Inbound",
+            month="June",
+            year=2026,
+            overall_action="Review attendance gaps",
+            scope=branch_scope,
+            user_id=None,
+        )
+
+    assert db.query(Action).filter(Action.action_type == "Team Action").count() == 0
+
+
 @pytest.mark.asyncio
 async def test_legacy_settings_mutations_cannot_create_a_second_scoring_source():
     with pytest.raises(HTTPException) as weights_error:

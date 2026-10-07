@@ -28,7 +28,7 @@ import {
   canSeeReportsNav,
   getRoleDisplayLabel,
   hasAllTeamsScope,
-  isFunctionViewerRole,
+  isScopedDirectorRole,
   isManagerRole,
 } from '../../lib/access';
 import { useFunctionScope } from '../../features/executive/useFunctionScope';
@@ -217,14 +217,17 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed = false, onToggleCollapsed = (
   };
 
   // Function Viewer gets its own read-only navigation (FunctionViewerNav).
-  const isFunctionViewer = isFunctionViewerRole(role);
-  const canSeeBroadNavigation = role !== 'Agent' && !isFunctionViewer;
+  // Keep the legacy Function Viewer experience isolated. Function Directors
+  // have the same function boundary but also receive their assigned read pages.
+  const isFunctionViewer = role === 'Function Viewer';
+  const isSelfOnly = role === 'Agent' || role === 'Employee';
+  const canSeeBroadNavigation = !isSelfOnly && !isFunctionViewer;
   const canSeeCorrectiveActions = canAccessCorrectiveActions(role);
   const roleLabel = getRoleDisplayLabel(role);
   const isManager = isManagerRole(role);
   const managerTeams = currentUser?.accessible_teams ?? [];
   // Manager (Mustafa, binding): Executive, their team, Reports, Corrective Actions, Planning — no Insights.
-  const teamsItem = hasAllTeamsScope(role, currentUser) || managerTeams.length
+  const teamsItem = hasAllTeamsScope(role, currentUser) || managerTeams.length || isScopedDirectorRole(role)
     ? [isManager && managerTeams.length === 1
       ? { name: `My Team · ${managerTeams[0]}`, path: `/team/${slugifyTeam(managerTeams[0])}`, icon: <UsersRound size={18} /> }
       : { name: isManager ? 'Assigned Teams' : 'All Teams', path: '/team/all', icon: <UsersRound size={18} /> }]
@@ -234,6 +237,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed = false, onToggleCollapsed = (
     ? [
         { name: 'Executive Summary', path: '/executive', icon: <Gauge size={18} /> },
         ...teamsItem,
+        ...(role === 'Function Director' ? [{ name: 'Function Summary', path: '/function-summary', icon: <Layers size={18} /> }] : []),
         ...(canSeeReportsNav(role) ? [{ name: 'Reports', path: '/reports', icon: <FileBarChart size={18} /> }] : []),
         // Plain /insights: Insights keeps its own filters in the URL
         // (period/region/function/team/level), and the sidebar link is the
@@ -430,7 +434,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed = false, onToggleCollapsed = (
       <div className={`mt-auto shrink-0 space-y-2 border-t border-[var(--border-light)] p-3 ${isCollapsed ? 'xl:p-2' : ''}`}>
         <div className={isCollapsed ? 'sidebar-collapsed-theme' : ''}><ThemeToggle variant="pill" /></div>
         {/* Settings link for all non-Agent roles; SettingsView soft-locks non-Admins (General Manager included). */}
-        {role !== 'Agent' && !isFunctionViewer && renderLink({ name: 'Settings', path: '/settings', icon: <Settings size={18} /> })}
+        {!isSelfOnly && !isFunctionViewer && renderLink({ name: 'Settings', path: '/settings', icon: <Settings size={18} /> })}
         <div className={`sidebar-user-menu flex items-center justify-between gap-2 rounded-xl border border-[var(--border-light)] bg-[var(--bg-raised)] p-2.5 shadow-sm ${isCollapsed ? 'xl:justify-center xl:p-2' : ''}`}>
           <div className={`flex min-w-0 items-center gap-2 ${isCollapsed ? 'xl:justify-center' : ''}`}>
             <div className="sidebar-user-avatar flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[11px] font-bold text-white shadow-sm" style={{ background: 'var(--sidebar-active-text)' }}>

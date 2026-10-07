@@ -256,6 +256,26 @@ def test_endpoint_rejects_employee_before_reading_data():
     assert exc.value.status_code == 422
 
 
+def test_branch_director_cannot_read_unattributed_management_scorecards(monkeypatch):
+    monkeypatch.setattr(
+        "api.routers.performance.require_authenticated_scope",
+        lambda db, request: {
+            "role": "Branch Director",
+            "accessible_branches": ["dubai"],
+            "legacy_unscoped": False,
+        },
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        get_balanced_scorecard(
+            request=SimpleNamespace(), db=None, team="Inbound", performance_level="Managerial",
+            month="May", year=2025, branch=None, employee_ids=[], history_months=6, selected_kpi=None,
+        )
+
+    assert exc.value.status_code == 403
+    assert "branch attribution" in exc.value.detail
+
+
 def test_endpoint_rejects_people_outside_authorized_context(monkeypatch):
     monkeypatch.setattr("api.routers.performance.require_authenticated_scope", lambda db, request: {"legacy_unscoped": False})
     monkeypatch.setattr("api.routers.performance.user_can_access_team_level", lambda scope, team, level: True)

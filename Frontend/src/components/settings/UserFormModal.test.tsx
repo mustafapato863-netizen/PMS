@@ -38,7 +38,7 @@ it('submits an edited full name independently from the login username', async ()
   }));
 });
 
-it('offers the General Manager role and hides the per-team checklist for it', async () => {
+it('offers only current roles and explains Performance Team scope', async () => {
   const onSubmit = vi.fn().mockResolvedValue(undefined);
   const user = userEvent.setup();
 
@@ -52,28 +52,29 @@ it('offers the General Manager role and hides the per-team checklist for it', as
   );
 
   const roleSelect = screen.getByRole('combobox', { name: 'Role' });
-  expect(screen.getByRole('option', { name: 'General Manager' })).toBeInTheDocument();
+  expect(screen.queryByRole('option', { name: 'General Manager' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('option', { name: 'Function Viewer' })).not.toBeInTheDocument();
 
   await user.selectOptions(roleSelect, 'Manager');
   expect(screen.getByRole('checkbox', { name: 'All branches' })).toBeInTheDocument();
   expect(screen.queryByText(/General manager \(all teams\)/)).not.toBeInTheDocument();
   expect(screen.getByRole('checkbox', { name: 'Marketing' })).toBeInTheDocument();
 
-  await user.selectOptions(roleSelect, 'General Manager');
+  await user.selectOptions(roleSelect, 'Performance Team');
   expect(screen.queryByRole('checkbox', { name: 'All branches' })).not.toBeInTheDocument();
   expect(screen.queryByRole('checkbox', { name: 'Marketing' })).not.toBeInTheDocument();
-  expect(screen.getByText('General Managers have access to all branches and functions.')).toBeInTheDocument();
+  expect(screen.getByText(/Broad operational access across the system/)).toBeInTheDocument();
 
   await user.type(screen.getByRole('textbox', { name: 'Full name' }), 'Gina Grant');
   await user.type(screen.getByRole('textbox', { name: 'Username' }), 'gina');
   await user.type(screen.getByLabelText(/Password/), 'secret-pass');
   await user.click(screen.getByRole('button', { name: 'Create user' }));
 
-  expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ role: 'General Manager', username: 'gina' }));
+  expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ role: 'Performance Team', username: 'gina' }));
 });
 
 
-it('assigns selected functions to a Function Viewer', async () => {
+it('assigns selected functions to a Function Director', async () => {
   const onSubmit = vi.fn().mockResolvedValue(undefined);
   const user = userEvent.setup();
 
@@ -87,8 +88,8 @@ it('assigns selected functions to a Function Viewer', async () => {
   );
 
   const roleSelect = screen.getByRole('combobox', { name: 'Role' });
-  expect(screen.getByRole('option', { name: 'Function Viewer' })).toBeInTheDocument();
-  await user.selectOptions(roleSelect, 'Function Viewer');
+  expect(screen.getByRole('option', { name: 'Function Director' })).toBeInTheDocument();
+  await user.selectOptions(roleSelect, 'Function Director');
   await user.click(screen.getByRole('checkbox', { name: 'Marketing' }));
   await user.type(screen.getByRole('textbox', { name: 'Full name' }), 'Gina Grant');
   await user.type(screen.getByRole('textbox', { name: 'Username' }), 'gina');
@@ -96,7 +97,7 @@ it('assigns selected functions to a Function Viewer', async () => {
   await user.click(screen.getByRole('button', { name: 'Create user' }));
 
   expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({
-    role: 'Function Viewer',
+    role: 'Function Director',
     accessibleFunctions: ['Marketing'],
   }));
 });

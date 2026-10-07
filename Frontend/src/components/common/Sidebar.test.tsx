@@ -10,7 +10,8 @@ type MockUser = {
   id: string;
   name: string;
   username: string;
-  role: 'Admin' | 'General Manager' | 'Manager' | 'Executive' | 'Viewer' | 'Agent' | 'Function Viewer';
+  role: 'Admin' | 'General Manager' | 'Manager' | 'Executive' | 'Viewer' | 'Agent' | 'Employee' | 'Performance Team' | 'Regional Manager' | 'Branch Director' | 'Function Director' | 'Function Viewer';
+  employee_id?: string;
   has_unrestricted_team_access?: boolean;
   accessible_teams?: string[];
   accessible_functions?: string[];
@@ -308,6 +309,39 @@ describe('Function Viewer sidebar (Figma 48:3)', () => {
     for (const name of ['Call Center', 'RCM', 'Pre-Approvals', 'Marketing']) {
       expect(screen.queryByRole('link', { name })).not.toBeInTheDocument();
     }
+  });
+});
+
+describe('new role navigation boundaries', () => {
+  beforeEach(() => {
+    mockTeamConfigFetch();
+    catalogState.scopes = DEFAULT_SCOPES;
+  });
+
+  it('keeps Employee navigation self-only and hides Settings', () => {
+    authState.user = {
+      id: 'employee-user', name: 'Eli Employee', username: 'eli', role: 'Employee',
+      employee_id: 'E-100', accessible_teams: [],
+    };
+    renderSidebar();
+
+    expect(screen.getByRole('link', { name: 'My Profile' })).toHaveAttribute('href', '/employee/E-100');
+    for (const name of ['Executive Summary', 'All Teams', 'Reports', 'Insights', 'Planning', 'Corrective Actions', 'Settings']) {
+      expect(screen.queryByRole('link', { name })).not.toBeInTheDocument();
+    }
+  });
+
+  it('shows Function Director read pages and their scoped team entry', () => {
+    authState.user = {
+      id: 'function-director', name: 'Fiona Director', username: 'fiona', role: 'Function Director',
+      accessible_teams: [], accessible_functions: ['Marketing'],
+    };
+    renderSidebar();
+
+    for (const name of ['All Teams', 'Function Summary', 'Reports', 'Insights', 'Planning', 'Corrective Actions']) {
+      expect(screen.getByRole('link', { name })).toBeInTheDocument();
+    }
+    expect(screen.queryByText('FUNCTION VIEWER')).not.toBeInTheDocument();
   });
 });
 

@@ -1,8 +1,9 @@
 import React, { createContext, useContext, useCallback } from 'react';
 import { useAuth } from './auth';
 import { getAccessToken } from '../lib/apiClient';
+import type { User } from '../types';
 
-export type UserRole = 'Admin' | 'General Manager' | 'Manager' | 'Executive' | 'Viewer' | 'Agent' | 'Function Viewer';
+export type UserRole = User['role'];
 
 interface RoleContextProps {
   role: UserRole;
@@ -15,7 +16,7 @@ const RoleContext = createContext<RoleContextProps | undefined>(undefined);
 export const RoleProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { currentUser } = useAuth();
   
-  const role: UserRole = currentUser?.role ?? 'Viewer';
+  const role: UserRole = currentUser?.role ?? 'Employee';
 
   const setRole = (newRole: UserRole) => {
     localStorage.setItem('pms_user_role', newRole);

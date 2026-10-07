@@ -49,11 +49,11 @@ def _seed(db):
     rows = [
         PerformanceRecord(
             id=uuid.uuid4(), year=2026, employee_id=employees[0].id, team_id=inbound.id,
-            month="June", performance_level="Employee", region="EGY", score=90, grade="A", status="Exceeds",
+            month="June", performance_level="Employee", region="EGY", branch_key="dubai", score=90, grade="A", status="Exceeds",
         ),
         PerformanceRecord(
             id=uuid.uuid4(), year=2026, employee_id=employees[1].id, team_id=inbound.id,
-            month="June", performance_level="Employee", region="EGY", score=80, grade="B", status="Meets",
+            month="June", performance_level="Employee", region="EGY", branch_key="dubai", score=80, grade="B", status="Meets",
         ),
         PerformanceRecord(
             id=uuid.uuid4(), year=2026, employee_id=employees[0].id, team_id=inbound.id,
@@ -193,6 +193,49 @@ def test_records_use_stable_cursor_pages_and_keep_scope_out_of_results():
             status="Exceeds",
         )
         assert filtered["items"][0]["previous_score"] == 70
+    finally:
+        db.close()
+
+
+def test_records_page_filters_below_score_and_branch_with_stable_filtered_total():
+    db = _session()
+    try:
+        _seed(db)
+        service = PerformanceDashboardReadService(db, _scope())
+
+        first = service.records_page(
+            period="2026-06",
+            branch="Dubai",
+            score_lt=100,
+            sort="score_asc",
+            page_size=1,
+            include_total=True,
+        )
+        assert first["total"] == 2
+        assert first["has_more"] is True
+        assert [(item["employee_name"], item["score"]) for item in first["items"]] == [("Bob", 80.0)]
+
+        second = service.records_page(
+            period="2026-06",
+            branch="dubai",
+            score_lt=100,
+            sort="score_asc",
+            cursor=first["next_cursor"],
+            page_size=1,
+            include_total=True,
+        )
+        assert second["total"] == 2
+        assert second["has_more"] is False
+        assert [(item["employee_name"], item["score"]) for item in second["items"]] == [("Alice", 90.0)]
+
+        below_90 = service.records_page(
+            period="2026-06",
+            branch="dubai",
+            score_lt=90,
+            include_total=True,
+        )
+        assert below_90["total"] == 1
+        assert [(item["employee_name"], item["score"]) for item in below_90["items"]] == [("Bob", 80.0)]
     finally:
         db.close()
 

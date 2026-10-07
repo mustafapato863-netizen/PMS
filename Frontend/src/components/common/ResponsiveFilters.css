@@ -38,6 +38,7 @@
 
 .responsive-filter-launcher .responsive-filter-trigger:focus-visible,
 .responsive-filter-panel[role='dialog'] .responsive-filter-panel__close:focus-visible,
+.responsive-filter-panel[role='dialog'] .responsive-filter-panel__clear:focus-visible,
 .responsive-filter-panel[role='dialog'] .responsive-filter-panel__done:focus-visible {
   outline: 3px solid color-mix(in srgb, var(--sgh-cyan-primary, #00A3E0) 60%, white);
   outline-offset: 3px;
@@ -164,6 +165,26 @@
   background: var(--bg-sunken);
   cursor: pointer;
   transition: color 150ms ease, border-color 150ms ease, background-color 150ms ease;
+}
+
+.responsive-filter-panel[role='dialog'] .responsive-filter-panel__clear {
+  display: inline-grid;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 11px;
+  color: var(--text-muted);
+  background: transparent;
+  cursor: pointer;
+  transition: color 150ms ease, border-color 150ms ease, background-color 150ms ease;
+}
+
+.responsive-filter-panel[role='dialog'] .responsive-filter-panel__clear:hover {
+  border-color: color-mix(in srgb, var(--sgh-cyan-primary, #00A3E0) 28%, var(--border-light));
+  color: var(--sgh-cyan-primary, #00A3E0);
+  background: color-mix(in srgb, var(--sgh-cyan-primary, #00A3E0) 8%, var(--bg-surface));
 }
 
 .responsive-filter-panel[role='dialog'] .responsive-filter-panel__close:hover {
@@ -301,6 +322,7 @@
   .responsive-filter-launcher .responsive-filter-trigger,
   .responsive-filter-tooltip,
   .responsive-filter-panel__close,
+  .responsive-filter-panel__clear,
   .responsive-filter-panel__done {
     transition-duration: 0.01ms;
   }

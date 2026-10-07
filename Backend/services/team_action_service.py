@@ -80,6 +80,16 @@ class TeamActionService:
         raise ValueError("Team not found")
 
     @staticmethod
+    def _ensure_team_action_scope(scope: dict, team_name: str) -> None:
+        # Team-wide notes have no branch attribution, so a branch-scoped role
+        # cannot safely read or change them until the data model is branch-aware.
+        role = str(scope.get("role", "")).strip().casefold().replace("_", " ")
+        if role == "branch director":
+            raise PermissionError("Branch Directors cannot access unscoped team actions")
+        if not user_can_access_team(scope, team_name):
+            raise PermissionError("The team is outside your authorized action scope")
+
+    @staticmethod
     def _serialize(action: Action) -> dict:
         return {
             "team_id": logical_team_name(action.team),
@@ -93,8 +103,7 @@ class TeamActionService:
     def get(self, *, team_reference: str, month: str, year: int, scope: dict) -> dict | None:
         team = self._team(team_reference)
         team_name = logical_team_name(team)
-        if not user_can_access_team(scope, team_name):
-            raise PermissionError("The team is outside your authorized action scope")
+        self._ensure_team_action_scope(scope, team_name)
         action = self.actions.get_active_team_summary(team.id, month, year)
         return self._serialize(action) if action else None
 
@@ -110,8 +119,7 @@ class TeamActionService:
     ) -> dict:
         team = self._team(team_reference)
         team_name = logical_team_name(team)
-        if not user_can_access_team(scope, team_name):
-            raise PermissionError("The team is outside your authorized action scope")
+        self._ensure_team_action_scope(scope, team_name)
 
         actor_id = None
         try:

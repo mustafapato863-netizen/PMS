@@ -3,7 +3,7 @@ from repositories.base_repository import BaseRepository
 from sqlalchemy import String, and_, case, cast, false, func, or_
 
 from models.models import PerformanceRecord, Employee, KPIValue, Team
-from utils.report_scope import _team_keys
+from utils.report_scope import FUNCTION_SCOPED_ROLES, _team_keys
 import logging
 
 logger = logging.getLogger(__name__)
@@ -72,21 +72,35 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
             return query
 
         role = str(scope.get("role") or "")
-        if role == "Function Viewer":
+        if role in FUNCTION_SCOPED_ROLES:
             accessible_functions = scope.get("accessible_functions") or []
             accessible_teams = _expanded_scope_team_values(accessible_functions)
             return query.filter(_team_name_clause(accessible_teams)) if accessible_teams else query.filter(false())
 
         if scope.get("legacy_unscoped"):
             return query
-        if role in {"Admin", "General Manager", "Viewer"} or scope.get("has_unrestricted_team_access"):
+        if role in {"Admin", "General Manager", "Performance Team", "Viewer"}:
             return query
 
-        if role in {"Agent", "Executive"}:
+        if role in {"Agent", "Executive", "Employee"}:
             employee_id = str(scope.get("employee_id") or "").strip()
             return query.filter(Employee.employee_id == employee_id) if employee_id else query.filter(false())
 
+        if role == "Regional Manager":
+            regions = {str(value).strip().casefold() for value in scope.get("accessible_regions", []) if str(value).strip()}
+            if not regions:
+                return query.filter(false())
+            row_region = func.lower(func.coalesce(PerformanceRecord.region, Employee.region, Team.region))
+            return query.filter(row_region.in_(regions))
+
+        if role == "Branch Director":
+            branches = {str(value).strip().casefold() for value in scope.get("accessible_branches", []) if str(value).strip()}
+            return query.filter(func.lower(PerformanceRecord.branch_key).in_(branches)) if branches else query.filter(false())
+
         if role != "Manager":
+            return query
+
+        if scope.get("has_unrestricted_team_access"):
             return query
 
         accessible_teams = _expanded_scope_team_values(scope.get("accessible_teams"))
@@ -124,6 +138,8 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
         year: int | None = None,
         position: str | None = None,
         region: str | None = None,
+        branch: str | None = None,
+        score_lt: float | None = None,
         periods: list[tuple[int, str]] | None = None,
         employee_search: str | None = None,
     ):
@@ -164,6 +180,14 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
         if region:
             region_value = func.lower(func.coalesce(PerformanceRecord.region, Employee.region))
             query = query.filter(region_value == str(region).casefold())
+        if branch:
+            query = query.filter(func.lower(PerformanceRecord.branch_key) == str(branch).strip().casefold())
+        if score_lt is not None:
+            normalized_score = case(
+                (and_(PerformanceRecord.score > 0, PerformanceRecord.score <= 10), PerformanceRecord.score * 100),
+                else_=PerformanceRecord.score,
+            )
+            query = query.filter(normalized_score < score_lt)
         if periods:
             period_clauses = [
                 and_(PerformanceRecord.year == period_year, PerformanceRecord.month == period_month)
@@ -172,12 +196,12 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
             query = query.filter(or_(*period_clauses)) if period_clauses else query.filter(false())
         return query
 
-    def get_option_rows(self) -> list[dict[str, object]]:
+    def get_option_rows(self, scope: dict | None = None) -> list[dict[str, object]]:
         """Return only scalar dimensions needed by filter-option endpoints."""
         logical_team_name = func.coalesce(Team.display_name, Team.name)
         position_name = func.coalesce(PerformanceRecord.position_name, Employee.position_name)
         region_name = func.coalesce(PerformanceRecord.region, Employee.region)
-        rows = (
+        query = (
             self.db.query(
                 Employee.employee_id,
                 Employee.name,
@@ -187,14 +211,15 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
                 region_name.label("region_name"),
                 PerformanceRecord.performance_level,
                 position_name.label("position_name"),
+                PerformanceRecord.branch_key,
                 PerformanceRecord.grade,
                 PerformanceRecord.status,
             )
             .join(Employee, PerformanceRecord.employee_id == Employee.id)
             .join(Team, PerformanceRecord.team_id == Team.id)
             .filter(Team.team_level == "employee")
-            .all()
         )
+        rows = self._apply_scope(query, scope).all()
         return [
             {
                 "employee_id": str(employee_id),
@@ -205,6 +230,7 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
                 "region": str(region) if region else None,
                 "performance_level": str(performance_level),
                 "position": str(position) if position else None,
+                "branch_key": str(branch_key) if branch_key else None,
                 "grade": str(grade) if grade else None,
                 "status": str(status) if status else None,
             }
@@ -217,6 +243,7 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
                 region,
                 performance_level,
                 position,
+                branch_key,
                 grade,
                 status,
             ) in rows
@@ -248,6 +275,7 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
         year: int | None = None,
         position: str | None = None,
         region: str | None = None,
+        scope: dict | None = None,
     ) -> list[tuple[str, str, str, int]]:
         """Return lightweight dashboard record identifiers filtered in SQL."""
         logical_team_name = func.coalesce(Team.display_name, Team.name)
@@ -261,6 +289,8 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
         ).join(
             Team, PerformanceRecord.team_id == Team.id
         ).filter(Team.team_level == "employee")
+
+        query = self._apply_scope(query, scope)
 
         if team:
             normalized_team = _team_filter_values(team)
@@ -404,7 +434,9 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
         year: int | None = None,
         position: str | None = None,
         region: str | None = None,
+        branch: str | None = None,
         employee_search: str | None = None,
+        score_lt: float | None = None,
         kpi: str | None = None,
         sort: str = "name",
         cursor: dict | None = None,
@@ -424,6 +456,8 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
             year=year,
             position=position,
             region=region,
+            branch=branch,
+            score_lt=score_lt,
             employee_search=employee_search,
         )
         if kpi:
@@ -443,6 +477,13 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
         normalized_sort = str(sort or "name").strip().lower()
         if normalized_sort not in {"name", "score_desc", "score_asc"}:
             raise ValueError("sort must be name, score_desc, or score_asc")
+
+        # The reported total describes the full filtered result, not just the
+        # rows remaining after the current cursor.
+        if include_total:
+            total = query.order_by(None).count()
+        else:
+            total = None
 
         if cursor:
             if normalized_sort == "name":
@@ -471,11 +512,6 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
                         and_(same_score, name_key == last_name, employee_key == last_employee, record_key > last_record),
                     )
                 )
-
-        if include_total:
-            total = query.order_by(None).count()
-        else:
-            total = None
 
         if normalized_sort == "name":
             query = query.order_by(name_key.asc(), employee_key.asc(), record_key.asc())

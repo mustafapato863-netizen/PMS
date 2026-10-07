@@ -24,7 +24,12 @@ from models.models import (
 )
 from repositories.action_repository import ActionRepository
 from services.audit_service import AuditService
-from utils.report_scope import user_can_access_team, user_can_access_team_level
+from utils.report_scope import (
+    filter_records_by_scope,
+    user_can_access_region,
+    user_can_access_team,
+    user_can_access_team_level,
+)
 from utils.team_identity import logical_team_name
 
 
@@ -178,6 +183,7 @@ class CorrectiveActionService:
             "employee_id": action.employee.employee_id if action.employee else None,
             "employee_name": action.employee.name if action.employee else None,
             "team": display_team.display_name or display_team.name if display_team else None,
+            "branch_key": action.branch_key,
             "month": action.month,
             "year": action.year,
             "score": score,
@@ -208,8 +214,22 @@ class CorrectiveActionService:
         for action in self.actions.list_active():
             if action.employee_id is None or action.employee is None:
                 continue
+            if scope.get("role") in {"Agent", "Executive", "Employee"}:
+                if str(action.employee.employee_id) != str(scope.get("employee_id") or ""):
+                    continue
+                try:
+                    scoped_actions.append(self.serialize(action))
+                except Exception:
+                    logger.exception("Skipping unreadable corrective action %s", action.id)
+                continue
+            if scope.get("role") == "Branch Director" and action.branch_key not in scope.get("accessible_branches", []):
+                continue
             performance_record = self._performance_record_for_action(action)
             effective_team = self._effective_action_team(action, performance_record)
+            if scope.get("role") == "Regional Manager" and not self._regional_action_in_scope(
+                action, performance_record, scope
+            ):
+                continue
             if not effective_team or not user_can_access_team_level(
                 scope,
                 logical_team_name(effective_team),
@@ -230,12 +250,32 @@ class CorrectiveActionService:
 
     def ensure_employee_scope(self, employee_identifier: str, scope: dict) -> Employee:
         employee = self._employee(employee_identifier)
-        if not user_can_access_team_level(scope, logical_team_name(employee.team), employee.performance_level):
+        if scope.get("role") == "Branch Director":
+            allowed = set(scope.get("accessible_branches", []))
+            has_scoped_record = bool(
+                allowed
+                and self.db.query(PerformanceRecord.id)
+                .filter(PerformanceRecord.employee_id == employee.id, PerformanceRecord.branch_key.in_(allowed))
+                .first()
+            )
+            if not has_scoped_record:
+                raise PermissionError("The employee has no performance evidence in your assigned branches")
+        elif scope.get("role") in {"Agent", "Executive", "Employee"}:
+            if str(employee.employee_id) != str(scope.get("employee_id") or ""):
+                raise PermissionError("The employee is outside your self-only profile scope")
+        elif not user_can_access_team_level(scope, logical_team_name(employee.team), employee.performance_level):
             raise PermissionError("The employee is outside your authorized action scope")
         return employee
 
-    def get_history(self, employee_identifier: str) -> list[dict[str, Any]]:
+    def get_history(self, employee_identifier: str, scope: dict | None = None) -> list[dict[str, Any]]:
         employee = self._employee(employee_identifier)
+        if scope is not None:
+            self.ensure_employee_scope(employee_identifier, scope)
+            return [
+                action
+                for action in self.list_scoped(scope)
+                if str(action.get("employee_id") or "") == str(employee.employee_id)
+            ]
         return [self.serialize(action) for action in self.actions.list_active_by_employee(employee.id)]
 
     def save(
@@ -286,6 +326,7 @@ class CorrectiveActionService:
                 action.month = month
                 action.year = year or action.year
                 action.team_id = period_team.id
+                action.branch_key = period_record.branch_key if period_record else None
                 action.action_type = action_type
                 action.action_text = action_text
                 action.root_cause_note = manager_notes.strip() or None
@@ -296,6 +337,7 @@ class CorrectiveActionService:
                     id=parsed_action_id or uuid.uuid4(),
                     employee_id=employee.id,
                     team_id=period_team.id,
+                    branch_key=period_record.branch_key if period_record else None,
                     month=month,
                     year=year or dt.datetime.now().year,
                     action_type=action_type,
@@ -428,9 +470,11 @@ class CorrectiveActionService:
         return {"summary": summary, "actions": selected}
 
     def list_owners(self, scope: dict) -> list[dict[str, str]]:
+        if scope.get("role") in {"Regional Manager", "Branch Director", "Function Director", "Function Viewer", "Employee"}:
+            return []
         users = (
             self.db.query(User)
-            .filter(User.is_active.is_(True))
+            .filter(User.is_active.is_(True), User.role.in_(["Admin", "General Manager", "Manager", "Performance Team"]))
             .order_by(User.full_name.asc(), User.username.asc())
             .all()
         )
@@ -441,11 +485,17 @@ class CorrectiveActionService:
         ]
 
     def _follow_up_candidate(self, action: Action, scope: dict) -> dict[str, Any] | None:
+        if scope.get("role") == "Branch Director" and action.branch_key not in scope.get("accessible_branches", []):
+            return None
         record = None
         effective_team = None
         if action.employee_id is not None and action.due_date is not None and action.employee is not None:
             record = self._performance_record_for_action(action)
             effective_team = self._effective_action_team(action, record)
+            if scope.get("role") == "Regional Manager" and not self._regional_action_in_scope(
+                action, record, scope
+            ):
+                return None
             if not effective_team or not user_can_access_team_level(
                 scope,
                 logical_team_name(effective_team),
@@ -606,9 +656,9 @@ class CorrectiveActionService:
 
     def _assert_can_update_status(self, action: Action, scope: dict) -> None:
         role = scope.get("role")
-        if role in {"Executive", "Viewer"} or not scope:
+        if role in {"Executive", "Viewer", "Regional Manager", "Branch Director", "Function Director", "Employee"} or not scope:
             raise CorrectiveActionAccessError("You do not have permission to update this action")
-        if role in {"Admin", "General Manager"} or scope.get("has_unrestricted_team_access"):
+        if role in {"Admin", "General Manager", "Performance Team"} or scope.get("has_unrestricted_team_access"):
             return
         if action.owner_user_id and str(action.owner_user_id) == str(scope.get("user_id") or ""):
             return
@@ -659,7 +709,7 @@ class CorrectiveActionService:
 
     def _owner_covers_team(self, owner: User, scope: dict, team_name: str, performance_level: str | None) -> bool:
         level = performance_level or "Employee"
-        if owner.role == "Admin":
+        if owner.role in {"Admin", "Performance Team"}:
             return True
         if str(owner.id) == str(scope.get("user_id") or "") and user_can_access_team_level(scope, team_name, level):
             return True
@@ -682,12 +732,23 @@ class CorrectiveActionService:
         return user_can_access_team_level(owner_scope, team_name, level)
 
     def _can_access_plan(self, plan: PerformancePlan, scope: dict) -> bool:
-        if scope.get("role") in {"Admin", "General Manager"} or scope.get("has_unrestricted_team_access"):
+        role = scope.get("role")
+        if role in {"Admin", "General Manager", "Performance Team"} or scope.get("has_unrestricted_team_access"):
             return True
         team_name = logical_team_name(plan.team) if plan.team is not None else ""
-        if scope.get("role") == "Manager":
+        if role == "Branch Director":
+            return bool(plan.branch_key and plan.branch_key in scope.get("accessible_branches", []))
+        if role == "Regional Manager":
+            return user_can_access_region(scope, plan.region)
+        if role in {"Manager", "Function Director", "Function Viewer"}:
             return user_can_access_team_level(scope, team_name, plan.performance_level)
         return bool(plan.employee and str(plan.employee.employee_id) == str(scope.get("employee_id") or ""))
+
+    def _regional_action_in_scope(self, action: Action, record: PerformanceRecord | None, scope: dict) -> bool:
+        if record is not None:
+            return bool(filter_records_by_scope([record], scope))
+        plan = action.plan
+        return bool(plan and self._can_access_plan(plan, scope) and user_can_access_region(scope, plan.region))
 
     def _accessible_plan(self, plan_id: Any, scope: dict, employee: Employee, period_team: Team) -> PerformancePlan:
         parsed = self._uuid(str(plan_id))

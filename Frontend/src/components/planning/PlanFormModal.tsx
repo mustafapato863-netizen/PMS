@@ -3,6 +3,7 @@ import { ArrowLeft, ArrowRight, CheckCircle2, Loader2, X } from 'lucide-react';
 import type { PlanCreatePayload, PlanningOptions } from '../../features/planning/types';
 import { useInsightsWorkspace } from '../../hooks/api/useInsightsWorkspace';
 import { useCreatePlan } from '../../hooks/api/usePlanning';
+import { useUserRole } from '../../context/RoleContext';
 import OverlayPortal from '../common/OverlayPortal';
 
 const input = 'min-h-11 w-full rounded-xl border border-[var(--input-border)] bg-[var(--input-bg)] px-3 text-sm text-[var(--input-text)] outline-none focus:border-[var(--sgh-cyan-primary)] focus:ring-2 focus:ring-[var(--sgh-cyan-primary)]/20 transition-all';
@@ -24,6 +25,8 @@ function readDraft(): Record<string, unknown> {
 }
 
 function PlanFormModalContent({ options, onClose, onCreated }: Props) {
+  const { role } = useUserRole();
+  const canAssignBranch = role === 'Admin' || role === 'Performance Team';
   const [draft] = useState(readDraft);
   const dates = useMemo(() => {
     const now = new Date();
@@ -41,6 +44,7 @@ function PlanFormModalContent({ options, onClose, onCreated }: Props) {
     scopeType: draft.employee_id ? 'Employee' : draft.position ? 'Position' : 'Team',
     team: String(draft.team || options.teams[0] || ''),
     level: String(draft.performance_level || options.performance_levels[0] || 'Employee'),
+    branch: String(draft.branch_key || ''),
     position: String(draft.position || ''),
     employee: String(draft.employee_id || ''),
     start: dates.today,
@@ -167,6 +171,7 @@ function PlanFormModalContent({ options, onClose, onCreated }: Props) {
       scope_type: form.scopeType,
       team: form.team,
       performance_level: form.level,
+      branch_key: canAssignBranch && form.branch ? form.branch : undefined,
       position_name: form.position || undefined,
       employee_identifier: form.employee || undefined,
       period_start: form.start,
@@ -245,6 +250,7 @@ function PlanFormModalContent({ options, onClose, onCreated }: Props) {
               <label className="block"><span className="mb-1.5 block text-xs font-bold text-[var(--text-secondary)]">Scope type</span><select className={input} value={form.scopeType} onChange={(event) => set('scopeType', event.target.value)}>{['Team', 'Position', 'Employee', 'Management'].map((value) => <option key={value}>{value}</option>)}</select></label>
               <label className="block"><span className="mb-1.5 block text-xs font-bold text-[var(--text-secondary)]">Team</span><select className={input} value={form.team} onChange={(event) => set('team', event.target.value)}>{options.teams.map((value) => <option key={value}>{value}</option>)}</select></label>
               <label className="block"><span className="mb-1.5 block text-xs font-bold text-[var(--text-secondary)]">Performance level</span><select className={input} value={form.level} onChange={(event) => set('level', event.target.value)}>{options.performance_levels.map((value) => <option key={value}>{value}</option>)}</select></label>
+              {canAssignBranch && <label className="block"><span className="mb-1.5 block text-xs font-bold text-[var(--text-secondary)]">Branch scope (optional)</span><select className={input} value={form.branch} onChange={(event) => set('branch', event.target.value)}><option value="">All / not branch-specific</option>{(options.branches || ['dubai', 'sharjah', 'ajman', 'clinics']).map((value) => <option key={value} value={value}>{value.charAt(0).toUpperCase() + value.slice(1)}</option>)}</select></label>}
               {form.scopeType === 'Position' && <label className="block"><span className="mb-1.5 block text-xs font-bold text-[var(--text-secondary)]">Position</span><select className={input} value={form.position} onChange={(event) => set('position', event.target.value)}><option value="">Select</option>{options.positions.map((value) => <option key={value}>{value}</option>)}</select></label>}
               {form.scopeType === 'Employee' && <label className="block"><span className="mb-1.5 block text-xs font-bold text-[var(--text-secondary)]">Employee</span><select className={input} value={form.employee} onChange={(event) => set('employee', event.target.value)}><option value="">Select</option>{options.employees.filter((employee) => employee.team === form.team).map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}</select></label>}
               <label className="block"><span className="mb-1.5 block text-xs font-bold text-[var(--text-secondary)]">Owner</span><select className={input} value={form.owner} onChange={(event) => set('owner', event.target.value)}>{options.owners.map((owner) => <option key={owner.id} value={owner.id}>{owner.name}</option>)}</select></label>
@@ -295,7 +301,7 @@ function PlanFormModalContent({ options, onClose, onCreated }: Props) {
               <div className="rounded-2xl border border-[var(--border-light)] bg-[var(--bg-sunken)] p-5">
                 <CheckCircle2 className="text-emerald-500" />
                 <h3 className="mt-3 font-extrabold text-[var(--text-primary)]">Review plan</h3>
-                <p className="mt-1 font-semibold text-[var(--text-primary)]">{form.name} · {form.team} · {form.start} to {form.end}</p>
+                <p className="mt-1 font-semibold text-[var(--text-primary)]">{form.name} · {form.team}{form.branch ? ` · ${form.branch}` : ''} · {form.start} to {form.end}</p>
                 <p className="mt-1 text-sm text-[var(--text-muted)]">Baseline {form.baseline} {form.unit} → Current {form.current || form.baseline} {form.unit} → Target {form.target} {form.unit}; {linked.length} linked insight(s).</p>
                 <p className="mt-2 text-sm text-[var(--text-muted)]">Objective: {form.objective}</p>
               </div>

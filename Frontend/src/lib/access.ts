@@ -32,6 +32,11 @@ export type UnrestrictedTeamAccessUser = Pick<
 export const ROLE_ADMIN = 'Admin' as const;
 export const ROLE_GENERAL_MANAGER = 'General Manager' as const;
 export const ROLE_MANAGER = 'Manager' as const;
+export const ROLE_EMPLOYEE = 'Employee' as const;
+export const ROLE_PERFORMANCE_TEAM = 'Performance Team' as const;
+export const ROLE_REGIONAL_MANAGER = 'Regional Manager' as const;
+export const ROLE_BRANCH_DIRECTOR = 'Branch Director' as const;
+export const ROLE_FUNCTION_DIRECTOR = 'Function Director' as const;
 /**
  * Read-only role scoped to one or more functions (Executive + Function Summary v1).
  * Backend is adding it; CoS default: the stored string is "Function Viewer".
@@ -40,7 +45,22 @@ export const ROLE_MANAGER = 'Manager' as const;
 export const ROLE_FUNCTION_VIEWER = 'Function Viewer' as const;
 
 /** Role options offered in the Admin user form / filters, in display order. */
-export const USER_ROLE_OPTIONS: readonly AppRole[] = ['Admin', 'General Manager', 'Manager', ROLE_FUNCTION_VIEWER, 'Executive', 'Viewer', 'Agent'];
+export const USER_ROLE_OPTIONS: readonly AppRole[] = [
+  ROLE_ADMIN,
+  ROLE_MANAGER,
+  ROLE_EMPLOYEE,
+  ROLE_PERFORMANCE_TEAM,
+  ROLE_REGIONAL_MANAGER,
+  ROLE_BRANCH_DIRECTOR,
+  ROLE_FUNCTION_DIRECTOR,
+];
+export const USER_REGION_OPTIONS = ['UAE', 'EGY', 'Other'] as const;
+export const USER_BRANCH_OPTIONS = [
+  { key: 'dubai', label: 'Dubai' },
+  { key: 'sharjah', label: 'Sharjah' },
+  { key: 'ajman', label: 'Ajman' },
+  { key: 'clinics', label: 'Clinics' },
+] as const;
 
 export const isAdminRole = (role: RoleInput): boolean => role === ROLE_ADMIN;
 
@@ -48,11 +68,17 @@ export const isGeneralManagerRole = (role: RoleInput): boolean => role === ROLE_
 
 /** Admin or General Manager: may open the broad product pages (Reports, Insights, Planning, ...). */
 export const canAccessBroadAppPages = (role: RoleInput): boolean =>
-  isAdminRole(role) || isGeneralManagerRole(role);
+  isAdminRole(role) || isGeneralManagerRole(role) || isPerformanceTeamRole(role);
 
 export const isManagerRole = (role: RoleInput): boolean => role === ROLE_MANAGER;
 
-export const isFunctionViewerRole = (role: RoleInput): boolean => role === ROLE_FUNCTION_VIEWER;
+export const isFunctionViewerRole = (role: RoleInput): boolean =>
+  role === ROLE_FUNCTION_VIEWER || role === ROLE_FUNCTION_DIRECTOR;
+
+export const isPerformanceTeamRole = (role: RoleInput): boolean => role === ROLE_PERFORMANCE_TEAM;
+
+export const isScopedDirectorRole = (role: RoleInput): boolean =>
+  role === ROLE_REGIONAL_MANAGER || role === ROLE_BRANCH_DIRECTOR || role === ROLE_FUNCTION_DIRECTOR;
 
 /**
  * Corrective Actions: Admin, Executive, General Manager and Manager (Mustafa,
@@ -60,18 +86,19 @@ export const isFunctionViewerRole = (role: RoleInput): boolean => role === ROLE_
  * scopes `/api/corrective-actions/*` to the manager's teams).
  */
 export const canAccessCorrectiveActions = (role: RoleInput): boolean =>
-  role === 'Executive' || isManagerRole(role) || canAccessBroadAppPages(role);
+  role === 'Executive' || isManagerRole(role) || isScopedDirectorRole(role)
+  || isPerformanceTeamRole(role) || canAccessBroadAppPages(role);
 
 /** Planning: Admin, General Manager and Manager (team-scoped by the backend `view_plans` scope). */
 export const canAccessPlanning = (role: RoleInput): boolean =>
-  canAccessBroadAppPages(role) || isManagerRole(role);
+  canAccessBroadAppPages(role) || isManagerRole(role) || isScopedDirectorRole(role);
 
 /** Reports list: Admin, General Manager and Manager in the sidebar (route also admits Executive / Viewer). */
 export const canSeeReportsNav = (role: RoleInput): boolean =>
-  canAccessBroadAppPages(role) || isManagerRole(role) || isFunctionViewerRole(role);
+  canAccessBroadAppPages(role) || isManagerRole(role) || isFunctionViewerRole(role) || isScopedDirectorRole(role);
 
 /** Insights stays Admin / General Manager only (Mustafa, Executive v1). */
-export const canAccessInsights = (role: RoleInput): boolean => canAccessBroadAppPages(role);
+export const canAccessInsights = (role: RoleInput): boolean => canAccessBroadAppPages(role) || isScopedDirectorRole(role);
 
 /** Function Summary page: Admin, General Manager and Function Viewer (limited to its functions). */
 export const canAccessFunctionSummary = (role: RoleInput): boolean =>
@@ -82,20 +109,20 @@ export const canAccessFunctionSummary = (role: RoleInput): boolean =>
  * guards cannot drift apart; access.test.ts pins them.
  */
 export const ROUTE_ROLES = {
-  insights: ['Admin', 'General Manager'],
-  planning: ['Admin', 'General Manager', 'Manager'],
-  correctiveActions: ['Admin', 'Executive', 'General Manager', 'Manager'],
-  functionSummary: ['Admin', 'General Manager', ROLE_FUNCTION_VIEWER],
-  /** Saved-report library + preview (read). Function Viewer: backend must scope to its functions. */
-  reports: ['Admin', 'General Manager', 'Manager', 'Executive', 'Viewer', ROLE_FUNCTION_VIEWER],
+  insights: ['Admin', 'General Manager', 'Performance Team', 'Regional Manager', 'Branch Director', 'Function Director'],
+  planning: ['Admin', 'General Manager', 'Manager', 'Performance Team', 'Regional Manager', 'Branch Director', 'Function Director'],
+  correctiveActions: ['Admin', 'Executive', 'General Manager', 'Manager', 'Performance Team', 'Regional Manager', 'Branch Director', 'Function Director'],
+  functionSummary: ['Admin', 'General Manager', 'Performance Team', ROLE_FUNCTION_VIEWER, ROLE_FUNCTION_DIRECTOR],
+  /** Saved-report library + preview (read). Legacy and new scoped roles are API-filtered. */
+  reports: ['Admin', 'General Manager', 'Manager', 'Executive', 'Viewer', ROLE_FUNCTION_VIEWER, 'Performance Team', 'Regional Manager', 'Branch Director', 'Function Director'],
 } as const satisfies Record<string, readonly AppRole[]>;
 
 /** Which Executive Summary layout a role gets on `/executive`. */
 export type ExecutiveViewForRole = 'corporate' | 'managerial' | 'function';
 
 /**
- * Admin / GM → Corporate (full); Executive / Viewer → Corporate read-only;
- * Manager → Managerial (own team); Function Viewer → Function Summary.
+ * Admin / Performance Team → Corporate; scoped leaders see only their granted rows;
+ * Manager → Managerial (own team); Function Director → Function Summary.
  */
 export const executiveViewForRole = (role: RoleInput): ExecutiveViewForRole => {
   if (isManagerRole(role)) return 'managerial';
@@ -125,7 +152,7 @@ export const canAccessSettings = canAccessSettingsContent;
 
 /** Standalone Team Management page: Admin or General Manager. */
 export const canAccessTeamManagement = (role: RoleInput): boolean =>
-  isAdminRole(role) || isGeneralManagerRole(role);
+  isAdminRole(role) || isGeneralManagerRole(role) || isPerformanceTeamRole(role);
 
 /** Route-level check used by `RouteGuard`: a plain role allow-list. */
 export const canAccessRoute = ({
@@ -155,4 +182,4 @@ export const readHasUnrestrictedTeamAccess = (user?: UnrestrictedTeamAccessUser)
 export const hasAllTeamsScope = (
   role: RoleInput,
   user?: UnrestrictedTeamAccessUser,
-): boolean => isAdminRole(role) || isGeneralManagerRole(role) || readHasUnrestrictedTeamAccess(user);
+): boolean => isAdminRole(role) || isGeneralManagerRole(role) || isPerformanceTeamRole(role) || readHasUnrestrictedTeamAccess(user);

@@ -40,7 +40,7 @@ function AnimatedRoutes() {
   const location = useLocation();
   const { currentUser } = useAuth();
 
-  if (currentUser?.role === 'Agent') {
+  if (currentUser?.role === 'Agent' || currentUser?.role === 'Employee') {
     return (
       <AnimatePresence mode="wait">
         <Routes location={location} key={location.pathname}>
@@ -84,7 +84,7 @@ function AnimatedRoutes() {
         <Route
           path="/team-management"
           element={
-            <RouteGuard allowedRoles={['Admin', 'General Manager']}>
+          <RouteGuard allowedRoles={['Admin', 'General Manager', 'Performance Team']}>
               <Suspense fallback={<RouteLoadingFallback />}><TeamManagementView /></Suspense>
             </RouteGuard>
           }
@@ -105,7 +105,7 @@ function AnimatedRoutes() {
         <Route
           path="/reports/new"
           element={
-            <RouteGuard allowedRoles={['Admin', 'General Manager']}>
+          <RouteGuard allowedRoles={['Admin', 'General Manager', 'Performance Team']}>
               <Suspense fallback={<RouteLoadingFallback />}><ReportBuilderView /></Suspense>
             </RouteGuard>
           }
@@ -113,7 +113,7 @@ function AnimatedRoutes() {
         <Route
           path="/reports/:reportId/edit"
           element={
-            <RouteGuard allowedRoles={['Admin', 'General Manager']}>
+          <RouteGuard allowedRoles={['Admin', 'General Manager', 'Performance Team']}>
               <Suspense fallback={<RouteLoadingFallback />}><ReportBuilderView /></Suspense>
             </RouteGuard>
           }

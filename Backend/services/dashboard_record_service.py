@@ -403,10 +403,10 @@ class DashboardRecordService:
             
         return result
 
-    def list_option_rows(self) -> list[dict[str, object]]:
+    def list_option_rows(self, scope: dict | None = None) -> list[dict[str, object]]:
         """Return lightweight dimensions without loading KPI/config payloads."""
         sql_repository = self.sql_repository_cls(self.db, PerformanceRecord)
-        return sql_repository.get_option_rows()
+        return sql_repository.get_option_rows(scope)
 
     def list_kpi_options(self, scope: dict | None = None) -> list[str]:
         """Return authorized KPI keys without materializing dashboard records."""

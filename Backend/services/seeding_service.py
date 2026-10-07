@@ -45,6 +45,7 @@ from models.models import (
 )
 from data_cleaning.standard_mappings import calculate_achievement, calculate_grade
 from utils.performance_levels import normalize_performance_level
+from utils.branch_scope import explicit_branch_key
 from services.marketing_import_service import MarketingImportResult, MarketingImportService
 from utils.performance_status import status_for_grade
 from services.upload_record_collisions import (
@@ -679,6 +680,7 @@ class DatabaseSeeder:
                     existing.record_payload = json_safe(
                         record.model_copy(update={"year": year, "upload_id": upload_id}).model_dump(mode="json")
                     )
+                    existing.branch_key = explicit_branch_key(record)
                     db_record = existing
                 else:
                     db_record = DBPerformanceRecord(
@@ -694,6 +696,7 @@ class DatabaseSeeder:
                         grade=record.evaluation.grade,
                         status=self._status_for_record(record),
                         upload_id=upload_log_id,
+                        branch_key=explicit_branch_key(record),
                         record_payload=json_safe(
                             record.model_copy(update={"year": year, "upload_id": upload_id}).model_dump(mode="json")
                         ),

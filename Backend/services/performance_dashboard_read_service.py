@@ -468,6 +468,8 @@ class PerformanceDashboardReadService:
         employee_id: str | None = None,
         location: str = "all",
         employee_search: str | None = None,
+        branch: str | None = None,
+        score_lt: float | None = None,
         grade: str | None = None,
         status: str | None = None,
         sort: str = "name",
@@ -486,6 +488,8 @@ class PerformanceDashboardReadService:
             raise HTTPException(status_code=422, detail="sort must be name, score_desc, or score_asc")
         if str(location or "all").casefold() not in _LOCATION_KEYS:
             raise HTTPException(status_code=422, detail="location must be all, dubai, sharjah, ajman, or clinics")
+        if score_lt is not None and not 0 <= score_lt <= 100:
+            raise HTTPException(status_code=422, detail="score_lt must be between 0 and 100")
         cursor_data = decode_cursor(cursor)
         filters = {
             "period": period,
@@ -496,6 +500,8 @@ class PerformanceDashboardReadService:
             "employee_id": employee_id,
             "location": location,
             "employee_search": employee_search,
+            "branch": branch,
+            "score_lt": score_lt,
             "grade": grade,
             "status": status,
             "sort": sort,
@@ -521,7 +527,9 @@ class PerformanceDashboardReadService:
                 performance_level=performance_level,
                 position=position,
                 region=region,
+                branch=branch,
                 employee_search=employee_search,
+                score_lt=score_lt,
                 grade=grade,
                 status=status,
                 kpi=kpi,
@@ -547,6 +555,10 @@ class PerformanceDashboardReadService:
                 kpi=kpi,
             )
             resolved = _active_records(all_rows, location)
+            if branch:
+                resolved = [row for row in resolved if str(getattr(row, "branch_key", "") or "").strip().casefold() == str(branch).strip().casefold()]
+            if score_lt is not None:
+                resolved = [row for row in resolved if _score(row) < score_lt]
             if sort == "score_desc":
                 resolved.sort(key=lambda row: (-_score(row), str(row.employee_name).casefold(), str(row.employee_id).casefold(), str(row.id).casefold()))
             elif sort == "score_asc":

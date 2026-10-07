@@ -196,7 +196,8 @@ def _seed_teams(db_session, names=("Inbound", "Outbound", "Marketing")) -> list[
 class TestGeneralManagerConstantsAndSeed:
     def test_role_constant_and_roles_list(self):
         assert settings.ROLE_GENERAL_MANAGER == "General Manager"
-        assert "General Manager" in settings.ROLES
+        assert "General Manager" not in settings.ROLES
+        assert "General Manager" in settings.LEGACY_ROLES
         assert settings.ROLE_ADMIN in settings.ROLES
 
     def test_permission_matrix_excludes_settings_admin_powers(self):

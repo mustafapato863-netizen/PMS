@@ -156,7 +156,10 @@ class TestEmployeeRouter:
             assert data["employee"]["id"] == "EMP001"
             assert [row["month"] for row in data["performance_history"]] == ["January", "June"]
             mock_dashboard_service.return_value.list_records.assert_called_once_with(employee_id="EMP001")
-            mock_action_service.return_value.get_history.assert_called_once_with("EMP001")
+            mock_action_service.return_value.get_history.assert_called_once()
+            history_args = mock_action_service.return_value.get_history.call_args.args
+            assert history_args[0] == "EMP001"
+            assert history_args[1]["role"] == "Viewer"
 
     def test_create_employee(self):
         with patch("api.routers.employee.EmployeeDirectoryService") as mock_service:

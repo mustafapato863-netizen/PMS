@@ -1,6 +1,7 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { useState } from 'react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ResponsiveFilters from './ResponsiveFilters';
 
 describe('ResponsiveFilters', () => {
@@ -41,6 +42,33 @@ describe('ResponsiveFilters', () => {
 
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Team filters' })).not.toBeInTheDocument());
     expect(launcher).toHaveFocus();
+  });
+
+  it('clears active filters from the icon without closing the filter panel', async () => {
+    const user = userEvent.setup();
+    const onClear = vi.fn();
+    function ClearableFilters() {
+      const [active, setActive] = useState(true);
+      return <ResponsiveFilters activeCount={active ? 2 : 0} clearableCount={active ? 2 : 0} onClear={() => { onClear(); setActive(false); }}><p>Filter controls</p></ResponsiveFilters>;
+    }
+    render(<ClearableFilters />);
+
+    await user.click(screen.getByRole('button', { name: /Filters, 2 active filters/i }));
+    await user.click(screen.getByRole('button', { name: 'Clear filters' }));
+
+    expect(onClear).toHaveBeenCalledOnce();
+    expect(screen.getByRole('dialog', { name: 'Filters' })).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Clear filters' })).not.toBeInTheDocument());
+    expect(within(screen.getByRole('dialog', { name: 'Filters' })).getByRole('button', { name: 'Close filters' })).toHaveFocus();
+  });
+
+  it('does not show a clear icon when no optional filters are active', async () => {
+    const user = userEvent.setup();
+    render(<ResponsiveFilters activeCount={1} clearableCount={0} onClear={() => {}} label="Function filters"><p>Locked function</p></ResponsiveFilters>);
+
+    await user.click(screen.getByRole('button', { name: /Function filters/ }));
+
+    expect(screen.queryByRole('button', { name: 'Clear filters' })).not.toBeInTheDocument();
   });
 
   it('lets the launcher move, keeps it in the viewport, and remembers its new position', async () => {

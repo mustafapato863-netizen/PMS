@@ -159,6 +159,15 @@ class CollectedReport:
 
 
 class ReportService:
+    _PEOPLE_REPORT_ROLES = {
+        "Admin",
+        "General Manager",
+        "Manager",
+        "Performance Team",
+        "Regional Manager",
+        "Branch Director",
+        "Function Director",
+    }
     def __init__(self, db: Session, record_service: DashboardRecordService | None = None):
         self.db = db
         self.record_service = record_service or DashboardRecordService(db)
@@ -353,7 +362,7 @@ class ReportService:
         # level. Managers keep only levels present in their authorized rows.
         if role in {"Admin", "General Manager", "Executive", "Viewer"} or scope.get("has_unrestricted_team_access"):
             performance_levels.update(PERFORMANCE_LEVELS)
-        can_view_people = role in {"Admin", "General Manager", "Manager"}
+        can_view_people = role in self._PEOPLE_REPORT_ROLES
         can_view_actions = role == "Admin" or "view_actions" in PERMISSION_MATRIX.get(role, [])
         can_export = "export_data" in PERMISSION_MATRIX.get(role, [])
         return {
@@ -389,7 +398,7 @@ class ReportService:
     def _validate_scope(self, configuration: ReportConfiguration, scope: dict) -> None:
         original_role = str(scope.get("report_role") or scope.get("role") or "Viewer")
         effective_scope = self._effective_scope(scope)
-        if configuration.employee_id and original_role not in {"Admin", "General Manager", "Manager"}:
+        if configuration.employee_id and original_role not in self._PEOPLE_REPORT_ROLES:
             raise ReportAccessError("This role can only view aggregate reporting data")
         if configuration.report_type == "corrective_actions" and original_role != "Admin" and "view_actions" not in PERMISSION_MATRIX.get(original_role, []):
             raise ReportAccessError("This role cannot view corrective-action details")
@@ -1855,7 +1864,7 @@ class ReportService:
             "table_preview": data.rows[:5],
             "preview_redacted": self._is_aggregate_scope(scope),
             "capabilities": {
-                "can_view_people": str(scope.get("role") or "") in {"Admin", "General Manager", "Manager"},
+                "can_view_people": str(scope.get("role") or "") in self._PEOPLE_REPORT_ROLES,
                 "can_view_actions": (
                     str(scope.get("role") or "Viewer") == "Admin"
                     or "view_actions" in PERMISSION_MATRIX.get(str(scope.get("role") or "Viewer"), [])
