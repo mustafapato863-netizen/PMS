@@ -29,6 +29,7 @@ from services.balanced_scorecard_service import BalancedScorecardService
 from services.bsc_template_service import bsc_template_service
 from services.management_bsc_service import ManagementBSCService, ManagementBSCSchemaError
 from services.dashboard_record_service import DashboardRecordService
+from services.insights_service import InsightsService
 from api.middleware.rbac_middleware import require_permission
 from services.upload_security import read_validated_excel
 from models.report_schemas import MONTHS
@@ -276,6 +277,32 @@ def get_all_records(
             success=False,
             message=f"Failed to fetch performance records: {e}"
         )
+
+
+@router.get("/summary-records", response_model=StandardResponse)
+def get_summary_records(
+    request: Request,
+    db: Session = Depends(get_db),
+    employee_id: str | None = Query(None),
+):
+    """Authorized employee and management evidence for summary and 360 views."""
+    scope = require_authenticated_scope(db, request)
+    service = InsightsService(
+        performance_repo,
+        planning_service,
+        db=db,
+        record_service=DashboardRecordService(db, sql_repository_cls=SQLPerformanceRepository),
+    )
+    records, _ = service.authorized_records(scope)
+    data = []
+    for record in records:
+        payload = dict(record) if isinstance(record, dict) else record.model_dump(mode="json")
+        if employee_id and str(payload.get("employee_id")) != employee_id:
+            continue
+        if (payload.get("evaluation") or {}).get("score") is None:
+            continue
+        data.append(payload)
+    return StandardResponse(success=True, message="Authorized summary evidence retrieved", data=data)
 
 
 @router.get("/catalog", response_model=StandardResponse)

@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'r
 import { AnimatePresence } from 'framer-motion';
 import Sidebar from './components/common/Sidebar';
 import Header from './components/common/Header';
+import BackToTop from './components/common/BackToTop';
 import { AuthProvider } from './context/AuthContext';
 import { useAuth } from './context/auth';
 import { RoleProvider } from './context/RoleContext';
@@ -247,6 +248,7 @@ function AppContent() {
           <AnimatedRoutes />
         </div>
       </main>
+      <BackToTop />
 
     </div>
   );

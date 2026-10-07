@@ -1,11 +1,10 @@
 import './PageEnhancements.css';
-import BackToTop from '../components/common/BackToTop';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   AlertCircle, AlertTriangle, ArrowRight, ArrowUpRight,
   ChevronLeft, ChevronRight, DatabaseZap,
-  Download, Eye, Filter, Loader2, RefreshCw, SearchX,
+  Download, Eye, Loader2, RefreshCw, SearchX,
   Share2, Sparkles, Target, TrendingDown, TrendingUp, X,
 } from 'lucide-react';
 import InsightDetailDrawer from '../components/insights/InsightDetailDrawer';
@@ -341,7 +340,6 @@ export default function InsightsView() {
     historyMode.current = 'push';
     setFilters(value);
   };
-  const [showAdditional, setShowAdditional] = useState(false);
   const [drawerInsight, setDrawerInsight] = useState<InsightItem | null>(null);
   const [focusedInsightId, setFocusedInsightId] = useState<string | null>(null);
   const [analysisTab, setAnalysisTab] = useState<'all' | InsightSeverity>('all');
@@ -657,6 +655,17 @@ export default function InsightsView() {
   const functionOptions = functionOptionsFor(workspace.options).map((value) => ({ value, label: value }));
   const teamOptions = teamOptionsFor(workspace.options.teams, filters.teamFunction, workspace.options.team_functions).map((value) => ({ value, label: value }));
   const filterKey = JSON.stringify(filters);
+  const additionalActiveCount = [filters.position, filters.kpi, filters.severity, filters.insightType, filters.status].filter(Boolean).length;
+  const additionalFilterControls = (
+    <div className="responsive-filter-content responsive-filter-content--insights-extra">
+      <FilterSelect label="Position" value={filters.position || ''} onChange={(value) => { update('position', value); update('employeeId', ''); }} allLabel="All positions" options={workspace.options.positions.map((value) => ({ value, label: value }))} />
+      <FilterSelect label="KPI" value={filters.kpi || ''} onChange={(value) => update('kpi', value)} allLabel="All KPIs" options={workspace.options.kpis.map((kpi) => ({ value: kpi.key, label: kpi.label }))} />
+      <FilterSelect label="Severity" value={filters.severity || ''} onChange={(value) => update('severity', value)} allLabel="All severities" options={workspace.options.severities.map((value) => ({ value, label: value.replace('_', ' ') }))} />
+      <FilterSelect label="Insight type" value={filters.insightType || ''} onChange={(value) => update('insightType', value)} allLabel="All types" options={workspace.options.insight_types.map((value) => ({ value, label: value.replace('_', ' ') }))} />
+      <FilterSelect label="Status" value={filters.status || ''} onChange={(value) => update('status', value)} allLabel="All statuses" options={workspace.options.statuses.map((value) => ({ value, label: value.replace('_', ' ') }))} />
+      <button type="button" onClick={clearAnalysis} className="min-h-11 rounded-xl border border-[var(--input-border)] px-4 text-sm font-bold text-[var(--text-secondary)] hover:text-red-600">Clear analysis</button>
+    </div>
+  );
 
   return (
     <div className="app-page-shell rf-page rf-page--insights insights-page [--app-section-gap:16px] [--rf-page-gap:16px]">
@@ -685,6 +694,8 @@ export default function InsightsView() {
             kpi: undefined,
           }));
         }}
+        additionalFilters={additionalFilterControls}
+        additionalActiveCount={additionalActiveCount}
       />
 
       {/* Existing secondary controls kept from the previous Insights page (not part of Figma 18:3). */}
@@ -693,11 +704,9 @@ export default function InsightsView() {
           {query.isFetching && <Loader2 size={14} className="animate-spin text-[var(--insights-accent)]" aria-label="Refreshing insights" />}
           {shareNotice && <span role="status" className="font-bold text-[var(--insights-accent-text)]">{shareNotice}</span>}
           {exportError && <span role="alert" className="font-bold text-rose-600">{exportError}</span>}
-          <button type="button" aria-expanded={showAdditional} onClick={() => setShowAdditional((value) => !value)} className="inline-flex h-[32px] items-center gap-1.5 rounded-[8px] border border-[var(--insights-card-border)] bg-[var(--bg-surface)] px-3 font-semibold text-[var(--text-secondary)] transition hover:border-[var(--insights-accent-border)]"><Filter size={14} /> More filters {activeFilterEntries.length > 0 && <span className="grid h-5 min-w-5 place-items-center rounded-full bg-[var(--insights-accent)] px-1 text-[10px] text-white">{activeFilterEntries.length}</span>}</button>
           <button type="button" onClick={() => void handleShare()} className="inline-flex h-[32px] items-center gap-1.5 rounded-[8px] border border-[var(--insights-card-border)] bg-[var(--bg-surface)] px-3 font-semibold text-[var(--text-secondary)] transition hover:border-[var(--insights-accent-border)]"><Share2 size={14} /> Share</button>
           <button type="button" onClick={() => void handleExport()} disabled={exportState === 'exporting'} className="inline-flex h-[32px] items-center gap-1.5 rounded-[8px] border border-[var(--insights-accent-border)] bg-[var(--insights-accent-soft)] px-3 font-semibold text-[var(--insights-accent-text)] transition hover:border-[var(--insights-accent)] disabled:cursor-wait disabled:opacity-70">{exportState === 'exporting' ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} {exportState === 'exporting' ? 'Exporting PPTX…' : 'Export PowerPoint'}</button>
         </div>
-        {showAdditional && <div className="grid gap-2 rounded-[12px] border border-[var(--insights-card-border)] bg-[var(--bg-surface)] p-4 sm:grid-cols-2 xl:grid-cols-6"><FilterSelect label="Position" value={filters.position || ''} onChange={(value) => { update('position', value); update('employeeId', ''); }} allLabel="All positions" options={workspace.options.positions.map((value) => ({ value, label: value }))} /><FilterSelect label="KPI" value={filters.kpi || ''} onChange={(value) => update('kpi', value)} allLabel="All KPIs" options={workspace.options.kpis.map((kpi) => ({ value: kpi.key, label: kpi.label }))} /><FilterSelect label="Severity" value={filters.severity || ''} onChange={(value) => update('severity', value)} allLabel="All severities" options={workspace.options.severities.map((value) => ({ value, label: value.replace('_', ' ') }))} /><FilterSelect label="Insight type" value={filters.insightType || ''} onChange={(value) => update('insightType', value)} allLabel="All types" options={workspace.options.insight_types.map((value) => ({ value, label: value.replace('_', ' ') }))} /><FilterSelect label="Status" value={filters.status || ''} onChange={(value) => update('status', value)} allLabel="All statuses" options={workspace.options.statuses.map((value) => ({ value, label: value.replace('_', ' ') }))} /><button type="button" onClick={clearAnalysis} className="min-h-11 rounded-xl border border-[var(--input-border)] px-4 text-sm font-bold text-[var(--text-secondary)] hover:text-red-600">Clear analysis</button></div>}
         {activeFilterEntries.length > 0 && <div className="flex flex-wrap items-center gap-2"><span className="mr-1 text-[10px] font-black uppercase tracking-[0.14em] text-[var(--text-faint)]">{analysisDepth}</span>{activeFilterEntries.map((entry) => <button key={entry.key} type="button" onClick={() => clearFilter(entry.key)} className="inline-flex items-center gap-1.5 rounded-full border border-[var(--insights-accent-border)] bg-[var(--insights-accent-soft)] px-2.5 py-1 text-[11px] font-bold text-[var(--insights-accent-text)] hover:border-[var(--insights-accent)]">{entry.label}: {entry.value}<X size={12} /></button>)}<button type="button" onClick={clearAnalysis} className="ml-auto text-[11px] font-bold text-[var(--text-muted)] hover:text-rose-600">Reset analysis</button></div>}
       </div>
 
@@ -931,7 +940,6 @@ export default function InsightsView() {
           <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-0.5 border-4 border-transparent border-t-slate-900/95 dark:border-t-slate-800/95" />
         </div>
       )}
-      <BackToTop />
     </div>
   );
 }

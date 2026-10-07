@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom';
 import type { ExecutiveCorrectiveActions, ExecutivePeriod } from '../../../features/executive/types';
 import { fmtDate } from '../../../features/executive/format';
 import { actionStatus } from './execModel';
+import { ActionStatusMenu } from '../../actions/ActionStatusMenu';
+import type { ActionStatus } from '../../../types';
 import { ExecCard, ExecCardHeader, SoftEmpty, StatusPill } from './ExecPrimitives';
 
 function Tile({ label, value, icon: Icon, color }: { label: string; value: number | null; icon: LucideIcon; color: string }) {
@@ -18,14 +20,18 @@ function Tile({ label, value, icon: Icon, color }: { label: string; value: numbe
 }
 
 
-export default function CorrectiveActionsCard({ data, effective, variant, canCreate }: {
+export default function CorrectiveActionsCard({ data, effective, variant, canCreate, scopeLabel, canEdit = false, onStatusChange }: {
   data: ExecutiveCorrectiveActions | null;
   effective: ExecutivePeriod | null;
-  variant: 'company' | 'team';
+  variant: 'company' | 'team' | 'function';
   canCreate?: boolean;
+  scopeLabel?: string;
+  canEdit?: boolean;
+  onStatusChange?: (id: string, update: { status: ActionStatus; completion_note?: string }) => Promise<unknown>;
 }) {
   const title = variant === 'team' ? 'My corrective actions' : 'Corrective actions';
-  const scope = variant === 'team' ? 'Your team' : 'Company-wide';
+  const scope = scopeLabel ?? (variant === 'team' ? 'Your team' : 'Company-wide');
+  const workspaceHref = variant === 'function' && scopeLabel ? `/corrective-actions?function=${encodeURIComponent(scopeLabel)}` : '/corrective-actions';
   const head = 'text-[10px] font-semibold uppercase tracking-[0.6px] text-[var(--text-muted)]';
   const action = (
     <div className="flex flex-wrap gap-[8px]">
@@ -34,7 +40,7 @@ export default function CorrectiveActionsCard({ data, effective, variant, canCre
           <Plus aria-hidden="true" className="size-[13px]" strokeWidth={2} />New action
         </Link>
       )}
-      <Link to="/corrective-actions" className="inline-flex shrink-0 items-center rounded-[8px] border border-[var(--insights-accent-border)] bg-[var(--insights-accent-soft)] px-[10px] py-[6px] text-[12px] font-semibold text-[var(--insights-accent-text)]">{variant === 'team' ? 'View all' : 'Open Corrective Actions'}</Link>
+      <Link to={workspaceHref} className="inline-flex shrink-0 items-center rounded-[8px] border border-[var(--insights-accent-border)] bg-[var(--insights-accent-soft)] px-[10px] py-[6px] text-[12px] font-semibold text-[var(--insights-accent-text)]">{variant === 'team' ? 'View all' : 'Open Corrective Actions'}</Link>
     </div>
   );
   return (
@@ -56,7 +62,7 @@ export default function CorrectiveActionsCard({ data, effective, variant, canCre
             <Tile label="Open" value={data.summary.open} icon={Inbox} color="var(--insights-heading)" />
             <Tile label="Overdue" value={data.summary.overdue} icon={AlertTriangle} color="var(--insights-negative)" />
             <Tile label="Due this week" value={data.summary.due_this_week} icon={Clock} color="var(--exec-warning)" />
-            {variant === 'company' && <Tile label={`Closed in ${effective?.month ?? 'month'}`} value={data.summary.closed_in_month} icon={CheckCircle2} color="var(--insights-positive)" />}
+            {variant !== 'team' && <Tile label={`Closed in ${effective?.month ?? 'month'}`} value={data.summary.closed_in_month} icon={CheckCircle2} color="var(--insights-positive)" />}
           </div>
           {variant === 'team' && data.actions.length ? (
             <ul aria-label={title} className="flex flex-col">
@@ -65,11 +71,12 @@ export default function CorrectiveActionsCard({ data, effective, variant, canCre
                 return (
                   <li key={item.id} className="flex items-center gap-[12px] border-b border-[var(--insights-row-border)] py-[10px] last:border-b-0" data-testid="action-row">
                     <span className="flex min-w-0 flex-1 flex-col gap-[2px]">
-                      <span className="truncate text-[13px] font-semibold text-[var(--insights-heading)]">{item.title}</span>
+                          <Link to={item.employee_id ? `/employee/${encodeURIComponent(item.employee_id)}${item.month ? `?month=${encodeURIComponent(item.month)}` : ''}` : workspaceHref} className="truncate text-[13px] font-semibold text-[var(--insights-heading)] hover:underline">{item.title}</Link>
                       <span className="truncate text-[11px] text-[var(--text-muted)]">{item.employee_name || 'Whole team'}</span>
                     </span>
                     <span className="flex shrink-0 flex-col items-end gap-[3px]">
                       <StatusPill tone={status.tone} icon={status.icon}>{status.label}</StatusPill>
+                      {canEdit && onStatusChange && <ActionStatusMenu status={item.status} canEdit ariaLabel={`Status for ${item.title}`} compact onChange={(update) => onStatusChange(item.id, update)} />}
                       <span className="text-[11px]" style={{ color: status.tone === 'danger' ? 'var(--insights-negative)' : 'var(--text-muted)' }}>Due {fmtDate(item.due_date)}</span>
                     </span>
                   </li>
@@ -89,11 +96,11 @@ export default function CorrectiveActionsCard({ data, effective, variant, canCre
                 const status = actionStatus(item);
                 return (
                   <div role="row" key={item.id} className="flex items-center gap-[12px] border-b border-[var(--insights-row-border)] px-[12px] py-[10px] last:border-b-0" data-testid="action-row">
-                    <span role="cell" className="min-w-0 flex-1 truncate text-[13px] font-medium text-[var(--insights-heading)]">{item.title}{item.employee_name ? ` — ${item.employee_name}` : ''}</span>
+                    <span role="cell" className="min-w-0 flex-1 truncate text-[13px] font-medium text-[var(--insights-heading)]"><Link to={item.employee_id ? `/employee/${encodeURIComponent(item.employee_id)}${item.month ? `?month=${encodeURIComponent(item.month)}` : ''}` : workspaceHref} className="hover:underline">{item.title}{item.employee_name ? ` — ${item.employee_name}` : ''}</Link></span>
                     <span role="cell" className="hidden w-[200px] truncate text-[12px] text-[var(--text-secondary)] md:block">{[item.team, item.region].filter(Boolean).join(' · ') || '—'}</span>
                     <span role="cell" className="hidden w-[140px] truncate text-[12px] text-[var(--text-secondary)] lg:block">{item.owner?.name ?? 'Unassigned'}</span>
                     <span role="cell" className="w-[90px] text-right text-[12px]" style={{ color: status.tone === 'danger' ? 'var(--insights-negative)' : 'var(--text-secondary)' }}>{fmtDate(item.due_date)}</span>
-                    <span role="cell" className="w-[130px]"><StatusPill tone={status.tone} icon={status.icon}>{status.label}</StatusPill></span>
+                    <span role="cell" className="flex w-[130px] flex-col items-start gap-[4px]"><StatusPill tone={status.tone} icon={status.icon}>{status.label}</StatusPill>{canEdit && onStatusChange && <ActionStatusMenu status={item.status} canEdit ariaLabel={`Status for ${item.title}`} compact onChange={(update) => onStatusChange(item.id, update)} />}</span>
                   </div>
                 );
               })}

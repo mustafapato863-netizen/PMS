@@ -38,7 +38,7 @@ const CHECKLIST = [
   ['Function scorecards', 'Call Center, RCM, Pre-Approvals, Marketing — click through to Function Summary'],
   ['Region split', 'EGY vs UAE score, grade, gap and headcount'],
   ['Direction-aware drivers', 'Top 3 negative and positive KPI movements (↑/↓ better)'],
-  ['Teams at risk + grade mix', 'Grade D/E or falling 2 months; A–E distribution with movement'],
+  ['Teams at risk + grade mix', 'Grade C/D/E or falling 2 months; A–E distribution with movement'],
   ['Corrective actions', 'Open, overdue and due-this-week with the most urgent items'],
 ];
 

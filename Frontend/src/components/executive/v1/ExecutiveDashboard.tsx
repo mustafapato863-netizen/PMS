@@ -10,12 +10,13 @@ import DriversCard from './DriversCard';
 import RegionSplitCard from './RegionSplitCard';
 import TeamsAtRiskCard from './TeamsAtRiskCard';
 import GradeDistributionCard from './GradeDistributionCard';
-import CorrectiveActionsCard from './CorrectiveActionsCard';
+import CorrectiveActionInsightsCard from './CorrectiveActionInsightsCard';
 import TeamKpiTable from './TeamKpiTable';
 import { PeopleToReviewCard, TopPerformersCard } from './PeopleCards';
 import LevelBreakdownCard from './LevelBreakdownCard';
 import { TeamLeaderboardCard, TeamsNeedingAttentionCard } from './FunctionTeamsCards';
 import { FallbackNotice, ScopeBanner } from './ExecutiveStates';
+import EmployeesBelowTargetCard from './EmployeesBelowTargetCard';
 
 export interface ExecutiveDashboardPermissions {
   /** Function cards link to /function-summary/:slug. */
@@ -27,7 +28,7 @@ export interface ExecutiveDashboardPermissions {
   canCreateActions: boolean;
 }
 
-export default function ExecutiveDashboard({ summary, permissions, exportSlot = null, functionBreakdownSlot = null }: { summary: ExecutiveSummary; permissions: ExecutiveDashboardPermissions; exportSlot?: ReactNode; functionBreakdownSlot?: ReactNode }) {
+export default function ExecutiveDashboard({ summary, permissions, functionBreakdownSlot = null }: { summary: ExecutiveSummary; permissions: ExecutiveDashboardPermissions; functionBreakdownSlot?: ReactNode }) {
   const { period, scope } = summary;
   const previous = period.previous;
   const notice = period.fallback_applied && period.notice ? <FallbackNotice notice={period.notice} /> : null;
@@ -46,14 +47,13 @@ export default function ExecutiveDashboard({ summary, permissions, exportSlot = 
         {notice}
         <ExecutiveHero summary={summary} />
         <TeamKpiTable rows={summary.kpis} effective={period.effective} previous={previous} score={summary.hero.score} reportHref={team ? `/team/${encodeURIComponent(team)}` : null} />
+        <EmployeesBelowTargetCard summary={summary} />
         <div className="grid gap-[16px] xl:grid-cols-[minmax(0,1fr)_minmax(0,360px)]">
           <PeopleToReviewCard people={summary.people} team={team} previous={previous} rosterHref={team ? `/team/${encodeURIComponent(team)}` : null} />
           <TopPerformersCard people={summary.people} previous={previous} />
         </div>
-        <div className="grid gap-[16px] xl:grid-cols-2">
-          <LevelBreakdownCard levels={summary.levels} />
-          {permissions.canSeeActions && <CorrectiveActionsCard data={summary.corrective_actions} effective={period.effective} variant="team" canCreate={permissions.canCreateActions} />}
-        </div>
+        <LevelBreakdownCard levels={summary.levels} />
+        {permissions.canSeeActions && <CorrectiveActionInsightsCard data={summary.corrective_actions} effective={period.effective} scopeLabel={team ?? 'Your team'} />}
       </div>
     );
   }
@@ -78,15 +78,14 @@ export default function ExecutiveDashboard({ summary, permissions, exportSlot = 
           subtitle={`Headcount-weighted across ${fn} teams${period.effective ? ` · ${period.effective.month} ${period.effective.year}` : ''}`}
           showTeams
         />
+        <EmployeesBelowTargetCard summary={summary} />
         {functionBreakdownSlot}
         <div className="grid gap-[16px] xl:grid-cols-[minmax(0,1fr)_minmax(0,400px)]">
           <DriversCard summary={summary} viewAllHref={permissions.canOpenInsights ? `/insights?function=${encodeURIComponent(fn)}${period.effective ? `&period=${period.effective.key}` : ''}` : null} title={`What moved ${fn}${vs}`} />
           <RegionSplitCard regions={summary.regions} previous={previous} />
         </div>
-        <div className="grid gap-[16px] xl:grid-cols-2">
-          <LevelBreakdownCard levels={summary.levels} title="Level split" subtitle={`${fn} score by performance level`} />
-          {exportSlot}
-        </div>
+        <LevelBreakdownCard levels={summary.levels} title="Level split" subtitle={`${fn} score by performance level`} />
+        {permissions.canSeeActions && <CorrectiveActionInsightsCard data={summary.corrective_actions} effective={period.effective} scopeLabel={fn} />}
       </div>
     );
   }
@@ -101,6 +100,7 @@ export default function ExecutiveDashboard({ summary, permissions, exportSlot = 
       {summary.functions.length > 0 && (
         <FunctionCards cards={summary.functions} previous={previous} linkable={permissions.canOpenFunctions} />
       )}
+      <EmployeesBelowTargetCard summary={summary} />
       <div className="grid gap-[16px] xl:grid-cols-[minmax(0,1fr)_minmax(0,400px)]">
         <DriversCard summary={summary} viewAllHref={insightsHref} />
         <RegionSplitCard regions={summary.regions} previous={previous} />
@@ -110,7 +110,7 @@ export default function ExecutiveDashboard({ summary, permissions, exportSlot = 
         <GradeDistributionCard distribution={summary.grade_distribution} previous={previous} />
       </div>
       {permissions.canSeeActions && (
-        <CorrectiveActionsCard data={summary.corrective_actions} effective={period.effective} variant="company" />
+        <CorrectiveActionInsightsCard data={summary.corrective_actions} effective={period.effective} scopeLabel={scope.team ?? scope.function ?? 'Company-wide'} />
       )}
     </div>
   );

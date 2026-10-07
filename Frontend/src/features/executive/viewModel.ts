@@ -1,7 +1,15 @@
 /** Page-level helpers for the Executive / Function Summary headers. */
 import type { FilterOption } from '../../components/insights/overview/InsightsHeader';
 import { MONTHS, formatPeriod, periodOf } from './compose';
-import type { ExecutiveSummary, ExecutiveView } from './types';
+import type { ExecutivePerson, ExecutivePeriod, ExecutiveSummary, ExecutiveView } from './types';
+
+export function employeeProfilePath(person: ExecutivePerson, period: ExecutivePeriod | null) {
+  const params = new URLSearchParams();
+  if (period) { params.set('month', period.month); params.set('year', String(period.year)); }
+  if (person.performance_level) params.set('performance_level', person.performance_level);
+  const query = params.toString();
+  return `/employee/${encodeURIComponent(person.employee_id)}${query ? `?${query}` : ''}`;
+}
 
 export function currentPeriodKey(today = new Date()) {
   return periodOf(today.getFullYear(), MONTHS[today.getMonth()]).key;

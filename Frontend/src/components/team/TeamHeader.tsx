@@ -138,7 +138,7 @@ const TeamHeader = ({
           <Breadcrumb items={breadcrumbItems} />
         </div>
       </div>
-      <ResponsiveFilters activeCount={activeFilterCount} className="team-header-filters shrink-0">
+      <ResponsiveFilters activeCount={activeFilterCount}>
         <PerformanceLevelFilter value={performanceLevel} onChange={setPerformanceLevel} disabled={disabledPerformanceLevel} />
 
         {showPreApprovalsWorkflowFilter && setPreApprovalsWorkflow && (

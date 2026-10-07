@@ -102,13 +102,14 @@ export function gapTone(row: Pick<ExecutiveKpiRow, 'gap_value' | 'raw_gap' | 'kp
 export const FLAG_LABEL: Record<ExecutiveTeamFlag, string> = {
   grade_e: 'Grade E',
   grade_d: 'Grade D',
+  grade_c: 'Grade C',
   falling_2_months: 'Falling 2 mo',
   lowest_in_function: 'Lowest in function',
   kpi_worsening_2_months: 'KPI worsening 2 mo',
   below_function_avg: 'Below function avg',
 };
 
-export const FLAG_ORDER: ExecutiveTeamFlag[] = ['grade_e', 'grade_d', 'falling_2_months', 'lowest_in_function', 'kpi_worsening_2_months', 'below_function_avg'];
+export const FLAG_ORDER: ExecutiveTeamFlag[] = ['grade_e', 'grade_d', 'grade_c', 'falling_2_months', 'lowest_in_function', 'kpi_worsening_2_months', 'below_function_avg'];
 
 export function atRiskTeams(teams: ExecutiveTeam[], limit = 4) {
   return teams.filter(isAtRisk).sort((l, r) => (l.score ?? 0) - (r.score ?? 0)).slice(0, limit);

@@ -22,14 +22,15 @@ import {
   executiveViewForRole,
   isCorporateReadOnly,
 } from '../lib/access';
-import { MONTHS } from '../features/executive/compose';
+import { MONTHS, SUMMARY_BRANCHES, SUMMARY_LEVELS } from '../features/executive/compose';
 import { currentPeriodKey, periodOptionsFor, subtitleFor } from '../features/executive/viewModel';
 import { useExecutiveSummary, type ExecutiveFilterState } from '../features/executive/useExecutiveSummary';
 import type { ExecutiveView as ExecutiveViewKind } from '../features/executive/types';
-import { teamOptionsFor } from '../features/insights/filterCascade';
+import { teamBelongsToFunction, teamOptionsFor } from '../features/insights/filterCascade';
+import { executiveFunctionForTeam } from '../features/executive/functions';
 
 const PARAM: Record<keyof ExecutiveFilterState, string> = {
-  periodKey: 'period', region: 'region', teamFunction: 'function', team: 'team', performanceLevel: 'level',
+  periodKey: 'period', region: 'region', branch: 'branch', teamFunction: 'function', team: 'team', position: 'position', performanceLevel: 'level',
 };
 
 const toOptions = (values: string[]): FilterOption[] => values.map((value) => ({ value, label: value }));
@@ -41,8 +42,8 @@ function ExecutiveSummaryPage({ view }: { view: Exclude<ExecutiveViewKind, 'func
   const filters: ExecutiveFilterState = useMemo(() => {
     const read = (key: keyof ExecutiveFilterState) => searchParams.get(PARAM[key]) || undefined;
     return view === 'managerial'
-      ? { periodKey: read('periodKey'), performanceLevel: read('performanceLevel') }
-      : { periodKey: read('periodKey'), region: read('region'), teamFunction: read('teamFunction'), team: read('team'), performanceLevel: read('performanceLevel') };
+      ? { periodKey: read('periodKey'), branch: read('branch'), performanceLevel: read('performanceLevel') }
+      : { periodKey: read('periodKey'), region: read('region'), branch: read('branch'), teamFunction: read('teamFunction'), team: read('team'), performanceLevel: read('performanceLevel') };
   }, [searchParams, view]);
 
   const update = useCallback((patch: Partial<ExecutiveFilterState>) => {
@@ -86,15 +87,24 @@ function ExecutiveSummaryPage({ view }: { view: Exclude<ExecutiveViewKind, 'func
       onPeriodChange={(value) => update({ periodKey: value })}
       region={managerial ? scope?.region ?? '' : filters.region ?? ''}
       regionOptions={toOptions(managerial ? [scope?.region ?? ''].filter(Boolean) : options.regions)}
-      onRegionChange={(value) => update({ region: value, team: undefined })}
+      onRegionChange={(value) => update({ region: value, branch: undefined, team: undefined })}
+      branch={filters.branch ?? ''}
+      branchOptions={SUMMARY_BRANCHES}
+      onBranchChange={(value) => update({ branch: value, team: undefined })}
       functionValue={managerial ? scope?.function ?? '' : filters.teamFunction ?? ''}
       functionOptions={toOptions(managerial ? [scope?.function ?? ''].filter(Boolean) : options.functions)}
       onFunctionChange={(value) => update({ teamFunction: value, team: undefined })}
       team={managerial ? managerTeam ?? '' : filters.team ?? ''}
       teamOptions={toOptions(teamValues)}
-      onTeamChange={(value) => update({ team: value })}
+      onTeamChange={(value) => {
+        const primaryFunction = executiveFunctionForTeam(value, options.team_functions);
+        const mappedFunction = primaryFunction && options.functions.includes(primaryFunction)
+          ? primaryFunction
+          : options.functions.find((candidate) => teamBelongsToFunction(value, candidate, options.team_functions));
+        update(mappedFunction ? { teamFunction: mappedFunction, team: value } : { team: value });
+      }}
       level={filters.performanceLevel ?? ''}
-      levelOptions={toOptions(options.levels)}
+      levelOptions={toOptions([...SUMMARY_LEVELS])}
       onLevelChange={(value) => update({ performanceLevel: value })}
       locked={managerial ? { region: true, function: true, team: true } : undefined}
     />

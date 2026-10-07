@@ -7,6 +7,7 @@ import type { ActionStatus, PMSAction } from '../../types';
 import { dueBadgeLabel, todayIso } from './dueBadge';
 import { ActionStatusMenu, StatusPill } from './ActionStatusMenu';
 import { EMPTY_FOLLOW_UP_SUMMARY, type FollowUpFilters, type FollowUpSummary } from './followUpTypes';
+import { executiveFunctionForTeam } from '../../features/executive/functions';
 
 export type { FollowUpFilters, FollowUpSummary };
 export { EMPTY_FOLLOW_UP_SUMMARY };;
@@ -227,32 +228,48 @@ export function ActionFollowUpBoard({
   );
 }
 
-export function ActionFollowUpPanel({ canEdit }: { canEdit: boolean }) {
-  const [filters, setFilters] = useState<FollowUpFilters>({});
-  return <ConnectedFollowUp filters={filters} onFiltersChange={setFilters} canEdit={canEdit} />;
+export function ActionFollowUpPanel({ canEdit, initialFilters = {}, scopeFunction }: { canEdit: boolean; initialFilters?: FollowUpFilters; scopeFunction?: string | null }) {
+  const [filters, setFilters] = useState<FollowUpFilters>(initialFilters);
+  return <ConnectedFollowUp filters={filters} onFiltersChange={setFilters} canEdit={canEdit} scopeFunction={scopeFunction} />;
 }
 
 function ConnectedFollowUp({
   filters,
   onFiltersChange,
   canEdit,
+  scopeFunction,
 }: {
   filters: FollowUpFilters;
   onFiltersChange: (filters: FollowUpFilters) => void;
   canEdit: boolean;
+  scopeFunction?: string | null;
 }) {
   const baseline = useFollowUp({});
   const filtered = useFollowUp(filters);
   const active = filters.state || filters.team || filters.owner || filters.month ? filtered : baseline;
   const owners = useActionOwners();
   const updateStatus = useUpdateActionStatus();
-  const source = baseline.data?.actions ?? [];
+  const inFunction = (action: PMSAction) => !scopeFunction || executiveFunctionForTeam(action.team) === scopeFunction;
+  const source = (baseline.data?.actions ?? []).filter(inFunction);
+  const scopedSummaryActions = source.filter((action) => (!filters.team || action.team === filters.team)
+    && (!filters.month || action.month === filters.month) && (!filters.owner || action.owner?.id === filters.owner));
+  const open = scopedSummaryActions.filter((action) => action.status === 'Open').length;
+  const inProgress = scopedSummaryActions.filter((action) => action.status === 'In Progress').length;
+  const completed = scopedSummaryActions.filter((action) => action.status === 'Completed').length;
+  const currentMonth = new Date().toISOString().slice(0, 7);
+  const summary: FollowUpSummary = scopeFunction ? {
+    overdue: scopedSummaryActions.filter((action) => action.follow_up_state === 'overdue').length,
+    due_soon: scopedSummaryActions.filter((action) => action.follow_up_state === 'due_soon').length,
+    open, in_progress: inProgress,
+    completed_this_month: scopedSummaryActions.filter((action) => action.status === 'Completed' && action.completed_at?.slice(0, 7) === currentMonth).length,
+    completion_rate: open + inProgress + completed ? Math.round(completed / (open + inProgress + completed) * 1000) / 10 : 0,
+  } : active.data?.summary ?? EMPTY_FOLLOW_UP_SUMMARY;
   const teams = Array.from(new Set(source.map((action) => action.team).filter(Boolean))).sort();
   const months = Array.from(new Set(source.map((action) => action.month).filter(Boolean)));
   return (
     <ActionFollowUpBoard
-      actions={active.data?.actions ?? []}
-      summary={active.data?.summary ?? EMPTY_FOLLOW_UP_SUMMARY}
+      actions={(active.data?.actions ?? []).filter(inFunction)}
+      summary={summary}
       isLoading={active.isLoading}
       isError={active.isError}
       onRetry={() => { void active.refetch(); }}

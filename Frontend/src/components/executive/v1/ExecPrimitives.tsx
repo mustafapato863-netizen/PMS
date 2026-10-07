@@ -157,21 +157,118 @@ export function SoftEmpty({ children }: { children: ReactNode }) {
 
 
 /** Tiny trend line (function cards, team rows). */
-export function Sparkline({ values, height = 34, width = 120, className = '', label }: { values: Array<number | null>; height?: number; width?: number; className?: string; label?: string }) {
-  const points = values.map((value, index) => ({ value, index })).filter((point): point is { value: number; index: number } => point.value !== null);
-  if (points.length < 2) return <div aria-hidden="true" style={{ height }} className={className} />;
+export function Sparkline({
+  values,
+  height = 34,
+  width = 120,
+  className = '',
+  label,
+  latestValue,
+  latestValueLabel,
+  pointLabels,
+}: {
+  values: Array<number | null>;
+  height?: number;
+  width?: number;
+  className?: string;
+  label?: string;
+  latestValue?: number | null;
+  latestValueLabel?: string;
+  pointLabels?: string[];
+}) {
+  const hasLatestValue = typeof latestValue === 'number' && Number.isFinite(latestValue) && Boolean(latestValueLabel);
+  const points = values
+    .map((value, index) => ({ value, index }))
+    .filter((point): point is { value: number; index: number } => typeof point.value === 'number' && Number.isFinite(point.value));
+  if (!points.length) return <div aria-hidden="true" style={{ height }} className={className} />;
+
   const min = Math.min(...points.map((point) => point.value));
   const max = Math.max(...points.map((point) => point.value));
-  const span = Math.max(max - min, 1);
-  const step = width / Math.max(values.length - 1, 1);
-  const y = (value: number) => 3 + (height - 6) * (1 - (value - min) / span);
-  const path = points.map((point, i) => `${i ? 'L' : 'M'}${(point.index * step).toFixed(1)},${y(point.value).toFixed(1)}`).join(' ');
-  const last = points[points.length - 1];
-  const delta = last.value - points[points.length - 2].value;
+  const center = (max + min) / 2;
+  const span = Math.max(max - min, 4);
+  const domainMin = center - span / 2;
+  const domainMax = center + span / 2;
+  const plotLeft = 5;
+  const plotRight = width - (hasLatestValue ? 72 : 5);
+  const step = (plotRight - plotLeft) / Math.max(values.length - 1, 1);
+  const top = 6;
+  const bottom = height - 6;
+  const y = (value: number) => top + (bottom - top) * (1 - (value - domainMin) / (domainMax - domainMin));
+  const chartPoints = points.map((point) => ({
+    ...point,
+    x: plotLeft + point.index * step,
+    y: y(point.value),
+  }));
+  const last = chartPoints[chartPoints.length - 1];
+  const first = chartPoints[0];
+  const curve = chartPoints.reduce((path, point, index) => {
+    if (index === 0) return `M${point.x.toFixed(1)},${point.y.toFixed(1)}`;
+    const previous = chartPoints[index - 1];
+    const before = chartPoints[index - 2] ?? previous;
+    const after = chartPoints[index + 1] ?? point;
+    const control1X = previous.x + (point.x - before.x) / 6;
+    const control1Y = Math.max(top, Math.min(bottom, previous.y + (point.y - before.y) / 6));
+    const control2X = point.x - (after.x - previous.x) / 6;
+    const control2Y = Math.max(top, Math.min(bottom, point.y - (after.y - previous.y) / 6));
+    return `${path} C${control1X.toFixed(1)},${control1Y.toFixed(1)} ${control2X.toFixed(1)},${control2Y.toFixed(1)} ${point.x.toFixed(1)},${point.y.toFixed(1)}`;
+  }, '');
+  const area = chartPoints.length > 1 ? `${curve} L${last.x.toFixed(1)},${bottom} L${first.x.toFixed(1)},${bottom} Z` : '';
+  const delta = chartPoints.length > 1 ? last.value - chartPoints[chartPoints.length - 2].value : 0;
   const color = delta < -0.05 ? 'var(--insights-negative)' : delta > 0.05 ? 'var(--insights-positive)' : 'var(--insights-accent)';
+  const latestTone = getGradeTone(latestValue);
+  const accessibleLabel = label
+    ? `${label}${hasLatestValue ? `, latest score ${latestValueLabel}` : ''}`
+    : undefined;
+  const badgeTop = Math.max(13, Math.min(height - 13, last.y));
+
   return (
-    <svg role={label ? 'img' : undefined} aria-label={label} aria-hidden={label ? undefined : true} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" className={`block w-full ${className}`} style={{ height }}>
-      <path d={path} fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
-    </svg>
+    <div className={`relative w-full ${className}`} style={{ height }}>
+      <svg
+        role={accessibleLabel ? 'img' : undefined}
+        aria-label={accessibleLabel}
+        aria-hidden={accessibleLabel ? undefined : true}
+        data-testid="sparkline-chart"
+        viewBox={`0 0 ${width} ${height}`}
+        preserveAspectRatio="none"
+        className="absolute inset-0 block size-full overflow-visible"
+      >
+        <line x1={plotLeft} y1={bottom} x2={plotRight} y2={bottom} stroke="var(--insights-row-border)" strokeWidth="1" vectorEffect="non-scaling-stroke" />
+        {area && <path d={area} fill={color} opacity="0.08" />}
+        {chartPoints.length > 1 && (
+          <path data-testid="sparkline-line" d={curve} fill="none" stroke={color} strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+        )}
+        {chartPoints.map((point) => (
+          <circle
+            key={`${point.index}-${point.value}`}
+            cx={point.x}
+            cy={point.y}
+            r={point.index === last.index ? 3.5 : 2}
+            fill={point.index === last.index ? 'var(--bg-surface)' : color}
+            stroke={color}
+            strokeWidth={point.index === last.index ? 2 : 0}
+            vectorEffect="non-scaling-stroke"
+          >
+            {pointLabels?.[point.index] && <title>{pointLabels[point.index]}</title>}
+          </circle>
+        ))}
+      </svg>
+      {hasLatestValue && (
+        <span
+          aria-hidden="true"
+          data-testid="sparkline-latest-score"
+          className="pointer-events-none absolute z-[1] -translate-y-1/2 whitespace-nowrap rounded-full border px-[8px] py-[4px] text-[10px] font-bold leading-none shadow-sm"
+          style={{
+            left: `${(last.x / width) * 100}%`,
+            top: `${(badgeTop / height) * 100}%`,
+            transform: 'translate(6px, -50%)',
+            background: latestTone.badgeBg,
+            borderColor: latestTone.border,
+            color: latestTone.badgeText,
+          }}
+        >
+          {latestValueLabel}
+        </span>
+      )}
+    </div>
   );
 }

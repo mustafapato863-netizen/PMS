@@ -17,6 +17,8 @@ const state = vi.hoisted(() => ({
 
 vi.mock('../context/RoleContext', () => ({ useUserRole: () => ({ role: state.role }) }));
 vi.mock('../context/auth', () => ({ useAuth: () => ({ currentUser: state.user }) }));
+vi.mock('../hooks/useActionStore', () => ({ useUpdateActionStatus: () => ({ mutateAsync: vi.fn() }) }));
+vi.mock('../features/executive/useSummaryRecords', () => ({ useSummaryRecords: () => ({ data: undefined, isError: true, isLoading: false }) }));
 vi.mock('../features/executive/useExecutiveSummary', () => ({
   useExecutiveSummary: (args: UseExecutiveSummaryArgs) => {
     state.lastArgs = args;
@@ -53,7 +55,7 @@ function Where() {
 }
 
 function renderAt(path: string) {
-  return render(
+  const rendered = render(
     <MemoryRouter initialEntries={[path]}>
       <Routes>
         <Route path="/function-summary" element={<FunctionSummaryView />} />
@@ -62,6 +64,9 @@ function renderAt(path: string) {
       <Where />
     </MemoryRouter>,
   );
+  const launcher = screen.queryByRole('button', { name: /Function filters/i });
+  if (launcher) fireEvent.click(launcher);
+  return rendered;
 }
 
 beforeEach(() => {
@@ -151,15 +156,18 @@ describe('Function Summary page', () => {
     expect(screen.getByRole('button', { name: /Team/ })).toHaveTextContent('All RCM teams');
   });
 
-  it('disables function export with a clear note and names only the selected function', () => {
+  it('removes Reports & export and offers all three performance levels and branch choices', () => {
     renderAt('/function-summary/rcm');
-    const card = screen.getByTestId('function-export');
-    expect(within(card).getByRole('heading', { name: 'Reports & export' })).toBeInTheDocument();
-    expect(within(card).getByText('Function-locked: exports contain RCM only')).toBeInTheDocument();
-    for (const button of within(card).getAllByRole('button', { name: /Export/ })) expect(button).toBeDisabled();
-    expect(within(card).getByRole('note')).toHaveTextContent("doesn't accept a function= filter yet");
-    expect(within(card).getByText(/Switch to Pre-Approvals to export that function/)).toBeInTheDocument();
-    expect(card).not.toHaveTextContent('Call Center');
+    expect(screen.queryByTestId('function-export')).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Reports & export' })).not.toBeInTheDocument();
+    const levelSelect = screen.getByRole('combobox', { name: 'Performance level' });
+    expect(within(levelSelect).getAllByRole('option').map((option) => option.textContent)).toEqual(['All levels', 'Employee', 'Managerial', 'Corporate']);
+    const branchSelect = screen.getByRole('combobox', { name: 'Branch' });
+    expect(within(branchSelect).getAllByRole('option').map((option) => option.textContent)).toEqual(['All Branches', 'Dubai', 'Sharjah (Sharqa)', 'Ajman', 'Clinics']);
+    fireEvent.change(branchSelect, { target: { value: 'sharjah' } });
+    expect(state.lastArgs?.filters.branch).toBe('sharjah');
+    fireEvent.change(levelSelect, { target: { value: 'Corporate' } });
+    expect(state.lastArgs?.filters.performanceLevel).toBe('Corporate');
   });
 
   it('softens the drivers card when driver analysis is unavailable to the Function Viewer', () => {

@@ -1,5 +1,4 @@
 import './PageEnhancements.css';
-import BackToTop from '../components/common/BackToTop';
 import { lazy, Suspense, useState, useMemo, useEffect, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useTeamData, usePerformanceData, parseAHTtoSeconds, formatSecondsToMMSS, agentMatchesLocation, refreshPerformanceData, resolveTeamMonths, hasRealActivity } from '../hooks/usePerformanceData';
@@ -2308,7 +2307,6 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
           <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-0.5 border-4 border-transparent border-t-slate-900/95 dark:border-t-slate-800/95" />
         </div>
       )}
-      <BackToTop />
     </div>
   );
 };

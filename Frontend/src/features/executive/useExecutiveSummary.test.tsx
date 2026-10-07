@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { FIXTURE_TEAM_FUNCTIONS, fixtureActions, fixtureAgentRecords, fixtureDrivers } from './executive.fixture';
 import { composeExecutiveSummary, toExecRecords } from './compose';
 import { executiveSummaryUrl, useExecutiveSummary } from './useExecutiveSummary';
+import { executiveFunctionForTeam } from './functions';
 
 const mocks = vi.hoisted(() => ({
   apiFetch: vi.fn(),
@@ -16,6 +17,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../../lib/apiClient', () => ({ apiFetch: mocks.apiFetch }));
 vi.mock('../../hooks/usePerformanceData', () => ({
+  mapScopedPerformanceRecord: (record: unknown) => record,
   usePerformanceData: (_m: string, _l: string, _r: string, _p: string, enabled: boolean) => ({
     agents: enabled ? mocks.agents : [], loading: false, dataSource: 'api', errorMessage: null,
   }),
@@ -31,7 +33,7 @@ vi.mock('../../hooks/api/useInsightsWorkspace', () => ({
     };
   },
 }));
-vi.mock('../../hooks/useActionStore', () => ({ fetchFollowUp: mocks.followUp }));
+vi.mock('../../hooks/useActionStore', () => ({ fetchFollowUp: mocks.followUp, mapBackendAction: (record: unknown) => record }));
 
 const TODAY = new Date(2026, 6, 6);
 const wrapper = ({ children }: { children: ReactNode }) => (
@@ -59,6 +61,41 @@ describe('executiveSummaryUrl', () => {
 });
 
 describe('useExecutiveSummary', () => {
+  it('includes old undated actions and deduplicates tracked records by persisted ID', async () => {
+    const action = { id: 'old-action', employee_id: 'old-employee', employee_name: 'Old employee', team: 'Coding', month: 'June', action_text: 'Coaching', action_type: 'Coaching' };
+    mocks.followUp.mockResolvedValue({ actions: [{ ...action, status: 'In Progress', due_date: '2026-07-07' }] });
+    mocks.apiFetch.mockImplementation((url: string) => url === '/api/corrective-actions/'
+      ? Promise.resolve({ success: true, data: [action, { ...action, id: 'undated' }] })
+      : Promise.reject(new Error('Not Found')));
+    const { result } = renderHook(() => useExecutiveSummary({ view: 'function', role: 'Admin', functionName: 'RCM', filters: {}, today: TODAY }), { wrapper });
+    await waitFor(() => expect(result.current.summary?.corrective_actions?.summary.open).toBe(2));
+    expect(result.current.summary?.corrective_actions?.actions).toHaveLength(2);
+    expect(result.current.summary?.corrective_actions?.summary.due_this_week).toBe(1);
+  });
+
+  it('preserves root cause evidence when merging tracked actions and scopes monthly analysis to the selected team', async () => {
+    const action = { id: 'merged', employee_id: 'e1', team: 'Inbound', month: 'June', action_text: 'Coach calls', action_type: 'Coaching', root_cause_note: 'Booking rate and AHT', created_at: '2026-06-15' };
+    mocks.followUp.mockResolvedValue({ actions: [{ ...action, root_cause_note: '', status: 'Completed' }] });
+    mocks.apiFetch.mockImplementation((url: string) => url === '/api/corrective-actions/'
+      ? Promise.resolve({ success: true, data: [action, { ...action, id: 'other-team', team: 'Coding' }, { ...action, id: 'other-month', month: 'May' }] })
+      : Promise.reject(new Error('Not Found')));
+    const { result } = renderHook(() => useExecutiveSummary({ view: 'corporate', role: 'Admin', filters: { team: 'Inbound', periodKey: '2026-06' }, today: TODAY }), { wrapper });
+    await waitFor(() => expect(result.current.summary?.corrective_actions?.analytics?.actions).toHaveLength(1));
+    expect(result.current.summary?.corrective_actions?.analytics?.actions[0]).toMatchObject({
+      id: 'merged', team: 'Inbound', action_type: 'Coaching', kpi_mentions: ['Booking Rate', 'AHT (Handle Time)'],
+    });
+  });
+  it('uses canonical management and employee evidence and scopes function actions', async () => {
+    mocks.apiFetch.mockImplementation((url: string) => url.startsWith('/api/performance/summary-records')
+      ? Promise.resolve({ success: true, data: mocks.agents })
+      : Promise.reject(new Error('Not Found')));
+    const { result } = renderHook(() => useExecutiveSummary({ view: 'function', role: 'Admin', functionName: 'RCM', filters: {}, today: TODAY }), { wrapper });
+    await waitFor(() => expect(result.current.summary?.corrective_actions ?? null).not.toBeNull());
+    expect(mocks.apiFetch).toHaveBeenCalledWith('/api/performance/summary-records', expect.anything());
+    expect(result.current.options.levels).toEqual(['Employee', 'Managerial', 'Corporate']);
+    expect(result.current.summary?.people?.below_90).toBeDefined();
+    expect(result.current.summary?.corrective_actions?.actions.every((action) => executiveFunctionForTeam(action.team, FIXTURE_TEAM_FUNCTIONS) === 'RCM')).toBe(true);
+  });
   it('uses GET /api/executive/summary as-is when the endpoint answers', async () => {
     const records = toExecRecords(fixtureAgentRecords());
     const apiSummary = { ...composeExecutiveSummary({ view: 'corporate', role: 'Admin', records, filters: {}, today: TODAY }), meta: { source: 'api', unavailable: [], driver_metric: 'weighted_gap' } };

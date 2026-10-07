@@ -1,6 +1,6 @@
 import './PageEnhancements.css';
 import { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   AlertCircle,
   CalendarDays,
@@ -13,9 +13,13 @@ import {
   Search,
   Users,
 } from 'lucide-react';
-import { useActionStore, useFollowUp } from '../hooks/useActionStore';
+import { useActionStore, useFollowUp, useUpdateActionStatus } from '../hooks/useActionStore';
+import CorrectiveActionsCard from '../components/executive/v1/CorrectiveActionsCard';
+import { MONTHS, periodOf, summarizeActions } from '../features/executive/compose';
+import { executiveFunctionForTeam } from '../features/executive/functions';
 import { useUserRole } from '../context/RoleContext';
 import CustomDropdown from '../components/common/CustomDropdown';
+import ResponsiveFilters from '../components/common/ResponsiveFilters';
 import { ActionFollowUpPanel } from '../components/actions/ActionFollowUpBoard';
 import { canEditActionFollowUp, dueBadgeLabel } from '../components/actions/dueBadge';
 import { StatusPill } from '../components/actions/ActionStatusMenu';
@@ -114,23 +118,27 @@ function ActionCard({ action }: { action: PMSAction }) {
 
 export default function CorrectiveActionsView() {
   const { getAllActions } = useActionStore();
+  const updateStatus = useUpdateActionStatus();
+  const [params] = useSearchParams();
   const { role } = useUserRole();
   const followUp = useFollowUp({});
   const overdueCount = followUp.data?.summary.overdue ?? 0;
   const [pageTab, setPageTab] = useState<'all' | 'follow-up'>('all');
   const [search, setSearch] = useState('');
-  const [teamFilter, setTeamFilter] = useState('All teams');
-  const [monthFilter, setMonthFilter] = useState('All months');
+  const [teamFilter, setTeamFilter] = useState(params.get('team') ?? 'All teams');
+  const [monthFilter, setMonthFilter] = useState(params.get('month') ?? 'All months');
   const [typeFilter, setTypeFilter] = useState('All types');
   const [isExporting, setIsExporting] = useState(false);
   const [exportError, setExportError] = useState('');
 
   const actions = getAllActions();
+  const functionFilter = params.get('function');
   const teams = useMemo(() => Array.from(new Set(actions.map((action) => action.team).filter(Boolean))).sort(), [actions]);
   const months = useMemo(() => Array.from(new Set(actions.map((action) => action.month).filter(Boolean))), [actions]);
   const filteredActions = useMemo(() => {
     const query = search.trim().toLowerCase();
     return actions.filter((action) => {
+      if (functionFilter && executiveFunctionForTeam(action.team) !== functionFilter) return false;
       if (teamFilter !== 'All teams' && action.team !== teamFilter) return false;
       if (monthFilter !== 'All months' && action.month !== monthFilter) return false;
       if (typeFilter !== 'All types' && action.action_type !== typeFilter) return false;
@@ -138,7 +146,8 @@ export default function CorrectiveActionsView() {
       return [action.employee_name, action.employee_id, action.team, action.action_text, action.root_cause_note]
         .some((value) => String(value || '').toLowerCase().includes(query));
     });
-  }, [actions, monthFilter, search, teamFilter, typeFilter]);
+  }, [actions, functionFilter, monthFilter, search, teamFilter, typeFilter]);
+  const actionSummary = summarizeActions(filteredActions.map((action) => ({ ...action, status: action.status ?? 'Open', title: action.action_text })), new Date(), MONTHS.includes(monthFilter) ? periodOf(new Date().getFullYear(), monthFilter) : periodOf(new Date().getFullYear(), MONTHS[new Date().getMonth()]));
 
   const employeesActioned = new Set(filteredActions.map((action) => action.employee_id)).size;
   const teamsRepresented = new Set(filteredActions.map((action) => action.team).filter(Boolean)).size;
@@ -157,7 +166,7 @@ export default function CorrectiveActionsView() {
   };
 
   return (
-    <div className="app-page-shell rf-page rf-page--corrective-actions">
+    <div className="app-page-shell rf-page rf-page--corrective-actions executive-v1">
       <header className="rf-page-hero flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <div className="flex items-center gap-2 text-blue-600 dark:text-blue-400"><ClipboardCheck size={19} /><span className="text-[11px] font-black uppercase tracking-[0.18em]">Executive workspace</span></div>
@@ -184,9 +193,11 @@ export default function CorrectiveActionsView() {
         </button>
       </div>
 
-      {pageTab === 'follow-up' && <ActionFollowUpPanel canEdit={canEditActionFollowUp(role)} />}
+      {pageTab === 'follow-up' && <ActionFollowUpPanel canEdit={canEditActionFollowUp(role)} scopeFunction={functionFilter} initialFilters={{ team: teamFilter === 'All teams' ? undefined : teamFilter, month: monthFilter === 'All months' ? undefined : monthFilter }} />}
 
       {pageTab === 'all' && exportError && <p role="alert" className="rounded-xl border border-rose-500/20 bg-rose-500/5 px-3 py-2 text-sm font-semibold text-rose-700 dark:text-rose-300">{exportError}</p>}
+
+      {pageTab === 'all' && <CorrectiveActionsCard data={actionSummary} effective={MONTHS.includes(monthFilter) ? periodOf(new Date().getFullYear(), monthFilter) : null} variant="company" scopeLabel={functionFilter ?? (teamFilter !== 'All teams' ? teamFilter : 'Your authorized scope')} canEdit={canEditActionFollowUp(role)} onStatusChange={(id, update) => updateStatus.mutateAsync({ id, ...update })} />}
 
       {pageTab === 'all' && <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Corrective action summary">
         <article className="rf-stat-card rounded-2xl border border-blue-500/15 bg-blue-500/5 p-4"><p className="text-[10px] font-black uppercase tracking-wider text-blue-700 dark:text-blue-300">Visible actions</p><p className="mt-2 text-3xl font-black text-[var(--text-primary)]">{filteredActions.length}</p></article>
@@ -195,18 +206,23 @@ export default function CorrectiveActionsView() {
         <article className="rf-stat-card rounded-2xl border border-amber-500/15 bg-amber-500/5 p-4"><p className="text-[10px] font-black uppercase tracking-wider text-amber-700 dark:text-amber-300">Pending sync</p><p className="mt-2 text-3xl font-black text-[var(--text-primary)]">{pendingSync}</p></article>
       </section>}
 
-      {pageTab === 'all' && <section className="glass-panel rf-filter-panel rounded-2xl p-4 shadow-sm" aria-label="Corrective action filters">
-        <div className="grid gap-3 lg:grid-cols-[minmax(240px,1fr)_repeat(3,minmax(150px,0.7fr))]">
-          <label className="relative block">
-            <span className="sr-only">Search corrective actions</span>
-            <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
-            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search employee, team or action…" className="min-h-11 w-full rounded-xl border border-[var(--border-light)] bg-[var(--bg-surface)] pl-10 pr-3 text-sm outline-none transition focus:border-blue-500" />
-          </label>
-          <CustomDropdown value={teamFilter} options={['All teams', ...teams]} onChange={setTeamFilter} icon={<Filter size={15} />} ariaLabel="Filter by team" className="w-full" buttonClassName="w-full min-h-11 rounded-xl" size="lg" />
-          <CustomDropdown value={monthFilter} options={['All months', ...months]} onChange={setMonthFilter} icon={<CalendarDays size={15} />} ariaLabel="Filter by month" className="w-full" buttonClassName="w-full min-h-11 rounded-xl" size="lg" />
-          <CustomDropdown value={typeFilter} options={['All types', ...ACTION_TYPES]} onChange={setTypeFilter} icon={<FileText size={15} />} ariaLabel="Filter by action type" className="w-full" buttonClassName="w-full min-h-11 rounded-xl" size="lg" />
-        </div>
-      </section>}
+      {pageTab === 'all' && <ResponsiveFilters
+        label="Action filters"
+        activeCount={Number(Boolean(search.trim())) + Number(teamFilter !== 'All teams') + Number(monthFilter !== 'All months') + Number(typeFilter !== 'All types')}
+      >
+        <section className="responsive-filter-content" aria-label="Corrective action filters">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <label className="relative block sm:col-span-2">
+              <span className="sr-only">Search corrective actions</span>
+              <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
+              <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search employee, team or action…" className="min-h-11 w-full rounded-xl border border-[var(--border-light)] bg-[var(--bg-surface)] pl-10 pr-3 text-sm outline-none transition focus:border-blue-500" />
+            </label>
+            <CustomDropdown value={teamFilter} options={['All teams', ...teams]} onChange={setTeamFilter} icon={<Filter size={15} />} ariaLabel="Filter by team" className="w-full" buttonClassName="w-full min-h-11 rounded-xl" size="lg" />
+            <CustomDropdown value={monthFilter} options={['All months', ...months]} onChange={setMonthFilter} icon={<CalendarDays size={15} />} ariaLabel="Filter by month" className="w-full" buttonClassName="w-full min-h-11 rounded-xl" size="lg" />
+            <CustomDropdown value={typeFilter} options={['All types', ...ACTION_TYPES]} onChange={setTypeFilter} icon={<FileText size={15} />} ariaLabel="Filter by action type" className="w-full sm:col-span-2" buttonClassName="w-full min-h-11 rounded-xl" size="lg" />
+          </div>
+        </section>
+      </ResponsiveFilters>}
 
       {pageTab === 'all' && filteredActions.length > 0 ? (
         <section className="grid gap-4 md:grid-cols-2" aria-label="Corrective action records">

@@ -1,17 +1,17 @@
 import { MemoryRouter } from 'react-router-dom';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PMSAction } from '../types';
 
 const { getAllActions, downloadCorrectiveActionsPowerPoint, followUpState } = vi.hoisted(() => ({
   getAllActions: vi.fn(),
   downloadCorrectiveActionsPowerPoint: vi.fn(() => Promise.resolve()),
-  followUpState: { overdue: 0 },
+  followUpState: { overdue: 0, actions: [] as PMSAction[] },
 }));
 
 vi.mock('../hooks/useActionStore', () => ({
   useActionStore: () => ({ getAllActions }),
-  useFollowUp: () => ({ data: { summary: { overdue: followUpState.overdue, due_soon: 0, open: 0, in_progress: 0, completed_this_month: 0, completion_rate: 0 }, actions: [] }, isLoading: false, isError: false, refetch: vi.fn() }),
+  useFollowUp: () => ({ data: { summary: { overdue: followUpState.overdue, due_soon: 0, open: 0, in_progress: 0, completed_this_month: 0, completion_rate: 0 }, actions: followUpState.actions }, isLoading: false, isError: false, refetch: vi.fn() }),
   useActionOwners: () => ({ data: [] }),
   useUpdateActionStatus: () => ({ mutateAsync: vi.fn() }),
 }));
@@ -44,6 +44,7 @@ describe('CorrectiveActionsView', () => {
     getAllActions.mockReset();
     getAllActions.mockReturnValue(actions);
     followUpState.overdue = 0;
+    followUpState.actions = [];
     Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: vi.fn(() => 'blob:actions') });
     Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() });
   });
@@ -56,6 +57,21 @@ describe('CorrectiveActionsView', () => {
     expect(screen.getByText('Agent Two')).toBeInTheDocument();
     expect(screen.getByText('Visible actions').parentElement).toHaveTextContent('2');
     expect(screen.getByText('Pending sync').parentElement).toHaveTextContent('1');
+  });
+
+  it('keeps function scope in the new design and the existing follow-up workflow', () => {
+    const marketingAction: PMSAction = { ...actions[1], team: 'Marketing', status: 'Open', due_date: '2026-01-01', follow_up_state: 'overdue' };
+    getAllActions.mockReturnValue([actions[0], marketingAction]);
+    followUpState.actions = [{ ...actions[0], status: 'Open' }, marketingAction];
+    render(<MemoryRouter initialEntries={['/corrective-actions?function=Marketing']}><CorrectiveActionsView /></MemoryRouter>);
+    expect(screen.getByText('Agent Two')).toBeInTheDocument();
+    expect(screen.queryByText('Agent One')).not.toBeInTheDocument();
+    expect(screen.getByTestId('action-tile-open')).toHaveTextContent('1');
+    fireEvent.click(screen.getByRole('tab', { name: 'Follow-up' }));
+    const board = screen.getByRole('region', { name: 'Action follow-up' });
+    expect(within(board).getAllByRole('link', { name: 'Agent Two' })).toHaveLength(2);
+    expect(within(board).queryByRole('link', { name: 'Agent One' })).not.toBeInTheDocument();
+    expect(within(board).getByText('Open', { selector: 'p' }).parentElement).toHaveTextContent('1');
   });
 
   it('opens an Outlook draft addressed with the agent ID and action details', () => {
@@ -76,6 +92,7 @@ describe('CorrectiveActionsView', () => {
   it('filters records before exporting a PowerPoint document', async () => {
     render(<MemoryRouter><CorrectiveActionsView /></MemoryRouter>);
 
+    fireEvent.click(screen.getByRole('button', { name: /Action filters/i }));
     const teamSelect = screen.getAllByLabelText('Filter by team').find((element) => element.tagName === 'SELECT');
     fireEvent.change(teamSelect as HTMLSelectElement, { target: { value: 'Inbound' } });
     expect(screen.getByText('Agent One')).toBeInTheDocument();

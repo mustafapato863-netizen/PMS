@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
@@ -51,7 +51,12 @@ vi.mock('../hooks/api/useReports', () => ({
 }));
 
 describe('ReportsView', () => {
-  const renderView = () => render(<MemoryRouter><ReportsView /></MemoryRouter>);
+  const renderView = () => {
+    const rendered = render(<MemoryRouter><ReportsView /></MemoryRouter>);
+    const launcher = screen.queryByRole('button', { name: /Report filters/i });
+    if (launcher) fireEvent.click(launcher);
+    return rendered;
+  };
   beforeEach(() => {
     mocks.canExport = true;
     mocks.refetch.mockReset();

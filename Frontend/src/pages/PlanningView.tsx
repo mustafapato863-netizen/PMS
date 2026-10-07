@@ -1,5 +1,4 @@
 import './PageEnhancements.css';
-import BackToTop from '../components/common/BackToTop';
 import { useMemo, useState, type FormEvent } from 'react';
 import {
   AlertCircle, CalendarDays, CheckCircle2, ChevronLeft, ClipboardCheck,
@@ -7,6 +6,7 @@ import {
   Pencil, Target, Trash2, UserRound, X,
 } from 'lucide-react';
 import OverlayPortal from '../components/common/OverlayPortal';
+import ResponsiveFilters from '../components/common/ResponsiveFilters';
 import MilestonePanel from '../components/planning/MilestonePanel';
 import PlanFormModal from '../components/planning/PlanFormModal';
 import { PageLoadingSkeleton, PanelLoadingSkeleton } from '../components/common/SkeletonLoader';
@@ -300,14 +300,25 @@ export default function PlanningView() {
     <div className="app-page-shell rf-page rf-page--planning">
       <header className="flex flex-col gap-3 rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] p-4 shadow-sm xl:flex-row xl:items-center xl:justify-between">
         <div className="shrink-0"><div className="flex items-center gap-2"><h1 className="text-xl font-extrabold text-[var(--text-primary)]">Planning</h1><ClipboardCheck size={17} className="text-[var(--sgh-cyan-primary)]" /></div><p className="mt-0.5 text-xs text-[var(--text-muted)]">Turn performance insights into owned, measurable actions.</p><div className="mt-2">{workspaceSwitch}</div></div>
-        <div className="grid gap-2 sm:grid-cols-2 xl:flex xl:items-center"><select aria-label="Team" className="min-h-10 min-w-0 rounded-xl border border-[var(--input-border)] bg-[var(--input-bg)] px-3 text-xs font-semibold text-[var(--input-text)] outline-none focus:border-[var(--sgh-cyan-primary)] focus:ring-2 focus:ring-[var(--sgh-cyan-primary)]/20 transition-all xl:w-44" value={team} onChange={(event) => setTeam(event.target.value)}><option value="">All Teams</option>{options.data.teams.map((value) => <option key={value}>{value}</option>)}</select><select aria-label="Plan owner" className="min-h-10 min-w-0 rounded-xl border border-[var(--input-border)] bg-[var(--input-bg)] px-3 text-xs font-semibold text-[var(--input-text)] outline-none focus:border-[var(--sgh-cyan-primary)] focus:ring-2 focus:ring-[var(--sgh-cyan-primary)]/20 transition-all xl:w-40" value={owner} onChange={(event) => setOwner(event.target.value)}><option value="">All Plan Owners</option>{options.data.owners.map((value) => <option key={value.id} value={value.id}>{value.name}</option>)}</select><select aria-label="Status" className="min-h-10 min-w-0 rounded-xl border border-[var(--input-border)] bg-[var(--input-bg)] px-3 text-xs font-semibold text-[var(--input-text)] outline-none focus:border-[var(--sgh-cyan-primary)] focus:ring-2 focus:ring-[var(--sgh-cyan-primary)]/20 transition-all xl:w-32" value={status} onChange={(event) => setStatus(event.target.value)}><option value="">All Statuses</option>{options.data.statuses.map((value) => <option key={value}>{value}</option>)}</select>{options.data.can_edit && <button type="button" onClick={() => setNewOpen(true)} className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-[#00A3E0] to-[#00A859] px-4 text-xs font-bold text-white shadow-sm hover:brightness-110 active:scale-[0.98] transition-all"><Plus size={16} />New Plan</button>}</div>
+        {options.data.can_edit && <button type="button" onClick={() => setNewOpen(true)} className="inline-flex min-h-10 items-center justify-center gap-1.5 self-start rounded-xl bg-gradient-to-r from-[#00A3E0] to-[#00A859] px-4 text-xs font-bold text-white shadow-sm transition-all hover:brightness-110 active:scale-[0.98] xl:self-auto"><Plus size={16} />New Plan</button>}
       </header>
 
-      <nav aria-label="Plan status" className="flex gap-1 overflow-x-auto rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] p-1.5 shadow-sm">{['', ...options.data.statuses].map((value) => <button type="button" key={value || 'All'} onClick={() => setStatus(value)} className={`min-h-9 whitespace-nowrap rounded-xl px-3.5 text-xs font-bold transition-colors ${status === value ? 'bg-[var(--sgh-cyan-primary)] text-white shadow-sm' : 'text-[var(--text-muted)] hover:bg-[var(--bg-sunken)] hover:text-[var(--text-primary)]'}`}>{value || 'All Plans'}</button>)}</nav>
+      <ResponsiveFilters label="Plan filters" activeCount={Number(Boolean(search.trim())) + Number(Boolean(team)) + Number(Boolean(owner)) + Number(Boolean(status))}>
+        <div className="responsive-filter-content responsive-filter-content--planning">
+          <label className="relative block">
+            <span className="sr-only">Search plans</span>
+            <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
+            <input className={`${input} w-full pl-9`} placeholder="Search plans..." value={search} onChange={(event) => setSearch(event.target.value)} />
+          </label>
+          <select aria-label="Team" className={`${input} w-full text-xs`} value={team} onChange={(event) => setTeam(event.target.value)}><option value="">All Teams</option>{options.data.teams.map((value) => <option key={value}>{value}</option>)}</select>
+          <select aria-label="Plan owner" className={`${input} w-full text-xs`} value={owner} onChange={(event) => setOwner(event.target.value)}><option value="">All Plan Owners</option>{options.data.owners.map((value) => <option key={value.id} value={value.id}>{value.name}</option>)}</select>
+          <select aria-label="Status" className={`${input} w-full text-xs`} value={status} onChange={(event) => setStatus(event.target.value)}><option value="">All Statuses</option>{options.data.statuses.map((value) => <option key={value}>{value}</option>)}</select>
+        </div>
+      </ResponsiveFilters>
 
       <div className="grid min-h-[612px] gap-4 lg:grid-cols-[390px_minmax(0,1fr)]">
         <aside className={`${mobileDetail ? 'hidden lg:flex' : 'flex'} min-h-0 flex-col rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] shadow-sm`}>
-          <div className="border-b border-[var(--border-light)] p-3"><label className="relative block"><Search size={16} className="absolute left-3 top-3.5 text-[var(--text-muted)]" /><input aria-label="Search plans" className={`${input} w-full pl-9`} placeholder="Search plans..." value={search} onChange={(event) => setSearch(event.target.value)} /></label><p className="mt-2 px-1 text-[10px] font-semibold text-[var(--text-muted)]">{plans.data?.length || 0} plan{plans.data?.length === 1 ? '' : 's'} in this view</p></div>
+          <div className="border-b border-[var(--border-light)] p-3"><p className="px-1 text-[10px] font-semibold text-[var(--text-muted)]">{plans.data?.length || 0} plan{plans.data?.length === 1 ? '' : 's'} in this view</p></div>
           <div className="custom-scrollbar max-h-[calc(100vh-285px)] flex-1 space-y-3 overflow-y-auto p-3">{plans.data?.map((plan) => <PlanCardView key={plan.id} plan={plan} active={effectiveSelected === plan.id} onClick={() => { setSelected(plan.id); setTab('Overview'); setMobileDetail(true); }} />)}{!plans.data?.length && <EmptyState icon={ClipboardCheck} title="No plans in this view" copy="Change the filters or create a new performance plan." />}</div>
         </aside>
 
@@ -342,7 +353,6 @@ export default function PlanningView() {
       {newOpen && <PlanFormModal options={options.data} onClose={() => setNewOpen(false)} onCreated={(id) => { setNewOpen(false); setSelected(id); setMobileDetail(true); }} />}
       {editOpen && current && <EditPlanModal detail={current} owners={options.data.owners} statuses={options.data.statuses} onClose={() => setEditOpen(false)} />}
       {deleteOpen && current && <DeletePlanModal detail={current} onClose={() => setDeleteOpen(false)} onDeleted={() => { setDeleteOpen(false); setSelected(''); setMobileDetail(false); }} />}
-      <BackToTop />
     </div>
   );
 }

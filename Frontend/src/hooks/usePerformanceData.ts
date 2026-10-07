@@ -9,6 +9,7 @@ import { calculatePerformanceSummary } from '../utils/performanceSummary';
 import { useAllTeamConfigs } from './useTeamConfig';
 import { calculateAggregatedTeamPerformance } from '../features/team/teamKpiAggregator';
 import { scopedPerformanceApiEnabled } from './api/usePerformanceDashboard';
+import { agentMatchesLocation } from '../utils/branchScope';
 
 const MONTH_ORDER: Record<string, number> = {
   January: 1, February: 2, March: 3, April: 4, May: 5, June: 6,
@@ -462,38 +463,7 @@ function getGeoValue(geo: GeoBreakdown, location: LocationKey): number {
   return geo[location];
 }
 
-export function agentMatchesLocation(a: AgentRecord, location: LocationKey): boolean {
-  if (location === 'all') return true;
-
-  // Source branch/team fields are authoritative for branch-scoped uploads.
-  // Geo totals are often copied or synthesized during ingestion, so checking
-  // them first can make every SHJ/AJM employee appear in both branches.
-  const raw = a.raw_data || {};
-  const explicitBranchText = [
-    raw.Team,
-    raw['Out Team'],
-    raw.Branch,
-    raw.Site,
-    raw.Area,
-  ].filter(Boolean).join(' ').toUpperCase();
-  const identityTeam = String(a.identity.team || '').toUpperCase();
-  const explicitBranch = explicitBranchText.includes('AJM') || explicitBranchText.includes('AJMAN')
-    ? 'ajman'
-    : explicitBranchText.includes('SHJ') || explicitBranchText.includes('SHARJAH') || explicitBranchText.includes('SHARQA')
-      ? 'sharjah'
-      : explicitBranchText.includes('DUBAI') || identityTeam.includes('DUBAI')
-        ? 'dubai'
-        : explicitBranchText.includes('CLINIC')
-          ? 'clinics'
-          : undefined;
-  if (explicitBranch) return explicitBranch === location;
-
-  // Legacy call-center rows may not carry a branch field; retain the geo
-  // fallback for those records only.
-  const bookings = a.geo?.bookings?.[location] || 0;
-  const attended = a.geo?.attended?.[location] || 0;
-  return bookings > 0 || attended > 0;
-}
+export { agentMatchesLocation } from '../utils/branchScope';
 
 /**
  * Pick the score shown in cross-team summaries without allowing a malformed

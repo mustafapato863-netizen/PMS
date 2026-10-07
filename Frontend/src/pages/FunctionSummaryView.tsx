@@ -13,19 +13,19 @@ import { useUserRole } from '../context/RoleContext';
 import InsightsHeader, { type FilterOption } from '../components/insights/overview/InsightsHeader';
 import { ExecutiveViewSkeleton } from '../components/common/SkeletonLoader';
 import ExecutiveDashboard from '../components/executive/v1/ExecutiveDashboard';
-import FunctionExportCard from '../components/executive/v1/FunctionExportCard';
 import AffectedAgentKpiBreakdown from '../components/executive/v1/AffectedAgentKpiBreakdown';
 import FunctionSwitcher from '../components/executive/v1/FunctionSwitcher';
 import { ExecutiveEmptyState, ReadOnlyBadge, ScopeBanner } from '../components/executive/v1/ExecutiveStates';
-import { canAccessInsights, canAccessSettingsContent, isFunctionViewerRole, readAccessibleFunctions } from '../lib/access';
-import { MONTHS } from '../features/executive/compose';
+import { canAccessCorrectiveActions, canAccessInsights, canAccessSettingsContent, isFunctionViewerRole, readAccessibleFunctions } from '../lib/access';
+import { canEditActionFollowUp } from '../components/actions/dueBadge';
+import { MONTHS, SUMMARY_BRANCHES, SUMMARY_LEVELS } from '../features/executive/compose';
 import { allowedFunctionsFor, functionFromSlug, functionSlug } from '../features/executive/functions';
 import { currentPeriodKey, periodOptionsFor, subtitleFor } from '../features/executive/viewModel';
 import { useExecutiveSummary, type ExecutiveFilterState } from '../features/executive/useExecutiveSummary';
 import type { ExecutiveFunction } from '../features/executive/types';
 
 const PARAM: Record<Exclude<keyof ExecutiveFilterState, 'teamFunction'>, string> = {
-  periodKey: 'period', region: 'region', team: 'team', performanceLevel: 'level',
+  periodKey: 'period', region: 'region', branch: 'branch', team: 'team', position: 'position', performanceLevel: 'level',
 };
 
 const toOptions = (values: string[]): FilterOption[] => values.map((value) => ({ value, label: value }));
@@ -38,7 +38,7 @@ function FunctionSummaryPage({ fn, allowed }: { fn: ExecutiveFunction; allowed: 
 
   const filters: ExecutiveFilterState = useMemo(() => {
     const read = (key: keyof typeof PARAM) => searchParams.get(PARAM[key]) || undefined;
-    return { periodKey: read('periodKey'), region: read('region'), team: read('team'), performanceLevel: read('performanceLevel') };
+    return { periodKey: read('periodKey'), region: read('region'), branch: read('branch'), team: read('team'), position: read('position'), performanceLevel: read('performanceLevel') };
   }, [searchParams]);
 
   const update = useCallback((patch: Partial<ExecutiveFilterState>) => {
@@ -84,18 +84,22 @@ function FunctionSummaryPage({ fn, allowed }: { fn: ExecutiveFunction; allowed: 
       onPeriodChange={(value) => update({ periodKey: value })}
       region={filters.region ?? ''}
       regionOptions={toOptions(options.regions)}
-      onRegionChange={(value) => update({ region: value, team: undefined })}
+      onRegionChange={(value) => update({ region: value, branch: undefined, team: undefined, position: undefined })}
+      branch={filters.branch ?? ''}
+      branchOptions={SUMMARY_BRANCHES}
+      onBranchChange={(value) => update({ branch: value, team: undefined, position: undefined })}
       functionValue={fn}
       functionOptions={toOptions(allowed)}
       onFunctionChange={(value) => switchFunction(value as ExecutiveFunction)}
       functionSlot={<FunctionSwitcher functions={allowed} value={fn} onChange={switchFunction} assigned={readOnly} />}
-      team={filters.team ?? ''}
-      teamOptions={toOptions(options.teams)}
-      teamAllLabel={`All ${fn} teams`}
-      onTeamChange={(value) => update({ team: value })}
+      team={fn === 'Marketing' ? filters.position ?? '' : filters.team ?? ''}
+      teamOptions={toOptions(fn === 'Marketing' ? options.roles ?? [] : options.teams)}
+      teamLabel={fn === 'Marketing' ? 'Roles' : 'Teams'}
+      teamAllLabel={fn === 'Marketing' ? 'All Marketing roles' : `All ${fn} teams`}
+      onTeamChange={(value) => update(fn === 'Marketing' ? { position: value, team: undefined } : { team: value })}
       level={filters.performanceLevel ?? ''}
-      levelOptions={toOptions(options.levels)}
-      onLevelChange={(value) => update({ performanceLevel: value })}
+      levelOptions={toOptions([...SUMMARY_LEVELS])}
+      onLevelChange={(value) => update({ performanceLevel: value, position: undefined })}
     />
   );
 
@@ -124,8 +128,7 @@ function FunctionSummaryPage({ fn, allowed }: { fn: ExecutiveFunction; allowed: 
         )}
         <ExecutiveDashboard
           summary={summary}
-          permissions={{ canOpenFunctions: false, canOpenInsights: canAccessInsights(role), canSeeActions: false, canCreateActions: false }}
-          exportSlot={<FunctionExportCard fn={fn} period={summary.period.effective ? `${summary.period.effective.month} ${summary.period.effective.year}` : ''} otherFunctions={allowed.filter((name) => name !== fn)} />}
+          permissions={{ canOpenFunctions: false, canOpenInsights: canAccessInsights(role), canSeeActions: canAccessCorrectiveActions(role), canCreateActions: canEditActionFollowUp(role) }}
           functionBreakdownSlot={<AffectedAgentKpiBreakdown summary={summary} source={source} performanceLevel={filters.performanceLevel ?? 'All'} teamFunctions={options.team_functions} />}
         />
       </>

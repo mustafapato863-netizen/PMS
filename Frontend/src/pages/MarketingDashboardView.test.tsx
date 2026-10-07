@@ -132,6 +132,8 @@ const renderDashboard = ({
       </MemoryRouter>
     </ThemeProvider>,
   );
+  const filtersButton = screen.queryByRole('button', { name: /Filters/i });
+  if (filtersButton) fireEvent.click(filtersButton);
   return { onExport, onAddAction };
 };
 

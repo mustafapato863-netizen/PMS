@@ -19,7 +19,7 @@ export default function TeamsAtRiskCard({ teams, viewAllHref, limit = 4 }: { tea
         iconBg="var(--pms-grade-d-badge-bg)"
         iconColor="var(--pms-grade-d-text)"
         title="Teams at risk"
-        subtitle="Grade D/E, or score falling 2 consecutive months"
+        subtitle="Grade C/D/E, or score falling 2 consecutive months"
         action={viewAllHref ? <Link to={viewAllHref} className="inline-flex shrink-0 items-center rounded-[8px] border border-[var(--insights-accent-border)] bg-[var(--insights-accent-soft)] px-[10px] py-[6px] text-[12px] font-semibold text-[var(--insights-accent-text)]">View all teams</Link> : null}
       />
       {rows.length ? (

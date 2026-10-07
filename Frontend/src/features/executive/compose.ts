@@ -12,6 +12,8 @@ import { GRADE_CLASSES, getGradeClassOrNull, type GradeClass } from '../../const
 import { canonicalTeamName } from '../../types';
 import type { AgentRecord } from '../../types';
 import { normalizePerformanceScore } from '../../utils/kpiScore';
+import { agentMatchesLocation } from '../../utils/branchScope';
+import { summarizeActionAnalytics } from './actionAnalytics';
 import type { InsightDriver, InsightItem, InsightTrendStatus } from '../insights/types';
 import type { TeamFunctionMap } from '../insights/filterCascade';
 import { teamBelongsToFunction } from '../insights/filterCascade';
@@ -38,6 +40,13 @@ import type {
 } from './types';
 
 export const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+export const SUMMARY_LEVELS = ['Employee', 'Managerial', 'Corporate'] as const;
+export const SUMMARY_BRANCHES = [
+  { value: 'dubai', label: 'Dubai' },
+  { value: 'sharjah', label: 'Sharjah (Sharqa)' },
+  { value: 'ajman', label: 'Ajman' },
+  { value: 'clinics', label: 'Clinics' },
+];
 const TARGET = 100;
 const REGION_LABELS: Record<string, string> = { EGY: 'Offshore Egypt', UAE: 'UAE Region' };
 
@@ -49,6 +58,7 @@ export interface ExecRecord {
   region: string | null;
   position: string | null;
   level: string;
+  branches?: string[];
   period: ExecutivePeriod;
   score: number;
   kpis: NonNullable<AgentRecord['kpi_values']>;
@@ -76,6 +86,7 @@ export function toExecRecords(agents: AgentRecord[], fallbackYear = new Date().g
     const team = canonicalTeamName(agent.identity?.team);
     if (!month || !MONTHS.includes(month) || !team) return [];
     if ((agent.identity.name || '').trim().toLowerCase() === 'total') return [];
+    if (agent.evaluation?.score == null) return [];
     const raw = Number(agent.evaluation?.score);
     if (!Number.isFinite(raw)) return [];
     return [{
@@ -83,8 +94,9 @@ export function toExecRecords(agents: AgentRecord[], fallbackYear = new Date().g
       name: agent.identity.name,
       team,
       region: (agent.region || agent.identity.region || null) as string | null,
-      position: (agent.position || agent.identity.position || null) as string | null,
+      position: (agent.position || agent.identity.position || agent.raw_data?.Position || null) as string | null,
       level: agent.performance_level || 'Employee',
+      branches: SUMMARY_BRANCHES.filter((branch) => agentMatchesLocation(agent, branch.value as Parameters<typeof agentMatchesLocation>[1])).map((branch) => branch.value),
       period: periodOf(agent.year || fallbackYear, month),
       score: normalizePerformanceScore(raw),
       kpis: agent.kpi_values || [],
@@ -225,35 +237,39 @@ export function kpiRows(current: ExecRecord[], previous: ExecRecord[]): Executiv
 }
 
 function levels(current: ExecRecord[], previous: ExecRecord[]): ExecutiveLevel[] {
-  const groups = new Map<string, ExecRecord[]>();
-  current.forEach((record) => {
-    const key = record.position || 'Unassigned';
-    groups.set(key, [...(groups.get(key) ?? []), record]);
-  });
-  return [...groups.entries()].map(([level, records]) => {
+  return SUMMARY_LEVELS.map((level) => {
+    const records = current.filter((record) => record.level === level);
     const score = scoreOf(records);
-    const previousScore = scoreOf(previous.filter((record) => (record.position || 'Unassigned') === level));
+    const previousScore = scoreOf(previous.filter((record) => record.level === level));
     return { level, employees: employeesOf(records), score, previous_score: previousScore, change: diff(score, previousScore), grade: getGradeClassOrNull(score) };
-  }).sort((left, right) => (left.score ?? 0) - (right.score ?? 0));
+  });
 }
 
 function people(current: ExecRecord[], previous: ExecRecord[]): ExecutivePeople {
-  const previousByEmployee = new Map(previous.map((record) => [record.employeeId, record.score]));
-  const persons: ExecutivePerson[] = current.map((record) => {
-    const previousScore = previousByEmployee.get(record.employeeId);
-    const score = round1(record.score);
+  const key = (record: ExecRecord) => `${record.employeeId}:${record.level}`;
+  const groups = new Map<string, ExecRecord[]>();
+  current.forEach((record) => groups.set(key(record), [...(groups.get(key(record)) ?? []), record]));
+  const persons: ExecutivePerson[] = [...groups.values()].map((records) => {
+    const record = records[0];
+    const previousScore = scoreOf(previous.filter((item) => key(item) === key(record)));
+    const score = scoreOf(records);
     return {
       employee_id: record.employeeId,
       name: record.name,
       position: record.position,
+      team: record.team,
+      region: record.region,
+      performance_level: record.level,
       score,
-      previous_score: previousScore === undefined ? null : round1(previousScore),
-      change: previousScore === undefined ? null : round1(record.score - previousScore),
-      grade: getGradeClassOrNull(record.score),
+      previous_score: previousScore,
+      change: diff(score, previousScore),
+      grade: getGradeClassOrNull(score),
     };
   });
   const byName = (left: ExecutivePerson, right: ExecutivePerson) => left.name.localeCompare(right.name);
   return {
+    below_90: persons.filter((person) => person.score !== null && person.score < 90)
+      .sort((l, r) => (l.score ?? 0) - (r.score ?? 0) || byName(l, r)),
     bottom: [...persons].sort((l, r) => (l.score ?? 0) - (r.score ?? 0) || byName(l, r)).slice(0, 4),
     biggest_drops: persons.filter((person) => person.change !== null && person.change < 0)
       .sort((l, r) => (l.change ?? 0) - (r.change ?? 0) || byName(l, r)).slice(0, 4),
@@ -266,10 +282,12 @@ function teamsOf(
   effective: ExecutivePeriod,
   previous: ExecutivePeriod | null,
   teamFunctions: TeamFunctionMap | undefined,
+  byRole = false,
 ): ExecutiveTeam[] {
-  const names = [...new Set(inPeriod(scoped, effective).map((record) => record.team))];
+  const groupName = (record: ExecRecord) => byRole ? record.position || record.team : record.team;
+  const names = [...new Set(inPeriod(scoped, effective).map(groupName))];
   const base = names.map((team) => {
-    const records = scoped.filter((record) => record.team === team);
+    const records = scoped.filter((record) => groupName(record) === team);
     const current = inPeriod(records, effective);
     const score = scoreOf(current);
     const previousScore = scoreOf(inPeriod(records, previous));
@@ -277,7 +295,9 @@ function teamsOf(
     const worstKpi = kpiRows(current, inPeriod(records, previous))[0];
     return {
       team,
-      function: executiveFunctionForTeam(team, teamFunctions),
+      position: byRole ? team : null,
+      source_team: records[0].team,
+      function: executiveFunctionForTeam(records[0].team, teamFunctions),
       regions: [...new Set(current.map((record) => record.region).filter((value): value is string => Boolean(value)))].sort(),
       employees: employeesOf(current),
       score,
@@ -316,6 +336,7 @@ function teamsOf(
     if (ranked.length > 1) ranked[ranked.length - 1].flags.push('lowest_in_function');
   });
   base.forEach((team) => {
+    if (team.grade === 'C') team.flags.unshift('grade_c');
     if (team.grade === 'D') team.flags.unshift('grade_d');
     if (team.grade === 'E') team.flags.unshift('grade_e');
     if (fallingMonths(team.trend) >= 2) team.flags.push('falling_2_months');
@@ -324,7 +345,7 @@ function teamsOf(
 }
 
 export function isAtRisk(team: ExecutiveTeam) {
-  return team.flags.some((flag) => flag === 'grade_d' || flag === 'grade_e' || flag === 'falling_2_months');
+  return team.flags.some((flag) => flag === 'grade_c' || flag === 'grade_d' || flag === 'grade_e' || flag === 'falling_2_months');
 }
 
 function functionCards(scoped: ExecRecord[], effective: ExecutivePeriod, previous: ExecutivePeriod | null, teamFunctions?: TeamFunctionMap): ExecutiveFunctionCard[] {
@@ -386,6 +407,44 @@ function regions(current: ExecRecord[], previous: ExecRecord[]): ExecutiveRegion
 }
 
 /* ── Drivers (from the Insights workspace) ── */
+
+/** Branch/role drivers use only persisted contributions inside the selected scope. */
+export function scopedRecordDrivers(current: ExecRecord[], previous: ExecRecord[], teamFunctions?: TeamFunctionMap) {
+  const points = (value: number) => Math.abs(value) <= 1 ? value * 100 : value;
+  const contributions = (records: ExecRecord[], team: string, key: string) => records
+    .filter((record) => record.team === team)
+    .flatMap((record) => record.kpis.filter((kpi) => kpi.kpi_key === key
+      && Number.isFinite(kpi.contribution) && Number.isFinite(kpi.weight_applied)));
+  const all: ExecutiveDriver[] = [];
+  for (const team of new Set(current.map((record) => record.team))) {
+    const rows = kpiRows(current.filter((record) => record.team === team), previous.filter((record) => record.team === team));
+    for (const row of rows) {
+      if (row.gap_value === null) continue;
+      const now = contributions(current, team, row.kpi_key);
+      if (!now.length) continue;
+      const before = contributions(previous, team, row.kpi_key);
+      const currentImpact = now.reduce((total, kpi) => total + points(kpi.contribution!), 0) / current.length;
+      const targetImpact = now.reduce((total, kpi) => total + points(kpi.weight_applied!), 0) / current.length;
+      const previousImpact = before.length ? before.reduce((total, kpi) => total + points(kpi.contribution!), 0) / previous.length : null;
+      const change = previousImpact === null ? null : currentImpact - previousImpact;
+      all.push({
+        kpi_key: row.kpi_key, kpi_label: row.kpi_label, team,
+        function: executiveFunctionForTeam(team, teamFunctions), kpi_direction: row.kpi_direction,
+        unit: row.unit, current_value: row.actual, previous_value: row.previous_actual,
+        raw_change: row.raw_change, change_value: row.change_value, trend_status: row.trend_status,
+        gap_value: row.gap_value, achievement_percent: row.achievement_percent, weight: row.weight,
+        impact_points: change, impact_change_points: change,
+        weighted_gap_points: currentImpact - targetImpact,
+      });
+    }
+  }
+  if (!all.length) return null;
+  return {
+    negative: all.filter((driver) => driver.weighted_gap_points! < 0).sort((left, right) => left.weighted_gap_points! - right.weighted_gap_points!).slice(0, 3),
+    positive: all.filter((driver) => (driver.impact_change_points ?? 0) > 0).sort((left, right) => right.impact_change_points! - left.impact_change_points!).slice(0, 3),
+    metric: 'weighted_gap' as const, hasWeightedGap: true,
+  };
+}
 
 function splitScope(scope: string): { team: string | null } {
   const [team] = String(scope || '').split(' · ');
@@ -453,6 +512,11 @@ export function mapDrivers(
 /* ── Corrective actions (from /api/corrective-actions/follow-up) ── */
 
 export interface FollowUpAction {
+  employee_id?: string | null;
+  month?: string;
+  created_at?: string | null;
+  root_cause_note?: string | null;
+  linked_kpi_key?: string | null;
   id: string | number;
   title?: string | null;
   action_type?: string | null;
@@ -499,8 +563,11 @@ export function summarizeActions(actions: FollowUpAction[], today: Date, effecti
       due_date: dueDate(action),
       status: String(action.status || ''),
       follow_up_state: overdue(action) ? 'overdue' : dueThisWeek(action) ? 'due_this_week' : (action.follow_up_state ?? null),
+      employee_id: action.employee_id ?? null,
+      month: action.month,
     }));
   return {
+    analytics: summarizeActionAnalytics(actions, effective),
     summary: {
       as_of: todayIso,
       open: actions.filter(isOpen).length,
@@ -518,7 +585,7 @@ export interface ComposeInput {
   view: ExecutiveView;
   role: string;
   records: ExecRecord[];
-  filters: { region?: string; teamFunction?: string; team?: string; performanceLevel?: string };
+  filters: { region?: string; branch?: string; teamFunction?: string; team?: string; position?: string; performanceLevel?: string };
   requestedPeriodKey?: string | null;
   /** Managerial: the manager's team; Function view: the selected function. */
   team?: string | null;
@@ -526,6 +593,7 @@ export interface ComposeInput {
   accessibleFunctions?: string[];
   teamFunctions?: TeamFunctionMap;
   drivers?: { drivers: InsightDriver[]; items: InsightItem[] } | null;
+  deriveScopedDrivers?: boolean;
   actions?: FollowUpAction[] | null;
   /** Records outside the viewer's scope for aggregate comparisons (never available client-side for Manager / Function Viewer). */
   comparisonRecords?: ExecRecord[] | null;
@@ -533,9 +601,11 @@ export interface ComposeInput {
 }
 
 function applyFilters(records: ExecRecord[], input: ComposeInput, teamFunctions?: TeamFunctionMap) {
-  const { region, teamFunction, team, performanceLevel } = input.filters;
+  const { region, branch, teamFunction, team, position, performanceLevel } = input.filters;
   return records.filter((record) => (
     (!region || record.region === region)
+    && (!branch || record.branches?.includes(branch))
+    && (!position || record.position === position)
     && (!performanceLevel || record.level === performanceLevel)
     && (!teamFunction || (input.view === 'function'
       ? executiveFunctionForTeam(record.team, teamFunctions) === teamFunction
@@ -564,10 +634,10 @@ export function composeExecutiveSummary(input: ComposeInput): ExecutiveSummary {
   const score = scoreOf(current);
   const previousScore = scoreOf(before);
 
-  const teams = effective ? teamsOf(scoped, effective, previous, teamFunctions) : [];
+  const teams = effective ? teamsOf(scoped, effective, previous, teamFunctions, view === 'function' && input.functionName === 'Marketing') : [];
   const functions = effective ? functionCards(scoped, effective, previous, teamFunctions) : [];
   const comparison = input.comparisonRecords && effective
-    ? applyFilters(input.comparisonRecords, { ...input, filters: { region: input.filters.region, performanceLevel: input.filters.performanceLevel } }, teamFunctions)
+    ? applyFilters(input.comparisonRecords, { ...input, filters: { region: input.filters.region, branch: input.filters.branch, performanceLevel: input.filters.performanceLevel } }, teamFunctions)
     : null;
 
   // Comparison line: managerial = function average, function = company average.
@@ -598,7 +668,7 @@ export function composeExecutiveSummary(input: ComposeInput): ExecutiveSummary {
     ? trendOf(scoped, effective).map((point, index) => ({ ...point, comparison_score: comparisonTrend?.[index] ?? null, target: TARGET }))
     : [];
 
-  const rawSplit = input.drivers
+  const rawSplit = input.deriveScopedDrivers ? scopedRecordDrivers(current, before, teamFunctions) : input.drivers
     ? mapDrivers(input.drivers.drivers, input.drivers.items, teamFunctions, view === 'function' ? Number.POSITIVE_INFINITY : 3)
     : null;
   // Function view: Insights' function filter is overlapping, Executive membership is disjoint.
@@ -652,6 +722,9 @@ export function composeExecutiveSummary(input: ComposeInput): ExecutiveSummary {
       function: view === 'function' ? input.functionName ?? null : (view === 'managerial' ? executiveFunctionForTeam(input.team, teamFunctions) : input.filters.teamFunction ?? null),
       region: view === 'managerial' ? ([...new Set(current.map((record) => record.region).filter(Boolean))][0] ?? null) : input.filters.region ?? null,
       accessible_functions: input.accessibleFunctions ?? [...EXECUTIVE_FUNCTIONS],
+      branch: input.filters.branch ?? null,
+      performance_level: input.filters.performanceLevel ?? null,
+      position: input.filters.position ?? null,
     },
     hero: {
       label,
@@ -679,7 +752,7 @@ export function composeExecutiveSummary(input: ComposeInput): ExecutiveSummary {
     grade_distribution: grades,
     kpis,
     levels: levels(current, before),
-    people: view === 'managerial' ? people(current, before) : null,
+    people: people(current, before),
     highlights: {
       most_improved: mostImproved && mostImproved.change !== null ? { type: 'function', name: mostImproved.function, change: mostImproved.change } : null,
       lowest_in_function: lowestTeam && lowestTeam.function && lowestTeam.score !== null

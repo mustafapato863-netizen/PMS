@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { User } from '../types';
@@ -41,7 +41,7 @@ const build = (patch: Partial<ComposeInput> = {}) => composeExecutiveSummary({
 });
 
 function renderAt(path = '/executive') {
-  return render(
+  const rendered = render(
     <MemoryRouter initialEntries={[path]}>
       <Routes>
         <Route path="/executive" element={<ExecutiveView />} />
@@ -49,6 +49,9 @@ function renderAt(path = '/executive') {
       </Routes>
     </MemoryRouter>,
   );
+  const launcher = screen.queryByRole('button', { name: /Executive filters/i });
+  if (launcher) fireEvent.click(launcher);
+  return rendered;
 }
 
 beforeEach(() => {
@@ -83,8 +86,16 @@ describe('ExecutiveView role routing', () => {
     expect(screen.getByRole('note')).toHaveTextContent('Scoped to your team');
     expect(screen.getByRole('note')).toHaveTextContent('function-average comparison appears once the backend summary endpoint is live');
     expect(screen.getByRole('heading', { name: 'Team KPIs — worst first' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'My corrective actions' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Corrective actions' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Functions' })).not.toBeInTheDocument();
+  });
+
+  it('applies the selected team parent function together with the team filter', () => {
+    renderAt();
+
+    fireEvent.change(screen.getByLabelText('Team'), { target: { value: 'Inbound' } });
+
+    expect(state.lastArgs?.filters).toMatchObject({ teamFunction: 'Call Center', team: 'Inbound' });
   });
 
   it('Function Viewer is redirected to /function-summary', () => {
@@ -117,7 +128,9 @@ describe('Corporate sections', () => {
     expect(screen.getByRole('heading', { name: 'Teams at risk' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Grade distribution' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Corrective actions' })).toBeInTheDocument();
-    expect(screen.getByTestId('action-tile-due-this-week')).toHaveTextContent('3');
+    expect(screen.getByTestId('corrective-action-insights')).toBeInTheDocument();
+    expect(screen.queryByTestId('action-tile-due-this-week')).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Open Corrective Actions' })).not.toBeInTheDocument();
   });
 
   it('labels the driver metric neutrally until weighted_gap_points arrives', () => {

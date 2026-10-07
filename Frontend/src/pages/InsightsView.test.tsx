@@ -310,7 +310,7 @@ function HistoryProbe() {
 /** The production Sidebar next to Insights / Executive, inside one router. */
 function renderWithRealSidebar(entries: string[]) {
   const sidebar = <Sidebar isOpen setIsOpen={vi.fn()} />;
-  return render(
+  const rendered = render(
     <MemoryRouter initialEntries={entries} initialIndex={entries.length - 1}>
       <ThemeProvider>
         <Routes>
@@ -320,6 +320,9 @@ function renderWithRealSidebar(entries: string[]) {
       </ThemeProvider>
     </MemoryRouter>,
   );
+  const launcher = screen.queryByRole('button', { name: /Insights filters/i });
+  if (launcher) fireEvent.click(launcher);
+  return rendered;
 }
 
 const realSidebarInsightsLink = () => within(screen.getByRole('complementary', { name: 'Primary navigation' }))
@@ -327,7 +330,7 @@ const realSidebarInsightsLink = () => within(screen.getByRole('complementary', {
 
 /** Router with a page before Insights, so Back can leave the page. */
 function renderWithHistory(entries: string[], initialIndex = entries.length - 1) {
-  return render(
+  const rendered = render(
     <MemoryRouter initialEntries={entries} initialIndex={initialIndex}>
       <Routes>
         <Route path="/insights" element={<><InsightsView /><LocationProbe /><HistoryProbe /></>} />
@@ -335,14 +338,17 @@ function renderWithHistory(entries: string[], initialIndex = entries.length - 1)
       </Routes>
     </MemoryRouter>,
   );
+  const launcher = screen.queryByRole('button', { name: /Insights filters/i });
+  if (launcher) fireEvent.click(launcher);
+  return rendered;
 }
 
 function currentSearch() {
   return new URLSearchParams(screen.getByTestId('location-search').textContent || '');
 }
 
-function renderInsights(entry = '/insights') {
-  return render(
+function renderInsights(entry = '/insights', openFilters = true) {
+  const rendered = render(
     <MemoryRouter initialEntries={[entry]}>
       <Routes>
         <Route path="/insights" element={<><InsightsView /><LocationProbe /></>} />
@@ -351,6 +357,9 @@ function renderInsights(entry = '/insights') {
       </Routes>
     </MemoryRouter>,
   );
+  const launcher = openFilters ? screen.queryByRole('button', { name: /Insights filters/i }) : null;
+  if (launcher) fireEvent.click(launcher);
+  return rendered;
 }
 
 function section(name: string) {
@@ -928,8 +937,8 @@ describe('InsightsView', () => {
 
     expect(screen.queryByRole('heading', { name: 'People Contribution Analysis' })).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: '6-Month KPI Trend' })).not.toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: /More filters/i }));
     await user.selectOptions(screen.getByRole('combobox', { name: 'KPI' }), 'cpl');
+    await user.click(screen.getByRole('button', { name: 'Done' }));
 
     expect(screen.getByRole('heading', { name: 'People Contribution Analysis' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: '6-Month KPI Trend' })).toBeInTheDocument();
@@ -955,7 +964,6 @@ describe('InsightsView', () => {
     const user = userEvent.setup();
     renderInsights();
 
-    await user.click(screen.getByRole('button', { name: /More filters/i }));
     expect(screen.queryByRole('combobox', { name: 'Employee' })).not.toBeInTheDocument();
     expect(optionValues('Function')).toEqual(['All functions', 'Call Center', 'RCM', 'Pre-Approvals', 'Marketing']);
 
@@ -1041,6 +1049,7 @@ describe('InsightsView', () => {
       expect(Object.fromEntries(currentSearch())).toEqual({ function: 'RCM' });
       await forward(user);
       expect(Object.fromEntries(currentSearch())).toEqual({ function: 'RCM', team: 'Coding' });
+      await user.click(screen.getByRole('button', { name: /Insights filters/i }));
       expect(screen.getByRole('combobox', { name: 'Team' })).toHaveValue('Coding');
       expect(latestFilters.current).toEqual({ teamFunction: 'RCM', team: 'Coding' });
     });
@@ -1144,7 +1153,7 @@ describe('InsightsView', () => {
 
   it('keeps focus on the chart point when Escape hides its tooltip (QA BUG-2)', async () => {
     const user = userEvent.setup();
-    renderInsights();
+    renderInsights('/insights', false);
     const june = screen.getByTestId('performance-trend-point-2026-06');
     june.focus();
     await user.keyboard('{ArrowLeft}');

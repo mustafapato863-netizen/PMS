@@ -39,6 +39,9 @@ export interface ExecutiveScope {
   function: string | null;
   region: string | null;
   accessible_functions: string[];
+  branch?: string | null;
+  performance_level?: string | null;
+  position?: string | null;
 }
 
 export interface ExecutiveTrendPoint {
@@ -124,6 +127,7 @@ export interface ExecutiveDriver {
 }
 
 export type ExecutiveTeamFlag =
+  | 'grade_c'
   | 'grade_d'
   | 'grade_e'
   | 'falling_2_months'
@@ -133,6 +137,9 @@ export type ExecutiveTeamFlag =
 
 export interface ExecutiveTeam {
   team: string;
+  /** Marketing role groups retain their source team and never become synthetic teams. */
+  position?: string | null;
+  source_team?: string;
   function: string | null;
   regions: string[];
   employees: number;
@@ -197,6 +204,9 @@ export interface ExecutivePerson {
   employee_id: string;
   name: string;
   position: string | null;
+  team?: string;
+  region?: string | null;
+  performance_level?: string;
   score: number | null;
   previous_score: number | null;
   change: number | null;
@@ -207,6 +217,7 @@ export interface ExecutivePeople {
   bottom: ExecutivePerson[];
   biggest_drops: ExecutivePerson[];
   top: ExecutivePerson[];
+  below_90?: ExecutivePerson[];
 }
 
 export interface ExecutiveActionItem {
@@ -219,9 +230,13 @@ export interface ExecutiveActionItem {
   due_date: string | null;
   status: string;
   follow_up_state: string | null;
+  employee_id?: string | null;
+  month?: string;
 }
 
 export interface ExecutiveCorrectiveActions {
+  /** Full period-scoped evidence for read-only dashboard analysis, not the four open follow-up rows. */
+  analytics?: ExecutiveActionAnalytics;
   summary: {
     as_of: string;
     open: number;
@@ -231,6 +246,17 @@ export interface ExecutiveCorrectiveActions {
     closed_in_month: number | null;
   };
   actions: ExecutiveActionItem[];
+}
+
+export interface ExecutiveActionAnalytics {
+  actions: Array<{
+    id: string;
+    team: string | null;
+    employee_id: string | null;
+    action_type: string;
+    kpi_mentions: string[];
+  }>;
+  unassigned_period: number;
 }
 
 export interface ExecutiveHighlights {

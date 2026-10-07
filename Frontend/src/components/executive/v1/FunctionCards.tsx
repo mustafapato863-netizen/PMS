@@ -50,7 +50,17 @@ function FunctionCard({ card, previous, linkable }: { card: ExecutiveFunctionCar
           <StatusPill tone="danger" icon={TrendingDown}>Falling {card.falling_months} mo</StatusPill>
         )}
       </div>
-      <Sparkline values={card.trend.map((point) => point.score)} label={`${card.function} 6-month trend`} />
+      <div className="rounded-[10px] bg-[var(--exec-tile-bg)] px-[8px] py-[4px]">
+        <Sparkline
+          values={card.trend.map((point) => point.score)}
+          height={50}
+          width={360}
+          label={`${card.function} 6-month trend`}
+          latestValue={card.score}
+          latestValueLabel={fmtScore(card.score)}
+          pointLabels={card.trend.map(({ period, score }) => `${period.month} ${period.year}: ${fmtScore(score)}`)}
+        />
+      </div>
       <div className="h-px w-full bg-[var(--insights-row-border)]" />
       <div className="flex items-end justify-between gap-[8px]">
         <p className="min-w-0 text-[11px] leading-[1.4] text-[var(--text-muted)]">{card.teams.join(' · ')}</p>

@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   composeExecutiveSummary,
   gradeDistribution,
+  isAtRisk,
   kpiRows,
   mapDrivers,
+  scopedRecordDrivers,
   summarizeActions,
   toExecRecords,
   type ComposeInput,
@@ -36,6 +38,35 @@ const record = (score: number, patch: Partial<ExecRecord> = {}): ExecRecord => (
 });
 
 describe('executive function membership (disjoint, Executive cards only)', () => {
+  it('splits by performance level and lists every below-90 employee in the filtered branch', () => {
+    const evidence = [
+      ...[71, 75, 80, 82, 85, 89].map((score) => record(score, { team: 'Coding', position: null, branches: ['dubai'] })),
+      record(84, { team: 'Coding', employeeId: 'manager', level: 'Managerial', position: 'Manager', branches: ['dubai'] }),
+      record(92, { team: 'Coding', employeeId: 'corp', level: 'Corporate', position: 'Director', branches: ['dubai'] }),
+      record(60, { team: 'Coding', employeeId: 'ajman', branches: ['ajman'] }),
+    ];
+    const summary = compose({ view: 'function', functionName: 'RCM', records: evidence, filters: { branch: 'dubai' }, comparisonRecords: null });
+    expect(summary.levels.map((item) => [item.level, item.employees])).toEqual([['Employee', 6], ['Managerial', 1], ['Corporate', 1]]);
+    expect(summary.people?.below_90).toHaveLength(7);
+    expect(summary.people?.below_90?.some((person) => person.employee_id === 'ajman')).toBe(false);
+    const managerial = compose({ view: 'function', functionName: 'RCM', records: evidence, filters: { branch: 'dubai', performanceLevel: 'Managerial' }, comparisonRecords: null });
+    expect(managerial.hero.score).toBe(84);
+    expect(managerial.people?.below_90?.map((person) => person.employee_id)).toEqual(['manager']);
+    expect(managerial.levels.map((item) => item.score)).toEqual([null, 84, null]);
+  });
+
+  it('groups Marketing leaderboard rows by role and filters the same shared details by role', () => {
+    const evidence = [
+      record(98, { team: 'Marketing', position: 'Web Developer', employeeId: 'web' }),
+      record(75, { team: 'Marketing', position: 'Copywriter', employeeId: 'copy' }),
+    ];
+    const summary = compose({ view: 'function', functionName: 'Marketing', records: evidence, filters: {}, comparisonRecords: null });
+    expect(summary.teams.map((item) => item.position)).toEqual(['Copywriter', 'Web Developer']);
+    expect(summary.teams.find((item) => item.position === 'Web Developer')?.rank_in_function).toBe(1);
+    const role = compose({ view: 'function', functionName: 'Marketing', records: evidence, filters: { position: 'Copywriter' }, comparisonRecords: null });
+    expect(role.hero.score).toBe(75);
+    expect(role.people?.below_90?.map((person) => person.employee_id)).toEqual(['copy']);
+  });
   it('puts IP Offshore under RCM and UAE pre-approvals under Pre-Approvals even when the backend lists both', () => {
     expect(executiveFunctionForTeam('Pre-Approvals IP Offshore', FIXTURE_TEAM_FUNCTIONS)).toBe('RCM');
     expect(executiveFunctionForTeam('Pre-Approvals IP Offshore')).toBe('RCM');
@@ -72,6 +103,34 @@ describe('executive function membership (disjoint, Executive cards only)', () =>
     expect(summary.teams.map((team) => team.team)).toContain('CSR');
     const cardHeadcount = summary.functions.reduce((sum, card) => sum + card.employees, 0);
     expect(summary.hero.employees).toBe(cardHeadcount + 5);
+  });
+});
+
+describe('teams at risk', () => {
+  it.each([
+    [69.9, 'E', true],
+    [70, 'D', true],
+    [79.9, 'D', true],
+    [80, 'C', true],
+    [89.9, 'C', true],
+    [90, 'B', false],
+    [95, 'A', false],
+  ] as const)('flags score %s (Grade %s) as at risk: %s', (score, grade, expected) => {
+    const team = compose({ records: [record(score)] }).teams[0];
+    expect(team.grade).toBe(grade);
+    expect(isAtRisk(team)).toBe(expected);
+    if (expected) expect(team.flags).toContain(`grade_${grade.toLowerCase()}`);
+  });
+
+  it('still flags healthy grades after two consecutive monthly declines, but not one', () => {
+    const april = record(98, { period: { key: '2026-04', year: 2026, month: 'April' } });
+    const may = record(96, { period: { key: '2026-05', year: 2026, month: 'May' } });
+    const june = record(94);
+    const declining = compose({ records: [april, may, june] }).teams[0];
+    expect(declining.grade).toBe('B');
+    expect(declining.flags).toContain('falling_2_months');
+    expect(isAtRisk(declining)).toBe(true);
+    expect(isAtRisk(compose({ records: [may, june] }).teams[0])).toBe(false);
   });
 });
 
@@ -155,6 +214,19 @@ describe('direction-aware KPI rows', () => {
 });
 
 describe('drivers (CoS: impact_points keeps its meaning; weighted_gap_points preferred)', () => {
+  it('derives scoped gaps from persisted contributions and keeps lower-is-better movement correct', () => {
+    const kpi = (actual: number, contribution: number): ExecRecord['kpis'][number] => ({ kpi_key: 'aht', label: 'Average Handle Time', direction: 'lower_better', unit: 'seconds', actual_value: actual, target_value: 360, achievement_ratio: contribution / 0.25, weight_applied: 0.25, contribution });
+    const current = [record(80, { team: 'Coding', kpis: [kpi(400, 0.225)] })];
+    const previous = [record(70, { team: 'Coding', kpis: [kpi(450, 0.20)] })];
+    const drivers = scopedRecordDrivers(current, previous);
+    expect(drivers?.metric).toBe('weighted_gap');
+    expect(drivers?.negative[0]).toMatchObject({ team: 'Coding', weighted_gap_points: -2.5, raw_change: -50, change_value: 50, trend_status: 'improving' });
+    expect(drivers?.positive[0]?.impact_change_points).toBe(2.5);
+    expect(scopedRecordDrivers([record(80)], [])).toBeNull();
+    const scoped = compose({ view: 'function', functionName: 'RCM', records: [...current.map((item) => ({ ...item, branches: ['dubai'] })), record(10, { team: 'Coding', branches: ['ajman'] })], filters: { branch: 'dubai' }, drivers: null, deriveScopedDrivers: true });
+    expect(scoped.meta.unavailable).not.toContain('drivers');
+    expect(scoped.drivers.negative[0]?.weighted_gap_points).toBe(-2.5);
+  });
   it('ranks negatives by the existing impact_points and labels the metric neutrally when weighted gap is absent', () => {
     const { drivers, items } = fixtureDrivers();
     const split = mapDrivers(drivers, items, FIXTURE_TEAM_FUNCTIONS);

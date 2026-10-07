@@ -10,7 +10,7 @@ export default function FunctionSwitcher({ functions, value, onChange, assigned 
         {assigned && value === functions[0] && <span className="rounded-full bg-[var(--insights-accent-tag)] px-[6px] py-px text-[9px] font-semibold text-[var(--insights-accent-text)]">Primary</span>}
         <span className="text-[9px] font-semibold text-[var(--text-muted)]">{functions.length} {assigned ? 'assigned' : 'available'}</span>
       </div>
-      <div role="radiogroup" aria-label="Function" className="flex h-[34px] items-center gap-[2px] rounded-[8px] border-[1.5px] border-[var(--insights-accent)] bg-[var(--bg-surface)] p-[2px]">
+      <div role="radiogroup" aria-label="Function" className="flex min-h-[34px] min-w-0 flex-wrap items-center gap-[2px] rounded-[8px] border-[1.5px] border-[var(--insights-accent)] bg-[var(--bg-surface)] p-[2px]">
         {functions.map((fn) => {
           const active = fn === value;
           return (
@@ -20,7 +20,7 @@ export default function FunctionSwitcher({ functions, value, onChange, assigned 
               role="radio"
               aria-checked={active}
               onClick={() => onChange(fn)}
-              className={`h-full whitespace-nowrap rounded-[6px] px-[10px] text-[12px] font-semibold transition-colors ${active ? 'bg-[var(--insights-accent)] text-white' : 'text-[var(--text-secondary)] hover:bg-[var(--insights-accent-soft)]'}`}
+              className={`min-h-[28px] max-w-full flex-[1_1_auto] whitespace-nowrap rounded-[6px] px-[10px] text-[12px] font-semibold transition-colors ${active ? 'bg-[var(--insights-accent)] text-white' : 'text-[var(--text-secondary)] hover:bg-[var(--insights-accent-soft)]'}`}
             >
               {fn}
             </button>

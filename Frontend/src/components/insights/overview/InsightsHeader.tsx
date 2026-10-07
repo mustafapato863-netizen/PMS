@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { Calendar, Layers, Lock } from 'lucide-react';
 import CustomDropdown from '../../common/CustomDropdown';
+import ResponsiveFilters from '../../common/ResponsiveFilters';
 
 export interface FilterOption {
   value: string;
@@ -95,6 +96,9 @@ export default function InsightsHeader({
   region,
   regionOptions,
   onRegionChange,
+  branch,
+  branchOptions = [],
+  onBranchChange,
   functionValue,
   functionOptions,
   onFunctionChange,
@@ -109,7 +113,10 @@ export default function InsightsHeader({
   titleBadge,
   locked,
   functionSlot,
+  additionalFilters,
+  additionalActiveCount = 0,
   teamAllLabel = 'All teams',
+  teamLabel = 'Teams',
   groupLabel = 'Insights filters',
   periodAriaLabel = 'Insight period',
   rowFrom = 'xl',
@@ -120,6 +127,9 @@ export default function InsightsHeader({
   region: string;
   regionOptions: FilterOption[];
   onRegionChange: (value: string) => void;
+  branch?: string;
+  branchOptions?: FilterOption[];
+  onBranchChange?: (value: string) => void;
   functionValue: string;
   functionOptions: FilterOption[];
   onFunctionChange: (value: string) => void;
@@ -136,13 +146,19 @@ export default function InsightsHeader({
   locked?: { region?: boolean; function?: boolean; team?: boolean };
   /** Replaces the Functions dropdown (Function Viewer's function switcher). */
   functionSlot?: ReactNode;
+  /** Additional page-specific filters displayed in the same floating panel. */
+  additionalFilters?: ReactNode;
+  additionalActiveCount?: number;
   /** "All" entry of the Teams filter (Function Summary: "All RCM teams"). */
   teamAllLabel?: string;
+  teamLabel?: string;
   groupLabel?: string;
   periodAriaLabel?: string;
   /** Breakpoint where title and filters share one row (longer titles need 2xl). */
   rowFrom?: 'xl' | '2xl';
 }) {
+  const activeCount = [region, branch, functionValue, team, level].filter(Boolean).length + additionalActiveCount;
+
   return (
     <header className={`flex flex-col gap-[16px] pb-[4px] ${rowFrom === '2xl' ? '2xl:flex-row 2xl:items-end' : 'xl:flex-row xl:items-end'}`}>
       <div className="flex min-w-0 flex-1 flex-col gap-[4px] leading-normal">
@@ -152,32 +168,36 @@ export default function InsightsHeader({
         </div>
         <p className="text-[14px] font-normal text-[var(--text-secondary)]">{subtitle}</p>
       </div>
-      <div className="flex flex-wrap items-end gap-[10px]" role="group" aria-label={groupLabel}>
-        <LabeledFilter
-          label="Date"
-          ariaLabel={periodAriaLabel}
-          value={period}
-          options={periodOptions}
-          onChange={onPeriodChange}
-          widthClass="w-[140px]"
-          icon={<Calendar className="size-[16px] text-[var(--text-secondary)]" strokeWidth={1.5} />}
-        />
-        <LabeledFilter label="Regions" ariaLabel="Region" value={region} options={regionOptions} allLabel="All regions" onChange={onRegionChange} widthClass="w-[136px]" locked={locked?.region} />
-        {functionSlot ?? <LabeledFilter
-          locked={locked?.function}
-          primary
-          label="Functions"
-          ariaLabel="Function"
-          value={functionValue}
-          options={functionOptions}
-          allLabel="All functions"
-          onChange={onFunctionChange}
-          widthClass="w-[168px]"
-          icon={<Layers className="size-[16px] text-[var(--insights-accent)]" strokeWidth={1.5} />}
-        />}
-        <LabeledFilter label="Teams" ariaLabel="Team" value={team} options={teamOptions} allLabel={teamAllLabel} onChange={onTeamChange} widthClass="w-[168px]" menuMinWidth={260} locked={locked?.team} />
-        <LabeledFilter label="Levels" ariaLabel="Performance level" value={level} options={levelOptions} allLabel="All levels" onChange={onLevelChange} widthClass="w-[132px]" />
-      </div>
+      <ResponsiveFilters activeCount={activeCount} label={groupLabel}>
+        <div className="responsive-filter-content responsive-filter-content--insights" role="group" aria-label={groupLabel}>
+          <LabeledFilter
+            label="Date"
+            ariaLabel={periodAriaLabel}
+            value={period}
+            options={periodOptions}
+            onChange={onPeriodChange}
+            widthClass="w-[140px]"
+            icon={<Calendar className="size-[16px] text-[var(--text-secondary)]" strokeWidth={1.5} />}
+          />
+          <LabeledFilter label="Regions" ariaLabel="Region" value={region} options={regionOptions} allLabel="All regions" onChange={onRegionChange} widthClass="w-[136px]" locked={locked?.region} />
+          {onBranchChange && <LabeledFilter label="Branches" ariaLabel="Branch" value={branch ?? ''} options={branchOptions} allLabel="All Branches" onChange={onBranchChange} widthClass="w-[156px]" />}
+          {functionSlot ? <div className="responsive-filter-function-switcher">{functionSlot}</div> : <LabeledFilter
+            locked={locked?.function}
+            primary
+            label="Functions"
+            ariaLabel="Function"
+            value={functionValue}
+            options={functionOptions}
+            allLabel="All functions"
+            onChange={onFunctionChange}
+            widthClass="w-[168px]"
+            icon={<Layers className="size-[16px] text-[var(--insights-accent)]" strokeWidth={1.5} />}
+          />}
+          <LabeledFilter label={teamLabel} ariaLabel={teamLabel === 'Roles' ? 'Marketing role' : 'Team'} value={team} options={teamOptions} allLabel={teamAllLabel} onChange={onTeamChange} widthClass="w-[168px]" menuMinWidth={260} locked={locked?.team} />
+          <LabeledFilter label="Levels" ariaLabel="Performance level" value={level} options={levelOptions} allLabel="All levels" onChange={onLevelChange} widthClass="w-[132px]" />
+        </div>
+        {additionalFilters}
+      </ResponsiveFilters>
     </header>
   );
 }

@@ -1,10 +1,12 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { MemoryRouter } from 'react-router-dom';
 import type { AgentRecord } from '../../../types';
 import type { ExecutiveSummary } from '../../../features/executive/types';
 import AffectedAgentKpiBreakdown from './AffectedAgentKpiBreakdown';
 
 const mocks = vi.hoisted(() => ({ usePerformanceData: vi.fn() }));
+vi.mock('../../../features/executive/useSummaryRecords', () => ({ useSummaryRecords: () => ({ data: undefined, isError: true, isLoading: false }) }));
 
 vi.mock('../../../hooks/usePerformanceData', () => ({
   usePerformanceData: mocks.usePerformanceData,
@@ -55,11 +57,11 @@ describe('AffectedAgentKpiBreakdown', () => {
   });
 
   it('switches affected agents and shows the selected agent actual, target, and gap', () => {
-    render(<AffectedAgentKpiBreakdown summary={summary} source="composed" performanceLevel="All" />);
+    render(<MemoryRouter><AffectedAgentKpiBreakdown summary={summary} source="composed" performanceLevel="All" /></MemoryRouter>);
 
     const agentSelect = screen.getByRole('combobox', { name: 'Affected agent' });
     expect(agentSelect).toHaveValue('agent-1');
-    expect(within(agentSelect).getByRole('option', { name: 'Sam Agent · Largest drop' })).toBeInTheDocument();
+    expect(within(agentSelect).getByRole('option', { name: 'Sam Agent · Below 90%' })).toBeInTheDocument();
 
     fireEvent.change(agentSelect, { target: { value: 'agent-2' } });
 
@@ -69,5 +71,6 @@ describe('AffectedAgentKpiBreakdown', () => {
     expect(cells[2]).toHaveTextContent('95%');
     expect(cells[3]).toHaveTextContent('90%');
     expect(cells[4]).toHaveTextContent('↑ +5 pp');
+    expect(screen.getByRole('link', { name: /Open 360 profile/ })).toHaveAttribute('href', '/employee/agent-2?month=March&year=2026');
   });
 });

@@ -1,8 +1,7 @@
 import './PageEnhancements.css';
-import BackToTop from '../components/common/BackToTop';
 import { EmployeeHeroStats } from '../components/employee/EmployeeHeroStats';
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, User, Plus, AlertTriangle, Loader2, Users, ChevronLeft, ChevronRight } from 'lucide-react';
 import Breadcrumb from '../components/common/Breadcrumb';
@@ -19,7 +18,8 @@ import KpiBreakdownPanel from '../components/employee/KpiBreakdownPanel';
 import ActionTimeline from '../components/employee/ActionTimeline';
 import EmployeeActionModal from '../components/team/EmployeeActionModal';
 import type { TeamAgentRow, TeamWeightConfig } from '../hooks/usePerformanceData';
-import { getKPIsForAgent, isPreApprovalsIpElectiveTeam, resolvePreApprovalsWorkstream } from '../types';
+import { getKPIsForAgent, getStatusFromScore, isPreApprovalsIpElectiveTeam, resolvePreApprovalsWorkstream } from '../types';
+import { useSummaryRecords } from '../features/executive/useSummaryRecords';
 import type { AgentRecord, EditableCorrectiveAction } from '../types';
 import { getGradeClass } from '../constants/grades';
 import { apiFetch } from '../lib/apiClient';
@@ -172,6 +172,8 @@ const EmployeeProfileView = () => {
   const { employeeId } = useParams<{ employeeId: string }>();
   const navigate = useNavigate();
   const { month } = useMonthParam('All');
+  const [searchParams] = useSearchParams();
+  const selectedYear = Number(searchParams.get('year')) || undefined;
   const { performanceLevel } = usePerformanceLevelParam('All');
   const { role } = useUserRole();
   const functionScope = useFunctionScope();
@@ -185,7 +187,28 @@ const EmployeeProfileView = () => {
       .catch(() => { });
   }, [role]);
 
-  const { rows, loading: loadingRoster } = useTeamData(null, month, 'All', 'all', weightsList, performanceLevel);
+  const { rows: persistedRows, loading: loadingPersistedRoster } = useTeamData(null, month, 'All', 'all', weightsList, performanceLevel);
+  const managementEvidence = useSummaryRecords(Boolean(employeeId && (performanceLevel === 'Managerial' || performanceLevel === 'Corporate')), employeeId);
+  const rows = useMemo(() => {
+    const managementRows: TeamAgentRow[] = (managementEvidence.data ?? [])
+      .filter((agent) => agent.performance_level === performanceLevel && (month === 'All' || agent.identity.month === month))
+      .map((agent) => {
+        const score = normalizeScore(agent.evaluation.score);
+        return {
+          id: agent.identity.employee_id ?? agent.identity.name,
+          name: agent.identity.name, team: agent.identity.team ?? '', month: agent.identity.month,
+          performanceLevel: agent.performance_level ?? 'Employee', score,
+          gradeClass: getGradeClass(score), gradeLabel: agent.evaluation.grade,
+          status: getStatusFromScore(score), rootCauseAuto: '',
+          rootCauseNote: agent.evaluation.manager_notes ?? '', correctiveAction: agent.evaluation.corrective_action ?? '',
+          suggestedAction: agent.evaluation.suggested_action ?? '', ahtMinutes: 0,
+          bookingRate: agent.actual.booking_rate, attendRate: agent.actual.attend_rate, raw: agent,
+        };
+      });
+    const represented = new Set(managementRows.map((row) => `${row.id}:${row.month}:${row.raw.year}`));
+    return [...persistedRows.filter((row) => !represented.has(`${row.id}:${row.month}:${row.raw.year}`)), ...managementRows];
+  }, [managementEvidence.data, month, performanceLevel, persistedRows]);
+  const loadingRoster = loadingPersistedRoster || managementEvidence.isLoading;
   const { agents: legacyPerformanceAgents } = usePerformanceData(
     'All',
     'all',
@@ -201,9 +224,9 @@ const EmployeeProfileView = () => {
     () => (scopedHistoryQuery.data || []).map((item) => mapScopedPerformanceRecord(item)),
     [scopedHistoryQuery.data],
   );
-  const allPerformanceAgents = scopedPerformanceApiEnabled ? scopedPerformanceAgents : legacyPerformanceAgents;
+  const allPerformanceAgents = managementEvidence.data ?? (scopedPerformanceApiEnabled ? scopedPerformanceAgents : legacyPerformanceAgents);
   const employee = useMemo(() => {
-    const empRows = rows.filter((r) => r.id === employeeId);
+    const empRows = rows.filter((r) => r.id === employeeId && (!selectedYear || r.raw.year === selectedYear));
     if (empRows.length === 0) return undefined;
 
     if (month === 'All') {
@@ -211,10 +234,10 @@ const EmployeeProfileView = () => {
         January: 1, February: 2, March: 3, April: 4, May: 5, June: 6,
         July: 7, August: 8, September: 9, October: 10, November: 11, December: 12
       };
-      return [...empRows].sort((a, b) => (MONTH_ORDER[b.month] || 0) - (MONTH_ORDER[a.month] || 0))[0];
+      return [...empRows].sort((a, b) => (b.raw.year ?? 0) - (a.raw.year ?? 0) || (MONTH_ORDER[b.month] || 0) - (MONTH_ORDER[a.month] || 0))[0];
     }
     return empRows.find((r) => r.month === month) || empRows[0];
-  }, [rows, employeeId, month]);
+  }, [rows, employeeId, month, selectedYear]);
 
   const [directoryTeamFilter, setDirectoryTeamFilter] = useState<string | null>(null);
   const [directoryPositionFilter, setDirectoryPositionFilter] = useState(ALL_EMPLOYEE_POSITIONS);
@@ -379,16 +402,19 @@ const EmployeeProfileView = () => {
   }, [comparisonMode, comparisonAgent, role]);
 
   const orderedProfileHistory = useMemo(
-    () => mergeEmployeeHistory(employeeId, allPerformanceAgents, backendProfile?.performance_history || []),
-    [allPerformanceAgents, backendProfile, employeeId],
+    () => mergeEmployeeHistory(
+      employeeId,
+      allPerformanceAgents.filter((record) => performanceLevel === 'All' || (record.performance_level ?? 'Employee') === performanceLevel),
+      (backendProfile?.performance_history || []).filter((record) => performanceLevel === 'All' || (record.performance_level ?? 'Employee') === performanceLevel),
+    ),
+    [allPerformanceAgents, backendProfile, employeeId, performanceLevel],
   );
   const profileHistory = orderedProfileHistory;
   const recentProfileHistory = useMemo(() => orderedProfileHistory.slice(0, 6), [orderedProfileHistory]);
   const currentProfileRecord = useMemo(() => {
     if (!employee || profileHistory.length === 0) return null;
-    if (month !== 'All') return profileHistory.find((h) => h.month === month) || null;
-    return orderedProfileHistory[0] || null;
-  }, [employee, month, orderedProfileHistory, profileHistory]);
+    return profileHistory.find((record) => (month === 'All' || record.month === month) && (!selectedYear || record.year === selectedYear)) || null;
+  }, [employee, month, profileHistory, selectedYear]);
 
   const displayScore = useMemo(() => {
     if (currentProfileRecord) return resolveDisplayScore(currentProfileRecord, teamWeights);
@@ -398,7 +424,7 @@ const EmployeeProfileView = () => {
 
   const previousScore = useMemo(() => {
     if (!currentProfileRecord || orderedProfileHistory.length < 2) return null;
-    const currentIndex = orderedProfileHistory.findIndex((h) => h.month === currentProfileRecord.month);
+    const currentIndex = orderedProfileHistory.findIndex((h) => h.month === currentProfileRecord.month && h.year === currentProfileRecord.year);
     if (currentIndex !== -1 && currentIndex + 1 < orderedProfileHistory.length) {
       return resolveDisplayScore(orderedProfileHistory[currentIndex + 1], teamWeights);
     }
@@ -1172,7 +1198,6 @@ const EmployeeProfileView = () => {
           onSaved={triggerRefresh}
         />
       )}
-      <BackToTop />
     </motion.div>
   );
 };

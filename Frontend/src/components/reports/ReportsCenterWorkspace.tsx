@@ -1,6 +1,5 @@
 import {
   FileBarChart,
-  Filter,
   Loader2,
   Presentation,
   RefreshCw,
@@ -12,6 +11,7 @@ import type {
   ReportOptions,
   ReportTemplate,
 } from '../../features/reports/types';
+import ResponsiveFilters from '../common/ResponsiveFilters';
 
 type SelectFilterOption = { value: string; label: string };
 
@@ -203,16 +203,16 @@ export default function ReportsCenterWorkspace({
         </div>
       </section>
 
-      <section aria-label="Report filters" className="rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] p-4 shadow-sm md:p-5">
+      <ResponsiveFilters label="Report filters" activeCount={activeFilterEntries.length}>
+      <section aria-label="Report filters" className="responsive-filter-content rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] p-4 shadow-sm md:p-5">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <div className="flex items-center gap-2"><Filter size={16} className="text-[var(--sgh-cyan-primary,#00A3E0)]" /><h2 className="font-extrabold text-[var(--text-primary)]">Report filters</h2></div>
             <p className="mt-1 max-w-2xl text-xs leading-5 text-[var(--text-muted)]">Set the period first, then narrow the scope. Changes apply immediately to every report type below.</p>
           </div>
           <button type="button" onClick={onResetFilters} className="self-start text-xs font-extrabold text-[var(--sgh-cyan-primary,#00A3E0)] hover:underline">Clear all</button>
         </div>
 
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+        <div className="mt-4 grid gap-3 grid-cols-1 sm:grid-cols-2">
           <SelectFilter label="Select Reporting Period" value={filters.period} values={options.periods.map((period) => period.key)} onChange={(value) => onFilterChange('period', value)} />
           <SelectFilter label="Comparison period" value={filters.comparison_period} values={options.periods.map((period) => period.key).filter((period) => period !== filters.period)} allLabel="No comparison" onChange={(value) => onFilterChange('comparison_period', value)} />
           <SelectFilter label="Region" value={filters.region} values={options.regions} allLabel="All regions" onChange={(value) => onFilterChange('region', value)} />
@@ -255,6 +255,7 @@ export default function ReportsCenterWorkspace({
 
         {!canGeneratePptx && <p className="mt-3 rounded-xl bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-700 dark:text-amber-300">Preview only - report generation is unavailable for your role.</p>}
       </section>
+      </ResponsiveFilters>
 
       {isFetching && <div role="status" className="text-right text-xs font-semibold text-[var(--text-muted)]">Refreshing report options...</div>}
 
