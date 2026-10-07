@@ -6,6 +6,7 @@ import { FIXTURE_TEAM_FUNCTIONS, fixtureActions, fixtureAgentRecords, fixtureDri
 import { composeExecutiveSummary, toExecRecords } from './compose';
 import { executiveSummaryUrl, useExecutiveSummary } from './useExecutiveSummary';
 import { executiveFunctionForTeam } from './functions';
+import { ApiError } from '../../lib/apiClient';
 
 const mocks = vi.hoisted(() => ({
   apiFetch: vi.fn(),
@@ -15,7 +16,9 @@ const mocks = vi.hoisted(() => ({
   agents: [] as unknown[],
 }));
 
-vi.mock('../../lib/apiClient', () => ({ apiFetch: mocks.apiFetch }));
+vi.mock('../../lib/apiClient', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../../lib/apiClient')>(), apiFetch: mocks.apiFetch,
+}));
 vi.mock('../../hooks/usePerformanceData', () => ({
   mapScopedPerformanceRecord: (record: unknown) => record,
   usePerformanceData: (_m: string, _l: string, _r: string, _p: string, enabled: boolean) => ({
@@ -61,6 +64,44 @@ describe('executiveSummaryUrl', () => {
 });
 
 describe('useExecutiveSummary', () => {
+  it('does not probe a missing endpoint again when the filters change', async () => {
+    mocks.apiFetch.mockImplementation((url: string) => url.startsWith('/api/executive/summary')
+      ? Promise.reject(new ApiError('Not Found', 404))
+      : Promise.resolve({ success: true, data: mocks.agents }));
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const sharedWrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+    const { result, rerender } = renderHook(({ team }: { team?: string }) => useExecutiveSummary({ view: 'corporate', role: 'Viewer', filters: { team }, today: TODAY }), { initialProps: { team: undefined } as { team?: string }, wrapper: sharedWrapper });
+    await waitFor(() => expect(result.current.source).toBe('composed'));
+    rerender({ team: 'Coding' });
+    await waitFor(() => expect(result.current.summary?.scope.team).toBe('Coding'));
+    expect(mocks.apiFetch.mock.calls.filter(([url]) => url.startsWith('/api/executive/summary'))).toHaveLength(1);
+    client.clear();
+  });
+
+  it('rechecks endpoint availability after five minutes', async () => {
+    mocks.apiFetch.mockRejectedValue(new ApiError('Not Found', 404));
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const sharedWrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+    const { result, rerender } = renderHook(({ team }: { team?: string }) => useExecutiveSummary({ view: 'corporate', role: 'Viewer', filters: { team }, today: TODAY }), { initialProps: { team: undefined } as { team?: string }, wrapper: sharedWrapper });
+    await waitFor(() => expect(result.current.source).toBe('composed'));
+    const capability = client.getQueryCache().findAll({ queryKey: ['executive', 'summary-endpoint-unavailable'] })[0];
+    client.setQueryData(capability.queryKey, Date.now() - 300_001);
+    rerender({ team: 'Coding' });
+    await waitFor(() => expect(mocks.apiFetch.mock.calls.filter(([url]) => url.startsWith('/api/executive/summary'))).toHaveLength(2));
+    client.clear();
+  });
+
+  it.each([403, 500])('does not cache HTTP %s as an unavailable endpoint', async (status) => {
+    mocks.apiFetch.mockRejectedValue(new ApiError('Request failed', status));
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const sharedWrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+    const { result, rerender } = renderHook(({ team }: { team?: string }) => useExecutiveSummary({ view: 'corporate', role: 'Viewer', filters: { team }, today: TODAY }), { initialProps: { team: undefined } as { team?: string }, wrapper: sharedWrapper });
+    await waitFor(() => expect(result.current.source).toBe('composed'));
+    rerender({ team: 'Coding' });
+    await waitFor(() => expect(mocks.apiFetch.mock.calls.filter(([url]) => url.startsWith('/api/executive/summary'))).toHaveLength(2));
+    expect(client.getQueryCache().findAll({ queryKey: ['executive', 'summary-endpoint-unavailable'] })).toHaveLength(0);
+    client.clear();
+  });
   it('includes old undated actions and deduplicates tracked records by persisted ID', async () => {
     const action = { id: 'old-action', employee_id: 'old-employee', employee_name: 'Old employee', team: 'Coding', month: 'June', action_text: 'Coaching', action_type: 'Coaching' };
     mocks.followUp.mockResolvedValue({ actions: [{ ...action, status: 'In Progress', due_date: '2026-07-07' }] });

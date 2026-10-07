@@ -82,6 +82,8 @@ class NotificationNamespace(AsyncNamespace):
             return False
         try:
             payload = AuthenticationService.validate_token(token)
+            if payload.get("must_change_password"):
+                return False
             user_id = str(payload["user_id"])
         except (KeyError, TypeError, ValueError):
             logger.warning("Rejected socket connection with invalid token: %s", sid)

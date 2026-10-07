@@ -17,6 +17,7 @@ import WorkspaceLoader from './components/common/WorkspaceLoader';
 import { PageLoadingSkeleton } from './components/common/SkeletonLoader';
 import RouteGuard from './components/common/RouteGuard';
 import { ROUTE_ROLES } from './lib/access';
+import PasswordChangeGate from './components/common/PasswordChangeGate';
 
 const ExecutiveView = lazy(() => import('./pages/ExecutiveView'));
 const FunctionSummaryView = lazy(() => import('./pages/FunctionSummaryView'));
@@ -259,9 +260,11 @@ function AppRouter() {
 
   return (
     <Router>
-      <UploadJobProvider key={currentUser?.id || 'anonymous'}>
-        <AppContent />
-      </UploadJobProvider>
+      <PasswordChangeGate>
+        <UploadJobProvider key={currentUser?.id || 'anonymous'}>
+          <AppContent />
+        </UploadJobProvider>
+      </PasswordChangeGate>
     </Router>
   );
 }

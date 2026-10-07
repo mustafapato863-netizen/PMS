@@ -23,14 +23,14 @@ describe('TeamKpiTable direction semantics', () => {
     const rejectionCells = within(kpiRows[0]).getAllByRole('cell');
     const responseCells = within(kpiRows[1]).getAllByRole('cell');
 
-    expect(rejectionCells[4]).toHaveTextContent('↓ −2 pp');
+    expect(rejectionCells[4]).toHaveTextContent('↓ −2%');
     expect(rejectionCells[4]).toHaveAttribute('data-tone', 'bad');
-    expect(rejectionCells[5]).toHaveTextContent('↓ −3 pp');
+    expect(rejectionCells[5]).toHaveTextContent('↓ −3%');
     expect(rejectionCells[5]).toHaveAttribute('data-tone', 'bad');
 
-    expect(responseCells[4]).toHaveTextContent('↑ +5 pp');
+    expect(responseCells[4]).toHaveTextContent('↑ +5%');
     expect(responseCells[4]).toHaveAttribute('data-tone', 'good');
-    expect(responseCells[5]).toHaveTextContent('↑ +3 pp');
+    expect(responseCells[5]).toHaveTextContent('↑ +3%');
     expect(responseCells[5]).toHaveAttribute('data-tone', 'good');
   });
 });

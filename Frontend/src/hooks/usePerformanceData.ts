@@ -1,8 +1,10 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import type { AgentRecord, LocationKey, MonthKey, PerformanceLevelFilter, GeoBreakdown, EmployeeCRMRecord, EmployeeStatus, PlanningCategory, Trend, PreApprovalsWorkflowFilter, CallCenterChannelFilter, RcmDomainFilter, RcmGroupFilter } from '../types';
 import { canonicalTeamName, getKPIsForAgent, TEAM_ID_MAP, PRE_APPROVALS_UAE_TEAM, CALL_CENTER_TEAM, RCM_TEAM, isMergedBranchTeam, isPreApprovalsUaeTeam, isPreApprovalsWorkflowTeam, isCallCenterTeam, isCallCenterChannelTeam, isRcmTeam, isRcmDomainTeam, isRcmGroupTeam, sameCanonicalTeam } from '../types';
 import { getGradeClass } from '../constants/grades';
 import { apiFetch } from '../lib/apiClient';
+import { performanceSessionKey } from '../lib/performanceSessionKey';
 import { normalizePerformanceScore, resolveDisplayScore } from '../utils/kpiScore';
 import { normalizeTeamName } from './api/useKpiWeights';
 import { calculatePerformanceSummary } from '../utils/performanceSummary';
@@ -167,9 +169,11 @@ export function resolveAutoRootCause(
 // Module-level shared cache and listeners for Backend API data
 const STALE_TIME_MS = 10 * 60 * 1000;
 let cachedData: AgentRecord[] | null = null;
+let cachedDataSession = '';
 let lastFetchTime = 0;
 const listeners = new Set<(data: AgentRecord[]) => void>();
 let isFetching = false;
+let fetchingSession = '';
 let lastDataSource: 'api' | 'empty' = 'empty';
 let lastErrorMessage: string | null = null;
 let scopedRefreshVersion = 0;
@@ -205,16 +209,7 @@ function stringValue(value: unknown, fallback = ''): string {
   return typeof value === 'string' ? value : value == null ? fallback : String(value);
 }
 
-function scopedSessionKey(): string {
-  try {
-    const saved = localStorage.getItem('pms_session_v1');
-    if (!saved) return 'anonymous';
-    const user = JSON.parse(saved) as { id?: string; username?: string };
-    return user.id || user.username || 'anonymous';
-  } catch {
-    return 'anonymous';
-  }
-}
+const scopedSessionKey = performanceSessionKey;
 
 function geoValue(value: unknown): GeoBreakdown {
   const source = objectValue(value);
@@ -242,6 +237,7 @@ export function mapScopedPerformanceRecord(item: ScopedRecordItem): AgentRecord 
 
   return {
     raw_data: objectValue(item.raw_data) as AgentRecord['raw_data'],
+    branch_key: stringValue(item.branch_key, '') || null,
     region: stringValue(item.region ?? identity.region, '') || undefined,
     year: item.year == null ? undefined : numberValue(item.year),
     position: stringValue(item.position ?? identity.position, '') || undefined,
@@ -406,18 +402,22 @@ async function fetchScopedPerformanceData(
 }
 
 async function fetchPerformanceData(force = false) {
-  if (!force && isFetching) return;
-  if (!force && cachedData && lastDataSource === 'api' && Date.now() - lastFetchTime < STALE_TIME_MS) {
+  const session = performanceSessionKey();
+  if (!force && isFetching && fetchingSession === session) return;
+  if (!force && cachedDataSession === session && cachedData && lastDataSource === 'api' && Date.now() - lastFetchTime < STALE_TIME_MS) {
     lastDataSource = 'api';
     lastErrorMessage = null;
     listeners.forEach((listener) => listener(cachedData!));
     return;
   }
   isFetching = true;
+  fetchingSession = session;
   try {
     const result = await apiFetch<{ success: boolean; data: AgentRecord[]; message?: string }>('/api/performance');
+    if (performanceSessionKey() !== session) return;
     if (result && result.success && Array.isArray(result.data)) {
       cachedData = result.data;
+      cachedDataSession = session;
       lastFetchTime = Date.now();
       lastDataSource = 'api';
       lastErrorMessage = null;
@@ -426,14 +426,16 @@ async function fetchPerformanceData(force = false) {
     }
     listeners.forEach((listener) => listener(cachedData!));
   } catch (error) {
+    if (performanceSessionKey() !== session) return;
     console.warn('Failed to fetch performance data from the Backend API.');
     cachedData = [];
+    cachedDataSession = session;
     lastFetchTime = Date.now();
     lastDataSource = 'empty';
     lastErrorMessage = error instanceof Error ? error.message : 'Failed to fetch performance data';
     listeners.forEach((listener) => listener(cachedData!));
   } finally {
-    isFetching = false;
+    if (fetchingSession === session) isFetching = false;
   }
 }
 
@@ -447,6 +449,7 @@ export function refreshPerformanceData() {
     return;
   }
   cachedData = null;
+  cachedDataSession = '';
   lastFetchTime = 0;
   isFetching = false;
   lastDataSource = 'empty';
@@ -622,11 +625,31 @@ export function usePerformanceData(
   enabled = true,
   scopedTeam?: string,
 ) {
-  const [allData, setAllData] = useState<AgentRecord[]>(scopedPerformanceApiEnabled ? [] : cachedData || []);
-  const [loading, setLoading] = useState(enabled && (scopedPerformanceApiEnabled || !cachedData));
-  const [dataSource, setDataSource] = useState<'api' | 'empty'>(scopedPerformanceApiEnabled ? 'empty' : lastDataSource);
-  const [errorMessage, setErrorMessage] = useState<string | null>(scopedPerformanceApiEnabled ? null : lastErrorMessage);
+  const session = performanceSessionKey();
+  const cacheMatches = cachedDataSession === session;
+  const [dataState, setDataState] = useState(() => ({
+    session, data: scopedPerformanceApiEnabled || !cacheMatches ? [] : cachedData || [],
+  }));
+  const [legacyLoading, setLoading] = useState(enabled && (!cacheMatches || !cachedData));
+  const [legacyDataSource, setDataSource] = useState<'api' | 'empty'>(lastDataSource);
+  const [legacyErrorMessage, setErrorMessage] = useState<string | null>(lastErrorMessage);
   const [refreshVersion, setRefreshVersion] = useState(scopedRefreshVersion);
+  const scopedQuery = useQuery({
+    queryKey: ['performance', 'bounded-records', session, month, region, performanceLevel, location, scopedTeam ?? 'all', refreshVersion],
+    // Reuse the bounded in-flight read across consumers/remounts, then cache it
+    // for warm navigation. Session boundaries cancel/clear this query cache.
+    queryFn: () => fetchScopedPerformanceData(month, region, performanceLevel, location, scopedTeam),
+    enabled: enabled && scopedPerformanceApiEnabled,
+    staleTime: 2 * 60_000,
+    retry: false,
+  });
+  const allData = useMemo(() => scopedPerformanceApiEnabled
+    ? (enabled ? scopedQuery.data ?? [] : [])
+    : dataState.session === session ? dataState.data : [], [dataState, enabled, scopedQuery.data, session]);
+  const loading = scopedPerformanceApiEnabled ? enabled && scopedQuery.isLoading : legacyLoading;
+  const dataSource = scopedPerformanceApiEnabled ? (scopedQuery.isSuccess ? 'api' : 'empty') : legacyDataSource;
+  const errorMessage = scopedPerformanceApiEnabled
+    ? (enabled && scopedQuery.isError ? scopedQuery.error.message : null) : legacyErrorMessage;
 
   useEffect(() => {
     const listener = () => setRefreshVersion(scopedRefreshVersion);
@@ -641,45 +664,23 @@ export function usePerformanceData(
       return;
     }
 
-    if (scopedPerformanceApiEnabled) {
-      let cancelled = false;
-      fetchScopedPerformanceData(month, region, performanceLevel, location, scopedTeam)
-        .then((newData) => {
-          if (cancelled) return;
-          setAllData(newData);
-          setLoading(false);
-          setDataSource('api');
-          setErrorMessage(null);
-        })
-        .catch((error: unknown) => {
-          if (cancelled) return;
-          console.warn('Failed to fetch bounded performance data from the Backend API.');
-          setAllData([]);
-          setLoading(false);
-          setDataSource('empty');
-          setErrorMessage(error instanceof Error ? error.message : 'Failed to fetch performance data');
-        });
-      return () => {
-        cancelled = true;
-      };
-    }
+    if (scopedPerformanceApiEnabled) return;
 
     const listener = (newData: AgentRecord[]) => {
-      setAllData(newData);
+      if (performanceSessionKey() !== session) return;
+      setDataState({ session, data: newData });
       setLoading(false);
       setDataSource(lastDataSource);
       setErrorMessage(lastErrorMessage);
     };
     listeners.add(listener);
 
-    if (!cachedData || lastDataSource !== 'api' || Date.now() - lastFetchTime >= STALE_TIME_MS) {
-      fetchPerformanceData();
-    }
+    void fetchPerformanceData();
 
     return () => {
       listeners.delete(listener);
     };
-  }, [enabled, location, month, performanceLevel, refreshVersion, region, scopedTeam]);
+  }, [enabled, location, month, performanceLevel, refreshVersion, region, scopedTeam, session]);
 
   return useMemo(() => {
     const levelData = performanceLevel === 'All'
@@ -1000,11 +1001,11 @@ export function usePerformanceData(
       avgAHTSeconds,
       kpiVsTarget,
       outliers,
-      loading: enabled ? loading : false,
-      dataSource,
-      errorMessage,
+      loading: enabled ? loading || (!scopedPerformanceApiEnabled && dataState.session !== session) : false,
+      dataSource: scopedPerformanceApiEnabled || dataState.session === session ? dataSource : 'empty' as const,
+      errorMessage: scopedPerformanceApiEnabled || dataState.session === session ? errorMessage : null,
     };
-  }, [allData, month, location, region, performanceLevel, loading, dataSource, errorMessage, enabled]);
+  }, [allData, month, location, region, performanceLevel, loading, dataSource, errorMessage, enabled, dataState.session, session]);
 }
 
 export function useCRMData(month: MonthKey, location: LocationKey, performanceLevel: PerformanceLevelFilter = 'All') {
@@ -1123,7 +1124,7 @@ export function useTeamData(
   legacyEnabled = true,
 ) {
   const sourceMonth = scopedPerformanceApiEnabled ? month : 'All';
-  const scopedTeam = scopedPerformanceApiEnabled && teamName && !['Call Center', 'Pre-Approvals', 'RCM'].includes(teamName)
+  const scopedTeam = scopedPerformanceApiEnabled && teamName
     ? teamName
     : undefined;
   const { agents: allAgents, loading, dataSource, errorMessage } = usePerformanceData(

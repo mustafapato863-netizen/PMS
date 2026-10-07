@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiFetch } from '../../lib/apiClient';
+import { performanceSessionKey } from '../../lib/performanceSessionKey';
 
 export interface BalancedScorecardResponse {
   team?: {
@@ -144,6 +145,7 @@ export function useBalancedScorecard(params: {
       params.selectedKpi,
       params.branch,
       params.view,
+      performanceSessionKey(),
     ],
     queryFn: async ({ signal }): Promise<BalancedScorecardResponse> => {
       const search = new URLSearchParams();

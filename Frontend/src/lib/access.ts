@@ -86,35 +86,39 @@ export const isScopedDirectorRole = (role: RoleInput): boolean =>
  * scopes `/api/corrective-actions/*` to the manager's teams).
  */
 export const canAccessCorrectiveActions = (role: RoleInput): boolean =>
-  role === 'Executive' || isManagerRole(role) || isScopedDirectorRole(role)
+  role === 'Executive' || isManagerRole(role)
   || isPerformanceTeamRole(role) || canAccessBroadAppPages(role);
 
 /** Planning: Admin, General Manager and Manager (team-scoped by the backend `view_plans` scope). */
 export const canAccessPlanning = (role: RoleInput): boolean =>
-  canAccessBroadAppPages(role) || isManagerRole(role) || isScopedDirectorRole(role);
+  canAccessBroadAppPages(role) || isManagerRole(role);
 
 /** Reports list: Admin, General Manager and Manager in the sidebar (route also admits Executive / Viewer). */
 export const canSeeReportsNav = (role: RoleInput): boolean =>
-  canAccessBroadAppPages(role) || isManagerRole(role) || isFunctionViewerRole(role) || isScopedDirectorRole(role);
+  canAccessBroadAppPages(role) || isManagerRole(role) || role === ROLE_FUNCTION_VIEWER;
 
 /** Insights stays Admin / General Manager only (Mustafa, Executive v1). */
-export const canAccessInsights = (role: RoleInput): boolean => canAccessBroadAppPages(role) || isScopedDirectorRole(role);
+export const canAccessInsights = (role: RoleInput): boolean => canAccessBroadAppPages(role);
+
+/** Scoped summary analytics are not access to the operational workspace. */
+export const canSeeSummaryActionAnalytics = (role: RoleInput): boolean =>
+  canAccessCorrectiveActions(role) || isScopedDirectorRole(role);
 
 /** Function Summary page: Admin, General Manager and Function Viewer (limited to its functions). */
 export const canAccessFunctionSummary = (role: RoleInput): boolean =>
-  canAccessBroadAppPages(role) || isFunctionViewerRole(role);
+  canAccessBroadAppPages(role) || isFunctionViewerRole(role) || isScopedDirectorRole(role);
 
 /**
  * Route guard role lists (App.tsx). Kept here so the sidebar, search and the
  * guards cannot drift apart; access.test.ts pins them.
  */
 export const ROUTE_ROLES = {
-  insights: ['Admin', 'General Manager', 'Performance Team', 'Regional Manager', 'Branch Director', 'Function Director'],
-  planning: ['Admin', 'General Manager', 'Manager', 'Performance Team', 'Regional Manager', 'Branch Director', 'Function Director'],
-  correctiveActions: ['Admin', 'Executive', 'General Manager', 'Manager', 'Performance Team', 'Regional Manager', 'Branch Director', 'Function Director'],
-  functionSummary: ['Admin', 'General Manager', 'Performance Team', ROLE_FUNCTION_VIEWER, ROLE_FUNCTION_DIRECTOR],
+  insights: ['Admin', 'General Manager', 'Performance Team'],
+  planning: ['Admin', 'General Manager', 'Manager', 'Performance Team'],
+  correctiveActions: ['Admin', 'Executive', 'General Manager', 'Manager', 'Performance Team'],
+  functionSummary: ['Admin', 'General Manager', 'Performance Team', ROLE_FUNCTION_VIEWER, ROLE_FUNCTION_DIRECTOR, ROLE_BRANCH_DIRECTOR, ROLE_REGIONAL_MANAGER],
   /** Saved-report library + preview (read). Legacy and new scoped roles are API-filtered. */
-  reports: ['Admin', 'General Manager', 'Manager', 'Executive', 'Viewer', ROLE_FUNCTION_VIEWER, 'Performance Team', 'Regional Manager', 'Branch Director', 'Function Director'],
+  reports: ['Admin', 'General Manager', 'Manager', 'Executive', 'Viewer', ROLE_FUNCTION_VIEWER, 'Performance Team'],
 } as const satisfies Record<string, readonly AppRole[]>;
 
 /** Which Executive Summary layout a role gets on `/executive`. */
@@ -182,4 +186,4 @@ export const readHasUnrestrictedTeamAccess = (user?: UnrestrictedTeamAccessUser)
 export const hasAllTeamsScope = (
   role: RoleInput,
   user?: UnrestrictedTeamAccessUser,
-): boolean => isAdminRole(role) || isGeneralManagerRole(role) || isPerformanceTeamRole(role) || readHasUnrestrictedTeamAccess(user);
+): boolean => !isScopedDirectorRole(role) && (isAdminRole(role) || isGeneralManagerRole(role) || isPerformanceTeamRole(role) || readHasUnrestrictedTeamAccess(user));

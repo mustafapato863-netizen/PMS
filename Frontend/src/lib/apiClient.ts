@@ -19,6 +19,17 @@ type AccessTokenResponse = {
 let accessToken: string | null = null;
 let tokenRefresh: Promise<boolean> | null = null;
 
+/** Preserve HTTP status so optional capabilities are not confused with permission errors. */
+export class ApiError extends Error {
+  readonly status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+  }
+}
+
 export function getAccessToken(): string | null {
   if (accessToken) return accessToken;
   // One-time migration for sessions created before the refresh-cookie flow.
@@ -303,7 +314,7 @@ export async function apiFetch<T>(
       if (retry.status !== 401) {
         if (!retry.ok) {
           const error = await retry.json().catch(() => ({ message: retry.statusText }));
-          throw new Error(apiErrorMessage(error, retry.status));
+          throw new ApiError(apiErrorMessage(error, retry.status), retry.status);
         }
         return retry.json();
       }
@@ -316,7 +327,7 @@ export async function apiFetch<T>(
 
   if (!res.ok) {
     const error = await res.json().catch(() => ({ message: res.statusText }));
-    throw new Error(apiErrorMessage(error, res.status));
+    throw new ApiError(apiErrorMessage(error, res.status), res.status);
   }
 
   return res.json();

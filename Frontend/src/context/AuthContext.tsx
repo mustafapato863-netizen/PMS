@@ -38,7 +38,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [initializationError, setInitializationError] = useState<string | null>(null);
   const [authReady, setAuthReady] = useState(false);
 
-  usePresenceHeartbeat(Boolean(currentUser) && initializationStatus === 'ready');
+  usePresenceHeartbeat(Boolean(currentUser) && !currentUser?.must_change_password && initializationStatus === 'ready');
 
   // Bootstrap from the HttpOnly refresh cookie. A legacy localStorage access
   // token is accepted once during migration, but no new long-lived token is
@@ -96,13 +96,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const login = async (username: string, password: string, rememberMe = false) => {
     try {
-      const res = await apiFetch<{ success: boolean; data?: { access_token: string; username: string; role: string }; message?: string }>('/api/auth/login', {
+      const res = await apiFetch<{ success: boolean; data?: { access_token: string; username: string; role: string; must_change_password?: boolean }; message?: string }>('/api/auth/login', {
         method: 'POST',
         body: JSON.stringify({ username, password, remember_me: rememberMe }),
       });
       if (!res.success) return { success: false, error: res.message || 'Username or Password wrong' };
       const { access_token } = res.data!;
-      const user: User = { id: '', name: res.data?.username || username, username: res.data?.username || username, role: (res.data?.role || 'Viewer') as User['role'] };
+      const user: User = { id: '', name: res.data?.username || username, username: res.data?.username || username, role: (res.data?.role || 'Viewer') as User['role'], must_change_password: Boolean(res.data?.must_change_password) };
       setAccessToken(access_token);
       const csrfToken = (res.data as { csrf_token?: string } | undefined)?.csrf_token;
       if (csrfToken) localStorage.setItem('pms_csrf_token', csrfToken);
@@ -127,7 +127,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = () => {
-    apiFetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
+    if (getAccessToken()) apiFetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
     void terminateClientSession();
     setCurrentUser(null);
     setUsers([]);
@@ -172,6 +172,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           new_password: newPassword,
         }),
       });
+      if (currentUser?.must_change_password) {
+        // The server revoked all temporary sessions. Clear the old token before
+        // signing out so a redundant logout cannot trigger a failed refresh.
+        await terminateClientSession();
+      }
       return { success: true };
     } catch (error: unknown) {
       return { success: false, error: error instanceof Error ? error.message : 'Failed to change password' };

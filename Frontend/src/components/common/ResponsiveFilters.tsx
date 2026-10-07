@@ -296,12 +296,13 @@ const ResponsiveFilters = ({
                   </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
-                  {onClear && safeClearableCount > 0 && (
+                  {onClear && (
                     <button
                       type="button"
                       className="responsive-filter-panel__clear"
                       aria-label="Clear filters"
                       title="Clear filters"
+                      disabled={safeClearableCount === 0}
                       onClick={() => {
                         onClear();
                         window.requestAnimationFrame(() => closeButtonRef.current?.focus());

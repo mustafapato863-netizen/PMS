@@ -1,14 +1,12 @@
 import { Activity, TrendingDown, TrendingUp } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import type { ExecutiveDriver, ExecutiveSummary } from '../../../features/executive/types';
-import { arrow, fmtKpiDelta, fmtKpiValue, kpiChangeDelta, kpiMovementTone, toneColor } from '../../../features/executive/format';
+import { arrow, fmtKpiDelta, fmtKpiValue, fmtSigned, kpiChangeDelta, kpiMovementTone, toneColor } from '../../../features/executive/format';
 import { driverImpact } from './execModel';
 import { DirectionTag, ExecCard, ExecCardHeader, Footnote, SoftEmpty } from './ExecPrimitives';
 
 type Metric = ExecutiveSummary['meta']['driver_metric'];
 
-
-const fmtPts = (value: number | null) => (value === null ? '—' : `${value > 0 ? '+' : value < 0 ? '\u2212' : ''}${Math.abs(value).toFixed(2)}`);
 
 function DriverRow({ driver, side, metric, max }: { driver: ExecutiveDriver; side: 'negative' | 'positive'; metric: Metric; max: number }) {
   const impact = driverImpact(driver, side, metric);
@@ -34,8 +32,7 @@ function DriverRow({ driver, side, metric, max }: { driver: ExecutiveDriver; sid
           </div>
         </div>
         <div className="flex w-[64px] shrink-0 flex-col items-end">
-          <span className="text-[14px] font-bold" style={{ color: barColor }}>{fmtPts(impact)}</span>
-          <span className="text-[10px] text-[var(--text-muted)]">pts</span>
+          <span className="text-[14px] font-bold" style={{ color: barColor }}>{fmtSigned(impact, '%', 2)}</span>
         </div>
       </div>
       <div aria-hidden="true" className="h-[6px] w-full rounded-[3px] bg-[var(--insights-track)]">
@@ -103,8 +100,8 @@ export default function DriversCard({ summary, viewAllHref, title }: { summary: 
       {!unavailable && (
         <Footnote>
           {metric === 'weighted_gap'
-            ? 'Impact = KPI weight × gap to target, in score points.'
-            : `Impact = change in the KPI's weighted contribution to the score vs ${previous} (pts). Ranking switches to weight × gap once the backend sends it.`}
+            ? 'Impact = KPI weight × gap to target (%).'
+            : `Impact = change in the KPI's weighted contribution to the score vs ${previous} (%). Ranking switches to weight × gap once the backend sends it.`}
         </Footnote>
       )}
     </ExecCard>

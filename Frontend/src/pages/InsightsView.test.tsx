@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, within } from '@testing-library/rea
 import userEvent from '@testing-library/user-event';
 import { Link, MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import InsightsView from './InsightsView';
 import Sidebar from '../components/common/Sidebar';
 import { ThemeProvider } from '../context/ThemeContext';
@@ -60,7 +61,7 @@ const noShowInsight = {
   ...insight,
   id: 'outbound-no-show',
   title: 'No Show Rate is improving but remains above target',
-  explanation: 'No Show Rate improved by 1.0 percentage points, moving from 52.0% to 51.0%. The result remains 31.0 percentage points above target.',
+  explanation: 'No Show Rate improved by 1.0%, moving from 52.0% to 51.0%. The result remains 31.0% above target.',
   scope: 'Outbound · Agent',
   impact_points: null,
   trend_label: 'Improving · Still above target',
@@ -311,6 +312,7 @@ function HistoryProbe() {
 function renderWithRealSidebar(entries: string[]) {
   const sidebar = <Sidebar isOpen setIsOpen={vi.fn()} />;
   const rendered = render(
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
     <MemoryRouter initialEntries={entries} initialIndex={entries.length - 1}>
       <ThemeProvider>
         <Routes>
@@ -318,7 +320,8 @@ function renderWithRealSidebar(entries: string[]) {
           <Route path="/executive" element={<>{sidebar}<p>Executive page</p><LocationProbe /></>} />
         </Routes>
       </ThemeProvider>
-    </MemoryRouter>,
+    </MemoryRouter>
+    </QueryClientProvider>,
   );
   const launcher = screen.queryByRole('button', { name: /Insights filters/i });
   if (launcher) fireEvent.click(launcher);
@@ -450,7 +453,7 @@ describe('InsightsView', () => {
       // Overall score is always higher-is-better: 79.4 → 77.5 is a decline.
       const movement = within(tooltip).getByTestId('performance-trend-tooltip-movement');
       expect(movement).toHaveAttribute('data-tone', 'bad');
-      expect(movement).toHaveTextContent('▼-1.9 pts vs May');
+      expect(movement).toHaveTextContent('▼-1.9% vs May');
     });
 
     it('labels the leading-KPI fallback honestly when the API has no overall series', () => {
@@ -527,9 +530,9 @@ describe('InsightsView', () => {
       fireEvent.focus(screen.getByTestId('performance-trend-point-2026-06'));
       const movement = screen.getByTestId('performance-trend-tooltip-movement');
       expect(movement).toHaveAttribute('data-tone', 'good');
-      expect(movement).toHaveTextContent('▼-4 pts vs May');
+      expect(movement).toHaveTextContent('▼-4% vs May');
       expect(movement).toHaveStyle({ color: 'var(--insights-positive)' });
-      expect(screen.getByTestId('performance-trend-point-2026-06')).toHaveAccessibleName(/-4 pts vs May, improving/);
+      expect(screen.getByTestId('performance-trend-point-2026-06')).toHaveAccessibleName(/-4% vs May, improving/);
     });
 
     it('shows the tooltip for keyboard focus, hides it with Escape and keeps a single roving tab stop', () => {
@@ -744,7 +747,7 @@ describe('InsightsView', () => {
       fireEvent.focus(screen.getByTestId('performance-trend-point-2026-06'));
       const movement = screen.getByTestId('performance-trend-tooltip-movement');
       expect(movement).toHaveAttribute('data-tone', 'bad');
-      expect(movement).toHaveTextContent('▲+6 pts vs May');
+      expect(movement).toHaveTextContent('▲+6% vs May');
     });
   });
 
@@ -965,7 +968,7 @@ describe('InsightsView', () => {
     renderInsights();
 
     expect(screen.queryByRole('combobox', { name: 'Employee' })).not.toBeInTheDocument();
-    expect(optionValues('Function')).toEqual(['All functions', 'Call Center', 'RCM', 'Pre-Approvals', 'Marketing']);
+    expect(optionValues('Function')).toEqual(['All functions', 'Call Center', 'RCM', 'Marketing']);
 
     await user.selectOptions(screen.getByRole('combobox', { name: 'Function' }), 'Call Center');
     expect(latestFilters.current).toMatchObject({ teamFunction: 'Call Center' });
@@ -1004,17 +1007,13 @@ describe('InsightsView', () => {
       'Pre-Approvals IP Offshore', 'Pre-Approvals OP Final', 'RCM',
     ]);
 
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Function' }), 'Pre-Approvals');
-    // Every UAE Pre-Approvals sub-team; IP Offshore is RCM-only in team_functions.
-    // OP Dubai + OP Final SHJAJM and IP Final Dubai merge into their canonical teams.
-    expect(optionValues('Team')).toEqual([
-      'All teams', 'Pre-Approvals IP Elective Dubai', 'Pre-Approvals IP Final', 'Pre-Approvals OP Final',
-    ]);
+    // Pre-Approvals workflows remain selectable as RCM teams, not as a function.
+    expect(optionValues('Function')).not.toContain('Pre-Approvals');
 
     await user.selectOptions(screen.getByRole('combobox', { name: 'Team' }), 'Pre-Approvals OP Final');
     await user.selectOptions(screen.getByRole('combobox', { name: 'Team' }), '');
     expect(currentSearch().get('team')).toBeNull();
-    expect(insightsWorkspaceUrl(latestFilters.current)).toContain('function=Pre-Approvals');
+    expect(insightsWorkspaceUrl(latestFilters.current)).toContain('function=RCM');
     expect(insightsWorkspaceUrl(latestFilters.current)).not.toContain('team=');
   });
 
@@ -1172,7 +1171,7 @@ describe('InsightsView', () => {
     it('keeps every function listed after one is selected, so the user can switch directly', async () => {
       const user = userEvent.setup();
       renderInsights();
-      const all = ['All functions', 'Call Center', 'RCM', 'Pre-Approvals', 'Marketing'];
+      const all = ['All functions', 'Call Center', 'RCM', 'Marketing'];
 
       await user.selectOptions(screen.getByRole('combobox', { name: 'Function' }), 'Call Center');
       expect(optionValues('Function')).toEqual(all);
@@ -1197,14 +1196,14 @@ describe('InsightsView', () => {
       renderInsights();
       await user.selectOptions(screen.getByRole('combobox', { name: 'Function' }), 'RCM');
       await user.selectOptions(screen.getByRole('combobox', { name: 'Team' }), 'Pre-Approvals OP Final');
-      expect(optionValues('Function')).toEqual(['All functions', 'Call Center', 'RCM', 'Pre-Approvals', 'Marketing']);
+      expect(optionValues('Function')).toEqual(['All functions', 'Call Center', 'RCM', 'Marketing']);
       expect(latestFilters.current).toMatchObject({ teamFunction: 'RCM', team: 'Pre-Approvals OP Final' });
 
-      // Directly to Pre-Approvals: the UAE PA team belongs to both, so it stays.
-      await user.selectOptions(screen.getByRole('combobox', { name: 'Function' }), 'Pre-Approvals');
-      expect(latestFilters.current).toMatchObject({ teamFunction: 'Pre-Approvals', team: 'Pre-Approvals OP Final' });
+      // Clearing the function retains the valid selected Pre-Approvals team.
+      await user.selectOptions(screen.getByRole('combobox', { name: 'Function' }), '');
+      expect(latestFilters.current).toMatchObject({ team: 'Pre-Approvals OP Final' });
       expect(screen.getByRole('combobox', { name: 'Team' })).toHaveValue('Pre-Approvals OP Final');
-      expect(Object.fromEntries(currentSearch())).toEqual({ function: 'Pre-Approvals', team: 'Pre-Approvals OP Final' });
+      expect(Object.fromEntries(currentSearch())).toEqual({ team: 'Pre-Approvals OP Final' });
     });
   });
 
@@ -1342,7 +1341,7 @@ describe('InsightsView', () => {
     const user = userEvent.setup();
     renderInsights();
     // PR #14 options.functions also contains standalone teams (Sales); they are never shown.
-    expect(optionValues('Function')).toEqual(['All functions', 'Call Center', 'RCM', 'Pre-Approvals', 'Marketing']);
+    expect(optionValues('Function')).toEqual(['All functions', 'Call Center', 'RCM', 'Marketing']);
     expect(optionValues('Function')).not.toContain('Sales');
     // Hide-when-empty is kept: EGY has no Marketing or UAE Pre-Approvals teams.
     await user.selectOptions(screen.getByRole('combobox', { name: 'Region' }), 'EGY');
@@ -1365,22 +1364,18 @@ describe('InsightsView', () => {
     scopeMock.mode = 'legacy';
     const user = userEvent.setup();
     renderInsights();
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Function' }), 'Pre-Approvals');
-    expect(optionValues('Team')).toEqual([
-      'All teams', 'Pre-Approvals IP Elective Dubai', 'Pre-Approvals IP Final', 'Pre-Approvals OP Final',
-    ]);
     await user.selectOptions(screen.getByRole('combobox', { name: 'Function' }), 'RCM');
     expect(optionValues('Team')).toContain('Pre-Approvals OP Final');
     expect(optionValues('Team')).toContain('Pre-Approvals IP Offshore');
   });
 
-  it('keeps a UAE Pre-Approvals team when switching between RCM and Pre-Approvals', async () => {
+  it('keeps a Pre-Approvals team when clearing its RCM function', async () => {
     const user = userEvent.setup();
     renderInsights();
     await user.selectOptions(screen.getByRole('combobox', { name: 'Function' }), 'RCM');
     await user.selectOptions(screen.getByRole('combobox', { name: 'Team' }), 'Pre-Approvals IP Final');
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Function' }), 'Pre-Approvals');
-    expect(latestFilters.current).toMatchObject({ teamFunction: 'Pre-Approvals', team: 'Pre-Approvals IP Final' });
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Function' }), '');
+    expect(latestFilters.current).toMatchObject({ team: 'Pre-Approvals IP Final' });
     expect(screen.getByRole('combobox', { name: 'Team' })).toHaveValue('Pre-Approvals IP Final');
   });
 

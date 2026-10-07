@@ -1,36 +1,55 @@
 import { INSIGHT_FUNCTIONS, teamBelongsToFunction, type TeamFunctionMap } from '../insights/filterCascade';
 import type { ExecutiveFunction } from './types';
-import { isPreApprovalsUaeTeam } from '../../types';
+import { canonicalTeamName, isPreApprovalsUaeTeam } from '../../types';
 import { isFunctionViewerRole } from '../../lib/access';
 
 const IP_OFFSHORE_TEAM = 'Pre-Approvals IP Offshore';
 const normalizeTeamIdentity = (value: string | null | undefined) => String(value ?? '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '');
 
-/** The four executive functions, in the fixed display order (same as the Insights header). */
+/** Current functions; Pre-Approvals is an RCM team, not a function choice. */
 export const EXECUTIVE_FUNCTIONS: readonly ExecutiveFunction[] = INSIGHT_FUNCTIONS;
 
+/** Selection hierarchy only. Never use this broader rollup to infer authorization. */
+export function isPreApprovalsSubTeam(team: string | null | undefined): boolean {
+  return isPreApprovalsUaeTeam(team) || normalizeTeamIdentity(team) === normalizeTeamIdentity(IP_OFFSHORE_TEAM);
+}
+
+export function summaryTeamMatches(team: string, selected: string): boolean {
+  return selected === 'Pre-Approvals' ? isPreApprovalsSubTeam(team) : canonicalTeamName(team) === canonicalTeamName(selected);
+}
+
+export function summaryTeamOptions(teams: string[]): string[] {
+  return [...new Set(teams.map((team) => isPreApprovalsSubTeam(team) ? 'Pre-Approvals' : canonicalTeamName(team)))].sort((a, b) => a.localeCompare(b));
+}
+
+export function preApprovalsSubTeamOptions(teams: string[]): string[] {
+  return [...new Set(teams.filter((team) => isPreApprovalsSubTeam(team) && team !== 'Pre-Approvals').map(canonicalTeamName))].sort((a, b) => a.localeCompare(b));
+}
+
 /**
- * Disjoint team → function mapping for the Executive / Function Summary cards
- * ONLY (CoS decision). Insights keeps its overlapping membership.
- *
- * - UAE Pre-Approvals teams (OP / IP Final / IP Elective) → Pre-Approvals,
- *   even though backend `team_functions` also lists them under RCM.
- * - Pre-Approvals IP Offshore → RCM (Mustafa).
+ * Pre-Approvals workflows (UAE and Offshore) belong to RCM. Legacy backend
+ * Pre-Approvals membership is kept only to preserve restricted old grants.
  * - Otherwise the backend `team_functions` map (PR #14) or the existing
  *   frontend helpers decide, so CSR is not under Call Center (it is its own
  *   function in the backend; flagged as a design/data difference).
- * - Teams outside the four (Sales, Pharmacy, CSR, …) return `null`: they count
+ * - Teams outside the current functions (Sales, Pharmacy, CSR, …) return `null`: they count
  *   in the company score but get no function card.
  */
 export function executiveFunctionForTeam(team: string | null | undefined, teamFunctions?: TeamFunctionMap): ExecutiveFunction | null {
   if (!team) return null;
   // Explicit rules first so a backend map listing a team under both functions cannot override them.
   if (normalizeTeamIdentity(team) === normalizeTeamIdentity(IP_OFFSHORE_TEAM)) return 'RCM';
-  if (isPreApprovalsUaeTeam(team) || teamBelongsToFunction(team, 'Pre-Approvals', teamFunctions)) return 'Pre-Approvals';
+  if (isPreApprovalsSubTeam(team) || teamBelongsToFunction(team, 'Pre-Approvals', teamFunctions)) return 'RCM';
   for (const name of ['Call Center', 'RCM', 'Marketing'] as const) {
     if (teamBelongsToFunction(team, name, teamFunctions)) return name;
   }
   return null;
+}
+
+export function summaryFunctionMatches(team: string, fn: string, teamFunctions?: TeamFunctionMap): boolean {
+  return fn === 'Pre-Approvals'
+    ? teamBelongsToFunction(team, fn)
+    : executiveFunctionForTeam(team, teamFunctions) === fn;
 }
 
 const SLUGS: Record<ExecutiveFunction, string> = {
@@ -46,7 +65,7 @@ export function functionSlug(name: ExecutiveFunction): string {
 
 export function functionFromSlug(slug: string | null | undefined): ExecutiveFunction | null {
   const normalized = String(slug ?? '').trim().toLowerCase();
-  return EXECUTIVE_FUNCTIONS.find((name) => SLUGS[name] === normalized || name.toLowerCase() === normalized) ?? null;
+  return [...EXECUTIVE_FUNCTIONS, 'Pre-Approvals' as const].find((name) => SLUGS[name] === normalized || name.toLowerCase() === normalized) ?? null;
 }
 
 export function isExecutiveFunction(value: string | null | undefined): value is ExecutiveFunction {
@@ -59,14 +78,15 @@ export function teamPath(team: string): string {
 }
 
 /**
- * Functions a viewer may open on the Function Summary. Admin / GM: all four.
+ * Functions a viewer may open on the Function Summary. Admin / GM: all current functions.
  * Function Viewer: only the functions explicitly returned in /auth/me; an empty
  * or missing assignment grants no function access.
  */
 export function allowedFunctionsFor(role: string | null | undefined, accessibleFunctions?: string[]): ExecutiveFunction[] {
   if (!isFunctionViewerRole(role)) return [...EXECUTIVE_FUNCTIONS];
   const wanted = new Set((accessibleFunctions ?? []).map((name) => name.trim().toLowerCase()));
-  return EXECUTIVE_FUNCTIONS.filter((fn) => wanted.has(fn.toLowerCase()));
+  // Retain old narrow grants; never translate them to a broader RCM permission.
+  return [...EXECUTIVE_FUNCTIONS, 'Pre-Approvals' as const].filter((fn) => wanted.has(fn.toLowerCase()));
 }
 
 /**
@@ -78,7 +98,10 @@ export function allowedFunctionsFor(role: string | null | undefined, accessibleF
  */
 export function isTeamInFunctions(team: string | null | undefined, allowed: readonly ExecutiveFunction[], teamFunctions?: TeamFunctionMap): boolean {
   if (!team) return false;
+  if (allowed.includes('Pre-Approvals') && isPreApprovalsUaeTeam(team)) return true;
+  // Legacy Pre-Approvals grants excluded Offshore, even if an old map says otherwise.
+  const canonicalAllowed: readonly ExecutiveFunction[] = allowed.filter((fn) => fn !== 'Pre-Approvals');
   const primary = executiveFunctionForTeam(team, teamFunctions);
-  if (primary && allowed.includes(primary)) return true;
-  return allowed.some((fn) => teamBelongsToFunction(team, fn, teamFunctions));
+  if (primary && canonicalAllowed.includes(primary)) return true;
+  return canonicalAllowed.some((fn) => teamBelongsToFunction(team, fn, teamFunctions));
 }

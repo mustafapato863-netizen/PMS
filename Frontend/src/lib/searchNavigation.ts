@@ -7,6 +7,7 @@ import {
   canSeeReportsNav,
   canAccessSettingsContent,
   canAccessTeamManagement,
+  isScopedDirectorRole,
 } from './access';
 
 export type SearchGroupId = 'navigation' | 'employees' | 'teams' | 'actions';
@@ -83,7 +84,7 @@ const baseNavigation = ({
 }): SearchResultItem[] => {
   const items: SearchResultItem[] = [];
 
-  if (role === 'Admin' || role === 'General Manager' || role === 'Manager' || role === 'Executive') {
+  if (role === 'Admin' || role === 'General Manager' || role === 'Manager' || role === 'Executive' || role === 'Performance Team' || isScopedDirectorRole(role)) {
     items.push({
       id: 'nav-executive',
       group: 'navigation',

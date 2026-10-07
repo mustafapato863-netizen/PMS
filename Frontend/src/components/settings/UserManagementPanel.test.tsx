@@ -91,7 +91,7 @@ it('creates a Performance Team account using the current role set', async () => 
   await user.click(screen.getByRole('button', { name: /Add user/ }));
   await user.type(screen.getByRole('textbox', { name: 'Full name' }), 'Pat Performance');
   await user.type(screen.getByRole('textbox', { name: 'Username' }), 'Pat');
-  await user.type(screen.getByLabelText(/Password/), 'secret-pass');
+  await user.type(screen.getByLabelText(/Temporary password/), 'secret-pass');
   await user.selectOptions(screen.getByRole('combobox', { name: 'Role' }), 'Performance Team');
   await user.click(screen.getByRole('button', { name: 'Create user' }));
 

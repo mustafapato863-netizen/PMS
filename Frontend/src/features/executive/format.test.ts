@@ -1,7 +1,21 @@
 import { describe, expect, it } from 'vitest';
-import { directionAdjustedDelta, kpiChangeDelta, kpiGapDelta, kpiMovementTone, normalizeKpiDirection } from './format';
+import { directionAdjustedDelta, fmtKpiDelta, kpiChangeDelta, kpiGapDelta, kpiMovementTone, normalizeKpiDirection } from './format';
 
 describe('direction-aware Executive KPI deltas', () => {
+  it.each(['%', 'percent', 'percentage'])('uses %% for %s deltas without changing their values', (unit) => {
+    expect(fmtKpiDelta(5, unit)).toBe('+5%');
+    expect(fmtKpiDelta(-1.6, unit)).toBe('−1.6%');
+    expect(fmtKpiDelta(0, unit)).toBe('0%');
+    expect(fmtKpiDelta(null, unit)).toBe('—');
+  });
+
+  it('preserves non-percentage KPI units', () => {
+    expect(fmtKpiDelta(8, 'seconds')).toBe('+8 s');
+    expect(fmtKpiDelta(-1.5, 'minutes')).toBe('−1.5 min');
+    expect(fmtKpiDelta(2, 'days')).toBe('+2 d');
+    expect(fmtKpiDelta(24, 'count')).toBe('+24');
+  });
+
   it('normalizes only directions supplied by the KPI', () => {
     expect(normalizeKpiDirection('lower_better')).toBe('lower_better');
     expect(normalizeKpiDirection('higher_better')).toBe('higher_better');

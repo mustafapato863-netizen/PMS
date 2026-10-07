@@ -14,6 +14,7 @@
     "test:marketing": "vitest run src/features/marketing src/pages/MarketingDashboardView.test.tsx",
     "test:summary": "node --test src/utils/performanceSummary.test.mjs",
     "test:e2e": "playwright test e2e/layout.spec.ts",
+    "test:e2e:performance": "python e2e/performance.py",
     "test:visual": "playwright test e2e/visual.spec.ts",
     "test:visual:update": "playwright test e2e/visual.spec.ts --update-snapshots",
     "preview": "vite preview"

@@ -58,7 +58,7 @@ describe('ResponsiveFilters', () => {
 
     expect(onClear).toHaveBeenCalledOnce();
     expect(screen.getByRole('dialog', { name: 'Filters' })).toBeInTheDocument();
-    await waitFor(() => expect(screen.queryByRole('button', { name: 'Clear filters' })).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Clear filters' })).toBeDisabled());
     expect(within(screen.getByRole('dialog', { name: 'Filters' })).getByRole('button', { name: 'Close filters' })).toHaveFocus();
   });
 
@@ -68,7 +68,7 @@ describe('ResponsiveFilters', () => {
 
     await user.click(screen.getByRole('button', { name: /Function filters/ }));
 
-    expect(screen.queryByRole('button', { name: 'Clear filters' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Clear filters' })).toBeDisabled();
   });
 
   it('lets the launcher move, keeps it in the viewport, and remembers its new position', async () => {

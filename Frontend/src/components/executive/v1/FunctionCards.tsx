@@ -1,10 +1,12 @@
-import { TrendingDown, TrendingUp } from 'lucide-react';
+import { ArrowRight, TrendingDown, TrendingUp } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { FUNCTION_STYLE } from './execModel';
 import type { ExecutiveFunction, ExecutiveFunctionCard, ExecutivePeriod } from '../../../features/executive/types';
 import { functionSlug } from '../../../features/executive/functions';
-import { arrow, fmtScore, fmtSigned, scoreTone } from '../../../features/executive/format';
+import { arrow, fmtScore, fmtSigned, scoreTone, toneColor } from '../../../features/executive/format';
 import { getGradeTone } from '../../../constants/grades';
-import { GradePill, ScoreText, SoftLink, Sparkline, StatLabel, StatusPill, ToneText } from './ExecPrimitives';
+import { GradePill, ScoreText, StatLabel, StatusPill, ToneText } from './ExecPrimitives';
+import FunctionTrendChart from './FunctionTrendChart';
 
 
 export function FunctionIcon({ fn, size = 32 }: { fn: ExecutiveFunction; size?: number }) {
@@ -12,59 +14,52 @@ export function FunctionIcon({ fn, size = 32 }: { fn: ExecutiveFunction; size?: 
   const Icon = style.icon;
   return (
     <span aria-hidden="true" className="flex shrink-0 items-center justify-center rounded-[8px]" style={{ background: style.bg, width: size, height: size }}>
-      <Icon className="size-[16px]" style={{ color: style.color }} strokeWidth={1.75} />
+      <Icon style={{ color: style.color, width: size * 0.52, height: size * 0.52 }} strokeWidth={1.75} />
     </span>
   );
 }
 
 function FunctionCard({ card, previous, linkable }: { card: ExecutiveFunctionCard; previous: ExecutivePeriod | null; linkable: boolean }) {
   const tone = getGradeTone(card.score);
+  const style = FUNCTION_STYLE[card.function];
   const changeTone = scoreTone(card.change);
+  const trendColor = changeTone === 'neutral' ? style.color : toneColor(changeTone);
   const vsLabel = previous ? `vs ${previous.month.slice(0, 3)}` : 'vs last';
   return (
-    <article aria-label={`${card.function} function`} className="flex min-w-0 flex-col gap-[12px] rounded-[12px] border border-[var(--exec-card-border)] bg-[var(--bg-surface)] px-[20px] py-[18px] shadow-[var(--exec-card-shadow)]">
+    <article aria-label={`${card.function} function`} className="flex min-w-0 flex-col gap-[12px] rounded-[16px] border border-[var(--exec-card-border)] bg-[var(--bg-surface)] p-[16px] shadow-[var(--exec-card-shadow)]">
       <div className="flex items-center gap-[10px]">
-        <FunctionIcon fn={card.function} />
+        <FunctionIcon fn={card.function} size={40} />
         <div className="min-w-0">
-          <h3 className="truncate text-[15px] font-bold text-[var(--insights-heading)]">{card.function}</h3>
-          <p className="truncate text-[11px] text-[var(--text-muted)]">
+          <h3 className="text-[17px] font-bold leading-[1.3] tracking-[-0.025em] text-[var(--insights-heading)]">{card.function}</h3>
+          <p className="mt-[2px] text-[11px] leading-[1.5] text-[var(--text-muted)]">
             {card.teams.length} {card.teams.length === 1 ? 'team' : 'teams'} · {card.employees} people{card.regions.length ? ` · ${card.regions.join(' + ')}` : ''}
           </p>
         </div>
       </div>
       <div className="flex flex-wrap items-center gap-[8px]">
-        <ScoreText score={card.score} className="text-[28px]">{fmtScore(card.score)}</ScoreText>
-        <GradePill score={card.score} />
-        {card.is_most_improved && <StatusPill tone="success" icon={TrendingUp}>Most improved</StatusPill>}
+        <ScoreText score={card.score} className="text-[34px] tracking-[-0.045em] tabular-nums">{fmtScore(card.score)}</ScoreText>
+        <GradePill score={card.score} className="!px-[10px] !py-[4px]" />
       </div>
       <div className="flex flex-wrap items-end gap-x-[16px] gap-y-[6px]">
         <div className="flex flex-col gap-[2px]">
           <StatLabel>Gap</StatLabel>
-          <ToneText tone={card.gap !== null && card.gap < 0 ? 'bad' : 'good'}>{arrow(card.gap)} {fmtSigned(card.gap)}</ToneText>
+          <ToneText tone={scoreTone(card.gap)} className="text-[18px] font-bold tabular-nums">{arrow(card.gap)} {fmtSigned(card.gap)}</ToneText>
         </div>
         <div className="flex flex-col gap-[2px]">
           <StatLabel>{vsLabel}</StatLabel>
-          <ToneText tone={changeTone}>{arrow(card.change)} {fmtSigned(card.change)}</ToneText>
+          <ToneText tone={changeTone} className="text-[14px] font-semibold tabular-nums">{arrow(card.change)} {fmtSigned(card.change)}</ToneText>
         </div>
+      </div>
+      <div className="flex min-h-[18px] flex-wrap items-center gap-[6px]">
+        {card.is_most_improved && <StatusPill tone="success" icon={TrendingUp}>Most improved</StatusPill>}
         {card.falling_months !== null && card.falling_months >= 2 && (
           <StatusPill tone="danger" icon={TrendingDown}>Falling {card.falling_months} mo</StatusPill>
         )}
       </div>
-      <div className="rounded-[10px] bg-[var(--exec-tile-bg)] px-[8px] py-[4px]">
-        <Sparkline
-          values={card.trend.map((point) => point.score)}
-          height={50}
-          width={360}
-          label={`${card.function} 6-month trend`}
-          latestValue={card.score}
-          latestValueLabel={fmtScore(card.score)}
-          pointLabels={card.trend.map(({ period, score }) => `${period.month} ${period.year}: ${fmtScore(score)}`)}
-        />
-      </div>
-      <div className="h-px w-full bg-[var(--insights-row-border)]" />
-      <div className="flex items-end justify-between gap-[8px]">
-        <p className="min-w-0 text-[11px] leading-[1.4] text-[var(--text-muted)]">{card.teams.join(' · ')}</p>
-        {linkable && <SoftLink to={`/function-summary/${functionSlug(card.function)}`} ariaLabel={`View ${card.function} function`}>View function</SoftLink>}
+      <FunctionTrendChart color={trendColor} title={`${card.function} score`} points={card.trend} />
+      <div className="mt-auto flex flex-col gap-[10px] border-t border-[var(--insights-row-border)] pt-[10px]">
+        <p className="min-w-0 text-[11px] leading-[1.6] text-[var(--text-secondary)]">{card.teams.join(' · ')}</p>
+        {linkable && <Link to={`/function-summary/${functionSlug(card.function)}`} aria-label={`View ${card.function} function`} className="inline-flex min-h-[44px] items-center justify-center gap-[8px] rounded-[10px] border px-[12px] py-[8px] text-[13px] font-bold transition-[filter] hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--insights-accent-ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-surface)] motion-reduce:transition-none" style={{ background: style.bg, color: style.color, borderColor: `color-mix(in srgb, ${style.color} 25%, transparent)` }}>View function <ArrowRight aria-hidden="true" className="size-[16px]" /></Link>}
       </div>
       <span className="sr-only">{tone.label}</span>
     </article>
@@ -81,7 +76,7 @@ export default function FunctionCards({ cards, previous, linkable }: { cards: Ex
         </div>
         {linkable && <span className="text-[12px] text-[var(--text-muted)]">Click a function to open its Function Summary →</span>}
       </div>
-      <div className="grid gap-[16px] md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,260px),1fr))] gap-[12px]">
         {cards.map((card) => <FunctionCard key={card.function} card={card} previous={previous} linkable={linkable} />)}
       </div>
     </section>

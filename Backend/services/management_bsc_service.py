@@ -144,10 +144,14 @@ class ManagementBSCService:
         history_months: int,
         selected_kpi: str | None,
         base_config: dict[str, Any],
+        allowed_regions: list[str] | None = None,
     ) -> dict[str, Any]:
         try:
             team = get_scoped_team(self.db, team_name, "management")
-            if not team:
+            region_grants = None if allowed_regions is None else {
+                str(region).strip().casefold() for region in allowed_regions
+            }
+            if not team or (region_grants is not None and str(team.region or "").strip().casefold() not in region_grants):
                 return self._empty_response(
                     team_name,
                     performance_level,

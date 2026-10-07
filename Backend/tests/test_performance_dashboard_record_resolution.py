@@ -414,3 +414,15 @@ def test_analysis_records_share_the_dashboard_source():
 
     assert len(records) == 1
     assert records[0].evaluation.score == 90
+
+
+@pytest.mark.parametrize("rich_payload", [False, True])
+def test_dashboard_retains_canonical_branch_for_director_scope(rich_payload):
+    payload = PerformanceRecord(
+        id="old", employee_id="IN-1", employee_name="Agent", team="Inbound", month="June",
+        branch_key="sharjah", evaluation=EvaluationData(score=82, grade="C"),
+    ).model_dump(mode="json") if rich_payload else None
+    row = _sql_record(payload=payload)
+    row.branch_key = "dubai"
+    [record] = _service([row]).list_records()
+    assert record.branch_key == "dubai"

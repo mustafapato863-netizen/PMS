@@ -1,5 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
+import { StrictMode, type ReactNode } from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ThemeProvider } from '../../context/ThemeContext';
 import { apiFetch } from '../../lib/apiClient';
@@ -15,6 +17,8 @@ type MockUser = {
   has_unrestricted_team_access?: boolean;
   accessible_teams?: string[];
   accessible_functions?: string[];
+  accessible_branches?: string[];
+  accessible_regions?: string[];
 };
 
 const authState = vi.hoisted(() => ({
@@ -69,12 +73,18 @@ vi.mock('../../lib/apiClient', () => ({
 
 const mockedApiFetch = vi.mocked(apiFetch);
 
+const QueryWrapper = ({ children }: { children: ReactNode }) => (
+  <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+    {children}
+  </QueryClientProvider>
+);
+
 const renderSidebar = (initialEntry = '/') => render(
   <MemoryRouter initialEntries={[initialEntry]}>
     <ThemeProvider>
       <Sidebar isOpen setIsOpen={vi.fn()} />
     </ThemeProvider>
-  </MemoryRouter>,
+  </MemoryRouter>, { wrapper: QueryWrapper },
 );
 
 const mockTeamConfigFetch = () => {
@@ -98,9 +108,18 @@ const mockTeamConfigFetch = () => {
 
 describe('Sidebar team icons', () => {
   beforeEach(() => {
+    mockedApiFetch.mockClear();
     authState.user = ADMIN_USER;
     catalogState.scopes = DEFAULT_SCOPES;
     mockTeamConfigFetch();
+  });
+
+  it('shares configuration requests across StrictMode remounts', async () => {
+    render(<StrictMode><MemoryRouter><ThemeProvider><Sidebar isOpen setIsOpen={vi.fn()} /></ThemeProvider></MemoryRouter></StrictMode>, { wrapper: QueryWrapper });
+    await waitFor(() => expect(mockedApiFetch).toHaveBeenCalledWith('/api/config/teams'));
+    await waitFor(() => expect(mockedApiFetch).toHaveBeenCalledWith('/api/team-management/management-kpi-config/teams'));
+    expect(mockedApiFetch.mock.calls.filter(([path]) => path === '/api/config/teams')).toHaveLength(1);
+    expect(mockedApiFetch.mock.calls.filter(([path]) => path === '/api/team-management/management-kpi-config/teams')).toHaveLength(1);
   });
 
   it('uses a distinct icon for every known team', () => {
@@ -124,7 +143,7 @@ describe('Sidebar team icons', () => {
         <ThemeProvider>
           <Sidebar isOpen setIsOpen={vi.fn()} onToggleCollapsed={onToggleCollapsed} />
         </ThemeProvider>
-      </MemoryRouter>,
+      </MemoryRouter>, { wrapper: QueryWrapper },
     );
 
     const collapseButton = screen.getByRole('button', { name: 'Minimize navigation sidebar' });
@@ -139,7 +158,7 @@ describe('Sidebar team icons', () => {
         <ThemeProvider>
           <Sidebar isOpen setIsOpen={vi.fn()} isCollapsed onToggleCollapsed={vi.fn()} />
         </ThemeProvider>
-      </MemoryRouter>,
+      </MemoryRouter>, { wrapper: QueryWrapper },
     );
 
     const sidebar = screen.getByRole('complementary', { name: 'Primary navigation' });
@@ -288,8 +307,16 @@ describe('Function Viewer sidebar (Figma 48:3)', () => {
     expect(within(rcmTeams).getByRole('link', { name: 'Coding' })).toHaveAttribute('href', '/team/coding');
     expect(within(rcmTeams).getByRole('link', { name: 'Pre-Approvals IP Offshore' })).toBeInTheDocument();
     expect(within(rcmTeams).queryByRole('link', { name: 'Inbound' })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Show Pre-Approvals teams' }));
-    expect(within(screen.getByRole('group', { name: 'Pre-Approvals teams' })).getByRole('link', { name: 'Pre-Approvals OP Final' })).toBeInTheDocument();
+    expect(within(rcmTeams).getByRole('link', { name: 'Pre-Approvals OP Final' })).toBeInTheDocument();
+  });
+
+  it('keeps the legacy UAE-only grant usable without adding RCM or Offshore access', async () => {
+    authState.user = { ...authState.user, accessible_functions: ['Pre-Approvals'] };
+    renderSidebar('/function-summary/pre-approvals');
+    const group = await screen.findByRole('group', { name: 'Pre-Approvals teams' });
+    expect(within(group).getByRole('link', { name: 'Pre-Approvals OP Final' })).toBeInTheDocument();
+    expect(within(group).queryByRole('link', { name: 'Pre-Approvals IP Offshore' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'RCM' })).not.toBeInTheDocument();
   });
 
   it('hides the employee tree, Shared Functions, product pages and Settings, and shows Read-only', () => {
@@ -331,17 +358,60 @@ describe('new role navigation boundaries', () => {
     }
   });
 
-  it('shows Function Director read pages and their scoped team entry', () => {
+  it('shows Function Director summary and scoped teams, not performance workspaces', () => {
     authState.user = {
       id: 'function-director', name: 'Fiona Director', username: 'fiona', role: 'Function Director',
       accessible_teams: [], accessible_functions: ['Marketing'],
     };
     renderSidebar();
 
-    for (const name of ['All Teams', 'Function Summary', 'Reports', 'Insights', 'Planning', 'Corrective Actions']) {
-      expect(screen.getByRole('link', { name })).toBeInTheDocument();
+    for (const name of ['All Teams', 'Reports', 'Insights', 'Planning', 'Corrective Actions']) {
+      expect(screen.queryByRole('link', { name })).not.toBeInTheDocument();
     }
+    expect(screen.queryByRole('link', { name: 'Function Summary' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Employee teams' })).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('link', { name: 'Marketing' })).toHaveAttribute('href', '/team/marketing?performance_level=Employee');
     expect(screen.queryByText('FUNCTION VIEWER')).not.toBeInTheDocument();
+  });
+
+  it.each(['Branch Director', 'Regional Manager'] as const)('uses the server-scoped catalog for %s rather than empty team assignments', (role) => {
+    authState.user = { id: 'director', username: 'director', name: 'Director', role, accessible_teams: [], accessible_branches: ['dubai'], accessible_regions: ['UAE'] };
+    catalogState.scopes = [{ team: 'Pre-Approvals OP Dubai', region: 'UAE', performance_level: 'Employee', position: '' }];
+    renderSidebar('/executive?branch=sharjah&region=EGY');
+    const href = screen.getByRole('link', { name: 'Pre-Approvals OP Final' }).getAttribute('href')!;
+    expect(href).toContain('/team/pre-approvals-op-final');
+    expect(href).toContain(role === 'Branch Director' ? 'branch=dubai' : 'region=UAE');
+    expect(screen.queryByRole('link', { name: 'Marketing' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Function Summary' })).not.toBeInTheDocument();
+    for (const level of ['Managerial', 'Corporate']) expect(screen.queryByRole('button', { name: `${level} teams` })).not.toBeInTheDocument();
+    for (const name of ['All Teams', 'Reports', 'Insights', 'Planning', 'Corrective Actions']) expect(screen.queryByRole('link', { name })).not.toBeInTheDocument();
+  });
+
+  it.each(['Branch Director', 'Regional Manager', 'Function Director'] as const)('groups authorized team names by level for %s and preserves scoped drilldowns', (role) => {
+    authState.user = { id: 'director', username: 'director', name: 'Director', role, accessible_teams: [], accessible_branches: ['dubai'], accessible_regions: ['UAE'], accessible_functions: ['RCM'] };
+    catalogState.scopes = [
+      { team: 'Coding', region: 'UAE', performance_level: 'Employee', position: '' },
+      { team: 'Coding', region: 'UAE', performance_level: 'Employee', position: 'Agent' },
+      { team: 'Coding', region: 'UAE', performance_level: 'Managerial', position: '' },
+      { team: 'Coding', region: 'UAE', performance_level: 'Corporate', position: '' },
+    ];
+    renderSidebar('/team/coding?performance_level=Corporate&branch=sharjah&region=EGY');
+    expect(screen.queryByRole('link', { name: 'Function Summary' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Your teams')).not.toBeInTheDocument();
+    for (const level of ['Employee', 'Managerial', 'Corporate']) {
+      const toggle = screen.getByRole('button', { name: `${level} teams` });
+      if (toggle.getAttribute('aria-expanded') !== 'true') fireEvent.click(toggle);
+      const group = screen.getByRole('group', { name: `${level} teams` });
+      expect(within(group).getAllByRole('link')).toHaveLength(1);
+      const link = within(group).getByRole('link', { name: 'Coding' });
+      const destination = new URL(link.getAttribute('href')!, 'http://localhost');
+      expect(destination.searchParams.get('performance_level')).toBe(level);
+      if (role === 'Branch Director') expect(destination.searchParams.get('branch')).toBe('dubai');
+      if (role === 'Regional Manager') expect(destination.searchParams.get('region')).toBe('UAE');
+      expect(link.getAttribute('aria-current')).toBe(level === 'Corporate' ? 'page' : null);
+      expect(link).toHaveAttribute('title', 'Coding');
+    }
+    expect(screen.queryByRole('link', { name: /Coding ·/ })).not.toBeInTheDocument();
   });
 });
 
@@ -349,6 +419,22 @@ describe('Sidebar query carry-over (QA BUG-1b)', () => {
   beforeEach(() => {
     mockTeamConfigFetch();
     authState.user = ADMIN_USER;
+  });
+
+  it.each([
+    '/function-summary/rcm', '/team/coding', '/reports', '/insights',
+  ])('returns to the company overview without carrying page-specific filters from %s', (path) => {
+    renderSidebar(`${path}?period=2026-06&month=June&year=2026&region=All&branch=dubai&function=RCM&team=Coding&sub_team=Submission&position=Agent&level=Corporate&performance_level=Employee&employee_id=other&status=Open`);
+    expect(screen.getByRole('link', { name: 'Executive Summary' })).toHaveAttribute('href', '/executive?period=2026-06&month=June&year=2026');
+  });
+
+  it.each([
+    { role: 'Branch Director' as const, grant: { accessible_branches: ['dubai'] }, fixed: 'branch=dubai' },
+    { role: 'Regional Manager' as const, grant: { accessible_regions: ['UAE'] }, fixed: 'region=UAE' },
+  ])('keeps the $role boundary when returning to the overview', ({ role, grant, fixed }) => {
+    authState.user = { id: 'director', name: 'Director', username: 'director', role, ...grant };
+    renderSidebar('/team/coding?period=2026-06&region=EGY&branch=sharjah&team=Submission&level=Corporate');
+    expect(screen.getByRole('link', { name: 'Executive Summary' })).toHaveAttribute('href', `/executive?period=2026-06&${fixed}`);
   });
 
   it('links Insights to plain /insights from a filtered Insights URL', () => {

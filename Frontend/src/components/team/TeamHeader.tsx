@@ -37,6 +37,9 @@ interface TeamHeaderProps {
   performanceLevel: PerformanceLevel;
   setPerformanceLevel: (level: PerformanceLevel) => void;
   disabledPerformanceLevel?: boolean;
+  lockedBranch?: string;
+  lockedRegion?: string;
+  scopedNavigation?: boolean;
 }
 
 const TeamHeader = ({
@@ -68,6 +71,9 @@ const TeamHeader = ({
   performanceLevel,
   setPerformanceLevel,
   disabledPerformanceLevel,
+  lockedBranch,
+  lockedRegion,
+  scopedNavigation = false,
 }: TeamHeaderProps) => {
   const [branchesOpen, setBranchesOpen] = useState(false);
   const branchesRef = useRef<HTMLDivElement>(null);
@@ -105,7 +111,7 @@ const TeamHeader = ({
   };
   const breadcrumbItems: BreadcrumbItem[] = [
     { label: 'Dashboard', href: '/executive', icon: 'home' },
-    { label: 'Team Performance', href: '/team/all', icon: 'teams' },
+    { label: 'Team Performance', href: scopedNavigation || lockedBranch || lockedRegion ? '/executive' : '/team/all', icon: 'teams' },
     ...(displayName && displayName !== 'All Teams'
       ? [{ label: displayName, icon: 'team' as const }]
       : []),
@@ -180,10 +186,12 @@ const TeamHeader = ({
         )}
         
         {/* Region Selector */}
-        {showRegionFilter && (
+        {(showRegionFilter || lockedRegion) && (
           <CustomDropdown
-            value={region}
-            options={[
+            ariaLabel="Region"
+            disabled={Boolean(lockedRegion)}
+            value={lockedRegion || region}
+            options={lockedRegion ? [{ value: lockedRegion, label: lockedRegion }] : [
               { value: 'All', label: 'All Regions' },
               { value: 'EGY', label: 'Egypt (EGY)' },
               { value: 'UAE', label: 'UAE' },
@@ -194,7 +202,7 @@ const TeamHeader = ({
         )}
 
         {/* Branch selector shared by the merged OP Final and IP Final views. */}
-        {multiBranchFilter ? (
+        {lockedBranch ? <CustomDropdown ariaLabel="Branch" disabled value={lockedBranch} options={[{ value: lockedBranch, label: lockedBranch }]} onChange={() => {}} size="md" /> : multiBranchFilter ? (
           <div ref={branchesRef} className="relative inline-block">
             <button
               type="button"

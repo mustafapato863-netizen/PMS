@@ -25,7 +25,7 @@ vi.mock('../features/executive/useExecutiveSummary', () => ({
     state.lastArgs = args;
     return {
       summary: state.summary,
-      options: { regions: ['EGY', 'UAE'], functions: [], teams: ['Coding', 'Submission'], levels: ['Employee'] },
+      options: { regions: ['EGY', 'UAE'], functions: [], teams: ['Coding', 'Submission', 'Pre-Approvals OP Dubai', 'Pre-Approvals IP Offshore'], levels: ['Employee'] },
       isLoading: false,
       error: null,
       source: 'composed',
@@ -87,6 +87,32 @@ beforeEach(() => {
 });
 
 describe('Function Summary routing and scope', () => {
+  it('treats legacy All filter values as unfiltered', () => {
+    state.role = 'Admin';
+    renderAt('/function-summary/rcm?region=All&branch=all&team=ALL&level=All&position=All');
+    expect(state.lastArgs?.filters).toMatchObject({
+      region: undefined, branch: undefined, team: undefined, performanceLevel: undefined, position: undefined,
+    });
+    expect(screen.getByLabelText('Region')).toHaveValue('');
+  });
+  it('redirects the old public Pre-Approvals route to its RCM parent team', () => {
+    state.role = 'Admin';
+    renderAt('/function-summary/pre-approvals?period=2026-06');
+    expect(screen.getByTestId('location')).toHaveTextContent('/function-summary/rcm?period=2026-06&team=Pre-Approvals');
+    expect(state.lastArgs).toMatchObject({ functionName: 'RCM', filters: { team: 'Pre-Approvals' } });
+  });
+
+  it('filters a sub-team and clears it without dropping the assigned function or period', () => {
+    state.role = 'Function Director';
+    state.user = { id: 'fd', role: 'Function Director', accessible_functions: ['RCM'] };
+    renderAt('/function-summary/rcm?period=2026-06&team=Pre-Approvals&sub_team=Pre-Approvals%20IP%20Offshore&level=Corporate');
+    expect(screen.getByRole('group', { name: /Function: RCM \(fixed by your role\)/ })).toHaveAttribute('aria-disabled', 'true');
+    expect(state.lastArgs).toMatchObject({ functionName: 'RCM', filters: { team: 'Pre-Approvals IP Offshore', performanceLevel: 'Corporate' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
+    expect(screen.getByTestId('location')).toHaveTextContent('/function-summary/rcm?period=2026-06');
+    expect(state.lastArgs).toMatchObject({ functionName: 'RCM', accessibleFunctions: ['RCM'] });
+    expect(state.lastArgs?.filters.team).toBeUndefined();
+  });
   it('redirects /function-summary to the first allowed function, keeping the query', () => {
     renderAt('/function-summary?period=2026-06');
     expect(screen.getByTestId('location')).toHaveTextContent('/function-summary/rcm?period=2026-06');
@@ -113,7 +139,7 @@ describe('Function Summary routing and scope', () => {
     state.summary = build({ role: 'Admin', functionName: 'Marketing' });
     renderAt('/function-summary/marketing');
     expect(screen.getByTestId('location')).toHaveTextContent('/function-summary/marketing');
-    expect(screen.getAllByRole('radio').map((radio) => radio.textContent)).toEqual(['Call Center', 'RCM', 'Pre-Approvals', 'Marketing']);
+    expect(screen.getAllByRole('radio').map((radio) => radio.textContent)).toEqual(['Call Center', 'RCM', 'Marketing']);
     expect(screen.queryByText('Read-only')).not.toBeInTheDocument();
   });
 
@@ -128,8 +154,8 @@ describe('Function Summary page', () => {
   it('renders the function layout read-only with the switcher limited to assigned functions', () => {
     renderAt('/function-summary/rcm');
     expect(screen.getByRole('heading', { name: 'Function Summary' })).toBeInTheDocument();
-    expect(screen.getByText(/^RCM · June 2026 vs May 2026 · 4 teams · \d+ people$/)).toBeInTheDocument();
-    expect(screen.getByText(/Submission leads at \d+\.\d%; Re-Submission .*is holding the function back\./)).toBeInTheDocument();
+    expect(screen.getByText(/^RCM · June 2026 vs May 2026 · 7 teams · \d+ people$/)).toBeInTheDocument();
+    expect(screen.getByText(/Submission leads at \d+\.\d%; Pre-Approvals IP Final .*is holding the function back\./)).toBeInTheDocument();
     expect(screen.getByText('Read-only')).toBeInTheDocument();
     const switcher = screen.getByRole('radiogroup', { name: 'Function' });
     expect(within(switcher).getAllByRole('radio').map((radio) => radio.textContent)).toEqual(['RCM', 'Pre-Approvals']);
@@ -151,7 +177,7 @@ describe('Function Summary page', () => {
     const names = within(board).getAllByRole('link').map((link) => link.textContent);
     expect(names).toEqual(expect.arrayContaining(['Coding', 'Submission', 'Re-Submission', 'Pre-Approvals IP Offshore']));
     expect(names).not.toContain('Inbound');
-    expect(names).not.toContain('Pre-Approvals OP Final');
+    expect(names).toContain('Pre-Approvals OP Final');
     expect(within(board).getByRole('link', { name: 'Coding' })).toHaveAttribute('href', '/team/coding');
   });
 

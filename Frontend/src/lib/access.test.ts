@@ -49,9 +49,9 @@ describe('access helpers (current roles and legacy transition)', () => {
     expect(canAccessCorrectiveActions('General Manager')).toBe(true);
     expect(canAccessCorrectiveActions('Manager')).toBe(true);
     expect(canAccessCorrectiveActions('Function Viewer')).toBe(false);
-    expect(canAccessCorrectiveActions('Function Director')).toBe(true);
-    expect(canAccessCorrectiveActions('Branch Director')).toBe(true);
-    expect(canAccessCorrectiveActions('Regional Manager')).toBe(true);
+    expect(canAccessCorrectiveActions('Function Director')).toBe(false);
+    expect(canAccessCorrectiveActions('Branch Director')).toBe(false);
+    expect(canAccessCorrectiveActions('Regional Manager')).toBe(false);
     expect(canAccessCorrectiveActions('Performance Team')).toBe(true);
     expect(canAccessCorrectiveActions('Viewer')).toBe(false);
   });

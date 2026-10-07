@@ -567,7 +567,7 @@ select option {
   --exec-pos-bg: #E3F6EC;
   --exec-pos-text: #0A6B3C;
   --exec-function-call-center: rgba(0, 163, 224, 0.10);
-  --exec-function-rcm: rgba(0, 105, 180, 0.10);
+  --exec-function-rcm: rgba(0, 168, 89, 0.10);
   --exec-function-pre-approvals: rgba(0, 168, 89, 0.10);
   --exec-function-marketing: rgba(124, 58, 237, 0.10);
   --exec-comparison-line: #7C3AED;
@@ -595,7 +595,7 @@ select option {
   --exec-pos-bg: rgba(14, 135, 73, 0.22);
   --exec-pos-text: #34D399;
   --exec-function-call-center: rgba(56, 189, 248, 0.16);
-  --exec-function-rcm: rgba(96, 165, 250, 0.16);
+  --exec-function-rcm: rgba(52, 211, 153, 0.16);
   --exec-function-pre-approvals: rgba(52, 211, 153, 0.16);
   --exec-function-marketing: rgba(167, 139, 250, 0.18);
   --exec-comparison-line: #A78BFA;

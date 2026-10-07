@@ -18,14 +18,18 @@ def test_ip_final_scope_alias_keeps_source_and_canonical_names_in_one_scope():
     } <= keys
 
 
-def test_pre_approvals_parent_repository_alias_reads_all_uae_sources():
-    assert _team_filter_values("Pre-Approvals") == (
+def test_pre_approvals_selection_reads_uae_and_offshore_without_widening_legacy_grants():
+    selected = set(_team_filter_values("Pre-Approvals"))
+    assert {
         "pre-approvals op dubai",
         "pre-approvals op final shjajm",
         "pre-approvals ip final dubai",
         "pre-approvals ip final shjajm",
         "pre-approvals ip elective dubai",
-    )
+        "pre-approvals ip offshore",
+    } <= selected
+    assert "coding" not in selected
+    assert "pre-approvals ip offshore" not in _team_keys("Pre-Approvals")
 
 
 def test_pre_approvals_parent_scope_includes_elective_source():

@@ -42,6 +42,37 @@ def test_highest_position_uses_org_seniority():
     assert _highest_position({"Account Manager", "Finance Manager", "Sales Director"}) == "Sales Director"
 
 
+@pytest.mark.parametrize("regions,visible", [(["EGY"], True), (["UAE"], False), ([], False)])
+def test_regional_grants_bound_management_bsc_before_snapshot_selection(regions, visible):
+    session = _db()
+    try:
+        team = _seed_team(session, "Sales")
+        team.team_level = "management"
+        session.commit()
+        service = ManagementBSCService(session)
+        service.import_template_rows(rows=[{
+            "employee_id": "EMP-1", "team": "Sales", "employee_name": "One",
+            "position": "Sales Director", "performance_level": "Managerial",
+            "month": "June", "year": 2026, "perspective": "Financial",
+            "kpi_label": "Revenue", "direction": "higher_better", "weight": 1.0,
+            "target_value": 100.0, "target_unit": "%", "actual_value": 95.0,
+        }], updated_by="tester")
+        data = service.build_scorecard_dataset(
+            team_name="Sales", performance_level="Managerial", month="June", year=2026,
+            employee_ids=["EMP-1"], history_months=6, selected_kpi=None,
+            base_config=_base_config(), allowed_regions=regions,
+        )
+        assert bool(data["available_people"]) is visible
+        assert bool(data["kpi_table"]) is visible
+        if not visible:
+            assert data["team"]["top_position"] is None
+            assert data["available_periods"] == []
+            assert data["history"] == []
+            assert data["scorecard"]["score"] is None
+    finally:
+        session.close()
+
+
 def test_employee_override_beats_position_config():
     session = _db()
     _seed_team(session, "Sales")

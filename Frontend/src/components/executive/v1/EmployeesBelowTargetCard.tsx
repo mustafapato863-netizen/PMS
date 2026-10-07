@@ -3,12 +3,14 @@ import { useQuery } from '@tanstack/react-query';
 import { ArrowUpRight, ChevronLeft, ChevronRight, UserRound } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { apiFetch } from '../../../lib/apiClient';
+import { performanceSessionKey } from '../../../lib/performanceSessionKey';
 import type { ExecutivePerson, ExecutiveSummary } from '../../../features/executive/types';
 import { executivePersonPath } from '../../../features/executive/viewModel';
 import { fmtScore } from '../../../features/executive/format';
 import { ExecCard, ExecCardHeader, GradeSquare, ScoreText, SoftEmpty } from './ExecPrimitives';
 
 const PAGE_SIZE = 8;
+const FETCH_BATCH_SIZE = 100;
 
 interface BelowTargetRecord {
   employee_id: string;
@@ -52,9 +54,32 @@ function pageParams(summary: ExecutiveSummary): URLSearchParams {
   params.set('score_lt', '90');
   params.set('sort', 'score_asc');
   params.set('detail', 'table');
-  params.set('page_size', String(PAGE_SIZE));
-  params.set('include_total', 'true');
   return params;
+}
+
+async function loadRoster(filterKey: string, signal: AbortSignal): Promise<BelowTargetRecord[]> {
+  const params = new URLSearchParams(filterKey);
+  params.set('page_size', String(FETCH_BATCH_SIZE));
+  // Once all bounded batches are cached, their length is the exact roster total.
+  params.set('include_total', 'false');
+  const items: BelowTargetRecord[] = [];
+  const cursors = new Set<string>();
+
+  while (true) {
+    const response = await apiFetch<ApiEnvelope<RecordsPage>>(`/api/performance/records?${params.toString()}`, { signal });
+    if (!response.success || !Array.isArray(response.data?.items)) {
+      throw new Error(response.message || 'Employees below target could not be loaded.');
+    }
+    items.push(...response.data.items);
+    if (!response.data.has_more) return items;
+
+    const cursor = response.data.next_cursor;
+    if (!cursor || cursors.has(cursor) || response.data.items.length === 0) {
+      throw new Error('Employees below target could not be loaded. Please try again.');
+    }
+    cursors.add(cursor);
+    params.set('cursor', cursor);
+  }
 }
 
 function toExecutivePerson(record: BelowTargetRecord): ExecutivePerson {
@@ -73,58 +98,39 @@ function toExecutivePerson(record: BelowTargetRecord): ExecutivePerson {
 }
 
 export default function EmployeesBelowTargetCard({ summary }: { summary: ExecutiveSummary }) {
-  const baseParams = pageParams(summary);
-  const filterKey = baseParams.toString();
-  const [pagination, setPagination] = useState<{ filterKey: string; page: number; cursors: Array<string | null> }>({
-    filterKey,
-    page: 0,
-    cursors: [null],
-  });
-  const isCurrentFilter = pagination.filterKey === filterKey;
-  const pageIndex = isCurrentFilter ? pagination.page : 0;
-  const cursor = isCurrentFilter ? pagination.cursors[pageIndex] ?? null : null;
+  const filterKey = pageParams(summary).toString();
+  // A different scope resets the displayed page without borrowing another scope's rows.
+  return <EmployeeRoster key={`${performanceSessionKey()}:${filterKey}`} summary={summary} filterKey={filterKey} />;
+}
+
+function EmployeeRoster({ summary, filterKey }: { summary: ExecutiveSummary; filterKey: string }) {
+  const [page, setPage] = useState(0);
   const pageQuery = useQuery({
-    queryKey: ['executive', 'employees-below-90', filterKey, cursor],
-    queryFn: async ({ signal }) => {
-      const params = new URLSearchParams(baseParams);
-      if (cursor) params.set('cursor', cursor);
-      const response = await apiFetch<ApiEnvelope<RecordsPage>>(`/api/performance/records?${params.toString()}`, { signal });
-      if (!response.success || !Array.isArray(response.data?.items)) {
-        throw new Error(response.message || 'Employees below target could not be loaded.');
-      }
-      return response.data;
-    },
+    queryKey: ['performance', 'executive', 'employees-below-90', 'roster', filterKey, performanceSessionKey()],
+    queryFn: ({ signal }) => loadRoster(filterKey, signal),
     enabled: Boolean(summary.period.effective?.key),
     retry: false,
-    staleTime: 60_000,
+    staleTime: 5 * 60_000,
+    gcTime: 10 * 60_000,
+    refetchOnWindowFocus: false,
   });
 
-  const items = pageQuery.data?.items ?? [];
-  const total = pageQuery.data?.total ?? 0;
+  const roster = pageQuery.data ?? [];
+  const total = roster.length;
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const pageIndex = Math.min(page, pageCount - 1);
+  const items = roster.slice(pageIndex * PAGE_SIZE, (pageIndex + 1) * PAGE_SIZE);
   const firstItem = total === 0 ? 0 : pageIndex * PAGE_SIZE + 1;
   const lastItem = Math.min((pageIndex + 1) * PAGE_SIZE, total);
   const people = items.map(toExecutivePerson);
 
   const goToNextPage = () => {
-    const nextCursor = pageQuery.data?.next_cursor;
-    if (!nextCursor) return;
-    setPagination((current) => {
-      const currentCursors = current.filterKey === filterKey ? current.cursors : [null];
-      const nextPage = current.filterKey === filterKey ? current.page + 1 : 1;
-      const cursors = currentCursors.slice(0, nextPage);
-      cursors[nextPage] = nextCursor;
-      return { filterKey, page: nextPage, cursors };
-    });
+    setPage(Math.min(pageIndex + 1, pageCount - 1));
   };
 
   const goToPreviousPage = () => {
     if (pageIndex === 0) return;
-    setPagination((current) => ({
-      filterKey,
-      page: current.filterKey === filterKey ? Math.max(0, current.page - 1) : 0,
-      cursors: current.filterKey === filterKey ? current.cursors : [null],
-    }));
+    setPage(pageIndex - 1);
   };
 
   const subtitle = pageQuery.isLoading
@@ -145,7 +151,7 @@ export default function EmployeesBelowTargetCard({ summary }: { summary: Executi
         <div role="status" aria-live="polite" className="px-[6px] py-[24px] text-[13px] text-[var(--text-muted)]">
           Loading employees below 90%…
         </div>
-      ) : pageQuery.isError ? (
+      ) : pageQuery.isError && !pageQuery.data ? (
         <div className="flex flex-wrap items-center justify-between gap-[12px] px-[6px] py-[18px]">
           <p role="alert" className="text-[13px] text-[var(--insights-negative)]">
             {pageQuery.error instanceof Error ? pageQuery.error.message : 'Employees below target could not be loaded.'}
@@ -180,7 +186,7 @@ export default function EmployeesBelowTargetCard({ summary }: { summary: Executi
                 <button type="button" aria-label="Previous page" onClick={goToPreviousPage} disabled={pageIndex === 0} className="inline-flex size-[34px] items-center justify-center rounded-[8px] border border-[var(--exec-card-border)] text-[var(--text-secondary)] enabled:hover:bg-[var(--exec-tile-bg)] disabled:cursor-not-allowed disabled:opacity-40">
                   <ChevronLeft aria-hidden="true" className="size-[16px]" />
                 </button>
-                <button type="button" aria-label="Next page" onClick={goToNextPage} disabled={!pageQuery.data?.has_more || !pageQuery.data.next_cursor} className="inline-flex size-[34px] items-center justify-center rounded-[8px] border border-[var(--exec-card-border)] text-[var(--text-secondary)] enabled:hover:bg-[var(--exec-tile-bg)] disabled:cursor-not-allowed disabled:opacity-40">
+                <button type="button" aria-label="Next page" onClick={goToNextPage} disabled={pageIndex >= pageCount - 1} className="inline-flex size-[34px] items-center justify-center rounded-[8px] border border-[var(--exec-card-border)] text-[var(--text-secondary)] enabled:hover:bg-[var(--exec-tile-bg)] disabled:cursor-not-allowed disabled:opacity-40">
                   <ChevronRight aria-hidden="true" className="size-[16px]" />
                 </button>
               </span>

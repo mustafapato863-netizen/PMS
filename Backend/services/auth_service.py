@@ -129,6 +129,7 @@ class AuthenticationService:
             "username": user.username,
             "role": user.role,
             "type": "access",
+            "must_change_password": bool(user.must_change_password),
             "iat": now,
             "exp": now + timedelta(minutes=settings.JWT_EXPIRE_MINUTES),
         }
@@ -355,7 +356,7 @@ class AuthenticationService:
         AuthenticationService._delete_cached_session(session.id)
 
     @staticmethod
-    def revoke_all_sessions(db: Session, user_id: str | uuid.UUID, reason: str = "password_changed") -> None:
+    def revoke_all_sessions(db: Session, user_id: str | uuid.UUID, reason: str = "password_changed", *, commit: bool = True) -> None:
         normalized_user_id: uuid.UUID | str = user_id
         if isinstance(user_id, str):
             try:
@@ -371,7 +372,8 @@ class AuthenticationService:
             session.revoked_at = now
             session.revocation_reason = reason
             AuthenticationService._delete_cached_session(session.id)
-        db.commit()
+        if commit:
+            db.commit()
 
     @staticmethod
     def validate_token(token: str) -> dict:

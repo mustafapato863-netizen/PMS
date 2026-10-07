@@ -179,6 +179,7 @@ def get_balanced_scorecard(
             history_months=history_months,
             selected_kpi=selected_kpi,
             base_config=config,
+            **({"allowed_regions": scope.get("accessible_regions", [])} if scope.get("role") == "Regional Manager" else {}),
         )
     except ManagementBSCSchemaError as exc:
         raise HTTPException(status_code=500, detail="Failed to load performance records.") from exc
@@ -380,9 +381,11 @@ def _require_scoped_read_api(scope: dict) -> None:
         raise HTTPException(status_code=404, detail="Scoped performance API is disabled")
     allowed_roles = set(settings.PMS_SCOPED_PERFORMANCE_ALLOWED_ROLES or ())
     role = str(scope.get("role") or "")
-    # Function Viewer is always eligible for the read API once globally enabled;
-    # repository-level scope checks restrict every query to assigned functions.
-    if allowed_roles and role not in allowed_roles and role != "Function Viewer":
+    # Scoped leaders require these reads for their authorized summary/drilldowns.
+    # This is rollout eligibility, not authorization: repository grants still
+    # intersect every query, including when a URL requests another scope.
+    scoped_read_roles = {"Function Viewer", "Function Director", "Branch Director", "Regional Manager", "Performance Team"}
+    if allowed_roles and role not in allowed_roles and role not in scoped_read_roles:
         raise HTTPException(status_code=404, detail="Scoped performance API is not enabled for this role")
 
 

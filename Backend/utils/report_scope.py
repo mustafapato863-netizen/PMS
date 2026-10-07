@@ -161,6 +161,17 @@ def function_team_keys(function_name: str) -> set[str]:
     return _team_keys(str(function_name))
 
 
+def selection_team_keys(team_name: str) -> set[str]:
+    """Expand a UI rollup, not a grant. Always intersect with user scope first.
+
+    The new RCM Pre-Approvals team includes Offshore as a sub-team. Legacy
+    Pre-Approvals grants retain their UAE-only meaning in ``_team_keys``.
+    """
+    if str(team_name).strip().casefold() == "pre-approvals":
+        return _PRE_APPROVALS_UAE_KEYS | {"pre-approvals ip offshore"}
+    return _team_keys(team_name)
+
+
 def user_can_access_team(scope: dict, team_name: str) -> bool:
     role = scope.get("role")
     if role in FUNCTION_SCOPED_ROLES:
@@ -176,8 +187,8 @@ def user_can_access_team(scope: dict, team_name: str) -> bool:
     if role in GLOBAL_DATA_ROLES or scope.get("has_unrestricted_team_access"):
         return True
     if role == "Regional Manager":
-        accessible = {str(name).strip().casefold() for name in scope.get("accessible_teams", [])}
-        return str(team_name).strip().casefold() in accessible
+        # Opening a team is allowed; its records still intersect the region grant.
+        return bool(scope.get("accessible_regions"))
     if role == "Branch Director":
         # Team-only checks are followed by branch filtering on the records.
         return bool(scope.get("accessible_branches"))
@@ -245,11 +256,9 @@ def filter_records_by_scope(records, scope: dict):
         return scoped_records
     if role == "Regional Manager":
         allowed_regions = {str(value).strip().casefold() for value in scope.get("accessible_regions", [])}
-        allowed_teams = {str(value).strip().casefold() for value in scope.get("accessible_teams", [])}
         return [
             record for record in records
             if _record_region(record) in allowed_regions
-            and _record_team_name(record).strip().casefold() in allowed_teams
         ]
     if role in SELF_SCOPED_ROLES:
         self_id = str(scope.get("employee_id") or scope.get("user_id") or "")
@@ -264,7 +273,7 @@ def filter_records_by_scope(records, scope: dict):
 
 def filter_records_by_team_levels(records, scope: dict):
     """Apply explicit team/level assignments after the broader role scope filter."""
-    if scope.get("role") in FUNCTION_SCOPED_ROLES:
+    if scope.get("role") in FUNCTION_SCOPED_ROLES | {"Regional Manager", "Branch Director"}:
         return filter_records_by_scope(records, scope)
     if scope.get("role") in GLOBAL_DATA_ROLES or scope.get("has_unrestricted_team_access") or scope.get("legacy_unscoped"):
         return records

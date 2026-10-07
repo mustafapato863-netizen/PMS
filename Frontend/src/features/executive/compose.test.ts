@@ -67,12 +67,27 @@ describe('executive function membership (disjoint, Executive cards only)', () =>
     expect(role.hero.score).toBe(75);
     expect(role.people?.below_90?.map((person) => person.employee_id)).toEqual(['copy']);
   });
-  it('puts IP Offshore under RCM and UAE pre-approvals under Pre-Approvals even when the backend lists both', () => {
+  it('puts every Pre-Approvals sub-team under RCM even when the backend lists both', () => {
     expect(executiveFunctionForTeam('Pre-Approvals IP Offshore', FIXTURE_TEAM_FUNCTIONS)).toBe('RCM');
     expect(executiveFunctionForTeam('Pre-Approvals IP Offshore')).toBe('RCM');
-    expect(executiveFunctionForTeam('Pre-Approvals IP Final', FIXTURE_TEAM_FUNCTIONS)).toBe('Pre-Approvals');
-    expect(executiveFunctionForTeam('Pre-Approvals OP Final', FIXTURE_TEAM_FUNCTIONS)).toBe('Pre-Approvals');
-    expect(executiveFunctionForTeam('Pre-Approvals OP Final')).toBe('Pre-Approvals');
+    expect(executiveFunctionForTeam('Pre-Approvals IP Final', FIXTURE_TEAM_FUNCTIONS)).toBe('RCM');
+    expect(executiveFunctionForTeam('Pre-Approvals OP Final', FIXTURE_TEAM_FUNCTIONS)).toBe('RCM');
+    expect(executiveFunctionForTeam('Pre-Approvals OP Final')).toBe('RCM');
+  });
+
+  it('filters the Pre-Approvals parent across its sub-teams without including RCM siblings', () => {
+    const evidence = [
+      record(80, { team: 'Pre-Approvals OP Final', employeeId: 'op' }),
+      record(90, { team: 'Pre-Approvals IP Offshore', employeeId: 'offshore' }),
+      record(99, { team: 'Coding', employeeId: 'coding' }),
+    ];
+    const parent = compose({ view: 'function', functionName: 'RCM', records: evidence, filters: { team: 'Pre-Approvals' } });
+    expect(parent.hero.score).toBe(85);
+    expect(parent.hero.employees).toBe(2);
+    expect(parent.teams.map((team) => team.team)).toEqual(['Pre-Approvals OP Final', 'Pre-Approvals IP Offshore']);
+    const leaf = compose({ view: 'function', functionName: 'RCM', records: evidence, filters: { team: 'Pre-Approvals OP Final' } });
+    expect(leaf.hero.employees).toBe(1);
+    expect(leaf.hero.score).toBe(80);
   });
 
   it('follows backend team_functions for CSR (not Call Center) and gives outside teams no card', () => {
@@ -91,12 +106,11 @@ describe('executive function membership (disjoint, Executive cards only)', () =>
 
   it('builds one card per function with disjoint teams; CSR counts in the company score only', () => {
     const summary = compose();
-    expect(summary.functions.map((card) => card.function)).toEqual(['Call Center', 'RCM', 'Pre-Approvals', 'Marketing']);
+    expect(summary.functions.map((card) => card.function)).toEqual(['Call Center', 'RCM', 'Marketing']);
     const rcm = summary.functions.find((card) => card.function === 'RCM')!;
-    const pa = summary.functions.find((card) => card.function === 'Pre-Approvals')!;
     expect(rcm.teams).toContain('Pre-Approvals IP Offshore');
-    expect(pa.teams).not.toContain('Pre-Approvals IP Offshore');
-    expect(pa.teams).toContain('Pre-Approvals IP Final');
+    expect(rcm.teams).toContain('Pre-Approvals IP Final');
+    expect(summary.functions.some((card) => card.function === 'Pre-Approvals')).toBe(false);
     const cardTeams = summary.functions.flatMap((card) => card.teams);
     expect(new Set(cardTeams).size).toBe(cardTeams.length);
     expect(cardTeams).not.toContain('CSR');
@@ -234,7 +248,7 @@ describe('drivers (CoS: impact_points keeps its meaning; weighted_gap_points pre
     expect(split.hasWeightedGap).toBe(false);
     expect(split.negative.map((driver) => driver.kpi_label)).toEqual(['Initial Rejection %', 'Average Handle Time', 'First Call Resolution']);
     expect(split.positive.map((driver) => driver.kpi_label)).toEqual(['Clean Claim Rate', 'Denial Rate', 'Response Rate']);
-    expect(split.negative[0]).toMatchObject({ team: 'Pre-Approvals IP Final', function: 'Pre-Approvals', kpi_direction: 'lower_better', raw_change: 1.6, trend_status: 'declining' });
+    expect(split.negative[0]).toMatchObject({ team: 'Pre-Approvals IP Final', function: 'RCM', kpi_direction: 'lower_better', raw_change: 1.6, trend_status: 'declining' });
   });
 
   it('ranks negatives by weighted_gap_points and positives by impact_change_points when present', () => {

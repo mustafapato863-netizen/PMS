@@ -49,6 +49,8 @@ describe('ScoreTrendChart', () => {
     fireEvent.focus(june);
     expect(screen.getByTestId('executive-trend-tooltip')).toHaveTextContent('Jun 2026');
     expect(screen.getByTestId('executive-trend-tooltip')).toHaveTextContent('87.0%');
+    expect(screen.getByTestId('executive-trend-tooltip')).toHaveTextContent('+2.0%');
+    expect(screen.getByTestId('executive-trend-tooltip')).not.toHaveTextContent(/\b(?:pp|pts)\b/);
 
     fireEvent.keyDown(june, { key: 'ArrowLeft' });
     expect(screen.getByTestId('executive-trend-tooltip')).toHaveTextContent('May 2026');
@@ -72,5 +74,11 @@ describe('ScoreTrendChart', () => {
     const noData = points.map((entry) => ({ ...entry, score: null }));
     render(<ScoreTrendChart points={noData} title="Performance" />);
     expect(screen.getByTestId('executive-trend-empty')).toHaveTextContent('No measured score');
+  });
+
+  it('treats non-finite scores as missing instead of drawing invalid points or score labels', () => {
+    render(<ScoreTrendChart points={[point('January', '2026-01', NaN), point('February', '2026-02', Infinity)]} title="Function" />);
+    expect(screen.getByTestId('executive-trend-empty')).toBeVisible();
+    expect(screen.queryByTestId('function-trend-value')).not.toBeInTheDocument();
   });
 });

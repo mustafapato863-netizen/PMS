@@ -82,7 +82,7 @@ export function heroNarrative(summary: ExecutiveSummary): string | null {
 
 export const FUNCTION_STYLE: Record<ExecutiveFunction, { icon: LucideIcon; bg: string; color: string }> = {
   'Call Center': { icon: Users, bg: 'var(--exec-function-call-center)', color: 'var(--insights-accent)' },
-  RCM: { icon: FileText, bg: 'var(--exec-function-rcm)', color: 'var(--exec-info-text)' },
+  RCM: { icon: FileText, bg: 'var(--exec-function-rcm)', color: 'var(--exec-pos-text)' },
   'Pre-Approvals': { icon: CheckCircle2, bg: 'var(--exec-function-pre-approvals)', color: 'var(--insights-positive)' },
   Marketing: { icon: BarChart3, bg: 'var(--exec-function-marketing)', color: 'var(--exec-comparison-line)' },
 };

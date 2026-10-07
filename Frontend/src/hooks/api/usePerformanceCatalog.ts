@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiFetch } from '../../lib/apiClient';
+import { performanceSessionKey } from '../../lib/performanceSessionKey';
 
 export interface PerformanceCatalog {
   periods: Array<{ year: number; month: string; key: string }>;
@@ -14,19 +15,8 @@ export interface PerformanceCatalog {
   as_of?: string;
 }
 
-function sessionCacheKey(): string {
-  try {
-    const saved = localStorage.getItem('pms_session_v1');
-    if (!saved) return 'anonymous';
-    const user = JSON.parse(saved) as { id?: string; username?: string };
-    return user.id || user.username || 'anonymous';
-  } catch {
-    return 'anonymous';
-  }
-}
-
 export function usePerformanceCatalog(enabled = true) {
-  const session = sessionCacheKey();
+  const session = performanceSessionKey();
   return useQuery({
     queryKey: ['performance', 'catalog', session],
     queryFn: async () => {
