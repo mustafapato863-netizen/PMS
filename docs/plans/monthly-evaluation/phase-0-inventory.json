@@ -1,0 +1,2422 @@
+{
+  "status": "partial",
+  "baseline_commit": "2af9eb1e3991cb649ebcc695e3f2c42fbce4f40a",
+  "branch": "codex/evaluation-phase-0-audit",
+  "evidence_boundary": {
+    "employee_data": "none",
+    "credential_material": "absent",
+    "implementer_database_connections": "none, except disposable sqlite:///:memory: inside test_evaluation_baseline_management.py",
+    "source": "tracked files at the baseline commit plus new characterization tests",
+    "orchestrator_local": "docs/plans/monthly-evaluation/orchestrator-local-schema-inventory.md and orchestrator-migration-preflight.md, observed 2026-10-08 by Codex on loopback PostgreSQL with default_transaction_read_only=on. Not re-queried here. Not production.",
+    "production": "not inspected"
+  },
+  "approved_decisions": {
+    "D-001": "Admin alone manages every Evaluation Settings stage, including draft, preview, approval, and apply. Performance Team draft/preview is rejected. Approval does not recalculate; apply is a separate explicit Admin confirmation."
+  },
+  "alembic_source": {
+    "revision_count": 44,
+    "heads": [
+      "d9e4b7a2c106"
+    ],
+    "method": "AST of revision and down_revision assignments, not a database connection"
+  },
+  "synthetic_parents": {
+    "Call Center": [
+      "call center",
+      "inbound",
+      "outbound"
+    ],
+    "RCM": [
+      "coding",
+      "pre-approvals",
+      "pre-approvals ip elective",
+      "pre-approvals ip elective dubai",
+      "pre-approvals ip final",
+      "pre-approvals ip final dubai",
+      "pre-approvals ip final shjajm",
+      "pre-approvals ip offshore",
+      "pre-approvals op dubai",
+      "pre-approvals op final",
+      "pre-approvals op final shjajm",
+      "rcm",
+      "re-submission",
+      "submission"
+    ],
+    "Pre-Approvals grant": [
+      "pre-approvals",
+      "pre-approvals ip elective",
+      "pre-approvals ip elective dubai",
+      "pre-approvals ip final",
+      "pre-approvals ip final dubai",
+      "pre-approvals ip final shjajm",
+      "pre-approvals op dubai",
+      "pre-approvals op final",
+      "pre-approvals op final shjajm"
+    ],
+    "Pre-Approvals selection": [
+      "pre-approvals",
+      "pre-approvals ip elective",
+      "pre-approvals ip elective dubai",
+      "pre-approvals ip final",
+      "pre-approvals ip final dubai",
+      "pre-approvals ip final shjajm",
+      "pre-approvals ip offshore",
+      "pre-approvals op dubai",
+      "pre-approvals op final",
+      "pre-approvals op final shjajm"
+    ],
+    "OP Final": [
+      "pre-approvals op dubai",
+      "pre-approvals op final",
+      "pre-approvals op final shjajm"
+    ],
+    "IP Final": [
+      "pre-approvals ip final",
+      "pre-approvals ip final dubai",
+      "pre-approvals ip final shjajm"
+    ],
+    "IP Elective": [
+      "pre-approvals ip elective",
+      "pre-approvals ip elective dubai"
+    ],
+    "note": "These are report_scope key expansions. They are not JSON files and are not scoring configurations. Inbound UAE is absent from Call Center. Pre-Approvals IP Offshore is in the Pre-Approvals selection and in RCM, and is absent from the Pre-Approvals grant."
+  },
+  "tracked_team_files": [
+    {
+      "file": "coding.json",
+      "team": "Coding",
+      "db_name": "Coding",
+      "region": "UAE",
+      "extra_keys": [],
+      "missing_actual_exception": null,
+      "kpi_direction_source_teams": null,
+      "flat_employee_kpis": [
+        {
+          "key": "QualityErrors",
+          "direction": "lower_better",
+          "weight": 0.2,
+          "unit": "%",
+          "actual_col": "A.QualityErrorsRate",
+          "target_col": "T.QualityErrorsRate",
+          "achievement_col": null,
+          "score_formula": null,
+          "aggregation_method": "average",
+          "aggregation_weight_col": null,
+          "aggregation_weight_is_target_col": false
+        },
+        {
+          "key": "Rejection",
+          "direction": "lower_better",
+          "weight": 0.5,
+          "unit": "%",
+          "actual_col": "A.RejectionRate",
+          "target_col": "T.RejectionRate",
+          "achievement_col": null,
+          "score_formula": null,
+          "aggregation_method": "average",
+          "aggregation_weight_col": null,
+          "aggregation_weight_is_target_col": false
+        },
+        {
+          "key": "TAT",
+          "direction": "lower_better",
+          "weight": 0.3,
+          "unit": "hours",
+          "actual_col": "A.TAT",
+          "target_col": "T.TAT",
+          "achievement_col": null,
+          "score_formula": null,
+          "aggregation_method": "average",
+          "aggregation_weight_col": null,
+          "aggregation_weight_is_target_col": false
+        }
+      ],
+      "performance_levels": {},
+      "any_achievement_col": false,
+      "score_formulas": [
+        "unset"
+      ],
+      "directions": [
+        "lower_better"
+      ],
+      "functions": [
+        "RCM"
+      ],
+      "legacy_employee_calculator": false
+    },
+    {
+      "file": "csr.json",
+      "team": "CSR",
+      "db_name": "CSR",
+      "region": "UAE",
+      "extra_keys": [],
+      "missing_actual_exception": null,
+      "kpi_direction_source_teams": null,
+      "flat_employee_kpis": [
+        {
+          "key": "Rejection",
+          "direction": "lower_better",
+          "weight": 0.4,
+          "unit": "%",
+          "actual_col": "A.CSRRejection%",
+          "target_col": "T.CSRRejection%",
+          "achievement_col": null,
+          "score_formula": null,
+          "aggregation_method": "average",
+          "aggregation_weight_col": null,
+          "aggregation_weight_is_target_col": false
+        },
+        {
+          "key": "Queries",
+          "direction": "higher_better",
+          "weight": 0.3,
+          "unit": "%",
+          "actual_col": "A.CSRQueries",
+          "target_col": "T.QueriesTarget",
+          "achievement_col": null,
+          "score_formula": null,
+          "aggregation_method": "sum",
+          "aggregation_weight_col": null,
+          "aggregation_weight_is_target_col": false
+        },
+        {
+          "key": "AttendedCR",
+          "direction": "higher_better",
+          "weight": 0.3,
+          "unit": "count",
+          "actual_col": "A.CPTConversion%",
+          "target_col": "T.AttendedC.R",
+          "achievement_col": null,
+          "score_formula": null,
+          "aggregation_method": "average",
+          "aggregation_weight_col": null,
+          "aggregation_weight_is_target_col": false
+        }
+      ],
+      "performance_levels": {},
+      "any_achievement_col": false,
+      "score_formulas": [
+        "unset"
+      ],
+      "directions": [
+        "higher_better",
+        "lower_better"
+      ],
+      "functions": [
+        "CSR"
+      ],
+      "legacy_employee_calculator": false
+    },
+    {
+      "file": "inbound.json",
+      "team": "Inbound",
+      "db_name": "Inbound",
+      "region": "EGY",
+      "extra_keys": [],
+      "missing_actual_exception": null,
+      "kpi_direction_source_teams": null,
+      "flat_employee_kpis": [
+        {
+          "key": "Attendance",
+          "direction": "higher_better",
+          "weight": 0.7,
+          "unit": "%",
+          "actual_col": "A.Attend%",
+          "target_col": "T.Attend%",
+          "achievement_col": "Attend%Ach%",
+          "score_formula": null,
+          "aggregation_method": "ratio",
+          "aggregation_weight_col": null,
+          "aggregation_weight_is_target_col": false
+        },
+        {
+          "key": "Booking",
+          "direction": "higher_better",
+          "weight": 0.1,
+          "unit": "%",
+          "actual_col": "A.Booking%",
+          "target_col": "T.Booking%",
+          "achievement_col": "Booking%Ach%",
+          "score_formula": null,
+          "aggregation_method": "ratio",
+          "aggregation_weight_col": null,
+          "aggregation_weight_is_target_col": false
+        },
+        {
+          "key": "Quality",
+          "direction": "higher_better",
+          "weight": 0.05,
+          "unit": "%",
+          "actual_col": "A.QualityScore",
+          "target_col": "T.Quality%",
+          "achievement_col": "QualityTargetAch%",
+          "score_formula": null,
+          "aggregation_method": "average",
+          "aggregation_weight_col": null,
+          "aggregation_weight_is_target_col": false
+        },
+        {
+          "key": "AHT",
+          "direction": "lower_better",
+          "weight": 0.05,
+          "unit": "min",
+          "actual_col": "AHT_Minutes",
+          "target_col": "T.AHT",
+          "achievement_col": "AHTAch%",
+          "score_formula": null,
+          "aggregation_method": "weighted_average",
+          "aggregation_weight_col": "$calls.total_handled",
+          "aggregation_weight_is_target_col": false
+        },
+        {
+          "key": "Other",
+          "direction": "lower_better",
+          "weight": 0.1,
+          "unit": "%",
+          "actual_col": "A.AbandonRate%",
+          "target_col": "T.Abandon%",
+          "achievement_col": "AbandonRate%Ach%",
+          "score_formula": null,
+          "aggregation_method": "ratio",
+          "aggregation_weight_col": null,
+          "aggregation_weight_is_target_col": false
+        }
+      ],
+      "performance_levels": {
+        "Managerial": {
+          "kpis": [
+            {
+              "key": "TeamSLA",
+              "direction": "higher_better",
+              "weight": 0.35,
+              "unit": "%",
+              "actual_col": "A.TeamSLA",
+              "target_col": "T.TeamSLA",
+              "achievement_col": null,
+              "score_formula": null,
+              "aggregation_method": null,
+              "aggregation_weight_col": null,
+              "aggregation_weight_is_target_col": false
+            },
+            {
+              "key": "TeamQuality",
+              "direction": "higher_better",
+              "weight": 0.3,
+              "unit": "%",
+              "actual_col": "A.TeamQuality",
+              "target_col": "T.TeamQuality",
+              "achievement_col": null,
+              "score_formula": null,
+              "aggregation_method": null,
+              "aggregation_weight_col": null,
+              "aggregation_weight_is_target_col": false
+            },
+            {
+              "key": "CoachingCompletion",
+              "direction": "higher_better",
+              "weight": 0.2,
+              "unit": "%",
+              "actual_col": "A.CoachingCompletion",
+              "target_col": "T.CoachingCompletion",
+              "achievement_col": null,
+              "score_formula": null,
+              "aggregation_method": null,
+              "aggregation_weight_col": null,
+              "aggregation_weight_is_target_col": false
+            },
+            {
+              "key": "AttendanceCompliance",
+              "direction": "higher_better",
+              "weight": 0.15,
+              "unit": "%",
+              "actual_col": "A.AttendanceCompliance",
+              "target_col": "T.AttendanceCompliance",
+              "achievement_col": null,
+              "score_formula": null,
+              "aggregation_method": null,
+              "aggregation_weight_col": null,
+              "aggregation_weight_is_target_col": false
+            }
+          ],
+          "positions": {}
+        },
+        "Corporate": {
+          "kpis": [
+            {
+              "key": "StrategicDelivery",
+              "direction": "higher_better",
+              "weight": 0.35,
+              "unit": "%",
+              "actual_col": "A.StrategicDelivery",
+              "target_col": "T.StrategicDelivery",
+              "achievement_col": null,
+              "score_formula": null,
+              "aggregation_method": null,
+              "aggregation_weight_col": null,
+              "aggregation_weight_is_target_col": false
+            },
+            {
+              "key": "GovernanceCompliance",
+              "direction": "higher_better",
+              "weight": 0.25,
+              "unit": "%",
+              "actual_col": "A.GovernanceCompliance",
+              "target_col": "T.GovernanceCompliance",
+              "achievement_col": null,
+              "score_formula": null,
+              "aggregation_method": null,
+              "aggregation_weight_col": null,
+              "aggregation_weight_is_target_col": false
+            },
+            {
+              "key": "StakeholderSatisfaction",
+              "direction": "higher_better",
+              "weight": 0.25,
+              "unit": "%",
+              "actual_col": "A.StakeholderSatisfaction",
+              "target_col": "T.StakeholderSatisfaction",
+              "achievement_col": null,
+              "score_formula": null,
+              "aggregation_method": null,
+              "aggregation_weight_col": null,
+              "aggregation_weight_is_target_col": false
+            },
+            {
+              "key": "CostEfficiency",
+              "direction": "higher_better",
+              "weight": 0.15,
+              "unit": "%",
+              "actual_col": "A.CostEfficiency",
+              "target_col": "T.CostEfficiency",
+              "achievement_col": null,
+              "score_formula": null,
+              "aggregation_method": null,
+              "aggregation_weight_col": null,
+              "aggregation_weight_is_target_col": false
+            }
+          ],
+          "positions": {}
+        }
+      },
+      "any_achievement_col": true,
+      "score_formulas": [
+        "unset"
+      ],
+      "directions": [
+        "higher_better",
+        "lower_better"
+      ],
+      "functions": [
+        "Call Center"
+      ],
+      "legacy_employee_calculator": true
+    },
+    {
+      "file": "inbound_uae.json",
+      "team": "Inbound UAE",
+      "db_name": "Inbound UAE",
+      "region": "UAE",
+      "extra_keys": [],
+      "missing_actual_exception": null,
+      "kpi_direction_source_teams": null,
+      "flat_employee_kpis": [
+        {
+          "key": "Attendance",
+          "direction": "higher_better",
+          "weight": 0.7,
+          "unit": "%",
+          "actual_col": "A.Attend%",
+          "target_col": "T.Attend%",
+          "achievement_col": "AttendC.RAch%",
+          "score_formula": null,
+          "aggregation_method": "ratio",
+          "aggregation_weight_col": null,
+          "aggregation_weight_is_target_col": false
+        },
+        {
+          "key": "Booking",
+          "direction": "higher_better",
+          "weight": 0.2,
+          "unit": "%",
+          "actual_col": "A.Booking%",
+          "target_col": "T.Booking%",
+          "achievement_col": "BookingC.RAch%",
+          "score_formula": null,
+          "aggregation_method": "ratio",
+          "aggregation_weight_col": null,
+          "aggregation_weight_is_target_col": false
+        },
+        {
+          "key": "Other",
+          "direction": "lower_better",
+          "weight": 0.1,
+          "unit": "%",
+          "actual_col": "A.AbandonRate%",
+          "target_col": "T.Abandon%",
+          "achievement_col": "AbandonRateAch%",
+          "score_formula": null,
+          "aggregation_method": "ratio",
+          "aggregation_weight_col": null,
+          "aggregation_weight_is_target_col": false
+        }
+      ],
+      "performance_levels": {},
+      "any_achievement_col": true,
+      "score_formulas": [
+        "unset"
+      ],
+      "directions": [
+        "higher_better",
+        "lower_better"
+      ],
+      "functions": [
+        "Inbound UAE"
+      ],
+      "legacy_employee_calculator": true
+    },
+    {
+      "file": "marketing.json",
+      "team": "Marketing",
+      "db_name": "Marketing",
+      "region": "EGY",
+      "extra_keys": [],
+      "missing_actual_exception": null,
+      "kpi_direction_source_teams": null,
+      "flat_employee_kpis": [],
+      "performance_levels": {
+        "Employee": {
+          "kpis": [],
+          "positions": {
+            "Media Buyer": {
+              "kpis": [
+                {
+                  "key": "mb_cpl",
+                  "direction": "lower_better",
+                  "weight": 0.1,
+                  "unit": "AED",
+                  "actual_col": "Actual Value",
+                  "target_col": "Target Value",
+                  "achievement_col": null,
+                  "score_formula": null,
+                  "aggregation_method": "weighted_average",
+                  "aggregation_weight_col": "Target Value",
+                  "aggregation_weight_is_target_col": true
+                },
+                {
+                  "key": "mb_cr",
+                  "direction": "higher_better",
+                  "weight": 0.3,
+                  "unit": "%",
+                  "actual_col": "Actual Value",
+                  "target_col": "Target Value",
+                  "achievement_col": null,
+                  "score_formula": null,
+                  "aggregation_method": "weighted_average",
+                  "aggregation_weight_col": "Target Value",
+                  "aggregation_weight_is_target_col": true
+                },
+                {
+                  "key": "mb_leads",
+                  "direction": "higher_better",
+                  "weight": 0.3,
+                  "unit": "count",
+                  "actual_col": "Actual Value",
+                  "target_col": "Target Value",
+                  "achievement_col": null,
+                  "score_formula": null,
+                  "aggregation_method": "sum",
+                  "aggregation_weight_col": null,
+                  "aggregation_weight_is_target_col": false
+                },
+                {
+                  "key": "mb_cpv",
+                  "direction": "lower_better",
+                  "weight": 0.1,
+                  "unit": "AED",
+                  "actual_col": "Actual Value",
+                  "target_col": "Target Value",
+                  "achievement_col": null,
+                  "score_formula": null,
+                  "aggregation_method": "weighted_average",
+                  "aggregation_weight_col": "Target Value",
+                  "aggregation_weight_is_target_col": true
+                },
+                {
+                  "key": "mb_revenue",
+                  "direction": "higher_better",
+                  "weight": 0.1,
+                  "unit": "AED",
+                  "actual_col": "Actual Value",
+                  "target_col": "Target Value",
+                  "achievement_col": null,
+                  "score_formula": null,
+                  "aggregation_method": "sum",
+                  "aggregation_weight_col": null,
+                  "aggregation_weight_is_target_col": false
+                },
+                {
+                  "key": "mb_app_installs",
+                  "direction": "higher_better",
+                  "weight": 0.1,
+                  "unit": "count",
+                  "actual_col": "Actual Value",
+                  "target_col": "Target Value",
+                  "achievement_col": null,
+                  "score_formula": null,
+                  "aggregation_method": "sum",
+                  "aggregation_weight_col": null,
+                  "aggregation_weight_is_target_col": false
+                }
+              ],
+              "period_variants": []
+            },
+            "Graphic Designer": {
+              "kpis": [
+                {
+                  "key": "gd_on_schedule",
+                  "direction": "higher_better",
+                  "weight": 0.4,
+                  "unit": "count",
+                  "actual_col": "Actual Value",
+                  "target_col": "Target Value",
+                  "achievement_col": null,
+                  "score_formula": null,
+                  "aggregation_method": "sum",
+                  "aggregation_weight_col": null,
+                  "aggregation_weight_is_target_col": false
+                },
+                {
+                  "key": "gd_rework",
+                  "direction": "lower_better",
+                  "weight": 0.25,
+                  "unit": "%",
+                  "actual_col": "Actual Value",
+                  "target_col": "Target Value",
+                  "achievement_col": null,
+                  "score_formula": null,
+                  "aggregation_method": "weighted_average",
+                  "aggregation_weight_col": "Target Value",
+                  "aggregation_weight_is_target_col": true
+                },
+                {
+                  "key": "gd_brand_consistency",
+                  "direction": "higher_better",
+                  "weight": 0.2,
+                  "unit": "%",
+                  "actual_col": "Actual Value",
+                  "target_col": "Target Value",
+                  "achievement_col": null,
+                  "score_formula": null,
+                  "aggregation_method": "weighted_average",
+                  "aggregation_weight_col": "Target Value",
+                  "aggregation_weight_is_target_col": true
+                },
+                {
+                  "key": "gd_edits_rate",
+                  "direction": "lower_better",
+                  "weight": 0.15,
+                  "unit": "%",
+                  "actual_col": "Actual Value",
+                  "target_col": "Target Value",
+                  "achievement_col": null,
+                  "score_formula": null,
+                  "aggregation_method": "weighted_average",
+                  "aggregation_weight_col": "Target Value",
+                  "aggregation_weight_is_target_col": true
+                }
+              ],
+              "period_variants": []
+            },
+            "Social Media Specialist": {
+              "kpis": [
+                {
+                  "key": "sms_response_rate",
+                  "direction": "higher_better",
+                  "weight": 0.4,
+                  "unit": "%",
+                  "actual_col": "Actual Value",
+                  "target_col": "Target Value",
+                  "achievement_col": null,
+                  "score_formula": null,
+                  "aggregation_method": "weighted_average",
+                  "aggregation_weight_col": "Target Value",
+                  "aggregation_weight_is_target_col": true
+                },
+                {
+                  "key": "sms_channel_growth",
+                  "direction": "higher_better",
+                  "weight": 0.2,
+                  "unit": "%",
+                  "actual_col": "Actual Value",
+                  "target_col": "Target Value",
+                  "achievement_col": null,
+                  "score_formula": null,
+                  "aggregation_method": "weighted_average",
+                  "aggregation_weight_col": "Target Value",
+                  "aggregation_weight_is_target_col": true
+                },
+                {
+                  "key": "sms_response_time",
+                  "direction": "lower_better",
+                  "weight": 0.4,
+                  "unit": "min",
+                  "actual_col": "Actual Value",
+                  "target_col": "Target Value",
+                  "achievement_col": null,
+                  "score_formula": null,
+                  "aggregation_method": "weighted_average",
+                  "aggregation_weight_col": "Target Value",
+                  "aggregation_weight_is_target_col": true
+                }
+              ],
+              "period_variants": []
+            },
+            "Account Manager": {
+              "kpis": [
+                {
+                  "key": "am_campaign_delivery",
+                  "direction": "higher_better",
+                  "weight": 0.15,
+                  "unit": "%",
+                  "actual_col": "Actual Value",
+                  "target_col": "Target Value",
+                  "achievement_col": null,
+                  "score_formula": null,
+                  "aggregation_method": "weighted_average",
+                  "aggregation_weight_col": "Target Value",
+                  "aggregation_weight_is_target_col": true
+                },
+                {
+                  "key": "am_campaign_delivery_ontime",
+                  "direction": "higher_better",
+                  "weight": 0.2,
+                  "unit": "%",
+                  "actual_col": "Actual Value",
+                  "target_col": "Target Value",
+                  "achievement_col": null,
+                  "score_formula": null,
+                  "aggregation_method": "weighted_average",
+                  "aggregation_weight_col": "Target Value",
+                  "aggregation_weight_is_target_col": true
+                },
+                {
+                  "key": "am_deficit",
+                  "direction": "lower_better",
+                  "weight": 0.1,
+                  "unit": "%",
+                  "actual_col": "Actual Value",
+                  "target_col": "Target Value",
+                  "achievement_col": null,
+                  "score_formula": null,
+                  "aggregation_method": "weighted_average",
+                  "aggregation_weight_col": "Target Value",
+                  "aggregation_weight_is_target_col": true
+                },
+                {
+                  "key": "am_requests",
+                  "direction": "higher_better",
+                  "weight": 0.1,
+                  "unit": "%",
+                  "actual_col": "Actual Value",
+                  "target_col": "Target Value",
+                  "achievement_col": null,
+                  "score_formula": null,
+                  "aggregation_method": "weighted_average",
+                  "aggregation_weight_col": "Target Value",
+                  "aggregation_weight_is_target_col": true
+                },
+                {
+                  "key": "am_modifications",
+                  "direction": "lower_better",
+                  "weight": 0.1,
+                  "unit": "%",
+                  "actual_col": "Actual Value",
+                  "target_col": "Target Value",
+                  "achievement_col": null,
+                  "score_formula": null,
+                  "aggregation_method": "weighted_average",
+                  "aggregation_weight_col": "Target Value",
+                  "aggregation_weight_is_target_col": true
+                },
+                {
+                  "key": "am_edit_rate",
+                  "direction": "lower_better",
+                  "weight": 0.15,
+                  "unit": "%",
+                  "actual_col": "Actual Value",
+                  "target_col": "Target Value",
+                  "achievement_col": null,
+                  "score_formula": null,
+                  "aggregation_method": "weighted_average",
+                  "aggregation_weight_col": "Target Value",
+                  "aggregation_weight_is_target_col": true
+                },
+                {
+                  "key": "am_projects_ontime",
+                  "direction": "higher_better",
+                  "weight": 0.2,
+                  "unit": "%",
+                  "actual_col": "Actual Value",
+                  "target_col": "Target Value",
+                  "achievement_col": null,
+                  "score_formula": null,
+                  "aggregation_method": "weighted_average",
+                  "aggregation_weight_col": "Target Value",
+                  "aggregation_weight_is_target_col": true
+                }
+              ],
+              "period_variants": [
+                {
+                  "id": "may_2026_onward",
+                  "effective_from": "2026-05-01",
+                  "kpis": [
+                    {
+                      "key": "am_requests",
+                      "direction": "higher_better",
+                      "weight": 0.35,
+                      "unit": "%",
+                      "actual_col": "Actual Value",
+                      "target_col": "Target Value",
+                      "achievement_col": null,
+                      "score_formula": null,
+                      "aggregation_method": "weighted_average",
+                      "aggregation_weight_col": "Target Value",
+                      "aggregation_weight_is_target_col": true
+                    },
+                    {
+                      "key": "am_edit_rate",
+                      "direction": "lower_better",
+                      "weight": 0.2,
+                      "unit": "%",
+                      "actual_col": "Actual Value",
+                      "target_col": "Target Value",
+                      "achievement_col": null,
+                      "score_formula": null,
+                      "aggregation_method": "weighted_average",
+                      "aggregation_weight_col": "Target Value",
+                      "aggregation_weight_is_target_col": true
+                    },
+                    {
+                      "key": "am_projects_ontime",
+                      "direction": "higher_better",
+                      "weight": 0.45,
+                      "unit": "%",
+                      "actual_col": "Actual Value",
+                      "target_col": "Target Value",
+                      "achievement_col": null,
+                      "score_formula": null,
+                      "aggregation_method": "weighted_average",
+                      "aggregation_weight_col": "Target Value",
+                      "aggregation_weight_is_target_col": true
+                    }
+                  ]
+                }
+              ]
+            },
+            "Web Developer": {
+              "kpis": [
+                {
+                  "key": "wd_uptime",
+                  "direction": "higher_better",
+                  "weight": 0.25,
+                  "unit": "%",
+                  "actual_col": "Actual Value",
+                  "target_col": "Target Value",
+                  "achievement_col": null,
+                  "score_formula": null,
+                  "aggregation_method": "weighted_average",
+                  "aggregation_weight_col": "Target Value",
+                  "aggregation_weight_is_target_col": true
+                },
+                {
+                  "key": "wd_page_speed",
+                  "direction": "lower_better",
+                  "weight": 0.25,
+                  "unit": "sec",
+                  "actual_col": "Actual Value",
+                  "target_col": "Target Value",
+                  "achievement_col": null,
+                  "score_formula": null,
+                  "aggregation_method": "weighted_average",
+                  "aggregation_weight_col": "Target Value",
+                  "aggregation_weight_is_target_col": true
+                },
+                {
+                  "key": "wd_bug_resolution",
+                  "direction": "higher_better",
+                  "weight": 0.25,
+                  "unit": "%",
+                  "actual_col": "Actual Value",
+                  "target_col": "Target Value",
+                  "achievement_col": null,
+                  "score_formula": null,
+                  "aggregation_method": "weighted_average",
+                  "aggregation_weight_col": "Target Value",
+                  "aggregation_weight_is_target_col": true
+                },
+                {
+                  "key": "wd_delivery_timeliness",
+                  "direction": "higher_better",
+                  "weight": 0.25,
+                  "unit": "%",
+                  "actual_col": "Actual Value",
+                  "target_col": "Target Value",
+                  "achievement_col": null,
+                  "score_formula": null,
+                  "aggregation_method": "weighted_average",
+                  "aggregation_weight_col": "Target Value",
+                  "aggregation_weight_is_target_col": true
+                }
+              ],
+              "period_variants": []
+            },
+            "Content Writer": {
+              "kpis": [
+                {
+                  "key": "cw_organic_traffic",
+                  "direction": "higher_better",
+                  "weight": 0.4,
+                  "unit": "%",
+                  "actual_col": "Actual Value",
+                  "target_col": "Target Value",
+                  "achievement_col": null,
+                  "score_formula": null,
+                  "aggregation_method": "weighted_average",
+                  "aggregation_weight_col": "Target Value",
+                  "aggregation_weight_is_target_col": true
+                },
+                {
+                  "key": "cw_delivery_timeliness",
+                  "direction": "higher_better",
+                  "weight": 0.3,
+                  "unit": "%",
+                  "actual_col": "Actual Value",
+                  "target_col": "Target Value",
+                  "achievement_col": null,
+                  "score_formula": null,
+                  "aggregation_method": "weighted_average",
+                  "aggregation_weight_col": "Target Value",
+                  "aggregation_weight_is_target_col": true
+                },
+                {
+                  "key": "cw_error_free",
+                  "direction": "higher_better",
+                  "weight": 0.3,
+                  "unit": "%",
+                  "actual_col": "Actual Value",
+                  "target_col": "Target Value",
+                  "achievement_col": null,
+                  "score_formula": null,
+                  "aggregation_method": "weighted_average",
+                  "aggregation_weight_col": "Target Value",
+                  "aggregation_weight_is_target_col": true
+                }
+              ],
+              "period_variants": []
+            }
+          }
+        }
+      },
+      "any_achievement_col": false,
+      "score_formulas": [
+        "unset"
+      ],
+      "directions": [
+        "higher_better",
+        "lower_better"
+      ],
+      "functions": [
+        "Marketing"
+      ],
+      "legacy_employee_calculator": false
+    },
+    {
+      "file": "outbound.json",
+      "team": "Outbound",
+      "db_name": "Outbound",
+      "region": "EGY",
+      "extra_keys": [],
+      "missing_actual_exception": null,
+      "kpi_direction_source_teams": null,
+      "flat_employee_kpis": [
+        {
+          "key": "Attendance",
+          "direction": "higher_better",
+          "weight": 0.7,
+          "unit": "%",
+          "actual_col": "A.Attend%",
+          "target_col": "T.Attend%",
+          "achievement_col": "AttendC.RAch%",
+          "score_formula": null,
+          "aggregation_method": "ratio",
+          "aggregation_weight_col": null,
+          "aggregation_weight_is_target_col": false
+        },
+        {
+          "key": "Booking",
+          "direction": "higher_better",
+          "weight": 0.1,
+          "unit": "%",
+          "actual_col": "A.Booking%",
+          "target_col": "T.Booking%",
+          "achievement_col": "BookingC.RAch%",
+          "score_formula": null,
+          "aggregation_method": "ratio",
+          "aggregation_weight_col": null,
+          "aggregation_weight_is_target_col": false
+        },
+        {
+          "key": "Quality",
+          "direction": "higher_better",
+          "weight": 0.1,
+          "unit": "%",
+          "actual_col": "A.QualityScore",
+          "target_col": "T.Quality%",
+          "achievement_col": "QualityAch%",
+          "score_formula": null,
+          "aggregation_method": "average",
+          "aggregation_weight_col": null,
+          "aggregation_weight_is_target_col": false
+        },
+        {
+          "key": "Other",
+          "direction": "higher_better",
+          "weight": 0.1,
+          "unit": "%",
+          "actual_col": "A.Reachability%",
+          "target_col": "T.Reachability%",
+          "achievement_col": "Reachability%Ach%",
+          "score_formula": null,
+          "aggregation_method": "average",
+          "aggregation_weight_col": null,
+          "aggregation_weight_is_target_col": false
+        }
+      ],
+      "performance_levels": {},
+      "any_achievement_col": true,
+      "score_formulas": [
+        "unset"
+      ],
+      "directions": [
+        "higher_better"
+      ],
+      "functions": [
+        "Call Center"
+      ],
+      "legacy_employee_calculator": true
+    },
+    {
+      "file": "pharmacy.json",
+      "team": "Pharmacy",
+      "db_name": "Pharmacy",
+      "region": "UAE",
+      "extra_keys": [],
+      "missing_actual_exception": null,
+      "kpi_direction_source_teams": null,
+      "flat_employee_kpis": [
+        {
+          "key": "WaitingTime",
+          "direction": "lower_better",
+          "weight": 0.2,
+          "unit": "min",
+          "actual_col": "A.TotalAvgWaitingTime",
+          "target_col": "T.TotalWaitingTime",
+          "achievement_col": null,
+          "score_formula": null,
+          "aggregation_method": "average",
+          "aggregation_weight_col": null,
+          "aggregation_weight_is_target_col": false
+        },
+        {
+          "key": "Leakage",
+          "direction": "lower_better",
+          "weight": 0.2,
+          "unit": "%",
+          "actual_col": "A.Leakage%",
+          "target_col": "T.Leakage%",
+          "achievement_col": null,
+          "score_formula": null,
+          "aggregation_method": "average",
+          "aggregation_weight_col": null,
+          "aggregation_weight_is_target_col": false
+        },
+        {
+          "key": "TenderCompliance",
+          "direction": "higher_better",
+          "weight": 0.2,
+          "unit": "%",
+          "actual_col": "A.TenderItemCompliance",
+          "target_col": "T.TenderItemCompliance",
+          "achievement_col": null,
+          "score_formula": null,
+          "aggregation_method": "average",
+          "aggregation_weight_col": null,
+          "aggregation_weight_is_target_col": false
+        },
+        {
+          "key": "ATV",
+          "direction": "higher_better",
+          "weight": 0.2,
+          "unit": "AED",
+          "actual_col": "A.ATV",
+          "target_col": "T.ATV",
+          "achievement_col": null,
+          "score_formula": null,
+          "aggregation_method": "average",
+          "aggregation_weight_col": null,
+          "aggregation_weight_is_target_col": false
+        },
+        {
+          "key": "Prescription",
+          "direction": "higher_better",
+          "weight": 0.2,
+          "unit": "%",
+          "actual_col": "NoofPrescriptionAch%",
+          "target_col": "T.NoofPrescriptionsContribution",
+          "achievement_col": null,
+          "score_formula": null,
+          "aggregation_method": "average",
+          "aggregation_weight_col": null,
+          "aggregation_weight_is_target_col": false
+        }
+      ],
+      "performance_levels": {},
+      "any_achievement_col": false,
+      "score_formulas": [
+        "unset"
+      ],
+      "directions": [
+        "higher_better",
+        "lower_better"
+      ],
+      "functions": [
+        "Pharmacy"
+      ],
+      "legacy_employee_calculator": false
+    },
+    {
+      "file": "pre_approvals_ip_elective_dubai.json",
+      "team": "Pre-Approvals IP Elective Dubai",
+      "db_name": "Pre-Approvals IP Elective Dubai",
+      "region": "UAE",
+      "extra_keys": [
+        "configuration_notes",
+        "kpi_direction_source_teams",
+        "workstream_target_pairs"
+      ],
+      "missing_actual_exception": null,
+      "kpi_direction_source_teams": [
+        "Pre-Approvals IP Final Dubai"
+      ],
+      "flat_employee_kpis": [],
+      "performance_levels": {
+        "Employee": {
+          "kpis": [],
+          "positions": {
+            "IP Elective": {
+              "kpis": [
+                {
+                  "key": "ip_initial_rejection_rate",
+                  "direction": "lower_better",
+                  "weight": 0.6,
+                  "unit": "%",
+                  "actual_col": "A.IPInitialRejectionRate",
+                  "target_col": "T.IPInitialRejectionRate",
+                  "achievement_col": null,
+                  "score_formula": "target_ratio",
+                  "aggregation_method": "ratio",
+                  "aggregation_weight_col": null,
+                  "aggregation_weight_is_target_col": false
+                },
+                {
+                  "key": "approval_within_48_hours",
+                  "direction": "higher_better",
+                  "weight": 0.4,
+                  "unit": "%",
+                  "actual_col": "A.ApprovalWithin48HoursRate",
+                  "target_col": "T.ApprovalWithin48HoursRate",
+                  "achievement_col": null,
+                  "score_formula": "target_ratio",
+                  "aggregation_method": "ratio",
+                  "aggregation_weight_col": null,
+                  "aggregation_weight_is_target_col": false
+                }
+              ],
+              "period_variants": []
+            },
+            "ER / IP Approval": {
+              "kpis": [
+                {
+                  "key": "er_initial_rejection_rate",
+                  "direction": "lower_better",
+                  "weight": 0.6,
+                  "unit": "%",
+                  "actual_col": "A.ERInitialRejectionRate",
+                  "target_col": "T.ERInitialRejectionRate",
+                  "achievement_col": null,
+                  "score_formula": "target_ratio",
+                  "aggregation_method": "ratio",
+                  "aggregation_weight_col": null,
+                  "aggregation_weight_is_target_col": false
+                },
+                {
+                  "key": "approval_within_1_5_hours",
+                  "direction": "higher_better",
+                  "weight": 0.4,
+                  "unit": "%",
+                  "actual_col": "A.ApprovalWithin1.5HoursRate",
+                  "target_col": "T.ApprovalWithin1.5HoursRate",
+                  "achievement_col": null,
+                  "score_formula": "target_ratio",
+                  "aggregation_method": "ratio",
+                  "aggregation_weight_col": null,
+                  "aggregation_weight_is_target_col": false
+                }
+              ],
+              "period_variants": []
+            }
+          }
+        }
+      },
+      "any_achievement_col": false,
+      "score_formulas": [
+        "target_ratio"
+      ],
+      "directions": [
+        "higher_better",
+        "lower_better"
+      ],
+      "functions": [
+        "RCM",
+        "Pre-Approvals"
+      ],
+      "legacy_employee_calculator": false
+    },
+    {
+      "file": "pre_approvals_ip_final_dubai.json",
+      "team": "Pre-Approvals IP Final Dubai",
+      "db_name": "Pre-Approvals IP Final Dubai",
+      "region": "UAE",
+      "extra_keys": [
+        "configuration_notes"
+      ],
+      "missing_actual_exception": null,
+      "kpi_direction_source_teams": null,
+      "flat_employee_kpis": [],
+      "performance_levels": {
+        "Employee": {
+          "kpis": [],
+          "positions": {
+            "Combined": {
+              "kpis": [
+                {
+                  "key": "combined_acceptance_rate",
+                  "direction": "higher_better",
+                  "weight": 0.5,
+                  "unit": "%",
+                  "actual_col": "AcceptanceRate",
+                  "target_col": "A.AcceptanceRate",
+                  "achievement_col": "T.AcceptanceRate%",
+                  "score_formula": "baseline_80",
+                  "aggregation_method": "ratio",
+                  "aggregation_weight_col": null,
+                  "aggregation_weight_is_target_col": false
+                },
+                {
+                  "key": "combined_submission_within_month",
+                  "direction": "higher_better",
+                  "weight": 0.3,
+                  "unit": "%",
+                  "actual_col": "SubmissionWithinMonth%",
+                  "target_col": "A.SubmissionWithinMonth%",
+                  "achievement_col": "T.%ofSubmissionWithinDuedate",
+                  "score_formula": "baseline_80",
+                  "aggregation_method": "ratio",
+                  "aggregation_weight_col": null,
+                  "aggregation_weight_is_target_col": false
+                },
+                {
+                  "key": "combined_discharge_within_one_hour",
+                  "direction": "higher_better",
+                  "weight": 0.2,
+                  "unit": "%",
+                  "actual_col": "Discharge%Within1Hour",
+                  "target_col": "A.Discharge%Within1Hour",
+                  "achievement_col": "T.Discharge%Within1Hour",
+                  "score_formula": "baseline_80",
+                  "aggregation_method": "ratio",
+                  "aggregation_weight_col": null,
+                  "aggregation_weight_is_target_col": false
+                }
+              ],
+              "period_variants": []
+            },
+            "IP Approval": {
+              "kpis": [
+                {
+                  "key": "ip_approval_acceptance_rate",
+                  "direction": "higher_better",
+                  "weight": 0.6,
+                  "unit": "%",
+                  "actual_col": "AcceptanceRate",
+                  "target_col": "A.AcceptanceRate",
+                  "achievement_col": "T.AcceptanceRate%",
+                  "score_formula": "baseline_80",
+                  "aggregation_method": "ratio",
+                  "aggregation_weight_col": null,
+                  "aggregation_weight_is_target_col": false
+                },
+                {
+                  "key": "ip_approval_submission_within_month",
+                  "direction": "higher_better",
+                  "weight": 0.4,
+                  "unit": "%",
+                  "actual_col": "SubmissionWithinMonth%",
+                  "target_col": "A.SubmissionWithinMonth%",
+                  "achievement_col": "T.%ofSubmissionWithinDuedate",
+                  "score_formula": "baseline_80",
+                  "aggregation_method": "ratio",
+                  "aggregation_weight_col": null,
+                  "aggregation_weight_is_target_col": false
+                }
+              ],
+              "period_variants": []
+            },
+            "IP Discharge": {
+              "kpis": [
+                {
+                  "key": "ip_discharge_within_one_hour",
+                  "direction": "higher_better",
+                  "weight": 1.0,
+                  "unit": "%",
+                  "actual_col": "Discharge%Within1Hour",
+                  "target_col": "A.Discharge%Within1Hour",
+                  "achievement_col": "T.Discharge%Within1Hour",
+                  "score_formula": "baseline_80",
+                  "aggregation_method": "ratio",
+                  "aggregation_weight_col": null,
+                  "aggregation_weight_is_target_col": false
+                }
+              ],
+              "period_variants": []
+            }
+          }
+        }
+      },
+      "any_achievement_col": true,
+      "score_formulas": [
+        "baseline_80"
+      ],
+      "directions": [
+        "higher_better"
+      ],
+      "functions": [
+        "RCM",
+        "Pre-Approvals"
+      ],
+      "legacy_employee_calculator": false
+    },
+    {
+      "file": "pre_approvals_ip_final_shj_ajm.json",
+      "team": "Pre-Approvals IP Final SHJAJM",
+      "db_name": "Pre-Approvals IP Final SHJAJM",
+      "region": "UAE",
+      "extra_keys": [
+        "configuration_notes"
+      ],
+      "missing_actual_exception": null,
+      "kpi_direction_source_teams": null,
+      "flat_employee_kpis": [],
+      "performance_levels": {
+        "Employee": {
+          "kpis": [],
+          "positions": {
+            "IP Final": {
+              "kpis": [
+                {
+                  "key": "ip_final_acceptance_rate",
+                  "direction": "higher_better",
+                  "weight": 0.4,
+                  "unit": "%",
+                  "actual_col": "AcceptanceRate",
+                  "target_col": "T.AcceptanceRate",
+                  "achievement_col": "AcceptanceRateAchievement",
+                  "score_formula": "baseline_80",
+                  "aggregation_method": "ratio",
+                  "aggregation_weight_col": null,
+                  "aggregation_weight_is_target_col": false
+                },
+                {
+                  "key": "ip_final_submission_within_month",
+                  "direction": "higher_better",
+                  "weight": 0.6,
+                  "unit": "%",
+                  "actual_col": "SubmissionWithinMonth%",
+                  "target_col": "T.SubmissionWithinMonth%",
+                  "achievement_col": "SubmissionWithinMonthAchievement",
+                  "score_formula": "baseline_80",
+                  "aggregation_method": "ratio",
+                  "aggregation_weight_col": null,
+                  "aggregation_weight_is_target_col": false
+                }
+              ],
+              "period_variants": []
+            }
+          }
+        }
+      },
+      "any_achievement_col": true,
+      "score_formulas": [
+        "baseline_80"
+      ],
+      "directions": [
+        "higher_better"
+      ],
+      "functions": [
+        "RCM",
+        "Pre-Approvals"
+      ],
+      "legacy_employee_calculator": false
+    },
+    {
+      "file": "pre_approvals_offshore.json",
+      "team": "Pre-Approvals IP Offshore",
+      "db_name": "Pre-Approvals IP Offshore",
+      "region": "EGY",
+      "extra_keys": [],
+      "missing_actual_exception": null,
+      "kpi_direction_source_teams": null,
+      "flat_employee_kpis": [
+        {
+          "key": "Rejection",
+          "direction": "lower_better",
+          "weight": 0.5,
+          "unit": "%",
+          "actual_col": "IPInitialRejection%",
+          "target_col": "T.Rejection%",
+          "achievement_col": "RejectionRate",
+          "score_formula": null,
+          "aggregation_method": "ratio",
+          "aggregation_weight_col": null,
+          "aggregation_weight_is_target_col": false
+        },
+        {
+          "key": "InitialError",
+          "direction": "lower_better",
+          "weight": 0.2,
+          "unit": "%",
+          "actual_col": "Error%",
+          "target_col": "T.InitialError%",
+          "achievement_col": "InitialError%",
+          "score_formula": null,
+          "aggregation_method": "ratio",
+          "aggregation_weight_col": null,
+          "aggregation_weight_is_target_col": false
+        },
+        {
+          "key": "Submission",
+          "direction": "higher_better",
+          "weight": 0.3,
+          "unit": "%",
+          "actual_col": "NumberApprovalwithin48hrs",
+          "target_col": "T.Submission%",
+          "achievement_col": "%ofSubmissionWithinDuedate",
+          "score_formula": null,
+          "aggregation_method": "ratio",
+          "aggregation_weight_col": null,
+          "aggregation_weight_is_target_col": false
+        }
+      ],
+      "performance_levels": {},
+      "any_achievement_col": true,
+      "score_formulas": [
+        "unset"
+      ],
+      "directions": [
+        "higher_better",
+        "lower_better"
+      ],
+      "functions": [
+        "RCM"
+      ],
+      "legacy_employee_calculator": true
+    },
+    {
+      "file": "pre_approvals_op_dubai.json",
+      "team": "Pre-Approvals OP Dubai",
+      "db_name": "Pre-Approvals OP Dubai",
+      "region": "UAE",
+      "extra_keys": [
+        "configuration_notes"
+      ],
+      "missing_actual_exception": null,
+      "kpi_direction_source_teams": null,
+      "flat_employee_kpis": [],
+      "performance_levels": {
+        "Employee": {
+          "kpis": [],
+          "positions": {
+            "Initial Submission": {
+              "kpis": [
+                {
+                  "key": "initial_rejection_rate",
+                  "direction": "lower_better",
+                  "weight": 0.6,
+                  "unit": "%",
+                  "actual_col": "A.InitialRejectionRate",
+                  "target_col": "T.InitialRejectionRate",
+                  "achievement_col": null,
+                  "score_formula": null,
+                  "aggregation_method": "ratio",
+                  "aggregation_weight_col": null,
+                  "aggregation_weight_is_target_col": false
+                },
+                {
+                  "key": "submission_within_hour",
+                  "direction": "higher_better",
+                  "weight": 0.4,
+                  "unit": "%",
+                  "actual_col": "A.SubmissionWithinHourRate",
+                  "target_col": "T.SubmissionWithinHourRate",
+                  "achievement_col": null,
+                  "score_formula": null,
+                  "aggregation_method": "ratio",
+                  "aggregation_weight_col": null,
+                  "aggregation_weight_is_target_col": false
+                }
+              ],
+              "period_variants": []
+            },
+            "Final Submission": {
+              "kpis": [
+                {
+                  "key": "submission_within_due_date",
+                  "direction": "higher_better",
+                  "weight": 1.0,
+                  "unit": "%",
+                  "actual_col": "A.SubmissionWithinDueDateRate",
+                  "target_col": "T.SubmissionWithinDueDateRate",
+                  "achievement_col": null,
+                  "score_formula": null,
+                  "aggregation_method": "ratio",
+                  "aggregation_weight_col": null,
+                  "aggregation_weight_is_target_col": false
+                }
+              ],
+              "period_variants": []
+            },
+            "Calls": {
+              "kpis": [
+                {
+                  "key": "abandoned_calls_rate",
+                  "direction": "lower_better",
+                  "weight": 0.6,
+                  "unit": "%",
+                  "actual_col": "A.AbandonedCallsRate",
+                  "target_col": "T.AbandonedCallsRate",
+                  "achievement_col": null,
+                  "score_formula": null,
+                  "aggregation_method": "ratio",
+                  "aggregation_weight_col": null,
+                  "aggregation_weight_is_target_col": false
+                },
+                {
+                  "key": "attended_calls_rate",
+                  "direction": "higher_better",
+                  "weight": 0.4,
+                  "unit": "%",
+                  "actual_col": "A.AttendedCallsRate",
+                  "target_col": "T.AttendedCallsRate",
+                  "achievement_col": null,
+                  "score_formula": null,
+                  "aggregation_method": "ratio",
+                  "aggregation_weight_col": null,
+                  "aggregation_weight_is_target_col": false
+                }
+              ],
+              "period_variants": []
+            }
+          }
+        }
+      },
+      "any_achievement_col": false,
+      "score_formulas": [
+        "unset"
+      ],
+      "directions": [
+        "higher_better",
+        "lower_better"
+      ],
+      "functions": [
+        "RCM",
+        "Pre-Approvals"
+      ],
+      "legacy_employee_calculator": false
+    },
+    {
+      "file": "pre_approvals_op_final_shj_ajm.json",
+      "team": "Pre-Approvals OP Final SHJAJM",
+      "db_name": "Pre-Approvals OP Final SHJAJM",
+      "region": "UAE",
+      "extra_keys": [
+        "configuration_notes",
+        "missing_actual_exception"
+      ],
+      "missing_actual_exception": "initial_rejection_only",
+      "kpi_direction_source_teams": null,
+      "flat_employee_kpis": [],
+      "performance_levels": {
+        "Employee": {
+          "kpis": [],
+          "positions": {
+            "OP Final": {
+              "kpis": [
+                {
+                  "key": "initial_rejection_rate",
+                  "direction": "lower_better",
+                  "weight": 0.6,
+                  "unit": "%",
+                  "actual_col": "A.InitialRejectionRate",
+                  "target_col": "T.InitialRejectionRate",
+                  "achievement_col": null,
+                  "score_formula": "target_ratio",
+                  "aggregation_method": "ratio",
+                  "aggregation_weight_col": null,
+                  "aggregation_weight_is_target_col": false
+                },
+                {
+                  "key": "submission_within_tat",
+                  "direction": "higher_better",
+                  "weight": 0.4,
+                  "unit": "%",
+                  "actual_col": "A.SubmissionWithinTATRate",
+                  "target_col": "T.SubmissionWithinTATRate",
+                  "achievement_col": null,
+                  "score_formula": "target_ratio",
+                  "aggregation_method": "ratio",
+                  "aggregation_weight_col": null,
+                  "aggregation_weight_is_target_col": false
+                }
+              ],
+              "period_variants": []
+            }
+          }
+        }
+      },
+      "any_achievement_col": false,
+      "score_formulas": [
+        "target_ratio"
+      ],
+      "directions": [
+        "higher_better",
+        "lower_better"
+      ],
+      "functions": [
+        "RCM",
+        "Pre-Approvals"
+      ],
+      "legacy_employee_calculator": false
+    },
+    {
+      "file": "re_submission.json",
+      "team": "Re-Submission",
+      "db_name": "Re-Submission",
+      "region": "UAE",
+      "extra_keys": [],
+      "missing_actual_exception": null,
+      "kpi_direction_source_teams": null,
+      "flat_employee_kpis": [
+        {
+          "key": "quality_errors_rate",
+          "direction": "lower_better",
+          "weight": 0.2,
+          "unit": "%",
+          "actual_col": "A.QualityErrorsRate",
+          "target_col": "T.QualityErrorsRate",
+          "achievement_col": "QualityErrorsRateAch%",
+          "score_formula": null,
+          "aggregation_method": "ratio",
+          "aggregation_weight_col": null,
+          "aggregation_weight_is_target_col": false
+        },
+        {
+          "key": "rejection_rate_after_resubmission",
+          "direction": "lower_better",
+          "weight": 0.5,
+          "unit": "%",
+          "actual_col": "A.RejectionRateAfterRe-Submission",
+          "target_col": "T.RejectionRateAfterRe-Submission",
+          "achievement_col": "RejectionRateAfterRe-SubmissionAch%",
+          "score_formula": null,
+          "aggregation_method": "ratio",
+          "aggregation_weight_col": null,
+          "aggregation_weight_is_target_col": false
+        },
+        {
+          "key": "tat",
+          "direction": "higher_better",
+          "weight": 0.3,
+          "unit": "%",
+          "actual_col": "A.TAT",
+          "target_col": "T.TAT",
+          "achievement_col": "TATAch%",
+          "score_formula": null,
+          "aggregation_method": "ratio",
+          "aggregation_weight_col": null,
+          "aggregation_weight_is_target_col": false
+        }
+      ],
+      "performance_levels": {},
+      "any_achievement_col": true,
+      "score_formulas": [
+        "unset"
+      ],
+      "directions": [
+        "higher_better",
+        "lower_better"
+      ],
+      "functions": [
+        "RCM"
+      ],
+      "legacy_employee_calculator": false
+    },
+    {
+      "file": "sales.json",
+      "team": "Sales",
+      "db_name": "Sales",
+      "region": "UAE",
+      "extra_keys": [],
+      "missing_actual_exception": null,
+      "kpi_direction_source_teams": null,
+      "flat_employee_kpis": [
+        {
+          "key": "OPCensus",
+          "direction": "higher_better",
+          "weight": 0.1,
+          "unit": "number",
+          "actual_col": "A.OPCensus",
+          "target_col": "T.OPCensus",
+          "achievement_col": "OPCensusAch%",
+          "score_formula": null,
+          "aggregation_method": "ratio",
+          "aggregation_weight_col": null,
+          "aggregation_weight_is_target_col": false
+        },
+        {
+          "key": "OPRevenue",
+          "direction": "higher_better",
+          "weight": 0.1,
+          "unit": "currency",
+          "actual_col": "A.OPRevenue",
+          "target_col": "T.OPRevenue",
+          "achievement_col": "OPRevenueAch%",
+          "score_formula": null,
+          "aggregation_method": "ratio",
+          "aggregation_weight_col": null,
+          "aggregation_weight_is_target_col": false
+        },
+        {
+          "key": "IPCensus",
+          "direction": "higher_better",
+          "weight": 0.25,
+          "unit": "number",
+          "actual_col": "A.IPCensus",
+          "target_col": "T.IPCensus",
+          "achievement_col": "IPCensusAch%",
+          "score_formula": null,
+          "aggregation_method": "ratio",
+          "aggregation_weight_col": null,
+          "aggregation_weight_is_target_col": false
+        },
+        {
+          "key": "IPRevenue",
+          "direction": "higher_better",
+          "weight": 0.45,
+          "unit": "currency",
+          "actual_col": "A.IPRevenue",
+          "target_col": "T.IPRevenue",
+          "achievement_col": "IPRevenueAch%",
+          "score_formula": null,
+          "aggregation_method": "ratio",
+          "aggregation_weight_col": null,
+          "aggregation_weight_is_target_col": false
+        },
+        {
+          "key": "Activity",
+          "direction": "higher_better",
+          "weight": 0.1,
+          "unit": "number",
+          "actual_col": "A.Activity",
+          "target_col": "T.Activity",
+          "achievement_col": "ActivityAch%",
+          "score_formula": null,
+          "aggregation_method": "ratio",
+          "aggregation_weight_col": null,
+          "aggregation_weight_is_target_col": false
+        }
+      ],
+      "performance_levels": {
+        "Managerial": {
+          "kpis": [
+            {
+              "key": "PipelineAttainment",
+              "direction": "higher_better",
+              "weight": 0.35,
+              "unit": "%",
+              "actual_col": "A.PipelineAttainment",
+              "target_col": "T.PipelineAttainment",
+              "achievement_col": null,
+              "score_formula": null,
+              "aggregation_method": null,
+              "aggregation_weight_col": null,
+              "aggregation_weight_is_target_col": false
+            },
+            {
+              "key": "ForecastAccuracy",
+              "direction": "higher_better",
+              "weight": 0.25,
+              "unit": "%",
+              "actual_col": "A.ForecastAccuracy",
+              "target_col": "T.ForecastAccuracy",
+              "achievement_col": null,
+              "score_formula": null,
+              "aggregation_method": null,
+              "aggregation_weight_col": null,
+              "aggregation_weight_is_target_col": false
+            },
+            {
+              "key": "CoachingCompletion",
+              "direction": "higher_better",
+              "weight": 0.2,
+              "unit": "%",
+              "actual_col": "A.CoachingCompletion",
+              "target_col": "T.CoachingCompletion",
+              "achievement_col": null,
+              "score_formula": null,
+              "aggregation_method": null,
+              "aggregation_weight_col": null,
+              "aggregation_weight_is_target_col": false
+            },
+            {
+              "key": "EscalationResolution",
+              "direction": "higher_better",
+              "weight": 0.2,
+              "unit": "%",
+              "actual_col": "A.EscalationResolution",
+              "target_col": "T.EscalationResolution",
+              "achievement_col": null,
+              "score_formula": null,
+              "aggregation_method": null,
+              "aggregation_weight_col": null,
+              "aggregation_weight_is_target_col": false
+            }
+          ],
+          "positions": {}
+        },
+        "Corporate": {
+          "kpis": [
+            {
+              "key": "StrategicDelivery",
+              "direction": "higher_better",
+              "weight": 0.3,
+              "unit": "%",
+              "actual_col": "A.StrategicDelivery",
+              "target_col": "T.StrategicDelivery",
+              "achievement_col": null,
+              "score_formula": null,
+              "aggregation_method": null,
+              "aggregation_weight_col": null,
+              "aggregation_weight_is_target_col": false
+            },
+            {
+              "key": "RevenueGovernance",
+              "direction": "higher_better",
+              "weight": 0.25,
+              "unit": "%",
+              "actual_col": "A.RevenueGovernance",
+              "target_col": "T.RevenueGovernance",
+              "achievement_col": null,
+              "score_formula": null,
+              "aggregation_method": null,
+              "aggregation_weight_col": null,
+              "aggregation_weight_is_target_col": false
+            },
+            {
+              "key": "StakeholderSatisfaction",
+              "direction": "higher_better",
+              "weight": 0.25,
+              "unit": "%",
+              "actual_col": "A.StakeholderSatisfaction",
+              "target_col": "T.StakeholderSatisfaction",
+              "achievement_col": null,
+              "score_formula": null,
+              "aggregation_method": null,
+              "aggregation_weight_col": null,
+              "aggregation_weight_is_target_col": false
+            },
+            {
+              "key": "ProjectMilestones",
+              "direction": "higher_better",
+              "weight": 0.2,
+              "unit": "%",
+              "actual_col": "A.ProjectMilestones",
+              "target_col": "T.ProjectMilestones",
+              "achievement_col": null,
+              "score_formula": null,
+              "aggregation_method": null,
+              "aggregation_weight_col": null,
+              "aggregation_weight_is_target_col": false
+            }
+          ],
+          "positions": {}
+        }
+      },
+      "any_achievement_col": true,
+      "score_formulas": [
+        "unset"
+      ],
+      "directions": [
+        "higher_better"
+      ],
+      "functions": [
+        "Sales"
+      ],
+      "legacy_employee_calculator": true
+    },
+    {
+      "file": "submission.json",
+      "team": "Submission",
+      "db_name": "Submission",
+      "region": "UAE",
+      "extra_keys": [],
+      "missing_actual_exception": null,
+      "kpi_direction_source_teams": null,
+      "flat_employee_kpis": [
+        {
+          "key": "initial_rejection_rate",
+          "direction": "lower_better",
+          "weight": 0.6,
+          "unit": "%",
+          "actual_col": "A.InitialRejectionRate",
+          "target_col": "T.InitialRejectionRate",
+          "achievement_col": null,
+          "score_formula": null,
+          "aggregation_method": "ratio",
+          "aggregation_weight_col": null,
+          "aggregation_weight_is_target_col": false
+        },
+        {
+          "key": "submission_within_due_date",
+          "direction": "higher_better",
+          "weight": 0.4,
+          "unit": "%",
+          "actual_col": "A.TAT48Hours",
+          "target_col": "T.%ofSubmissionWithinDuedate",
+          "achievement_col": null,
+          "score_formula": null,
+          "aggregation_method": "average",
+          "aggregation_weight_col": null,
+          "aggregation_weight_is_target_col": false
+        }
+      ],
+      "performance_levels": {},
+      "any_achievement_col": false,
+      "score_formulas": [
+        "unset"
+      ],
+      "directions": [
+        "higher_better",
+        "lower_better"
+      ],
+      "functions": [
+        "RCM"
+      ],
+      "legacy_employee_calculator": false
+    }
+  ],
+  "coverage_matrix": [
+    {
+      "team": "Coding",
+      "db_name": "Coding",
+      "identity": "tracked_json_source",
+      "functions": [
+        "RCM"
+      ],
+      "levels_in_file": [
+        "Employee"
+      ],
+      "positions": [],
+      "employee_support": {
+        "calculator": "KPIService.calculate_performance_multi_team via load_team_config and resolve_team_config",
+        "raw_vs_precomputed": "Workbook actual and target columns. No achievement_col on the tracked KPIs.",
+        "target": "Workbook target_col at calculation time.",
+        "weight": "File weight at calculation time, copied onto weight_applied.",
+        "direction": "File direction at calculation time. target_ratio dashboard reads recompute achievement from the current direction.",
+        "recompute_from_new_target": true,
+        "recompute_note": "Workbook actual and target are both stored, so a later explicit apply can recompute a target_ratio achievement if the raw values remain."
+      },
+      "consumer_integration": "traced_in_source_not_integration_tested",
+      "characterization_test": "test_coding_lower_better_uses_workbook_target_columns"
+    },
+    {
+      "team": "CSR",
+      "db_name": "CSR",
+      "identity": "tracked_json_source",
+      "functions": [
+        "CSR"
+      ],
+      "levels_in_file": [
+        "Employee"
+      ],
+      "positions": [],
+      "employee_support": {
+        "calculator": "KPIService.calculate_performance_multi_team via load_team_config and resolve_team_config",
+        "raw_vs_precomputed": "Workbook actual and target columns. No achievement_col on the tracked KPIs.",
+        "target": "Workbook target_col at calculation time.",
+        "weight": "File weight at calculation time, copied onto weight_applied.",
+        "direction": "File direction at calculation time. target_ratio dashboard reads recompute achievement from the current direction.",
+        "recompute_from_new_target": true,
+        "recompute_note": "Workbook actual and target are both stored, so a later explicit apply can recompute a target_ratio achievement if the raw values remain."
+      },
+      "consumer_integration": "traced_in_source_not_integration_tested",
+      "characterization_test": "test_csr_workbook_targets_follow_the_row_and_ignore_the_month_label"
+    },
+    {
+      "team": "Inbound",
+      "db_name": "Inbound",
+      "identity": "tracked_json_source",
+      "functions": [
+        "Call Center"
+      ],
+      "levels_in_file": [
+        "Employee",
+        "Corporate",
+        "Managerial"
+      ],
+      "positions": [],
+      "employee_support": {
+        "calculator": "KPIService.calculate_performance employee branch",
+        "raw_vs_precomputed": "Raw volume columns. File achievement_col is not read by this branch.",
+        "target": "Repository targets, else DEFAULT_TARGETS. Workbook target columns are not the scoring input.",
+        "weight": "Repository weights, else block defaults. June 2026 sets Quality to 0 and Other to 0.15.",
+        "direction": "Hardcoded inside the legacy formulas. A later file-direction edit does not change this branch.",
+        "recompute_from_new_target": false,
+        "recompute_note": "A settings target does not flow into this branch unless the repository/default used by the block changes. Workbook target cells do not."
+      },
+      "consumer_integration": "traced_in_source_not_integration_tested",
+      "characterization_test": "test_legacy_inbound_uses_repository_target_not_the_workbook_column"
+    },
+    {
+      "team": "Inbound UAE",
+      "db_name": "Inbound UAE",
+      "identity": "tracked_json_source",
+      "functions": [
+        "Inbound UAE"
+      ],
+      "levels_in_file": [
+        "Employee"
+      ],
+      "positions": [],
+      "employee_support": {
+        "calculator": "KPIService.calculate_performance employee branch",
+        "raw_vs_precomputed": "Raw volume columns. File achievement_col is not read by this branch.",
+        "target": "Repository targets, else DEFAULT_TARGETS. Workbook target columns are not the scoring input.",
+        "weight": "Repository weights, else block defaults. This block has no month exception.",
+        "direction": "Hardcoded inside the legacy formulas. A later file-direction edit does not change this branch.",
+        "recompute_from_new_target": false,
+        "recompute_note": "A settings target does not flow into this branch unless the repository/default used by the block changes. Workbook target cells do not."
+      },
+      "consumer_integration": "traced_in_source_not_integration_tested",
+      "characterization_test": null
+    },
+    {
+      "team": "Marketing",
+      "db_name": "Marketing",
+      "identity": "tracked_json_source",
+      "functions": [
+        "Marketing"
+      ],
+      "levels_in_file": [
+        "Employee"
+      ],
+      "positions": [
+        "Account Manager",
+        "Content Writer",
+        "Graphic Designer",
+        "Media Buyer",
+        "Social Media Specialist",
+        "Web Developer"
+      ],
+      "employee_support": {
+        "calculator": "MarketingImportService selects a position KPI set by exact label match and period, then scores there. Generic resolve_team_config does not select period_variants.",
+        "raw_vs_precomputed": "Raw actual and target columns. No achievement_col in the tracked file.",
+        "target": "Workbook target stored on the row. aggregate_kpi_metric weighted_average uses that same target as the aggregation weight.",
+        "weight": "Scoring weight comes from the selected KPI definition. It is separate from the aggregation weight, which is the target value.",
+        "direction": "Selected KPI definition at import. Dashboard target_ratio reads can still rewrite a stored achievement from the current direction.",
+        "recompute_from_new_target": false,
+        "recompute_note": "A future fixed scoring target must not overwrite the raw target used as the Marketing aggregation weight."
+      },
+      "consumer_integration": "traced_in_source_not_integration_tested",
+      "characterization_test": "test_weighted_average_uses_target_values_and_ignores_scoring_weight"
+    },
+    {
+      "team": "Outbound",
+      "db_name": "Outbound",
+      "identity": "tracked_json_source",
+      "functions": [
+        "Call Center"
+      ],
+      "levels_in_file": [
+        "Employee"
+      ],
+      "positions": [],
+      "employee_support": {
+        "calculator": "KPIService.calculate_performance employee branch",
+        "raw_vs_precomputed": "Raw volume columns. File achievement_col is not read by this branch.",
+        "target": "Repository targets, else DEFAULT_TARGETS. Workbook target columns are not the scoring input.",
+        "weight": "Repository weights, else block defaults. June 2026 sets Quality to 0 and Other to 0.20. A string date containing 'June' also matches.",
+        "direction": "Hardcoded inside the legacy formulas. A later file-direction edit does not change this branch.",
+        "recompute_from_new_target": false,
+        "recompute_note": "A settings target does not flow into this branch unless the repository/default used by the block changes. Workbook target cells do not."
+      },
+      "consumer_integration": "traced_in_source_not_integration_tested",
+      "characterization_test": null
+    },
+    {
+      "team": "Pharmacy",
+      "db_name": "Pharmacy",
+      "identity": "tracked_json_source",
+      "functions": [
+        "Pharmacy"
+      ],
+      "levels_in_file": [
+        "Employee"
+      ],
+      "positions": [],
+      "employee_support": {
+        "calculator": "KPIService.calculate_performance_multi_team via load_team_config and resolve_team_config",
+        "raw_vs_precomputed": "Workbook actual and target columns. No achievement_col on the tracked KPIs.",
+        "target": "Workbook target_col at calculation time.",
+        "weight": "File weight at calculation time, copied onto weight_applied.",
+        "direction": "File direction at calculation time. target_ratio dashboard reads recompute achievement from the current direction.",
+        "recompute_from_new_target": true,
+        "recompute_note": "Workbook actual and target are both stored, so a later explicit apply can recompute a target_ratio achievement if the raw values remain."
+      },
+      "consumer_integration": "traced_in_source_not_integration_tested",
+      "characterization_test": null
+    },
+    {
+      "team": "Pre-Approvals IP Elective Dubai",
+      "db_name": "Pre-Approvals IP Elective Dubai",
+      "identity": "tracked_json_source",
+      "functions": [
+        "RCM",
+        "Pre-Approvals"
+      ],
+      "levels_in_file": [
+        "Employee"
+      ],
+      "positions": [
+        "ER / IP Approval",
+        "IP Elective"
+      ],
+      "employee_support": {
+        "calculator": "KPIService.calculate_performance_multi_team via load_team_config and resolve_team_config",
+        "raw_vs_precomputed": "Workbook actual and target columns. No achievement_col on the tracked KPIs.",
+        "target": "Workbook target_col at calculation time.",
+        "weight": "File weight at calculation time, copied onto weight_applied.",
+        "direction": "File direction at calculation time. target_ratio dashboard reads recompute achievement from the current direction.",
+        "recompute_from_new_target": true,
+        "recompute_note": "Workbook actual and target are both stored, so a later explicit apply can recompute a target_ratio achievement if the raw values remain."
+      },
+      "consumer_integration": "traced_in_source_not_integration_tested",
+      "characterization_test": null
+    },
+    {
+      "team": "Pre-Approvals IP Final Dubai",
+      "db_name": "Pre-Approvals IP Final Dubai",
+      "identity": "tracked_json_source",
+      "functions": [
+        "RCM",
+        "Pre-Approvals"
+      ],
+      "levels_in_file": [
+        "Employee"
+      ],
+      "positions": [
+        "Combined",
+        "IP Approval",
+        "IP Discharge"
+      ],
+      "employee_support": {
+        "calculator": "KPIService.calculate_performance_multi_team via load_team_config and resolve_team_config",
+        "raw_vs_precomputed": "If the configured achievement_col is present on the row, that value is stored and actual, target, and direction are not used for the achievement.",
+        "target": "Workbook target_col at calculation time.",
+        "weight": "File weight at calculation time, copied onto weight_applied.",
+        "direction": "File direction at calculation time. target_ratio dashboard reads recompute achievement from the current direction.",
+        "recompute_from_new_target": false,
+        "recompute_note": "File score_formula is baseline_80, and backend scoring does not implement it. When achievement_col is present, the stored achievement ignores actual, target, and direction."
+      },
+      "consumer_integration": "traced_in_source_not_integration_tested",
+      "characterization_test": "test_precomputed_achievement_ignores_target_and_direction_inputs"
+    },
+    {
+      "team": "Pre-Approvals IP Final SHJAJM",
+      "db_name": "Pre-Approvals IP Final SHJAJM",
+      "identity": "tracked_json_source",
+      "functions": [
+        "RCM",
+        "Pre-Approvals"
+      ],
+      "levels_in_file": [
+        "Employee"
+      ],
+      "positions": [
+        "IP Final"
+      ],
+      "employee_support": {
+        "calculator": "KPIService.calculate_performance_multi_team via load_team_config and resolve_team_config",
+        "raw_vs_precomputed": "If the configured achievement_col is present on the row, that value is stored and actual, target, and direction are not used for the achievement.",
+        "target": "Workbook target_col at calculation time.",
+        "weight": "File weight at calculation time, copied onto weight_applied.",
+        "direction": "File direction at calculation time. target_ratio dashboard reads recompute achievement from the current direction.",
+        "recompute_from_new_target": false,
+        "recompute_note": "File score_formula is baseline_80, and backend scoring does not implement it. When achievement_col is present, the stored achievement ignores actual, target, and direction."
+      },
+      "consumer_integration": "traced_in_source_not_integration_tested",
+      "characterization_test": null
+    },
+    {
+      "team": "Pre-Approvals IP Offshore",
+      "db_name": "Pre-Approvals IP Offshore",
+      "identity": "tracked_json_source",
+      "functions": [
+        "RCM"
+      ],
+      "levels_in_file": [
+        "Employee"
+      ],
+      "positions": [],
+      "employee_support": {
+        "calculator": "KPIService.calculate_performance employee branch",
+        "raw_vs_precomputed": "Raw volume columns. File achievement_col is not read by this branch.",
+        "target": "Repository targets, else DEFAULT_TARGETS. Workbook target columns are not the scoring input.",
+        "weight": "Hardcoded in the block: 0.50/0.20/0.30 when submitted claims are positive, else 0.60/0.00/0.40. This follows claim count, not month.",
+        "direction": "Hardcoded inside the legacy formulas. A later file-direction edit does not change this branch.",
+        "recompute_from_new_target": false,
+        "recompute_note": "A settings target does not flow into this branch unless the repository/default used by the block changes. Workbook target cells do not."
+      },
+      "consumer_integration": "traced_in_source_not_integration_tested",
+      "characterization_test": null
+    },
+    {
+      "team": "Pre-Approvals OP Dubai",
+      "db_name": "Pre-Approvals OP Dubai",
+      "identity": "tracked_json_source",
+      "functions": [
+        "RCM",
+        "Pre-Approvals"
+      ],
+      "levels_in_file": [
+        "Employee"
+      ],
+      "positions": [
+        "Calls",
+        "Final Submission",
+        "Initial Submission"
+      ],
+      "employee_support": {
+        "calculator": "KPIService.calculate_performance_multi_team via load_team_config and resolve_team_config",
+        "raw_vs_precomputed": "Workbook actual and target columns. No achievement_col on the tracked KPIs.",
+        "target": "Workbook target_col at calculation time.",
+        "weight": "File weight at calculation time, copied onto weight_applied.",
+        "direction": "File direction at calculation time. target_ratio dashboard reads recompute achievement from the current direction.",
+        "recompute_from_new_target": true,
+        "recompute_note": "Workbook actual and target are both stored, so a later explicit apply can recompute a target_ratio achievement if the raw values remain."
+      },
+      "consumer_integration": "traced_in_source_not_integration_tested",
+      "characterization_test": null
+    },
+    {
+      "team": "Pre-Approvals OP Final SHJAJM",
+      "db_name": "Pre-Approvals OP Final SHJAJM",
+      "identity": "tracked_json_source",
+      "functions": [
+        "RCM",
+        "Pre-Approvals"
+      ],
+      "levels_in_file": [
+        "Employee"
+      ],
+      "positions": [
+        "OP Final"
+      ],
+      "employee_support": {
+        "calculator": "KPIService.calculate_performance_multi_team via load_team_config and resolve_team_config",
+        "raw_vs_precomputed": "Workbook actual and target columns. No achievement_col on the tracked KPIs.",
+        "target": "Workbook target_col at calculation time.",
+        "weight": "File weight at calculation time, copied onto weight_applied.",
+        "direction": "File direction at calculation time. target_ratio dashboard reads recompute achievement from the current direction.",
+        "recompute_from_new_target": true,
+        "recompute_note": "Workbook actual and target are both stored, so a later explicit apply can recompute a target_ratio achievement if the raw values remain. missing_actual_exception=initial_rejection_only is honored inside calculate_performance_multi_team."
+      },
+      "consumer_integration": "traced_in_source_not_integration_tested",
+      "characterization_test": null
+    },
+    {
+      "team": "Re-Submission",
+      "db_name": "Re-Submission",
+      "identity": "tracked_json_source",
+      "functions": [
+        "RCM"
+      ],
+      "levels_in_file": [
+        "Employee"
+      ],
+      "positions": [],
+      "employee_support": {
+        "calculator": "KPIService.calculate_performance_multi_team via load_team_config and resolve_team_config",
+        "raw_vs_precomputed": "If the configured achievement_col is present on the row, that value is stored and actual, target, and direction are not used for the achievement.",
+        "target": "Workbook target_col at calculation time.",
+        "weight": "File weight at calculation time, copied onto weight_applied.",
+        "direction": "File direction at calculation time. target_ratio dashboard reads recompute achievement from the current direction.",
+        "recompute_from_new_target": false,
+        "recompute_note": "When achievement_col is present, the stored achievement ignores a replacement target. Recomputation needs the raw actual and target, or an explicit policy to ignore the precomputed column."
+      },
+      "consumer_integration": "traced_in_source_not_integration_tested",
+      "characterization_test": null
+    },
+    {
+      "team": "Sales",
+      "db_name": "Sales",
+      "identity": "tracked_json_source",
+      "functions": [
+        "Sales"
+      ],
+      "levels_in_file": [
+        "Employee",
+        "Corporate",
+        "Managerial"
+      ],
+      "positions": [],
+      "employee_support": {
+        "calculator": "KPIService.calculate_performance employee branch",
+        "raw_vs_precomputed": "Sales uses A./T. columns when both are present and otherwise precomputed Ach% columns. The other four legacy teams compute actuals from raw volume columns and ignore file achievement_col.",
+        "target": "Workbook T.* when the matching A.* column is also present. DEFAULT_TARGETS is not read by the Sales block.",
+        "weight": "Repository weights, else hardcoded defaults in the Sales block. The score caps each KPI achievement at 1.0 before weighting.",
+        "direction": "Hardcoded inside the legacy formulas. A later file-direction edit does not change this branch.",
+        "recompute_from_new_target": true,
+        "recompute_note": "A changed workbook target changes the score only while raw A.* and T.* columns are both present."
+      },
+      "consumer_integration": "traced_in_source_not_integration_tested",
+      "characterization_test": "test_sales_raw_columns_change_with_target_until_only_precomputed_is_present"
+    },
+    {
+      "team": "Submission",
+      "db_name": "Submission",
+      "identity": "tracked_json_source",
+      "functions": [
+        "RCM"
+      ],
+      "levels_in_file": [
+        "Employee"
+      ],
+      "positions": [],
+      "employee_support": {
+        "calculator": "KPIService.calculate_performance_multi_team via load_team_config and resolve_team_config",
+        "raw_vs_precomputed": "Workbook actual and target columns. No achievement_col on the tracked KPIs.",
+        "target": "Workbook target_col at calculation time.",
+        "weight": "File weight at calculation time, copied onto weight_applied.",
+        "direction": "File direction at calculation time. target_ratio dashboard reads recompute achievement from the current direction.",
+        "recompute_from_new_target": true,
+        "recompute_note": "Workbook actual and target are both stored, so a later explicit apply can recompute a target_ratio achievement if the raw values remain."
+      },
+      "consumer_integration": "traced_in_source_not_integration_tested",
+      "characterization_test": null
+    }
+  ],
+  "db_only_management_sources": {
+    "evidence": "orchestrator_local",
+    "active_storage_names": [
+      "crm_management",
+      "finance_management",
+      "marketing_management",
+      "nursing_management",
+      "pharmacy_management",
+      "pmo_management",
+      "rcm_management"
+    ],
+    "display_names_exported": false,
+    "entry": [
+      "ManagementBSCService._get_or_create_team calls create_management_team_identity when no management-scoped Team row exists.",
+      "users_and_actions._replace_team_assignments creates a management identity only when an employee-scoped team with the same logical name already exists.",
+      "TeamService.get_all_teams reads active employee-level teams only, so these management rows do not appear in that catalog.",
+      "load_team_config cannot score them. Their KPI definitions live in management_kpi_config."
+    ],
+    "support": {
+      "target_weight_direction": "Already stored per effective month and year on ManagementKPIConfig, with person or position scope.",
+      "actuals": "ManagementKPISnapshot stores actuals for a month and year and does not store target or direction in the current ORM.",
+      "recompute": "build_scorecard_dataset filters config and snapshot by the requested period. July and August stay separate in the disposable sqlite characterization.",
+      "per_kpi_inventory": "Not exported. The orchestrator counted rows and did not export configuration payloads."
+    }
+  },
+  "inactive_catalog_rows": {
+    "evidence": "orchestrator_local",
+    "names": [
+      "Call Center",
+      "call_center_management",
+      "call_center_offshore",
+      "csr_management",
+      "pre_approval_op_dubai",
+      "sales_management",
+      "sales_management_2"
+    ],
+    "note": "Inactive rows and the synthetic Call Center parent are different objects. Do not reactivate or double-count aliases. The active OP Dubai row has name pre_approvals_op_dubai and db_name Pre-Approvals OP Dubai."
+  },
+  "local_schema": {
+    "evidence": "orchestrator_local",
+    "postgresql": "18.4",
+    "alembic_head": "d9e4b7a2c106",
+    "performance_records_partitions": "yearly 2020-2030 plus default",
+    "team_configuration_versions": {
+      "exists": true,
+      "row_count": 4,
+      "separate_coverage_table": false,
+      "payloads_exported": false,
+      "application_writer_in_source": false
+    },
+    "performance_records": {
+      "configuration_version_id_column_present": true,
+      "orm_mapped_at_baseline": false,
+      "non_null_count": 0,
+      "employee_periods_observed": "January-August 2026; operational row counts retained only in local private evidence",
+      "levels_observed": "Employee rows only in this count. Management evidence is in the snapshot tables."
+    },
+    "kpi_values": {
+      "direction_column": false,
+      "local_unique": "record_id/kpi_key, not record_year"
+    },
+    "management_tables": "Configuration, history and snapshots are populated; operational counts omitted from public evidence",
+    "teams": {
+      "total": 30,
+      "active": 23,
+      "inactive": 7
+    }
+  },
+  "bootstrap_versus_migration_chain": {
+    "evidence": "orchestrator_migration_preflight",
+    "direct_empty_upgrade": "failed at 975c072657f1 because employees does not exist",
+    "supported_bootstrap": "Backend/scripts/bootstrap_schema.py then alembic upgrade head passed on disposable pms_evaluation_bootstrap: 38 ORM tables stamped d9e4b7a2c106, without team_configuration_versions or performance_records.configuration_version_id",
+    "historical_sql_upgrade": "Database/pms_scheme.sql applied to disposable pms_evaluation_legacy, then upgrade failed at 975c072657f1 because mv_team_monthly_summary depends on performance_records.grade",
+    "phase_1_requirement": "Idempotent expand-only reconciliation for both the legacy-migrated local shape and the fresh ORM bootstrap shape. Do not treat a direct empty upgrade failure as proof that production startup is broken. Do not stamp over the historical-chain failure."
+  },
+  "remaining_gates": [
+    "Production schema and catalog were not inspected.",
+    "Official workbook golden scores were not supplied. Synthetic 0.60 actual versus 0.55 and 0.65 targets is the calculation baseline, not an actual-data certification.",
+    "The four local team_configuration_versions payloads and their provenance were not exported.",
+    "Logical display names for the seven DB-only management teams were not exported.",
+    "baseline_80 has no backend scoring implementation. Whether IP Final edits may proceed before that decision is unresolved.",
+    "Branch-specific scoring rules were not found in source. Live branch-specific targets were not queried.",
+    "Historical Alembic roundtrip is not green."
+  ]
+}
