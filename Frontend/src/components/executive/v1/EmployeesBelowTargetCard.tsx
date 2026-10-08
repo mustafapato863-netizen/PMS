@@ -135,6 +135,8 @@ function EmployeeRoster({ summary, filterKey }: { summary: ExecutiveSummary; fil
 
   const subtitle = pageQuery.isLoading
     ? `Loading results · ${PAGE_SIZE} per page`
+    : pageQuery.isError && !pageQuery.data
+      ? `Employee list unavailable · ${PAGE_SIZE} per page · Try again to load the selected scope`
     : `${total} ${total === 1 ? 'person' : 'people'} in the selected scope · ${PAGE_SIZE} per page · Corporate-level names open their BSC; others open their 360 profile`;
 
   return (
@@ -162,9 +164,9 @@ function EmployeeRoster({ summary, filterKey }: { summary: ExecutiveSummary; fil
         </div>
       ) : people.length ? (
         <>
-          <ul className="grid gap-x-[24px] lg:grid-cols-2">
+          <ul className="grid min-w-0 grid-cols-1 gap-x-[24px] lg:grid-cols-2">
             {people.map((person) => (
-              <li key={`${person.employee_id}:${person.performance_level ?? ''}`}>
+              <li key={`${person.employee_id}:${person.performance_level ?? ''}`} className="min-w-0">
                 <Link to={executivePersonPath(person, summary.period.effective, summary.scope.branch)} className="flex items-center gap-[10px] rounded-[8px] border-b border-[var(--insights-row-border)] px-[6px] py-[10px] hover:bg-[var(--exec-tile-bg)] focus-visible:outline-2 focus-visible:outline-[var(--insights-accent)]">
                   <span className="flex min-w-0 flex-1 flex-col gap-[3px]">
                     <span className="truncate text-[13px] font-semibold text-[var(--insights-heading)]">{person.name}</span>
@@ -178,7 +180,7 @@ function EmployeeRoster({ summary, filterKey }: { summary: ExecutiveSummary; fil
             ))}
           </ul>
           {pageCount > 1 && (
-            <nav aria-label="Employees below 90% pages" className="mt-[12px] flex items-center justify-between border-t border-[var(--insights-row-border)] px-[6px] pt-[12px]">
+            <nav aria-label="Employees below 90% pages" className="mt-[12px] flex flex-wrap items-center justify-between gap-[12px] border-t border-[var(--insights-row-border)] px-[6px] pt-[12px]">
               <span aria-live="polite" className="text-[12px] text-[var(--text-muted)]">
                 Showing {firstItem}–{lastItem} of {total} · Page {pageIndex + 1} of {pageCount}
               </span>

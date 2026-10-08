@@ -1,22 +1,39 @@
-import type { ReactNode } from 'react';
-import { Target } from 'lucide-react';
+import { useId, useState, type ReactNode } from 'react';
+import { ChevronLeft, ChevronRight, Target } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import type { ExecutiveKpiRow, ExecutivePeriod } from '../../../features/executive/types';
 import { arrow, fmtKpiDelta, fmtKpiValue, fmtScore, kpiChangeDelta, kpiGapDelta, kpiMovementTone, toneColor } from '../../../features/executive/format';
 import { gapTone } from './execModel';
 import { DirectionTag, ExecCard, ExecCardHeader, GradeSquare, ScoreText, SoftEmpty } from './ExecPrimitives';
 
+const PAGE_SIZE = 8;
 
-export default function TeamKpiTable({ rows, effective, previous, score, reportHref, title = 'Team KPIs — worst first', subtitle, showTeams = false, headerAction = null, emptyMessage = 'No KPI breakdown for this month.', scoreLabel = 'Team score' }: {
+type TeamKpiTableProps = {
   rows: ExecutiveKpiRow[]; effective: ExecutivePeriod | null; previous: ExecutivePeriod | null; score: number | null; reportHref?: string | null;
   title?: string; subtitle?: string; showTeams?: boolean; headerAction?: ReactNode; emptyMessage?: ReactNode; scoreLabel?: string;
-}) {
+};
+
+export default function TeamKpiTable(props: TeamKpiTableProps) {
+  // New periods, scopes or ordering start on page one; value-only refreshes
+  // retain the page. Navigation only slices the already loaded rollup.
+  const contextKey = JSON.stringify([props.effective?.key, props.title, props.showTeams,
+    props.rows.map((row) => [row.kpi_key, row.teams])]);
+  return <PaginatedKpiTable key={contextKey} {...props} />;
+}
+
+function PaginatedKpiTable({ rows, effective, previous, score, reportHref, title = 'Team KPIs — worst first', subtitle, showTeams = false, headerAction = null, emptyMessage = 'No KPI breakdown for this month.', scoreLabel = 'Team score' }: TeamKpiTableProps) {
+  const titleId = useId();
+  const [page, setPage] = useState(0);
+  const pageCount = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+  const pageIndex = Math.min(page, pageCount - 1);
+  const offset = pageIndex * PAGE_SIZE;
+  const pageRows = rows.slice(offset, offset + PAGE_SIZE);
   const head = 'text-[10px] font-semibold uppercase tracking-[0.6px] text-[var(--text-muted)]';
   const vs = previous ? `vs ${previous.month.slice(0, 3)}` : 'vs last';
   return (
-    <ExecCard aria-labelledby="exec-kpis-title">
+    <ExecCard aria-labelledby={titleId}>
       <ExecCardHeader
-        titleId="exec-kpis-title"
+        titleId={titleId}
         icon={Target}
         iconBg="var(--exec-info-bg)"
         iconColor="var(--exec-info-text)"
@@ -44,7 +61,7 @@ export default function TeamKpiTable({ rows, effective, previous, score, reportH
               <span role="columnheader" className={`${head} hidden w-[56px] text-right lg:block`}>Weight</span>
               <span role="columnheader" className={`${head} w-[96px] text-right`}>Achievement</span>
             </div>
-            {rows.map((row, index) => {
+            {pageRows.map((row, index) => {
               const movement = kpiMovementTone(row);
               const gapDelta = kpiGapDelta(row);
               const changeDelta = kpiChangeDelta(row);
@@ -53,7 +70,7 @@ export default function TeamKpiTable({ rows, effective, previous, score, reportH
                 <div role="row" key={row.kpi_key} className="flex items-center gap-[12px] border-b border-[var(--insights-row-border)] px-[12px] py-[10px] last:border-b-0" data-testid="kpi-row">
                   {showTeams && <span role="cell" className="w-[150px] truncate text-[12px] text-[var(--text-secondary)]" title={row.teams.join(', ')}>{row.teams.join(', ')}</span>}
                   <span role="cell" className="flex min-w-0 flex-1 items-center gap-[10px]">
-                    <span className="w-[14px] text-[12px] text-[var(--text-muted)]">{index + 1}</span>
+                    <span className="w-[14px] text-[12px] text-[var(--text-muted)]">{offset + index + 1}</span>
                     <span className="truncate text-[13px] font-semibold text-[var(--insights-heading)]">{row.kpi_label}</span>
                   </span>
                   <span role="cell" className="w-[84px]"><DirectionTag direction={row.kpi_direction} /></span>
@@ -72,6 +89,21 @@ export default function TeamKpiTable({ rows, effective, previous, score, reportH
           </div>
         </div>
       ) : <SoftEmpty>{emptyMessage}</SoftEmpty>}
+      {pageCount > 1 && (
+        <nav aria-label={`${title} pages`} className="flex flex-wrap items-center justify-between gap-[12px] border-t border-[var(--insights-row-border)] px-[6px] pt-[12px]">
+          <span aria-live="polite" className="text-[12px] text-[var(--text-muted)]">
+            Showing {offset + 1}–{Math.min(offset + PAGE_SIZE, rows.length)} of {rows.length} · Page {pageIndex + 1} of {pageCount}
+          </span>
+          <span className="flex items-center gap-[8px]">
+            <button type="button" aria-label="Previous page" onClick={() => setPage(pageIndex - 1)} disabled={pageIndex === 0} className="inline-flex size-[44px] items-center justify-center rounded-[8px] border border-[var(--exec-card-border)] text-[var(--text-secondary)] enabled:hover:bg-[var(--exec-tile-bg)] disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-[var(--insights-accent)]">
+              <ChevronLeft aria-hidden="true" className="size-[16px]" />
+            </button>
+            <button type="button" aria-label="Next page" onClick={() => setPage(pageIndex + 1)} disabled={pageIndex >= pageCount - 1} className="inline-flex size-[44px] items-center justify-center rounded-[8px] border border-[var(--exec-card-border)] text-[var(--text-secondary)] enabled:hover:bg-[var(--exec-tile-bg)] disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-[var(--insights-accent)]">
+              <ChevronRight aria-hidden="true" className="size-[16px]" />
+            </button>
+          </span>
+        </nav>
+      )}
       <div className="flex flex-wrap items-center justify-between gap-[8px] text-[11px] text-[var(--text-muted)]">
         <span className="flex flex-wrap items-center gap-[8px]">
           <DirectionTag direction="higher_better" /> higher is better

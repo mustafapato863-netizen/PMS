@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import TeamKpiTable from './TeamKpiTable';
 import type { ExecutiveKpiRow } from '../../../features/executive/types';
@@ -17,6 +17,51 @@ const rows: ExecutiveKpiRow[] = [
 ];
 
 describe('TeamKpiTable direction semantics', () => {
+  it('shows eight cached KPIs per page, retaining global ranks and direction calculations', () => {
+    const manyRows = Array.from({ length: 21 }, (_, index) => ({
+      ...rows[0], kpi_key: `kpi-${index}`, kpi_label: `Metric ${index + 1}`,
+    }));
+    render(<TeamKpiTable rows={manyRows} effective={null} previous={null} score={null} showTeams />);
+    const nav = screen.getByRole('navigation', { name: 'Team KPIs — worst first pages' });
+    expect(screen.getAllByTestId('kpi-row')).toHaveLength(8);
+    expect(nav).toHaveTextContent('Showing 1–8 of 21 · Page 1 of 3');
+    expect(within(nav).getByRole('button', { name: 'Previous page' })).toBeDisabled();
+    fireEvent.click(within(nav).getByRole('button', { name: 'Next page' }));
+    expect(screen.getAllByTestId('kpi-row')).toHaveLength(8);
+    expect(screen.queryByText('Metric 1')).not.toBeInTheDocument();
+    expect(screen.getByText('Metric 9')).toBeInTheDocument();
+    expect(nav).toHaveTextContent('Showing 9–16 of 21 · Page 2 of 3');
+    fireEvent.click(within(nav).getByRole('button', { name: 'Next page' }));
+    const pageRows = screen.getAllByTestId('kpi-row');
+    expect(pageRows).toHaveLength(5);
+    expect(within(pageRows[0]).getAllByRole('cell')[1]).toHaveTextContent('17Metric 17');
+    expect(within(pageRows[0]).getAllByRole('cell')[5]).toHaveTextContent('↓ −2%');
+    expect(nav).toHaveTextContent('Showing 17–21 of 21 · Page 3 of 3');
+    expect(within(nav).getByRole('button', { name: 'Next page' })).toBeDisabled();
+    fireEvent.click(within(nav).getByRole('button', { name: 'Previous page' }));
+    expect(screen.getByText('Metric 9')).toBeInTheDocument();
+  });
+
+  it('resets pagination for a new period or scope and hides navigation for small/empty tables', () => {
+    const manyRows = Array.from({ length: 17 }, (_, index) => ({
+      ...rows[0], kpi_key: `kpi-${index}`, kpi_label: `Metric ${index + 1}`,
+    }));
+    const period = { key: '2026-08', year: 2026, month: 'August' };
+    const { rerender } = render(<TeamKpiTable rows={manyRows} effective={period} previous={null} score={null} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+    rerender(<TeamKpiTable rows={manyRows} effective={{ ...period, key: '2026-07', month: 'July' }} previous={null} score={null} />);
+    expect(screen.getByText('Metric 1')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+    rerender(<TeamKpiTable rows={manyRows.map((row) => ({ ...row, teams: ['Marketing'] }))} effective={period} previous={null} score={null} />);
+    expect(screen.getByText('Metric 1')).toBeInTheDocument();
+    rerender(<TeamKpiTable rows={rows} effective={period} previous={null} score={null} />);
+    expect(screen.queryByRole('navigation')).not.toBeInTheDocument();
+    expect(screen.getAllByTestId('kpi-row')).toHaveLength(2);
+    rerender(<TeamKpiTable rows={[]} effective={period} previous={null} score={null} />);
+    expect(screen.queryByRole('navigation')).not.toBeInTheDocument();
+    expect(screen.getByText('No KPI breakdown for this month.')).toBeInTheDocument();
+  });
+
   it('places Teams first in both the header and each function KPI row', () => {
     render(<TeamKpiTable rows={rows} effective={null} previous={null} score={null} showTeams />);
     expect(screen.getAllByRole('columnheader').map((header) => header.textContent)).toEqual([

@@ -171,6 +171,8 @@ describe('EmployeesBelowTargetCard', () => {
     renderCard();
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Roster request failed');
+    expect(screen.queryByText(/0 people in the selected scope/)).not.toBeInTheDocument();
+    expect(screen.getByText(/Employee list unavailable/)).toBeInTheDocument();
     expect(screen.queryByText('Server Person 0')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
     expect(await screen.findByText('Server Person 0')).toBeInTheDocument();
