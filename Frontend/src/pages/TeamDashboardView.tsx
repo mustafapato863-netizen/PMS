@@ -369,7 +369,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
   }, [role]);
 
   // Smart Employee Roster view state
-  const [rosterView, setRosterView] = useState<'top_bottom' | 'all'>('top_bottom');
+  const [rosterView, setRosterView] = useState<'top_bottom' | 'all'>('all');
 
   // Previous month's data for trend calculation
   const prevRows = useMemo(() => {

@@ -995,6 +995,10 @@ select option {
 }
 
 /* Touch-optimized target sizes for mobile */
+.roster-view-tile {
+  min-height: 56px;
+}
+
 @media (max-width: 768px) {
   button, select, input[type="button"], input[type="submit"] {
     min-height: 36px;

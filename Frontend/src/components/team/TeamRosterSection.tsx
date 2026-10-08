@@ -2,13 +2,14 @@ import { Link } from 'react-router-dom';
 import {
   Search, Award, AlertTriangle, ChevronLeft, ChevronRight,
   ChevronsUpDown, ChevronUp, ChevronDown, UsersRound,
-  ArrowLeftRight, Download, SlidersHorizontal
+  ArrowLeftRight, Download
 } from 'lucide-react';
 import type { TeamAgentRow } from '../../hooks/usePerformanceData';
 import type { PerformanceLevelFilter } from '../../types';
 import type { PMSAction } from '../../types';
 import { GRADE_PALETTE } from '../../constants/grades';
 import EmployeeRowActions from './EmployeeRowActions';
+import RosterViewTiles from './RosterViewTiles';
 
 const PAGE_SIZE = 15;
 
@@ -346,7 +347,7 @@ const TeamRosterSection = ({
 
   return (
     <div className="glass-panel rounded-xl p-4 shadow-sm sm:p-5">
-      <div className="mb-4 flex flex-col justify-between gap-3 md:flex-row md:items-center">
+      <div className="mb-4 flex flex-col justify-between gap-3 lg:flex-row lg:items-center">
         <div className="flex items-center gap-3">
           <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${
             isAllView
@@ -365,37 +366,22 @@ const TeamRosterSection = ({
           </div>
         </div>
 
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        {showTopBottomToggle && <RosterViewTiles value={rosterView} onChange={setRosterView} />}
+      </div>
+
+      {isAllView && <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           {/* Search Input */}
-          {isAllView && (
             <div className="relative w-full sm:w-72">
               <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--text-faint)]" size={18} />
               <input
+                aria-label="Search employees"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search by name, ID..."
                 className="w-full rounded-xl border border-[var(--border-medium)] bg-[var(--bg-surface)] py-3 pl-11 pr-4 text-sm font-medium text-[var(--text-primary)] shadow-sm transition-all placeholder:text-[var(--text-faint)] focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500/10"
               />
             </div>
-          )}
-
-          {/* Dropdown Selector */}
-          {showTopBottomToggle && (
-            <div className="relative min-w-[210px]">
-              <SlidersHorizontal className="pointer-events-none absolute left-3.5 top-1/2 z-10 -translate-y-1/2 text-blue-600 dark:text-blue-400" size={17} />
-              <select
-                value={rosterView}
-                onChange={(e) => setRosterView(e.target.value as 'top_bottom' | 'all')}
-                className="w-full cursor-pointer appearance-none rounded-xl border border-[var(--border-medium)] bg-[var(--bg-surface)] py-3 pl-11 pr-10 text-sm font-bold text-[var(--text-primary)] shadow-sm focus:border-blue-500 focus:outline-none"
-              >
-                <option value="top_bottom">Top/Bottom Performers</option>
-                <option value="all">All Employees</option>
-              </select>
-              <ChevronDown className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-[var(--text-faint)]" size={17} />
-            </div>
-          )}
-
-          {isAllView && canExport && (
+          {canExport && (
             <button
               type="button"
               onClick={onExport}
@@ -405,8 +391,7 @@ const TeamRosterSection = ({
               Export Excel
             </button>
           )}
-        </div>
-      </div>
+      </div>}
 
       {isAllView ? (
         <>

@@ -9,7 +9,6 @@ import {
   ChevronUp,
   Gauge,
   Lightbulb,
-  SlidersHorizontal,
   Target,
   TrendingDown,
   TrendingUp,
@@ -40,6 +39,7 @@ import type { PerformanceKpiBadgeType } from '../common/PerformanceKpiCard';
 import { resolveKpiTargetStatus } from '../common/performanceKpiProgress';
 import EmployeeRowActions from '../team/EmployeeRowActions';
 import TeamChartsSection from '../team/TeamChartsSection';
+import RosterViewTiles from '../team/RosterViewTiles';
 
 const EMPLOYEE_PAGE_SIZE = 10;
 
@@ -103,7 +103,7 @@ const MarketingPositionDetail = ({
   onAddAction = () => undefined,
   onEmployeeChanged,
 }: MarketingPositionDetailProps) => {
-  const [rosterView, setRosterView] = useState<'top_bottom' | 'all'>('top_bottom');
+  const [rosterView, setRosterView] = useState<'top_bottom' | 'all'>('all');
   const [employeeView, setEmployeeView] = useState<'all' | 'attention'>('all');
   const [employeePage, setEmployeePage] = useState(1);
   const [showAllAnalysis, setShowAllAnalysis] = useState(false);
@@ -249,7 +249,7 @@ const MarketingPositionDetail = ({
       <TeamChartsSection pieData={gradeData} trendData={trendData} />
 
       <section className="glass-panel overflow-hidden rounded-xl p-4 shadow-sm sm:p-5" aria-labelledby="position-roster-title">
-        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-center gap-3">
             <span className={`flex h-10 w-10 items-center justify-center rounded-xl ${
               rosterView === 'top_bottom'
@@ -269,22 +269,10 @@ const MarketingPositionDetail = ({
               </p>
             </div>
           </div>
-          <div className="relative min-w-[220px]">
-            <SlidersHorizontal className="pointer-events-none absolute left-3.5 top-1/2 z-10 -translate-y-1/2 text-blue-600 dark:text-blue-400" size={16} />
-            <select
-              aria-label="Marketing roster view"
-              value={rosterView}
-              onChange={(event) => {
-                setRosterView(event.target.value as 'top_bottom' | 'all');
-                setEmployeePage(1);
-              }}
-              className="w-full cursor-pointer appearance-none rounded-xl border border-[var(--border-medium)] bg-[var(--bg-surface)] py-2.5 pl-10 pr-10 text-xs font-extrabold text-[var(--text-primary)] shadow-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10"
-            >
-              <option value="top_bottom">Top/Bottom Performers</option>
-              <option value="all">All Employees</option>
-            </select>
-            <ChevronDown className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-[var(--text-faint)]" size={16} />
-          </div>
+          <RosterViewTiles value={rosterView} label="Marketing roster view" onChange={(view) => {
+            setRosterView(view);
+            setEmployeePage(1);
+          }} />
         </div>
 
         {rosterView === 'top_bottom' ? (

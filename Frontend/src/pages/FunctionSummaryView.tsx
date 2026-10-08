@@ -14,6 +14,7 @@ import { useUserRole } from '../context/RoleContext';
 import InsightsHeader, { type FilterOption } from '../components/insights/overview/InsightsHeader';
 import { ExecutiveViewSkeleton } from '../components/common/SkeletonLoader';
 import ExecutiveDashboard from '../components/executive/v1/ExecutiveDashboard';
+import SummaryScopeWelcome from '../components/executive/v1/SummaryScopeWelcome';
 import AffectedAgentKpiBreakdown from '../components/executive/v1/AffectedAgentKpiBreakdown';
 import FunctionSwitcher from '../components/executive/v1/FunctionSwitcher';
 import { ExecutiveEmptyState, ReadOnlyBadge, ScopeBanner } from '../components/executive/v1/ExecutiveStates';
@@ -94,6 +95,7 @@ function FunctionSummaryPage({ fn, allowed }: { fn: ExecutiveFunction; allowed: 
     <InsightsHeader
       title="Function Summary"
       subtitle={subtitleFor(summary, 'function')}
+      intro={<SummaryScopeWelcome role={role} user={currentUser} scope={summary?.scope} />}
       titleBadge={readOnly ? <ReadOnlyBadge /> : null}
       groupLabel="Function filters"
       onClearFilters={clearFilters}

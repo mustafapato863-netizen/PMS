@@ -17,6 +17,26 @@ const rows: ExecutiveKpiRow[] = [
 ];
 
 describe('TeamKpiTable direction semantics', () => {
+  it('places Teams first in both the header and each function KPI row', () => {
+    render(<TeamKpiTable rows={rows} effective={null} previous={null} score={null} showTeams />);
+    expect(screen.getAllByRole('columnheader').map((header) => header.textContent)).toEqual([
+      'Teams', 'KPI', 'Direction', 'Actual', 'Target', 'Gap', 'vs last', 'Weight', 'Achievement',
+    ]);
+    screen.getAllByTestId('kpi-row').forEach((row, index) => {
+      const cells = within(row).getAllByRole('cell');
+      expect(cells[0]).toHaveTextContent(rows[index].teams.join(', '));
+      expect(cells[0]).toHaveAttribute('title', rows[index].teams.join(', '));
+      expect(cells[1]).toHaveTextContent(rows[index].kpi_label);
+      expect(cells).toHaveLength(9);
+    });
+  });
+
+  it('keeps KPI first when the table has no Teams column', () => {
+    render(<TeamKpiTable rows={rows} effective={null} previous={null} score={null} />);
+    expect(screen.getAllByRole('columnheader')[0]).toHaveTextContent('KPI');
+    expect(screen.queryByRole('columnheader', { name: 'Teams' })).not.toBeInTheDocument();
+  });
+
   it('renders direction-adjusted gap and movement arrows, values, and tones per KPI', () => {
     render(<TeamKpiTable rows={rows} effective={null} previous={null} score={null} />);
     const kpiRows = screen.getAllByTestId('kpi-row');

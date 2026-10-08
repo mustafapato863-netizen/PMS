@@ -98,6 +98,28 @@ describe('executive function membership (disjoint, Executive cards only)', () =>
     expect(executiveFunctionForTeam('Sales', FIXTURE_TEAM_FUNCTIONS)).toBe('Sales');
   });
 
+  it('shows Pharmacy as a standalone function across levels and keeps branch filters isolated', () => {
+    const evidence = [
+      record(90, { employeeId: 'pharmacist', team: 'Pharmacy', branches: ['dubai'] }),
+      record(88, { employeeId: 'pharmacy-manager', team: 'Pharmacy', level: 'Managerial', branches: ['dubai'] }),
+      record(95, { employeeId: 'pharmacy-director', team: 'Pharmacy', level: 'Corporate', branches: ['dubai'] }),
+      record(60, { employeeId: 'pharmacy-ajman', team: 'Pharmacy', branches: ['ajman'] }),
+      record(70, { employeeId: 'coding', team: 'Coding', branches: ['dubai'] }),
+    ];
+    const corporate = compose({ records: evidence, filters: { branch: 'dubai' } });
+    expect(corporate.functions.find((card) => card.function === 'Pharmacy')).toMatchObject({
+      teams: ['Pharmacy'], employees: 3, score: 91,
+    });
+    expect(corporate.functions.find((card) => card.function === 'RCM')?.teams).not.toContain('Pharmacy');
+    const pharmacy = compose({ view: 'function', functionName: 'Pharmacy', records: evidence, filters: { branch: 'dubai' } });
+    expect(pharmacy.hero).toMatchObject({ employees: 3, score: 91 });
+    expect(pharmacy.teams.map((team) => team.team)).toEqual(['Pharmacy']);
+    expect(pharmacy.levels.map((item) => item.level)).toEqual(['Employee', 'Managerial', 'Corporate']);
+    const managerial = compose({ view: 'function', functionName: 'Pharmacy', records: evidence,
+      filters: { branch: 'dubai', performanceLevel: 'Managerial' } });
+    expect(managerial.hero).toMatchObject({ employees: 1, score: 88 });
+  });
+
   it('round-trips function slugs', () => {
     expect(functionSlug('Pre-Approvals')).toBe('pre-approvals');
     expect(functionFromSlug('call-center')).toBe('Call Center');

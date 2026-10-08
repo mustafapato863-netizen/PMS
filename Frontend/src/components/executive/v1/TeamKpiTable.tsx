@@ -34,6 +34,7 @@ export default function TeamKpiTable({ rows, effective, previous, score, reportH
         <div className="overflow-x-auto">
           <div role="table" aria-label={title} className={`flex flex-col ${showTeams ? 'min-w-[760px]' : 'min-w-[640px]'}`}>
             <div role="row" className="flex items-center gap-[12px] rounded-[8px] bg-[var(--exec-table-head-bg)] px-[12px] py-[9px]">
+              {showTeams && <span role="columnheader" className={`${head} w-[150px]`}>Teams</span>}
               <span role="columnheader" className={`${head} min-w-0 flex-1`}>KPI</span>
               <span role="columnheader" className={`${head} w-[84px]`}>Direction</span>
               <span role="columnheader" className={`${head} w-[72px] text-right`}>Actual</span>
@@ -42,7 +43,6 @@ export default function TeamKpiTable({ rows, effective, previous, score, reportH
               <span role="columnheader" className={`${head} w-[80px] text-right`}>{vs}</span>
               <span role="columnheader" className={`${head} hidden w-[56px] text-right lg:block`}>Weight</span>
               <span role="columnheader" className={`${head} w-[96px] text-right`}>Achievement</span>
-              {showTeams && <span role="columnheader" className={`${head} w-[150px]`}>Teams</span>}
             </div>
             {rows.map((row, index) => {
               const movement = kpiMovementTone(row);
@@ -51,6 +51,7 @@ export default function TeamKpiTable({ rows, effective, previous, score, reportH
               const gap = gapTone(row);
               return (
                 <div role="row" key={row.kpi_key} className="flex items-center gap-[12px] border-b border-[var(--insights-row-border)] px-[12px] py-[10px] last:border-b-0" data-testid="kpi-row">
+                  {showTeams && <span role="cell" className="w-[150px] truncate text-[12px] text-[var(--text-secondary)]" title={row.teams.join(', ')}>{row.teams.join(', ')}</span>}
                   <span role="cell" className="flex min-w-0 flex-1 items-center gap-[10px]">
                     <span className="w-[14px] text-[12px] text-[var(--text-muted)]">{index + 1}</span>
                     <span className="truncate text-[13px] font-semibold text-[var(--insights-heading)]">{row.kpi_label}</span>
@@ -65,7 +66,6 @@ export default function TeamKpiTable({ rows, effective, previous, score, reportH
                     <ScoreText score={row.achievement_percent} className="text-[13px]">{fmtScore(row.achievement_percent)}</ScoreText>
                     <GradeSquare score={row.achievement_percent} />
                   </span>
-                  {showTeams && <span role="cell" className="w-[150px] truncate text-[12px] text-[var(--text-secondary)]" title={row.teams.join(', ')}>{row.teams.join(', ')}</span>}
                 </div>
               );
             })}
