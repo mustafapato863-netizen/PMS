@@ -1,0 +1,15 @@
+{
+  "team": "CSR",
+  "kpi_key": "Queries",
+  "actual_column": "A.CSRQueries",
+  "target_column": "T.QueriesTarget",
+  "actual": 0.6,
+  "neutral_columns": {
+    "A.CSRRejection%": 0.1,
+    "T.CSRRejection%": 0.1,
+    "A.CPTConversion%": 1.0,
+    "T.AttendedC.R": 1.0
+  },
+  "july_target": 0.55,
+  "august_target": 0.65
+}
