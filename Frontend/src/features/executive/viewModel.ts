@@ -3,6 +3,16 @@ import type { FilterOption } from '../../components/insights/overview/InsightsHe
 import { MONTHS, formatPeriod, periodOf } from './compose';
 import { teamPath } from './functions';
 import type { ExecutivePerson, ExecutivePeriod, ExecutiveSummary, ExecutiveView } from './types';
+import { hasAllTeamsScope } from '../../lib/access';
+
+export function summaryViewLabel(role: string, view: ExecutiveView) {
+  if (role === 'Branch Director') return 'Branch view';
+  if (role === 'Regional Manager') return 'Regional view';
+  if (role === 'Function Director' || role === 'Function Viewer') return 'Function view';
+  if (view === 'managerial') return 'Team view';
+  if (view === 'function') return 'Function view';
+  return hasAllTeamsScope(role) ? 'Company view' : 'Authorized scope view';
+}
 
 export function employeeProfilePath(person: ExecutivePerson, period: ExecutivePeriod | null) {
   const params = new URLSearchParams();
@@ -55,8 +65,8 @@ export function periodOptionsFor(summary: ExecutiveSummary | null, requestedKey:
   return options.sort((left, right) => right.value.localeCompare(left.value));
 }
 
-export function subtitleFor(summary: ExecutiveSummary | null, view: ExecutiveView) {
-  const prefix = view === 'managerial' ? 'Managerial view' : view === 'function' ? 'Function view' : 'Corporate view';
+export function subtitleFor(summary: ExecutiveSummary | null, view: ExecutiveView, viewLabel?: string) {
+  const prefix = viewLabel ?? (view === 'managerial' ? 'Managerial view' : view === 'function' ? 'Function view' : 'Corporate view');
   if (!summary?.period.effective) return `${prefix} · target 100%`;
   const team = view === 'managerial' && summary.scope.team ? ` · ${summary.scope.team}` : '';
   const vs = summary.period.previous ? ` vs ${formatPeriod(summary.period.previous)}` : '';

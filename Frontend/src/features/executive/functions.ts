@@ -32,8 +32,8 @@ export function preApprovalsSubTeamOptions(teams: string[]): string[] {
  * - Otherwise the backend `team_functions` map (PR #14) or the existing
  *   frontend helpers decide, so CSR is not under Call Center (it is its own
  *   function in the backend; flagged as a design/data difference).
- * - Teams outside the current functions (Sales, Pharmacy, CSR, …) return `null`: they count
- *   in the company score but get no function card.
+ * - Sales, Pharmacy and CSR are standalone functions with their own cards.
+ *   Only teams outside the supported functions return `null`.
  */
 export function executiveFunctionForTeam(team: string | null | undefined, teamFunctions?: TeamFunctionMap): ExecutiveFunction | null {
   if (!team) return null;

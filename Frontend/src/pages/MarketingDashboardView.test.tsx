@@ -192,6 +192,11 @@ describe('MarketingDashboardContent', () => {
     expect(screen.getAllByText('Contribution').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Weight').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Needs Attention').length).toBeGreaterThan(0);
+    expect(screen.getByRole('heading', { name: 'Employee Performance' })).toBeInTheDocument();
+    const viewTiles = within(screen.getByRole('group', { name: 'Marketing roster view' }));
+    expect(viewTiles.getByRole('button', { name: 'All Employees' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.queryByRole('combobox', { name: 'Marketing roster view' })).not.toBeInTheDocument();
+    fireEvent.click(viewTiles.getByRole('button', { name: 'Top / Bottom' }));
     expect(screen.getByRole('heading', { name: 'Top & Bottom Performers' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Performance Analysis' })).toBeInTheDocument();
     expect(screen.getByText('Unchanged')).toBeInTheDocument();
@@ -202,14 +207,14 @@ describe('MarketingDashboardContent', () => {
     expect(screen.getAllByText('June 2026').length).toBeGreaterThan(0);
     expect(screen.getByText('No additional employees are available for this group.')).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Employee Performance' })).not.toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText('Marketing roster view'), { target: { value: 'all' } });
+    fireEvent.click(viewTiles.getByRole('button', { name: 'All Employees' }));
     expect(screen.getByRole('heading', { name: 'Employee Performance' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Top & Bottom Performers' })).not.toBeInTheDocument();
     expect(screen.getByRole('columnheader', { name: 'Root Cause' })).toBeInTheDocument();
     expect(screen.getByRole('columnheader', { name: 'Actions' })).toBeInTheDocument();
     expect(screen.getByText('No gap')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Open actions for Test Employee' })).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText('Marketing roster view'), { target: { value: 'top_bottom' } });
+    fireEvent.click(viewTiles.getByRole('button', { name: 'Top / Bottom' }));
     expect(screen.getByRole('heading', { name: 'Top & Bottom Performers' })).toBeInTheDocument();
     expect(screen.getByTestId('location')).toHaveTextContent('position_view=Media+Buyer');
     fireEvent.click(screen.getByRole('button', { name: 'Back to Marketing Overview' }));
@@ -252,7 +257,7 @@ describe('MarketingDashboardContent', () => {
       role: 'Manager',
     });
 
-    fireEvent.change(screen.getByLabelText('Marketing roster view'), { target: { value: 'all' } });
+    expect(within(screen.getByRole('group', { name: 'Marketing roster view' })).getByRole('button', { name: 'All Employees' })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByText('Media Buyer KPI (main issue)')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Open actions for Test Employee' }));
 

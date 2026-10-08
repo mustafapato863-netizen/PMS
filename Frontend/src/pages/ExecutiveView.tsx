@@ -13,6 +13,7 @@ import { useUserRole } from '../context/RoleContext';
 import InsightsHeader, { type FilterOption } from '../components/insights/overview/InsightsHeader';
 import { ExecutiveViewSkeleton } from '../components/common/SkeletonLoader';
 import ExecutiveDashboard from '../components/executive/v1/ExecutiveDashboard';
+import SummaryScopeWelcome from '../components/executive/v1/SummaryScopeWelcome';
 import { ExecutiveEmptyState, ReadOnlyBadge } from '../components/executive/v1/ExecutiveStates';
 import { canEditActionFollowUp } from '../components/actions/dueBadge';
 import {
@@ -24,7 +25,7 @@ import {
   isCorporateReadOnly,
 } from '../lib/access';
 import { MONTHS, SUMMARY_BRANCHES, SUMMARY_LEVELS } from '../features/executive/compose';
-import { currentPeriodKey, periodOptionsFor, subtitleFor } from '../features/executive/viewModel';
+import { currentPeriodKey, periodOptionsFor, subtitleFor, summaryViewLabel } from '../features/executive/viewModel';
 import { useExecutiveSummary, type ExecutiveFilterState } from '../features/executive/useExecutiveSummary';
 import type { ExecutiveView as ExecutiveViewKind } from '../features/executive/types';
 import { teamBelongsToFunction, teamOptionsFor } from '../features/insights/filterCascade';
@@ -95,7 +96,8 @@ function ExecutiveSummaryPage({ view }: { view: Exclude<ExecutiveViewKind, 'func
   const header = (
     <InsightsHeader
       title="Executive Summary"
-      subtitle={subtitleFor(summary, view)}
+      subtitle={subtitleFor(summary, view, summaryViewLabel(role, view))}
+      intro={<SummaryScopeWelcome role={role} user={currentUser} scope={summary?.scope} />}
       titleBadge={managerial
         ? <span className="rounded-full bg-[var(--insights-accent-tag)] px-[8px] py-[2px] text-[11px] font-semibold text-[var(--insights-accent-text)]">Team scope</span>
         : isCorporateReadOnly(role) ? <ReadOnlyBadge /> : null}

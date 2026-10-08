@@ -115,6 +115,7 @@ export default function InsightsHeader({
   title = 'Insights',
   subtitle = 'Understand what happened, why it happened, and what to do next.',
   titleBadge,
+  intro,
   locked,
   functionSlot,
   additionalFilters,
@@ -151,6 +152,8 @@ export default function InsightsHeader({
   title?: string;
   subtitle?: ReactNode;
   titleBadge?: ReactNode;
+  /** Optional role/scope explanation under the reporting-period subtitle. */
+  intro?: ReactNode;
   locked?: { region?: boolean; branch?: boolean; function?: boolean; team?: boolean };
   /** Replaces the Functions dropdown (Function Viewer's function switcher). */
   functionSlot?: ReactNode;
@@ -185,6 +188,7 @@ export default function InsightsHeader({
           {titleBadge}
         </div>
         <p className="text-[14px] font-normal text-[var(--text-secondary)]">{subtitle}</p>
+        {intro}
       </div>
       <ResponsiveFilters activeCount={activeCount} clearableCount={clearableCount} onClear={onClearFilters} label={groupLabel}>
         <div className="responsive-filter-content responsive-filter-content--insights" role="group" aria-label={groupLabel}>
