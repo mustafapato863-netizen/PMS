@@ -487,7 +487,9 @@ def get_monthly_records(
             return StandardResponse(success=False, message="Failed to fetch performance records.")
 
     scope = require_authenticated_scope(db, request)
-    _require_scoped_read_api(scope)
+    # The summary roster uses bounded records even with legacy dashboards.
+    # Dashboard rollout eligibility must not disable this shared read contract;
+    # authentication and repository grants still apply before paging/caching.
     data = PerformanceDashboardReadService(db, scope).records_page(
         period=period,
         team=team,

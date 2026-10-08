@@ -24,8 +24,8 @@ The following properties configure the FastAPI application server, database mapp
 | `REDIS_RETRY_INTERVAL_SECONDS` | Decimal seconds | `30` | Cooldown before retrying an unavailable Redis service. |
 | `PMS_REALTIME_MODE` | Enum String | `disabled` on Vercel; `in_process` elsewhere | Enables process-local Socket.IO only on a compatible single-process runtime. |
 | `PMS_REPORT_CENTER_ENABLED` | Boolean | `true` locally; explicitly staged in hosted environments | Enables the role-adaptive Reports Center routes. Keep the legacy report workspace available for rollback during the first release. |
-| `PMS_SCOPED_PERFORMANCE_API_ENABLED` | Boolean | `false` | Enables the bounded, scope-aware performance summary/records/history routes. Roll out only with the matching frontend flag. |
-| `PMS_SCOPED_PERFORMANCE_ALLOWED_ROLES` | CSV roles | unset | Optional allow-list for scoped performance reads, for example `Admin,Manager,Executive`. |
+| `PMS_SCOPED_PERFORMANCE_API_ENABLED` | Boolean | `false` | Enables the new performance summary/history dashboard paths. Roll out only with the matching frontend flag. The authenticated, scope-enforced bounded records roster is always available, including with legacy dashboards. |
+| `PMS_SCOPED_PERFORMANCE_ALLOWED_ROLES` | CSV roles | unset | Optional rollout allow-list for new summary/history dashboard paths, for example `Admin,Manager,Executive`. Does not control the shared bounded records roster; server grants always limit that read. |
 | `JWT_SECRET` | String | N/A | Encryption key used to sign session cookies and JWTs. |
 | `JWT_ALGORITHM` | String | `HS256` | Encryption token hashing format. |
 | `JWT_EXPIRE_MINUTES` | Integer | `10` | Short-lived bearer access-token lifespan in minutes. |

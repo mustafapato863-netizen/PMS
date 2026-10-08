@@ -34,9 +34,12 @@ The user confirmed that Dokploy runs `alembic upgrade head` before starting new
 backend code. The required head is `c8d3f6a1b205`, following `b7e2d6a9f104`.
 No production data-fix script or database downgrade was run.
 
-The scoped roster endpoint requires `PMS_SCOPED_PERFORMANCE_API_ENABLED=true` on
-the deployed backend. Production feature flags and authenticated user workflows
-must be verified independently; local checks are not production certification.
+The shared bounded roster endpoint is authenticated and scope-enforced regardless
+of `PMS_SCOPED_PERFORMANCE_API_ENABLED`. That flag still controls the new dashboard
+summary/history paths. Deploy the backend roster compatibility fix along with its
+frontend before verifying employee availability. Production feature flags and
+authenticated user workflows must be verified independently; local checks are
+not production certification.
 
 The separate Hostinger GitHub deployment workflow has no configured production
 secrets/variables. This is independent of the existing Vercel/Dokploy deployment.
@@ -44,3 +47,19 @@ secrets/variables. This is independent of the existing Vercel/Dokploy deployment
 Known unrelated local limitations: the optional executive-summary endpoint uses
 its fallback; the aggregate RCM team-actions endpoint returns 404. Neither was
 treated as a successful API response or corrected by this release.
+
+## Local follow-up: employee availability and KPI pagination
+
+- The bounded records route is available with dashboard rollout disabled, while
+  retaining authenticated server scopes, cursor limits and scope-specific caches.
+- Role/API regressions: 132 passed, covering director filter tampering and revoked
+  grants with rollout enabled/disabled, Manager level isolation, Employee self-only
+  reads, global roles, anonymous denial and bounded pagination.
+- Full frontend: 615 passed (84 files). After correcting mobile employee grid
+  overflow, the relevant component/page suite passed 54 checks.
+- Typecheck, lint, production build and bundle budgets passed. Existing large
+  entry-chunk warning remains.
+- Local Chromium: employees and KPIs show eight rows per page; switching pages
+  uses cached data. Verified 1440/768/375px with no page overflow or JS errors.
+- No production release in this follow-up. Both backend and frontend changes must
+  be published before these fixes can be verified on the live system.

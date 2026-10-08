@@ -1,4 +1,5 @@
 import uuid
+from urllib.parse import urlencode
 
 import pytest
 from sqlalchemy import create_engine
@@ -169,6 +170,74 @@ def test_function_viewer_http_scope_tampering_and_revocation(monkeypatch):
         db.close()
 
 
+@pytest.mark.parametrize("role,linked_employee,assigned_level,expected", [
+    ("Admin", None, None, {"EMP-A", "EMP-B", "EMP-C"}),
+    ("Performance Team", None, None, {"EMP-A", "EMP-B", "EMP-C"}),
+    ("Manager", None, "Employee", {"EMP-A", "EMP-B"}),
+    ("Manager", None, "Corporate", set()),
+    ("Employee", "EMP-B", None, {"EMP-B"}),
+    ("Employee", None, None, set()),
+])
+def test_bounded_roster_works_without_dashboard_rollout_and_respects_scope(role, linked_employee, assigned_level, expected, monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from api.middleware.auth_middleware import AuthMiddleware
+    from api.routers.performance import router
+    from config import settings
+    from config.database import get_db
+    from models.models import UserTeamAssignment
+    from services.auth_service import AuthenticationService
+    from services.cache_service import CacheService
+
+    db = _session()
+    try:
+        _seed(db)
+        user = AuthenticationService.create_user(db, "roster_test", "roster@test.com", "SecurePassword123!", role)
+        user.employee_id = linked_employee
+        if role == "Manager":
+            inbound = db.query(Team).filter(Team.name == "Inbound").one()
+            db.add(UserTeamAssignment(user_id=user.id, team_id=inbound.id, performance_level=assigned_level, assigned_by="test"))
+        db.commit()
+        headers = {"Authorization": f"Bearer {AuthenticationService.authenticate_user(db, user.username, 'SecurePassword123!')}", "X-User-Role": "Admin"}
+        monkeypatch.setattr(settings, "PMS_SCOPED_PERFORMANCE_API_ENABLED", False)
+        monkeypatch.setattr(settings, "PMS_SCOPED_PERFORMANCE_ALLOWED_ROLES", ("Admin",))
+        monkeypatch.setattr("api.middleware.auth_middleware._legacy_access_allowed", lambda: False)
+        monkeypatch.setattr(CacheService, "get_json", lambda *args, **kwargs: None)
+        monkeypatch.setattr(CacheService, "set_json", lambda *args, **kwargs: None)
+        app = FastAPI()
+        app.add_middleware(AuthMiddleware)
+
+        def override_db():
+            yield db
+
+        app.dependency_overrides[get_db] = override_db
+        app.include_router(router, prefix="/api")
+        with TestClient(app) as client:
+            url = "/api/performance/records?period=2026-06&sort=score_asc&page_size=1&include_total=true"
+            assert client.get(url).status_code == 401
+            assert client.get(url, headers={"X-User-Role": "Admin"}).status_code == 401
+            seen = set()
+            cursor = None
+            while True:
+                page_url = f"{url}&{urlencode({'cursor': cursor})}" if cursor else url
+                result = client.get(page_url, headers=headers)
+                assert result.status_code == 200
+                data = result.json()["data"]
+                assert len(data["items"]) <= 1
+                assert data["total"] == len(expected)
+                seen.update(row["employee_id"] for row in data["items"])
+                if not data["has_more"]:
+                    break
+                assert data["next_cursor"] and data["next_cursor"] != cursor
+                cursor = data["next_cursor"]
+            assert seen == expected
+            below = client.get(f"{url}&score_lt=90", headers=headers).json()["data"]
+            assert {row["employee_id"] for row in below["items"]} == expected.intersection({"EMP-B"})
+            assert client.get("/api/performance/summary?period=2026-06", headers=headers).status_code == 404
+    finally:
+        db.close()
+
+
 def test_records_use_stable_cursor_pages_and_keep_scope_out_of_results():
     db = _session()
     try:
@@ -262,7 +331,8 @@ def test_invalid_cursor_and_unbounded_history_are_rejected():
     ("Regional Manager", "region_code", "EGY", "region=UAE", {"EMP-A", "EMP-B", "EMP-C"}),
     ("Function Director", "function_name", "Call Center", "team=Marketing", {"EMP-A", "EMP-B", "EMP-C"}),
 ])
-def test_director_http_reads_intersect_grants_and_revocation(role, scope_field, scope_value, tampered_filter, expected, monkeypatch):
+@pytest.mark.parametrize("rollout_enabled", [True, False])
+def test_director_http_reads_intersect_grants_and_revocation(role, scope_field, scope_value, tampered_filter, expected, rollout_enabled, monkeypatch):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
     from api.middleware.auth_middleware import AuthMiddleware
@@ -288,7 +358,7 @@ def test_director_http_reads_intersect_grants_and_revocation(role, scope_field, 
         db.add(assignment)
         db.commit()
         headers = {"Authorization": f"Bearer {AuthenticationService.authenticate_user(db, user.username, 'SecurePassword123!')}", "X-User-Role": "Admin"}
-        monkeypatch.setattr(settings, "PMS_SCOPED_PERFORMANCE_API_ENABLED", True)
+        monkeypatch.setattr(settings, "PMS_SCOPED_PERFORMANCE_API_ENABLED", rollout_enabled)
         monkeypatch.setattr(settings, "PMS_SCOPED_PERFORMANCE_ALLOWED_ROLES", ("Admin",))
         monkeypatch.setattr("api.middleware.auth_middleware._legacy_access_allowed", lambda: False)
         cache = {}
@@ -307,18 +377,24 @@ def test_director_http_reads_intersect_grants_and_revocation(role, scope_field, 
             result = client.get(url, headers=headers)
             assert result.status_code == 200
             assert {row["employee_id"] for row in result.json()["data"]["items"]} == expected
+            assert client.get(url).status_code == 401
+            assert client.get(f"{url}&page_size=101", headers=headers).status_code == 422
             team_page = client.get("/api/performance/team/Inbound", headers=headers)
             assert team_page.status_code == 200
             assert team_page.json()["data"]
             assert client.get(f"{url}&{tampered_filter}", headers=headers).json()["data"]["items"] == []
             assert client.get("/api/performance/employee/EMP-H?period_end=2026-06", headers=headers).json()["data"] == []
             summary_url = "/api/performance/summary?period=2026-06"
-            assert client.get(summary_url, headers=headers).json()["data"]["current"]["total_agents"] == len(expected)
+            if rollout_enabled:
+                assert client.get(summary_url, headers=headers).json()["data"]["current"]["total_agents"] == len(expected)
+            else:
+                assert client.get(summary_url, headers=headers).status_code == 404
             assert cache
             db.delete(assignment)
             db.commit()
             assert client.get(url, headers=headers).json()["data"]["items"] == []
-            assert client.get(summary_url, headers=headers).json()["data"]["current"]["total_agents"] == 0
+            if rollout_enabled:
+                assert client.get(summary_url, headers=headers).json()["data"]["current"]["total_agents"] == 0
             assert client.get("/api/performance/catalog", headers=headers).json()["data"]["scopes"] == []
     finally:
         db.close()
