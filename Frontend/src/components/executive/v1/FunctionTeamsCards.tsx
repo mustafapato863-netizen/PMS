@@ -3,15 +3,36 @@ import { Link, useSearchParams } from 'react-router-dom';
 import type { ExecutiveTeam, ExecutivePeriod } from '../../../features/executive/types';
 import { arrow, fmtKpiValue, fmtScore, fmtSigned, isLowerBetter, scoreTone } from '../../../features/executive/format';
 import { teamPath } from '../../../features/executive/functions';
+import { MONTHS } from '../../../features/executive/compose';
 import { ExecCard, ExecCardHeader, Footnote, GradeSquare, ScoreText, SoftEmpty, Sparkline, StatusPill, ToneText } from './ExecPrimitives';
 import { FLAG_LABEL, FLAG_ORDER } from './execModel';
 
 function leaderboardPath(team: ExecutiveTeam, params: URLSearchParams) {
-  if (!team.position) return teamPath(team.team);
-  const next = new URLSearchParams(params);
-  next.delete('team');
-  next.set('position', team.position);
-  return `/function-summary/marketing?${next.toString()}`;
+  // Summary and sheet routes use different date/level keys. Carry only context,
+  // never stale summary team, sub-team, function or position selections.
+  const next = new URLSearchParams();
+  for (const key of ['month', 'year', 'region', 'branch', 'location']) {
+    const value = params.get(key);
+    if (value) next.set(key, value);
+  }
+  const period = params.get('period');
+  if (period && /^\d{4}-(0[1-9]|1[0-2])$/.test(period)) {
+    const [year, month] = period.split('-');
+    next.set('year', year);
+    next.set('month', MONTHS[Number(month) - 1]);
+  }
+  const level = params.get('level') || params.get('performance_level');
+  if (level && ['Employee', 'Managerial', 'Corporate'].includes(level)) {
+    next.set('performance_level', level);
+  }
+  const sourceTeam = team.source_team || (team.position ? 'Marketing' : team.team);
+  if (team.position) {
+    const employeeMarketingSheet = sourceTeam.toLowerCase() === 'marketing'
+      && level !== 'Managerial' && level !== 'Corporate';
+    next.set(employeeMarketingSheet ? 'position_view' : 'position', team.position);
+  }
+  const query = next.toString();
+  return `${teamPath(sourceTeam)}${query ? `?${query}` : ''}`;
 }
 
 /** Function Summary (Figma 48:3): teams ranked by score. */
@@ -51,7 +72,7 @@ export function TeamLeaderboardCard({ teams, fn, effective, previous }: { teams:
           ))}
         </div>
       ) : <SoftEmpty>No teams with data in this function.</SoftEmpty>}
-      <Footnote>{roleMode ? 'Click a role to see its KPIs and people in the shared Marketing summary.' : 'Click a team to open its Team Dashboard (read-only for Function Viewers).'}</Footnote>
+      <Footnote>{roleMode ? 'Click a role to open its own dashboard, KPIs and people.' : 'Click a team to open its Team Dashboard (read-only for Function Viewers).'}</Footnote>
     </ExecCard>
   );
 }
