@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { StrictMode, type ReactNode } from 'react';
+import { StrictMode, useState, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ThemeProvider } from '../../context/ThemeContext';
@@ -456,5 +456,117 @@ describe('Sidebar query carry-over (QA BUG-1b)', () => {
 
     expect(screen.getByRole('link', { name: 'Executive Summary' })).toHaveAttribute('href', '/executive?month=June');
     expect(screen.getByRole('link', { name: 'Reports' })).toHaveAttribute('href', '/reports?month=June');
+  });
+});
+
+function ResponsiveSidebarHarness() {
+  const [open, setOpen] = useState(false);
+  return <><button onClick={() => setOpen(true)}>Launch navigation</button><Sidebar isOpen={open} setIsOpen={setOpen} isDesktop={false} /></>;
+}
+
+describe('responsive dock and navigation drawer', () => {
+  beforeEach(() => {
+    authState.user = ADMIN_USER;
+    catalogState.scopes = DEFAULT_SCOPES;
+    mockTeamConfigFetch();
+  });
+
+  const renderResponsive = (path = '/executive') => render(
+    <MemoryRouter initialEntries={[path]}><ThemeProvider><ResponsiveSidebarHarness /></ThemeProvider></MemoryRouter>,
+    { wrapper: QueryWrapper },
+  );
+
+  it('shows compact permitted shortcuts and keeps the closed drawer out of the accessibility tree', () => {
+    renderResponsive('/team/coding?period=2026-08&team=Coding&performance_level=Employee');
+    const dock = screen.getByRole('navigation', { name: 'Quick navigation' });
+    expect(within(dock).getByRole('link', { name: 'Go to Summary' })).toHaveAttribute('href', '/executive?period=2026-08');
+    expect(within(dock).getByRole('link', { name: 'Go to Teams' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.queryByRole('complementary')).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('opens the full menu, focuses close, locks scrolling and restores focus after Escape', () => {
+    renderResponsive();
+    const opener = screen.getByRole('button', { name: 'Launch navigation' });
+    opener.focus();
+    fireEvent.click(opener);
+    expect(screen.getByRole('dialog', { name: 'Navigation menu' })).toHaveAttribute('aria-modal', 'true');
+    expect(screen.getByRole('button', { name: 'Close navigation sidebar' })).toHaveFocus();
+    expect(document.body.style.overflow).toBe('hidden');
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(document.body.style.overflow).toBe('');
+    expect(opener).toHaveFocus();
+  });
+
+  it('closes from the backdrop and retains all grouped team links inside the drawer', () => {
+    renderResponsive();
+    const opener = screen.getByRole('button', { name: 'Open full navigation' });
+    opener.focus();
+    fireEvent.click(opener);
+    expect(screen.getByRole('link', { name: 'Executive Summary' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Employee' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss navigation menu' }));
+    expect(screen.getByRole('navigation', { name: 'Quick navigation' })).toBeInTheDocument();
+    expect(opener).toHaveFocus();
+  });
+
+  it.each(['Branch Director', 'Regional Manager', 'Function Director'] as const)('does not expose workspaces in the %s dock', (role) => {
+    authState.user = { id: 'director', name: 'Director', username: 'director', role, accessible_branches: ['dubai'], accessible_regions: ['UAE'], accessible_functions: ['RCM'] };
+    renderResponsive('/team/coding?period=2026-08&branch=sharjah&region=EGY');
+    const dock = screen.getByRole('navigation', { name: 'Quick navigation' });
+    expect(within(dock).getAllByRole('link').filter((link) => !link.classList.contains('navigation-dock-tablet-only'))).toHaveLength(2);
+    const destination = within(dock).getByRole('link', { name: 'Go to Summary' }).getAttribute('href');
+    if (role === 'Branch Director') expect(destination).toContain('branch=dubai');
+    if (role === 'Regional Manager') expect(destination).toContain('region=UAE');
+    for (const page of ['Reports', 'Teams', 'Insights', 'Planning']) expect(within(dock).queryByRole('link', { name: `Go to ${page}` })).not.toBeInTheDocument();
+  });
+
+  it('keeps Employee shortcuts self-only', () => {
+    authState.user = { id: 'employee', name: 'Employee', username: 'employee', role: 'Employee', employee_id: 'E-100' };
+    renderResponsive('/employee/E-100');
+    const dock = screen.getByRole('navigation', { name: 'Quick navigation' });
+    expect(within(dock).getAllByRole('link')).toHaveLength(1);
+    expect(within(dock).getByRole('link', { name: 'Go to My profile' })).toHaveAttribute('href', '/employee/E-100');
+  });
+
+  it('adds all permitted workspaces and account on tablet, while keeping three mobile shortcuts', () => {
+    renderResponsive();
+    const dock = screen.getByRole('navigation', { name: 'Quick navigation' });
+    const links = within(dock).getAllByRole('link');
+    expect(links).toHaveLength(7);
+    expect(links.filter((link) => !link.classList.contains('navigation-dock-tablet-only'))).toHaveLength(3);
+    for (const label of ['Insights', 'Planning', 'Actions', 'Account']) {
+      expect(within(dock).getByRole('link', { name: `Go to ${label}` })).toHaveClass('navigation-dock-tablet-only');
+    }
+    expect(within(dock).getByRole('link', { name: 'Go to Actions' })).toHaveAttribute('href', '/corrective-actions');
+  });
+
+  it('adds direct authorized team shortcuts for scoped directors only on tablet', () => {
+    authState.user = { id: 'director', name: 'Director', username: 'director', role: 'Branch Director', accessible_branches: ['dubai'] };
+    catalogState.scopes = [
+      { team: 'Coding', region: 'UAE', performance_level: 'Corporate', position: '' },
+      { team: 'Coding', region: 'UAE', performance_level: 'Employee', position: '' },
+      { team: 'Submission', region: 'UAE', performance_level: 'Employee', position: '' },
+    ];
+    renderResponsive('/executive?period=2026-08&branch=sharjah');
+    const dock = screen.getByRole('navigation', { name: 'Quick navigation' });
+    const coding = within(dock).getByRole('link', { name: 'Go to Coding' });
+    expect(coding).toHaveClass('navigation-dock-tablet-only');
+    const destination = new URL(coding.getAttribute('href')!, 'http://localhost');
+    expect(destination.pathname).toBe('/team/coding');
+    expect(destination.searchParams.get('period')).toBe('2026-08');
+    expect(destination.searchParams.get('branch')).toBe('dubai');
+    expect(destination.searchParams.get('performance_level')).toBe('Employee');
+    expect(within(dock).getByRole('link', { name: 'Go to Submission' })).toBeInTheDocument();
+    expect(within(dock).queryByRole('link', { name: 'Go to Marketing' })).not.toBeInTheDocument();
+  });
+
+  it('keeps legacy Function Viewer shortcuts within their read-only pages', () => {
+    authState.user = { id: 'viewer', name: 'Viewer', username: 'viewer', role: 'Function Viewer', accessible_functions: ['RCM'] };
+    renderResponsive('/function-summary/rcm');
+    const dock = screen.getByRole('navigation', { name: 'Quick navigation' });
+    expect(within(dock).getByRole('link', { name: 'Go to Functions' })).toHaveAttribute('href', '/function-summary');
+    expect(within(dock).queryByRole('link', { name: 'Go to My profile' })).not.toBeInTheDocument();
   });
 });
