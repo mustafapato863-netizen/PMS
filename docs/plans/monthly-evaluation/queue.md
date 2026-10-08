@@ -8,7 +8,7 @@ Policy D-001 approved by user: Admin-only for ALL Evaluation Settings stages. Se
 
 | Phase | Brief | State | Dependency / gate |
 |---|---|---|---|
-| 0 Audit and golden baseline | phase-0-brief.md | Source/test slice reviewed; partial, draft PR pending | Source baseline 2af9eb1; golden/rollout gates remain |
+| 0 Audit and golden baseline | phase-0-brief.md | Source/test slice reviewed; partial, draft PR #24 | a68898f; CI 37831220705 passed; golden/rollout gates remain |
 | 1 Schema/evidence | phase-1-brief.md | Queued, not dispatched | Accepted Phase 0; verified schema and business defaults |
 | 2 Catalog/resolver | phase-2-brief.md | Queued, not dispatched | Accepted Phase 1 |
 | 3 Lifecycle API | phase-3-brief.md | Queued, not dispatched | Accepted Phase 2 |
@@ -26,3 +26,7 @@ No phase is accepted based only on the implementer's success report. Track sessi
 Phase 0 run 1 stopped at its 100-turn limit (exit 1), leaving 20 characterization tests and a source inventory. It is NOT accepted. Codex independently ran tests and supplied review/local schema evidence. A specific-session continuation with phase-0-rework-brief.md will finish the audit and tighten baseline assertions; no downstream phase dispatched.
 
 Run 2 completed on the same session/model/effort. Codex reviewed the full report, corrected factual wording, and independently reran 64 passing targeted tests (1 existing local-dataset skip). Full local suite had 1064 passing tests, 1 existing external Marketing workbook failure reproduced on untouched main, 1 skip. No full release green claim. Draft PR base will be codex/monthly-evaluation-integration; main stays at 2af9eb1. Further phase dispatch is gated on reviewed contracts and unresolved scoring decisions, not assumed from CLI exit 0.
+
+Draft PR: https://github.com/mustafapato863-netizen/PMS/pull/24. Reviewed source/test commit: a68898f18ea1051316590ef69fb32d9e25a08b12. CI 37831220705 completed successfully for backend, frontend and containers. No main merge/deployment or GitLab main push.
+
+User D-002 approved: block unsupported target/direction changes temporarily; allow weight-only changes with validated achievement. See approved-decisions.md. Foundation can proceed independently of unsupported formula activation; do not label remaining real-workbook golden/release gates passed.
