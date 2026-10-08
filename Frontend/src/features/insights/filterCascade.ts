@@ -15,10 +15,9 @@ import {
  * team; its old function value remains supported for legacy scopes.
  * A function is hidden only when the
  * current option scope has none of its teams. The backend (PR #14) may list
- * more `options.functions` (standalone teams such as Sales or CSR are their
- * own function there); those are never shown here.
+ * standalone teams such as Sales, CSR and Pharmacy as independent functions.
  */
-export const INSIGHT_FUNCTIONS = ['Call Center', 'RCM', 'Marketing'] as const;
+export const INSIGHT_FUNCTIONS = ['Call Center', 'RCM', 'Marketing', 'Sales', 'CSR', 'Pharmacy'] as const;
 
 /** `options.team_functions` from PR #14: source team name → every function it rolls up into. */
 export type TeamFunctionMap = Record<string, string[]>;
@@ -102,11 +101,11 @@ export function teamOptionsFor(apiTeams: string[], teamFunction?: string, teamFu
 }
 
 /**
- * The fixed four functions, in fixed order, minus any with no data in scope.
+ * Supported functions, in fixed order, minus any with no data in scope.
  *
  * With PR #14 this is `options.functions` (computed ignoring both the team and
  * the function selection, so the other functions stay listed and the user can
- * switch directly between them) intersected with the fixed four. It must not
+ * switch directly between them) intersected with supported names. It must not
  * be derived from `options.teams`: since PR #17 sends `function=`, the backend
  * narrows `teams` to the selected function (QA BUG-5). Older APIs without
  * `options.functions` fall back to the functions that have a team in

@@ -80,6 +80,7 @@ def test_export_route_passes_marketing_filters_and_builds_stable_filename(monkey
         "year": 2026,
         "position": "Media Buyer",
         "region": "EGY",
+        "scope": {"role": "Admin"},
     }
     assert response.headers["content-disposition"] == (
         "attachment; filename=Marketing_Media_Buyer_2026_June.xlsx"

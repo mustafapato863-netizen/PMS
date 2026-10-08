@@ -133,13 +133,13 @@ describe('Function Summary routing and scope', () => {
     expect(state.lastArgs).toMatchObject({ view: 'function', functionName: 'Pre-Approvals', accessibleFunctions: ['RCM', 'Pre-Approvals'] });
   });
 
-  it('lets Admin open any of the four functions', () => {
+  it('lets Admin open every current function', () => {
     state.role = 'Admin';
     state.user = { id: 'a1', name: 'Admin', role: 'Admin', accessible_teams: [] };
     state.summary = build({ role: 'Admin', functionName: 'Marketing' });
     renderAt('/function-summary/marketing');
     expect(screen.getByTestId('location')).toHaveTextContent('/function-summary/marketing');
-    expect(screen.getAllByRole('radio').map((radio) => radio.textContent)).toEqual(['Call Center', 'RCM', 'Marketing']);
+    expect(screen.getAllByRole('radio').map((radio) => radio.textContent)).toEqual(['Call Center', 'RCM', 'Marketing', 'Sales', 'CSR', 'Pharmacy']);
     expect(screen.queryByText('Read-only')).not.toBeInTheDocument();
   });
 

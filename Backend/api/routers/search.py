@@ -5,6 +5,7 @@ from api.dependencies import get_current_user_scope, require_authenticated_scope
 from config.database import get_db
 from models.schemas import StandardResponse
 from services.employee_directory_service import EmployeeDirectoryService
+from utils.report_scope import FUNCTION_SCOPED_ROLES, GLOBAL_DATA_ROLES, SELF_SCOPED_ROLES, user_can_access_team_level
 
 
 router = APIRouter(prefix="/search", tags=["Search"])
@@ -25,10 +26,12 @@ def global_search(
     query = q.strip().lower()
     role = scope.get("role")
 
-    if role in {"Admin", "General Manager", "Executive"} or scope.get("has_unrestricted_team_access"):
+    if role in GLOBAL_DATA_ROLES or (role == "Manager" and scope.get("has_unrestricted_team_access")):
         allowed_teams = list(dict.fromkeys(scope.get("active_team_names", [])))
     elif role == "Manager":
         allowed_teams = list(dict.fromkeys(scope.get("accessible_teams", [])))
+    elif role in FUNCTION_SCOPED_ROLES | {"Regional Manager", "Branch Director"}:
+        allowed_teams = list(dict.fromkeys(row["team"] for row in EmployeeDirectoryService(db).list(scope=scope)))
     else:
         allowed_teams = []
 
@@ -43,20 +46,21 @@ def global_search(
 
     employees = []
     if query:
-        all_employees = EmployeeDirectoryService(db).list(name=query)
-        if role in {"Admin", "General Manager", "Manager", "Executive"}:
+        all_employees = EmployeeDirectoryService(db).list(name=query, scope=scope)
+        if role == "Manager":
             visible = [
                 employee for employee in all_employees
-                if employee["status"] == "Active" and employee["team"] in allowed_teams
+                if employee["status"] == "Active" and user_can_access_team_level(
+                    scope, employee["team"], employee.get("performance_level", "Employee"))
             ]
-        elif role == "Agent":
+        elif role in SELF_SCOPED_ROLES:
             self_id = str(scope.get("employee_id") or scope.get("user_id") or "")
             visible = [
                 employee for employee in all_employees
                 if employee["status"] == "Active" and str(employee["id"]) == self_id
             ]
         else:
-            visible = []
+            visible = all_employees
 
         employees = [
             {

@@ -41,6 +41,7 @@ from services.user_profile_service import (
     UserProfileService,
 )
 from utils.performance_levels import PERFORMANCE_LEVELS
+from utils.report_scope import FUNCTION_VIEWER_FUNCTIONS
 from utils.team_identity import logical_team_name
 
 logger = logging.getLogger(__name__)

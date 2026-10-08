@@ -40,7 +40,7 @@ export function executiveFunctionForTeam(team: string | null | undefined, teamFu
   // Explicit rules first so a backend map listing a team under both functions cannot override them.
   if (normalizeTeamIdentity(team) === normalizeTeamIdentity(IP_OFFSHORE_TEAM)) return 'RCM';
   if (isPreApprovalsSubTeam(team) || teamBelongsToFunction(team, 'Pre-Approvals', teamFunctions)) return 'RCM';
-  for (const name of ['Call Center', 'RCM', 'Marketing'] as const) {
+  for (const name of EXECUTIVE_FUNCTIONS) {
     if (teamBelongsToFunction(team, name, teamFunctions)) return name;
   }
   return null;
@@ -57,6 +57,9 @@ const SLUGS: Record<ExecutiveFunction, string> = {
   RCM: 'rcm',
   'Pre-Approvals': 'pre-approvals',
   Marketing: 'marketing',
+  Sales: 'sales',
+  CSR: 'csr',
+  Pharmacy: 'pharmacy',
 };
 
 export function functionSlug(name: ExecutiveFunction): string {

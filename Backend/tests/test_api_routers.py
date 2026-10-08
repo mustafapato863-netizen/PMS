@@ -3,7 +3,7 @@ Integration tests for the current API router contracts.
 """
 
 from datetime import datetime
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 from uuid import uuid4
 
 import pytest
@@ -155,7 +155,8 @@ class TestEmployeeRouter:
             data = response.json()["data"]
             assert data["employee"]["id"] == "EMP001"
             assert [row["month"] for row in data["performance_history"]] == ["January", "June"]
-            mock_dashboard_service.return_value.list_records.assert_called_once_with(employee_id="EMP001")
+            mock_dashboard_service.return_value.list_records.assert_called_once_with(employee_id="EMP001", scope=ANY)
+            assert mock_dashboard_service.return_value.list_records.call_args.kwargs["scope"]["role"] == "Viewer"
             mock_action_service.return_value.get_history.assert_called_once()
             history_args = mock_action_service.return_value.get_history.call_args.args
             assert history_args[0] == "EMP001"
@@ -208,7 +209,7 @@ class TestEmployeeRouter:
             assert data["success"] is True
             assert data["data"]["name"] == "Jane Doe"
             mock_service.return_value.update.assert_called_once_with(
-                "EMP001", name="Jane Doe", team=None, region=None,
+                "EMP001", name="Jane Doe", team=None, region=None, scope=ANY,
             )
 
     def test_delete_employee(self):
@@ -312,13 +313,19 @@ class TestPerformanceRouter:
             assert data[0]["team"] == "Sales"
             assert data[0]["month"] == "January"
 
-    def test_get_employee_history(self):
+    def test_get_employee_history(self, monkeypatch):
+        # This case tests the compatibility contract, not the rollout-enabled API.
+        monkeypatch.setattr("api.routers.performance.settings.PMS_SCOPED_PERFORMANCE_API_ENABLED", False)
         with patch("api.routers.performance.DashboardRecordService") as mock_service:
             mock_service.return_value.list_records.return_value = [_performance_record(employee_id="EMP001")]
 
             response = client.get("/api/performance/employee/EMP001")
             assert response.status_code == 200
             assert response.json()["data"][0]["employee_id"] == "EMP001"
+
+    def test_scoped_employee_history_requires_authentication(self, monkeypatch):
+        monkeypatch.setattr("api.routers.performance.settings.PMS_SCOPED_PERFORMANCE_API_ENABLED", True)
+        assert client.get("/api/performance/employee/EMP001").status_code == 401
 
     def test_get_team_yearly_records(self):
         with patch("api.routers.performance.DashboardRecordService") as mock_service:

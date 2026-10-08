@@ -90,12 +90,12 @@ describe('executive function membership (disjoint, Executive cards only)', () =>
     expect(leaf.hero.score).toBe(80);
   });
 
-  it('follows backend team_functions for CSR (not Call Center) and gives outside teams no card', () => {
-    expect(executiveFunctionForTeam('CSR', FIXTURE_TEAM_FUNCTIONS)).toBeNull();
-    expect(executiveFunctionForTeam('CSR')).toBeNull();
+  it('keeps CSR and Sales independent of Call Center and shared functions', () => {
+    expect(executiveFunctionForTeam('CSR', FIXTURE_TEAM_FUNCTIONS)).toBe('CSR');
+    expect(executiveFunctionForTeam('CSR')).toBe('CSR');
     expect(executiveFunctionForTeam('Inbound', FIXTURE_TEAM_FUNCTIONS)).toBe('Call Center');
     expect(executiveFunctionForTeam('Content', FIXTURE_TEAM_FUNCTIONS)).toBe('Marketing');
-    expect(executiveFunctionForTeam('Sales', FIXTURE_TEAM_FUNCTIONS)).toBeNull();
+    expect(executiveFunctionForTeam('Sales', FIXTURE_TEAM_FUNCTIONS)).toBe('Sales');
   });
 
   it('round-trips function slugs', () => {
@@ -104,19 +104,19 @@ describe('executive function membership (disjoint, Executive cards only)', () =>
     expect(functionFromSlug('nope')).toBeNull();
   });
 
-  it('builds one card per function with disjoint teams; CSR counts in the company score only', () => {
+  it('builds disjoint function cards including standalone CSR', () => {
     const summary = compose();
-    expect(summary.functions.map((card) => card.function)).toEqual(['Call Center', 'RCM', 'Marketing']);
+    expect(summary.functions.map((card) => card.function)).toEqual(['Call Center', 'RCM', 'Marketing', 'CSR']);
     const rcm = summary.functions.find((card) => card.function === 'RCM')!;
     expect(rcm.teams).toContain('Pre-Approvals IP Offshore');
     expect(rcm.teams).toContain('Pre-Approvals IP Final');
     expect(summary.functions.some((card) => card.function === 'Pre-Approvals')).toBe(false);
     const cardTeams = summary.functions.flatMap((card) => card.teams);
     expect(new Set(cardTeams).size).toBe(cardTeams.length);
-    expect(cardTeams).not.toContain('CSR');
+    expect(cardTeams).toContain('CSR');
     expect(summary.teams.map((team) => team.team)).toContain('CSR');
     const cardHeadcount = summary.functions.reduce((sum, card) => sum + card.employees, 0);
-    expect(summary.hero.employees).toBe(cardHeadcount + 5);
+    expect(summary.hero.employees).toBe(cardHeadcount);
   });
 });
 

@@ -3,9 +3,9 @@ import { allowedFunctionsFor, functionFromSlug, functionSlug, isTeamInFunctions,
 import { FIXTURE_TEAM_FUNCTIONS } from './executive.fixture';
 
 describe('allowedFunctionsFor', () => {
-  it('gives Admin and General Manager all four functions regardless of accessible_functions', () => {
-    expect(allowedFunctionsFor('Admin', ['RCM'])).toEqual(['Call Center', 'RCM', 'Marketing']);
-    expect(allowedFunctionsFor('General Manager')).toHaveLength(3);
+  it('gives global roles all current functions regardless of accessible_functions', () => {
+    expect(allowedFunctionsFor('Admin', ['RCM'])).toEqual(['Call Center', 'RCM', 'Marketing', 'Sales', 'CSR', 'Pharmacy']);
+    expect(allowedFunctionsFor('General Manager')).toHaveLength(6);
   });
 
   it('limits a Function Viewer to accessible_functions, case-insensitively, in display order', () => {
@@ -16,6 +16,14 @@ describe('allowedFunctionsFor', () => {
     expect(allowedFunctionsFor('Function Viewer', ['Finance'])).toEqual([]);
     expect(allowedFunctionsFor('Function Viewer', [])).toEqual([]);
     expect(allowedFunctionsFor('Function Viewer')).toEqual([]);
+  });
+
+  it.each(['Sales', 'CSR', 'Pharmacy'] as const)('keeps %s grants isolated and round-trips their summary route', (name) => {
+    expect(allowedFunctionsFor('Function Director', [name])).toEqual([name]);
+    expect(isTeamInFunctions(name, [name])).toBe(true);
+    expect(isTeamInFunctions('Coding', [name])).toBe(false);
+    expect(isTeamInFunctions('Inbound', [name])).toBe(false);
+    expect(functionFromSlug(functionSlug(name))).toBe(name);
   });
 });
 

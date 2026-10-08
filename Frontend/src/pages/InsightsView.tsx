@@ -27,7 +27,6 @@ import EmployeeRowActions from '../components/team/EmployeeRowActions';
 import type { InsightFilters, InsightItem, InsightSeverity, InsightKpiOverview, InsightRoleSummary } from '../features/insights/types';
 import { useInsightsWorkspace } from '../hooks/api/useInsightsWorkspace';
 import {
-  INSIGHT_FUNCTIONS,
   apiTeamParam,
   functionOptionsFor,
   reconcileCascade,
@@ -308,7 +307,7 @@ function filtersFromUrl(params: URLSearchParams, { legacy = true }: { legacy?: b
   // Links shared before the Teams filter existed stored the Function filter
   // in `team`; read those as a function selection.
   const legacyFunction = legacy && !filters.teamFunction && filters.team
-    ? INSIGHT_FUNCTIONS.find((teamFunction) => teamFunction.toLowerCase() === filters.team?.toLowerCase())
+    ? ['Call Center', 'RCM', 'Marketing'].find((teamFunction) => teamFunction.toLowerCase() === filters.team?.toLowerCase())
     : undefined;
   if (legacyFunction) {
     filters.teamFunction = legacyFunction;

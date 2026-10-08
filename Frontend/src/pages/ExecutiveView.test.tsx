@@ -179,7 +179,7 @@ describe('Corporate sections', () => {
     renderAt();
     expect(screen.getByRole('heading', { name: /^June 2026 company performance is \d+\.\d% below target\.$/ })).toBeInTheDocument();
     expect(screen.getAllByRole('article').map((card) => card.getAttribute('aria-label'))).toEqual([
-      'Call Center function', 'RCM function', 'Marketing function',
+      'Call Center function', 'RCM function', 'Marketing function', 'CSR function',
     ]);
     expect(screen.getByRole('link', { name: 'View RCM function' })).toHaveAttribute('href', '/function-summary/rcm');
     expect(screen.getByRole('heading', { name: 'What moved the score vs May' })).toBeInTheDocument();

@@ -968,7 +968,7 @@ describe('InsightsView', () => {
     renderInsights();
 
     expect(screen.queryByRole('combobox', { name: 'Employee' })).not.toBeInTheDocument();
-    expect(optionValues('Function')).toEqual(['All functions', 'Call Center', 'RCM', 'Marketing']);
+    expect(optionValues('Function')).toEqual(['All functions', 'Call Center', 'RCM', 'Marketing', 'Sales']);
 
     await user.selectOptions(screen.getByRole('combobox', { name: 'Function' }), 'Call Center');
     expect(latestFilters.current).toMatchObject({ teamFunction: 'Call Center' });
@@ -1171,7 +1171,7 @@ describe('InsightsView', () => {
     it('keeps every function listed after one is selected, so the user can switch directly', async () => {
       const user = userEvent.setup();
       renderInsights();
-      const all = ['All functions', 'Call Center', 'RCM', 'Marketing'];
+      const all = ['All functions', 'Call Center', 'RCM', 'Marketing', 'Sales'];
 
       await user.selectOptions(screen.getByRole('combobox', { name: 'Function' }), 'Call Center');
       expect(optionValues('Function')).toEqual(all);
@@ -1196,7 +1196,7 @@ describe('InsightsView', () => {
       renderInsights();
       await user.selectOptions(screen.getByRole('combobox', { name: 'Function' }), 'RCM');
       await user.selectOptions(screen.getByRole('combobox', { name: 'Team' }), 'Pre-Approvals OP Final');
-      expect(optionValues('Function')).toEqual(['All functions', 'Call Center', 'RCM', 'Marketing']);
+      expect(optionValues('Function')).toEqual(['All functions', 'Call Center', 'RCM', 'Marketing', 'Sales']);
       expect(latestFilters.current).toMatchObject({ teamFunction: 'RCM', team: 'Pre-Approvals OP Final' });
 
       // Clearing the function retains the valid selected Pre-Approvals team.
@@ -1337,12 +1337,12 @@ describe('InsightsView', () => {
       period: '2026-06', region: 'EGY', function: 'Call Center', team: 'Inbound', performance_level: 'Employee',
     });
   });
-  it('keeps the Functions list fixed to the four functions even when PR #14 lists more', async () => {
+  it('lists supported standalone functions and hides functions without scoped data', async () => {
     const user = userEvent.setup();
     renderInsights();
-    // PR #14 options.functions also contains standalone teams (Sales); they are never shown.
-    expect(optionValues('Function')).toEqual(['All functions', 'Call Center', 'RCM', 'Marketing']);
-    expect(optionValues('Function')).not.toContain('Sales');
+    // Standalone functions are selectable when the API has authorized data.
+    expect(optionValues('Function')).toEqual(['All functions', 'Call Center', 'RCM', 'Marketing', 'Sales']);
+    expect(optionValues('Function')).toContain('Sales');
     // Hide-when-empty is kept: EGY has no Marketing or UAE Pre-Approvals teams.
     await user.selectOptions(screen.getByRole('combobox', { name: 'Region' }), 'EGY');
     expect(optionValues('Function')).toEqual(['All functions', 'Call Center', 'RCM']);
@@ -1417,7 +1417,7 @@ describe('InsightsView', () => {
       expect(latestFilters.current).toMatchObject({ periodKey: '2026-05' });
       expect(latestFilters.current.teamFunction).toBeUndefined();
       expect(latestFilters.current.team).toBeUndefined();
-      expect(optionValues('Function')).toEqual(['All functions', 'Marketing']);
+      expect(optionValues('Function')).toEqual(['All functions', 'Marketing', 'Pharmacy']);
       expect(optionValues('Team')).toEqual(['All teams', 'Marketing', 'Pharmacy']);
     });
 

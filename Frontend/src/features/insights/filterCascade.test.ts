@@ -27,8 +27,8 @@ describe('insights filter cascade', () => {
   });
 
   it('builds function and team options from the API team list', () => {
-    expect(functionOptionsFor({ teams: apiTeams })).toEqual(['Call Center', 'RCM', 'Marketing']);
-    expect(functionOptionsFor({ teams: ['Inbound', 'Sales'] })).toEqual(['Call Center']);
+    expect(functionOptionsFor({ teams: apiTeams })).toEqual(['Call Center', 'RCM', 'Marketing', 'Sales']);
+    expect(functionOptionsFor({ teams: ['Inbound', 'Sales'] })).toEqual(['Call Center', 'Sales']);
     expect(teamOptionsFor(apiTeams, 'Call Center')).toEqual(['Call Center', 'Inbound', 'Outbound']);
     expect(teamOptionsFor(apiTeams, 'RCM')).toEqual([
       'Coding', 'Pre-Approvals IP Final', 'Pre-Approvals IP Offshore', 'Pre-Approvals OP Final', 'RCM', 'Re-Submission',
@@ -81,14 +81,14 @@ describe('insights filter cascade', () => {
     expect(teamBelongsToFunction('Outbound', 'Call Center', teamFunctions)).toBe(true);
   });
 
-  it('keeps the visible functions fixed to the four, intersected with options.functions when present', () => {
+  it('includes supported standalone functions only when returned by scoped options', () => {
     const teamFunctions = { Inbound: ['Call Center'], Coding: ['RCM'], Sales: ['Sales'], Marketing: ['Marketing'] };
     expect(functionOptionsFor({
       teams: ['Inbound', 'Coding', 'Sales', 'Marketing'],
       functions: ['Call Center', 'Marketing', 'RCM', 'Sales'],
       team_functions: teamFunctions,
-    })).toEqual(['Call Center', 'RCM', 'Marketing']);
-    expect(functionOptionsFor({ teams: ['Sales'], functions: ['Sales'], team_functions: { Sales: ['Sales'] } })).toEqual([]);
+    })).toEqual(['Call Center', 'RCM', 'Marketing', 'Sales']);
+    expect(functionOptionsFor({ teams: ['Sales'], functions: ['Sales'], team_functions: { Sales: ['Sales'] } })).toEqual(['Sales']);
   });
 
   it('includes every UAE Pre-Approvals sub-team under Pre-Approvals with the helper fallback', () => {
@@ -141,7 +141,7 @@ describe('insights filter cascade against real PR #14 option responses', () => {
 
   it('narrows Pre-Approvals to all UAE sub-teams and lists them under RCM too', () => {
     const options = mutable(pr14Options.default);
-    expect(functionOptionsFor(options)).toEqual(['Call Center', 'RCM', 'Marketing']);
+    expect(functionOptionsFor(options)).toEqual(['Call Center', 'RCM', 'Marketing', 'Sales']);
     expect(options.functions).toContain('Sales');
     expect(teamOptionsFor(options.teams, 'Pre-Approvals', options.team_functions)).toEqual([
       'Pre-Approvals IP Elective Dubai', 'Pre-Approvals IP Final', 'Pre-Approvals OP Final',
@@ -170,7 +170,7 @@ describe('function= responses where teams are narrowed by the function (QA BUG-5
 
   it('keeps all four functions listed, in fixed order, whichever function is selected', () => {
     Object.values(pr17FunctionOptions).forEach((options) => {
-      expect(functionOptionsFor(mutable(options))).toEqual(['Call Center', 'RCM', 'Marketing']);
+      expect(functionOptionsFor(mutable(options))).toEqual(['Call Center', 'RCM', 'Marketing', 'Sales']);
     });
   });
 
@@ -178,9 +178,9 @@ describe('function= responses where teams are narrowed by the function (QA BUG-5
     // Call Center selected: teams only hold Call Center teams, functions are complete.
     const options = mutable(pr17FunctionOptions.functionCallCenter);
     expect(options.teams).toEqual(['Call Center', 'Inbound', 'Outbound']);
-    expect(functionOptionsFor(options)).toEqual(['Call Center', 'RCM', 'Marketing']);
-    // Standalone backend functions (Sales) are never shown; missing ones are hidden.
-    expect(functionOptionsFor({ ...options, functions: ['RCM', 'Sales', 'Call Center'] })).toEqual(['Call Center', 'RCM']);
+    expect(functionOptionsFor(options)).toEqual(['Call Center', 'RCM', 'Marketing', 'Sales']);
+    // Supported standalone functions remain selectable; absent functions disappear.
+    expect(functionOptionsFor({ ...options, functions: ['RCM', 'Sales', 'Call Center'] })).toEqual(['Call Center', 'RCM', 'Sales']);
     expect(functionOptionsFor({ ...options, functions: [] })).toEqual([]);
   });
 

@@ -36,6 +36,7 @@ def _level_filter(value: str | None) -> str | None:
 
 @router.get("", response_model=StandardResponse)
 def get_all_employees(
+    request: Request,
     db: Session = Depends(get_db),
     include_deleted: bool = Query(False),
     performance_level: str = Query(None),
@@ -51,6 +52,7 @@ def get_all_employees(
     try:
         level = _level_filter(performance_level)
         data = EmployeeDirectoryService(db).list(
+            scope=get_current_user_scope(db, request),
             include_deleted=include_deleted,
             performance_level=level,
             position=position,
@@ -61,6 +63,8 @@ def get_all_employees(
             message=f"Retrieved {len(data)} employees",
             data=data
         )
+    except HTTPException:
+        raise
     except Exception as e:
         return StandardResponse(
             success=False,
@@ -70,6 +74,7 @@ def get_all_employees(
 
 @router.get("/search", response_model=StandardResponse)
 def  search_employees(
+    request: Request,
     db: Session = Depends(get_db),
     name: str = Query(...),
     include_deleted: bool = Query(False),
@@ -89,6 +94,7 @@ def  search_employees(
     try:
         level = _level_filter(performance_level)
         data = EmployeeDirectoryService(db).list(
+            scope=get_current_user_scope(db, request),
             include_deleted=include_deleted,
             name=name,
             performance_level=level,
@@ -100,6 +106,8 @@ def  search_employees(
             message=f"Found {len(data)} employees matching '{name}'",
             data=data
         )
+    except HTTPException:
+        raise
     except Exception as e:
         return StandardResponse(
             success=False,
@@ -110,6 +118,7 @@ def  search_employees(
 @router.get("/team/{team_name}", response_model=StandardResponse)
 def get_employees_by_team(
     team_name: str,
+    request: Request,
     db: Session = Depends(get_db),
     include_deleted: bool = Query(False),
     performance_level: str = Query(None),
@@ -128,6 +137,7 @@ def get_employees_by_team(
     try:
         level = _level_filter(performance_level)
         data = EmployeeDirectoryService(db).list(
+            scope=get_current_user_scope(db, request),
             include_deleted=include_deleted,
             team=team_name,
             performance_level=level,
@@ -139,6 +149,8 @@ def get_employees_by_team(
             message=f"Retrieved {len(data)} employees for team",
             data=data
         )
+    except HTTPException:
+        raise
     except Exception as e:
         return StandardResponse(
             success=False,
@@ -149,6 +161,7 @@ def get_employees_by_team(
 @router.get("/team/{team_name}/active", response_model=StandardResponse)
 def get_active_employees_by_team(
     team_name: str,
+    request: Request,
     db: Session = Depends(get_db),
     performance_level: str = Query(None),
     position: str | None = Query(None),
@@ -166,6 +179,7 @@ def get_active_employees_by_team(
     try:
         level = _level_filter(performance_level)
         data = EmployeeDirectoryService(db).list(
+            scope=get_current_user_scope(db, request),
             include_deleted=False,
             team=team_name,
             performance_level=level,
@@ -177,6 +191,8 @@ def get_active_employees_by_team(
             message=f"Retrieved {len(data)} active employees for team",
             data=data
         )
+    except HTTPException:
+        raise
     except Exception as e:
         return StandardResponse(
             success=False,
@@ -186,6 +202,7 @@ def get_active_employees_by_team(
 
 @router.post("", response_model=StandardResponse, status_code=201)
 def  create_employee(
+    request: Request,
     employee_id: str = Query(...),
     name: str = Query(...),
     team: str = Query(...),
@@ -211,12 +228,15 @@ def  create_employee(
             name=name,
             team=team,
             region=region,
+            scope=get_current_user_scope(db, request),
         )
         return StandardResponse(
             success=True,
             message="Employee created successfully",
             data=emp
         )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
@@ -242,11 +262,11 @@ def get_employee_profile(employee_id: str, request: Request, db: Session = Depen
         Employee profile with performance history
     """
     try:
-        records = DashboardRecordService(db).list_records(employee_id=employee_id)
+        scope = get_current_user_scope(db, request)
+        records = DashboardRecordService(db).list_records(employee_id=employee_id, scope=scope)
         if not records:
             raise HTTPException(status_code=404, detail="Employee not found")
 
-        scope = get_current_user_scope(db, request)
         # Resolve authorization against the stable identity, then derive every
         # displayed profile field from the authorized rows only. A cross-branch
         # employee must not leak their latest out-of-scope team or region.
@@ -325,12 +345,14 @@ def  update_employee(
             if str(emp.employee_id) != self_id:
                 raise HTTPException(status_code=403, detail="Access denied for this employee")
 
-        updated = directory.update(employee_id, name=name, team=team, region=region)
+        updated = directory.update(employee_id, name=name, team=team, region=region, scope=scope)
         return StandardResponse(
             success=True,
             message="Employee updated successfully",
             data=updated
         )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except HTTPException as he:

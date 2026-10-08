@@ -1,6 +1,6 @@
 /** Non-component helpers for the Executive v1 cards (kept apart for React fast refresh). */
 import { useEffect, useRef, useState } from 'react';
-import { AlertTriangle, BarChart3, CheckCircle2, Clock, FileText, Users, type LucideIcon } from 'lucide-react';
+import { AlertTriangle, BarChart3, CheckCircle2, Clock, FileText, Headphones, Pill, Target, Users, type LucideIcon } from 'lucide-react';
 import type { GradeClass } from '../../../constants/grades';
 import type { ExecutiveActionItem, ExecutiveDriver, ExecutiveFunction, ExecutiveKpiRow, ExecutiveSummary, ExecutiveTeam, ExecutiveTeamFlag } from '../../../features/executive/types';
 import { isAtRisk, formatPeriod } from '../../../features/executive/compose';
@@ -85,6 +85,9 @@ export const FUNCTION_STYLE: Record<ExecutiveFunction, { icon: LucideIcon; bg: s
   RCM: { icon: FileText, bg: 'var(--exec-function-rcm)', color: 'var(--exec-pos-text)' },
   'Pre-Approvals': { icon: CheckCircle2, bg: 'var(--exec-function-pre-approvals)', color: 'var(--insights-positive)' },
   Marketing: { icon: BarChart3, bg: 'var(--exec-function-marketing)', color: 'var(--exec-comparison-line)' },
+  Sales: { icon: Target, bg: 'var(--exec-function-call-center)', color: 'var(--insights-accent)' },
+  CSR: { icon: Headphones, bg: 'var(--exec-function-call-center)', color: 'var(--insights-accent)' },
+  Pharmacy: { icon: Pill, bg: 'var(--exec-function-rcm)', color: 'var(--exec-pos-text)' },
 };
 
 export function movementTone(grade: GradeClass, movement: number): 'good' | 'bad' | 'neutral' {

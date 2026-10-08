@@ -104,6 +104,16 @@ it('assigns selected functions to a Function Director', async () => {
   }));
 });
 
+it.each(['Sales', 'CSR', 'Pharmacy'])('assigns the standalone %s function without widening to other functions', async (functionName) => {
+  const onSubmit = vi.fn().mockResolvedValue(undefined);
+  const user = userEvent.setup();
+  render(<UserFormModal open user={{ id: 'director', name: 'Director', username: 'director', role: 'Function Director', accessible_functions: [] }} teams={[]} onClose={vi.fn()} onSubmit={onSubmit} />);
+  await user.click(screen.getByRole('checkbox', { name: functionName }));
+  expect(screen.getByRole('checkbox', { name: 'RCM' })).not.toBeChecked();
+  await user.click(screen.getByRole('button', { name: 'Save changes' }));
+  expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ accessibleFunctions: [functionName] }));
+});
+
 it('grants Pre-Approvals sub-teams explicitly without selecting other RCM teams', async () => {
   const user = userEvent.setup();
   const onSubmit = vi.fn().mockResolvedValue(undefined);

@@ -102,6 +102,7 @@ def _get_dashboard_records(
     year: int | None = None,
     position: str | None = None,
     region: str | None = None,
+    scope: dict | None = None,
 ):
     return DashboardRecordService(
         db,
@@ -116,6 +117,7 @@ def _get_dashboard_records(
         year=year,
         position=position,
         region=region,
+        scope=scope,
     )
 
 
@@ -156,7 +158,7 @@ def get_balanced_scorecard(
     if not config.get("balanced_scorecard", {}).get("enabled"):
         raise HTTPException(status_code=404, detail="Balanced Scorecard is not configured for this context")
 
-    records = _get_dashboard_records(db, team=team, performance_level=level)
+    records = _get_dashboard_records(db, team=team, performance_level=level, scope=scope)
     records = filter_records_by_scope(records, scope)
     available_ids = {str(getattr(record, "employee_id", None) or record.get("employee_id")) for record in records}
     requested_ids = set(employee_ids)
@@ -267,6 +269,7 @@ def get_all_records(
             year=year,
             position=position,
             region=region,
+            scope=scope,
         )
         records = filter_records_by_scope(records, scope)
 
@@ -468,6 +471,7 @@ def get_monthly_records(
                 year=year,
                 position=position,
                 region=region,
+                scope=scope,
             )
             records = filter_records_by_scope(records, scope)
             response.headers["Deprecation"] = "true"
@@ -550,6 +554,7 @@ def get_employee_history(
             year=year,
             position=position,
             region=region,
+            scope=scope,
         )
         records = filter_records_by_scope(records, scope)
         emp_records = records
@@ -589,6 +594,7 @@ def get_team_yearly_records(
             year=year,
             position=position,
             region=region,
+            scope=scope,
         )
         team_records = filter_records_by_scope(team_records, scope)
 
@@ -634,6 +640,7 @@ def get_by_grade(
             year=year,
             position=position,
             region=region,
+            scope=scope,
         )
         filtered = filter_records_by_scope(filtered, scope)
 
@@ -679,6 +686,7 @@ def get_by_status(
             year=year,
             position=position,
             region=region,
+            scope=scope,
         )
         filtered = filter_records_by_scope(filtered, scope)
 
@@ -816,6 +824,7 @@ def export_report(
             year=year,
             position=position,
             region=region,
+            scope=scope,
         )
         records = filter_records_by_scope(records, scope)
         if rcm_filter_teams is not None:

@@ -100,7 +100,7 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
             return query.filter(func.lower(PerformanceRecord.branch_key).in_(branches)) if branches else query.filter(false())
 
         if role != "Manager":
-            return query
+            return query.filter(false())
 
         if scope.get("has_unrestricted_team_access"):
             return query

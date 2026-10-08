@@ -13,7 +13,7 @@ import type { GradeClass } from '../../constants/grades';
 import type { InsightPeriod, InsightTrendStatus, InsightTargetStatus } from '../insights/types';
 
 export type ExecutiveView = 'corporate' | 'managerial' | 'function';
-export type ExecutiveFunction = 'Call Center' | 'RCM' | 'Pre-Approvals' | 'Marketing';
+export type ExecutiveFunction = 'Call Center' | 'RCM' | 'Pre-Approvals' | 'Marketing' | 'Sales' | 'CSR' | 'Pharmacy';
 
 export type ExecutivePeriod = InsightPeriod;
 

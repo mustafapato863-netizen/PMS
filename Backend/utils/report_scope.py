@@ -115,7 +115,7 @@ def _team_keys(value: str) -> set[str]:
     return {normalized}
 
 
-FUNCTION_VIEWER_FUNCTIONS = ("Call Center", "RCM", "Pre-Approvals", "Marketing")
+FUNCTION_VIEWER_FUNCTIONS = ("Call Center", "RCM", "Pre-Approvals", "Marketing", "Sales", "CSR", "Pharmacy")
 FUNCTION_SCOPED_ROLES = {"Function Viewer", "Function Director"}
 GLOBAL_DATA_ROLES = {"Admin", "General Manager", "Performance Team", "Viewer"}
 SELF_SCOPED_ROLES = {"Agent", "Executive", "Employee"}
@@ -265,7 +265,9 @@ def filter_records_by_scope(records, scope: dict):
         return [record for record in records if str(_record_value(record, "employee_id")) == self_id]
     if role == "Manager" and not scope.get("has_unrestricted_team_access"):
         accessible = set().union(*(_team_keys(str(team)) for team in scope.get("accessible_teams", [])))
-        return [record for record in records if str(_record_value(record, "team")).lower() in accessible]
+        return filter_records_by_team_levels(
+            [record for record in records if str(_record_value(record, "team")).lower() in accessible], scope,
+        )
     if role in GLOBAL_DATA_ROLES or role == "Manager":
         return records
     return []

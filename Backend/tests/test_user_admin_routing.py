@@ -345,6 +345,34 @@ def test_admin_create_function_director_with_selected_functions(test_client, db_
     } == {"RCM", "Marketing"}
 
 
+@pytest.mark.parametrize("role", ["Function Director", "Function Viewer"])
+def test_auth_me_returns_function_grants_and_reflects_revocation(test_client, db_session, role):
+    from api.routers.auth import router as auth_router
+
+    test_client.app.include_router(auth_router, prefix="/api")
+    user = AuthenticationService.create_user(
+        db_session, "function_profile", "function_profile@test.com", "SecurePassword123!", role,
+    )
+    assignment = UserFunctionAssignment(user_id=user.id, function_name="RCM")
+    db_session.add(assignment)
+    db_session.commit()
+    token = AuthenticationService.authenticate_user(db_session, user.username, "SecurePassword123!")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    response = test_client.get("/api/auth/me", headers=headers)
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["success"] is True, payload["message"]
+    assert payload["data"]["role"] == role
+    assert payload["data"]["accessible_functions"] == ["RCM"]
+
+    db_session.delete(assignment)
+    db_session.commit()
+    revoked = test_client.get("/api/auth/me", headers=headers).json()
+    assert revoked["success"] is True
+    assert revoked["data"]["accessible_functions"] == []
+
+
 @pytest.mark.parametrize(
     ("role", "assignment_field", "assignment_values", "response_field", "model"),
     [
@@ -483,6 +511,20 @@ def test_admin_cannot_create_legacy_function_viewer_or_assign_unknown_function(t
     )
     assert current_role_response.status_code == 422
     assert db_session.query(User).filter(User.username == "bad_function_grant").first() is None
+
+
+@pytest.mark.parametrize("function", ["Sales", "CSR", "Pharmacy"])
+def test_admin_can_assign_standalone_function_director(test_client, db_session, function):
+    headers = _auth_headers(db_session, "standalone_admin", "SecurePassword123!")
+    response = test_client.post("/api/users/", headers=headers, json={
+        "id": "ignored", "name": "Standalone Director", "username": "standalone_director",
+        "password": "SecurePassword123!", "role": "Function Director",
+        "accessible_functions": [f" {function.lower()} "],
+    })
+    assert response.status_code == 200 and response.json()["success"] is True
+    assert response.json()["data"]["accessible_functions"] == [function]
+    created = db_session.query(User).filter_by(username="standalone_director").one()
+    assert [row.function_name for row in created.function_assignments] == [function]
 
 
 def test_function_assignments_load_into_authoritative_request_scope(db_session):

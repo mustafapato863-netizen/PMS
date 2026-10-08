@@ -539,7 +539,7 @@ class UserFunctionAssignment(Base):
 
     __table_args__ = (
         CheckConstraint(
-            "function_name IN ('Call Center', 'RCM', 'Pre-Approvals', 'Marketing')",
+            "function_name IN ('Call Center', 'RCM', 'Pre-Approvals', 'Marketing', 'Sales', 'CSR', 'Pharmacy')",
             name="ck_user_function_assignment_name",
         ),
         UniqueConstraint("user_id", "function_name", name="uq_user_function_assignment"),
