@@ -172,7 +172,7 @@ export default function GlobalSearch() {
           <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-300 shrink-0">
             <Search size={15} />
           </span>
-          <span className="hidden sm:inline-block min-w-0 flex-1 truncate text-xs font-semibold text-[var(--text-muted)] max-w-[120px]">
+          <span className="app-header-search-label hidden sm:inline-block min-w-0 flex-1 truncate text-xs font-semibold text-[var(--text-muted)] max-w-[120px]">
             Search PMS…
           </span>
         </button>

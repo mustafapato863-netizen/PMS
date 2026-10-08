@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useLocation, useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   CalendarDays,
   ChevronDown,
@@ -16,13 +16,15 @@ import { useUserRole } from '../../context/RoleContext';
 import { useAuth } from '../../context/auth';
 import { NotificationBell } from '../notifications';
 import { usePerformanceCatalog } from '../../hooks/api/usePerformanceCatalog';
-import { ProfileSettingsModal } from './ProfileSettingsModal';
 import { getRoleDisplayLabel, isGeneralManagerRole, readHasUnrestrictedTeamAccess } from '../../lib/access';
 
 // ── route config ──────────────────────────────────────────────────────────────
 
 const ROUTE_TITLES: Record<string, { title: string; compactTitle: string; subtitle: string }> = {
   '/executive': { title: 'Executive Summary', compactTitle: 'Executive', subtitle: 'Performance overview across all teams' },
+  '/function-summary': { title: 'Function Summary', compactTitle: 'Function', subtitle: 'Performance within your selected function' },
+  '/account': { title: 'Account Settings', compactTitle: 'Account', subtitle: 'Your profile, security and appearance' },
+  '/settings': { title: 'Administration', compactTitle: 'Admin', subtitle: 'System configuration and user management' },
   '/operational': { title: 'Team Performance', compactTitle: 'Teams', subtitle: 'CRM-style action and tracking' },
   '/team': { title: 'Team Dashboard', compactTitle: 'Team', subtitle: 'Deep dive into team performance' },
   '/employee': { title: 'Employee Profile', compactTitle: 'Employee', subtitle: 'Comprehensive history & records' },
@@ -46,6 +48,7 @@ function getInitials(name: string): string {
 
 function resolveRoute(pathname: string) {
   if (ROUTE_TITLES[pathname]) return ROUTE_TITLES[pathname];
+  if (pathname.startsWith('/function-summary/')) return ROUTE_TITLES['/function-summary'];
   if (pathname.startsWith('/employee')) return ROUTE_TITLES['/employee'];
   if (pathname.startsWith('/team')) return ROUTE_TITLES['/team'];
   return ROUTE_TITLES['/executive'];
@@ -199,7 +202,7 @@ function ProfileMenu({
                 className="mb-1 flex w-full cursor-pointer items-center gap-2.5 rounded-xl px-3 py-2 text-left text-xs font-semibold text-[var(--text-secondary)] transition-all"
               >
                 <UserRound size={13} className="text-blue-500" aria-hidden="true" />
-                My profile
+                Account settings
               </motion.button>
 
               <motion.button
@@ -230,10 +233,10 @@ const Header = ({ onMenuClick }: HeaderProps) => {
   const { pathname } = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const [isScrolled, setIsScrolled] = useState(false);
-  const [profileOpen, setProfileOpen] = useState(false);
+  const navigate = useNavigate();
 
   const { role } = useUserRole();
-  const { currentUser, logout, updateProfile, changePassword } = useAuth();
+  const { currentUser, logout } = useAuth();
   const { data: performanceCatalog } = usePerformanceCatalog();
   const uniqueMonths = performanceCatalog?.months || [];
 
@@ -320,7 +323,7 @@ const Header = ({ onMenuClick }: HeaderProps) => {
               <span className="app-header-title-full">{title}</span>
               <span className="app-header-title-compact" aria-hidden="true">{compactTitle}</span>
             </h1>
-            <p className="mt-0.5 hidden sm:flex items-center gap-1 truncate text-[10px] font-semibold text-blue-600 dark:text-blue-400">
+            <p className="app-header-subtitle mt-0.5 hidden sm:flex items-center gap-1 truncate text-[10px] font-semibold text-blue-600 dark:text-blue-400">
               <Sparkles size={10} className="text-blue-400 flex-shrink-0" aria-hidden="true" />
               {subtitle}
             </p>
@@ -357,20 +360,12 @@ const Header = ({ onMenuClick }: HeaderProps) => {
               accessibleTeamCount={currentUser.accessible_team_count}
               totalTeamCount={currentUser.total_team_count}
               hasUnrestrictedTeamAccess={readHasUnrestrictedTeamAccess(currentUser)}
-              onEditProfile={() => setProfileOpen(true)}
+              onEditProfile={() => navigate('/account')}
               onLogout={handleLogout}
             />
           )}
         </div>
       </motion.header>
-      {profileOpen && currentUser && (
-        <ProfileSettingsModal
-          user={currentUser}
-          onClose={() => setProfileOpen(false)}
-          onUpdateProfile={updateProfile}
-          onChangePassword={changePassword}
-        />
-      )}
     </>
   );
 };

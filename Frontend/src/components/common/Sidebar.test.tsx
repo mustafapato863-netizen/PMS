@@ -197,7 +197,7 @@ describe('Sidebar General Manager navigation (stored role string)', () => {
     mockTeamConfigFetch();
   });
 
-  it('gives a General Manager Reports, Insights, Planning, Corrective Actions, All Teams and the Settings link', () => {
+  it('gives a General Manager product pages and personal account settings, not administration', () => {
     authState.user = {
       id: 'gm-1',
       name: 'Gina Grant',
@@ -210,8 +210,8 @@ describe('Sidebar General Manager navigation (stored role string)', () => {
     for (const name of ['Reports', 'Insights', 'Planning', 'Corrective Actions', 'All Teams']) {
       expect(screen.getByRole('link', { name })).toBeInTheDocument();
     }
-    // Settings stays visible like for other non-Agent roles; SettingsView soft-locks the content.
-    expect(screen.getByRole('link', { name: 'Settings' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Account settings' })).toHaveAttribute('href', '/account');
+    expect(screen.queryByRole('link', { name: 'Administration' })).not.toBeInTheDocument();
     expect(screen.getByText('General Manager')).toBeInTheDocument();
   });
 
@@ -232,11 +232,11 @@ describe('Sidebar General Manager navigation (stored role string)', () => {
       expect(screen.getByRole('link', { name })).toBeInTheDocument();
     }
     expect(screen.getByRole('link', { name: 'Assigned Teams' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Settings' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Account settings' })).toHaveAttribute('href', '/account');
     expect(screen.queryByText('General Manager')).not.toBeInTheDocument();
   });
 
-  it('gives a scoped Manager the Executive v1 menu (no Insights) and the soft-locked Settings link', () => {
+  it('gives a scoped Manager the Executive v1 menu (no Insights) and personal account settings', () => {
     authState.user = {
       id: 'mgr-1',
       name: 'Mo Scoped',
@@ -254,26 +254,26 @@ describe('Sidebar General Manager navigation (stored role string)', () => {
     expect(positions.every((position) => position >= 0)).toBe(true);
     expect([...positions].sort((l, r) => l - r)).toEqual(positions);
     expect(screen.getByRole('link', { name: 'My Team · Marketing' })).toHaveAttribute('href', '/team/marketing');
-    expect(screen.getByRole('link', { name: 'Settings' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Account settings' })).toHaveAttribute('href', '/account');
     expect(screen.getByText('Manager')).toBeInTheDocument();
   });
 
-  it('still shows Settings and every product page to Admin', () => {
+  it('shows separate Administration and Account settings links to Admin', () => {
     authState.user = ADMIN_USER;
     renderSidebar();
 
-    for (const name of ['Reports', 'Insights', 'Planning', 'Corrective Actions', 'Settings', 'All Teams']) {
+    for (const name of ['Reports', 'Insights', 'Planning', 'Corrective Actions', 'Administration', 'Account settings', 'All Teams']) {
       expect(screen.getByRole('link', { name })).toBeInTheDocument();
     }
     expect(screen.queryByText('General Manager')).not.toBeInTheDocument();
   });
 
-  it('shows Corrective Actions and Settings but not Admin/GM product pages to Executive', () => {
+  it('shows Corrective Actions and personal account settings but not admin pages to Executive', () => {
     authState.user = { id: 'exec-1', name: 'Eve Exec', username: 'exec', role: 'Executive', accessible_teams: [] };
     renderSidebar();
 
     expect(screen.getByRole('link', { name: 'Corrective Actions' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Settings' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Account settings' })).toHaveAttribute('href', '/account');
     for (const name of ['Reports', 'Insights', 'Planning']) {
       expect(screen.queryByRole('link', { name })).not.toBeInTheDocument();
     }
@@ -526,7 +526,8 @@ describe('responsive dock and navigation drawer', () => {
     authState.user = { id: 'employee', name: 'Employee', username: 'employee', role: 'Employee', employee_id: 'E-100' };
     renderResponsive('/employee/E-100');
     const dock = screen.getByRole('navigation', { name: 'Quick navigation' });
-    expect(within(dock).getAllByRole('link')).toHaveLength(1);
+    expect(within(dock).getAllByRole('link')).toHaveLength(2);
+    expect(within(dock).getByRole('link', { name: 'Go to Account' })).toHaveAttribute('href', '/account');
     expect(within(dock).getByRole('link', { name: 'Go to My profile' })).toHaveAttribute('href', '/employee/E-100');
   });
 
@@ -540,6 +541,7 @@ describe('responsive dock and navigation drawer', () => {
       expect(within(dock).getByRole('link', { name: `Go to ${label}` })).toHaveClass('navigation-dock-tablet-only');
     }
     expect(within(dock).getByRole('link', { name: 'Go to Actions' })).toHaveAttribute('href', '/corrective-actions');
+    expect(within(dock).getByRole('link', { name: 'Go to Account' })).toHaveAttribute('href', '/account');
   });
 
   it('adds direct authorized team shortcuts for scoped directors only on tablet', () => {
@@ -568,5 +570,16 @@ describe('responsive dock and navigation drawer', () => {
     const dock = screen.getByRole('navigation', { name: 'Quick navigation' });
     expect(within(dock).getByRole('link', { name: 'Go to Functions' })).toHaveAttribute('href', '/function-summary');
     expect(within(dock).queryByRole('link', { name: 'Go to My profile' })).not.toBeInTheDocument();
+  });
+
+  it.each(['Employee', 'Manager', 'Function Viewer', 'Performance Team', 'Regional Manager', 'Branch Director', 'Function Director'] as const)('gives %s Account settings instead of an administration link', role => {
+    authState.user = { id: 'own-user', name: 'Own User', username: 'own', role, employee_id: 'E-100', accessible_functions: ['RCM'], accessible_branches: ['dubai'], accessible_regions: ['UAE'] };
+    renderResponsive();
+    const dock = screen.getByRole('navigation', { name: 'Quick navigation' });
+    expect(within(dock).getByRole('link', { name: 'Go to Account' })).toHaveAttribute('href', '/account');
+    fireEvent.click(screen.getByRole('button', { name: 'Open full navigation' }));
+    const dialog = screen.getByRole('dialog', { name: 'Navigation menu' });
+    expect(within(dialog).getByRole('link', { name: 'Account settings' })).toHaveAttribute('href', '/account');
+    expect(within(dialog).queryByRole('link', { name: 'Administration' })).not.toBeInTheDocument();
   });
 });
