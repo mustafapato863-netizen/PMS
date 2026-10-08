@@ -26,6 +26,7 @@ import { TEAM_ITEMS, getTeamIcon, isHiddenTeam } from './sidebarTeamItems';
 import { MANAGEMENT_DATA_CHANGED_EVENT } from '../../lib/managementDataEvents';
 import {
   canAccessCorrectiveActions,
+  canAccessSettingsContent,
   canAccessInsights,
   canAccessPlanning,
   canSeeReportsNav,
@@ -344,7 +345,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed: collapsedPreference = false, 
       dockItems.push({ label: team, destination: linkFor(`/team/${slugifyTeam(team)}`, level), icon: getTeamIcon(team), active: pathname === `/team/${slugifyTeam(team)}` && (selectedLevel || 'Employee') === level, tabletOnly: true });
     }
   }
-  if (canSeeBroadNavigation) dockItems.push({ label: 'Account', destination: linkFor('/settings'), icon: <Settings size={20} />, active: pathname === '/settings', tabletOnly: !scopedDirector });
+  dockItems.push({ label: 'Account', destination: '/account', icon: <User size={20} />, active: pathname === '/account', tabletOnly: canSeeBroadNavigation && !scopedDirector });
 
   return (
     <>
@@ -568,8 +569,8 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed: collapsedPreference = false, 
 
       <div className={`mt-auto shrink-0 space-y-2 border-t border-[var(--border-light)] p-3 ${isCollapsed ? 'xl:p-2' : ''}`}>
         <div className={isCollapsed ? 'sidebar-collapsed-theme' : ''}><ThemeToggle variant="pill" /></div>
-        {/* Settings link for all non-Agent roles; SettingsView soft-locks non-Admins (General Manager included). */}
-        {!isSelfOnly && !isFunctionViewer && renderLink({ name: 'Settings', path: '/settings', icon: <Settings size={18} /> })}
+        {renderLink({ name: 'Account settings', path: '/account', icon: <User size={18} /> }, undefined, false, true)}
+        {canAccessSettingsContent(role) && renderLink({ name: 'Administration', path: '/settings', icon: <Settings size={18} /> }, undefined, false, true)}
         <div className={`sidebar-user-menu flex items-center justify-between gap-2 rounded-xl border border-[var(--border-light)] bg-[var(--bg-raised)] p-2.5 shadow-sm ${isCollapsed ? 'xl:justify-center xl:p-2' : ''}`}>
           <div className={`flex min-w-0 items-center gap-2 ${isCollapsed ? 'xl:justify-center' : ''}`}>
             <div className="sidebar-user-avatar flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[11px] font-bold text-white shadow-sm" style={{ background: 'var(--sidebar-active-text)' }}>

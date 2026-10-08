@@ -22,12 +22,12 @@ with sync_playwright() as p:
     page.goto(base_url + "/executive?period=2026-08", wait_until="networkidle")
     expect(page.get_by_role("complementary", name="Primary navigation")).to_be_visible()
     expect(page.get_by_role("navigation", name="Quick navigation")).to_have_count(0)
-    for width, height in [(320, 740), (375, 812), (768, 900), (1024, 768), (844, 390)]:
+    for width, height in [(320, 740), (375, 812), (639, 704), (640, 704), (746, 704), (767, 704), (768, 900), (1024, 768), (844, 390)]:
         page.set_viewport_size({"width": width, "height": height})
         dock = page.get_by_role("navigation", name="Quick navigation")
         expect(dock).to_be_visible()
-        assert dock.get_by_role("link").count() == (7 if width >= 768 else 3), f"Incorrect shortcut count at {width}px"
-        if width >= 768:
+        assert dock.get_by_role("link").count() == (7 if width >= 640 else 3), f"Incorrect shortcut count at {width}px"
+        if width >= 640:
             for label in ["Insights", "Planning", "Actions", "Account"]:
                 expect(dock.get_by_role("link", name=f"Go to {label}", exact=True)).to_be_visible()
         else:
@@ -67,18 +67,28 @@ with sync_playwright() as p:
     page.screenshot(path=os.path.join(tempfile.gettempdir(), "pms-navigation-expanded-tablet.png"))
     page.get_by_role("link", name="Go to Summary", exact=True).click()
     page.wait_for_url("**/executive**")
-    expect(page.get_by_role("heading", name="Executive Summary", exact=True)).to_be_visible()
+    expect(page.locator(".app-route-canvas").get_by_role("heading", name="Executive Summary", exact=True)).to_be_visible(timeout=30000)
     page.wait_for_load_state("networkidle")
     menu = page.get_by_role("button", name="Open full navigation")
     menu.click()
     expect(page.get_by_role("dialog", name="Navigation menu")).to_be_visible()
     try:
-        page.get_by_role("dialog", name="Navigation menu").get_by_role("link", name="Settings", exact=True).click(timeout=10000)
+        page.get_by_role("dialog", name="Navigation menu").get_by_role("link", name="Account settings", exact=True).click(timeout=10000)
     except Exception:
         print(f"Navigation diagnostic: URL={page.url}, dialogs={page.get_by_role('dialog', name='Navigation menu').count()}, main inert={page.locator('main').evaluate('el => el.inert')}")
         page.screenshot(path=os.path.join(tempfile.gettempdir(), "pms-navigation-failure.png"))
         raise
-    page.wait_for_url("**/settings**")
+    page.wait_for_url("**/account")
+    expect(page.get_by_role("heading", name="Account settings", exact=True)).to_be_visible()
+    expect(page.get_by_label("Full name", exact=True)).to_be_visible()
+    expect(page.get_by_label("Username", exact=True)).to_have_attribute("readonly", "")
+    for width in [320, 375, 640, 746, 768, 1024]:
+        page.set_viewport_size({"width": width, "height": 900})
+        expect(page.get_by_label("Full name", exact=True)).to_be_visible()
+        assert page.evaluate("document.documentElement.scrollWidth <= innerWidth"), f"Account page overflow at {width}px"
+        page.screenshot(path=os.path.join(tempfile.gettempdir(), f"pms-account-{width}.png"))
+    page.set_viewport_size({"width": 768, "height": 900})
+    print("PASS: Account opens personal settings, with no overflow from 320px through tablet")
     expect(page.get_by_role("dialog", name="Navigation menu")).to_have_count(0)
     expect(page.get_by_role("navigation", name="Quick navigation")).to_be_visible()
     page.go_back(wait_until="networkidle")

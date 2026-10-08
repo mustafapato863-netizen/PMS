@@ -12,12 +12,11 @@ interface ProfileSettingsModalProps {
   onChangePassword: (currentPassword: string, newPassword: string) => Promise<ActionResult>;
 }
 
-export function ProfileSettingsModal({
+export function ProfileSettingsForms({
   user,
-  onClose,
   onUpdateProfile,
   onChangePassword,
-}: ProfileSettingsModalProps) {
+}: Omit<ProfileSettingsModalProps, 'onClose'>) {
   const [fullName, setFullName] = useState(user.name || '');
   const [nameBusy, setNameBusy] = useState(false);
   const [nameError, setNameError] = useState<string | null>(null);
@@ -31,6 +30,7 @@ export function ProfileSettingsModal({
 
   const submitName = async (event: FormEvent) => {
     event.preventDefault();
+    if (nameBusy || passwordBusy) return;
     setNameError(null);
     setNameSuccess(null);
     const normalized = fullName.trim();
@@ -39,58 +39,56 @@ export function ProfileSettingsModal({
       return;
     }
     setNameBusy(true);
-    const result = await onUpdateProfile(normalized);
-    setNameBusy(false);
-    if (!result.success) {
-      setNameError(result.error || 'Failed to update profile.');
-      return;
+    try {
+      const result = await onUpdateProfile(normalized);
+      if (!result.success) {
+        setNameError(result.error || 'Failed to update profile.');
+        return;
+      }
+      setFullName(normalized);
+      setNameSuccess('Full name updated successfully.');
+    } catch {
+      setNameError('Unable to save your name. Please try again.');
+    } finally {
+      setNameBusy(false);
     }
-    setFullName(normalized);
-    setNameSuccess('Full name updated successfully.');
   };
 
   const submitPassword = async (event: FormEvent) => {
     event.preventDefault();
+    if (nameBusy || passwordBusy) return;
     setPasswordError(null);
     setPasswordSuccess(null);
     if (newPassword !== confirmPassword) {
       setPasswordError('New passwords do not match.');
       return;
     }
-    setPasswordBusy(true);
-    const result = await onChangePassword(currentPassword, newPassword);
-    setPasswordBusy(false);
-    if (!result.success) {
-      setPasswordError(result.error || 'Failed to change password.');
+    if (newPassword === currentPassword) {
+      setPasswordError('Choose a password different from your current password.');
       return;
     }
-    setCurrentPassword('');
-    setNewPassword('');
-    setConfirmPassword('');
-    setPasswordSuccess('Password changed successfully.');
+    setPasswordBusy(true);
+    try {
+      const result = await onChangePassword(currentPassword, newPassword);
+      if (!result.success) {
+        setPasswordError(result.error || 'Failed to change password.');
+        return;
+      }
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      setPasswordSuccess('Password changed successfully.');
+    } catch {
+      setPasswordError('Unable to change your password. Please try again.');
+    } finally {
+      setPasswordBusy(false);
+    }
   };
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="profile-settings-title"
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm"
-      onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}
-    >
-      <div className="max-h-[92vh] w-full max-w-2xl overflow-auto rounded-3xl border border-[var(--border-light)] bg-[var(--bg-surface)] shadow-2xl">
-        <header className="sticky top-0 z-10 flex items-center justify-between border-b border-[var(--border-light)] bg-[var(--bg-surface)] px-6 py-4">
-          <div>
-            <h2 id="profile-settings-title" className="text-base font-black text-[var(--text-primary)]">My profile</h2>
-            <p className="mt-0.5 text-[10px] text-[var(--text-muted)]">Manage your display name and account password</p>
-          </div>
-          <button type="button" aria-label="Close profile settings" onClick={onClose} className="rounded-xl p-2 text-[var(--text-muted)] hover:bg-[var(--bg-sunken)]">
-            <X size={18} />
-          </button>
-        </header>
-
-        <div className="grid gap-5 p-6">
+    <div className="account-forms grid min-w-0 gap-5">
           <form onSubmit={submitName} className="rounded-2xl border border-[var(--border-light)] p-5">
+            <fieldset disabled={nameBusy || passwordBusy} className="min-w-0">
             <div className="mb-4 flex items-center gap-3">
               <span className="rounded-xl bg-blue-500/10 p-2 text-blue-600"><UserRound size={18} /></span>
               <div><h3 className="text-sm font-black text-[var(--text-primary)]">Profile information</h3><p className="text-[10px] text-[var(--text-muted)]">Your username remains unchanged.</p></div>
@@ -102,9 +100,11 @@ export function ProfileSettingsModal({
               <label className="text-xs font-bold text-[var(--text-secondary)]">Username<input aria-label="Username" readOnly value={user.username} className="mt-1.5 w-full cursor-not-allowed rounded-xl border border-[var(--border-light)] bg-[var(--bg-sunken)] px-3 py-2.5 font-mono text-xs text-[var(--text-muted)] outline-none" /></label>
             </div>
             <div className="mt-4 flex justify-end"><button type="submit" disabled={nameBusy} className="rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-bold text-white disabled:opacity-50">{nameBusy ? 'Saving…' : 'Save name'}</button></div>
+            </fieldset>
           </form>
 
           <form onSubmit={submitPassword} className="rounded-2xl border border-[var(--border-light)] p-5">
+            <fieldset disabled={nameBusy || passwordBusy} className="min-w-0">
             <div className="mb-4 flex items-center gap-3">
               <span className="rounded-xl bg-violet-500/10 p-2 text-violet-600"><KeyRound size={18} /></span>
               <div><h3 className="text-sm font-black text-[var(--text-primary)]">Change password</h3><p className="text-[10px] text-[var(--text-muted)]">Use 12+ characters with uppercase, lowercase, number and symbol.</p></div>
@@ -119,9 +119,21 @@ export function ProfileSettingsModal({
               </div>
             </div>
             <div className="mt-4 flex justify-end"><button type="submit" disabled={passwordBusy} className="rounded-xl bg-violet-600 px-4 py-2.5 text-xs font-bold text-white disabled:opacity-50">{passwordBusy ? 'Changing…' : 'Change password'}</button></div>
+            </fieldset>
           </form>
-        </div>
-      </div>
     </div>
   );
+}
+
+/** Legacy modal wrapper; the Account page uses the same self-service forms. */
+export function ProfileSettingsModal({ onClose, ...props }: ProfileSettingsModalProps) {
+  return <div role="dialog" aria-modal="true" aria-labelledby="profile-settings-title" className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/55 p-4" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
+    <div className="max-h-[92vh] w-full max-w-2xl overflow-auto rounded-3xl border border-[var(--border-light)] bg-[var(--bg-surface)] p-6">
+      <header className="mb-5 flex items-center justify-between">
+        <h2 id="profile-settings-title" className="font-bold text-[var(--text-primary)]">My profile</h2>
+        <button type="button" aria-label="Close profile settings" onClick={onClose} className="min-h-11 min-w-11 rounded-xl text-[var(--text-muted)]"><X size={18} className="mx-auto" /></button>
+      </header>
+      <ProfileSettingsForms {...props} />
+    </div>
+  </div>;
 }

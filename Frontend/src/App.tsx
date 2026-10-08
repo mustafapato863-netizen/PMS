@@ -26,6 +26,7 @@ const MarketingTeamRoute = lazy(() => import('./pages/MarketingTeamRoute'));
 const TeamDashboardView = lazy(() => import('./pages/TeamDashboardView'));
 const EmployeeProfileView = lazy(() => import('./pages/EmployeeProfileView'));
 const SettingsView = lazy(() => import('./pages/SettingsView'));
+const AccountView = lazy(() => import('./pages/AccountView'));
 const TeamManagementView = lazy(() => import('./pages/TeamManagementView'));
 const LoginView = lazy(() => import('./pages/LoginView'));
 const ReportsView = lazy(() => import('./pages/ReportsView'));
@@ -46,6 +47,7 @@ function AnimatedRoutes() {
     return (
       <AnimatePresence mode="wait">
         <Routes location={location} key={location.pathname}>
+          <Route path="/account" element={<Suspense fallback={<RouteLoadingFallback />}><AccountView /></Suspense>} />
           <Route
             path="/employee/:employeeId"
             element={<Suspense fallback={<RouteLoadingFallback />}><EmployeeProfileView /></Suspense>}
@@ -93,6 +95,7 @@ function AnimatedRoutes() {
         />
 
         {/* Settings: unguarded; SettingsView soft-locks every non-Admin role, General Manager included. */}
+        <Route path="/account" element={<Suspense fallback={<RouteLoadingFallback />}><AccountView /></Suspense>} />
         <Route path="/settings" element={<Suspense fallback={<RouteLoadingFallback />}><SettingsView /></Suspense>} />
 
         {/* Reporting workspace */}

@@ -172,11 +172,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           new_password: newPassword,
         }),
       });
-      if (currentUser?.must_change_password) {
-        // The server revoked all temporary sessions. Clear the old token before
-        // signing out so a redundant logout cannot trigger a failed refresh.
-        await terminateClientSession();
-      }
+      // Every password change revokes all server sessions. Clear the old token
+      // before signing out so logout cannot attempt a revoked-token refresh.
+      await terminateClientSession();
       return { success: true };
     } catch (error: unknown) {
       return { success: false, error: error instanceof Error ? error.message : 'Failed to change password' };

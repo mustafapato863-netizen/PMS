@@ -14,10 +14,9 @@ import type { User } from '../types';
  * - General Manager ≈ Admin for product pages (Reports list/preview/builder, Insights,
  *   Planning, Corrective Actions).
  * - Standalone Team Management (`/team-management`): Admin and General Manager.
- * - Settings: show + soft-lock. `/settings` is unguarded, the nav link shows for every
- *   non-Agent role, and `SettingsView` renders admin panels for Admin only; General
- *   Manager gets the "Administrator access required" panel (no users / system-errors /
- *   restore / upload admin UI).
+ * - Personal account settings (`/account`) are available to every authenticated role.
+ * - Administration (`/settings`) is linked for Admin only; direct requests from other
+ *   roles still show the "Administrator access required" panel, never admin content.
  * - Settings / upload / user-management search shortcuts stay Admin-only.
  */
 export type AppRole = User['role'];
