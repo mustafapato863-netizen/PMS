@@ -1,4 +1,4 @@
-import { useState, useEffect, lazy, Suspense } from 'react';
+import { useState, useEffect, useCallback, lazy, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AnimatePresence } from 'framer-motion';
 import Sidebar from './components/common/Sidebar';
@@ -18,6 +18,7 @@ import { PageLoadingSkeleton } from './components/common/SkeletonLoader';
 import RouteGuard from './components/common/RouteGuard';
 import { ROUTE_ROLES } from './lib/access';
 import PasswordChangeGate from './components/common/PasswordChangeGate';
+import { useDesktopNavigation } from './hooks/useDesktopNavigation';
 
 const ExecutiveView = lazy(() => import('./pages/ExecutiveView'));
 const FunctionSummaryView = lazy(() => import('./pages/FunctionSummaryView'));
@@ -159,7 +160,11 @@ function AnimatedRoutes() {
 function AppContent() {
   const { currentUser, isAppInitializing, initializationStatus, initializationError } = useAuth();
   const location = useLocation();
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [sidebarLocation, setSidebarLocation] = useState<string | null>(null);
+  const closeSidebar = useCallback(() => setSidebarLocation(null), []);
+  const isDesktopNavigation = useDesktopNavigation(closeSidebar);
+  const isSidebarOpen = sidebarLocation === location.key && !isDesktopNavigation;
+  const setIsSidebarOpen = useCallback((open: boolean) => setSidebarLocation(open ? location.key : null), [location.key]);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
     try {
       return window.localStorage.getItem('pms.sidebar.collapsed') === 'true';
@@ -168,6 +173,12 @@ function AppContent() {
     }
   });
   const isReportBuilder = location.pathname === '/reports/new' || /^\/reports\/[^/]+\/edit$/.test(location.pathname);
+
+  useEffect(() => {
+    // Browser history must not restore a drawer opened on an earlier location key.
+    window.addEventListener('popstate', closeSidebar);
+    return () => window.removeEventListener('popstate', closeSidebar);
+  }, [closeSidebar]);
 
   useEffect(() => {
     try {
@@ -231,25 +242,18 @@ function AppContent() {
           setIsOpen={setIsSidebarOpen}
           isCollapsed={isSidebarCollapsed}
           onToggleCollapsed={() => setIsSidebarCollapsed((collapsed) => !collapsed)}
+          isDesktop={isDesktopNavigation}
         />
       )}
 
 
-      {/* Mobile Overlay */}
-      {!isReportBuilder && isSidebarOpen && (
-        <div
-          className="fixed inset-0 z-30 bg-slate-900/50 backdrop-blur-sm xl:hidden"
-          onClick={() => setIsSidebarOpen(false)}
-        />
-      )}
-
-      <main className={`app-main relative flex min-h-screen min-w-0 flex-1 flex-col transition-[margin,width] duration-300 ${isReportBuilder ? '' : isSidebarCollapsed ? 'is-sidebar-collapsed' : ''}`}>
+      <main inert={!isReportBuilder && isSidebarOpen} className={`app-main relative flex min-h-screen min-w-0 flex-1 flex-col transition-[margin,width] duration-300 ${isReportBuilder ? '' : `has-navigation-dock ${isSidebarCollapsed ? 'is-sidebar-collapsed' : ''}`}`}>
         {!isReportBuilder && <Header onMenuClick={() => setIsSidebarOpen(true)} />}
         <div className={`app-route-canvas flex-1 w-full relative z-10 ${isReportBuilder ? 'p-3 sm:p-4' : 'app-route-padding'}`}>
           <AnimatedRoutes />
         </div>
       </main>
-      <BackToTop />
+      {!isSidebarOpen && <BackToTop aboveNavigation={!isReportBuilder} />}
 
     </div>
   );

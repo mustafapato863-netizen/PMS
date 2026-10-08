@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -10,7 +10,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
 } from 'lucide-react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { useUserRole } from '../../context/RoleContext';
 import { useAuth } from '../../context/auth';
 import { usePerformanceCatalog } from '../../hooks/api/usePerformanceCatalog';
@@ -37,6 +37,7 @@ import {
 import { useFunctionScope } from '../../features/executive/useFunctionScope';
 import { prepareBalancedScorecardTeamParams } from '../team/balancedScorecardNavigation';
 import SghHeartSvg from './SghHeartSvg';
+import NavigationDock, { type NavigationDockItem } from './NavigationDock';
 
 const FunctionViewerNav = lazy(() => import('./FunctionViewerNav'));
 
@@ -45,6 +46,7 @@ interface SidebarProps {
   setIsOpen: (val: boolean) => void;
   isCollapsed?: boolean;
   onToggleCollapsed?: () => void;
+  isDesktop?: boolean;
 }
 
 const LEVELS: Array<{ name: 'Employee'; icon: React.ReactNode; color: string }> = [
@@ -70,7 +72,44 @@ const prettyTeamLabel = (teamName: string) =>
     ? teamName.toUpperCase()
     : teamName.replace(/\b\w/g, (char) => char.toUpperCase());
 
-const Sidebar = ({ isOpen, setIsOpen, isCollapsed = false, onToggleCollapsed = () => {} }: SidebarProps) => {
+const Sidebar = ({ isOpen, setIsOpen, isCollapsed: collapsedPreference = false, onToggleCollapsed = () => {}, isDesktop = true }: SidebarProps) => {
+  const isCollapsed = isDesktop && collapsedPreference;
+  const reduceMotion = useReducedMotion();
+  const groupTransition = { duration: reduceMotion ? 0 : 0.2 };
+  const drawerRef = useRef<HTMLElement>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
+  const drawerOpen = !isDesktop && isOpen;
+  useEffect(() => {
+    if (!drawerOpen) return;
+    const opener = document.activeElement;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    closeRef.current?.focus();
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setIsOpen(false);
+      }
+      if (event.key !== 'Tab') return;
+      const focusable = Array.from(drawerRef.current?.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), input:not([disabled]), [tabindex="0"]') ?? [])
+        .filter((element) => element.getClientRects().length > 0);
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && (document.activeElement === first || document.activeElement === closeRef.current)) {
+        event.preventDefault();
+        last?.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first?.focus();
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener('keydown', handleKeyDown);
+      if (opener instanceof HTMLElement && opener.isConnected) opener.focus();
+    };
+  }, [drawerOpen, setIsOpen]);
   const { pathname } = useLocation();
   const [searchParams] = useSearchParams();
   const selectedLevel = searchParams.get('performance_level');
@@ -282,9 +321,40 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed = false, onToggleCollapsed = (
       ]
     : [{ name: 'My Profile', path: `/employee/${currentUser?.employee_id || currentUser?.id || ''}`, icon: <User size={18} /> }];
 
+  const dockItems: NavigationDockItem[] = isFunctionViewer
+    ? [
+      { label: 'Functions', destination: '/function-summary', icon: <Layers size={20} />, active: pathname.startsWith('/function-summary') },
+      ...(canSeeReportsNav(role) ? [{ label: 'Reports', destination: linkFor('/reports'), icon: <FileBarChart size={20} />, active: pathname.startsWith('/reports') }] : []),
+    ]
+    : generalItems.map((item, index) => ({
+      label: item.path === '/executive' ? 'Summary' : item.path.startsWith('/team') ? 'Teams' : item.name === 'My Profile' ? 'My profile' : item.path === '/corrective-actions' ? 'Actions' : item.name,
+      title: item.name,
+      tabletOnly: index >= 3,
+      destination: item.resetQuery ? item.path : linkFor(item.path),
+      icon: item.icon,
+      active: pathname === item.path || (item.path === '/team/all' && pathname.startsWith('/team/')),
+    }));
+  if (scopedDirector) {
+    // Reuse the server-scoped catalog; never add a broader team destination.
+    const quickTeams = new Map<string, typeof directorTeams[number]>();
+    for (const team of directorTeams) {
+      if (!quickTeams.has(team.team) || team.level === 'Employee') quickTeams.set(team.team, team);
+    }
+    for (const { team, level } of [...quickTeams.values()].slice(0, 3)) {
+      dockItems.push({ label: team, destination: linkFor(`/team/${slugifyTeam(team)}`, level), icon: getTeamIcon(team), active: pathname === `/team/${slugifyTeam(team)}` && (selectedLevel || 'Employee') === level, tabletOnly: true });
+    }
+  }
+  if (canSeeBroadNavigation) dockItems.push({ label: 'Account', destination: linkFor('/settings'), icon: <Settings size={20} />, active: pathname === '/settings', tabletOnly: !scopedDirector });
+
   return (
+    <>
+    <div className="contents" id="responsive-navigation" role={drawerOpen ? 'dialog' : undefined} aria-modal={drawerOpen ? true : undefined} aria-label={drawerOpen ? 'Navigation menu' : undefined}>
+    {drawerOpen && <button type="button" className="navigation-backdrop" aria-label="Dismiss navigation menu" tabIndex={-1} onClick={() => setIsOpen(false)} />}
     <aside
+      ref={drawerRef}
       aria-label="Primary navigation"
+      aria-hidden={!isDesktop && !isOpen ? true : undefined}
+      inert={!isDesktop && !isOpen}
       className={`app-sidebar fixed left-0 top-0 z-40 flex h-dvh shrink-0 flex-col transition-[width,transform] duration-300 xl:translate-x-0 ${isCollapsed ? 'is-collapsed' : 'is-expanded'} ${isOpen ? 'translate-x-0' : '-translate-x-full'} sidebar-navigation`}
       style={{ background: 'var(--sidebar-bg)', borderRight: '1px solid var(--sidebar-border)', boxShadow: '4px 0 20px rgba(0,0,0,0.04)' }}
     >
@@ -307,11 +377,12 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed = false, onToggleCollapsed = (
         >
           {isCollapsed ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}
         </button>
-        <button onClick={() => setIsOpen(false)} aria-label="Close navigation sidebar" className="min-h-11 min-w-11 rounded-lg text-[var(--text-muted)] xl:hidden">
+        <button ref={closeRef} type="button" onClick={() => setIsOpen(false)} aria-label="Close navigation sidebar" className="navigation-close min-h-11 min-w-11 rounded-lg text-[var(--text-muted)] xl:hidden">
           <X size={18} className="mx-auto" />
         </button>
       </div>
 
+      <div className="navigation-mobile-intro"><p>Your workspace</p><span>Pages and teams within your access</span></div>
       <div className={`mb-2 px-5 ${isCollapsed ? 'xl:hidden' : ''}`}><p className="text-label text-[0.625rem] text-[var(--text-faint)]">{isFunctionViewer ? 'FUNCTION VIEWER' : 'DASHBOARDS'}</p></div>
       <nav className="custom-scrollbar flex-1 space-y-0.5 overflow-y-auto px-2 pb-2">
         {isFunctionViewer ? (
@@ -356,7 +427,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed = false, onToggleCollapsed = (
               </button>
               <AnimatePresence initial={false}>
                 {isLevelOpen && (
-                  <motion.div id={groupId} role="group" aria-label={`${level.name} teams`} initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="space-y-0.5 overflow-hidden">
+                  <motion.div id={groupId} role="group" aria-label={`${level.name} teams`} initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={groupTransition} className="space-y-0.5 overflow-hidden">
                     {teams.map(({ team }) => renderLink({ name: team, path: `/team/${slugifyTeam(team)}`, icon: getTeamIcon(team) }, level.name, true))}
                   </motion.div>
                 )}
@@ -389,7 +460,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed = false, onToggleCollapsed = (
               </button>
               <AnimatePresence initial={false}>
                 {isLevelOpen && (
-                  <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
+                  <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={groupTransition} className="overflow-hidden">
                     {regions.map((region) => {
                       const key = `${level.name}-${region.id}`;
                       const isRegionOpen = regionOpen[key] ?? true;
@@ -437,7 +508,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed = false, onToggleCollapsed = (
             </button>
             <AnimatePresence initial={false}>
                 {sharedOpen && (
-                  <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
+                  <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={groupTransition} className="overflow-hidden">
                     <div className={`ml-3 border-l border-[var(--border-light)] pl-2 ${isCollapsed ? 'xl:ml-0 xl:border-l-0 xl:pl-0' : ''}`}>
                       {rcmVisible && renderLink(
                         { name: RCM_TEAM, path: '/team/rcm', icon: getTeamIcon(RCM_TEAM) },
@@ -480,7 +551,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed = false, onToggleCollapsed = (
               </button>
               <AnimatePresence initial={false}>
                 {isLevelOpen && (
-                  <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
+                  <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={groupTransition} className="overflow-hidden">
                     <div className={`ml-3 border-l border-[var(--border-light)] pl-2 ${isCollapsed ? 'xl:ml-0 xl:border-l-0 xl:pl-0' : ''}`}>
                       <div className="space-y-0.5">
                         {managementItems.map((item) => renderLink(item, 'Corporate', true, false, 'management'))}
@@ -517,6 +588,9 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed = false, onToggleCollapsed = (
         </div>
       </div>
     </aside>
+    </div>
+    {!isDesktop && <NavigationDock items={dockItems} hidden={isOpen} onOpenMenu={() => setIsOpen(true)} />}
+    </>
   );
 };
 

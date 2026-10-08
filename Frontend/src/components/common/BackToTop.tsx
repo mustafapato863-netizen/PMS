@@ -11,9 +11,10 @@ import { ArrowUp } from 'lucide-react';
 interface BackToTopProps {
   /** Pixel offset before the button becomes visible. @default 400 */
   threshold?: number;
+  aboveNavigation?: boolean;
 }
 
-export default function BackToTop({ threshold = 400 }: BackToTopProps) {
+export default function BackToTop({ threshold = 400, aboveNavigation = false }: BackToTopProps) {
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
@@ -42,7 +43,7 @@ export default function BackToTop({ threshold = 400 }: BackToTopProps) {
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.8, y: 10 }}
           transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-          className="fixed bottom-6 right-4 z-20 grid h-12 w-12 place-items-center rounded-full border border-[var(--border-light)] bg-[var(--bg-surface)] text-[var(--text-secondary)] shadow-lg backdrop-blur-sm transition-colors hover:border-blue-500/30 hover:text-blue-600 hover:shadow-xl focus-visible:outline-2 focus-visible:outline-blue-500 dark:bg-slate-900/90 dark:hover:text-blue-400"
+          className={`fixed bottom-6 right-4 z-20 grid h-12 w-12 place-items-center rounded-full border border-[var(--border-light)] bg-[var(--bg-surface)] text-[var(--text-secondary)] shadow-lg backdrop-blur-sm transition-colors hover:border-blue-500/30 hover:text-blue-600 hover:shadow-xl focus-visible:outline-2 focus-visible:outline-blue-500 dark:bg-slate-900/90 dark:hover:text-blue-400 ${aboveNavigation ? 'above-navigation-dock' : ''}`}
         >
           <ArrowUp size={18} aria-hidden="true" />
         </motion.button>

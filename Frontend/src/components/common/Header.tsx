@@ -121,7 +121,7 @@ function ProfileMenu({
         >
           {initials}
         </div>
-        <div className="hidden sm:flex flex-col text-left">
+        <div className="app-header-profile-details hidden sm:flex flex-col text-left">
           <span className="text-xs font-bold text-[var(--text-primary)] leading-none">{name}</span>
           <div className="flex items-center gap-1.5 mt-0.5">
             <span className="text-[11px] text-[var(--text-muted)] uppercase tracking-wider font-semibold">
@@ -299,6 +299,8 @@ const Header = ({ onMenuClick }: HeaderProps) => {
           <button
             onClick={onMenuClick}
             aria-label="Open navigation sidebar"
+            aria-haspopup="dialog"
+            aria-controls="responsive-navigation"
             className="-ml-1 flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-xl p-1.5 text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-sunken)] hover:text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 xl:hidden"
           >
             <Menu size={20} aria-hidden="true" />
