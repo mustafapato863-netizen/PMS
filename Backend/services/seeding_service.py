@@ -59,10 +59,11 @@ logger = logging.getLogger(__name__)
 def pin_upload_score(version, evidence):
     """Score one approved pin for both upload dry-run and commit.
 
-    Delegates to ``services.evaluation.resolver.score_basis``. A later
-    approved-capability guard belongs in that function so preview and commit
-    share it. This hook does not catch TargetConflict and does not fall back
-    to the workbook total. Outbound period lines come from
+    Delegates to ``services.evaluation.resolver.score_basis``. The caller runs
+    ``require_approved_capability`` after the approved row is found and before
+    this call. ``score_basis`` does not query the database. This hook does not
+    catch TargetConflict or an unsupported-capability error and does not fall
+    back to the workbook total. Outbound period lines come from
     ``services.outbound_period_basis.period_capability``.
     """
     from services.evaluation.resolver import score_basis
@@ -355,7 +356,7 @@ class DatabaseSeeder:
         """
         if db is None or not kpis:
             return
-        from services.evaluation.resolver import schema_ready
+        from services.evaluation.resolver import lock_team_rows, schema_ready
         from services.evaluation.workflow import EvaluationWorkflow
 
         if not schema_ready(db):
@@ -365,6 +366,7 @@ class DatabaseSeeder:
             grouped.setdefault(value.record_id, []).append(value)
         record_list = list(records_by_key.values())
         team_ids = {record.team_id for record in record_list}
+        lock_team_rows(db, team_ids)
         teams = {team.id: team for team in db.query(Team).filter(Team.id.in_(team_ids)).all()} if team_ids else {}
         workflow = EvaluationWorkflow(db)
         for record in record_list:
@@ -383,7 +385,8 @@ class DatabaseSeeder:
         """
         if db is None or not records:
             return []
-        from services.evaluation.resolver import approved_version, schema_ready
+        from services.evaluation.resolver import approved_version, lock_team_rows, require_approved_capability, schema_ready
+        from utils.team_identity import logical_team_name
 
         if not schema_ready(db):
             return []
@@ -392,12 +395,16 @@ class DatabaseSeeder:
             for label in (team.name, team.db_name, team.display_name):
                 if label:
                     by_name[str(label).strip().lower()] = team
-        summaries = []
+        prepared = []
         for record in records:
+            team = by_name.get(str(getattr(record, "team", "") or "").strip().lower())
+            prepared.append((record, team))
+        lock_team_rows(db, [team.id for _record, team in prepared if team is not None])
+        summaries = []
+        for record, team in prepared:
             year = self._upload_year(record)
             if not getattr(record, "year", None):
                 record.year = year
-            team = by_name.get(str(getattr(record, "team", "") or "").strip().lower())
             rows = self._workbook_rows(record)
             version = None
             if team is not None and rows:
@@ -419,6 +426,14 @@ class DatabaseSeeder:
                 })
                 continue
             self._refuse_unsupported_outbound_binding(record, version, year)
+            team_name = logical_team_name(team)
+            require_approved_capability(
+                version,
+                team_name=team_name,
+                config=self._checked_in_config(team_name),
+                year=version.effective_from_year,
+                month=version.effective_from_month,
+            )
             evidence = [
                 {
                     "kpi_key": row.get("kpi_key"),
@@ -462,6 +477,14 @@ class DatabaseSeeder:
                 ],
             })
         return summaries
+
+    @staticmethod
+    def _checked_in_config(team_name: str) -> dict | None:
+        """Checked-in team file for the capability gate. A missing file is ``None``."""
+        try:
+            return load_team_config(team_name)
+        except ConfigurationError:
+            return None
 
     @staticmethod
     def _refuse_unsupported_outbound_binding(record, version, year) -> None:
@@ -791,6 +814,9 @@ class DatabaseSeeder:
                 teams_to_sync.append((marketing_team, None))
 
             db.flush()
+            from services.evaluation.resolver import lock_team_rows
+
+            lock_team_rows(db, [position_team.id for position_team, _config in teams_to_sync])
 
             for position_team, team_config in teams_to_sync:
                 if position_team.name == "Marketing":

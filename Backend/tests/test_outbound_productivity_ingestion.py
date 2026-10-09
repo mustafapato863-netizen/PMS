@@ -23,6 +23,7 @@ from exports.report_exporter import ReportExporter
 from models.models import (
     Employee,
     EmployeeUploadBatch,
+    EvaluationRevision,
     EvaluationScope,
     KPIValue,
     PerformanceRecord,
@@ -95,6 +96,7 @@ def db():
             TeamKPIConfig.__table__,
             TeamConfigurationVersion.__table__,
             EvaluationScope.__table__,
+            EvaluationRevision.__table__,
             EmployeeUploadBatch.__table__,
             UploadLog.__table__,
         ],
@@ -491,17 +493,26 @@ def _lines(attendance_target: float) -> list[dict]:
 
 
 def _approved(team_id, month: int, lines: list[dict]) -> TeamConfigurationVersion:
+    """Exact monthly row: real month name, matching until endpoints, and published_at."""
+    from datetime import timezone
+
+    from services.evaluation.periods import month_name
+
+    label = month_name(month)
     return TeamConfigurationVersion(
         id=uuid.uuid4(),
         team_id=team_id,
         version_number=1,
         status="approved",
-        effective_month="Month",
+        effective_month=label,
         effective_year=2026,
         config_snapshot={"lines": lines, "grade_thresholds": {"A": 95, "B": 85, "C": 75, "D": 65}},
         config_checksum="a" * 64,
         effective_from_month=month,
         effective_from_year=2026,
+        effective_until_month=month,
+        effective_until_year=2026,
         performance_level="Employee",
         position_name="",
+        published_at=datetime.now(timezone.utc),
     )
