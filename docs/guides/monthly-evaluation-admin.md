@@ -1,6 +1,6 @@
 # Monthly evaluation settings: Admin operating guide
 
-Status: candidate guide, 9 October 2026. The Coding correction flow has passed real component/API checks with synthetic authentication and in-memory data, including desktop/tablet/mobile. Complete application-login and Outbound consumer integration verification are still pending. This guide does not mean the feature is deployed or every team's formula is supported.
+Status: reviewed candidate guide, 9 October 2026. Coding and Outbound correction flows passed actual component/API checks with synthetic authentication and in-memory data on desktop/tablet/mobile. Actual approved Outbound upload preview, commit, full-precision provenance and resolved reads also passed integration tests. Complete application-login, production verification and wider team activation remain separate gates. This guide does not mean the feature is deployed or every team's formula is supported.
 
 ## Select the exact scope
 

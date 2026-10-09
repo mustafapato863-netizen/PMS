@@ -1,10 +1,10 @@
 # Monthly Evaluation Settings — Integrated Implementation Plan
 
 **Document ID:** PMS-EVAL-001
-**Version:** 1.1
+**Version:** 1.2
 **Date:** 2026-10-09
 **Status:** Candidate implementation under independent review and correction. Phases 0–8 are not accepted as complete; unsupported scopes remain disabled until their gates pass. No production readiness or deployment verification is claimed. Phase 9 formula editing is a separate release.
-**Source baseline:** main `2af9eb1e3991cb649ebcc695e3f2c42fbce4f40a`; reviewed candidate `848f601c4595b8f69f15665c7841d7714329e674`.
+**Source baseline:** main `2af9eb1e3991cb649ebcc695e3f2c42fbce4f40a`; original candidate `848f601c4595b8f69f15665c7841d7714329e674`; independently reviewed consumer integration `ae40741750bf37f725e1815e5a5cf45775c91cf2`. See the [verification checkpoint](../reviews/monthly-evaluation-candidate-verification.md) for bounded results and remaining rollout gates.
 **Business owner:** PMS administrator
 **Initial scope:** Monthly KPI targets, scoring weights and direction, connected to the entire PMS calculation and reporting pipeline.
 
@@ -461,7 +461,7 @@ No implementation phase is complete until its exit gate has evidence. The whole 
 
 **Deliverables:** Complete frontend workflow, typed API hooks, component tests and browser scenarios.
 
-**Exit gate:** Admin completes July-to-August change with no code edit; authorized Performance Team draft flow works if enabled; directors only see permitted applied evidence. 320/375/640/746/768/1024/desktop widths and keyboard use pass without hidden controls or overflow.
+**Exit gate:** Admin completes July-to-August change with no code edit; Performance Team cannot manage drafts or previews under D001; directors only see permitted applied evidence. 320/375/640/746/768/1024/desktop widths and keyboard use pass without hidden controls or overflow.
 
 ### Phase 7 — Recalculation and legacy-history migration
 
@@ -572,7 +572,7 @@ D001–D005 above settle management authority, unsupported formula behavior, fix
 - [ ] Responsive UX, performance budgets, failure/retry behavior and rollback pass.
 - [ ] Live post-deployment verification confirms authorized real data and the deployed basis.
 
-**Next step:** Close the independently reproduced permission, scoring-completeness, Outbound source-basis, immutable-history, stale-rollback and frontend gate findings; reconcile one forward migration chain; then run integrated verification before a reviewed local merge. Publishing main or deploying is a separate step, requiring the release and recovery gates above. Phase 9 remains out of scope.
+**Next step:** Finish isolated CI verification and the reviewed local merge for the supported candidate. Independent permission, scoring-completeness, Outbound source-basis, immutable-history, stale-rollback and frontend workflow findings have been corrected and tested; this does not close all-team UAT, production-schema recovery or the full downstream performance matrix. Publishing main or deploying remains separate after release/recovery gates. Phase 9 remains out of scope.
 
 ## 16. Reference maintenance
 
