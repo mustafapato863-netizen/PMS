@@ -76,6 +76,13 @@ def preview_draft(version_id: str, body: PreviewRequest, request: Request, db: S
     return StandardResponse(success=True, message="Evaluation preview", data=data)
 
 
+@router.post("/drafts/{version_id}/impact-preview", response_model=StandardResponse)
+def impact_preview_draft(version_id: str, request: Request, db: Session = Depends(get_db)):
+    actor = _actor(request, db)
+    data = _run(lambda: EvaluationWorkflow(db).impact_preview(actor, version_id))
+    return StandardResponse(success=True, message="Evaluation impact preview", data=data)
+
+
 @router.post("/drafts/{version_id}/approve", response_model=StandardResponse)
 def approve_draft(version_id: str, request: Request, db: Session = Depends(get_db)):
     actor = _actor(request, db)
@@ -88,6 +95,13 @@ def preview_job(version_id: str, body: PreviewRequest, request: Request, db: Ses
     actor = _actor(request, db)
     data = _run(lambda: EvaluationWorkflow(db).run_preview_job(actor, version_id, body.rows))
     return StandardResponse(success=True, message="Evaluation preview job", data=data)
+
+
+@router.post("/versions/{version_id}/revise", response_model=StandardResponse)
+def revise_version(version_id: str, request: Request, db: Session = Depends(get_db)):
+    actor = _actor(request, db)
+    data = _run(lambda: EvaluationWorkflow(db).revise(actor, version_id))
+    return StandardResponse(success=True, message="Evaluation revision draft saved", data=data)
 
 
 @router.get("/versions/{version_id}", response_model=StandardResponse)
