@@ -22,6 +22,7 @@ import { getRoleDisplayLabel, isGeneralManagerRole, readHasUnrestrictedTeamAcces
 
 const ROUTE_TITLES: Record<string, { title: string; compactTitle: string; subtitle: string }> = {
   '/executive': { title: 'Executive Summary', compactTitle: 'Executive', subtitle: 'Performance overview across all teams' },
+  '/departmental-summary': { title: 'Departmental Summary', compactTitle: 'Departments', subtitle: 'Function, team and region performance' },
   '/function-summary': { title: 'Function Summary', compactTitle: 'Function', subtitle: 'Performance within your selected function' },
   '/account': { title: 'Account Settings', compactTitle: 'Account', subtitle: 'Your profile, security and appearance' },
   '/settings': { title: 'Administration', compactTitle: 'Admin', subtitle: 'System configuration and user management' },

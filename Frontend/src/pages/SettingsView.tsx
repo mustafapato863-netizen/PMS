@@ -6,7 +6,7 @@ import { useUserRole } from '../context/RoleContext';
 import { canAccessSettingsContent } from '../lib/access';
 import { SettingsLayout } from '../components/settings/SettingsLayout';
 import { DataManagementPanel } from '../components/settings/DataManagementPanel';
-import { KPIConfigPanel } from '../components/settings/KPIConfigPanel';
+import { EvaluationSettingsPanel } from '../components/settings/EvaluationSettingsPanel';
 import { UserManagementPanel } from '../components/settings/UserManagementPanel';
 import { CorrectiveActionDataPanel } from '../components/settings/CorrectiveActionDataPanel';
 import { SystemErrorsPanel } from '../components/settings/SystemErrorsPanel';
@@ -40,7 +40,7 @@ const SettingsView = () => {
       <SettingsLayout activeSection={activeSection} onSectionChange={setActiveSection}>
         {activeSection === 'upload' && <DataManagementPanel />}
         {activeSection === 'corrective_actions' && <CorrectiveActionDataPanel />}
-        {activeSection === 'kpis' && <KPIConfigPanel />}
+        {activeSection === 'kpis' && <EvaluationSettingsPanel />}
         {activeSection === 'users' && <UserManagementPanel />}
         {activeSection === 'teams' && <div className="glass-panel rounded-3xl p-5 shadow-sm"><TeamManagementView /></div>}
         {activeSection === 'system_errors' && <SystemErrorsPanel />}

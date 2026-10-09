@@ -50,6 +50,8 @@ def run():
         begin = time.perf_counter()
         page.get_by_role("button", name="Sign In", exact=True).click()
         page.wait_for_url(re.compile(r"/executive(?:\?|$)"))
+        page.locator("aside").get_by_role("link", name="Departmental Summary", exact=True).click()
+        page.wait_for_url(re.compile(r"/departmental-summary(?:\?|$)"))
         roster = page.locator('[aria-labelledby="exec-employees-below-title"]')
         expect(roster.locator("li").first).to_be_visible(timeout=60_000)
         result["cold_login_to_roster_ms"] = round((time.perf_counter() - begin) * 1000)
@@ -79,13 +81,13 @@ def run():
             show_teams = page.get_by_role("button", name="Show all teams", exact=True)
             show_teams.click()
             expect(page.get_by_role("table", name="All teams", exact=True)).to_be_visible()
-            assert urlparse(page.url).path == "/executive"
+            assert urlparse(page.url).path == "/departmental-summary"
             page.get_by_role("button", name="Show at-risk teams", exact=True).click()
             result["checks"].append("Show all teams expands inline and can collapse")
 
             def open_filters():
-                page.get_by_role("button", name=re.compile(r"^Executive filters[.,]")).click()
-                dialog = page.get_by_role("dialog", name="Executive filters", exact=True)
+                page.get_by_role("button", name=re.compile(r"^Departmental filters[.,]")).click()
+                dialog = page.get_by_role("dialog", name="Departmental filters", exact=True)
                 expect(dialog).to_be_visible()
                 return dialog
 
@@ -120,7 +122,7 @@ def run():
             result["checks"].append("Team navigation opens its details page")
             request_count_before_return = len(result["requests"])
             begin = time.perf_counter()
-            page.locator("aside").get_by_role("link", name="Executive Summary", exact=True).click()
+            page.locator("aside").get_by_role("link", name="Departmental Summary", exact=True).click()
             expect(roster.locator("li").first).to_be_visible()
             assert "team=" not in page.url and "function=" not in page.url
             result["warm_return_to_summary_ms"] = round((time.perf_counter() - begin) * 1000)
@@ -161,7 +163,7 @@ def run():
             page.wait_for_url(re.compile(r"/function-summary/rcm"))
             expect(page.get_by_role("heading", name="Function Summary", exact=True)).to_be_visible()
             assert not page.get_by_role("heading", name="Reports & export", exact=True).count()
-            page.locator("aside").get_by_role("link", name="Executive Summary", exact=True).click()
+            page.locator("aside").get_by_role("link", name="Departmental Summary", exact=True).click()
             expect(roster.locator("li").first).to_be_visible()
             result["checks"].append("RCM function details open and have no reports/export section")
             samples = []
@@ -170,7 +172,7 @@ def run():
                 expect(team_roster_link).to_be_visible(timeout=60_000)
                 page.wait_for_load_state("networkidle")
                 begin = time.perf_counter()
-                page.locator("aside").get_by_role("link", name="Executive Summary", exact=True).click()
+                page.locator("aside").get_by_role("link", name="Departmental Summary", exact=True).click()
                 expect(roster.locator("li").first).to_be_visible()
                 samples.append(round((time.perf_counter() - begin) * 1000))
             result["warm_return_samples_ms"] = samples
@@ -199,10 +201,12 @@ def run():
                 branch_page.get_by_role("button", name="Sign In", exact=True).click()
             token = login_response.value.json()["data"]["access_token"]
             branch_page.wait_for_url(re.compile(r"/executive(?:\?|$)"))
+            branch_page.locator("aside").get_by_role("link", name="Departmental Summary", exact=True).click()
+            branch_page.wait_for_url(re.compile(r"/departmental-summary(?:\?|$)"))
             expect(branch_page.locator('[aria-labelledby="exec-employees-below-title"] li').first).to_be_visible(timeout=60_000)
             branch_page.wait_for_load_state("networkidle")
-            branch_page.get_by_role("button", name=re.compile(r"^Executive filters[.,]")).click()
-            branch_dialog = branch_page.get_by_role("dialog", name="Executive filters", exact=True)
+            branch_page.get_by_role("button", name=re.compile(r"^Departmental filters[.,]")).click()
+            branch_dialog = branch_page.get_by_role("dialog", name="Departmental filters", exact=True)
             locked = branch_dialog.locator('[data-locked="true"]').filter(has_text="Dubai")
             expect(locked).to_have_attribute("aria-disabled", "true")
             expect(branch_dialog.get_by_role("button", name="Branch", exact=True)).to_have_count(0)

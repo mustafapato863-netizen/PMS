@@ -181,6 +181,15 @@ async def upload_pms_file(
         )
         logger.exception("Unexpected upload processing failure")
         status_code = getattr(e, "status_code", 500)
+        if type(e).__name__ == "TargetConflict":
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "message": str(e),
+                    "code": "target_conflict",
+                    "conflicts": getattr(e, "data", {}).get("conflicts", []),
+                },
+            ) from e
         error_type = type(e).__name__
         if error_type in ("UploadProcessingError", "ConfigurationError") or status_code == 422:
             raise HTTPException(

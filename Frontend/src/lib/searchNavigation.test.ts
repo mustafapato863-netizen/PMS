@@ -24,7 +24,7 @@ const BROAD_PATHS = ['/reports', '/insights', '/planning'];
 describe('buildLocalSearchResults access (General Manager role string)', () => {
   it('lets a General Manager search product pages and Team Management, but not Settings shortcuts', () => {
     const paths = pathsFor(user('General Manager', true));
-    for (const path of [...BROAD_PATHS, '/corrective-actions', '/team-management', '/executive', '/team/all']) {
+    for (const path of [...BROAD_PATHS, '/corrective-actions', '/team-management', '/executive', '/departmental-summary', '/team/all']) {
       expect(paths).toContain(path);
     }
     for (const path of SETTINGS_SHORTCUTS) expect(paths).not.toContain(path);
@@ -36,7 +36,7 @@ describe('buildLocalSearchResults access (General Manager role string)', () => {
     for (const path of ['/insights', '/team-management', ...SETTINGS_SHORTCUTS]) {
       expect(paths).not.toContain(path);
     }
-    for (const path of ['/executive', '/reports', '/planning', '/corrective-actions']) expect(paths).toContain(path);
+    for (const path of ['/executive', '/departmental-summary', '/reports', '/planning', '/corrective-actions']) expect(paths).toContain(path);
   });
 
   it('keeps Settings, user and team management search items for Admin', () => {
@@ -73,7 +73,7 @@ describe('buildLocalSearchResults for Function Viewer', () => {
     const paths = pathsFor(user('Function Viewer'));
     expect(paths).toContain('/function-summary');
     expect(paths).toContain('/reports');
-    for (const path of ['/executive', '/insights', '/planning', '/corrective-actions', '/team/all', ...SETTINGS_SHORTCUTS]) {
+    for (const path of ['/executive', '/departmental-summary', '/insights', '/planning', '/corrective-actions', '/team/all', ...SETTINGS_SHORTCUTS]) {
       expect(paths).not.toContain(path);
     }
   });

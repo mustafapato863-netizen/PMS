@@ -45,6 +45,7 @@ def _weight(weights: Mapping[str, float], key: str) -> float:
         "Quality": ("Quality",),
         "AHT": ("AHT",),
         "Other": ("Other",),
+        "Productivity": ("Productivity",),
         "Rejection": ("Rejection",),
         "InitialError": ("InitialError",),
         "Submission": ("Submission",),
@@ -272,6 +273,7 @@ def build_legacy_employee_kpi_values(
     if team not in LEGACY_EMPLOYEE_TEAMS:
         return []
 
+    productivity_only = False
     evidence_keys = {
         "Inbound": ("A.Attend%", "A.Booking%", "A.QualityScore", "AHT_Minutes", "A.UTZ%", "A.AbandonRate%"),
         "Outbound": ("A.Attend%", "A.Booking%", "A.QualityScore", "A.Reachability%"),
@@ -279,7 +281,14 @@ def build_legacy_employee_kpi_values(
         "Pre-Approvals IP Offshore": ("IPInitialRejection%", "Error%", "NumberApprovalwithin48hrs"),
         "Sales": ("A.OPCensus", "A.OPRevenue", "A.IPCensus", "A.IPRevenue", "OPCensusAch%"),
     }
-    if not any(_first(row, key) is not None for key in evidence_keys[team]):
+    if team == "Outbound":
+        from services.outbound_period_basis import productivity_actual
+
+        has_core = any(_first(row, key) is not None for key in evidence_keys[team])
+        if not has_core and productivity_actual(row) is None:
+            return []
+        productivity_only = not has_core
+    elif not any(_first(row, key) is not None for key in evidence_keys[team]):
         return []
 
     achievements = achievements or {}
@@ -307,7 +316,7 @@ def build_legacy_employee_kpi_values(
             ),
         ]
     elif team == "Outbound":
-        specs = [
+        specs = [] if productivity_only else [
             ("Attendance", "Attendance Rate", "higher_better", _first(row, "A.Attend%"), _first(row, "AttendC.RAch%", "Attend%Ach%"), 0.55),
             ("Booking", "Booking Rate", "higher_better", _first(row, "A.Booking%"), _first(row, "BookingC.RAch%", "Booking%Ach%"), 0.46),
             ("Quality", "Quality Score", "higher_better", _first(row, "A.QualityScore"), _first(row, "QualityAch%", "QualityTargetAch%"), 0.95),
@@ -387,6 +396,14 @@ def build_legacy_employee_kpi_values(
                 "T.InitialRejection",
                 *target_keys,
             ]
+        elif team == "Outbound" and key == "Attendance":
+            target_keys = ["T.Attend%", "T.Attend", *target_keys]
+        elif team == "Outbound" and key == "Booking":
+            target_keys = ["T.Booking%", "T.Booking", *target_keys]
+        elif team == "Outbound" and key == "Quality":
+            target_keys = ["T.Quality%", "T.Quality", *target_keys]
+        elif team == "Outbound" and key == "Other":
+            target_keys = ["T.Reachability%", "T.Reachability", *target_keys]
         elif key == "Submission":
             # The Offshore workbook names the submission target by its
             # approval-within-48-hours measure, not by the KPI label.
@@ -417,7 +434,9 @@ def build_legacy_employee_kpi_values(
                 raw_ach = (target / actual) if actual > 0 else 1.0
             else:
                 raw_ach = (actual / target)
-            achievement = round(min(max(raw_ach, 0.0), 1.0), 4)
+            achievement = min(max(raw_ach, 0.0), 1.0)
+            if team != "Outbound":
+                achievement = round(achievement, 4)
         result.append({
             "kpi_key": key,
             "label": label,
@@ -432,4 +451,44 @@ def build_legacy_employee_kpi_values(
             "contribution": min(achievement, 1.0) * weight,
             "cap_achievement": True,
         })
+    if team == "Outbound":
+        _append_outbound_productivity(result, row, weights, definitions)
     return result
+
+
+def _append_outbound_productivity(result, row, weights, definitions) -> None:
+    """Keep a present Productivity actual. A missing actual adds no zero row."""
+    from services.outbound_period_basis import (
+        PRODUCTIVITY_KEY,
+        productivity_actual,
+        productivity_target,
+    )
+
+    if any(item.get("kpi_key") == PRODUCTIVITY_KEY for item in result):
+        return
+    actual = productivity_actual(row)
+    if actual is None:
+        return
+    weight = _weight(weights, PRODUCTIVITY_KEY)
+    target = productivity_target(row, 0.8 if weight > 0 else None)
+    if target is not None and target > 1.0:
+        target = target / 100.0
+    if target is None:
+        target = 0.0
+    achievement = min(max(actual / target, 0.0), 1.0) if target > 0 else 0.0
+    definition = definitions.get(PRODUCTIVITY_KEY, {})
+    result.append({
+        "kpi_key": PRODUCTIVITY_KEY,
+        "label": "Productivity",
+        "perspective": definition.get("perspective"),
+        "unit": definition.get("unit", "%"),
+        "color": definition.get("color", "#3B82F6"),
+        "direction": "higher_better",
+        "actual_value": actual,
+        "target_value": target,
+        "achievement_ratio": achievement,
+        "weight_applied": weight,
+        "contribution": achievement * weight,
+        "cap_achievement": True,
+        "scored": weight > 0,
+    })

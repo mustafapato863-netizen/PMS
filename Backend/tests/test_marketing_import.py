@@ -6,7 +6,7 @@ import pandas as pd
 import pytest
 from fastapi import HTTPException, UploadFile
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from api.routers import upload as upload_router
@@ -548,29 +548,25 @@ def test_failed_publish_leaves_json_snapshots_untouched_and_rolls_back_database(
         lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("database failure")),
     )
 
-    class DummySession:
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(bind=engine)
+
+    class TrackingSession(Session):
         def __init__(self):
+            super().__init__(bind=engine, autoflush=False)
             self.rolled_back = False
-
-        def add(self, _row):
-            pass
-
-        def flush(self):
-            pass
 
         def commit(self):
             pytest.fail("failed upload must not commit")
 
         def rollback(self):
             self.rolled_back = True
+            super().rollback()
 
-        def close(self):
-            pass
-
-    session = DummySession()
+    session = TrackingSession()
     monkeypatch.setattr("services.seeding_service.SessionLocal", lambda: session)
 
-    with pytest.raises(UploadProcessingError):
+    with pytest.raises(UploadProcessingError, match="database failure"):
         seeder.process_uploaded_file(
             "marketing.xlsx",
             _workbook_bytes(_valid_frame(positions=["Media Buyer"])),
@@ -580,6 +576,14 @@ def test_failed_publish_leaves_json_snapshots_untouched_and_rolls_back_database(
     # Hosted runtime persistence is database-only. A failed transaction must
     # not write to or rewrite the legacy JSON snapshots.
     assert restored == {}
+    # A real transaction also proves that the staged upload batch was removed.
+    from models.models import EmployeeUploadBatch
+
+    with Session(bind=engine) as verification:
+        assert verification.query(EmployeeUploadBatch).count() == 0
+        assert verification.query(DBPerformanceRecord).count() == 0
+        assert verification.query(KPIValue).count() == 0
+    engine.dispose()
 
 
 @pytest.mark.asyncio

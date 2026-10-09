@@ -15,7 +15,10 @@ from services.corrective_action_service import CorrectiveActionService, Correcti
 from services.kpi_configuration_service import KPIConfigurationService
 from sqlalchemy.orm import Session
 
+from api.routers.evaluation_settings import router as evaluation_router
+
 router = APIRouter()
+router.include_router(evaluation_router, prefix="/evaluation", tags=["Evaluation Settings"])
 
 
 @router.get("/system-errors", response_model=StandardResponse)

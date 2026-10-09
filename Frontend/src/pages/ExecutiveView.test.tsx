@@ -1,274 +1,214 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, within } from '@testing-library/react';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { MemoryRouter, Route, RouterProvider, Routes, createMemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { User } from '../types';
-import type { ExecutiveSummary } from '../features/executive/types';
-import { composeExecutiveSummary, toExecRecords, type ComposeInput } from '../features/executive/compose';
-import { FIXTURE_TEAM_FUNCTIONS, fixtureActions, fixtureAgentRecords, fixtureDrivers } from '../features/executive/executive.fixture';
-import type { UseExecutiveSummaryArgs } from '../features/executive/useExecutiveSummary';
+import { ThemeProvider } from '../context/ThemeContext';
 import ExecutiveView from './ExecutiveView';
-import { periodOptionsFor } from '../features/executive/viewModel';
 
 const state = vi.hoisted(() => ({
   role: 'Admin' as string,
-  user: null as Partial<User> | null,
-  summary: null as ExecutiveSummary | null,
-  loading: false,
-  lastArgs: null as UseExecutiveSummaryArgs | null,
+  user: { id: 'u1', name: 'Super Admin', role: 'Admin', accessible_teams: [] } as Partial<User>,
 }));
+
+const calls = vi.hoisted(() => ({ summary: [] as unknown[][] }));
 
 vi.mock('../context/RoleContext', () => ({ useUserRole: () => ({ role: state.role }) }));
 vi.mock('../context/auth', () => ({ useAuth: () => ({ currentUser: state.user }) }));
-vi.mock('../features/executive/useExecutiveSummary', () => ({
-  useExecutiveSummary: (args: UseExecutiveSummaryArgs) => {
-    state.lastArgs = args;
+vi.mock('../hooks/useActionStore', () => ({ useActionStore: () => ({ getAllActions: () => [] }) }));
+vi.mock('../lib/apiClient', () => ({ apiFetch: vi.fn().mockResolvedValue({ success: true, data: [] }) }));
+vi.mock('../hooks/api/usePerformanceDashboard', () => ({
+  scopedPerformanceApiEnabled: true,
+  useScopedExecutiveSummary: (...args: unknown[]) => {
+    calls.summary.push(args);
     return {
-      summary: state.summary,
-      options: { regions: ['EGY', 'UAE'], functions: ['Call Center', 'RCM', 'Pre-Approvals', 'Marketing'], teams: ['Inbound', 'Outbound', 'Pre-Approvals IP Offshore', 'Pre-Approvals OP Dubai'], levels: ['Employee'] },
-      isLoading: state.loading,
-      error: null,
-      source: 'composed',
-      managerTeam: args.view === 'managerial' ? 'Inbound' : null,
+      summaries: [],
+      previousSummaries: [],
+      totalAgents: 12,
+      uniqueTeamCount: 3,
+      overallAvgScore: 84.2,
+      pctAB: 61.5,
+      pctDE: 8.4,
+      allClassCounts: { A: 4, B: 3, C: 3, D: 1, E: 1 },
+      uniqueMonths: ['May', 'June'],
+      activePeriod: { month: 'June', year: 2026, key: '2026-06' },
+      previousPeriod: { month: 'May', year: 2026, key: '2026-05' },
+      previousTotalAgents: 10,
+      previousOverallAvgScore: 80,
+      previousPctAB: 55,
+      previousPctDE: 10,
+      loading: false,
+      dataSource: 'api',
+      errorMessage: null,
     };
   },
 }));
-vi.mock('../lib/apiClient', () => ({
-  apiFetch: vi.fn().mockResolvedValue({
-    success: true,
-    data: { items: [], page_size: 8, next_cursor: null, has_more: false, total: 0 },
-  }),
-}));
 
-const TODAY = new Date(2026, 6, 6);
-const records = toExecRecords(fixtureAgentRecords());
-const build = (patch: Partial<ComposeInput> = {}) => composeExecutiveSummary({
-  view: 'corporate', role: 'Admin', records, filters: {}, teamFunctions: FIXTURE_TEAM_FUNCTIONS,
-  drivers: fixtureDrivers(), actions: fixtureActions(TODAY), comparisonRecords: records, today: TODAY, ...patch,
-});
+function lastSummary() {
+  return calls.summary.at(-1) as [string, string, string, string];
+}
 
 function renderAt(path = '/executive') {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  const rendered = render(
+  return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={[path]}>
-        <Routes>
-          <Route path="/executive" element={<ExecutiveView />} />
-          <Route path="/function-summary" element={<div>Function Summary page</div>} />
-        </Routes>
-      </MemoryRouter>
+      <ThemeProvider>
+        <MemoryRouter initialEntries={[path]}>
+          <Routes>
+            <Route path="/executive" element={<ExecutiveView />} />
+            <Route path="/function-summary" element={<div>Function Summary page</div>} />
+          </Routes>
+        </MemoryRouter>
+      </ThemeProvider>
     </QueryClientProvider>,
   );
-  const launcher = screen.queryByRole('button', { name: /Executive filters/i });
-  if (launcher) fireEvent.click(launcher);
-  return rendered;
+}
+
+function renderHistory(entries: string[]) {
+  const router = createMemoryRouter([
+    { path: '/executive', element: <ExecutiveView /> },
+    { path: '/function-summary', element: <div>Function Summary page</div> },
+  ], { initialEntries: entries, initialIndex: entries.length - 1 });
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={queryClient}>
+      <ThemeProvider>
+        <RouterProvider router={router} />
+      </ThemeProvider>
+    </QueryClientProvider>,
+  );
+  return router;
+}
+
+function openFilters() {
+  fireEvent.click(screen.getByRole('button', { name: /Filters/ }));
 }
 
 beforeEach(() => {
   state.role = 'Admin';
   state.user = { id: 'u1', name: 'Super Admin', role: 'Admin', accessible_teams: [] };
-  state.summary = build();
-  state.loading = false;
-  state.lastArgs = null;
+  calls.summary.length = 0;
 });
 
-describe('ExecutiveView role routing', () => {
-  it('treats legacy All filter values as unfiltered when returning from other dashboards', () => {
-    renderAt('/executive?region=All&branch=all&function=ALL&team=All&level=All');
-    expect(state.lastArgs?.filters).toMatchObject({
-      region: undefined, branch: undefined, teamFunction: undefined, team: undefined, performanceLevel: undefined,
-    });
-    expect(screen.getByLabelText('Region')).toHaveValue('');
-  });
-  it.each([
-    { role: 'Branch Director', grant: { accessible_branches: ['dubai'] }, url: 'branch=sharjah&region=UAE', filter: 'branch', value: 'dubai', label: /Branch: Dubai \(fixed by your role\)/ },
-    { role: 'Regional Manager', grant: { accessible_regions: ['UAE'] }, url: 'region=EGY&branch=dubai', filter: 'region', value: 'UAE', label: /Region: UAE \(fixed by your role\)/ },
-  ])('locks $role grant even with a contradictory URL and clear', ({ role, grant, url, filter, value, label }) => {
-    state.role = role;
-    state.user = { id: 'director', ...grant };
-    renderAt(`/executive?period=2026-06&${url}&level=Corporate`);
-    expect(state.lastArgs?.filters[filter as 'branch' | 'region']).toBe(value);
-    expect(screen.getByRole('group', { name: label })).toHaveAttribute('aria-disabled', 'true');
-    fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
-    expect(state.lastArgs?.filters[filter as 'branch' | 'region']).toBe(value);
-    expect(state.lastArgs?.filters.periodKey).toBe('2026-06');
-    expect(state.lastArgs?.filters.performanceLevel).toBeUndefined();
-  });
-  it.each(['Admin', 'General Manager', 'Executive', 'Viewer'])('%s gets the Corporate view', (role) => {
-    state.role = role;
+describe('Executive overview', () => {
+  it('restores the company overview with region, branch and month filters', () => {
     renderAt();
-    expect(state.lastArgs?.view).toBe('corporate');
-    expect(screen.getByTestId('executive-corporate')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Executive Summary' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Executive Overview' })).toBeInTheDocument();
+    openFilters();
+    expect(screen.getByRole('combobox', { name: 'Filter by region' })).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Filter by branch' })).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Filter by month' })).toBeInTheDocument();
+    expect(screen.getByText('Total Agents')).toBeInTheDocument();
+    expect(screen.getByText('Avg Performance Score')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Actions Summary' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Team Summary' })).toBeInTheDocument();
   });
 
-  it('Manager gets the Managerial view with region/function/team locked', () => {
-    state.role = 'Manager';
-    state.user = { id: 'm1', name: 'Hany Mostafa', role: 'Manager', accessible_teams: ['Inbound'] };
-    state.summary = build({ view: 'managerial', role: 'Manager', team: 'Inbound', comparisonRecords: null });
-    renderAt();
-    expect(state.lastArgs).toMatchObject({ view: 'managerial', managerTeams: ['Inbound'] });
-    expect(screen.getByTestId('executive-managerial')).toBeInTheDocument();
-    expect(screen.getByText('Team scope')).toBeInTheDocument();
-    const filters = screen.getByRole('group', { name: 'Executive filters' });
-    expect(within(filters).getByRole('group', { name: /Region: EGY \(fixed by your role\)/ })).toBeInTheDocument();
-    expect(within(filters).getByRole('group', { name: /Function: Call Center \(fixed by your role\)/ })).toBeInTheDocument();
-    expect(within(filters).getByRole('group', { name: /Team: Inbound \(fixed by your role\)/ })).toBeInTheDocument();
-    expect(screen.getByRole('note')).toHaveTextContent('Scoped to your team');
-    expect(screen.getByRole('note')).toHaveTextContent('function-average comparison appears once the backend summary endpoint is live');
-    expect(screen.getByRole('heading', { name: 'Team KPIs — worst first' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Corrective actions' })).toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: 'Functions' })).not.toBeInTheDocument();
-  });
-
-  it('applies the selected team parent function together with the team filter', () => {
-    renderAt();
-
-    fireEvent.change(screen.getByLabelText('Team'), { target: { value: 'Inbound' } });
-
-    expect(state.lastArgs?.filters).toMatchObject({ teamFunction: 'Call Center', team: 'Inbound' });
-  });
-
-  it('clears scope filters from the icon while preserving the selected period', () => {
-    renderAt('/executive?period=2026-06&region=UAE&branch=Dubai&function=RCM&team=Inbound&level=Employee');
-
-    fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
-
-    expect(state.lastArgs?.filters).toEqual({ periodKey: '2026-06' });
-  });
-
-  it('restores a sub-team link under RCM and clears both hierarchy selections', () => {
-    renderAt('/executive?period=2026-06&function=RCM&team=Pre-Approvals&sub_team=Pre-Approvals%20IP%20Offshore&level=Corporate');
-    expect(state.lastArgs?.filters).toMatchObject({ teamFunction: 'RCM', team: 'Pre-Approvals IP Offshore', performanceLevel: 'Corporate' });
-    expect(screen.getByLabelText('Team')).toHaveValue('Pre-Approvals');
-    expect(screen.getByLabelText('Sub-team')).toHaveValue('Pre-Approvals IP Offshore');
-    fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
-    expect(state.lastArgs?.filters).toEqual({ periodKey: '2026-06' });
-    expect(screen.queryByLabelText('Sub-team')).not.toBeInTheDocument();
-  });
-
-  it('ignores a sub-team URL value outside the selected parent', () => {
-    renderAt('/executive?function=RCM&team=Pre-Approvals&sub_team=Coding');
-    expect(state.lastArgs?.filters.team).toBe('Pre-Approvals');
-  });
-
-  it('ignores a contradictory legacy function/team link when restoring its new parent', () => {
-    renderAt('/executive?function=Pre-Approvals&team=Coding');
-    expect(state.lastArgs?.filters).toMatchObject({ teamFunction: 'RCM', team: 'Pre-Approvals' });
-  });
-
-  it('Function Viewer is redirected to /function-summary', () => {
+  it('sends a Function Viewer to Function Summary without mounting the overview', () => {
     state.role = 'Function Viewer';
     renderAt();
     expect(screen.getByText('Function Summary page')).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Executive Overview' })).not.toBeInTheDocument();
+    expect(calls.summary).toHaveLength(0);
   });
 
-  it('marks the corporate view read-only for Executive and Viewer, not for Admin', () => {
-    state.role = 'Executive';
-    const { unmount } = renderAt();
-    expect(screen.getByText('Read-only')).toBeInTheDocument();
-    unmount();
-    state.role = 'Admin';
-    renderAt();
-    expect(screen.queryByText('Read-only')).not.toBeInTheDocument();
+  it('sends a Function Director to Function Summary and does not clear the function scope here', () => {
+    state.role = 'Function Director';
+    state.user = { id: 'fd', role: 'Function Director', accessible_functions: ['Call Center'] };
+    renderAt('/executive?function=Marketing');
+    expect(screen.getByText('Function Summary page')).toBeInTheDocument();
+    expect(calls.summary).toHaveLength(0);
   });
-});
 
-describe('Corporate sections', () => {
-  it('renders hero, function cards, drivers, regions, teams at risk, grades and actions', () => {
-    renderAt();
-    expect(screen.getByRole('heading', { name: /^June 2026 company performance is \d+\.\d% below target\.$/ })).toBeInTheDocument();
-    expect(screen.getAllByRole('article').map((card) => card.getAttribute('aria-label'))).toEqual([
-      'Call Center function', 'RCM function', 'Marketing function', 'CSR function',
+  it('passes an exact period through even when the same month name is also present', () => {
+    renderAt('/executive?period=2025-07&month=July');
+    expect(lastSummary()[0]).toBe('2025-07');
+    openFilters();
+    expect(screen.getByRole('combobox', { name: 'Filter by month' })).toHaveValue('July');
+  });
+
+  it('locks a Branch Director to the assigned branch and keeps that scope when filters are cleared', () => {
+    state.role = 'Branch Director';
+    state.user = { id: 'bd', role: 'Branch Director', accessible_branches: ['Dubai'] };
+    renderAt('/executive?period=2025-07&branch=sharjah&region=EGY&performance_level=Employee');
+    expect(lastSummary()).toEqual(['2025-07', 'EGY', 'dubai', 'Employee']);
+    openFilters();
+    const branch = screen.getByRole('combobox', { name: 'Filter by branch' });
+    expect(branch).toBeDisabled();
+    expect(branch).toHaveValue('dubai');
+    expect(Array.from((branch as HTMLSelectElement).options).map((option) => option.value)).toEqual(['dubai']);
+    fireEvent.change(branch, { target: { value: 'sharjah' } });
+    expect(lastSummary()[2]).toBe('dubai');
+    fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
+    expect(lastSummary()).toEqual(['2025-07', 'All', 'dubai', 'All']);
+    expect(screen.getByRole('heading', { name: 'Executive Overview' })).toBeInTheDocument();
+  });
+
+  it('locks a Regional Manager to the assigned region when the URL names another region', () => {
+    state.role = 'Regional Manager';
+    state.user = { id: 'rm', role: 'Regional Manager', accessible_regions: ['uae'] };
+    renderAt('/executive?region=EGY&branch=sharjah');
+    expect(lastSummary()[1]).toBe('UAE');
+    expect(lastSummary()[2]).toBe('sharjah');
+    openFilters();
+    const region = screen.getByRole('combobox', { name: 'Filter by region' });
+    expect(region).toBeDisabled();
+    expect(region).toHaveValue('UAE');
+    fireEvent.change(region, { target: { value: 'EGY' } });
+    expect(lastSummary()[1]).toBe('UAE');
+  });
+
+  it('does not invent one branch or region when several are assigned', () => {
+    state.role = 'Branch Director';
+    state.user = { id: 'bd', role: 'Branch Director', accessible_branches: ['Dubai', 'Sharjah'] };
+    renderAt('/executive?branch=ajman');
+    expect(lastSummary()[2]).toBe('all');
+    openFilters();
+    const branch = screen.getByRole('combobox', { name: 'Filter by branch' });
+    expect(branch).toBeDisabled();
+    expect(branch).toHaveTextContent('dubai, sharjah');
+    cleanup();
+
+    state.role = 'Regional Manager';
+    state.user = { id: 'rm', role: 'Regional Manager', accessible_regions: ['EGY', 'KSA'] };
+    renderAt('/executive?region=UAE');
+    expect(lastSummary()[1]).toBe('All');
+    openFilters();
+    expect(screen.getAllByRole('combobox', { name: 'Filter by region' }).at(-1)).toHaveTextContent('EGY, KSA');
+  });
+
+  it('lets an Admin follow the branch in the URL and drops an exact period when the month changes', () => {
+    renderAt('/executive?period=2025-07&month=July&branch=sharjah&region=UAE&performance_level=Employee');
+    expect(lastSummary()).toEqual(['2025-07', 'UAE', 'sharjah', 'Employee']);
+    openFilters();
+    expect(screen.getByRole('combobox', { name: 'Filter by branch' })).toBeEnabled();
+    fireEvent.change(screen.getByRole('combobox', { name: 'Filter by month' }), { target: { value: 'June' } });
+    expect(lastSummary()).toEqual(['June', 'UAE', 'sharjah', 'Employee']);
+  });
+
+  it('keeps the assigned branch when the back stack contains a tampered branch URL', async () => {
+    state.role = 'Branch Director';
+    state.user = { id: 'bd', role: 'Branch Director', accessible_branches: ['dubai'] };
+    const router = renderHistory([
+      '/executive?period=2025-07&branch=dubai',
+      '/executive?period=2025-07&branch=sharjah',
     ]);
-    expect(screen.getByRole('link', { name: 'View RCM function' })).toHaveAttribute('href', '/function-summary/rcm');
-    expect(screen.getByRole('heading', { name: 'What moved the score vs May' })).toBeInTheDocument();
-    expect(screen.getAllByTestId('region-box')).toHaveLength(2);
-    expect(screen.getByRole('heading', { name: 'Teams at risk' })).toBeInTheDocument();
-    expect(screen.getAllByTestId('risk-row')).toHaveLength(state.summary?.teams.filter((team) => team.score !== null && team.score < 90).length ?? 0);
-    fireEvent.click(screen.getByRole('button', { name: 'Show all teams' }));
-    expect(screen.getByRole('heading', { name: 'All teams' })).toBeInTheDocument();
-    expect(screen.getAllByTestId('risk-row')).toHaveLength(state.summary?.teams.length ?? 0);
-    expect(screen.getByRole('heading', { name: 'Grade distribution' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Corrective actions' })).toBeInTheDocument();
-    expect(screen.getByTestId('corrective-action-insights')).toBeInTheDocument();
-    expect(screen.queryByTestId('action-tile-due-this-week')).not.toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: 'Open Corrective Actions' })).not.toBeInTheDocument();
+    expect(lastSummary()[2]).toBe('dubai');
+    await act(async () => { await router.navigate(-1); });
+    expect(router.state.location.pathname).toBe('/executive');
+    expect(screen.getByRole('heading', { name: 'Executive Overview' })).toBeInTheDocument();
+    expect(screen.queryByText('Function Summary page')).not.toBeInTheDocument();
+    expect(lastSummary()).toEqual(['2025-07', 'All', 'dubai', 'All']);
   });
 
-  it('labels the driver metric neutrally until weighted_gap_points arrives', () => {
-    renderAt();
-    expect(screen.getByText(/change in the KPI's weighted contribution to the score vs May/)).toBeInTheDocument();
-  });
-
-  it('switches the driver footnote to weight × gap when the backend sends it', () => {
-    state.summary = build({ drivers: fixtureDrivers({ weightedGap: true }) });
-    renderAt();
-    expect(screen.getByText('Impact = KPI weight × gap to target (%).')).toBeInTheDocument();
-  });
-
-  it('renders direction-aware driver rows: a rising lower-is-better KPI is red, a falling one is green', () => {
-    renderAt();
-    const negatives = screen.getAllByTestId('driver-negative');
-    const rejection = negatives.find((row) => row.textContent?.includes('Initial Rejection %'))!;
-    expect(within(rejection).getByText('↓ better')).toBeInTheDocument();
-    expect(within(rejection).getByText('↓ −1.6%')).toHaveAttribute('data-tone', 'bad');
-    const denial = screen.getAllByTestId('driver-positive').find((row) => row.textContent?.includes('Denial Rate'))!;
-    expect(within(denial).getByText('↑ +0.8%')).toHaveAttribute('data-tone', 'good');
-    expect(negatives.every((row) => !/\b(?:pp|pts)\b/.test(row.textContent ?? ''))).toBe(true);
-  });
-
-  it('hides function links and the Insights link for Executive (no Function Summary / Insights access)', () => {
-    state.role = 'Executive';
-    renderAt();
-    expect(screen.queryByRole('link', { name: /View .* function/ })).not.toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: 'View all drivers' })).not.toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Corrective actions' })).toBeInTheDocument();
-  });
-
-  it('hides corrective actions for Viewer (no follow-up access)', () => {
-    state.role = 'Viewer';
-    renderAt();
-    expect(screen.queryByRole('heading', { name: 'Corrective actions' })).not.toBeInTheDocument();
-  });
-
-  it('softens drivers when the workspace is unavailable instead of inventing numbers', () => {
-    state.summary = build({ drivers: null });
-    renderAt();
-    expect(screen.getByText("Driver analysis isn't available for this view yet.")).toBeInTheDocument();
-    expect(screen.queryAllByTestId('driver-negative')).toHaveLength(0);
-  });
-});
-
-describe('fallback and empty states', () => {
-  it('shows the fallback notice when the requested month has no data', () => {
-    state.summary = build({ requestedPeriodKey: '2026-07' });
-    renderAt('/executive?period=2026-07');
-    expect(screen.getByText('No performance data for July 2026 yet — showing June 2026, the latest month with data.')).toBeInTheDocument();
-    expect(screen.getByTestId('executive-corporate')).toBeInTheDocument();
-    expect(state.lastArgs?.filters.periodKey).toBe('2026-07');
-  });
-
-  it('shows the full empty state with Upload for Admin when the scope has no data at all', () => {
-    state.summary = build({ records: [], comparisonRecords: [] });
-    renderAt('/executive?period=2026-07');
-    expect(screen.getByTestId('executive-empty')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'No performance data for July 2026' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Upload performance data' })).toHaveAttribute('href', '/settings');
-    expect(screen.getByRole('button', { name: 'Pick another month' })).toBeInTheDocument();
-  });
-
-  it('tells non-admins to ask their admin instead of offering Upload', () => {
-    state.role = 'Manager';
-    state.summary = build({ view: 'managerial', role: 'Manager', team: 'Inbound', records: [], comparisonRecords: null });
-    renderAt('/executive?period=2026-07');
-    expect(screen.queryByRole('link', { name: 'Upload performance data' })).not.toBeInTheDocument();
-    expect(screen.getByText('Ask your admin to upload July data.')).toBeInTheDocument();
-  });
-
-  it('lists the requested month as "(no data)" in the Date filter', () => {
-    const options = periodOptionsFor(build(), '2026-07', TODAY);
-    expect(options[0]).toEqual({ value: '2026-07', label: 'July 2026 (no data)' });
-    expect(options[1]).toEqual({ value: '2026-06', label: 'June 2026' });
+  it('restores an unlocked branch from the back stack', async () => {
+    const router = renderHistory([
+      '/executive?branch=dubai',
+      '/executive?branch=sharjah',
+    ]);
+    expect(lastSummary()[2]).toBe('sharjah');
+    await act(async () => { await router.navigate(-1); });
+    expect(router.state.location.pathname).toBe('/executive');
+    expect(lastSummary()[2]).toBe('dubai');
   });
 });

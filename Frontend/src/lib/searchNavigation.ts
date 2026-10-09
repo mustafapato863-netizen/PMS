@@ -93,6 +93,14 @@ const baseNavigation = ({
       icon: 'layout',
       path: '/executive',
     });
+    items.push({
+      id: 'nav-departmental-summary',
+      group: 'navigation',
+      label: 'Departmental Summary',
+      subtitle: 'Function, team and region performance',
+      icon: 'layout',
+      path: '/departmental-summary',
+    });
   }
 
   if (canAccessFunctionSummary(role)) {

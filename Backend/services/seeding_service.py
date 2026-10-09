@@ -56,6 +56,21 @@ from services.upload_record_collisions import (
 
 logger = logging.getLogger(__name__)
 
+def pin_upload_score(version, evidence):
+    """Score one approved pin for both upload dry-run and commit.
+
+    Delegates to ``services.evaluation.resolver.score_basis``. The caller runs
+    ``require_approved_capability`` after the approved row is found and before
+    this call. ``score_basis`` does not query the database. This hook does not
+    catch TargetConflict or an unsupported-capability error and does not fall
+    back to the workbook total. Outbound period lines come from
+    ``services.outbound_period_basis.period_capability``.
+    """
+    from services.evaluation.resolver import score_basis
+
+    return score_basis(version, evidence)
+
+
 class UploadProcessingError(RuntimeError):
     def __init__(self, message: str, report: dict):
         super().__init__(message)
@@ -219,29 +234,48 @@ class DatabaseSeeder:
         uploaded_by_user_id: str | None = None,
         uploaded_by_name: str | None = None,
         upload_batch_id: str | None = None,
+        db_session=None,
     ):
-        """Processes an uploaded PMS excel file and returns the import counts."""
+        """Processes an uploaded PMS excel file and returns the import counts.
+
+        ``db_session`` is optional. Production callers omit it and this method
+        opens ``SessionLocal``, including the collision lookup and the approved
+        pin. An injected session is rolled back on dry-run and committed on
+        success, and it is left open for the caller. Database errors propagate.
+        """
         excel_file = self.excel_processor.load_excel(contents)
         marketing_result = self.marketing_import_service.parse_excel(excel_file)
+        owns_session = db_session is None
+        db = db_session if db_session is not None else SessionLocal()
 
         if dry_run:
-            result = self._process_and_save_excel(
-                excel_file,
-                marketing_result=marketing_result,
-                dry_run=True,
-            )
-            result["dry_run"] = True
-            return result
+            try:
+                result = self._process_and_save_excel(
+                    excel_file,
+                    marketing_result=marketing_result,
+                    dry_run=True,
+                    db_session=db,
+                )
+                result["dry_run"] = True
+                db.rollback()
+                return result
+            except Exception:
+                db.rollback()
+                raise
+            finally:
+                if owns_session:
+                    db.close()
 
         # Vercel Production Safety: Do not write to JSON repositories for runtime persistence.
         # Generate upload ID for the batch. Metadata persistence is delegated to the DB.
         try:
             upload_uuid = uuid.UUID(str(upload_batch_id)) if upload_batch_id else uuid.uuid4()
         except (TypeError, ValueError) as exc:
+            if owns_session:
+                db.close()
             raise UploadProcessingError("The upload batch identifier is invalid.", {}) from exc
         upload_id = str(upload_uuid)
         
-        db = SessionLocal()
         try:
             existing_batch = None
             if upload_batch_id:
@@ -286,7 +320,8 @@ class DatabaseSeeder:
             db.rollback()
             raise
         finally:
-            db.close()
+            if owns_session:
+                db.close()
 
     @staticmethod
     def _normalize_sheet_levels(df: pd.DataFrame, id_col: str, team_name: str) -> list[str]:
@@ -311,6 +346,275 @@ class DatabaseSeeder:
                 ) from exc
         df["performance_level"] = levels
         return levels
+
+    @staticmethod
+    def _pin_approved_evaluation(db, records_by_key, kpis) -> None:
+        """Apply an approved monthly basis to rows this upload is saving.
+
+        No approved basis leaves the legacy workbook score untouched. A fixed
+        target that differs from the workbook target aborts the whole upload.
+        """
+        if db is None or not kpis:
+            return
+        from services.evaluation.resolver import lock_team_rows, schema_ready
+        from services.evaluation.workflow import EvaluationWorkflow
+
+        if not schema_ready(db):
+            return
+        grouped: dict = {}
+        for value in kpis:
+            grouped.setdefault(value.record_id, []).append(value)
+        record_list = list(records_by_key.values())
+        team_ids = {record.team_id for record in record_list}
+        lock_team_rows(db, team_ids)
+        teams = {team.id: team for team in db.query(Team).filter(Team.id.in_(team_ids)).all()} if team_ids else {}
+        workflow = EvaluationWorkflow(db)
+        for record in record_list:
+            group = grouped.get(record.id)
+            team = teams.get(record.team_id)
+            if not group or team is None:
+                continue
+            workflow.rescore_uploaded(record, team, group, 0)
+
+    def _pin_uploaded_records(self, db, records) -> list[dict]:
+        """Score dry-run and commit with the same approved basis.
+
+        A fixed approved target that differs from the workbook target raises
+        TargetConflict before either path returns. No approved basis leaves
+        the legacy workbook score unchanged.
+        """
+        if db is None or not records:
+            return []
+        from services.evaluation.resolver import approved_version, lock_team_rows, require_approved_capability, schema_ready
+        from utils.team_identity import logical_team_name
+
+        if not schema_ready(db):
+            return []
+        by_name: dict[str, Team] = {}
+        for team in db.query(Team).all():
+            for label in (team.name, team.db_name, team.display_name):
+                if label:
+                    by_name[str(label).strip().lower()] = team
+        prepared = []
+        for record in records:
+            team = by_name.get(str(getattr(record, "team", "") or "").strip().lower())
+            prepared.append((record, team))
+        lock_team_rows(db, [team.id for _record, team in prepared if team is not None])
+        summaries = []
+        for record, team in prepared:
+            year = self._upload_year(record)
+            if not getattr(record, "year", None):
+                record.year = year
+            rows = self._workbook_rows(record)
+            version = None
+            if team is not None and rows:
+                version = approved_version(
+                    db,
+                    team_id=team.id,
+                    level=getattr(record, "performance_level", None) or "Employee",
+                    position=getattr(record, "position", None) or "",
+                    year=year,
+                    month=record.month,
+                )
+            if version is None:
+                summaries.append({
+                    "employee_id": str(record.employee_id),
+                    "month": record.month,
+                    "year": year,
+                    "score": float(record.evaluation.score),
+                    "rows": [],
+                })
+                continue
+            self._refuse_unsupported_outbound_binding(record, version, year)
+            team_name = logical_team_name(team)
+            require_approved_capability(
+                version,
+                team_name=team_name,
+                config=self._checked_in_config(team_name),
+                year=version.effective_from_year,
+                month=version.effective_from_month,
+            )
+            evidence = [
+                {
+                    "kpi_key": row.get("kpi_key"),
+                    "actual": row.get("actual_value"),
+                    "workbook_target": row.get("target_value"),
+                    "precomputed_achievement": row.get("achievement_ratio"),
+                }
+                for row in rows
+            ]
+            scored = pin_upload_score(version, evidence)
+            by_key = {item["kpi_key"]: item for item in scored["rows"]}
+            for row in rows:
+                item = by_key.get(row.get("kpi_key"))
+                if item is None:
+                    continue
+                if item["target"] is not None:
+                    row["target_value"] = item["target"]
+                if item["achievement"] is not None:
+                    row["achievement_ratio"] = item["achievement"]
+                row["weight_applied"] = item["weight"]
+                row["contribution"] = item["contribution"] if item["contribution"] is not None else 0
+            if not record.kpi_values:
+                record.kpi_values = rows
+            if scored["score"] is not None:
+                record.evaluation.score = float(scored["score"])
+            if scored["grade"]:
+                record.evaluation.grade = scored["grade"]
+            summaries.append({
+                "employee_id": str(record.employee_id),
+                "month": record.month,
+                "year": year,
+                "score": scored["score"],
+                "rows": [
+                    {
+                        "kpi_key": item["kpi_key"],
+                        "actual": item["actual"],
+                        "target": item["target"],
+                        "achievement": item["achievement"],
+                    }
+                    for item in scored["rows"]
+                ],
+            })
+        return summaries
+
+    @staticmethod
+    def _checked_in_config(team_name: str) -> dict | None:
+        """Checked-in team file for the capability gate. A missing file is ``None``."""
+        try:
+            return load_team_config(team_name)
+        except ConfigurationError:
+            return None
+
+    @staticmethod
+    def _refuse_unsupported_outbound_binding(record, version, year) -> None:
+        """Refuse an approved snapshot the canonical period does not support.
+
+        July and August still reach ``pin_upload_score``. A fixed-target
+        mismatch stays ``TargetConflict`` with no fallback score.
+        """
+        if version is None or str(getattr(record, "team", "") or "") != "Outbound":
+            return
+        from services.evaluation.resolver import snapshot_lines
+        from services.outbound_period_basis import (
+            OutboundUnsupportedApprovedBinding,
+            period_capability,
+        )
+
+        decision = period_capability(year, record.month)
+        period_label = decision["period"] or str(record.month)
+        if decision["approved_binding"] != "apply":
+            raise OutboundUnsupportedApprovedBinding(period_label, decision["status"])
+        if decision["status"] in {"june_2026_exception", "july_2026", "august_2026"}:
+            scored = {
+                str(line.get("kpi_key"))
+                for line in snapshot_lines(version)
+                if float(line.get("weight") or 0) > 0
+            }
+            if scored != set(decision["scored_keys"]):
+                raise OutboundUnsupportedApprovedBinding(
+                    period_label,
+                    "approved lines are not the canonical scored lines",
+                )
+
+    @staticmethod
+    def _upload_year(record) -> int:
+        if getattr(record, "year", None):
+            return int(record.year)
+        raw = getattr(record, "raw_data", None) or {}
+        for key, value in raw.items():
+            if str(key).strip().lower() != "date":
+                continue
+            if isinstance(value, (datetime.datetime, datetime.date)):
+                return value.year
+            text = str(value).strip()
+            if not text or text.lower() in {"nan", "none", "nat"}:
+                continue
+            parsed = pd.to_datetime(text, errors="coerce")
+            if not pd.isna(parsed):
+                return int(parsed.year)
+        return datetime.datetime.now().year
+
+    def _workbook_rows(self, record) -> list[dict]:
+        existing = list(getattr(record, "kpi_values", None) or [])
+        if existing:
+            return self._with_productivity_evidence(record, existing)
+        try:
+            team_config = resolve_team_config(
+                load_team_config(record.team),
+                getattr(record, "performance_level", None) or "Employee",
+                getattr(record, "position", None),
+            )
+        except Exception:
+            return []
+        raw = getattr(record, "raw_data", None) or {}
+        rows = []
+        for kpi in team_config.get("kpis") or []:
+            actual = self._raw_number(raw, kpi.get("actual_col"))
+            target = self._raw_number(raw, kpi.get("target_col"))
+            if actual is None and target is None:
+                continue
+            rows.append({
+                "kpi_key": str(kpi.get("key") or ""),
+                "actual_value": 0.0 if actual is None else actual,
+                "target_value": 0.0 if target is None else target,
+                "achievement_ratio": None,
+                "weight_applied": kpi.get("weight", 0.0),
+                "contribution": None,
+            })
+        return self._with_productivity_evidence(record, rows)
+
+    @staticmethod
+    def _with_productivity_evidence(record, rows: list[dict]) -> list[dict]:
+        """Keep a source Productivity actual the four-key map would drop.
+
+        A missing actual is left missing. It is not stored as zero.
+        """
+        if str(getattr(record, "team", "") or "") != "Outbound":
+            return rows
+        from services.outbound_period_basis import PRODUCTIVITY_KEY, productivity_actual, productivity_target
+
+        if any(str(row.get("kpi_key")) == PRODUCTIVITY_KEY for row in rows):
+            return rows
+        actual = productivity_actual(getattr(record, "raw_data", None) or {})
+        if actual is None:
+            return rows
+        target = productivity_target(getattr(record, "raw_data", None) or {})
+        rows.append({
+            "kpi_key": PRODUCTIVITY_KEY,
+            "actual_value": actual,
+            "target_value": 0.0 if target is None else target,
+            "achievement_ratio": None,
+            "weight_applied": 0.0,
+            "contribution": None,
+        })
+        return rows
+
+    @staticmethod
+    def _raw_number(data: dict, col_name: str | None):
+        if not data or not col_name:
+            return None
+        value = data.get(col_name)
+        if value is None:
+            clean_target = str(col_name).lower().replace(" ", "").replace("_", "").replace(".", "")
+            for key, item in data.items():
+                if str(key).lower().replace(" ", "").replace("_", "").replace(".", "") == clean_target:
+                    value = item
+                    break
+        if value is None:
+            return None
+        try:
+            if pd.isna(value):
+                return None
+        except TypeError:
+            pass
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return None
+        if math.isnan(number):
+            return None
+        return number
 
     @staticmethod
     def _score_from_kpi_rows(kv_list) -> float:
@@ -510,6 +814,9 @@ class DatabaseSeeder:
                 teams_to_sync.append((marketing_team, None))
 
             db.flush()
+            from services.evaluation.resolver import lock_team_rows
+
+            lock_team_rows(db, [position_team.id for position_team, _config in teams_to_sync])
 
             for position_team, team_config in teams_to_sync:
                 if position_team.name == "Marketing":
@@ -812,6 +1119,8 @@ class DatabaseSeeder:
                     deduped_map[(kv.record_id, kv.kpi_key)] = kv
                 kpis_to_insert = list(deduped_map.values())
 
+            self._pin_approved_evaluation(db, existing_perf_map, kpis_to_insert)
+
             # Recalculate PerformanceRecord scores strictly as the sum of capped KPI contributions
             if kpis_to_insert:
                 rec_map = {r.id: r for r in existing_perf_map.values()}
@@ -858,9 +1167,11 @@ class DatabaseSeeder:
         dry_run: bool = False,
         db_session=None,
     ):
+        from services.outbound_period_basis import resolve_outbound_sheet_name
+
         sheet_names = set(excel_file.sheet_names)
         inbound_df = self.excel_processor.process_sheet_inbound(excel_file) if "Inbound" in sheet_names else pd.DataFrame()
-        outbound_df = self.excel_processor.process_sheet_outbound(excel_file) if "Outbound" in sheet_names else pd.DataFrame()
+        outbound_df = self.excel_processor.process_sheet_outbound(excel_file) if resolve_outbound_sheet_name(sheet_names) else pd.DataFrame()
         inbound_uae_df = self.excel_processor.process_sheet_inbound_uae(excel_file) if "Inbound UAE" in sheet_names else pd.DataFrame()
         preapprovals_df = self.excel_processor.process_sheet_preapprovals(excel_file) if "Pre-Approvals IP Offshore" in sheet_names else pd.DataFrame()
         preapprovals_op_dubai_df = self.excel_processor.process_sheet_preapprovals_op_dubai(excel_file) if "Pre-Approvals OP Dubai" in sheet_names else pd.DataFrame()
@@ -1051,11 +1362,16 @@ class DatabaseSeeder:
                     )
                     geo = GeoData(bookings=geo_bookings, attended=geo_attended)
 
+                    productivity_rate = None
+                    if team_name == "Outbound":
+                        from services.outbound_period_basis import productivity_actual
+                        productivity_rate = productivity_actual(row)
                     actual = ActualMetrics(
                         booking_rate=safe_float(row.get("A.Booking%", 0.0)),
                         attend_rate=safe_float(row.get("A.Attend%", 0.0)),
                         abandon_rate=safe_float(row.get("A.AbandonRate%", 0.0)),
                         reachability_rate=safe_float(row.get("A.Reachability%", 0.0)),
+                        productivity_rate=productivity_rate,
                         rejection_rate=safe_float(
                             row.get("A.InitialRejectionRate")
                             or row.get("IPInitialRejection%")
@@ -1111,7 +1427,8 @@ class DatabaseSeeder:
                         op_revenue_ach=achievements.get("OPRevenue", 0.0),
                         ip_census_ach=achievements.get("IPCensus", 0.0),
                         ip_revenue_ach=achievements.get("IPRevenue", 0.0),
-                        activity_ach=achievements.get("Activity", 0.0)
+                        activity_ach=achievements.get("Activity", 0.0),
+                        productivity_ach=achievements.get("Productivity") if "Productivity" in achievements else None,
                     )
 
                     root_cause = self.analysis_service.run_root_cause_analysis(team_name, achievements, weights_used, row_dict)
@@ -1206,6 +1523,7 @@ class DatabaseSeeder:
         imported_teams = list(dict.fromkeys([team_name for team_name, _, _, _ in sheet_mappings]))
         if marketing_result is not None:
             imported_teams.append("Marketing")
+        scored_rows = self._pin_uploaded_records(db_session, all_new_records)
 
         if dry_run:
             return {
@@ -1218,6 +1536,7 @@ class DatabaseSeeder:
                 "failed_teams": failed_teams,
                 "marketing": marketing_report,
                 "warnings": upload_warnings,
+                "scored_rows": scored_rows,
             }
 
         # Vercel Production Safety: Do not write to JSON repositories. DB is the sole runtime persistence.
@@ -1280,4 +1599,5 @@ class DatabaseSeeder:
             "failed_teams": failed_teams,
             "marketing": marketing_report,
             "warnings": upload_warnings,
+            "scored_rows": scored_rows,
         }

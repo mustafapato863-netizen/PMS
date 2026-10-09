@@ -12,7 +12,7 @@ vi.mock('../components/settings/SettingsLayout', () => ({
   SettingsLayout: ({ children }: { children: React.ReactNode }) => <div data-testid="settings-layout">{children}</div>,
 }));
 vi.mock('../components/settings/DataManagementPanel', () => ({ DataManagementPanel: () => <p>Data management panel</p> }));
-vi.mock('../components/settings/KPIConfigPanel', () => ({ KPIConfigPanel: () => null }));
+vi.mock('../components/settings/EvaluationSettingsPanel', () => ({ EvaluationSettingsPanel: () => null }));
 vi.mock('../components/settings/UserManagementPanel', () => ({ UserManagementPanel: () => null }));
 vi.mock('../components/settings/CorrectiveActionDataPanel', () => ({ CorrectiveActionDataPanel: () => null }));
 vi.mock('../components/settings/SystemErrorsPanel', () => ({ SystemErrorsPanel: () => null }));

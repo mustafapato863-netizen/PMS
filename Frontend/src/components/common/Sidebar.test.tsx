@@ -321,7 +321,7 @@ describe('Function Viewer sidebar (Figma 48:3)', () => {
 
   it('hides the employee tree, Shared Functions, product pages and Settings, and shows Read-only', () => {
     renderSidebar('/function-summary/rcm');
-    for (const name of ['Executive Summary', 'Insights', 'Planning', 'Corrective Actions', 'Settings', 'All Teams', 'Inbound', 'CSR']) {
+    for (const name of ['Executive Summary', 'Departmental Summary', 'Insights', 'Planning', 'Corrective Actions', 'Settings', 'All Teams', 'Inbound', 'CSR']) {
       expect(screen.queryByRole('link', { name })).not.toBeInTheDocument();
     }
     expect(screen.queryByText('Shared Functions')).not.toBeInTheDocument();
@@ -353,7 +353,7 @@ describe('new role navigation boundaries', () => {
     renderSidebar();
 
     expect(screen.getByRole('link', { name: 'My Profile' })).toHaveAttribute('href', '/employee/E-100');
-    for (const name of ['Executive Summary', 'All Teams', 'Reports', 'Insights', 'Planning', 'Corrective Actions', 'Settings']) {
+    for (const name of ['Executive Summary', 'Departmental Summary', 'All Teams', 'Reports', 'Insights', 'Planning', 'Corrective Actions', 'Settings']) {
       expect(screen.queryByRole('link', { name })).not.toBeInTheDocument();
     }
   });
@@ -426,6 +426,7 @@ describe('Sidebar query carry-over (QA BUG-1b)', () => {
   ])('returns to the company overview without carrying page-specific filters from %s', (path) => {
     renderSidebar(`${path}?period=2026-06&month=June&year=2026&region=All&branch=dubai&function=RCM&team=Coding&sub_team=Submission&position=Agent&level=Corporate&performance_level=Employee&employee_id=other&status=Open`);
     expect(screen.getByRole('link', { name: 'Executive Summary' })).toHaveAttribute('href', '/executive?period=2026-06&month=June&year=2026');
+    expect(screen.getByRole('link', { name: 'Departmental Summary' })).toHaveAttribute('href', '/departmental-summary?period=2026-06&month=June&year=2026');
   });
 
   it.each([
@@ -435,6 +436,7 @@ describe('Sidebar query carry-over (QA BUG-1b)', () => {
     authState.user = { id: 'director', name: 'Director', username: 'director', role, ...grant };
     renderSidebar('/team/coding?period=2026-06&region=EGY&branch=sharjah&team=Submission&level=Corporate');
     expect(screen.getByRole('link', { name: 'Executive Summary' })).toHaveAttribute('href', `/executive?period=2026-06&${fixed}`);
+    expect(screen.getByRole('link', { name: 'Departmental Summary' })).toHaveAttribute('href', `/departmental-summary?period=2026-06&${fixed}`);
   });
 
   it('links Insights to plain /insights from a filtered Insights URL', () => {
@@ -535,9 +537,9 @@ describe('responsive dock and navigation drawer', () => {
     renderResponsive();
     const dock = screen.getByRole('navigation', { name: 'Quick navigation' });
     const links = within(dock).getAllByRole('link');
-    expect(links).toHaveLength(7);
+    expect(links).toHaveLength(8);
     expect(links.filter((link) => !link.classList.contains('navigation-dock-tablet-only'))).toHaveLength(3);
-    for (const label of ['Insights', 'Planning', 'Actions', 'Account']) {
+    for (const label of ['Departments', 'Insights', 'Planning', 'Actions', 'Account']) {
       expect(within(dock).getByRole('link', { name: `Go to ${label}` })).toHaveClass('navigation-dock-tablet-only');
     }
     expect(within(dock).getByRole('link', { name: 'Go to Actions' })).toHaveAttribute('href', '/corrective-actions');

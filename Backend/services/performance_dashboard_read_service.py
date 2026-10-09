@@ -21,6 +21,7 @@ from repositories.performance_repository import PerformanceRepository
 from services.cache_invalidation_service import CacheInvalidationService
 from services.cache_service import CacheService
 from services.dashboard_record_service import DashboardRecordService
+from services.evaluation.cache_identity import evaluation_cache_identity
 
 
 _MONTH_BY_NUMBER = {number: name for name, number in MONTHS.items()}
@@ -347,6 +348,7 @@ class PerformanceDashboardReadService:
             "scope": _scope_identity(self.scope),
             "data_version": data_version,
             "config_version": config_version,
+            "evaluation_identity": evaluation_cache_identity(self.db),
         }
         digest = hashlib.sha256(json.dumps(payload, sort_keys=True, default=str).encode()).hexdigest()
         return f"pms:v1:performance:{endpoint}:{digest}"
