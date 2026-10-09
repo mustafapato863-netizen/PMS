@@ -21,6 +21,7 @@ from api.routers.evaluation_settings import router as evaluation_router
 from config.database import get_db
 from models.models import (
     Employee,
+    EvaluationRevision,
     EvaluationScope,
     KPIValue,
     PerformanceRecord,
@@ -59,6 +60,7 @@ def db(monkeypatch):
         KPIValue.__table__,
         TeamConfigurationVersion.__table__,
         EvaluationScope.__table__,
+        EvaluationRevision.__table__,
     ]
     from models.models import Base
 

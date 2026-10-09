@@ -36,6 +36,66 @@ def _period_value(month: str, year: int) -> tuple[int, int]:
     return (int(year), MONTHS.get(str(month), 0))
 
 
+def _authorized_runtime_records(records, team_name: str, performance_level: str, selected_period: tuple[int, int]):
+    """Keep historical rows the caller already loaded for this period and level.
+
+    ``None`` means the caller did not authorize a record set. That is not a
+    request to look up the latest approved version. A missing team on a dict
+    is stamped only because the caller already scoped the snapshot query.
+    """
+    if records is None:
+        return None
+    try:
+        year = int(selected_period[0] or 0)
+        month_number = int(selected_period[1] or 0)
+    except (TypeError, ValueError):
+        return []
+    if month_number < 1 or month_number > 12:
+        return []
+    from services.evaluation.periods import month_aliases
+
+    aliases = {item.casefold() for item in month_aliases(month_number)}
+    wanted_team = str(team_name or "").casefold()
+    wanted_level = str(performance_level or "")
+    authorized = []
+    for record in records:
+        if isinstance(record, dict):
+            source = record
+            team_value = source.get("team")
+            if team_value is None or (isinstance(team_value, str) and not team_value.strip()):
+                source = dict(source)
+                source["team"] = team_name
+                team_value = team_name
+            elif not isinstance(team_value, str):
+                team_value = logical_team_name(team_value)
+            level = source.get("performance_level")
+            record_year = source.get("year")
+            record_month = source.get("month")
+        else:
+            team_value = getattr(record, "team", None)
+            if team_value is None or (isinstance(team_value, str) and not str(team_value).strip()):
+                continue
+            if not isinstance(team_value, str):
+                team_value = logical_team_name(team_value)
+            source = record
+            level = getattr(record, "performance_level", None)
+            record_year = getattr(record, "year", None)
+            record_month = getattr(record, "month", None)
+        if str(team_value).casefold() != wanted_team:
+            continue
+        if str(level or "") != wanted_level:
+            continue
+        try:
+            if int(record_year or 0) != year:
+                continue
+        except (TypeError, ValueError):
+            continue
+        if str(record_month or "").strip().casefold() not in aliases:
+            continue
+        authorized.append(source)
+    return authorized
+
+
 from services.scoring.engine import achievement as engine_achievement, contribution as engine_contribution, MANAGEMENT_POLICY
 
 
@@ -232,7 +292,9 @@ class ManagementBSCService:
             )
 
         period_configs = {
-            period: self._build_runtime_config(configs, base_config, team_name, performance_level, period)
+            period: self._build_runtime_config(
+                configs, base_config, team_name, performance_level, period, records,
+            )
             for period in active_periods
         }
         config = period_configs[selected_period]
@@ -439,6 +501,7 @@ class ManagementBSCService:
                     team_name,
                     performance_level,
                     period,
+                    records,
                 )
                 for period in periods
             }
@@ -803,6 +866,7 @@ class ManagementBSCService:
         team_name: str,
         performance_level: str,
         selected_period: tuple[int, int],
+        records: list | None = None,
     ) -> dict[str, Any]:
         base_bsc = base_config.get("balanced_scorecard", {}) or {}
         base_perspectives = {
@@ -859,6 +923,7 @@ class ManagementBSCService:
             int(year or 0),
             int(month_number or 0),
             kpis,
+            records=_authorized_runtime_records(records, team_name, performance_level, selected_period),
         )
         return {
             "team": team_name,
