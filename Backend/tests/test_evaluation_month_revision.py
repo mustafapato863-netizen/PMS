@@ -422,7 +422,11 @@ def test_impact_preview_uses_every_stored_record_and_keeps_source_targets(db):
 
     reads = world.workflow.reads(world.actor, world.scope["id"], 2026, [7])
     assert reads["periods"][0]["pinned"] is False
-    assert reads["periods"][0]["stored_score"] == 70
+    # This scope has two people, so neither person's score is its aggregate.
+    assert reads["periods"][0]["stored_score"] is None
+    assert {item["record_id"]: item["score"] for item in reads["periods"][0]["evidence"]} == {
+        str(first.id): 70, str(second.id): 72,
+    }
     assert "evaluation_basis" not in (first.record_payload or {})
 
 
