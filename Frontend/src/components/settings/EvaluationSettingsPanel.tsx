@@ -6,56 +6,76 @@ import { useUserRole } from '../../context/RoleContext';
 import { canAccessSettingsContent } from '../../lib/access';
 import {
   MONTHS,
-  SAMPLE_PREVIEW_LIMIT,
-  SAMPLE_PREVIEW_UNAVAILABLE,
+  READ_ONLY_APPROVED_NOTE,
   UNSAVED_PREVIEW_NOTE,
+  UNSUPPORTED_FORMULA_NOTE,
   applyVersion,
   emptyPeriod,
-  formatSamplePreview,
   initialReportingPeriod,
+  lineFormulaSupported,
   lineSignature,
-  previewSampleRows,
+  monthHasApprovedVersion,
+  revisionLabel,
   toPeriodData,
+  versionLabel,
   type EvaluationLine,
   type EvaluationPeriodData,
+  type EvaluationRevision,
   type EvaluationVersion,
+  type PeriodScope,
 } from './evaluationSettings';
+import {
+  EVIDENCE_CHANGED_NOTE,
+  FIXED_MISMATCH_NOTE,
+  ROLLBACK_CONFIRM_NOTE,
+  displayNumber,
+  formatApplyResult,
+  formatKpiLine,
+  formatImpactSummary,
+  formatReviseNotice,
+  formatRollbackResult,
+  isStaleProofCode,
+  lifecycleQueryKeys,
+  pageSlice,
+  parseImpactProof,
+  periodQueryKey,
+  proofAuthorizesApproval,
+  type ImpactProof,
+} from './monthlyCorrection';
 
 type Selection = { scopeId: string; year: number; month: number };
 
-type Scope = {
+type Scope = PeriodScope & {
   id: string;
   display_name: string;
   performance_level: string;
   position_name: string;
-  readiness: string;
-  block_reason?: string | null;
-  history_note?: string;
-  supported?: boolean;
 };
+
+type RequestError = Error & { code?: string };
+
+type ProofState = { key: string; versionId: string; proof: ImpactProof };
+
+function selectionKey(selection: Selection) {
+  return `${selection.scopeId}|${selection.year}|${selection.month}`;
+}
 
 async function readJson(response: Response) {
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
     const detail = body?.detail;
     const message = typeof detail === 'string' ? detail : detail?.message || body?.message || 'Evaluation request failed';
-    const error = new Error(message) as Error & { conflicts?: Array<{ kpi_key: string; workbook_target: number; approved_target: number }> };
-    error.conflicts = detail?.conflicts;
+    const error = new Error(message) as RequestError;
+    if (detail && typeof detail === 'object' && typeof detail.code === 'string') error.code = detail.code;
     throw error;
   }
   return body?.data ?? body;
 }
 
 function errorText(caught: unknown) {
-  return caught instanceof Error ? caught.message : 'Evaluation request failed';
-}
-
-function periodQueryKey(scopeId: string, year: number, month: number) {
-  return ['evaluation-settings', 'period', scopeId, year, month] as const;
-}
-
-function selectionKey(selection: Selection) {
-  return `${selection.scopeId}|${selection.year}|${selection.month}`;
+  if (!(caught instanceof Error)) return 'Evaluation request failed';
+  const code = (caught as RequestError).code;
+  return code ? `${code}: ${caught.message}` : caught.message;
 }
 
 export function EvaluationSettingsPanel() {
@@ -66,9 +86,11 @@ export function EvaluationSettingsPanel() {
   const [month, setMonth] = useState(() => initialReportingPeriod(window.location.search).month);
   const [scopeId, setScopeId] = useState<string | null>(null);
   const [draft, setDraft] = useState<{ key: string; lines: EvaluationLine[] } | null>(null);
-  const [preview, setPreview] = useState<{ key: string; text: string } | null>(null);
+  const [proof, setProof] = useState<ProofState | null>(null);
+  const [page, setPage] = useState(0);
   const [notice, setNotice] = useState<{ key: string; text: string } | null>(null);
   const [actionError, setActionError] = useState<{ key: string; text: string } | null>(null);
+  const [rollbackConfirm, setRollbackConfirm] = useState<{ key: string; revisionId: string } | null>(null);
   const gate = useRef(false);
   const catalogQuery = useQuery({
     queryKey: ['evaluation-settings', 'catalog'],
@@ -112,14 +134,20 @@ export function EvaluationSettingsPanel() {
     queryClient.setQueryData<EvaluationPeriodData>(periodQueryKey(scope, Number(periodYear), Number(periodMonth)), (current) => updater(current ?? emptyPeriod()));
   };
 
+  const invalidateLifecycle = (vars: Selection) => {
+    lifecycleQueryKeys(vars).forEach((queryKey) => {
+      void queryClient.invalidateQueries({ queryKey: [...queryKey] });
+    });
+  };
+
   const save = useMutation({
     retry: false,
-    mutationFn: async (vars: Selection & { versionId: string; lines: EvaluationLine[]; weightOnly: boolean }) => {
+    mutationFn: async (vars: Selection & { versionId: string; lines: EvaluationLine[] }) => {
       await queryClient.cancelQueries({ queryKey: periodQueryKey(vars.scopeId, vars.year, vars.month) });
       const response = await fetchWithRole(`${API_BASE}/api/settings/evaluation/drafts/${vars.versionId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lines: vars.lines, weight_only: vars.weightOnly }),
+        body: JSON.stringify({ lines: vars.lines }),
       });
       return readJson(response) as Promise<EvaluationVersion>;
     },
@@ -128,7 +156,8 @@ export function EvaluationSettingsPanel() {
       remember(key, (current) => applyVersion(current, { ...version, lines: version.lines || vars.lines }));
       if (!isCurrent(vars)) return;
       setDraft((current) => current?.key === key ? null : current);
-      setNotice({ key, text: vars.weightOnly ? 'Weight change saved.' : 'Draft saved.' });
+      setProof(null);
+      setNotice({ key, text: 'Draft saved.' });
     },
     onError: (caught, vars) => {
       if (isCurrent(vars)) setActionError({ key: selectionKey(vars), text: errorText(caught) });
@@ -152,7 +181,7 @@ export function EvaluationSettingsPanel() {
       remember(key, (current) => applyVersion(current, version));
       if (!isCurrent(vars)) return;
       setDraft((current) => current?.key === key ? null : current);
-      setPreview(null);
+      setProof(null);
       setNotice({ key, text: vars.copyPrevious ? (version.notes || 'Previous month copied.') : 'Draft opened for this month.' });
     },
     onError: (caught, vars) => {
@@ -161,24 +190,50 @@ export function EvaluationSettingsPanel() {
     onSettled: () => { gate.current = false; },
   });
 
-  const previewMutation = useMutation({
+  const revise = useMutation({
     retry: false,
-    mutationFn: async (vars: Selection & { versionId: string; lines: EvaluationLine[]; actuals: Record<string, number> }) => {
-      const rows = previewSampleRows(vars.lines, vars.actuals);
-      if (!rows.length) throw new Error(SAMPLE_PREVIEW_UNAVAILABLE);
-      const response = await fetchWithRole(`${API_BASE}/api/settings/evaluation/drafts/${vars.versionId}/preview`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rows }),
-      });
-      return readJson(response) as Promise<{ score?: unknown; rows?: unknown }>;
+    mutationFn: async (vars: Selection & { versionId: string }) => {
+      await queryClient.cancelQueries({ queryKey: periodQueryKey(vars.scopeId, vars.year, vars.month) });
+      const response = await fetchWithRole(`${API_BASE}/api/settings/evaluation/versions/${vars.versionId}/revise`, { method: 'POST' });
+      return readJson(response) as Promise<EvaluationVersion & { resumed?: boolean }>;
     },
-    onSuccess: (data, vars) => {
+    onSuccess: (version, vars) => {
+      const key = selectionKey(vars);
+      remember(key, (current) => applyVersion(current, version));
+      invalidateLifecycle(vars);
       if (!isCurrent(vars)) return;
-      setPreview({ key: selectionKey(vars), text: formatSamplePreview(data) });
+      setDraft((current) => current?.key === key ? null : current);
+      setProof(null);
+      setNotice({ key, text: formatReviseNotice(version) });
     },
     onError: (caught, vars) => {
       if (isCurrent(vars)) setActionError({ key: selectionKey(vars), text: errorText(caught) });
+    },
+    onSettled: () => { gate.current = false; },
+  });
+
+  const impact = useMutation({
+    retry: false,
+    mutationFn: async (vars: Selection & { versionId: string }) => {
+      const response = await fetchWithRole(`${API_BASE}/api/settings/evaluation/drafts/${vars.versionId}/impact-preview`, { method: 'POST' });
+      return readJson(response);
+    },
+    onSuccess: (data, vars) => {
+      if (!isCurrent(vars)) return;
+      const cached = queryClient.getQueryData<EvaluationPeriodData>(periodQueryKey(vars.scopeId, vars.year, vars.month));
+      const parsed = parseImpactProof(data);
+      if (!cached || cached.versionId !== vars.versionId || !proofAuthorizesApproval(parsed, vars.versionId, vars)) {
+        setProof(null);
+        setActionError({ key: selectionKey(vars), text: 'Impact preview did not satisfy the approval gate for this saved draft.' });
+        return;
+      }
+      setPage(0);
+      setProof({ key: selectionKey(vars), versionId: vars.versionId, proof: parsed });
+    },
+    onError: (caught, vars) => {
+      if (!isCurrent(vars)) return;
+      setProof(null);
+      setActionError({ key: selectionKey(vars), text: errorText(caught) });
     },
     onSettled: () => { gate.current = false; },
   });
@@ -193,11 +248,16 @@ export function EvaluationSettingsPanel() {
     onSuccess: (version, vars) => {
       const key = selectionKey(vars);
       remember(key, (current) => applyVersion(current, version));
+      invalidateLifecycle(vars);
       if (!isCurrent(vars)) return;
+      setProof(null);
+      setDraft((current) => current?.key === key ? null : current);
       setNotice({ key, text: 'Approved. Existing scores were not recalculated.' });
     },
     onError: (caught, vars) => {
-      if (isCurrent(vars)) setActionError({ key: selectionKey(vars), text: errorText(caught) });
+      if (!isCurrent(vars)) return;
+      if (isStaleProofCode((caught as RequestError).code)) setProof(null);
+      setActionError({ key: selectionKey(vars), text: errorText(caught) });
     },
     onSettled: () => { gate.current = false; },
   });
@@ -210,10 +270,12 @@ export function EvaluationSettingsPanel() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ scope_id: vars.scopeId, year: vars.year, month: vars.month }),
       });
-      await readJson(response);
+      return readJson(response);
     },
-    onSuccess: (_data, vars) => {
-      if (isCurrent(vars)) setNotice({ key: selectionKey(vars), text: 'Apply updated this month only.' });
+    onSuccess: (result, vars) => {
+      invalidateLifecycle(vars);
+      if (!isCurrent(vars)) return;
+      setNotice({ key: selectionKey(vars), text: formatApplyResult(result) });
     },
     onError: (caught, vars) => {
       if (isCurrent(vars)) setActionError({ key: selectionKey(vars), text: errorText(caught) });
@@ -221,21 +283,49 @@ export function EvaluationSettingsPanel() {
     onSettled: () => { gate.current = false; },
   });
 
-  const busy = save.isPending || openDraft.isPending || previewMutation.isPending || approve.isPending || apply.isPending;
+  const rollback = useMutation({
+    retry: false,
+    mutationFn: async (vars: Selection & { revisionId: string }) => {
+      const response = await fetchWithRole(`${API_BASE}/api/settings/evaluation/revisions/${vars.revisionId}/rollback`, { method: 'POST' });
+      return readJson(response);
+    },
+    onSuccess: (result, vars) => {
+      invalidateLifecycle(vars);
+      if (!isCurrent(vars)) return;
+      setRollbackConfirm(null);
+      setNotice({ key: selectionKey(vars), text: formatRollbackResult(result) });
+    },
+    onError: (caught, vars) => {
+      if (!isCurrent(vars)) return;
+      const code = (caught as RequestError).code;
+      const text = code === 'evidence_changed' ? `${errorText(caught)} ${EVIDENCE_CHANGED_NOTE}` : errorText(caught);
+      setActionError({ key: selectionKey(vars), text });
+    },
+    onSettled: () => { gate.current = false; },
+  });
+
+  const busy = save.isPending || openDraft.isPending || revise.isPending || impact.isPending || approve.isPending || apply.isPending || rollback.isPending;
   const period = periodQuery.data;
   const serverLines = period?.lines ?? [];
   const lines = draft?.key === currentKey ? draft.lines : serverLines;
   const dirty = draft?.key === currentKey && lineSignature(draft.lines) !== lineSignature(serverLines);
-  const storedActuals = period?.storedActuals ?? {};
-  const hasSampleActuals = previewSampleRows(serverLines, storedActuals).length > 0;
   const periodLoading = Boolean(resolvedScopeId) && periodQuery.isLoading;
-  const scope = scopes.find((item) => item.id === resolvedScopeId) || null;
-  const blocked = scope != null && scope.readiness !== 'supported';
+  const catalogScope = scopes.find((item) => item.id === resolvedScopeId) || null;
+  const readinessSource = period?.scope?.readiness ? period.scope : catalogScope;
+  const blocked = readinessSource != null && readinessSource.readiness !== 'supported';
+  const unsupported = lines.some((line) => !lineFormulaSupported(line));
+  const approved = period?.status === 'approved';
   const controlsLocked = busy || periodLoading || periodQuery.isError || !period;
-  const previewText = preview?.key === currentKey ? preview.text : '';
+  const visibleProof = proof?.key === currentKey && proof.versionId === period?.versionId ? proof.proof : null;
+  const approvalReady = Boolean(period?.versionId && visibleProof && proofAuthorizesApproval(visibleProof, period.versionId, selection));
   const message = notice?.key === currentKey ? notice.text : '';
   const loadError = periodQuery.error instanceof Error ? periodQuery.error.message : catalogQuery.error instanceof Error ? catalogQuery.error.message : '';
   const error = (actionError?.key === currentKey ? actionError.text : '') || loadError;
+  const monthApproved = monthHasApprovedVersion(period);
+  const actionsReady = Boolean(period) && !periodLoading && !blocked;
+  const comparisons = visibleProof?.comparisons ?? [];
+  const comparisonPage = pageSlice(comparisons, page);
+  const pendingRollback = rollbackConfirm?.key === currentKey ? period?.revisions.find((item) => item.id === rollbackConfirm.revisionId && item.canRollback) : undefined;
 
   const begin = () => {
     if (gate.current || busy) return false;
@@ -244,36 +334,54 @@ export function EvaluationSettingsPanel() {
     return true;
   };
 
+  const changeSelection = (next: Partial<Selection>) => {
+    if (next.scopeId != null) setScopeId(next.scopeId);
+    if (next.year != null) setYear(next.year);
+    if (next.month != null) setMonth(next.month);
+    setProof(null);
+    setRollbackConfirm(null);
+    setPage(0);
+  };
+
   const updateLine = (key: string, patch: Partial<EvaluationLine>) => {
-    const next = lines.map((line) => line.kpi_key === key ? { ...line, ...patch } : line);
-    setDraft({ key: currentKey, lines: next });
-    setPreview(null);
+    setDraft({ key: currentKey, lines: lines.map((line) => line.kpi_key === key ? { ...line, ...patch } : line) });
+    setProof(null);
     setNotice(null);
   };
 
-  const runSave = (weightOnly: boolean) => {
-    if (!period?.versionId || !begin()) return;
-    save.mutate({ ...selection, versionId: period.versionId, lines, weightOnly });
+  const runSave = () => {
+    if (!period?.versionId || period.status !== 'draft' || unsupported || !begin()) return;
+    save.mutate({ ...selection, versionId: period.versionId, lines });
   };
 
   const runOpen = (copyPrevious: boolean) => {
-    if (!resolvedScopeId || !begin()) return;
+    if (!resolvedScopeId || !period || monthApproved || !begin()) return;
     openDraft.mutate({ ...selection, copyPrevious });
   };
 
-  const runPreview = () => {
-    if (!period?.versionId || dirty || !hasSampleActuals || !begin()) return;
-    previewMutation.mutate({ ...selection, versionId: period.versionId, lines: serverLines, actuals: storedActuals });
+  const runRevise = () => {
+    if (!period?.versionId || period.status !== 'approved' || !begin()) return;
+    revise.mutate({ ...selection, versionId: period.versionId });
+  };
+
+  const runImpact = () => {
+    if (!period?.versionId || period.status !== 'draft' || dirty || unsupported || blocked || !begin()) return;
+    impact.mutate({ ...selection, versionId: period.versionId });
   };
 
   const runApprove = () => {
-    if (!period?.versionId || dirty || period.status !== 'draft' || !begin()) return;
+    if (!period?.versionId || period.status !== 'draft' || dirty || unsupported || !approvalReady || !begin()) return;
     approve.mutate({ ...selection, versionId: period.versionId });
   };
 
   const runApply = () => {
-    if (!resolvedScopeId || !begin()) return;
+    if (!resolvedScopeId || period?.status !== 'approved' || dirty || blocked || !begin()) return;
     apply.mutate(selection);
+  };
+
+  const runRollback = (revision: EvaluationRevision) => {
+    if (!revision.canRollback || !begin()) return;
+    rollback.mutate({ ...selection, revisionId: revision.id });
   };
 
   if (!isAdmin) {
@@ -281,85 +389,170 @@ export function EvaluationSettingsPanel() {
       <div className="min-w-0 space-y-4">
         <header>
           <h2 className="text-xl font-black text-[var(--text-primary)]">Evaluation settings</h2>
-          <p className="mt-1 text-xs text-[var(--text-muted)]">Draft a month, preview it, then approve and apply as separate steps. July and August stay independent.</p>
+          <p className="mt-1 text-xs text-[var(--text-muted)]">Revise an approved month, review the stored impact, then approve and apply as separate steps.</p>
         </header>
         <p role="status" className="rounded-xl border border-[var(--border-light)] bg-[var(--bg-sunken)] px-4 py-3 text-xs text-[var(--text-secondary)]">Evaluation settings are limited to Admin.</p>
       </div>
     );
   }
 
-  const scopeLabel = scope ? `${scope.display_name} · ${scope.performance_level}${scope.position_name ? ` · ${scope.position_name}` : ''}` : 'No scope';
+  const scopeLabel = catalogScope ? `${catalogScope.display_name} · ${catalogScope.performance_level}${catalogScope.position_name ? ` · ${catalogScope.position_name}` : ''}` : 'No scope';
+  const monthName = MONTHS[month - 1] || '';
 
   return (
     <div className="min-w-0 space-y-4" aria-busy={periodLoading || busy}>
       <header>
         <h2 className="text-xl font-black text-[var(--text-primary)]">Evaluation settings</h2>
-        <p className="mt-1 text-xs text-[var(--text-muted)]">Draft a month, preview it, then approve and apply as separate steps. July and August stay independent.</p>
+        <p className="mt-1 text-xs text-[var(--text-muted)]">Revise an approved month, review the stored impact, then approve and apply as separate steps. July and August stay independent. Supported scopes only.</p>
       </header>
       {error && <div role="alert" className="flex items-start gap-2 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-xs font-semibold text-red-600"><AlertCircle size={16} />{error}</div>}
       {message && <p className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-xs font-semibold text-emerald-700" role="status">{message}</p>}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <label className="min-w-0 text-xs font-bold text-[var(--text-secondary)]">Evaluation scope
-          <select aria-label="Evaluation scope" value={resolvedScopeId} onChange={(event) => setScopeId(event.target.value)} className="mt-1 w-full rounded-xl border border-[var(--border-light)] bg-[var(--bg-surface)] px-3 py-2 text-sm text-[var(--text-primary)]">
+          <select aria-label="Evaluation scope" value={resolvedScopeId} onChange={(event) => changeSelection({ scopeId: event.target.value })} className="mt-1 w-full rounded-xl border border-[var(--border-light)] bg-[var(--bg-surface)] px-3 py-2 text-sm text-[var(--text-primary)]">
             {scopes.map((item) => <option key={item.id} value={item.id}>{item.display_name} · {item.performance_level}{item.position_name ? ` · ${item.position_name}` : ''}{item.readiness === 'supported' ? '' : item.readiness === 'unlinked_baseline' ? ' · unlinked' : ' · blocked'}</option>)}
           </select>
         </label>
         <label className="min-w-0 text-xs font-bold text-[var(--text-secondary)]">Reporting month
-          <select aria-label="Reporting month" value={month} onChange={(event) => setMonth(Number(event.target.value))} className="mt-1 w-full rounded-xl border border-[var(--border-light)] bg-[var(--bg-surface)] px-3 py-2 text-sm">
+          <select aria-label="Reporting month" value={month} onChange={(event) => changeSelection({ month: Number(event.target.value) })} className="mt-1 w-full rounded-xl border border-[var(--border-light)] bg-[var(--bg-surface)] px-3 py-2 text-sm">
             {MONTHS.map((name, index) => <option key={name} value={index + 1}>{name}</option>)}
           </select>
         </label>
         <label className="min-w-0 text-xs font-bold text-[var(--text-secondary)]">Reporting year
-          <input aria-label="Reporting year" type="number" min={2000} max={2100} value={year} onChange={(event) => setYear(Number(event.target.value))} className="mt-1 w-full rounded-xl border border-[var(--border-light)] bg-[var(--bg-surface)] px-3 py-2 text-sm" />
+          <input aria-label="Reporting year" type="number" min={2000} max={2100} value={year} onChange={(event) => changeSelection({ year: Number(event.target.value) })} className="mt-1 w-full rounded-xl border border-[var(--border-light)] bg-[var(--bg-surface)] px-3 py-2 text-sm" />
         </label>
         <div className="min-w-0 self-end text-xs text-[var(--text-muted)]">{scopes.length === 0 && catalogQuery.isPending ? 'Loading scopes…' : scopeLabel}</div>
       </div>
-      {blocked && <div role="status" className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs text-amber-800">{scope?.block_reason} {scope?.history_note}</div>}
-      {!blocked && <div className="flex flex-wrap gap-2">
-        <button type="button" onClick={() => runOpen(false)} disabled={controlsLocked} className="rounded-xl border border-[var(--border-light)] px-3 py-2 text-xs font-bold disabled:cursor-not-allowed disabled:opacity-50">New draft</button>
-        <button type="button" onClick={() => runOpen(true)} disabled={controlsLocked} className="inline-flex items-center gap-1 rounded-xl border border-[var(--border-light)] px-3 py-2 text-xs font-bold disabled:cursor-not-allowed disabled:opacity-50"><Copy size={14} />Copy previous month</button>
-        <button type="button" onClick={() => runSave(false)} disabled={controlsLocked || !period?.versionId} className="inline-flex items-center gap-1 rounded-xl border border-[var(--border-light)] px-3 py-2 text-xs font-bold disabled:cursor-not-allowed disabled:opacity-50"><Save size={14} />Save draft</button>
-        <button type="button" onClick={() => runSave(true)} disabled={controlsLocked || !period?.versionId} className="rounded-xl border border-[var(--border-light)] px-3 py-2 text-xs font-bold disabled:cursor-not-allowed disabled:opacity-50">Save weights</button>
-        <button type="button" onClick={runPreview} disabled={controlsLocked || !period?.versionId || dirty || !hasSampleActuals} className="rounded-xl border border-[var(--border-light)] px-3 py-2 text-xs font-bold disabled:cursor-not-allowed disabled:opacity-50">Preview</button>
-        <button type="button" onClick={runApprove} disabled={controlsLocked || !period?.versionId || dirty || period?.status !== 'draft'} className="inline-flex items-center gap-1 rounded-xl bg-blue-600 px-3 py-2 text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"><Check size={14} />Approve</button>
-        <button type="button" onClick={runApply} disabled={controlsLocked} className="rounded-xl bg-slate-900 px-3 py-2 text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">Apply</button>
+      {blocked && <div role="status" className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs text-amber-800">{readinessSource?.block_reason} {readinessSource?.history_note}</div>}
+      {actionsReady && <div className="flex flex-wrap gap-2">
+        {!monthApproved && <button type="button" onClick={() => runOpen(false)} disabled={controlsLocked} className="rounded-xl border border-[var(--border-light)] px-3 py-2 text-xs font-bold disabled:cursor-not-allowed disabled:opacity-50">New draft</button>}
+        {!monthApproved && <button type="button" onClick={() => runOpen(true)} disabled={controlsLocked} className="inline-flex items-center gap-1 rounded-xl border border-[var(--border-light)] px-3 py-2 text-xs font-bold disabled:cursor-not-allowed disabled:opacity-50"><Copy size={14} />Copy previous month</button>}
+        {approved && <button type="button" onClick={runRevise} disabled={controlsLocked || !period?.versionId} className="rounded-xl border border-[var(--border-light)] px-3 py-2 text-xs font-bold disabled:cursor-not-allowed disabled:opacity-50">Revise this month</button>}
+        {!approved && <button type="button" onClick={runSave} disabled={controlsLocked || !period?.versionId || period?.status !== 'draft' || unsupported} className="inline-flex items-center gap-1 rounded-xl border border-[var(--border-light)] px-3 py-2 text-xs font-bold disabled:cursor-not-allowed disabled:opacity-50"><Save size={14} />Save draft</button>}
+        {!approved && <button type="button" onClick={runImpact} disabled={controlsLocked || !period?.versionId || period?.status !== 'draft' || dirty || unsupported} className="rounded-xl border border-[var(--border-light)] px-3 py-2 text-xs font-bold disabled:cursor-not-allowed disabled:opacity-50">Impact preview</button>}
+        {!approved && <button type="button" onClick={runApprove} disabled={controlsLocked || !period?.versionId || dirty || period?.status !== 'draft' || !approvalReady} className="inline-flex items-center gap-1 rounded-xl bg-blue-600 px-3 py-2 text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"><Check size={14} />Approve</button>}
+        <button type="button" onClick={runApply} disabled={controlsLocked || period?.status !== 'approved' || dirty} className="rounded-xl bg-slate-900 px-3 py-2 text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">Apply</button>
       </div>}
-      {!blocked && period && <p className="text-xs text-[var(--text-muted)]">{hasSampleActuals ? SAMPLE_PREVIEW_LIMIT : SAMPLE_PREVIEW_UNAVAILABLE}</p>}
+      {!blocked && approved && <p role="status" className="text-xs text-[var(--text-secondary)]">{READ_ONLY_APPROVED_NOTE}</p>}
       {!blocked && dirty && <p role="status" className="text-xs font-semibold text-[var(--text-secondary)]">{UNSAVED_PREVIEW_NOTE}</p>}
-      {previewText && <p className="text-xs text-[var(--text-secondary)]">{previewText}</p>}
+      {!blocked && unsupported && <p role="status" className="text-xs font-semibold text-amber-800">{UNSUPPORTED_FORMULA_NOTE}</p>}
+      {!!period?.sourceVersionId && <p className="text-xs text-[var(--text-secondary)]">Source version {period.sourceVersionId}{period.sourceChecksum ? ` · source checksum ${period.sourceChecksum}` : ''}. The source version remains in this month's history.</p>}
       {!!period?.notes && <p className="text-xs text-[var(--text-muted)]">{period.notes}</p>}
+      {visibleProof && <section className="min-w-0 space-y-3" aria-label="Impact proof">
+        <p className="text-xs text-[var(--text-secondary)]">{formatImpactSummary(visibleProof)}</p>
+        {visibleProof.writes === 0 && <p className="text-xs text-[var(--text-muted)]">Impact preview wrote no scores.</p>}
+        {visibleProof.rulesChecksum && <p className="text-xs text-[var(--text-muted)]">Rules checksum {visibleProof.rulesChecksum}.</p>}
+        {visibleProof.conflicts.length > 0 && <div className="space-y-2">
+          <p className="text-xs text-[var(--text-secondary)]">{FIXED_MISMATCH_NOTE}</p>
+          <div className="min-w-0 overflow-x-auto">
+            <table className="w-full min-w-[36rem] text-left text-xs">
+              <caption className="mb-2 text-left text-xs font-bold text-[var(--text-secondary)]">Fixed target mismatches</caption>
+              <thead>
+                <tr>
+                  <th scope="col" className="px-2 py-1">Record</th>
+                  <th scope="col" className="px-2 py-1">KPI</th>
+                  <th scope="col" className="px-2 py-1">Workbook target</th>
+                  <th scope="col" className="px-2 py-1">Approved fixed target</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visibleProof.conflicts.map((conflict) => <tr key={`${conflict.recordId || 'record'}-${conflict.kpiKey}`}>
+                  <td className="px-2 py-1">{conflict.recordId || '—'}</td>
+                  <td className="px-2 py-1">{conflict.kpiKey}</td>
+                  <td className="px-2 py-1">{displayNumber(conflict.workbookTarget)}</td>
+                  <td className="px-2 py-1">{displayNumber(conflict.approvedTarget)}</td>
+                </tr>)}
+              </tbody>
+            </table>
+          </div>
+        </div>}
+        {comparisons.length > 0 && <div className="space-y-2">
+          <div className="min-w-0 overflow-x-auto">
+            <table className="w-full min-w-[42rem] text-left text-xs">
+              <caption className="mb-2 text-left text-xs font-bold text-[var(--text-secondary)]">Before and after scores</caption>
+              <thead>
+                <tr>
+                  <th scope="col" className="px-2 py-1">Employee</th>
+                  <th scope="col" className="px-2 py-1">Before score</th>
+                  <th scope="col" className="px-2 py-1">After score</th>
+                  <th scope="col" className="px-2 py-1">Before grade</th>
+                  <th scope="col" className="px-2 py-1">After grade</th>
+                </tr>
+              </thead>
+              <tbody>
+                {comparisonPage.rows.map((row, index) => <tr key={row.recordId || `${row.employeeCode || 'employee'}-${index}`}>
+                  <th scope="row" className="px-2 py-1 font-semibold">{row.employeeCode || row.employeeId || '—'}
+                    {row.kpis.map((kpi) => <span key={kpi.kpiKey} className="mt-1 block font-normal text-[var(--text-muted)]">{formatKpiLine(kpi)}</span>)}
+                  </th>
+                  <td className="px-2 py-1">{displayNumber(row.beforeScore)}</td>
+                  <td className="px-2 py-1">{displayNumber(row.afterScore)}</td>
+                  <td className="px-2 py-1">{row.beforeGrade || '—'}</td>
+                  <td className="px-2 py-1">{row.afterGrade || '—'}</td>
+                </tr>)}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-xs text-[var(--text-muted)]">Page {comparisonPage.page + 1} of {comparisonPage.pages}</p>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={() => setPage(comparisonPage.page - 1)} disabled={comparisonPage.page === 0} className="rounded-lg border border-[var(--border-light)] px-2 py-1 text-xs font-bold disabled:opacity-50">Previous impact page</button>
+            <button type="button" onClick={() => setPage(comparisonPage.page + 1)} disabled={comparisonPage.page >= comparisonPage.pages - 1} className="rounded-lg border border-[var(--border-light)] px-2 py-1 text-xs font-bold disabled:opacity-50">Next impact page</button>
+          </div>
+        </div>}
+      </section>}
       <div className="min-w-0 space-y-3">
         {periodLoading && <p className="text-xs text-[var(--text-muted)]">Loading this month…</p>}
-        {!periodLoading && !blocked && lines.map((line) => <fieldset key={line.kpi_key} disabled={busy} className="min-w-0 rounded-2xl border border-[var(--border-light)] p-3 disabled:opacity-60">
-          <legend className="px-1 text-xs font-black text-[var(--text-primary)]">{line.label || line.kpi_key}</legend>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <label className="text-[10px] font-bold uppercase tracking-wide text-[var(--text-muted)]">Target
-              <input aria-label={`${line.kpi_key} target`} value={line.target ?? ''} onChange={(event) => updateLine(line.kpi_key, { target: event.target.value === '' ? null : Number(event.target.value), target_mode: 'fixed' })} className="mt-1 w-full rounded-lg border border-[var(--border-light)] bg-transparent px-2 py-2 text-sm" />
-            </label>
-            <label className="text-[10px] font-bold uppercase tracking-wide text-[var(--text-muted)]">Weight
-              <input aria-label={`${line.kpi_key} weight`} value={line.weight} onChange={(event) => updateLine(line.kpi_key, { weight: Number(event.target.value) })} className="mt-1 w-full rounded-lg border border-[var(--border-light)] bg-transparent px-2 py-2 text-sm" />
-            </label>
-            <label className="text-[10px] font-bold uppercase tracking-wide text-[var(--text-muted)]">Direction
-              <select aria-label={`${line.kpi_key} direction`} value={line.direction} onChange={(event) => updateLine(line.kpi_key, { direction: event.target.value })} className="mt-1 w-full rounded-lg border border-[var(--border-light)] bg-transparent px-2 py-2 text-sm">
-                <option value="higher_better">Higher is better</option>
-                <option value="lower_better">Lower is better</option>
-              </select>
-            </label>
-            <label className="text-[10px] font-bold uppercase tracking-wide text-[var(--text-muted)]">Source
-              <select aria-label={`${line.kpi_key} source`} value={line.target_mode} onChange={(event) => updateLine(line.kpi_key, { target_mode: event.target.value })} className="mt-1 w-full rounded-lg border border-[var(--border-light)] bg-transparent px-2 py-2 text-sm">
-                <option value="workbook">Workbook</option>
-                <option value="fixed">Fixed</option>
-              </select>
-            </label>
-          </div>
-        </fieldset>)}
+        {!periodLoading && !blocked && lines.map((line) => {
+          const supported = lineFormulaSupported(line);
+          const locked = busy || approved || !supported;
+          return (
+            <fieldset key={line.kpi_key} disabled={locked} className="min-w-0 rounded-2xl border border-[var(--border-light)] p-3 disabled:opacity-60">
+              <legend className="px-1 text-xs font-black text-[var(--text-primary)]">{line.label || line.kpi_key}</legend>
+              {!supported && <p role="status" className="mb-2 text-xs text-amber-800">{UNSUPPORTED_FORMULA_NOTE}</p>}
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <label className="text-[10px] font-bold uppercase tracking-wide text-[var(--text-muted)]">Target
+                  <input aria-label={`${line.kpi_key} target`} value={line.target ?? ''} onChange={(event) => updateLine(line.kpi_key, { target: event.target.value === '' ? null : Number(event.target.value), target_mode: 'fixed' })} className="mt-1 w-full rounded-lg border border-[var(--border-light)] bg-transparent px-2 py-2 text-sm" />
+                </label>
+                <label className="text-[10px] font-bold uppercase tracking-wide text-[var(--text-muted)]">Weight
+                  <input aria-label={`${line.kpi_key} weight`} value={line.weight} onChange={(event) => updateLine(line.kpi_key, { weight: Number(event.target.value) })} className="mt-1 w-full rounded-lg border border-[var(--border-light)] bg-transparent px-2 py-2 text-sm" />
+                </label>
+                <label className="text-[10px] font-bold uppercase tracking-wide text-[var(--text-muted)]">Direction
+                  {supported ? (
+                    <select aria-label={`${line.kpi_key} direction`} value={line.direction} onChange={(event) => updateLine(line.kpi_key, { direction: event.target.value })} className="mt-1 w-full rounded-lg border border-[var(--border-light)] bg-transparent px-2 py-2 text-sm">
+                      <option value="higher_better">Higher is better</option>
+                      <option value="lower_better">Lower is better</option>
+                    </select>
+                  ) : <input aria-label={`${line.kpi_key} direction`} value={line.direction} readOnly className="mt-1 w-full rounded-lg border border-[var(--border-light)] bg-transparent px-2 py-2 text-sm" />}
+                </label>
+                <label className="text-[10px] font-bold uppercase tracking-wide text-[var(--text-muted)]">Source
+                  {supported ? (
+                    <select aria-label={`${line.kpi_key} source`} value={line.target_mode} onChange={(event) => updateLine(line.kpi_key, { target_mode: event.target.value })} className="mt-1 w-full rounded-lg border border-[var(--border-light)] bg-transparent px-2 py-2 text-sm">
+                      <option value="workbook">Workbook</option>
+                      <option value="fixed">Fixed</option>
+                    </select>
+                  ) : <input aria-label={`${line.kpi_key} source`} value={line.target_mode} readOnly className="mt-1 w-full rounded-lg border border-[var(--border-light)] bg-transparent px-2 py-2 text-sm" />}
+                </label>
+              </div>
+            </fieldset>
+          );
+        })}
       </div>
+      {pendingRollback && <div role="group" aria-label="Rollback confirmation" className="space-y-2 rounded-xl border border-[var(--border-light)] p-3">
+        <p className="text-xs text-[var(--text-secondary)]">{ROLLBACK_CONFIRM_NOTE}</p>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" onClick={() => runRollback(pendingRollback)} disabled={busy} className="rounded-xl border border-[var(--border-light)] px-3 py-2 text-xs font-bold disabled:opacity-50">Restore saved values</button>
+          <button type="button" onClick={() => setRollbackConfirm(null)} className="rounded-xl border border-[var(--border-light)] px-3 py-2 text-xs font-bold">Keep current records</button>
+        </div>
+      </div>}
       <section className="min-w-0">
         <h3 className="mb-2 flex items-center gap-2 text-xs font-black uppercase tracking-wide text-[var(--text-muted)]"><History size={14} />History</h3>
-        <ul className="space-y-1 text-xs text-[var(--text-secondary)]">
+        <ul className="space-y-2 text-xs text-[var(--text-secondary)]">
           {periodLoading && <li>Loading this month…</li>}
-          {!periodLoading && (period?.history ?? []).map((item) => <li key={item.id}>{item.month_name || MONTHS[month - 1]} · {item.status} · {period?.status === item.status ? 'open' : 'saved'}</li>)}
-          {!periodLoading && !(period?.history ?? []).length && <li>No saved versions for this month.</li>}
+          {!periodLoading && (period?.history ?? []).map((item) => <li key={item.id}>{versionLabel(item, monthName)}</li>)}
+          {!periodLoading && (period?.revisions ?? []).map((item) => <li key={item.id} className="flex flex-wrap items-center gap-2">
+            <span>{revisionLabel(item)}</span>
+            {item.canRollback && <button type="button" onClick={() => setRollbackConfirm({ key: currentKey, revisionId: item.id })} disabled={busy} className="rounded-lg border border-[var(--border-light)] px-2 py-1 text-xs font-bold disabled:opacity-50">Rollback</button>}
+          </li>)}
+          {!periodLoading && !(period?.history ?? []).length && !(period?.revisions ?? []).length && <li>No saved versions for this month.</li>}
         </ul>
       </section>
     </div>
