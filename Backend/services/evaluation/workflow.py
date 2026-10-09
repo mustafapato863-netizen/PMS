@@ -7,6 +7,7 @@ import json
 import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
+from types import SimpleNamespace
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -22,19 +23,21 @@ from models.models import (
     Team,
     TeamConfigurationVersion,
 )
-from services.evaluation.access import AccessDenied, EvaluationError, TargetConflict, require_action
+from services.evaluation.access import EvaluationError, TargetConflict, require_action
 from services.evaluation.catalog import EvaluationCatalog
 from services.evaluation.periods import month_aliases, month_name, month_number, previous_period
 from services.evaluation.resolver import (
     approved_version,
     assert_schema,
     basis_payload,
+    require_approved_capability,
     schema_ready,
     score_basis,
     snapshot_lines,
 )
 from services.evaluation.scoring import SUPPORTED_DIRECTIONS, decimal_places
 from utils.performance_status import status_for_grade
+from utils.report_scope import filter_records_by_scope, filter_records_by_team_levels
 from utils.team_identity import logical_team_name
 
 
@@ -73,6 +76,43 @@ def _copy_lines(lines: list[dict]) -> list[dict]:
     return json.loads(json.dumps(lines))
 
 
+def _saved_applied_basis(record: PerformanceRecord | None) -> dict | None:
+    """Return the basis apply saved on this visible row.
+
+    An approved version that was never written onto the row is not a substitute.
+    """
+    payload = getattr(record, "record_payload", None) if record is not None else None
+    if not isinstance(payload, dict):
+        return None
+    basis = payload.get("evaluation_basis")
+    if not isinstance(basis, dict) or basis.get("pinned") is not True:
+        return None
+    return basis
+
+
+def _visible_evidence(rows: list[PerformanceRecord], actor: dict, team_name: str) -> list[PerformanceRecord]:
+    """Keep rows that pass the canonical team, level, person, branch, function, and region filters."""
+    projections = []
+    for row in rows:
+        employee = getattr(row, "employee", None)
+        team = getattr(row, "team", None)
+        region = getattr(row, "region", None) or getattr(employee, "region", None) or getattr(team, "region", None)
+        projections.append(
+            SimpleNamespace(
+                team=team_name,
+                performance_level=row.performance_level,
+                employee_id=str(getattr(employee, "employee_id", "") or ""),
+                branch_key=getattr(row, "branch_key", None),
+                region=region,
+                employee=SimpleNamespace(region=getattr(employee, "region", None)) if employee is not None else None,
+            )
+        )
+    visible = filter_records_by_scope(projections, actor)
+    visible = filter_records_by_team_levels(visible, actor)
+    allowed = {id(item) for item in visible}
+    return [row for row, projection in zip(rows, projections) if id(projection) in allowed]
+
+
 class EvaluationWorkflow:
     def __init__(self, db: Session):
         self.db = db
@@ -81,11 +121,15 @@ class EvaluationWorkflow:
     def _ready(self) -> None:
         assert_schema(self.db)
 
-    def _scope(self, scope_id) -> EvaluationScope:
+    def _require_admin(self, actor: dict) -> None:
+        """Management calls stop here, before any catalog sync or settings write."""
+        require_action(actor, "", "catalog")
+
+    def _scope(self, scope_id, *, sync: bool = False) -> EvaluationScope:
         self._ready()
         parsed = _as_uuid(scope_id, "Evaluation scope was not found.")
         scope = self.db.query(EvaluationScope).filter(EvaluationScope.id == parsed).one_or_none()
-        if scope is None:
+        if scope is None and sync:
             self.catalog.sync()
             scope = self.db.query(EvaluationScope).filter(EvaluationScope.id == parsed).one_or_none()
         if scope is None:
@@ -100,20 +144,10 @@ class EvaluationWorkflow:
         return scope.display_name
 
     def sync_catalog(self, scope: dict) -> dict:
+        self._require_admin(scope)
         self._ready()
         rows = self.catalog.sync()
-        visible = []
-        for row in rows:
-            try:
-                require_action(scope, self._team_name(row), "applied" if row.readiness != "supported" else "version")
-            except AccessDenied:
-                if str(scope.get("role") or "") not in {"Admin", "General Manager", "Performance Team"}:
-                    continue
-                try:
-                    require_action(scope, self._team_name(row), "applied")
-                except AccessDenied:
-                    continue
-            visible.append(self.catalog.serialize(row))
+        visible = [self.catalog.serialize(row) for row in rows]
         return {
             "scopes": visible,
             "schema_gaps": [
@@ -131,6 +165,29 @@ class EvaluationWorkflow:
                 readiness=scope_row.readiness,
                 block_reason=scope_row.block_reason,
                 ambiguous_kpis=list(scope_row.ambiguous_kpis or []),
+                edit_mode="blocked",
+                weight_only_allowed=False,
+            )
+
+    def _guard_editable(self, scope_row: EvaluationScope) -> None:
+        """Live file audit. Stored readiness and a client weight_only flag are not permission."""
+        if scope_row.team_id is not None:
+            team = self.db.query(Team).filter(Team.id == scope_row.team_id).one_or_none()
+            if team is None or not team.is_active:
+                raise EvaluationError(
+                    "This team is inactive. It stays outside the supported rollout.",
+                    code="scope_blocked",
+                    edit_mode="blocked",
+                    weight_only_allowed=False,
+                )
+        decision = self.catalog.decision_for(scope_row)
+        if not decision.allows_ratio_edit:
+            raise EvaluationError(
+                decision.reason,
+                code="unsupported_calculation",
+                edit_mode="blocked",
+                weight_only_allowed=False,
+                readiness=scope_row.readiness,
             )
 
     def _validate_lines(self, current: list[dict], proposed: list[dict], *, weight_only: bool = False) -> tuple[list[dict], list[str]]:
@@ -265,8 +322,9 @@ class EvaluationWorkflow:
         )
 
     def open_draft(self, actor: dict, scope_id, year: int, month, *, copy_previous: bool = False) -> dict:
-        scope_row = self._scope(scope_id)
-        require_action(actor, self._team_name(scope_row), "draft")
+        self._require_admin(actor)
+        scope_row = self._scope(scope_id, sync=True)
+        self._guard_editable(scope_row)
         self._guard_supported(scope_row)
         number = month_number(month)
         existing = self._find_version(scope_row, int(year), number, "draft")
@@ -291,10 +349,11 @@ class EvaluationWorkflow:
         return self._serialize_version(created, scope_row)
 
     def edit_draft(self, actor: dict, version_id, lines: list[dict], *, weight_only: bool = False) -> dict:
+        self._require_admin(actor)
         self._ready()
         version = self._version(version_id)
         scope_row = self._scope_for_version(version)
-        require_action(actor, self._team_name(scope_row), "draft")
+        self._guard_editable(scope_row)
         self._guard_supported(scope_row)
         if version.status != "draft":
             raise EvaluationError("Approved settings are immutable. Open a new draft.", code="immutable")
@@ -311,10 +370,11 @@ class EvaluationWorkflow:
         return body
 
     def approve(self, actor: dict, version_id) -> dict:
+        self._require_admin(actor)
         self._ready()
         version = self._version(version_id)
         scope_row = self._scope_for_version(version)
-        require_action(actor, self._team_name(scope_row), "approve")
+        self._guard_editable(scope_row)
         self._guard_supported(scope_row)
         if version.status != "draft":
             raise EvaluationError("Only a draft can be approved.", code="immutable")
@@ -340,10 +400,11 @@ class EvaluationWorkflow:
         return self._serialize_version(version, scope_row)
 
     def preview(self, actor: dict, version_id, rows: list[dict]) -> dict:
+        self._require_admin(actor)
         self._ready()
         version = self._version(version_id)
         scope_row = self._scope_for_version(version)
-        require_action(actor, self._team_name(scope_row), "preview")
+        self._guard_editable(scope_row)
         if version.status not in {"draft", "approved"}:
             raise EvaluationError("Preview needs a draft or approved version.", code="not_found")
         body = score_basis(version, rows)
@@ -352,26 +413,26 @@ class EvaluationWorkflow:
 
     def run_preview_job(self, actor: dict, version_id, rows: list[dict]) -> dict:
         """Job entry. The caller's grants are read again here, including after revocation."""
-        require_action(actor, self._team_name(self._scope_for_version(self._version(version_id))), "job")
+        self._require_admin(actor)
         return self.preview(actor, version_id, rows)
 
     def export_version(self, actor: dict, version_id) -> dict:
+        self._require_admin(actor)
         self._ready()
         version = self._version(version_id)
         scope_row = self._scope_for_version(version)
-        require_action(actor, self._team_name(scope_row), "export")
         return self._serialize_version(version, scope_row)
 
     def get_version(self, actor: dict, version_id) -> dict:
+        self._require_admin(actor)
         self._ready()
         version = self._version(version_id)
         scope_row = self._scope_for_version(version)
-        require_action(actor, self._team_name(scope_row), "version")
         return self._serialize_version(version, scope_row)
 
     def period(self, actor: dict, scope_id, year: int, month) -> dict:
-        scope_row = self._scope(scope_id)
-        require_action(actor, self._team_name(scope_row), "version")
+        self._require_admin(actor)
+        scope_row = self._scope(scope_id, sync=True)
         number = month_number(month)
         rows = (
             self.db.query(TeamConfigurationVersion)
@@ -397,30 +458,31 @@ class EvaluationWorkflow:
         }
 
     def reads(self, actor: dict, scope_id, year: int, months: list) -> dict:
-        scope_row = self._scope(scope_id)
-        role = str(actor.get("role") or "")
-        action = "version" if role in {"Admin", "General Manager", "Performance Team"} else "applied"
-        require_action(actor, self._team_name(scope_row), action)
+        scope_row = self._scope(scope_id, sync=False)
+        require_action(actor, self._team_name(scope_row), "applied", scope_row.performance_level)
         bodies = []
         for month in months:
             number = month_number(month)
-            version = self._find_version(scope_row, int(year), number, "approved")
+            visible = self._records(scope_row, int(year), number, actor)
+            source = visible[0] if visible else None
+            basis = _saved_applied_basis(source)
             bodies.append(
                 {
                     "year": int(year),
                     "month": number,
                     "month_name": month_name(number),
-                    "version_id": str(version.id) if version else None,
-                    "lines": snapshot_lines(version),
-                    "stored_score": self._stored_score(scope_row, int(year), number, actor),
-                    "pinned": version is not None,
+                    "version_id": None if basis is None else basis.get("version_id"),
+                    "lines": [] if basis is None else list(basis.get("lines") or []),
+                    "stored_score": None if source is None else float(source.score),
+                    "pinned": basis is not None,
                 }
             )
         return {"scope_id": str(scope_row.id), "periods": bodies}
 
     def apply(self, actor: dict, scope_id, year: int, month) -> dict:
-        scope_row = self._scope(scope_id)
-        require_action(actor, self._team_name(scope_row), "apply")
+        self._require_admin(actor)
+        scope_row = self._scope(scope_id, sync=True)
+        self._guard_editable(scope_row)
         self._guard_supported(scope_row)
         number = month_number(month)
         version = self._find_version(scope_row, int(year), number, "approved")
@@ -504,13 +566,13 @@ class EvaluationWorkflow:
         return {"revision_id": str(revision.id), "version_id": str(version.id), "records": applied_rows}
 
     def rollback(self, actor: dict, revision_id) -> dict:
+        self._require_admin(actor)
         self._ready()
         parsed = _as_uuid(revision_id, "Revision was not found.")
         revision = self.db.query(EvaluationRevision).filter(EvaluationRevision.id == parsed).one_or_none()
         if revision is None:
             raise EvaluationError("Revision was not found.", code="not_found")
         team = self.db.query(Team).filter(Team.id == revision.team_id).one()
-        require_action(actor, logical_team_name(team), "rollback")
         if revision.status != "active":
             raise EvaluationError("Only the active revision can be rolled back.", code="immutable")
         self._restore(revision.prior_snapshot)
@@ -538,6 +600,12 @@ class EvaluationWorkflow:
         )
         if version is None:
             return
+        team_name = logical_team_name(team)
+        require_approved_capability(
+            version,
+            team_name=team_name,
+            config=self.catalog._config_for(team_name),
+        )
         fresh = values[start:]
         if not fresh:
             return
@@ -582,17 +650,7 @@ class EvaluationWorkflow:
         rows = [row for row in query.all() if str(row.month).strip().casefold() in aliases]
         position = scope_row.position_name or ""
         rows = [row for row in rows if (row.position_name or "") == position]
-        role = str(actor.get("role") or "")
-        if role == "Branch Director":
-            allowed = {str(value).casefold() for value in actor.get("accessible_branches") or []}
-            rows = [row for row in rows if str(row.branch_key or "").casefold() in allowed]
-        if role == "Regional Manager":
-            allowed = {str(value).casefold() for value in actor.get("accessible_regions") or []}
-            rows = [row for row in rows if str(row.region or "").casefold() in allowed]
-        if role in {"Employee", "Agent", "Executive"}:
-            employee_id = str(actor.get("employee_id") or "")
-            rows = [row for row in rows if str(getattr(row.employee, "employee_id", "") or "") == employee_id]
-        return rows
+        return _visible_evidence(rows, actor, self._team_name(scope_row))
 
     def _stored_score(self, scope_row: EvaluationScope, year: int, month: int, actor: dict):
         rows = self._records(scope_row, year, month, actor)

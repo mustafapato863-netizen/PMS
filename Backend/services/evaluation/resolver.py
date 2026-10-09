@@ -97,6 +97,37 @@ def basis_payload(version: TeamConfigurationVersion) -> dict:
     }
 
 
+def require_approved_capability(version: TeamConfigurationVersion, *, team_name: str, config: dict | None):
+    """Refuse recomputation when an approved month is not an audited ratio.
+
+    Upload preview imports this from ``services.evaluation.resolver`` and calls
+    it after ``approved_version`` finds a row. Pass the checked-in team file as
+    ``config`` (``None`` when that file is missing). A blocked decision raises
+    ``EvaluationError`` with ``code="unsupported_calculation"``,
+    ``edit_mode="blocked"``, and ``weight_only_allowed=False``. The function
+    does not read or write performance evidence, so the original workbook
+    values stay in place. Historical reads do not call it.
+    """
+    from services.evaluation.access import EvaluationError
+    from services.evaluation.catalog import calculation_for
+
+    decision = calculation_for(
+        team_name,
+        str(getattr(version, "performance_level", "") or ""),
+        str(getattr(version, "position_name", "") or ""),
+        config,
+    )
+    if not decision.allows_ratio_edit:
+        raise EvaluationError(
+            "Approved recomputation is refused for this monthly configuration. " + decision.reason,
+            code="unsupported_calculation",
+            edit_mode="blocked",
+            weight_only_allowed=False,
+            capability_reason=decision.reason,
+        )
+    return decision
+
+
 def score_basis(version: TeamConfigurationVersion, rows: list[dict], *, check_conflicts: bool = True) -> dict:
     """Same function for preview and commit. Apply rescoring passes check_conflicts=False."""
     lines = snapshot_lines(version)
@@ -112,6 +143,11 @@ def score_basis(version: TeamConfigurationVersion, rows: list[dict], *, check_co
     scored = score_rows(version.performance_level or "Employee", lines, rows)
     score = overall_score(scored)
     thresholds = (version.config_snapshot or {}).get("grade_thresholds") if isinstance(version.config_snapshot, dict) else None
+    if isinstance(thresholds, dict):
+        from services.evaluation.scoring import _finite
+
+        for band, limit in thresholds.items():
+            _finite(limit, f"Grade threshold {band}")
     return {
         "version_id": str(version.id),
         "lines": lines,
