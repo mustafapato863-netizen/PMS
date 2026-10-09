@@ -1,8 +1,10 @@
 import './PageEnhancements.css';
 import { useEffect, useState } from 'react';
-import { Navigate } from 'react-router-dom';
+import { Navigate, useSearchParams } from 'react-router-dom';
 import { useUserRole } from '../context/RoleContext';
-import { executiveViewForRole } from '../lib/access';
+import { executiveViewForRole, readHasUnrestrictedTeamAccess } from '../lib/access';
+import { directorScope } from '../lib/directorScope';
+import { monthNameFromPeriodKey, overviewPeriodSelector, previousReportingSelector } from '../hooks/api/scopedPeriod';
 import { motion } from 'framer-motion';
 import { Users, TrendingUp, Award, AlertTriangle, CalendarDays, ChevronDown, ClipboardList, Globe, MapPin } from 'lucide-react';
 import Breadcrumb from '../components/common/Breadcrumb';
@@ -25,35 +27,69 @@ import { summarizeRootCauses } from '../utils/rootCauseInsights';
 import type { LocationKey } from '../types';
 import { apiFetch } from '../lib/apiClient';
 import { filterActionsByPerformanceScope } from '../features/executive/actionScope';
-import { readHasUnrestrictedTeamAccess } from '../lib/access';
+
+type RegionFilter = 'All' | 'EGY' | 'UAE';
+
+const REGION_OPTIONS: Array<{ value: RegionFilter; label: string }> = [
+  { value: 'All', label: 'All Regions' },
+  { value: 'EGY', label: 'Egypt (EGY)' },
+  { value: 'UAE', label: 'UAE' },
+];
+
+const BRANCH_OPTIONS: Array<{ value: LocationKey; label: string }> = [
+  { value: 'all', label: 'All Branches' },
+  { value: 'dubai', label: 'Dubai' },
+  { value: 'sharjah', label: 'Sharjah (Sharqa)' },
+  { value: 'ajman', label: 'Ajman' },
+  { value: 'clinics', label: 'Clinics' },
+];
+
+function canonicalRegion(value: string | null | undefined): RegionFilter | null {
+  const normalized = value?.trim().toUpperCase();
+  if (normalized === 'EGY' || normalized === 'UAE') return normalized;
+  return null;
+}
 
 const ExecutiveOverview = () => {
-  const [region, setRegion] = useState<'All' | 'EGY' | 'UAE'>('All');
+  const { role } = useUserRole();
   const { currentUser } = useAuth();
-  const { location, setLocation } = useLocationParam('all');
-  const { month, setMonth } = useMonthParam('All');
+  const assigned = directorScope(role, currentUser);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const { location: locationFromUrl, setLocation } = useLocationParam('all');
+  const { month: monthParam } = useMonthParam('All');
   const { performanceLevel, setPerformanceLevel } = usePerformanceLevelParam('All');
   const [weightsList, setWeightsList] = useState<Array<{ team: string; weights: Record<string, number> }>>([]);
-  const locationKey: LocationKey = (['all', 'dubai', 'sharjah', 'ajman', 'clinics'].includes(location)
-    ? location
-    : 'all') as LocationKey;
-  const legacySummary = useAllTeamsSummary(month, region, locationKey, performanceLevel, weightsList, !scopedPerformanceApiEnabled);
-  const scopedSummary = useScopedExecutiveSummary(month, region, locationKey, performanceLevel);
+  const periodSelector = overviewPeriodSelector(searchParams.get('period'), monthParam);
+  const selectedMonth = monthNameFromPeriodKey(periodSelector) || monthParam;
+  // Assigned branch and region stay in force even when the URL, reset, or back stack says otherwise.
+  const forcedRegion = assigned.regionLocked ? canonicalRegion(assigned.region) : null;
+  const region: RegionFilter = assigned.regionLocked ? (forcedRegion ?? 'All') : (canonicalRegion(searchParams.get('region')) ?? 'All');
+  const forcedBranch = assigned.branchLocked && assigned.branch && BRANCH_OPTIONS.some((option) => option.value === assigned.branch)
+    ? assigned.branch as LocationKey
+    : null;
+  const locationKey: LocationKey = assigned.branchLocked ? (forcedBranch ?? 'all') : locationFromUrl;
+  const legacySummary = useAllTeamsSummary(periodSelector, region, locationKey, performanceLevel, weightsList, !scopedPerformanceApiEnabled);
+  const scopedSummary = useScopedExecutiveSummary(periodSelector, region, locationKey, performanceLevel);
   const { summaries, totalAgents, uniqueTeamCount, overallAvgScore, pctAB, pctDE, allClassCounts, loading, dataSource, errorMessage } = scopedPerformanceApiEnabled
     ? scopedSummary
     : legacySummary;
   const legacyAllData = usePerformanceData('All', locationKey, region, performanceLevel, !scopedPerformanceApiEnabled);
   const uniqueMonths = scopedPerformanceApiEnabled ? scopedSummary.uniqueMonths : legacyAllData.uniqueMonths;
   const allAgents = scopedPerformanceApiEnabled ? [] : legacyAllData.agents;
-  const activeMonth = month === 'All'
+  const activeMonth = selectedMonth === 'All'
     ? (scopedPerformanceApiEnabled ? scopedSummary.activePeriod?.month : uniqueMonths[uniqueMonths.length - 1]) || 'January'
-    : month;
+    : selectedMonth;
   const activeMonthIndex = uniqueMonths.indexOf(activeMonth);
+  const legacyPreviousKey = !scopedPerformanceApiEnabled && periodSelector !== 'All'
+    ? previousReportingSelector(
+        legacyAllData.agents.map((agent) => ({ month: agent.identity.month, year: agent.year })),
+        periodSelector,
+      )
+    : null;
   const previousMonth = scopedPerformanceApiEnabled
     ? scopedSummary.previousPeriod?.month || null
-    : month !== 'All' && activeMonthIndex > 0
-      ? uniqueMonths[activeMonthIndex - 1]
-      : null;
+    : legacyPreviousKey
+      ?? (selectedMonth !== 'All' && activeMonthIndex > 0 ? uniqueMonths[activeMonthIndex - 1] : null);
   const legacyPreviousSummary = useAllTeamsSummary(
     previousMonth || activeMonth,
     region,
@@ -113,9 +149,9 @@ const ExecutiveOverview = () => {
     if (!import.meta.env.DEV) return;
     console.debug('performance_summary', {
       page: 'Executive Summary',
-      month,
+      month: selectedMonth,
       region,
-      branch: location,
+      branch: locationKey,
       recordsUsed: totalAgents,
       uniqueTeams: summaries.map((summary) => summary.teamName),
       uniqueTeamCount: teamCountLabel,
@@ -125,7 +161,7 @@ const ExecutiveOverview = () => {
       classDECount: allClassCounts.D + allClassCounts.E,
       classDEPercentage: pctDE,
     });
-  }, [month, region, location, totalAgents, summaries, teamCountLabel, overallAvgScore, allClassCounts, pctAB, pctDE]);
+  }, [selectedMonth, region, locationKey, totalAgents, summaries, teamCountLabel, overallAvgScore, allClassCounts, pctAB, pctDE]);
 
   const allActions = getAllActions();
   const scopedActions = currentUser?.role === 'Manager' && !readHasUnrestrictedTeamAccess(currentUser)
@@ -142,11 +178,57 @@ const ExecutiveOverview = () => {
   const actionStats = summarizeRootCauses(
     dashboardScopedActions.filter((action) => action.month === activeMonth)
   );
+  const setRegion = (value: RegionFilter) => {
+    if (assigned.regionLocked) return;
+    const next = new URLSearchParams(searchParams);
+    if (value === 'All') next.delete('region');
+    else next.set('region', value);
+    setSearchParams(next);
+  };
+  const setBranch = (value: LocationKey) => {
+    if (assigned.branchLocked) return;
+    setLocation(value);
+  };
+  const onMonthChange = (value: string) => {
+    const next = new URLSearchParams(searchParams);
+    next.set('month', value);
+    next.delete('period');
+    setSearchParams(next);
+  };
+  const clearFilters = () => {
+    const next = new URLSearchParams(searchParams);
+    if (!assigned.regionLocked) next.delete('region');
+    if (!assigned.branchLocked) {
+      next.delete('branch');
+      next.delete('location');
+      next.delete('branches');
+    }
+    next.delete('performance_level');
+    setSearchParams(next, { replace: true });
+  };
+  const regionOptions = assigned.regionLocked
+    ? forcedRegion
+      ? REGION_OPTIONS.filter((option) => option.value === forcedRegion)
+      : [{ value: 'All' as const, label: assigned.regionLabel }]
+    : REGION_OPTIONS;
+  const branchOptions = assigned.branchLocked
+    ? forcedBranch
+      ? BRANCH_OPTIONS.filter((option) => option.value === forcedBranch)
+      : [{ value: 'all' as const, label: assigned.branchLabel }]
+    : BRANCH_OPTIONS;
+  const monthOptions = selectedMonth !== 'All' && !uniqueMonths.includes(selectedMonth)
+    ? [...uniqueMonths, selectedMonth]
+    : uniqueMonths;
   const activeFilterCount = [
     performanceLevel !== 'All',
     region !== 'All',
-    location !== 'all',
-    month !== 'All',
+    locationKey !== 'all',
+    selectedMonth !== 'All',
+  ].filter(Boolean).length;
+  const clearableCount = [
+    performanceLevel !== 'All',
+    !assigned.regionLocked && region !== 'All',
+    !assigned.branchLocked && locationKey !== 'all',
   ].filter(Boolean).length;
 
   if (loading) {
@@ -176,20 +258,20 @@ const ExecutiveOverview = () => {
         </div>
 
         {/* Selectors */}
-        <ResponsiveFilters activeCount={activeFilterCount}>
+        <ResponsiveFilters activeCount={activeFilterCount} clearableCount={clearableCount} onClear={clearFilters}>
           <PerformanceLevelFilter value={performanceLevel} onChange={setPerformanceLevel} />
           {/* Region Selector */}
           <div className="relative group flex-1 sm:flex-none min-w-[130px] sm:min-w-[150px]">
             <Globe className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
             <select
               aria-label="Filter by region"
+              title={assigned.regionLocked ? 'Assigned region' : undefined}
               value={region}
-              onChange={(e) => setRegion(e.target.value as 'All' | 'EGY' | 'UAE')}
-              className="w-full appearance-none bg-[var(--bg-surface)] border border-[var(--border-medium)] text-[var(--text-primary)] text-xs font-semibold rounded-xl pl-8 pr-7 py-2.5 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all cursor-pointer shadow-sm"
+              disabled={assigned.regionLocked}
+              onChange={(event) => setRegion(event.target.value as RegionFilter)}
+              className="w-full appearance-none bg-[var(--bg-surface)] border border-[var(--border-medium)] text-[var(--text-primary)] text-xs font-semibold rounded-xl pl-8 pr-7 py-2.5 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all cursor-pointer shadow-sm disabled:cursor-not-allowed disabled:opacity-70"
             >
-              <option value="All">All Regions</option>
-              <option value="EGY">Egypt (EGY)</option>
-              <option value="UAE">UAE</option>
+              {regionOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
             </select>
             <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
           </div>
@@ -199,15 +281,13 @@ const ExecutiveOverview = () => {
             <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
             <select
               aria-label="Filter by branch"
-              value={location}
-              onChange={(e) => setLocation(e.target.value as LocationKey)}
-              className="w-full appearance-none bg-[var(--bg-surface)] border border-[var(--border-medium)] text-[var(--text-primary)] text-xs font-semibold rounded-xl pl-8 pr-7 py-2.5 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all cursor-pointer shadow-sm"
+              title={assigned.branchLocked ? 'Assigned branch' : undefined}
+              value={locationKey}
+              disabled={assigned.branchLocked}
+              onChange={(event) => setBranch(event.target.value as LocationKey)}
+              className="w-full appearance-none bg-[var(--bg-surface)] border border-[var(--border-medium)] text-[var(--text-primary)] text-xs font-semibold rounded-xl pl-8 pr-7 py-2.5 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all cursor-pointer shadow-sm disabled:cursor-not-allowed disabled:opacity-70"
             >
-              <option value="all">All Branches</option>
-              <option value="dubai">Dubai</option>
-              <option value="sharjah">Sharjah (Sharqa)</option>
-              <option value="ajman">Ajman</option>
-              <option value="clinics">Clinics</option>
+              {branchOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
             </select>
             <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
           </div>
@@ -217,13 +297,13 @@ const ExecutiveOverview = () => {
             <CalendarDays className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
             <select
               aria-label="Filter by month"
-              value={month}
-              onChange={(e) => setMonth(e.target.value)}
+              value={selectedMonth}
+              onChange={(event) => onMonthChange(event.target.value)}
               className="w-full appearance-none bg-[var(--bg-surface)] border border-[var(--border-medium)] text-[var(--text-primary)] text-xs font-semibold rounded-xl pl-8 pr-7 py-2.5 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all cursor-pointer shadow-sm"
             >
               <option value="All">All Months</option>
-              {uniqueMonths.map((m) => (
-                <option key={m} value={m}>{m}</option>
+              {monthOptions.map((name) => (
+                <option key={name} value={name}>{name}</option>
               ))}
             </select>
             <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
@@ -234,15 +314,15 @@ const ExecutiveOverview = () => {
       {totalAgents === 0 ? (
         <NoDataEmptyState
           availablePeriods={uniqueMonths.map(m => ({ month: m, year: new Date().getFullYear() }))}
-          selectedMonth={month}
+          selectedMonth={selectedMonth}
           dataSource={dataSource}
           errorMessage={errorMessage}
-          onSelectPeriod={(m) => setMonth(m)}
+          onSelectPeriod={onMonthChange}
         />
       ) : (
         <>
           {/* All-Months Warning Banner */}
-          {month === 'All' && (
+          {selectedMonth === 'All' && (
             <div className="rounded-xl border border-amber-400/30 bg-amber-500/8 px-4 py-3 text-xs font-semibold text-amber-700 dark:text-amber-300 flex items-center gap-2">
               <AlertTriangle size={14} className="shrink-0" />
               Performance metrics are aggregated across all selected months. Headcount is shown from the latest available month.
@@ -259,7 +339,7 @@ const ExecutiveOverview = () => {
               trendDelta={headcountMoM}
               showStableTrend
               note={activeMonth
-                ? `${month === 'All' ? 'Latest headcount' : 'Headcount'} · ${activeMonth}`
+                ? `${selectedMonth === 'All' ? 'Latest headcount' : 'Headcount'} · ${activeMonth}`
                 : 'Headcount unavailable'}
               accent="border-l-blue-500"
             />
