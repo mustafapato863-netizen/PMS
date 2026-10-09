@@ -364,10 +364,48 @@ def test_pinned_basis_does_not_cross_management_level(db):
     runtime = ManagementBSCService(db)._build_runtime_config([config_row], {}, "Coding", "Managerial", (2026, 7))
     assert runtime["kpis"][0]["weight"] == 0.3
     assert runtime["kpis"][0].get("target") is None
-    overlaid = overlay_pinned_kpis(db, "Coding", "Employee", "", 2026, 7, [{"key": edited[0]["kpi_key"], "weight": 0.3, "direction": "lower_better"}])
-    assert overlaid[0]["aggregation_weight"] == 0.3
-    assert overlaid[0]["target"] == 55
-    assert overlaid[0]["evaluation_pinned"] is True
+    caller_kpi = {"key": edited[0]["kpi_key"], "weight": 0.3, "direction": "lower_better"}
+    overlaid = overlay_pinned_kpis(db, "Coding", "Employee", "", 2026, 7, [caller_kpi])
+    assert overlaid[0]["weight"] == 0.3
+    assert "aggregation_weight" not in overlaid[0]
+    assert overlaid[0].get("target") is None
+    assert overlaid[0].get("evaluation_pinned") is not True
+    saved = overlay_pinned_kpis(
+        db,
+        "Coding",
+        "Employee",
+        "",
+        2026,
+        7,
+        [caller_kpi],
+        records=[{
+            "team": "Coding",
+            "performance_level": "Employee",
+            "position_name": "",
+            "year": 2026,
+            "month": "July",
+            "record_payload": {
+                "evaluation_basis": {
+                    "pinned": True,
+                    "version_id": "saved-pin",
+                    "year": 2026,
+                    "month": 7,
+                    "lines": [{
+                        "kpi_key": edited[0]["kpi_key"],
+                        "weight": 1,
+                        "direction": "higher_better",
+                        "target_mode": "fixed",
+                        "target": 55,
+                    }],
+                },
+            },
+        }],
+    )
+    assert saved[0]["weight"] == 0.3
+    assert saved[0]["aggregation_weight"] == 0.3
+    assert saved[0]["scoring_weight"] == 1
+    assert saved[0]["target"] == 55
+    assert saved[0]["evaluation_pinned"] is True
 
 
 def test_catalog_covers_live_scopes_without_guessing_history(db):
