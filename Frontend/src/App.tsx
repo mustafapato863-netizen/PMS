@@ -21,6 +21,7 @@ import PasswordChangeGate from './components/common/PasswordChangeGate';
 import { useDesktopNavigation } from './hooks/useDesktopNavigation';
 
 const ExecutiveView = lazy(() => import('./pages/ExecutiveView'));
+const DepartmentalSummaryView = lazy(() => import('./pages/DepartmentalSummaryView'));
 const FunctionSummaryView = lazy(() => import('./pages/FunctionSummaryView'));
 const MarketingTeamRoute = lazy(() => import('./pages/MarketingTeamRoute'));
 const TeamDashboardView = lazy(() => import('./pages/TeamDashboardView'));
@@ -67,8 +68,11 @@ function AnimatedRoutes() {
         {/* Login Page Redirect when authenticated */}
         <Route path="/login" element={<Navigate to="/executive" replace />} />
 
-        {/* Page 1: Executive Summary */}
+        {/* Company overview restored from the pre-v1 executive page. */}
         <Route path="/executive" element={<Suspense fallback={<RouteLoadingFallback />}><ExecutiveView /></Suspense>} />
+
+        {/* Departmental Summary: the v1 dashboard (corporate, managerial, function redirect). */}
+        <Route path="/departmental-summary" element={<Suspense fallback={<RouteLoadingFallback />}><DepartmentalSummaryView /></Suspense>} />
 
         {/* Function Summary: Admin, General Manager, Function Viewer (own functions only). */}
         <Route path="/function-summary" element={<RouteGuard allowedRoles={ROUTE_ROLES.functionSummary}><Suspense fallback={<RouteLoadingFallback />}><FunctionSummaryView /></Suspense></RouteGuard>} />

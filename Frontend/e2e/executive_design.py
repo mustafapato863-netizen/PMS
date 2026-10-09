@@ -26,6 +26,8 @@ def run():
         page.get_by_label("Password", exact=True).fill(os.environ["PMS_E2E_PASSWORD"])
         page.get_by_role("button", name="Sign In", exact=True).click()
         page.wait_for_url(re.compile(r"/executive(?:\?|$)"))
+        page.locator("aside").get_by_role("link", name="Departmental Summary", exact=True).click()
+        page.wait_for_url(re.compile(r"/departmental-summary(?:\?|$)"))
         hero = page.locator('[aria-labelledby="exec-hero-title"]')
         functions = page.locator('[aria-labelledby="exec-functions-title"]')
         expect(hero).to_be_visible(timeout=60_000)
