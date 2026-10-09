@@ -11,7 +11,7 @@ interface SettingsLayoutProps {
 const navigation = [
   { id: 'upload' as const, label: 'Data Management', description: 'Employee and management uploads', icon: Database },
   { id: 'corrective_actions' as const, label: 'Corrective Actions', description: 'Transfer action history safely', icon: ClipboardCheck },
-  { id: 'kpis' as const, label: 'KPI Configuration', description: 'Weights and targets by team', icon: SlidersHorizontal },
+  { id: 'kpis' as const, label: 'Evaluation settings', description: 'Monthly targets, weights and direction', icon: SlidersHorizontal },
   { id: 'users' as const, label: 'User Management', description: 'Accounts, roles and access', icon: Users },
   { id: 'system_errors' as const, label: 'System errors', description: 'Trace recent server failures', icon: Activity },
 ];

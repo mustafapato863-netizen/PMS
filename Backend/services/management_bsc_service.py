@@ -848,6 +848,18 @@ class ManagementBSCService:
                 }
             )
 
+        from services.evaluation.resolver import overlay_pinned_kpis
+
+        year, month_number = selected_period
+        pinned_kpis = overlay_pinned_kpis(
+            self.db,
+            team_name,
+            performance_level,
+            "",
+            int(year or 0),
+            int(month_number or 0),
+            kpis,
+        )
         return {
             "team": team_name,
             "performance_level": performance_level,
@@ -857,7 +869,7 @@ class ManagementBSCService:
                 "perspectives": perspectives,
                 "strategy_map_links": base_bsc.get("strategy_map_links", []),
             },
-            "kpis": kpis,
+            "kpis": pinned_kpis,
         }
 
     def _serialize_config_row(self, row: ManagementKPIConfig) -> dict[str, Any]:

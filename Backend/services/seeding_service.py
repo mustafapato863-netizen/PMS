@@ -313,6 +313,33 @@ class DatabaseSeeder:
         return levels
 
     @staticmethod
+    def _pin_approved_evaluation(db, records_by_key, kpis) -> None:
+        """Apply an approved monthly basis to rows this upload is saving.
+
+        No approved basis leaves the legacy workbook score untouched. A fixed
+        target that differs from the workbook target aborts the whole upload.
+        """
+        if db is None or not kpis:
+            return
+        from services.evaluation.resolver import schema_ready
+        from services.evaluation.workflow import EvaluationWorkflow
+
+        if not schema_ready(db):
+            return
+        grouped: dict = {}
+        for value in kpis:
+            grouped.setdefault(value.record_id, []).append(value)
+        record_list = list(records_by_key.values())
+        team_ids = {record.team_id for record in record_list}
+        teams = {team.id: team for team in db.query(Team).filter(Team.id.in_(team_ids)).all()} if team_ids else {}
+        workflow = EvaluationWorkflow(db)
+        for record in record_list:
+            group = grouped.get(record.id)
+            team = teams.get(record.team_id)
+            if not group or team is None:
+                continue
+            workflow.rescore_uploaded(record, team, group, 0)
+
     def _score_from_kpi_rows(kv_list) -> float:
         """0-100 record score from capped KPI contributions.
 
@@ -811,6 +838,8 @@ class DatabaseSeeder:
                 for kv in kpis_to_insert:
                     deduped_map[(kv.record_id, kv.kpi_key)] = kv
                 kpis_to_insert = list(deduped_map.values())
+
+            self._pin_approved_evaluation(db, existing_perf_map, kpis_to_insert)
 
             # Recalculate PerformanceRecord scores strictly as the sum of capped KPI contributions
             if kpis_to_insert:

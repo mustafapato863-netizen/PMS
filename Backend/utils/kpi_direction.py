@@ -243,6 +243,10 @@ def resolve_kpi_direction(
     definition: dict[str, Any] | None = None,
 ) -> tuple[str, str]:
     """Return ``(direction, source)`` for one KPI row (see module docstring)."""
+    if bool(_get(value, "evaluation_pinned")):
+        pinned = normalize_direction(_get(value, "direction"))
+        if pinned:
+            return pinned, "pinned"
     variant_key = str(_get(value, "kpi_key") or _get(value, "key") or "").strip().casefold()
     variant_label = str(_get(value, "label") or "").strip().casefold()
     variant = LEGACY_VARIANT_DIRECTIONS.get((variant_key, variant_label))
