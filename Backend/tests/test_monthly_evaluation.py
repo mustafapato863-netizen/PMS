@@ -1,7 +1,8 @@
 """Monthly evaluation settings use the real resolver, approval, upload pin, and reads."""
 
+import io
 import uuid
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 
 import pytest
@@ -14,10 +15,13 @@ from sqlalchemy.pool import StaticPool
 
 from api.routers.evaluation_settings import router as evaluation_router
 from config.database import get_db
+from openpyxl import Workbook
+
 from models.models import (
     Action,
     Base,
     Employee,
+    EmployeeUploadBatch,
     EvaluationRevision,
     EvaluationScope,
     GeneratedReport,
@@ -26,6 +30,8 @@ from models.models import (
     PerformanceRecord,
     Team,
     TeamConfigurationVersion,
+    TeamKPIConfig,
+    UploadLog,
     User,
     UserTeamAssignment,
 )
@@ -62,6 +68,9 @@ def db():
             EvaluationScope.__table__,
             EvaluationRevision.__table__,
             ManagementKPIConfig.__table__,
+            TeamKPIConfig.__table__,
+            EmployeeUploadBatch.__table__,
+            UploadLog.__table__,
         ],
     )
     session = sessionmaker(bind=engine, autoflush=False, autocommit=False)()
@@ -206,11 +215,8 @@ def test_july_and_august_stay_independent_until_explicit_apply(db):
     assert again == reads
 
     version = db.query(TeamConfigurationVersion).filter(TeamConfigurationVersion.id == uuid.UUID(approved["id"])).one()
-    rows = [{"kpi_key": edited[0]["kpi_key"], "actual": 60, "workbook_target": 55}]
-    preview = workflow.preview(actor, approved["id"], rows)
-    committed = score_basis(version, rows)
-    assert preview["rows"][0]["achievement"] == committed["rows"][0]["achievement"] == 1.0
-    assert abs(preview["score"] - 100.0) < 0.001
+    july_period = workflow.period(actor, scope["id"], 2026, 7)
+    assert july_period["stored_actuals"][edited[0]["kpi_key"]] == 60.0
     august_version = db.query(TeamConfigurationVersion).filter(TeamConfigurationVersion.status == "approved", TeamConfigurationVersion.effective_from_month == 8).one()
     august_scored = score_basis(august_version, [{"kpi_key": edited[0]["kpi_key"], "actual": 60, "workbook_target": 65}])
     assert abs(august_scored["rows"][0]["achievement"] - (60 / 65)) < 1e-9
@@ -523,3 +529,93 @@ def test_catalog_covers_live_scopes_without_guessing_history(db):
     db.refresh(record)
     assert float(record.score) == 70.0
     assert record.record_payload == {"manager_notes": "historical note"}
+
+
+def _coding_workbook(
+    *,
+    quality_actual: float,
+    quality_target: float,
+    rejection_actual: float,
+    rejection_target: float,
+    tat_actual: float,
+    tat_target: float,
+) -> bytes:
+    book = Workbook()
+    sheet = book.active
+    sheet.title = "Coding"
+    sheet.append([
+        "HRID", "AgentName", "Role", "Date", "Status",
+        "A.QualityErrorsRate", "T.QualityErrorsRate",
+        "A.RejectionRate", "T.RejectionRate",
+        "A.TAT", "T.TAT",
+    ])
+    sheet.append([
+        "C-9", "Coder", "Employee", datetime(2026, 7, 15), "Active",
+        quality_actual, quality_target,
+        rejection_actual, rejection_target,
+        tat_actual, tat_target,
+    ])
+    buffer = io.BytesIO()
+    book.save(buffer)
+    return buffer.getvalue()
+
+
+def test_upload_dry_run_and_commit_share_the_approved_pin(db, monkeypatch):
+    """Dry-run and commit both pin the approved basis, including a D-003 block."""
+    monkeypatch.setattr(
+        "services.seeding_service.SessionLocal",
+        sessionmaker(bind=db.get_bind(), autoflush=False, autocommit=False),
+    )
+    admin = _user("Admin", "upload-admin")
+    coding = Team(id=uuid.uuid4(), name="Coding", db_name="Coding", display_name="Coding", region="UAE", team_level="employee")
+    db.add_all([admin, coding])
+    db.commit()
+
+    actor = _actor(admin)
+    workflow = EvaluationWorkflow(db)
+    scope = _coding_scope(workflow, actor)
+    draft = workflow.open_draft(actor, scope["id"], 2026, 7)
+    workflow.edit_draft(actor, draft["id"], [{**line, "target_mode": "fixed", "target": 55} for line in draft["lines"]])
+    workflow.approve(actor, draft["id"])
+
+    seeder = DatabaseSeeder()
+    # The optional JSON trend file is not the pin. Keep this test off the workspace copy.
+    seeder.performance_repo.get_all = lambda: []
+
+    conflict = _coding_workbook(
+        quality_actual=60, quality_target=50,
+        rejection_actual=55, rejection_target=55,
+        tat_actual=55, tat_target=55,
+    )
+    for dry_run in (True, False):
+        with pytest.raises(TargetConflict) as caught:
+            seeder.process_uploaded_file("coding-conflict.xlsx", conflict, dry_run=dry_run)
+        quality = next(item for item in caught.value.data["conflicts"] if item["kpi_key"] == "QualityErrors")
+        assert quality["workbook_target"] == 50
+        assert quality["approved_target"] == 55
+    db.rollback()
+    assert db.query(PerformanceRecord).count() == 0
+    db.rollback()
+
+    matched = _coding_workbook(
+        quality_actual=60, quality_target=55,
+        rejection_actual=55, rejection_target=55,
+        tat_actual=55, tat_target=55,
+    )
+    preview = seeder.process_uploaded_file("coding-match.xlsx", matched, dry_run=True)
+    db.rollback()
+    assert db.query(PerformanceRecord).count() == 0
+    db.rollback()
+    committed = seeder.process_uploaded_file("coding-match.xlsx", matched, dry_run=False)
+    assert preview["scored_rows"] == committed["scored_rows"]
+    quality_row = next(row for row in committed["scored_rows"][0]["rows"] if row["kpi_key"] == "QualityErrors")
+    assert abs(quality_row["achievement"] - (55 / 60)) < 1e-9
+    assert quality_row["target"] == 55
+    db.rollback()
+    stored = (
+        db.query(PerformanceRecord)
+        .join(Employee, PerformanceRecord.employee_id == Employee.id)
+        .filter(Employee.employee_id == "C-9", PerformanceRecord.month == "July", PerformanceRecord.year == 2026)
+        .one()
+    )
+    assert abs(float(stored.score) - float(committed["scored_rows"][0]["score"])) < 0.001

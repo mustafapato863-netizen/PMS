@@ -225,13 +225,22 @@ class DatabaseSeeder:
         marketing_result = self.marketing_import_service.parse_excel(excel_file)
 
         if dry_run:
-            result = self._process_and_save_excel(
-                excel_file,
-                marketing_result=marketing_result,
-                dry_run=True,
-            )
-            result["dry_run"] = True
-            return result
+            db = SessionLocal()
+            try:
+                result = self._process_and_save_excel(
+                    excel_file,
+                    marketing_result=marketing_result,
+                    dry_run=True,
+                    db_session=db,
+                )
+                result["dry_run"] = True
+                db.rollback()
+                return result
+            except Exception:
+                db.rollback()
+                raise
+            finally:
+                db.close()
 
         # Vercel Production Safety: Do not write to JSON repositories for runtime persistence.
         # Generate upload ID for the batch. Metadata persistence is delegated to the DB.
@@ -340,6 +349,168 @@ class DatabaseSeeder:
                 continue
             workflow.rescore_uploaded(record, team, group, 0)
 
+    def _pin_uploaded_records(self, db, records) -> list[dict]:
+        """Score dry-run and commit with the same approved basis.
+
+        A fixed approved target that differs from the workbook target raises
+        TargetConflict before either path returns. No approved basis leaves
+        the legacy workbook score unchanged.
+        """
+        if db is None or not records:
+            return []
+        from services.evaluation.resolver import approved_version, schema_ready, score_basis
+
+        if not schema_ready(db):
+            return []
+        by_name: dict[str, Team] = {}
+        for team in db.query(Team).all():
+            for label in (team.name, team.db_name, team.display_name):
+                if label:
+                    by_name[str(label).strip().lower()] = team
+        summaries = []
+        for record in records:
+            year = self._upload_year(record)
+            if not getattr(record, "year", None):
+                record.year = year
+            team = by_name.get(str(getattr(record, "team", "") or "").strip().lower())
+            rows = self._workbook_rows(record)
+            version = None
+            if team is not None and rows:
+                version = approved_version(
+                    db,
+                    team_id=team.id,
+                    level=getattr(record, "performance_level", None) or "Employee",
+                    position=getattr(record, "position", None) or "",
+                    year=year,
+                    month=record.month,
+                )
+            if version is None:
+                summaries.append({
+                    "employee_id": str(record.employee_id),
+                    "month": record.month,
+                    "year": year,
+                    "score": float(record.evaluation.score),
+                    "rows": [],
+                })
+                continue
+            evidence = [
+                {
+                    "kpi_key": row.get("kpi_key"),
+                    "actual": row.get("actual_value"),
+                    "workbook_target": row.get("target_value"),
+                    "precomputed_achievement": row.get("achievement_ratio"),
+                }
+                for row in rows
+            ]
+            scored = score_basis(version, evidence)
+            by_key = {item["kpi_key"]: item for item in scored["rows"]}
+            for row in rows:
+                item = by_key.get(row.get("kpi_key"))
+                if item is None:
+                    continue
+                if item["target"] is not None:
+                    row["target_value"] = item["target"]
+                if item["achievement"] is not None:
+                    row["achievement_ratio"] = item["achievement"]
+                row["weight_applied"] = item["weight"]
+                row["contribution"] = item["contribution"] if item["contribution"] is not None else 0
+            if not record.kpi_values:
+                record.kpi_values = rows
+            if scored["score"] is not None:
+                record.evaluation.score = float(scored["score"])
+            if scored["grade"]:
+                record.evaluation.grade = scored["grade"]
+            summaries.append({
+                "employee_id": str(record.employee_id),
+                "month": record.month,
+                "year": year,
+                "score": scored["score"],
+                "rows": [
+                    {
+                        "kpi_key": item["kpi_key"],
+                        "actual": item["actual"],
+                        "target": item["target"],
+                        "achievement": item["achievement"],
+                    }
+                    for item in scored["rows"]
+                ],
+            })
+        return summaries
+
+    @staticmethod
+    def _upload_year(record) -> int:
+        if getattr(record, "year", None):
+            return int(record.year)
+        raw = getattr(record, "raw_data", None) or {}
+        for key, value in raw.items():
+            if str(key).strip().lower() != "date":
+                continue
+            if isinstance(value, (datetime.datetime, datetime.date)):
+                return value.year
+            text = str(value).strip()
+            if not text or text.lower() in {"nan", "none", "nat"}:
+                continue
+            parsed = pd.to_datetime(text, errors="coerce")
+            if not pd.isna(parsed):
+                return int(parsed.year)
+        return datetime.datetime.now().year
+
+    def _workbook_rows(self, record) -> list[dict]:
+        existing = list(getattr(record, "kpi_values", None) or [])
+        if existing:
+            return existing
+        try:
+            team_config = resolve_team_config(
+                load_team_config(record.team),
+                getattr(record, "performance_level", None) or "Employee",
+                getattr(record, "position", None),
+            )
+        except Exception:
+            return []
+        raw = getattr(record, "raw_data", None) or {}
+        rows = []
+        for kpi in team_config.get("kpis") or []:
+            actual = self._raw_number(raw, kpi.get("actual_col"))
+            target = self._raw_number(raw, kpi.get("target_col"))
+            if actual is None and target is None:
+                continue
+            rows.append({
+                "kpi_key": str(kpi.get("key") or ""),
+                "actual_value": 0.0 if actual is None else actual,
+                "target_value": 0.0 if target is None else target,
+                "achievement_ratio": None,
+                "weight_applied": kpi.get("weight", 0.0),
+                "contribution": None,
+            })
+        return rows
+
+    @staticmethod
+    def _raw_number(data: dict, col_name: str | None):
+        if not data or not col_name:
+            return None
+        value = data.get(col_name)
+        if value is None:
+            clean_target = str(col_name).lower().replace(" ", "").replace("_", "").replace(".", "")
+            for key, item in data.items():
+                if str(key).lower().replace(" ", "").replace("_", "").replace(".", "") == clean_target:
+                    value = item
+                    break
+        if value is None:
+            return None
+        try:
+            if pd.isna(value):
+                return None
+        except TypeError:
+            pass
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return None
+        if math.isnan(number):
+            return None
+        return number
+
+    @staticmethod
     def _score_from_kpi_rows(kv_list) -> float:
         """0-100 record score from capped KPI contributions.
 
@@ -1235,6 +1406,7 @@ class DatabaseSeeder:
         imported_teams = list(dict.fromkeys([team_name for team_name, _, _, _ in sheet_mappings]))
         if marketing_result is not None:
             imported_teams.append("Marketing")
+        scored_rows = self._pin_uploaded_records(db_session, all_new_records)
 
         if dry_run:
             return {
@@ -1247,6 +1419,7 @@ class DatabaseSeeder:
                 "failed_teams": failed_teams,
                 "marketing": marketing_report,
                 "warnings": upload_warnings,
+                "scored_rows": scored_rows,
             }
 
         # Vercel Production Safety: Do not write to JSON repositories. DB is the sole runtime persistence.
@@ -1309,4 +1482,5 @@ class DatabaseSeeder:
             "failed_teams": failed_teams,
             "marketing": marketing_report,
             "warnings": upload_warnings,
+            "scored_rows": scored_rows,
         }

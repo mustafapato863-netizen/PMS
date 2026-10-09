@@ -393,6 +393,7 @@ class EvaluationWorkflow:
             "month_name": month_name(number),
             "versions": [self._serialize_version(row, scope_row) for row in rows],
             "stored_score": self._stored_score(scope_row, int(year), number, actor),
+            "stored_actuals": self._stored_actuals(scope_row, int(year), number, actor),
         }
 
     def reads(self, actor: dict, scope_id, year: int, months: list) -> dict:
@@ -598,6 +599,18 @@ class EvaluationWorkflow:
         if not rows:
             return None
         return float(rows[0].score)
+
+    def _stored_actuals(self, scope_row: EvaluationScope, year: int, month: int, actor: dict) -> dict:
+        """Actuals from the same first stored record as the displayed score."""
+        rows = self._records(scope_row, year, month, actor)
+        if not rows:
+            return {}
+        actuals = {}
+        for value in rows[0].kpi_values:
+            if value.actual_value is None:
+                continue
+            actuals[value.kpi_key] = float(value.actual_value)
+        return actuals
 
     def _snapshot(self, records: list[PerformanceRecord]) -> dict:
         body = []

@@ -25,11 +25,21 @@ def assert_schema(db: Session) -> None:
 
 
 def schema_ready(db: Session) -> bool:
+    """True when the monthly evaluation tables are present on this session.
+
+    Inspect the session connection. An engine-level inspect checks out another
+    pool connection, and a one-connection pool rolls back the upload transaction.
+    """
     try:
-        columns = {column["name"] for column in inspect(db.bind).get_columns("team_configuration_versions")}
+        inspector = inspect(db.connection())
+        inspector.clear_cache()
+        tables = set(inspector.get_table_names())
+        if "team_configuration_versions" not in tables or "evaluation_scopes" not in tables:
+            return False
+        columns = {column["name"] for column in inspector.get_columns("team_configuration_versions")}
     except Exception:
         return False
-    return "performance_level" in columns and inspect(db.bind).has_table("evaluation_scopes")
+    return "performance_level" in columns
 
 
 def _position(value: str | None) -> str:

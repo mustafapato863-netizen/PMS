@@ -82,6 +82,34 @@ it('does not let a non-admin approve', async () => {
   expect(screen.queryByRole('button', { name: 'Apply' })).not.toBeInTheDocument();
 });
 
+it('previews the stored actual against the edited target', async () => {
+  const user = userEvent.setup();
+  mocks.fetchWithRole.mockImplementation(async (url: string, init?: RequestInit) => {
+    const href = String(url);
+    if (href.includes('/catalog')) return json({ scopes: [scope] });
+    if (href.includes('/periods')) {
+      return json({
+        versions: [{
+          ...draft,
+          lines: [{ ...draft.lines[0], direction: 'lower_better', weight: 1, target: 55, target_mode: 'fixed' }],
+        }],
+        stored_actuals: { QualityErrors: 60 },
+      });
+    }
+    if (href.includes('/preview')) {
+      return json({ score: 91.6667, rows: [{ kpi_key: 'QualityErrors', achievement: 55 / 60 }] });
+    }
+    return json({ lines: draft.lines });
+  });
+  render(<EvaluationSettingsPanel />);
+  expect(await screen.findByLabelText('QualityErrors target')).toHaveValue('55');
+  await user.click(screen.getByRole('button', { name: 'Preview' }));
+  expect(await screen.findByText(/QualityErrors achievement 91\.67%, score 91\.6667/)).toBeInTheDocument();
+  const previewCall = mocks.fetchWithRole.mock.calls.find((call) => String(call[0]).includes('/preview'));
+  const body = JSON.parse(String(previewCall?.[1]?.body));
+  expect(body.rows).toEqual([{ kpi_key: 'QualityErrors', actual: 60, workbook_target: 55 }]);
+});
+
 it('shows a blocked scope instead of treating it as supported', async () => {
   const user = userEvent.setup();
   render(<EvaluationSettingsPanel />);

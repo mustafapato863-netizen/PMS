@@ -58,6 +58,7 @@ export function EvaluationSettingsPanel() {
   const [status, setStatus] = useState('');
   const [notes, setNotes] = useState('');
   const [history, setHistory] = useState<Version[]>([]);
+  const [storedActuals, setStoredActuals] = useState<Record<string, number>>({});
   const [preview, setPreview] = useState('');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -85,6 +86,8 @@ export function EvaluationSettingsPanel() {
     setStatus(draft?.status || '');
     setLines(draft?.lines ? draft.lines.map((line) => ({ ...line })) : []);
     setNotes(draft?.notes || '');
+    const actuals = data?.stored_actuals && typeof data.stored_actuals === 'object' ? data.stored_actuals as Record<string, number> : {};
+    setStoredActuals(actuals);
   }, [fetchWithRole, month, scopeId, year]);
 
   useEffect(() => {
@@ -151,7 +154,11 @@ export function EvaluationSettingsPanel() {
 
   const runPreview = async () => {
     setError('');
-    const rows = lines.map((line) => ({ kpi_key: line.kpi_key, actual: line.target ?? 0, workbook_target: line.target }));
+    const rows = lines.map((line) => ({
+      kpi_key: line.kpi_key,
+      actual: Object.prototype.hasOwnProperty.call(storedActuals, line.kpi_key) ? storedActuals[line.kpi_key] : null,
+      workbook_target: line.target,
+    }));
     const response = await fetchWithRole(`${API_BASE}/api/settings/evaluation/drafts/${versionId}/preview`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
