@@ -207,8 +207,12 @@ def test_july_and_august_stay_independent_until_explicit_apply(db):
     workflow.approve(actor, august_draft["id"])
     reads = workflow.reads(actor, scope["id"], 2026, [7, 8])
     july_body, august_body = reads["periods"]
-    assert july_body["lines"][0]["target"] == 55
-    assert august_body["lines"][0]["target"] == 65
+    assert july_body["lines"] == []
+    assert august_body["lines"] == []
+    assert july_body["pinned"] is False
+    assert august_body["pinned"] is False
+    assert july_body["version_id"] is None
+    assert august_body["version_id"] is None
     assert july_body["stored_score"] == 70.0
     assert august_body["stored_score"] == 71.0
     again = workflow.reads(actor, scope["id"], 2026, [7, 8])
@@ -217,6 +221,11 @@ def test_july_and_august_stay_independent_until_explicit_apply(db):
     version = db.query(TeamConfigurationVersion).filter(TeamConfigurationVersion.id == uuid.UUID(approved["id"])).one()
     july_period = workflow.period(actor, scope["id"], 2026, 7)
     assert july_period["stored_actuals"][edited[0]["kpi_key"]] == 60.0
+    approved_july = next(item for item in july_period["versions"] if item["status"] == "approved")
+    assert approved_july["lines"][0]["target"] == 55
+    august_period = workflow.period(actor, scope["id"], 2026, 8)
+    approved_august = next(item for item in august_period["versions"] if item["status"] == "approved")
+    assert approved_august["lines"][0]["target"] == 65
     august_version = db.query(TeamConfigurationVersion).filter(TeamConfigurationVersion.status == "approved", TeamConfigurationVersion.effective_from_month == 8).one()
     august_scored = score_basis(august_version, [{"kpi_key": edited[0]["kpi_key"], "actual": 60, "workbook_target": 65}])
     assert abs(august_scored["rows"][0]["achievement"] - (60 / 65)) < 1e-9
@@ -240,6 +249,13 @@ def test_july_and_august_stay_independent_until_explicit_apply(db):
     assert july.record_payload["manager_notes"] == "keep the july note"
     assert float(august.score) == round((60 / 65) * 100, 2)
     assert august.record_payload["evaluation_basis"]["pinned"] is True
+    applied_reads = workflow.reads(actor, scope["id"], 2026, [7, 8])
+    assert applied_reads["periods"][0]["pinned"] is False
+    assert applied_reads["periods"][0]["lines"] == []
+    assert applied_reads["periods"][0]["stored_score"] == 70.0
+    assert applied_reads["periods"][1]["pinned"] is True
+    assert applied_reads["periods"][1]["lines"][0]["target"] == 65
+    assert applied_reads["periods"][1]["version_id"] == str(august_version.id)
     assert august.record_payload["manager_notes"] == "keep the august note"
     assert float(other_record.score) == 88.0
     assert workflow.protected_texts() == protected
