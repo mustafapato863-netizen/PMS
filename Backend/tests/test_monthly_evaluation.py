@@ -46,7 +46,8 @@ from models.models import ManagementKPIConfig
 
 
 @pytest.fixture
-def db():
+def db(monkeypatch):
+    monkeypatch.setattr(EvaluationWorkflow, "_bump", lambda self, kind: None)
     engine = create_engine(
         "sqlite:///:memory:",
         connect_args={"check_same_thread": False},
@@ -195,6 +196,8 @@ def test_july_and_august_stay_independent_until_explicit_apply(db):
     saved_weights = workflow.edit_draft(actor, july_draft["id"], weighted, weight_only=False)
     assert saved_weights["lines"][0]["weight"] == 0.5
     workflow.edit_draft(actor, july_draft["id"], edited)
+    # Approval requires a server impact preview. A client sample cannot satisfy it.
+    workflow.impact_preview(actor, july_draft["id"])
     approved = workflow.approve(actor, july_draft["id"])
     assert approved["status"] == "approved"
     db.refresh(july)
@@ -204,6 +207,7 @@ def test_july_and_august_stay_independent_until_explicit_apply(db):
     assert august_draft["lines"][0]["target"] == 55
     august_lines = _line_edit(august_draft["lines"], 65)
     workflow.edit_draft(actor, august_draft["id"], august_lines)
+    workflow.impact_preview(actor, august_draft["id"])
     workflow.approve(actor, august_draft["id"])
     reads = workflow.reads(actor, scope["id"], 2026, [7, 8])
     july_body, august_body = reads["periods"]
@@ -353,6 +357,7 @@ def test_pinned_basis_does_not_cross_management_level(db):
     draft = workflow.open_draft(actor, scope["id"], 2026, 7)
     edited = _line_edit(draft["lines"], 55)
     workflow.edit_draft(actor, draft["id"], edited)
+    workflow.impact_preview(actor, draft["id"])
     workflow.approve(actor, draft["id"])
     config_row = ManagementKPIConfig(
         id=uuid.uuid4(), team_id=coding.id, performance_level="Managerial", position_name="Lead",
@@ -592,6 +597,7 @@ def test_upload_dry_run_and_commit_share_the_approved_pin(db, monkeypatch):
     scope = _coding_scope(workflow, actor)
     draft = workflow.open_draft(actor, scope["id"], 2026, 7)
     workflow.edit_draft(actor, draft["id"], [{**line, "target_mode": "fixed", "target": 55} for line in draft["lines"]])
+    workflow.impact_preview(actor, draft["id"])
     workflow.approve(actor, draft["id"])
 
     seeder = DatabaseSeeder()

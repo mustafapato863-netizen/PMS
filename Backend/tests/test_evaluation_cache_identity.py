@@ -1,4 +1,5 @@
 """Dashboard cache observes committed evaluation changes without Redis bumps."""
+import logging
 import uuid
 
 from sqlalchemy import create_engine
@@ -37,6 +38,7 @@ def test_scoped_summary_refreshes_after_apply_and_rollback_without_shared_versio
         workflow.edit_draft(actor, draft["id"], lines)
         db.add(KPIValue(record_id=record.id, record_year=2026, kpi_key=lines[0]["kpi_key"], actual_value=8, target_value=10, achievement_ratio=.7, weight_applied=1, contribution=.7))
         db.commit()
+        workflow.impact_preview(actor, draft["id"])
         workflow.approve(actor, draft["id"])
         service = PerformanceDashboardReadService(db, actor)
         assert service.summary(period="2026-08")["current"]["average_score"] == 70
@@ -48,6 +50,27 @@ def test_scoped_summary_refreshes_after_apply_and_rollback_without_shared_versio
         assert service.summary(period="2026-08")["current"]["average_score"] == 80
         workflow.rollback(actor, applied["revision_id"])
         assert service.summary(period="2026-08")["current"]["average_score"] == 70
+    finally:
+        db.close()
+        engine.dispose()
+
+
+def test_bump_failure_logs_kind_without_credentials(monkeypatch, caplog):
+    engine = create_engine("sqlite:///:memory:", poolclass=StaticPool)
+    Base.metadata.create_all(engine)
+    db = sessionmaker(bind=engine)()
+    try:
+        workflow = EvaluationWorkflow(db)
+
+        def explode():
+            raise RuntimeError("redis://secret-user:secret-pass@internal")
+
+        monkeypatch.setattr(CacheInvalidationService, "bump_data_version", explode)
+        with caplog.at_level(logging.WARNING, logger="services.evaluation.workflow"):
+            workflow._bump("data")
+        assert "kind=data" in caplog.text
+        assert "secret-pass" not in caplog.text
+        assert "redis://" not in caplog.text
     finally:
         db.close()
         engine.dispose()
