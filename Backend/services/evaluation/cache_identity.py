@@ -11,9 +11,10 @@ from sqlalchemy.orm import Session
 def evaluation_cache_identity(db: Session) -> str:
     """Read small history tables, not the employee roster, before cache lookup.
 
-    A committed approval, apply or rollback changes this identity even when a
-    Redis version bump is unavailable or another worker has a stale local bump.
-    Legacy databases without monthly settings keep their existing cache path.
+    A committed approval, apply, rollback or workbook replacement changes this
+    identity even when a Redis version bump is unavailable or stale. Workbook
+    logs are reused by team/month, so counting logs or their original upload
+    timestamps alone would miss a replacement. No employee roster is scanned.
     The digest contains no user-visible configuration or employee information.
     """
     connection = db.connection()
@@ -39,4 +40,18 @@ def evaluation_cache_identity(db: Session) -> str:
                 "FROM evaluation_revisions GROUP BY status ORDER BY status"
             ))
         )
+    if "upload_log" in tables:
+        columns = {column["name"] for column in inspector.get_columns("upload_log")}
+        # Older installations lack batch_id; do not invent a batch identity.
+        fields = [name for name in ("id", "batch_id", "team_id", "year", "month", "status", "record_count") if name in columns]
+        if "id" in fields:
+            uploads = hashlib.sha256()
+            # Identifiers come exclusively from this fixed column allowlist.
+            result = connection.execute(text(
+                f"SELECT {', '.join(fields)} FROM upload_log ORDER BY id"
+            ))
+            for row in result:
+                uploads.update(json.dumps(tuple(row), default=str, separators=(",", ":")).encode())
+                uploads.update(b"\n")
+            state.append(("uploads", uploads.hexdigest()))
     return hashlib.sha256(json.dumps(state, separators=(",", ":")).encode()).hexdigest()
