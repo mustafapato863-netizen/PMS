@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from config.loader import get_configured_performance_levels, iter_employee_kpi_configs, load_all_team_configs
 from data_cleaning.cleaner_factory import CleanerFactory
 from models.models import EvaluationScope, Team
+from services.evaluation.capabilities import CapabilityDecision, decide
 from services.evaluation.scoring import SUPPORTED_DIRECTIONS
 from utils.performance_levels import PERFORMANCE_LEVELS
 from utils.team_identity import logical_team_name
@@ -111,6 +112,26 @@ def classify_readiness(
     return "supported", None
 
 
+def _importer_registered(names: list[str], importers: set[str]) -> bool:
+    return any(_norm(name) in importers for name in names if name)
+
+
+def calculation_for(display: str, level: str, position: str, config: dict | None, importers: set[str] | None = None) -> CapabilityDecision:
+    """Live file-and-importer decision. This does not read or write catalog rows."""
+    registered_importers = _importer_names() if importers is None else importers
+    names = [display]
+    if config is not None:
+        names.extend([config.get("team"), config.get("db_name")])
+    kpis = _kpis_for(config, level, position) if config else []
+    return decide(
+        team_name=display,
+        level=level,
+        position=position or "",
+        kpis=kpis,
+        importer_registered=_importer_registered(names, registered_importers),
+    )
+
+
 def _baseline_lines(config: dict, level: str, position: str) -> list[dict]:
     lines = []
     for kpi in _kpis_for(config, level, position):
@@ -144,6 +165,7 @@ class EvaluationCatalog:
             keys.discard("")
             for key in keys:
                 file_by_key[key] = config
+        self._file_by_key = file_by_key
 
         teams = self.db.query(Team).all()
         team_by_key: dict[str, Team] = {}
@@ -180,6 +202,10 @@ class EvaluationCatalog:
                 ambiguous=ambiguous,
                 employee_importer=employee_importer,
             )
+            decision = calculation_for(display, level, position, config, importers)
+            if readiness == "supported" and not decision.allows_ratio_edit:
+                readiness = "blocked"
+                reason = decision.reason
             wanted.append(
                 {
                     "team": team,
@@ -194,6 +220,7 @@ class EvaluationCatalog:
                     "source_kind": source,
                     "lines": _baseline_lines(config, level, position) if config else [],
                     "thresholds": (config or {}).get("grade_thresholds") or {"A": 95, "B": 85, "C": 75, "D": 65},
+                    "decision": decision,
                 }
             )
 
@@ -233,7 +260,7 @@ class EvaluationCatalog:
             row.history_note = HISTORY_NOTE
             row.ambiguous_kpis = item["ambiguous_kpis"]
             row.importer_name = item["importer_name"]
-            row.policy_family = "employee_ratio"
+            row.policy_family = "employee_ratio" if item["readiness"] == "supported" else "unsupported"
             row.source_kind = item["source_kind"]
             rows.append(row)
         for key, row in existing.items():
@@ -245,6 +272,7 @@ class EvaluationCatalog:
         self.db.commit()
         self._baselines = {(row.team_key, row.performance_level, row.position_name): item["lines"] for item, row in zip(wanted, rows[: len(wanted)])}
         self._thresholds = {(row.team_key, row.performance_level, row.position_name): item["thresholds"] for item, row in zip(wanted, rows[: len(wanted)])}
+        self._decisions = {(row.team_key, row.performance_level, row.position_name): item["decision"] for item, row in zip(wanted, rows[: len(wanted)])}
         return rows
 
     def baseline_lines(self, scope: EvaluationScope) -> list[dict]:
@@ -257,7 +285,32 @@ class EvaluationCatalog:
             self.sync()
         return dict(self._thresholds.get((scope.team_key, scope.performance_level, scope.position_name), {"A": 95, "B": 85, "C": 75, "D": 65}))
 
+    def decision_for(self, scope: EvaluationScope) -> CapabilityDecision:
+        """Recompute capability from files. Stored readiness and client flags are ignored."""
+        cached = getattr(self, "_decisions", {}).get((scope.team_key, scope.performance_level, scope.position_name))
+        if isinstance(cached, CapabilityDecision):
+            return cached
+        config = self._config_for(scope.display_name)
+        return calculation_for(scope.display_name, scope.performance_level, scope.position_name or "", config)
+
+    def _config_for(self, display: str) -> dict | None:
+        if not hasattr(self, "_file_by_key"):
+            files = []
+            try:
+                files = load_all_team_configs()
+            except Exception:
+                files = []
+            file_by_key = {}
+            for config in files:
+                for key in (_norm(config.get("team") or ""), _norm(config.get("db_name") or "")):
+                    if key:
+                        file_by_key[key] = config
+            self._file_by_key = file_by_key
+        return self._file_by_key.get(_norm(display))
+
     def serialize(self, scope: EvaluationScope) -> dict:
+        decision = self.decision_for(scope)
+        enabled = scope.readiness == "supported" and decision.allows_ratio_edit
         return {
             "id": str(scope.id),
             "team_id": str(scope.team_id) if scope.team_id else None,
@@ -272,5 +325,8 @@ class EvaluationCatalog:
             "importer_name": scope.importer_name,
             "policy_family": scope.policy_family,
             "source_kind": scope.source_kind,
-            "supported": scope.readiness == "supported",
+            "supported": enabled,
+            "edit_mode": "full" if enabled else "blocked",
+            "weight_only_allowed": False,
+            "capability_reason": decision.reason if enabled else (scope.block_reason or decision.reason),
         }
