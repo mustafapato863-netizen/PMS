@@ -327,3 +327,238 @@ describe('TeamKpiSection active monthly KPI cards', () => {
     expect(tatCard).toHaveTextContent('On Target');
   });
 });
+
+const callCenterShell = {
+  totalAgents: 4,
+  avgScore: 80,
+  pctAB: 50,
+  pctDE: 0,
+  classCounts: { A: 1, B: 1, C: 2, D: 0, E: 0 },
+  prevTeamMetrics: null,
+  avgAHTSec: 130,
+  teamWeights: { Attend: 0.7, Booking: 0.1, AHT: 0.05, Other: 0.1, Quality: 0.1 },
+};
+
+const variedKpi = (label: string, actual = 0.4) => ({
+  label,
+  actual,
+  target: Number.NaN,
+  unit: '%',
+  weight: null,
+  contribution: null,
+  basisVaries: true,
+  isLowerBetter: false,
+});
+
+describe('TeamKpiSection applied call-center basis', () => {
+  it('keeps every fixed family and a null-weight extra KPI neutral when the basis varies', () => {
+    render(
+      <ThemeProvider>
+        <TeamKpiSection
+          {...callCenterShell}
+          isCallCenterView
+          isInbound={false}
+          teamId="outbound"
+          teamName="Outbound"
+          month="August"
+          teamMetrics={{
+            ...teamMetrics,
+            attendCR: 50,
+            bookingCR: 40,
+            reachabilityRate: 40,
+            avgAHT: '2:10',
+            avgAHTSec: 130,
+            dynamicKpis: [
+              variedKpi('Attendance Rate', 0.5),
+              variedKpi('Booking Rate', 0.4),
+              variedKpi('AHT (Handle Time)', 130),
+              variedKpi('Reachability', 0.4),
+              variedKpi('Quality Score', 0.9),
+              variedKpi('Productivity', 0.78),
+            ],
+          }}
+        />
+      </ThemeProvider>,
+    );
+
+    for (const label of [
+      'Patient Attendance Rate',
+      'Booking Conversion',
+      'Avg. Handle Time',
+      'Reachability',
+      'Quality Score',
+      'Productivity',
+    ]) {
+      const card = screen.getByText(label).closest('article');
+      expect(card).toHaveTextContent('Target: Varies');
+      expect(card).toHaveTextContent('Basis varies');
+      expect(card).toHaveTextContent('Applied basis varies');
+      expect(card).toHaveTextContent('Contribution—');
+      expect(card).toHaveTextContent('Weight—');
+      expect(card).not.toHaveTextContent('Target: 55%');
+      expect(card).not.toHaveTextContent('Target: 46%');
+      expect(card).not.toHaveTextContent('Target: 75%');
+      expect(card).not.toHaveTextContent('Target: 2:30');
+      expect(card).not.toHaveTextContent('Weight70%');
+      expect(card).not.toHaveTextContent('Weight10%');
+    }
+    expect(screen.getByText('Patient Attendance Rate').closest('article')?.parentElement).toHaveClass('xl:grid-cols-5');
+    expect(screen.getByRole('progressbar', { name: 'Patient Attendance Rate progress to target' })).toHaveAttribute(
+      'aria-valuetext',
+      'Target progress unavailable',
+    );
+    expect(screen.getByRole('progressbar', { name: 'Productivity progress to target' })).toHaveAttribute(
+      'aria-valuetext',
+      'Target progress unavailable',
+    );
+  });
+
+  it('keeps inbound utilization and abandon neutral instead of the 85 and 1 fallbacks', () => {
+    const { unmount } = render(
+      <ThemeProvider>
+        <TeamKpiSection
+          {...callCenterShell}
+          isCallCenterView
+          isInbound
+          teamId="inbound"
+          teamName="Inbound"
+          month="August"
+          teamMetrics={{
+            ...teamMetrics,
+            hasUtz: true,
+            utzRate: 40,
+            dynamicKpis: [variedKpi('Utilization', 0.4)],
+          }}
+        />
+      </ThemeProvider>,
+    );
+    const utilization = screen.getByText('Utilization').closest('article');
+    expect(utilization).toHaveTextContent('Target: Varies');
+    expect(utilization).toHaveTextContent('Basis varies');
+    expect(utilization).not.toHaveTextContent('Target: 85%');
+    expect(utilization).toHaveTextContent('Weight—');
+    unmount();
+
+    render(
+      <ThemeProvider>
+        <TeamKpiSection
+          {...callCenterShell}
+          isCallCenterView
+          isInbound
+          teamId="inbound"
+          teamName="Inbound"
+          month="August"
+          teamMetrics={{
+            ...teamMetrics,
+            hasUtz: false,
+            abandonRate: 3,
+            dynamicKpis: [variedKpi('Abandon Rate', 0.03)],
+          }}
+        />
+      </ThemeProvider>,
+    );
+    const abandon = screen.getByText('Call Abandon Rate').closest('article');
+    expect(abandon).toHaveTextContent('Target: Varies');
+    expect(abandon).toHaveTextContent('Basis varies');
+    expect(abandon).not.toHaveTextContent('Target: 1%');
+    expect(abandon).toHaveTextContent('Weight—');
+  });
+
+  it('follows an applied lower-better attendance pin and a higher-better handle-time pin', () => {
+    render(
+      <ThemeProvider>
+        <TeamKpiSection
+          {...callCenterShell}
+          isCallCenterView
+          isInbound={false}
+          teamId="outbound"
+          teamName="Outbound"
+          month="August"
+          avgAHTSec={100}
+          teamMetrics={{
+            ...teamMetrics,
+            attendCR: 60,
+            avgAHT: '1:40',
+            avgAHTSec: 100,
+            dynamicKpis: [
+              {
+                label: 'Attendance Rate', actual: 0.6, target: 0.7, unit: '%',
+                isLowerBetter: true, weight: 0.5, contribution: 0.5,
+              },
+              {
+                label: 'AHT (Handle Time)', actual: 100, target: 2.5, unit: 'min',
+                isLowerBetter: false, weight: 0.05, contribution: 0.03,
+              },
+            ],
+          }}
+        />
+      </ThemeProvider>,
+    );
+
+    const attendance = screen.getByText('Patient Attendance Rate').closest('article');
+    expect(attendance).toHaveTextContent('Target: 70%');
+    expect(attendance).toHaveTextContent('On Target');
+    expect(attendance).toHaveTextContent('116.7% of target');
+    expect(attendance).not.toHaveTextContent('Below Target');
+
+    const handleTime = screen.getByText('Avg. Handle Time').closest('article');
+    expect(handleTime).toHaveTextContent('Target: 2:30');
+    expect(handleTime).toHaveTextContent('Higher is better');
+    expect(handleTime).toHaveTextContent('Below Target');
+    expect(handleTime).toHaveTextContent('66.7% of target');
+    expect(handleTime).not.toHaveTextContent('On Target');
+  });
+
+  it('preserves the static attendance fallback, the four-column grid, and a zero-weight handle-time diagnostic', () => {
+    const { unmount } = render(
+      <ThemeProvider>
+        <TeamKpiSection
+          {...callCenterShell}
+          isCallCenterView
+          isInbound={false}
+          teamId="outbound"
+          teamName="Outbound"
+          month="August"
+          teamMetrics={{ ...teamMetrics, dynamicKpis: [] }}
+        />
+      </ThemeProvider>,
+    );
+    const attendance = screen.getByText('Patient Attendance Rate').closest('article');
+    expect(attendance).toHaveTextContent('Target: 55%');
+    expect(attendance).not.toHaveTextContent('Basis varies');
+    expect(attendance?.parentElement).toHaveClass('xl:grid-cols-4');
+    unmount();
+
+    render(
+      <ThemeProvider>
+        <TeamKpiSection
+          {...callCenterShell}
+          isCallCenterView
+          isInbound
+          teamId="inbound"
+          teamName="Inbound"
+          month="August"
+          teamMetrics={{
+            ...teamMetrics,
+            hasUtz: true,
+            dynamicKpis: [{
+              label: 'AHT (Handle Time)',
+              actual: 2.4,
+              target: 2.5,
+              unit: 'min',
+              isLowerBetter: true,
+              weight: 0,
+              contribution: 0,
+            }],
+          }}
+        />
+      </ThemeProvider>,
+    );
+    expect(screen.getByText('Patient Attendance Rate').closest('article')).toHaveTextContent('Target: 75%');
+    const handleTime = screen.getByText('Avg. Handle Time').closest('article');
+    expect(handleTime).toHaveTextContent('Target: 2:30');
+    expect(handleTime).toHaveTextContent('Lower is better');
+    expect(handleTime).toHaveTextContent('Weight0%');
+    expect(handleTime).not.toHaveTextContent('Basis varies');
+  });
+});

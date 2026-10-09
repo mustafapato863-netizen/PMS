@@ -85,8 +85,8 @@ export function useGeneratedReports(mine: boolean, page = 1, filters: ReportHist
 export function useReportsCenter(filters: ReportCenterFilters, enabled = true) {
   return useQuery({
     queryKey: reportQueryKeys.center(filters),
-    queryFn: async () => (
-      await apiFetch<ApiResponse<ReportCenterResponse>>(`/api/reports/center?${queryString(filters)}`)
+    queryFn: async ({ signal }) => (
+      await apiFetch<ApiResponse<ReportCenterResponse>>(`/api/reports/center?${queryString(filters)}`, { signal })
     ).data,
     enabled,
     staleTime: 60 * 1000,
@@ -100,8 +100,8 @@ export function useReportsCenterRecords(
 ) {
   return useQuery({
     queryKey: reportQueryKeys.centerRecords(filters),
-    queryFn: async () => (
-      await apiFetch<ApiResponse<ReportCenterRecordsResponse>>(`/api/reports/center/records?${queryString(filters)}`)
+    queryFn: async ({ signal }) => (
+      await apiFetch<ApiResponse<ReportCenterRecordsResponse>>(`/api/reports/center/records?${queryString(filters)}`, { signal })
     ).data,
     enabled,
     staleTime: 60 * 1000,

@@ -245,6 +245,9 @@ describe('direction-aware KPI rows', () => {
     expect(aht.raw_gap).toBe(80);
     expect(aht.gap_value).toBe(-80);
     expect(aht.target_status).toBe('missed');
+    expect(rows[1].actual).toBe(88);
+    expect(rows[1].target).toBe(90);
+    expect(rows[1].raw_change).toBe(2);
     expect(rows[1].trend_status).toBe('improving');
   });
 });

@@ -8,6 +8,7 @@
  * Anything that cannot be derived honestly is left `null` and listed in
  * `meta.unavailable`, so the UI hides or softens it instead of inventing it.
  */
+import { normalizePercentageKpiForDisplay } from '../../components/common/performanceKpiProgress';
 import { GRADE_CLASSES, getGradeClassOrNull, type GradeClass } from '../../constants/grades';
 import { canonicalTeamName } from '../../types';
 import type { AgentRecord } from '../../types';
@@ -178,6 +179,22 @@ function trendStatusOf(changeValue: number | null): InsightTrendStatus | null {
   return changeValue > 0 ? 'improving' : 'declining';
 }
 
+/**
+ * Percent display scale for one stored KPI.
+ * A paired target in (0, 1] is a ratio (1 means 100%), matching
+ * `normalizePercentageKpiForDisplay`. A percent-point target such as 0.1
+ * against 5, or 88 against 90, stays on the stored scale. Counts, currency,
+ * and durations are unchanged.
+ */
+function executivePercentValue(value: number, unit: string | null | undefined, target: number | null): number {
+  const kind = String(unit ?? '').trim().toLowerCase();
+  if (kind === 'percent' || kind === 'percentage') {
+    return target !== null && target > 0 && target <= 1 ? value * 100 : value;
+  }
+  if (kind === '%') return normalizePercentageKpiForDisplay(value, target ?? Number.NaN, '%');
+  return value;
+}
+
 /** Direction-aware KPI rows (worst achievement first) from per-employee `kpi_values`. */
 export function kpiRows(current: ExecRecord[], previous: ExecRecord[]): ExecutiveKpiRow[] {
   type Bucket = { label: string; unit: string | null; direction: string | null; actual: number[]; target: number[]; weight: number[]; achievement: number[]; teams: Set<string> };
@@ -189,8 +206,11 @@ export function kpiRows(current: ExecRecord[], previous: ExecRecord[]): Executiv
         label: kpi.label || kpi.kpi_key, unit: kpi.unit ?? null, direction: kpi.direction ?? null,
         actual: [], target: [], weight: [], achievement: [], teams: new Set<string>(),
       };
-      if (Number.isFinite(kpi.actual_value)) bucket.actual.push(Number(kpi.actual_value));
-      if (Number.isFinite(kpi.target_value)) bucket.target.push(Number(kpi.target_value));
+      const storedTarget = Number.isFinite(kpi.target_value) ? Number(kpi.target_value) : null;
+      if (Number.isFinite(kpi.actual_value)) {
+        bucket.actual.push(executivePercentValue(Number(kpi.actual_value), kpi.unit, storedTarget));
+      }
+      if (storedTarget !== null) bucket.target.push(executivePercentValue(storedTarget, kpi.unit, storedTarget));
       if (Number.isFinite(kpi.weight_applied)) bucket.weight.push(Number(kpi.weight_applied));
       if (Number.isFinite(kpi.achievement_ratio)) bucket.achievement.push(Math.min(Math.max(Number(kpi.achievement_ratio), 0), 1) * 100);
       bucket.teams.add(record.team);
@@ -475,6 +495,19 @@ export function mapDrivers(
       existing.impact_change_points = add(existing.impact_change_points, driver.impact_change_points);
       return;
     }
+    // API details keep percent measures as ratios when the paired target is in
+    // (0, 1]. Impact and achievement already use display points; weight stays a fraction.
+    const storedTarget = detail?.target_value != null && Number.isFinite(detail.target_value)
+      ? detail.target_value
+      : null;
+    const displayMeasure = (value: number | null | undefined) => (
+      value == null || !Number.isFinite(value) ? null : executivePercentValue(value, detail?.unit, storedTarget)
+    );
+    const rawChange = detail?.raw_change ?? (
+      detail?.current_value != null && detail?.previous_value != null
+        ? detail.current_value - detail.previous_value
+        : null
+    );
     merged.set(key, {
       kpi_key: item?.kpi_key ?? null,
       kpi_label: driver.driver,
@@ -482,12 +515,12 @@ export function mapDrivers(
       function: executiveFunctionForTeam(team, teamFunctions),
       kpi_direction: driver.kpi_direction ?? detail?.direction ?? null,
       unit: detail?.unit ?? null,
-      current_value: detail?.current_value ?? null,
-      previous_value: detail?.previous_value ?? null,
-      raw_change: detail?.raw_change ?? (detail?.current_value != null && detail?.previous_value != null ? detail.current_value - detail.previous_value : null),
-      change_value: detail?.change_value ?? null,
+      current_value: displayMeasure(detail?.current_value),
+      previous_value: displayMeasure(detail?.previous_value),
+      raw_change: displayMeasure(rawChange),
+      change_value: displayMeasure(detail?.change_value),
       trend_status: detail?.trend_status ?? null,
-      gap_value: detail?.gap_value ?? null,
+      gap_value: displayMeasure(detail?.gap_value),
       achievement_percent: detail?.achievement_percent ?? null,
       weight: (item as (InsightItem & { weight?: number | null }) | undefined)?.weight ?? null,
       impact_points: driver.impact_points ?? null,

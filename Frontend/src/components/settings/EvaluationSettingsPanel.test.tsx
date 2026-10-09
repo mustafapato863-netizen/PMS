@@ -8,9 +8,13 @@ import { initialReportingPeriod } from './evaluationSettings';
 
 const roleState = vi.hoisted(() => ({ role: 'Admin' as string }));
 const mocks = vi.hoisted(() => ({ fetchWithRole: vi.fn() }));
+const performanceRefresh = vi.hoisted(() => vi.fn());
 
 vi.mock('../../context/RoleContext', () => ({
   useUserRole: () => ({ role: roleState.role, fetchWithRole: mocks.fetchWithRole }),
+}));
+vi.mock('../../hooks/usePerformanceData', () => ({
+  refreshPerformanceData: performanceRefresh,
 }));
 
 const scope = {
@@ -121,6 +125,7 @@ function renderPanel(retryMutations = false) {
 
 beforeEach(() => {
   roleState.role = 'Admin';
+  performanceRefresh.mockClear();
   mocks.fetchWithRole.mockClear();
   mocks.fetchWithRole.mockImplementation(async (url: string, init?: RequestInit) => {
     const href = String(url);
@@ -290,8 +295,10 @@ it('revises the selected approved month, saves, proves impact, approves without 
   fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
   expect(await screen.findByText(/Existing scores were not recalculated/)).toBeInTheDocument();
   expect(calls('/evaluation/apply', 'POST')).toHaveLength(0);
+  expect(performanceRefresh).not.toHaveBeenCalled();
 
   client.setQueryData(['performance', 'catalog', 'sess'], { periods: [] });
+  client.setQueryData(['performance', 'bounded-records', 'kept'], { score: 79.82, target: 0.65 });
   client.setQueryData(['performance', 'summary', 'sess'], { total: 1 });
   client.setQueryData(['team-configs'], []);
   client.setQueryData(['kpi-weights'], []);
@@ -303,15 +310,20 @@ it('revises the selected approved month, saves, proves impact, approves without 
   const applyCall = calls('/evaluation/apply', 'POST')[0];
   expect(JSON.parse(String(applyCall[1]?.body))).toEqual({ scope_id: 'scope-1', year: 2026, month: 7 });
   expect(await screen.findByRole('button', { name: 'Rollback' })).toBeInTheDocument();
+  expect(performanceRefresh).toHaveBeenCalledTimes(1);
   expect(invalidate.mock.calls.map((call) => call[0]?.queryKey)).toEqual(expect.arrayContaining([
     ['evaluation-settings', 'period', 'scope-1', 2026, 7],
     ['performance'],
+    ['executive', 'summary'],
+    ['reports', 'center'],
+    ['insights', 'workspace'],
     ['team-config'],
     ['team-configs'],
     ['kpi-weights'],
     ['balanced-scorecard'],
   ]));
   expect(client.getQueryState(['reports', 'list'])?.isInvalidated).not.toBe(true);
+  expect(client.getQueryState(['performance', 'bounded-records', 'kept'])?.isInvalidated).toBe(true);
 
   fireEvent.click(screen.getByRole('button', { name: 'Rollback' }));
   expect(screen.getByRole('group', { name: 'Rollback confirmation' })).toHaveTextContent(/restores the saved before-apply values/i);
@@ -322,6 +334,7 @@ it('revises the selected approved month, saves, proves impact, approves without 
   fireEvent.click(screen.getByRole('button', { name: 'Rollback' }));
   fireEvent.click(screen.getByRole('button', { name: 'Restore saved values' }));
   expect(await screen.findByText(/No older approved version was reactivated/)).toBeInTheDocument();
+  expect(performanceRefresh).toHaveBeenCalledTimes(2);
   const rollbackCall = calls('/rollback', 'POST')[0];
   expect(String(rollbackCall[0])).toContain('/revisions/revision-1/rollback');
   expect(rollbackCall[1]?.body).toBeUndefined();
@@ -687,6 +700,27 @@ it('does not retry approval when the shared query client would retry a mutation'
   fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
   expect(await screen.findByRole('alert')).toHaveTextContent('Approval failed');
   expect(calls('/approve', 'POST')).toHaveLength(1);
+  expect(performanceRefresh).not.toHaveBeenCalled();
+});
+
+it('does not refresh committed performance data when apply fails', async () => {
+  october();
+  const approved = { ...draft, id: 'approved-oct', status: 'approved', version_number: 2, checksum: 'sum-approved' };
+  mocks.fetchWithRole.mockImplementation(async (url: string) => {
+    const href = String(url);
+    if (href.includes('/catalog')) return json({ scopes: [scope] });
+    if (href.includes('/periods')) return json({ versions: [approved], revisions: [] });
+    if (href.includes('/evaluation/apply')) return json('Apply failed', false);
+    return json(approved);
+  });
+  const { client } = renderPanel();
+  client.setQueryData(['performance', 'bounded-records', 'kept'], { score: 79.82, target: 0.65 });
+  expect(await screen.findByRole('button', { name: 'Apply' })).toBeEnabled();
+  fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Apply failed');
+  expect(performanceRefresh).not.toHaveBeenCalled();
+  expect(client.getQueryData(['performance', 'bounded-records', 'kept'])).toEqual({ score: 79.82, target: 0.65 });
+  expect(client.getQueryState(['performance', 'bounded-records', 'kept'])?.isInvalidated).not.toBe(true);
 });
 
 it('shows a blocked scope instead of treating it as supported', async () => {

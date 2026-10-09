@@ -2,6 +2,7 @@ import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertCircle, Check, Copy, History, Save } from 'lucide-react';
 import { API_BASE } from '../../config';
+import { refreshPerformanceData } from '../../hooks/usePerformanceData';
 import { useUserRole } from '../../context/RoleContext';
 import { canAccessSettingsContent } from '../../lib/access';
 import {
@@ -34,8 +35,9 @@ import {
   formatImpactSummary,
   formatReviseNotice,
   formatRollbackResult,
+  invalidateCommittedEvidence,
+  invalidateDraftLifecycle,
   isStaleProofCode,
-  lifecycleQueryKeys,
   pageSlice,
   parseImpactProof,
   periodQueryKey,
@@ -134,10 +136,12 @@ export function EvaluationSettingsPanel() {
     queryClient.setQueryData<EvaluationPeriodData>(periodQueryKey(scope, Number(periodYear), Number(periodMonth)), (current) => updater(current ?? emptyPeriod()));
   };
 
-  const invalidateLifecycle = (vars: Selection) => {
-    lifecycleQueryKeys(vars).forEach((queryKey) => {
-      void queryClient.invalidateQueries({ queryKey: [...queryKey] });
-    });
+  const invalidateSettings = (vars: Selection) => {
+    invalidateDraftLifecycle(queryClient, vars);
+  };
+
+  const invalidateCommitted = (vars: Selection) => {
+    invalidateCommittedEvidence(queryClient, vars, refreshPerformanceData);
   };
 
   const save = useMutation({
@@ -200,7 +204,7 @@ export function EvaluationSettingsPanel() {
     onSuccess: (version, vars) => {
       const key = selectionKey(vars);
       remember(key, (current) => applyVersion(current, version));
-      invalidateLifecycle(vars);
+      invalidateSettings(vars);
       if (!isCurrent(vars)) return;
       setDraft((current) => current?.key === key ? null : current);
       setProof(null);
@@ -248,7 +252,7 @@ export function EvaluationSettingsPanel() {
     onSuccess: (version, vars) => {
       const key = selectionKey(vars);
       remember(key, (current) => applyVersion(current, version));
-      invalidateLifecycle(vars);
+      invalidateSettings(vars);
       if (!isCurrent(vars)) return;
       setProof(null);
       setDraft((current) => current?.key === key ? null : current);
@@ -273,7 +277,7 @@ export function EvaluationSettingsPanel() {
       return readJson(response);
     },
     onSuccess: (result, vars) => {
-      invalidateLifecycle(vars);
+      invalidateCommitted(vars);
       if (!isCurrent(vars)) return;
       setNotice({ key: selectionKey(vars), text: formatApplyResult(result) });
     },
@@ -290,7 +294,7 @@ export function EvaluationSettingsPanel() {
       return readJson(response);
     },
     onSuccess: (result, vars) => {
-      invalidateLifecycle(vars);
+      invalidateCommitted(vars);
       if (!isCurrent(vars)) return;
       setRollbackConfirm(null);
       setNotice({ key: selectionKey(vars), text: formatRollbackResult(result) });
