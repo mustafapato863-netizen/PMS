@@ -903,8 +903,15 @@ class EvaluationWorkflow:
         self.db.commit()
         return self._serialize_version(created, scope_row)
 
-    def edit_draft(self, actor: dict, version_id, lines: list[dict], *, weight_only: bool = False) -> dict:
+    def edit_draft(self, actor: dict, version_id, lines: list[dict], *, weight_only: bool = False, expected_checksum: str | None = None, require_precondition: bool = False) -> dict:
         self._require_admin(actor)
+        # HTTP callers must pin the rules they edited. Internal trusted callers
+        # retain their existing contract; supplying a checksum also checks it.
+        if require_precondition and not expected_checksum:
+            raise EvaluationConflict(
+                "Load this draft before saving it. A rules checksum is required.",
+                code="draft_precondition_required",
+            )
         self._ready()
         version = self._version(version_id)
         scope_row = self._scope_for_version(version)
@@ -914,6 +921,11 @@ class EvaluationWorkflow:
         version = self._version(version.id, lock=True)
         if version.status != "draft":
             raise EvaluationError("Approved settings are immutable. Open a new draft.", code="immutable")
+        if expected_checksum is not None and expected_checksum != version.config_checksum:
+            raise EvaluationConflict(
+                "This draft changed after you opened it. Reload the draft before saving; no changes were made.",
+                code="stale_draft",
+            )
         cleaned, notes = self._validate_lines(snapshot_lines(version), lines, weight_only=weight_only)
         snapshot = dict(version.config_snapshot or {})
         snapshot.pop("preview_evidence", None)

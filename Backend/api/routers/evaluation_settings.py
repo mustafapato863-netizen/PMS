@@ -23,6 +23,7 @@ class DraftRequest(BaseModel):
 class EditRequest(BaseModel):
     lines: list[dict]
     weight_only: bool = False
+    expected_checksum: str | None = None
 
 
 class PreviewRequest(BaseModel):
@@ -65,7 +66,10 @@ def open_draft(body: DraftRequest, request: Request, db: Session = Depends(get_d
 @router.patch("/drafts/{version_id}", response_model=StandardResponse)
 def edit_draft(version_id: str, body: EditRequest, request: Request, db: Session = Depends(get_db)):
     actor = _actor(request, db)
-    data = _run(lambda: EvaluationWorkflow(db).edit_draft(actor, version_id, body.lines, weight_only=body.weight_only))
+    data = _run(lambda: EvaluationWorkflow(db).edit_draft(
+        actor, version_id, body.lines, weight_only=body.weight_only,
+        expected_checksum=body.expected_checksum, require_precondition=True,
+    ))
     return StandardResponse(success=True, message="Evaluation draft updated", data=data)
 
 
@@ -133,11 +137,18 @@ def evaluation_reads(
     request: Request,
     scope_id: str,
     year: int = Query(ge=2000, le=2100),
-    months: str = Query(min_length=1),
+    months: str = Query(min_length=1, max_length=64),
     db: Session = Depends(get_db),
 ):
     actor = _actor(request, db)
-    parsed = [int(part) for part in months.split(",") if part.strip()]
+    # A bounded, exact calendar list prevents malformed requests from raising
+    # uncaught conversion errors or performing repeated evidence reads.
+    parts = [part.strip() for part in months.split(",")]
+    if len(parts) > 12 or any(not part.isascii() or not part.isdigit() for part in parts):
+        raise HTTPException(status_code=422, detail="Provide 1 to 12 distinct calendar months (1-12).")
+    parsed = [int(part) for part in parts]
+    if any(number < 1 or number > 12 for number in parsed) or len(set(parsed)) != len(parsed):
+        raise HTTPException(status_code=422, detail="Provide 1 to 12 distinct calendar months (1-12).")
     return StandardResponse(
         success=True,
         message="Evaluation reads",

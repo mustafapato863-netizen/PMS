@@ -36,7 +36,7 @@ from models.models import (
     UserTeamAssignment,
 )
 from services.dashboard_record_service import DashboardRecordService
-from services.evaluation.access import TargetConflict
+from services.evaluation.access import EvaluationError, TargetConflict
 from services.evaluation.resolver import overlay_pinned_kpis, score_basis
 from services.evaluation.workflow import EvaluationWorkflow
 from services.management_bsc_service import ManagementBSCService
@@ -125,6 +125,57 @@ def _line_edit(lines: list[dict], target: float) -> list[dict]:
             "target": target if index == 0 else 1,
         })
     return edited
+
+
+@pytest.mark.parametrize("weight, code", [(0.1, "invalid_weight_total"), (0.3, "invalid_weight_total"), (-0.1, "invalid_weight"), (0.12345, "invalid_weight")])
+def test_roadmap_invalid_weights_do_not_normalize_or_mutate_draft(db, weight, code):
+    admin = _user("Admin", "weight-boundary-admin")
+    coding = Team(id=uuid.uuid4(), name="Coding", db_name="Coding", display_name="Coding", region="UAE", team_level="employee")
+    db.add_all([admin, coding])
+    db.commit()
+    actor = _actor(admin)
+    workflow = EvaluationWorkflow(db)
+    scope = _coding_scope(workflow, actor)
+    draft = workflow.open_draft(actor, scope["id"], 2026, 7)
+    proposed = [{**line, "weight": weight if index == 0 else line["weight"]} for index, line in enumerate(draft["lines"])]
+    with pytest.raises(EvaluationError) as error:
+        workflow.edit_draft(actor, draft["id"], proposed)
+    assert error.value.data.get("code") == code
+    version = db.query(TeamConfigurationVersion).filter(TeamConfigurationVersion.id == uuid.UUID(draft["id"])).one()
+    assert version.config_snapshot["lines"] == draft["lines"]
+    assert version.config_checksum == draft["checksum"]
+
+
+def test_roadmap_january_copy_uses_previous_december_not_another_year(db):
+    from services.evaluation.periods import previous_period
+
+    assert previous_period(2026, 1) == (2025, 12)
+    admin = _user("Admin", "year-boundary-admin")
+    coding = Team(id=uuid.uuid4(), name="Coding", db_name="Coding", display_name="Coding", region="UAE", team_level="employee")
+    db.add_all([admin, coding])
+    db.commit()
+    actor = _actor(admin)
+    workflow = EvaluationWorkflow(db)
+    scope = _coding_scope(workflow, actor)
+    december = workflow.open_draft(actor, scope["id"], 2025, 12)
+    edited = workflow.edit_draft(actor, december["id"], _line_edit(december["lines"], 0.55))
+    workflow.impact_preview(actor, december["id"])
+    workflow.approve(actor, december["id"])
+    january = workflow.open_draft(actor, scope["id"], 2026, 1, copy_previous=True)
+    assert january["lines"] == edited["lines"]
+    assert january["month_name"] == "January"
+    original = db.query(TeamConfigurationVersion).filter(TeamConfigurationVersion.id == uuid.UUID(december["id"])).one()
+    assert original.effective_from_year == 2025
+    assert original.effective_from_month == 12
+    assert original.config_checksum == edited["checksum"]
+
+
+def test_roadmap_synthetic_sixty_over_sixty_five_preserves_ratio_precision():
+    from services.evaluation.scoring import overall_score, score_rows
+
+    rows = score_rows("Employee", [{"kpi_key": "synthetic_ratio", "weight": 1, "direction": "higher_better", "target_mode": "fixed", "target": 0.65}], [{"kpi_key": "synthetic_ratio", "actual": 0.6, "workbook_target": 0.65}])
+    assert rows[0]["achievement"] == pytest.approx(12 / 13)
+    assert overall_score(rows) == 92.31
 
 
 def test_july_and_august_stay_independent_until_explicit_apply(db):
