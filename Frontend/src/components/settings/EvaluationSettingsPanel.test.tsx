@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
 import { EvaluationSettingsPanel } from './EvaluationSettingsPanel';
 import { initialReportingPeriod } from './evaluationSettings';
+import { periodQueryKey } from './monthlyCorrection';
 
 const roleState = vi.hoisted(() => ({ role: 'Admin' as string }));
 const mocks = vi.hoisted(() => ({ fetchWithRole: vi.fn() }));
@@ -41,7 +42,7 @@ const line = {
   label: 'Quality Errors',
   weight: 1,
   direction: 'higher_better',
-  target: 55,
+  target: 0.55,
   target_mode: 'fixed',
   unit: '%',
 };
@@ -140,7 +141,7 @@ beforeEach(() => {
         ...draft,
         id: `draft-${body.month}`,
         notes: 'Copied from the approved previous month.',
-        lines: [{ ...line, target: body.month === 8 ? 65 : 70 }],
+        lines: [{ ...line, target: body.month === 8 ? 0.65 : 0.7 }],
       });
     }
     return json(draft);
@@ -180,6 +181,8 @@ it.each(['Manager', 'Performance Team'])('makes no evaluation request and shows 
   renderPanel();
   expect(screen.getByText('Evaluation settings are limited to Admin.')).toBeInTheDocument();
   expect(screen.queryByLabelText('Reporting month')).not.toBeInTheDocument();
+  expect(screen.queryByLabelText('QualityErrors target')).not.toBeInTheDocument();
+  expect(screen.queryByLabelText('QualityErrors weight')).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument();
   expect(screen.queryByRole('spinbutton', { name: 'Reporting year' })).not.toBeInTheDocument();
   await act(async () => { await Promise.resolve(); });
@@ -194,7 +197,7 @@ it('revises the selected approved month, saves, proves impact, approves without 
     status: 'approved',
     version_number: 2,
     checksum: 'sum-approved',
-    lines: [{ ...line, target: 55 }],
+    lines: [{ ...line, target: 0.55 }],
   };
   const revised = {
     id: 'draft-july',
@@ -203,7 +206,7 @@ it('revises the selected approved month, saves, proves impact, approves without 
     checksum: 'sum-draft',
     source_version_id: 'approved-july',
     source_checksum: 'sum-approved',
-    lines: [{ ...line, target: 55 }],
+    lines: [{ ...line, target: 0.55 }],
   };
   const state = {
     versions: [approved] as Array<Record<string, unknown>>,
@@ -232,7 +235,7 @@ it('revises the selected approved month, saves, proves impact, approves without 
         scored_employees: 2,
         changed_count: 1,
         unchanged_count: 1,
-        conflicts: [{ record_id: 'rec-1', kpi_key: 'QualityErrors', workbook_target: 60, approved_target: 55 }],
+        conflicts: [{ record_id: 'rec-1', kpi_key: 'QualityErrors', workbook_target: 0.6, approved_target: 0.55 }],
         comparisons: [comparison('E001', 70), comparison('E002', 81)],
       }));
     }
@@ -256,6 +259,8 @@ it('revises the selected approved month, saves, proves impact, approves without 
   const { client } = renderPanel();
   expect(await screen.findByLabelText('QualityErrors target')).toBeDisabled();
   expect(screen.getByLabelText('QualityErrors target')).toHaveValue('55');
+  expect(screen.getByLabelText('QualityErrors weight')).toBeDisabled();
+  expect(screen.getByLabelText('QualityErrors weight')).toHaveValue('100');
   expect(screen.queryByRole('button', { name: 'New draft' })).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Copy previous month' })).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Revise this month' }));
@@ -276,14 +281,15 @@ it('revises the selected approved month, saves, proves impact, approves without 
   await waitFor(() => expect(calls('/drafts/draft-july', 'PATCH')).toHaveLength(1));
   const saved = JSON.parse(String(calls('/drafts/draft-july', 'PATCH')[0][1]?.body));
   expect(saved.weight_only).toBeUndefined();
-  expect(saved.lines[0]).toMatchObject({ target: 40, weight: 1, direction: 'higher_better', target_mode: 'fixed' });
+  expect(saved.expected_checksum).toBe('sum-draft');
+  expect(saved.lines[0]).toMatchObject({ target: 0.4, weight: 1, direction: 'higher_better', target_mode: 'fixed' });
   expect(await screen.findByText('Draft saved.')).toBeInTheDocument();
 
   fireEvent.click(screen.getByRole('button', { name: 'Impact preview' }));
   expect(await screen.findByText(/2 stored records, 2 scored, 1 changed, 1 unchanged/)).toBeInTheDocument();
   const mismatches = screen.getByRole('table', { name: 'Fixed target mismatches' });
-  expect(within(mismatches).getByText('60')).toBeInTheDocument();
-  expect(within(mismatches).getByText('55')).toBeInTheDocument();
+  expect(within(mismatches).getByText('60%')).toBeInTheDocument();
+  expect(within(mismatches).getByText('55%')).toBeInTheDocument();
   expect(screen.getByText(/new upload is still blocked/i)).toBeInTheDocument();
   expect(screen.getByRole('table', { name: 'Before and after scores' }).closest('div')).toHaveClass('overflow-x-auto');
   expect(screen.getByText('E001')).toBeInTheDocument();
@@ -366,7 +372,7 @@ it('describes a zero-record validation without inventing an employee score', asy
   mocks.fetchWithRole.mockImplementation(async (url: string) => {
     const href = String(url);
     if (href.includes('/catalog')) return json({ scopes: [scope] });
-    if (href.includes('/periods')) return json(periodData(55));
+    if (href.includes('/periods')) return json(periodData(0.55));
     if (href.includes('/impact-preview')) {
       return json(impactProof({
         zero_affected: true,
@@ -394,7 +400,7 @@ it('pages nine stored employees eight at a time', async () => {
   mocks.fetchWithRole.mockImplementation(async (url: string) => {
     const href = String(url);
     if (href.includes('/catalog')) return json({ scopes: [scope] });
-    if (href.includes('/periods')) return json(periodData(55));
+    if (href.includes('/periods')) return json(periodData(0.55));
     if (href.includes('/impact-preview')) {
       return json(impactProof({
         affected_count: 9,
@@ -422,7 +428,7 @@ it('clears proof and keeps the target when approval reports a stale preview', as
   mocks.fetchWithRole.mockImplementation(async (url: string) => {
     const href = String(url);
     if (href.includes('/catalog')) return json({ scopes: [scope] });
-    if (href.includes('/periods')) return json(periodData(55));
+    if (href.includes('/periods')) return json(periodData(0.55));
     if (href.includes('/impact-preview')) return json(impactProof());
     if (href.includes('/approve')) return json({ message: 'Impact preview is stale because the rules changed.', code: 'stale_preview' }, false);
     return json(draft);
@@ -451,10 +457,10 @@ it('resumes an existing draft unchanged and does not overwrite it on a 409', asy
       return json({
         versions: resumed
           ? [
-            { id: 'approved-july', status: 'approved', version_number: 2, checksum: 'sum-approved', lines: [{ ...line, target: 55 }] },
-            { id: 'draft-july', status: 'draft', version_number: 3, checksum: 'sum-draft', source_version_id: 'approved-july', source_checksum: 'sum-approved', lines: [{ ...line, target: 70 }] },
+            { id: 'approved-july', status: 'approved', version_number: 2, checksum: 'sum-approved', lines: [{ ...line, target: 0.55 }] },
+            { id: 'draft-july', status: 'draft', version_number: 3, checksum: 'sum-draft', source_version_id: 'approved-july', source_checksum: 'sum-approved', lines: [{ ...line, target: 0.7 }] },
           ]
-          : [{ id: 'approved-july', status: 'approved', version_number: 2, checksum: 'sum-approved', lines: [{ ...line, target: 55 }] }],
+          : [{ id: 'approved-july', status: 'approved', version_number: 2, checksum: 'sum-approved', lines: [{ ...line, target: 0.55 }] }],
       });
     }
     if (href.includes('/revise')) {
@@ -467,7 +473,7 @@ it('resumes an existing draft unchanged and does not overwrite it on a 409', asy
         source_version_id: 'approved-july',
         source_checksum: 'sum-approved',
         resumed: true,
-        lines: [{ ...line, target: 70 }],
+        lines: [{ ...line, target: 0.7 }],
       });
     }
     return json(draft);
@@ -484,7 +490,7 @@ it('resumes an existing draft unchanged and does not overwrite it on a 409', asy
   mocks.fetchWithRole.mockImplementation(async (url: string) => {
     const href = String(url);
     if (href.includes('/catalog')) return json({ scopes: [scope] });
-    if (href.includes('/periods')) return json({ versions: [{ id: 'approved-july', status: 'approved', version_number: 2, checksum: 'sum-approved', lines: [{ ...line, target: 55 }] }] });
+    if (href.includes('/periods')) return json({ versions: [{ id: 'approved-july', status: 'approved', version_number: 2, checksum: 'sum-approved', lines: [{ ...line, target: 0.55 }] }] });
     if (href.includes('/revise')) return json({ message: 'A draft already exists for this month and was not overwritten.', code: 'draft_exists' }, false);
     return json(draft);
   });
@@ -550,9 +556,9 @@ it('ignores a late period response after the selection changes', async () => {
   expect(screen.getAllByText('Loading this month…').length).toBeGreaterThan(0);
   expect(screen.queryByLabelText('QualityErrors target')).not.toBeInTheDocument();
   fireEvent.change(screen.getByLabelText('Reporting month'), { target: { value: '8' } });
-  pending.get('8')?.(periodData(80));
+  pending.get('8')?.(periodData(0.8));
   expect(await screen.findByDisplayValue('80')).toBeInTheDocument();
-  pending.get('7')?.(periodData(55));
+  pending.get('7')?.(periodData(0.55));
   await act(async () => { await Promise.resolve(); });
   expect(screen.getByLabelText('QualityErrors target')).toHaveValue('80');
   expect(screen.getByRole('button', { name: 'Save draft' })).toBeEnabled();
@@ -561,11 +567,11 @@ it('ignores a late period response after the selection changes', async () => {
 it('does not apply a save or a late impact for the previous month to the month now on screen', async () => {
   let releaseSave: (value: { lines?: Array<{ target?: number }> }) => void = () => {};
   let releaseImpact: (value: unknown) => void = () => {};
-  let julyTarget = 55;
+  let julyTarget = 0.55;
   mocks.fetchWithRole.mockImplementation(async (url: string, init?: RequestInit) => {
     const href = String(url);
     if (href.includes('/catalog')) return json({ scopes: [scope] });
-    if (href.includes('/periods')) return json(periodData(monthOf(href) === '8' ? 80 : julyTarget));
+    if (href.includes('/periods')) return json(periodData(monthOf(href) === '8' ? 0.8 : julyTarget));
     if (href.includes('/impact-preview')) return json(await new Promise((resolve) => { releaseImpact = resolve; }));
     if (init?.method === 'PATCH') {
       return json(await new Promise((resolve) => {
@@ -584,7 +590,7 @@ it('does not apply a save or a late impact for the previous month to the month n
   fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
   fireEvent.change(screen.getByLabelText('Reporting month'), { target: { value: '8' } });
   expect(await screen.findByDisplayValue('80')).toBeInTheDocument();
-  releaseSave({ ...draft, lines: [{ ...line, target: 99 }] });
+  releaseSave({ ...draft, lines: [{ ...line, target: 0.99 }] });
   await act(async () => { await Promise.resolve(); });
   expect(screen.getByLabelText('QualityErrors target')).toHaveValue('80');
   expect(screen.queryByText('Draft saved.')).not.toBeInTheDocument();
@@ -730,4 +736,313 @@ it('shows a blocked scope instead of treating it as supported', async () => {
   await user.selectOptions(screen.getByLabelText('Evaluation scope'), 'scope-2');
   expect(await screen.findByText(/No supported importer/)).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument();
+});
+
+it('labels the selected scope with the exact month admission, not the current catalog default', async () => {
+  window.history.replaceState(null, '', '/settings?period=2026-08');
+  mocks.fetchWithRole.mockImplementation(async (url: string) => {
+    const href = String(url);
+    if (href.includes('/catalog')) return json({ scopes: [{ ...scope, readiness: 'blocked' }] });
+    if (href.includes('/periods')) return json({
+      versions: [draft],
+      scope: { ...scope, readiness: monthOf(href) === '8' ? 'supported' : 'blocked', block_reason: 'This exact month is not admitted.' },
+    });
+    return json(draft);
+  });
+  renderPanel();
+  expect(await screen.findByLabelText('QualityErrors target')).toBeEnabled();
+  expect(screen.getByRole('option', { name: 'Coding · Employee' })).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText('Reporting month'), { target: { value: '9' } });
+  expect(await screen.findByText(/This exact month is not admitted/)).toBeInTheDocument();
+  expect(screen.getByRole('option', { name: 'Coding · Employee · blocked' })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Save draft' })).not.toBeInTheDocument();
+});
+
+it('saves explicit percents as fractions and leaves other units and untouched precision unchanged', async () => {
+  october();
+  const preciseWeight = 0.1 + 0.2;
+  const hours = { kpi_key: 'HandleTime', label: 'Handle time', weight: 0, direction: 'lower_better', target: 2.5, target_mode: 'fixed', unit: 'hours' };
+  const count = { kpi_key: 'Calls', label: 'Rework percentage', weight: 0.6, direction: 'higher_better', target: 65, target_mode: 'fixed', unit: 'count' };
+  const unknown = { kpi_key: 'Mystery', label: 'Mystery', weight: preciseWeight, direction: 'higher_better', target: 65, target_mode: 'fixed' };
+  const workbook = { kpi_key: 'Quality', label: 'Quality', weight: 0.5, direction: 'higher_better', target: null, target_mode: 'workbook', unit: '%' };
+  mocks.fetchWithRole.mockImplementation(async (url: string, init?: RequestInit) => {
+    const href = String(url);
+    if (href.includes('/catalog')) return json({ scopes: [scope] });
+    if (href.includes('/periods')) return json({ versions: [{ ...draft, lines: [{ ...line, target: 0.65, weight: 1, target_mode: 'workbook' }, hours, count, unknown, workbook] }] });
+    if (init?.method === 'PATCH') return json({ ...draft, lines: JSON.parse(String(init.body)).lines });
+    return json(draft);
+  });
+  renderPanel();
+  expect(await screen.findByLabelText('QualityErrors target')).toHaveValue('65');
+  expect(screen.getByLabelText('QualityErrors weight')).toHaveValue('100');
+  expect(screen.getByLabelText('HandleTime target')).toHaveValue('2.5');
+  expect(screen.getByLabelText('HandleTime weight')).toHaveValue('0');
+  expect(screen.getByLabelText('Calls target')).toHaveValue('65');
+  expect(screen.getByLabelText('Calls weight')).toHaveValue('60');
+  expect(screen.getByLabelText('Mystery target')).toHaveValue('65');
+  expect(screen.getByText(/No unit was provided/)).toBeInTheDocument();
+  expect(screen.getByLabelText('Quality target')).toHaveValue('');
+  expect(screen.getByText(/Saved target: empty/)).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText('QualityErrors target'), { target: { value: '70' } });
+  expect(screen.getByLabelText('QualityErrors source')).toHaveValue('fixed');
+  fireEvent.change(screen.getByLabelText('Calls weight'), { target: { value: '50' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+  await waitFor(() => expect(calls('/drafts/draft-1', 'PATCH')).toHaveLength(1));
+  const saved = JSON.parse(String(calls('/drafts/draft-1', 'PATCH')[0][1]?.body));
+  expect(saved.expected_checksum).toBe('sum-draft');
+  const byKey = Object.fromEntries(saved.lines.map((item: { kpi_key: string }) => [item.kpi_key, item]));
+  expect(byKey.QualityErrors).toMatchObject({ target: 0.7, weight: 1, target_mode: 'fixed' });
+  expect(byKey.HandleTime).toMatchObject({ target: 2.5, weight: 0, unit: 'hours' });
+  expect(byKey.Calls).toMatchObject({ target: 65, weight: 0.5, unit: 'count' });
+  expect(byKey.Mystery.target).toBe(65);
+  expect(byKey.Mystery.weight).toBe(preciseWeight);
+  expect(byKey.Quality.target).toBeNull();
+  expect(byKey.Quality).toMatchObject({ target_mode: 'workbook', weight: 0.5 });
+});
+
+it('does not save a blank or unfinished percent, and keeps the stored value visible', async () => {
+  october();
+  renderPanel();
+  const target = await screen.findByLabelText('QualityErrors target');
+  expect(target).toHaveValue('55');
+  fireEvent.change(target, { target: { value: '' } });
+  expect(target).toHaveValue('');
+  expect(screen.getByText(/Saved target remains 55%/)).toBeInTheDocument();
+  expect(screen.getByText(/Saved target: 55%/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+  expect(calls('/drafts/draft-1', 'PATCH')).toHaveLength(0);
+  fireEvent.change(screen.getByLabelText('QualityErrors target'), { target: { value: '0.' } });
+  expect(screen.getByLabelText('QualityErrors target')).toHaveValue('0.');
+  expect(screen.getByText(/not a finite number/)).toBeInTheDocument();
+  expect(screen.getByText(/Saved target remains 55%/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+  expect(calls('/drafts/draft-1', 'PATCH')).toHaveLength(0);
+  fireEvent.change(screen.getByLabelText('QualityErrors target'), { target: { value: '0.1' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+  await waitFor(() => expect(calls('/drafts/draft-1', 'PATCH')).toHaveLength(1));
+  const saved = JSON.parse(String(calls('/drafts/draft-1', 'PATCH')[0][1]?.body));
+  expect(saved.expected_checksum).toBe('sum-draft');
+  expect(saved.lines[0]).toMatchObject({ target: 0.001, weight: 1 });
+});
+
+it('discards an unfinished target when the reporting period changes', async () => {
+  october();
+  mocks.fetchWithRole.mockImplementation(async (url: string) => {
+    const href = String(url);
+    if (href.includes('/catalog')) return json({ scopes: [scope] });
+    if (href.includes('/periods')) return json(periodData(monthOf(href) === '8' ? 0.8 : 0.55));
+    return json(draft);
+  });
+  renderPanel();
+  expect(await screen.findByLabelText('QualityErrors target')).toHaveValue('55');
+  fireEvent.change(screen.getByLabelText('QualityErrors target'), { target: { value: '0.' } });
+  expect(screen.getByLabelText('QualityErrors target')).toHaveValue('0.');
+  fireEvent.change(screen.getByLabelText('Reporting month'), { target: { value: '8' } });
+  expect(await screen.findByLabelText('QualityErrors target')).toHaveValue('80');
+  expect(screen.queryByDisplayValue('0.')).not.toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText('Reporting month'), { target: { value: '10' } });
+  expect(await screen.findByLabelText('QualityErrors target')).toHaveValue('55');
+  expect(screen.queryByDisplayValue('0.')).not.toBeInTheDocument();
+});
+
+it('scales conflict values only for a rule with an explicit percent unit', async () => {
+  october();
+  const hours = { kpi_key: 'HandleTime', label: 'Handle time', weight: 0, direction: 'lower_better', target: 2.5, target_mode: 'fixed', unit: 'hours' };
+  const unknown = { kpi_key: 'Mystery', label: 'Mystery', weight: 0, direction: 'higher_better', target: 65, target_mode: 'fixed' };
+  mocks.fetchWithRole.mockImplementation(async (url: string) => {
+    const href = String(url);
+    if (href.includes('/catalog')) return json({ scopes: [scope] });
+    if (href.includes('/periods')) return json({ versions: [{ ...draft, lines: [{ ...line, target: 0.55 }, hours, unknown] }] });
+    if (href.includes('/impact-preview')) {
+      return json(impactProof({
+        conflicts: [
+          { record_id: 'rec-1', kpi_key: 'QualityErrors', workbook_target: 0.6, approved_target: 0.55 },
+          { record_id: 'rec-2', kpi_key: 'HandleTime', workbook_target: 2.5, approved_target: 3 },
+          { record_id: 'rec-3', kpi_key: 'Mystery', workbook_target: 65, approved_target: 70 },
+          { record_id: 'rec-4', kpi_key: 'Unlisted', workbook_target: 65, approved_target: 0.65 },
+        ],
+      }));
+    }
+    return json(draft);
+  });
+  renderPanel();
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Impact preview' })).toBeEnabled());
+  fireEvent.click(screen.getByRole('button', { name: 'Impact preview' }));
+  const mismatches = await screen.findByRole('table', { name: 'Fixed target mismatches' });
+  expect(within(mismatches).getByText('60%')).toBeInTheDocument();
+  expect(within(mismatches).getByText('55%')).toBeInTheDocument();
+  expect(within(mismatches).getByText('2.5 hours')).toBeInTheDocument();
+  expect(within(mismatches).getByText('3 hours')).toBeInTheDocument();
+  expect(within(mismatches).getAllByText('65 (stored value, unit not provided)')).toHaveLength(2);
+  expect(within(mismatches).getByText('70 (stored value, unit not provided)')).toBeInTheDocument();
+  expect(within(mismatches).getByText('0.65 (stored value, unit not provided)')).toBeInTheDocument();
+  expect(within(mismatches).queryByText('6500%')).not.toBeInTheDocument();
+  expect(within(mismatches).queryByText('250%')).not.toBeInTheDocument();
+});
+
+it('keeps the captured checksum and percent scale when a refresh arrives during a dirty edit', async () => {
+  october();
+  let refreshed = false;
+  mocks.fetchWithRole.mockImplementation(async (url: string, init?: RequestInit) => {
+    const href = String(url);
+    if (href.includes('/catalog')) return json({ scopes: [scope] });
+    if (href.includes('/periods')) {
+      if (refreshed) {
+        return json({ versions: [{ ...draft, checksum: 'sum-refreshed', lines: [{ ...line, unit: 'hours', target: 9, weight: 0.25, direction: 'higher_better' }] }] });
+      }
+      return json({ versions: [{ ...draft, lines: [{ ...line, target: 0.55, weight: 1 }] }] });
+    }
+    if (init?.method === 'PATCH') {
+      return json({ message: 'This draft changed after you opened it. Reload the draft before saving; no changes were made.', code: 'stale_draft' }, false);
+    }
+    return json(draft);
+  });
+  const { client } = renderPanel();
+  const target = await screen.findByLabelText('QualityErrors target');
+  fireEvent.change(screen.getByLabelText('QualityErrors direction'), { target: { value: 'lower_better' } });
+  fireEvent.change(target, { target: { value: '70' } });
+  expect(target).toHaveValue('70');
+  const key = periodQueryKey('scope-1', 2026, 10);
+  refreshed = true;
+  await act(async () => {
+    await client.invalidateQueries({ queryKey: key });
+  });
+  await waitFor(() => expect(client.getQueryData(key)).toMatchObject({ checksum: 'sum-refreshed' }));
+  expect(screen.getByLabelText('QualityErrors target')).toHaveValue('70');
+  expect(screen.getByLabelText('QualityErrors direction')).toHaveValue('lower_better');
+  expect(screen.getByText(/Saved target: 55%/)).toBeInTheDocument();
+  expect(screen.queryByText(/Saved target: 9 hours/)).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+  await waitFor(() => expect(calls('/drafts/draft-1', 'PATCH')).toHaveLength(1));
+  const saved = JSON.parse(String(calls('/drafts/draft-1', 'PATCH')[0][1]?.body));
+  expect(String(calls('/drafts/draft-1', 'PATCH')[0][0])).toContain('/drafts/draft-1');
+  expect(saved.expected_checksum).toBe('sum-draft');
+  expect(saved.lines[0]).toMatchObject({ target: 0.7, weight: 1, unit: '%', direction: 'lower_better', target_mode: 'fixed' });
+  expect(await screen.findByRole('alert')).toHaveTextContent('stale_draft');
+  expect(screen.getByText(/Reload the draft or discard your edits/)).toBeInTheDocument();
+  expect(screen.getByLabelText('QualityErrors target')).toHaveValue('70');
+  expect(screen.getByRole('button', { name: 'Save draft' })).toBeDisabled();
+  fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+  expect(calls('/drafts/draft-1', 'PATCH')).toHaveLength(1);
+  const cached = client.getQueryData(key) as { checksum: string; lines: Array<{ target: number; unit?: string }> };
+  expect(cached.checksum).toBe('sum-refreshed');
+  expect(cached.lines[0]).toMatchObject({ target: 9, unit: 'hours' });
+  fireEvent.click(screen.getByRole('button', { name: 'Discard edits' }));
+  expect(screen.getByLabelText('QualityErrors target')).toHaveValue('9');
+  expect(screen.queryByDisplayValue('70')).not.toBeInTheDocument();
+  expect(calls('/drafts/draft-1', 'PATCH')).toHaveLength(1);
+});
+
+it('does not write a different version when the open draft changes during editing', async () => {
+  october();
+  let refreshed = false;
+  mocks.fetchWithRole.mockImplementation(async (url: string, init?: RequestInit) => {
+    const href = String(url);
+    if (href.includes('/catalog')) return json({ scopes: [scope] });
+    if (href.includes('/periods')) {
+      return json({ versions: [refreshed ? { ...draft, id: 'draft-other', checksum: 'sum-other' } : draft] });
+    }
+    if (init?.method === 'PATCH') return json({ ...draft, id: 'draft-other', checksum: 'sum-other', lines: JSON.parse(String(init.body)).lines });
+    return json(draft);
+  });
+  const { client } = renderPanel();
+  expect(await screen.findByLabelText('QualityErrors target')).toHaveValue('55');
+  fireEvent.change(screen.getByLabelText('QualityErrors target'), { target: { value: '70' } });
+  const key = periodQueryKey('scope-1', 2026, 10);
+  refreshed = true;
+  await act(async () => {
+    await client.invalidateQueries({ queryKey: key });
+  });
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Save draft' })).toBeDisabled());
+  expect(screen.getByLabelText('QualityErrors target')).toHaveValue('70');
+  expect(screen.getByText(/will not write that other version/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+  expect(mocks.fetchWithRole.mock.calls.filter((call) => call[1]?.method === 'PATCH')).toHaveLength(0);
+  fireEvent.click(screen.getByRole('button', { name: 'Discard edits' }));
+  expect(screen.getByLabelText('QualityErrors target')).toHaveValue('55');
+  fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+  await waitFor(() => expect(calls('/drafts/draft-other', 'PATCH')).toHaveLength(1));
+  const saved = JSON.parse(String(calls('/drafts/draft-other', 'PATCH')[0][1]?.body));
+  expect(saved.expected_checksum).toBe('sum-other');
+  expect(calls('/drafts/draft-1', 'PATCH')).toHaveLength(0);
+});
+
+it('does not send an empty checksum when the draft has none', async () => {
+  october();
+  mocks.fetchWithRole.mockImplementation(async (url: string) => {
+    const href = String(url);
+    if (href.includes('/catalog')) return json({ scopes: [scope] });
+    if (href.includes('/periods')) return json({ versions: [{ ...draft, checksum: '   ' }] });
+    return json(draft);
+  });
+  renderPanel();
+  expect(await screen.findByLabelText('QualityErrors target')).toHaveValue('55');
+  expect(screen.getByRole('button', { name: 'Save draft' })).toBeDisabled();
+  expect(screen.getByText(/An empty checksum is not sent/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+  fireEvent.change(screen.getByLabelText('QualityErrors target'), { target: { value: '70' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+  expect(mocks.fetchWithRole.mock.calls.filter((call) => call[1]?.method === 'PATCH')).toHaveLength(0);
+  expect(screen.getByLabelText('QualityErrors target')).toHaveValue('70');
+});
+
+it('does not reuse a checksum from another month or from a revise response that omitted one', async () => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date(2026, 6, 15));
+  mocks.fetchWithRole.mockImplementation(async (url: string, init?: RequestInit) => {
+    const href = String(url);
+    const month = monthOf(href);
+    if (href.includes('/catalog')) return json({ scopes: [scope] });
+    if (href.includes('/periods')) {
+      if (month === '8') return json({ versions: [{ ...draft, id: 'draft-august', checksum: 'sum-august', lines: [{ ...line, target: 0.8 }] }] });
+      return json({ versions: [{ ...draft, id: 'draft-july', checksum: 'sum-july', lines: [{ ...line, target: 0.55 }] }] });
+    }
+    if (init?.method === 'PATCH') {
+      const id = href.includes('draft-august') ? 'draft-august' : 'draft-july';
+      return json({ ...draft, id, checksum: id === 'draft-august' ? 'sum-august-saved' : 'sum-july-saved', lines: JSON.parse(String(init.body)).lines });
+    }
+    return json(draft);
+  });
+  renderPanel();
+  expect(await screen.findByLabelText('QualityErrors target')).toHaveValue('55');
+  fireEvent.change(screen.getByLabelText('QualityErrors target'), { target: { value: '40' } });
+  fireEvent.change(screen.getByLabelText('Reporting month'), { target: { value: '8' } });
+  expect(await screen.findByLabelText('QualityErrors target')).toHaveValue('80');
+  expect(screen.queryByDisplayValue('40')).not.toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText('QualityErrors target'), { target: { value: '70' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+  await waitFor(() => expect(calls('/drafts/draft-august', 'PATCH')).toHaveLength(1));
+  const august = JSON.parse(String(calls('/drafts/draft-august', 'PATCH')[0][1]?.body));
+  expect(august.expected_checksum).toBe('sum-august');
+  expect(august.lines[0]).toMatchObject({ target: 0.7, weight: 1 });
+  expect(calls('/drafts/draft-july', 'PATCH')).toHaveLength(0);
+  const patchesBeforeRevise = mocks.fetchWithRole.mock.calls.filter((call) => call[1]?.method === 'PATCH').length;
+
+  let revised = false;
+  mocks.fetchWithRole.mockImplementation(async (url: string) => {
+    const href = String(url);
+    if (href.includes('/catalog')) return json({ scopes: [scope] });
+    if (href.includes('/periods')) {
+      const approvedOnly = { id: 'approved-july', status: 'approved', version_number: 2, checksum: 'sum-approved', lines: [{ ...line, target: 0.55 }] };
+      return json({
+        versions: revised
+          ? [approvedOnly, { id: 'draft-july', status: 'draft', version_number: 3, lines: [{ ...line, target: 0.55 }] }]
+          : [approvedOnly],
+      });
+    }
+    if (href.includes('/revise')) {
+      revised = true;
+      return json({ id: 'draft-july', status: 'draft', version_number: 3, lines: [{ ...line, target: 0.55 }] });
+    }
+    return json(draft);
+  });
+  fireEvent.change(screen.getByLabelText('Reporting month'), { target: { value: '7' } });
+  await waitFor(() => expect(screen.getByLabelText('QualityErrors target')).toBeDisabled());
+  fireEvent.click(screen.getByRole('button', { name: 'Revise this month' }));
+  expect(await screen.findByText(/Revision draft opened for this month/)).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Save draft' })).toBeDisabled();
+  expect(screen.getByText(/An empty checksum is not sent/)).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText('QualityErrors target'), { target: { value: '40' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+  expect(mocks.fetchWithRole.mock.calls.filter((call) => call[1]?.method === 'PATCH')).toHaveLength(patchesBeforeRevise);
 });
