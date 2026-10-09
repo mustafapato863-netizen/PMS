@@ -1,0 +1,149 @@
+{
+  "status": "source_characterization_only_not_activated",
+  "reference_file": "docs/plans/monthly-evaluation/outbound-anonymous-reference.json",
+  "units": {
+    "rates_achievements_weights_contributions_totals": "normalized_ratio_0_to_1",
+    "engine_score_dto": "0_to_100_earned_divided_by_measured_weight",
+    "aht_target": "seconds",
+    "attendance_target": "raw_ratio_not_excel_time"
+  },
+  "provenance": {
+    "trend_sha256": "1a153df8957f2e4ba3001775419e2eab7b19c79cf14158876347b50ff442829d",
+    "august_source_sha256": "62aad191081ca338a76cf3fbce8c267d1b517a6bbde3557dfe250ee80f1b2a68",
+    "july": "Trend stored achievements reconciled to actual/target. Original July workbook formulas were unavailable, so July is numeric reconciliation, not source-formula certification.",
+    "august": "Original August formulas and cached values were independently reproduced from anonymized rates. This is not native Excel recalculation. Reported max source-raw difference is 1.11e-16.",
+    "identities_and_operational_counts": "omitted"
+  },
+  "policy": {
+    "direction": "higher_better",
+    "achievement": "min(actual / target, 1)",
+    "contribution": "achievement * weight",
+    "total": "sum of scored contributions on the 0-1 scale",
+    "engine_policy": "EMPLOYEE_POLICY",
+    "cap": 1.0,
+    "grades": "unavailable_external_table_not_asserted"
+  },
+  "source_formulas": {
+    "booking": "sum(booked counts) / Reached",
+    "attendance": "sum(attended counts) / sum(booked counts)",
+    "reachability": "Reached / NumOfLeads",
+    "quality": "stored source actual",
+    "productivity": "stored numeric actual; not derived from available time",
+    "aht": "diagnostic formula differs and is uncapped; weight is zero and the formula stays disabled"
+  },
+  "source_timeline": {
+    "attendance_target_january_through_may": 0.55,
+    "attendance_target_from_june_including_july_and_august": 0.65,
+    "july_55_august_65_is_source_history": false,
+    "shared_targets": {
+      "Booking": 0.3,
+      "Reachability": 0.75,
+      "Quality": 0.95
+    }
+  },
+  "aht": {
+    "included_in_scored_total": false,
+    "weight": 0.0,
+    "target_seconds": 150,
+    "enabled": false
+  },
+  "attendance_target_serialization": {
+    "raw_numeric": 0.65,
+    "excel_builtin_format_id": 22,
+    "date_aware_display": "15:36:00",
+    "required_scoring_value": 0.65,
+    "rejected_readings": [
+      "excel_time_of_day_15:36:00",
+      "hours_value_15.6",
+      "day_fraction_converted_to_minutes_936",
+      "magnitude_heuristic"
+    ]
+  },
+  "missing_productivity": {
+    "august_actual": null,
+    "disposition": "fail_visible_missing_source_actual",
+    "forbidden_substitutions": [
+      "zero",
+      "renormalize_remaining_weights",
+      "infer_from_available_time",
+      "infer_from_final_score",
+      "trend_lookup"
+    ]
+  },
+  "synthetic_attendance_scenario": {
+    "status": "acceptance_scenario_not_source_history",
+    "july_attendance_target": 0.55,
+    "august_attendance_target": 0.65,
+    "july_keeps_source_july_kpi_set": true,
+    "august_matches_source_august": true,
+    "july_expected_attendance_raw_ratio": 1.0052183466080746,
+    "july_expected_attendance_achievement": 1.0,
+    "july_expected_contributions": {
+      "Booking": 0.05678504031566306,
+      "Attendance": 0.7,
+      "Reachability": 0.07633077980750344,
+      "Quality": 0.1
+    },
+    "july_expected_score": 0.9331158201231665
+  },
+  "cap_boundaries": [
+    {
+      "name": "exact_target",
+      "actual": 0.8,
+      "target": 0.8,
+      "expected_value": 1.0,
+      "expected_raw_ratio": 1.0,
+      "expected_state": "measured"
+    },
+    {
+      "name": "above_target",
+      "actual": 1.0,
+      "target": 0.8,
+      "expected_value": 1.0,
+      "expected_raw_ratio": 1.25,
+      "expected_state": "measured"
+    },
+    {
+      "name": "below_target",
+      "actual": 0.4,
+      "target": 0.8,
+      "expected_value": 0.5,
+      "expected_raw_ratio": 0.5,
+      "expected_state": "measured"
+    },
+    {
+      "name": "zero_actual",
+      "actual": 0.0,
+      "target": 0.8,
+      "expected_value": 0.0,
+      "expected_raw_ratio": 0.0,
+      "expected_state": "measured"
+    }
+  ],
+  "decisions": {
+    "d001": "admin_only_unchanged_not_implemented_here",
+    "d002": "unsupported_target_and_direction_edits_remain_blocked",
+    "d003": "fixed_target_conflict_blocks_upload_with_no_bypass_not_implemented_here",
+    "d004": "approved_intention_only_not_activated"
+  },
+  "ingestion_gates": [
+    "preserve_raw_percentage_0.65",
+    "reject_excel_builtin_22_time_reading",
+    "reject_magnitude_heuristic",
+    "do_not_derive_productivity_from_available_time",
+    "fail_visible_when_august_productivity_actual_is_missing",
+    "do_not_zero_fill_missing_productivity",
+    "do_not_accept_trend_as_the_productivity_source",
+    "do_not_apply_the_august_kpi_set_to_july",
+    "keep_aht_diagnostic_and_weight_zero",
+    "do_not_add_grade_bands_or_treat_a_cached_label_as_policy",
+    "confirm_productivity_survives_workbook_crop_before_ingestion",
+    "block_approved_fixed_target_conflicts_with_no_bypass"
+  ],
+  "not_invented": [
+    "zero_denominator_defaults",
+    "grade_bands",
+    "available_time_productivity_formula",
+    "missing_input_defaults"
+  ]
+}

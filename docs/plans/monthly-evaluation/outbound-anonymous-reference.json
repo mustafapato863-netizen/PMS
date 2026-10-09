@@ -1,0 +1,22 @@
+{
+  "status": "source_reference_only_not_activated",
+  "units": "normalized_ratios_scores_and_weights",
+  "july": {
+    "period": "2026-07",
+    "actuals": {"Booking": 0.1703551209469892, "Attendance": 0.552870090634441, "Reachability": 0.5724808485562758, "Quality": 0.96},
+    "targets": {"Booking": 0.3, "Attendance": 0.65, "Reachability": 0.75, "Quality": 0.95},
+    "weights": {"Booking": 0.1, "Attendance": 0.7, "Reachability": 0.1, "Quality": 0.1},
+    "validated_stored_achievements": {"Booking": 0.5678504031566306, "Attendance": 0.8505693702068323, "Reachability": 0.7633077980750343, "Quality": 1.0},
+    "expected_score": 0.8285143792679491,
+    "boundary": "Trend numeric evidence; original July formula workbook unavailable"
+  },
+  "august": {
+    "period": "2026-08",
+    "actuals": {"Booking": 0.3008083140877598, "Attendance": 0.46065259117082535, "Reachability": 0.568241469816273, "Quality": 0.98, "Productivity": 0.7780694444444445},
+    "targets": {"Booking": 0.3, "Attendance": 0.65, "Reachability": 0.75, "Quality": 0.95, "Productivity": 0.8},
+    "weights": {"Booking": 0.1, "Attendance": 0.6, "Reachability": 0.1, "Quality": 0.1, "Productivity": 0.1},
+    "expected_achievements": {"Booking": 1.0, "Attendance": 0.7086962941089621, "Reachability": 0.757655293088364, "Quality": 1.0, "Productivity": 0.9725868055555555},
+    "expected_score": 0.7982419863297692,
+    "boundary": "Original August formulas/cached values independently reproduced numerically; no native Excel recalc"
+  }
+}

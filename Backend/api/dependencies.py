@@ -228,6 +228,16 @@ def serialize_performance_record(r) -> Dict[str, Any]:
         "raw_data": raw_data,
         "kpi_values": getattr(r, "kpi_values", []) or [],
     }
+    productivity_rate = getattr(r.actual, "productivity_rate", None)
+    if productivity_rate is not None:
+        result["actual"]["productivity_rate"] = productivity_rate
+    productivity_ach = getattr(r.achievement, "productivity_ach", None)
+    if productivity_ach is not None:
+        result["achievement"]["productivity_ach"] = productivity_ach
+    if getattr(r, "upload_id", None):
+        result["upload_id"] = r.upload_id
+    if getattr(r, "meta", None):
+        result["meta"] = r.meta
 
     _serialize_cache[cache_key] = (result, now + _SERIALIZE_CACHE_TTL)
     return result

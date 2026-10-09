@@ -2,10 +2,31 @@ import logging
 
 import pandas as pd
 
+from services.outbound_period_basis import is_productivity_column
 from utils import convert_aht_to_minutes, convert_percentage
 
 
 logger = logging.getLogger(__name__)
+
+
+def preserve_productivity_columns(df, column_name="Performance Grade"):
+    """Keep known productivity aliases that sit after the crop column.
+
+    The crop is exact. A junk column after the grade stays dropped. Available
+    time is not a productivity alias, so it is not reattached.
+    """
+    if column_name not in df.columns:
+        return df
+    col_index = df.columns.get_loc(column_name)
+    preserved = {
+        column: df[column].copy()
+        for column in df.columns
+        if is_productivity_column(column) and df.columns.get_loc(column) > col_index
+    }
+    cropped = df.iloc[:, : col_index + 1].copy()
+    for column, series in preserved.items():
+        cropped[column] = series
+    return cropped
 
 
 def clean_sheet_data(df, sheet_name, column_name="Performance Grade"):
@@ -21,8 +42,7 @@ def clean_sheet_data(df, sheet_name, column_name="Performance Grade"):
     df.columns = [str(col).strip() for col in df.columns]
 
     if column_name in df.columns:
-        col_index = df.columns.get_loc(column_name)
-        df = df.iloc[:, :col_index + 1]
+        df = preserve_productivity_columns(df, column_name)
         logger.debug("Cropped %s to %s columns", sheet_name, df.shape[1])
 
     for col in df.columns:

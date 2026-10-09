@@ -2,7 +2,13 @@ import uuid
 from sqlalchemy import Column, String, Integer, SmallInteger, Numeric, Boolean, Date, DateTime, ForeignKey, Text, LargeBinary, ForeignKeyConstraint, UniqueConstraint, CheckConstraint, Enum as SQLEnum, JSON, Index
 from sqlalchemy.dialects.postgresql import UUID, JSONB, INET
 from sqlalchemy.orm import relationship
-from sqlalchemy.sql import func, false, text
+from sqlalchemy.sql import func, false, text, true
+from models.evaluation_history_schema import (
+    REVISION_CHECKS,
+    ActorUnknownDefault,
+    register_history_guards,
+    version_check_sql,
+)
 from config.database import Base
 from utils.performance_levels import PerformanceLevel
 from utils.user_identity import default_user_full_name
@@ -1055,42 +1061,73 @@ class PerformanceRecordVersion(Base):
 
 
 class TeamConfigurationVersion(Base):
-    """Immutable team configuration snapshot.
+    """Team configuration snapshot.
 
     Older rows are open-ended published snapshots and have no performance level.
-    Monthly evaluation bindings set the level, position, and exact month.
+    Monthly rows set the level, an exact month, and a position. '' means no position.
+    Approved and superseded monthly evidence is immutable at the database.
     """
 
     __tablename__ = "team_configuration_versions"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    team_id = Column(UUID(as_uuid=True), ForeignKey("teams.id", ondelete="CASCADE"), nullable=False)
+    team_id = Column(UUID(as_uuid=True), ForeignKey("teams.id", ondelete="RESTRICT"), nullable=False)
     version_number = Column(Integer, nullable=False)
     status = Column(String(20), nullable=False)
     effective_month = Column(String(20), nullable=False)
     effective_year = Column(SmallInteger, nullable=False)
-    config_snapshot = Column(JSON_COMPAT_TYPE, nullable=False)
+    # Historical migrations created this column as JSON, not JSONB.
+    config_snapshot = Column(JSON, nullable=False)
     config_checksum = Column(String(64), nullable=False)
     created_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     published_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    published_at = Column(DateTime(timezone=True), nullable=True)
+    published_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=True)
     superseded_at = Column(DateTime(timezone=True), nullable=True)
     notes = Column(Text, nullable=True)
     effective_from_month = Column(SmallInteger, nullable=False)
     effective_from_year = Column(SmallInteger, nullable=False)
     effective_until_month = Column(SmallInteger, nullable=True)
     effective_until_year = Column(SmallInteger, nullable=True)
+    preview_snapshot = Column(JSON, nullable=True)
+    total_weight = Column(Numeric(7, 4), nullable=True)
+    overall_score = Column(Numeric(10, 2), nullable=True)
+    is_active = Column(Boolean, nullable=False, default=True, server_default=true())
     performance_level = Column(String(20), nullable=True)
     position_name = Column(String(255), nullable=True)
+    actor_created_snapshot = Column(
+        JSON_COMPAT_TYPE,
+        nullable=False,
+        default=lambda: {"state": "unknown"},
+        server_default=ActorUnknownDefault(),
+    )
+    actor_published_snapshot = Column(
+        JSON_COMPAT_TYPE,
+        nullable=False,
+        default=lambda: {"state": "unknown"},
+        server_default=ActorUnknownDefault(),
+    )
 
     team = relationship("Team")
 
     __table_args__ = (
         UniqueConstraint("team_id", "version_number", name="uq_team_config_version"),
-        CheckConstraint(
-            "performance_level IS NULL OR performance_level IN ('Employee', 'Managerial', 'Corporate')",
-            name="ck_team_config_version_level",
+        CheckConstraint(version_check_sql()["ck_team_config_version_level"], name="ck_team_config_version_level"),
+        CheckConstraint(version_check_sql()["ck_team_config_effective_from_month"], name="ck_team_config_effective_from_month"),
+        CheckConstraint(version_check_sql()["ck_team_config_effective_until_month"], name="ck_team_config_effective_until_month"),
+        CheckConstraint(version_check_sql()["ck_team_config_effective_range"], name="ck_team_config_effective_range"),
+        CheckConstraint(version_check_sql()["ck_team_config_monthly_position"], name="ck_team_config_monthly_position"),
+        CheckConstraint(version_check_sql()["ck_team_config_monthly_exact_period"], name="ck_team_config_monthly_exact_period"),
+        CheckConstraint(version_check_sql()["ck_team_config_monthly_status"], name="ck_team_config_monthly_status"),
+        CheckConstraint(version_check_sql()["ck_team_config_monthly_published_marker"], name="ck_team_config_monthly_published_marker"),
+        Index(
+            "idx_team_config_coverage",
+            "team_id",
+            "status",
+            "effective_from_year",
+            "effective_from_month",
+            "effective_until_year",
+            "effective_until_month",
         ),
         Index(
             "uq_team_config_one_approved_month",
@@ -1153,29 +1190,56 @@ class EvaluationScope(Base):
 
 
 class EvaluationRevision(Base):
-    """One explicit apply of an approved month, with the previous scores kept for rollback."""
+    """One explicit apply of an approved month.
+
+    Snapshots, scope, version, previous revision, and actor attribution are
+    fixed once the row exists. Status may move from active to rolled_back or
+    superseded. This model does not restore a rolled-back revision.
+    """
 
     __tablename__ = "evaluation_revisions"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    team_id = Column(UUID(as_uuid=True), ForeignKey("teams.id", ondelete="CASCADE"), nullable=False)
+    team_id = Column(UUID(as_uuid=True), ForeignKey("teams.id", ondelete="RESTRICT"), nullable=False)
     performance_level = Column(String(20), nullable=False)
     position_name = Column(String(255), nullable=False, default="")
     year = Column(SmallInteger, nullable=False)
     month = Column(SmallInteger, nullable=False)
     version_id = Column(UUID(as_uuid=True), ForeignKey("team_configuration_versions.id", ondelete="RESTRICT"), nullable=False)
     status = Column(String(20), nullable=False, default="active")
-    previous_revision_id = Column(UUID(as_uuid=True), ForeignKey("evaluation_revisions.id", ondelete="SET NULL"), nullable=True)
+    previous_revision_id = Column(UUID(as_uuid=True), ForeignKey("evaluation_revisions.id", ondelete="RESTRICT"), nullable=True)
     prior_snapshot = Column(JSON_COMPAT_TYPE, nullable=False)
     applied_snapshot = Column(JSON_COMPAT_TYPE, nullable=False)
     created_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    actor_snapshot = Column(
+        JSON_COMPAT_TYPE,
+        nullable=False,
+        default=lambda: {"state": "unknown"},
+        server_default=ActorUnknownDefault(),
+    )
 
     __table_args__ = (
-        CheckConstraint("status IN ('active', 'rolled_back')", name="ck_evaluation_revision_status"),
-        CheckConstraint("month BETWEEN 1 AND 12", name="ck_evaluation_revision_month"),
+        CheckConstraint(REVISION_CHECKS["ck_evaluation_revision_status"], name="ck_evaluation_revision_status"),
+        CheckConstraint(REVISION_CHECKS["ck_evaluation_revision_month"], name="ck_evaluation_revision_month"),
+        CheckConstraint(REVISION_CHECKS["ck_evaluation_revision_level"], name="ck_evaluation_revision_level"),
+        CheckConstraint(REVISION_CHECKS["ck_evaluation_revision_year"], name="ck_evaluation_revision_year"),
         Index("idx_evaluation_revision_period", "team_id", "performance_level", "position_name", "year", "month", "status"),
+        Index(
+            "uq_evaluation_revision_one_active",
+            "team_id",
+            "performance_level",
+            "position_name",
+            "year",
+            "month",
+            unique=True,
+            sqlite_where=text("status = 'active'"),
+            postgresql_where=text("status = 'active'"),
+        ),
     )
+
+
+register_history_guards(TeamConfigurationVersion.__table__, EvaluationRevision.__table__)
 
 
 class ErrorLog(Base):
