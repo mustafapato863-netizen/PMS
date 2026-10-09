@@ -2,10 +2,19 @@
  * Full-scope impact proof and the query prefixes already used by performance
  * and settings caches. Sample preview is not an approval proof.
  *
- * Performance prefixes cover catalog, scoped summary, records, employee history,
- * and bounded team data. Settings prefixes cover team config, KPI weights, and
- * the balanced scorecard refresh used by settings.
+ * Performance prefixes cover catalog, scoped summary, records, summary records,
+ * employee history, and bounded team data. Settings prefixes cover team config,
+ * KPI weights, and the balanced scorecard refresh used by settings.
+ *
+ * Committed apply and rollback also refresh the optional executive summary,
+ * the live report-center aggregate, and the insights workspace. Saved report
+ * artifacts, story drafts, plans, and human-authored actions stay out of that
+ * set. EmployeeProfileView reads summary records and legacy performance data.
+ * useEmployeeProfile is a separate unused helper; omitting its query key is
+ * not acceptance of a stale profile score.
  */
+
+import type { QueryClient } from '@tanstack/react-query';
 
 export const IMPACT_PAGE_SIZE = 8;
 
@@ -221,15 +230,57 @@ export function periodQueryKey(scopeId: string, year: number, month: number) {
   return ['evaluation-settings', 'period', scopeId, year, month] as const;
 }
 
-export function lifecycleQueryKeys(selection: ReportingSelection) {
+export function uncommittedLifecycleQueryKeys(selection: ReportingSelection) {
   return [
     periodQueryKey(selection.scopeId, selection.year, selection.month),
-    ['performance'],
     ['team-config'],
     ['team-configs'],
     ['kpi-weights'],
     ['balanced-scorecard'],
   ] as const;
+}
+
+export function committedEvidenceQueryKeys() {
+  return [
+    ['performance'],
+    ['executive', 'summary'],
+    ['reports', 'center'],
+    ['insights', 'workspace'],
+  ] as const;
+}
+
+export function lifecycleQueryKeys(selection: ReportingSelection) {
+  return [
+    periodQueryKey(selection.scopeId, selection.year, selection.month),
+    ...committedEvidenceQueryKeys(),
+    ['team-config'],
+    ['team-configs'],
+    ['kpi-weights'],
+    ['balanced-scorecard'],
+  ] as const;
+}
+
+export function cancelAndInvalidate(queryClient: QueryClient, keys: readonly (readonly unknown[])[]) {
+  keys.forEach((queryKey) => {
+    const key = [...queryKey];
+    void queryClient.cancelQueries({ queryKey: key });
+    void queryClient.invalidateQueries({ queryKey: key });
+  });
+}
+
+/** Draft, revise, and approve refresh settings only. Scores stay where they were. */
+export function invalidateDraftLifecycle(queryClient: QueryClient, selection: ReportingSelection) {
+  cancelAndInvalidate(queryClient, uncommittedLifecycleQueryKeys(selection));
+}
+
+/** Apply and rollback refresh live evidence and the legacy performance module cache. */
+export function invalidateCommittedEvidence(
+  queryClient: QueryClient,
+  selection: ReportingSelection,
+  refresh: () => void,
+) {
+  cancelAndInvalidate(queryClient, lifecycleQueryKeys(selection));
+  refresh();
 }
 
 export function isStaleProofCode(code: string | undefined): boolean {

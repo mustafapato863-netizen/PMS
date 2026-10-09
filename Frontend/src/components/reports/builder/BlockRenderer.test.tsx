@@ -36,6 +36,35 @@ describe('management analysis block renderers', () => {
     expect(screen.getByText('12 matched · 1 joiners · 0 leavers')).toBeInTheDocument();
   });
 
+  it('shows a scoring-basis change even when the configuration effect is zero', () => {
+    const type = 'overall_score_movement_bridge';
+    render(<BlockRenderer block={block(type)} blockData={data(type, {
+      previous_overall_score: 80, current_overall_score: 80,
+      total_score_point_change: 0, comparison_period: 'July 2026', current_period: 'August 2026',
+      matched_employee_count: 2, joiner_count: 0, leaver_count: 0,
+      kpi_contribution_movements: [], team_contribution_movements: [],
+      joiner_effect: 0, leaver_effect: 0, population_scope_mix_effect: 0,
+      configuration_version_effect: 0, scoring_basis_changed: true, raw_performance_changed: false,
+      missing_incomparable_data_effect: 0, residual: 0, reconciliation_state: 'reconciled',
+      narrative: 'Evaluation settings changed. Overall PMS Score was unchanged at 80.0% on each month\'s own applied basis.',
+      warnings: [],
+    })} />);
+    expect(screen.getByText('Scoring basis changed')).toBeInTheDocument();
+    expect(screen.getByText(/was unchanged at 80.0%/)).toBeInTheDocument();
+  });
+
+  it('labels a trend point whose month uses a different applied basis', () => {
+    const type = 'score_trend';
+    render(<BlockRenderer block={block(type)} blockData={data(type, {
+      series: [
+        { label: 'July 2026', value: 82.85, basis_changed: false, basis_state: 'uniform' },
+        { label: 'August 2026', value: 80, basis_changed: true, basis_state: 'mixed' },
+      ],
+    })} />);
+    expect(screen.getByText('Mixed basis')).toBeInTheDocument();
+    expect(screen.queryByText('Basis changed')).not.toBeInTheDocument();
+  });
+
   it('separates zero-target configuration exclusions from ranked KPIs', () => {
     const type = 'lowest_kpis_weighted_impact';
     render(<BlockRenderer block={block(type)} blockData={data(type, {

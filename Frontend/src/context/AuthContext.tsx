@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import type { User } from '../types';
 import { usePresenceHeartbeat } from '../hooks/usePresenceHeartbeat';
+import { discardPerformanceCache } from '../hooks/usePerformanceData';
 import { apiFetch, getAccessToken, refreshAccessToken, setAccessToken, terminateClientSession } from '../lib/apiClient';
 import { AuthContext } from './auth';
 import type { AuthContextProps } from './auth';
@@ -127,6 +128,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = () => {
+    discardPerformanceCache();
     if (getAccessToken()) apiFetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
     void terminateClientSession();
     setCurrentUser(null);

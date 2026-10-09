@@ -26,7 +26,9 @@ Approved and superseded monthly rows cannot change snapshot, checksum, preview, 
 
 `scripts/bootstrap_schema.py` does not run root revision `975c072657f1`. On an empty database it runs ORM `create_all`, checks the history guard definitions, and stamps head. A database that already has tables and no `alembic_version` is refused. The success line says this is not a historical chain replay. The PostgreSQL verifier probes the root separately and records `HISTORICAL_REPLAY_ROOT_FAILURE`; that probe rolls back and leaves no tables.
 
-## Later workflow locks
+## Workflow gaps at the original schema-only checkpoint
+
+The paragraph below records the earlier schema-only review, not the current integrated workflow. The subsequent correction is documented in the final integration note at the end.
 
 Set `actor_created_snapshot` on version insert and `actor_published_snapshot` before or during draft approval. Set `actor_snapshot` on revision insert. Do not delete approved or superseded versions, or any revision. Replace a draft in place or by delete; do not mark it superseded. `open_draft(..., copy_previous=True)` still assigns `draft -> superseded` when a draft for that month already exists, so that path needs a later adjustment before it can run against this schema. Do not reactivate a rolled-back revision. Do not change a monthly row's team, level, position, version number, or period, and do not clear either end field. Do not relabel a legacy row as monthly. Do not hard-delete a team that still has versions or revisions. User deletion clears the user ids; the actor JSON is the remaining attribution.
 
@@ -43,3 +45,7 @@ Disposable databases `pms_eval_review_fix16` (port 55432) and `pms_eval_review_f
 ## Limitations
 
 This is not a replay of the historical migration chain and not a release-ready claim. Guard comparison covers the two history tables' check text, index definitions, trigger definitions, and guard function bodies. Downgrade refuses while approved or superseded monthly versions or any evaluation revision exist, and it does not turn `''` positions back into NULL. No scoring or workflow code was changed.
+
+## Subsequent reviewed integration
+
+Consumer `adeb33d`, integrated at `ae40741`, no longer supersedes an existing draft to copy the previous month. It returns an unchanged ordinary draft, or refuses `draft_exists` for copy/revision lineage. An approved month must use its immutable revision workflow. Live team locks are shared with upload pinning; the fresh activity check cannot trust stale ORM state. Final PostgreSQL history/correction/upload-race gates passed26 tests on exact disposable16/18 databases. This closes the draft-lifecycle gap above, not the historical root-replay or production-recovery limitations. See the [independent verification checkpoint](../reviews/monthly-evaluation-candidate-verification.md).

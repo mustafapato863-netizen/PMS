@@ -1,3 +1,5 @@
+import hashlib
+import json
 import time
 from uuid import UUID
 import pandas as pd
@@ -73,9 +75,74 @@ def get_overall_trend_label(trend_status) -> str:
         return trend_status.get("score", {}).get("mom", "Stable")
     return trend_status or "Stable"
 
+
+def _evidence_snapshot(value):
+    if hasattr(value, "model_dump"):
+        return value.model_dump(mode="json")
+    return value
+
+
+def _kpi_evidence(values) -> list:
+    """Full KPI payload, in stored order. Dict key order is not part of identity."""
+    rows = []
+    for item in values or []:
+        if isinstance(item, dict):
+            rows.append(dict(item))
+        else:
+            rows.append(_evidence_snapshot(item))
+    return rows
+
+
+def _serialized_text(record, name: str):
+    value = getattr(record, name, None)
+    return value if isinstance(value, str) else None
+
+
+def serialization_cache_key(record) -> str:
+    """Identity for one stored row, including a later revision of the same id.
+
+    ``performance_records`` uses ``(id, year)`` as its key, and apply or
+    rollback can rewrite that same id. The digest covers the fields
+    ``serialize_performance_record`` emits: score, human note, raw source,
+    calls, actuals, achievement, geo, employee identity, region, branch,
+    level, position, upload, meta, and the full KPI payload including
+    passthrough metadata. The returned key contains the record id, year, and
+    digest only. It does not use a process-local flush or a shared version
+    counter.
+    """
+    year = getattr(record, "year", None)
+    if isinstance(year, bool) or not isinstance(year, int):
+        year = None
+    payload = {
+        "id": str(getattr(record, "id", "")),
+        "employee_id": getattr(record, "employee_id", None),
+        "employee_name": getattr(record, "employee_name", None),
+        "year": year,
+        "month": getattr(record, "month", None),
+        "team": getattr(record, "team", None),
+        "region": getattr(record, "region", "EGY") or "EGY",
+        "branch_key": getattr(record, "branch_key", None),
+        "performance_level": getattr(record, "performance_level", "Employee") or "Employee",
+        "position": _serialized_text(record, "position"),
+        "status": _serialized_text(record, "status"),
+        "upload_id": getattr(record, "upload_id", None),
+        "meta": _evidence_snapshot(getattr(record, "meta", None)),
+        "evaluation": _evidence_snapshot(getattr(record, "evaluation", None)),
+        "raw_data": getattr(record, "raw_data", None) or {},
+        "kpi_values": _kpi_evidence(getattr(record, "kpi_values", None)),
+        "calls": _evidence_snapshot(getattr(record, "calls", None)),
+        "actual": _evidence_snapshot(getattr(record, "actual", None)),
+        "achievement": _evidence_snapshot(getattr(record, "achievement", None)),
+        "geo": _evidence_snapshot(getattr(record, "geo", None)),
+    }
+    digest = hashlib.sha256(
+        json.dumps(payload, sort_keys=True, default=str, separators=(",", ":")).encode()
+    ).hexdigest()
+    return f"ser:{payload['id']}:{year}:{digest}"
+
 def serialize_performance_record(r) -> Dict[str, Any]:
     now = time.time()
-    cache_key = f"ser:{r.id}"
+    cache_key = serialization_cache_key(r)
     entry = _serialize_cache.get(cache_key)
     if entry is not None and now < entry[1]:
         return entry[0]

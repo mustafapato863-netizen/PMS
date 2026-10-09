@@ -136,4 +136,25 @@ describe('PerformanceKpiCard', () => {
     expect(screen.getByText('30.0%')).toBeInTheDocument();
     expect(screen.getByText('30%')).toBeInTheDocument();
   });
+
+  it.each([
+    { contribution: 0.7142857142857143, value: '1.0%', expected: '0.7%', forbidden: ['50.0%'] },
+    { contribution: 1, value: '2.0%', expected: '1.0%', forbidden: ['50.0%', '100.0%'] },
+    { contribution: 0, value: '1.4%', expected: '0.0%', forbidden: ['—'] },
+  ])('prints $contribution score points as $expected without rescaling', ({ contribution, value, expected, forbidden }) => {
+    render(
+      <PerformanceKpiCard
+        icon={Activity}
+        label="Patient Attendance Rate"
+        value={value}
+        contribution={contribution}
+        weight={0.5}
+      />,
+    );
+
+    const card = screen.getByText('Patient Attendance Rate').closest('article');
+    expect(card).toHaveTextContent(`Contribution${expected}`);
+    expect(card).toHaveTextContent('Weight50%');
+    for (const text of forbidden) expect(card).not.toHaveTextContent(`Contribution${text}`);
+  });
 });

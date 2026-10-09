@@ -39,7 +39,8 @@ const getKpiBgColor = (label: string): string => {
   return 'bg-slate-600';
 };
 
-const formatKpiValue = (value: number, unit: string) => {
+const formatKpiValue = (value: number, unit: string | undefined) => {
+  if (!Number.isFinite(value)) return '—';
   if (unit === '%') {
     return value > 1 ? `${value.toFixed(1)}%` : `${(value * 100).toFixed(1)}%`;
   }
@@ -63,12 +64,14 @@ interface DynamicKpi {
   label: string;
   actual: number;
   target: number;
-  unit: string;
+  unit?: string;
   isLowerBetter?: boolean;
   color?: string;
   weight?: number | null;
+  /** Score points from the team aggregate. 0.7 means 0.7%, including values at or below 1. */
   contribution?: number | null;
   achievement?: number;
+  basisVaries?: boolean;
 }
 
 interface TeamKpiSectionProps {
@@ -204,6 +207,18 @@ const TeamKpiSection = ({
   const dynamicAbandonKpi = teamMetrics.dynamicKpis?.find((k) => k.label.toLowerCase().includes('abandon'));
   const dynamicReachKpi = teamMetrics.dynamicKpis?.find((k) => k.label.toLowerCase().includes('reach'));
   const dynamicUtzKpi = teamMetrics.dynamicKpis?.find((k) => k.label.toLowerCase().includes('utz') || k.label.toLowerCase().includes('utilization'));
+  const metricVaries = (kpi?: DynamicKpi) => Boolean(
+    kpi && (kpi.basisVaries === true || !Number.isFinite(kpi.target)),
+  );
+  const appliedLowerBetter = (kpi: DynamicKpi | undefined, fallback: boolean) => (
+    typeof kpi?.isLowerBetter === 'boolean' ? kpi.isLowerBetter : fallback
+  );
+  const attendLower = appliedLowerBetter(dynamicAttendKpi, false);
+  const bookingLower = appliedLowerBetter(dynamicBookingKpi, false);
+  const ahtLower = appliedLowerBetter(dynamicAhtKpi, true);
+  const abandonLower = appliedLowerBetter(dynamicAbandonKpi, true);
+  const reachLower = appliedLowerBetter(dynamicReachKpi, false);
+  const utzLower = appliedLowerBetter(dynamicUtzKpi, false);
 
   const rawAttendTarget = dynamicAttendKpi?.target;
   const rawBookingTarget = dynamicBookingKpi?.target;
@@ -240,21 +255,21 @@ const TeamKpiSection = ({
     ? (rawUtzTarget > 1 ? rawUtzTarget : rawUtzTarget * 100)
     : 85;
 
-  // Target Status Badges
-  const isAttendOnTarget = teamMetrics.attendCR >= attendTarget;
-  const isBookingOnTarget = teamMetrics.bookingCR >= bookingTarget;
-  const isAhtOnTarget = avgAHTSec <= ahtTargetSec;
-  const isAbandonOnTarget = teamMetrics.abandonRate <= abandonTarget;
-  const isReachabilityOnTarget = teamMetrics.reachabilityRate >= reachabilityTarget;
-  const isUtzOnTarget = teamMetrics.utzRate >= utzTarget;
+  // Target status follows an applied direction when the dynamic KPI has one.
+  // Legacy cards keep the family default: AHT and abandon are lower-better.
+  const isAttendOnTarget = attendLower ? teamMetrics.attendCR <= attendTarget : teamMetrics.attendCR >= attendTarget;
+  const isBookingOnTarget = bookingLower ? teamMetrics.bookingCR <= bookingTarget : teamMetrics.bookingCR >= bookingTarget;
+  const isAhtOnTarget = ahtLower ? avgAHTSec <= ahtTargetSec : avgAHTSec >= ahtTargetSec;
+  const isAbandonOnTarget = abandonLower ? teamMetrics.abandonRate <= abandonTarget : teamMetrics.abandonRate >= abandonTarget;
+  const isReachabilityOnTarget = reachLower ? teamMetrics.reachabilityRate <= reachabilityTarget : teamMetrics.reachabilityRate >= reachabilityTarget;
+  const isUtzOnTarget = utzLower ? teamMetrics.utzRate <= utzTarget : teamMetrics.utzRate >= utzTarget;
 
-  // Trend Good/Bad logic
-  const isAttendGood = attendDelta !== undefined ? attendDelta >= 0 : undefined;
-  const isBookingGood = bookingDelta !== undefined ? bookingDelta >= 0 : undefined;
-  const isAhtGood = ahtDeltaSec !== undefined ? ahtDeltaSec <= 0 : undefined; // Lower AHT is better
-  const isAbandonGood = abandonDelta !== undefined ? abandonDelta <= 0 : undefined; // Lower abandon is better
-  const isReachabilityGood = reachabilityDelta !== undefined ? reachabilityDelta >= 0 : undefined;
-  const isUtzGood = utzDelta !== undefined ? utzDelta >= 0 : undefined; // Higher UTZ is better
+  const isAttendGood = attendDelta !== undefined ? (attendLower ? attendDelta <= 0 : attendDelta >= 0) : undefined;
+  const isBookingGood = bookingDelta !== undefined ? (bookingLower ? bookingDelta <= 0 : bookingDelta >= 0) : undefined;
+  const isAhtGood = ahtDeltaSec !== undefined ? (ahtLower ? ahtDeltaSec <= 0 : ahtDeltaSec >= 0) : undefined;
+  const isAbandonGood = abandonDelta !== undefined ? (abandonLower ? abandonDelta <= 0 : abandonDelta >= 0) : undefined;
+  const isReachabilityGood = reachabilityDelta !== undefined ? (reachLower ? reachabilityDelta <= 0 : reachabilityDelta >= 0) : undefined;
+  const isUtzGood = utzDelta !== undefined ? (utzLower ? utzDelta <= 0 : utzDelta >= 0) : undefined;
   const renderTrendNote = (delta: number | undefined, lowerBetter = false) => {
     if (delta === undefined || delta === 0) return null;
     const isDown = delta < 0;
@@ -285,20 +300,23 @@ const TeamKpiSection = ({
     kpiFamily(kpi.label) === kpiFamily(label)
   ));
   const getWeight = (label: string) => {
-    const aggregateWeight = getScoredKpi(label)?.weight;
+    const scoredKpi = getScoredKpi(label);
+    if (metricVaries(scoredKpi)) return null;
+    const aggregateWeight = scoredKpi?.weight;
     return aggregateWeight ?? getWeightForLabel(teamWeights, label, teamName, undefined, month);
   };
   const calcContribution = (label: string, actual: number, target: number, lowerBetter = false) => {
     const scoredKpi = getScoredKpi(label);
+    if (metricVaries(scoredKpi)) return null;
     const aggregateContribution = scoredKpi?.contribution;
     if (aggregateContribution !== undefined && aggregateContribution !== null) {
       const rawWeight = scoredKpi?.weight ?? getWeight(label) ?? 0;
       const normalizedWeight = rawWeight > 1 ? rawWeight / 100 : rawWeight;
-      const contributionPercent = aggregateContribution <= 1.0 ? aggregateContribution * 100 : aggregateContribution;
-      return Math.min(Math.max(contributionPercent, 0), Math.max(normalizedWeight, 0) * 100);
+      // Aggregate contribution is already score points, including 0 and values below 1.
+      return Math.min(Math.max(aggregateContribution, 0), Math.max(normalizedWeight, 0) * 100);
     }
     const weight = getWeight(label);
-    if (weight === undefined) return undefined;
+    if (weight == null) return undefined;
     const achievement = lowerBetter ? (target / Math.max(actual, 0.01)) * 100 : (actual / Math.max(target, 0.01)) * 100;
     const normalizedWeight = weight > 1 ? weight / 100 : weight;
     return Math.min(Math.max(achievement, 0), 100) * Math.max(normalizedWeight, 0);
@@ -306,11 +324,11 @@ const TeamKpiSection = ({
   const qualityKpi = teamMetrics.dynamicKpis?.find((kpi) => kpi.label.toLowerCase().includes('quality'));
   const previousQualityKpi = prevTeamMetrics?.dynamicKpis?.find((kpi) => kpi.label === qualityKpi?.label);
   const qualityWeight = getWeight('Quality Score');
-  const normalizedQualityWeight = qualityWeight === undefined ? 0 : qualityWeight > 1 ? qualityWeight / 100 : qualityWeight;
+  const normalizedQualityWeight = qualityWeight == null ? 0 : qualityWeight > 1 ? qualityWeight / 100 : qualityWeight;
+  const qualityVaries = metricVaries(qualityKpi);
   const showQualityCard = isCallCenterView
     && !!qualityKpi
-    && qualityKpi.target > 0
-    && normalizedQualityWeight > 0;
+    && (qualityVaries || (qualityKpi.target > 0 && normalizedQualityWeight > 0));
   const fixedCallCenterFamilies = new Set([
     'attendance',
     'booking',
@@ -320,15 +338,58 @@ const TeamKpiSection = ({
   ]);
   const additionalScoredCallCenterKpis = isCallCenterView
     ? (teamMetrics.dynamicKpis || []).filter((kpi) => {
+      if (fixedCallCenterFamilies.has(kpiFamily(kpi.label))) return false;
+      if (metricVaries(kpi)) return true;
       const weight = kpi.weight ?? getWeight(kpi.label);
-      return weight !== undefined && weight !== null && weight > 0
-        && !fixedCallCenterFamilies.has(kpiFamily(kpi.label));
+      return weight !== undefined && weight !== null && weight > 0;
     })
     : [];
   const qualityDelta = qualityKpi && previousQualityKpi && previousQualityKpi.actual !== 0
     ? ((qualityKpi.actual - previousQualityKpi.actual) / previousQualityKpi.actual) * 100
     : undefined;
-  const isQualityOnTarget = !!qualityKpi && qualityKpi.actual >= qualityKpi.target;
+  const qualityLower = appliedLowerBetter(qualityKpi, false);
+  const isQualityOnTarget = !!qualityKpi && (
+    qualityLower ? qualityKpi.actual <= qualityKpi.target : qualityKpi.actual >= qualityKpi.target
+  );
+  const fixedMetricProps = (
+    kpi: DynamicKpi | undefined,
+    label: string,
+    actual: number,
+    numericTarget: number,
+    fallbackLower: boolean,
+    detailLabel: string,
+    delta: number | undefined,
+    targetText: string,
+    onTarget: boolean,
+    trendGood: boolean | undefined,
+  ) => {
+    if (metricVaries(kpi)) {
+      return {
+        targetValue: 'Varies',
+        badgeText: 'Basis varies',
+        badgeType: 'neutral' as const,
+        detailLabel: 'Applied basis varies',
+        trendDelta: delta,
+        isTrendGood: undefined,
+        progressPercent: null as number | null,
+        contribution: null as number | null,
+        weight: null as number | null,
+      };
+    }
+    const lower = appliedLowerBetter(kpi, fallbackLower);
+    const statesDirection = detailLabel === 'Lower is better' || detailLabel === 'Higher is better';
+    return {
+      targetValue: targetText,
+      badgeText: onTarget ? 'On Target' : 'Below Target',
+      badgeType: (onTarget ? 'success' : 'danger') as 'success' | 'danger',
+      detailLabel: statesDirection ? (lower ? 'Lower is better' : 'Higher is better') : detailLabel,
+      trendDelta: delta,
+      isTrendGood: trendGood,
+      progressPercent: calculateKpiTargetProgress(actual, numericTarget, lower),
+      contribution: calcContribution(label, actual, numericTarget, lower),
+      weight: getWeight(label),
+    };
+  };
 
   return (
     <div className="space-y-4">
@@ -398,15 +459,18 @@ const TeamKpiSection = ({
             iconBgColor="bg-indigo-600"
             label="Patient Attendance Rate"
             value={`${teamMetrics.attendCR.toFixed(1)}%`}
-            detailLabel={`${teamMetrics.totalAttended.toLocaleString()} total attended`}
-            targetValue={`${attendTarget}%`}
-            badgeText={isAttendOnTarget ? 'On Target' : 'Below Target'}
-            badgeType={isAttendOnTarget ? 'success' : 'danger'}
-            trendDelta={attendDelta}
-            isTrendGood={isAttendGood}
-            progressPercent={calculateKpiTargetProgress(teamMetrics.attendCR, attendTarget)}
-            contribution={calcContribution('Patient Attendance Rate', teamMetrics.attendCR, attendTarget)}
-            weight={getWeight('Patient Attendance Rate')}
+            {...fixedMetricProps(
+              dynamicAttendKpi,
+              'Patient Attendance Rate',
+              teamMetrics.attendCR,
+              attendTarget,
+              false,
+              `${teamMetrics.totalAttended.toLocaleString()} total attended`,
+              attendDelta,
+              `${attendTarget}%`,
+              isAttendOnTarget,
+              isAttendGood,
+            )}
           />
 
           {/* Booking Conversion */}
@@ -415,15 +479,18 @@ const TeamKpiSection = ({
             iconBgColor="bg-blue-600"
             label="Booking Conversion"
             value={`${teamMetrics.bookingCR.toFixed(1)}%`}
-            detailLabel={`${teamMetrics.totalBookings.toLocaleString()} total bookings`}
-            targetValue={`${bookingTarget}%`}
-            badgeText={isBookingOnTarget ? 'On Target' : 'Below Target'}
-            badgeType={isBookingOnTarget ? 'success' : 'danger'}
-            trendDelta={bookingDelta}
-            isTrendGood={isBookingGood}
-            progressPercent={calculateKpiTargetProgress(teamMetrics.bookingCR, bookingTarget)}
-            contribution={calcContribution('Booking Conversion', teamMetrics.bookingCR, bookingTarget)}
-            weight={getWeight('Booking Conversion')}
+            {...fixedMetricProps(
+              dynamicBookingKpi,
+              'Booking Conversion',
+              teamMetrics.bookingCR,
+              bookingTarget,
+              false,
+              `${teamMetrics.totalBookings.toLocaleString()} total bookings`,
+              bookingDelta,
+              `${bookingTarget}%`,
+              isBookingOnTarget,
+              isBookingGood,
+            )}
           />
 
           {/* Avg Handle Time */}
@@ -432,16 +499,19 @@ const TeamKpiSection = ({
             iconBgColor="bg-amber-600"
             label="Avg. Handle Time"
             value={teamMetrics.avgAHT}
-            detailLabel="Lower is better"
-            targetValue={formatSecondsAsClock(ahtTargetSec)}
-            badgeText={isAhtOnTarget ? 'On Target' : 'Below Target'}
-            badgeType={isAhtOnTarget ? 'success' : 'danger'}
-            trendDelta={ahtDeltaSec}
             trendUnit="s"
-            isTrendGood={isAhtGood}
-            progressPercent={calculateKpiTargetProgress(avgAHTSec, ahtTargetSec, true)}
-            contribution={calcContribution('Avg. Handle Time', avgAHTSec, ahtTargetSec, true)}
-            weight={getWeight('Avg. Handle Time')}
+            {...fixedMetricProps(
+              dynamicAhtKpi,
+              'Avg. Handle Time',
+              avgAHTSec,
+              ahtTargetSec,
+              true,
+              'Lower is better',
+              ahtDeltaSec,
+              formatSecondsAsClock(ahtTargetSec),
+              isAhtOnTarget,
+              isAhtGood,
+            )}
           />
 
           {/* Inbound Abandon vs Outbound Reachability vs Utilization */}
@@ -452,15 +522,18 @@ const TeamKpiSection = ({
                 iconBgColor="bg-violet-600"
                 label="Utilization"
                 value={`${teamMetrics.utzRate.toFixed(1)}%`}
-                detailLabel="Higher is better"
-                targetValue={`${utzTarget}%`}
-                badgeText={isUtzOnTarget ? 'On Target' : 'Below Target'}
-                badgeType={isUtzOnTarget ? 'success' : 'danger'}
-                trendDelta={utzDelta}
-                isTrendGood={isUtzGood}
-                progressPercent={calculateKpiTargetProgress(teamMetrics.utzRate, utzTarget)}
-                contribution={calcContribution('Utilization', teamMetrics.utzRate, utzTarget)}
-                weight={getWeight('Utilization')}
+                {...fixedMetricProps(
+                  dynamicUtzKpi,
+                  'Utilization',
+                  teamMetrics.utzRate,
+                  utzTarget,
+                  false,
+                  'Higher is better',
+                  utzDelta,
+                  `${utzTarget}%`,
+                  isUtzOnTarget,
+                  isUtzGood,
+                )}
               />
             ) : (
               <PerformanceKpiCard
@@ -468,15 +541,18 @@ const TeamKpiSection = ({
                 iconBgColor="bg-red-600"
                 label="Call Abandon Rate"
                 value={`${teamMetrics.abandonRate.toFixed(1)}%`}
-                detailLabel={`${teamMetrics.totalAbandoned.toLocaleString()} missed opportunities`}
-                targetValue={`${abandonTarget}%`}
-                badgeText={isAbandonOnTarget ? 'On Target' : 'Below Target'}
-                badgeType={isAbandonOnTarget ? 'success' : 'danger'}
-                trendDelta={abandonDelta}
-                isTrendGood={isAbandonGood}
-                progressPercent={calculateKpiTargetProgress(teamMetrics.abandonRate, abandonTarget, true)}
-                contribution={calcContribution('Call Abandon Rate', teamMetrics.abandonRate, abandonTarget, true)}
-                weight={getWeight('Call Abandon Rate')}
+                {...fixedMetricProps(
+                  dynamicAbandonKpi,
+                  'Call Abandon Rate',
+                  teamMetrics.abandonRate,
+                  abandonTarget,
+                  true,
+                  `${teamMetrics.totalAbandoned.toLocaleString()} missed opportunities`,
+                  abandonDelta,
+                  `${abandonTarget}%`,
+                  isAbandonOnTarget,
+                  isAbandonGood,
+                )}
               />
             )
           ) : (
@@ -485,15 +561,18 @@ const TeamKpiSection = ({
               iconBgColor="bg-emerald-600"
               label="Reachability"
               value={`${teamMetrics.reachabilityRate.toFixed(1)}%`}
-              detailLabel={`${teamMetrics.totalCallsHandled.toLocaleString()} total calls`}
-              targetValue={`${reachabilityTarget}%`}
-              badgeText={isReachabilityOnTarget ? 'On Target' : 'Below Target'}
-              badgeType={isReachabilityOnTarget ? 'success' : 'danger'}
-              trendDelta={reachabilityDelta}
-              isTrendGood={isReachabilityGood}
-              progressPercent={calculateKpiTargetProgress(teamMetrics.reachabilityRate, reachabilityTarget)}
-              contribution={calcContribution('Reachability', teamMetrics.reachabilityRate, reachabilityTarget)}
-              weight={getWeight('Reachability')}
+              {...fixedMetricProps(
+                dynamicReachKpi,
+                'Reachability',
+                teamMetrics.reachabilityRate,
+                reachabilityTarget,
+                false,
+                `${teamMetrics.totalCallsHandled.toLocaleString()} total calls`,
+                reachabilityDelta,
+                `${reachabilityTarget}%`,
+                isReachabilityOnTarget,
+                isReachabilityGood,
+              )}
             />
           )}
 
@@ -503,15 +582,18 @@ const TeamKpiSection = ({
               iconBgColor="bg-teal-600"
               label="Quality Score"
               value={formatKpiValue(qualityKpi.actual, qualityKpi.unit)}
-              targetValue={formatKpiValue(qualityKpi.target, qualityKpi.unit)}
-              detailLabel="Higher is better"
-              badgeText={isQualityOnTarget ? 'On Target' : 'Below Target'}
-              badgeType={isQualityOnTarget ? 'success' : 'danger'}
-              trendDelta={qualityDelta}
-              isTrendGood={qualityDelta === undefined ? undefined : qualityDelta >= 0}
-              progressPercent={calculateKpiTargetProgress(qualityKpi.actual, qualityKpi.target)}
-              contribution={calcContribution('Quality Score', qualityKpi.actual, qualityKpi.target)}
-              weight={normalizedQualityWeight}
+              {...fixedMetricProps(
+                qualityKpi,
+                'Quality Score',
+                qualityKpi.actual,
+                qualityKpi.target,
+                false,
+                'Higher is better',
+                qualityDelta,
+                formatKpiValue(qualityKpi.target, qualityKpi.unit),
+                isQualityOnTarget,
+                qualityDelta === undefined ? undefined : (qualityLower ? qualityDelta <= 0 : qualityDelta >= 0),
+              )}
             />
           )}
         </div>
@@ -524,7 +606,8 @@ const TeamKpiSection = ({
             const delta = previous && previous.actual !== 0
               ? ((kpi.actual - previous.actual) / previous.actual) * 100
               : undefined;
-            const onTarget = kpi.isLowerBetter ? kpi.actual <= kpi.target : kpi.actual >= kpi.target;
+            const varied = metricVaries(kpi);
+            const onTarget = !varied && (kpi.isLowerBetter ? kpi.actual <= kpi.target : kpi.actual >= kpi.target);
             const Icon = getKpiIcon(kpi.label);
             return (
               <PerformanceKpiCard
@@ -533,16 +616,16 @@ const TeamKpiSection = ({
                 iconBgColor={getKpiBgColor(kpi.label)}
                 label={kpi.label}
                 value={formatKpiValue(kpi.actual, kpi.unit)}
-                targetValue={`${kpi.isLowerBetter ? '≤ ' : ''}${formatKpiValue(kpi.target, kpi.unit)}`}
-                detailLabel={kpi.isLowerBetter ? 'Lower is better' : 'Higher is better'}
-                badgeText={onTarget ? 'On Target' : 'Below Target'}
-                badgeType={onTarget ? 'success' : 'danger'}
+                targetValue={varied ? 'Varies' : `${kpi.isLowerBetter ? '≤ ' : ''}${formatKpiValue(kpi.target, kpi.unit)}`}
+                detailLabel={varied ? 'Applied basis varies' : (kpi.isLowerBetter ? 'Lower is better' : 'Higher is better')}
+                badgeText={varied ? 'Basis varies' : (onTarget ? 'On Target' : 'Below Target')}
+                badgeType={varied ? 'neutral' : (onTarget ? 'success' : 'danger')}
                 trendDelta={delta}
                 isTrendGood={delta === undefined ? undefined : (kpi.isLowerBetter ? delta <= 0 : delta >= 0)}
                 trendUnit={kpi.unit === '%' ? '%' : ''}
-                progressPercent={calculateKpiTargetProgress(kpi.actual, kpi.target, kpi.isLowerBetter)}
-                contribution={kpi.contribution ?? calcContribution(kpi.label, kpi.actual, kpi.target, kpi.isLowerBetter)}
-                weight={kpi.weight ?? getWeight(kpi.label)}
+                progressPercent={varied ? null : calculateKpiTargetProgress(kpi.actual, kpi.target, kpi.isLowerBetter)}
+                contribution={varied ? null : (kpi.contribution ?? calcContribution(kpi.label, kpi.actual, kpi.target, kpi.isLowerBetter))}
+                weight={varied ? null : (kpi.weight ?? getWeight(kpi.label))}
               />
             );
           })}
@@ -698,6 +781,7 @@ const TeamKpiSection = ({
             const trendDelta = prevKpi && prevKpi.actual !== 0 ? ((kpi.actual - prevKpi.actual) / prevKpi.actual) * 100 : undefined;
 
             const isPrescription = kpi.label.toLowerCase().includes('prescription');
+            const varied = kpi.basisVaries === true;
             const rawActual = normalizePercentageKpiForDisplay(kpi.actual, kpi.target, kpi.unit);
             const targetVal = isPrescription && (!kpi.target || kpi.target === 0) ? 100 : (kpi.target > 0 && kpi.target <= 1 ? kpi.target * 100 : kpi.target);
 
@@ -712,11 +796,13 @@ const TeamKpiSection = ({
             const Icon = getKpiIcon(kpi.label);
             const bgColor = getKpiBgColor(kpi.label);
 
-            const weightVal = kpi.weight ?? getWeight(kpi.label) ?? 0.20;
-            const progress = isPrescription ? displayActual : calculateKpiTargetProgress(rawActual, targetVal, kpi.isLowerBetter);
-            const contribution = isPrescription 
-              ? (displayActual * weightVal) 
-              : (kpi.contribution ?? calcContribution(kpi.label, rawActual, targetVal, kpi.isLowerBetter));
+            const weightVal = varied ? null : (kpi.weight ?? getWeight(kpi.label) ?? 0.20);
+            const progress = varied ? null : (isPrescription ? displayActual : calculateKpiTargetProgress(rawActual, targetVal, kpi.isLowerBetter));
+            const contribution = varied
+              ? null
+              : isPrescription
+                ? (displayActual * (weightVal ?? 0))
+                : (kpi.contribution ?? calcContribution(kpi.label, rawActual, targetVal, kpi.isLowerBetter));
 
             return (
               <PerformanceKpiCard
@@ -725,10 +811,10 @@ const TeamKpiSection = ({
                 iconBgColor={bgColor}
                 label={kpi.label}
                 value={formatKpiValue(displayActual, kpi.unit)}
-                targetValue={`${kpi.isLowerBetter ? '≤ ' : ''}${formatKpiValue(targetVal, kpi.unit)}`}
-                detailLabel={detailLabelStr}
-                badgeText={isOnTarget ? 'On Target' : 'Below Target'}
-                badgeType={isOnTarget ? 'success' : 'danger'}
+                targetValue={varied ? 'Varies' : `${kpi.isLowerBetter ? '≤ ' : ''}${formatKpiValue(targetVal, kpi.unit)}`}
+                detailLabel={varied ? 'Applied basis varies' : detailLabelStr}
+                badgeText={varied ? 'Basis varies' : (isOnTarget ? 'On Target' : 'Below Target')}
+                badgeType={varied ? 'neutral' : (isOnTarget ? 'success' : 'danger')}
                 trendDelta={trendDelta}
                 isTrendGood={isTrendGood}
                 trendUnit={kpi.unit === '%' ? '%' : ''}

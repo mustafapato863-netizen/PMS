@@ -8,7 +8,9 @@ import {
   formatKpiLine,
   formatRollbackResult,
   isStaleProofCode,
+  committedEvidenceQueryKeys,
   lifecycleQueryKeys,
+  uncommittedLifecycleQueryKeys,
   pageSlice,
   parseImpactProof,
   periodQueryKey,
@@ -95,13 +97,35 @@ describe('monthly impact proof', () => {
   });
 
   it('invalidates the real evaluation period and performance and settings prefixes', () => {
-    expect(lifecycleQueryKeys(selection)).toEqual([
+    expect(uncommittedLifecycleQueryKeys(selection)).toEqual([
       periodQueryKey('scope-1', 2026, 7),
-      ['performance'],
       ['team-config'],
       ['team-configs'],
       ['kpi-weights'],
       ['balanced-scorecard'],
     ]);
+    expect(committedEvidenceQueryKeys()).toEqual([
+      ['performance'],
+      ['executive', 'summary'],
+      ['reports', 'center'],
+      ['insights', 'workspace'],
+    ]);
+    expect(lifecycleQueryKeys(selection)).toEqual([
+      periodQueryKey('scope-1', 2026, 7),
+      ['performance'],
+      ['executive', 'summary'],
+      ['reports', 'center'],
+      ['insights', 'workspace'],
+      ['team-config'],
+      ['team-configs'],
+      ['kpi-weights'],
+      ['balanced-scorecard'],
+    ]);
+    const roots = lifecycleQueryKeys(selection).map((key) => String(key[0]));
+    expect(roots).not.toContain('employee');
+    expect(roots).not.toContain('planning');
+    expect(roots).not.toContain('corrective-actions');
+    const reportKeys = lifecycleQueryKeys(selection).filter((key) => String(key[0]) === 'reports');
+    expect(reportKeys.every((key) => String(key[1]) === 'center')).toBe(true);
   });
 });

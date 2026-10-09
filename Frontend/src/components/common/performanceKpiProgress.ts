@@ -48,5 +48,5 @@ export const resolveKpiTargetStatus = (
 export const normalizePercentageKpiForDisplay = (
   value: number,
   target: number,
-  unit: string,
+  unit: string | undefined,
 ) => unit === '%' && target > 0 && target <= 1 ? value * 100 : value;

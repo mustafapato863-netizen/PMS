@@ -17,6 +17,7 @@ interface PerformanceKpiCardProps {
   trendUnit?: string;
   isTrendGood?: boolean;
   progressPercent?: number | null;
+  /** Score points from the caller. 0.7 means 0.7%, including values at or below 1. */
   contribution?: number | null;
   weight?: number | null;
   targetValue?: string | number | null;
@@ -102,9 +103,10 @@ const PerformanceKpiCard = ({
   const normalizedWeight = weight !== undefined && weight !== null
     ? (weight > 1 ? weight / 100 : weight)
     : null;
+  // Callers already pass score points. A value at or below 1 is still points, not a fraction.
   const contributionPercent = contribution !== undefined && contribution !== null
     ? Math.min(
-      Math.max(contribution <= 1 && contribution > 0 ? contribution * 100 : contribution, 0),
+      Math.max(contribution, 0),
       normalizedWeight !== null ? Math.max(normalizedWeight, 0) * 100 : 100,
     )
     : null;
