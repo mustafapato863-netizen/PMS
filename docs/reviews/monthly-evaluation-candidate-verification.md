@@ -37,7 +37,7 @@ Safe backend gates run with `APP_ENV=test`, `DATABASE_URL=sqlite:///:memory:`, e
 
 Earlier isolated PR31/32 CI was not green: PR31's older-base Outbound fixtures violated the exact-month CHECK; PR32's obsolete Marketing rollback dummy lacked a real connection. Both are corrected in the final integration and pass the local regression suite. A fresh isolated final-review CI run is required; old failed runs are not presented as acceptance.
 
-Consumer source review, original full-precision upload goldens, mixed-basis guards and final PostgreSQL/browser checks above have passed. Local main merge still awaits the isolated final CI gate. The external local Marketing workbook baseline remains unresolved and reported, not hidden.
+Consumer source review, original full-precision upload goldens, mixed-basis guards and final PostgreSQL/browser checks above have passed. Final review PR34 run37928384449 passed backend, frontend and containers on `bb86ee766b248631270ef0c1c82da1396dcb5048`. Earlier integrated run37927968812 also passed and reported1142 backend tests passed/2 existing CI skips; the external workbook test retains its original CI skip policy. Subsequent commits change documentation only, verified by path diff. This closes the isolated CI gate for the supported local integration, not the unresolved external local Marketing workbook baseline or wider release gates.
 
 ## Wider rollout boundaries
 
@@ -45,4 +45,4 @@ Consumer source review, original full-precision upload goldens, mixed-basis guar
 - Complete application-login browser coverage, full downstream all-team/UAT matrix, measured large-scope performance and production-schema/recovery validation remain separate gates.
 - Source July/August Outbound attendance target is65% in both months.55-to65 is synthetic correction evidence, not source chronology.
 
-No main merge, main/GitLab push or production deployment has occurred at this checkpoint. Remote main auto-deploys, so release publication remains a separate action after the reviewed local integration.
+This checkpoint was committed before the authorized local main merge. No main/GitLab push or production deployment is authorized by this review. Remote main auto-deploys, so release publication remains separate from reviewed local integration.
