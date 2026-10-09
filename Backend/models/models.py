@@ -1,6 +1,6 @@
 import uuid
-from sqlalchemy import Column, String, Integer, SmallInteger, Numeric, Boolean, Date, DateTime, ForeignKey, Text, LargeBinary, ForeignKeyConstraint, UniqueConstraint, CheckConstraint, Enum as SQLEnum, JSON, Index
-from sqlalchemy.dialects.postgresql import UUID, JSONB, INET
+from sqlalchemy import Column, String, Integer, SmallInteger, Numeric, Boolean, Date, DateTime, ForeignKey, Text, LargeBinary, ForeignKeyConstraint, UniqueConstraint, CheckConstraint, Enum as SQLEnum, JSON, Index, Uuid as UUID
+from sqlalchemy.dialects.postgresql import JSONB, INET
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func, false, text, true
 from models.evaluation_history_schema import (
@@ -16,6 +16,10 @@ from utils.user_identity import default_user_full_name
 
 JSON_COMPAT_TYPE = JSON().with_variant(JSONB, "postgresql")
 INET_COMPAT_TYPE = String(45).with_variant(INET, "postgresql")
+
+# Generic Uuid stays native UUID on PostgreSQL and CHAR(32) on SQLite.
+# PostgreSQL-only UUID compiled as SQLite NUMERIC affinity, corrupting valid
+# numeric-looking hex IDs (including scientific notation) during persistence.
 
 # ============================================================
 # 1. CONFIGURATION MODELS
