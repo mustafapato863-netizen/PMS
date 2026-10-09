@@ -1,9 +1,9 @@
 """Versioned correction of one approved month.
 
-SQLite cannot prove the PostgreSQL team-row lock, and the current revision
-check constraint has no superseded status. A replaced revision stays active
-and is not marked rolled back. Rollback still refuses that older revision
-while a newer one points at it.
+SQLite cannot prove the PostgreSQL team-row lock. A replaced revision must
+become superseded before the next active row is inserted. Rollback refuses
+an older revision while a newer active revision exists, and a rolled-back
+revision stays rolled back.
 """
 
 import json
@@ -37,7 +37,7 @@ from models.models import (
     User,
     UserTeamAssignment,
 )
-from services.evaluation.access import AccessDenied
+from services.evaluation.access import AccessDenied, EvaluationError
 from services.evaluation.workflow import EvaluationConflict, EvaluationWorkflow
 
 
@@ -245,6 +245,7 @@ def test_revise_copies_selected_month_and_leaves_original_checksum(db):
     assert revised["status"] == "draft"
     assert revised["month"] == 7
     assert revised["source_version_id"] == approved["id"]
+    assert revised["source_version_number"] == source.version_number
     assert revised["source_checksum"] == before_checksum
     assert revised["lines"][0]["target"] == 55
     assert revised["lines"][0]["direction"] == "higher_better"
@@ -450,6 +451,7 @@ def test_missing_actual_and_empty_month_do_not_pretend_to_score(db):
     assert missing.value.status_code == 422
     assert missing.value.data["code"] == "missing_evidence"
     assert missing.value.data["missing_evidence"][0]["kpi_key"] == key
+    assert missing.value.data["missing_evidence"][0]["reason"] == "missing_weighted_actual"
     db.refresh(record)
     assert float(record.score) == 70
     stored = db.query(TeamConfigurationVersion).filter(TeamConfigurationVersion.id == uuid.UUID(draft["id"])).one()
@@ -588,6 +590,28 @@ def test_apply_is_idempotent_and_rollback_refuses_drift(db):
     assert db.query(EvaluationRevision).count() == 1
     assert (float(first.score), float(second.score)) == scores
 
+    drifted_payload = json.loads(json.dumps(first.record_payload))
+    drifted_payload["manager_notes"] = "changed after apply"
+    first.record_payload = drifted_payload
+    flag_modified(first, "record_payload")
+    db.commit()
+    with pytest.raises(EvaluationConflict) as changed:
+        world.workflow.apply(world.actor, world.scope["id"], 2026, 7)
+    assert changed.value.status_code == 409
+    assert changed.value.data["code"] == "evidence_changed"
+    db.refresh(first)
+    db.refresh(revision)
+    assert float(first.score) == 100
+    assert revision.status == "active"
+    assert db.query(EvaluationRevision).count() == 1
+    saved_payload = next(item["payload"] for item in revision.applied_snapshot["records"] if item["id"] == str(first.id))
+    first.record_payload = json.loads(json.dumps(saved_payload))
+    flag_modified(first, "record_payload")
+    db.commit()
+    restored_retry = world.workflow.apply(world.actor, world.scope["id"], 2026, 7)
+    assert restored_retry["idempotent"] is True
+    assert restored_retry["revision_id"] == applied["revision_id"]
+
     def refuse(mutate, repair):
         mutate()
         db.commit()
@@ -609,6 +633,19 @@ def test_apply_is_idempotent_and_rollback_refuses_drift(db):
     )
     original_actual = kpi_a.actual_value
     refuse(lambda: kpi_a.__setattr__("actual_value", Decimal("12")), lambda: kpi_a.__setattr__("actual_value", original_actual))
+    original_target = kpi_a.target_value
+    refuse(lambda: kpi_a.__setattr__("target_value", Decimal("77")), lambda: kpi_a.__setattr__("target_value", original_target))
+    full_payload = json.loads(json.dumps(first.record_payload))
+    refuse(
+        lambda: (
+            first.__setattr__("record_payload", {"replaced": True, "evaluation": {"score": 1, "grade": "E"}}),
+            flag_modified(first, "record_payload"),
+        ),
+        lambda: (
+            first.__setattr__("record_payload", full_payload),
+            flag_modified(first, "record_payload"),
+        ),
+    )
     later = datetime(2026, 7, 20, tzinfo=timezone.utc)
     newer = UploadLog(id=uuid.uuid4(), team_id=world.coding.id, month="July", year=2026, record_count=2, status="completed", uploaded_at=later)
     db.add(newer)
@@ -755,10 +792,9 @@ def test_older_revision_is_not_marked_rolled_back_and_cannot_undo_a_newer_one(db
     assert float(kpi.target_value) == 80
     older = db.query(EvaluationRevision).filter(EvaluationRevision.id == uuid.UUID(first["revision_id"])).one()
     newer = db.query(EvaluationRevision).filter(EvaluationRevision.id == uuid.UUID(second["revision_id"])).one()
-    assert older.status != "rolled_back"
+    assert older.status == "superseded"
     assert newer.status == "active"
     assert newer.previous_revision_id == older.id
-    older_status = older.status
 
     with pytest.raises(EvaluationConflict) as too_old:
         world.workflow.rollback(world.actor, first["revision_id"])
@@ -767,7 +803,7 @@ def test_older_revision_is_not_marked_rolled_back_and_cannot_undo_a_newer_one(db
     db.refresh(record)
     db.refresh(older)
     assert float(record.score) == 75
-    assert older.status == older_status
+    assert older.status == "superseded"
 
     rolled = world.workflow.rollback(world.actor, second["revision_id"])
     db.refresh(record)
@@ -778,13 +814,35 @@ def test_older_revision_is_not_marked_rolled_back_and_cannot_undo_a_newer_one(db
     assert float(record.score) == 100
     assert float(kpi.target_value) == 50
     assert record.record_payload["evaluation_basis"]["version_id"] != revised["id"]
-    assert older.status == older_status
+    assert older.status == "superseded"
     assert newer.status == "rolled_back"
-    with pytest.raises(Exception):
+    with pytest.raises(EvaluationError) as repeated:
         world.workflow.rollback(world.actor, second["revision_id"])
+    assert repeated.value.status_code == 422
+    assert repeated.value.data["code"] == "immutable"
     db.refresh(record)
+    db.refresh(older)
+    db.refresh(newer)
     assert float(record.score) == 100
+    assert older.status == "superseded"
+    assert newer.status == "rolled_back"
     assert db.query(EvaluationRevision).count() == 2
+
+    third = world.workflow.apply(world.actor, world.scope["id"], 2026, 7)
+    db.refresh(older)
+    db.refresh(newer)
+    chained = db.query(EvaluationRevision).filter(EvaluationRevision.id == uuid.UUID(third["revision_id"])).one()
+    assert third["idempotent"] is False
+    assert chained.status == "active"
+    assert chained.previous_revision_id == newer.id
+    assert older.status == "superseded"
+    assert newer.status == "rolled_back"
+    with pytest.raises(EvaluationConflict) as still_old:
+        world.workflow.rollback(world.actor, first["revision_id"])
+    assert still_old.value.data["code"] == "not_latest"
+    db.refresh(record)
+    assert float(record.score) == 75
+    assert db.query(EvaluationRevision).count() == 3
 
 
 def test_pharmacy_records_stay_outside_the_audited_correction_rollout(db):
@@ -811,3 +869,340 @@ def test_pharmacy_records_stay_outside_the_audited_correction_rollout(db):
     assert float(record.score) == 70
     stored = db.query(TeamConfigurationVersion).filter(TeamConfigurationVersion.id == uuid.UUID(draft["id"])).one()
     assert "preview_evidence" not in (stored.config_snapshot or {})
+
+
+def _snapshot_obj(value):
+    if isinstance(value, str):
+        return json.loads(value)
+    return value
+
+
+def _workbook_lines(lines: list[dict]) -> list[dict]:
+    edited = []
+    for index, line in enumerate(lines):
+        edited.append({
+            **line,
+            "weight": 1 if index == 0 else 0,
+            "direction": "higher_better",
+            "target_mode": "workbook" if index == 0 else "fixed",
+            "target": line.get("target") if index == 0 else 1,
+        })
+    return edited
+
+
+def test_successive_corrections_keep_the_original_workbook_target(db):
+    world = _World(db)
+    draft = _draft_target(world, 7, 65)
+    key = draft["lines"][0]["kpi_key"]
+    assert key == "QualityErrors"
+    record = world.record(world.employee_a, "July", "70.00", "D")
+    kpi = world.kpi(record, key, 40, 55)
+    db.commit()
+    original_payload = json.loads(json.dumps(record.record_payload))
+
+    preview = world.workflow.impact_preview(world.actor, draft["id"])
+    db.refresh(kpi)
+    assert float(kpi.target_value) == 55
+    conflict = preview["conflicts"][0]
+    assert conflict["workbook_target"] == 55
+    assert conflict["fixed_target"] == 65
+    assert conflict["approved_target"] == 65
+    assert conflict["difference"] == -10
+    compared = preview["comparisons"][0]["kpis"][0]
+    assert compared["workbook_target"] == 55
+    assert compared["applied_target"] == 65
+    assert preview["comparisons"][0]["after_score"] == round((40 / 65) * 100, 2)
+
+    _approve(world.workflow, world.actor, draft["id"])
+    applied = world.workflow.apply(world.actor, world.scope["id"], 2026, 7)
+    db.refresh(record)
+    db.refresh(kpi)
+    assert float(kpi.target_value) == 65
+    evidence = record.record_payload["source_evidence"]
+    assert evidence["origin"] == "sql_before_apply"
+    assert evidence["kpis"][key] == {"actual": "40", "target": "55"}
+    assert applied["idempotent"] is False
+
+    revised = world.workflow.revise(world.actor, draft["id"])
+    again = world.workflow.impact_preview(world.actor, revised["id"])
+    db.refresh(kpi)
+    assert float(kpi.target_value) == 65
+    assert again["conflicts"][0]["workbook_target"] == 55
+    assert again["conflicts"][0]["approved_target"] == 65
+    assert again["comparisons"][0]["kpis"][0]["workbook_target"] == 55
+    assert again["comparisons"][0]["kpis"][0]["applied_target"] == 65
+
+    workbook = world.workflow.edit_draft(world.actor, revised["id"], _workbook_lines(revised["lines"]))
+    assert workbook["lines"][0]["target_mode"] == "workbook"
+    workbook_preview = world.workflow.impact_preview(world.actor, revised["id"])
+    db.refresh(kpi)
+    assert float(kpi.target_value) == 65
+    assert workbook_preview["comparisons"][0]["kpis"][0]["workbook_target"] == 55
+    assert workbook_preview["comparisons"][0]["kpis"][0]["applied_target"] == 55
+    assert workbook_preview["comparisons"][0]["after_score"] == round((40 / 55) * 100, 2)
+    assert workbook_preview["conflicts"] == []
+
+    rolled = world.workflow.rollback(world.actor, applied["revision_id"])
+    db.refresh(record)
+    db.refresh(kpi)
+    assert rolled["status"] == "rolled_back"
+    assert json.loads(json.dumps(record.record_payload, sort_keys=True)) == json.loads(json.dumps(original_payload, sort_keys=True))
+    assert "source_evidence" not in record.record_payload
+    assert float(kpi.target_value) == 55
+    assert float(kpi.actual_value) == 40
+    assert float(record.score) == 70
+
+
+def test_raw_workbook_precision_beats_rounded_sql_and_scored_payload(db):
+    world = _World(db)
+    draft = _draft_target(world, 7, 70)
+    key = draft["lines"][0]["kpi_key"]
+    assert key == "QualityErrors"
+    record = world.record(world.employee_a, "July", "70.00", "D", payload={
+        "manager_notes": "raw july",
+        "raw_data": {
+            "A.QualityErrorsRate": "60.123456789",
+            "T.QualityErrorsRate": "55",
+        },
+        "kpi_values": {"QualityErrors": {"actual": 1, "target": 99}},
+    })
+    world.kpi(record, key, Decimal("60.1235"), Decimal("65"))
+    db.commit()
+    preview = world.workflow.impact_preview(world.actor, draft["id"])
+    compared = preview["comparisons"][0]["kpis"][0]
+    assert compared["actual"] == float(Decimal("60.123456789"))
+    assert compared["workbook_target"] == 55
+    assert preview["conflicts"][0]["workbook_target"] == 55
+    assert preview["conflicts"][0]["approved_target"] == 70
+    _approve(world.workflow, world.actor, draft["id"])
+    world.workflow.apply(world.actor, world.scope["id"], 2026, 7)
+    db.refresh(record)
+    assert record.record_payload["source_evidence"]["origin"] == "workbook_raw"
+    assert record.record_payload["source_evidence"]["kpis"][key] == {"actual": "60.123456789", "target": "55"}
+    revised = world.workflow.revise(world.actor, draft["id"])
+    again = world.workflow.impact_preview(world.actor, revised["id"])
+    assert again["comparisons"][0]["kpis"][0]["actual"] == float(Decimal("60.123456789"))
+    assert again["comparisons"][0]["kpis"][0]["workbook_target"] == 55
+
+
+def test_pinned_or_absent_or_duplicate_or_nonfinite_sources_are_refused(db):
+    world = _World(db)
+    draft = _draft_target(world, 7, 65)
+    key = draft["lines"][0]["kpi_key"]
+    pinned = world.record(world.employee_a, "July", "70.00", "D", payload={
+        "evaluation_basis": {"pinned": True, "version_id": str(uuid.uuid4())},
+        "kpi_values": {key: {"actual": 40, "target": 55}},
+    })
+    world.kpi(pinned, key, 40, 55)
+    db.commit()
+    with pytest.raises(EvaluationError) as missing_pinned:
+        world.workflow.impact_preview(world.actor, draft["id"])
+    assert missing_pinned.value.data["code"] == "missing_evidence"
+    assert missing_pinned.value.data["missing_evidence"][0]["reason"] == "missing_source"
+    db.refresh(pinned)
+    assert float(pinned.score) == 70
+    stored = db.query(TeamConfigurationVersion).filter(TeamConfigurationVersion.id == uuid.UUID(draft["id"])).one()
+    assert "preview_evidence" not in (stored.config_snapshot or {})
+
+    absent = _draft_target(world, 8, 65)
+    absent_record = world.record(world.employee_a, "August", "71.00", "D", payload={
+        "raw_data": {"A.QualityErrorsRate": None, "T.QualityErrorsRate": None},
+        "kpi_values": {key: {"actual": 40, "target": 55}},
+    })
+    world.kpi(absent_record, absent["lines"][0]["kpi_key"], 40, 55)
+    db.commit()
+    with pytest.raises(EvaluationError) as missing_raw:
+        world.workflow.impact_preview(world.actor, absent["id"])
+    assert missing_raw.value.data["missing_evidence"][0]["reason"] == "missing_source"
+    db.refresh(absent_record)
+    assert float(absent_record.score) == 71
+
+    nan_draft = _draft_target(world, 9, 65)
+    nan_record = world.record(world.employee_a, "September", "72.00", "D", payload={
+        "raw_data": {"A.QualityErrorsRate": "NaN", "T.QualityErrorsRate": "55"},
+    })
+    world.kpi(nan_record, nan_draft["lines"][0]["kpi_key"], 40, 55)
+    db.commit()
+    with pytest.raises(EvaluationError) as nan_source:
+        world.workflow.impact_preview(world.actor, nan_draft["id"])
+    assert nan_source.value.data["code"] == "invalid_evidence"
+    db.refresh(nan_record)
+    assert float(nan_record.score) == 72
+    nan_stored = db.query(TeamConfigurationVersion).filter(TeamConfigurationVersion.id == uuid.UUID(nan_draft["id"])).one()
+    assert "preview_evidence" not in (nan_stored.config_snapshot or {})
+
+    duplicate_draft = _draft_target(world, 10, 65)
+    duplicate_record = world.record(world.employee_a, "October", "73.00", "D")
+    duplicate_key = duplicate_draft["lines"][0]["kpi_key"]
+    world.kpi(duplicate_record, duplicate_key, 40, 55)
+    world.kpi(duplicate_record, duplicate_key, 41, 56)
+    db.commit()
+    with pytest.raises(EvaluationError) as duplicate:
+        world.workflow.impact_preview(world.actor, duplicate_draft["id"])
+    assert duplicate.value.data["code"] == "duplicate_kpi"
+    db.refresh(duplicate_record)
+    assert float(duplicate_record.score) == 73
+
+
+def test_actor_snapshots_come_from_the_database_user_and_survive_deletion(db):
+    world = _World(db)
+    spoofed = {**world.actor, "full_name": "Spoofed Name", "username": "spoofed"}
+    draft = world.workflow.open_draft(spoofed, world.scope["id"], 2026, 7)
+    version = db.query(TeamConfigurationVersion).filter(TeamConfigurationVersion.id == uuid.UUID(draft["id"])).one()
+    created = _snapshot_obj(version.actor_created_snapshot)
+    published = _snapshot_obj(version.actor_published_snapshot)
+    assert created == {
+        "state": "known",
+        "user_id": str(world.admin.id),
+        "username": world.admin.username,
+        "full_name": world.admin.full_name,
+        "role": "Admin",
+    }
+    assert created["full_name"] != "Spoofed Name"
+    assert created["username"] != "spoofed"
+    assert published == {"state": "unknown"}
+
+    edited = world.workflow.edit_draft(spoofed, draft["id"], _line_edit(draft["lines"], 65))
+    record = world.record(world.employee_a, "July", "70.00", "D")
+    world.kpi(record, edited["lines"][0]["kpi_key"], 40, 55)
+    db.commit()
+    _approve(world.workflow, spoofed, draft["id"])
+    db.refresh(version)
+    assert _snapshot_obj(version.actor_created_snapshot) == created
+    assert _snapshot_obj(version.actor_published_snapshot) == created
+    applied = world.workflow.apply(spoofed, world.scope["id"], 2026, 7)
+    revision = db.query(EvaluationRevision).filter(EvaluationRevision.id == uuid.UUID(applied["revision_id"])).one()
+    assert _snapshot_obj(revision.actor_snapshot) == created
+    assert revision.created_by_user_id == world.admin.id
+
+    created_bytes = json.dumps(created, sort_keys=True)
+    published_bytes = json.dumps(_snapshot_obj(version.actor_published_snapshot), sort_keys=True)
+    revision_bytes = json.dumps(_snapshot_obj(revision.actor_snapshot), sort_keys=True)
+    db.commit()
+    dbapi = db.connection().connection
+    previous_isolation = dbapi.isolation_level
+    dbapi.isolation_level = None
+    cursor = dbapi.cursor()
+    cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.execute("PRAGMA foreign_keys")
+    assert cursor.fetchone()[0] == 1
+    cursor.close()
+    dbapi.isolation_level = previous_isolation
+    db.delete(world.admin)
+    db.commit()
+    db.refresh(version)
+    db.refresh(revision)
+    assert version.created_by_user_id is None
+    assert version.published_by_user_id is None
+    assert revision.created_by_user_id is None
+    assert json.dumps(_snapshot_obj(version.actor_created_snapshot), sort_keys=True) == created_bytes
+    assert json.dumps(_snapshot_obj(version.actor_published_snapshot), sort_keys=True) == published_bytes
+    assert json.dumps(_snapshot_obj(revision.actor_snapshot), sort_keys=True) == revision_bytes
+
+    scope_count = db.query(EvaluationScope).count()
+    original_sync = world.workflow.catalog.sync
+
+    def fail_sync(*_args, **_kwargs):
+        raise AssertionError("catalog sync")
+
+    world.workflow.catalog.sync = fail_sync
+    try:
+        for actor in (
+            {**world.actor, "user_id": str(uuid.uuid4())},
+            {**world.actor, "user_id": str(world.manager.id), "full_name": "Spoofed Name"},
+        ):
+            with pytest.raises(AccessDenied) as denied:
+                world.workflow.revise(actor, draft["id"])
+            assert denied.value.status_code == 403
+            assert denied.value.message == "Evaluation settings are limited to Admin."
+    finally:
+        world.workflow.catalog.sync = original_sync
+    assert db.query(EvaluationScope).count() == scope_count
+
+
+def test_copy_previous_leaves_an_existing_draft_unchanged(db):
+    world = _World(db)
+    draft = world.workflow.open_draft(world.actor, world.scope["id"], 2026, 7)
+    stored = db.query(TeamConfigurationVersion).filter(TeamConfigurationVersion.id == uuid.UUID(draft["id"])).one()
+    checksum = stored.config_checksum
+    notes = stored.notes
+    with pytest.raises(EvaluationConflict) as conflict:
+        world.workflow.open_draft(world.actor, world.scope["id"], 2026, 7, copy_previous=True)
+    assert conflict.value.status_code == 409
+    assert conflict.value.data["code"] == "draft_exists"
+    db.refresh(stored)
+    assert stored.status == "draft"
+    assert stored.config_checksum == checksum
+    assert stored.notes == notes
+    resumed = world.workflow.open_draft(world.actor, world.scope["id"], 2026, 7)
+    assert resumed["id"] == draft["id"]
+    assert resumed["checksum"] == checksum
+
+
+def test_period_revisions_report_rollback_without_mutating_the_catalog(db):
+    world = _World(db)
+    scope_count = db.query(EvaluationScope).count()
+    calls = {"sync": 0}
+    original_sync = world.workflow.catalog.sync
+
+    def counting_sync(*args, **kwargs):
+        calls["sync"] += 1
+        return original_sync(*args, **kwargs)
+
+    world.workflow.catalog.sync = counting_sync
+    with pytest.raises(EvaluationError) as missing_scope:
+        world.workflow.period(world.actor, str(uuid.uuid4()), 2026, 7)
+    assert missing_scope.value.data["code"] == "not_found"
+    assert calls["sync"] == 0
+    assert db.query(EvaluationScope).count() == scope_count
+
+    draft = _draft_target(world, 7, 65)
+    record = world.record(world.employee_a, "July", "70.00", "D")
+    world.kpi(record, draft["lines"][0]["kpi_key"], 40, 55)
+    db.commit()
+    calls["sync"] = 0
+    empty = world.workflow.period(world.actor, world.scope["id"], 2026, 7)
+    assert empty["revisions"] == []
+    assert calls["sync"] == 0
+    _approve(world.workflow, world.actor, draft["id"])
+    applied = world.workflow.apply(world.actor, world.scope["id"], 2026, 7)
+    calls["sync"] = 0
+    body = world.workflow.period(world.actor, world.scope["id"], 2026, 7)
+    assert calls["sync"] == 0
+    assert db.query(EvaluationScope).count() == scope_count
+    assert len(body["revisions"]) == 1
+    item = body["revisions"][0]
+    assert set(item) == {"id", "version_id", "status", "created_at", "affected_count", "can_rollback"}
+    assert item["id"] == applied["revision_id"]
+    assert item["status"] == "active"
+    assert item["affected_count"] == 1
+    assert item["can_rollback"] is True
+    assert item["created_at"]
+    approved = next(row for row in body["versions"] if row["status"] == "approved")
+    assert approved["checksum"]
+    assert approved["proof"]["source_fingerprint"]
+    assert approved["proof"]["affected_count"] == 1
+    assert approved["proof"]["rules_checksum"] == approved["checksum"]
+    assert "preview_evidence" not in approved
+
+    legacy = world.workflow.open_draft(world.actor, world.scope["id"], 2026, 9)
+    legacy_row = db.query(TeamConfigurationVersion).filter(TeamConfigurationVersion.id == uuid.UUID(legacy["id"])).one()
+    assert _snapshot_obj(legacy_row.actor_published_snapshot) == {"state": "unknown"}
+    calls["sync"] = 0
+    world.workflow.period(world.actor, world.scope["id"], 2026, 9)
+    db.refresh(legacy_row)
+    assert _snapshot_obj(legacy_row.actor_published_snapshot) == {"state": "unknown"}
+    assert _snapshot_obj(legacy_row.actor_created_snapshot)["state"] == "known"
+    assert calls["sync"] == 0
+
+    db.refresh(record)
+    applied_score = record.score
+    record.score = Decimal("71.00")
+    db.commit()
+    stale = world.workflow.period(world.actor, world.scope["id"], 2026, 7)
+    assert stale["revisions"][0]["can_rollback"] is False
+    assert stale["revisions"][0]["status"] == "active"
+    record.score = applied_score
+    db.commit()
+    restored = world.workflow.period(world.actor, world.scope["id"], 2026, 7)
+    assert restored["revisions"][0]["can_rollback"] is True
