@@ -1,5 +1,7 @@
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const PERIOD_KEY = /^(\d{4})-(0[1-9]|1[0-2])$/;
+const SUPPORTED_DIRECTIONS = new Set(['higher_better', 'lower_better']);
+const SUPPORTED_TARGET_MODES = new Set(['workbook', 'fixed']);
 
 export type EvaluationLine = {
   kpi_key: string;
@@ -17,6 +19,29 @@ export type EvaluationVersion = {
   lines: EvaluationLine[];
   notes?: string | null;
   month_name?: string;
+  version_number?: number | null;
+  checksum?: string | null;
+  source_version_id?: string | null;
+  source_checksum?: string | null;
+};
+
+export type EvaluationRevision = {
+  id: string;
+  versionId: string;
+  status: string;
+  createdAt: string;
+  affectedCount: number | null;
+  canRollback: boolean;
+};
+
+export type PeriodScope = {
+  id?: string;
+  readiness: string;
+  block_reason?: string | null;
+  history_note?: string | null;
+  display_name?: string;
+  performance_level?: string;
+  position_name?: string;
 };
 
 export type EvaluationPeriodData = {
@@ -25,14 +50,19 @@ export type EvaluationPeriodData = {
   lines: EvaluationLine[];
   notes: string;
   history: EvaluationVersion[];
-  storedActuals: Record<string, number>;
+  scope: PeriodScope | null;
+  revisions: EvaluationRevision[];
+  sourceVersionId: string;
+  sourceChecksum: string;
+  versionNumber: number | null;
+  checksum: string;
 };
 
-export const SAMPLE_PREVIEW_LIMIT = 'Preview uses the saved version and the first stored record only. It is not a scope-wide impact. Full-scope actual rows and original workbook targets are not in the current period response.';
+export const UNSAVED_PREVIEW_NOTE = 'Save the draft before impact preview or approval. Unsaved edits are not previewed.';
 
-export const SAMPLE_PREVIEW_UNAVAILABLE = 'No stored actuals are available for this month, so preview cannot run. Full-scope actual rows are not in the current period response.';
+export const UNSUPPORTED_FORMULA_NOTE = 'This formula is blocked in this release. Only higher-is-better and lower-is-better directions, with a workbook or fixed target, can be edited.';
 
-export const UNSAVED_PREVIEW_NOTE = 'Save the draft before preview or approval. Unsaved edits are not previewed.';
+export const READ_ONLY_APPROVED_NOTE = 'This approved version is read-only. Revise this month to edit a new draft. The approved version stays in history.';
 
 /** Current date, unless the URL has a valid period or an explicit year and month. */
 export function initialReportingPeriod(search: string, today = new Date()): { year: number; month: number } {
@@ -49,52 +79,158 @@ export function initialReportingPeriod(search: string, today = new Date()): { ye
   return { year: today.getFullYear(), month: today.getMonth() + 1 };
 }
 
-/**
- * Period payload stores numeric actuals for the first saved record only.
- * Objects are ignored so a future row shape is not treated as evidence.
- */
-export function readStoredActuals(value: unknown): Record<string, number> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
-  const actuals: Record<string, number> = {};
-  Object.entries(value).forEach(([key, raw]) => {
-    if (typeof raw === 'number' && Number.isFinite(raw)) actuals[key] = raw;
-  });
-  return actuals;
+export function lineFormulaSupported(line: Pick<EvaluationLine, 'direction' | 'target_mode'>): boolean {
+  return SUPPORTED_DIRECTIONS.has(line.direction) && SUPPORTED_TARGET_MODES.has(line.target_mode);
 }
 
 export function emptyPeriod(): EvaluationPeriodData {
-  return { versionId: '', status: '', lines: [], notes: '', history: [], storedActuals: {} };
+  return {
+    versionId: '',
+    status: '',
+    lines: [],
+    notes: '',
+    history: [],
+    scope: null,
+    revisions: [],
+    sourceVersionId: '',
+    sourceChecksum: '',
+    versionNumber: null,
+    checksum: '',
+  };
+}
+
+function finiteNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function readLine(value: unknown): EvaluationLine | null {
+  if (!value || typeof value !== 'object') return null;
+  const line = value as EvaluationLine;
+  if (typeof line.kpi_key !== 'string' || !line.kpi_key) return null;
+  const target = finiteNumber(line.target);
+  return {
+    ...line,
+    kpi_key: line.kpi_key,
+    label: typeof line.label === 'string' ? line.label : line.kpi_key,
+    weight: finiteNumber(line.weight) ?? line.weight,
+    direction: typeof line.direction === 'string' ? line.direction : '',
+    target: target === null && line.target != null ? null : target,
+    target_mode: typeof line.target_mode === 'string' ? line.target_mode : 'workbook',
+  };
+}
+
+function readVersion(value: unknown): EvaluationVersion | null {
+  if (!value || typeof value !== 'object') return null;
+  const item = value as EvaluationVersion;
+  if (typeof item.id !== 'string' || !item.id) return null;
+  return {
+    id: item.id,
+    status: typeof item.status === 'string' ? item.status : '',
+    lines: Array.isArray(item.lines) ? item.lines.flatMap((line) => {
+      const parsed = readLine(line);
+      return parsed ? [parsed] : [];
+    }) : [],
+    notes: typeof item.notes === 'string' ? item.notes : null,
+    month_name: typeof item.month_name === 'string' ? item.month_name : undefined,
+    version_number: finiteNumber(item.version_number),
+    checksum: typeof item.checksum === 'string' ? item.checksum : null,
+    source_version_id: typeof item.source_version_id === 'string' ? item.source_version_id : null,
+    source_checksum: typeof item.source_checksum === 'string' ? item.source_checksum : null,
+  };
+}
+
+/** Draft wins. Otherwise the last approved row in payload order is the open version. */
+export function selectOpenVersion(history: EvaluationVersion[]): EvaluationVersion | undefined {
+  const draft = history.find((item) => item.status === 'draft');
+  if (draft) return draft;
+  const approved = history.filter((item) => item.status === 'approved');
+  return approved[approved.length - 1] ?? history[history.length - 1];
+}
+
+function readScope(value: unknown): PeriodScope | null {
+  if (!value || typeof value !== 'object') return null;
+  const scope = value as PeriodScope;
+  if (typeof scope.readiness !== 'string' || !scope.readiness) return null;
+  return {
+    id: typeof scope.id === 'string' ? scope.id : undefined,
+    readiness: scope.readiness,
+    block_reason: typeof scope.block_reason === 'string' ? scope.block_reason : scope.block_reason ?? null,
+    history_note: typeof scope.history_note === 'string' ? scope.history_note : scope.history_note ?? null,
+    display_name: typeof scope.display_name === 'string' ? scope.display_name : undefined,
+    performance_level: typeof scope.performance_level === 'string' ? scope.performance_level : undefined,
+    position_name: typeof scope.position_name === 'string' ? scope.position_name : undefined,
+  };
+}
+
+function readRevision(value: unknown): EvaluationRevision | null {
+  if (!value || typeof value !== 'object') return null;
+  const item = value as { id?: unknown; version_id?: unknown; status?: unknown; created_at?: unknown; affected_count?: unknown; can_rollback?: unknown };
+  if (typeof item.id !== 'string' || !item.id) return null;
+  return {
+    id: item.id,
+    versionId: typeof item.version_id === 'string' ? item.version_id : '',
+    status: typeof item.status === 'string' ? item.status : '',
+    createdAt: typeof item.created_at === 'string' ? item.created_at : '',
+    affectedCount: finiteNumber(item.affected_count),
+    canRollback: item.can_rollback === true,
+  };
+}
+
+export function readRevisions(value: unknown): EvaluationRevision[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    const parsed = readRevision(item);
+    return parsed ? [parsed] : [];
+  });
+}
+
+function periodFromVersion(version: EvaluationVersion | undefined, history: EvaluationVersion[], scope: PeriodScope | null, revisions: EvaluationRevision[]): EvaluationPeriodData {
+  return {
+    versionId: version?.id || '',
+    status: version?.status || '',
+    lines: version?.lines.map((line) => ({ ...line })) || [],
+    notes: version?.notes || '',
+    history,
+    scope,
+    revisions,
+    sourceVersionId: version?.source_version_id || '',
+    sourceChecksum: version?.source_checksum || '',
+    versionNumber: version?.version_number ?? null,
+    checksum: version?.checksum || '',
+  };
 }
 
 export function toPeriodData(data: unknown): EvaluationPeriodData {
-  const body = data && typeof data === 'object' ? data as { versions?: unknown; stored_actuals?: unknown } : {};
-  const history = Array.isArray(body.versions) ? body.versions.filter((item): item is EvaluationVersion => Boolean(item) && typeof item === 'object' && typeof (item as EvaluationVersion).id === 'string') : [];
-  const open = history.find((item) => item.status === 'draft') || history.find((item) => item.status === 'approved');
-  return {
-    versionId: open?.id || '',
-    status: open?.status || '',
-    lines: Array.isArray(open?.lines) ? open.lines.map((line) => ({ ...line })) : [],
-    notes: open?.notes || '',
-    history,
-    storedActuals: readStoredActuals(body.stored_actuals),
-  };
+  const body = data && typeof data === 'object' ? data as { versions?: unknown; scope?: unknown; revisions?: unknown } : {};
+  const history = Array.isArray(body.versions) ? body.versions.flatMap((item) => {
+    const parsed = readVersion(item);
+    return parsed ? [parsed] : [];
+  }) : [];
+  return periodFromVersion(selectOpenVersion(history), history, readScope(body.scope), readRevisions(body.revisions));
 }
 
 export function applyVersion(current: EvaluationPeriodData, version: Partial<EvaluationVersion>): EvaluationPeriodData {
-  const lines = Array.isArray(version.lines) ? version.lines.map((line) => ({ ...line })) : current.lines;
-  const history = version.id
-    ? current.history.some((item) => item.id === version.id)
-      ? current.history.map((item) => item.id === version.id ? { ...item, ...version, lines } : item)
-      : [...current.history, { id: version.id, status: version.status || 'draft', lines, notes: version.notes, month_name: version.month_name }]
-    : current.history;
-  return {
-    ...current,
-    versionId: version.id || current.versionId,
+  const lines = Array.isArray(version.lines) ? version.lines.flatMap((line) => {
+    const parsed = readLine(line);
+    return parsed ? [parsed] : [];
+  }) : current.lines;
+  const nextVersion: EvaluationVersion = {
+    id: version.id || current.versionId,
     status: version.status || current.status,
     lines,
     notes: version.notes ?? current.notes,
-    history,
+    month_name: version.month_name,
+    version_number: version.version_number ?? current.versionNumber,
+    checksum: version.checksum ?? current.checksum,
+    source_version_id: version.source_version_id ?? current.sourceVersionId,
+    source_checksum: version.source_checksum ?? current.sourceChecksum,
   };
+  const history = nextVersion.id
+    ? current.history.some((item) => item.id === nextVersion.id)
+      ? current.history.map((item) => item.id === nextVersion.id ? { ...item, ...nextVersion, lines } : item)
+      : [...current.history, nextVersion]
+    : current.history;
+  return periodFromVersion(nextVersion.id ? nextVersion : selectOpenVersion(history), history, current.scope, current.revisions);
 }
 
 export function lineSignature(lines: EvaluationLine[]): string {
@@ -107,27 +243,28 @@ export function lineSignature(lines: EvaluationLine[]): string {
   })));
 }
 
-/**
- * Sample actuals only. The edited or saved target is not sent as workbook_target.
- * Original workbook targets are absent from the current period contract.
- */
-export function previewSampleRows(lines: EvaluationLine[], actuals: Record<string, number>): Array<{ kpi_key: string; actual: number }> {
-  return lines.flatMap((line) => (
-    Object.prototype.hasOwnProperty.call(actuals, line.kpi_key)
-      ? [{ kpi_key: line.kpi_key, actual: actuals[line.kpi_key] }]
-      : []
-  ));
+export function versionLabel(item: EvaluationVersion, monthName: string): string {
+  const parts = [
+    item.version_number != null ? `Version ${item.version_number}` : 'Version',
+    item.month_name || monthName,
+    item.status || 'unknown',
+  ];
+  if (item.checksum) parts.push(`checksum ${item.checksum}`);
+  if (item.source_version_id) parts.push(`from ${item.source_version_id}`);
+  if (item.source_checksum) parts.push(`source checksum ${item.source_checksum}`);
+  return parts.join(' · ');
 }
 
-export function formatSamplePreview(data: { score?: unknown; rows?: unknown }): string {
-  const rows = Array.isArray(data.rows) ? data.rows : [];
-  const first = rows.find((row): row is { kpi_key?: unknown; achievement?: unknown } => Boolean(row) && typeof row === 'object');
-  const achievement = Number(first?.achievement);
-  const score = Number(data.score);
-  if (!first || typeof first.kpi_key !== 'string' || !Number.isFinite(achievement) || !Number.isFinite(score)) {
-    return 'Preview returned no scored sample. This is not a scope-wide result. Full-scope actual rows are not available from the current period response.';
-  }
-  return `Sample preview for the first stored record, not a scope-wide impact: ${first.kpi_key} achievement ${(achievement * 100).toFixed(2)}%, sample score ${score}. Full-scope actual rows are not included in the current period response.`;
+export function revisionLabel(item: EvaluationRevision): string {
+  const parts = [`Revision ${item.id}`, item.status || 'status not provided'];
+  if (item.versionId) parts.push(`version ${item.versionId}`);
+  if (item.affectedCount != null) parts.push(`${item.affectedCount} records`);
+  if (item.createdAt) parts.push(item.createdAt);
+  return parts.join(' · ');
+}
+
+export function monthHasApprovedVersion(period: EvaluationPeriodData | undefined): boolean {
+  return Boolean(period && (period.status === 'approved' || period.history.some((item) => item.status === 'approved')));
 }
 
 export { MONTHS };
