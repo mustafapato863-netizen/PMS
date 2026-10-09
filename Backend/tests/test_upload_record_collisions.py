@@ -264,7 +264,7 @@ def test_fix_script_dry_run_apply_idempotent_and_recomputes_status(session):
 
 # ------------------------------------------------- full upload (dry-run preflight)
 
-def test_upload_with_agent_on_both_dubai_sheets_reports_a_warning_and_one_record():
+def test_upload_with_agent_on_both_dubai_sheets_reports_a_warning_and_one_record(session):
     import io
 
     import pandas as pd
@@ -286,7 +286,9 @@ def test_upload_with_agent_on_both_dubai_sheets_reports_a_warning_and_one_record
         final_rows.to_excel(writer, sheet_name=FINAL_DUBAI, index=False)
         elective_rows.to_excel(writer, sheet_name=ELECTIVE, index=False)
 
-    result = DatabaseSeeder().process_uploaded_file("PMS_Trend_All.xlsx", workbook.getvalue(), dry_run=True)
+    result = DatabaseSeeder().process_uploaded_file(
+        "PMS_Trend_All.xlsx", workbook.getvalue(), dry_run=True, db_session=session,
+    )
 
     assert result["records_imported"] == 1
     assert result["employees_imported"] == 1

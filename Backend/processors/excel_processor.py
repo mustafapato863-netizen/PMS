@@ -30,11 +30,10 @@ class ExcelProcessor:
     def clean_sheet(df: pd.DataFrame, sheet_name: str, crop_col: str = "Performance Grade") -> pd.DataFrame:
         """Crop columns and convert data types for consistency."""
         df = df.copy()
-        
-        # Crop columns up to crop_col if present
+        from cleaned import preserve_productivity_columns
+
         if crop_col in df.columns:
-            col_index = df.columns.get_loc(crop_col)
-            df = df.iloc[:, :col_index + 1]
+            df = preserve_productivity_columns(df, crop_col)
             
         # Standardize column names by removing spaces
         df.columns = df.columns.str.replace(r'\s+', '', regex=True)
@@ -60,6 +59,10 @@ class ExcelProcessor:
     @staticmethod
     def _process_team_sheet(excel_file, sheet_name: str, legacy_processor) -> pd.DataFrame:
         raw = pd.read_excel(excel_file, sheet_name=sheet_name)
+        from services.outbound_period_basis import is_outbound_sheet
+        if is_outbound_sheet(sheet_name):
+            from utils.excel_percent_serial import restore_known_percent_serials
+            raw = restore_known_percent_serials(raw, excel_file, sheet_name)
         role_col = next((column for column in raw.columns if str(column).strip().lower() == "role"), None)
         if role_col is None:
             logger.warning("Legacy %s sheet has no Role column; defaulting rows to Employee", sheet_name)
@@ -77,7 +80,11 @@ class ExcelProcessor:
         return self._process_team_sheet(excel_file, "Inbound", process_inbound)
 
     def process_sheet_outbound(self, excel_file) -> pd.DataFrame:
-        return self._process_team_sheet(excel_file, "Outbound", process_outbound)
+        from services.outbound_period_basis import resolve_outbound_sheet_name
+        sheet_name = resolve_outbound_sheet_name(getattr(excel_file, "sheet_names", []))
+        if sheet_name is None:
+            return pd.DataFrame()
+        return self._process_team_sheet(excel_file, sheet_name, process_outbound)
 
     def process_sheet_inbound_uae(self, excel_file) -> pd.DataFrame:
         return self._process_team_sheet(excel_file, "Inbound UAE", process_inbound_uae)

@@ -195,6 +195,7 @@ class KPIService:
 
         achievements = {}
         final_weights = {}
+        outbound_cap_each = False
 
         # Import helper functions
         from utils.helpers import convert_aht_to_minutes, convert_percentage
@@ -333,65 +334,112 @@ class KPIService:
             row["AbandonRate%Ach%"] = abandon_ach
 
         elif team == "Outbound":
-            # 1. Raw Outbound Volumes
+            from services.outbound_period_basis import (
+                PRODUCTIVITY_TARGET_ALIASES,
+                SOURCE_TARGETS,
+                OutboundMonthlyActualMissing,
+                apply_basis_targets,
+                canonical_outbound_basis,
+                capped_achievement,
+                explicit_number,
+                period_from_value,
+                productivity_actual,
+                scoring_weights,
+            )
+
+            def _sheet_ratio(*keys):
+                number = explicit_number(row, *keys)
+                if number is None:
+                    return None
+                converted = convert_percentage(number)
+                if converted is None or (isinstance(converted, float) and np.isnan(converted)):
+                    return None
+                return float(converted)
+
+            period = period_from_value(row.get("Date"))
+            basis = canonical_outbound_basis(*(period or (None, None)))
+            outbound_cap_each = basis["status"] in {"july_2026", "august_2026"}
+
             reached = safe_float(row.get("Reached"))
             num_leads = safe_float(row.get("NumOfLeads") or row.get("NumOfLeads "))
-            
             dubai_booking = safe_float(row.get("Dubai_Booking") or row.get("Dubai _Booking"))
             sharjah_booking = safe_float(row.get("Sharjah_Booking") or row.get("Sharjah_Booking "))
             ajman_booking = safe_float(row.get("Ajman_Booking") or row.get("Ajman_Booking "))
             clinics_booking = safe_float(row.get("Clinics_Booking") or row.get("Clinics _Booking") or row.get("clinics_Booking") or row.get("clinics.Booking") or 0.0)
             total_bookings = dubai_booking + sharjah_booking + ajman_booking + clinics_booking
-
             dubai_attend = safe_float(row.get("Dubai_Attend") or row.get("Dubai _Attend"))
             sharjah_attend = safe_float(row.get("Sharjah_Attend") or row.get("Sharjah_Attend "))
             ajman_attend = safe_float(row.get("Ajman_Attend") or row.get("Ajman_Attend "))
             clinics_attend = safe_float(row.get("Clinics_Attend") or row.get("Clinics_Attend ") or row.get("clinics_Attend") or row.get("clinics.Attend") or 0.0)
             total_attends = dubai_attend + sharjah_attend + ajman_attend + clinics_attend
 
-            actual_booking_cr = total_bookings / reached if reached > 0 else 0.0
-            actual_attend_cr = total_attends / total_bookings if total_bookings > 0 else 0.0
-            actual_reachability = reached / num_leads if num_leads > 0 else 0.0
-            actual_quality = convert_percentage(row.get("A.QualityScore", 0.0))
+            explicit_booking = _sheet_ratio("A.Booking%")
+            explicit_attend = _sheet_ratio("A.Attend%")
+            explicit_reach = _sheet_ratio("A.Reachability%")
+            actual_booking_cr = explicit_booking if explicit_booking is not None else (total_bookings / reached if reached > 0 else 0.0)
+            actual_attend_cr = explicit_attend if explicit_attend is not None else (total_attends / total_bookings if total_bookings > 0 else 0.0)
+            actual_reachability = explicit_reach if explicit_reach is not None else (reached / num_leads if num_leads > 0 else 0.0)
+            explicit_quality = _sheet_ratio("A.QualityScore")
+            actual_quality = 0.0 if explicit_quality is None else explicit_quality
 
-            t_booking = targets.get("Booking", 0.55)
-            t_attend = targets.get("Attend", 0.75)
-            t_quality = targets.get("Quality", 0.95)
-            t_reachability = targets.get("Reachability", 0.95)
+            def _target(column_keys, repo_key, source_key, repo_fallback):
+                found = _sheet_ratio(*column_keys)
+                if found is not None:
+                    return found
+                if apply_basis_targets(basis):
+                    return float(SOURCE_TARGETS[source_key])
+                return float(targets.get(repo_key, repo_fallback))
 
-            booking_ach = actual_booking_cr / t_booking if t_booking > 0 else 0.0
-            attend_ach = actual_attend_cr / t_attend if t_attend > 0 else 0.0
-            quality_ach = actual_quality / t_quality if t_quality > 0 else 0.0
-            reachability_ach = actual_reachability / t_reachability if t_reachability > 0 else 0.0
+            t_booking = _target(("T.Booking%",), "Booking", "Booking", 0.55)
+            t_attend = _target(("T.Attend%",), "Attend", "Attendance", 0.75)
+            t_quality = _target(("T.Quality%",), "Quality", "Quality", 0.95)
+            t_reachability = _target(("T.Reachability%",), "Reachability", "Other", 0.95)
 
+            def _achievement(actual, target):
+                if target <= 0:
+                    return 0.0
+                if outbound_cap_each:
+                    result = capped_achievement(actual, target)
+                    return float(result.value or 0.0)
+                return actual / target
+
+            booking_ach = _achievement(actual_booking_cr, t_booking)
+            attend_ach = _achievement(actual_attend_cr, t_attend)
+            quality_ach = _achievement(actual_quality, t_quality)
+            reachability_ach = _achievement(actual_reachability, t_reachability)
             achievements = {
                 "Attend": attend_ach,
                 "Booking": booking_ach,
                 "Quality": quality_ach,
-                "Other": reachability_ach
+                "Other": reachability_ach,
             }
-            date_val = row.get("Date")
-            is_june_26 = False
-            if date_val:
-                if hasattr(date_val, "month") and hasattr(date_val, "year"):
-                    is_june_26 = (date_val.month == 6 and date_val.year == 2026)
-                elif isinstance(date_val, str):
-                    is_june_26 = ('2026-06' in date_val or '/06/2026' in date_val or 'June 2026' in date_val or 'June' in date_val)
-
-            w_quality = 0.00 if is_june_26 else weights.get("Quality", 0.10)
-            w_other = 0.20 if is_june_26 else weights.get("Other", 0.10)
-
-            final_weights = {
-                "Attend": weights.get("Attend", 0.70),
-                "Booking": weights.get("Booking", 0.10),
-                "Quality": w_quality,
-                "Other": w_other
-            }
+            final_weights = scoring_weights(basis, weights)
+            productivity = productivity_actual(row)
+            if basis["productivity_required"] and productivity is None:
+                raise OutboundMonthlyActualMissing(basis["period"] or "the requested month", ["Productivity"])
+            if productivity is not None:
+                row["A.Productivity%"] = productivity
+                t_productivity = _sheet_ratio(*PRODUCTIVITY_TARGET_ALIASES)
+                if t_productivity is None and apply_basis_targets(basis):
+                    t_productivity = float(SOURCE_TARGETS["Productivity"])
+                if "Productivity" in final_weights:
+                    achievements["Productivity"] = _achievement(productivity, t_productivity or 0.0)
+                    if t_productivity is not None:
+                        row["T.Productivity%"] = t_productivity
+                else:
+                    final_weights["Productivity"] = 0.0
+                    achievements["Productivity"] = _achievement(productivity, t_productivity) if t_productivity else 0.0
+                    if t_productivity is not None:
+                        row["T.Productivity%"] = t_productivity
 
             row["A.Booking%"] = actual_booking_cr
             row["A.Attend%"] = actual_attend_cr
             row["A.Reachability%"] = actual_reachability
             row["A.QualityScore"] = actual_quality
+            row["T.Booking%"] = t_booking
+            row["T.Attend%"] = t_attend
+            row["T.Quality%"] = t_quality
+            row["T.Reachability%"] = t_reachability
             row["BookingC.RAch%"] = booking_ach
             row["AttendC.RAch%"] = attend_ach
             row["QualityAch%"] = quality_ach
@@ -615,7 +663,7 @@ class KPIService:
             wt = final_weights.get(kpi, 0.0)
             # Sales uses capped KPI contributions: an over-target source
             # volume must not compensate for a different KPI below target.
-            raw_score += (min(ach, 1.0) if team == "Sales" else ach) * wt
+            raw_score += (min(ach, 1.0) if team == "Sales" or outbound_cap_each else ach) * wt
 
         score = float(round(min(raw_score, 1.0) * 100.0, 2))
         grade = self.assign_grade(score)
