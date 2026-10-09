@@ -1,17 +1,27 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertCircle, Check, Copy, History, Save } from 'lucide-react';
 import { API_BASE } from '../../config';
 import { useUserRole } from '../../context/RoleContext';
+import { canAccessSettingsContent } from '../../lib/access';
+import {
+  MONTHS,
+  SAMPLE_PREVIEW_LIMIT,
+  SAMPLE_PREVIEW_UNAVAILABLE,
+  UNSAVED_PREVIEW_NOTE,
+  applyVersion,
+  emptyPeriod,
+  formatSamplePreview,
+  initialReportingPeriod,
+  lineSignature,
+  previewSampleRows,
+  toPeriodData,
+  type EvaluationLine,
+  type EvaluationPeriodData,
+  type EvaluationVersion,
+} from './evaluationSettings';
 
-type Line = {
-  kpi_key: string;
-  label?: string;
-  weight: number;
-  direction: string;
-  target: number | null;
-  target_mode: 'workbook' | 'fixed' | string;
-  unit?: string;
-};
+type Selection = { scopeId: string; year: number; month: number };
 
 type Scope = {
   id: string;
@@ -23,16 +33,6 @@ type Scope = {
   history_note?: string;
   supported?: boolean;
 };
-
-type Version = {
-  id: string;
-  status: string;
-  lines: Line[];
-  notes?: string | null;
-  month_name?: string;
-};
-
-const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
 async function readJson(response: Response) {
   const body = await response.json().catch(() => ({}));
@@ -46,157 +46,252 @@ async function readJson(response: Response) {
   return body?.data ?? body;
 }
 
+function errorText(caught: unknown) {
+  return caught instanceof Error ? caught.message : 'Evaluation request failed';
+}
+
+function periodQueryKey(scopeId: string, year: number, month: number) {
+  return ['evaluation-settings', 'period', scopeId, year, month] as const;
+}
+
+function selectionKey(selection: Selection) {
+  return `${selection.scopeId}|${selection.year}|${selection.month}`;
+}
+
 export function EvaluationSettingsPanel() {
+  const queryClient = useQueryClient();
   const { role, fetchWithRole } = useUserRole();
-  const isAdmin = role === 'Admin';
-  const [scopes, setScopes] = useState<Scope[]>([]);
-  const [scopeId, setScopeId] = useState('');
-  const [year, setYear] = useState(2026);
-  const [month, setMonth] = useState(7);
-  const [lines, setLines] = useState<Line[]>([]);
-  const [versionId, setVersionId] = useState('');
-  const [status, setStatus] = useState('');
-  const [notes, setNotes] = useState('');
-  const [history, setHistory] = useState<Version[]>([]);
-  const [storedActuals, setStoredActuals] = useState<Record<string, number>>({});
-  const [preview, setPreview] = useState('');
-  const [message, setMessage] = useState('');
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(true);
+  const isAdmin = canAccessSettingsContent(role);
+  const [year, setYear] = useState(() => initialReportingPeriod(window.location.search).year);
+  const [month, setMonth] = useState(() => initialReportingPeriod(window.location.search).month);
+  const [scopeId, setScopeId] = useState<string | null>(null);
+  const [draft, setDraft] = useState<{ key: string; lines: EvaluationLine[] } | null>(null);
+  const [preview, setPreview] = useState<{ key: string; text: string } | null>(null);
+  const [notice, setNotice] = useState<{ key: string; text: string } | null>(null);
+  const [actionError, setActionError] = useState<{ key: string; text: string } | null>(null);
+  const gate = useRef(false);
+  const catalogQuery = useQuery({
+    queryKey: ['evaluation-settings', 'catalog'],
+    enabled: isAdmin,
+    queryFn: async ({ signal }) => {
+      const response = await fetchWithRole(`${API_BASE}/api/settings/evaluation/catalog`, { signal });
+      const data = await readJson(response);
+      return (Array.isArray(data?.scopes) ? data.scopes : []) as Scope[];
+    },
+  });
+  const scopes = catalogQuery.data ?? [];
+  const resolvedScopeId = scopeId ?? scopes.find((item) => item.readiness === 'supported')?.id ?? scopes[0]?.id ?? '';
+  const selection = useMemo(
+    () => ({ scopeId: resolvedScopeId, year, month }),
+    [resolvedScopeId, year, month],
+  );
+  const selectionRef = useRef(selection);
+  useLayoutEffect(() => {
+    selectionRef.current = selection;
+  }, [selection]);
+  const currentKey = selectionKey(selection);
+  const yearValid = year >= 2000 && year <= 2100;
+  const periodQuery = useQuery({
+    queryKey: periodQueryKey(resolvedScopeId, year, month),
+    enabled: isAdmin && Boolean(resolvedScopeId) && yearValid && month >= 1 && month <= 12,
+    queryFn: async ({ signal }) => {
+      const response = await fetchWithRole(`${API_BASE}/api/settings/evaluation/periods?scope_id=${resolvedScopeId}&year=${year}&month=${month}`, { signal });
+      const data = await readJson(response);
+      if (signal.aborted) throw new DOMException('The month request was cancelled.', 'AbortError');
+      return toPeriodData(data);
+    },
+  });
 
-  const scope = scopes.find((item) => item.id === scopeId) || null;
+  const isCurrent = (vars: Selection) => {
+    const current = selectionRef.current;
+    return current.scopeId === vars.scopeId && current.year === vars.year && current.month === vars.month;
+  };
+
+  const remember = (key: string, updater: (current: EvaluationPeriodData) => EvaluationPeriodData) => {
+    const [scope, periodYear, periodMonth] = key.split('|');
+    queryClient.setQueryData<EvaluationPeriodData>(periodQueryKey(scope, Number(periodYear), Number(periodMonth)), (current) => updater(current ?? emptyPeriod()));
+  };
+
+  const save = useMutation({
+    retry: false,
+    mutationFn: async (vars: Selection & { versionId: string; lines: EvaluationLine[]; weightOnly: boolean }) => {
+      await queryClient.cancelQueries({ queryKey: periodQueryKey(vars.scopeId, vars.year, vars.month) });
+      const response = await fetchWithRole(`${API_BASE}/api/settings/evaluation/drafts/${vars.versionId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lines: vars.lines, weight_only: vars.weightOnly }),
+      });
+      return readJson(response) as Promise<EvaluationVersion>;
+    },
+    onSuccess: (version, vars) => {
+      const key = selectionKey(vars);
+      remember(key, (current) => applyVersion(current, { ...version, lines: version.lines || vars.lines }));
+      if (!isCurrent(vars)) return;
+      setDraft((current) => current?.key === key ? null : current);
+      setNotice({ key, text: vars.weightOnly ? 'Weight change saved.' : 'Draft saved.' });
+    },
+    onError: (caught, vars) => {
+      if (isCurrent(vars)) setActionError({ key: selectionKey(vars), text: errorText(caught) });
+    },
+    onSettled: () => { gate.current = false; },
+  });
+
+  const openDraft = useMutation({
+    retry: false,
+    mutationFn: async (vars: Selection & { copyPrevious: boolean }) => {
+      await queryClient.cancelQueries({ queryKey: periodQueryKey(vars.scopeId, vars.year, vars.month) });
+      const response = await fetchWithRole(`${API_BASE}/api/settings/evaluation/drafts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scope_id: vars.scopeId, year: vars.year, month: vars.month, copy_previous: vars.copyPrevious }),
+      });
+      return readJson(response) as Promise<EvaluationVersion>;
+    },
+    onSuccess: (version, vars) => {
+      const key = selectionKey(vars);
+      remember(key, (current) => applyVersion(current, version));
+      if (!isCurrent(vars)) return;
+      setDraft((current) => current?.key === key ? null : current);
+      setPreview(null);
+      setNotice({ key, text: vars.copyPrevious ? (version.notes || 'Previous month copied.') : 'Draft opened for this month.' });
+    },
+    onError: (caught, vars) => {
+      if (isCurrent(vars)) setActionError({ key: selectionKey(vars), text: errorText(caught) });
+    },
+    onSettled: () => { gate.current = false; },
+  });
+
+  const previewMutation = useMutation({
+    retry: false,
+    mutationFn: async (vars: Selection & { versionId: string; lines: EvaluationLine[]; actuals: Record<string, number> }) => {
+      const rows = previewSampleRows(vars.lines, vars.actuals);
+      if (!rows.length) throw new Error(SAMPLE_PREVIEW_UNAVAILABLE);
+      const response = await fetchWithRole(`${API_BASE}/api/settings/evaluation/drafts/${vars.versionId}/preview`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rows }),
+      });
+      return readJson(response) as Promise<{ score?: unknown; rows?: unknown }>;
+    },
+    onSuccess: (data, vars) => {
+      if (!isCurrent(vars)) return;
+      setPreview({ key: selectionKey(vars), text: formatSamplePreview(data) });
+    },
+    onError: (caught, vars) => {
+      if (isCurrent(vars)) setActionError({ key: selectionKey(vars), text: errorText(caught) });
+    },
+    onSettled: () => { gate.current = false; },
+  });
+
+  const approve = useMutation({
+    retry: false,
+    mutationFn: async (vars: Selection & { versionId: string }) => {
+      await queryClient.cancelQueries({ queryKey: periodQueryKey(vars.scopeId, vars.year, vars.month) });
+      const response = await fetchWithRole(`${API_BASE}/api/settings/evaluation/drafts/${vars.versionId}/approve`, { method: 'POST' });
+      return readJson(response) as Promise<EvaluationVersion>;
+    },
+    onSuccess: (version, vars) => {
+      const key = selectionKey(vars);
+      remember(key, (current) => applyVersion(current, version));
+      if (!isCurrent(vars)) return;
+      setNotice({ key, text: 'Approved. Existing scores were not recalculated.' });
+    },
+    onError: (caught, vars) => {
+      if (isCurrent(vars)) setActionError({ key: selectionKey(vars), text: errorText(caught) });
+    },
+    onSettled: () => { gate.current = false; },
+  });
+
+  const apply = useMutation({
+    retry: false,
+    mutationFn: async (vars: Selection) => {
+      const response = await fetchWithRole(`${API_BASE}/api/settings/evaluation/apply`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scope_id: vars.scopeId, year: vars.year, month: vars.month }),
+      });
+      await readJson(response);
+    },
+    onSuccess: (_data, vars) => {
+      if (isCurrent(vars)) setNotice({ key: selectionKey(vars), text: 'Apply updated this month only.' });
+    },
+    onError: (caught, vars) => {
+      if (isCurrent(vars)) setActionError({ key: selectionKey(vars), text: errorText(caught) });
+    },
+    onSettled: () => { gate.current = false; },
+  });
+
+  const busy = save.isPending || openDraft.isPending || previewMutation.isPending || approve.isPending || apply.isPending;
+  const period = periodQuery.data;
+  const serverLines = period?.lines ?? [];
+  const lines = draft?.key === currentKey ? draft.lines : serverLines;
+  const dirty = draft?.key === currentKey && lineSignature(draft.lines) !== lineSignature(serverLines);
+  const storedActuals = period?.storedActuals ?? {};
+  const hasSampleActuals = previewSampleRows(serverLines, storedActuals).length > 0;
+  const periodLoading = Boolean(resolvedScopeId) && periodQuery.isLoading;
+  const scope = scopes.find((item) => item.id === resolvedScopeId) || null;
   const blocked = scope != null && scope.readiness !== 'supported';
+  const controlsLocked = busy || periodLoading || periodQuery.isError || !period;
+  const previewText = preview?.key === currentKey ? preview.text : '';
+  const message = notice?.key === currentKey ? notice.text : '';
+  const loadError = periodQuery.error instanceof Error ? periodQuery.error.message : catalogQuery.error instanceof Error ? catalogQuery.error.message : '';
+  const error = (actionError?.key === currentKey ? actionError.text : '') || loadError;
 
-  const loadCatalog = useCallback(async () => {
-    const response = await fetchWithRole(`${API_BASE}/api/settings/evaluation/catalog`);
-    const data = await readJson(response);
-    const next = Array.isArray(data?.scopes) ? data.scopes : [];
-    setScopes(next);
-    setScopeId((current) => current || next.find((item: Scope) => item.readiness === 'supported')?.id || next[0]?.id || '');
-  }, [fetchWithRole]);
-
-  const loadPeriod = useCallback(async () => {
-    if (!scopeId) return;
-    const response = await fetchWithRole(`${API_BASE}/api/settings/evaluation/periods?scope_id=${scopeId}&year=${year}&month=${month}`);
-    const data = await readJson(response);
-    const versions: Version[] = Array.isArray(data?.versions) ? data.versions : [];
-    setHistory(versions);
-    const draft = versions.find((item) => item.status === 'draft') || versions.find((item) => item.status === 'approved');
-    setVersionId(draft?.id || '');
-    setStatus(draft?.status || '');
-    setLines(draft?.lines ? draft.lines.map((line) => ({ ...line })) : []);
-    setNotes(draft?.notes || '');
-    const actuals = data?.stored_actuals && typeof data.stored_actuals === 'object' ? data.stored_actuals as Record<string, number> : {};
-    setStoredActuals(actuals);
-  }, [fetchWithRole, month, scopeId, year]);
-
-  useEffect(() => {
-    let active = true;
-    setLoading(true);
-    setError('');
-    loadCatalog()
-      .catch((caught) => active && setError(caught instanceof Error ? caught.message : 'Failed to load evaluation settings'))
-      .finally(() => active && setLoading(false));
-    return () => { active = false; };
-  }, [loadCatalog]);
-
-  useEffect(() => {
-    if (!scopeId) return;
-    setError('');
-    loadPeriod().catch((caught) => setError(caught instanceof Error ? caught.message : 'Failed to load the month'));
-  }, [loadPeriod, scopeId]);
-
-  const updateLine = (key: string, patch: Partial<Line>) => {
-    setLines((current) => current.map((line) => line.kpi_key === key ? { ...line, ...patch } : line));
+  const begin = () => {
+    if (gate.current || busy) return false;
+    gate.current = true;
+    setActionError(null);
+    return true;
   };
 
-  const save = async (weightOnly = false) => {
-    setError('');
-    setMessage('');
-    const response = await fetchWithRole(`${API_BASE}/api/settings/evaluation/drafts/${versionId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ lines, weight_only: weightOnly }),
-    });
-    const data = await readJson(response);
-    setLines(data.lines || lines);
-    setMessage(weightOnly ? 'Weight change saved.' : 'Draft saved.');
+  const updateLine = (key: string, patch: Partial<EvaluationLine>) => {
+    const next = lines.map((line) => line.kpi_key === key ? { ...line, ...patch } : line);
+    setDraft({ key: currentKey, lines: next });
+    setPreview(null);
+    setNotice(null);
   };
 
-  const copyPrevious = async () => {
-    setError('');
-    const response = await fetchWithRole(`${API_BASE}/api/settings/evaluation/drafts`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ scope_id: scopeId, year, month, copy_previous: true }),
-    });
-    const data = await readJson(response);
-    setVersionId(data.id);
-    setStatus(data.status);
-    setLines(data.lines || []);
-    setNotes(data.notes || '');
-    setMessage(data.notes || 'Previous month copied.');
+  const runSave = (weightOnly: boolean) => {
+    if (!period?.versionId || !begin()) return;
+    save.mutate({ ...selection, versionId: period.versionId, lines, weightOnly });
   };
 
-  const openDraft = async () => {
-    setError('');
-    const response = await fetchWithRole(`${API_BASE}/api/settings/evaluation/drafts`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ scope_id: scopeId, year, month, copy_previous: false }),
-    });
-    const data = await readJson(response);
-    setVersionId(data.id);
-    setStatus(data.status);
-    setLines(data.lines || []);
-    setNotes(data.notes || '');
+  const runOpen = (copyPrevious: boolean) => {
+    if (!resolvedScopeId || !begin()) return;
+    openDraft.mutate({ ...selection, copyPrevious });
   };
 
-  const runPreview = async () => {
-    setError('');
-    const rows = lines.map((line) => ({
-      kpi_key: line.kpi_key,
-      actual: Object.prototype.hasOwnProperty.call(storedActuals, line.kpi_key) ? storedActuals[line.kpi_key] : null,
-      workbook_target: line.target,
-    }));
-    const response = await fetchWithRole(`${API_BASE}/api/settings/evaluation/drafts/${versionId}/preview`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ rows }),
-    });
-    const data = await readJson(response);
-    const first = data.rows?.[0];
-    setPreview(first ? `${first.kpi_key} achievement ${(Number(first.achievement) * 100).toFixed(2)}%, score ${data.score}` : 'Preview has no rows.');
+  const runPreview = () => {
+    if (!period?.versionId || dirty || !hasSampleActuals || !begin()) return;
+    previewMutation.mutate({ ...selection, versionId: period.versionId, lines: serverLines, actuals: storedActuals });
   };
 
-  const approve = async () => {
-    setError('');
-    const response = await fetchWithRole(`${API_BASE}/api/settings/evaluation/drafts/${versionId}/approve`, { method: 'POST' });
-    const data = await readJson(response);
-    setStatus(data.status);
-    setMessage('Approved. Existing scores were not recalculated.');
-    await loadPeriod();
+  const runApprove = () => {
+    if (!period?.versionId || dirty || period.status !== 'draft' || !begin()) return;
+    approve.mutate({ ...selection, versionId: period.versionId });
   };
 
-  const apply = async () => {
-    setError('');
-    const response = await fetchWithRole(`${API_BASE}/api/settings/evaluation/apply`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ scope_id: scopeId, year, month }),
-    });
-    await readJson(response);
-    setMessage('Apply updated this month only.');
+  const runApply = () => {
+    if (!resolvedScopeId || !begin()) return;
+    apply.mutate(selection);
   };
 
-  const onAction = (action: () => Promise<void>) => {
-    action().catch((caught) => setError(caught instanceof Error ? caught.message : 'Evaluation request failed'));
-  };
+  if (!isAdmin) {
+    return (
+      <div className="min-w-0 space-y-4">
+        <header>
+          <h2 className="text-xl font-black text-[var(--text-primary)]">Evaluation settings</h2>
+          <p className="mt-1 text-xs text-[var(--text-muted)]">Draft a month, preview it, then approve and apply as separate steps. July and August stay independent.</p>
+        </header>
+        <p role="status" className="rounded-xl border border-[var(--border-light)] bg-[var(--bg-sunken)] px-4 py-3 text-xs text-[var(--text-secondary)]">Evaluation settings are limited to Admin.</p>
+      </div>
+    );
+  }
 
-  const scopeLabel = useMemo(() => scope ? `${scope.display_name} · ${scope.performance_level}${scope.position_name ? ` · ${scope.position_name}` : ''}` : 'No scope', [scope]);
+  const scopeLabel = scope ? `${scope.display_name} · ${scope.performance_level}${scope.position_name ? ` · ${scope.position_name}` : ''}` : 'No scope';
 
   return (
-    <div className="min-w-0 space-y-4">
+    <div className="min-w-0 space-y-4" aria-busy={periodLoading || busy}>
       <header>
         <h2 className="text-xl font-black text-[var(--text-primary)]">Evaluation settings</h2>
         <p className="mt-1 text-xs text-[var(--text-muted)]">Draft a month, preview it, then approve and apply as separate steps. July and August stay independent.</p>
@@ -205,7 +300,7 @@ export function EvaluationSettingsPanel() {
       {message && <p className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-xs font-semibold text-emerald-700" role="status">{message}</p>}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <label className="min-w-0 text-xs font-bold text-[var(--text-secondary)]">Evaluation scope
-          <select aria-label="Evaluation scope" value={scopeId} onChange={(event) => setScopeId(event.target.value)} className="mt-1 w-full rounded-xl border border-[var(--border-light)] bg-[var(--bg-surface)] px-3 py-2 text-sm text-[var(--text-primary)]">
+          <select aria-label="Evaluation scope" value={resolvedScopeId} onChange={(event) => setScopeId(event.target.value)} className="mt-1 w-full rounded-xl border border-[var(--border-light)] bg-[var(--bg-surface)] px-3 py-2 text-sm text-[var(--text-primary)]">
             {scopes.map((item) => <option key={item.id} value={item.id}>{item.display_name} · {item.performance_level}{item.position_name ? ` · ${item.position_name}` : ''}{item.readiness === 'supported' ? '' : item.readiness === 'unlinked_baseline' ? ' · unlinked' : ' · blocked'}</option>)}
           </select>
         </label>
@@ -215,25 +310,27 @@ export function EvaluationSettingsPanel() {
           </select>
         </label>
         <label className="min-w-0 text-xs font-bold text-[var(--text-secondary)]">Reporting year
-          <input aria-label="Reporting year" type="number" value={year} onChange={(event) => setYear(Number(event.target.value))} className="mt-1 w-full rounded-xl border border-[var(--border-light)] bg-[var(--bg-surface)] px-3 py-2 text-sm" />
+          <input aria-label="Reporting year" type="number" min={2000} max={2100} value={year} onChange={(event) => setYear(Number(event.target.value))} className="mt-1 w-full rounded-xl border border-[var(--border-light)] bg-[var(--bg-surface)] px-3 py-2 text-sm" />
         </label>
-        <div className="min-w-0 self-end text-xs text-[var(--text-muted)]">{scopes.length === 0 && loading ? 'Loading scopes…' : scopeLabel}</div>
+        <div className="min-w-0 self-end text-xs text-[var(--text-muted)]">{scopes.length === 0 && catalogQuery.isPending ? 'Loading scopes…' : scopeLabel}</div>
       </div>
       {blocked && <div role="status" className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs text-amber-800">{scope?.block_reason} {scope?.history_note}</div>}
       {!blocked && <div className="flex flex-wrap gap-2">
-        <button type="button" onClick={() => onAction(openDraft)} className="rounded-xl border border-[var(--border-light)] px-3 py-2 text-xs font-bold">New draft</button>
-        <button type="button" onClick={() => onAction(copyPrevious)} className="inline-flex items-center gap-1 rounded-xl border border-[var(--border-light)] px-3 py-2 text-xs font-bold"><Copy size={14} />Copy previous month</button>
-        <button type="button" onClick={() => onAction(() => save(false))} disabled={!versionId} className="inline-flex items-center gap-1 rounded-xl border border-[var(--border-light)] px-3 py-2 text-xs font-bold"><Save size={14} />Save draft</button>
-        <button type="button" onClick={() => onAction(() => save(true))} disabled={!versionId} className="rounded-xl border border-[var(--border-light)] px-3 py-2 text-xs font-bold">Save weights</button>
-        <button type="button" onClick={() => onAction(runPreview)} disabled={!versionId} className="rounded-xl border border-[var(--border-light)] px-3 py-2 text-xs font-bold">Preview</button>
-        {isAdmin && <button type="button" onClick={() => onAction(approve)} disabled={!versionId} className="inline-flex items-center gap-1 rounded-xl bg-blue-600 px-3 py-2 text-xs font-bold text-white"><Check size={14} />Approve</button>}
-        {isAdmin && <button type="button" onClick={() => onAction(apply)} className="rounded-xl bg-slate-900 px-3 py-2 text-xs font-bold text-white">Apply</button>}
-        {!isAdmin && <p className="self-center text-xs text-[var(--text-muted)]">Approval is limited to Admin.</p>}
+        <button type="button" onClick={() => runOpen(false)} disabled={controlsLocked} className="rounded-xl border border-[var(--border-light)] px-3 py-2 text-xs font-bold disabled:cursor-not-allowed disabled:opacity-50">New draft</button>
+        <button type="button" onClick={() => runOpen(true)} disabled={controlsLocked} className="inline-flex items-center gap-1 rounded-xl border border-[var(--border-light)] px-3 py-2 text-xs font-bold disabled:cursor-not-allowed disabled:opacity-50"><Copy size={14} />Copy previous month</button>
+        <button type="button" onClick={() => runSave(false)} disabled={controlsLocked || !period?.versionId} className="inline-flex items-center gap-1 rounded-xl border border-[var(--border-light)] px-3 py-2 text-xs font-bold disabled:cursor-not-allowed disabled:opacity-50"><Save size={14} />Save draft</button>
+        <button type="button" onClick={() => runSave(true)} disabled={controlsLocked || !period?.versionId} className="rounded-xl border border-[var(--border-light)] px-3 py-2 text-xs font-bold disabled:cursor-not-allowed disabled:opacity-50">Save weights</button>
+        <button type="button" onClick={runPreview} disabled={controlsLocked || !period?.versionId || dirty || !hasSampleActuals} className="rounded-xl border border-[var(--border-light)] px-3 py-2 text-xs font-bold disabled:cursor-not-allowed disabled:opacity-50">Preview</button>
+        <button type="button" onClick={runApprove} disabled={controlsLocked || !period?.versionId || dirty || period?.status !== 'draft'} className="inline-flex items-center gap-1 rounded-xl bg-blue-600 px-3 py-2 text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"><Check size={14} />Approve</button>
+        <button type="button" onClick={runApply} disabled={controlsLocked} className="rounded-xl bg-slate-900 px-3 py-2 text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">Apply</button>
       </div>}
-      {preview && <p className="text-xs text-[var(--text-secondary)]">{preview}</p>}
-      {!!notes && <p className="text-xs text-[var(--text-muted)]">{notes}</p>}
+      {!blocked && period && <p className="text-xs text-[var(--text-muted)]">{hasSampleActuals ? SAMPLE_PREVIEW_LIMIT : SAMPLE_PREVIEW_UNAVAILABLE}</p>}
+      {!blocked && dirty && <p role="status" className="text-xs font-semibold text-[var(--text-secondary)]">{UNSAVED_PREVIEW_NOTE}</p>}
+      {previewText && <p className="text-xs text-[var(--text-secondary)]">{previewText}</p>}
+      {!!period?.notes && <p className="text-xs text-[var(--text-muted)]">{period.notes}</p>}
       <div className="min-w-0 space-y-3">
-        {lines.map((line) => <fieldset key={line.kpi_key} className="min-w-0 rounded-2xl border border-[var(--border-light)] p-3">
+        {periodLoading && <p className="text-xs text-[var(--text-muted)]">Loading this month…</p>}
+        {!periodLoading && !blocked && lines.map((line) => <fieldset key={line.kpi_key} disabled={busy} className="min-w-0 rounded-2xl border border-[var(--border-light)] p-3 disabled:opacity-60">
           <legend className="px-1 text-xs font-black text-[var(--text-primary)]">{line.label || line.kpi_key}</legend>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <label className="text-[10px] font-bold uppercase tracking-wide text-[var(--text-muted)]">Target
@@ -260,8 +357,9 @@ export function EvaluationSettingsPanel() {
       <section className="min-w-0">
         <h3 className="mb-2 flex items-center gap-2 text-xs font-black uppercase tracking-wide text-[var(--text-muted)]"><History size={14} />History</h3>
         <ul className="space-y-1 text-xs text-[var(--text-secondary)]">
-          {history.map((item) => <li key={item.id}>{item.month_name || MONTHS[month - 1]} · {item.status} · {status === item.status ? 'open' : 'saved'}</li>)}
-          {!history.length && <li>No saved versions for this month.</li>}
+          {periodLoading && <li>Loading this month…</li>}
+          {!periodLoading && (period?.history ?? []).map((item) => <li key={item.id}>{item.month_name || MONTHS[month - 1]} · {item.status} · {period?.status === item.status ? 'open' : 'saved'}</li>)}
+          {!periodLoading && !(period?.history ?? []).length && <li>No saved versions for this month.</li>}
         </ul>
       </section>
     </div>

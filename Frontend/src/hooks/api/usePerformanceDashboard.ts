@@ -2,6 +2,7 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { apiFetch } from '../../lib/apiClient';
 import { performanceSessionKey } from '../../lib/performanceSessionKey';
 import { usePerformanceCatalog } from './usePerformanceCatalog';
+import { resolveScopedPeriod } from './scopedPeriod';
 
 export const scopedPerformanceApiEnabled = String(import.meta.env.VITE_SCOPED_PERFORMANCE_API || '').toLowerCase() === 'true';
 
@@ -207,13 +208,22 @@ export function useScopedEmployeePerformanceHistory(
   });
 }
 
-function periodForMonth(catalog: PerformanceCatalog | undefined, month: string): PerformancePeriod | null {
-  const periods = (catalog?.periods || [])
-    .map((period) => ({ ...period }))
-    .sort((left, right) => right.key.localeCompare(left.key));
-  if (!periods.length) return null;
-  if (!month || month === 'All') return periods[0];
-  return periods.find((period) => period.month === month) || periods[0];
+function scopeToken(value: string | null | undefined): string {
+  return value ?? '';
+}
+
+/** Placeholder rows from another branch, region, or level are not this request. */
+function summaryMatchesRequest(
+  summary: PerformanceSummary | undefined,
+  request: PerformanceScopeFilters,
+  placeholder: boolean,
+): boolean {
+  if (placeholder || !summary || summary.period?.key !== request.period) return false;
+  const scope = summary.scope;
+  if (!scope || scope.period !== request.period) return false;
+  return scopeToken(scope.region) === scopeToken(request.region)
+    && scopeToken(scope.location) === scopeToken(request.location)
+    && scopeToken(scope.performance_level) === scopeToken(request.performance_level);
 }
 
 function toClassCounts(value: Record<string, number> | undefined): { A: number; B: number; C: number; D: number; E: number } {
@@ -233,17 +243,25 @@ export function useScopedExecutiveSummary(
   performanceLevel: string = 'All',
 ): ScopedExecutiveSummary {
   const catalogQuery = usePerformanceCatalog(scopedPerformanceApiEnabled);
-  const activePeriod = periodForMonth(catalogQuery.data, month);
-  const summaryQuery = usePerformanceSummary(
-    {
-      period: activePeriod?.key || '',
-      region: region !== 'All' ? region : undefined,
-      location,
-      performance_level: performanceLevel !== 'All' ? performanceLevel : undefined,
-    },
-    24,
+  const activePeriod = resolveScopedPeriod(catalogQuery.data?.periods ?? [], month).active;
+  const request: PerformanceScopeFilters = {
+    period: activePeriod?.key || '',
+    region: region !== 'All' ? region : undefined,
+    location,
+    performance_level: performanceLevel !== 'All' ? performanceLevel : undefined,
+  };
+  const summaryQuery = usePerformanceSummary(request, 24);
+  const rawSummary = summaryQuery.data;
+  // keepPreviousData can repeat the same month for a different branch, region, or level.
+  const summaryIsCurrent = summaryMatchesRequest(rawSummary, request, summaryQuery.isPlaceholderData);
+  const summary = summaryIsCurrent ? rawSummary : undefined;
+  const waitingForSummary = Boolean(
+    scopedPerformanceApiEnabled
+    && request.period
+    && !summaryIsCurrent
+    && !summaryQuery.isError
+    && (summaryQuery.isPlaceholderData || summaryQuery.isPending || summaryQuery.isFetching || summaryQuery.isLoading),
   );
-  const summary = summaryQuery.data;
   const current = summary?.current;
   const previous = summary?.previous;
   const teamBreakdown = summary?.team_breakdown || [];
@@ -272,12 +290,12 @@ export function useScopedExecutiveSummary(
     allClassCounts: classCounts,
     uniqueMonths,
     activePeriod: summary?.period || activePeriod,
-    previousPeriod: summary?.previous_period || null,
+    previousPeriod: summaryIsCurrent ? rawSummary?.previous_period ?? null : null,
     previousTotalAgents,
     previousOverallAvgScore: Number(previous?.average_score || 0),
     previousPctAB: previousTotalAgents ? ((previousClassCounts.A + previousClassCounts.B) / previousTotalAgents) * 100 : 0,
     previousPctDE: previousTotalAgents ? ((previousClassCounts.D + previousClassCounts.E) / previousTotalAgents) * 100 : 0,
-    loading: catalogQuery.isLoading || summaryQuery.isLoading,
+    loading: catalogQuery.isLoading || summaryQuery.isLoading || waitingForSummary,
     dataSource: summary ? 'api' : 'empty',
     errorMessage: summaryQuery.error instanceof Error
       ? summaryQuery.error.message

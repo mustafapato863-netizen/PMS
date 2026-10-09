@@ -11,6 +11,7 @@ import { calculatePerformanceSummary } from '../utils/performanceSummary';
 import { useAllTeamConfigs } from './useTeamConfig';
 import { calculateAggregatedTeamPerformance } from '../features/team/teamKpiAggregator';
 import { scopedPerformanceApiEnabled } from './api/usePerformanceDashboard';
+import { filterByReportingPeriod, parseReportingSelector, previousReportingSelector, reportingMonthName } from './api/scopedPeriod';
 import { agentMatchesLocation } from '../utils/branchScope';
 
 const MONTH_ORDER: Record<string, number> = {
@@ -58,12 +59,17 @@ export function getLatestRecordPerEmployee(records: AgentRecord[]): AgentRecord[
   return Array.from(latestMap.values());
 }
 
+function agentPeriod(record: AgentRecord) {
+  return { month: record.identity?.month, year: record.year };
+}
+
 export function resolveHeadcountSnapshot(
   records: AgentRecord[],
   selectedMonth: string,
 ): { month: string; totalAgents: number; uniqueTeamCount: number } {
-  if (selectedMonth !== 'All') {
-    const snapshotRecords = records.filter((record) => record.identity.month === selectedMonth);
+  const selected = parseReportingSelector(selectedMonth);
+  if (selected.kind !== 'all') {
+    const snapshotRecords = filterByReportingPeriod(records, selectedMonth, agentPeriod);
     const employeeKeys = new Set(
       snapshotRecords
         .map((record) => record.identity.employee_id || record.identity.name)
@@ -75,7 +81,7 @@ export function resolveHeadcountSnapshot(
         .filter(Boolean),
     );
     return {
-      month: selectedMonth,
+      month: selected.month,
       totalAgents: employeeKeys.size,
       uniqueTeamCount: teams.size,
     };
@@ -339,9 +345,21 @@ function periodsForRequest(
   periodCount = 2,
 ): ScopedPerformancePeriod[] {
   const periods = (catalog.periods || []).slice().sort((left, right) => right.key.localeCompare(left.key));
+  const selected = parseReportingSelector(month);
+  // A missing exact key is still the requested period. Falling through to the
+  // latest catalog row would show a different year under the same month name.
+  if (selected.kind === 'exact') {
+    const active = periods.find((period) => period.key === selected.key)
+      ?? { key: selected.key, month: selected.month, year: selected.year };
+    const activeIndex = periods.findIndex((period) => period.key === active.key);
+    if (activeIndex < 0) return [active];
+    return periods.slice(activeIndex, activeIndex + Math.max(1, periodCount)).filter(
+      (period, index, values): period is ScopedPerformancePeriod => values.findIndex((item) => item.key === period.key) === index,
+    );
+  }
   if (!periods.length) return [];
-  const active = month !== 'All'
-    ? periods.find((period) => period.key === month || period.month === month) || periods[0]
+  const active = selected.kind === 'month'
+    ? periods.find((period) => period.month === selected.month) || periods[0]
     : periods[0];
   const activeIndex = periods.findIndex((period) => period.key === active.key);
   return periods.slice(activeIndex, activeIndex + Math.max(1, periodCount)).filter(
@@ -697,10 +715,10 @@ export function usePerformanceData(
     const uniqueMonths = Array.from(monthsSet);
     uniqueMonths.sort((a, b) => (MONTH_ORDER[a] || 0) - (MONTH_ORDER[b] || 0));
 
-    // Step 1: Filter by month
+    // Step 1: Filter by month. An exact key also fixes the year.
     let filtered = levelData;
-    if (month !== 'All') {
-      filtered = filtered.filter((r) => r.identity.month === month);
+    if (parseReportingSelector(month).kind !== 'all') {
+      filtered = filterByReportingPeriod(filtered, month, agentPeriod);
     }
 
     // Step 1.5: Filter by Region
@@ -920,9 +938,8 @@ export function usePerformanceData(
 
     // Step 13.5: Calculate Trends for Comparison
     let trends = null;
-    const currMonthName = month === 'All'
-      ? (uniqueMonths[uniqueMonths.length - 1] || 'March')
-      : month;
+    const selectedMonthName = reportingMonthName(month);
+    const currMonthName = selectedMonthName ?? (uniqueMonths[uniqueMonths.length - 1] || 'March');
     const currIdx = uniqueMonths.indexOf(currMonthName);
     const prevMonthName = currIdx > 0 ? uniqueMonths[currIdx - 1] : null;
     
@@ -947,8 +964,14 @@ export function usePerformanceData(
         const abandonDiff = currAbandon - prevAbandon;
 
         // Calculate AHT and Score directly from allData for those specific months
-        const currAgents = levelData.filter((r) => r.identity.month === currMonthName && r.identity.name.toLowerCase() !== 'total');
-        const prevAgents = levelData.filter((r) => r.identity.month === prevMonthName && r.identity.name.toLowerCase() !== 'total');
+        const namedAgents = levelData.filter((record) => record.identity.name.toLowerCase() !== 'total');
+        const previousKey = selectedMonthName ? previousReportingSelector(namedAgents.map(agentPeriod), month) : null;
+        const currAgents = selectedMonthName
+          ? filterByReportingPeriod(namedAgents, month, agentPeriod)
+          : namedAgents.filter((record) => record.identity.month === currMonthName);
+        const prevAgents = previousKey
+          ? filterByReportingPeriod(namedAgents, previousKey, agentPeriod)
+          : namedAgents.filter((record) => record.identity.month === prevMonthName);
         
         const currAHT = currAgents.length > 0 ? currAgents.reduce((s, a) => s + parseAHTtoSeconds(a.calls.aht_raw), 0) / currAgents.length : 0;
         const prevAHT = prevAgents.length > 0 ? prevAgents.reduce((s, a) => s + parseAHTtoSeconds(a.calls.aht_raw), 0) / prevAgents.length : 0;
@@ -1163,18 +1186,21 @@ export function useTeamData(
 
     const teamMonths = resolveTeamMonths(filtered, null);
 
-    // Get previous month's agents for trend calculation
-    const currMonthName = month === 'All'
-      ? (teamMonths[teamMonths.length - 1] || '')
-      : month;
-    const currIdx = teamMonths.indexOf(currMonthName);
-    const prevMonth = currIdx > 0 ? teamMonths[currIdx - 1] : null;
+    // Get previous month's agents for trend calculation.
+    // Exact keys compare year and month; a bare month name keeps only its latest year.
+    const selectedMonthName = reportingMonthName(month);
+    const currMonthName = selectedMonthName ?? (teamMonths[teamMonths.length - 1] || '');
+    const indexedPrev = teamMonths.indexOf(currMonthName) > 0 ? teamMonths[teamMonths.indexOf(currMonthName) - 1] : null;
+    const previousKey = selectedMonthName
+      ? previousReportingSelector(filtered.map(agentPeriod), month)
+      : null;
+    const prevMonth = previousKey ? reportingMonthName(previousKey) : indexedPrev;
     const headcountSnapshot = resolveHeadcountSnapshot(filtered, month);
 
     // Current month's records for display: when month is 'All', resolve each employee's latest available month
-    const currentFiltered = month === 'All'
-      ? getLatestRecordPerEmployee(filtered)
-      : filtered.filter((a) => a.identity.month === currMonthName);
+    const currentFiltered = selectedMonthName
+      ? filterByReportingPeriod(filtered, month, agentPeriod)
+      : getLatestRecordPerEmployee(filtered);
 
     const rows: TeamAgentRow[] = currentFiltered.map((agent, i) => {
       const rowWeights = weightsList?.find((w) => sameTeam(w.team, agent.identity.team))?.weights;
@@ -1235,7 +1261,7 @@ export function useTeamData(
         // and history; the rows are already scoped before this summary runs.
         // Applying a literal `team: RCM` filter here would exclude every source row.
         team: teamName && teamName !== RCM_TEAM ? teamName : undefined,
-        month,
+        month: selectedMonthName ?? month,
       }
     );
 
@@ -1245,14 +1271,16 @@ export function useTeamData(
     let prevPctDE = 0;
     let prevTotalAgents = 0;
     if (prevMonth) {
-      const prevFiltered = filtered.filter((a) => a.identity.month === prevMonth);
+      const prevFiltered = previousKey
+        ? filterByReportingPeriod(filtered, previousKey, agentPeriod)
+        : filtered.filter((agent) => agent.identity.month === prevMonth);
 
       const prevRowsScores = prevFiltered.map((agent) => {
         const rowWeights = weightsList?.find((weightConfig) => sameTeam(weightConfig.team, agent.identity.team))?.weights;
         const score = resolveDisplayScore(agent, rowWeights);
         return { score, grade: resolveRecordGradeClass(agent, score) };
       });
-      prevTotalAgents = resolveHeadcountSnapshot(filtered, prevMonth).totalAgents;
+      prevTotalAgents = resolveHeadcountSnapshot(filtered, previousKey || prevMonth).totalAgents;
       if (prevRowsScores.length > 0) {
         prevAvgScore = prevRowsScores.reduce((total, item) => total + item.score, 0) / prevRowsScores.length;
         const abCount = prevRowsScores.filter((item) => item.grade === 'A' || item.grade === 'B').length;
@@ -1345,7 +1373,8 @@ export function useAllTeamsSummary(
       const teamMonths = Array.from(new Set(teamRows.map((r) => r.month))).sort(
         (a, b) => (MONTH_ORDER[a] || 0) - (MONTH_ORDER[b] || 0)
       );
-      const teamLatestMonth = month === 'All' ? (teamMonths[teamMonths.length - 1] || currMonthName) : month;
+      const selectedMonthName = reportingMonthName(month);
+      const teamLatestMonth = selectedMonthName ?? (teamMonths[teamMonths.length - 1] || currMonthName);
 
       const latestTeamRows = teamRows.filter((row) => row.month === teamLatestMonth);
       latestTeamRows.forEach((row) => {
