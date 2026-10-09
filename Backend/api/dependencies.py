@@ -1,6 +1,9 @@
 import hashlib
 import json
+import threading
 import time
+from itertools import islice
+from collections import OrderedDict
 from uuid import UUID
 import pandas as pd
 from fastapi import Header, HTTPException, Request
@@ -35,13 +38,128 @@ from utils.report_scope import (
     user_can_access_team_level as scope_can_access_team_level,
 )
 
-# ── cache for serialized performance records ──
-_serialize_cache: dict[str, tuple[dict, float]] = {}
+# Process-local cache: one full-payload digest per (id, normalized year).
+# 4096 is a finite bound, not a production optimum; it keeps the 1000-row
+# benchmark warm. A separate rotating expiry cursor preserves FIFO eviction
+# and cannot starve later expiries behind a live prefix or a clock correction.
 _SERIALIZE_CACHE_TTL = 300
+_SERIALIZE_CACHE_CAPACITY = 4096
+_SERIALIZE_CACHE_EXPIRY_BUDGET = 4
+_serialize_lock = threading.Lock()
+_serialize_generation: dict[tuple[str, int | None], str] = {}
+_serialize_key_identity: dict[str, tuple[str, int | None]] = {}
+_serialize_expiry: OrderedDict[str, float | None] = OrderedDict()
+_serialize_next_expiry = float("inf")
+_serialize_sweep_remaining = 0
+
+
+def _entry_expiry(value):
+    try:
+        expiry = value[1]
+    except (TypeError, IndexError, KeyError):
+        return None
+    if isinstance(expiry, bool) or not isinstance(expiry, (int, float)):
+        return None
+    return float(expiry)
+
+
+def _forget_cached_key(key) -> None:
+    _serialize_expiry.pop(key, None)
+    identity = _serialize_key_identity.pop(key, None)
+    if identity is not None and _serialize_generation.get(identity) == key:
+        _serialize_generation.pop(identity, None)
+
+
+class _SerializeCache(dict):
+    """Private mapping; serializer mutations are protected by its lock.
+
+    Assignment/clear also synchronize indexes for legacy test fixtures.
+    Direct mapping access is not a public, thread-safe cache API.
+    """
+
+    def __setitem__(self, key, value):
+        global _serialize_next_expiry
+        super().__setitem__(key, value)
+        expiry = _entry_expiry(value)
+        _serialize_expiry[key] = expiry
+        _serialize_expiry.move_to_end(key)
+        if expiry is not None:
+            _serialize_next_expiry = min(_serialize_next_expiry, expiry)
+
+    def __delitem__(self, key):
+        super().__delitem__(key)
+        _forget_cached_key(key)
+
+    def pop(self, key, *args):
+        value = super().pop(key, *args)
+        _forget_cached_key(key)
+        return value
+
+    def clear(self):
+        global _serialize_next_expiry, _serialize_sweep_remaining
+        super().clear()
+        _serialize_expiry.clear()
+        _serialize_generation.clear()
+        _serialize_key_identity.clear()
+        _serialize_next_expiry = float("inf")
+        _serialize_sweep_remaining = 0
+
+
+_serialize_cache: dict[str, tuple[dict, float]] = _SerializeCache()
+
+
+def _maintain_serialize_cache(now: float) -> None:
+    global _serialize_next_expiry, _serialize_sweep_remaining
+    if not _serialize_sweep_remaining:
+        if now < _serialize_next_expiry:
+            return
+        _serialize_sweep_remaining = len(_serialize_expiry)
+        _serialize_next_expiry = float("inf")
+    # Copy only the bounded window, never the complete cache.
+    for key in list(islice(_serialize_expiry, _SERIALIZE_CACHE_EXPIRY_BUDGET)):
+        entry = _serialize_cache.get(key)
+        expiry = _entry_expiry(entry)
+        if entry is None or (expiry is not None and now >= expiry):
+            _serialize_cache.pop(key, None)
+        else:
+            _serialize_expiry.move_to_end(key)
+            if expiry is not None:
+                _serialize_next_expiry = min(_serialize_next_expiry, expiry)
+        _serialize_sweep_remaining = max(0, _serialize_sweep_remaining - 1)
+
+
+def _read_serialized(cache_key, now: float):
+    with _serialize_lock:
+        _maintain_serialize_cache(now)
+        entry = _serialize_cache.get(cache_key)
+        expiry = _entry_expiry(entry)
+        if expiry is None or now >= expiry:
+            return None
+        return entry[0]
+
+
+def _write_serialized(cache_key, result, record) -> None:
+    year = getattr(record, "year", None)
+    if isinstance(year, bool) or not isinstance(year, int):
+        year = None
+    identity = (str(getattr(record, "id", "")), year)
+    with _serialize_lock:
+        now = time.time()
+        _maintain_serialize_cache(now)
+        previous = _serialize_generation.get(identity)
+        if previous is not None and previous != cache_key:
+            _serialize_cache.pop(previous, None)
+        _serialize_cache[cache_key] = (result, now + _SERIALIZE_CACHE_TTL)
+        _serialize_generation[identity] = cache_key
+        _serialize_key_identity[cache_key] = identity
+        # Dict insertion order is FIFO; expiry rotation does not change it.
+        while len(_serialize_cache) > _SERIALIZE_CACHE_CAPACITY:
+            _serialize_cache.pop(next(iter(_serialize_cache)))
 
 
 def clear_serialization_cache() -> None:
-    _serialize_cache.clear()
+    with _serialize_lock:
+        _serialize_cache.clear()
 
 # Instantiate JSON-based repositories (single source of truth)
 performance_repo = JSONPerformanceRepository()
@@ -143,9 +261,9 @@ def serialization_cache_key(record) -> str:
 def serialize_performance_record(r) -> Dict[str, Any]:
     now = time.time()
     cache_key = serialization_cache_key(r)
-    entry = _serialize_cache.get(cache_key)
-    if entry is not None and now < entry[1]:
-        return entry[0]
+    cached = _read_serialized(cache_key, now)
+    if cached is not None:
+        return cached
 
     # Reconstruct GeoBreakdown totals
     geo_bookings = {
@@ -306,7 +424,7 @@ def serialize_performance_record(r) -> Dict[str, Any]:
     if getattr(r, "meta", None):
         result["meta"] = r.meta
 
-    _serialize_cache[cache_key] = (result, now + _SERIALIZE_CACHE_TTL)
+    _write_serialized(cache_key, result, r)
     return result
 
 def require_role(allowed_roles: List[str]):
