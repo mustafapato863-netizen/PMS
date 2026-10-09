@@ -56,6 +56,20 @@ from services.upload_record_collisions import (
 
 logger = logging.getLogger(__name__)
 
+def pin_upload_score(version, evidence):
+    """Score one approved pin for both upload dry-run and commit.
+
+    Delegates to ``services.evaluation.resolver.score_basis``. A later
+    approved-capability guard belongs in that function so preview and commit
+    share it. This hook does not catch TargetConflict and does not fall back
+    to the workbook total. Outbound period lines come from
+    ``services.outbound_period_basis.period_capability``.
+    """
+    from services.evaluation.resolver import score_basis
+
+    return score_basis(version, evidence)
+
+
 class UploadProcessingError(RuntimeError):
     def __init__(self, message: str, report: dict):
         super().__init__(message)
@@ -219,13 +233,21 @@ class DatabaseSeeder:
         uploaded_by_user_id: str | None = None,
         uploaded_by_name: str | None = None,
         upload_batch_id: str | None = None,
+        db_session=None,
     ):
-        """Processes an uploaded PMS excel file and returns the import counts."""
+        """Processes an uploaded PMS excel file and returns the import counts.
+
+        ``db_session`` is optional. Production callers omit it and this method
+        opens ``SessionLocal``, including the collision lookup and the approved
+        pin. An injected session is rolled back on dry-run and committed on
+        success, and it is left open for the caller. Database errors propagate.
+        """
         excel_file = self.excel_processor.load_excel(contents)
         marketing_result = self.marketing_import_service.parse_excel(excel_file)
+        owns_session = db_session is None
+        db = db_session if db_session is not None else SessionLocal()
 
         if dry_run:
-            db = SessionLocal()
             try:
                 result = self._process_and_save_excel(
                     excel_file,
@@ -240,17 +262,19 @@ class DatabaseSeeder:
                 db.rollback()
                 raise
             finally:
-                db.close()
+                if owns_session:
+                    db.close()
 
         # Vercel Production Safety: Do not write to JSON repositories for runtime persistence.
         # Generate upload ID for the batch. Metadata persistence is delegated to the DB.
         try:
             upload_uuid = uuid.UUID(str(upload_batch_id)) if upload_batch_id else uuid.uuid4()
         except (TypeError, ValueError) as exc:
+            if owns_session:
+                db.close()
             raise UploadProcessingError("The upload batch identifier is invalid.", {}) from exc
         upload_id = str(upload_uuid)
         
-        db = SessionLocal()
         try:
             existing_batch = None
             if upload_batch_id:
@@ -295,7 +319,8 @@ class DatabaseSeeder:
             db.rollback()
             raise
         finally:
-            db.close()
+            if owns_session:
+                db.close()
 
     @staticmethod
     def _normalize_sheet_levels(df: pd.DataFrame, id_col: str, team_name: str) -> list[str]:
@@ -358,7 +383,7 @@ class DatabaseSeeder:
         """
         if db is None or not records:
             return []
-        from services.evaluation.resolver import approved_version, schema_ready, score_basis
+        from services.evaluation.resolver import approved_version, schema_ready
 
         if not schema_ready(db):
             return []
@@ -393,6 +418,7 @@ class DatabaseSeeder:
                     "rows": [],
                 })
                 continue
+            self._refuse_unsupported_outbound_binding(record, version, year)
             evidence = [
                 {
                     "kpi_key": row.get("kpi_key"),
@@ -402,7 +428,7 @@ class DatabaseSeeder:
                 }
                 for row in rows
             ]
-            scored = score_basis(version, evidence)
+            scored = pin_upload_score(version, evidence)
             by_key = {item["kpi_key"]: item for item in scored["rows"]}
             for row in rows:
                 item = by_key.get(row.get("kpi_key"))
@@ -438,6 +464,37 @@ class DatabaseSeeder:
         return summaries
 
     @staticmethod
+    def _refuse_unsupported_outbound_binding(record, version, year) -> None:
+        """Refuse an approved snapshot the canonical period does not support.
+
+        July and August still reach ``pin_upload_score``. A fixed-target
+        mismatch stays ``TargetConflict`` with no fallback score.
+        """
+        if version is None or str(getattr(record, "team", "") or "") != "Outbound":
+            return
+        from services.evaluation.resolver import snapshot_lines
+        from services.outbound_period_basis import (
+            OutboundUnsupportedApprovedBinding,
+            period_capability,
+        )
+
+        decision = period_capability(year, record.month)
+        period_label = decision["period"] or str(record.month)
+        if decision["approved_binding"] != "apply":
+            raise OutboundUnsupportedApprovedBinding(period_label, decision["status"])
+        if decision["status"] in {"june_2026_exception", "july_2026", "august_2026"}:
+            scored = {
+                str(line.get("kpi_key"))
+                for line in snapshot_lines(version)
+                if float(line.get("weight") or 0) > 0
+            }
+            if scored != set(decision["scored_keys"]):
+                raise OutboundUnsupportedApprovedBinding(
+                    period_label,
+                    "approved lines are not the canonical scored lines",
+                )
+
+    @staticmethod
     def _upload_year(record) -> int:
         if getattr(record, "year", None):
             return int(record.year)
@@ -458,7 +515,7 @@ class DatabaseSeeder:
     def _workbook_rows(self, record) -> list[dict]:
         existing = list(getattr(record, "kpi_values", None) or [])
         if existing:
-            return existing
+            return self._with_productivity_evidence(record, existing)
         try:
             team_config = resolve_team_config(
                 load_team_config(record.team),
@@ -482,6 +539,32 @@ class DatabaseSeeder:
                 "weight_applied": kpi.get("weight", 0.0),
                 "contribution": None,
             })
+        return self._with_productivity_evidence(record, rows)
+
+    @staticmethod
+    def _with_productivity_evidence(record, rows: list[dict]) -> list[dict]:
+        """Keep a source Productivity actual the four-key map would drop.
+
+        A missing actual is left missing. It is not stored as zero.
+        """
+        if str(getattr(record, "team", "") or "") != "Outbound":
+            return rows
+        from services.outbound_period_basis import PRODUCTIVITY_KEY, productivity_actual, productivity_target
+
+        if any(str(row.get("kpi_key")) == PRODUCTIVITY_KEY for row in rows):
+            return rows
+        actual = productivity_actual(getattr(record, "raw_data", None) or {})
+        if actual is None:
+            return rows
+        target = productivity_target(getattr(record, "raw_data", None) or {})
+        rows.append({
+            "kpi_key": PRODUCTIVITY_KEY,
+            "actual_value": actual,
+            "target_value": 0.0 if target is None else target,
+            "achievement_ratio": None,
+            "weight_applied": 0.0,
+            "contribution": None,
+        })
         return rows
 
     @staticmethod
@@ -1058,9 +1141,11 @@ class DatabaseSeeder:
         dry_run: bool = False,
         db_session=None,
     ):
+        from services.outbound_period_basis import resolve_outbound_sheet_name
+
         sheet_names = set(excel_file.sheet_names)
         inbound_df = self.excel_processor.process_sheet_inbound(excel_file) if "Inbound" in sheet_names else pd.DataFrame()
-        outbound_df = self.excel_processor.process_sheet_outbound(excel_file) if "Outbound" in sheet_names else pd.DataFrame()
+        outbound_df = self.excel_processor.process_sheet_outbound(excel_file) if resolve_outbound_sheet_name(sheet_names) else pd.DataFrame()
         inbound_uae_df = self.excel_processor.process_sheet_inbound_uae(excel_file) if "Inbound UAE" in sheet_names else pd.DataFrame()
         preapprovals_df = self.excel_processor.process_sheet_preapprovals(excel_file) if "Pre-Approvals IP Offshore" in sheet_names else pd.DataFrame()
         preapprovals_op_dubai_df = self.excel_processor.process_sheet_preapprovals_op_dubai(excel_file) if "Pre-Approvals OP Dubai" in sheet_names else pd.DataFrame()
@@ -1251,11 +1336,16 @@ class DatabaseSeeder:
                     )
                     geo = GeoData(bookings=geo_bookings, attended=geo_attended)
 
+                    productivity_rate = None
+                    if team_name == "Outbound":
+                        from services.outbound_period_basis import productivity_actual
+                        productivity_rate = productivity_actual(row)
                     actual = ActualMetrics(
                         booking_rate=safe_float(row.get("A.Booking%", 0.0)),
                         attend_rate=safe_float(row.get("A.Attend%", 0.0)),
                         abandon_rate=safe_float(row.get("A.AbandonRate%", 0.0)),
                         reachability_rate=safe_float(row.get("A.Reachability%", 0.0)),
+                        productivity_rate=productivity_rate,
                         rejection_rate=safe_float(
                             row.get("A.InitialRejectionRate")
                             or row.get("IPInitialRejection%")
@@ -1311,7 +1401,8 @@ class DatabaseSeeder:
                         op_revenue_ach=achievements.get("OPRevenue", 0.0),
                         ip_census_ach=achievements.get("IPCensus", 0.0),
                         ip_revenue_ach=achievements.get("IPRevenue", 0.0),
-                        activity_ach=achievements.get("Activity", 0.0)
+                        activity_ach=achievements.get("Activity", 0.0),
+                        productivity_ach=achievements.get("Productivity") if "Productivity" in achievements else None,
                     )
 
                     root_cause = self.analysis_service.run_root_cause_analysis(team_name, achievements, weights_used, row_dict)

@@ -40,6 +40,9 @@ class ReportExporter:
             "Outbound Calls": r.calls.outbound,
             "AHT": r.calls.aht_raw,
         }
+        productivity_rate = getattr(r.actual, "productivity_rate", None)
+        if productivity_rate is not None:
+            row["Productivity Rate (%)"] = round(float(productivity_rate) * 100, 2)
         for value in r.kpi_values or []:
             label = str(value.get("label") or value.get("kpi_key") or "KPI")
             row[f"{label} Actual"] = value.get("actual_value")

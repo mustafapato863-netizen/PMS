@@ -33,41 +33,65 @@ def _pinned_basis(item) -> dict | None:
 
 
 def _pinned_schema_record(item, employee, team_name: str, basis: dict):
-    """Return the stored score and pinned KPI basis without reading today's team file."""
+    """Keep the stored payload and overlay identity, stored score, and pinned KPIs.
+
+    The current team file is not consulted. A later configuration change cannot
+    recalculate this row.
+    """
+    payload = item.record_payload if isinstance(item.record_payload, dict) else {}
+    try:
+        record = SchemaPerformanceRecord.model_validate(payload)
+    except ValidationError:
+        record = SchemaPerformanceRecord(
+            id=str(item.id),
+            employee_id=str(employee.employee_id),
+            employee_name=str(employee.name),
+            team=team_name,
+            month=str(item.month),
+            year=int(item.year),
+            evaluation={"score": float(item.score), "grade": item.grade},
+            raw_data=payload.get("raw_data") if isinstance(payload.get("raw_data"), dict) else {},
+        )
     lines = {str(line.get("kpi_key")): line for line in basis.get("lines") or []}
+    stored_kpis = {str(value.get("kpi_key")): value for value in (record.kpi_values or []) if isinstance(value, dict)}
     kpi_values = []
     for value in item.kpi_values:
         line = lines.get(str(value.kpi_key), {})
+        stored = stored_kpis.get(str(value.kpi_key), {})
         kpi_values.append(
             {
                 "kpi_key": value.kpi_key,
-                "label": line.get("label") or value.kpi_key,
-                "direction": line.get("direction"),
+                "label": line.get("label") or stored.get("label") or value.kpi_key,
+                "direction": line.get("direction") if line.get("direction") is not None else stored.get("direction"),
                 "evaluation_pinned": True,
+                "perspective": stored.get("perspective"),
+                "color": stored.get("color"),
                 "actual_value": float(value.actual_value),
                 "target_value": float(value.target_value),
                 "achievement_ratio": float(value.achievement_ratio),
                 "weight_applied": float(value.weight_applied),
                 "contribution": float(value.contribution),
-                "unit": line.get("unit") or "%",
+                "unit": line.get("unit") or stored.get("unit") or "%",
             }
         )
-    return SchemaPerformanceRecord(
-        id=str(item.id),
-        employee_id=str(employee.employee_id),
-        employee_name=str(employee.name),
-        team=team_name,
-        month=str(item.month),
-        year=int(item.year),
-        region=item.region or employee.region,
-        branch_key=getattr(item, "branch_key", None),
-        performance_level=str(item.performance_level),
-        position=item.position_name or employee.position_name,
-        status=item.status,
-        evaluation={"score": float(item.score), "grade": item.grade},
-        raw_data=(item.record_payload.get("raw_data") or {}) if isinstance(item.record_payload, dict) else {},
-        kpi_values=kpi_values,
-    )
+    payload_upload = payload.get("upload_id")
+    sql_upload = getattr(item, "upload_id", None)
+    return record.model_copy(update={
+        "id": str(item.id),
+        "employee_id": str(employee.employee_id),
+        "employee_name": str(employee.name),
+        "team": team_name,
+        "month": str(item.month),
+        "year": int(item.year),
+        "region": item.region or employee.region,
+        "branch_key": getattr(item, "branch_key", None),
+        "performance_level": str(item.performance_level),
+        "position": item.position_name or employee.position_name,
+        "status": item.status,
+        "upload_id": str(payload_upload) if payload_upload else (str(sql_upload) if sql_upload else None),
+        "evaluation": record.evaluation.model_copy(update={"score": float(item.score), "grade": item.grade}),
+        "kpi_values": kpi_values,
+    })
 
 
 def _normalise_kpi_values(
