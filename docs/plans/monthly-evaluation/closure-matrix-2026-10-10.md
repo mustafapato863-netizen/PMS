@@ -1,0 +1,89 @@
+# PMS-EVAL-001 — evidence-backed closure matrix
+
+Date: 10 October 2026. Baseline: `625abf4` (reviewed serializer retention), following `5c8aa201` (QA integration). This is an acceptance supplement, not a replacement or reduction of roadmap v1.2. Candidate fixes below are isolated and not deployed. No all-team completion claim.
+
+## Business and evidence boundaries
+
+- D001–D005 remain binding: Admin-only management; unsupported calculation changes locked; fixed-target new-upload conflicts block; July/August Outbound distinct source-owned templates; immutable same-month correction followed by explicit apply and guarded rollback.
+- Admitted calculation editing: Coding Employee, Submission Employee, Outbound Employee July/August 2026. No other month/family/level becomes supported merely by appearing in the live catalog. Weight-only remains blocked without trustworthy achievement provenance.
+- On 10 October the owner confirmed approved source files/goldens for Marketing, Pharmacy, CSR, IP Final and Managerial/Corporate are not currently available. Their acceptance and scoring activation remain blocked. Synthetic examples cannot substitute for approved formulas/results.
+- Phase 9 custom-formula configuration remains out of scope. Publication, production changes and recovery sign-off require a separate release decision.
+
+## Phase status
+
+| Phase | Verified implementation | Remaining acceptance gap |
+|---|---|---|
+| 0 Inventory | Dynamic DB/file/importer scope classification, new/inactive team coverage; unknown history not invented. `test_catalog_covers_live_scopes_without_guessing_history`. | Production inventory/approved cross-family reference results; Marketing private-workbook fixture reconciliation. |
+| 1 Immutable schema | Existing version system reused, period bindings/history guards, exact `(id, year)` identity, PostgreSQL upgrade/downgrade/concurrency. | Production schema/backup and recovery rehearsal. |
+| 2 Resolver | Exact period and no future/latest fallback; admitted adapters and blocked capabilities checked. | Every additional policy family needs source characterization and approved golden results before activation. |
+| 3 Workflow/API | Admin draft/copy/preview/revise/approve/apply/rollback; persisted role checks; approval is not recalculation. HTTP checksum preconditions now reject stale drafts before mutation; two independent JWT browser clients and PostgreSQL stale ORM identity checks passed. | Worker authorization still requires separate Phase7 implementation. Internal trusted workflow calls retain the documented optional token contract. |
+| 4 Upload | Supported upload pin, dry-run/commit parity, original source precision and target preserved, new-upload conflict blocking; real upload/apply race tested. | Cross-family/queued mixed-month goldens beyond admitted paths. |
+| 5 Consumers | Current combined-candidate real JWT apply/rollback across six API families, Function/Employee DOM, unchanged July/source, trusted Productivity pin retained in Insights and absent from July. Independent282-case gate passed before local integration. | Cross-period basis-only warnings across executive/risk/planning are a separate active Grok lane; all-team and all-role UAT remain unproven. |
+| 6 Settings UX | Percentage inputs save exact fractions; frozen original checksum/units survive background refresh. Two-client stale409 retains typing, disables Save, explicit Reload restores latest rules. Settings seven-width light/dark, field bounds, keyboard and no-page-error browser gate passed. Exact-month scope-label regression passed. | Proof subtitles without explicit units remain on stored scale; broader assistive-technology/all-role UAT is not certified. |
+| 7 Controlled historical apply | Exact-scope synchronous atomic apply, replay idempotence, previous-value restoration, drift/new-upload rejection, no old approval reactivation. | Durable background apply, staged bounded batches, progress/cancel/retry and large-scope memory/query/latency budgets are NOT implemented. A synchronous route named `jobs/.../preview` is not this functionality. |
+| 8 Release/UAT | Prior CI candidate results and reviewed local gates are documented, not production certification. | All-team UAT, new schema/recovery sign-off, runtime feature flags, production version/data check and monitoring. No deployment performed. |
+
+## EVAL acceptance scenarios
+
+| ID | Status and proof limit |
+|---|---|
+| 01 | Synthetic 55→65 example and actual source chronology covered. Actual July/August attendance target is 65% both months; no invented source chronology. |
+| 02 | Supported ratio/cap goldens covered; new explicit synthetic60/65 test preserves12/13 achievement precision and rounds only total/display to92.31%. |
+| 03 | Lower-better/missing/zero scoring covered; direction-edit workflow/UI arrows need a distinct bounded characterization. |
+| 04 | New explicit90%/110%/negative/overprecision regressions pass and assert saved lines/checksum unchanged; no normalization. |
+| 05 | Fixed-target conflict/pin rejection and preview/commit parity covered for admitted paths. |
+| 06 | Two-person source target variation preserved in real impact proof; no fabricated average target. |
+| 07 | Dynamic catalog includes all real template scopes and new teams, unsupported visibly blocked. All-family scoring remains blocked on goldens. |
+| 08 | Marketing calculation edits intentionally blocked. Existing raw business aggregation must remain unchanged. |
+| 09 | Merged RCM/Pre-Approvals narrow-grant boundaries tested; child-source scoring admission not generalized. |
+| 10 | Employee pins do not leak into management levels. Managerial/Corporate editing needs approved references. |
+| 11 | Stale rules/source/approval and idempotent apply tested, including PostgreSQL races. Async worker retry is not implemented. |
+| 12 | Approval does not mutate scored records; explicit apply required and tested. |
+| 13 | Exact-month apply/guarded rollback tested on admitted examples; large batched apply still missing. |
+| 14 | Actual-user/JWT management denial and ordinary scoped reads tested; worker apply authorization not applicable until worker exists. |
+| 15 | Durable DB lifecycle cache identity and serializer identity/retention tested; full Redis reconnect/multi-worker/open-tab matrix incomplete. |
+| 16 | Saved report bytes/human plans/actions preserved. Live derived planning metrics and their basis annotations need focused evidence. |
+| 17 | Current Settings browser320/375/640/746/768/1024/1440 in light/dark passes field/document bounds and keyboard; screenshots inspected at320dark/746light. Team/Function actual apply/rollback workflow fits390/746/1024/1440. This is not full assistive-technology/all-role certification. |
+| 18 | Exact year/month, blocked September/deactivated scopes covered; new actual workflow copyJanuary2026 fromDecember2025 passes, preserving original version checksum. |
+| 19 | Missing: bounded asynchronous processing/progress/cancel/retry and agreed p50/p95 budgets. Serializer memory test is not this gate. |
+| 20 | Current28 opt-in PostgreSQL16/18 history/month-correction/upload-race/stale-checksum cases passed, repeated after portable UUID mapping in61.61seconds. Only allowlisted owned databases were reset. Future durable-job schema and production recovery require separate gates. |
+| 21 | Same-month immutable revision, stale proof/source rejection, separate apply and latest-only drift-safe rollback covered. |
+
+## Downstream contract
+
+| Surface | Current boundary |
+|---|---|
+| Upload | Admitted sources pinned through actual persistence; source values preserved. |
+| Team/roster | Canonical stored basis used; compatible aggregation retains business pooling; mixed basis is not averaged into a fake target/weight. |
+| Employee 360 | Outbound target65→70→65/weight60→50→60/Productivity10→20→10 proven in actual DOM. Other profile sections need their own evidence. |
+| Management/Corporate BSC | Existing level-aware history is retained; no unsupported editing enabled. |
+| Function/Executive | Supported scores/drivers agree in API and selected DOM workflows; universal basis-only change copy not yet accepted. |
+| Insights | New trusted KPI composition retained; incompatible raw unit/direction comparisons safely gapped, cohort IDs/driver/planning links distinct. Actual JWT baseline/apply/rollback agrees with canonical Productivity pin and retains July's original KPI set. General basis-context annotation remains in review. |
+| Reports/exports | Regenerated APIs reflect applied basis; saved report snapshots and file bytes remain immutable. Do not retroactively rewrite saved exports. |
+| Planning/actions | Human text, ownership, status and plan targets preserved. This is not proof that every live derived progress metric uses the monthly pin. |
+| Search | Current search has names/drilldowns, not score snippets. No unnecessary scoring/search feature is introduced to satisfy an inapplicable gate. |
+| Cache/paging/permissions | Application scope checks and DB cache identity tested. Native PostgreSQL row-security policies are not enabled; do not call application authorization proof native RLS certification. |
+
+## Independent verification and exceptions
+
+- Current PostgreSQL repeat: **28 passed /61.61seconds**, on owned PostgreSQL16/18 databases at loopback55432/55433 only. Normal tests do not automatically collect these opt-in files.
+- Current combined-candidate full backend: **1212 passed, one known Marketing failure (131 local source rows vs68 expected), one existing skip,63warnings /564.44seconds**. No exclusion, skip or expectation change was used; this is not a green full suite.
+- Reviewer transport regression: malformed month text caused500; duplicates/unbounded lists reached the reader. Added failing transport tests then bounded calendar validation; **13 transport cases pass**, with the failed workflow case separately passing on repeat.
+- New characterization and transport gate: **24 passed / 9.70s**. This verifies targeted behavior, not the entire roadmap.
+- The observed SQLite UUID failure was deterministically reproduced: PostgreSQL-specific UUID DDL gave SQLite numeric affinity, coercing valid exponent-shaped hex IDs into REAL. Portable SQLAlchemy Uuid now keeps SQLite CHAR32/text and PostgreSQL native UUID. Four new identity/DDL regressions and59 focused cases passed; PostgreSQL28 checks repeated. No existing database or already corrupted SQLite IDs were repaired or rebuilt.
+- Final full frontend including the exact-month label refinement: **750 passed /100files /239.28seconds** with two workers and unchanged test timeouts. Before refinement749passed /275.24seconds. The first highly parallel run had734passes/15failures including timeout/DOM failures; the entire unchanged suite then passed under bounded concurrency. No tests were removed, retries added or timeouts increased.36focused cases also passed.
+- Reviewer-owned real JWT lifecycle baseline/corrected/restored gates passed across legacy records, summary/trend, employee history, Insights, report-center and regenerated preview. UI approve/preview do not change results; Apply/rollback propagate target/weight/Productivity changes and preserve July/source.
+- Full frontend lint passed; after final refinement changed-file lint, typecheck and build:ci/bundle budgets passed again. A TypeScript error in the new test's unsupported Testing Library exact option was corrected by removing that option (string names are already exact), not disabling typecheck. Vite's existing >500kB chunk warning and canvas-not-implemented test warnings remain.
+- No production load, complete native RLS, all-team activation, production backup recovery or deployment verification is claimed.
+
+## Prioritized remaining queue
+
+1. Preserve the verified bounded Settings/Insights/HTTP checkpoint above while composing later phases; this is not universal release certification.
+2. Preserve completed explicit characterization/calendar guards and stale-edit protections while composing later phases.
+3. Retain unsupported reference blockers; do not unlock by substituting synthetic examples for approved calculations.
+4. Trace and annotate basis-only change versus raw operational deterioration across live risk/summary/planning consumers.
+5. Implement durable staged/bounded historical apply using audited job primitives, separate permission/schema/concurrency/recovery review. Do not silently remove this phase or promise synchronous all-roster snapshots are bounded.
+6. Obtain approved missing family references, then enable each adapter only after matching goldens and cross-consumer tests.
+7. Complete full responsive/keyboard/dark, multi-worker/reconnect/large-scope performance and production recovery release gates; publish only on separate authorization.
+
+Grok audit suggestions are advisory: replacing the requested percentage UI with fraction-only labels was rejected; claiming async phase7 unnecessary without owner scope approval was rejected. Unsupported-family reference blockers are explicitly retained, not converted into completed checkboxes.

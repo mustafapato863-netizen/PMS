@@ -1,12 +1,14 @@
 # Monthly Evaluation Settings — Integrated Implementation Plan
 
 **Document ID:** PMS-EVAL-001
-**Version:** 1.2
-**Date:** 2026-10-09
+**Version:** 1.3 — evidence supplement, 10 October 2026
+**Date:** 2026-10-10
 **Status:** Candidate implementation under independent review and correction. Phases 0–8 are not accepted as complete; unsupported scopes remain disabled until their gates pass. No production readiness or deployment verification is claimed. Phase 9 formula editing is a separate release.
 **Source baseline:** main `2af9eb1e3991cb649ebcc695e3f2c42fbce4f40a`; original candidate `848f601c4595b8f69f15665c7841d7714329e674`; independently reviewed consumer integration `ae40741750bf37f725e1815e5a5cf45775c91cf2`. See the [verification checkpoint](../reviews/monthly-evaluation-candidate-verification.md) for bounded results and remaining rollout gates.
 **Business owner:** PMS administrator
 **Initial scope:** Monthly KPI targets, scoring weights and direction, connected to the entire PMS calculation and reporting pipeline.
+
+**Current acceptance evidence:** [10 October closure matrix](monthly-evaluation/closure-matrix-2026-10-10.md), based on reviewed `625abf4` and bounded follow-up candidates. It distinguishes implemented behavior from missing verification, intentionally blocked families and genuine unfinished work. The owner cannot currently provide the remaining family goldens; those calculation editors remain disabled. The full roadmap, including bounded historical jobs, has not been reduced or declared complete.
 
 ## 1. Purpose and success definition
 
@@ -572,7 +574,7 @@ D001–D005 above settle management authority, unsupported formula behavior, fix
 - [ ] Responsive UX, performance budgets, failure/retry behavior and rollback pass.
 - [ ] Live post-deployment verification confirms authorized real data and the deployed basis.
 
-**Next step:** Finish isolated CI verification and the reviewed local merge for the supported candidate. Independent permission, scoring-completeness, Outbound source-basis, immutable-history, stale-rollback and frontend workflow findings have been corrected and tested; this does not close all-team UAT, production-schema recovery or the full downstream performance matrix. Publishing main or deploying remains separate after release/recovery gates. Phase 9 remains out of scope.
+**Next step:** Follow the [current closure queue](monthly-evaluation/closure-matrix-2026-10-10.md): finish independently reviewed Settings percentage entry and Insights pin parity, add optimistic draft edit protection and basis-change consumer evidence, then deliver bounded historical jobs and remaining release gates. The owner cannot currently provide the remaining calculation-family references, so those editors stay blocked. Current PostgreSQL checks have been repeated; this still does not close all-team UAT, production recovery or the full downstream performance matrix. Publishing main or deploying remains a separate release decision. Phase 9 remains out of scope.
 
 ## 16. Reference maintenance
 
