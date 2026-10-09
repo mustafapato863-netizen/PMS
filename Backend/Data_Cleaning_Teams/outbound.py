@@ -1,12 +1,23 @@
+import io
+
 import pandas as pd
 import numpy as np
 from cleaned import clean_sheet_data
+from services.outbound_period_basis import resolve_outbound_sheet_name
 from utils import add_computed_columns
+from utils.excel_percent_serial import restore_known_percent_serials
 
 def process_outbound(file_path):
     # --- 1. Load and Clean Data ---
-    sheet_name = "Outbound"
-    df = pd.read_excel(file_path, sheet_name=sheet_name)
+    source = file_path
+    if isinstance(file_path, (bytes, bytearray)):
+        source = io.BytesIO(file_path)
+    excel = source if isinstance(source, pd.ExcelFile) else pd.ExcelFile(source)
+    sheet_name = resolve_outbound_sheet_name(excel.sheet_names)
+    if sheet_name is None:
+        return pd.DataFrame()
+    df = pd.read_excel(excel, sheet_name=sheet_name)
+    df = restore_known_percent_serials(df, excel, sheet_name)
     df = clean_sheet_data(df, sheet_name=sheet_name)
       
     # Standardize column names by removing ALL hidden whitespaces

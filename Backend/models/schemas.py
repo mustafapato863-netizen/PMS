@@ -43,6 +43,7 @@ class ActualMetrics(BaseModel):
     submission_rate: float = 0.0
     quality_rate: float = 0.0
     utz_rate: float = 0.0
+    productivity_rate: Optional[float] = None
 
 class AchievementMetrics(BaseModel):
     booking_ach: float = 0.0
@@ -59,6 +60,7 @@ class AchievementMetrics(BaseModel):
     ip_census_ach: float = 0.0
     ip_revenue_ach: float = 0.0
     activity_ach: float = 0.0
+    productivity_ach: Optional[float] = None
 
 class RootCauseInfo(BaseModel):
     kpi: str
@@ -96,6 +98,7 @@ class PerformanceRecord(BaseModel):
     upload_id: Optional[str] = None
     raw_data: Dict[str, Any] = Field(default_factory=dict)
     kpi_values: List[Dict[str, Any]] = Field(default_factory=list)
+    meta: Optional[Dict[str, Any]] = None
 
 class KPIWeight(BaseModel):
     team: str
