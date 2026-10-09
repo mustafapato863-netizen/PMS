@@ -1,11 +1,11 @@
 # Monthly Evaluation Settings — Integrated Implementation Plan
 
-**Document ID:** PMS-EVAL-001  
-**Version:** 1.0  
-**Date:** 2026-10-08  
-**Status:** Phases 0–8 are implemented locally and are not deployed. Production `bkpms.zainx.cloud` on 2026-10-09 still exposes only `/api/settings/weights` and `/api/settings/targets`. Phase 9 formula editing is a separate release.  
-**Source baseline:** main `2af9eb1e3991cb649ebcc695e3f2c42fbce4f40a`  
-**Business owner:** PMS administrator / Performance Team  
+**Document ID:** PMS-EVAL-001
+**Version:** 1.1
+**Date:** 2026-10-09
+**Status:** Candidate implementation under independent review and correction. Phases 0–8 are not accepted as complete; unsupported scopes remain disabled until their gates pass. No production readiness or deployment verification is claimed. Phase 9 formula editing is a separate release.
+**Source baseline:** main `2af9eb1e3991cb649ebcc695e3f2c42fbce4f40a`; reviewed candidate `848f601c4595b8f69f15665c7841d7714329e674`.
+**Business owner:** PMS administrator
 **Initial scope:** Monthly KPI targets, scoring weights and direction, connected to the entire PMS calculation and reporting pipeline.
 
 ## 1. Purpose and success definition
@@ -14,7 +14,7 @@ Administrators must be able to change a team's evaluation settings for a reporti
 
 This is a calculation-platform change with a settings interface, not a standalone editor. A successful release connects configuration to ingestion, persisted KPI evidence, team and employee dashboards, BSC, function/corporate rollups, risk flags, insights, exports, reports and relevant planning evidence.
 
-Example: July attendance target is 55%; August target is 65%. July remains scored using 55%; August uses 65%. Opening July after publishing August must not change July's scores, targets, weights, direction, grades or displayed meaning.
+Synthetic acceptance example: July attendance target is 55%; August target is 65%. July remains scored using 55%; August uses 65%. Opening July after publishing August must not change July's scores, targets, weights, direction, grades or displayed meaning. This is not the supplied Outbound source chronology: its attendance target is 65% in both July and August 2026.
 
 The first release preserves existing formulas, aggregation methods, grade thresholds, missing-value rules and achievement caps. Direction is editable within supported scoring policies; a direction change does not authorize changing the policy itself. Custom formulas are a later, separate phase.
 
@@ -38,17 +38,18 @@ The first release preserves existing formulas, aggregation methods, grade thresh
 - Keep old results and settings traceable.
 - Integrate with the whole system, not just Administration.
 
-### Recommended defaults requiring business approval before activation
+### Approved decisions governing implementation
 
-- Admin can create, edit, approve and initiate controlled recalculation.
-- Performance Team can prepare drafts and previews only if explicitly given evaluation-management capabilities; they do not receive general Administration access.
-- Initial publish/approval authority remains Admin-only. A separate approver capability can be considered later.
+- D001: Admin alone manages every evaluation-settings stage, including catalog, draft, preview, export, jobs, approval, apply and rollback. Performance Team retains ordinary operational reads, not evaluation-management rights.
+- D002: Temporarily block target/direction changes for unsupported formula paths. Weight-only changes require trustworthy achievement provenance and unchanged policy/cap; otherwise the scope remains blocked. A recognized direction or importer name is not proof of calculation support.
 - Exact-month bindings are preferred. Copying rules forward is explicit; no hidden use of the latest or a future month.
 - Existing workbook-sourced targets remain workbook-sourced during compatibility migration. Administrators explicitly switch selected KPIs to approved fixed targets.
-- A conflicting workbook target under fixed-target mode blocks commit until the conflict is resolved or explicitly acknowledged with an auditable reason under the approved policy. There is no silent override.
+- D003: A conflicting workbook target under fixed-target mode blocks upload until the mismatch is resolved. There is no acknowledgment or silent-override bypass.
+- D004: Support the original August 2026 Outbound Productivity KPI at 10% with Attendance at 60%, preserving July's four scored KPIs and Attendance at 70%. Productivity is a stored source actual, not a formula derived from available time. Missing Productivity cannot be zero-filled, omitted, inferred from a final score, or resolved by renormalizing other weights.
+- D005: Admin can revise the targets and weights for an already approved reporting month. Start a new draft copied from that month's approved version, preview and approve the correction, then explicitly apply it. Retain the original approved version and results/audit evidence; D002 capability limits and stale-source rollback protections still apply. This is not permission to mutate approved snapshots in place or automatically rescore history.
 - Scoring does not change until a new upload or an explicit apply/recalculation operation activates the new basis.
 
-These are proposals, not claims about current role permissions or deployed behavior.
+These are approved implementation requirements, not claims that the current candidate or production already enforces them. Original July formula certification and unsupported formula-family activation remain separate evidence gates.
 
 ### Out of scope for the initial release
 
@@ -289,15 +290,15 @@ Evaluation configuration management is a separate capability from viewing a team
 | Role | View applied rules/evidence | Prepare drafts/preview | Approve/apply | Administration access |
 |---|---|---|---|---|
 | Admin | Full authorized system scope | Yes | Yes | Existing access |
-| Performance Team | Existing full operational scope | Proposed explicit evaluation capability | No by default | Remains unavailable |
+| Performance Team | Existing full operational scope | No | No | Remains unavailable |
 | Branch Director | Own branch records/team evidence | No | No | No |
 | Function Director | Assigned function(s), child teams and authorized branches | No | No | No |
 | Regional Manager | Own region only | No | No | No |
-| Manager | Existing assigned-team behavior | No | No | No |
+| Manager | Existing assigned team and performance-level grants | No | No | No |
 | Employee | Own applied scorecard evidence only | No | No | No |
 | Legacy roles | Preserve current grant behavior | No new capability automatically | No | Preserve existing restrictions |
 
-Proposed capability names: `evaluation.view`, `evaluation.draft`, `evaluation.preview`, `evaluation.approve`, `evaluation.apply`. Map to the existing permission system; do not implement a parallel authorization framework.
+Evaluation-management operations are Admin-only under D001. Ordinary applied-result reads reuse the existing team, level, person, branch, function and region authorization contract; management catalog/version access must not be confused with ordinary evidence viewing. Do not implement a parallel authorization framework.
 
 - Non-admin viewers receive only metadata relevant to authorized evidence, not previews of other employees or wider branch/function targets.
 - Locked branch/function/region filters stay locked; clear/reset never clears enforced grants.
@@ -315,7 +316,7 @@ Replace the existing KPI Configuration section with **Evaluation Settings**; pre
 1. Reporting month/year selector.
 2. Function -> team/source sub-team -> performance level -> position/person scope selectors, populated from the live catalog.
 3. Readiness, status, version, target-source policy and active-result revision summary.
-4. Actions: Copy previous month, Save draft, Validate, Preview impact, Approve; Apply to existing data is a separate guarded action.
+4. Actions: Copy previous month, Revise this month, Save draft, Validate, Preview impact, Approve; Apply to existing data is a separate guarded action. Revise this month copies the selected month's approved settings into a new version; it does not edit the immutable approved version.
 5. Three tabs: **Rules**, **Impact preview**, **History**.
 
 Rules table columns: KPI, unit, target mode, target value, weight %, direction, previous-month value and validation state. Technical formula/aggregation/perspective/source mappings are read-only reference details in release one.
@@ -332,7 +333,7 @@ Rules table columns: KPI, unit, target mode, target value, weight %, direction, 
 - Mobile uses labeled editable KPI rows/cards; tablet/desktop use the compact table. Retain keyboard navigation, labels, visible focus, dialog focus trapping and usable touch targets.
 - Use static status indicators; no animation-dependent result loading.
 
-Performance Team, if given draft capability, receives a separate authorized Evaluation workspace rather than opening all of `/settings`. Personal `/account` settings stay separate.
+Performance Team does not receive an Evaluation workspace under D001. Personal `/account` settings stay separate from Administration and monthly evaluation management.
 
 ## 9. Downstream integration and acceptance matrix
 
@@ -432,7 +433,7 @@ No implementation phase is complete until its exit gate has evidence. The whole 
 
 ### Phase 3 — API workflow and authorization
 
-**Work:** Draft/copy/edit/validate/preview/approve/history endpoints; optimistic concurrency; preview freshness; audit reasons; capability mapping. Separate Performance Team draft workspace from general admin controls.
+**Work:** Admin-only draft/copy/edit/validate/preview/approve/history endpoints; optimistic concurrency; preview freshness; audit reasons; capability mapping. Performance Team does not manage evaluation drafts or previews under D001.
 
 **Deliverables:** OpenAPI contracts, error taxonomy, permission matrix and integration tests.
 
@@ -506,6 +507,7 @@ Collect actual old/new formulas and classify reusable policies. Add only reviewe
 | EVAL-18 | Multi-year January/December, missing month, deactivated team | No latest/future fallback or year collision; historical identity retained |
 | EVAL-19 | Large team/bulk preview/job | Bounded memory/queries, usable progress, idempotent retry; measured latency within agreed budgets |
 | EVAL-20 | Database upgrade/rollback and schema mismatch | Data preserved, service refuses incomplete schema clearly; no runtime UndefinedColumn failure after release |
+| EVAL-21 | Revise targets/weights after the selected month is already approved | New draft copied from that month; original approval retained; stale preview rejected; explicit apply updates only the selected scope/month; rollback never overwrites newer uploads |
 
 Tests use authorized Local/Test/Staging data; no destructive or password/user/grant-mutating tests in Production. Include real PostgreSQL migration/concurrency/partition coverage, not SQLite-only assertions. Capture numeric reconciliation at storage precision separately from display rounding.
 
@@ -548,13 +550,13 @@ If a month has no new changes, still explicitly approve its copied binding. If h
 | Target is also an aggregation input | Separate raw aggregation weight from edited scoring target |
 | Mixed-basis monthly data | Pin every row; show warning; controlled whole-affected-scope activation |
 | Future rule alters old direction/labels | Immutable basis; no current-definition override on pinned reads |
-| Performance Team needs configuration work but not admin settings | Separate capabilities/workspace; business approval of draft rights |
+| Performance Team accidentally receives evaluation-management rights | Enforce D001 Admin-only on every endpoint/job before any catalog write; ordinary authorized result reads remain available |
 | Scope nulls/overlaps allow duplicate publication | Normalize scope identity and database constraints + concurrency tests |
 | Correction job loses notes/actions/report history | Version calculation data only; preserve human artifacts and explicit links |
 | Redis failure leaves stale browser data | Durable post-commit delivery, revision keys and bounded refresh/fallback |
 | New team appears without an adapter | Dynamic coverage/readiness register; fail visibly; onboarding gate |
 
-Business decisions to confirm before activation: Performance Team draft rights; who approves; conflict acknowledgment policy; exact-month copy behavior; whether distinct branch scoring rules are genuinely needed; allowed retrospective-correction periods; and how periods are operationally locked/closed.
+D001–D005 above settle management authority, unsupported formula behavior, fixed-target conflicts, August Outbound Productivity and explicit post-approval monthly corrections. Remaining decisions before any wider activation include distinct branch scoring overrides and operational period locks. Do not silently introduce these features.
 
 ## 15. Overall definition of done and next implementation step
 
@@ -570,8 +572,10 @@ Business decisions to confirm before activation: Performance Team draft rights; 
 - [ ] Responsive UX, performance budgets, failure/retry behavior and rollback pass.
 - [ ] Live post-deployment verification confirms authorized real data and the deployed basis.
 
-**Recommended next step:** Deploy the local Phases 0–8 revision, run `alembic upgrade head` on the production database, and confirm one authorized live period returns the approved basis. This document does not by itself authorize a production write. Phase 9 remains out of scope.
+**Next step:** Close the independently reproduced permission, scoring-completeness, Outbound source-basis, immutable-history, stale-rollback and frontend gate findings; reconcile one forward migration chain; then run integrated verification before a reviewed local merge. Publishing main or deploying is a separate step, requiring the release and recovery gates above. Phase 9 remains out of scope.
 
 ## 16. Reference maintenance
+
+Admin operating guidance is maintained in [the monthly evaluation guide](../guides/monthly-evaluation-admin.md). Its candidate status must remain explicit until integrated and release gates pass.
 
 Update this document after each implementation phase with changed files, decisions, migrations, test evidence, remaining scope gaps and active rollout status. Mark a phase complete only when its exit gate is met. Keep proposals distinguishable from deployed behavior. The root `task_plan.md`, `findings.md` and `progress.md` hold session tracking; this file is the durable implementation reference.

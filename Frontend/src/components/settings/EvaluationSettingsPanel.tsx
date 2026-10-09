@@ -436,12 +436,12 @@ export function EvaluationSettingsPanel() {
       {!blocked && approved && <p role="status" className="text-xs text-[var(--text-secondary)]">{READ_ONLY_APPROVED_NOTE}</p>}
       {!blocked && dirty && <p role="status" className="text-xs font-semibold text-[var(--text-secondary)]">{UNSAVED_PREVIEW_NOTE}</p>}
       {!blocked && unsupported && <p role="status" className="text-xs font-semibold text-amber-800">{UNSUPPORTED_FORMULA_NOTE}</p>}
-      {!!period?.sourceVersionId && <p className="text-xs text-[var(--text-secondary)]">Source version {period.sourceVersionId}{period.sourceChecksum ? ` · source checksum ${period.sourceChecksum}` : ''}. The source version remains in this month's history.</p>}
+      {!!period?.sourceVersionId && <p className="text-xs [overflow-wrap:anywhere] text-[var(--text-secondary)]">Source version {period.sourceVersionId}{period.sourceChecksum ? ` · source checksum ${period.sourceChecksum}` : ''}. The source version remains in this month's history.</p>}
       {!!period?.notes && <p className="text-xs text-[var(--text-muted)]">{period.notes}</p>}
       {visibleProof && <section className="min-w-0 space-y-3" aria-label="Impact proof">
         <p className="text-xs text-[var(--text-secondary)]">{formatImpactSummary(visibleProof)}</p>
         {visibleProof.writes === 0 && <p className="text-xs text-[var(--text-muted)]">Impact preview wrote no scores.</p>}
-        {visibleProof.rulesChecksum && <p className="text-xs text-[var(--text-muted)]">Rules checksum {visibleProof.rulesChecksum}.</p>}
+        {visibleProof.rulesChecksum && <p className="text-xs [overflow-wrap:anywhere] text-[var(--text-muted)]">Rules checksum {visibleProof.rulesChecksum}.</p>}
         {visibleProof.conflicts.length > 0 && <div className="space-y-2">
           <p className="text-xs text-[var(--text-secondary)]">{FIXED_MISMATCH_NOTE}</p>
           <div className="min-w-0 overflow-x-auto">
@@ -545,7 +545,7 @@ export function EvaluationSettingsPanel() {
       </div>}
       <section className="min-w-0">
         <h3 className="mb-2 flex items-center gap-2 text-xs font-black uppercase tracking-wide text-[var(--text-muted)]"><History size={14} />History</h3>
-        <ul className="space-y-2 text-xs text-[var(--text-secondary)]">
+        <ul className="space-y-2 text-xs [overflow-wrap:anywhere] text-[var(--text-secondary)]">
           {periodLoading && <li>Loading this month…</li>}
           {!periodLoading && (period?.history ?? []).map((item) => <li key={item.id}>{versionLabel(item, monthName)}</li>)}
           {!periodLoading && (period?.revisions ?? []).map((item) => <li key={item.id} className="flex flex-wrap items-center gap-2">
