@@ -8,6 +8,7 @@ import kpiOverviewIcon from '../../../assets/insights/kpi-overview.svg';
 import moreAnalysisIcon from '../../../assets/insights/more-analysis.svg';
 import weightedContributionIcon from '../../../assets/insights/weighted-contribution.svg';
 import { GradeBadge, SectionCard, SectionHeader, ShareBar, ViewAllButton } from './InsightsOverviewPrimitives';
+import BasisComparisonNote from '../../../features/evaluation/BasisComparisonNote';
 import {
   barShare, cleanScope, formatMetric, formatPercent, formatSignedPercent, geographyGap,
   lowPerformingTeams, MORE_ANALYSIS_KEYS, peopleToReview, sparklinePoints, splitDrivers, teamGap, teamsNeedingAttention,
@@ -148,9 +149,9 @@ export function GeographySection({ summaries, regionFilter, onSelectRegion }: {
                   type="button"
                   onClick={() => onSelectRegion(summary.scope)}
                   aria-label={`Focus ${summary.scope}: score ${formatPercent(summary.current_score)}, gap ${formatSignedPercent(gap)}`}
-                  className="flex w-full items-center gap-[16px] rounded-[10px] border border-[var(--insights-card-border)] bg-[var(--bg-surface)] px-[16px] py-[14px] text-left transition hover:border-[var(--insights-accent-border)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--insights-accent)]"
+                  className="grid w-full grid-cols-1 items-center gap-[16px] rounded-[10px] border border-[var(--insights-card-border)] bg-[var(--bg-surface)] px-[16px] py-[14px] text-left transition hover:border-[var(--insights-accent-border)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--insights-accent)] sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_104px]"
                 >
-                  <span className="flex w-[196px] min-w-0 shrink-0 flex-col items-start gap-[4px]">
+                  <span className="flex min-w-0 flex-col items-start gap-[4px]">
                     <strong className="text-[13px] font-semibold leading-normal text-[var(--insights-heading)]">{summary.scope}</strong>
                     <span className="flex items-center gap-[8px]">
                       <span className="text-[22px] font-bold leading-normal text-[var(--insights-heading)]">{formatPercent(summary.current_score)}</span>
@@ -162,7 +163,7 @@ export function GeographySection({ summaries, regionFilter, onSelectRegion }: {
                     <GradeBadge score={summary.current_score} />
                   </span>
                   <ShareBar percent={share ?? 0} color={negativeColor} />
-                  <span className="w-[104px] shrink-0 text-right text-[12px] font-medium leading-normal text-[var(--insights-negative)]">
+                  <span className="min-w-0 text-[12px] font-medium leading-normal text-[var(--insights-negative)] sm:text-right">
                     {share === null ? 'No gap share' : `${share.toFixed(1)}% gap share`}
                   </span>
                 </button>
@@ -217,6 +218,7 @@ export function TeamsNeedingAttentionSection({ teams, onSelectTeam }: {
       />
       {visible.length ? (
         <div className={scrollX}>
+          <div className="px-[4px] pb-[8px]"><BasisComparisonNote messages={visible.map((team) => team.basis_context?.message)} /></div>
           <div className="min-w-[460px]">
             <div aria-hidden="true" className="flex items-start gap-[8px] border-b border-[var(--insights-card-border)] px-[4px] pb-[8px] pt-[6px] text-[12px] font-medium leading-normal text-[var(--text-muted)]">
               <span className="min-w-0 flex-1">Team</span>

@@ -27,6 +27,7 @@ import { summarizeRootCauses } from '../utils/rootCauseInsights';
 import type { LocationKey } from '../types';
 import { apiFetch } from '../lib/apiClient';
 import { filterActionsByPerformanceScope } from '../features/executive/actionScope';
+import BasisComparisonNote from '../features/evaluation/BasisComparisonNote';
 
 type RegionFilter = 'All' | 'EGY' | 'UAE';
 
@@ -321,6 +322,9 @@ const ExecutiveOverview = () => {
         />
       ) : (
         <>
+          {scopedPerformanceApiEnabled && (
+            <BasisComparisonNote messages={[scopedSummary.basisContext?.message]} />
+          )}
           {/* All-Months Warning Banner */}
           {selectedMonth === 'All' && (
             <div className="rounded-xl border border-amber-400/30 bg-amber-500/8 px-4 py-3 text-xs font-semibold text-amber-700 dark:text-amber-300 flex items-center gap-2">

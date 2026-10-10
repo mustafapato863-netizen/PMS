@@ -415,7 +415,16 @@ class PlanningService:
         first = plan.insight_links[0]
         workspace = InsightsService(self.performance_repo, self, db=self.db).generate_workspace(scope, month=first.evidence_month, year=first.evidence_year, team=logical_team_name(plan.team), performance_level=plan.performance_level, position=plan.position_name, employee_id=plan.employee.employee_id if plan.employee else None)
         by_id = {item.id: item for item in workspace.priority_insights}
-        return [{"id": link.insight_id, "resolved": link.insight_id in by_id, **(by_id[link.insight_id].model_dump(include={"severity", "title", "explanation", "scope"}) if link.insight_id in by_id else {})} for link in plan.insight_links]
+        resolved = []
+        for link in plan.insight_links:
+            item = by_id.get(link.insight_id)
+            if item is None:
+                resolved.append({"id": link.insight_id, "resolved": False})
+                continue
+            payload = item.model_dump(include={"severity", "title", "explanation", "scope"})
+            payload["basis_note"] = item.detail.basis_note
+            resolved.append({"id": link.insight_id, "resolved": True, **payload})
+        return resolved
 
     def update(self, plan_id: str, payload: PlanUpdate, scope: dict) -> dict[str, Any]:
         data = self.get(plan_id, scope); plan = self.plans.get(uuid.UUID(plan_id))

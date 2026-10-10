@@ -6,6 +6,7 @@ from statistics import mean
 from typing import Any, Iterable
 
 from config.loader import ConfigurationError, find_team_config_by_db_name, load_team_config, resolve_team_config
+from services.scoring_basis_comparison import compare_scoring_basis
 from utils.kpi_direction import FLIP_TOLERANCE, flipped_contribution_fix, normalize_direction, resolve_kpi_direction
 
 
@@ -358,20 +359,27 @@ class ReportingEvidenceService:
         return {"top": top, "bottom": bottom, "all": rows}
 
     def trend(self, records: list[Any], primary: tuple[int, int], requested_count: int = 6) -> dict[str, Any]:
-        periods = sorted({period_key(row) for row in records if period_key(row) and period_key(row) <= primary})[-requested_count:]
+        by_period: dict[tuple[int, int], list[Any]] = defaultdict(list)
+        for row in records:
+            key = period_key(row)
+            if key is not None:
+                by_period[key].append(row)
+        periods = sorted(key for key in by_period if key <= primary)[-requested_count:]
         series = []
         previous_signatures: set[tuple[Any, ...]] | None = None
         for period in periods:
-            period_rows = [row for row in records if period_key(row) == period and score(row) is not None]
+            period_rows = [row for row in by_period[period] if score(row) is not None]
             values = [score(row) for row in period_rows]
             if not values:
                 continue
             signatures = {self._config_signature(row) for row in period_rows}
+            previous_period = previous_calendar_period(period)
             series.append({
                 "label": period_label(period),
                 "value": round(mean(values), 2),
                 "basis_changed": previous_signatures is not None and signatures != previous_signatures,
                 "basis_state": "mixed" if len(signatures) > 1 else "uniform",
+                "basis_context": compare_scoring_basis(by_period.get(period, []), by_period.get(previous_period, [])),
             })
             previous_signatures = signatures
         count = len(series)
@@ -454,10 +462,11 @@ class ReportingEvidenceService:
         base = {"comparison_state": "available" if reported is not None else "unavailable", "comparison_period": period_label(previous_calendar_period(primary)) if primary else None,
                 "current_period": period_label(primary), "previous_overall_score": summary["previous_score"], "current_overall_score": summary["average_score"], "total_score_point_change": reported,
                 "matched_employee_count": len(matched), "joiner_count": len(current_only), "leaver_count": len(previous_only), "current_only_employee_count": len(current_only), "previous_only_employee_count": len(previous_only)}
+        basis_context = compare_scoring_basis(current, previous)
         if reported is None:
             return {**base, "kpi_contribution_movements": [], "team_contribution_movements": [], "joiner_effect": None, "leaver_effect": None, "population_scope_mix_effect": None,
                     "configuration_mismatch_effect": None, "configuration_version_effect": None, "missing_evidence_effect": None, "missing_incomparable_data_effect": None, "residual": None,
-                    "scoring_basis_changed": False, "raw_performance_changed": False, "kpi_basis_comparisons": [],
+                    "scoring_basis_changed": False, "raw_performance_changed": False, "kpi_basis_comparisons": [], "basis_context": basis_context,
                     "reconciliation_state": "unavailable", "rounding_tolerance": ROUNDING_TOLERANCE, "narrative": "Previous-calendar-month comparison is unavailable.", "warnings": ["An adjacent-month movement bridge cannot be produced."]}
         current_matched = mean(score(current_by_id[key]) for key in matched) if matched else None
         previous_matched = mean(score(previous_by_id[key]) for key in matched) if matched else None
@@ -531,7 +540,7 @@ class ReportingEvidenceService:
                 "joiner_effect": round(joiner, 2), "leaver_effect": round(leaver, 2), "population_scope_mix_effect": round(scope_mix, 2),
                 "configuration_mismatch_effect": round(config_effect, 2), "configuration_version_effect": round(config_effect, 2),
                 "missing_evidence_effect": round(missing_effect, 2), "missing_incomparable_data_effect": round(missing_effect, 2), "residual": round(residual, 2),
-                "scoring_basis_changed": scoring_basis_changed, "raw_performance_changed": raw_performance_changed, "kpi_basis_comparisons": basis_rows,
+                "scoring_basis_changed": scoring_basis_changed, "raw_performance_changed": raw_performance_changed, "kpi_basis_comparisons": basis_rows, "basis_context": basis_context,
                 "reconciliation_state": "partial" if partial else "reconciled", "rounding_tolerance": ROUNDING_TOLERANCE, "narrative": narrative, "warnings": warnings}
 
     def lowest_kpis(self, current: list[Any], previous: list[Any]) -> dict[str, Any]:

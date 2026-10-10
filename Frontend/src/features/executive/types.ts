@@ -10,6 +10,7 @@
  * widgets hide or soften instead of showing invented numbers.
  */
 import type { GradeClass } from '../../constants/grades';
+import type { BasisComparisonContext } from '../evaluation/scoringBasisComparison';
 import type { InsightPeriod, InsightTrendStatus, InsightTargetStatus } from '../insights/types';
 
 export type ExecutiveView = 'corporate' | 'managerial' | 'function';
@@ -50,6 +51,7 @@ export interface ExecutiveTrendPoint {
   comparison_score: number | null;
   target: number;
   measured_records?: number;
+  basis_context?: BasisComparisonContext | null;
 }
 
 export interface ExecutiveHero {
@@ -85,6 +87,7 @@ export interface ExecutiveFunctionCard {
   falling_months: number | null;
   trend: Array<{ period: ExecutivePeriod; score: number | null }>;
   is_most_improved: boolean;
+  basis_context?: BasisComparisonContext | null;
 }
 
 export interface ExecutiveRegion {
@@ -161,6 +164,7 @@ export interface ExecutiveTeam {
     unit: string | null;
     text: string;
   } | null;
+  basis_context?: BasisComparisonContext | null;
 }
 
 export interface ExecutiveGradeDistribution {

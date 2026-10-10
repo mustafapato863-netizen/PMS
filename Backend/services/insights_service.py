@@ -16,6 +16,7 @@ from config.loader import (
     resolve_team_config,
 )
 from models.insight_schemas import (
+    BasisComparisonContext,
     InsightComparison,
     InsightDetail,
     InsightDriver,
@@ -44,6 +45,7 @@ from services.dashboard_record_service import DashboardRecordService
 from services.kpi_aggregation import AggregatedKpiMetric, aggregate_kpi_metric, capped_achievement, configured_weight
 from services.management_bsc_service import ManagementBSCService
 from services.planning_service import PlanningService, MONTH_ORDER
+from services.scoring_basis_comparison import compare_scoring_basis, previous_calendar_month
 import utils.kpi_direction as _kd
 from utils.report_scope import (
     filter_records_by_scope,
@@ -616,6 +618,138 @@ def _kpi_recommended_focus(
     return f"Maintain {label} performance and monitor the next-period movement."
 
 
+class _BasisScopeIndex:
+    """Period and scope buckets for one already-filtered record list.
+
+    Comparisons reuse these buckets. The index lives only for that call.
+    """
+
+    def __init__(self, records: list[Any]) -> None:
+        self._by_period: dict[tuple[int, str], list[Any]] = defaultdict(list)
+        self._by_team: dict[tuple[int, str, str], list[Any]] = defaultdict(list)
+        self._by_position: dict[tuple[int, str, str, str], list[Any]] = defaultdict(list)
+        self._by_scope: dict[tuple[Any, ...], list[Any]] = defaultdict(list)
+        self._compared: dict[tuple[Any, ...], dict[str, Any]] = {}
+        for record in records:
+            period = _period(record)
+            schema = _period_schema(period)
+            if period is None or schema is None:
+                continue
+            team = str(_value(record, "team") or "").strip()
+            position = str(_value(record, "position") or "").strip()
+            level = str(_value(record, "performance_level") or "")
+            slot = (period[0], schema.month)
+            self._by_period[slot].append(record)
+            self._by_team[(*slot, team)].append(record)
+            self._by_position[(*slot, team, position)].append(record)
+            self._by_scope[(*slot, team, position, level)].append(record)
+
+    def payload(
+        self,
+        year: int,
+        month: str,
+        team: str | None = None,
+        position: str | None = None,
+        level: str | None = None,
+    ) -> dict[str, Any]:
+        key = (int(year), str(month), team, position, level)
+        cached = self._compared.get(key)
+        if cached is None:
+            previous = previous_calendar_month(int(year), str(month))
+            if previous is None:
+                cached = compare_scoring_basis([], [])
+            else:
+                cached = compare_scoring_basis(
+                    self._rows(int(year), str(month), team, position, level),
+                    self._rows(previous[0], previous[1], team, position, level),
+                )
+            self._compared[key] = cached
+        return cached
+
+    def context(
+        self,
+        year: int,
+        month: str,
+        team: str | None = None,
+        position: str | None = None,
+        level: str | None = None,
+    ) -> BasisComparisonContext:
+        return BasisComparisonContext.model_validate(self.payload(year, month, team, position, level))
+
+    def _rows(
+        self,
+        year: int,
+        month: str,
+        team: str | None,
+        position: str | None,
+        level: str | None,
+    ) -> list[Any]:
+        slot = (year, month)
+        if team is None and position is None and level is None:
+            return self._by_period.get(slot, [])
+        if team is not None and position is None and level is None:
+            return self._by_team.get((*slot, team), [])
+        if team is not None and position is not None and level is None:
+            return self._by_position.get((*slot, team, position), [])
+        if team is not None and position is not None and level is not None:
+            return self._by_scope.get((*slot, team, position, level), [])
+        chosen = []
+        for record in self._by_period.get(slot, []):
+            if team is not None and str(_value(record, "team") or "").strip() != team:
+                continue
+            if position is not None and str(_value(record, "position") or "").strip() != position:
+                continue
+            if level is not None and str(_value(record, "performance_level") or "") != level:
+                continue
+            chosen.append(record)
+        return chosen
+
+
+def _annotate_basis_notes(
+    items: list[Any],
+    records: list[Any],
+    year: int,
+    month: str,
+    index: _BasisScopeIndex | None = None,
+) -> None:
+    lookup = index or _BasisScopeIndex(records)
+    cache: dict[tuple[str, str, str], BasisComparisonContext] = {}
+    for item in items:
+        if item.insight_type == "data_quality":
+            continue
+        key = (item.team or "", item.position or "", item.performance_level or "")
+        if key not in cache:
+            cache[key] = lookup.context(
+                year,
+                month,
+                team=item.team,
+                position=item.position,
+                level=item.performance_level,
+            )
+        if cache[key].message:
+            item.detail.basis_note = cache[key].message
+
+
+def _legacy_basis_warning(records: list[Any], current: list[Any], month: str) -> dict[str, str] | None:
+    years = {
+        year for record in current
+        if isinstance((year := _value(record, "year")), int)
+    }
+    if len(years) != 1:
+        return None
+    year = next(iter(years))
+    lookup = _BasisScopeIndex(records)
+    messages: list[str] = []
+    for team in sorted({str(_value(record, "team", "")) for record in current if _value(record, "team")}):
+        context = lookup.payload(year, month, team=team)
+        message = context.get("message")
+        if context.get("state") in {"changed", "mixed", "unknown"} and message and message not in messages:
+            messages.append(message)
+    if not messages:
+        return None
+    return {"type": "warning", "message": " ".join(messages)}
+
+
 class InsightsService:
     """Canonical deterministic insight orchestration over existing PMS records."""
 
@@ -694,6 +828,9 @@ class InsightsService:
                 "type": "positive",
                 "message": f"{top_team} achieved the highest quality score averaging {team_quality[top_team] * 100:.1f}%.",
             })
+        basis_warning = _legacy_basis_warning(all_records, current, month)
+        if basis_warning:
+            insights.append(basis_warning)
         return insights or [{"type": "positive", "message": "All team metrics are performing stable within expectations."}]
 
     def _authorized_records(self, scope: dict) -> tuple[list[Any], int]:
@@ -1492,21 +1629,30 @@ class InsightsService:
         )
 
     @staticmethod
-    def _overall_trend(records: list[Any], current_period: tuple[int, int]) -> list[InsightOverallTrendPoint]:
+    def _overall_trend(
+        records: list[Any],
+        current_period: tuple[int, int],
+        index: _BasisScopeIndex | None = None,
+    ) -> list[InsightOverallTrendPoint]:
         """Six-month overall score trend ending at the workspace's current period.
 
         ``records`` is the same filtered, access-checked list that produces
         ``current`` for ``executive_story``; each month is selected with the
         same ``_records_in_period`` helper and averaged with ``_score_stats``,
         so the last point always equals ``executive_story.current_score``.
+        Basis context reuses ``index`` instead of scanning the whole history
+        once per point.
         """
+        lookup = index or _BasisScopeIndex(records)
         points = []
         for period in _trailing_periods(current_period):
             score, measured = _score_stats(_records_in_period(records, period))
+            schema = _period_schema(period)
             points.append(InsightOverallTrendPoint(
-                period=_period_schema(period),
+                period=schema,
                 score=round(score, 1) if score is not None else None,
                 measured_records=measured,
+                basis_context=lookup.context(period[0], schema.month),
             ))
         return points
 
@@ -2111,6 +2257,14 @@ class InsightsService:
         items.extend(data_issues)
         for item in items:
             item.planning_context["period"] = f"{_period_schema(current_period).month} {current_period[0]}"
+        basis_index = _BasisScopeIndex(records)
+        _annotate_basis_notes(
+            items,
+            records,
+            current_period[0],
+            _period_schema(current_period).month,
+            index=basis_index,
+        )
 
         selected_kpi = filters.get("kpi")
         selected_severity = filters.get("severity")
@@ -2292,6 +2446,11 @@ class InsightsService:
                 gap_points=round(current_score - 100.0, 1) if current_score is not None else None,
                 main_insight_id=ranked_items[0].id if ranked_items else None,
                 main_cause=ranked_items[0].title if ranked_items else None,
+                basis_context=basis_index.context(
+                    current_period[0],
+                    _period_schema(current_period).month,
+                    team=team,
+                ),
             ))
         total_team_gap_impact = sum(
             max(-(item.gap_points or 0), 0) * item.total_employees
@@ -2326,8 +2485,12 @@ class InsightsService:
                 f"{_period_schema(current_period).month} {_period_schema(current_period).year}",
             ])),
         )
+        executive_story.basis_context = basis_index.context(
+            current_period[0],
+            _period_schema(current_period).month,
+        )
 
-        overall_trend = self._overall_trend(records, current_period)
+        overall_trend = self._overall_trend(records, current_period, basis_index)
 
         repeated_employees = {item.employee_id for item in employee_items if item.employee_id}
         declining_teams = {

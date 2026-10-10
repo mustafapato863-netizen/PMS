@@ -13,6 +13,7 @@ import { GRADE_CLASSES, getGradeClassOrNull, type GradeClass } from '../../const
 import { canonicalTeamName } from '../../types';
 import type { AgentRecord } from '../../types';
 import { normalizePerformanceScore } from '../../utils/kpiScore';
+import { compareScoringBasis, type BasisRecord } from '../evaluation/scoringBasisComparison';
 import { agentMatchesLocation } from '../../utils/branchScope';
 import { summarizeActionAnalytics } from './actionAnalytics';
 import type { InsightDriver, InsightItem, InsightTrendStatus } from '../insights/types';
@@ -120,6 +121,29 @@ function employeesOf(records: ExecRecord[]): number {
 
 function inPeriod(records: ExecRecord[], period: ExecutivePeriod | null) {
   return period ? records.filter((record) => record.period.key === period.key) : [];
+}
+
+function exactPreviousPeriod(period: ExecutivePeriod): ExecutivePeriod {
+  const index = MONTHS.indexOf(period.month);
+  if (index <= 0) return periodOf(period.year - 1, 'December');
+  return periodOf(period.year, MONTHS[index - 1]);
+}
+
+function asBasisRecords(records: ExecRecord[]): BasisRecord[] {
+  return records.map((record) => ({
+    employee_id: record.employeeId,
+    team: record.team,
+    position: record.position,
+    performance_level: record.level,
+    year: record.period.year,
+    month: record.period.month,
+    kpi_values: record.kpis,
+  }));
+}
+
+/** Exact calendar month, even when the score delta uses a later available month. */
+function basisFor(records: ExecRecord[], period: ExecutivePeriod) {
+  return compareScoringBasis(asBasisRecords(inPeriod(records, period)), asBasisRecords(inPeriod(records, exactPreviousPeriod(period))));
 }
 
 /** Six calendar months ending at `period` (oldest first). */
@@ -329,6 +353,7 @@ function teamsOf(
       vs_function_avg: null as number | null,
       rank_in_function: null as number | null,
       flags: [] as ExecutiveTeamFlag[],
+      basis_context: basisFor(records, effective),
       flag_detail: worstKpi && worstKpi.achievement_percent !== null && worstKpi.achievement_percent < 100 ? {
         kpi_key: worstKpi.kpi_key,
         kpi_label: worstKpi.kpi_label,
@@ -389,6 +414,7 @@ function functionCards(scoped: ExecRecord[], effective: ExecutivePeriod, previou
       falling_months: fallingMonths(trend),
       trend,
       is_most_improved: false,
+      basis_context: basisFor(records, effective),
     }];
   });
   const improved = cards.filter((card) => (card.change ?? 0) > 0).sort((l, r) => (r.change ?? 0) - (l.change ?? 0))[0];
@@ -698,7 +724,7 @@ export function composeExecutiveSummary(input: ComposeInput): ExecutiveSummary {
   }
 
   const trend: ExecutiveTrendPoint[] = effective
-    ? trendOf(scoped, effective).map((point, index) => ({ ...point, comparison_score: comparisonTrend?.[index] ?? null, target: TARGET }))
+    ? trendOf(scoped, effective).map((point, index) => ({ ...point, comparison_score: comparisonTrend?.[index] ?? null, target: TARGET, basis_context: basisFor(scoped, point.period) }))
     : [];
 
   const rawSplit = input.deriveScopedDrivers ? scopedRecordDrivers(current, before, teamFunctions) : input.drivers

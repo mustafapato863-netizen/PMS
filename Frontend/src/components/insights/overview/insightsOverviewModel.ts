@@ -142,6 +142,7 @@ export interface TrendPoint {
     changeValue?: number | null;
     status?: string | null;
   };
+  basisMessage?: string | null;
 }
 
 export interface TrendSeries {
@@ -186,6 +187,7 @@ export function buildOverallTrend(points: InsightOverallTrendPoint[] | null | un
     key: point.period.key,
     actual: point.score,
     target: point.target,
+    basisMessage: point.basis_context?.message ?? null,
   }));
 }
 

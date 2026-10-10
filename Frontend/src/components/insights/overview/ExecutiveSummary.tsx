@@ -6,6 +6,7 @@ import {
   cleanScope, formatPercent, formatSignedPercent, movementTone, priorityFocusText, resolveMovementTone, selectTrendSeries,
   type MovementTone, type TrendPoint, type TrendSeries,
 } from './insightsOverviewModel';
+import BasisComparisonNote from '../../../features/evaluation/BasisComparisonNote';
 
 const CHART_HEIGHT = 176;
 const TONE_COLOR: Record<MovementTone, string> = {
@@ -345,6 +346,9 @@ function PerformanceTrendChart({ series }: { series: TrendSeries }) {
               {movement.text} vs {movement.against}
             </p>
           )}
+          {activePoint.basisMessage && (
+            <p className="mt-[5px] whitespace-normal break-words text-[11px] leading-4 text-[var(--text-secondary)]">{activePoint.basisMessage}</p>
+          )}
         </div>
       )}
     </div>
@@ -379,6 +383,7 @@ function PerformanceTrend({ series, loading, filterKey }: { series: TrendSeries;
       {loading
         ? <TrendSkeleton />
         : <PerformanceTrendChart key={`${filterKey ?? ''}|${series.source}|${series.kpiLabel ?? ''}|${series.points.map((point) => point.key).join(',')}`} series={series} />}
+      <BasisComparisonNote messages={[series.points[series.points.length - 1]?.basisMessage]} />
       <div className="flex w-full items-center justify-center gap-[20px] text-[12px] leading-normal text-[var(--text-secondary)]">
         <span className="inline-flex items-center gap-[6px]"><span aria-hidden="true" className="size-[8px] rounded-full bg-[var(--insights-accent)]" />{overall ? 'Overall score' : 'KPI actual'}</span>
         <span className="inline-flex items-center gap-[6px]">
@@ -517,6 +522,7 @@ export default function ExecutiveSummary({
             </p>
           </SummaryKpi>
         </div>
+        <BasisComparisonNote messages={[story?.basis_context?.message]} />
         </div>
       </div>
       <PerformanceTrend series={selectTrendSeries(overallTrend, trend)} loading={trendLoading} filterKey={filterKey} />

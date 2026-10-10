@@ -114,8 +114,10 @@ describe('DepartmentalSummaryView role routing', () => {
     expect(within(filters).getByRole('group', { name: /Region: EGY \(fixed by your role\)/ })).toBeInTheDocument();
     expect(within(filters).getByRole('group', { name: /Function: Call Center \(fixed by your role\)/ })).toBeInTheDocument();
     expect(within(filters).getByRole('group', { name: /Team: Inbound \(fixed by your role\)/ })).toBeInTheDocument();
-    expect(screen.getByRole('note')).toHaveTextContent('Scoped to your team');
-    expect(screen.getByRole('note')).toHaveTextContent('function-average comparison appears once the backend summary endpoint is live');
+    const scopeNotes = screen.getAllByRole('note').filter((note) => note.textContent?.startsWith('Scoped to your team.'));
+    expect(scopeNotes).toHaveLength(1);
+    expect(scopeNotes[0]).toHaveTextContent('Scoped to your team');
+    expect(scopeNotes[0]).toHaveTextContent('function-average comparison appears once the backend summary endpoint is live');
     expect(screen.getByRole('heading', { name: 'Team KPIs — worst first' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Corrective actions' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Functions' })).not.toBeInTheDocument();

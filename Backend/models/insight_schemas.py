@@ -23,6 +23,17 @@ class InsightEvidence(BaseModel):
     value: str
 
 
+class BasisComparisonContext(BaseModel):
+    """Additive scoring-basis note. It does not change the score or the risk class."""
+
+    state: Literal["unchanged", "changed", "mixed", "unknown", "unavailable"]
+    like_for_like: bool
+    raw_performance: Literal["unchanged", "changed", "not_comparable", "unknown", "partial"]
+    membership: Literal["stable", "changed", "none", "unknown"] = "unknown"
+    reasons: list[str] = Field(default_factory=list)
+    message: str | None = None
+
+
 class InsightDetail(BaseModel):
     current_value: float | None = None
     previous_value: float | None = None
@@ -49,6 +60,7 @@ class InsightDetail(BaseModel):
     trend_status: InsightTrendStatus | None = None
     target_status: InsightTargetStatus | None = None
     direction_defaulted: bool = False
+    basis_note: str | None = None
 
 
 class InsightItem(BaseModel):
@@ -129,6 +141,7 @@ class InsightTeamSummary(BaseModel):
     opportunities: int = 0
     main_insight_id: str | None = None
     main_cause: str | None = None
+    basis_context: BasisComparisonContext | None = None
 
 
 class InsightScopeSummary(BaseModel):
@@ -157,6 +170,7 @@ class InsightExecutiveStory(BaseModel):
     recommended_focus: str
     confidence: Literal["high", "partial", "low"] = "high"
     evidence: list[InsightEvidence] = Field(default_factory=list)
+    basis_context: BasisComparisonContext | None = None
 
 
 class InsightPersonContribution(BaseModel):
@@ -229,6 +243,7 @@ class InsightOverallTrendPoint(BaseModel):
     score: float | None = None
     target: float | None = 100.0
     measured_records: int = 0
+    basis_context: BasisComparisonContext | None = None
 
 
 class InsightRoleSummary(BaseModel):

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import { getGradeClassOrNull } from '../../../constants/grades';
 import type { ExecutiveTeam, ExecutiveTeamFlag } from '../../../features/executive/types';
+import type { BasisComparisonContext } from '../../../features/evaluation/scoringBasisComparison';
 import TeamsAtRiskCard from './TeamsAtRiskCard';
 
 function team(name: string, score: number | null, flags: ExecutiveTeamFlag[]): ExecutiveTeam {
@@ -68,6 +69,26 @@ describe('TeamsAtRiskCard', () => {
     expect(screen.getAllByText('No active risk flags')).toHaveLength(3);
     fireEvent.click(screen.getByRole('button', { name: 'Show at-risk teams' }));
     expect(screen.getAllByTestId('risk-row')).toHaveLength(1);
+  });
+
+  it('shows one evaluation-settings note for every team that shares it', () => {
+    const basis: BasisComparisonContext = {
+      state: 'changed',
+      like_for_like: false,
+      raw_performance: 'unchanged',
+      membership: 'stable',
+      reasons: ['target'],
+      message: 'Scores can be affected by evaluation settings. Comparable raw performance is unchanged.',
+    };
+    render(<MemoryRouter><TeamsAtRiskCard teams={[
+      { ...team('Grade C team', 80, ['grade_c']), basis_context: basis },
+      { ...team('Grade D team', 70, ['grade_d']), basis_context: basis },
+    ]} /></MemoryRouter>);
+
+    expect(screen.getAllByTestId('basis-comparison-note')).toHaveLength(1);
+    expect(screen.getByTestId('basis-comparison-note')).toHaveTextContent('Scores can be affected by evaluation settings.');
+    expect(screen.getByTestId('basis-comparison-note')).toHaveTextContent('Comparable raw performance is unchanged.');
+    expect(screen.getAllByTestId('risk-row')).toHaveLength(2);
   });
 
   it('keeps the selected branch and level when opening a team dashboard', () => {

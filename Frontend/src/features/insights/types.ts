@@ -17,6 +17,15 @@ export interface InsightEvidence {
   value: string;
 }
 
+export interface BasisComparisonContext {
+  state: 'unchanged' | 'changed' | 'mixed' | 'unknown' | 'unavailable';
+  like_for_like: boolean;
+  raw_performance: 'unchanged' | 'changed' | 'not_comparable' | 'unknown' | 'partial';
+  membership?: 'stable' | 'changed' | 'none' | 'unknown';
+  reasons: string[];
+  message: string | null;
+}
+
 export interface InsightDetail {
   current_value: number | null;
   previous_value: number | null;
@@ -42,6 +51,7 @@ export interface InsightDetail {
   trend_status?: InsightTrendStatus | null;
   target_status?: InsightTargetStatus | null;
   direction_defaulted?: boolean;
+  basis_note?: string | null;
 }
 
 export interface InsightItem {
@@ -110,6 +120,7 @@ export interface InsightExecutiveStory {
   recommended_focus: string;
   confidence: 'high' | 'partial' | 'low';
   evidence: InsightEvidence[];
+  basis_context?: BasisComparisonContext | null;
 }
 
 export type PersonContributionClassification = 'negative' | 'positive' | 'affected' | 'data_issue';
@@ -183,6 +194,7 @@ export interface InsightOverallTrendPoint {
   score: number | null;
   target: number | null;
   measured_records: number;
+  basis_context?: BasisComparisonContext | null;
 }
 
 export interface InsightRoleSummary {
@@ -272,6 +284,7 @@ export interface InsightsWorkspace {
     opportunities: number;
     main_insight_id: string | null;
     main_cause: string | null;
+    basis_context?: BasisComparisonContext | null;
   }>;
   geography_summaries?: InsightScopeSummary[];
   executive_story?: InsightExecutiveStory | null;
