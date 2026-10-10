@@ -11,6 +11,13 @@ This document records the old-policy baseline, not acceptance of the new impleme
 
 Harnesses and XML are retained under the primary workspace's ignored `tmp/`: `reviewer-evaluation-cross-admin-pg-20261010.py`, `reviewer-cross-admin-baseline-red-20261010.xml`, `reviewer-evaluation-cross-admin-recovery-20261010.py`, `reviewer-cross-admin-recovery-baseline-red-20261010.xml`.
 
+Additional independent native evidence on the same accepted old-policy closure:
+
+- Actual post-Team-lock-wait management role revocation/inactivation: **4 passed /7.55 seconds** across PostgreSQL16/18. `pg_stat_activity` confirmed the operation was blocked on the Team row before another connection committed the caller's revocation; after release there were no header, score, stage or audit writes. This negative security gate must be repeated after C2 broadens management. Artifact: `reviewer-management-authority-baseline-20261010.xml` and immutable `reviewer-evaluation-management-authority-pg-20261010.py`.
+- Actual two-Admin recovery after successful promotion/owner deactivation, and another Admin's cancellation versus the original worker's promotion: **4 failed /13.19 seconds /7 existing warnings**, at the expected requester-only management boundary. Valid preparation/staging and promotion ran on real ORM data; recovery/audit outcomes remain unproved. Artifact: `reviewer-management-races-baseline-red-20261010.xml` and immutable `reviewer-evaluation-management-races-pg-20261010.py`. All participant threads joined before teardown.
+
+A separate same-second timestamp/descending-random-UUID reopen harness is **prepared, not run**, to reject accidentally selecting an older cancelled job instead of a new open binding. Moving the new job's date forward in a test would not prove the actual same-second behavior. The full actual-JWT/200-row worker/lifecycle and browser reconnaissance harnesses are also prepared, not executed at this checkpoint.
+
 The unchanged post-implementation repeat must additionally prove original identity/source equality, actual management audit actor, cancellation and audit in one transaction, exactly one committed revision/outbox after recovery, no rescoring on acknowledgement, and continued refusal of cross-Admin execution. Passing the baseline setup alone does not establish those assertions.
 
 No production database, user workbook, main branch, remote or deployment was changed. These are application authorization tests, not native row-security policy certification.
