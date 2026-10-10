@@ -2,6 +2,8 @@
 
 ## Superseding bounded/authority checkpoint
 
+Dormant coordinator local checkpoint `e5176bc` supersedes historical C1-unaccepted statements below: independent125normalPASS plus32nativePASS prove the bounded lease/reclaim/cancel/retry/recovery slice, not worker/API/UI runtime or production. See `docs/qa/evaluation-lease-coordinator-independent-2026-10-10.md`. User-approved cross-Admin management is a subsequent unaccepted C2 candidate; original requester and prior evidence remain immutable. Missing-family source goldens, repeated full-cohort growth cost and release/UAT gates remain open.
+
 Pinned-summary cache review on `7f7bc34` found and repaired a response-key shadowing defect without changing calculations. Independent focused anonymous CI53PASS and real separate-process PostgreSQL16/18 apply/rollback warm-cache2PASS cover canonical summary/roster while Redis is absent; complete post-repair backend1400PASS/unchanged MarketingFAIL/existingSKIP and actual JWT/public lifecycle1PASS. See `docs/qa/evaluation-cross-process-cache-2026-10-10.md`. This does not certify reconnect or every consumer.
 
 Reviewed queue/publisher composition is now `81d3b03`: full backend1400PASS/unchanged MarketingFAIL/existingSKIP,100 sequential owned PostgreSQLPASS,115 anonymous CI-shapedPASS. Legacy queue isolation and dormant default-disabled publisher are accepted locally; worker/runtime/HTTP/UI are not activated. Phase7C1 lease coordinator remains a separate unaccepted candidate. Details: `docs/qa/evaluation-queue-outbox-composition-2026-10-10.md`. The whole roadmap remains incomplete. The following bounded-only checkpoint is retained as historical evidence.

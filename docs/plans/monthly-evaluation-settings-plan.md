@@ -14,6 +14,8 @@
 
 ## 1. Purpose and success definition
 
+Latest local execution checkpoint (10 October 2026): dormant lease coordinator reviewed and composed at `e5176bc`, independent125normal and32native cases passed. Background worker/API and progress UI are in separate candidates, not yet accepted or deployed. Any currently active Admin may manage recovery/cancel/new-job capture under the owner's newly approved policy; execution must never borrow revoked requester authority, and the original request attribution is retained. Unsupported family goldens and production sign-off remain unavailable/open.
+
 Administrators must be able to change a team's evaluation settings for a reporting month without changing backend code or redeploying the application. Every affected result must use the correct settings for its team, source identity, performance level, position and period.
 
 This is a calculation-platform change with a settings interface, not a standalone editor. A successful release connects configuration to ingestion, persisted KPI evidence, team and employee dashboards, BSC, function/corporate rollups, risk flags, insights, exports, reports and relevant planning evidence.
