@@ -468,7 +468,7 @@ class PerformanceDashboardReadService:
             ).filter(tuple_(KPIValue.record_id, KPIValue.record_year).in_(keys[start:start + 500])).all()
             for value in values:
                 evidence[(value.record_id, value.record_year)].append(value)
-        for key, (row, basis) in pinned.items():
+        for record_key, (row, basis) in pinned.items():
             lines = {str(line.get("kpi_key")): line for line in basis.get("lines") or []}
             stored = {str(value.get("kpi_key")): value for value in row.kpi_values or []}
             row.kpi_values = [{
@@ -477,7 +477,7 @@ class PerformanceDashboardReadService:
                 "evaluation_pinned": True,
                 "direction": lines.get(value.kpi_key, {}).get("direction") or stored.get(value.kpi_key, {}).get("direction"),
                 "unit": lines.get(value.kpi_key, {}).get("unit") or stored.get(value.kpi_key, {}).get("unit") or "%",
-            } for value in evidence[key]]
+            } for value in evidence[record_key]]
 
         data = {
             "scope": {
