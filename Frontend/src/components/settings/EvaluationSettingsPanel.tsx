@@ -61,6 +61,8 @@ import {
   proofAuthorizesApproval,
   type ImpactProof,
 } from './monthlyCorrection';
+import { EvaluationApplyProgress } from './EvaluationApplyProgress';
+import { BACKGROUND_CONTINUES_NOTE, CHECKING_APPLY_NOTE, useEvaluationApplyJobs } from './evaluationApplyJobs';
 
 type Selection = { scopeId: string; year: number; month: number };
 
@@ -159,6 +161,7 @@ export function EvaluationSettingsPanel() {
   const [actionError, setActionError] = useState<{ key: string; text: string } | null>(null);
   const [rollbackConfirm, setRollbackConfirm] = useState<{ key: string; revisionId: string } | null>(null);
   const [conflict, setConflict] = useState<{ key: string; text: string } | null>(null);
+  const [backgroundNote, setBackgroundNote] = useState<string | null>(null);
   const gate = useRef(false);
   const catalogQuery = useQuery({
     queryKey: ['evaluation-settings', 'catalog'],
@@ -209,6 +212,21 @@ export function EvaluationSettingsPanel() {
   const invalidateCommitted = (vars: Selection) => {
     invalidateCommittedEvidence(queryClient, vars, refreshPerformanceData);
   };
+
+  const releaseGate = () => { gate.current = false; };
+  const applyJobs = useEvaluationApplyJobs({
+    active: isAdmin,
+    selection,
+    selectionReady: Boolean(resolvedScopeId) && yearValid && month >= 1 && month <= 12,
+    isCurrent,
+    fetchWithRole,
+    releaseGate,
+    reportError: (vars, text) => {
+      if (!isCurrent(vars)) return;
+      setActionError({ key: selectionKey(vars), text });
+    },
+    invalidateCommitted,
+  });
 
   const save = useMutation({
     retry: false,
@@ -386,7 +404,7 @@ export function EvaluationSettingsPanel() {
     onSettled: () => { gate.current = false; },
   });
 
-  const busy = save.isPending || openDraft.isPending || revise.isPending || impact.isPending || approve.isPending || apply.isPending || rollback.isPending;
+  const busy = save.isPending || openDraft.isPending || revise.isPending || impact.isPending || approve.isPending || apply.isPending || rollback.isPending || applyJobs.pending;
   const period = periodQuery.data;
   const serverLines = period?.lines ?? [];
   const editorActive = editor?.key === currentKey ? editor : null;
@@ -430,6 +448,12 @@ export function EvaluationSettingsPanel() {
   };
 
   const changeSelection = (next: Partial<Selection>) => {
+    const nextSelection = {
+      scopeId: next.scopeId != null ? next.scopeId : selection.scopeId,
+      year: next.year != null ? next.year : selection.year,
+      month: next.month != null ? next.month : selection.month,
+    };
+    const leavingOpenJob = selectionKey(nextSelection) !== currentKey && applyJobs.tracksOpenJob;
     if (next.scopeId != null) setScopeId(next.scopeId);
     if (next.year != null) setYear(next.year);
     if (next.month != null) setMonth(next.month);
@@ -438,6 +462,7 @@ export function EvaluationSettingsPanel() {
     setConflict(null);
     setRollbackConfirm(null);
     setPage(0);
+    setBackgroundNote(leavingOpenJob ? BACKGROUND_CONTINUES_NOTE : null);
   };
 
   const ensureEditor = (current: EditorState | null): EditorState => {
@@ -562,8 +587,29 @@ export function EvaluationSettingsPanel() {
   };
 
   const runApply = () => {
-    if (!resolvedScopeId || period?.status !== 'approved' || dirty || blocked || !begin()) return;
-    apply.mutate(selection);
+    if (!resolvedScopeId || period?.status !== 'approved' || dirty || blocked || applyJobs.blockEnqueue) return;
+    if (!begin()) return;
+    if (applyJobs.mode === 'sync') {
+      apply.mutate(selection);
+      return;
+    }
+    if (applyJobs.mode === 'async' && applyJobs.enqueue(selection)) return;
+    gate.current = false;
+  };
+
+  const runCancelApply = () => {
+    if (!begin()) return;
+    if (!applyJobs.commitCancel()) gate.current = false;
+  };
+
+  const runRetryApply = () => {
+    if (!applyJobs.actions?.showRetry || !begin()) return;
+    if (!applyJobs.commitRetry()) gate.current = false;
+  };
+
+  const runRecoverApply = () => {
+    if (!applyJobs.actions?.showRecover || !begin()) return;
+    if (!applyJobs.commitRecover()) gate.current = false;
   };
 
   const runRollback = (revision: EvaluationRevision) => {
@@ -594,6 +640,28 @@ export function EvaluationSettingsPanel() {
       </header>
       {error && <div role="alert" className="flex items-start gap-2 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-xs font-semibold text-red-600"><AlertCircle size={16} />{error}</div>}
       {message && <p className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-xs font-semibold text-emerald-700" role="status">{message}</p>}
+      {applyJobs.mode === 'pending' && <p role="status" className="text-xs text-[var(--text-muted)]">{CHECKING_APPLY_NOTE}</p>}
+      {applyJobs.mode === 'unavailable' && <div role="alert" className="space-y-2 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-xs font-semibold text-red-600">
+        <p>{applyJobs.unavailableMessage}</p>
+        <button type="button" onClick={applyJobs.retryAvailability} className="rounded-xl border border-red-500/30 px-3 py-2 text-xs font-bold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--sgh-cyan-primary,#00A3E0)]">Retry availability check</button>
+      </div>}
+      {backgroundNote && <p role="status" className="break-words rounded-xl border border-[var(--border-light)] bg-[var(--bg-sunken)] px-4 py-3 text-xs text-[var(--text-secondary)]">{backgroundNote}</p>}
+      {applyJobs.problem && <div role="alert" className="space-y-2 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-xs font-semibold text-red-600">
+        <p>{applyJobs.problem}</p>
+        <button type="button" onClick={applyJobs.refreshJob} className="rounded-xl border border-red-500/30 px-3 py-2 text-xs font-bold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--sgh-cyan-primary,#00A3E0)]">Refresh background apply</button>
+      </div>}
+      {applyJobs.presentation && applyJobs.job && applyJobs.actions && <EvaluationApplyProgress
+        job={applyJobs.job}
+        presentation={applyJobs.presentation}
+        actions={applyJobs.actions}
+        confirmCancel={applyJobs.confirmCancel}
+        busy={busy}
+        onArmCancel={applyJobs.armCancel}
+        onConfirmCancel={runCancelApply}
+        onDismissCancel={applyJobs.dismissCancel}
+        onRetry={runRetryApply}
+        onRecover={runRecoverApply}
+      />}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <label className="min-w-0 text-xs font-bold text-[var(--text-secondary)]">Evaluation scope
           <select aria-label="Evaluation scope" value={resolvedScopeId} onChange={(event) => changeSelection({ scopeId: event.target.value })} className="mt-1 w-full rounded-xl border border-[var(--border-light)] bg-[var(--bg-surface)] px-3 py-2 text-sm text-[var(--text-primary)]">
@@ -623,7 +691,7 @@ export function EvaluationSettingsPanel() {
         {!approved && <button type="button" onClick={runSave} disabled={controlsLocked || !period?.versionId || period?.status !== 'draft' || unsupported || inputBlocked || checksumMissing || versionDrift || Boolean(conflictText)} className="inline-flex items-center gap-1 rounded-xl border border-[var(--border-light)] px-3 py-2 text-xs font-bold disabled:cursor-not-allowed disabled:opacity-50"><Save size={14} />Save draft</button>}
         {!approved && <button type="button" onClick={runImpact} disabled={controlsLocked || !period?.versionId || period?.status !== 'draft' || dirty || unsupported} className="rounded-xl border border-[var(--border-light)] px-3 py-2 text-xs font-bold disabled:cursor-not-allowed disabled:opacity-50">Impact preview</button>}
         {!approved && <button type="button" onClick={runApprove} disabled={controlsLocked || !period?.versionId || dirty || period?.status !== 'draft' || !approvalReady} className="inline-flex items-center gap-1 rounded-xl bg-blue-600 px-3 py-2 text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"><Check size={14} />Approve</button>}
-        <button type="button" onClick={runApply} disabled={controlsLocked || period?.status !== 'approved' || dirty} className="rounded-xl bg-slate-900 px-3 py-2 text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">Apply</button>
+        {(applyJobs.mode === 'sync' || applyJobs.mode === 'async') && <button type="button" onClick={runApply} disabled={controlsLocked || period?.status !== 'approved' || dirty || applyJobs.blockEnqueue} className="rounded-xl bg-slate-900 px-3 py-2 text-xs font-bold text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--sgh-cyan-primary,#00A3E0)] disabled:cursor-not-allowed disabled:opacity-50">Apply</button>}
       </div>}
       {!blocked && approved && <p role="status" className="text-xs text-[var(--text-secondary)]">{READ_ONLY_APPROVED_NOTE}</p>}
       {!blocked && checksumMissing && <p role="status" className="text-xs font-semibold text-amber-800">{MISSING_CHECKSUM_MESSAGE}</p>}
