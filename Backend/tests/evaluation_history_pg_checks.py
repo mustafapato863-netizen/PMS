@@ -1057,6 +1057,11 @@ def test_empty_downgrade_and_reupgrade_preserve_legacy_rows(pg):
 
 
 def test_bootstrap_matches_migration_and_reports_root_failure_separately(pg):
+    from services.evaluation.apply_job_schema import (
+        APPLY_FOUNDATION_REVISION,
+        missing_apply_foundation_objects,
+    )
+
     engine, target = pg
     url = url_for(target)
     with engine.connect() as connection:
@@ -1094,8 +1099,12 @@ def test_bootstrap_matches_migration_and_reports_root_failure_separately(pg):
     assert "evaluation revision evidence is immutable" in revision_guard
     with engine.connect() as connection:
         assert_safe(connection, target)
-        assert alembic_version(connection) == REVISION
+        # Fresh bootstrap stamps the current head, not this historical upgrade's
+        # fixed revision. Keep the exact historical signature comparison below
+        # and additionally verify every new foundation guard/constraint.
+        assert alembic_version(connection) == APPLY_FOUNDATION_REVISION
         assert history_schema_signature(connection) == migrated
+        assert missing_apply_foundation_objects(connection) == []
 
     with engine.connect() as connection:
         reset_public(connection, target)
