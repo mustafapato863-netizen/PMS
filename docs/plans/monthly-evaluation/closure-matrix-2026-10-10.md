@@ -1,5 +1,9 @@
 # PMS-EVAL-001 — evidence-backed closure matrix
 
+## Superseding bounded/authority checkpoint
+
+Reviewed local closure `dbecea2` now includes dormant bounded stager/atomic promotion and manifest-aware replay/rollback, plus fresh persisted Admin rechecks after the Team fence in public and bounded paths. Complete composed backend1329PASS with only unchanged Marketing131vs68FAIL/existingSKIP; native18PASS; actual auth-login/JWT/public manifest API1PASS. Earlier Phase7B RED failures remain historical reproduction evidence, not current outcomes. See `docs/qa/evaluation-bounded-authority-composition-2026-10-10.md`. Bounded retention is not linear query-cost acceptance: repeated full-month scans remain; user actual200employees measured1.516s traced stage-only. Worker enqueue/lease/reclaim/cancel/retry, outbox publication and progress UI remain unaccepted/not activated. Two isolated default-fail-closed queue/publisher lanes are in progress. No main/production change, added family support or all-roadmap completion is claimed.
+
 Date: 10 October 2026. Baseline: `625abf4` (reviewed serializer retention), following `5c8aa201` (QA integration). This is an acceptance supplement, not a replacement or reduction of roadmap v1.2. Candidate fixes below are isolated and not deployed. No all-team completion claim.
 
 ## Business and evidence boundaries

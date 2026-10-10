@@ -1,5 +1,11 @@
 # Remaining runtime integration gates
 
+## Superseding local checkpoint
+
+Public and bounded authority repairs are locally composed at `dbecea2` after independent review. The complete composed backend gate is1329PASS plus the unchanged Marketing131vs68FAIL/existingSKIP; composed native gates18PASS, real JWT/public manifest API scenario1PASS. See `docs/qa/evaluation-bounded-authority-composition-2026-10-10.md` for actual evidence and limits. The historical unauthorized-success failures below are retained as RED evidence and are no longer current candidate outcomes. Nonlocking post-fence authority is not transaction-wide revocation serialization.
+
+Dormant bounded staging/promotion/manifest adapters are implemented, with correctness and bounded-retention gates recorded, but repeated full-source scans remain a measured growth-cost limit. User actual largest cohort200/page100 measured1.516s with tracing in synthetic SQLite; page200 is not a proven latency win and default remains100. Neither worker runtime nor publisher/UI is activated. Separate default-fail-closed legacy queue and dormant outbox delivery candidates are now isolated Grok lanes, unaccepted until reviewer gates. Main/publish/release authority remains separate.
+
 Date:10October2026. Source audit of accepted closure `856cf4d`. This is a dependency checklist, not evidence that these features exist, and not permission to publish. Phase7B must independently pass before Phase7C implementation is accepted.
 
 ## 7B acceptance first
