@@ -38,7 +38,7 @@ from services.report_story_service import (
 )
 from services.seeding_service import DatabaseSeeder, UploadProcessingError
 from services.job_storage import cleanup_job_files, resolve_input_path
-from services.processing_job_service import ProcessingJobService
+from services.processing_job_service import JOB_KINDS, ProcessingJobService
 from services.socket_service import SocketNotificationService
 
 logger = logging.getLogger(__name__)
@@ -209,7 +209,9 @@ def process_job_once(job_id: str, worker_id: str) -> None:
     claim_db = SessionLocal()
     try:
         job = ProcessingJobService.get(claim_db, job_id)
-        if not job or job.status != "running":
+        # Unlocked read. get() reloads persisted kind and status for this
+        # session only; it does not hold the job row across the handler.
+        if not job or job.status != "running" or job.kind not in JOB_KINDS:
             return
         kind = job.kind
         payload = dict(job.request_json or {})
