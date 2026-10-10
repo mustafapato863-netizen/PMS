@@ -11,6 +11,10 @@ reread the persisted user after that fence. The read does not lock the user
 row. A completed promote replay may carry a stale epoch and still must not
 write. Source fingerprints reread the whole captured month, so a bounded page
 is not linear query cost.
+
+``capture`` still moves a new job to staging and running. ``capture_queued``
+is the lease seam: the same insert stops at queued and pending. ``_promote``
+can leave the job running when the caller acknowledges success separately.
 """
 
 from __future__ import annotations
@@ -281,6 +285,16 @@ class BoundedApplyService:
             self.db.expunge_all()
             raise
 
+    def capture_queued(self, actor: dict, scope_id, year: int, month) -> dict:
+        """Insert or resume one open binding and do not commit.
+
+        A new row stays ``queued`` and ``pending``. The caller owns the
+        transaction. Proof, admission, and the second source read stay in
+        ``_capture``.
+        """
+
+        return self._capture(actor, scope_id, year, month, leave_queued=True)
+
     def stage_page(
         self,
         actor: dict,
@@ -357,7 +371,7 @@ class BoundedApplyService:
         restored = self._restore_manifest_rows(revision)
         return [{"restored_count": restored}]
 
-    def _capture(self, actor: dict, scope_id, year: int, month) -> dict:
+    def _capture(self, actor: dict, scope_id, year: int, month, *, leave_queued: bool = False) -> dict:
         number = month_number(month)
         peeked = self._peek_scope(scope_id)
         team, user = self._team_fence(peeked.team_id, actor)
@@ -429,9 +443,10 @@ class BoundedApplyService:
         )
         self.db.add(control)
         self.db.flush()
-        control.state = "staging"
-        job.status = "running"
-        self.db.flush()
+        if not leave_queued:
+            control.state = "staging"
+            job.status = "running"
+            self.db.flush()
         confirmed, confirmed_count = self._stream_source(scope, int(year), number, lock=True)
         if confirmed != fingerprint or confirmed_count != expected:
             raise EvaluationConflict(
@@ -496,7 +511,7 @@ class BoundedApplyService:
             "idempotent": inserted == 0,
         }
 
-    def _promote(self, actor, job_id, *, expected_epoch) -> dict:
+    def _promote(self, actor, job_id, *, expected_epoch, acknowledge_job: bool = True) -> dict:
         user, job, control, scope = self._locked_header(job_id, actor)
         if control.state == "promoted" and control.promoted_revision_id is not None:
             # Read-only. A stale expected_epoch is tolerated and does not write.
@@ -548,14 +563,15 @@ class BoundedApplyService:
         self._fault("before_outbox_insert")
         self._insert_outbox(control, revision)
         self._fault("after_outbox_insert")
-        job.status = "succeeded"
-        job.progress = 100
-        job.result_json = {
-            "outcome": "promoted",
-            "revision_id": str(revision.id),
-            "count": expected,
-        }
-        self.db.flush()
+        if acknowledge_job:
+            job.status = "succeeded"
+            job.progress = 100
+            job.result_json = {
+                "outcome": "promoted",
+                "revision_id": str(revision.id),
+                "count": expected,
+            }
+            self.db.flush()
         logger.info("evaluation apply promoted job=%s revision=%s count=%s", control.job_id, revision.id, expected)
         return {
             "job_id": str(control.job_id),
