@@ -562,11 +562,24 @@ class EvaluationWorkflow:
         assert_schema(self.db)
 
     def _require_admin(self, actor: dict) -> None:
-        """Management calls stop here, before any catalog sync or settings write."""
+        """Persisted active Admin. Entry runs this before catalog sync.
+
+        The same check runs again after the team fence. require_action still
+        rejects a non-Admin actor. The actor dict is not the persisted role.
+        This read does not lock the user row.
+        """
         require_action(actor, "", "catalog")
         user = self._audit_user(actor)
         if user is None or user.role != "Admin" or user.is_active is not True:
             raise AccessDenied("Evaluation settings are limited to Admin.")
+
+    def _require_admin_after_fence(self, actor: dict) -> None:
+        """Reload persisted Admin after the team fence and before a mutation.
+
+        A passing read does not lock the user and does not cover a revocation
+        that commits after this statement.
+        """
+        self._require_admin(actor)
 
     def _audit_user(self, actor: dict):
         raw = (actor or {}).get("user_id")
@@ -610,15 +623,20 @@ class EvaluationWorkflow:
             ],
         }
 
-    def _guard_period(self, scope_row: EvaluationScope, year: int, month: int) -> None:
+    def _guard_period(self, scope_row: EvaluationScope, year: int, month: int, actor: dict) -> None:
         """Live exact-month capability. Stored readiness is not permission.
 
         An admitted July or August Outbound month stays editable while the global
         catalog row stays blocked. An unaudited scope stays blocked even when the
         stored row says supported. The team must still be active.
+
+        Persisted Admin is read again after the team fence returns, before the
+        capability decision or any later management write.
         """
         if scope_row.team_id is not None:
             self._lock_team(scope_row.team_id)
+        self._require_admin_after_fence(actor)
+        if scope_row.team_id is not None:
             team = self.db.query(Team).populate_existing().filter(Team.id == scope_row.team_id).one_or_none()
             if team is None or team.is_active is not True:
                 raise EvaluationError(
@@ -836,7 +854,7 @@ class EvaluationWorkflow:
         self._require_admin(actor)
         scope_row = self._scope(scope_id, sync=True)
         number = month_number(month)
-        self._guard_period(scope_row, int(year), number)
+        self._guard_period(scope_row, int(year), number, actor)
         existing = self._find_version(scope_row, int(year), number, "draft", lock=True)
         if existing is not None:
             if copy_previous or _lineage(existing.config_snapshot).get("source_version_id"):
@@ -915,7 +933,7 @@ class EvaluationWorkflow:
         self._ready()
         version = self._version(version_id)
         scope_row = self._scope_for_version(version)
-        self._guard_period(scope_row, version.effective_from_year, version.effective_from_month)
+        self._guard_period(scope_row, version.effective_from_year, version.effective_from_month, actor)
         if version.status != "draft":
             raise EvaluationError("Approved settings are immutable. Open a new draft.", code="immutable")
         version = self._version(version.id, lock=True)
@@ -946,7 +964,7 @@ class EvaluationWorkflow:
         self._ready()
         version = self._version(version_id)
         scope_row = self._scope_for_version(version)
-        self._guard_period(scope_row, version.effective_from_year, version.effective_from_month)
+        self._guard_period(scope_row, version.effective_from_year, version.effective_from_month, actor)
         version = self._version(version.id, lock=True)
         if version.status != "draft":
             raise EvaluationError("Only a draft can be approved.", code="immutable")
@@ -980,7 +998,7 @@ class EvaluationWorkflow:
         self._ready()
         version = self._version(version_id)
         scope_row = self._scope_for_version(version)
-        self._guard_period(scope_row, version.effective_from_year, version.effective_from_month)
+        self._guard_period(scope_row, version.effective_from_year, version.effective_from_month, actor)
         if version.status not in {"draft", "approved"}:
             raise EvaluationError("Preview needs a draft or approved version.", code="not_found")
         self._require_version(scope_row, version)
@@ -1062,7 +1080,7 @@ class EvaluationWorkflow:
         require_action(actor, self._team_name(scope_row), "approve")
         year = int(source.effective_from_year)
         month = int(source.effective_from_month)
-        self._guard_period(scope_row, year, month)
+        self._guard_period(scope_row, year, month, actor)
         source_id = str(source.id)
         source = self._version(source_id, lock=True)
         if source.status != "approved":
@@ -1111,7 +1129,7 @@ class EvaluationWorkflow:
         version = self._version(version_id)
         scope_row = self._scope_for_version(version)
         require_action(actor, self._team_name(scope_row), "approve")
-        self._guard_period(scope_row, version.effective_from_year, version.effective_from_month)
+        self._guard_period(scope_row, version.effective_from_year, version.effective_from_month, actor)
         if version.status != "draft":
             raise EvaluationError("Impact preview is stored on a draft before approval.", code="immutable")
         self._validate_lines(snapshot_lines(version), snapshot_lines(version))
@@ -1217,7 +1235,7 @@ class EvaluationWorkflow:
         self._require_admin(actor)
         scope_row = self._scope(scope_id, sync=True)
         number = month_number(month)
-        self._guard_period(scope_row, int(year), number)
+        self._guard_period(scope_row, int(year), number, actor)
         version = self._find_version(scope_row, int(year), number, "approved", lock=True)
         if version is None:
             raise EvaluationError("Approve this month before applying it.", code="not_approved")
@@ -1297,6 +1315,7 @@ class EvaluationWorkflow:
         team = self.db.query(Team).filter(Team.id == revision.team_id).one()
         require_action(actor, logical_team_name(team), "rollback")
         self._lock_team(revision.team_id)
+        self._require_admin_after_fence(actor)
         revision = self._for_update(
             self.db.query(EvaluationRevision).filter(EvaluationRevision.id == parsed),
             True,
