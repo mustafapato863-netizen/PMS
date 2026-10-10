@@ -5,12 +5,18 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
 import { EvaluationSettingsPanel } from './EvaluationSettingsPanel';
 import { initialReportingPeriod } from './evaluationSettings';
+import { resetEvidenceInvalidation } from './evaluationApplyJobs';
+import { periodQueryKey } from './monthlyCorrection';
 
 const roleState = vi.hoisted(() => ({ role: 'Admin' as string }));
 const mocks = vi.hoisted(() => ({ fetchWithRole: vi.fn() }));
+const performanceRefresh = vi.hoisted(() => vi.fn());
 
 vi.mock('../../context/RoleContext', () => ({
   useUserRole: () => ({ role: roleState.role, fetchWithRole: mocks.fetchWithRole }),
+}));
+vi.mock('../../hooks/usePerformanceData', () => ({
+  refreshPerformanceData: performanceRefresh,
 }));
 
 const scope = {
@@ -37,7 +43,7 @@ const line = {
   label: 'Quality Errors',
   weight: 1,
   direction: 'higher_better',
-  target: 55,
+  target: 0.55,
   target_mode: 'fixed',
   unit: '%',
 };
@@ -52,7 +58,30 @@ const draft = {
 };
 
 function json(data: unknown, ok = true) {
-  return { ok, json: async () => (ok ? { success: true, data } : { detail: data }) };
+  return { ok, status: ok ? 200 : 400, json: async () => (ok ? { success: true, data } : { detail: data }) };
+}
+
+let capabilityRoute: 'sync' | 'handler' = 'sync';
+let evaluationHandler: ((url: string, init?: RequestInit) => Promise<unknown>) | null = null;
+
+function installEvaluationFetchRouter() {
+  mocks.fetchWithRole.mockImplementation(async (url: string, init?: RequestInit) => {
+    const href = String(url);
+    if (capabilityRoute === 'sync' && href.includes('/apply-jobs/capabilities') && init?.method !== 'POST') {
+      return json({ enabled: false });
+    }
+    if (!evaluationHandler) throw new Error('evaluation fetch handler was not installed');
+    return evaluationHandler(url, init);
+  });
+}
+
+function assignEvaluationFetch(handler: (url: string, init?: RequestInit) => Promise<unknown>) {
+  evaluationHandler = handler;
+}
+
+function installApplyJobFetch(handler: (url: string, init?: RequestInit) => Promise<unknown>) {
+  capabilityRoute = 'handler';
+  assignEvaluationFetch(handler);
 }
 
 function monthOf(url: string) {
@@ -121,8 +150,13 @@ function renderPanel(retryMutations = false) {
 
 beforeEach(() => {
   roleState.role = 'Admin';
+  performanceRefresh.mockClear();
   mocks.fetchWithRole.mockClear();
-  mocks.fetchWithRole.mockImplementation(async (url: string, init?: RequestInit) => {
+  resetEvidenceInvalidation();
+  capabilityRoute = 'sync';
+  evaluationHandler = null;
+  installEvaluationFetchRouter();
+  assignEvaluationFetch(async (url: string, init?: RequestInit) => {
     const href = String(url);
     if (href.includes('/catalog')) return json({ scopes: [scope, blocked] });
     if (href.includes('/periods')) return json({ versions: [draft] });
@@ -135,7 +169,7 @@ beforeEach(() => {
         ...draft,
         id: `draft-${body.month}`,
         notes: 'Copied from the approved previous month.',
-        lines: [{ ...line, target: body.month === 8 ? 65 : 70 }],
+        lines: [{ ...line, target: body.month === 8 ? 0.65 : 0.7 }],
       });
     }
     return json(draft);
@@ -175,6 +209,8 @@ it.each(['Manager', 'Performance Team'])('makes no evaluation request and shows 
   renderPanel();
   expect(screen.getByText('Evaluation settings are limited to Admin.')).toBeInTheDocument();
   expect(screen.queryByLabelText('Reporting month')).not.toBeInTheDocument();
+  expect(screen.queryByLabelText('QualityErrors target')).not.toBeInTheDocument();
+  expect(screen.queryByLabelText('QualityErrors weight')).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument();
   expect(screen.queryByRole('spinbutton', { name: 'Reporting year' })).not.toBeInTheDocument();
   await act(async () => { await Promise.resolve(); });
@@ -189,7 +225,7 @@ it('revises the selected approved month, saves, proves impact, approves without 
     status: 'approved',
     version_number: 2,
     checksum: 'sum-approved',
-    lines: [{ ...line, target: 55 }],
+    lines: [{ ...line, target: 0.55 }],
   };
   const revised = {
     id: 'draft-july',
@@ -198,13 +234,13 @@ it('revises the selected approved month, saves, proves impact, approves without 
     checksum: 'sum-draft',
     source_version_id: 'approved-july',
     source_checksum: 'sum-approved',
-    lines: [{ ...line, target: 55 }],
+    lines: [{ ...line, target: 0.55 }],
   };
   const state = {
     versions: [approved] as Array<Record<string, unknown>>,
     revisions: [] as Array<Record<string, unknown>>,
   };
-  mocks.fetchWithRole.mockImplementation(async (url: string, init?: RequestInit) => {
+  assignEvaluationFetch(async (url: string, init?: RequestInit) => {
     const href = String(url);
     if (href.includes('/catalog')) return json({ scopes: [scope] });
     if (href.includes('/periods')) return json({ versions: state.versions, revisions: state.revisions });
@@ -227,7 +263,7 @@ it('revises the selected approved month, saves, proves impact, approves without 
         scored_employees: 2,
         changed_count: 1,
         unchanged_count: 1,
-        conflicts: [{ record_id: 'rec-1', kpi_key: 'QualityErrors', workbook_target: 60, approved_target: 55 }],
+        conflicts: [{ record_id: 'rec-1', kpi_key: 'QualityErrors', workbook_target: 0.6, approved_target: 0.55 }],
         comparisons: [comparison('E001', 70), comparison('E002', 81)],
       }));
     }
@@ -251,6 +287,8 @@ it('revises the selected approved month, saves, proves impact, approves without 
   const { client } = renderPanel();
   expect(await screen.findByLabelText('QualityErrors target')).toBeDisabled();
   expect(screen.getByLabelText('QualityErrors target')).toHaveValue('55');
+  expect(screen.getByLabelText('QualityErrors weight')).toBeDisabled();
+  expect(screen.getByLabelText('QualityErrors weight')).toHaveValue('100');
   expect(screen.queryByRole('button', { name: 'New draft' })).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Copy previous month' })).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Revise this month' }));
@@ -271,14 +309,15 @@ it('revises the selected approved month, saves, proves impact, approves without 
   await waitFor(() => expect(calls('/drafts/draft-july', 'PATCH')).toHaveLength(1));
   const saved = JSON.parse(String(calls('/drafts/draft-july', 'PATCH')[0][1]?.body));
   expect(saved.weight_only).toBeUndefined();
-  expect(saved.lines[0]).toMatchObject({ target: 40, weight: 1, direction: 'higher_better', target_mode: 'fixed' });
+  expect(saved.expected_checksum).toBe('sum-draft');
+  expect(saved.lines[0]).toMatchObject({ target: 0.4, weight: 1, direction: 'higher_better', target_mode: 'fixed' });
   expect(await screen.findByText('Draft saved.')).toBeInTheDocument();
 
   fireEvent.click(screen.getByRole('button', { name: 'Impact preview' }));
   expect(await screen.findByText(/2 stored records, 2 scored, 1 changed, 1 unchanged/)).toBeInTheDocument();
   const mismatches = screen.getByRole('table', { name: 'Fixed target mismatches' });
-  expect(within(mismatches).getByText('60')).toBeInTheDocument();
-  expect(within(mismatches).getByText('55')).toBeInTheDocument();
+  expect(within(mismatches).getByText('60%')).toBeInTheDocument();
+  expect(within(mismatches).getByText('55%')).toBeInTheDocument();
   expect(screen.getByText(/new upload is still blocked/i)).toBeInTheDocument();
   expect(screen.getByRole('table', { name: 'Before and after scores' }).closest('div')).toHaveClass('overflow-x-auto');
   expect(screen.getByText('E001')).toBeInTheDocument();
@@ -290,8 +329,10 @@ it('revises the selected approved month, saves, proves impact, approves without 
   fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
   expect(await screen.findByText(/Existing scores were not recalculated/)).toBeInTheDocument();
   expect(calls('/evaluation/apply', 'POST')).toHaveLength(0);
+  expect(performanceRefresh).not.toHaveBeenCalled();
 
   client.setQueryData(['performance', 'catalog', 'sess'], { periods: [] });
+  client.setQueryData(['performance', 'bounded-records', 'kept'], { score: 79.82, target: 0.65 });
   client.setQueryData(['performance', 'summary', 'sess'], { total: 1 });
   client.setQueryData(['team-configs'], []);
   client.setQueryData(['kpi-weights'], []);
@@ -303,15 +344,20 @@ it('revises the selected approved month, saves, proves impact, approves without 
   const applyCall = calls('/evaluation/apply', 'POST')[0];
   expect(JSON.parse(String(applyCall[1]?.body))).toEqual({ scope_id: 'scope-1', year: 2026, month: 7 });
   expect(await screen.findByRole('button', { name: 'Rollback' })).toBeInTheDocument();
+  expect(performanceRefresh).toHaveBeenCalledTimes(1);
   expect(invalidate.mock.calls.map((call) => call[0]?.queryKey)).toEqual(expect.arrayContaining([
     ['evaluation-settings', 'period', 'scope-1', 2026, 7],
     ['performance'],
+    ['executive', 'summary'],
+    ['reports', 'center'],
+    ['insights', 'workspace'],
     ['team-config'],
     ['team-configs'],
     ['kpi-weights'],
     ['balanced-scorecard'],
   ]));
   expect(client.getQueryState(['reports', 'list'])?.isInvalidated).not.toBe(true);
+  expect(client.getQueryState(['performance', 'bounded-records', 'kept'])?.isInvalidated).toBe(true);
 
   fireEvent.click(screen.getByRole('button', { name: 'Rollback' }));
   expect(screen.getByRole('group', { name: 'Rollback confirmation' })).toHaveTextContent(/restores the saved before-apply values/i);
@@ -322,6 +368,7 @@ it('revises the selected approved month, saves, proves impact, approves without 
   fireEvent.click(screen.getByRole('button', { name: 'Rollback' }));
   fireEvent.click(screen.getByRole('button', { name: 'Restore saved values' }));
   expect(await screen.findByText(/No older approved version was reactivated/)).toBeInTheDocument();
+  expect(performanceRefresh).toHaveBeenCalledTimes(2);
   const rollbackCall = calls('/rollback', 'POST')[0];
   expect(String(rollbackCall[0])).toContain('/revisions/revision-1/rollback');
   expect(rollbackCall[1]?.body).toBeUndefined();
@@ -350,10 +397,10 @@ it('does not preview unsaved edits and clears a previous proof', async () => {
 
 it('describes a zero-record validation without inventing an employee score', async () => {
   october();
-  mocks.fetchWithRole.mockImplementation(async (url: string) => {
+  assignEvaluationFetch(async (url: string) => {
     const href = String(url);
     if (href.includes('/catalog')) return json({ scopes: [scope] });
-    if (href.includes('/periods')) return json(periodData(55));
+    if (href.includes('/periods')) return json(periodData(0.55));
     if (href.includes('/impact-preview')) {
       return json(impactProof({
         zero_affected: true,
@@ -378,10 +425,10 @@ it('describes a zero-record validation without inventing an employee score', asy
 
 it('pages nine stored employees eight at a time', async () => {
   october();
-  mocks.fetchWithRole.mockImplementation(async (url: string) => {
+  assignEvaluationFetch(async (url: string) => {
     const href = String(url);
     if (href.includes('/catalog')) return json({ scopes: [scope] });
-    if (href.includes('/periods')) return json(periodData(55));
+    if (href.includes('/periods')) return json(periodData(0.55));
     if (href.includes('/impact-preview')) {
       return json(impactProof({
         affected_count: 9,
@@ -406,10 +453,10 @@ it('pages nine stored employees eight at a time', async () => {
 
 it('clears proof and keeps the target when approval reports a stale preview', async () => {
   october();
-  mocks.fetchWithRole.mockImplementation(async (url: string) => {
+  assignEvaluationFetch(async (url: string) => {
     const href = String(url);
     if (href.includes('/catalog')) return json({ scopes: [scope] });
-    if (href.includes('/periods')) return json(periodData(55));
+    if (href.includes('/periods')) return json(periodData(0.55));
     if (href.includes('/impact-preview')) return json(impactProof());
     if (href.includes('/approve')) return json({ message: 'Impact preview is stale because the rules changed.', code: 'stale_preview' }, false);
     return json(draft);
@@ -431,17 +478,17 @@ it('resumes an existing draft unchanged and does not overwrite it on a 409', asy
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(new Date(2026, 6, 15));
   let resumed = false;
-  mocks.fetchWithRole.mockImplementation(async (url: string) => {
+  assignEvaluationFetch(async (url: string) => {
     const href = String(url);
     if (href.includes('/catalog')) return json({ scopes: [scope] });
     if (href.includes('/periods')) {
       return json({
         versions: resumed
           ? [
-            { id: 'approved-july', status: 'approved', version_number: 2, checksum: 'sum-approved', lines: [{ ...line, target: 55 }] },
-            { id: 'draft-july', status: 'draft', version_number: 3, checksum: 'sum-draft', source_version_id: 'approved-july', source_checksum: 'sum-approved', lines: [{ ...line, target: 70 }] },
+            { id: 'approved-july', status: 'approved', version_number: 2, checksum: 'sum-approved', lines: [{ ...line, target: 0.55 }] },
+            { id: 'draft-july', status: 'draft', version_number: 3, checksum: 'sum-draft', source_version_id: 'approved-july', source_checksum: 'sum-approved', lines: [{ ...line, target: 0.7 }] },
           ]
-          : [{ id: 'approved-july', status: 'approved', version_number: 2, checksum: 'sum-approved', lines: [{ ...line, target: 55 }] }],
+          : [{ id: 'approved-july', status: 'approved', version_number: 2, checksum: 'sum-approved', lines: [{ ...line, target: 0.55 }] }],
       });
     }
     if (href.includes('/revise')) {
@@ -454,7 +501,7 @@ it('resumes an existing draft unchanged and does not overwrite it on a 409', asy
         source_version_id: 'approved-july',
         source_checksum: 'sum-approved',
         resumed: true,
-        lines: [{ ...line, target: 70 }],
+        lines: [{ ...line, target: 0.7 }],
       });
     }
     return json(draft);
@@ -468,10 +515,10 @@ it('resumes an existing draft unchanged and does not overwrite it on a 409', asy
   view.unmount();
 
   resumed = false;
-  mocks.fetchWithRole.mockImplementation(async (url: string) => {
+  assignEvaluationFetch(async (url: string) => {
     const href = String(url);
     if (href.includes('/catalog')) return json({ scopes: [scope] });
-    if (href.includes('/periods')) return json({ versions: [{ id: 'approved-july', status: 'approved', version_number: 2, checksum: 'sum-approved', lines: [{ ...line, target: 55 }] }] });
+    if (href.includes('/periods')) return json({ versions: [{ id: 'approved-july', status: 'approved', version_number: 2, checksum: 'sum-approved', lines: [{ ...line, target: 0.55 }] }] });
     if (href.includes('/revise')) return json({ message: 'A draft already exists for this month and was not overwritten.', code: 'draft_exists' }, false);
     return json(draft);
   });
@@ -486,7 +533,7 @@ it('resumes an existing draft unchanged and does not overwrite it on a 409', asy
 
 it('shows a blocked formula and a period scope that overrides the catalog', async () => {
   october();
-  mocks.fetchWithRole.mockImplementation(async (url: string) => {
+  assignEvaluationFetch(async (url: string) => {
     const href = String(url);
     if (href.includes('/catalog')) return json({ scopes: [scope] });
     if (href.includes('/periods') && href.includes('month=10')) {
@@ -504,7 +551,7 @@ it('shows a blocked formula and a period scope that overrides the catalog', asyn
   expect(mocks.fetchWithRole.mock.calls.filter((call) => call[1]?.method === 'PATCH')).toHaveLength(0);
   view.unmount();
 
-  mocks.fetchWithRole.mockImplementation(async (url: string) => {
+  assignEvaluationFetch(async (url: string) => {
     const href = String(url);
     if (href.includes('/catalog')) return json({ scopes: [scope] });
     if (href.includes('/periods')) {
@@ -524,7 +571,7 @@ it('shows a blocked formula and a period scope that overrides the catalog', asyn
 it('ignores a late period response after the selection changes', async () => {
   const pending = new Map<string, (value: unknown) => void>();
   const hold = (month: string) => new Promise((resolve) => { pending.set(month, resolve); });
-  mocks.fetchWithRole.mockImplementation(async (url: string) => {
+  assignEvaluationFetch(async (url: string) => {
     const href = String(url);
     if (href.includes('/catalog')) return json({ scopes: [scope] });
     if (href.includes('/periods')) return json(await hold(monthOf(href)));
@@ -537,9 +584,9 @@ it('ignores a late period response after the selection changes', async () => {
   expect(screen.getAllByText('Loading this month…').length).toBeGreaterThan(0);
   expect(screen.queryByLabelText('QualityErrors target')).not.toBeInTheDocument();
   fireEvent.change(screen.getByLabelText('Reporting month'), { target: { value: '8' } });
-  pending.get('8')?.(periodData(80));
+  pending.get('8')?.(periodData(0.8));
   expect(await screen.findByDisplayValue('80')).toBeInTheDocument();
-  pending.get('7')?.(periodData(55));
+  pending.get('7')?.(periodData(0.55));
   await act(async () => { await Promise.resolve(); });
   expect(screen.getByLabelText('QualityErrors target')).toHaveValue('80');
   expect(screen.getByRole('button', { name: 'Save draft' })).toBeEnabled();
@@ -548,11 +595,11 @@ it('ignores a late period response after the selection changes', async () => {
 it('does not apply a save or a late impact for the previous month to the month now on screen', async () => {
   let releaseSave: (value: { lines?: Array<{ target?: number }> }) => void = () => {};
   let releaseImpact: (value: unknown) => void = () => {};
-  let julyTarget = 55;
-  mocks.fetchWithRole.mockImplementation(async (url: string, init?: RequestInit) => {
+  let julyTarget = 0.55;
+  assignEvaluationFetch(async (url: string, init?: RequestInit) => {
     const href = String(url);
     if (href.includes('/catalog')) return json({ scopes: [scope] });
-    if (href.includes('/periods')) return json(periodData(monthOf(href) === '8' ? 80 : julyTarget));
+    if (href.includes('/periods')) return json(periodData(monthOf(href) === '8' ? 0.8 : julyTarget));
     if (href.includes('/impact-preview')) return json(await new Promise((resolve) => { releaseImpact = resolve; }));
     if (init?.method === 'PATCH') {
       return json(await new Promise((resolve) => {
@@ -571,7 +618,7 @@ it('does not apply a save or a late impact for the previous month to the month n
   fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
   fireEvent.change(screen.getByLabelText('Reporting month'), { target: { value: '8' } });
   expect(await screen.findByDisplayValue('80')).toBeInTheDocument();
-  releaseSave({ ...draft, lines: [{ ...line, target: 99 }] });
+  releaseSave({ ...draft, lines: [{ ...line, target: 0.99 }] });
   await act(async () => { await Promise.resolve(); });
   expect(screen.getByLabelText('QualityErrors target')).toHaveValue('80');
   expect(screen.queryByText('Draft saved.')).not.toBeInTheDocument();
@@ -593,7 +640,7 @@ it('does not apply a save or a late impact for the previous month to the month n
 
 it('sends one draft save when the button is activated twice', async () => {
   let releaseSave: (value: unknown) => void = () => {};
-  mocks.fetchWithRole.mockImplementation(async (url: string, init?: RequestInit) => {
+  assignEvaluationFetch(async (url: string, init?: RequestInit) => {
     const href = String(url);
     if (href.includes('/catalog')) return json({ scopes: [scope] });
     if (href.includes('/periods')) return json({ versions: [draft] });
@@ -615,7 +662,7 @@ it('sends one apply and one rollback when the confirmation is activated twice', 
   let releaseApply: () => void = () => {};
   let releaseRollback: () => void = () => {};
   const approved = { ...draft, id: 'approved-july', status: 'approved', version_number: 4, checksum: 'sum-approved' };
-  mocks.fetchWithRole.mockImplementation(async (url: string) => {
+  assignEvaluationFetch(async (url: string) => {
     const href = String(url);
     if (href.includes('/catalog')) return json({ scopes: [scope] });
     if (href.includes('/periods')) {
@@ -647,7 +694,7 @@ it('sends one apply and one rollback when the confirmation is activated twice', 
 it('keeps history and the target when rollback reports evidence_changed', async () => {
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(new Date(2026, 6, 15));
-  mocks.fetchWithRole.mockImplementation(async (url: string) => {
+  assignEvaluationFetch(async (url: string) => {
     const href = String(url);
     if (href.includes('/catalog')) return json({ scopes: [scope] });
     if (href.includes('/periods')) {
@@ -672,7 +719,7 @@ it('keeps history and the target when rollback reports evidence_changed', async 
 
 it('does not retry approval when the shared query client would retry a mutation', async () => {
   october();
-  mocks.fetchWithRole.mockImplementation(async (url: string) => {
+  assignEvaluationFetch(async (url: string) => {
     const href = String(url);
     if (href.includes('/catalog')) return json({ scopes: [scope] });
     if (href.includes('/periods')) return json({ versions: [draft] });
@@ -687,6 +734,27 @@ it('does not retry approval when the shared query client would retry a mutation'
   fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
   expect(await screen.findByRole('alert')).toHaveTextContent('Approval failed');
   expect(calls('/approve', 'POST')).toHaveLength(1);
+  expect(performanceRefresh).not.toHaveBeenCalled();
+});
+
+it('does not refresh committed performance data when apply fails', async () => {
+  october();
+  const approved = { ...draft, id: 'approved-oct', status: 'approved', version_number: 2, checksum: 'sum-approved' };
+  assignEvaluationFetch(async (url: string) => {
+    const href = String(url);
+    if (href.includes('/catalog')) return json({ scopes: [scope] });
+    if (href.includes('/periods')) return json({ versions: [approved], revisions: [] });
+    if (href.includes('/evaluation/apply')) return json('Apply failed', false);
+    return json(approved);
+  });
+  const { client } = renderPanel();
+  client.setQueryData(['performance', 'bounded-records', 'kept'], { score: 79.82, target: 0.65 });
+  expect(await screen.findByRole('button', { name: 'Apply' })).toBeEnabled();
+  fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Apply failed');
+  expect(performanceRefresh).not.toHaveBeenCalled();
+  expect(client.getQueryData(['performance', 'bounded-records', 'kept'])).toEqual({ score: 79.82, target: 0.65 });
+  expect(client.getQueryState(['performance', 'bounded-records', 'kept'])?.isInvalidated).not.toBe(true);
 });
 
 it('shows a blocked scope instead of treating it as supported', async () => {
@@ -696,4 +764,914 @@ it('shows a blocked scope instead of treating it as supported', async () => {
   await user.selectOptions(screen.getByLabelText('Evaluation scope'), 'scope-2');
   expect(await screen.findByText(/No supported importer/)).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument();
+});
+
+it('labels the selected scope with the exact month admission, not the current catalog default', async () => {
+  window.history.replaceState(null, '', '/settings?period=2026-08');
+  assignEvaluationFetch(async (url: string) => {
+    const href = String(url);
+    if (href.includes('/catalog')) return json({ scopes: [{ ...scope, readiness: 'blocked' }] });
+    if (href.includes('/periods')) return json({
+      versions: [draft],
+      scope: { ...scope, readiness: monthOf(href) === '8' ? 'supported' : 'blocked', block_reason: 'This exact month is not admitted.' },
+    });
+    return json(draft);
+  });
+  renderPanel();
+  expect(await screen.findByLabelText('QualityErrors target')).toBeEnabled();
+  expect(screen.getByRole('option', { name: 'Coding · Employee' })).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText('Reporting month'), { target: { value: '9' } });
+  expect(await screen.findByText(/This exact month is not admitted/)).toBeInTheDocument();
+  expect(screen.getByRole('option', { name: 'Coding · Employee · blocked' })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Save draft' })).not.toBeInTheDocument();
+});
+
+it('saves explicit percents as fractions and leaves other units and untouched precision unchanged', async () => {
+  october();
+  const preciseWeight = 0.1 + 0.2;
+  const hours = { kpi_key: 'HandleTime', label: 'Handle time', weight: 0, direction: 'lower_better', target: 2.5, target_mode: 'fixed', unit: 'hours' };
+  const count = { kpi_key: 'Calls', label: 'Rework percentage', weight: 0.6, direction: 'higher_better', target: 65, target_mode: 'fixed', unit: 'count' };
+  const unknown = { kpi_key: 'Mystery', label: 'Mystery', weight: preciseWeight, direction: 'higher_better', target: 65, target_mode: 'fixed' };
+  const workbook = { kpi_key: 'Quality', label: 'Quality', weight: 0.5, direction: 'higher_better', target: null, target_mode: 'workbook', unit: '%' };
+  assignEvaluationFetch(async (url: string, init?: RequestInit) => {
+    const href = String(url);
+    if (href.includes('/catalog')) return json({ scopes: [scope] });
+    if (href.includes('/periods')) return json({ versions: [{ ...draft, lines: [{ ...line, target: 0.65, weight: 1, target_mode: 'workbook' }, hours, count, unknown, workbook] }] });
+    if (init?.method === 'PATCH') return json({ ...draft, lines: JSON.parse(String(init.body)).lines });
+    return json(draft);
+  });
+  renderPanel();
+  expect(await screen.findByLabelText('QualityErrors target')).toHaveValue('65');
+  expect(screen.getByLabelText('QualityErrors weight')).toHaveValue('100');
+  expect(screen.getByLabelText('HandleTime target')).toHaveValue('2.5');
+  expect(screen.getByLabelText('HandleTime weight')).toHaveValue('0');
+  expect(screen.getByLabelText('Calls target')).toHaveValue('65');
+  expect(screen.getByLabelText('Calls weight')).toHaveValue('60');
+  expect(screen.getByLabelText('Mystery target')).toHaveValue('65');
+  expect(screen.getByText(/No unit was provided/)).toBeInTheDocument();
+  expect(screen.getByLabelText('Quality target')).toHaveValue('');
+  expect(screen.getByText(/Saved target: empty/)).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText('QualityErrors target'), { target: { value: '70' } });
+  expect(screen.getByLabelText('QualityErrors source')).toHaveValue('fixed');
+  fireEvent.change(screen.getByLabelText('Calls weight'), { target: { value: '50' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+  await waitFor(() => expect(calls('/drafts/draft-1', 'PATCH')).toHaveLength(1));
+  const saved = JSON.parse(String(calls('/drafts/draft-1', 'PATCH')[0][1]?.body));
+  expect(saved.expected_checksum).toBe('sum-draft');
+  const byKey = Object.fromEntries(saved.lines.map((item: { kpi_key: string }) => [item.kpi_key, item]));
+  expect(byKey.QualityErrors).toMatchObject({ target: 0.7, weight: 1, target_mode: 'fixed' });
+  expect(byKey.HandleTime).toMatchObject({ target: 2.5, weight: 0, unit: 'hours' });
+  expect(byKey.Calls).toMatchObject({ target: 65, weight: 0.5, unit: 'count' });
+  expect(byKey.Mystery.target).toBe(65);
+  expect(byKey.Mystery.weight).toBe(preciseWeight);
+  expect(byKey.Quality.target).toBeNull();
+  expect(byKey.Quality).toMatchObject({ target_mode: 'workbook', weight: 0.5 });
+});
+
+it('does not save a blank or unfinished percent, and keeps the stored value visible', async () => {
+  october();
+  renderPanel();
+  const target = await screen.findByLabelText('QualityErrors target');
+  expect(target).toHaveValue('55');
+  fireEvent.change(target, { target: { value: '' } });
+  expect(target).toHaveValue('');
+  expect(screen.getByText(/Saved target remains 55%/)).toBeInTheDocument();
+  expect(screen.getByText(/Saved target: 55%/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+  expect(calls('/drafts/draft-1', 'PATCH')).toHaveLength(0);
+  fireEvent.change(screen.getByLabelText('QualityErrors target'), { target: { value: '0.' } });
+  expect(screen.getByLabelText('QualityErrors target')).toHaveValue('0.');
+  expect(screen.getByText(/not a finite number/)).toBeInTheDocument();
+  expect(screen.getByText(/Saved target remains 55%/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+  expect(calls('/drafts/draft-1', 'PATCH')).toHaveLength(0);
+  fireEvent.change(screen.getByLabelText('QualityErrors target'), { target: { value: '0.1' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+  await waitFor(() => expect(calls('/drafts/draft-1', 'PATCH')).toHaveLength(1));
+  const saved = JSON.parse(String(calls('/drafts/draft-1', 'PATCH')[0][1]?.body));
+  expect(saved.expected_checksum).toBe('sum-draft');
+  expect(saved.lines[0]).toMatchObject({ target: 0.001, weight: 1 });
+});
+
+it('discards an unfinished target when the reporting period changes', async () => {
+  october();
+  assignEvaluationFetch(async (url: string) => {
+    const href = String(url);
+    if (href.includes('/catalog')) return json({ scopes: [scope] });
+    if (href.includes('/periods')) return json(periodData(monthOf(href) === '8' ? 0.8 : 0.55));
+    return json(draft);
+  });
+  renderPanel();
+  expect(await screen.findByLabelText('QualityErrors target')).toHaveValue('55');
+  fireEvent.change(screen.getByLabelText('QualityErrors target'), { target: { value: '0.' } });
+  expect(screen.getByLabelText('QualityErrors target')).toHaveValue('0.');
+  fireEvent.change(screen.getByLabelText('Reporting month'), { target: { value: '8' } });
+  expect(await screen.findByLabelText('QualityErrors target')).toHaveValue('80');
+  expect(screen.queryByDisplayValue('0.')).not.toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText('Reporting month'), { target: { value: '10' } });
+  expect(await screen.findByLabelText('QualityErrors target')).toHaveValue('55');
+  expect(screen.queryByDisplayValue('0.')).not.toBeInTheDocument();
+});
+
+it('scales conflict values only for a rule with an explicit percent unit', async () => {
+  october();
+  const hours = { kpi_key: 'HandleTime', label: 'Handle time', weight: 0, direction: 'lower_better', target: 2.5, target_mode: 'fixed', unit: 'hours' };
+  const unknown = { kpi_key: 'Mystery', label: 'Mystery', weight: 0, direction: 'higher_better', target: 65, target_mode: 'fixed' };
+  assignEvaluationFetch(async (url: string) => {
+    const href = String(url);
+    if (href.includes('/catalog')) return json({ scopes: [scope] });
+    if (href.includes('/periods')) return json({ versions: [{ ...draft, lines: [{ ...line, target: 0.55 }, hours, unknown] }] });
+    if (href.includes('/impact-preview')) {
+      return json(impactProof({
+        conflicts: [
+          { record_id: 'rec-1', kpi_key: 'QualityErrors', workbook_target: 0.6, approved_target: 0.55 },
+          { record_id: 'rec-2', kpi_key: 'HandleTime', workbook_target: 2.5, approved_target: 3 },
+          { record_id: 'rec-3', kpi_key: 'Mystery', workbook_target: 65, approved_target: 70 },
+          { record_id: 'rec-4', kpi_key: 'Unlisted', workbook_target: 65, approved_target: 0.65 },
+        ],
+      }));
+    }
+    return json(draft);
+  });
+  renderPanel();
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Impact preview' })).toBeEnabled());
+  fireEvent.click(screen.getByRole('button', { name: 'Impact preview' }));
+  const mismatches = await screen.findByRole('table', { name: 'Fixed target mismatches' });
+  expect(within(mismatches).getByText('60%')).toBeInTheDocument();
+  expect(within(mismatches).getByText('55%')).toBeInTheDocument();
+  expect(within(mismatches).getByText('2.5 hours')).toBeInTheDocument();
+  expect(within(mismatches).getByText('3 hours')).toBeInTheDocument();
+  expect(within(mismatches).getAllByText('65 (stored value, unit not provided)')).toHaveLength(2);
+  expect(within(mismatches).getByText('70 (stored value, unit not provided)')).toBeInTheDocument();
+  expect(within(mismatches).getByText('0.65 (stored value, unit not provided)')).toBeInTheDocument();
+  expect(within(mismatches).queryByText('6500%')).not.toBeInTheDocument();
+  expect(within(mismatches).queryByText('250%')).not.toBeInTheDocument();
+});
+
+it('keeps the captured checksum and percent scale when a refresh arrives during a dirty edit', async () => {
+  october();
+  let refreshed = false;
+  assignEvaluationFetch(async (url: string, init?: RequestInit) => {
+    const href = String(url);
+    if (href.includes('/catalog')) return json({ scopes: [scope] });
+    if (href.includes('/periods')) {
+      if (refreshed) {
+        return json({ versions: [{ ...draft, checksum: 'sum-refreshed', lines: [{ ...line, unit: 'hours', target: 9, weight: 0.25, direction: 'higher_better' }] }] });
+      }
+      return json({ versions: [{ ...draft, lines: [{ ...line, target: 0.55, weight: 1 }] }] });
+    }
+    if (init?.method === 'PATCH') {
+      return json({ message: 'This draft changed after you opened it. Reload the draft before saving; no changes were made.', code: 'stale_draft' }, false);
+    }
+    return json(draft);
+  });
+  const { client } = renderPanel();
+  const target = await screen.findByLabelText('QualityErrors target');
+  fireEvent.change(screen.getByLabelText('QualityErrors direction'), { target: { value: 'lower_better' } });
+  fireEvent.change(target, { target: { value: '70' } });
+  expect(target).toHaveValue('70');
+  const key = periodQueryKey('scope-1', 2026, 10);
+  refreshed = true;
+  await act(async () => {
+    await client.invalidateQueries({ queryKey: key });
+  });
+  await waitFor(() => expect(client.getQueryData(key)).toMatchObject({ checksum: 'sum-refreshed' }));
+  expect(screen.getByLabelText('QualityErrors target')).toHaveValue('70');
+  expect(screen.getByLabelText('QualityErrors direction')).toHaveValue('lower_better');
+  expect(screen.getByText(/Saved target: 55%/)).toBeInTheDocument();
+  expect(screen.queryByText(/Saved target: 9 hours/)).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+  await waitFor(() => expect(calls('/drafts/draft-1', 'PATCH')).toHaveLength(1));
+  const saved = JSON.parse(String(calls('/drafts/draft-1', 'PATCH')[0][1]?.body));
+  expect(String(calls('/drafts/draft-1', 'PATCH')[0][0])).toContain('/drafts/draft-1');
+  expect(saved.expected_checksum).toBe('sum-draft');
+  expect(saved.lines[0]).toMatchObject({ target: 0.7, weight: 1, unit: '%', direction: 'lower_better', target_mode: 'fixed' });
+  expect(await screen.findByRole('alert')).toHaveTextContent('stale_draft');
+  expect(screen.getByText(/Reload the draft or discard your edits/)).toBeInTheDocument();
+  expect(screen.getByLabelText('QualityErrors target')).toHaveValue('70');
+  expect(screen.getByRole('button', { name: 'Save draft' })).toBeDisabled();
+  fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+  expect(calls('/drafts/draft-1', 'PATCH')).toHaveLength(1);
+  const cached = client.getQueryData(key) as { checksum: string; lines: Array<{ target: number; unit?: string }> };
+  expect(cached.checksum).toBe('sum-refreshed');
+  expect(cached.lines[0]).toMatchObject({ target: 9, unit: 'hours' });
+  fireEvent.click(screen.getByRole('button', { name: 'Discard edits' }));
+  expect(screen.getByLabelText('QualityErrors target')).toHaveValue('9');
+  expect(screen.queryByDisplayValue('70')).not.toBeInTheDocument();
+  expect(calls('/drafts/draft-1', 'PATCH')).toHaveLength(1);
+});
+
+it('does not write a different version when the open draft changes during editing', async () => {
+  october();
+  let refreshed = false;
+  assignEvaluationFetch(async (url: string, init?: RequestInit) => {
+    const href = String(url);
+    if (href.includes('/catalog')) return json({ scopes: [scope] });
+    if (href.includes('/periods')) {
+      return json({ versions: [refreshed ? { ...draft, id: 'draft-other', checksum: 'sum-other' } : draft] });
+    }
+    if (init?.method === 'PATCH') return json({ ...draft, id: 'draft-other', checksum: 'sum-other', lines: JSON.parse(String(init.body)).lines });
+    return json(draft);
+  });
+  const { client } = renderPanel();
+  expect(await screen.findByLabelText('QualityErrors target')).toHaveValue('55');
+  fireEvent.change(screen.getByLabelText('QualityErrors target'), { target: { value: '70' } });
+  const key = periodQueryKey('scope-1', 2026, 10);
+  refreshed = true;
+  await act(async () => {
+    await client.invalidateQueries({ queryKey: key });
+  });
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Save draft' })).toBeDisabled());
+  expect(screen.getByLabelText('QualityErrors target')).toHaveValue('70');
+  expect(screen.getByText(/will not write that other version/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+  expect(mocks.fetchWithRole.mock.calls.filter((call) => call[1]?.method === 'PATCH')).toHaveLength(0);
+  fireEvent.click(screen.getByRole('button', { name: 'Discard edits' }));
+  expect(screen.getByLabelText('QualityErrors target')).toHaveValue('55');
+  fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+  await waitFor(() => expect(calls('/drafts/draft-other', 'PATCH')).toHaveLength(1));
+  const saved = JSON.parse(String(calls('/drafts/draft-other', 'PATCH')[0][1]?.body));
+  expect(saved.expected_checksum).toBe('sum-other');
+  expect(calls('/drafts/draft-1', 'PATCH')).toHaveLength(0);
+});
+
+it('does not send an empty checksum when the draft has none', async () => {
+  october();
+  assignEvaluationFetch(async (url: string) => {
+    const href = String(url);
+    if (href.includes('/catalog')) return json({ scopes: [scope] });
+    if (href.includes('/periods')) return json({ versions: [{ ...draft, checksum: '   ' }] });
+    return json(draft);
+  });
+  renderPanel();
+  expect(await screen.findByLabelText('QualityErrors target')).toHaveValue('55');
+  expect(screen.getByRole('button', { name: 'Save draft' })).toBeDisabled();
+  expect(screen.getByText(/An empty checksum is not sent/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+  fireEvent.change(screen.getByLabelText('QualityErrors target'), { target: { value: '70' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+  expect(mocks.fetchWithRole.mock.calls.filter((call) => call[1]?.method === 'PATCH')).toHaveLength(0);
+  expect(screen.getByLabelText('QualityErrors target')).toHaveValue('70');
+});
+
+it('does not reuse a checksum from another month or from a revise response that omitted one', async () => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date(2026, 6, 15));
+  assignEvaluationFetch(async (url: string, init?: RequestInit) => {
+    const href = String(url);
+    const month = monthOf(href);
+    if (href.includes('/catalog')) return json({ scopes: [scope] });
+    if (href.includes('/periods')) {
+      if (month === '8') return json({ versions: [{ ...draft, id: 'draft-august', checksum: 'sum-august', lines: [{ ...line, target: 0.8 }] }] });
+      return json({ versions: [{ ...draft, id: 'draft-july', checksum: 'sum-july', lines: [{ ...line, target: 0.55 }] }] });
+    }
+    if (init?.method === 'PATCH') {
+      const id = href.includes('draft-august') ? 'draft-august' : 'draft-july';
+      return json({ ...draft, id, checksum: id === 'draft-august' ? 'sum-august-saved' : 'sum-july-saved', lines: JSON.parse(String(init.body)).lines });
+    }
+    return json(draft);
+  });
+  renderPanel();
+  expect(await screen.findByLabelText('QualityErrors target')).toHaveValue('55');
+  fireEvent.change(screen.getByLabelText('QualityErrors target'), { target: { value: '40' } });
+  fireEvent.change(screen.getByLabelText('Reporting month'), { target: { value: '8' } });
+  expect(await screen.findByLabelText('QualityErrors target')).toHaveValue('80');
+  expect(screen.queryByDisplayValue('40')).not.toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText('QualityErrors target'), { target: { value: '70' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+  await waitFor(() => expect(calls('/drafts/draft-august', 'PATCH')).toHaveLength(1));
+  const august = JSON.parse(String(calls('/drafts/draft-august', 'PATCH')[0][1]?.body));
+  expect(august.expected_checksum).toBe('sum-august');
+  expect(august.lines[0]).toMatchObject({ target: 0.7, weight: 1 });
+  expect(calls('/drafts/draft-july', 'PATCH')).toHaveLength(0);
+  const patchesBeforeRevise = mocks.fetchWithRole.mock.calls.filter((call) => call[1]?.method === 'PATCH').length;
+
+  let revised = false;
+  assignEvaluationFetch(async (url: string) => {
+    const href = String(url);
+    if (href.includes('/catalog')) return json({ scopes: [scope] });
+    if (href.includes('/periods')) {
+      const approvedOnly = { id: 'approved-july', status: 'approved', version_number: 2, checksum: 'sum-approved', lines: [{ ...line, target: 0.55 }] };
+      return json({
+        versions: revised
+          ? [approvedOnly, { id: 'draft-july', status: 'draft', version_number: 3, lines: [{ ...line, target: 0.55 }] }]
+          : [approvedOnly],
+      });
+    }
+    if (href.includes('/revise')) {
+      revised = true;
+      return json({ id: 'draft-july', status: 'draft', version_number: 3, lines: [{ ...line, target: 0.55 }] });
+    }
+    return json(draft);
+  });
+  fireEvent.change(screen.getByLabelText('Reporting month'), { target: { value: '7' } });
+  await waitFor(() => expect(screen.getByLabelText('QualityErrors target')).toBeDisabled());
+  fireEvent.click(screen.getByRole('button', { name: 'Revise this month' }));
+  expect(await screen.findByText(/Revision draft opened for this month/)).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Save draft' })).toBeDisabled();
+  expect(screen.getByText(/An empty checksum is not sent/)).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText('QualityErrors target'), { target: { value: '40' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+  expect(mocks.fetchWithRole.mock.calls.filter((call) => call[1]?.method === 'PATCH')).toHaveLength(patchesBeforeRevise);
+});
+
+const approvedMonth = { ...draft, id: 'approved-month', status: 'approved', version_number: 2, checksum: 'sum-approved' };
+
+function statusDocument(overrides: Record<string, unknown> = {}) {
+  return {
+    enabled: true,
+    outcome: 'status',
+    job_id: 'job-1',
+    state: 'pending',
+    job_status: 'queued',
+    claim_epoch: 3,
+    staged_count: 1,
+    promoted_count: 0,
+    stage_cursor: 'cursor-secret',
+    revision_id: null,
+    progress: 0,
+    attempt_count: 1,
+    expected_count: 4,
+    safe_reason: null,
+    ...overrides,
+  };
+}
+
+function queuedDocument(overrides: Record<string, unknown> = {}) {
+  return {
+    enabled: true,
+    outcome: 'queued',
+    job_id: 'job-1',
+    state: 'pending',
+    job_status: 'queued',
+    claim_epoch: 3,
+    expected_count: 4,
+    resumed: false,
+    ...overrides,
+  };
+}
+
+function isCapabilityRequest(href: string) {
+  return href.includes('/apply-jobs/capabilities');
+}
+
+function isLatestRequest(href: string) {
+  return href.includes('/apply-jobs?');
+}
+
+function isEnqueueRequest(href: string, method?: string) {
+  return method === 'POST' && href.split('?')[0].endsWith('/apply-jobs');
+}
+
+function isStatusRequest(href: string) {
+  return /\/apply-jobs\/[^/]+$/.test(href.split('?')[0]);
+}
+
+function commandOf(href: string) {
+  return /\/(cancel|retry|recover)$/.exec(href)?.[1] ?? '';
+}
+
+function holdPerformance(queryClient: QueryClient) {
+  queryClient.setQueryData(['performance', 'bounded-records', 'kept'], { score: 79.82, target: 0.65 });
+}
+
+function performanceWasCleared(queryClient: QueryClient) {
+  return queryClient.getQueryState(['performance', 'bounded-records', 'kept'])?.isInvalidated === true;
+}
+
+function syncApplyPosts() {
+  return mocks.fetchWithRole.mock.calls.filter((call) => {
+    const path = String(call[0]).split('?')[0];
+    return call[1]?.method === 'POST' && path.endsWith('/evaluation/apply');
+  });
+}
+
+function enqueuePosts() {
+  return mocks.fetchWithRole.mock.calls.filter((call) => isEnqueueRequest(String(call[0]), call[1]?.method));
+}
+
+function ownValue(source: object, key: string): unknown {
+  if (!Object.hasOwn(source, key)) return undefined;
+  for (const [name, value] of Object.entries(source)) {
+    if (name === key) return value;
+  }
+  return undefined;
+}
+
+function isPollInterval(value: unknown): value is (query: { state: { data?: unknown; error: unknown } }) => number | false | undefined {
+  return typeof value === 'function';
+}
+
+function statusPoll(queryClient: QueryClient) {
+  const found = queryClient.getQueryCache().getAll().find((query) => query.queryKey.includes('status') && query.queryKey.includes('job-1'));
+  if (!found) return { interval: undefined, background: undefined };
+  const intervalOption = ownValue(found.options, 'refetchInterval');
+  const backgroundOption = ownValue(found.options, 'refetchIntervalInBackground');
+  const interval = isPollInterval(intervalOption)
+    ? intervalOption(found)
+    : intervalOption === false || typeof intervalOption === 'number'
+      ? intervalOption
+      : undefined;
+  const background = typeof backgroundOption === 'boolean' ? backgroundOption : undefined;
+  return { interval, background };
+}
+
+type BackgroundScript = {
+  scopes?: unknown[];
+  versions?: unknown;
+  revisions?: unknown[];
+  capability?: unknown;
+  capabilityResponse?: () => Promise<ReturnType<typeof json>>;
+  latest?: (href: string) => unknown;
+  status?: (href: string) => unknown;
+  enqueue?: (body: unknown) => Promise<unknown>;
+  command?: (name: string, body: unknown) => unknown;
+  routes?: (href: string, init?: RequestInit) => unknown;
+};
+
+function backgroundFetch(script: BackgroundScript) {
+  installApplyJobFetch(async (url: string, init?: RequestInit) => {
+    const href = String(url);
+    const routed = script.routes?.(href, init);
+    if (routed !== undefined) return routed;
+    if (href.includes('/catalog')) return json({ scopes: script.scopes ?? [scope] });
+    if (href.includes('/periods')) return json({ versions: script.versions ?? [approvedMonth], revisions: script.revisions ?? [] });
+    if (isCapabilityRequest(href)) return script.capabilityResponse ? script.capabilityResponse() : json(script.capability ?? { enabled: true });
+    if (isLatestRequest(href)) return json(script.latest ? script.latest(href) : { job: null });
+    if (isEnqueueRequest(href, init?.method)) {
+      const body = JSON.parse(String(init?.body ?? '{}')) as unknown;
+      return script.enqueue ? script.enqueue(body) : json(queuedDocument());
+    }
+    const command = commandOf(href);
+    if (command && init?.method === 'POST') {
+      const body = JSON.parse(String(init.body ?? '{}')) as unknown;
+      const result = script.command ? script.command(command, body) : { state: 'cancelled', job_status: 'cancelled' };
+      if (result && typeof result === 'object' && 'json' in result) return result;
+      return json(result);
+    }
+    if (isStatusRequest(href)) return json(script.status ? script.status(href) : statusDocument());
+    return json(approvedMonth);
+  });
+}
+
+it('uses synchronous apply after the capability payload is false', async () => {
+  october();
+  assignEvaluationFetch(async (url: string) => {
+    const href = String(url);
+    if (href.includes('/catalog')) return json({ scopes: [scope] });
+    if (href.includes('/periods')) return json({ versions: [approvedMonth], revisions: [] });
+    if (href.includes('/evaluation/apply')) return json({ revision_id: 'revision-1', applied_count: 1 });
+    return json(approvedMonth);
+  });
+  renderPanel();
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Apply' })).toBeEnabled());
+  fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
+  expect(await screen.findByText('Apply recorded revision revision-1 for 1 stored records.')).toBeInTheDocument();
+  expect(calls('/evaluation/apply', 'POST')).toHaveLength(1);
+  expect(calls('/apply-jobs', 'POST')).toHaveLength(0);
+});
+
+it('does not apply while background availability is still pending', async () => {
+  october();
+  let release: (value: unknown) => void = () => {};
+  installApplyJobFetch(async (url: string) => {
+    const href = String(url);
+    if (href.includes('/catalog')) return json({ scopes: [scope] });
+    if (href.includes('/periods')) return json({ versions: [approvedMonth], revisions: [] });
+    if (isCapabilityRequest(href)) return json(await new Promise((resolve) => { release = resolve; }));
+    if (href.includes('/evaluation/apply')) return json({ revision_id: 'revision-1', applied_count: 1 });
+    return json(approvedMonth);
+  });
+  renderPanel();
+  expect(await screen.findByText(/Apply stays off until that check finishes/)).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Apply' })).not.toBeInTheDocument();
+  expect(calls('/evaluation/apply', 'POST')).toHaveLength(0);
+  expect(calls('/apply-jobs', 'POST')).toHaveLength(0);
+  release({ enabled: false });
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Apply' })).toBeEnabled());
+  fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
+  expect(await screen.findByText(/Apply recorded revision revision-1/)).toBeInTheDocument();
+  expect(calls('/evaluation/apply', 'POST')).toHaveLength(1);
+  expect(calls('/apply-jobs', 'POST')).toHaveLength(0);
+});
+
+it('keeps apply off when the capability check fails or is not a boolean', async () => {
+  october();
+  let checks = 0;
+  installApplyJobFetch(async (url: string) => {
+    const href = String(url);
+    if (href.includes('/catalog')) return json({ scopes: [scope] });
+    if (href.includes('/periods')) return json({ versions: [approvedMonth] });
+    if (isCapabilityRequest(href)) {
+      checks += 1;
+      return checks === 1 ? json('availability failed', false) : json({ enabled: 'true' });
+    }
+    return json(approvedMonth);
+  });
+  renderPanel();
+  expect(await screen.findByRole('alert')).toHaveTextContent(/Synchronous apply is not used/);
+  expect(screen.queryByRole('button', { name: 'Apply' })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Retry availability check' }));
+  await waitFor(() => expect(checks).toBe(2));
+  expect(screen.getByRole('alert')).toHaveTextContent(/could not be confirmed/);
+  expect(calls('/evaluation/apply', 'POST')).toHaveLength(0);
+  expect(calls('/apply-jobs', 'POST')).toHaveLength(0);
+});
+
+it('queues a background apply without refreshing live scores', async () => {
+  october();
+  backgroundFetch({
+    enqueue: async (body) => {
+      expect(body).toEqual({ scope_id: 'scope-1', year: 2026, month: 10 });
+      return json(queuedDocument());
+    },
+  });
+  const { client } = renderPanel();
+  holdPerformance(client);
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Apply' })).toBeEnabled());
+  fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
+  expect(await screen.findByText(/Scores are unchanged/)).toBeInTheDocument();
+  expect(syncApplyPosts()).toHaveLength(0);
+  expect(enqueuePosts()).toHaveLength(1);
+  expect(performanceRefresh).not.toHaveBeenCalled();
+  expect(performanceWasCleared(client)).toBe(false);
+  expect(screen.queryByText('cursor-secret')).not.toBeInTheDocument();
+  expect(screen.queryByText(/permission granted/i)).not.toBeInTheDocument();
+});
+
+it('sends one background apply when Apply is activated twice', async () => {
+  october();
+  let posts = 0;
+  let release: (value: unknown) => void = () => {};
+  backgroundFetch({
+    enqueue: async () => {
+      posts += 1;
+      return json(await new Promise((resolve) => { release = resolve; }));
+    },
+  });
+  renderPanel(true);
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Apply' })).toBeEnabled());
+  const button = screen.getByRole('button', { name: 'Apply' });
+  fireEvent.click(button);
+  fireEvent.click(button);
+  await waitFor(() => expect(posts).toBe(1));
+  release(queuedDocument());
+  expect(await screen.findByText(/Scores are unchanged/)).toBeInTheDocument();
+  expect(posts).toBe(1);
+  expect(syncApplyPosts()).toHaveLength(0);
+  expect(enqueuePosts()).toHaveLength(1);
+});
+
+it('adopts an open job after a failed acceptance and does not post again', async () => {
+  october();
+  let posts = 0;
+  let posted = false;
+  backgroundFetch({
+    latest: () => (posted ? { job: statusDocument({ job_id: 'job-open' }) } : { job: null }),
+    enqueue: async () => {
+      posts += 1;
+      posted = true;
+      throw new Error('socket down');
+    },
+    status: () => statusDocument({ job_id: 'job-open' }),
+  });
+  renderPanel(true);
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Apply' })).toBeEnabled());
+  fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
+  expect(await screen.findByText(/Scores are unchanged/)).toBeInTheDocument();
+  expect(posts).toBe(1);
+  expect(screen.getByRole('button', { name: 'Apply' })).toBeDisabled();
+  fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
+  await act(async () => { await Promise.resolve(); });
+  expect(posts).toBe(1);
+});
+
+it('refreshes the latest job when acceptance is unknown and posts again only on the next click', async () => {
+  october();
+  let posts = 0;
+  backgroundFetch({
+    latest: () => ({ job: null }),
+    enqueue: async () => {
+      posts += 1;
+      throw new Error('socket down');
+    },
+  });
+  renderPanel(true);
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Apply' })).toBeEnabled());
+  fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent(/acceptance was not confirmed/i);
+  await act(async () => { await Promise.resolve(); });
+  expect(posts).toBe(1);
+  fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
+  await waitFor(() => expect(posts).toBe(2));
+  expect(posts).toBe(2);
+});
+
+it('adopts the server job when enqueue is rejected and a job is already open', async () => {
+  october();
+  let posts = 0;
+  let posted = false;
+  backgroundFetch({
+    latest: () => (posted ? { job: statusDocument() } : { job: null }),
+    enqueue: async () => {
+      posts += 1;
+      posted = true;
+      return { ok: false, status: 409, json: async () => ({ detail: { message: 'duplicate', code: 'job_open' } }) };
+    },
+  });
+  renderPanel();
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Apply' })).toBeEnabled());
+  fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
+  expect(await screen.findByText(/Scores are unchanged/)).toBeInTheDocument();
+  expect(posts).toBe(1);
+  expect(screen.queryByText(/acceptance was not confirmed/i)).not.toBeInTheDocument();
+  expect(performanceRefresh).not.toHaveBeenCalled();
+});
+
+it('does not apply a stale acceptance to the month or scope now on screen', async () => {
+  october();
+  const submission = { ...scope, id: 'scope-b', display_name: 'Submission' };
+  const acceptance: { release: ((value: unknown) => void) | null } = { release: null };
+  let posts = 0;
+  backgroundFetch({
+    scopes: [scope, submission],
+    latest: () => ({ job: null }),
+    enqueue: async () => {
+      posts += 1;
+      return json(await new Promise((resolve) => { acceptance.release = resolve; }));
+    },
+  });
+  const { client } = renderPanel();
+  holdPerformance(client);
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Apply' })).toBeEnabled());
+  fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
+  await waitFor(() => expect(posts).toBe(1));
+  fireEvent.change(screen.getByLabelText('Reporting month'), { target: { value: '8' } });
+  expect(await screen.findByLabelText('Reporting month')).toHaveValue('8');
+  acceptance.release?.(queuedDocument());
+  await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+  expect(screen.queryByText(/Scores are unchanged/)).not.toBeInTheDocument();
+  expect(performanceRefresh).not.toHaveBeenCalled();
+  expect(performanceWasCleared(client)).toBe(false);
+
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Apply' })).toBeEnabled());
+  fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
+  await waitFor(() => expect(posts).toBe(2));
+  fireEvent.change(screen.getByLabelText('Evaluation scope'), { target: { value: 'scope-b' } });
+  expect(await screen.findByLabelText('Evaluation scope')).toHaveValue('scope-b');
+  acceptance.release?.(queuedDocument({ job_id: 'job-scope' }));
+  await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+  expect(screen.queryByText(/Scores are unchanged/)).not.toBeInTheDocument();
+  expect(performanceRefresh).not.toHaveBeenCalled();
+});
+
+it('shows a malformed status as an error even when the message says ok', async () => {
+  october();
+  backgroundFetch({
+    latest: () => ({ job: statusDocument() }),
+    status: () => ({ message: 'ok' }),
+  });
+  const { client } = renderPanel();
+  holdPerformance(client);
+  expect(await screen.findByRole('alert')).toHaveTextContent(/not a successful apply/);
+  expect(screen.queryByRole('heading', { name: 'Succeeded' })).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Apply' })).toBeDisabled();
+  fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
+  expect(calls('/apply-jobs', 'POST')).toHaveLength(0);
+  expect(performanceRefresh).not.toHaveBeenCalled();
+  expect(performanceWasCleared(client)).toBe(false);
+});
+
+it('refreshes committed evidence once when a revision is first confirmed', async () => {
+  october();
+  let phase: 'promoted' | 'succeeded' = 'promoted';
+  const promoted = { state: 'promoted', job_status: 'running', revision_id: 'revision-9', progress: 90, staged_count: 4, promoted_count: 4 };
+  const succeeded = { state: 'promoted', job_status: 'succeeded', revision_id: 'revision-9', progress: 100, staged_count: 4, promoted_count: 4 };
+  backgroundFetch({
+    latest: () => ({ job: statusDocument(promoted) }),
+    status: () => statusDocument(phase === 'promoted' ? promoted : succeeded),
+  });
+  const { client } = renderPanel();
+  holdPerformance(client);
+  await waitFor(() => expect(performanceRefresh).toHaveBeenCalledTimes(1));
+  expect(performanceWasCleared(client)).toBe(true);
+  await client.refetchQueries({ queryKey: ['evaluation-settings', 'apply-jobs', 'status'] });
+  expect(performanceRefresh).toHaveBeenCalledTimes(1);
+  phase = 'succeeded';
+  await client.refetchQueries({ queryKey: ['evaluation-settings', 'apply-jobs', 'status'] });
+  expect(await screen.findByText(/finished at 100 percent/)).toBeInTheDocument();
+  expect(performanceRefresh).toHaveBeenCalledTimes(1);
+});
+
+it('cancels only after confirmation and does not refresh live scores', async () => {
+  october();
+  backgroundFetch({
+    latest: () => ({ job: statusDocument() }),
+    command: () => ({ state: 'cancelled', job_status: 'cancelled' }),
+  });
+  const { client } = renderPanel();
+  holdPerformance(client);
+  fireEvent.click(await screen.findByRole('button', { name: 'Cancel background apply' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Keep this apply' }));
+  expect(calls('/cancel', 'POST')).toHaveLength(0);
+  fireEvent.click(screen.getByRole('button', { name: 'Cancel background apply' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Cancel this apply' }));
+  await waitFor(() => expect(calls('/cancel', 'POST')).toHaveLength(1));
+  expect(String(calls('/cancel', 'POST')[0]?.[1]?.body)).toBe('{}');
+  expect(await screen.findByText(/was cancelled/)).toBeInTheDocument();
+  expect(performanceRefresh).not.toHaveBeenCalled();
+  expect(performanceWasCleared(client)).toBe(false);
+});
+
+it('retries the same job without posting a second apply or refreshing scores', async () => {
+  october();
+  backgroundFetch({
+    latest: () => ({ job: statusDocument({ state: 'failed', job_status: 'failed', safe_reason: 'lease_expired' }) }),
+    command: (name, body) => {
+      expect(name).toBe('retry');
+      expect(body).toEqual({});
+      return { state: 'pending', job_status: 'queued', claim_epoch: 4 };
+    },
+  });
+  const { client } = renderPanel();
+  holdPerformance(client);
+  fireEvent.click(await screen.findByRole('button', { name: 'Retry this job' }));
+  expect(await screen.findByText(/Scores are unchanged/)).toBeInTheDocument();
+  expect(calls('/retry', 'POST')).toHaveLength(1);
+  expect(enqueuePosts()).toHaveLength(0);
+  expect(syncApplyPosts()).toHaveLength(0);
+  expect(performanceRefresh).not.toHaveBeenCalled();
+});
+
+it('acknowledges a committed revision without applying the month again', async () => {
+  october();
+  const promoted = { state: 'promoted', job_status: 'running', revision_id: 'revision-9', progress: 90, staged_count: 4, promoted_count: 4 };
+  backgroundFetch({
+    latest: () => ({ job: statusDocument(promoted) }),
+    command: (name, body) => {
+      expect(name).toBe('recover');
+      expect(body).toEqual({ expected_epoch: 3 });
+      return { state: 'promoted', job_status: 'succeeded', revision_id: 'revision-9' };
+    },
+  });
+  const { client } = renderPanel();
+  holdPerformance(client);
+  await waitFor(() => expect(performanceRefresh).toHaveBeenCalledTimes(1));
+  fireEvent.click(screen.getByRole('button', { name: 'Acknowledge committed revision' }));
+  expect(await screen.findByText(/finished at 100 percent/)).toBeInTheDocument();
+  expect(calls('/recover', 'POST')).toHaveLength(1);
+  expect(enqueuePosts()).toHaveLength(0);
+  expect(syncApplyPosts()).toHaveLength(0);
+  expect(performanceRefresh).toHaveBeenCalledTimes(1);
+  expect(performanceWasCleared(client)).toBe(true);
+});
+
+it('finds the server job again after the screen closes without storing it in the browser', async () => {
+  october();
+  localStorage.clear();
+  sessionStorage.clear();
+  const setItem = vi.spyOn(Storage.prototype, 'setItem');
+  backgroundFetch({ latest: () => ({ job: statusDocument() }) });
+  const first = renderPanel();
+  expect(await screen.findByText(/Scores are unchanged/)).toBeInTheDocument();
+  await waitFor(() => expect(statusPoll(first.client).interval).toBe(2000));
+  expect(statusPoll(first.client).background).toBe(false);
+  const before = calls('/apply-jobs/job-1').length;
+  first.unmount();
+  await act(async () => { await Promise.resolve(); });
+  expect(calls('/apply-jobs/job-1').length).toBe(before);
+  expect(setItem).not.toHaveBeenCalled();
+  const second = renderPanel();
+  expect(await screen.findByText(/Scores are unchanged/)).toBeInTheDocument();
+  expect(calls('/apply-jobs?').length).toBeGreaterThan(1);
+  expect(localStorage.length).toBe(0);
+  expect(sessionStorage.length).toBe(0);
+  expect(performanceRefresh).not.toHaveBeenCalled();
+  second.unmount();
+  setItem.mockRestore();
+});
+
+it('does not refresh committed evidence again when the same revision is reopened', async () => {
+  october();
+  const promoted = { state: 'promoted', job_status: 'running', revision_id: 'revision-9', progress: 90, staged_count: 4, promoted_count: 4 };
+  backgroundFetch({ latest: () => ({ job: statusDocument(promoted) }) });
+  const first = renderPanel();
+  await waitFor(() => expect(performanceRefresh).toHaveBeenCalledTimes(1));
+  first.unmount();
+  renderPanel();
+  expect(await screen.findByText(/Awaiting acknowledgement/)).toBeInTheDocument();
+  await act(async () => { await Promise.resolve(); });
+  expect(performanceRefresh).toHaveBeenCalledTimes(1);
+});
+
+it('does not refresh live scores from draft, revise, or approve while background apply is on', async () => {
+  october();
+  let revised = false;
+  let approved = false;
+  installApplyJobFetch(async (url: string) => {
+    const href = String(url);
+    if (href.includes('/catalog')) return json({ scopes: [scope] });
+    if (href.includes('/periods')) {
+      if (approved) return json({ versions: [{ ...draft, status: 'approved', checksum: 'sum-approved' }] });
+      if (revised) return json({ versions: [{ ...draft, status: 'draft', checksum: 'sum-draft' }] });
+      return json({ versions: [{ ...approvedMonth }] });
+    }
+    if (isCapabilityRequest(href)) return json({ enabled: true });
+    if (isLatestRequest(href)) return json({ job: null });
+    if (href.includes('/revise')) {
+      revised = true;
+      return json({ ...draft, status: 'draft', checksum: 'sum-draft', source_version_id: 'approved-month' });
+    }
+    if (href.includes('/impact-preview')) return json(impactProof());
+    if (href.includes('/approve')) {
+      approved = true;
+      return json({ ...draft, status: 'approved', checksum: 'sum-approved' });
+    }
+    return json(draft);
+  });
+  const { client } = renderPanel();
+  holdPerformance(client);
+  fireEvent.click(await screen.findByRole('button', { name: 'Revise this month' }));
+  expect(await screen.findByText(/Revision draft opened for this month/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Impact preview' }));
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Approve' })).toBeEnabled());
+  fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+  expect(await screen.findByText(/Existing scores were not recalculated/)).toBeInTheDocument();
+  expect(performanceRefresh).not.toHaveBeenCalled();
+  expect(performanceWasCleared(client)).toBe(false);
+  expect(calls('/apply-jobs', 'POST')).toHaveLength(0);
+  expect(calls('/evaluation/apply', 'POST')).toHaveLength(0);
+});
+
+it('does not invent a retry grant when the status omits permission flags', async () => {
+  october();
+  backgroundFetch({
+    latest: () => ({ job: statusDocument({ state: 'failed', job_status: 'failed' }) }),
+  });
+  renderPanel();
+  expect(await screen.findByRole('button', { name: 'Retry this job' })).toBeInTheDocument();
+  expect(screen.getByText(/does not start a second apply/)).toBeInTheDocument();
+  expect(screen.queryByText(/permission granted/i)).not.toBeInTheDocument();
+});
+
+it('tells another admin to cancel and capture a new job instead of retrying', async () => {
+  october();
+  backgroundFetch({
+    latest: () => ({ job: statusDocument({ state: 'failed', job_status: 'failed', can_retry: false }) }),
+  });
+  renderPanel();
+  expect(await screen.findByText(/Another admin can cancel the job and apply again/)).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Retry this job' })).not.toBeInTheDocument();
+  expect(screen.queryByText(/permission granted/i)).not.toBeInTheDocument();
+});
+
+it('keeps rollback on the latest history revision while a background job is visible', async () => {
+  october();
+  backgroundFetch({
+    revisions: [
+      { id: 'revision-old', version_id: 'approved-month', status: 'rolled_back', affected_count: 1, can_rollback: false },
+      { id: 'revision-9', version_id: 'approved-month', status: 'active', affected_count: 2, can_rollback: true },
+    ],
+    latest: () => ({ job: statusDocument({ state: 'promoted', job_status: 'succeeded', revision_id: 'revision-9', progress: 100, staged_count: 4, promoted_count: 4 }) }),
+  });
+  renderPanel();
+  expect(await screen.findByRole('button', { name: 'Rollback' })).toBeInTheDocument();
+  expect(screen.getAllByRole('button', { name: 'Rollback' })).toHaveLength(1);
+  expect(screen.getByText(/Rollback remains on the latest revision only/)).toBeInTheDocument();
+  expect(screen.getByText(/Revision revision-9 · active/)).toBeInTheDocument();
+});
+
+it('notes that a background apply continues after the selected scope changes', async () => {
+  october();
+  const submission = { ...scope, id: 'scope-b', display_name: 'Submission' };
+  backgroundFetch({
+    scopes: [scope, submission],
+    latest: (href) => (href.includes('scope_id=scope-1') && href.includes('month=10') ? { job: statusDocument() } : { job: null }),
+  });
+  renderPanel();
+  expect(await screen.findByRole('heading', { name: 'Queued' })).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText('Reporting month'), { target: { value: '8' } });
+  expect(await screen.findByText(/continues on the server/)).toBeInTheDocument();
+  expect(screen.queryByRole('heading', { name: 'Queued' })).not.toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText('Reporting month'), { target: { value: '10' } });
+  expect(await screen.findByRole('heading', { name: 'Queued' })).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText('Evaluation scope'), { target: { value: 'scope-b' } });
+  expect(await screen.findByText(/continues on the server/)).toBeInTheDocument();
+  expect(screen.queryByRole('heading', { name: 'Queued' })).not.toBeInTheDocument();
+  expect(calls('/apply-jobs', 'POST')).toHaveLength(0);
+});
+
+it('shows an actionable denial when cancel is rejected and does not grant permission locally', async () => {
+  october();
+  backgroundFetch({
+    latest: () => ({ job: statusDocument() }),
+    command: () => ({ ok: false, status: 403, json: async () => ({ detail: { message: 'nope', code: 'permission_denied' } }) }),
+  });
+  renderPanel();
+  fireEvent.click(await screen.findByRole('button', { name: 'Cancel background apply' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Cancel this apply' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent(/did not grant permission/);
+  expect(calls('/cancel', 'POST')).toHaveLength(1);
+  expect(screen.queryByText(/permission granted/i)).not.toBeInTheDocument();
+  expect(performanceRefresh).not.toHaveBeenCalled();
 });

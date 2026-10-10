@@ -8,10 +8,12 @@
  * Anything that cannot be derived honestly is left `null` and listed in
  * `meta.unavailable`, so the UI hides or softens it instead of inventing it.
  */
+import { normalizePercentageKpiForDisplay } from '../../components/common/performanceKpiProgress';
 import { GRADE_CLASSES, getGradeClassOrNull, type GradeClass } from '../../constants/grades';
 import { canonicalTeamName } from '../../types';
 import type { AgentRecord } from '../../types';
 import { normalizePerformanceScore } from '../../utils/kpiScore';
+import { compareScoringBasis, type BasisRecord } from '../evaluation/scoringBasisComparison';
 import { agentMatchesLocation } from '../../utils/branchScope';
 import { summarizeActionAnalytics } from './actionAnalytics';
 import type { InsightDriver, InsightItem, InsightTrendStatus } from '../insights/types';
@@ -121,6 +123,29 @@ function inPeriod(records: ExecRecord[], period: ExecutivePeriod | null) {
   return period ? records.filter((record) => record.period.key === period.key) : [];
 }
 
+function exactPreviousPeriod(period: ExecutivePeriod): ExecutivePeriod {
+  const index = MONTHS.indexOf(period.month);
+  if (index <= 0) return periodOf(period.year - 1, 'December');
+  return periodOf(period.year, MONTHS[index - 1]);
+}
+
+function asBasisRecords(records: ExecRecord[]): BasisRecord[] {
+  return records.map((record) => ({
+    employee_id: record.employeeId,
+    team: record.team,
+    position: record.position,
+    performance_level: record.level,
+    year: record.period.year,
+    month: record.period.month,
+    kpi_values: record.kpis,
+  }));
+}
+
+/** Exact calendar month, even when the score delta uses a later available month. */
+function basisFor(records: ExecRecord[], period: ExecutivePeriod) {
+  return compareScoringBasis(asBasisRecords(inPeriod(records, period)), asBasisRecords(inPeriod(records, exactPreviousPeriod(period))));
+}
+
 /** Six calendar months ending at `period` (oldest first). */
 export function trailingPeriods(period: ExecutivePeriod, count = 6): ExecutivePeriod[] {
   const absolute = period.year * 12 + MONTHS.indexOf(period.month);
@@ -178,6 +203,22 @@ function trendStatusOf(changeValue: number | null): InsightTrendStatus | null {
   return changeValue > 0 ? 'improving' : 'declining';
 }
 
+/**
+ * Percent display scale for one stored KPI.
+ * A paired target in (0, 1] is a ratio (1 means 100%), matching
+ * `normalizePercentageKpiForDisplay`. A percent-point target such as 0.1
+ * against 5, or 88 against 90, stays on the stored scale. Counts, currency,
+ * and durations are unchanged.
+ */
+function executivePercentValue(value: number, unit: string | null | undefined, target: number | null): number {
+  const kind = String(unit ?? '').trim().toLowerCase();
+  if (kind === 'percent' || kind === 'percentage') {
+    return target !== null && target > 0 && target <= 1 ? value * 100 : value;
+  }
+  if (kind === '%') return normalizePercentageKpiForDisplay(value, target ?? Number.NaN, '%');
+  return value;
+}
+
 /** Direction-aware KPI rows (worst achievement first) from per-employee `kpi_values`. */
 export function kpiRows(current: ExecRecord[], previous: ExecRecord[]): ExecutiveKpiRow[] {
   type Bucket = { label: string; unit: string | null; direction: string | null; actual: number[]; target: number[]; weight: number[]; achievement: number[]; teams: Set<string> };
@@ -189,8 +230,11 @@ export function kpiRows(current: ExecRecord[], previous: ExecRecord[]): Executiv
         label: kpi.label || kpi.kpi_key, unit: kpi.unit ?? null, direction: kpi.direction ?? null,
         actual: [], target: [], weight: [], achievement: [], teams: new Set<string>(),
       };
-      if (Number.isFinite(kpi.actual_value)) bucket.actual.push(Number(kpi.actual_value));
-      if (Number.isFinite(kpi.target_value)) bucket.target.push(Number(kpi.target_value));
+      const storedTarget = Number.isFinite(kpi.target_value) ? Number(kpi.target_value) : null;
+      if (Number.isFinite(kpi.actual_value)) {
+        bucket.actual.push(executivePercentValue(Number(kpi.actual_value), kpi.unit, storedTarget));
+      }
+      if (storedTarget !== null) bucket.target.push(executivePercentValue(storedTarget, kpi.unit, storedTarget));
       if (Number.isFinite(kpi.weight_applied)) bucket.weight.push(Number(kpi.weight_applied));
       if (Number.isFinite(kpi.achievement_ratio)) bucket.achievement.push(Math.min(Math.max(Number(kpi.achievement_ratio), 0), 1) * 100);
       bucket.teams.add(record.team);
@@ -309,6 +353,7 @@ function teamsOf(
       vs_function_avg: null as number | null,
       rank_in_function: null as number | null,
       flags: [] as ExecutiveTeamFlag[],
+      basis_context: basisFor(records, effective),
       flag_detail: worstKpi && worstKpi.achievement_percent !== null && worstKpi.achievement_percent < 100 ? {
         kpi_key: worstKpi.kpi_key,
         kpi_label: worstKpi.kpi_label,
@@ -369,6 +414,7 @@ function functionCards(scoped: ExecRecord[], effective: ExecutivePeriod, previou
       falling_months: fallingMonths(trend),
       trend,
       is_most_improved: false,
+      basis_context: basisFor(records, effective),
     }];
   });
   const improved = cards.filter((card) => (card.change ?? 0) > 0).sort((l, r) => (r.change ?? 0) - (l.change ?? 0))[0];
@@ -475,6 +521,19 @@ export function mapDrivers(
       existing.impact_change_points = add(existing.impact_change_points, driver.impact_change_points);
       return;
     }
+    // API details keep percent measures as ratios when the paired target is in
+    // (0, 1]. Impact and achievement already use display points; weight stays a fraction.
+    const storedTarget = detail?.target_value != null && Number.isFinite(detail.target_value)
+      ? detail.target_value
+      : null;
+    const displayMeasure = (value: number | null | undefined) => (
+      value == null || !Number.isFinite(value) ? null : executivePercentValue(value, detail?.unit, storedTarget)
+    );
+    const rawChange = detail?.raw_change ?? (
+      detail?.current_value != null && detail?.previous_value != null
+        ? detail.current_value - detail.previous_value
+        : null
+    );
     merged.set(key, {
       kpi_key: item?.kpi_key ?? null,
       kpi_label: driver.driver,
@@ -482,12 +541,12 @@ export function mapDrivers(
       function: executiveFunctionForTeam(team, teamFunctions),
       kpi_direction: driver.kpi_direction ?? detail?.direction ?? null,
       unit: detail?.unit ?? null,
-      current_value: detail?.current_value ?? null,
-      previous_value: detail?.previous_value ?? null,
-      raw_change: detail?.raw_change ?? (detail?.current_value != null && detail?.previous_value != null ? detail.current_value - detail.previous_value : null),
-      change_value: detail?.change_value ?? null,
+      current_value: displayMeasure(detail?.current_value),
+      previous_value: displayMeasure(detail?.previous_value),
+      raw_change: displayMeasure(rawChange),
+      change_value: displayMeasure(detail?.change_value),
       trend_status: detail?.trend_status ?? null,
-      gap_value: detail?.gap_value ?? null,
+      gap_value: displayMeasure(detail?.gap_value),
       achievement_percent: detail?.achievement_percent ?? null,
       weight: (item as (InsightItem & { weight?: number | null }) | undefined)?.weight ?? null,
       impact_points: driver.impact_points ?? null,
@@ -665,7 +724,7 @@ export function composeExecutiveSummary(input: ComposeInput): ExecutiveSummary {
   }
 
   const trend: ExecutiveTrendPoint[] = effective
-    ? trendOf(scoped, effective).map((point, index) => ({ ...point, comparison_score: comparisonTrend?.[index] ?? null, target: TARGET }))
+    ? trendOf(scoped, effective).map((point, index) => ({ ...point, comparison_score: comparisonTrend?.[index] ?? null, target: TARGET, basis_context: basisFor(scoped, point.period) }))
     : [];
 
   const rawSplit = input.deriveScopedDrivers ? scopedRecordDrivers(current, before, teamFunctions) : input.drivers

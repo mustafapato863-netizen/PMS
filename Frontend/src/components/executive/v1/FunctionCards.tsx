@@ -7,6 +7,7 @@ import { arrow, fmtScore, fmtSigned, scoreTone, toneColor } from '../../../featu
 import { getGradeTone } from '../../../constants/grades';
 import { GradePill, ScoreText, StatLabel, StatusPill, ToneText } from './ExecPrimitives';
 import FunctionTrendChart from './FunctionTrendChart';
+import BasisComparisonNote from '../../../features/evaluation/BasisComparisonNote';
 
 
 export function FunctionIcon({ fn, size = 32 }: { fn: ExecutiveFunction; size?: number }) {
@@ -76,6 +77,7 @@ export default function FunctionCards({ cards, previous, linkable }: { cards: Ex
         </div>
         {linkable && <span className="text-[12px] text-[var(--text-muted)]">Click a function to open its Function Summary →</span>}
       </div>
+      <BasisComparisonNote messages={cards.map((card) => card.basis_context?.message)} />
       <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,260px),1fr))] gap-[12px]">
         {cards.map((card) => <FunctionCard key={card.function} card={card} previous={previous} linkable={linkable} />)}
       </div>

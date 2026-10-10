@@ -25,6 +25,8 @@ export interface AgentRecord {
     weight_applied: number;
     contribution: number;
     cap_achievement?: boolean;
+    /** True when this row is the applied monthly evaluation basis, not the file template. */
+    evaluation_pinned?: boolean;
   }>;
   identity: {
     name: string;
@@ -546,6 +548,8 @@ export interface KPIConfig {
   weight?: number;
   /** UI-normalized score contribution, e.g. 4.4 means 4.4%. */
   contribution?: number;
+  /** Applied monthly evaluation row. File-template weights must not replace it. */
+  evaluationPinned?: boolean;
   actualVolume?: number;
   targetVolume?: number;
   volumeUnit?: string;
@@ -867,6 +871,7 @@ export function getKPIsForAgent(agent: AgentRecord): KPIConfig[] {
         Math.max(kpi.contribution, 0),
         Math.max(kpi.weight_applied, 0),
       ) * 100,
+      evaluationPinned: kpi.evaluation_pinned === true,
     }));
   }
 

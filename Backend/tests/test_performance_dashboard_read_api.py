@@ -82,6 +82,54 @@ def _scope():
     }
 
 
+@pytest.mark.parametrize("previous_month,expected_state", [("July", "changed"), ("June", "unavailable")])
+def test_summary_basis_uses_exact_calendar_and_existing_scoped_projection(monkeypatch, previous_month, expected_state):
+    from models.performance_read_schemas import PerformanceSummaryData
+    from models.schemas import EvaluationData, PerformanceRecord as SummaryRecord
+    from services.cache_service import CacheService
+
+    db = _session()
+    try:
+        service = PerformanceDashboardReadService(db, _scope())
+        projected = []
+        for month, target, score in ((previous_month, .55, 82.85), ("August", .65, 79.82)):
+            for branch in ("Dubai", "Sharjah"):
+                record = SummaryRecord(
+                    id=f"anonymous-{branch}-{month}", employee_id=f"anonymous-{branch}",
+                    employee_name="Anonymous", team="Inbound", position="Agent", region="EGY",
+                    performance_level="Employee", year=2026, month=month,
+                    evaluation=EvaluationData(score=score, grade="C"), raw_data={"Branch": branch},
+                    kpi_values=[{"kpi_key": "Attendance", "actual_value": .60,
+                                 "target_value": target if branch == "Dubai" else .65,
+                                 "weight_applied": .70, "evaluation_pinned": True,
+                                 "direction": "higher_better", "unit": "%"}],
+                )
+                projected.append({"record_id": record.id, "employee_id": record.employee_id,
+                                  "team": record.team, "performance_level": record.performance_level,
+                                  "year": 2026, "month": month, "score": score,
+                                  "grade": "C", "record_payload": record.model_dump(mode="json")})
+        queries = []
+        def projection(**filters):
+            queries.append(filters)
+            return projected
+        monkeypatch.setattr(service.repository, "get_dashboard_summary_rows", projection)
+        monkeypatch.setattr(service.records, "list_records", lambda **_: pytest.fail("extra roster hydration"))
+        monkeypatch.setattr(CacheService, "get_json", lambda *_, **__: None)
+        monkeypatch.setattr(CacheService, "set_json", lambda *_, **__: None)
+        data = service.summary(period="2026-08", location="dubai")
+        assert len(queries) == 1 and queries[0]["scope"] is service.scope
+        assert data["current"]["total_agents"] == 1
+        assert data["current"]["average_score"] == 79.82
+        assert data["basis_context"]["state"] == expected_state
+        assert data["basis_context"]["raw_performance"] == ("unchanged" if previous_month == "July" else "unknown")
+        assert data["previous_period"]["month"] == previous_month  # numeric fallback unchanged
+        assert PerformanceSummaryData.model_validate(data).basis_context.state == expected_state
+        other = service.summary(period="2026-08", location="sharjah")
+        assert other["basis_context"]["state"] == ("unchanged" if previous_month == "July" else "unavailable")
+    finally:
+        db.close()
+
+
 def test_summary_is_period_bounded_and_sql_scoped():
     db = _session()
     try:

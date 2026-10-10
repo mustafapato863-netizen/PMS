@@ -16,6 +16,7 @@ from config.loader import (
     resolve_team_config,
 )
 from models.insight_schemas import (
+    BasisComparisonContext,
     InsightComparison,
     InsightDetail,
     InsightDriver,
@@ -41,9 +42,10 @@ from models.insight_schemas import (
 from models.schemas import PerformanceRecord
 from repositories.base import PerformanceRepository
 from services.dashboard_record_service import DashboardRecordService
-from services.kpi_aggregation import aggregate_kpi_metric, capped_achievement, configured_weight
+from services.kpi_aggregation import AggregatedKpiMetric, aggregate_kpi_metric, capped_achievement, configured_weight
 from services.management_bsc_service import ManagementBSCService
 from services.planning_service import PlanningService, MONTH_ORDER
+from services.scoring_basis_comparison import compare_scoring_basis, previous_calendar_month
 import utils.kpi_direction as _kd
 from utils.report_scope import (
     filter_records_by_scope,
@@ -205,6 +207,13 @@ _global_direction_index = _kd.global_direction_index
 _resolve_kpi_direction = _kd.resolve_kpi_direction
 
 
+def _attribute_present(value: Any, name: str) -> bool:
+    """True when ``name`` is stored on a dict or object. Missing attributes are not invented."""
+    if isinstance(value, dict):
+        return name in value
+    return hasattr(value, name)
+
+
 def _persisted_kpi_item(value: Any, key: str) -> dict[str, Any]:
     if isinstance(value, dict):
         return dict(value)
@@ -219,6 +228,35 @@ def _persisted_kpi_item(value: Any, key: str) -> dict[str, Any]:
     for optional in ("label", "direction", "unit", "aggregation"):
         if _value(value, optional) is not None:
             item[optional] = _value(value, optional)
+    # Canonical object rows carry the server pin. Raw ORM rows do not have
+    # this attribute, so a parent or sibling claim cannot mark them trusted.
+    if _attribute_present(value, "evaluation_pinned"):
+        item["evaluation_pinned"] = _value(value, "evaluation_pinned")
+    return item
+
+
+def _trusted_evaluation_pin(item: dict[str, Any]) -> bool:
+    """Only the boolean ``True`` written by server serialization is a trusted pin."""
+    return item.get("evaluation_pinned") is True
+
+
+def _retain_trusted_pin(item: dict[str, Any], key: str) -> dict[str, Any]:
+    """Keep a canonical pin's stored basis. Do not overlay the static file or rescale it."""
+    if not item.get("kpi_key"):
+        item["kpi_key"] = key
+    if not item.get("label"):
+        item["label"] = item.get("kpi_key") or key
+    normalized = _normalize_direction(item.get("direction"))
+    if normalized:
+        item["direction"] = normalized
+        item["direction_source"] = "pinned"
+    return item
+
+
+def _without_untrusted_pin(item: dict[str, Any]) -> dict[str, Any]:
+    """Drop a missing or malformed pin so it cannot select the pinned direction."""
+    if item.get("evaluation_pinned") is not True:
+        item.pop("evaluation_pinned", None)
     return item
 
 
@@ -301,6 +339,53 @@ def _kpi_status(achievement_percent: float | None) -> str | None:
     return "critical"
 
 
+def _insight_cohort(kpi: Any) -> tuple[str, str]:
+    """Direction and unit that must agree before two rows share an Insights cohort."""
+    return (str(_value(kpi, "direction") or ""), str(_value(kpi, "unit") or ""))
+
+
+def _uniform_cohort(values: list[Any]) -> tuple[str | None, str | None, bool]:
+    if not values:
+        return None, None, True
+    directions = {str(_value(value, "direction") or "") for value in values}
+    units = {str(_value(value, "unit") or "") for value in values}
+    if len(directions) == 1 and len(units) == 1:
+        direction = next(iter(directions)) or None
+        unit = next(iter(units)) or None
+        return direction, unit, True
+    return None, None, False
+
+
+def _separate_colliding_cohort_ids(items: list[InsightItem], variants: dict[int, str]) -> None:
+    """Give colliding narratives a cohort id and leave a unique legacy id unchanged.
+
+    ``_make_item`` identifies a row by type, title, scope, and KPI key. Separated
+    direction, unit, or variant cohorts can share that narrative. The cohort is
+    added only when those legacy ids collide, so a uniform KPI keeps its old id.
+    """
+    grouped: dict[str, list[InsightItem]] = defaultdict(list)
+    for item in items:
+        grouped[item.id].append(item)
+    for group in grouped.values():
+        if len(group) < 2:
+            continue
+        for item in group:
+            detail = item.detail
+            item.id = _stable_id(
+                item.insight_type,
+                item.title,
+                item.team,
+                item.performance_level,
+                item.position,
+                item.employee_id,
+                item.kpi_key,
+                detail.direction or "",
+                detail.unit or "",
+                variants.get(id(item), ""),
+            )
+            item.planning_context["source_insight_id"] = item.id
+
+
 def _configured_kpi_values(record: Any) -> list[Any]:
     persisted = list(_value(record, "kpi_values", []) or [])
     team = str(_value(record, "team", ""))
@@ -309,10 +394,14 @@ def _configured_kpi_values(record: Any) -> list[Any]:
     config = _analysis_config(team, level, position)
     if persisted:
         if not config:
-            return [
-                _apply_direction(_persisted_kpi_item(value, str(_value(value, "kpi_key", ""))), team, None)
-                for value in persisted
-            ]
+            retained = []
+            for value in persisted:
+                item = _without_untrusted_pin(_persisted_kpi_item(value, str(_value(value, "kpi_key", ""))))
+                if _trusted_evaluation_pin(item):
+                    retained.append(_retain_trusted_pin(item, str(_value(value, "kpi_key", ""))))
+                else:
+                    retained.append(_apply_direction(item, team, None))
+            return retained
         metadata = {}
         for kpi in config.get("kpis", []) or []:
             for identity in (kpi.get("key"), kpi.get("label")):
@@ -321,6 +410,10 @@ def _configured_kpi_values(record: Any) -> list[Any]:
         enriched = []
         for value in persisted:
             key = str(_value(value, "kpi_key", ""))
+            item = _without_untrusted_pin(_persisted_kpi_item(value, key))
+            if _trusted_evaluation_pin(item):
+                enriched.append(_retain_trusted_pin(item, key))
+                continue
             kpi = metadata.get(key.casefold(), {})
             if not kpi:
                 persisted_label = str(_value(value, "label", "")).casefold()
@@ -345,7 +438,6 @@ def _configured_kpi_values(record: Any) -> list[Any]:
                 # Persisted evidence is retained on the record, but unknown/stale
                 # keys are not interpreted as scored KPIs for this applied config.
                 continue
-            item = _persisted_kpi_item(value, key)
             if not item.get("label"):
                 item["label"] = kpi.get("label") or key
             # The configured direction is canonical; a persisted value is only a
@@ -526,6 +618,138 @@ def _kpi_recommended_focus(
     return f"Maintain {label} performance and monitor the next-period movement."
 
 
+class _BasisScopeIndex:
+    """Period and scope buckets for one already-filtered record list.
+
+    Comparisons reuse these buckets. The index lives only for that call.
+    """
+
+    def __init__(self, records: list[Any]) -> None:
+        self._by_period: dict[tuple[int, str], list[Any]] = defaultdict(list)
+        self._by_team: dict[tuple[int, str, str], list[Any]] = defaultdict(list)
+        self._by_position: dict[tuple[int, str, str, str], list[Any]] = defaultdict(list)
+        self._by_scope: dict[tuple[Any, ...], list[Any]] = defaultdict(list)
+        self._compared: dict[tuple[Any, ...], dict[str, Any]] = {}
+        for record in records:
+            period = _period(record)
+            schema = _period_schema(period)
+            if period is None or schema is None:
+                continue
+            team = str(_value(record, "team") or "").strip()
+            position = str(_value(record, "position") or "").strip()
+            level = str(_value(record, "performance_level") or "")
+            slot = (period[0], schema.month)
+            self._by_period[slot].append(record)
+            self._by_team[(*slot, team)].append(record)
+            self._by_position[(*slot, team, position)].append(record)
+            self._by_scope[(*slot, team, position, level)].append(record)
+
+    def payload(
+        self,
+        year: int,
+        month: str,
+        team: str | None = None,
+        position: str | None = None,
+        level: str | None = None,
+    ) -> dict[str, Any]:
+        key = (int(year), str(month), team, position, level)
+        cached = self._compared.get(key)
+        if cached is None:
+            previous = previous_calendar_month(int(year), str(month))
+            if previous is None:
+                cached = compare_scoring_basis([], [])
+            else:
+                cached = compare_scoring_basis(
+                    self._rows(int(year), str(month), team, position, level),
+                    self._rows(previous[0], previous[1], team, position, level),
+                )
+            self._compared[key] = cached
+        return cached
+
+    def context(
+        self,
+        year: int,
+        month: str,
+        team: str | None = None,
+        position: str | None = None,
+        level: str | None = None,
+    ) -> BasisComparisonContext:
+        return BasisComparisonContext.model_validate(self.payload(year, month, team, position, level))
+
+    def _rows(
+        self,
+        year: int,
+        month: str,
+        team: str | None,
+        position: str | None,
+        level: str | None,
+    ) -> list[Any]:
+        slot = (year, month)
+        if team is None and position is None and level is None:
+            return self._by_period.get(slot, [])
+        if team is not None and position is None and level is None:
+            return self._by_team.get((*slot, team), [])
+        if team is not None and position is not None and level is None:
+            return self._by_position.get((*slot, team, position), [])
+        if team is not None and position is not None and level is not None:
+            return self._by_scope.get((*slot, team, position, level), [])
+        chosen = []
+        for record in self._by_period.get(slot, []):
+            if team is not None and str(_value(record, "team") or "").strip() != team:
+                continue
+            if position is not None and str(_value(record, "position") or "").strip() != position:
+                continue
+            if level is not None and str(_value(record, "performance_level") or "") != level:
+                continue
+            chosen.append(record)
+        return chosen
+
+
+def _annotate_basis_notes(
+    items: list[Any],
+    records: list[Any],
+    year: int,
+    month: str,
+    index: _BasisScopeIndex | None = None,
+) -> None:
+    lookup = index or _BasisScopeIndex(records)
+    cache: dict[tuple[str, str, str], BasisComparisonContext] = {}
+    for item in items:
+        if item.insight_type == "data_quality":
+            continue
+        key = (item.team or "", item.position or "", item.performance_level or "")
+        if key not in cache:
+            cache[key] = lookup.context(
+                year,
+                month,
+                team=item.team,
+                position=item.position,
+                level=item.performance_level,
+            )
+        if cache[key].message:
+            item.detail.basis_note = cache[key].message
+
+
+def _legacy_basis_warning(records: list[Any], current: list[Any], month: str) -> dict[str, str] | None:
+    years = {
+        year for record in current
+        if isinstance((year := _value(record, "year")), int)
+    }
+    if len(years) != 1:
+        return None
+    year = next(iter(years))
+    lookup = _BasisScopeIndex(records)
+    messages: list[str] = []
+    for team in sorted({str(_value(record, "team", "")) for record in current if _value(record, "team")}):
+        context = lookup.payload(year, month, team=team)
+        message = context.get("message")
+        if context.get("state") in {"changed", "mixed", "unknown"} and message and message not in messages:
+            messages.append(message)
+    if not messages:
+        return None
+    return {"type": "warning", "message": " ".join(messages)}
+
+
 class InsightsService:
     """Canonical deterministic insight orchestration over existing PMS records."""
 
@@ -604,6 +828,9 @@ class InsightsService:
                 "type": "positive",
                 "message": f"{top_team} achieved the highest quality score averaging {team_quality[top_team] * 100:.1f}%.",
             })
+        basis_warning = _legacy_basis_warning(all_records, current, month)
+        if basis_warning:
+            insights.append(basis_warning)
         return insights or [{"type": "positive", "message": "All team metrics are performing stable within expectations."}]
 
     def _authorized_records(self, scope: dict) -> tuple[list[Any], int]:
@@ -1032,9 +1259,9 @@ class InsightsService:
     def _kpi_insights(self, current: list[Any], previous: list[Any]) -> tuple[list[InsightItem], list[InsightItem], list[InsightDriver], set[tuple[str, str]]]:
         # Buckets are keyed by KPI key + documented variant so Inbound ``Other``
         # Utilization (real UTZ) and Abandon Rate (no UTZ) rows never average.
-        buckets: dict[tuple[str, str, str, str, str], list[Any]] = defaultdict(list)
-        previous_buckets: dict[tuple[str, str, str, str, str], list[Any]] = defaultdict(list)
-        metadata: dict[tuple[str, str, str, str, str], dict[str, Any]] = {}
+        buckets: dict[tuple[str, str, str, str, str, str, str], list[Any]] = defaultdict(list)
+        previous_buckets: dict[tuple[str, str, str, str, str, str, str], list[Any]] = defaultdict(list)
+        metadata: dict[tuple[str, str, str, str, str, str, str], dict[str, Any]] = {}
         for target, records in ((buckets, current), (previous_buckets, previous)):
             for record in records:
                 team = str(_value(record, "team", ""))
@@ -1044,7 +1271,7 @@ class InsightsService:
                     key = str(_value(kpi, "kpi_key", ""))
                     if not key:
                         continue
-                    bucket_key = (team, position, level, key, _kd.kpi_variant(kpi))
+                    bucket_key = (team, position, level, key, _kd.kpi_variant(kpi), *_insight_cohort(kpi))
                     target[bucket_key].append(kpi)
                     defaulted = _value(kpi, "direction_source") == "default"
                     metadata[bucket_key] = {
@@ -1058,9 +1285,11 @@ class InsightsService:
         items: list[InsightItem] = []
         analyses: list[InsightItem] = []
         drivers: list[InsightDriver] = []
+        pending_drivers: list[tuple[tuple, InsightItem, float, str]] = []
+        cohort_variants: dict[int, str] = {}
         high_weight_misses: set[tuple[str, str]] = set()
         for bucket_key, values in sorted(buckets.items()):
-            team, position, level, key, _variant = bucket_key
+            team, position, level, key, _variant, _cohort_direction, _cohort_unit = bucket_key
             previous_values = previous_buckets.get(bucket_key, [])
             meta = metadata[bucket_key]
             label, direction, unit = meta["label"], meta["direction"], meta["unit"]
@@ -1113,6 +1342,7 @@ class InsightsService:
                         recommended_focus="Correct the effective KPI target before using this KPI in performance interpretation.",
                     ),
                 )
+                cohort_variants[id(configuration_item)] = _variant
                 analyses.append(configuration_item)
                 items.append(configuration_item)
                 continue
@@ -1224,21 +1454,25 @@ class InsightsService:
                     **_directional_fields(actual, previous_actual, target, direction),
                 ),
             )
+            cohort_variants[id(item)] = _variant
             analyses.append(item)
             relevant = abs(impact) >= 1 or (weight >= .15 and target_missed) or exceeds_target
             if not relevant:
                 continue
             items.append(item)
             if abs(impact) >= .5:
-                drivers.append(InsightDriver(
-                    id=_stable_id("driver", *bucket_key),
-                    driver=label,
-                    scope=f"{team} · {position}",
-                    impact_points=round(impact, 2),
-                    direction="positive" if impact > 0 else "negative",
-                    insight_id=item.id,
-                    kpi_direction=direction,
-                ))
+                pending_drivers.append((bucket_key, item, impact, label))
+        _separate_colliding_cohort_ids(analyses, cohort_variants)
+        for bucket_key, item, impact, label in pending_drivers:
+            drivers.append(InsightDriver(
+                id=_stable_id("driver", *bucket_key),
+                driver=label,
+                scope=item.scope,
+                impact_points=round(impact, 2),
+                direction="positive" if impact > 0 else "negative",
+                insight_id=item.id,
+                kpi_direction=item.detail.direction,
+            ))
         return items, analyses, drivers, high_weight_misses
 
     @staticmethod
@@ -1395,21 +1629,30 @@ class InsightsService:
         )
 
     @staticmethod
-    def _overall_trend(records: list[Any], current_period: tuple[int, int]) -> list[InsightOverallTrendPoint]:
+    def _overall_trend(
+        records: list[Any],
+        current_period: tuple[int, int],
+        index: _BasisScopeIndex | None = None,
+    ) -> list[InsightOverallTrendPoint]:
         """Six-month overall score trend ending at the workspace's current period.
 
         ``records`` is the same filtered, access-checked list that produces
         ``current`` for ``executive_story``; each month is selected with the
         same ``_records_in_period`` helper and averaged with ``_score_stats``,
         so the last point always equals ``executive_story.current_score``.
+        Basis context reuses ``index`` instead of scanning the whole history
+        once per point.
         """
+        lookup = index or _BasisScopeIndex(records)
         points = []
         for period in _trailing_periods(current_period):
             score, measured = _score_stats(_records_in_period(records, period))
+            schema = _period_schema(period)
             points.append(InsightOverallTrendPoint(
-                period=_period_schema(period),
+                period=schema,
                 score=round(score, 1) if score is not None else None,
                 measured_records=measured,
+                basis_context=lookup.context(period[0], schema.month),
             ))
         return points
 
@@ -1430,8 +1673,6 @@ class InsightsService:
 
         values_by_period: dict[tuple[int, int], list[Any]] = defaultdict(list)
         label = selected_kpi
-        unit = None
-        direction = None
         for record in records:
             record_period = _period(record)
             if record_period not in window:
@@ -1441,37 +1682,93 @@ class InsightsService:
                     continue
                 values_by_period[record_period].append(value)
                 label = str(_value(value, "label", selected_kpi))
-                unit = _value(value, "unit")
-                direction = _value(value, "direction")
+
+        current_values = values_by_period.get(current_period, [])
+        direction, unit, current_uniform = _uniform_cohort(current_values)
+        # The response has one unit. A mixed current month has no unit that can
+        # scale every raw point, so older homogeneous numbers stay off the chart.
+        chart_ready = False
+        if current_values and not current_uniform:
+            direction, unit = None, None
+        elif current_values:
+            label = str(_value(current_values[-1], "label", selected_kpi))
+            chart_ready = True
+        else:
+            for period in reversed(window):
+                historical = values_by_period.get(period, [])
+                historical_direction, historical_unit, historical_uniform = _uniform_cohort(historical)
+                if historical and historical_uniform:
+                    direction, unit = historical_direction, historical_unit
+                    label = str(_value(historical[-1], "label", selected_kpi))
+                    chart_ready = True
+                    break
 
         points = []
         previous_actual: float | None = None
+        previous_cohort: tuple[str | None, str | None] | None = None
         last_change: float | None = None
         for period in window:
             values = values_by_period.get(period, [])
-            definition = {
-                "label": label,
-                "unit": unit,
-                "aggregation": _value(values[0], "aggregation") if values else None,
-            }
-            metric = aggregate_kpi_metric(values, definition)
-            achievement = capped_achievement(metric, direction)
+            period_direction, period_unit, uniform = _uniform_cohort(values)
+            if values and not uniform:
+                metric = AggregatedKpiMetric(actual=None, target=None)
+                achievement = None
+                point_cohort = None
+            else:
+                definition = {
+                    "label": label,
+                    "unit": period_unit if values else unit,
+                    "aggregation": _value(values[0], "aggregation") if values else None,
+                }
+                metric = aggregate_kpi_metric(values, definition)
+                point_direction = period_direction if values else direction
+                achievement = capped_achievement(metric, point_direction)
+                point_cohort = (period_direction, period_unit) if values else None
             achievement_percent = round(achievement * 100, 2) if achievement is not None else None
-            change = _directional_change(metric.actual, previous_actual, direction)
-            if metric.actual is not None:
+            same_cohort = (
+                point_cohort is not None
+                and previous_cohort == point_cohort
+                and metric.actual is not None
+                and previous_actual is not None
+            )
+            # Raw actual/target are published only when they share the chart unit.
+            # Achievement stays available for a uniform period. Movement does not
+            # cross a direction or unit boundary, and a hidden unit is not a delta.
+            plot_raw = chart_ready and point_cohort is not None and period_unit == unit
+            change = (
+                _directional_change(metric.actual, previous_actual, period_direction)
+                if same_cohort and plot_raw
+                else None
+            )
+            if plot_raw:
+                published_actual = metric.actual
+                published_target = metric.target
+                status = _kpi_status(achievement_percent)
+            else:
+                published_actual = None
+                published_target = None
+                status = None
+            if values and not uniform:
+                previous_actual = None
+                previous_cohort = None
+                last_change = None
+            elif point_cohort is not None and metric.actual is not None:
+                if previous_cohort is not None and previous_cohort != point_cohort:
+                    last_change = None
                 if change is not None:
                     last_change = change
                 previous_actual = metric.actual
+                previous_cohort = point_cohort
             points.append(InsightKpiTrendPoint(
                 period=_period_schema(period),
                 actual_value=(
-                    round(actual, 4)
-                    if (actual := metric.actual) is not None
+                    round(published_actual, 4)
+                    if published_actual is not None
                     else None
                 ),
                 target_value=(
-                    round(target, 4)
-                    if (target := metric.target) is not None
+                    round(published_target, 4)
+                    if published_target is not None
                     else None
                 ),
                 measured_records=len([
@@ -1479,7 +1776,7 @@ class InsightsService:
                     if _value(value, "actual_value") is not None
                 ]),
                 achievement_percent=achievement_percent,
-                status=_kpi_status(achievement_percent),
+                status=status,
                 change_value=round(change, 4) if change is not None else None,
                 trend_status=_trend_status(change),
             ))
@@ -1850,7 +2147,7 @@ class InsightsService:
         points: list[InsightKpiOverviewPoint] = []
         for period in available_periods[-6:]:
             period_records = [record for record in records if _period(record) == period]
-            grouped: dict[tuple[str, str, str, str, str], list[Any]] = defaultdict(list)
+            grouped: dict[tuple[str, str, str, str, str, str, str], list[Any]] = defaultdict(list)
             for record in period_records:
                 for kpi in _configured_kpi_values(record):
                     key = str(_value(kpi, "kpi_key", "") or "")
@@ -1861,6 +2158,7 @@ class InsightsService:
                             str(_value(record, "performance_level", "")),
                             key,
                             _kd.kpi_variant(kpi),
+                            *_insight_cohort(kpi),
                         )].append(kpi)
             statuses: list[float] = []
             for values in grouped.values():
@@ -1959,6 +2257,14 @@ class InsightsService:
         items.extend(data_issues)
         for item in items:
             item.planning_context["period"] = f"{_period_schema(current_period).month} {current_period[0]}"
+        basis_index = _BasisScopeIndex(records)
+        _annotate_basis_notes(
+            items,
+            records,
+            current_period[0],
+            _period_schema(current_period).month,
+            index=basis_index,
+        )
 
         selected_kpi = filters.get("kpi")
         selected_severity = filters.get("severity")
@@ -2140,6 +2446,11 @@ class InsightsService:
                 gap_points=round(current_score - 100.0, 1) if current_score is not None else None,
                 main_insight_id=ranked_items[0].id if ranked_items else None,
                 main_cause=ranked_items[0].title if ranked_items else None,
+                basis_context=basis_index.context(
+                    current_period[0],
+                    _period_schema(current_period).month,
+                    team=team,
+                ),
             ))
         total_team_gap_impact = sum(
             max(-(item.gap_points or 0), 0) * item.total_employees
@@ -2174,8 +2485,12 @@ class InsightsService:
                 f"{_period_schema(current_period).month} {_period_schema(current_period).year}",
             ])),
         )
+        executive_story.basis_context = basis_index.context(
+            current_period[0],
+            _period_schema(current_period).month,
+        )
 
-        overall_trend = self._overall_trend(records, current_period)
+        overall_trend = self._overall_trend(records, current_period, basis_index)
 
         repeated_employees = {item.employee_id for item in employee_items if item.employee_id}
         declining_teams = {

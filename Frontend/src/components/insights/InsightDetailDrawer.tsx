@@ -5,6 +5,7 @@ import type { InsightItem } from '../../features/insights/types';
 import { SEVERITY_LABELS, SEVERITY_STYLES, severityDisplay } from '../../features/insights/severity';
 import { buildTeamPath } from '../../lib/searchNavigation';
 import OverlayPortal from '../common/OverlayPortal';
+import BasisComparisonNote from '../../features/evaluation/BasisComparisonNote';
 
 function metric(value: number | null, unit: string | null) {
   if (value === null || value === undefined) return 'Not available';
@@ -97,6 +98,13 @@ export default function InsightDetailDrawer({ insight, onClose }: { insight: Ins
               <div className="mt-2 flex flex-wrap gap-2">
                 {[...insight.detail.affected_teams, ...insight.detail.affected_positions, ...insight.detail.affected_employees].map((value) => <span key={value} className="rounded-full bg-[var(--bg-sunken)] px-3 py-1.5 text-xs font-semibold text-[var(--text-secondary)]">{value}</span>)}
               </div>
+            </section>
+          )}
+
+          {insight.detail.basis_note && (
+            <section>
+              <h3 className="text-sm font-extrabold text-[var(--text-primary)]">Evaluation settings</h3>
+              <div className="mt-2"><BasisComparisonNote messages={[insight.detail.basis_note]} /></div>
             </section>
           )}
 

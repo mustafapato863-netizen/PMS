@@ -8,7 +8,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from config.database import Base
-from models.models import AuditLog, PerformancePlan, PlanMilestone, Team, User
+from models.models import AuditLog, Employee, KPIValue, PerformancePlan, PerformanceRecord, PlanInsightLink, PlanMilestone, Team, User
 from models.planning_schemas import PlanCreate, PlanMilestoneCreate, PlanMilestoneUpdate, PlanUpdate
 from services.planning_service import PlanningAccessError, PlanningNotFoundError, PlanningService, PlanningValidationError
 
@@ -264,3 +264,92 @@ def test_milestone_mutations_validate_scope_dates_and_rollback(workspace, monkey
         service.add_milestone(str(plan.id), payload, scope)
 
     assert db.query(PlanMilestone).filter(PlanMilestone.plan_id == plan.id).count() == 0
+
+
+def _stored_outcome(plan):
+    return (plan.baseline_value, plan.target_value, plan.current_value, plan.status)
+
+
+def _pin(db, team, employee, month, score, target):
+    record = PerformanceRecord(
+        id=uuid.uuid4(), year=2026, employee_id=employee.id, team_id=team.id, month=month,
+        performance_level="Employee", position_name="Agent", region="EGY", score=score, grade="C", status="Below",
+        record_payload={"evaluation_basis": {"pinned": True, "lines": [{"kpi_key": "Attendance", "label": "Attendance", "direction": "higher_better", "unit": "%"}]}},
+    )
+    db.add(record)
+    db.flush()
+    db.add(KPIValue(record_id=record.id, record_year=2026, kpi_key="Attendance", actual_value=0.60, target_value=target, achievement_ratio=0.9, weight_applied=0.70, contribution=0.20))
+    return record
+
+
+def _linked_plan(db, user, scope, targets):
+    from services.insights_service import InsightsService
+
+    team = db.query(Team).filter(Team.name == "Marketing").one()
+    employee = Employee(id=uuid.uuid4(), employee_id=f"MKT-{uuid.uuid4().hex[:8]}", name="Anonymous", team_id=team.id, region="EGY", performance_level="Employee", position_name="Agent")
+    db.add(employee)
+    db.flush()
+    for month, score, target in targets:
+        _pin(db, team, employee, month, score, target)
+    db.commit()
+    service = PlanningService(StubRepo(), db=db)
+    workspace = InsightsService(StubRepo(), service, db=db).generate_workspace(scope, month="August", year=2026, team="Marketing", performance_level="Employee")
+    noted = next(item for item in workspace.priority_insights if item.detail.basis_note)
+    plan = service.create(_payload(user, insight_ids=[noted.id], evidence_month="August", evidence_year=2026, no_insight_reason=None), scope)
+    return service, plan, noted
+
+
+def test_saved_plan_get_keeps_human_values_and_shows_the_linked_basis_note(workspace):
+    db, user, scope = workspace
+    service, plan, noted = _linked_plan(db, user, scope, [("July", 80, 0.55), ("August", 70, 0.65)])
+    stored = db.query(PerformancePlan).filter(PerformancePlan.id == plan.id).one()
+    before = _stored_outcome(stored)
+
+    detail = service.get(str(plan.id), scope)
+    db.refresh(stored)
+    linked = next(item for item in detail["linked_insights"] if item["id"] == noted.id)
+
+    assert _stored_outcome(stored) == before
+    assert detail["summary"]["baseline"] == 60.0
+    assert detail["summary"]["target"] == 80.0
+    assert detail["summary"]["current"] == 70.0
+    assert detail["stored_status"] == "In Progress"
+    assert linked["resolved"] is True
+    assert linked["basis_note"]
+    assert "Scores can be affected by evaluation settings." in linked["basis_note"]
+
+    db.add(PlanInsightLink(plan_id=plan.id, insight_id="missing-evidence", evidence_month="August", evidence_year=2026))
+    db.commit()
+    reread = service.get(str(plan.id), scope)
+    missing = next(item for item in reread["linked_insights"] if item["id"] == "missing-evidence")
+    db.refresh(stored)
+
+    assert missing == {"id": "missing-evidence", "resolved": False}
+    assert reread["summary"]["baseline"] == 60.0
+    assert reread["summary"]["target"] == 80.0
+    assert reread["summary"]["current"] == 70.0
+    assert _stored_outcome(stored) == before
+
+
+def test_saved_plan_get_stays_readable_when_linked_evidence_is_mixed(workspace):
+    db, user, scope = workspace
+    team = db.query(Team).filter(Team.name == "Marketing").one()
+    other = Employee(id=uuid.uuid4(), employee_id=f"MKT-{uuid.uuid4().hex[:8]}", name="Anonymous two", team_id=team.id, region="EGY", performance_level="Employee", position_name="Agent")
+    db.add(other)
+    db.flush()
+    service, plan, noted = _linked_plan(db, user, scope, [("July", 80, 0.55), ("August", 70, 0.65)])
+    _pin(db, team, other, "July", 80, 0.55)
+    _pin(db, team, other, "August", 70, 0.90)
+    db.commit()
+    stored = db.query(PerformancePlan).filter(PerformancePlan.id == plan.id).one()
+    before = _stored_outcome(stored)
+
+    detail = service.get(str(plan.id), scope)
+    db.refresh(stored)
+    linked = next(item for item in detail["linked_insights"] if item["id"] == noted.id)
+
+    assert _stored_outcome(stored) == before
+    assert detail["summary"]["current"] == 70.0
+    assert linked["resolved"] is True
+    assert linked["basis_note"]
+    assert "mixed" in linked["basis_note"].casefold()

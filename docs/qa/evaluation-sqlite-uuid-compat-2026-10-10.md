@@ -1,0 +1,9 @@
+# SQLite UUID affinity regression — independent reviewer
+
+Date: 10 October 2026. Local candidate only, not deployed. A focused Outbound test intermittently returned a float to the UUID decoder. An independent disposable in-memory probe reproduced this deterministically with valid UUID hex `1000000000000000000000000000e123`: PostgreSQL-specific `UUID` compiled as SQLite `UUID` (numeric affinity), which stored it as REAL and then raised `AttributeError: float has no attribute replace` on ORM read. A numeric UUID with leading zeros was stored as INTEGER.
+
+The ORM now uses SQLAlchemy's portable `Uuid(as_uuid=True)` via the existing UUID alias. It compiles to native `UUID` on PostgreSQL and `CHAR(32)` on SQLite, retaining the same Python UUID identity. No PostgreSQL migration, source/scoring change or existing database mutation is included. Fresh SQLite metadata creation is fixed; this does NOT recover identifiers already coerced in an existing SQLite database, nor silently rebuild any user database.
+
+New tests cover three valid numeric/scientific-looking UUIDs, exact identity round trip, TEXT storage, and native PostgreSQL / CHAR SQLite compilation. The initial RED run also exposed one malformed synthetic test string; its length was corrected to a valid 32-digit hex, not waived. The independent decode probe now passes. Current focused evaluation/database gate: **59 passed / 15.59s**. Current opt-in PostgreSQL16/18 history/month-correction/upload-race gate after this type change: **28 passed / 61.61s**, only allowlisted owned loopback databases.
+
+The full backend run before this UUID change and Insights integration had **1189 passed, one known Marketing workbook failure (131 vs68 expected), one existing skip /380.72s**. It is not a green integrated release. A new full integrated run remains required. No unsupported family, native RLS, production recovery or deployment certification is claimed.

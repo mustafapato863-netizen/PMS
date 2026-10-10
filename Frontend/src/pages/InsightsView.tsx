@@ -12,6 +12,7 @@ import KpiSixMonthTrend from '../components/insights/KpiSixMonthTrend';
 import PeopleContributionAnalysis from '../components/insights/PeopleContributionAnalysis';
 import { SEVERITY_LABELS, SEVERITY_STYLES, severityDisplay } from '../features/insights/severity';
 import ExecutiveSummary from '../components/insights/overview/ExecutiveSummary';
+import BasisComparisonNote from '../features/evaluation/BasisComparisonNote';
 import InsightsHeader from '../components/insights/overview/InsightsHeader';
 import {
   GeographySection,
@@ -787,6 +788,7 @@ export default function InsightsView() {
           <header className="border-b border-[var(--border-light)] px-5 py-4">
             <h2 className="text-base font-extrabold text-[var(--text-primary)]">Team Risk Matrix</h2>
             <p className="mt-1 text-xs text-[var(--text-muted)]">Score, movement and affected headcount for a fair cross-team comparison.</p>
+            <div className="mt-2"><BasisComparisonNote messages={workspace.team_summaries.map((team) => team.basis_context?.message)} /></div>
           </header>
           {workspace.team_summaries.length ? (
             <div className="overflow-x-auto">

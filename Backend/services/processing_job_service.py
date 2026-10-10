@@ -41,6 +41,41 @@ def _iso(value: datetime | None) -> str | None:
     return value.isoformat()
 
 
+def _legacy_kind_clause():
+    return ProcessingJob.kind.in_(tuple(sorted(JOB_KINDS)))
+
+
+def _legacy_running_job(
+    db: Session,
+    job_id: str | UUID | None,
+    worker_id: str | None = None,
+    *,
+    match_worker: bool = False,
+) -> ProcessingJob | None:
+    """Admit one running legacy row from the current persisted kind.
+
+    The kind, status, and optional worker predicates are in this SELECT.
+    populate_existing() copies that result over an already-loaded identity-map
+    row before the caller assigns columns. with_for_update() then locks only
+    the matched processing_jobs row until this transaction ends. A kind change
+    committed before the SELECT is visible and is not locked. A commit after
+    the SELECT is not re-read. No other table is locked. SQLite ignores
+    FOR UPDATE.
+    """
+
+    parsed = _as_uuid(job_id)
+    if parsed is None:
+        return None
+    query = db.query(ProcessingJob).filter(
+        ProcessingJob.id == parsed,
+        _legacy_kind_clause(),
+        ProcessingJob.status == "running",
+    )
+    if match_worker:
+        query = query.filter(ProcessingJob.worker_id == worker_id)
+    return query.populate_existing().with_for_update(skip_locked=False).first()
+
+
 def scope_snapshot(scope: dict[str, Any]) -> dict[str, Any]:
     """Keep only the authorization facts needed when the worker re-checks work."""
 
@@ -140,7 +175,14 @@ class ProcessingJobService:
     @staticmethod
     def get(db: Session, job_id: str | UUID) -> ProcessingJob | None:
         parsed = _as_uuid(job_id)
-        return db.query(ProcessingJob).filter(ProcessingJob.id == parsed).first() if parsed else None
+        if parsed is None:
+            return None
+        return (
+            db.query(ProcessingJob)
+            .filter(ProcessingJob.id == parsed)
+            .populate_existing()
+            .first()
+        )
 
     @staticmethod
     def serialize(job: ProcessingJob) -> dict[str, Any]:
@@ -180,6 +222,8 @@ class ProcessingJobService:
 
     @staticmethod
     def can_view(job: ProcessingJob, user_id: str | None, role: str | None) -> bool:
+        if job.kind not in JOB_KINDS:
+            return False
         return role == "Admin" or (
             bool(user_id)
             and job.requested_by_user_id is not None
@@ -192,10 +236,12 @@ class ProcessingJobService:
         job = (
             db.query(ProcessingJob)
             .filter(
+                _legacy_kind_clause(),
                 ProcessingJob.status == "queued",
                 ProcessingJob.available_at <= now,
             )
             .order_by(ProcessingJob.created_at.asc(), ProcessingJob.id.asc())
+            .populate_existing()
             .with_for_update(skip_locked=True)
             .first()
         )
@@ -213,8 +259,8 @@ class ProcessingJobService:
 
     @staticmethod
     def heartbeat(db: Session, job_id: str | UUID, worker_id: str) -> bool:
-        job = ProcessingJobService.get(db, job_id)
-        if not job or job.status != "running" or job.worker_id != worker_id:
+        job = _legacy_running_job(db, job_id, worker_id, match_worker=True)
+        if job is None:
             return False
         now = utcnow()
         job.heartbeat_at = now
@@ -224,8 +270,8 @@ class ProcessingJobService:
 
     @staticmethod
     def progress(db: Session, job_id: str | UUID, value: int, worker_id: str | None = None) -> bool:
-        job = ProcessingJobService.get(db, job_id)
-        if not job or job.status != "running" or (worker_id and job.worker_id != worker_id):
+        job = _legacy_running_job(db, job_id, worker_id, match_worker=bool(worker_id))
+        if job is None:
             return False
         job.progress = max(0, min(99, int(value)))
         now = utcnow()
@@ -244,12 +290,8 @@ class ProcessingJobService:
         result_id: str | None = None,
         worker_id: str | None = None,
     ) -> ProcessingJob | None:
-        job = ProcessingJobService.get(db, job_id)
-        if (
-            not job
-            or job.status != "running"
-            or (worker_id and job.worker_id != worker_id)
-        ):
+        job = _legacy_running_job(db, job_id, worker_id, match_worker=bool(worker_id))
+        if job is None:
             return None
         job.status = "succeeded"
         job.progress = 100
@@ -275,12 +317,8 @@ class ProcessingJobService:
         retryable: bool,
         worker_id: str | None = None,
     ) -> ProcessingJob | None:
-        job = ProcessingJobService.get(db, job_id)
-        if (
-            not job
-            or job.status != "running"
-            or (worker_id and job.worker_id != worker_id)
-        ):
+        job = _legacy_running_job(db, job_id, worker_id, match_worker=bool(worker_id))
+        if job is None:
             return None
         safe_message = (message or "Processing failed.").replace("\x00", " ").strip()[:500]
         if retryable and int(job.attempt_count or 0) < int(job.max_attempts or 1):
@@ -308,10 +346,12 @@ class ProcessingJobService:
         jobs = (
             db.query(ProcessingJob)
             .filter(
+                _legacy_kind_clause(),
                 ProcessingJob.status == "running",
                 ProcessingJob.lease_expires_at.is_not(None),
                 ProcessingJob.lease_expires_at < now,
             )
+            .populate_existing()
             .with_for_update(skip_locked=True)
             .all()
         )

@@ -360,6 +360,9 @@ export interface ScoreMovementBridgeData {
   leaver_effect: number | null;
   population_scope_mix_effect: number | null;
   configuration_version_effect: number | null;
+  scoring_basis_changed?: boolean;
+  raw_performance_changed?: boolean;
+  basis_context?: { state?: string; raw_performance?: string; message?: string | null } | null;
   missing_incomparable_data_effect: number | null;
   residual: number | null;
   reconciliation_state: 'reconciled' | 'partial' | 'unavailable';

@@ -48,6 +48,14 @@ def test_scoped_summary_refreshes_after_apply_and_rollback_without_shared_versio
         assert len(cache) == count
         applied = workflow.apply(actor, scope["id"], 2026, 8)
         assert service.summary(period="2026-08")["current"]["average_score"] == 80
+        # Persisted pin enrichment must not replace the scope/version cache key
+        # with a record/year pair. Prove a warm request does not query the roster.
+        assert all(isinstance(key, str) and key.startswith("pms:v1:performance:summary:") for key in cache)
+        with monkeypatch.context() as warm:
+            def reject_projection(**kwargs):
+                raise AssertionError("Pinned summary repeat missed its response cache")
+            warm.setattr(service.repository, "get_dashboard_summary_rows", reject_projection)
+            assert service.summary(period="2026-08")["current"]["average_score"] == 80
         workflow.rollback(actor, applied["revision_id"])
         assert service.summary(period="2026-08")["current"]["average_score"] == 70
     finally:

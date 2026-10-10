@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import logging
@@ -130,48 +131,49 @@ def _lineage(snapshot: dict | None) -> dict:
     return dict(lineage) if isinstance(lineage, dict) else {}
 
 
+def _evidence_item(record) -> dict:
+    """One canonical evidence object. Callers supply the row; this does not query."""
+    employee = record.employee
+    kpis = [
+        {
+            "id": str(value.id),
+            "kpi_key": value.kpi_key,
+            "actual": _canon_decimal(value.actual_value),
+            "target": _canon_decimal(value.target_value),
+            "achievement": _canon_decimal(value.achievement_ratio),
+            "weight": _canon_decimal(value.weight_applied),
+            "contribution": _canon_decimal(value.contribution),
+        }
+        for value in record.kpi_values
+    ]
+    kpis.sort(key=lambda item: (item["kpi_key"], item["id"]))
+    return {
+        "id": str(record.id),
+        "year": int(record.year),
+        "month": str(record.month),
+        "team_id": str(record.team_id),
+        "performance_level": record.performance_level,
+        "position_name": record.position_name or "",
+        "employee_id": str(record.employee_id),
+        "employee_code": getattr(employee, "employee_id", None) if employee is not None else None,
+        "branch_key": record.branch_key,
+        "region": record.region,
+        "upload_id": str(record.upload_id) if record.upload_id else None,
+        "uploaded_at": _iso(record.uploaded_at),
+        "score": _canon_decimal(record.score),
+        "grade": record.grade,
+        "status": record.status,
+        "payload": _freeze(record.record_payload) if record.record_payload is not None else None,
+        "kpis": kpis,
+    }
+
+
 def _evidence_list(records: list) -> list[dict]:
-    body = []
     seen = {}
     for record in records:
         seen[str(record.id)] = record
-    for record in sorted(seen.values(), key=lambda row: (str(row.id), int(row.year))):
-        employee = record.employee
-        kpis = [
-            {
-                "id": str(value.id),
-                "kpi_key": value.kpi_key,
-                "actual": _canon_decimal(value.actual_value),
-                "target": _canon_decimal(value.target_value),
-                "achievement": _canon_decimal(value.achievement_ratio),
-                "weight": _canon_decimal(value.weight_applied),
-                "contribution": _canon_decimal(value.contribution),
-            }
-            for value in record.kpi_values
-        ]
-        kpis.sort(key=lambda item: (item["kpi_key"], item["id"]))
-        body.append(
-            {
-                "id": str(record.id),
-                "year": int(record.year),
-                "month": str(record.month),
-                "team_id": str(record.team_id),
-                "performance_level": record.performance_level,
-                "position_name": record.position_name or "",
-                "employee_id": str(record.employee_id),
-                "employee_code": getattr(employee, "employee_id", None) if employee is not None else None,
-                "branch_key": record.branch_key,
-                "region": record.region,
-                "upload_id": str(record.upload_id) if record.upload_id else None,
-                "uploaded_at": _iso(record.uploaded_at),
-                "score": _canon_decimal(record.score),
-                "grade": record.grade,
-                "status": record.status,
-                "payload": _freeze(record.record_payload) if record.record_payload is not None else None,
-                "kpis": kpis,
-            }
-        )
-    return body
+    ordered = sorted(seen.values(), key=lambda row: (str(row.id), int(row.year)))
+    return [_evidence_item(record) for record in ordered]
 
 
 def _full_snapshot(records: list) -> dict:
@@ -179,37 +181,36 @@ def _full_snapshot(records: list) -> dict:
     return {"records": body, "hash": _checksum(body)}
 
 
-def _source_projection(records: list) -> list[dict]:
+def _source_item(item: dict) -> dict:
     """Identity and workbook inputs. Derived scores are excluded because apply rewrites them."""
-    projected = []
-    for item in _evidence_list(records):
-        projected.append(
+    return {
+        "id": item["id"],
+        "year": item["year"],
+        "month": item["month"],
+        "team_id": item["team_id"],
+        "performance_level": item["performance_level"],
+        "position_name": item["position_name"],
+        "employee_id": item["employee_id"],
+        "employee_code": item["employee_code"],
+        "branch_key": item["branch_key"],
+        "region": item["region"],
+        "upload_id": item["upload_id"],
+        "uploaded_at": item["uploaded_at"],
+        "payload": item["payload"],
+        "kpis": [
             {
-                "id": item["id"],
-                "year": item["year"],
-                "month": item["month"],
-                "team_id": item["team_id"],
-                "performance_level": item["performance_level"],
-                "position_name": item["position_name"],
-                "employee_id": item["employee_id"],
-                "employee_code": item["employee_code"],
-                "branch_key": item["branch_key"],
-                "region": item["region"],
-                "upload_id": item["upload_id"],
-                "uploaded_at": item["uploaded_at"],
-                "payload": item["payload"],
-                "kpis": [
-                    {
-                        "id": kpi["id"],
-                        "kpi_key": kpi["kpi_key"],
-                        "actual": kpi["actual"],
-                        "target": kpi["target"],
-                    }
-                    for kpi in item["kpis"]
-                ],
+                "id": kpi["id"],
+                "kpi_key": kpi["kpi_key"],
+                "actual": kpi["actual"],
+                "target": kpi["target"],
             }
-        )
-    return projected
+            for kpi in item["kpis"]
+        ],
+    }
+
+
+def _source_projection(records: list) -> list[dict]:
+    return [_source_item(item) for item in _evidence_list(records)]
 
 
 def _source_fingerprint(records: list) -> str:
@@ -439,6 +440,100 @@ def _listed_kpis(payload: dict) -> dict[str, dict]:
     return found
 
 
+_MISSING = object()
+
+
+def record_source_rows(version: TeamConfigurationVersion, record: PerformanceRecord, config) -> tuple[list[dict], list[dict], list[dict]]:
+    """Pure inputs for one already-loaded record. ``config`` is the hoisted team file slice.
+
+    The caller decides whether a missing retained source may load ``config``.
+    This function does not query and does not guess a source shape.
+    """
+    values_by_key: dict[str, KPIValue] = {}
+    for value in record.kpi_values:
+        key = str(value.kpi_key)
+        if key in values_by_key:
+            raise EvaluationError(
+                "A stored record repeats a KPI key.",
+                code="duplicate_kpi",
+                record_id=str(record.id),
+                kpi_key=key,
+            )
+        values_by_key[key] = value
+    payload = _payload_dict(record)
+    retained = _retained_source(payload)
+    pinned = _is_pinned(payload)
+    raw = payload.get("raw_data") if isinstance(payload.get("raw_data"), dict) else None
+    if retained is not None:
+        config = None
+    missing = []
+    rows = []
+    conflicts = []
+    for line in snapshot_lines(version):
+        key = str(line.get("kpi_key"))
+        weight = _decimal(line.get("weight")) or Decimal("0")
+        sql_value = values_by_key.get(key)
+        origin = "sql_before_apply"
+        actual = None
+        workbook = None
+        if retained is not None:
+            origin = "retained"
+            item = retained.get(key)
+            if item is not None:
+                actual = item["actual"]
+                workbook = item["target"]
+        else:
+            if key == PRODUCTIVITY_KEY:
+                actual_found, raw_actual, target_found, raw_target = _productivity_from_raw(record, raw)
+            else:
+                actual_found, raw_actual, target_found, raw_target = _config_source(config, key, raw)
+            workbook_present = key == PRODUCTIVITY_KEY and _has_raw_workbook(raw)
+            if actual_found or target_found:
+                origin = "workbook_raw"
+                actual = raw_actual
+                workbook = raw_target
+            elif pinned or workbook_present:
+                origin = "missing_pinned" if pinned else "missing_source"
+            elif sql_value is not None:
+                actual = _source_number(sql_value.actual_value)
+                workbook = _source_number(sql_value.target_value)
+        if weight > 0 and actual is None:
+            missing.append(
+                {
+                    "record_id": str(record.id),
+                    "employee_id": str(record.employee_id),
+                    "kpi_key": key,
+                    "reason": "missing_source" if origin != "sql_before_apply" else "missing_weighted_actual",
+                }
+            )
+            continue
+        if actual is None and workbook is None:
+            continue
+        rows.append(
+            {
+                "kpi_key": key,
+                "actual": actual,
+                "workbook_target": workbook,
+                "origin": origin,
+            }
+        )
+        if line.get("target_mode") == "fixed" and line.get("target") is not None and workbook is not None:
+            fixed = _decimal(line.get("target"))
+            if fixed is not None and abs(workbook - fixed) > Decimal("0.0001"):
+                conflicts.append(
+                    {
+                        "record_id": str(record.id),
+                        "employee_id": str(record.employee_id),
+                        "kpi_key": key,
+                        "workbook_target": float(workbook),
+                        "fixed_target": float(fixed),
+                        "approved_target": float(fixed),
+                        "difference": float(workbook - fixed),
+                    }
+                )
+    return missing, rows, conflicts
+
+
 def _as_uuid(value, message: str):
     if isinstance(value, uuid.UUID):
         return value
@@ -562,11 +657,24 @@ class EvaluationWorkflow:
         assert_schema(self.db)
 
     def _require_admin(self, actor: dict) -> None:
-        """Management calls stop here, before any catalog sync or settings write."""
+        """Persisted active Admin. Entry runs this before catalog sync.
+
+        The same check runs again after the team fence. require_action still
+        rejects a non-Admin actor. The actor dict is not the persisted role.
+        This read does not lock the user row.
+        """
         require_action(actor, "", "catalog")
         user = self._audit_user(actor)
         if user is None or user.role != "Admin" or user.is_active is not True:
             raise AccessDenied("Evaluation settings are limited to Admin.")
+
+    def _require_admin_after_fence(self, actor: dict) -> None:
+        """Reload persisted Admin after the team fence and before a mutation.
+
+        A passing read does not lock the user and does not cover a revocation
+        that commits after this statement.
+        """
+        self._require_admin(actor)
 
     def _audit_user(self, actor: dict):
         raw = (actor or {}).get("user_id")
@@ -610,15 +718,20 @@ class EvaluationWorkflow:
             ],
         }
 
-    def _guard_period(self, scope_row: EvaluationScope, year: int, month: int) -> None:
+    def _guard_period(self, scope_row: EvaluationScope, year: int, month: int, actor: dict) -> None:
         """Live exact-month capability. Stored readiness is not permission.
 
         An admitted July or August Outbound month stays editable while the global
         catalog row stays blocked. An unaudited scope stays blocked even when the
         stored row says supported. The team must still be active.
+
+        Persisted Admin is read again after the team fence returns, before the
+        capability decision or any later management write.
         """
         if scope_row.team_id is not None:
             self._lock_team(scope_row.team_id)
+        self._require_admin_after_fence(actor)
+        if scope_row.team_id is not None:
             team = self.db.query(Team).populate_existing().filter(Team.id == scope_row.team_id).one_or_none()
             if team is None or team.is_active is not True:
                 raise EvaluationError(
@@ -836,7 +949,7 @@ class EvaluationWorkflow:
         self._require_admin(actor)
         scope_row = self._scope(scope_id, sync=True)
         number = month_number(month)
-        self._guard_period(scope_row, int(year), number)
+        self._guard_period(scope_row, int(year), number, actor)
         existing = self._find_version(scope_row, int(year), number, "draft", lock=True)
         if existing is not None:
             if copy_previous or _lineage(existing.config_snapshot).get("source_version_id"):
@@ -903,17 +1016,29 @@ class EvaluationWorkflow:
         self.db.commit()
         return self._serialize_version(created, scope_row)
 
-    def edit_draft(self, actor: dict, version_id, lines: list[dict], *, weight_only: bool = False) -> dict:
+    def edit_draft(self, actor: dict, version_id, lines: list[dict], *, weight_only: bool = False, expected_checksum: str | None = None, require_precondition: bool = False) -> dict:
         self._require_admin(actor)
+        # HTTP callers must pin the rules they edited. Internal trusted callers
+        # retain their existing contract; supplying a checksum also checks it.
+        if require_precondition and not expected_checksum:
+            raise EvaluationConflict(
+                "Load this draft before saving it. A rules checksum is required.",
+                code="draft_precondition_required",
+            )
         self._ready()
         version = self._version(version_id)
         scope_row = self._scope_for_version(version)
-        self._guard_period(scope_row, version.effective_from_year, version.effective_from_month)
+        self._guard_period(scope_row, version.effective_from_year, version.effective_from_month, actor)
         if version.status != "draft":
             raise EvaluationError("Approved settings are immutable. Open a new draft.", code="immutable")
         version = self._version(version.id, lock=True)
         if version.status != "draft":
             raise EvaluationError("Approved settings are immutable. Open a new draft.", code="immutable")
+        if expected_checksum is not None and expected_checksum != version.config_checksum:
+            raise EvaluationConflict(
+                "This draft changed after you opened it. Reload the draft before saving; no changes were made.",
+                code="stale_draft",
+            )
         cleaned, notes = self._validate_lines(snapshot_lines(version), lines, weight_only=weight_only)
         snapshot = dict(version.config_snapshot or {})
         snapshot.pop("preview_evidence", None)
@@ -934,7 +1059,7 @@ class EvaluationWorkflow:
         self._ready()
         version = self._version(version_id)
         scope_row = self._scope_for_version(version)
-        self._guard_period(scope_row, version.effective_from_year, version.effective_from_month)
+        self._guard_period(scope_row, version.effective_from_year, version.effective_from_month, actor)
         version = self._version(version.id, lock=True)
         if version.status != "draft":
             raise EvaluationError("Only a draft can be approved.", code="immutable")
@@ -968,7 +1093,7 @@ class EvaluationWorkflow:
         self._ready()
         version = self._version(version_id)
         scope_row = self._scope_for_version(version)
-        self._guard_period(scope_row, version.effective_from_year, version.effective_from_month)
+        self._guard_period(scope_row, version.effective_from_year, version.effective_from_month, actor)
         if version.status not in {"draft", "approved"}:
             raise EvaluationError("Preview needs a draft or approved version.", code="not_found")
         self._require_version(scope_row, version)
@@ -1050,7 +1175,7 @@ class EvaluationWorkflow:
         require_action(actor, self._team_name(scope_row), "approve")
         year = int(source.effective_from_year)
         month = int(source.effective_from_month)
-        self._guard_period(scope_row, year, month)
+        self._guard_period(scope_row, year, month, actor)
         source_id = str(source.id)
         source = self._version(source_id, lock=True)
         if source.status != "approved":
@@ -1099,7 +1224,7 @@ class EvaluationWorkflow:
         version = self._version(version_id)
         scope_row = self._scope_for_version(version)
         require_action(actor, self._team_name(scope_row), "approve")
-        self._guard_period(scope_row, version.effective_from_year, version.effective_from_month)
+        self._guard_period(scope_row, version.effective_from_year, version.effective_from_month, actor)
         if version.status != "draft":
             raise EvaluationError("Impact preview is stored on a draft before approval.", code="immutable")
         self._validate_lines(snapshot_lines(version), snapshot_lines(version))
@@ -1205,7 +1330,7 @@ class EvaluationWorkflow:
         self._require_admin(actor)
         scope_row = self._scope(scope_id, sync=True)
         number = month_number(month)
-        self._guard_period(scope_row, int(year), number)
+        self._guard_period(scope_row, int(year), number, actor)
         version = self._find_version(scope_row, int(year), number, "approved", lock=True)
         if version is None:
             raise EvaluationError("Approve this month before applying it.", code="not_approved")
@@ -1213,7 +1338,7 @@ class EvaluationWorkflow:
         records = self._exact_records(scope_row, int(year), number, lock=True)
         active_same = [row for row in revisions if row.status == "active" and row.version_id == version.id]
         if len(active_same) == 1 and not any(row.status == "active" and row.id != active_same[0].id for row in revisions):
-            if _evidence_matches(records, active_same[0].applied_snapshot):
+            if self._snapshot_matches(records, active_same[0].applied_snapshot, active_same[0]):
                 return self._revision_body(active_same[0], idempotent=True)
             raise EvaluationConflict(
                 "Stored evidence no longer matches the applied snapshot. Apply made no changes.",
@@ -1282,9 +1407,13 @@ class EvaluationWorkflow:
         revision = self.db.query(EvaluationRevision).filter(EvaluationRevision.id == parsed).one_or_none()
         if revision is None:
             raise EvaluationError("Revision was not found.", code="not_found")
+        held_applied = copy.deepcopy(revision.applied_snapshot) if isinstance(revision.applied_snapshot, dict) else revision.applied_snapshot
+        held_prior = copy.deepcopy(revision.prior_snapshot) if isinstance(revision.prior_snapshot, dict) else revision.prior_snapshot
+        self.db.expire(revision, ["applied_snapshot", "prior_snapshot"])
         team = self.db.query(Team).filter(Team.id == revision.team_id).one()
         require_action(actor, logical_team_name(team), "rollback")
         self._lock_team(revision.team_id)
+        self._require_admin_after_fence(actor)
         revision = self._for_update(
             self.db.query(EvaluationRevision).filter(EvaluationRevision.id == parsed),
             True,
@@ -1299,6 +1428,33 @@ class EvaluationWorkflow:
                 "An older revision cannot roll back a newer one.",
                 code="not_latest",
             )
+        from services.evaluation.bounded_apply import classify_snapshot, guard_loaded_manifest
+
+        guard_loaded_manifest(self.db, held_applied, held_prior)
+        kind = classify_snapshot(revision.applied_snapshot)
+        if kind in {"manifest", "unknown_manifest", "malformed"}:
+            if kind != "manifest" or classify_snapshot(revision.prior_snapshot) != "manifest":
+                raise EvaluationConflict(
+                    "Stored revision manifest cannot be read. Rollback made no changes.",
+                    code="invalid_manifest",
+                )
+            try:
+                from services.evaluation.bounded_apply import BoundedApplyService
+
+                restored = BoundedApplyService(self.db).restore_manifest(revision)
+                revision.status = "rolled_back"
+                self.db.flush()
+                self.db.commit()
+            except EvaluationError:
+                self.db.rollback()
+                raise
+            self._bump("data")
+            return {
+                "revision_id": str(revision.id),
+                "status": "rolled_back",
+                "restored_basis": restored,
+                "restored_revision_id": None,
+            }
         records = self._exact_records(revision, int(revision.year), int(revision.month), lock=True)
         if not _evidence_matches(records, revision.applied_snapshot):
             raise EvaluationConflict(
@@ -1553,89 +1709,15 @@ class EvaluationWorkflow:
         except Exception:
             return None
 
-    def _record_inputs(self, version: TeamConfigurationVersion, record: PerformanceRecord) -> tuple[list[dict], list[dict], list[dict]]:
-        values_by_key: dict[str, KPIValue] = {}
-        for value in record.kpi_values:
-            key = str(value.kpi_key)
-            if key in values_by_key:
-                raise EvaluationError(
-                    "A stored record repeats a KPI key.",
-                    code="duplicate_kpi",
-                    record_id=str(record.id),
-                    kpi_key=key,
-                )
-            values_by_key[key] = value
-        payload = _payload_dict(record)
-        retained = _retained_source(payload)
-        pinned = _is_pinned(payload)
-        raw = payload.get("raw_data") if isinstance(payload.get("raw_data"), dict) else None
-        config = None if retained is not None else self._team_file(record)
-        missing = []
-        rows = []
-        conflicts = []
-        for line in snapshot_lines(version):
-            key = str(line.get("kpi_key"))
-            weight = _decimal(line.get("weight")) or Decimal("0")
-            sql_value = values_by_key.get(key)
-            origin = "sql_before_apply"
-            actual = None
-            workbook = None
-            if retained is not None:
-                origin = "retained"
-                item = retained.get(key)
-                if item is not None:
-                    actual = item["actual"]
-                    workbook = item["target"]
-            else:
-                if key == PRODUCTIVITY_KEY:
-                    actual_found, raw_actual, target_found, raw_target = _productivity_from_raw(record, raw)
-                else:
-                    actual_found, raw_actual, target_found, raw_target = _config_source(config, key, raw)
-                workbook_present = key == PRODUCTIVITY_KEY and _has_raw_workbook(raw)
-                if actual_found or target_found:
-                    origin = "workbook_raw"
-                    actual = raw_actual
-                    workbook = raw_target
-                elif pinned or workbook_present:
-                    origin = "missing_pinned" if pinned else "missing_source"
-                elif sql_value is not None:
-                    actual = _source_number(sql_value.actual_value)
-                    workbook = _source_number(sql_value.target_value)
-            if weight > 0 and actual is None:
-                missing.append(
-                    {
-                        "record_id": str(record.id),
-                        "employee_id": str(record.employee_id),
-                        "kpi_key": key,
-                        "reason": "missing_source" if origin != "sql_before_apply" else "missing_weighted_actual",
-                    }
-                )
-                continue
-            if actual is None and workbook is None:
-                continue
-            rows.append(
-                {
-                    "kpi_key": key,
-                    "actual": actual,
-                    "workbook_target": workbook,
-                    "origin": origin,
-                }
-            )
-            if line.get("target_mode") == "fixed" and line.get("target") is not None and workbook is not None:
-                fixed = _decimal(line.get("target"))
-                if fixed is not None and abs(workbook - fixed) > Decimal("0.0001"):
-                    conflicts.append(
-                        {
-                            "record_id": str(record.id),
-                            "employee_id": str(record.employee_id),
-                            "kpi_key": key,
-                            "workbook_target": float(workbook),
-                            "fixed_target": float(fixed),
-                            "approved_target": float(fixed),
-                            "difference": float(workbook - fixed),
-                        }
-                    )
-        return missing, rows, conflicts
+    def _record_inputs(self, version: TeamConfigurationVersion, record: PerformanceRecord, *, team_config=_MISSING) -> tuple[list[dict], list[dict], list[dict]]:
+        """Score inputs for one record. Pass ``team_config`` to avoid a per-employee file lookup."""
+        if team_config is _MISSING:
+            payload = _payload_dict(record)
+            retained = _retained_source(payload)
+            config = None if retained is not None else self._team_file(record)
+        else:
+            config = team_config
+        return record_source_rows(version, record, config)
 
     def _store_proof(self, version: TeamConfigurationVersion, proof: dict) -> None:
         snapshot = dict(version.config_snapshot or {})
@@ -1694,9 +1776,15 @@ class EvaluationWorkflow:
         )
         return self._for_update(query, lock).all()
 
+    def _snapshot_matches(self, records: list, snapshot: dict | None, revision=None) -> bool:
+        from services.evaluation.bounded_apply import snapshot_evidence_matches
+
+        return snapshot_evidence_matches(self.db, records, snapshot, revision)
+
     def _public_revision(self, revision: EvaluationRevision, revisions: list[EvaluationRevision], records: list) -> dict:
         snapshot = revision.applied_snapshot if isinstance(revision.applied_snapshot, dict) else {}
-        affected = snapshot.get("records")
+        from services.evaluation.bounded_apply import applied_count
+
         latest = _latest_revision(revisions)
         active = [row for row in revisions if row.status == "active"]
         can_rollback = bool(
@@ -1705,14 +1793,14 @@ class EvaluationWorkflow:
             and latest.id == revision.id
             and len(active) == 1
             and active[0].id == revision.id
-            and _evidence_matches(records, revision.applied_snapshot)
+            and self._snapshot_matches(records, revision.applied_snapshot, revision)
         )
         return {
             "id": str(revision.id),
             "version_id": str(revision.version_id),
             "status": revision.status,
             "created_at": _iso(revision.created_at),
-            "affected_count": len(affected) if isinstance(affected, list) else 0,
+            "affected_count": applied_count(snapshot),
             "can_rollback": can_rollback,
         }
 
@@ -1778,18 +1866,21 @@ class EvaluationWorkflow:
 
     def _revision_body(self, revision: EvaluationRevision, *, idempotent: bool) -> dict:
         snapshot = revision.applied_snapshot if isinstance(revision.applied_snapshot, dict) else {}
+        from services.evaluation.bounded_apply import applied_count, classify_snapshot
+
         records = []
-        for item in snapshot.get("records") or []:
-            if "score" not in item or "grade" not in item:
-                continue
-            records.append({"id": item["id"], "score": float(item["score"]), "grade": item["grade"]})
+        if classify_snapshot(snapshot) == "legacy":
+            for item in snapshot.get("records") or []:
+                if "score" not in item or "grade" not in item:
+                    continue
+                records.append({"id": item["id"], "score": float(item["score"]), "grade": item["grade"]})
         return {
             "revision_id": str(revision.id),
             "version_id": str(revision.version_id),
             "idempotent": idempotent,
             "records": records,
-            "snapshot_hash": snapshot.get("hash"),
-            "applied_count": len(snapshot.get("records") or []),
+            "snapshot_hash": snapshot.get("after_hash") if classify_snapshot(snapshot) == "manifest" else snapshot.get("hash"),
+            "applied_count": applied_count(snapshot),
         }
 
     def _restore(self, snapshot: dict) -> list[dict]:

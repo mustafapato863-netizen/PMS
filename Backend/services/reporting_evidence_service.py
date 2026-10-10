@@ -6,6 +6,7 @@ from statistics import mean
 from typing import Any, Iterable
 
 from config.loader import ConfigurationError, find_team_config_by_db_name, load_team_config, resolve_team_config
+from services.scoring_basis_comparison import compare_scoring_basis
 from utils.kpi_direction import FLIP_TOLERANCE, flipped_contribution_fix, normalize_direction, resolve_kpi_direction
 
 
@@ -85,6 +86,7 @@ def _raw_kpis(record: Any) -> list[dict[str, Any]]:
             key: _record_value(raw, key) for key in (
                 "kpi_key", "label", "actual_value", "target_value", "achievement_ratio",
                 "weight_applied", "contribution", "direction", "unit", "weight", "target",
+                "evaluation_pinned",
             )
         }
         result.append({
@@ -172,15 +174,30 @@ class ReportingEvidenceService:
         issues: list[dict[str, Any]] = []
         seen: Counter[str] = Counter()
         employee_id = _employee_key(record)
+        saw_unpinned_kpi = False
         for raw in _raw_kpis(record):
             key = str(raw.get("kpi_key") or "").strip()
             if not key:
                 continue
             seen[key.casefold()] += 1
+            # A trusted applied pin is authoritative for Employee rows too.
+            # The static file remains the template for every unpinned KPI.
+            trusted_pin = raw.get("evaluation_pinned") is True
+            if not trusted_pin:
+                saw_unpinned_kpi = True
             configured_item = configured.get(key.casefold()) or configured.get(str(raw.get("label") or "").casefold())
-            if configured_item is None:
+            if configured_item is None and not trusted_pin:
                 issues.append({"code": "persisted_kpi_missing_configuration", "severity": "high", "kpi": key, "employee_id": employee_id, "blocks_ranking": True})
                 continue
+            if configured_item is None:
+                configured_item = {
+                    "key": key,
+                    "label": raw.get("label") or key,
+                    "direction": raw.get("direction"),
+                    "unit": raw.get("unit"),
+                    "weight": raw.get("weight_applied"),
+                    "target": raw.get("target_value"),
+                }
             persisted_weight = _normalized_percent(number(raw.get("weight_applied")))
             configured_weight = _normalized_percent(number(configured_item.get("weight")))
             weight = persisted_weight if persisted_weight is not None else configured_weight
@@ -201,9 +218,10 @@ class ReportingEvidenceService:
             contribution = _normalized_percent(number(raw.get("contribution")))
             if contribution is not None:
                 contribution = min(max(contribution, 0.0), max(weight or 0.0, 0.0))
-                if direction and weight:
-                    # Rows saved under the opposite direction (e.g. Marketing
-                    # cw_error_free before the config fix) are re-scored here.
+                # Official pinned contributions stay stored. Unpinned legacy
+                # rows saved under the opposite direction (e.g. Marketing
+                # cw_error_free before the config fix) are still re-scored.
+                if direction and weight and not trusted_pin:
                     corrected = flipped_contribution_fix(
                         actual, target, float(weight), contribution, direction, raw.get("direction"),
                         tolerance=FLIP_TOLERANCE * 100,
@@ -251,16 +269,20 @@ class ReportingEvidenceService:
                 issues.append({"code": "invalid_direction", "severity": "high", "kpi": key, "employee_id": employee_id, "blocks_ranking": True})
             if not unit:
                 issues.append({"code": "missing_unit", "severity": "medium", "kpi": key, "employee_id": employee_id, "blocks_ranking": False})
-            if persisted_weight is not None and configured_weight is not None and abs(persisted_weight - configured_weight) > 0.01:
+            if not trusted_pin and persisted_weight is not None and configured_weight is not None and abs(persisted_weight - configured_weight) > 0.01:
                 issues.append({"code": "weight_mismatch", "severity": "high", "kpi": key, "employee_id": employee_id, "blocks_ranking": False, "expected": configured_weight, "actual": persisted_weight})
         for key, count in seen.items():
             if count > 1:
                 issues.append({"code": "duplicate_kpi", "severity": "high", "kpi": key, "employee_id": employee_id, "blocks_ranking": True})
-        raw_identities = {str(item.get("kpi_key") or "").casefold() for item in _raw_kpis(record)}
-        configured_unique = {str(item.get("key") or item.get("label") or "").casefold(): item for item in configured.values()}
-        for identity, item in configured_unique.items():
-            if identity and identity not in raw_identities and str(item.get("label") or "").casefold() not in raw_identities:
-                issues.append({"code": "configured_kpi_missing_evidence", "severity": "medium", "kpi": item.get("label") or item.get("key"), "employee_id": employee_id, "blocks_ranking": False})
+        # A record whose KPIs are all trusted pins uses that applied set.
+        # File-only template KPIs are not missing evidence. A legacy row
+        # still reports KPIs the static file expected and did not receive.
+        if saw_unpinned_kpi or not any(seen.values()):
+            raw_identities = {str(item.get("kpi_key") or "").casefold() for item in _raw_kpis(record)}
+            configured_unique = {str(item.get("key") or item.get("label") or "").casefold(): item for item in configured.values()}
+            for identity, item in configured_unique.items():
+                if identity and identity not in raw_identities and str(item.get("label") or "").casefold() not in raw_identities:
+                    issues.append({"code": "configured_kpi_missing_evidence", "severity": "medium", "kpi": item.get("label") or item.get("key"), "employee_id": employee_id, "blocks_ranking": False})
         return rows, issues
 
     def kpi_evidence(self, current: list[Any], previous: list[Any]) -> tuple[list[dict[str, Any]], list[str]]:
@@ -337,12 +359,29 @@ class ReportingEvidenceService:
         return {"top": top, "bottom": bottom, "all": rows}
 
     def trend(self, records: list[Any], primary: tuple[int, int], requested_count: int = 6) -> dict[str, Any]:
-        periods = sorted({period_key(row) for row in records if period_key(row) and period_key(row) <= primary})[-requested_count:]
+        by_period: dict[tuple[int, int], list[Any]] = defaultdict(list)
+        for row in records:
+            key = period_key(row)
+            if key is not None:
+                by_period[key].append(row)
+        periods = sorted(key for key in by_period if key <= primary)[-requested_count:]
         series = []
+        previous_signatures: set[tuple[Any, ...]] | None = None
         for period in periods:
-            values = [score(row) for row in records if period_key(row) == period and score(row) is not None]
-            if values:
-                series.append({"label": period_label(period), "value": round(mean(values), 2)})
+            period_rows = [row for row in by_period[period] if score(row) is not None]
+            values = [score(row) for row in period_rows]
+            if not values:
+                continue
+            signatures = {self._config_signature(row) for row in period_rows}
+            previous_period = previous_calendar_period(period)
+            series.append({
+                "label": period_label(period),
+                "value": round(mean(values), 2),
+                "basis_changed": previous_signatures is not None and signatures != previous_signatures,
+                "basis_state": "mixed" if len(signatures) > 1 else "uniform",
+                "basis_context": compare_scoring_basis(by_period.get(period, []), by_period.get(previous_period, [])),
+            })
+            previous_signatures = signatures
         count = len(series)
         if count == 0: title, state = "Trend Unavailable", "unavailable"
         elif count == 1: title, state = f"{series[0]['label']} Only", "single_period"
@@ -355,6 +394,65 @@ class ReportingEvidenceService:
         rows, _ = self._normalized_record_kpis(record)
         return tuple(sorted((row["key"].casefold(), row["weight"], row["target"], row["direction"], row["unit"]) for row in rows))
 
+    @staticmethod
+    def _same_measure(left: Any, right: Any) -> bool:
+        if left is None or right is None:
+            return left is None and right is None
+        if isinstance(left, (int, float)) and isinstance(right, (int, float)):
+            return abs(float(left) - float(right)) <= 1e-9
+        return left == right
+
+    def _kpi_basis_comparisons(self, pairs: list[tuple[Any, Any]]) -> list[dict[str, Any]]:
+        grouped: dict[str, list[tuple[dict[str, Any] | None, dict[str, Any] | None]]] = defaultdict(list)
+        for current_row, previous_row in pairs:
+            current_kpis = {row["key"]: row for row in self._normalized_record_kpis(current_row)[0]}
+            previous_kpis = {row["key"]: row for row in self._normalized_record_kpis(previous_row)[0]}
+            for key in set(current_kpis) | set(previous_kpis):
+                grouped[key].append((previous_kpis.get(key), current_kpis.get(key)))
+        comparisons: list[dict[str, Any]] = []
+        for key in sorted(grouped):
+            samples = grouped[key]
+
+            def side_values(index: int, field: str) -> list[Any]:
+                return [sample[index].get(field) if sample[index] else None for sample in samples]
+
+            def uniform_number(values: list[Any]) -> float | None:
+                if not values or any(value is None for value in values):
+                    return None
+                first = float(values[0])
+                if all(abs(float(value) - first) <= 1e-9 for value in values):
+                    return first
+                return None
+
+            actual_changed = any(
+                not self._same_measure(
+                    previous.get("actual") if previous else None,
+                    current.get("actual") if current else None,
+                )
+                for previous, current in samples
+            )
+            basis_changed = any(
+                previous is None
+                or current is None
+                or not self._same_measure(previous.get("target"), current.get("target"))
+                or not self._same_measure(previous.get("weight"), current.get("weight"))
+                or previous.get("direction") != current.get("direction")
+                or previous.get("unit") != current.get("unit")
+                for previous, current in samples
+            )
+            comparisons.append({
+                "key": key,
+                "actual_changed": actual_changed,
+                "basis_changed": basis_changed,
+                "previous_actual": uniform_number(side_values(0, "actual")),
+                "current_actual": uniform_number(side_values(1, "actual")),
+                "previous_target": uniform_number(side_values(0, "target")),
+                "current_target": uniform_number(side_values(1, "target")),
+                "previous_weight": uniform_number(side_values(0, "weight")),
+                "current_weight": uniform_number(side_values(1, "weight")),
+            })
+        return comparisons
+
     def movement(self, current: list[Any], previous: list[Any], primary: tuple[int, int] | None = None) -> dict[str, Any]:
         summary = self.summary(current, previous)
         current_by_id = {_employee_key(row): row for row in current if score(row) is not None}
@@ -364,9 +462,11 @@ class ReportingEvidenceService:
         base = {"comparison_state": "available" if reported is not None else "unavailable", "comparison_period": period_label(previous_calendar_period(primary)) if primary else None,
                 "current_period": period_label(primary), "previous_overall_score": summary["previous_score"], "current_overall_score": summary["average_score"], "total_score_point_change": reported,
                 "matched_employee_count": len(matched), "joiner_count": len(current_only), "leaver_count": len(previous_only), "current_only_employee_count": len(current_only), "previous_only_employee_count": len(previous_only)}
+        basis_context = compare_scoring_basis(current, previous)
         if reported is None:
             return {**base, "kpi_contribution_movements": [], "team_contribution_movements": [], "joiner_effect": None, "leaver_effect": None, "population_scope_mix_effect": None,
                     "configuration_mismatch_effect": None, "configuration_version_effect": None, "missing_evidence_effect": None, "missing_incomparable_data_effect": None, "residual": None,
+                    "scoring_basis_changed": False, "raw_performance_changed": False, "kpi_basis_comparisons": [], "basis_context": basis_context,
                     "reconciliation_state": "unavailable", "rounding_tolerance": ROUNDING_TOLERANCE, "narrative": "Previous-calendar-month comparison is unavailable.", "warnings": ["An adjacent-month movement bridge cannot be produced."]}
         current_matched = mean(score(current_by_id[key]) for key in matched) if matched else None
         previous_matched = mean(score(previous_by_id[key]) for key in matched) if matched else None
@@ -374,14 +474,18 @@ class ReportingEvidenceService:
         leaver = round(previous_matched - summary["previous_score"], 4) if previous_matched is not None else 0.0
         kpi_movements: dict[str, float] = defaultdict(float); team_movements: dict[str, float] = defaultdict(float)
         config_effect = missing_effect = scope_mix = 0.0
+        signature_changed = False
+        matched_pairs: list[tuple[Any, Any]] = []
         for key in matched:
             current_row, previous_row = current_by_id[key], previous_by_id[key]
+            matched_pairs.append((current_row, previous_row))
             employee_delta = score(current_row) - score(previous_row)
             team = str(_record_value(current_row, "team") or "Unspecified")
             team_movements[team] += employee_delta / len(matched)
             if (_record_value(current_row, "team"), _record_value(current_row, "position"), _record_value(current_row, "performance_level")) != (_record_value(previous_row, "team"), _record_value(previous_row, "position"), _record_value(previous_row, "performance_level")):
                 scope_mix += employee_delta / len(matched); continue
             if self._config_signature(current_row) != self._config_signature(previous_row):
+                signature_changed = True
                 config_effect += employee_delta / len(matched); continue
             current_kpis, _ = self._normalized_record_kpis(current_row); previous_kpis, _ = self._normalized_record_kpis(previous_row)
             current_contrib = {row["key"]: row["weighted_contribution"] for row in current_kpis if row["weighted_contribution"] is not None}
@@ -399,17 +503,44 @@ class ReportingEvidenceService:
         strongest_negative = next((row for row in movement_rows if row["score_point_change"] < 0), None)
         strongest_positive = next((row for row in movement_rows if row["score_point_change"] > 0), None)
         verb = "increased" if reported > 0 else "declined" if reported < 0 else "was unchanged"
-        narrative = f"Overall PMS Score {verb} from {summary['previous_score']:.1f}% to {summary['average_score']:.1f}%, a movement of {abs(reported):.1f}%."
-        if strongest_negative: narrative += f" {strongest_negative['label']} contributed to the decline."
-        if strongest_positive: narrative += f" {strongest_positive['label']} partially offset negative movement."
-        if abs(residual) > ROUNDING_TOLERANCE: narrative += f" A residual of {residual:+.1f}% remains attributable to population, configuration, or incomparable evidence."
+        basis_rows = self._kpi_basis_comparisons(matched_pairs)
+        raw_performance_changed = any(row["actual_changed"] for row in basis_rows)
+        scoring_basis_changed = signature_changed or any(row["basis_changed"] for row in basis_rows)
+        settings_only = (
+            scoring_basis_changed
+            and not raw_performance_changed
+            and not movement_rows
+            and abs(scope_mix) <= ROUNDING_TOLERANCE
+            and abs(missing_effect) <= ROUNDING_TOLERANCE
+            and abs(joiner) <= ROUNDING_TOLERANCE
+            and abs(leaver) <= ROUNDING_TOLERANCE
+        )
+        if settings_only and abs(reported) <= ROUNDING_TOLERANCE:
+            narrative = (
+                "Evaluation settings changed. "
+                f"Overall PMS Score was unchanged at {summary['average_score']:.1f}% "
+                "on each month's own applied basis."
+            )
+        elif settings_only:
+            narrative = (
+                "Evaluation settings changed. "
+                f"Overall PMS Score moved from {summary['previous_score']:.1f}% to {summary['average_score']:.1f}% "
+                f"({abs(reported):.1f}%) on each month's own applied basis."
+            )
+        else:
+            narrative = f"Overall PMS Score {verb} from {summary['previous_score']:.1f}% to {summary['average_score']:.1f}%, a movement of {abs(reported):.1f}%."
+            if strongest_negative: narrative += f" {strongest_negative['label']} contributed to the decline."
+            if strongest_positive: narrative += f" {strongest_positive['label']} partially offset negative movement."
+            if abs(residual) > ROUNDING_TOLERANCE: narrative += f" A residual of {residual:+.1f}% remains attributable to population, configuration, or incomparable evidence."
+            if scoring_basis_changed: narrative += " Evaluation settings changed."
         warnings = []
-        if config_effect: warnings.append("Compared records used different applied KPI configurations.")
+        if scoring_basis_changed: warnings.append("Compared records used different applied KPI configurations.")
         if missing_effect: warnings.append("Some matched records lacked comparable KPI contribution evidence.")
         return {**base, "kpi_contribution_movements": movement_rows, "team_contribution_movements": team_rows,
                 "joiner_effect": round(joiner, 2), "leaver_effect": round(leaver, 2), "population_scope_mix_effect": round(scope_mix, 2),
                 "configuration_mismatch_effect": round(config_effect, 2), "configuration_version_effect": round(config_effect, 2),
                 "missing_evidence_effect": round(missing_effect, 2), "missing_incomparable_data_effect": round(missing_effect, 2), "residual": round(residual, 2),
+                "scoring_basis_changed": scoring_basis_changed, "raw_performance_changed": raw_performance_changed, "kpi_basis_comparisons": basis_rows, "basis_context": basis_context,
                 "reconciliation_state": "partial" if partial else "reconciled", "rounding_tolerance": ROUNDING_TOLERANCE, "narrative": narrative, "warnings": warnings}
 
     def lowest_kpis(self, current: list[Any], previous: list[Any]) -> dict[str, Any]:

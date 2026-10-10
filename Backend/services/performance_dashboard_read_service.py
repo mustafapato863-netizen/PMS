@@ -7,21 +7,24 @@ import hashlib
 import json
 import random
 import re
+import uuid
 from datetime import datetime, timezone
 from typing import Any, Iterable
 
 from fastapi import HTTPException
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
+from sqlalchemy import tuple_
 
 from models.report_schemas import MONTHS
 from models.schemas import EvaluationData, PerformanceRecord as SummaryRecord
-from models.models import PerformanceRecord
+from models.models import PerformanceRecord, KPIValue
 from repositories.performance_repository import PerformanceRepository
 from services.cache_invalidation_service import CacheInvalidationService
 from services.cache_service import CacheService
 from services.dashboard_record_service import DashboardRecordService
 from services.evaluation.cache_identity import evaluation_cache_identity
+from services.scoring_basis_comparison import compare_adjacent_records
 
 
 _MONTH_BY_NUMBER = {number: name for name, number in MONTHS.items()}
@@ -343,6 +346,7 @@ class PerformanceDashboardReadService:
         config_version = CacheInvalidationService.get_config_version()
         payload = {
             "hierarchy_version": 2,
+            "basis_context_version": 1 if endpoint == "summary" else None,
             "endpoint": endpoint,
             "filters": filters,
             "scope": _scope_identity(self.scope),
@@ -431,6 +435,50 @@ class PerformanceDashboardReadService:
                     **_summary(by_period[trend_key], location),
                 })
 
+        # Scalar summary payloads intentionally do not hydrate child KPIs.
+        # Applied rule pins live in evaluation_basis, while their exact actuals,
+        # effective targets and weights live in KPIValue. Read only the two
+        # comparison periods' pinned evidence in bounded batches; no employees
+        # or historical roster is hydrated and no score is recalculated.
+        adjacent_keys = {period_key(y, m) for y, m in _periods_ending(year, month, 2)}
+        basis_rows = _active_records(
+            [row for key in adjacent_keys for row in by_period.get(key, [])], location,
+        )
+        payload_by_record = {
+            (str(item.get("record_id")), item.get("year")): item.get("record_payload")
+            for item in summary_rows
+        }
+        pinned = {}
+        for row in basis_rows:
+            payload = payload_by_record.get((row.id, row.year))
+            basis = payload.get("evaluation_basis") if isinstance(payload, dict) else None
+            if isinstance(basis, dict) and basis.get("pinned"):
+                try:
+                    record_key = (uuid.UUID(row.id), row.year)
+                except (ValueError, TypeError, AttributeError):
+                    row.kpi_values = []  # malformed identity cannot prove a pin
+                    continue
+                pinned[record_key] = (row, basis)
+        keys = list(pinned)
+        evidence = {key: [] for key in keys}
+        for start in range(0, len(keys), 500):
+            values = self.db.query(
+                KPIValue.record_id, KPIValue.record_year, KPIValue.kpi_key,
+                KPIValue.actual_value, KPIValue.target_value, KPIValue.weight_applied,
+            ).filter(tuple_(KPIValue.record_id, KPIValue.record_year).in_(keys[start:start + 500])).all()
+            for value in values:
+                evidence[(value.record_id, value.record_year)].append(value)
+        for record_key, (row, basis) in pinned.items():
+            lines = {str(line.get("kpi_key")): line for line in basis.get("lines") or []}
+            stored = {str(value.get("kpi_key")): value for value in row.kpi_values or []}
+            row.kpi_values = [{
+                "kpi_key": value.kpi_key, "actual_value": value.actual_value,
+                "target_value": value.target_value, "weight_applied": value.weight_applied,
+                "evaluation_pinned": True,
+                "direction": lines.get(value.kpi_key, {}).get("direction") or stored.get(value.kpi_key, {}).get("direction"),
+                "unit": lines.get(value.kpi_key, {}).get("unit") or stored.get(value.kpi_key, {}).get("unit") or "%",
+            } for value in evidence[record_key]]
+
         data = {
             "scope": {
                 "period": period,
@@ -442,6 +490,13 @@ class PerformanceDashboardReadService:
             },
             "period": _period_ref(year, month),
             "previous_period": previous_period,
+            # Compare the exact adjacent calendar month, not the older period
+            # the numeric overview may fall back to. Reuse already scoped rows.
+            "basis_context": compare_adjacent_records(
+                basis_rows,
+                year=year,
+                month=month,
+            ),
             "current": current,
             "previous": (
                 {

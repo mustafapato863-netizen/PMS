@@ -13,6 +13,7 @@ allowlisted fixture. This file does not write os.environ.
 from __future__ import annotations
 
 import importlib.util
+import copy
 import os
 import threading
 import uuid
@@ -183,6 +184,36 @@ def _session_call(engine, fn):
         return fn(session)
     finally:
         session.close()
+
+
+def test_stale_second_admin_checksum_is_refreshed_under_postgres_lock(pg):
+    engine, _target = pg
+    factory = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+    with factory() as first, factory() as second:
+        seeded = _seed(first)
+        admin_b = User(id=uuid.uuid4(), full_name="pg-stale-admin", username=f"pg-stale-{uuid.uuid4().hex[:8]}", email=f"pg-stale-{uuid.uuid4().hex[:8]}@example.com", password_hash="synthetic", role="Admin")
+        first.add(admin_b)
+        first.commit()
+        actor_b = _actor(admin_b)
+        workflow_a = EvaluationWorkflow(first)
+        draft = workflow_a.revise(seeded["actor"], seeded["version_id"])
+        # Keep a genuinely stale ORM identity in another independent session.
+        cached = second.query(TeamConfigurationVersion).filter(TeamConfigurationVersion.id == uuid.UUID(draft["id"])).one()
+        assert cached.config_checksum == draft["checksum"]
+        saved = workflow_a.edit_draft(seeded["actor"], draft["id"], _line_edit(draft["lines"], 70), expected_checksum=draft["checksum"], require_precondition=True)
+        workflow_a.impact_preview(seeded["actor"], draft["id"])
+        first.expire_all()
+        current = first.query(TeamConfigurationVersion).filter(TeamConfigurationVersion.id == uuid.UUID(draft["id"])).one()
+        snapshot = copy.deepcopy(current.config_snapshot)
+        assert "preview_evidence" in snapshot
+        with pytest.raises(EvaluationConflict) as caught:
+            EvaluationWorkflow(second).edit_draft(actor_b, draft["id"], _line_edit(draft["lines"], 80), expected_checksum=draft["checksum"], require_precondition=True)
+        assert caught.value.data["code"] == "stale_draft"
+        second.rollback()
+        first.expire_all()
+        preserved = first.query(TeamConfigurationVersion).filter(TeamConfigurationVersion.id == uuid.UUID(draft["id"])).one()
+        assert preserved.config_checksum == saved["checksum"]
+        assert preserved.config_snapshot == snapshot
 
 
 def test_guarded_workflow_locks_revision_apply_and_rollback(pg):

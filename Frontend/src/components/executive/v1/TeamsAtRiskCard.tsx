@@ -6,6 +6,7 @@ import { teamPath } from '../../../features/executive/functions';
 import { FLAG_LABEL, FLAG_ORDER } from './execModel';
 import { arrow, fmtScore, fmtSigned } from '../../../features/executive/format';
 import { ExecCard, ExecCardHeader, GradeSquare, ScoreText, SoftEmpty, Sparkline, StatusPill } from './ExecPrimitives';
+import BasisComparisonNote from '../../../features/evaluation/BasisComparisonNote';
 
 const TEAM_BRANCHES = new Set(['dubai', 'sharjah', 'ajman', 'clinics']);
 const TEAM_LEVELS = new Set(['All', 'Employee', 'Managerial', 'Corporate']);
@@ -42,6 +43,7 @@ export default function TeamsAtRiskCard({ teams }: { teams: ExecutiveTeam[] }) {
       />
       {rows.length ? (
         <div role="table" aria-label={showAllTeams ? 'All teams' : 'Teams at risk'} className="flex flex-col">
+          <div className="px-[12px] pb-[8px]"><BasisComparisonNote messages={rows.map((team) => team.basis_context?.message)} /></div>
           <div role="row" className="flex items-center gap-[10px] rounded-[8px] bg-[var(--exec-table-head-bg)] px-[12px] py-[9px]">
             <span role="columnheader" className={`${head} min-w-0 flex-1`}>Team</span>
             <span role="columnheader" className={`${head} w-[56px] text-right`}>Score</span>

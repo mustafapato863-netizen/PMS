@@ -3,6 +3,7 @@ import { apiFetch } from '../../lib/apiClient';
 import { performanceSessionKey } from '../../lib/performanceSessionKey';
 import { usePerformanceCatalog } from './usePerformanceCatalog';
 import { resolveScopedPeriod } from './scopedPeriod';
+import type { BasisComparisonContext } from '../../features/insights/types';
 
 export const scopedPerformanceApiEnabled = String(import.meta.env.VITE_SCOPED_PERFORMANCE_API || '').toLowerCase() === 'true';
 
@@ -25,6 +26,7 @@ export interface PerformanceSummary {
   scope: PerformanceScopeFilters;
   period: PerformancePeriod;
   previous_period: PerformancePeriod | null;
+  basis_context?: BasisComparisonContext | null;
   current: PerformanceSummaryPeriod;
   previous: PerformanceSummaryPeriod | null;
   trend: Array<PerformancePeriod & PerformanceSummaryPeriod>;
@@ -133,6 +135,7 @@ export interface ScopedExecutiveSummary {
   uniqueMonths: string[];
   activePeriod: PerformancePeriod | null;
   previousPeriod: PerformancePeriod | null;
+  basisContext?: BasisComparisonContext | null;
   previousTotalAgents: number;
   previousOverallAvgScore: number;
   previousPctAB: number;
@@ -291,6 +294,7 @@ export function useScopedExecutiveSummary(
     uniqueMonths,
     activePeriod: summary?.period || activePeriod,
     previousPeriod: summaryIsCurrent ? rawSummary?.previous_period ?? null : null,
+    basisContext: summary?.basis_context ?? null,
     previousTotalAgents,
     previousOverallAvgScore: Number(previous?.average_score || 0),
     previousPctAB: previousTotalAgents ? ((previousClassCounts.A + previousClassCounts.B) / previousTotalAgents) * 100 : 0,

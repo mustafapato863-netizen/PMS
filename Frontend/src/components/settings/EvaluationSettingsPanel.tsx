@@ -2,6 +2,7 @@ import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertCircle, Check, Copy, History, Save } from 'lucide-react';
 import { API_BASE } from '../../config';
+import { refreshPerformanceData } from '../../hooks/usePerformanceData';
 import { useUserRole } from '../../context/RoleContext';
 import { canAccessSettingsContent } from '../../lib/access';
 import {
@@ -25,6 +26,23 @@ import {
   type PeriodScope,
 } from './evaluationSettings';
 import {
+  WEIGHT_FIELD_HELP,
+  WEIGHT_FIELD_LABEL,
+  commitLineInputs,
+  formatIdentifiedTarget,
+  isExplicitPercentUnit,
+  inputToStoredTarget,
+  numericDraftsDirty,
+  savedTargetSummary,
+  savedWeightSummary,
+  storedTargetToInput,
+  storedWeightToInput,
+  targetDraftUnchanged,
+  targetFieldHelp,
+  targetFieldLabel,
+  type NumericDrafts,
+} from './evaluationInputUnits';
+import {
   EVIDENCE_CHANGED_NOTE,
   FIXED_MISMATCH_NOTE,
   ROLLBACK_CONFIRM_NOTE,
@@ -34,14 +52,17 @@ import {
   formatImpactSummary,
   formatReviseNotice,
   formatRollbackResult,
+  invalidateCommittedEvidence,
+  invalidateDraftLifecycle,
   isStaleProofCode,
-  lifecycleQueryKeys,
   pageSlice,
   parseImpactProof,
   periodQueryKey,
   proofAuthorizesApproval,
   type ImpactProof,
 } from './monthlyCorrection';
+import { EvaluationApplyProgress } from './EvaluationApplyProgress';
+import { BACKGROUND_CONTINUES_NOTE, CHECKING_APPLY_NOTE, useEvaluationApplyJobs } from './evaluationApplyJobs';
 
 type Selection = { scopeId: string; year: number; month: number };
 
@@ -56,8 +77,56 @@ type RequestError = Error & { code?: string };
 
 type ProofState = { key: string; versionId: string; proof: ImpactProof };
 
+type EditorState = {
+  key: string;
+  versionId: string;
+  checksum: string;
+  scopeId: string;
+  year: number;
+  month: number;
+  lines: EvaluationLine[];
+  baseLines: EvaluationLine[];
+  text: NumericDrafts;
+};
+
+const STALE_SAVE_MESSAGE = 'This draft changed after you opened it. Reload the draft or discard your edits. Nothing was saved.';
+const VERSION_DRIFT_MESSAGE = 'This month is showing a different version from the one you started editing. Reload the draft or discard your edits. Saving will not write that other version.';
+const MISSING_CHECKSUM_MESSAGE = 'Save is unavailable until this draft has a rules checksum. Reload the month. An empty checksum is not sent.';
+
 function selectionKey(selection: Selection) {
   return `${selection.scopeId}|${selection.year}|${selection.month}`;
+}
+
+function rulesChecksum(version: { checksum?: string | null }) {
+  return typeof version.checksum === 'string' ? version.checksum.trim() : '';
+}
+
+function storeVersion(current: EvaluationPeriodData, version: Partial<EvaluationVersion>): EvaluationPeriodData {
+  const applied = applyVersion(current, version);
+  const token = rulesChecksum(version);
+  const versionId = version.id || applied.versionId;
+  return {
+    ...applied,
+    checksum: token,
+    history: applied.history.map((item) => item.id === versionId ? { ...item, checksum: token || null } : item),
+  };
+}
+
+function cloneLines(lines: readonly EvaluationLine[]): EvaluationLine[] {
+  return lines.map((line) => ({ ...line }));
+}
+
+/** Direction and source edits ride on the lines captured when editing began. */
+function linesFromFrozenBase(editor: EditorState): EvaluationLine[] {
+  return editor.baseLines.map((base) => {
+    const edited = editor.lines.find((line) => line.kpi_key === base.kpi_key);
+    if (!edited || (edited.direction === base.direction && edited.target_mode === base.target_mode)) return base;
+    return { ...base, direction: edited.direction, target_mode: edited.target_mode };
+  });
+}
+
+function isDraftConflictCode(code: string | undefined) {
+  return code === 'stale_draft' || code === 'draft_precondition_required';
 }
 
 async function readJson(response: Response) {
@@ -85,12 +154,14 @@ export function EvaluationSettingsPanel() {
   const [year, setYear] = useState(() => initialReportingPeriod(window.location.search).year);
   const [month, setMonth] = useState(() => initialReportingPeriod(window.location.search).month);
   const [scopeId, setScopeId] = useState<string | null>(null);
-  const [draft, setDraft] = useState<{ key: string; lines: EvaluationLine[] } | null>(null);
+  const [editor, setEditor] = useState<EditorState | null>(null);
   const [proof, setProof] = useState<ProofState | null>(null);
   const [page, setPage] = useState(0);
   const [notice, setNotice] = useState<{ key: string; text: string } | null>(null);
   const [actionError, setActionError] = useState<{ key: string; text: string } | null>(null);
   const [rollbackConfirm, setRollbackConfirm] = useState<{ key: string; revisionId: string } | null>(null);
+  const [conflict, setConflict] = useState<{ key: string; text: string } | null>(null);
+  const [backgroundNote, setBackgroundNote] = useState<string | null>(null);
   const gate = useRef(false);
   const catalogQuery = useQuery({
     queryKey: ['evaluation-settings', 'catalog'],
@@ -134,33 +205,59 @@ export function EvaluationSettingsPanel() {
     queryClient.setQueryData<EvaluationPeriodData>(periodQueryKey(scope, Number(periodYear), Number(periodMonth)), (current) => updater(current ?? emptyPeriod()));
   };
 
-  const invalidateLifecycle = (vars: Selection) => {
-    lifecycleQueryKeys(vars).forEach((queryKey) => {
-      void queryClient.invalidateQueries({ queryKey: [...queryKey] });
-    });
+  const invalidateSettings = (vars: Selection) => {
+    invalidateDraftLifecycle(queryClient, vars);
   };
+
+  const invalidateCommitted = (vars: Selection) => {
+    invalidateCommittedEvidence(queryClient, vars, refreshPerformanceData);
+  };
+
+  const releaseGate = () => { gate.current = false; };
+  const applyJobs = useEvaluationApplyJobs({
+    active: isAdmin,
+    selection,
+    selectionReady: Boolean(resolvedScopeId) && yearValid && month >= 1 && month <= 12,
+    isCurrent,
+    fetchWithRole,
+    releaseGate,
+    reportError: (vars, text) => {
+      if (!isCurrent(vars)) return;
+      setActionError({ key: selectionKey(vars), text });
+    },
+    invalidateCommitted,
+  });
 
   const save = useMutation({
     retry: false,
-    mutationFn: async (vars: Selection & { versionId: string; lines: EvaluationLine[] }) => {
+    mutationFn: async (vars: Selection & { versionId: string; checksum: string; lines: EvaluationLine[] }) => {
+      const checksum = vars.checksum.trim();
+      if (!checksum) throw new Error(MISSING_CHECKSUM_MESSAGE);
       await queryClient.cancelQueries({ queryKey: periodQueryKey(vars.scopeId, vars.year, vars.month) });
       const response = await fetchWithRole(`${API_BASE}/api/settings/evaluation/drafts/${vars.versionId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lines: vars.lines }),
+        body: JSON.stringify({ lines: vars.lines, expected_checksum: checksum }),
       });
       return readJson(response) as Promise<EvaluationVersion>;
     },
     onSuccess: (version, vars) => {
       const key = selectionKey(vars);
-      remember(key, (current) => applyVersion(current, { ...version, lines: version.lines || vars.lines }));
+      remember(key, (current) => storeVersion(current, { ...version, lines: version.lines || vars.lines }));
       if (!isCurrent(vars)) return;
-      setDraft((current) => current?.key === key ? null : current);
+      setEditor((current) => current?.key === key ? null : current);
       setProof(null);
+      setConflict(null);
       setNotice({ key, text: 'Draft saved.' });
     },
     onError: (caught, vars) => {
-      if (isCurrent(vars)) setActionError({ key: selectionKey(vars), text: errorText(caught) });
+      if (!isCurrent(vars)) return;
+      const key = selectionKey(vars);
+      const code = (caught as RequestError).code;
+      if (isDraftConflictCode(code)) {
+        setConflict({ key, text: STALE_SAVE_MESSAGE });
+      }
+      setActionError({ key, text: errorText(caught) });
     },
     onSettled: () => { gate.current = false; },
   });
@@ -178,10 +275,11 @@ export function EvaluationSettingsPanel() {
     },
     onSuccess: (version, vars) => {
       const key = selectionKey(vars);
-      remember(key, (current) => applyVersion(current, version));
+      remember(key, (current) => storeVersion(current, version));
       if (!isCurrent(vars)) return;
-      setDraft((current) => current?.key === key ? null : current);
+      setEditor((current) => current?.key === key ? null : current);
       setProof(null);
+      setConflict(null);
       setNotice({ key, text: vars.copyPrevious ? (version.notes || 'Previous month copied.') : 'Draft opened for this month.' });
     },
     onError: (caught, vars) => {
@@ -199,11 +297,12 @@ export function EvaluationSettingsPanel() {
     },
     onSuccess: (version, vars) => {
       const key = selectionKey(vars);
-      remember(key, (current) => applyVersion(current, version));
-      invalidateLifecycle(vars);
+      remember(key, (current) => storeVersion(current, version));
+      invalidateSettings(vars);
       if (!isCurrent(vars)) return;
-      setDraft((current) => current?.key === key ? null : current);
+      setEditor((current) => current?.key === key ? null : current);
       setProof(null);
+      setConflict(null);
       setNotice({ key, text: formatReviseNotice(version) });
     },
     onError: (caught, vars) => {
@@ -247,11 +346,12 @@ export function EvaluationSettingsPanel() {
     },
     onSuccess: (version, vars) => {
       const key = selectionKey(vars);
-      remember(key, (current) => applyVersion(current, version));
-      invalidateLifecycle(vars);
+      remember(key, (current) => storeVersion(current, version));
+      invalidateSettings(vars);
       if (!isCurrent(vars)) return;
       setProof(null);
-      setDraft((current) => current?.key === key ? null : current);
+      setEditor((current) => current?.key === key ? null : current);
+      setConflict(null);
       setNotice({ key, text: 'Approved. Existing scores were not recalculated.' });
     },
     onError: (caught, vars) => {
@@ -273,7 +373,7 @@ export function EvaluationSettingsPanel() {
       return readJson(response);
     },
     onSuccess: (result, vars) => {
-      invalidateLifecycle(vars);
+      invalidateCommitted(vars);
       if (!isCurrent(vars)) return;
       setNotice({ key: selectionKey(vars), text: formatApplyResult(result) });
     },
@@ -290,7 +390,7 @@ export function EvaluationSettingsPanel() {
       return readJson(response);
     },
     onSuccess: (result, vars) => {
-      invalidateLifecycle(vars);
+      invalidateCommitted(vars);
       if (!isCurrent(vars)) return;
       setRollbackConfirm(null);
       setNotice({ key: selectionKey(vars), text: formatRollbackResult(result) });
@@ -304,11 +404,24 @@ export function EvaluationSettingsPanel() {
     onSettled: () => { gate.current = false; },
   });
 
-  const busy = save.isPending || openDraft.isPending || revise.isPending || impact.isPending || approve.isPending || apply.isPending || rollback.isPending;
+  const busy = save.isPending || openDraft.isPending || revise.isPending || impact.isPending || approve.isPending || apply.isPending || rollback.isPending || applyJobs.pending;
   const period = periodQuery.data;
   const serverLines = period?.lines ?? [];
-  const lines = draft?.key === currentKey ? draft.lines : serverLines;
-  const dirty = draft?.key === currentKey && lineSignature(draft.lines) !== lineSignature(serverLines);
+  const editorActive = editor?.key === currentKey ? editor : null;
+  const lines = editorActive?.lines ?? serverLines;
+  const referenceLines = editorActive?.baseLines ?? serverLines;
+  const textDrafts = editorActive?.text ?? {};
+  const frozenLines = editorActive ? linesFromFrozenBase(editorActive) : null;
+  const draftCommit = frozenLines ? commitLineInputs(frozenLines, textDrafts) : null;
+  const inputBlocked = Boolean(draftCommit && !draftCommit.ok);
+  const draftProblems = draftCommit && !draftCommit.ok ? draftCommit.errors : [];
+  const dirty = editorActive != null && (
+    lineSignature(editorActive.lines) !== lineSignature(editorActive.baseLines) || numericDraftsDirty(editorActive.baseLines, textDrafts)
+  );
+  const versionDrift = Boolean(editorActive && period?.versionId && editorActive.versionId !== period.versionId);
+  const activeChecksum = editorActive ? editorActive.checksum.trim() : (period?.checksum ?? '').trim();
+  const checksumMissing = Boolean(period?.status === 'draft' && period.versionId && !activeChecksum);
+  const conflictText = versionDrift ? VERSION_DRIFT_MESSAGE : conflict?.key === currentKey ? conflict.text : '';
   const periodLoading = Boolean(resolvedScopeId) && periodQuery.isLoading;
   const catalogScope = scopes.find((item) => item.id === resolvedScopeId) || null;
   const readinessSource = period?.scope?.readiness ? period.scope : catalogScope;
@@ -335,23 +448,122 @@ export function EvaluationSettingsPanel() {
   };
 
   const changeSelection = (next: Partial<Selection>) => {
+    const nextSelection = {
+      scopeId: next.scopeId != null ? next.scopeId : selection.scopeId,
+      year: next.year != null ? next.year : selection.year,
+      month: next.month != null ? next.month : selection.month,
+    };
+    const leavingOpenJob = selectionKey(nextSelection) !== currentKey && applyJobs.tracksOpenJob;
     if (next.scopeId != null) setScopeId(next.scopeId);
     if (next.year != null) setYear(next.year);
     if (next.month != null) setMonth(next.month);
+    setEditor(null);
     setProof(null);
+    setConflict(null);
     setRollbackConfirm(null);
     setPage(0);
+    setBackgroundNote(leavingOpenJob ? BACKGROUND_CONTINUES_NOTE : null);
+  };
+
+  const ensureEditor = (current: EditorState | null): EditorState => {
+    if (current?.key === currentKey) return current;
+    const baseLines = cloneLines(serverLines);
+    return {
+      key: currentKey,
+      versionId: period?.versionId ?? '',
+      checksum: (period?.checksum ?? '').trim(),
+      scopeId: selection.scopeId,
+      year: selection.year,
+      month: selection.month,
+      lines: cloneLines(baseLines),
+      baseLines,
+      text: {},
+    };
+  };
+
+  const reloadDraft = () => {
+    const vars = selectionRef.current;
+    setEditor(null);
+    setProof(null);
+    setConflict(null);
+    setActionError(null);
+    setNotice(null);
+    void queryClient.invalidateQueries({ queryKey: periodQueryKey(vars.scopeId, vars.year, vars.month) });
+  };
+
+  const discardDraft = () => {
+    setEditor(null);
+    setProof(null);
+    setConflict(null);
+    setActionError(null);
   };
 
   const updateLine = (key: string, patch: Partial<EvaluationLine>) => {
-    setDraft({ key: currentKey, lines: lines.map((line) => line.kpi_key === key ? { ...line, ...patch } : line) });
+    setEditor((current) => {
+      const base = ensureEditor(current);
+      return { ...base, lines: base.lines.map((line) => line.kpi_key === key ? { ...line, ...patch } : line) };
+    });
+    setProof(null);
+    setNotice(null);
+  };
+
+  const editText = (key: string, field: 'targetText' | 'weightText', value: string) => {
+    const line = lines.find((item) => item.kpi_key === key);
+    if (!line || busy || approved || !lineFormulaSupported(line)) return;
+    setEditor((current) => {
+      const base = ensureEditor(current);
+      const previous = base.text[key] ?? {};
+      const text = { ...base.text, [key]: { ...previous, [field]: value } };
+      if (field !== 'targetText') return { ...base, text };
+      const baseLine = base.baseLines.find((item) => item.kpi_key === key);
+      if (!baseLine) return { ...base, text };
+      const unchanged = targetDraftUnchanged(baseLine, value);
+      const finiteChange = !unchanged && inputToStoredTarget(value, baseLine.unit).ok;
+      const nextLines = base.lines.map((item) => {
+        if (item.kpi_key !== key) return item;
+        if (unchanged) return { ...item, target_mode: baseLine.target_mode };
+        if (finiteChange) return { ...item, target_mode: 'fixed' };
+        return item;
+      });
+      return { ...base, lines: nextLines, text };
+    });
     setProof(null);
     setNotice(null);
   };
 
   const runSave = () => {
-    if (!period?.versionId || period.status !== 'draft' || unsupported || !begin()) return;
-    save.mutate({ ...selection, versionId: period.versionId, lines });
+    if (!period?.versionId || period.status !== 'draft' || unsupported || inputBlocked || checksumMissing || versionDrift || conflictText) return;
+    const active = editor?.key === currentKey ? editor : null;
+    let payload = serverLines;
+    let versionId = period.versionId;
+    let checksum = (period.checksum ?? '').trim();
+    let target = selection;
+    if (active) {
+      if (
+        active.versionId !== period.versionId
+        || active.scopeId !== selection.scopeId
+        || active.year !== selection.year
+        || active.month !== selection.month
+      ) {
+        setConflict({ key: currentKey, text: VERSION_DRIFT_MESSAGE });
+        return;
+      }
+      const committed = commitLineInputs(linesFromFrozenBase(active), active.text);
+      if (!committed.ok) {
+        setActionError({ key: currentKey, text: committed.errors.map((item) => item.message).join(' ') });
+        return;
+      }
+      payload = committed.lines;
+      versionId = active.versionId;
+      checksum = active.checksum.trim();
+      target = { scopeId: active.scopeId, year: active.year, month: active.month };
+    }
+    if (!checksum) {
+      setActionError({ key: currentKey, text: MISSING_CHECKSUM_MESSAGE });
+      return;
+    }
+    if (!begin()) return;
+    save.mutate({ ...target, versionId, checksum, lines: payload });
   };
 
   const runOpen = (copyPrevious: boolean) => {
@@ -375,8 +587,29 @@ export function EvaluationSettingsPanel() {
   };
 
   const runApply = () => {
-    if (!resolvedScopeId || period?.status !== 'approved' || dirty || blocked || !begin()) return;
-    apply.mutate(selection);
+    if (!resolvedScopeId || period?.status !== 'approved' || dirty || blocked || applyJobs.blockEnqueue) return;
+    if (!begin()) return;
+    if (applyJobs.mode === 'sync') {
+      apply.mutate(selection);
+      return;
+    }
+    if (applyJobs.mode === 'async' && applyJobs.enqueue(selection)) return;
+    gate.current = false;
+  };
+
+  const runCancelApply = () => {
+    if (!begin()) return;
+    if (!applyJobs.commitCancel()) gate.current = false;
+  };
+
+  const runRetryApply = () => {
+    if (!applyJobs.actions?.showRetry || !begin()) return;
+    if (!applyJobs.commitRetry()) gate.current = false;
+  };
+
+  const runRecoverApply = () => {
+    if (!applyJobs.actions?.showRecover || !begin()) return;
+    if (!applyJobs.commitRecover()) gate.current = false;
   };
 
   const runRollback = (revision: EvaluationRevision) => {
@@ -407,10 +640,37 @@ export function EvaluationSettingsPanel() {
       </header>
       {error && <div role="alert" className="flex items-start gap-2 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-xs font-semibold text-red-600"><AlertCircle size={16} />{error}</div>}
       {message && <p className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-xs font-semibold text-emerald-700" role="status">{message}</p>}
+      {applyJobs.mode === 'pending' && <p role="status" className="text-xs text-[var(--text-muted)]">{CHECKING_APPLY_NOTE}</p>}
+      {applyJobs.mode === 'unavailable' && <div role="alert" className="space-y-2 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-xs font-semibold text-red-600">
+        <p>{applyJobs.unavailableMessage}</p>
+        <button type="button" onClick={applyJobs.retryAvailability} className="rounded-xl border border-red-500/30 px-3 py-2 text-xs font-bold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--sgh-cyan-primary,#00A3E0)]">Retry availability check</button>
+      </div>}
+      {backgroundNote && <p role="status" className="break-words rounded-xl border border-[var(--border-light)] bg-[var(--bg-sunken)] px-4 py-3 text-xs text-[var(--text-secondary)]">{backgroundNote}</p>}
+      {applyJobs.problem && <div role="alert" className="space-y-2 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-xs font-semibold text-red-600">
+        <p>{applyJobs.problem}</p>
+        <button type="button" onClick={applyJobs.refreshJob} className="rounded-xl border border-red-500/30 px-3 py-2 text-xs font-bold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--sgh-cyan-primary,#00A3E0)]">Refresh background apply</button>
+      </div>}
+      {applyJobs.presentation && applyJobs.job && applyJobs.actions && <EvaluationApplyProgress
+        job={applyJobs.job}
+        presentation={applyJobs.presentation}
+        actions={applyJobs.actions}
+        confirmCancel={applyJobs.confirmCancel}
+        busy={busy}
+        onArmCancel={applyJobs.armCancel}
+        onConfirmCancel={runCancelApply}
+        onDismissCancel={applyJobs.dismissCancel}
+        onRetry={runRetryApply}
+        onRecover={runRecoverApply}
+      />}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <label className="min-w-0 text-xs font-bold text-[var(--text-secondary)]">Evaluation scope
           <select aria-label="Evaluation scope" value={resolvedScopeId} onChange={(event) => changeSelection({ scopeId: event.target.value })} className="mt-1 w-full rounded-xl border border-[var(--border-light)] bg-[var(--bg-surface)] px-3 py-2 text-sm text-[var(--text-primary)]">
-            {scopes.map((item) => <option key={item.id} value={item.id}>{item.display_name} · {item.performance_level}{item.position_name ? ` · ${item.position_name}` : ''}{item.readiness === 'supported' ? '' : item.readiness === 'unlinked_baseline' ? ' · unlinked' : ' · blocked'}</option>)}
+            {scopes.map((item) => {
+              const readiness = item.id === resolvedScopeId && !periodLoading && !periodQuery.isError
+                ? readinessSource?.readiness ?? item.readiness
+                : item.readiness;
+              return <option key={item.id} value={item.id}>{item.display_name} · {item.performance_level}{item.position_name ? ` · ${item.position_name}` : ''}{readiness === 'supported' ? '' : readiness === 'unlinked_baseline' ? ' · unlinked' : ' · blocked'}</option>;
+            })}
           </select>
         </label>
         <label className="min-w-0 text-xs font-bold text-[var(--text-secondary)]">Reporting month
@@ -428,12 +688,18 @@ export function EvaluationSettingsPanel() {
         {!monthApproved && <button type="button" onClick={() => runOpen(false)} disabled={controlsLocked} className="rounded-xl border border-[var(--border-light)] px-3 py-2 text-xs font-bold disabled:cursor-not-allowed disabled:opacity-50">New draft</button>}
         {!monthApproved && <button type="button" onClick={() => runOpen(true)} disabled={controlsLocked} className="inline-flex items-center gap-1 rounded-xl border border-[var(--border-light)] px-3 py-2 text-xs font-bold disabled:cursor-not-allowed disabled:opacity-50"><Copy size={14} />Copy previous month</button>}
         {approved && <button type="button" onClick={runRevise} disabled={controlsLocked || !period?.versionId} className="rounded-xl border border-[var(--border-light)] px-3 py-2 text-xs font-bold disabled:cursor-not-allowed disabled:opacity-50">Revise this month</button>}
-        {!approved && <button type="button" onClick={runSave} disabled={controlsLocked || !period?.versionId || period?.status !== 'draft' || unsupported} className="inline-flex items-center gap-1 rounded-xl border border-[var(--border-light)] px-3 py-2 text-xs font-bold disabled:cursor-not-allowed disabled:opacity-50"><Save size={14} />Save draft</button>}
+        {!approved && <button type="button" onClick={runSave} disabled={controlsLocked || !period?.versionId || period?.status !== 'draft' || unsupported || inputBlocked || checksumMissing || versionDrift || Boolean(conflictText)} className="inline-flex items-center gap-1 rounded-xl border border-[var(--border-light)] px-3 py-2 text-xs font-bold disabled:cursor-not-allowed disabled:opacity-50"><Save size={14} />Save draft</button>}
         {!approved && <button type="button" onClick={runImpact} disabled={controlsLocked || !period?.versionId || period?.status !== 'draft' || dirty || unsupported} className="rounded-xl border border-[var(--border-light)] px-3 py-2 text-xs font-bold disabled:cursor-not-allowed disabled:opacity-50">Impact preview</button>}
         {!approved && <button type="button" onClick={runApprove} disabled={controlsLocked || !period?.versionId || dirty || period?.status !== 'draft' || !approvalReady} className="inline-flex items-center gap-1 rounded-xl bg-blue-600 px-3 py-2 text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"><Check size={14} />Approve</button>}
-        <button type="button" onClick={runApply} disabled={controlsLocked || period?.status !== 'approved' || dirty} className="rounded-xl bg-slate-900 px-3 py-2 text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">Apply</button>
+        {(applyJobs.mode === 'sync' || applyJobs.mode === 'async') && <button type="button" onClick={runApply} disabled={controlsLocked || period?.status !== 'approved' || dirty || applyJobs.blockEnqueue} className="rounded-xl bg-slate-900 px-3 py-2 text-xs font-bold text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--sgh-cyan-primary,#00A3E0)] disabled:cursor-not-allowed disabled:opacity-50">Apply</button>}
       </div>}
       {!blocked && approved && <p role="status" className="text-xs text-[var(--text-secondary)]">{READ_ONLY_APPROVED_NOTE}</p>}
+      {!blocked && checksumMissing && <p role="status" className="text-xs font-semibold text-amber-800">{MISSING_CHECKSUM_MESSAGE}</p>}
+      {!blocked && conflictText && <p role="status" className="text-xs font-semibold text-[var(--text-secondary)]">{conflictText}</p>}
+      {!blocked && conflictText && <div className="flex flex-wrap gap-2">
+        <button type="button" onClick={reloadDraft} className="rounded-xl border border-[var(--border-light)] px-3 py-2 text-xs font-bold">Reload draft</button>
+        <button type="button" onClick={discardDraft} className="rounded-xl border border-[var(--border-light)] px-3 py-2 text-xs font-bold">Discard edits</button>
+      </div>}
       {!blocked && dirty && <p role="status" className="text-xs font-semibold text-[var(--text-secondary)]">{UNSAVED_PREVIEW_NOTE}</p>}
       {!blocked && unsupported && <p role="status" className="text-xs font-semibold text-amber-800">{UNSUPPORTED_FORMULA_NOTE}</p>}
       {!!period?.sourceVersionId && <p className="text-xs [overflow-wrap:anywhere] text-[var(--text-secondary)]">Source version {period.sourceVersionId}{period.sourceChecksum ? ` · source checksum ${period.sourceChecksum}` : ''}. The source version remains in this month's history.</p>}
@@ -444,6 +710,7 @@ export function EvaluationSettingsPanel() {
         {visibleProof.rulesChecksum && <p className="text-xs [overflow-wrap:anywhere] text-[var(--text-muted)]">Rules checksum {visibleProof.rulesChecksum}.</p>}
         {visibleProof.conflicts.length > 0 && <div className="space-y-2">
           <p className="text-xs text-[var(--text-secondary)]">{FIXED_MISMATCH_NOTE}</p>
+          <p className="text-xs text-[var(--text-muted)]">Mismatch numbers use the explicit unit on that KPI's rule. A missing unit stays on the stored scale.</p>
           <div className="min-w-0 overflow-x-auto">
             <table className="w-full min-w-[36rem] text-left text-xs">
               <caption className="mb-2 text-left text-xs font-bold text-[var(--text-secondary)]">Fixed target mismatches</caption>
@@ -456,12 +723,17 @@ export function EvaluationSettingsPanel() {
                 </tr>
               </thead>
               <tbody>
-                {visibleProof.conflicts.map((conflict) => <tr key={`${conflict.recordId || 'record'}-${conflict.kpiKey}`}>
-                  <td className="px-2 py-1">{conflict.recordId || '—'}</td>
-                  <td className="px-2 py-1">{conflict.kpiKey}</td>
-                  <td className="px-2 py-1">{displayNumber(conflict.workbookTarget)}</td>
-                  <td className="px-2 py-1">{displayNumber(conflict.approvedTarget)}</td>
-                </tr>)}
+                {visibleProof.conflicts.map((conflict) => {
+                  const rule = lines.find((item) => item.kpi_key === conflict.kpiKey);
+                  return (
+                    <tr key={`${conflict.recordId || 'record'}-${conflict.kpiKey}`}>
+                      <td className="px-2 py-1">{conflict.recordId || '—'}</td>
+                      <td className="px-2 py-1">{conflict.kpiKey}</td>
+                      <td className="px-2 py-1">{formatIdentifiedTarget(conflict.workbookTarget, rule?.unit)}</td>
+                      <td className="px-2 py-1">{formatIdentifiedTarget(conflict.approvedTarget, rule?.unit)}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -504,16 +776,40 @@ export function EvaluationSettingsPanel() {
         {!periodLoading && !blocked && lines.map((line) => {
           const supported = lineFormulaSupported(line);
           const locked = busy || approved || !supported;
+          const savedLine = referenceLines.find((item) => item.kpi_key === line.kpi_key) ?? line;
+          const entry = textDrafts[line.kpi_key];
+          const targetValue = entry?.targetText !== undefined ? entry.targetText : storedTargetToInput(savedLine.target, savedLine.unit);
+          const weightValue = entry?.weightText !== undefined ? entry.weightText : storedWeightToInput(savedLine.weight);
+          const targetProblem = draftProblems.find((item) => item.kpiKey === line.kpi_key && item.field === 'target');
+          const weightProblem = draftProblems.find((item) => item.kpiKey === line.kpi_key && item.field === 'weight');
+          const unitSuffix = isExplicitPercentUnit(savedLine.unit)
+            ? '%'
+            : typeof savedLine.unit === 'string' && savedLine.unit.trim()
+              ? savedLine.unit.trim()
+              : 'as stored';
+          const fieldKey = line.kpi_key.replace(/[^A-Za-z0-9_-]/g, '-');
           return (
             <fieldset key={line.kpi_key} disabled={locked} className="min-w-0 rounded-2xl border border-[var(--border-light)] p-3 disabled:opacity-60">
               <legend className="px-1 text-xs font-black text-[var(--text-primary)]">{line.label || line.kpi_key}</legend>
               {!supported && <p role="status" className="mb-2 text-xs text-amber-800">{UNSUPPORTED_FORMULA_NOTE}</p>}
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                <label className="text-[10px] font-bold uppercase tracking-wide text-[var(--text-muted)]">Target
-                  <input aria-label={`${line.kpi_key} target`} value={line.target ?? ''} onChange={(event) => updateLine(line.kpi_key, { target: event.target.value === '' ? null : Number(event.target.value), target_mode: 'fixed' })} className="mt-1 w-full rounded-lg border border-[var(--border-light)] bg-transparent px-2 py-2 text-sm" />
+                <label className="text-[10px] font-bold text-[var(--text-muted)]">
+                  <span className="uppercase tracking-wide">{targetFieldLabel(savedLine.unit)}</span>
+                  <span className="mt-1 flex items-center gap-2">
+                    <input aria-label={`${line.kpi_key} target`} aria-describedby={`${fieldKey}-target-help`} aria-invalid={targetProblem ? true : undefined} type="text" inputMode="decimal" autoComplete="off" spellCheck={false} value={targetValue} onChange={(event) => editText(line.kpi_key, 'targetText', event.target.value)} className="w-full rounded-lg border border-[var(--border-light)] bg-transparent px-2 py-2 text-sm normal-case" />
+                    <span className="shrink-0 text-xs font-bold normal-case">{unitSuffix}</span>
+                  </span>
+                  <span id={`${fieldKey}-target-help`} className="mt-1 block font-normal normal-case tracking-normal">{targetFieldHelp(savedLine.unit)} Saved target: {savedTargetSummary(savedLine)}.</span>
+                  {targetProblem && <span role="status" className="mt-1 block font-semibold normal-case tracking-normal text-amber-800">{targetProblem.message}</span>}
                 </label>
-                <label className="text-[10px] font-bold uppercase tracking-wide text-[var(--text-muted)]">Weight
-                  <input aria-label={`${line.kpi_key} weight`} value={line.weight} onChange={(event) => updateLine(line.kpi_key, { weight: Number(event.target.value) })} className="mt-1 w-full rounded-lg border border-[var(--border-light)] bg-transparent px-2 py-2 text-sm" />
+                <label className="text-[10px] font-bold text-[var(--text-muted)]">
+                  <span className="uppercase tracking-wide">{WEIGHT_FIELD_LABEL}</span>
+                  <span className="mt-1 flex items-center gap-2">
+                    <input aria-label={`${line.kpi_key} weight`} aria-describedby={`${fieldKey}-weight-help`} aria-invalid={weightProblem ? true : undefined} type="text" inputMode="decimal" autoComplete="off" spellCheck={false} value={weightValue} onChange={(event) => editText(line.kpi_key, 'weightText', event.target.value)} className="w-full rounded-lg border border-[var(--border-light)] bg-transparent px-2 py-2 text-sm normal-case" />
+                    <span className="shrink-0 text-xs font-bold normal-case">%</span>
+                  </span>
+                  <span id={`${fieldKey}-weight-help`} className="mt-1 block font-normal normal-case tracking-normal">{WEIGHT_FIELD_HELP} Saved weight: {savedWeightSummary(savedLine.weight)}.</span>
+                  {weightProblem && <span role="status" className="mt-1 block font-semibold normal-case tracking-normal text-amber-800">{weightProblem.message}</span>}
                 </label>
                 <label className="text-[10px] font-bold uppercase tracking-wide text-[var(--text-muted)]">Direction
                   {supported ? (

@@ -1,14 +1,21 @@
 # Monthly Evaluation Settings — Integrated Implementation Plan
 
 **Document ID:** PMS-EVAL-001
-**Version:** 1.2
-**Date:** 2026-10-09
-**Status:** Candidate implementation under independent review and correction. Phases 0–8 are not accepted as complete; unsupported scopes remain disabled until their gates pass. No production readiness or deployment verification is claimed. Phase 9 formula editing is a separate release.
+**Version:** 1.4 — async consumer/load evidence supplement, 11 October 2026
+**Final local runtime supplement:** Worker/API and progress UI are now composed and independently verified for the admitted scopes. See [final runtime evidence](../qa/evaluation-runtime-final-composition-2026-10-10.md) for complete1433backend/824frontend gates, native cross-Admin recovery and actual200-record browser/worker apply/rollback. Earlier missing-runtime statements below are historical checkpoints, not current implementation gaps. Runtime remains default-disabled; unsupported family references, production recovery/UAT/reconnect/load budgets and publication are not complete.
+**Date:** 2026-10-11
+**Status:** Local implementation and verification are accepted for the admitted Coding Employee, Submission Employee and Outbound Employee July/August2026 scopes. Release-wide Phase0–8 acceptance remains conditional on missing family references, production rehearsal and UAT; unsupported editors stay blocked. No production readiness, main publication or deployment verification is claimed. Phase9 formula editing remains a separate release.
 **Source baseline:** main `2af9eb1e3991cb649ebcc695e3f2c42fbce4f40a`; original candidate `848f601c4595b8f69f15665c7841d7714329e674`; independently reviewed consumer integration `ae40741750bf37f725e1815e5a5cf45775c91cf2`. See the [verification checkpoint](../reviews/monthly-evaluation-candidate-verification.md) for bounded results and remaining rollout gates.
 **Business owner:** PMS administrator
 **Initial scope:** Monthly KPI targets, scoring weights and direction, connected to the entire PMS calculation and reporting pipeline.
 
+**Current acceptance evidence:** [Closure matrix](monthly-evaluation/closure-matrix-2026-10-10.md), [reviewed runtime composition](../qa/evaluation-runtime-final-composition-2026-10-10.md) and [11 October async consumer/load proof](../qa/evaluation-runtime-consumers-load-2026-10-11.md), following reviewed `512ec32`. Full backend1434PASS/2existingCI skips; prior complete frontend824PASS. Real async Outbound79.82→79.93→79.82 propagates through summary/trend/employee/Insights/reports while preserving July/source/human artifacts. Native200-person/five-KPI separate-process cache proof passes on PostgreSQL16/18. These do not admit missing families or establish production budgets.
+
+**Latest local review:** Foundation, canonical/basis-aware consumers, bounded atomic promotion, lease/reclaim/cancel/retry/recovery, persisted authority, registered default-disabled worker/API/outbox and progress UI are composed and independently verified locally. Earlier blocking/unaccepted-lane statements and RED artifacts remain historical evidence, not current implementation gaps. [Remaining gates](monthly-evaluation/remaining-runtime-gates-2026-10-10.md) now distinguish local acceptance from genuine production recovery, all-consumer reconnect/UAT, family-reference and performance-budget requirements. Default page100 and all source-drift guards are unchanged.
+
 ## 1. Purpose and success definition
+
+Latest local execution checkpoint (11 October 2026): runtime/API/progress UI and admitted-scope consumer propagation are accepted locally, not deployed. Any persisted active Admin may inspect/cancel/recover committed promotion or cancel and capture a new request under themselves; start/stage/promote/ack/retry execution still requires the captured active requester. Original attribution is immutable. Unsupported family goldens and production sign-off remain unavailable/open.
 
 Administrators must be able to change a team's evaluation settings for a reporting month without changing backend code or redeploying the application. Every affected result must use the correct settings for its team, source identity, performance level, position and period.
 
@@ -572,7 +579,7 @@ D001–D005 above settle management authority, unsupported formula behavior, fix
 - [ ] Responsive UX, performance budgets, failure/retry behavior and rollback pass.
 - [ ] Live post-deployment verification confirms authorized real data and the deployed basis.
 
-**Next step:** Finish isolated CI verification and the reviewed local merge for the supported candidate. Independent permission, scoring-completeness, Outbound source-basis, immutable-history, stale-rollback and frontend workflow findings have been corrected and tested; this does not close all-team UAT, production-schema recovery or the full downstream performance matrix. Publishing main or deploying remains separate after release/recovery gates. Phase 9 remains out of scope.
+**Next step:** Follow the [current closure queue](monthly-evaluation/closure-matrix-2026-10-10.md): review the dormant lease coordinator, then explicitly integrate worker/authenticated status/cancel/retry and progress UI after native recovery gates. Complete multi-process consumer/reconnect, production-load and release verification without relabeling earlier executed consumer/optimistic-edit/unit-entry gates as missing or complete end-to-end runtime. Remaining family references are unavailable, so those editors stay blocked. PostgreSQL100PASS does not close all-team UAT, production recovery or the full downstream performance matrix. Publishing main or deploying remains a separate release decision. Phase9 remains out of scope.
 
 ## 16. Reference maintenance
 

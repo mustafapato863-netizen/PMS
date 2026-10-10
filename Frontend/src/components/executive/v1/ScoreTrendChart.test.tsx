@@ -56,6 +56,48 @@ describe('ScoreTrendChart', () => {
     expect(screen.getByTestId('executive-trend-tooltip')).toHaveTextContent('May 2026');
   });
 
+  it('shows one settings note and repeats it on the active month tooltip', () => {
+    const noted = points.map((item, index) => index === points.length - 1 ? {
+      ...item,
+      basis_context: {
+        state: 'changed' as const,
+        like_for_like: false,
+        raw_performance: 'unchanged' as const,
+        membership: 'stable' as const,
+        reasons: ['target'],
+        message: 'Scores can be affected by evaluation settings. Comparable raw performance is unchanged.',
+      },
+    } : item);
+    render(<ScoreTrendChart points={noted} title="Performance" />);
+
+    expect(screen.getAllByTestId('basis-comparison-note')).toHaveLength(1);
+    fireEvent.focus(screen.getByTestId('executive-trend-point-2026-06'));
+    expect(screen.getByTestId('executive-trend-tooltip')).toHaveTextContent('Scores can be affected by evaluation settings.');
+    expect(screen.getByTestId('executive-trend-tooltip')).toHaveTextContent('Comparable raw performance is unchanged.');
+  });
+
+  it('keeps the current comparison note and leaves older notes on the focused month', () => {
+    const unavailable = 'Evaluation settings comparison is unavailable for the exact previous month.';
+    const changed = 'Scores can be affected by evaluation settings. Comparable raw performance changed.';
+    const withHistory = points.map((item) => {
+      if (item.period.key === '2026-05') return { ...item, basis_context: { state: 'unknown' as const, like_for_like: false, raw_performance: 'unknown' as const, membership: 'none' as const, reasons: [], message: unavailable } };
+      if (item.period.key === '2026-04') return { ...item, basis_context: { state: 'changed' as const, like_for_like: false, raw_performance: 'changed' as const, membership: 'stable' as const, reasons: ['target'], message: changed } };
+      return item;
+    });
+    render(<ScoreTrendChart points={withHistory} title="Performance" />);
+
+    expect(screen.queryByTestId('basis-comparison-note')).not.toBeInTheDocument();
+    fireEvent.focus(screen.getByTestId('executive-trend-point-2026-04'));
+    const older = screen.getByTestId('executive-trend-tooltip');
+    expect(older).toHaveTextContent(changed);
+    expect(older).not.toHaveTextContent(unavailable);
+    expect(older.querySelector('[data-testid="basis-comparison-note"]')).toBeNull();
+
+    fireEvent.focus(screen.getByTestId('executive-trend-point-2026-05'));
+    expect(screen.getByTestId('executive-trend-tooltip')).toHaveTextContent(unavailable);
+    expect(screen.queryByTestId('basis-comparison-note')).not.toBeInTheDocument();
+  });
+
   it('keeps gaps in score history visible instead of connecting across missing months', () => {
     const withGap = [
       point('January', '2026-01', 80),

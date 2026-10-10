@@ -17,7 +17,7 @@ export interface TeamKpiVolumeData {
 export interface TeamKpiAnalysis {
   key: string;
   label: string;
-  unit: KPIConfig['unit'];
+  unit: KPIConfig['unit'] | '';
   lowerBetter: boolean;
   actual: number;
   target: number;
@@ -29,6 +29,8 @@ export interface TeamKpiAnalysis {
   isNewBaseline: boolean;
   weight: number | null;
   contribution: number | null;
+  evaluationPinned?: boolean;
+  basisVaries?: boolean;
   capAchievement?: boolean;
   achievement: number | null;
   movementPercent: number | null;
@@ -68,7 +70,7 @@ const MONTH_NUMBER: Record<string, number> = {
 const aggregate = (records: AgentRecord[], teamConfig?: TeamConfig, location: LocationKey = 'all') => {
   const buckets = new Map<string, {
     label: string;
-    unit: KPIConfig['unit'];
+    unit: KPIConfig['unit'] | '';
     lowerBetter: boolean;
     actual: number;
     target: number;
@@ -76,6 +78,8 @@ const aggregate = (records: AgentRecord[], teamConfig?: TeamConfig, location: Lo
     weightCount: number;
     contribution: number;
     contributionCount: number;
+    evaluationPinned: boolean;
+    basisVaries: boolean;
     capAchievement: boolean;
     count: number;
   }>();
@@ -86,7 +90,7 @@ const aggregate = (records: AgentRecord[], teamConfig?: TeamConfig, location: Lo
       const key = normalizeKey(kpi.label);
       const bucket = buckets.get(key) || {
         label: kpi.label,
-        unit: kpi.unit,
+        unit: kpi.unit ?? '',
         lowerBetter: !!kpi.isLowerBetter,
         actual: 0,
         target: 0,
@@ -94,12 +98,16 @@ const aggregate = (records: AgentRecord[], teamConfig?: TeamConfig, location: Lo
         weightCount: 0,
         contribution: 0,
         contributionCount: 0,
+        evaluationPinned: false,
+        basisVaries: false,
         capAchievement: kpi.capAchievement,
         count: 0,
       };
       bucket.actual = kpi.actual;
       bucket.target = kpi.target;
       bucket.count = 1;
+      bucket.evaluationPinned = kpi.evaluationPinned === true;
+      bucket.basisVaries = kpi.basisVaries === true;
       if (kpi.weight !== null) {
         bucket.weight = kpi.weight;
         bucket.weightCount = 1;
@@ -117,8 +125,10 @@ const aggregate = (records: AgentRecord[], teamConfig?: TeamConfig, location: Lo
     ...value,
     actual: value.actual / value.count,
     target: value.target / value.count,
-    weight: value.weightCount ? value.weight / value.weightCount : null,
-    contribution: value.contributionCount ? value.contribution / value.contributionCount : null,
+    weight: value.basisVaries ? null : (value.weightCount ? value.weight / value.weightCount : null),
+    contribution: value.basisVaries ? null : (value.contributionCount ? value.contribution / value.contributionCount : null),
+    evaluationPinned: value.evaluationPinned,
+    basisVaries: value.basisVaries,
   }]));
 };
 
@@ -152,6 +162,8 @@ const addNoShowAnalysis = (
     weightCount: 0,
     contribution: null,
     contributionCount: 0,
+    evaluationPinned: false,
+    basisVaries: false,
     capAchievement: true,
     count: 1,
   });
@@ -206,6 +218,8 @@ const addAhtAnalysis = (buckets: ReturnType<typeof aggregate>, records: AgentRec
     weightCount: 0,
     contribution: null,
     contributionCount: 0,
+    evaluationPinned: false,
+    basisVaries: false,
     capAchievement: true,
     count: 1,
   });
@@ -308,6 +322,7 @@ export const buildTeamKpiAnalysis = (
     : eligibleBaselines.filter((period) => period.key !== currentPeriodKey);
   if (currentContext && options.teamWeights) {
     current.forEach((value) => {
+      if (value.evaluationPinned || value.basisVaries) return;
       const configuredWeight = getWeightForLabel(
         options.teamWeights,
         value.label,
@@ -343,8 +358,9 @@ export const buildTeamKpiAnalysis = (
       ? { actual: value.actual, month: currentContext?.identity.month ?? 'Current period' }
       : previousBaseline;
     const isNewBaseline = previousBaseline !== null && beatsPreviousBaseline;
-    const targetMet = value.target > 0 && (value.lowerBetter ? value.actual <= value.target : value.actual >= value.target);
-    const rawAchievement = value.target <= 0
+    const basisVaries = value.basisVaries === true;
+    const targetMet = !basisVaries && value.target > 0 && (value.lowerBetter ? value.actual <= value.target : value.actual >= value.target);
+    const rawAchievement = basisVaries || value.target <= 0
       ? null
       : value.lowerBetter
         ? (value.actual <= 0 ? 100 : (value.target / value.actual) * 100)
@@ -406,6 +422,8 @@ export const buildTeamKpiAnalysis = (
       contribution: value.contribution === null || value.weight === null
         ? value.contribution
         : Math.min(Math.max(value.contribution, 0), Math.max(value.weight, 0) * 100),
+      evaluationPinned: value.evaluationPinned,
+      basisVaries,
       achievement,
       movementPercent,
       movementPositive,
@@ -422,7 +440,8 @@ export const buildTeamKpiAnalysis = (
   });
 };
 
-export const formatTeamKpiValue = (value: number, unit: KPIConfig['unit']) => {
+export const formatTeamKpiValue = (value: number, unit: KPIConfig['unit'] | '') => {
+  if (!Number.isFinite(value)) return '—';
   if (unit === '%') return `${(value * 100).toFixed(1)}%`;
   if (unit === 'min') return `${value.toFixed(1)} min`;
   if (unit === 'currency') return `AED ${value.toLocaleString(undefined, { maximumFractionDigits: 1 })}`;

@@ -41,7 +41,7 @@ import { useTeamConfig } from '../hooks/useTeamConfig';
 import { GRADE_PALETTE } from '../constants/grades';
 import { buildTeamKpiAnalysis } from '../features/team/teamKpiAnalysis';
 import { aggregatePreApprovalsIpMetrics } from '../features/team/preApprovalsIpMetrics';
-import { aggregateConfiguredTeamKpis, calculateAggregatedTeamPerformance } from '../features/team/teamKpiAggregator';
+import { aggregateConfiguredTeamKpis, calculateAggregatedTeamPerformance, displayedTeamScore, recordsUseAppliedPin } from '../features/team/teamKpiAggregator';
 import { resolveAvailableTeamPeriods } from '../features/team/teamPeriods';
 import { canAccessBroadAppPages, hasAllTeamsScope, isScopedDirectorRole } from '../lib/access';
 import { directorScope } from '../lib/directorScope';
@@ -651,22 +651,20 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
     // pooled KPI aggregation below.
     if (isMergedTeam) return hookAvgScore;
     const teamAgents = (rows || []).map((row) => row.raw).filter((record) => record.identity.month === activeMonth);
-    const canonical = getCanonicalTeamScore(teamAgents);
-    if (canonical !== null && canonical > 0 && Math.abs(canonical - hookAvgScore) <= 15) {
-      return canonical;
-    }
-    return hookAvgScore;
+    return displayedTeamScore(
+      getCanonicalTeamScore(teamAgents),
+      hookAvgScore,
+      recordsUseAppliedPin(teamAgents),
+    );
   }, [teamId, activeMonth, getCanonicalTeamScore, hookAvgScore, rows, isMergedTeam]);
 
   const calculatedPrevAvgScore = useMemo(() => {
-    if (teamId === 'all') return prevAvgScore;
-    if (isMergedTeam) return prevAvgScore;
-    if (!prevMonth) return prevAvgScore;
-    const canonical = getCanonicalTeamScore(previousTeamAgents);
-    if (canonical !== null && canonical > 0 && Math.abs(canonical - prevAvgScore) <= 15) {
-      return canonical;
-    }
-    return prevAvgScore;
+    if (teamId === 'all' || isMergedTeam || !prevMonth) return prevAvgScore;
+    return displayedTeamScore(
+      getCanonicalTeamScore(previousTeamAgents),
+      prevAvgScore,
+      recordsUseAppliedPin(previousTeamAgents),
+    );
   }, [teamId, prevMonth, getCanonicalTeamScore, prevAvgScore, previousTeamAgents, isMergedTeam]);
 
   // Compute metrics dynamically for the current month
@@ -1320,9 +1318,11 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
         ? monthAgents.reduce((sum, a) => sum + resolveDisplayScore(a, activeTeamWeights), 0) / monthAgents.length
         : 0;
 
-      const avgScore = (canonicalScore !== null && canonicalScore > 0 && Math.abs(canonicalScore - fallbackScore) <= 15)
-        ? canonicalScore
-        : fallbackScore;
+      const avgScore = displayedTeamScore(
+        canonicalScore,
+        fallbackScore,
+        recordsUseAppliedPin(monthAgents),
+      );
 
       return {
         month: m.slice(0, 3),
@@ -1351,7 +1351,8 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
       return bullets;
     }
 
-    const avg = hookAvgScore;
+    const avg = calculatedAvgScore;
+    const pinnedHeadline = recordsUseAppliedPin((rows || []).map((row) => row.raw));
 
     // 1. Grade Distribution description (Always present if rows exist)
     let gradesDesc = 'mixed with standard performance distribution';
@@ -1391,7 +1392,9 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
     bullets.push({
       icon: avgIcon,
       title: `Team Average Score: ${avg.toFixed(1)}%`,
-      desc: `Overall team grades are ${gradesDesc}.`,
+      desc: pinnedHeadline && Math.abs(avg - hookAvgScore) > 15
+        ? 'This is the pooled team score from applied KPI totals. Individual grades stay on the roster.'
+        : `Overall team grades are ${gradesDesc}.`,
       badgeText: avgBadge,
       status: avgStatus
     });
@@ -1578,6 +1581,16 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
       }
     } else if (teamMetrics.dynamicKpis && teamMetrics.dynamicKpis.length > 0) {
       teamMetrics.dynamicKpis.forEach((kpi) => {
+        if (kpi.basisVaries) {
+          bullets.push({
+            icon: AlertTriangle,
+            title: `${kpi.label}: applied basis varies`,
+            desc: 'This KPI uses more than one applied target, weight, or direction. Those cohorts stay separate and are not averaged into one target.',
+            badgeText: 'BASIS VARIES',
+            status: 'info',
+          });
+          return;
+        }
         const isOnTarget = kpi.isLowerBetter ? kpi.actual <= kpi.target : kpi.actual >= kpi.target;
         const diffPct = kpi.target !== 0 ? Math.abs((kpi.actual - kpi.target) / kpi.target) * 100 : 0;
         
@@ -1603,8 +1616,8 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
 
         bullets.push({
           icon: bulletIcon,
-          title: `${kpi.label}: ${formatVal(kpi.actual, kpi.unit)}`,
-          desc: `Target is ${formatVal(kpi.target, kpi.unit)}. Team is currently ${isOnTarget ? 'meeting' : 'missing'} the target.`,
+          title: `${kpi.label}: ${formatVal(kpi.actual, kpi.unit ?? '')}`,
+          desc: `Target is ${formatVal(kpi.target, kpi.unit ?? '')}. Team is currently ${isOnTarget ? 'meeting' : 'missing'} the target.`,
           badgeText,
           status
         });
@@ -1619,7 +1632,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
     }
 
     return bullets;
-  }, [teamId, scoredTeamId, hookAvgScore, rows, teamMetrics]);
+  }, [teamId, scoredTeamId, hookAvgScore, calculatedAvgScore, rows, teamMetrics]);
 
   if (loading) {
     return <OperationalViewSkeleton />;

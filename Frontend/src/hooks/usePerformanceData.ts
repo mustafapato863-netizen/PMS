@@ -180,6 +180,7 @@ let lastFetchTime = 0;
 const listeners = new Set<(data: AgentRecord[]) => void>();
 let isFetching = false;
 let fetchingSession = '';
+let performanceFetchGeneration = 0;
 let lastDataSource: 'api' | 'empty' = 'empty';
 let lastErrorMessage: string | null = null;
 let scopedRefreshVersion = 0;
@@ -373,8 +374,10 @@ async function fetchScopedPerformanceData(
   performanceLevel: PerformanceLevelFilter,
   location: LocationKey,
   team?: string,
+  signal?: AbortSignal,
 ): Promise<AgentRecord[]> {
   const catalog = await getScopedCatalog();
+  if (signal?.aborted) throw new DOMException('The performance records read was cancelled.', 'AbortError');
   const periods = periodsForRequest(catalog, month, month === 'All' ? 6 : 2);
 
   // Periods are independent. Keep pagination sequential within one period,
@@ -400,7 +403,8 @@ async function fetchScopedPerformanceData(
         success: boolean;
         data?: ScopedRecordPage;
         message?: string;
-      }>(`/api/performance/records?${params.toString()}`);
+      }>(`/api/performance/records?${params.toString()}`, { signal });
+      if (signal?.aborted) throw new DOMException('The performance records read was cancelled.', 'AbortError');
       if (!response.success || !response.data) {
         throw new Error(response.message || 'Performance records request failed');
       }
@@ -419,6 +423,14 @@ async function fetchScopedPerformanceData(
   return recordsByPeriod.flat();
 }
 
+function forgetLegacyPerformanceCache() {
+  cachedData = null;
+  cachedDataSession = '';
+  lastFetchTime = 0;
+  lastDataSource = 'empty';
+  lastErrorMessage = null;
+}
+
 async function fetchPerformanceData(force = false) {
   const session = performanceSessionKey();
   if (!force && isFetching && fetchingSession === session) return;
@@ -428,11 +440,16 @@ async function fetchPerformanceData(force = false) {
     listeners.forEach((listener) => listener(cachedData!));
     return;
   }
+  const generation = ++performanceFetchGeneration;
   isFetching = true;
   fetchingSession = session;
   try {
     const result = await apiFetch<{ success: boolean; data: AgentRecord[]; message?: string }>('/api/performance');
-    if (performanceSessionKey() !== session) return;
+    if (generation !== performanceFetchGeneration) return;
+    if (performanceSessionKey() !== session) {
+      if (cachedDataSession === session) forgetLegacyPerformanceCache();
+      return;
+    }
     if (result && result.success && Array.isArray(result.data)) {
       cachedData = result.data;
       cachedDataSession = session;
@@ -444,7 +461,11 @@ async function fetchPerformanceData(force = false) {
     }
     listeners.forEach((listener) => listener(cachedData!));
   } catch (error) {
-    if (performanceSessionKey() !== session) return;
+    if (generation !== performanceFetchGeneration) return;
+    if (performanceSessionKey() !== session) {
+      if (cachedDataSession === session) forgetLegacyPerformanceCache();
+      return;
+    }
     console.warn('Failed to fetch performance data from the Backend API.');
     cachedData = [];
     cachedDataSession = session;
@@ -453,8 +474,16 @@ async function fetchPerformanceData(force = false) {
     lastErrorMessage = error instanceof Error ? error.message : 'Failed to fetch performance data';
     listeners.forEach((listener) => listener(cachedData!));
   } finally {
-    if (fetchingSession === session) isFetching = false;
+    if (generation === performanceFetchGeneration) isFetching = false;
   }
+}
+
+/** Drop the module cache and ignore any legacy read that started earlier. */
+export function discardPerformanceCache() {
+  performanceFetchGeneration += 1;
+  isFetching = false;
+  fetchingSession = '';
+  forgetLegacyPerformanceCache();
 }
 
 /** Force a re-fetch from the backend API (e.g. after a new file upload). */
@@ -464,14 +493,10 @@ export function refreshPerformanceData() {
     scopedCatalogFetchedAt = 0;
     scopedRefreshVersion += 1;
     scopedRefreshListeners.forEach((listener) => listener());
+    discardPerformanceCache();
     return;
   }
-  cachedData = null;
-  cachedDataSession = '';
-  lastFetchTime = 0;
-  isFetching = false;
-  lastDataSource = 'empty';
-  lastErrorMessage = null;
+  discardPerformanceCache();
   fetchPerformanceData(true);
 }
 
@@ -656,7 +681,7 @@ export function usePerformanceData(
     queryKey: ['performance', 'bounded-records', session, month, region, performanceLevel, location, scopedTeam ?? 'all', refreshVersion],
     // Reuse the bounded in-flight read across consumers/remounts, then cache it
     // for warm navigation. Session boundaries cancel/clear this query cache.
-    queryFn: () => fetchScopedPerformanceData(month, region, performanceLevel, location, scopedTeam),
+    queryFn: ({ signal }) => fetchScopedPerformanceData(month, region, performanceLevel, location, scopedTeam, signal),
     enabled: enabled && scopedPerformanceApiEnabled,
     staleTime: 2 * 60_000,
     retry: false,

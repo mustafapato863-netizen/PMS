@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from pydantic import BaseModel, Field
+from models.insight_schemas import BasisComparisonContext
 
 
 class PerformancePeriod(BaseModel):
@@ -34,6 +35,7 @@ class PerformanceSummaryData(BaseModel):
     scope: PerformanceScope
     period: PerformancePeriod
     previous_period: PerformancePeriod | None = None
+    basis_context: BasisComparisonContext | None = None
     current: dict[str, Any] = Field(default_factory=dict)
     previous: dict[str, Any] | None = None
     trend: list[dict[str, Any]] = Field(default_factory=list)

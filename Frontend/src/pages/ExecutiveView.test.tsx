@@ -33,6 +33,7 @@ vi.mock('../hooks/api/usePerformanceDashboard', () => ({
       uniqueMonths: ['May', 'June'],
       activePeriod: { month: 'June', year: 2026, key: '2026-06' },
       previousPeriod: { month: 'May', year: 2026, key: '2026-05' },
+      basisContext: { state: 'changed', like_for_like: false, raw_performance: 'partial', reasons: ['weight'], message: 'Scores can be affected by evaluation settings.' },
       previousTotalAgents: 10,
       previousOverallAvgScore: 80,
       previousPctAB: 55,
@@ -91,6 +92,12 @@ beforeEach(() => {
 });
 
 describe('Executive overview', () => {
+  it('shows the scoped API basis note without replacing numeric performance', () => {
+    renderAt();
+    expect(screen.getByTestId('basis-comparison-note')).toHaveTextContent('Scores can be affected by evaluation settings.');
+    expect(screen.getByText('84.2%')).toBeInTheDocument();
+    expect(lastSummary()).toEqual(['All', 'All', 'all', 'All']);
+  });
   it('restores the company overview with region, branch and month filters', () => {
     renderAt();
     expect(screen.getByRole('heading', { name: 'Executive Overview' })).toBeInTheDocument();

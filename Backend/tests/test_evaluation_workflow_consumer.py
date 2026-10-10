@@ -259,6 +259,45 @@ def _approve(world: _World, version_id: str) -> dict:
     return world.workflow.approve(world.actor, version_id)
 
 
+def test_lightweight_summary_compares_persisted_pins_without_roster_reload(db, monkeypatch):
+    from sqlalchemy import event
+    from services.performance_dashboard_read_service import PerformanceDashboardReadService
+    from services.scoring_basis_comparison import compare_adjacent_records
+    from services.cache_service import CacheService
+
+    world = _World(db)
+    for month, number, raw in (("July", 7, _raw(JULY, productivity=None)),
+                               ("August", 8, _raw(AUGUST, productivity=AUGUST["Productivity"]))):
+        record = world.record(world.employee, month, raw)
+        actuals = JULY if number == 7 else AUGUST
+        world.stored_kpis(record, actuals, productivity=None if number == 7 else AUGUST["Productivity"])
+        draft = world.workflow.open_draft(world.actor, world.scope["id"], 2026, number)
+        _approve(world, draft["id"])
+        world.workflow.apply(world.actor, world.scope["id"], 2026, number)
+    scope = {"role": "Admin", "user_id": str(world.admin.id), "has_unrestricted_team_access": True,
+             "legacy_unscoped": False, "accessible_teams": [], "accessible_team_levels": []}
+    service = PerformanceDashboardReadService(db, scope)
+    canonical = DashboardRecordService(db).list_records(scope=scope)
+    expected = compare_adjacent_records(canonical, year=2026, month="August")
+    monkeypatch.setattr(service.records, "list_records", lambda **_: pytest.fail("roster reload"))
+    monkeypatch.setattr(CacheService, "get_json", lambda *_, **__: None)
+    monkeypatch.setattr(CacheService, "set_json", lambda *_, **__: None)
+    queries = []
+    def capture(connection, cursor, statement, parameters, context, executemany):
+        if "from kpi_values" in statement.casefold():
+            queries.append(statement)
+    event.listen(db.bind, "before_cursor_execute", capture)
+    try:
+        summary = service.summary(period="2026-08")
+    finally:
+        event.remove(db.bind, "before_cursor_execute", capture)
+    assert summary["basis_context"] == expected
+    assert expected["state"] == "changed" and "kpi_set" in expected["reasons"]
+    assert len(queries) == 1
+    assert summary["current"]["average_score"] == pytest.approx(AUGUST_GOLDEN, abs=.01)
+    assert summary["previous"]["average_score"] == pytest.approx(JULY_GOLDEN, abs=.01)
+
+
 def test_exact_month_catalog_admits_july_and_august_only(db):
     world = _World(db)
     assert world.scope["readiness"] == "blocked"
