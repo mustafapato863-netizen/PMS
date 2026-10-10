@@ -11,6 +11,8 @@ from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
+from utils.schema_key_guards import fk_target_ready
+
 
 revision = "e1b6c9d4a870"
 down_revision = "a7c3e5f9b214"
@@ -19,6 +21,7 @@ depends_on = None
 
 
 def upgrade():
+    teams_ready = fk_target_ready(op.get_bind(), "teams", ("id",), "evaluation_scopes/evaluation_revisions.team_id")
     op.add_column("team_configuration_versions", sa.Column("performance_level", sa.String(length=20), nullable=True))
     op.add_column("team_configuration_versions", sa.Column("position_name", sa.String(length=255), nullable=True))
     op.create_check_constraint(
@@ -65,7 +68,7 @@ def upgrade():
             "readiness IN ('supported', 'blocked', 'unlinked_baseline')",
             name="ck_evaluation_scope_readiness",
         ),
-        sa.ForeignKeyConstraint(["team_id"], ["teams.id"], ondelete="SET NULL"),
+        *([sa.ForeignKeyConstraint(["team_id"], ["teams.id"], ondelete="SET NULL")] if teams_ready else []),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("team_key", "performance_level", "position_name", name="uq_evaluation_scope_identity"),
     )
@@ -86,7 +89,7 @@ def upgrade():
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
         sa.CheckConstraint("status IN ('active', 'rolled_back')", name="ck_evaluation_revision_status"),
         sa.CheckConstraint("month BETWEEN 1 AND 12", name="ck_evaluation_revision_month"),
-        sa.ForeignKeyConstraint(["team_id"], ["teams.id"], ondelete="CASCADE"),
+        *([sa.ForeignKeyConstraint(["team_id"], ["teams.id"], ondelete="CASCADE")] if teams_ready else []),
         sa.ForeignKeyConstraint(["version_id"], ["team_configuration_versions.id"], ondelete="RESTRICT"),
         sa.ForeignKeyConstraint(["previous_revision_id"], ["evaluation_revisions.id"], ondelete="SET NULL"),
         sa.ForeignKeyConstraint(["created_by_user_id"], ["users.id"], ondelete="SET NULL"),

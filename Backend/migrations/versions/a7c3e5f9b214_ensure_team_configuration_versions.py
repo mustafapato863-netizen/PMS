@@ -1,7 +1,7 @@
 """Ensure team_configuration_versions exists before monthly evaluation settings.
 
 Revision ID: a7c3e5f9b214
-Revises: d9e4b7a2c106
+Revises: 0b5d8e2f6c41
 
 Production was initialized by scripts.bootstrap_schema (ORM create_all + stamp)
 from code whose models did not yet define TeamConfigurationVersion. The table
@@ -20,11 +20,13 @@ created the table, and it must never drop configuration history.
 
 from alembic import op
 import sqlalchemy as sa
+
+from utils.schema_key_guards import fk_target_ready
 from sqlalchemy.dialects import postgresql
 
 
 revision = "a7c3e5f9b214"
-down_revision = "d9e4b7a2c106"
+down_revision = "0b5d8e2f6c41"
 branch_labels = None
 depends_on = None
 
@@ -36,6 +38,11 @@ def upgrade() -> None:
     if sa.inspect(bind).has_table(TABLE):
         return
 
+    team_fk = (
+        [sa.ForeignKeyConstraint(["team_id"], ["teams.id"], ondelete="CASCADE")]
+        if fk_target_ready(bind, "teams", ("id",), f"{TABLE}.team_id")
+        else []
+    )
     op.create_table(
         TABLE,
         # 8716484ca95c
@@ -64,9 +71,9 @@ def upgrade() -> None:
         sa.Column("overall_score", sa.Numeric(10, 2), nullable=True),
         sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.text("true")),
         sa.PrimaryKeyConstraint("id"),
-        sa.ForeignKeyConstraint(["team_id"], ["teams.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["created_by_user_id"], ["users.id"], ondelete="SET NULL"),
         sa.ForeignKeyConstraint(["published_by_user_id"], ["users.id"], ondelete="SET NULL"),
+        *team_fk,
         sa.UniqueConstraint("team_id", "version_number", name="uq_team_config_version"),
         sa.CheckConstraint("effective_from_month BETWEEN 1 AND 12", name="ck_team_config_effective_from_month"),
         sa.CheckConstraint(
