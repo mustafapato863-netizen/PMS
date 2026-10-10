@@ -1,7 +1,7 @@
 """Add monthly evaluation scopes and exact-month bindings.
 
 Revision ID: e1b6c9d4a870
-Revises: d9e4b7a2c106
+Revises: a7c3e5f9b214
 
 Expand-only. This revision does not update performance scores, plans,
 actions, or saved reports. Downgrade refuses once a monthly binding exists.
@@ -13,7 +13,7 @@ from sqlalchemy.dialects import postgresql
 
 
 revision = "e1b6c9d4a870"
-down_revision = "d9e4b7a2c106"
+down_revision = "a7c3e5f9b214"
 branch_labels = None
 depends_on = None
 
