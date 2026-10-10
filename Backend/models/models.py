@@ -9,6 +9,14 @@ from models.evaluation_history_schema import (
     register_history_guards,
     version_check_sql,
 )
+from services.evaluation.apply_job_schema import (
+    CLAIM_EPOCH_CHECK_SQL,
+    CONTROL_CHECKS,
+    KIND_CHECK_SQL,
+    OUTBOX_CHECKS,
+    STAGE_CHECKS,
+    register_apply_foundation_guards,
+)
 from config.database import Base
 from utils.performance_levels import PerformanceLevel
 from utils.user_identity import default_user_full_name
@@ -309,6 +317,9 @@ class ProcessingJob(Base):
     progress = Column(SmallInteger, nullable=False, default=0)
     attempt_count = Column(Integer, nullable=False, default=0)
     max_attempts = Column(Integer, nullable=False, default=3)
+    # Nullable so existing upload and report rows stay valid. Later fencing
+    # increments it; this slice does not claim or dispatch a new job kind.
+    claim_epoch = Column(Integer, nullable=True, default=0, server_default=text("0"))
     available_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     worker_id = Column(String(150), nullable=True)
     lease_expires_at = Column(DateTime(timezone=True), nullable=True)
@@ -325,10 +336,7 @@ class ProcessingJob(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
     __table_args__ = (
-        CheckConstraint(
-            "kind IN ('pms_upload', 'report_generation', 'story_report_generation')",
-            name="ck_processing_job_kind",
-        ),
+        CheckConstraint(KIND_CHECK_SQL, name="ck_processing_job_kind"),
         CheckConstraint(
             "status IN ('queued', 'running', 'succeeded', 'failed', 'cancelled')",
             name="ck_processing_job_status",
@@ -336,6 +344,7 @@ class ProcessingJob(Base):
         CheckConstraint("progress >= 0 AND progress <= 100", name="ck_processing_job_progress"),
         CheckConstraint("attempt_count >= 0", name="ck_processing_job_attempts"),
         CheckConstraint("max_attempts >= 1", name="ck_processing_job_max_attempts"),
+        CheckConstraint(CLAIM_EPOCH_CHECK_SQL, name="ck_processing_job_claim_epoch"),
         UniqueConstraint("kind", "idempotency_key", name="uq_processing_job_idempotency"),
         Index("idx_processing_job_claim", "status", "available_at", "created_at"),
         Index("idx_processing_job_requester", "requested_by_user_id", "created_at"),
@@ -1244,6 +1253,183 @@ class EvaluationRevision(Base):
 
 
 register_history_guards(TeamConfigurationVersion.__table__, EvaluationRevision.__table__)
+
+
+class EvaluationApplyControl(Base):
+    """Captured identity for one future evaluation apply job.
+
+    The row is the job header. It does not store the scored population.
+    Open states are pending, staging, and promoting. Authorization stays in
+    the later worker, which must re-read the live user.
+    """
+
+    __tablename__ = "evaluation_apply_controls"
+
+    job_id = Column(UUID(as_uuid=True), primary_key=True)
+    scope_id = Column(UUID(as_uuid=True), nullable=False)
+    version_id = Column(UUID(as_uuid=True), nullable=False)
+    team_id = Column(UUID(as_uuid=True), nullable=False)
+    performance_level = Column(String(20), nullable=False)
+    position_name = Column(String(255), nullable=False, default="")
+    year = Column(SmallInteger, nullable=False)
+    month = Column(SmallInteger, nullable=False)
+    engine_version = Column(String(64), nullable=False)
+    rules_checksum = Column(String(64), nullable=False)
+    proof_source_fingerprint = Column(String(64), nullable=False)
+    lineage_fingerprint = Column(String(64), nullable=False)
+    requested_by_user_id = Column(UUID(as_uuid=True), nullable=True)
+    actor_snapshot = Column(JSON_COMPAT_TYPE, nullable=False)
+    state = Column(String(20), nullable=False)
+    claim_epoch = Column(Integer, nullable=False)
+    stage_cursor = Column(String(80), nullable=True)
+    staged_count = Column(Integer, nullable=False, default=0, server_default=text("0"))
+    promoted_count = Column(Integer, nullable=False, default=0, server_default=text("0"))
+    promoted_revision_id = Column(UUID(as_uuid=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["job_id"],
+            ["processing_jobs.id"],
+            ondelete="RESTRICT",
+            name="fk_evaluation_apply_control_job",
+        ),
+        ForeignKeyConstraint(
+            ["scope_id"],
+            ["evaluation_scopes.id"],
+            ondelete="RESTRICT",
+            name="fk_evaluation_apply_control_scope",
+        ),
+        ForeignKeyConstraint(
+            ["version_id"],
+            ["team_configuration_versions.id"],
+            ondelete="RESTRICT",
+            name="fk_evaluation_apply_control_version",
+        ),
+        ForeignKeyConstraint(
+            ["team_id"],
+            ["teams.id"],
+            ondelete="RESTRICT",
+            name="fk_evaluation_apply_control_team",
+        ),
+        ForeignKeyConstraint(
+            ["requested_by_user_id"],
+            ["users.id"],
+            ondelete="SET NULL",
+            name="fk_evaluation_apply_control_user",
+        ),
+        ForeignKeyConstraint(
+            ["promoted_revision_id"],
+            ["evaluation_revisions.id"],
+            ondelete="RESTRICT",
+            name="fk_evaluation_apply_control_revision",
+        ),
+        *(
+            CheckConstraint(expression, name=name)
+            for name, expression in CONTROL_CHECKS.items()
+        ),
+        Index("idx_evaluation_apply_control_version", "version_id"),
+        Index("idx_evaluation_apply_control_revision", "promoted_revision_id"),
+        Index(
+            "uq_evaluation_apply_one_open_scope_month",
+            "scope_id",
+            "year",
+            "month",
+            unique=True,
+            sqlite_where=text("state IN ('pending', 'staging', 'promoting')"),
+            postgresql_where=text("state IN ('pending', 'staging', 'promoting')"),
+        ),
+    )
+
+
+class EvaluationApplyStageRow(Base):
+    """One immutable before/after image for one record and one claim epoch."""
+
+    __tablename__ = "evaluation_apply_stage_rows"
+
+    job_id = Column(UUID(as_uuid=True), primary_key=True)
+    claim_epoch = Column(Integer, primary_key=True)
+    record_id = Column(UUID(as_uuid=True), primary_key=True)
+    record_year = Column(SmallInteger, primary_key=True)
+    before_row = Column(JSON_COMPAT_TYPE, nullable=False)
+    after_row = Column(JSON_COMPAT_TYPE, nullable=False)
+    before_hash = Column(String(64), nullable=False)
+    after_hash = Column(String(64), nullable=False)
+    rules_checksum = Column(String(64), nullable=False)
+    captured_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["job_id"],
+            ["evaluation_apply_controls.job_id"],
+            ondelete="RESTRICT",
+            name="fk_evaluation_apply_stage_control",
+        ),
+        ForeignKeyConstraint(
+            ["record_id", "record_year"],
+            ["performance_records.id", "performance_records.year"],
+            ondelete="RESTRICT",
+            name="fk_evaluation_apply_stage_record",
+        ),
+        *(
+            CheckConstraint(expression, name=name)
+            for name, expression in STAGE_CHECKS.items()
+        ),
+        Index(
+            "idx_evaluation_apply_stage_keyset",
+            "job_id",
+            "claim_epoch",
+            "record_year",
+            "record_id",
+        ),
+    )
+
+
+class CacheInvalidationOutbox(Base):
+    """One durable data-namespace notification. It carries no employee payload."""
+
+    __tablename__ = "cache_invalidation_outbox"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    job_id = Column(UUID(as_uuid=True), nullable=False)
+    revision_id = Column(UUID(as_uuid=True), nullable=False)
+    namespace = Column(String(40), nullable=False)
+    dedup_key = Column(String(200), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    delivery_attempts = Column(Integer, nullable=False, default=0, server_default=text("0"))
+    next_retry_at = Column(DateTime(timezone=True), nullable=True)
+    published_at = Column(DateTime(timezone=True), nullable=True)
+    last_error = Column(String(240), nullable=True)
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["job_id"],
+            ["evaluation_apply_controls.job_id"],
+            ondelete="RESTRICT",
+            name="fk_cache_invalidation_outbox_job",
+        ),
+        ForeignKeyConstraint(
+            ["revision_id"],
+            ["evaluation_revisions.id"],
+            ondelete="RESTRICT",
+            name="fk_cache_invalidation_outbox_revision",
+        ),
+        UniqueConstraint("namespace", "dedup_key", name="uq_cache_invalidation_outbox_dedup"),
+        *(
+            CheckConstraint(expression, name=name)
+            for name, expression in OUTBOX_CHECKS.items()
+        ),
+        Index(
+            "idx_cache_invalidation_outbox_unpublished",
+            "namespace",
+            "next_retry_at",
+            sqlite_where=text("published_at IS NULL"),
+            postgresql_where=text("published_at IS NULL"),
+        ),
+    )
+
+
+register_apply_foundation_guards(Base.metadata)
 
 
 class ErrorLog(Base):
