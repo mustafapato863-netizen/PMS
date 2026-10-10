@@ -14,6 +14,8 @@ from services.scoring.engine import (
     contribution,
 )
 
+# Identity only. Caps, grades, precision, and formulas are unchanged.
+ENGINE_VERSION = "employee-ratio-cap-v1"
 SUPPORTED_DIRECTIONS = {"higher_better", "lower_better"}
 POLICIES = {
     "Employee": EMPLOYEE_POLICY,
