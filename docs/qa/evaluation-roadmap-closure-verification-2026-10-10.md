@@ -2,6 +2,8 @@
 
 Date:10 October2026. Local candidate:codex/evaluation-roadmap-closure. Reviewed baseline625abf4; accepted local commits67af1d4(Insights),a048a0c(UUID identity),d49cad3(HTTP concurrency/calendar),50c5058(settings inputs/concurrency/month labels). Main and production are unchanged.
 
+Historical checkpoint: the table below is retained, not a current rerun. Subsequent composed foundation/consumer gates and direction API/UI proof are in `evaluation-composed-consumers-2026-10-10.md` and `evaluation-direction-lifecycle-2026-10-10.md`. The current closure matrix supersedes the active-lane wording below; bounded apply remains independently rejected/unaccepted, while the foundation and consumer slices are accepted locally. No all-phase or release acceptance.
+
 ## Executed gates
 
 | Gate | Actual result | Limit |

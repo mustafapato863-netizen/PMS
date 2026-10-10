@@ -10,6 +10,8 @@
 
 **Current acceptance evidence:** [10 October closure matrix](monthly-evaluation/closure-matrix-2026-10-10.md), based on reviewed `625abf4` and bounded follow-up candidates. It distinguishes implemented behavior from missing verification, intentionally blocked families and genuine unfinished work. The owner cannot currently provide the remaining family goldens; those calculation editors remain disabled. The full roadmap, including bounded historical jobs, has not been reduced or declared complete.
 
+**Latest local review:** Foundation and semantic consumer slices are composed and independently verified; see [combined consumer evidence](../qa/evaluation-composed-consumers-2026-10-10.md) and [exact-month direction lifecycle/API/UI evidence](../qa/evaluation-direction-lifecycle-2026-10-10.md). The bounded-apply candidate remains rejected pending rework: [independent blocking defects](../qa/evaluation-bounded-apply-independent-red-2026-10-10.md). [Remaining runtime integration gates](monthly-evaluation/remaining-runtime-gates-2026-10-10.md) specify the worker, recovery, cache and settings-UI sequence without reducing the original scope. These are local review checkpoints, not main integration or production acceptance.
+
 ## 1. Purpose and success definition
 
 Administrators must be able to change a team's evaluation settings for a reporting month without changing backend code or redeploying the application. Every affected result must use the correct settings for its team, source identity, performance level, position and period.
