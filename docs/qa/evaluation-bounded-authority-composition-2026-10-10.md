@@ -11,6 +11,12 @@ Reviewed local closure: `dbecea2`, combining public authority `2af8b95` (sourcec
 
 ## Boundaries retained
 
+## CI portability follow-up
+
+Independent `CI=true` collection reproduced a new normal-test blocker: `test_evaluation_public_authority.py` required CI unset, so no cases could collect. Removed only that inappropriate CI restriction; explicit anonymous environment requirements and every authority assertion remain. The backend GitHub CI job now explicitly sets test environment, in-memory SQLite, empty Redis URL, an anonymous test-only JWT secret and disabled seed flags before imports. The unchanged37authority+35related cases then passed **72 cases,8warnings20.55s under CI=true**, evidence `reviewer-public-authority-ci-green-20261010.xml`. The earlier1329-case complete run predates this test/workflow-only portability repair; it is not described as a full CI execution. No native database guard or application authorization/scoring behavior was changed.
+
+## Runtime and data boundaries
+
 Fresh active persisted Admin is checked after the Team fence. Native races prove denial when revocation commits before the post-fence user SELECT. No User row lock serializes revocation after that SELECT; no stronger guarantee is claimed.
 
 Promotion remains one transaction for scores, manifest revision, immutable control and one unpublished outbox. Page100 at the actual200-employee cohort measured1.516seconds/36SELECT/400sourcevisits/3.21MBtraced peak in synthetic SQLite stage-only; page200 reduced SQL but measured1.658seconds/5.49MBpeak. Default remains100. Full-month fingerprint scans persist on each page, so this is bounded retention, not linear-time growth or a production SLA.

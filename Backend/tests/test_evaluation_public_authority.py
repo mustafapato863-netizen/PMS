@@ -12,8 +12,6 @@ if (
     or os.environ.get("REDIS_URL", "")
 ):
     raise RuntimeError("Anonymous test environment is required before import")
-if os.environ.get("CI"):
-    raise RuntimeError("CI must be unset for this anonymous gate")
 
 import uuid
 from datetime import date

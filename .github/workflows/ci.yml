@@ -11,6 +11,14 @@ permissions:
 jobs:
   backend:
     runs-on: ubuntu-latest
+    env:
+      APP_ENV: test
+      DATABASE_URL: "sqlite:///:memory:"
+      REDIS_URL: ""
+      JWT_SECRET: "ci-only-anonymous-test-secret-never-production"
+      PMS_AUTO_SEED: "false"
+      PMS_SEED_DEMO_LEVELS: "false"
+      PMS_SEED_PERMISSIONS_ON_STARTUP: "false"
     defaults:
       run:
         working-directory: Backend
