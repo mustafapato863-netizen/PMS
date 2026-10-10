@@ -2,7 +2,7 @@
 
 ## Superseding local checkpoint
 
-Canonical summary/roster Redis-unavailable separate-process cache gate now passes on owned PostgreSQL16/18 after a two-line pinned-summary key-shadow repair, with repeated post-apply and post-rollback hits. Focused anonymous CI53PASS; native2PASS13.61s. See `docs/qa/evaluation-cross-process-cache-2026-10-10.md`. This closes that bounded unavailable-Redis gate only; actual Redis reconnect and all-consumer/runtime certification remain open.
+Canonical summary/roster Redis-unavailable separate-process cache gate now passes on owned PostgreSQL16/18 after a two-line pinned-summary key-shadow repair, with repeated post-apply and post-rollback hits. Focused anonymous CI53PASS; native2PASS13.61s. Follow-up actual owned Redis7 pause/socket-timeout/unpause reconnect, realINCR/PUBLISH/subscriber/ACK and latest rollback also pass2native18.13s. Container stopped/auto-removed; no production connection. See `docs/qa/evaluation-cross-process-cache-2026-10-10.md`. These close the bounded canonical unavailable/reconnect gates only; all-consumer/runtime certification remains open.
 
 Queue/publisher source checkpoint `81d3b03` is now locally accepted after complete source/test review and independent gates: full backend1400PASS with only unchanged MarketingFAIL/existingSKIP, sequential owned PostgreSQL100PASS, explicit anonymous CI-shaped115PASS. See `docs/qa/evaluation-queue-outbox-composition-2026-10-10.md`. Legacy queue isolation is enforced; dormant default-disabled outbox delivery is implemented but not registered or activated. Separate Phase7C1 lease coordinator candidate is in progress, not accepted. No main/production change.
 
@@ -35,7 +35,7 @@ The accepted generic `claim_next` now filters the three legacy kinds before `FOR
 
 ## Cache and consumers
 
-`evaluation_cache_identity` already adds committed configuration/revision/upload identity to the shared dashboard cache. Do not replace this with Redis alone. A reviewed dormant publisher now implements at-least-once delivery, acknowledges only after actual direct commands and DB commit, retains failed deliveries and tolerates a crash between Redis increment and acknowledgment. It is default-disabled and unregistered. Actual Redis reconnect/multi-process consumer/runtime integration remains open; injected-client native tests are not that certification.
+`evaluation_cache_identity` already adds committed configuration/revision/upload identity to the shared dashboard cache. Do not replace this with Redis alone. A reviewed dormant publisher now implements at-least-once delivery, acknowledges only after actual direct commands and DB commit, retains failed deliveries and tolerates a crash between Redis increment and acknowledgment. It is default-disabled and unregistered. Canonical summary/roster separate-process unavailable/reconnect gates now pass as documented above; all-consumer/runtime integration remains open, and injected-client native tests alone are not that certification.
 
 Audit actual reader ownership before changing caches. Current Insights workspace route regenerates through `InsightsService`; its request-local comparison caches are not a demonstrated shared stale-cache defect. Current Story context caches are request-local. Reports use shared data-version metadata, and regenerated versus saved outputs must remain distinct.
 
