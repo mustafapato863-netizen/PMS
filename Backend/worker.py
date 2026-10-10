@@ -278,10 +278,31 @@ def process_job_once(job_id: str, worker_id: str) -> None:
         heartbeat.stop()
 
 
+def _run_optional_evaluation_tick(worker_id: str) -> None:
+    """One evaluation pass. Legacy claim and dispatch stay below this hook."""
+
+    if settings.PMS_EVALUATION_APPLY_JOBS_ENABLED is not True:
+        return
+    from services.evaluation.runtime import run_enabled_tick
+
+    db = SessionLocal()
+    try:
+        run_enabled_tick(db, worker_id)
+    except Exception:
+        logger.warning("evaluation apply runtime tick failed")
+        try:
+            db.rollback()
+        except Exception:
+            pass
+    finally:
+        db.close()
+
+
 def run_worker(*, once: bool = False) -> None:
     worker_id = f"{socket.gethostname()}:{os.getpid()}"
     logger.info("Processing worker started", extra={"worker_id": worker_id})
     while True:
+        _run_optional_evaluation_tick(worker_id)
         db = SessionLocal()
         try:
             ProcessingJobService.requeue_expired(db)

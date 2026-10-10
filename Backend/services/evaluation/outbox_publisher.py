@@ -1,10 +1,12 @@
-"""Dormant at-least-once delivery for cache invalidation outbox rows.
+"""At-least-once delivery for cache invalidation outbox rows.
 
-Nothing calls this service. There is no setting, worker branch, or route.
-``deliver_due`` does no work unless ``enabled is True``. A truthy flag is
-not enough, and the Redis client is never tested with ``bool()`` because
-``LazyRedisClient`` connects on truthiness and can report a process-local
-version that is not a publish.
+The evaluation runtime calls ``deliver_due`` only when
+``PMS_EVALUATION_APPLY_JOBS_ENABLED is True``. ``deliver_due`` itself does
+no work unless ``enabled is True``. A truthy flag is not enough, and the
+Redis client is never tested with ``bool()`` because ``LazyRedisClient``
+connects on truthiness and can report a process-local version that is not
+a publish. A failed command stays unpublished. This module does not count a
+process-local version bump as delivery.
 
 One call locks at most ``MAX_BATCH_LIMIT`` due ``data`` rows, ordered by
 ``next_retry_at`` then ``id``, with no offset. On PostgreSQL the lock is

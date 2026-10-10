@@ -1,19 +1,28 @@
-"""Dormant lease coordinator for one persisted evaluation apply.
+"""Lease coordinator for one persisted evaluation apply.
 
-Nothing registers this module. There is no setting, worker loop, route, or
-cache publisher. Every operation returns immediately unless ``enabled is
-True``. A truthy value is not enough. Disabled calls do not touch the
-session, the clock, or a client.
+The evaluation runtime and settings routes call this module only when
+``PMS_EVALUATION_APPLY_JOBS_ENABLED is True``. Every operation still returns
+immediately unless ``enabled is True``. A truthy value is not enough.
+Disabled calls do not touch the session, the clock, or a client.
 
-The captured requester is the only management identity. Another active Admin
-cannot read status, cancel, retry, claim, stage, promote, acknowledge, or
-recover the job. Enqueue of an open binding by a different Admin raises
-``duplicate_binding`` and does not replace ``requested_by_user_id`` or the
-actor snapshot. The snapshot is attribution written by capture. It is not
-read back as a role grant. After the team row is locked, the user row is
-selected again without ``FOR UPDATE``. That user must still be the requester,
-with role Admin and ``is_active`` true. A missing, deleted, revoked, or
-inactive requester fails closed for every caller.
+Any persisted active Admin may inspect a job, cancel it, or acknowledge an
+already committed promotion. Those calls keep ``requested_by_user_id`` and
+``actor_snapshot`` unchanged. When the caller is not the captured requester,
+the same transaction writes one ``audit_log`` row: old and new job and
+control state, the claim epoch, and the original requester id. It does not
+store the snapshot, a source array, a name, or an error string.
+``performed_by`` is the Admin who made the call.
+
+Start, heartbeat, stage, promote, acknowledge, live failure, and retry of
+the same job stay with the captured requester. The actor snapshot is not a
+role grant and is never used to impersonate a revoked or deleted requester.
+Another Admin who wants a new attempt cancels the unpromoted job and
+enqueues a new job. Historical stage rows stay on the old job and epoch.
+
+The grant is a non-locking user read after the team, job, scope, and control
+fences. The shared team fence also reads the user before those header locks.
+That earlier row is not the grant. A role change committed after the later
+read is not held off for the rest of the transaction.
 
 Lock order stays team, processing job, evaluation scope, apply control, then
 the records taken by the existing stage and promote code. Claim epoch changes
@@ -23,10 +32,11 @@ does not lock the control before the job.
 ``promote`` commits the accepted score, revision, and outbox write while the
 job stays ``running`` and progress stays below 100. ``acknowledge`` is a later
 transaction for the same worker, epoch, and unexpired lease. ``recover`` is
-the requester path for the crash between those commits: a matching epoch
+the management path for the crash between those commits: a matching epoch
 acknowledges a still-running promoted job even after the lease has expired; a
 stale epoch returns the committed revision and writes nothing. Neither path
-inserts a second revision or outbox row.
+inserts a second revision or outbox row. ``fail_live`` fails one live staging
+token. A promoted control is left in place.
 
 A running staging row with no lease is the public capture, not an expired
 worker job. Retry does not adopt it. An expired worker lease is failed in its
@@ -52,7 +62,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm.attributes import flag_modified
 
 import services.evaluation.bounded_apply as bounded_apply_module
-from models.models import EvaluationApplyControl, ProcessingJob
+from models.models import AuditLog, EvaluationApplyControl, ProcessingJob
 from services.evaluation.access import EvaluationError
 from services.evaluation.apply_job_schema import JOB_KIND_EVALUATION_APPLY, STATUS_PAYLOAD_LIMIT
 from services.evaluation.bounded_apply import BoundedApplyService, _page_size
@@ -68,6 +78,19 @@ SAFE_REASONS = {
     "cancelled": "cancelled",
     "lease_expired": "lease_expired",
 }
+SAFE_FAILURE_REASONS = frozenset({
+    "access_denied",
+    "apply_failed",
+    "evidence_changed",
+    "incomplete_stage",
+    "invalid_state",
+    "lineage_changed",
+    "scope_blocked",
+    "stale_preview",
+    "target_conflict",
+})
+AUDIT_TABLE = "evaluation_apply_controls"
+AUDIT_OPERATION = "UPDATE"
 
 
 class LeaseCoordinatorError(EvaluationError):
@@ -105,6 +128,14 @@ def require_epoch(value) -> int:
 
     if type(value) is not int or value < 0:
         raise LeaseCoordinatorError("invalid_epoch")
+    return value
+
+
+def _safe_failure_reason(value) -> str:
+    """Accept one stable code. Exception text is not a reason."""
+
+    if type(value) is not str or value not in SAFE_FAILURE_REASONS:
+        raise LeaseCoordinatorError("invalid_state")
     return value
 
 
@@ -293,6 +324,16 @@ class EvaluationLeaseCoordinator:
         self._require_clock()
         return self._guard(lambda: self._retry(actor, parsed))
 
+    def fail_live(self, actor, token, *, reason=None, enabled: bool = False) -> dict:
+        """Fail one live staging token without rewriting a promoted commit."""
+
+        if enabled is not True:
+            return _disabled()
+        parsed, worker, epoch = _parse_token(token)
+        safe = _safe_failure_reason(reason)
+        self._require_clock()
+        return self._guard(lambda: self._fail_live(actor, parsed, worker, epoch, safe))
+
     def _enqueue(self, actor, scope_id, year: int, month: int) -> dict:
         body = self._apply().capture_queued(actor, scope_id, year, month)
         job_id = uuid.UUID(str(body["job_id"]))
@@ -310,7 +351,18 @@ class EvaluationLeaseCoordinator:
                 code="duplicate_binding",
             )
         if not body["resumed"]:
-            job.available_at = self._admit()
+            now = self._admit()
+            job.available_at = now
+            # Admission is serialized by the Team fence. UUIDs are not clocks.
+            previous = (
+                self.db.query(ProcessingJob.created_at)
+                .join(EvaluationApplyControl, EvaluationApplyControl.job_id == ProcessingJob.id)
+                .filter(EvaluationApplyControl.scope_id == control.scope_id,
+                        EvaluationApplyControl.year == year, EvaluationApplyControl.month == month,
+                        ProcessingJob.id != job.id)
+                .order_by(ProcessingJob.created_at.desc()).limit(1).scalar()
+            )
+            job.created_at = max(now, _as_utc(previous) + timedelta(microseconds=1)) if previous else now
             job.worker_id = None
             job.lease_expires_at = None
             job.heartbeat_at = None
@@ -445,22 +497,29 @@ class EvaluationLeaseCoordinator:
         return payload
 
     def _recover(self, actor, job_id, epoch: int) -> dict:
-        _user, job, control, _scope = self._locked(actor, job_id)
+        user, job, control, _scope = self._locked(actor, job_id, owner_required=False)
         now = self._admit()
+        identity = self._identity(job, control)
+        remembered = self._remembered(job, control)
         current = _same_epoch(job, control)
         promoted = control.state == "promoted" and control.promoted_revision_id is not None
         if not promoted or job.status != "running" or current != epoch:
             outcome = "promoted" if promoted else "observed"
             idempotent = bool(promoted and job.status == "succeeded" and _acked(job, control))
-            return self._release(self._recovery_body(job, control, outcome=outcome, mutated=False, idempotent=idempotent))
+            payload = self._recovery_body(job, control, outcome=outcome, mutated=False, idempotent=idempotent)
+            return self._finish_read(user, job, control, identity, remembered, "recover", payload)
         self._write_ack(job, control, now)
+        self._require_same_identity(identity, job, control)
+        self._audit_cross_admin(user, job, control, remembered, "recover")
         self._apply()._fault("before_commit")
         payload = self._recovery_body(job, control, outcome="recovered", mutated=True, idempotent=False)
         self._commit()
         return payload
 
     def _status(self, actor, job_id) -> dict:
-        _user, job, control, _scope = self._locked(actor, job_id)
+        user, job, control, _scope = self._locked(actor, job_id, owner_required=False)
+        identity = self._identity(job, control)
+        remembered = self._remembered(job, control)
         epoch = _same_epoch(job, control)
         payload = {
             "enabled": True,
@@ -475,17 +534,20 @@ class EvaluationLeaseCoordinator:
             "revision_id": None if control.promoted_revision_id is None else str(control.promoted_revision_id),
             "progress": int(job.progress or 0),
             "attempt_count": int(job.attempt_count or 0),
-            "safe_reason": SAFE_REASONS.get(job.error_code),
+            "safe_reason": job.error_code if job.error_code in SAFE_FAILURE_REASONS else SAFE_REASONS.get(job.error_code),
         }
-        return self._release(payload)
+        return self._finish_read(user, job, control, identity, remembered, "inspect", payload)
 
     def _cancel(self, actor, job_id) -> dict:
-        _user, job, control, _scope = self._locked(actor, job_id)
+        user, job, control, _scope = self._locked(actor, job_id, owner_required=False)
         now = self._admit()
+        identity = self._identity(job, control)
+        remembered = self._remembered(job, control)
         if control.state in {"promoted", "promoting"} or job.status == "succeeded":
             raise LeaseCoordinatorError("invalid_state")
         if control.state == "cancelled" and job.status == "cancelled":
-            return self._release(self._terminal(job, control, "cancelled", idempotent=True))
+            payload = self._terminal(job, control, "cancelled", idempotent=True)
+            return self._finish_read(user, job, control, identity, remembered, "cancel", payload)
         if control.state not in {"pending", "staging"} or job.status not in {"queued", "running"}:
             raise LeaseCoordinatorError("invalid_state")
         control.state = "cancelled"
@@ -499,7 +561,46 @@ class EvaluationLeaseCoordinator:
         if int(job.progress or 0) > 99:
             job.progress = 99
         self.db.flush()
+        self._require_same_identity(identity, job, control)
+        self._audit_cross_admin(user, job, control, remembered, "cancel")
         payload = self._terminal(job, control, "cancelled", idempotent=False)
+        self._commit()
+        return payload
+
+    def _fail_live(self, actor, job_id, worker: str, epoch: int, reason: str) -> dict:
+        _user, job, control, _scope = self._locked(actor, job_id)
+        now = self._admit()
+        identity = self._identity(job, control)
+        self._require_epoch(job, control, epoch)
+        if control.state == "promoted" or job.status == "succeeded" or control.promoted_revision_id is not None:
+            if control.promoted_revision_id is None:
+                raise LeaseCoordinatorError("invalid_state")
+            body = self._promoted_body(
+                job,
+                control,
+                acknowledged=job.status == "succeeded",
+                idempotent=True,
+            )
+            body["outcome"] = "preserved"
+            return self._release(body)
+        self._require_worker(job, worker)
+        if job.status != "running" or control.state != "staging":
+            raise LeaseCoordinatorError("invalid_state")
+        if not self._lease_active(job, now):
+            raise LeaseCoordinatorError("lease_expired")
+        control.state = "failed"
+        job.status = "failed"
+        job.worker_id = None
+        job.lease_expires_at = None
+        job.heartbeat_at = None
+        job.finished_at = now
+        job.error_code = reason
+        job.safe_error_message = "evaluation apply failed"
+        if int(job.progress or 0) > 99:
+            job.progress = 99
+        self.db.flush()
+        self._require_same_identity(identity, job, control)
+        payload = self._terminal(job, control, "failed", idempotent=False)
         self._commit()
         return payload
 
@@ -635,16 +736,81 @@ class EvaluationLeaseCoordinator:
             return False
         return _as_utc(job.lease_expires_at) > now
 
-    def _locked(self, actor, job_id):
+    def _locked(self, actor, job_id, *, owner_required: bool = True):
+        """Lock team, job, scope, and control, then reread the caller.
+
+        The user row returned by the team fence is stale for authorization.
+        ``_admin`` after the header locks is the grant. A revocation that
+        commits after that second read is outside this transaction.
+        """
+
         apply = self._apply()
         kind = self.db.query(ProcessingJob.kind).filter(ProcessingJob.id == job_id).scalar()
         peeked = apply._peek_control(job_id)
         if kind != JOB_KIND_EVALUATION_APPLY or peeked is None or peeked.team_id is None:
             raise EvaluationError("Evaluation apply was not found.", code="not_found")
-        _team, user = apply._team_fence(peeked.team_id, actor)
-        job, control, scope = apply._lock_existing_header(peeked, _team)
-        apply._require_open_actor(control, user)
+        team, _earlier_user = apply._team_fence(peeked.team_id, actor)
+        job, control, scope = apply._lock_existing_header(peeked, team)
+        user = apply._admin(actor)
+        if owner_required:
+            apply._require_open_actor(control, user)
         return user, job, control, scope
+
+    def _identity(self, job, control):
+        snapshot = control.actor_snapshot
+        if isinstance(snapshot, dict):
+            snapshot = json.dumps(snapshot, sort_keys=True, default=str)
+        return (job.requested_by_user_id, job.requested_by_name, control.requested_by_user_id, snapshot)
+
+    def _require_same_identity(self, identity, job, control) -> None:
+        if self._identity(job, control) != identity:
+            raise LeaseCoordinatorError("invalid_state")
+
+    def _remembered(self, job, control) -> tuple[str, str, int]:
+        return job.status, control.state, int(control.claim_epoch)
+
+    def _cross_admin(self, user, control) -> bool:
+        return control.requested_by_user_id != user.id
+
+    def _audit_cross_admin(self, user, job, control, remembered, action: str) -> None:
+        """One safe audit row. Names, snapshots, and errors stay out of it."""
+
+        if not self._cross_admin(user, control):
+            return
+        old_status, old_state, old_epoch = remembered
+        requester = None if control.requested_by_user_id is None else str(control.requested_by_user_id)
+        old_values = {
+            "action": action,
+            "claim_epoch": old_epoch,
+            "control_state": old_state,
+            "job_status": old_status,
+            "requested_by_user_id": requester,
+        }
+        new_values = {
+            "action": action,
+            "claim_epoch": int(control.claim_epoch),
+            "control_state": control.state,
+            "job_status": job.status,
+            "requested_by_user_id": requester,
+        }
+        self.db.add(AuditLog(
+            id=uuid.uuid4(),
+            table_name=AUDIT_TABLE,
+            operation=AUDIT_OPERATION,
+            record_id=job.id,
+            old_values=old_values,
+            new_values=new_values,
+            performed_by_user_id=user.id,
+        ))
+        self.db.flush()
+
+    def _finish_read(self, user, job, control, identity, remembered, action: str, payload: dict) -> dict:
+        self._require_same_identity(identity, job, control)
+        if not self._cross_admin(user, control):
+            return self._release(payload)
+        self._audit_cross_admin(user, job, control, remembered, action)
+        self._commit()
+        return payload
 
     def _apply(self) -> BoundedApplyService:
         if self._service is None:

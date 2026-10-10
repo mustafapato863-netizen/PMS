@@ -329,10 +329,15 @@ def test_enqueue_is_pending_identity_and_does_not_score(db):
         coordinator.enqueue(other_actor, scope_id, 2026, 7, enabled=True)
     assert _code(duplicate) == "duplicate_binding"
     assert _control(db, queued["job_id"]).requested_by_user_id == requester
-    with pytest.raises(Exception) as denied:
-        coordinator.status(other_actor, queued["job_id"], enabled=True)
-    assert denied.value.status_code == 403
+    inspected = coordinator.status(other_actor, queued["job_id"], enabled=True)
+    assert inspected["outcome"] == "status" and inspected["job_status"] == "queued"
+    assert _control(db, queued["job_id"]).requested_by_user_id == requester
+    assert _control(db, queued["job_id"]).actor_snapshot == snapshot
+    with pytest.raises(Exception) as denied_execution:
+        coordinator.start(other_actor, queued["job_id"], "worker-b", lease_seconds=30, enabled=True)
+    assert denied_execution.value.status_code == 403
     assert _job(db, queued["job_id"]).status == "queued"
+    assert int(_job(db, queued["job_id"]).attempt_count or 0) == 0
     visible = db.query(ProcessingJob).filter(_legacy_kind_clause(), ProcessingJob.status == "queued").all()
     assert visible == []
     with pytest.raises(ValueError, match="Unsupported processing job kind"):

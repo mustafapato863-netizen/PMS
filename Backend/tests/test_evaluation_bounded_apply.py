@@ -88,6 +88,13 @@ PUBLIC_ROUTES = {
     ("GET", "/reads"),
     ("POST", "/apply"),
     ("POST", "/revisions/{revision_id}/rollback"),
+    ("GET", "/apply-jobs/capabilities"),
+    ("GET", "/apply-jobs"),
+    ("POST", "/apply-jobs"),
+    ("GET", "/apply-jobs/{job_id}"),
+    ("POST", "/apply-jobs/{job_id}/cancel"),
+    ("POST", "/apply-jobs/{job_id}/retry"),
+    ("POST", "/apply-jobs/{job_id}/recover"),
 }
 
 

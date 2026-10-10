@@ -95,6 +95,12 @@ PMS_REPORT_CENTER_ENABLED = parse_bool(
     os.environ.get("PMS_REPORT_CENTER_ENABLED"),
     default=True,
 )
+# Durable evaluation apply stays off until an operator turns the worker and
+# the management API on together. Synchronous /apply is not gated by this.
+PMS_EVALUATION_APPLY_JOBS_ENABLED = parse_bool(
+    os.environ.get("PMS_EVALUATION_APPLY_JOBS_ENABLED"),
+    default=False,
+)
 if PMS_JOB_POLL_SECONDS <= 0:
     raise ValueError("PMS_JOB_POLL_SECONDS must be greater than zero.")
 if PMS_JOB_LEASE_SECONDS <= 0:
@@ -191,6 +197,7 @@ class _SettingsCompatibility:
     PMS_SCOPED_PERFORMANCE_API_ENABLED = PMS_SCOPED_PERFORMANCE_API_ENABLED
     PMS_SCOPED_PERFORMANCE_ALLOWED_ROLES = PMS_SCOPED_PERFORMANCE_ALLOWED_ROLES
     PMS_REPORT_CENTER_ENABLED = PMS_REPORT_CENTER_ENABLED
+    PMS_EVALUATION_APPLY_JOBS_ENABLED = PMS_EVALUATION_APPLY_JOBS_ENABLED
     JWT_EXPIRE_MINUTES = JWT_EXPIRE_MINUTES
     AUTH_REFRESH_COOKIE_NAME = AUTH_REFRESH_COOKIE_NAME
     AUTH_CSRF_COOKIE_NAME = AUTH_CSRF_COOKIE_NAME
