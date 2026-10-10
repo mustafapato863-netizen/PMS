@@ -2,9 +2,13 @@
 
 ## Superseding bounded/authority checkpoint
 
+**11 October consumer/load supplement:** [Independent async source-golden proof](../../qa/evaluation-runtime-consumers-load-2026-10-11.md) now covers real worker→summary/trend/employee/Insights/report preview/Story page→rollback, unchanged July/source/human artifacts and same-client Team back-navigation. Complete backend1434PASS/2existingCI skips; final strengthened scenarioPASS. Four traced native200-person/five-KPI cases plus two untraced default-page samples passed on PostgreSQL16/18, with real separate-process warm-cache readback. Page100 remains default; single samples2.289/2.650s are not a production SLA. This supplements local admitted-scope acceptance without closing missing family goldens or production rollout/UAT/reconnect/budget gates.
+
 **Current local runtime checkpoint:** Reviewed Phase7C2 worker/API and Phase7D progress UI are composed at `ac11e44`/`9cf5d31`, with a subsequent browser-proven command-hint repair. Final full backend1433PASS/2existingCI skips; frontend824PASS/105files; native cross-Admin12PASS plus2SQLitePASS; actualJWT200-row worker lifecycle and browser70→80→70 pass. Default-disabled runtime and original-requester execution checks are retained; any active Admin management/recovery is proven with immutable attribution. See [final composition evidence](../../qa/evaluation-runtime-final-composition-2026-10-10.md). Historical C1/C2-unaccepted and missing-runtime rows below are superseded for this **local admitted-scope candidate only**. Production recovery, full-consumer reconnect, agreed load budgets, all-family source goldens/UAT and publication remain open; no all-roadmap completion.
 
-Dormant coordinator local checkpoint `e5176bc` supersedes historical C1-unaccepted statements below: independent125normalPASS plus32nativePASS prove the bounded lease/reclaim/cancel/retry/recovery slice, not worker/API/UI runtime or production. See `docs/qa/evaluation-lease-coordinator-independent-2026-10-10.md`. User-approved cross-Admin management is a subsequent unaccepted C2 candidate; original requester and prior evidence remain immutable. Missing-family source goldens, repeated full-cohort growth cost and release/UAT gates remain open.
+## Historical checkpoints (superseded by current supplements above)
+
+Dormant coordinator local checkpoint `e5176bc` supersedes historical C1-unaccepted statements below: independent125normalPASS plus32nativePASS prove the bounded lease/reclaim/cancel/retry/recovery slice, not worker/API/UI runtime or production. See `docs/qa/evaluation-lease-coordinator-independent-2026-10-10.md`. User-approved cross-Admin management was a subsequent unaccepted C2 candidate at that checkpoint; it is now accepted locally as stated above. Original requester and prior evidence remain immutable. Missing-family source goldens, repeated full-cohort growth cost and release/UAT gates remain open.
 
 Pinned-summary cache review on `7f7bc34` found and repaired a response-key shadowing defect without changing calculations. Independent focused anonymous CI53PASS and real separate-process PostgreSQL16/18 apply/rollback warm-cache2PASS cover canonical summary/roster while Redis is absent; complete post-repair backend1400PASS/unchanged MarketingFAIL/existingSKIP and actual JWT/public lifecycle1PASS. See `docs/qa/evaluation-cross-process-cache-2026-10-10.md`. This does not certify reconnect or every consumer.
 
@@ -21,7 +25,7 @@ Date: 10 October 2026. Baseline: `625abf4` (reviewed serializer retention), foll
 - On 10 October the owner confirmed approved source files/goldens for Marketing, Pharmacy, CSR, IP Final and Managerial/Corporate are not currently available. Their acceptance and scoring activation remain blocked. Synthetic examples cannot substitute for approved formulas/results.
 - Phase 9 custom-formula configuration remains out of scope. Publication, production changes and recovery sign-off require a separate release decision.
 
-## Phase status
+## Historical phase status at 625abf4 (use current supplements above)
 
 | Phase | Verified implementation | Remaining acceptance gap |
 |---|---|---|
