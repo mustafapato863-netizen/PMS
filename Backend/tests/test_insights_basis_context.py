@@ -4,7 +4,6 @@ import os
 os.environ["APP_ENV"] = "test"
 os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 os.environ["REDIS_URL"] = ""
-os.environ.pop("CI", None)
 
 from models.schemas import EvaluationData, PerformanceRecord
 from services.insights_service import InsightsService
