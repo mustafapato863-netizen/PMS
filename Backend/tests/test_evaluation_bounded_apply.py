@@ -1691,4 +1691,3 @@ def test_role_change_at_the_team_fence_is_reread_before_mutation(db, monkeypatch
     assert _live(db) == promoted_rows
     assert db.query(EvaluationApplyControl).one().requested_by_user_id == world.admin_id
     assert db.query(EvaluationApplyControl).one().actor_snapshot["role"] == "Admin"
-
