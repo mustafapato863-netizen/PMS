@@ -20,6 +20,19 @@ Publisher remains unregistered and default-disabled; only literal `enabled=True`
 
 ## Still open
 
+### Additional actual200-cohort characterization
+
+Independent reviewer stage-only synthetic200-record checks on owned PostgreSQL16/18 passed **4 cases, 7 warnings, 24.13s**; artifact `reviewer-bounded-native-cost-20261010.xml` and four JSON results in primary `tmp`. Live score snapshots remain unchanged and the staging session identity map is empty afterward. Capture/setup and promotion are outside the timing.
+
+| Database | Page | Traced stage seconds | SELECT | Source scans/row visits | Traced peak bytes |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| PostgreSQL16 | 100 | 1.916 | 40 | 2/400 | 4032817 |
+| PostgreSQL16 | 200 | 1.579 | 20 | 1/200 | 6748175 |
+| PostgreSQL18 | 100 | 1.942 | 40 | 2/400 | 3901603 |
+| PostgreSQL18 | 200 | 1.360 | 20 | 1/200 | 6740592 |
+
+Windows process working set was sampled around page loads via the native process-memory API without installing a dependency. Sampled maxima are189550592/195190784/192135168/196460544 bytes respectively; these include baseline, setup/import and allocator history of the shared test process. They are not continuous stage peaks or isolated stage RSS. One run per cell, synthetic Coding evidence and instrumentation do not establish p50/p95, all-family behavior or production SLA. Page200 halved SQL in these runs but consumed more traced memory; earlier SQLite timing was not faster. Keep default100 until representative repeat/load/lease-recovery gates justify tuning.
+
 The largest actual team is200. Prior stage-only synthetic SQLite/tracing measurements remain1.516s/36SELECT/two source scans at page100; page200 was not a proven latency win. Default100 and repeated whole-source drift checks remain; no production RSS/p95 SLA or source-generation optimization is claimed.
 
 Phase7C1 lease coordinator is a separate **unaccepted** Grok4.7/xhigh candidate from this source checkpoint. It must separate queued/pending capture from lease-fenced start, reject old epochs/workers, retain previous-attempt evidence, handle cancellation/retry and promoted-before-ACK truth. Runtime worker/HTTP registration and7D UI remain separate later gates. No main push, PR, deployment, new formula/family admission, unsupported-source substitution or completion of the whole roadmap is implied.
