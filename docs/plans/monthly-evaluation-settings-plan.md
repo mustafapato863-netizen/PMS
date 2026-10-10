@@ -2,6 +2,7 @@
 
 **Document ID:** PMS-EVAL-001
 **Version:** 1.3 — evidence supplement, 10 October 2026
+**Final local runtime supplement:** Worker/API and progress UI are now composed and independently verified for the admitted scopes. See [final runtime evidence](../qa/evaluation-runtime-final-composition-2026-10-10.md) for complete1433backend/824frontend gates, native cross-Admin recovery and actual200-record browser/worker apply/rollback. Earlier missing-runtime statements below are historical checkpoints, not current implementation gaps. Runtime remains default-disabled; unsupported family references, production recovery/UAT/reconnect/load budgets and publication are not complete.
 **Date:** 2026-10-10
 **Status:** Candidate implementation under independent review and correction. Phases 0–8 are not accepted as complete; unsupported scopes remain disabled until their gates pass. No production readiness or deployment verification is claimed. Phase 9 formula editing is a separate release.
 **Source baseline:** main `2af9eb1e3991cb649ebcc695e3f2c42fbce4f40a`; original candidate `848f601c4595b8f69f15665c7841d7714329e674`; independently reviewed consumer integration `ae40741750bf37f725e1815e5a5cf45775c91cf2`. See the [verification checkpoint](../reviews/monthly-evaluation-candidate-verification.md) for bounded results and remaining rollout gates.

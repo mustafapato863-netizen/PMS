@@ -111,15 +111,23 @@ def _latest_apply_job_id(db: Session, scope_id: uuid.UUID, year: int, month: int
 
 def _management_status(db: Session, actor: dict, job_id: uuid.UUID) -> dict:
     data = EvaluationLeaseCoordinator(db).status(actor, job_id, enabled=True)
+    return _with_management_hints(db, actor, job_id, data)
+
+
+def _with_management_hints(db: Session, actor: dict, job_id: uuid.UUID, data: dict) -> dict:
     # Presentation hints, never grants: commands recheck the persisted Admin.
-    requester = db.query(EvaluationApplyControl.requested_by_user_id).filter(
+    current = db.query(
+        EvaluationApplyControl.requested_by_user_id,
+        EvaluationApplyControl.state,
+        ProcessingJob.status,
+    ).join(ProcessingJob, ProcessingJob.id == EvaluationApplyControl.job_id).filter(
         EvaluationApplyControl.job_id == job_id,
-    ).scalar()
-    state = data["state"]
+    ).one_or_none()
+    requester, state, status = current if current is not None else (None, None, None)
     data.update({
         "can_cancel": state in {"pending", "staging"},
         "can_retry": state in {"failed", "cancelled"} and str(requester) == str(actor.get("user_id")),
-        "can_recover": state == "promoted" and data["job_status"] == "running",
+        "can_recover": state == "promoted" and status == "running",
     })
     db.rollback()
     return data
@@ -288,6 +296,7 @@ def cancel_apply_job(job_id: uuid.UUID, request: Request, db: Session = Depends(
     actor = _admin_actor(request, db)
     _require_apply_jobs()
     data = _run(lambda: EvaluationLeaseCoordinator(db).cancel(actor, job_id, enabled=True))
+    data = _with_management_hints(db, actor, job_id, data)
     return StandardResponse(success=True, message="Evaluation apply job cancelled", data=data)
 
 
@@ -296,6 +305,7 @@ def retry_apply_job(job_id: uuid.UUID, request: Request, db: Session = Depends(g
     actor = _admin_actor(request, db)
     _require_apply_jobs()
     data = _run(lambda: EvaluationLeaseCoordinator(db).retry(actor, job_id, enabled=True))
+    data = _with_management_hints(db, actor, job_id, data)
     return StandardResponse(success=True, message="Evaluation apply job retry", data=data)
 
 
@@ -304,4 +314,5 @@ def recover_apply_job(job_id: uuid.UUID, body: RecoverJobRequest, request: Reque
     actor = _admin_actor(request, db)
     _require_apply_jobs()
     data = _run(lambda: EvaluationLeaseCoordinator(db).recover(actor, job_id, expected_epoch=body.expected_epoch, enabled=True))
+    data = _with_management_hints(db, actor, job_id, data)
     return StandardResponse(success=True, message="Evaluation apply job recovered", data=data)

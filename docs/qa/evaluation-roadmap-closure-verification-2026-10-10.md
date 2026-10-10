@@ -1,5 +1,9 @@
 # Monthly evaluation closure checkpoint — independent verification
 
+## Superseding final runtime verification
+
+The historical checkpoint below is retained. [Final runtime composition](evaluation-runtime-final-composition-2026-10-10.md) supersedes its missing worker/progress statements: backend1433PASS/2existingCI skips, frontend824PASS,12native cross-Admin cases plus2SQLite cases, actual JWT200-record worker and browser70→80→70 all passed on the composed local candidate. It preserves missing-family blocks and explicit production/UAT/reconnect/load gates. No main or deployment acceptance is implied.
+
 Date:10 October2026. Local candidate:codex/evaluation-roadmap-closure. Reviewed baseline625abf4; accepted local commits67af1d4(Insights),a048a0c(UUID identity),d49cad3(HTTP concurrency/calendar),50c5058(settings inputs/concurrency/month labels). Main and production are unchanged.
 
 Historical checkpoint: the table below is retained, not a current rerun. Subsequent composed foundation/consumer gates and direction API/UI proof are in `evaluation-composed-consumers-2026-10-10.md` and `evaluation-direction-lifecycle-2026-10-10.md`. The current closure matrix supersedes the active-lane wording below; bounded apply remains independently rejected/unaccepted, while the foundation and consumer slices are accepted locally. No all-phase or release acceptance.

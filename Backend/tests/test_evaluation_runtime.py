@@ -539,6 +539,8 @@ def test_http_cross_admin_management_reopen_and_committed_recover(db, api, monke
     assert cancelled.status_code == 200, cancelled.text
     assert cancelled.json()["data"]["state"] == "cancelled"
     assert cancelled.json()["data"]["idempotent"] is False
+    assert cancelled.json()["data"]["can_retry"] is False
+    assert cancelled.json()["data"]["can_cancel"] is False
     cancel_rows = _audits(db, job_id)
     assert len(cancel_rows) == 3
     cancel_audit = [row for row in cancel_rows if _values(row.new_values)["action"] == "cancel"]
@@ -1168,3 +1170,24 @@ def test_admission_chronology_and_server_management_hints(db, api, monkeypatch):
     assert owner["safe_reason"] == "evidence_changed" and owner["can_retry"] is True
     denied = api.get(f"{PREFIX}/apply-jobs/{new['job_id']}", headers=_headers(db, other_id)).json()["data"]
     assert denied["can_retry"] is False
+
+
+def test_command_responses_refresh_owner_retry_hints_without_extra_management_audits(db, api, monkeypatch):
+    monkeypatch.setattr(settings, "PMS_EVALUATION_APPLY_JOBS_ENABLED", True)
+    world, prepared = _prepared(db, ((7, [("C-1", "Ada Sentinel", "60")]),))
+    created = api.post(f"{PREFIX}/apply-jobs", headers=_headers(db, world.admin_id),
+                       json={"scope_id": str(prepared[7]["scope"]["id"]), "year": 2026, "month": 7})
+    assert created.status_code == 200, created.text
+    job_id = created.json()["data"]["job_id"]
+    original_audits = len(_audits(db, job_id))
+    cancelled = api.post(f"{PREFIX}/apply-jobs/{job_id}/cancel", headers=_headers(db, world.admin_id))
+    assert cancelled.status_code == 200, cancelled.text
+    assert cancelled.json()["data"]["can_retry"] is True
+    assert cancelled.json()["data"]["can_cancel"] is False
+    assert cancelled.json()["data"]["can_recover"] is False
+    retried = api.post(f"{PREFIX}/apply-jobs/{job_id}/retry", headers=_headers(db, world.admin_id))
+    assert retried.status_code == 200, retried.text
+    assert retried.json()["data"]["can_retry"] is False
+    assert retried.json()["data"]["can_cancel"] is True
+    assert retried.json()["data"]["can_recover"] is False
+    assert len(_audits(db, job_id)) == original_audits

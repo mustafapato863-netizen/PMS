@@ -64,3 +64,13 @@ Source attendance target is 65% in **both** supplied months. The 55%→65% scena
 Only the eligible latest applied revision can roll back. It restores complete prior saved evidence, whether pinned or legacy, without reactivating an old immutable approval. Changes to records, KPIs, notes, upload identity or source evidence after apply cause refusal; newer data stays untouched. Older revisions cannot undo newer ones; repeated rollback cannot repeat side effects.
 
 Broader activation needs separate source, calculation, security and release gates. See [the implementation reference](../plans/monthly-evaluation-settings-plan.md).
+
+## Background apply when explicitly enabled
+
+The reviewed local candidate supports background application, but `PMS_EVALUATION_APPLY_JOBS_ENABLED` defaults to false and must be an explicit rollout decision. The interface checks the authenticated capability; a failed or malformed check blocks Apply instead of silently switching modes. When disabled, the existing synchronous workflow remains available.
+
+With background mode enabled, **Apply** captures the selected scope/year/month and approved proof. **Queued** means no scores changed. Staging is bounded and remains below100%; a committed revision awaiting acknowledgement remains99%. Only **Succeeded** is100%. Leaving and reopening settings retrieves the persisted job; changing months does not redirect the original request. Revision history and eligible latest rollback remain on the selected month.
+
+Use **Cancel background apply**, then confirm, for uncommitted work. Cancellation does not undo an already committed revision. The original active requester may **Retry this job**; another active Admin can cancel and use **Apply** to create a new attributed request. If the original requester is disabled or loses Admin rights, the worker does not execute under its saved identity. Any other active Admin can inspect, cancel, or **Acknowledge committed revision** without rescoring; original attribution and the actual managing Admin's audit are retained.
+
+Action buttons are presentation only: every command rechecks persisted authority and the current job/lease. A successful approval/enqueue is not evidence that performance changed. Confirm completion/revision history and reconcile live results. See [the final local verification](../qa/evaluation-runtime-final-composition-2026-10-10.md); production activation and all-family acceptance remain separate.
