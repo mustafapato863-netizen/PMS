@@ -2,6 +2,8 @@
 
 ## Superseding local checkpoint
 
+Queue/publisher source checkpoint `81d3b03` is now locally accepted after complete source/test review and independent gates: full backend1400PASS with only unchanged MarketingFAIL/existingSKIP, sequential owned PostgreSQL100PASS, explicit anonymous CI-shaped115PASS. See `docs/qa/evaluation-queue-outbox-composition-2026-10-10.md`. Legacy queue isolation is enforced; dormant default-disabled outbox delivery is implemented but not registered or activated. Separate Phase7C1 lease coordinator candidate is in progress, not accepted. No main/production change.
+
 Public and bounded authority repairs are locally composed at `dbecea2` after independent review. The complete composed backend gate is1329PASS plus the unchanged Marketing131vs68FAIL/existingSKIP; composed native gates18PASS, real JWT/public manifest API scenario1PASS. See `docs/qa/evaluation-bounded-authority-composition-2026-10-10.md` for actual evidence and limits. The historical unauthorized-success failures below are retained as RED evidence and are no longer current candidate outcomes. Nonlocking post-fence authority is not transaction-wide revocation serialization.
 
 Dormant bounded staging/promotion/manifest adapters are implemented, with correctness and bounded-retention gates recorded, but repeated full-source scans remain a measured growth-cost limit. User actual largest cohort200/page100 measured1.516s with tracing in synthetic SQLite; page200 is not a proven latency win and default remains100. Neither worker runtime nor publisher/UI is activated. Separate default-fail-closed legacy queue and dormant outbox delivery candidates are now isolated Grok lanes, unaccepted until reviewer gates. Main/publish/release authority remains separate.
@@ -18,12 +20,12 @@ The current bounded candidate retains whole-month fingerprint reads before every
 
 ## 7C worker and recovery
 
-Current public job kinds and `worker.process_job_once` support only upload and two report kinds. `claim_next`, heartbeat, progress, success, failure and expired-lease requeue currently use legacy job ownership without evaluation-control epoch coordination. Adding a dispatch branch alone is unsafe.
+Current public job kinds and `worker.process_job_once` support only upload and two report kinds. Accepted queue isolation filters current persisted legacy kind for claim, heartbeat, progress, success, failure and expired-lease requeue; generic status/worker reads reload identity. These paths do not coordinate evaluation-control epochs and deliberately reject evaluation work. Adding a dispatch branch alone is unsafe.
 
 - Keep evaluation runtime disabled by default until explicitly enabled. Disabled workers must not claim evaluation jobs. Existing upload/report gates must continue to pass unchanged.
 - Define enqueue, claim and retry transactions across job and evaluation control using the accepted lock hierarchy, including the existing outer team fence. Never expose roster payloads in job request/result; preserve the2048-character foundation cap.
 
-The current generic `claim_next` filters status/time but not job kind; the runtime-disabled gate must prove an evaluation job cannot be claimed by a legacy worker. Public creation still rejects the new kind. The dormant bounded candidate's `capture` currently transitions both control/job to staging/running in its own transaction, without a worker lease. Do not reuse that as a queue-acceptance wrapper: explicitly separate pending enqueue from lease-fenced start, preserving captured proof, ownership and immutable identity. A successful enqueue is not a completed apply.
+The accepted generic `claim_next` now filters the three legacy kinds before `FOR UPDATE SKIP LOCKED`; actual PostgreSQL isolation and committed stale-kind probes passed. Public creation still rejects evaluation_apply. The dormant bounded service's `capture` currently transitions both control/job to staging/running in its own transaction, without a worker lease. Do not reuse that as a queue-acceptance wrapper: explicitly separate pending enqueue from lease-fenced start, preserving captured proof, ownership and immutable identity. A successful enqueue is not a completed apply.
 - Reclaim increments/fences the active epoch before any old worker can stage or promote. Heartbeats and committed progress require matching worker, live lease and epoch. Preserve immutable prior-attempt stage evidence.
 - Cancellation before promotion must leave no scored partial writes. Promotion versus cancellation/retry/revocation must serialize; successful commit must not be reported as cancelled afterward. Fresh persisted active Admin authorization is required, not the actor snapshot.
 - Crash/retry must handle committed promotion with missing job-success acknowledgement as an idempotent outcome, not duplicate history or a false failure. Retain latest-only rollback and no old approval reactivation.
@@ -31,7 +33,7 @@ The current generic `claim_next` filters status/time but not job kind; the runti
 
 ## Cache and consumers
 
-`evaluation_cache_identity` already adds committed configuration/revision/upload identity to the shared dashboard cache. Do not replace this with Redis alone. The outbox has no publisher yet: publish at least once, acknowledge only after actual success, retain failed deliveries and tolerate a crash between Redis increment and acknowledgement.
+`evaluation_cache_identity` already adds committed configuration/revision/upload identity to the shared dashboard cache. Do not replace this with Redis alone. A reviewed dormant publisher now implements at-least-once delivery, acknowledges only after actual direct commands and DB commit, retains failed deliveries and tolerates a crash between Redis increment and acknowledgment. It is default-disabled and unregistered. Actual Redis reconnect/multi-process consumer/runtime integration remains open; injected-client native tests are not that certification.
 
 Audit actual reader ownership before changing caches. Current Insights workspace route regenerates through `InsightsService`; its request-local comparison caches are not a demonstrated shared stale-cache defect. Current Story context caches are request-local. Reports use shared data-version metadata, and regenerated versus saved outputs must remain distinct.
 
