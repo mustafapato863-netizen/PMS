@@ -53,6 +53,12 @@ from services.upload_record_collisions import (
     resolve_employee_month_collisions,
     stored_assignments,
 )
+from services.upload_header_notices import (
+    ambiguous_target_message,
+    bound_column_warnings,
+    collecting_upload_header_notices,
+    current_header_notices,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -1255,6 +1261,7 @@ class DatabaseSeeder:
             if owns_session:
                 db.close()
 
+    @collecting_upload_header_notices
     def _process_and_save_excel(
         self,
         excel_file,
@@ -1347,6 +1354,14 @@ class DatabaseSeeder:
                 ))
             except ConfigurationError:
                 sheet_mappings.append(("Re-Submission", re_submission_df, "EmployeeID", "EmployeeName"))
+
+        column_warnings = bound_column_warnings(current_header_notices())
+        target_conflicts = [item for item in column_warnings if item.get("code") == "ambiguous_alias"]
+        if target_conflicts:
+            raise UploadProcessingError(
+                ambiguous_target_message(target_conflicts),
+                {"column_warnings": column_warnings, "failed_teams": []},
+            )
 
         for team_name, df, id_col, _ in sheet_mappings:
             self._normalize_sheet_levels(df, id_col, team_name)
@@ -1639,6 +1654,7 @@ class DatabaseSeeder:
                 "failed_teams": failed_teams,
                 "marketing": marketing_report,
                 "warnings": upload_warnings,
+                "column_warnings": column_warnings,
                 "scored_rows": scored_rows,
             }
 
@@ -1702,5 +1718,6 @@ class DatabaseSeeder:
             "failed_teams": failed_teams,
             "marketing": marketing_report,
             "warnings": upload_warnings,
+            "column_warnings": column_warnings,
             "scored_rows": scored_rows,
         }
