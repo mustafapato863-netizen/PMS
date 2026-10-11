@@ -94,6 +94,32 @@ def _pinned_schema_record(item, employee, team_name: str, basis: dict):
     })
 
 
+def _operational_outbound_evidence(team: str | None, values: list) -> bool:
+    """Ordinary Outbound evidence caps the final total, not each KPI.
+
+    The legacy builder marks that evidence with ``cap_achievement`` false.
+    A positive Productivity weight is the reference contract and stays capped.
+    """
+    if team != "Outbound":
+        return False
+    marked = False
+    for raw in values:
+        if not isinstance(raw, dict):
+            continue
+        if str(raw.get("kpi_key") or "") == "Productivity":
+            try:
+                weight = float(raw.get("weight_applied") or 0)
+            except (TypeError, ValueError):
+                weight = 0.0
+            if weight > 1.0:
+                weight /= 100.0
+            if weight > 0:
+                return False
+        if raw.get("cap_achievement") is False:
+            marked = True
+    return marked
+
+
 def _normalise_kpi_values(
     values: list[dict],
     config: dict | None,
@@ -101,12 +127,13 @@ def _normalise_kpi_values(
     team: str | None = None,
     persisted_directions: dict[str, str] | None = None,
 ) -> list[dict]:
-    """Return KPI evidence on one consistent 0-1 achievement/contribution scale.
+    """Return KPI evidence on one consistent achievement/contribution scale.
 
     Older rows can contain an achievement ratio above 1 and a contribution above
-    the configured KPI weight.  The product-wide contract now caps every KPI,
-    including rows written by an older ``uncapped`` configuration, so cards,
-    analysis, exports, and score calculations cannot disagree.
+    the configured KPI weight. Teams other than operational Outbound cap every
+    KPI, including rows written by an older ``uncapped`` configuration, so cards,
+    analysis, exports, and score calculations cannot disagree. Operational
+    Outbound keeps an over-target ratio and caps the final total.
 
     Direction is resolved through ``utils.kpi_direction`` (record config ->
     team config -> persisted -> unambiguous global match -> flagged default)
@@ -117,6 +144,7 @@ def _normalise_kpi_values(
     """
     result: list[dict] = []
     persisted_directions = persisted_directions or {}
+    operational_outbound = _operational_outbound_evidence(team, values)
     for raw_value in values:
         value = dict(raw_value)
         kpi_key = str(value.get("kpi_key"))
@@ -142,7 +170,7 @@ def _normalise_kpi_values(
         if weight > 1.0:
             weight /= 100.0
         ratio = _number("achievement_ratio")
-        if ratio > 2.0:
+        if ratio > 2.0 and not operational_outbound:
             ratio /= 100.0
         ratio = max(ratio, 0.0)
         # Target-ratio KPIs can be reconstructed from their canonical actual
@@ -161,13 +189,17 @@ def _normalise_kpi_values(
                     else 1.0
                 )
                 ratio = max(ratio, 0.0)
-        ratio = min(ratio, GLOBAL_KPI_ACHIEVEMENT_CAP)
+        if not operational_outbound:
+            ratio = min(ratio, GLOBAL_KPI_ACHIEVEMENT_CAP)
 
         contribution = _number("contribution")
-        if contribution > 1.0:
+        if contribution > 1.0 and not operational_outbound:
             contribution /= 100.0
         contribution = max(contribution, 0.0)
-        contribution = min(contribution, max(weight, 0.0))
+        if operational_outbound:
+            contribution = ratio * weight
+        else:
+            contribution = min(contribution, max(weight, 0.0))
         if definition is not None and definition.get("score_formula", "target_ratio") == "target_ratio":
             corrected = flipped_contribution_fix(
                 value.get("actual_value"),
@@ -184,7 +216,7 @@ def _normalise_kpi_values(
         value["achievement_ratio"] = ratio
         value["weight_applied"] = weight
         value["contribution"] = contribution
-        value["cap_achievement"] = True
+        value["cap_achievement"] = not operational_outbound
         result.append(value)
     return result
 

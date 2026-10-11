@@ -426,6 +426,7 @@ class DatabaseSeeder:
                 })
                 continue
             self._refuse_unsupported_outbound_binding(record, version, year)
+            self._require_reference_productivity(record, version, year, rows)
             team_name = logical_team_name(team)
             require_approved_capability(
                 version,
@@ -434,15 +435,7 @@ class DatabaseSeeder:
                 year=version.effective_from_year,
                 month=version.effective_from_month,
             )
-            evidence = [
-                {
-                    "kpi_key": row.get("kpi_key"),
-                    "actual": row.get("actual_value"),
-                    "workbook_target": row.get("target_value"),
-                    "precomputed_achievement": row.get("achievement_ratio"),
-                }
-                for row in rows
-            ]
+            evidence = [self._pin_evidence_row(record, version, row) for row in rows]
             scored = pin_upload_score(version, evidence)
             by_key = {item["kpi_key"]: item for item in scored["rows"]}
             for row in rows:
@@ -487,11 +480,43 @@ class DatabaseSeeder:
             return None
 
     @staticmethod
+    def _require_reference_productivity(record, version, year, rows) -> None:
+        """A reference August binding still requires a Productivity actual.
+
+        An ordinary upload with no reference binding does not. A missing actual
+        is not stored as zero.
+        """
+        if version is None or str(getattr(record, "team", "") or "") != "Outbound":
+            return
+        snapshot = version.config_snapshot if isinstance(version.config_snapshot, dict) else {}
+        if snapshot.get("contract") == "operational_upload":
+            return
+        from services.outbound_period_basis import OutboundMonthlyActualMissing, period_capability
+
+        decision = period_capability(year, record.month)
+        if not decision.get("productivity_required"):
+            return
+        scored = {
+            str(line.get("kpi_key"))
+            for line in (snapshot.get("lines") or [])
+            if float(line.get("weight") or 0) > 0
+        }
+        if "Productivity" not in scored:
+            return
+        present = any(
+            str(row.get("kpi_key")) == "Productivity" and row.get("actual_value") is not None
+            for row in rows or []
+        )
+        if not present:
+            raise OutboundMonthlyActualMissing(decision.get("period") or "the requested month", ["Productivity"])
+
+    @staticmethod
     def _refuse_unsupported_outbound_binding(record, version, year) -> None:
         """Refuse an approved snapshot the canonical period does not support.
 
-        July and August still reach ``pin_upload_score``. A fixed-target
-        mismatch stays ``TargetConflict`` with no fallback score.
+        July and August reference bindings still reach ``pin_upload_score``.
+        An operational upload contract is checked against its own key set.
+        A fixed-target mismatch stays ``TargetConflict`` with no fallback score.
         """
         if version is None or str(getattr(record, "team", "") or "") != "Outbound":
             return
@@ -501,6 +526,22 @@ class DatabaseSeeder:
             period_capability,
         )
 
+        snapshot = version.config_snapshot if isinstance(version.config_snapshot, dict) else {}
+        if snapshot.get("contract") == "operational_upload":
+            from services.operational_upload_contract import operational_lines, operational_scored_keys
+
+            expected = set(operational_scored_keys(operational_lines("Outbound", year, record.month)))
+            scored = {
+                str(line.get("kpi_key"))
+                for line in snapshot_lines(version)
+                if float(line.get("weight") or 0) > 0
+            }
+            if scored != expected:
+                raise OutboundUnsupportedApprovedBinding(
+                    str(record.month),
+                    "approved lines are not the operational scored lines",
+                )
+            return
         decision = period_capability(year, record.month)
         period_label = decision["period"] or str(record.month)
         if decision["approved_binding"] != "apply":
@@ -534,6 +575,40 @@ class DatabaseSeeder:
             if not pd.isna(parsed):
                 return int(parsed.year)
         return datetime.datetime.now().year
+
+    @staticmethod
+    def _pin_evidence_row(record, version, row: dict) -> dict:
+        """Workbook evidence for one pin row.
+
+        A legacy Productivity row stores a missing target as zero when that KPI
+        has no operational weight. A reference binding must not treat that zero
+        as the workbook target; the sheet target, or the reference line target
+        when the sheet has none, is the scoring input.
+        """
+        actual = row.get("actual_value")
+        workbook_target = row.get("target_value")
+        snapshot = version.config_snapshot if isinstance(version.config_snapshot, dict) else {}
+        if str(row.get("kpi_key") or "") == "Productivity" and snapshot.get("contract") != "operational_upload":
+            from services.evaluation.workflow import _productivity_from_raw
+
+            raw = getattr(record, "raw_data", None) or {}
+            actual_found, raw_actual, target_found, raw_target = _productivity_from_raw(
+                record,
+                raw if isinstance(raw, dict) else {},
+                apply_reference_targets=True,
+            )
+            if actual_found and raw_actual is not None:
+                actual = float(raw_actual)
+            if target_found and raw_target is not None:
+                workbook_target = float(raw_target)
+            elif not target_found:
+                workbook_target = None
+        return {
+            "kpi_key": row.get("kpi_key"),
+            "actual": actual,
+            "workbook_target": workbook_target,
+            "precomputed_achievement": row.get("achievement_ratio"),
+        }
 
     def _workbook_rows(self, record) -> list[dict]:
         existing = list(getattr(record, "kpi_values", None) or [])
@@ -617,19 +692,40 @@ class DatabaseSeeder:
         return number
 
     @staticmethod
-    def _score_from_kpi_rows(kv_list) -> float:
-        """0-100 record score from capped KPI contributions.
+    def _final_total_cap(record, kv_list) -> bool:
+        """Operational Outbound caps the final total. Reference Productivity stays per KPI."""
+        if str(getattr(record, "team", "") or "") != "Outbound":
+            return False
+        for kv in kv_list:
+            if str(getattr(kv, "kpi_key", "") or "") != "Productivity":
+                continue
+            if float(getattr(kv, "weight_applied", 0) or 0) > 0:
+                return False
+        return True
 
-        Contributions arrive on the ratio scale (``achievement(0-1) x weight``,
-        so each one is at most its weight) or on the percent scale
-        (``achievement(0-100) x weight``). The scale is decided per record from
-        that invariant, not from the total: a total above 1.0 on the ratio scale
-        used to be stored unscaled (1.51-2.72 for the merged IP Elective records).
+    @staticmethod
+    def _score_from_kpi_rows(kv_list, *, final_total_cap: bool = False) -> float:
+        """0-100 record score from KPI contributions.
+
+        Contributions arrive on the ratio scale (``achievement x weight``) or on
+        the percent scale (``achievement(0-100) x weight``). A capped ratio
+        contribution is at most its weight. Operational Outbound can exceed that
+        weight on one KPI; the total is still capped at 1 before it is stored
+        as 0-100. Percent-scale rows have a contribution above 1. The scale is
+        decided per record, not from the total: a total above 1.0 on the ratio
+        scale used to be stored unscaled (1.51-2.72 for the merged IP Elective
+        records).
         """
-        contributions = [float(kv.contribution or 0) for kv in kv_list]
-        weights = [float(kv.weight_applied or 0) for kv in kv_list]
+        contributions = [float(getattr(kv, "contribution", 0) or 0) for kv in kv_list]
+        weights = [float(getattr(kv, "weight_applied", 0) or 0) for kv in kv_list]
         total = sum(contributions)
-        ratio_scale = all(c <= w * 1.0001 + 1e-9 for c, w in zip(contributions, weights)) and all(w <= 1.0 for w in weights)
+        weights_are_ratios = all(weight <= 1.0 for weight in weights)
+        within_weight = all(
+            contribution <= weight * 1.0001 + 1e-9
+            for contribution, weight in zip(contributions, weights)
+        )
+        modest_ratio = weights_are_ratios and all(contribution <= 1.0 for contribution in contributions)
+        ratio_scale = (final_total_cap and weights_are_ratios) or modest_ratio or (within_weight and weights_are_ratios)
         score = min(total, 1.0) * 100.0 if ratio_scale else min(total, 100.0)
         return round(max(score, 0.0), 2)
 
@@ -1131,7 +1227,10 @@ class DatabaseSeeder:
                 for rec_id, kv_list in kpi_by_rec.items():
                     rec = rec_map.get(rec_id)
                     if rec:
-                        final_score = self._score_from_kpi_rows(kv_list)
+                        final_score = self._score_from_kpi_rows(
+                            kv_list,
+                            final_total_cap=self._final_total_cap(rec, kv_list),
+                        )
                         final_grade = calculate_grade(final_score, record_thresholds.get(rec_id))
                         rec.score = safe_decimal(final_score)
                         rec.grade = final_grade
@@ -1523,7 +1622,14 @@ class DatabaseSeeder:
         imported_teams = list(dict.fromkeys([team_name for team_name, _, _, _ in sheet_mappings]))
         if marketing_result is not None:
             imported_teams.append("Marketing")
-        scored_rows = self._pin_uploaded_records(db_session, all_new_records)
+        try:
+            scored_rows = self._pin_uploaded_records(db_session, all_new_records)
+        except Exception as exc:
+            from services.outbound_period_basis import OutboundMonthlyActualMissing
+
+            if isinstance(exc, OutboundMonthlyActualMissing):
+                raise UploadProcessingError(str(exc), {"failed_teams": failed_teams}) from exc
+            raise
 
         if dry_run:
             return {

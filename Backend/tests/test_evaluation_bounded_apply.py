@@ -82,6 +82,7 @@ PUBLIC_ROUTES = {
     ("POST", "/drafts/{version_id}/approve"),
     ("POST", "/jobs/{version_id}/preview"),
     ("POST", "/versions/{version_id}/revise"),
+    ("POST", "/versions/{version_id}/adopt-operational"),
     ("GET", "/versions/{version_id}"),
     ("GET", "/versions/{version_id}/export"),
     ("GET", "/periods"),
@@ -1197,10 +1198,12 @@ def test_empty_bad_month_and_unsupported_scopes_do_not_open_a_job(db):
         world.service.capture(world.actor, pharmacy["id"], 2026, 7)
     assert _code(blocked) == "unsupported_calculation"
     outbound = world.scope("Outbound")
+    # June and September are operational months. With no approved version the
+    # job stops for approval; a row date does not make them a reference period.
     for month in (6, 9):
         with pytest.raises(EvaluationError) as refused:
             world.service.capture(world.actor, outbound["id"], 2026, month)
-        assert _code(refused) == "unsupported_calculation"
+        assert _code(refused) == "not_approved"
     positioned = [
         item for item in world.catalog["scopes"]
         if item["display_name"] == "Coding" and item["position_name"] not in {"", None}
@@ -1300,7 +1303,7 @@ def test_outbound_july_and_august_use_the_canonical_ratios(db):
     assert attendance.weight_applied == Decimal("0.7000")
     assert attendance.contribution == Decimal("0.3500")
 
-    august = world.workflow.open_draft(world.actor, scope["id"], 2026, 8)
+    august = world.workflow.open_reference_draft(world.actor, scope["id"], 2026, 8)
     august_weights = {line["kpi_key"]: line["weight"] for line in august["lines"] if float(line["weight"]) > 0}
     assert august_weights["Attendance"] == pytest.approx(0.60)
     assert august_weights["Productivity"] == pytest.approx(0.10)

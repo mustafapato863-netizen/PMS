@@ -446,8 +446,87 @@ def require_approved_capability(
             decision.reason,
         )
     if asked_year is not None and asked_month is not None:
-        _assert_outbound_version_lines(version, team_name, asked_year, asked_month)
+        snapshot = version.config_snapshot if isinstance(version.config_snapshot, dict) else {}
+        from services.evaluation.capabilities import is_outbound_employee_scope
+        from services.operational_upload_contract import OPERATIONAL_CONTRACT, snapshot_contract
+
+        if snapshot_contract(snapshot) == OPERATIONAL_CONTRACT:
+            _assert_operational_version_lines(version, team_name, asked_year, asked_month)
+        elif is_outbound_employee_scope(
+            team_name,
+            str(getattr(version, "performance_level", "") or ""),
+            str(getattr(version, "position_name", "") or ""),
+        ):
+            _assert_outbound_version_lines(version, team_name, asked_year, asked_month)
     return decision
+
+
+def _assert_operational_version_lines(version: TeamConfigurationVersion, team_name: str, year: int, month: int) -> None:
+    """Operational snapshots keep the upload key set. Weight numbers may change.
+
+    Individual KPIs are not capped. A zero-weight mapped line stays visible.
+    """
+    from services.operational_upload_contract import (
+        OPERATIONAL_CONTRACT,
+        is_operational_team,
+        operational_lines,
+        operational_scored_keys,
+    )
+
+    level = str(getattr(version, "performance_level", "") or "")
+    position = str(getattr(version, "position_name", "") or "")
+    if not is_operational_team(team_name, level, position):
+        _refuse_capability(
+            "Approved recomputation is refused for this monthly configuration. This scope is not an operational upload team.",
+            "scope",
+        )
+    lines = operational_lines(team_name, year, month) or []
+    expected = {str(line.get("kpi_key") or ""): line for line in lines}
+    scored_expected = set(operational_scored_keys(lines))
+    snapshot = version.config_snapshot if isinstance(version.config_snapshot, dict) else {}
+    if str(snapshot.get("policy") or "") != "operational_upload" or snapshot.get("contract") != OPERATIONAL_CONTRACT:
+        _refuse_capability(
+            "Approved recomputation is refused for this monthly configuration. The snapshot is not the operational upload contract.",
+            "policy",
+        )
+    weighted = set()
+    for line in snapshot_lines(version):
+        key = str(line.get("kpi_key") or "")
+        try:
+            weight = float(line.get("weight") or 0)
+        except (TypeError, ValueError):
+            _refuse_capability(
+                "Approved recomputation is refused for this monthly configuration. A line weight is not a number.",
+                "weight",
+            )
+        template = expected.get(key)
+        if template is None:
+            _refuse_capability(
+                "Approved recomputation is refused for this monthly configuration. "
+                f"{key} is outside the operational upload contract.",
+                "kpi_key",
+            )
+        direction = str(line.get("direction") or "")
+        if direction and direction != str(template.get("direction") or ""):
+            _refuse_capability(
+                "Approved recomputation is refused for this monthly configuration. "
+                f"{key} direction does not match the operational upload contract.",
+                "direction",
+            )
+        if line.get("cap_each") is True:
+            _refuse_capability(
+                "Approved recomputation is refused for this monthly configuration. The operational contract caps the final total.",
+                "cap",
+            )
+        if weight > 0:
+            weighted.add(key)
+    if weighted != scored_expected:
+        _refuse_capability(
+            "Approved recomputation is refused for this monthly configuration. "
+            "The weighted KPI set does not match the operational upload contract. "
+            "Weight values may differ from the source defaults, but the scored keys may not.",
+            "scored_keys",
+        )
 
 
 def score_basis(version: TeamConfigurationVersion, rows: list[dict], *, check_conflicts: bool = True) -> dict:
@@ -466,8 +545,15 @@ def score_basis(version: TeamConfigurationVersion, rows: list[dict], *, check_co
             code="target_conflict",
             conflicts=found,
         )
-    scored = score_rows(version.performance_level or "Employee", lines, rows)
-    score = overall_score(scored)
+    snapshot = version.config_snapshot if isinstance(version.config_snapshot, dict) else {}
+    if snapshot.get("contract") == "operational_upload":
+        from services.operational_upload_contract import final_total_score, score_operational_lines
+
+        scored = score_operational_lines(lines, rows)
+        score = final_total_score(scored)
+    else:
+        scored = score_rows(version.performance_level or "Employee", lines, rows)
+        score = overall_score(scored)
     thresholds = (version.config_snapshot or {}).get("grade_thresholds") if isinstance(version.config_snapshot, dict) else None
     if isinstance(thresholds, dict):
         from services.evaluation.scoring import _finite

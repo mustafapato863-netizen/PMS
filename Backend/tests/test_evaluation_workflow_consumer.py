@@ -271,7 +271,7 @@ def test_lightweight_summary_compares_persisted_pins_without_roster_reload(db, m
         record = world.record(world.employee, month, raw)
         actuals = JULY if number == 7 else AUGUST
         world.stored_kpis(record, actuals, productivity=None if number == 7 else AUGUST["Productivity"])
-        draft = world.workflow.open_draft(world.actor, world.scope["id"], 2026, number)
+        draft = world.workflow.open_reference_draft(world.actor, world.scope["id"], 2026, number)
         _approve(world, draft["id"])
         world.workflow.apply(world.actor, world.scope["id"], 2026, number)
     scope = {"role": "Admin", "user_id": str(world.admin.id), "has_unrestricted_team_access": True,
@@ -302,9 +302,10 @@ def test_exact_month_catalog_admits_july_and_august_only(db):
     world = _World(db)
     assert world.scope["readiness"] == "blocked"
     assert world.scope["supported"] is False
-    july = world.workflow.period(world.actor, world.scope["id"], 2026, 7)
-    august = world.workflow.period(world.actor, world.scope["id"], 2026, 8)
-    september = world.workflow.period(world.actor, world.scope["id"], 2026, 9)
+    scope_row = db.query(EvaluationScope).filter(EvaluationScope.id == uuid.UUID(world.scope["id"])).one()
+    july = {"scope": world.workflow.catalog.reference_serialize(scope_row, 2026, 7)}
+    august = {"scope": world.workflow.catalog.reference_serialize(scope_row, 2026, 8)}
+    september = {"scope": world.workflow.catalog.reference_serialize(scope_row, 2026, 9)}
     assert july["scope"]["readiness"] == "supported"
     assert july["scope"]["global_readiness"] == "blocked"
     assert july["scope"]["global_supported"] is False
@@ -320,7 +321,7 @@ def test_unsupported_period_level_position_and_inactive_team_stay_blocked(db):
     world = _World(db)
     for year, month in ((2026, 9), (2027, 8), (2026, 6)):
         with pytest.raises(EvaluationError) as blocked:
-            world.workflow.open_draft(world.actor, world.scope["id"], year, month)
+            world.workflow.open_reference_draft(world.actor, world.scope["id"], year, month)
         assert blocked.value.data["code"] == "unsupported_calculation"
         assert blocked.value.data["edit_mode"] == "blocked"
         assert blocked.value.data["weight_only_allowed"] is False
@@ -365,7 +366,7 @@ def test_july_to_august_copy_adds_productivity_and_same_month_keeps_custom_weigh
     world.stored_kpis(july_record, JULY, productivity=None)
     world.stored_kpis(august_record, AUGUST, productivity=AUGUST["Productivity"])
 
-    july_draft = world.workflow.open_draft(world.actor, world.scope["id"], 2026, 7)
+    july_draft = world.workflow.open_reference_draft(world.actor, world.scope["id"], 2026, 7)
     assert "Productivity" not in {line["kpi_key"] for line in july_draft["lines"] if float(line["weight"]) > 0}
     july_lines = _reweight(july_draft["lines"], {"Attendance": 0.40, "Booking": 0.20, "Quality": 0.20, "Other": 0.20})
     world.workflow.edit_draft(world.actor, july_draft["id"], july_lines)
@@ -375,7 +376,7 @@ def test_july_to_august_copy_adds_productivity_and_same_month_keeps_custom_weigh
     assert float(july_record.score) == 70.0
     assert "evaluation_basis" not in (july_record.record_payload or {})
 
-    august_draft = world.workflow.open_draft(world.actor, world.scope["id"], 2026, 8, copy_previous=True)
+    august_draft = world.workflow.open_reference_draft(world.actor, world.scope["id"], 2026, 8, copy_previous=True)
     assert august_draft["source_version_id"] is None
     assert _line(august_draft["lines"], "Attendance")["weight"] == pytest.approx(0.60)
     productivity = _line(august_draft["lines"], "Productivity")
@@ -459,7 +460,7 @@ def test_july_to_august_copy_adds_productivity_and_same_month_keeps_custom_weigh
 
 def test_missing_productivity_and_invalid_edits_are_refused(db):
     world = _World(db)
-    draft = world.workflow.open_draft(world.actor, world.scope["id"], 2026, 8)
+    draft = world.workflow.open_reference_draft(world.actor, world.scope["id"], 2026, 8)
     raw = _raw(AUGUST, productivity=None)
     record = world.record(world.employee, "August", raw)
     world.stored_kpis(record, AUGUST, productivity=AUGUST["Productivity"])
@@ -583,7 +584,7 @@ def test_only_a_persisted_admin_can_manage(db):
 def test_approved_upload_preview_commit_and_resolved_read_match_period_goldens(db, monkeypatch):
     world = _World(db)
     for month in (7, 8):
-        draft = world.workflow.open_draft(world.actor, world.scope["id"], 2026, month)
+        draft = world.workflow.open_reference_draft(world.actor, world.scope["id"], 2026, month)
         approved = _approve(world, draft["id"])
         assert approved["applied"] is False
     _bind(db, monkeypatch)

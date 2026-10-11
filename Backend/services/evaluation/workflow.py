@@ -61,6 +61,30 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _operational_snapshot(scope_row, year: int, month: int, lines: list[dict], snapshot: dict | None, thresholds: dict) -> dict | None:
+    """Stamp a new Inbound or Outbound draft. Other teams keep their snapshot."""
+    from services.operational_upload_contract import (
+        FINAL_TOTAL_CAP,
+        OPERATIONAL_CONTRACT,
+        is_operational_team,
+        operational_period_status,
+    )
+
+    if not is_operational_team(scope_row.display_name, scope_row.performance_level, scope_row.position_name or ""):
+        return snapshot
+    body = dict(snapshot or {})
+    body["schema"] = body.get("schema") or 1
+    body["contract"] = OPERATIONAL_CONTRACT
+    body["policy"] = "operational_upload"
+    body["cap"] = FINAL_TOTAL_CAP
+    body["performance_level"] = scope_row.performance_level
+    body["position_name"] = scope_row.position_name or ""
+    body["lines"] = lines
+    body["grade_thresholds"] = body.get("grade_thresholds") or thresholds
+    body["period_status"] = operational_period_status(scope_row.display_name, year, month)
+    return body
+
+
 class EvaluationConflict(EvaluationError):
     """Stale proof, evidence drift, or a lifecycle collision. Nothing was written."""
 
@@ -407,11 +431,12 @@ def _has_raw_workbook(raw) -> bool:
     return False
 
 
-def _productivity_from_raw(record, raw) -> tuple[bool, Decimal | None, bool, Decimal | None]:
+def _productivity_from_raw(record, raw, *, apply_reference_targets: bool = True) -> tuple[bool, Decimal | None, bool, Decimal | None]:
     """Full-precision Productivity actual and target. Available Time is not an alias.
 
-    An explicit source target wins. July and August use the audited source target
-    only when the actual is present and the workbook has no target column.
+    An explicit source target wins. A reference July or August binding uses the
+    audited source target only when the actual is present and the workbook has
+    no target column. The operational contract does not fill that target.
     """
     if not isinstance(raw, dict):
         return False, None, False, None
@@ -422,6 +447,8 @@ def _productivity_from_raw(record, raw) -> tuple[bool, Decimal | None, bool, Dec
     actual = _source_number(actual_raw) if actual_raw is not None else None
     if explicit is not None:
         return True, actual, True, _source_number(explicit)
+    if not apply_reference_targets:
+        return True, actual, False, None
     basis = period_capability(getattr(record, "year", None), getattr(record, "month", None))
     if actual is not None and apply_basis_targets(basis):
         return True, actual, True, _source_number(SOURCE_TARGETS[PRODUCTIVITY_KEY])
@@ -449,6 +476,8 @@ def record_source_rows(version: TeamConfigurationVersion, record: PerformanceRec
     The caller decides whether a missing retained source may load ``config``.
     This function does not query and does not guess a source shape.
     """
+    snapshot = version.config_snapshot if isinstance(version.config_snapshot, dict) else {}
+    operational = snapshot.get("contract") == "operational_upload"
     values_by_key: dict[str, KPIValue] = {}
     for value in record.kpi_values:
         key = str(value.kpi_key)
@@ -482,9 +511,15 @@ def record_source_rows(version: TeamConfigurationVersion, record: PerformanceRec
             if item is not None:
                 actual = item["actual"]
                 workbook = item["target"]
+        elif operational and sql_value is not None:
+            origin = "stored_actual"
+            actual = _source_number(sql_value.actual_value)
+            workbook = _source_number(sql_value.target_value)
         else:
             if key == PRODUCTIVITY_KEY:
-                actual_found, raw_actual, target_found, raw_target = _productivity_from_raw(record, raw)
+                actual_found, raw_actual, target_found, raw_target = _productivity_from_raw(
+                    record, raw, apply_reference_targets=not operational,
+                )
             else:
                 actual_found, raw_actual, target_found, raw_target = _config_source(config, key, raw)
             workbook_present = key == PRODUCTIVITY_KEY and _has_raw_workbook(raw)
@@ -509,14 +544,17 @@ def record_source_rows(version: TeamConfigurationVersion, record: PerformanceRec
             continue
         if actual is None and workbook is None:
             continue
-        rows.append(
-            {
-                "kpi_key": key,
-                "actual": actual,
-                "workbook_target": workbook,
-                "origin": origin,
-            }
-        )
+        body = {
+            "kpi_key": key,
+            "actual": actual,
+            "workbook_target": workbook,
+            "origin": origin,
+        }
+        if str(line.get("row_selection") or "") == "utz_or_abandon":
+            from services.operational_upload_contract import other_direction_for_row
+
+            body["direction"] = other_direction_for_row(raw if isinstance(raw, dict) else None, line)
+        rows.append(body)
         if line.get("target_mode") == "fixed" and line.get("target") is not None and workbook is not None:
             fixed = _decimal(line.get("target"))
             if fixed is not None and abs(workbook - fixed) > Decimal("0.0001"):
@@ -795,7 +833,7 @@ class EvaluationWorkflow:
             month=version.effective_from_month,
         )
 
-    def _validate_lines(self, current: list[dict], proposed: list[dict], *, weight_only: bool = False) -> tuple[list[dict], list[str]]:
+    def _validate_lines(self, current: list[dict], proposed: list[dict], *, weight_only: bool = False, snapshot: dict | None = None) -> tuple[list[dict], list[str]]:
         current_by_key = {str(line["kpi_key"]): line for line in current}
         proposed_keys = [str(line.get("kpi_key")) for line in proposed]
         if len(proposed_keys) != len(set(proposed_keys)):
@@ -814,6 +852,13 @@ class EvaluationWorkflow:
                     "Direction must be higher-is-better or lower-is-better. Other formulas are not editable in this release.",
                     code="unsupported_direction",
                 )
+            if isinstance(snapshot, dict) and snapshot.get("contract") == "operational_upload":
+                if direction != str(previous.get("direction") or ""):
+                    raise EvaluationError(
+                        "The operational upload contract keeps the source direction.",
+                        code="unsupported_direction",
+                        kpi_key=key,
+                    )
             try:
                 weight = _decimal(raw.get("weight"))
             except Exception as exc:
@@ -848,17 +893,19 @@ class EvaluationWorkflow:
             ):
                 raise EvaluationError("Only the weight can change for this edit.", code="unsupported_edit")
             total += weight
-            cleaned.append(
-                {
-                    "kpi_key": key,
-                    "label": previous.get("label") or key,
-                    "weight": float(weight),
-                    "direction": direction,
-                    "target": target_value,
-                    "target_mode": target_mode,
-                    "unit": previous.get("unit") or "%",
-                }
-            )
+            cleaned_line = {
+                "kpi_key": key,
+                "label": previous.get("label") or key,
+                "weight": float(weight),
+                "direction": direction,
+                "target": target_value,
+                "target_mode": target_mode,
+                "unit": previous.get("unit") or "%",
+            }
+            for extra in ("row_selection", "cap_each"):
+                if extra in previous:
+                    cleaned_line[extra] = previous.get(extra)
+            cleaned.append(cleaned_line)
         if abs(total - Decimal("1")) > Decimal("0.0001"):
             raise EvaluationError(
                 f"Weights total {float(total):.4f}. Approval requires a total of 1 and does not normalize the values.",
@@ -1011,8 +1058,160 @@ class EvaluationWorkflow:
             note = "Draft started from the file baseline."
         if not lines:
             raise EvaluationError("This scope has no KPI baseline to draft.", code="scope_blocked")
+        snapshot = _operational_snapshot(scope_row, int(year), number, lines, snapshot, self.catalog.thresholds(scope_row))
         self._require_lines(scope_row, int(year), number, lines, snapshot)
         created = self._insert_version(scope_row, int(year), number, lines, "draft", note, actor, snapshot=snapshot)
+        self.db.commit()
+        return self._serialize_version(created, scope_row)
+
+    def open_reference_draft(self, actor: dict, scope_id, year: int, month, *, copy_previous: bool = False) -> dict:
+        """Explicit reference-workbook draft. A row date cannot open this contract."""
+        from services.evaluation.capabilities import is_outbound_employee_scope
+        from services.operational_upload_contract import REFERENCE_CONTRACT
+
+        self._require_admin(actor)
+        scope_row = self._scope(scope_id, sync=True)
+        number = month_number(month)
+        if not is_outbound_employee_scope(scope_row.display_name, scope_row.performance_level, scope_row.position_name or ""):
+            raise EvaluationError(
+                "The reference workbook contract is only defined for Outbound Employee.",
+                code="unsupported_calculation",
+                edit_mode="blocked",
+                weight_only_allowed=False,
+            )
+        decision = self.catalog.reference_decision_for(scope_row, int(year), number)
+        if not decision.allows_ratio_edit:
+            raise EvaluationError(
+                decision.reason,
+                code="unsupported_calculation",
+                edit_mode="blocked",
+                weight_only_allowed=False,
+            )
+        self._guard_period(scope_row, int(year), number, actor)
+        existing = self._find_version(scope_row, int(year), number, "draft", lock=True)
+        if existing is not None:
+            return self._serialize_version(existing, scope_row)
+        approved = self._find_version(scope_row, int(year), number, "approved", lock=True)
+        if approved is not None:
+            raise EvaluationConflict(
+                "This month already has an approved version. Revise that version instead of starting from the file baseline.",
+                code="already_approved",
+                version_id=str(approved.id),
+            )
+        from services.evaluation.catalog import _period_template
+
+        template = _period_template(scope_row.display_name, scope_row.performance_level, scope_row.position_name or "", int(year), number)
+        period = template[1] if template is not None else {}
+        if copy_previous:
+            prior_year, prior_month = previous_period(int(year), number)
+            source = self._find_version(scope_row, prior_year, prior_month, "approved")
+            copied = _copy_lines(snapshot_lines(source)) if source else []
+            reconciled = self.catalog.reconcile_reference_period_lines(scope_row, int(year), number, copied)
+            lines = list(reconciled["lines"])
+            diagnostics = list(reconciled.get("diagnostics") or [])
+            note = "Copied from the approved previous month." if source else "No approved previous month. Draft started from the reference workbook contract."
+            if diagnostics:
+                note = note + " " + " ".join(str(item) for item in diagnostics)
+            snapshot = {
+                "schema": 1,
+                "contract": REFERENCE_CONTRACT,
+                "performance_level": scope_row.performance_level,
+                "position_name": scope_row.position_name or "",
+                "policy": "employee_ratio",
+                "lines": lines,
+                "grade_thresholds": self.catalog.thresholds(scope_row),
+                "copy_diagnostics": diagnostics,
+                "template_changed": bool(reconciled.get("template_changed")),
+                "preserved_values": bool(reconciled.get("preserved_values")),
+                "period_status": period.get("status") or reconciled.get("period_status"),
+            }
+        else:
+            lines = self.catalog.reference_baseline_lines(scope_row, int(year), number)
+            note = "Draft started from the reference workbook contract."
+            snapshot = {
+                "schema": 1,
+                "contract": REFERENCE_CONTRACT,
+                "performance_level": scope_row.performance_level,
+                "position_name": scope_row.position_name or "",
+                "policy": "employee_ratio",
+                "lines": lines,
+                "grade_thresholds": self.catalog.thresholds(scope_row),
+                "period_status": period.get("status"),
+            }
+        self._require_lines(scope_row, int(year), number, lines, snapshot)
+        created = self._insert_version(
+            scope_row, int(year), number, lines, "draft", note, actor, snapshot=snapshot,
+        )
+        self.db.commit()
+        return self._serialize_version(created, scope_row)
+
+    def adopt_operational_contract(self, actor: dict, version_id, *, confirm: bool = False) -> dict:
+        """Explicit Admin adoption. Reading a version does not call this."""
+        from services.operational_upload_contract import (
+            OPERATIONAL_CONTRACT,
+            is_operational_team,
+            operational_period_status,
+            snapshot_contract,
+        )
+
+        if confirm is not True:
+            raise EvaluationError(
+                "Adopting the operational upload contract requires explicit confirmation.",
+                code="confirmation_required",
+            )
+        self._require_admin(actor)
+        source = self._version(version_id)
+        scope_row = self._scope_for_version(source)
+        team_name = self._team_name(scope_row)
+        if not is_operational_team(team_name, scope_row.performance_level, scope_row.position_name or ""):
+            raise EvaluationError(
+                "This scope has no operational upload contract to adopt.",
+                code="unsupported_calculation",
+            )
+        year = int(source.effective_from_year)
+        month = int(source.effective_from_month)
+        self._guard_period(scope_row, year, month, actor)
+        lines = self.catalog.baseline_lines(scope_row, year, month)
+        if source.status == "draft":
+            snapshot = dict(source.config_snapshot or {})
+            snapshot = _operational_snapshot(scope_row, year, month, lines, snapshot, self.catalog.thresholds(scope_row))
+            self._require_lines(scope_row, year, month, lines, snapshot)
+            source.config_snapshot = snapshot
+            source.config_checksum = _rules_checksum(snapshot)
+            flag_modified(source, "config_snapshot")
+            source.notes = ((source.notes or "") + " Adopted the operational upload contract.").strip()
+            self.db.commit()
+            return self._serialize_version(source, scope_row)
+        if source.status != "approved":
+            raise EvaluationError("Only a draft or an approved version can adopt the operational contract.", code="immutable")
+        source_id = str(source.id)
+        source_checksum = source.config_checksum
+        source_number = int(source.version_number)
+        adopted_from = snapshot_contract(source.config_snapshot) or "reference_workbook"
+        existing = self._find_version(scope_row, year, month, "draft", lock=True)
+        if existing is not None:
+            raise EvaluationConflict(
+                "A draft already exists for this month and was not overwritten.",
+                code="draft_exists",
+                draft_id=str(existing.id),
+            )
+        snapshot = _operational_snapshot(
+            scope_row, year, month, lines, None, self.catalog.thresholds(scope_row),
+        )
+        snapshot["lineage"] = {
+            "source_version_id": source_id,
+            "source_checksum": source_checksum,
+            "source_version_number": source_number,
+            "adopted_from_contract": adopted_from,
+        }
+        snapshot["period_status"] = operational_period_status(team_name, year, month)
+        snapshot["contract"] = OPERATIONAL_CONTRACT
+        self._require_lines(scope_row, year, month, lines, snapshot)
+        created = self._insert_version(
+            scope_row, year, month, lines, "draft",
+            "Adopted the operational upload contract from an approved version.",
+            actor, snapshot=snapshot,
+        )
         self.db.commit()
         return self._serialize_version(created, scope_row)
 
@@ -1039,7 +1238,9 @@ class EvaluationWorkflow:
                 "This draft changed after you opened it. Reload the draft before saving; no changes were made.",
                 code="stale_draft",
             )
-        cleaned, notes = self._validate_lines(snapshot_lines(version), lines, weight_only=weight_only)
+        cleaned, notes = self._validate_lines(
+            snapshot_lines(version), lines, weight_only=weight_only, snapshot=version.config_snapshot,
+        )
         snapshot = dict(version.config_snapshot or {})
         snapshot.pop("preview_evidence", None)
         self._require_lines(scope_row, version.effective_from_year, version.effective_from_month, cleaned, snapshot)
@@ -1981,10 +2182,19 @@ class EvaluationWorkflow:
                 "year": proof.get("year"),
                 "month": proof.get("month"),
             }
+        from services.operational_upload_contract import revision_choice, snapshot_contract
+
         return {
             "id": str(version.id),
             "scope_id": str(scope_row.id),
             "status": version.status,
+            "contract": snapshot_contract(snapshot),
+            "revision_choice": revision_choice(
+                scope_row.display_name,
+                scope_row.performance_level,
+                scope_row.position_name or "",
+                snapshot,
+            ),
             "version_number": version.version_number,
             "year": version.effective_from_year,
             "month": version.effective_from_month,

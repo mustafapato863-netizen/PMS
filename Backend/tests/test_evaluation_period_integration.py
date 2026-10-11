@@ -6,9 +6,9 @@ position) can be admitted. Coding and Submission ignore the period.
 
     calculation_for(display, level, position, config, importers=None, year=None, month=None) -> CapabilityDecision
     catalog.decision_for(scope, year=None, month=None) -> CapabilityDecision
-    catalog.baseline_lines(scope, year=None, month=None) -> list[dict]
+    catalog.reference_baseline_lines(scope, year=None, month=None) -> list[dict]
     catalog.serialize(scope, year=None, month=None) -> dict
-    catalog.reconcile_period_lines(scope, year, month, copied_lines) -> dict
+    catalog.reconcile_reference_period_lines(scope, year, month, copied_lines) -> dict
     require_approved_capability(version, *, team_name, config, year=None, month=None) -> CapabilityDecision
     lock_team_rows(db, team_ids) -> list[Team]
     schema_ready(db) -> bool
@@ -62,7 +62,7 @@ from models.models import (
 from models.schemas import Employee, EvaluationData, PerformanceRecord
 from services.evaluation.access import EvaluationError, SchemaIncomplete, TargetConflict
 from services.evaluation.capabilities import decide
-from services.evaluation.catalog import EvaluationCatalog, calculation_for
+from services.evaluation.catalog import EvaluationCatalog, calculation_for, reference_calculation_for
 from services.evaluation.resolver import (
     _column_names,
     _table_names,
@@ -220,23 +220,23 @@ def test_outbound_is_admitted_only_for_july_and_august_2026():
     assert DEFAULT_WEIGHTS["Outbound"]["AHT"] == 0.00
     assert "Productivity" not in file_keys
 
-    blocked = calculation_for("Outbound", "Employee", "", config)
+    blocked = reference_calculation_for("Outbound", "Employee", "", config)
     assert blocked.allows_ratio_edit is False
     assert blocked.weight_only_allowed is False
     assert "July 2026" in blocked.reason and "August 2026" in blocked.reason
 
-    partial_year = calculation_for("Outbound", "Employee", "", config, year=2026)
-    partial_month = calculation_for("Outbound", "Employee", "", config, month=8)
+    partial_year = reference_calculation_for("Outbound", "Employee", "", config, year=2026)
+    partial_month = reference_calculation_for("Outbound", "Employee", "", config, month=8)
     assert partial_year.allows_ratio_edit is False
     assert partial_month.allows_ratio_edit is False
 
-    july = calculation_for("Outbound", "Employee", "", config, year=2026, month=7)
-    august = calculation_for("Outbound", "Employee", "", config, year=2026, month="August")
+    july = reference_calculation_for("Outbound", "Employee", "", config, year=2026, month=7)
+    august = reference_calculation_for("Outbound", "Employee", "", config, year=2026, month="August")
     assert july.allows_ratio_edit is True and july.edit_mode == "full" and july.weight_only_allowed is False
     assert august.allows_ratio_edit is True and august.weight_only_allowed is False
 
     for year, month in ((2026, 6), (2026, 9), (2025, 8), (2027, 7)):
-        refused = calculation_for("Outbound", "Employee", "", config, year=year, month=month)
+        refused = reference_calculation_for("Outbound", "Employee", "", config, year=year, month=month)
         assert refused.allows_ratio_edit is False
         assert refused.weight_only_allowed is False
         assert "Productivity" not in refused.reason or "not inferred" in refused.reason or "not admitted" in refused.reason
@@ -255,9 +255,9 @@ def test_outbound_is_admitted_only_for_july_and_august_2026():
 def test_period_lines_use_source_targets_and_optional_aht():
     catalog = _catalog()
     scope = _scope("Outbound")
-    july = catalog.baseline_lines(scope, 2026, 7)
-    august = catalog.baseline_lines(scope, 2026, 8)
-    september = catalog.baseline_lines(scope, 2026, 9)
+    july = catalog.reference_baseline_lines(scope, 2026, 7)
+    august = catalog.reference_baseline_lines(scope, 2026, 8)
+    september = catalog.reference_baseline_lines(scope, 2026, 9)
     july_scored = _scored(july)
     august_scored = _scored(august)
     assert set(july_scored) == {"Attendance", "Booking", "Quality", "Other"}
@@ -279,10 +279,10 @@ def test_period_lines_use_source_targets_and_optional_aht():
             assert line["target_mode"] == "workbook"
     assert "Productivity" not in _scored(september)
     assert all(line["target"] is None for line in september if line["kpi_key"] != "AHT")
-    no_period = catalog.decision_for(scope)
+    no_period = catalog.reference_decision_for(scope)
     assert no_period.allows_ratio_edit is False
-    assert catalog.decision_for(scope, 2026, 7).allows_ratio_edit is True
-    assert catalog.decision_for(scope, 2026, 9).allows_ratio_edit is False
+    assert catalog.reference_decision_for(scope, 2026, 7).allows_ratio_edit is True
+    assert catalog.reference_decision_for(scope, 2026, 9).allows_ratio_edit is False
 
 
 def test_global_catalog_lists_outbound_as_period_dependent_without_enabling_every_month():
@@ -307,7 +307,7 @@ def test_global_catalog_lists_outbound_as_period_dependent_without_enabling_ever
         assert body["weight_only_allowed"] is False
         assert [(item["year"], item["month"]) for item in body["admitted_periods"]] == [(2026, 7), (2026, 8)]
         assert "period_readiness" not in body
-        period = EvaluationCatalog(db).serialize(outbound, 2026, 8)
+        period = EvaluationCatalog(db).reference_serialize(outbound, 2026, 8)
         assert period["supported"] is True
         assert period["readiness"] == "supported"
         assert period["edit_mode"] == "full"
@@ -322,7 +322,7 @@ def test_global_catalog_lists_outbound_as_period_dependent_without_enabling_ever
         assert period["period"]["catalog_template_supported"] is True
         assert period["period"]["infer_from_august"] is False
         assert "Productivity" in period["period"]["scored_keys"]
-        later = EvaluationCatalog(db).serialize(outbound, 2026, 9)
+        later = EvaluationCatalog(db).reference_serialize(outbound, 2026, 9)
         assert later["readiness"] == "blocked"
         assert later["supported"] is False
         assert later["edit_mode"] == "blocked"
@@ -345,8 +345,8 @@ def test_global_catalog_lists_outbound_as_period_dependent_without_enabling_ever
 def test_copying_july_into_august_uses_the_canonical_productivity_template():
     catalog = _catalog()
     scope = _scope("Outbound")
-    copied = [line for line in catalog.baseline_lines(scope, 2026, 7) if line["kpi_key"] != "AHT"]
-    result = catalog.reconcile_period_lines(scope, 2026, 8, copied)
+    copied = [line for line in catalog.reference_baseline_lines(scope, 2026, 7) if line["kpi_key"] != "AHT"]
+    result = catalog.reconcile_reference_period_lines(scope, 2026, 8, copied)
     scored = _scored(result["lines"])
     assert result["template_changed"] is True
     assert result["preserved_values"] is False
@@ -364,7 +364,7 @@ def test_copying_july_into_august_uses_the_canonical_productivity_template():
 def test_same_month_revise_keeps_admin_weights_and_refuses_keys_outside_the_template():
     catalog = _catalog()
     scope = _scope("Outbound")
-    copied = [dict(line) for line in catalog.baseline_lines(scope, 2026, 8) if line["kpi_key"] != "AHT"]
+    copied = [dict(line) for line in catalog.reference_baseline_lines(scope, 2026, 8) if line["kpi_key"] != "AHT"]
     for line in copied:
         if line["kpi_key"] == "Attendance":
             line["weight"] = 0.40
@@ -372,7 +372,7 @@ def test_same_month_revise_keeps_admin_weights_and_refuses_keys_outside_the_temp
             line["target_mode"] = "fixed"
         elif line["kpi_key"] == "Booking":
             line["weight"] = 0.30
-    result = catalog.reconcile_period_lines(scope, 2026, 8, copied)
+    result = catalog.reconcile_reference_period_lines(scope, 2026, 8, copied)
     by_key = {line["kpi_key"]: line for line in result["lines"]}
     assert result["preserved_values"] is True
     assert result["template_changed"] is False
@@ -387,24 +387,24 @@ def test_same_month_revise_keeps_admin_weights_and_refuses_keys_outside_the_temp
     for line in short:
         if line["kpi_key"] == "Attendance":
             line["weight"] = 0.50
-    uneven = catalog.reconcile_period_lines(scope, 2026, 8, short)
+    uneven = catalog.reconcile_reference_period_lines(scope, 2026, 8, short)
     assert uneven["preserved_values"] is True
     assert any("not rescaled" in item for item in uneven["diagnostics"])
     assert _scored(uneven["lines"])["Attendance"]["weight"] == pytest.approx(0.50)
 
     extra = [dict(line) for line in copied]
     extra.append({"kpi_key": "Mystery", "weight": 0.0, "direction": "higher_better", "target_mode": "workbook"})
-    rejected = catalog.reconcile_period_lines(scope, 2026, 8, extra)
+    rejected = catalog.reconcile_reference_period_lines(scope, 2026, 8, extra)
     assert rejected["preserved_values"] is False
     assert "Mystery" not in {line["kpi_key"] for line in rejected["lines"]}
 
-    activated = [dict(line) for line in catalog.baseline_lines(scope, 2026, 8)]
+    activated = [dict(line) for line in catalog.reference_baseline_lines(scope, 2026, 8)]
     for line in activated:
         if line["kpi_key"] == "AHT":
             line["weight"] = 0.05
         if line["kpi_key"] == "Attendance":
             line["weight"] = 0.55
-    aht = catalog.reconcile_period_lines(scope, 2026, 8, activated)
+    aht = catalog.reconcile_reference_period_lines(scope, 2026, 8, activated)
     assert _scored(aht["lines"]).get("AHT") is None
     assert next(line["weight"] for line in aht["lines"] if line["kpi_key"] == "AHT") == 0
 
@@ -412,8 +412,8 @@ def test_same_month_revise_keeps_admin_weights_and_refuses_keys_outside_the_temp
 def test_september_does_not_inherit_august_lines():
     catalog = _catalog()
     scope = _scope("Outbound")
-    august = [line for line in catalog.baseline_lines(scope, 2026, 8) if line["kpi_key"] != "AHT"]
-    result = catalog.reconcile_period_lines(scope, 2026, 9, august)
+    august = [line for line in catalog.reference_baseline_lines(scope, 2026, 8) if line["kpi_key"] != "AHT"]
+    result = catalog.reconcile_reference_period_lines(scope, 2026, 9, august)
     assert result["blocked"] is True
     assert result["template_changed"] is True
     assert result["period_status"] == "unconfigured"

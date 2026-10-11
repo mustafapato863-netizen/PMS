@@ -43,6 +43,10 @@ class ApplyRequest(BaseModel):
     month: int = Field(ge=1, le=12)
 
 
+class AdoptOperationalRequest(BaseModel):
+    confirm: bool = False
+
+
 class ApplyJobCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     scope_id: uuid.UUID
@@ -189,6 +193,13 @@ def revise_version(version_id: str, request: Request, db: Session = Depends(get_
     actor = _actor(request, db)
     data = _run(lambda: EvaluationWorkflow(db).revise(actor, version_id))
     return StandardResponse(success=True, message="Evaluation revision draft saved", data=data)
+
+
+@router.post("/versions/{version_id}/adopt-operational", response_model=StandardResponse)
+def adopt_operational_version(version_id: str, body: AdoptOperationalRequest, request: Request, db: Session = Depends(get_db)):
+    actor = _actor(request, db)
+    data = _run(lambda: EvaluationWorkflow(db).adopt_operational_contract(actor, version_id, confirm=body.confirm))
+    return StandardResponse(success=True, message="Operational upload contract adopted", data=data)
 
 
 @router.get("/versions/{version_id}", response_model=StandardResponse)

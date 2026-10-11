@@ -15,27 +15,21 @@ Employee can be supported, Outbound stays blocked, and no month is inferred.
     reconciled = catalog.reconcile_period_lines(scope, year, month, copied_lines)
     decision = calculation_for(display, level, position, config, importers, year, month)
 
-``decision_for`` recomputes from the checked-in file and, when both period
-arguments are passed, from ``period_capability``. Passing only ``year`` or only
-``month`` stays conservative for Outbound. Stored readiness and client flags
-are ignored. ``baseline_lines`` without a period is the file template.
-With a period, Outbound Employee uses the helper's exact-month lines (direction
-``higher_better``, unit ``%``, ``target_mode`` ``workbook``, source targets)
-plus the optional zero-weight AHT diagnostic. ``serialize`` without a period
-keeps ``readiness``, ``supported``, and ``edit_mode`` blocked for Outbound and
-adds ``period_dependent`` plus ``admitted_periods``. With both ``year`` and
-``month``, those three top-level fields follow that exact month:
-August 2026 is ``readiness="supported"`` and ``supported`` true, and a later
-month stays blocked. ``global_readiness`` and ``global_supported`` keep the
-no-period catalog result. The period body also adds ``period_readiness``,
-``period_supported``, ``period_edit_mode``, ``lines``, and ``period``.
+``decision_for`` and ``baseline_lines`` use the operational upload contract
+when both period arguments are passed for Inbound or Outbound Employee.
+Passing only ``year`` or only ``month`` stays blocked. The reference workbook
+stays on ``reference_decision_for``, ``reference_baseline_lines``,
+``reference_serialize``, and ``reconcile_reference_period_lines``.
+``serialize`` without a period keeps Outbound blocked. With both ``year`` and
+``month``, an exact operational month is supported and a missing period is not.
+``global_readiness`` and ``global_supported`` keep the no-period catalog result.
 
 ``reconcile_period_lines`` returns ``lines``, ``diagnostics``,
 ``template_changed``, ``preserved_values``, ``source_baseline``, ``blocked``,
 ``period_status``, and ``weights_total``. Same weighted keys keep the copied
-targets and weights. A different set, including July copied into August, is
-replaced by the canonical destination lines so the weights sum to 1 and
-Productivity is visible instead of dropped.
+targets and weights and are not rescaled. The operational destination does not
+insert Productivity. The reference reconcile keeps the July-into-August
+Productivity template.
 """
 
 from __future__ import annotations
@@ -175,9 +169,26 @@ def calculation_for(
     """Live file-and-importer decision. This does not read or write catalog rows.
 
     ``year`` and ``month`` are optional and are forwarded to ``decide``. Omit
-    them and Outbound stays blocked. Pass the exact period and only the helper's
-    admitted Outbound Employee month can return ``edit_mode="full"``.
+    either and Inbound and Outbound stay blocked. Pass an exact period and
+    those Employee scopes use the operational upload contract.
     """
+    return _calculation(display, level, position, config, importers, year, month, basis="operational")
+
+
+def reference_calculation_for(
+    display: str,
+    level: str,
+    position: str,
+    config: dict | None,
+    importers: set[str] | None = None,
+    year: int | None = None,
+    month: int | str | None = None,
+) -> CapabilityDecision:
+    """Reference-workbook admission. July 2026 and August 2026 Outbound only."""
+    return _calculation(display, level, position, config, importers, year, month, basis="reference")
+
+
+def _calculation(display, level, position, config, importers, year, month, *, basis: str) -> CapabilityDecision:
     registered_importers = _importer_names() if importers is None else importers
     names = [display]
     if config is not None:
@@ -191,11 +202,12 @@ def calculation_for(
         importer_registered=_importer_registered(names, registered_importers),
         year=year,
         month=month,
+        basis=basis,
     )
 
 
 def _copy_line(line: dict) -> dict:
-    return {
+    copied = {
         "kpi_key": str(line.get("kpi_key") or ""),
         "label": line.get("label") or line.get("kpi_key"),
         "weight": float(line.get("weight") or 0),
@@ -204,6 +216,48 @@ def _copy_line(line: dict) -> dict:
         "target_mode": line.get("target_mode") or "workbook",
         "unit": line.get("unit") or "%",
     }
+    for key in ("row_selection", "cap_each", "weight_key"):
+        if line.get(key) not in (None, ""):
+            copied[key] = line.get(key)
+    for key in ("optional", "scored", "enabled"):
+        if key in line:
+            copied[key] = line[key]
+    return copied
+
+
+def _operational_catalog_template(display: str, level: str, position: str, year, month):
+    """Operational lines for one exact Inbound or Outbound month, or None."""
+    from services.operational_upload_contract import (
+        OPERATIONAL_CONTRACT,
+        is_operational_team,
+        month_label,
+        operational_lines,
+        operational_period_status,
+        operational_scored_keys,
+        period_numbers,
+    )
+
+    if year is None or month is None or not is_operational_team(display, level, position):
+        return None
+    lines = operational_lines(display, year, month)
+    if not lines:
+        return None
+    year_number, month_value = period_numbers(year, month)
+    label = month_label(month_value)
+    period = {
+        "year": year_number,
+        "month": month_value,
+        "month_name": label,
+        "period": f"{label} {year_number}" if label and year_number else None,
+        "status": operational_period_status(display, year, month),
+        "approved_binding": "apply",
+        "catalog_template_supported": True,
+        "infer_from_august": False,
+        "silent_fallback": False,
+        "scored_keys": operational_scored_keys(lines),
+        "contract": OPERATIONAL_CONTRACT,
+    }
+    return lines, period
 
 
 def _aht_diagnostic() -> dict:
@@ -412,13 +466,24 @@ class EvaluationCatalog:
         return rows
 
     def baseline_lines(self, scope: EvaluationScope, year: int | None = None, month: int | str | None = None) -> list[dict]:
-        """File baseline, or the exact-month Outbound template when a period is passed.
+        """File baseline, or the operational upload lines when an exact period is passed.
 
-        Without ``year`` and ``month`` the result is the checked-in file,
-        including Outbound's four technical KPIs. With a period, Outbound
-        Employee uses ``period_capability`` lines and does not copy August into
-        a later month.
+        Without ``year`` and ``month`` the result is the checked-in file.
+        With a period, Inbound and Outbound Employee use that file's operational
+        weights. June 2026 is the only weight exception. A date does not select
+        the reference workbook.
         """
+        template = _operational_catalog_template(
+            scope.display_name, scope.performance_level, scope.position_name or "", year, month,
+        )
+        if template is not None:
+            return [dict(line) for line in template[0]]
+        if not hasattr(self, "_baselines"):
+            self.sync()
+        return [dict(line) for line in self._baselines.get((scope.team_key, scope.performance_level, scope.position_name), [])]
+
+    def reference_baseline_lines(self, scope: EvaluationScope, year: int | None = None, month: int | str | None = None) -> list[dict]:
+        """Reference-workbook lines. July and August keep source targets and Productivity."""
         template = _period_template(scope.display_name, scope.performance_level, scope.position_name or "", year, month)
         if template is not None:
             return [dict(line) for line in template[0]]
@@ -452,6 +517,18 @@ class EvaluationCatalog:
             month=month,
         )
 
+    def reference_decision_for(self, scope: EvaluationScope, year: int | None = None, month: int | str | None = None) -> CapabilityDecision:
+        """July 2026 and August 2026 reference-workbook admission. Stored readiness is ignored."""
+        config = self._config_for(scope.display_name)
+        return reference_calculation_for(
+            scope.display_name,
+            scope.performance_level,
+            scope.position_name or "",
+            config,
+            year=year,
+            month=month,
+        )
+
     def _config_for(self, display: str) -> dict | None:
         if not hasattr(self, "_file_by_key"):
             files = []
@@ -468,6 +545,13 @@ class EvaluationCatalog:
         return self._file_by_key.get(_norm(display))
 
     def serialize(self, scope: EvaluationScope, year: int | None = None, month: int | str | None = None) -> dict:
+        return self._serialize_scope(scope, year, month, reference=False)
+
+    def reference_serialize(self, scope: EvaluationScope, year: int | None = None, month: int | str | None = None) -> dict:
+        """Reference-workbook catalog body. July and August stay the admitted months."""
+        return self._serialize_scope(scope, year, month, reference=True)
+
+    def _serialize_scope(self, scope: EvaluationScope, year: int | None = None, month: int | str | None = None, *, reference: bool = False) -> dict:
         """Catalog row for the workflow consumer.
 
         Without a period, ``readiness``, ``supported``, and ``edit_mode`` follow
@@ -479,14 +563,18 @@ class EvaluationCatalog:
         """
         periodless = self.decision_for(scope)
         has_period = year is not None and month is not None
-        decision = self.decision_for(scope, year, month) if has_period else periodless
+        outbound = is_outbound_employee_scope(scope.display_name, scope.performance_level, scope.position_name or "")
+        if reference and has_period and outbound:
+            decision = self.reference_decision_for(scope, year, month)
+        else:
+            decision = self.decision_for(scope, year, month) if has_period else periodless
         if has_period:
             enabled = decision.allows_ratio_edit
             readiness = "supported" if enabled else "blocked"
         else:
             enabled = scope.readiness == "supported" and decision.allows_ratio_edit
             readiness = scope.readiness
-        period_dependent = is_outbound_employee_scope(scope.display_name, scope.performance_level, scope.position_name or "")
+        period_dependent = outbound
         body = {
             "id": str(scope.id),
             "team_id": str(scope.team_id) if scope.team_id else None,
@@ -510,7 +598,10 @@ class EvaluationCatalog:
         }
         if not has_period:
             return body
-        template = _period_template(scope.display_name, scope.performance_level, scope.position_name or "", year, month)
+        if reference:
+            template = _period_template(scope.display_name, scope.performance_level, scope.position_name or "", year, month)
+        else:
+            template = _operational_catalog_template(scope.display_name, scope.performance_level, scope.position_name or "", year, month)
         period_decision = decision
         period_enabled = period_decision.allows_ratio_edit
         body["global_readiness"] = scope.readiness
@@ -541,22 +632,30 @@ class EvaluationCatalog:
         return body
 
     def reconcile_period_lines(self, scope: EvaluationScope, year: int, month: int | str, copied_lines: list[dict] | None) -> dict:
-        """Choose lines for one destination period.
+        """Choose operational lines for one destination period.
 
         Same weighted KPI set: keep copied targets, weights, directions, and
-        target modes when each scored line is safe. Weights are not rescaled
-        to the source defaults, including a same-month revise whose admin
-        already changed them. July copied into August does not share a weighted
-        set, so the result is the canonical August template, Productivity
-        included, with a diagnostic and ``source_baseline``. Keys outside the
-        server template are not kept. An AHT weight above zero is not kept.
-        Later months are the technical template, not an August inference.
+        target modes. Weights are not rescaled. Keys outside the operational
+        template are not kept. Productivity is not inserted from another month.
         """
+        return self._reconcile(scope, year, month, copied_lines, reference=False)
+
+    def reconcile_reference_period_lines(self, scope: EvaluationScope, year: int, month: int | str, copied_lines: list[dict] | None) -> dict:
+        """Reference-workbook reconcile. July copied into August gains Productivity."""
+        return self._reconcile(scope, year, month, copied_lines, reference=True)
+
+    def _reconcile(self, scope: EvaluationScope, year: int, month: int | str, copied_lines: list[dict] | None, *, reference: bool) -> dict:
         copied = [dict(line) for line in (copied_lines or [])]
-        canonical = self.baseline_lines(scope, year, month)
-        template = _period_template(scope.display_name, scope.performance_level, scope.position_name or "", year, month)
-        period = template[1] if template is not None else {}
-        blocked = not self.decision_for(scope, year, month).allows_ratio_edit
+        if reference:
+            canonical = self.reference_baseline_lines(scope, year, month)
+            template = _period_template(scope.display_name, scope.performance_level, scope.position_name or "", year, month)
+            period = template[1] if template is not None else {}
+            blocked = not self.reference_decision_for(scope, year, month).allows_ratio_edit
+        else:
+            canonical = self.baseline_lines(scope, year, month)
+            template = _operational_catalog_template(scope.display_name, scope.performance_level, scope.position_name or "", year, month)
+            period = template[1] if template is not None else {}
+            blocked = not self.decision_for(scope, year, month).allows_ratio_edit
         diagnostics: list[str] = []
         destination_keys = _weighted_keys(canonical)
         copied_keys = _weighted_keys(copied)
@@ -605,7 +704,7 @@ class EvaluationCatalog:
             if weight < 0 or weight > 1:
                 unsafe.append(f"{key} weight is outside 0 to 1")
                 continue
-            if key == AHT_KEY and weight > 0:
+            if key == AHT_KEY and weight > 0 and template_line.get("scored") is False:
                 unsafe.append("AHT is an optional zero-weight diagnostic and cannot be activated")
                 continue
             direction = str(raw.get("direction") or template_line.get("direction") or "")

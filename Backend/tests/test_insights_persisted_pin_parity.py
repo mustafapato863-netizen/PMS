@@ -559,7 +559,7 @@ def test_apply_and_rollback_round_trip_the_pinned_basis_through_insights(db):
     before = service.generate_workspace(_admin_scope(), month="August", year=2026)
     assert "Productivity" not in _option_keys(before)
 
-    draft = world.workflow.open_draft(world.actor, world.scope["id"], 2026, 8)
+    draft = world.workflow.open_reference_draft(world.actor, world.scope["id"], 2026, 8)
     _approve(world, draft["id"])
     world.workflow.apply(world.actor, world.scope["id"], 2026, 8)
     db.refresh(august_record)

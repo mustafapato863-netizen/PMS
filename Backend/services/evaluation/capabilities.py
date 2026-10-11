@@ -34,15 +34,13 @@ other team was given a formula):
   IP Elective were not admitted. Several depend on workbook achievement
   columns. Outbound August productivity is a later slice.
 - Marketing has no CleanerFactory ratio importer in this gate.
-- Outbound Employee with an empty position is not in the map above. It is
-  admitted only for July 2026 and August 2026, and only when ``year`` and
-  ``month`` are passed through to :func:`decide`. The admission is the
-  period-owned decision from ``services.outbound_period_basis.period_capability``
-  (capped target ratio, source targets, no August inference). A call with no
-  period stays blocked, so the global catalog does not claim every Outbound
-  month. ``Backend/config/teams/outbound.json`` stays the technical four-KPI
-  file and is not rewritten. Workbook achievement columns on that file are
-  not the formula and cannot turn on weight-only edits.
+- Outbound Employee and Inbound Employee with an empty position are not in
+  the map above. ``decide`` admits them for an exact year and month on the
+  operational upload contract (final-total cap, checked-in keys, registered
+  importer). A call with no period stays blocked, so the global catalog does
+  not claim every month. ``basis="reference"`` keeps the July 2026 and August
+  2026 reference-workbook admission from ``period_capability``. Workbook
+  achievement columns are not the formula and cannot turn on weight-only edits.
 
 Any scope absent from the audited map stays blocked. A client flag is not an
 input and cannot grant a formula.
@@ -228,6 +226,63 @@ def _outbound_period_decision(kpis: list[dict], importer_registered: bool, year,
     )
 
 
+_INBOUND_DIRECTIONS = {
+    "Attendance": "higher_better",
+    "Booking": "higher_better",
+    "Quality": "higher_better",
+    "AHT": "lower_better",
+    "Other": "lower_better",
+}
+
+
+def _is_inbound_employee_scope(team_name: str, level: str, position: str | None) -> bool:
+    return _norm(team_name) == "inbound" and str(level or "") == "Employee" and (position or "") == ""
+
+
+def _operational_decision(team_name: str, kpis: list[dict], importer_registered: bool, year, month) -> CapabilityDecision:
+    """Admit one exact month when the checked-in file matches the upload contract."""
+    kind = "Inbound" if _norm(team_name) == "inbound" else "Outbound"
+    expected = _INBOUND_DIRECTIONS if kind == "Inbound" else {key: "higher_better" for key in _OUTBOUND_FILE_KEYS}
+    if year is None or month is None:
+        return _blocked(
+            f"{kind} Employee edits require an exact year and month. "
+            "No period stays blocked, so the catalog does not enable every month. "
+            "A row date does not select the reference workbook, and a client flag cannot grant the formula."
+        )
+    from services.evaluation.periods import PeriodError, month_number
+
+    try:
+        month_number(month)
+        int(year)
+    except (PeriodError, TypeError, ValueError):
+        return _blocked(f"{kind} Employee requires an exact calendar month.")
+    if not kpis:
+        return _blocked(f"No checked-in baseline is available for {kind} Employee.")
+    seen = {str(kpi.get("key") or ""): str(kpi.get("direction") or "") for kpi in kpis if kpi.get("key")}
+    if set(seen) != set(expected):
+        return _blocked(f"Checked-in {kind} keys do not match the operational upload contract.")
+    for key, direction in expected.items():
+        if seen.get(key) != direction:
+            return _blocked(f"Checked-in {kind} directions do not match the operational upload contract.")
+    if not importer_registered:
+        return _blocked("The operational upload importer is not registered for this scope.")
+    if kind == "Outbound":
+        reason = (
+            "Outbound Employee uses the operational upload contract for this exact month. "
+            "Four achievement columns are scored and the final total is capped. "
+            "A row date does not select the reference workbook, a per-KPI cap, or Productivity. "
+            "Weight-only edits stay blocked, and a client flag cannot grant them."
+        )
+    else:
+        reason = (
+            "Inbound Employee uses the operational upload contract for this exact month. "
+            "UTZ is scored when the row supplies it, including zero, and Abandon is scored when UTZ is missing. "
+            "AHT stays in minutes and lower-is-better. The final total is capped. "
+            "Weight-only edits stay blocked, and a client flag cannot grant them."
+        )
+    return CapabilityDecision(edit_mode="full", reason=reason, weight_only_allowed=False)
+
+
 def decide(
     *,
     team_name: str,
@@ -237,19 +292,26 @@ def decide(
     importer_registered: bool,
     year: int | None = None,
     month: int | str | None = None,
+    basis: str = "operational",
 ) -> CapabilityDecision:
     """Return the server edit mode. Caller flags are not an input.
 
-    ``year`` and ``month`` are optional. Omit both and Outbound stays blocked.
-    Pass both and only July 2026 or August 2026 Outbound Employee (empty
-    position) can be admitted, using ``period_capability``. Coding and
+    ``year`` and ``month`` are optional. Omit either and Inbound and Outbound
+    stay blocked. Pass both and those Employee scopes (empty position) are
+    admitted on the operational upload contract. ``basis="reference"`` keeps
+    the July 2026 and August 2026 reference-workbook gate. Coding and
     Submission ignore the period and keep the audited map.
     """
     formula = _unsupported_formula_reason(kpis)
     if formula:
         return _blocked(formula)
-    if is_outbound_employee_scope(team_name, level, position):
+    if basis == "reference" and is_outbound_employee_scope(team_name, level, position):
         return _outbound_period_decision(kpis, importer_registered, year, month)
+    if basis != "reference" and (
+        is_outbound_employee_scope(team_name, level, position)
+        or _is_inbound_employee_scope(team_name, level, position)
+    ):
+        return _operational_decision(team_name, kpis, importer_registered, year, month)
     key = (_norm(team_name), str(level or ""), position or "")
     audited = _AUDITED_RATIO.get(key)
     if audited is None:

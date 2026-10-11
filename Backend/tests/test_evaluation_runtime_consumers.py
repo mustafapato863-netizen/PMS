@@ -142,7 +142,7 @@ def test_async_worker_updates_warm_consumers_and_rollback_preserves_human_artifa
             versions = {}
             for month in (7, 8):
                 payload = {"scope_id": world.scope["id"], "year": 2026, "month": month}
-                draft = _call(client, "POST", "/settings/evaluation/drafts", payload)
+                draft = world.workflow.open_reference_draft(world.actor, world.scope["id"], 2026, month)
                 _call(client, "POST", f"/settings/evaluation/drafts/{draft['id']}/impact-preview")
                 _call(client, "POST", f"/settings/evaluation/drafts/{draft['id']}/approve")
                 _call(client, "POST", "/settings/evaluation/apply", payload)

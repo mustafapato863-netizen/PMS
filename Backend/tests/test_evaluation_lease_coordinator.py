@@ -551,10 +551,12 @@ def test_drift_role_and_closed_scopes_fail_closed(db):
             coordinator.enqueue(world.actor, item["id"], 2026, 7, enabled=True)
         assert _code(blocked) in {"unsupported_calculation", "not_found", "scope_blocked"}
     outbound = world.scope("Outbound")
+    # June and September are operational months. With no approved version the
+    # job stops for approval; a row date does not make them a reference period.
     for month in (6, 9):
         with pytest.raises(EvaluationError) as refused:
             coordinator.enqueue(world.actor, outbound["id"], 2026, month, enabled=True)
-        assert _code(refused) == "unsupported_calculation"
+        assert _code(refused) == "not_approved"
     assert db.query(ProcessingJob).count() == 0
 
     _reload(world)
@@ -855,7 +857,7 @@ def test_outbound_coding_and_submission_keep_the_canonical_ratios(db, monkeypatc
     assert attendance.contribution == Decimal("0.3500")
 
     _reload(world)
-    august = world.workflow.open_draft(world.actor, outbound["id"], 2026, 8)
+    august = world.workflow.open_reference_draft(world.actor, outbound["id"], 2026, 8)
     august_weights = {line["kpi_key"]: line["weight"] for line in august["lines"] if float(line["weight"]) > 0}
     assert august_weights["Attendance"] == pytest.approx(0.60)
     assert august_weights["Productivity"] == pytest.approx(0.10)

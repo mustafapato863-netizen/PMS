@@ -334,17 +334,12 @@ class KPIService:
             row["AbandonRate%Ach%"] = abandon_ach
 
         elif team == "Outbound":
+            from services.operational_upload_contract import is_june_2026
             from services.outbound_period_basis import (
                 PRODUCTIVITY_TARGET_ALIASES,
-                SOURCE_TARGETS,
-                OutboundMonthlyActualMissing,
-                apply_basis_targets,
-                canonical_outbound_basis,
-                capped_achievement,
                 explicit_number,
                 period_from_value,
                 productivity_actual,
-                scoring_weights,
             )
 
             def _sheet_ratio(*keys):
@@ -357,8 +352,7 @@ class KPIService:
                 return float(converted)
 
             period = period_from_value(row.get("Date"))
-            basis = canonical_outbound_basis(*(period or (None, None)))
-            outbound_cap_each = basis["status"] in {"july_2026", "august_2026"}
+            june = is_june_2026(*(period or (None, None)))
 
             reached = safe_float(row.get("Reached"))
             num_leads = safe_float(row.get("NumOfLeads") or row.get("NumOfLeads "))
@@ -382,25 +376,20 @@ class KPIService:
             explicit_quality = _sheet_ratio("A.QualityScore")
             actual_quality = 0.0 if explicit_quality is None else explicit_quality
 
-            def _target(column_keys, repo_key, source_key, repo_fallback):
+            def _target(column_keys, repo_key, repo_fallback):
                 found = _sheet_ratio(*column_keys)
                 if found is not None:
                     return found
-                if apply_basis_targets(basis):
-                    return float(SOURCE_TARGETS[source_key])
                 return float(targets.get(repo_key, repo_fallback))
 
-            t_booking = _target(("T.Booking%",), "Booking", "Booking", 0.55)
-            t_attend = _target(("T.Attend%",), "Attend", "Attendance", 0.75)
-            t_quality = _target(("T.Quality%",), "Quality", "Quality", 0.95)
-            t_reachability = _target(("T.Reachability%",), "Reachability", "Other", 0.95)
+            t_booking = _target(("T.Booking%",), "Booking", 0.55)
+            t_attend = _target(("T.Attend%",), "Attend", 0.75)
+            t_quality = _target(("T.Quality%",), "Quality", 0.95)
+            t_reachability = _target(("T.Reachability%",), "Reachability", 0.95)
 
             def _achievement(actual, target):
                 if target <= 0:
                     return 0.0
-                if outbound_cap_each:
-                    result = capped_achievement(actual, target)
-                    return float(result.value or 0.0)
                 return actual / target
 
             booking_ach = _achievement(actual_booking_cr, t_booking)
@@ -413,24 +402,20 @@ class KPIService:
                 "Quality": quality_ach,
                 "Other": reachability_ach,
             }
-            final_weights = scoring_weights(basis, weights)
+            final_weights = {
+                "Attend": float(weights.get("Attend", 0.70)),
+                "Booking": float(weights.get("Booking", 0.10)),
+                "Quality": 0.0 if june else float(weights.get("Quality", 0.10)),
+                "Other": 0.20 if june else float(weights.get("Other", 0.10)),
+            }
             productivity = productivity_actual(row)
-            if basis["productivity_required"] and productivity is None:
-                raise OutboundMonthlyActualMissing(basis["period"] or "the requested month", ["Productivity"])
             if productivity is not None:
                 row["A.Productivity%"] = productivity
                 t_productivity = _sheet_ratio(*PRODUCTIVITY_TARGET_ALIASES)
-                if t_productivity is None and apply_basis_targets(basis):
-                    t_productivity = float(SOURCE_TARGETS["Productivity"])
-                if "Productivity" in final_weights:
-                    achievements["Productivity"] = _achievement(productivity, t_productivity or 0.0)
-                    if t_productivity is not None:
-                        row["T.Productivity%"] = t_productivity
-                else:
-                    final_weights["Productivity"] = 0.0
-                    achievements["Productivity"] = _achievement(productivity, t_productivity) if t_productivity else 0.0
-                    if t_productivity is not None:
-                        row["T.Productivity%"] = t_productivity
+                final_weights["Productivity"] = 0.0
+                achievements["Productivity"] = _achievement(productivity, t_productivity) if t_productivity else 0.0
+                if t_productivity is not None:
+                    row["T.Productivity%"] = t_productivity
 
             row["A.Booking%"] = actual_booking_cr
             row["A.Attend%"] = actual_attend_cr

@@ -428,13 +428,16 @@ def build_legacy_employee_kpi_values(
         else:
             target = _target(actual, achievement, direction, fallback_target)
 
-        # Recalculate achievement ratio dynamically from actual and target for 100% precision
+        # Recalculate achievement ratio dynamically from actual and target.
+        # Operational Outbound caps the final total, not each KPI. A positive
+        # Productivity weight is the reference contract and keeps the per-KPI cap.
+        cap_each = not (team == "Outbound" and _weight(weights, "Productivity") <= 0)
         if target > 0 and actual >= 0:
             if direction == "lower_better":
                 raw_ach = (target / actual) if actual > 0 else 1.0
             else:
                 raw_ach = (actual / target)
-            achievement = min(max(raw_ach, 0.0), 1.0)
+            achievement = min(max(raw_ach, 0.0), 1.0) if cap_each else max(raw_ach, 0.0)
             if team != "Outbound":
                 achievement = round(achievement, 4)
         result.append({
@@ -448,8 +451,8 @@ def build_legacy_employee_kpi_values(
             "target_value": target,
             "achievement_ratio": achievement,
             "weight_applied": weight,
-            "contribution": min(achievement, 1.0) * weight,
-            "cap_achievement": True,
+            "contribution": (min(achievement, 1.0) if cap_each else achievement) * weight,
+            "cap_achievement": cap_each,
         })
     if team == "Outbound":
         _append_outbound_productivity(result, row, weights, definitions)
@@ -475,7 +478,8 @@ def _append_outbound_productivity(result, row, weights, definitions) -> None:
         target = target / 100.0
     if target is None:
         target = 0.0
-    achievement = min(max(actual / target, 0.0), 1.0) if target > 0 else 0.0
+    raw_achievement = (actual / target) if target > 0 else 0.0
+    achievement = min(max(raw_achievement, 0.0), 1.0) if weight > 0 else max(raw_achievement, 0.0)
     definition = definitions.get(PRODUCTIVITY_KEY, {})
     result.append({
         "kpi_key": PRODUCTIVITY_KEY,
@@ -489,6 +493,6 @@ def _append_outbound_productivity(result, row, weights, definitions) -> None:
         "achievement_ratio": achievement,
         "weight_applied": weight,
         "contribution": achievement * weight,
-        "cap_achievement": True,
+        "cap_achievement": weight > 0,
         "scored": weight > 0,
     })

@@ -240,6 +240,7 @@ def test_format_22_percent_serial_survives_the_real_parser_and_crop():
 
 def test_august_upload_dry_run_matches_commit_and_keeps_the_five_kpi_total(db, monkeypatch):
     _bind(db, monkeypatch)
+    _install_reference(db, 8)
     seeder = _seeder()
     blob = _august_bytes()
     preview = seeder.process_uploaded_file("august.xlsx", blob, dry_run=True)
@@ -293,6 +294,7 @@ def test_august_upload_dry_run_matches_commit_and_keeps_the_five_kpi_total(db, m
 
 def test_july_upload_keeps_the_four_kpi_score(db, monkeypatch):
     _bind(db, monkeypatch)
+    _install_reference(db, 7)
     blob = _workbook(
         datetime(2026, 7, 15), JULY, productivity=None, role="Emp", sheet="Outbound Offshore Call Center",
     )
@@ -310,6 +312,7 @@ def test_july_upload_keeps_the_four_kpi_score(db, monkeypatch):
 
 def test_missing_august_productivity_is_refused_on_dry_run_and_commit(db, monkeypatch):
     _bind(db, monkeypatch)
+    _install_reference(db, 8)
     blob = _august_bytes(productivity=None)
     seeder = _seeder()
     for dry_run in (True, False):
@@ -476,6 +479,41 @@ def test_pinned_read_keeps_the_rich_payload_when_current_config_changes(monkeypa
     assert resolved.evaluation.score != EvaluationData(score=1, grade="A").score
 
 
+def _reference_lines(month: int) -> list[dict]:
+    """Workbook-owned targets so the sheet, not a fixed override, supplies the ratio."""
+    return [
+        {
+            "kpi_key": line["kpi_key"],
+            "label": line.get("label") or line["kpi_key"],
+            "direction": line.get("direction") or "higher_better",
+            "unit": line.get("unit") or "%",
+            "weight": line["weight"],
+            "target": line.get("target"),
+            "target_mode": "workbook",
+        }
+        for line in period_capability(2026, month)["lines"]
+    ]
+
+
+def _install_reference(db, month: int) -> Team:
+    team = db.query(Team).filter(Team.name == "Outbound").one_or_none()
+    if team is None:
+        team = Team(
+            id=uuid.uuid4(),
+            name="Outbound",
+            db_name="Outbound",
+            display_name="Outbound",
+            region="EGY",
+            team_level="employee",
+            is_active=True,
+        )
+        db.add(team)
+        db.flush()
+    db.add(_approved(team.id, month, _reference_lines(month)))
+    db.commit()
+    return team
+
+
 def _lines(attendance_target: float) -> list[dict]:
     weights = {"Booking": 0.10, "Attendance": 0.60, "Other": 0.10, "Quality": 0.10, "Productivity": 0.10}
     return [
@@ -506,7 +544,12 @@ def _approved(team_id, month: int, lines: list[dict]) -> TeamConfigurationVersio
         status="approved",
         effective_month=label,
         effective_year=2026,
-        config_snapshot={"lines": lines, "grade_thresholds": {"A": 95, "B": 85, "C": 75, "D": 65}},
+        config_snapshot={
+            "lines": lines,
+            "grade_thresholds": {"A": 95, "B": 85, "C": 75, "D": 65},
+            "contract": "reference_workbook",
+            "policy": "employee_ratio",
+        },
         config_checksum="a" * 64,
         effective_from_month=month,
         effective_from_year=2026,
