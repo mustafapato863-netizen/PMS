@@ -903,7 +903,32 @@ def _create_foundation_tables(connection) -> None:
                 f"{table.name} already exists; refusing to recreate an existing "
                 "evaluation apply table."
             )
+        _create_table_skipping_unready_foreign_keys(connection, table)
+
+
+def _create_table_skipping_unready_foreign_keys(connection, table) -> None:
+    """Create ``table``; omit FKs whose referenced key is missing (with a warning)."""
+    from sqlalchemy.schema import CreateIndex, CreateTable
+
+    from utils.schema_key_guards import fk_target_ready
+
+    unready = [
+        fk
+        for fk in table.foreign_key_constraints
+        if not fk_target_ready(
+            connection,
+            fk.referred_table.name,
+            tuple(element.column.name for element in fk.elements),
+            f"{table.name}({', '.join(fk.column_keys)})",
+        )
+    ]
+    if not unready:
         table.create(bind=connection, checkfirst=False)
+        return
+    keep = [fk for fk in table.foreign_key_constraints if fk not in unready]
+    connection.execute(CreateTable(table, include_foreign_key_constraints=keep))
+    for index in table.indexes:
+        connection.execute(CreateIndex(index))
 
 
 def _widen_processing_jobs(connection) -> None:

@@ -757,6 +757,19 @@ def _replace_foreign_key(connection, table: str, column: str, referred: str, ond
         for fk in inspector.get_foreign_keys(table)
         if fk.get("constrained_columns") == [column] and fk.get("referred_table") == referred
     ]
+    if not matches:
+        from utils.schema_key_guards import has_unique_key
+
+        if not has_unique_key(connection, referred, ("id",)):
+            # The referenced key is missing (legacy bootstrap schema), so the
+            # earlier revision skipped this foreign key with a warning.
+            from utils.schema_key_guards import log
+
+            log.warning(
+                "SKIPPED foreign key %s.%s -> %s(id): referenced key is missing.",
+                table, column, referred,
+            )
+            return
     if len(matches) != 1 or not matches[0].get("name"):
         raise RuntimeError(
             f"Expected one foreign key for {table}.{column} referencing {referred}, found {matches}."
