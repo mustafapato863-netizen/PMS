@@ -261,6 +261,7 @@ def process_job_once(job_id: str, worker_id: str) -> None:
         failed = None
         db = SessionLocal()
         try:
+            report = getattr(exc, "report", None)
             failed = ProcessingJobService.fail(
                 db,
                 job_id,
@@ -268,6 +269,7 @@ def process_job_once(job_id: str, worker_id: str) -> None:
                 message=_safe_processing_error_message(exc, job_id),
                 retryable=retryable,
                 worker_id=worker_id,
+                result=report if isinstance(report, dict) else None,
             )
         finally:
             db.close()

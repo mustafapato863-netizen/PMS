@@ -80,6 +80,8 @@ KNOWN_PERCENT_COLUMNS = (
     "T.Booking%",
     "A.QualityScore",
     "T.Quality%",
+    # Ordinary workbook header for the same quality-target ratio.
+    "T.Quality Target",
     "A.Reachability%",
     "T.Reachability%",
     "AttendC.RAch%",

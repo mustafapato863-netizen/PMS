@@ -328,6 +328,7 @@ it.each(['Manager', 'Performance Team'])('makes no evaluation request and shows 
   expect(screen.queryByLabelText('QualityErrors target')).not.toBeInTheDocument();
   expect(screen.queryByLabelText('QualityErrors weight')).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Use original upload settings' })).not.toBeInTheDocument();
   expect(screen.queryByRole('spinbutton', { name: 'Reporting year' })).not.toBeInTheDocument();
   await act(async () => { await Promise.resolve(); });
   expect(mocks.fetchWithRole).not.toHaveBeenCalled();
@@ -1848,4 +1849,275 @@ it('shows an actionable denial when cancel is rejected and does not grant permis
   expect(calls('/cancel', 'POST')).toHaveLength(1);
   expect(screen.queryByText(/permission granted/i)).not.toBeInTheDocument();
   expect(performanceRefresh).not.toHaveBeenCalled();
+});
+
+const referenceChoice = {
+  available: true,
+  contract: 'reference_workbook',
+  code: 'adopt_operational_upload',
+  message: 'This version uses the reference workbook contract and was not changed. Admin can adopt the operational upload contract explicitly.',
+};
+
+function referenceDraft(id: string) {
+  return {
+    id,
+    status: 'draft',
+    version_number: 4,
+    checksum: `sum-${id}`,
+    contract: 'reference_workbook',
+    revision_choice: referenceChoice,
+    lines: [{ kpi_key: 'Productivity', label: 'Productivity', weight: 1, direction: 'higher_better', target: 0.8, target_mode: 'workbook', unit: '%' }],
+  };
+}
+
+function operationalDraft(id: string, sourceId?: string) {
+  return {
+    id,
+    status: 'draft',
+    version_number: 5,
+    checksum: `sum-${id}`,
+    contract: 'operational_upload',
+    source_version_id: sourceId ?? null,
+    revision_choice: {
+      available: false,
+      contract: 'operational_upload',
+      code: null,
+      message: 'This version uses the operational upload contract.',
+    },
+    lines: [{ kpi_key: 'Attendance', label: 'Attendance', weight: 1, direction: 'higher_better', target: null, target_mode: 'workbook', unit: '%' }],
+  };
+}
+
+function adoptCalls() {
+  return calls('/adopt-operational', 'POST');
+}
+
+it('adopts the reference contract only after confirmation and shows the operational result', async () => {
+  window.history.replaceState(null, '', '/?period=2026-07');
+  let adopted = false;
+  assignEvaluationFetch(async (url: string, init?: RequestInit) => {
+    const href = String(url);
+    if (href.includes('/catalog')) return json({ scopes: [{ ...scope, id: 'outbound', display_name: 'Outbound' }] });
+    if (href.includes('/periods')) return json({ versions: [adopted ? operationalDraft('july-draft') : referenceDraft('july-draft')] });
+    if (href.includes('/adopt-operational') && init?.method === 'POST') {
+      adopted = true;
+      return json(operationalDraft('july-draft'));
+    }
+    return json(referenceDraft('july-draft'));
+  });
+  renderPanel();
+  expect(await screen.findByText('Settings source: Reference workbook · July 2026 · Employee')).toBeInTheDocument();
+  expect(screen.getByText(/original uploader's supported indicators, targets, and weights for this month/)).toBeInTheDocument();
+  expect(screen.getByText(/Approved results and history stay unchanged until you preview, approve, and Apply/)).toBeInTheDocument();
+  expect(screen.getByText(/Unsaved edits are discarded only after you confirm/)).toBeInTheDocument();
+  expect(screen.queryByText(/operational upload contract/i)).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Use original upload settings' }));
+  expect(adoptCalls()).toHaveLength(0);
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm switch' }));
+  expect(await screen.findByText('Settings source: Original upload · July 2026 · Employee')).toBeInTheDocument();
+  expect(screen.getByLabelText('Attendance target')).toBeInTheDocument();
+  expect(screen.queryByLabelText('Productivity weight')).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Use original upload settings' })).not.toBeInTheDocument();
+  expect(adoptCalls()).toHaveLength(1);
+  expect(String(adoptCalls()[0][0])).toContain('/versions/july-draft/adopt-operational');
+  expect(JSON.parse(String(adoptCalls()[0][1]?.body))).toEqual({ confirm: true, expected_checksum: 'sum-july-draft' });
+});
+
+it('keeps unsaved edits until adoption is confirmed, then posts the loaded checksum only', async () => {
+  window.history.replaceState(null, '', '/?period=2026-07');
+  let adopted = false;
+  assignEvaluationFetch(async (url: string, init?: RequestInit) => {
+    const href = String(url);
+    if (href.includes('/catalog')) return json({ scopes: [{ ...scope, id: 'outbound', display_name: 'Outbound' }] });
+    if (href.includes('/periods')) return json({ versions: [adopted ? operationalDraft('july-draft') : referenceDraft('july-draft')] });
+    if (href.includes('/adopt-operational') && init?.method === 'POST') {
+      adopted = true;
+      return json(operationalDraft('july-draft'));
+    }
+    return json(referenceDraft('july-draft'));
+  });
+  renderPanel();
+  const weight = await screen.findByLabelText('Productivity weight');
+  fireEvent.change(weight, { target: { value: '90' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Use original upload settings' }));
+  expect(screen.getByRole('group', { name: 'Switch to original upload settings' })).toHaveTextContent(/Unsaved target and weight edits for July 2026 are discarded only after you confirm/);
+  expect(screen.getByRole('group', { name: 'Switch to original upload settings' })).toHaveTextContent(/Approved results and history stay unchanged until you preview, approve, and Apply/);
+  expect(adoptCalls()).toHaveLength(0);
+  fireEvent.click(screen.getByRole('button', { name: 'Keep current settings' }));
+  expect(screen.getByLabelText('Productivity weight')).toHaveValue('90');
+  expect(screen.queryByRole('group', { name: 'Switch to original upload settings' })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Use original upload settings' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm switch' }));
+  await waitFor(() => expect(adoptCalls()).toHaveLength(1));
+  const body = JSON.parse(String(adoptCalls()[0][1]?.body));
+  expect(body).toEqual({ confirm: true, expected_checksum: 'sum-july-draft' });
+  expect(body.lines).toBeUndefined();
+  expect(await screen.findByLabelText('Attendance weight')).toBeInTheDocument();
+});
+
+it('reports a stale or denied adoption without replacing the reference draft', async () => {
+  window.history.replaceState(null, '', '/?period=2026-07');
+  let mode: 'stale' | 'denied' = 'stale';
+  assignEvaluationFetch(async (url: string, init?: RequestInit) => {
+    const href = String(url);
+    if (href.includes('/catalog')) return json({ scopes: [{ ...scope, id: 'outbound', display_name: 'Outbound' }] });
+    if (href.includes('/periods')) return json({ versions: [referenceDraft('july-draft')] });
+    if (href.includes('/adopt-operational') && init?.method === 'POST') {
+      const detail = mode === 'stale'
+        ? { message: 'This version changed after you opened it. Nothing was changed.', code: 'stale_draft' }
+        : { message: 'Evaluation settings are limited to Admin.', code: 'access_denied' };
+      return { ok: false, status: mode === 'denied' ? 403 : 409, json: async () => ({ detail }) };
+    }
+    return json(referenceDraft('july-draft'));
+  });
+  renderPanel();
+  fireEvent.click(await screen.findByRole('button', { name: 'Use original upload settings' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm switch' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('stale_draft: This version changed after you opened it.');
+  expect(screen.getByLabelText('Productivity weight')).toBeInTheDocument();
+  expect(screen.getByText('Settings source: Reference workbook · July 2026 · Employee')).toBeInTheDocument();
+  expect(adoptCalls()).toHaveLength(1);
+  mode = 'denied';
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm switch' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('access_denied: Evaluation settings are limited to Admin.');
+  expect(adoptCalls()).toHaveLength(2);
+  expect(screen.getByLabelText('Productivity weight')).toBeInTheDocument();
+  expect(screen.queryByLabelText('Attendance weight')).not.toBeInTheDocument();
+});
+
+it('does not post twice while an adoption request is still open', async () => {
+  window.history.replaceState(null, '', '/?period=2026-07');
+  let release: (value: unknown) => void = () => {};
+  const pending = new Promise((resolve) => { release = resolve; });
+  assignEvaluationFetch(async (url: string, init?: RequestInit) => {
+    const href = String(url);
+    if (href.includes('/catalog')) return json({ scopes: [{ ...scope, id: 'outbound', display_name: 'Outbound' }] });
+    if (href.includes('/periods')) return json({ versions: [referenceDraft('july-draft')] });
+    if (href.includes('/adopt-operational') && init?.method === 'POST') return pending;
+    return json(referenceDraft('july-draft'));
+  });
+  renderPanel();
+  fireEvent.click(await screen.findByRole('button', { name: 'Use original upload settings' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm switch' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm switch' }));
+  await waitFor(() => expect(adoptCalls()).toHaveLength(1));
+  await act(async () => { release(json(operationalDraft('july-draft'))); });
+  expect(await screen.findByText(/This month now uses the original upload settings/)).toBeInTheDocument();
+  expect(adoptCalls()).toHaveLength(1);
+});
+
+it('adopts only the selected level and month', async () => {
+  window.history.replaceState(null, '', '/?period=2026-07');
+  const outbound = { ...scope, id: 'outbound', display_name: 'Outbound', performance_level: 'Employee' };
+  const managerial = { ...scope, id: 'managerial', display_name: 'Outbound', performance_level: 'Managerial' };
+  const adopted = new Set<string>();
+  assignEvaluationFetch(async (url: string, init?: RequestInit) => {
+    const href = String(url);
+    if (href.includes('/catalog')) return json({ scopes: [outbound, managerial] });
+    if (href.includes('/adopt-operational') && init?.method === 'POST') {
+      const id = /versions\/([^/]+)\/adopt-operational/.exec(href)?.[1] ?? '';
+      adopted.add(id);
+      return json(operationalDraft(id));
+    }
+    if (href.includes('/periods')) {
+      const params = new URL(href, window.location.origin).searchParams;
+      if (params.get('scope_id') === 'managerial') return json({ versions: [{ ...draft, id: 'manager-draft' }] });
+      const id = params.get('month') === '8' ? 'august-draft' : 'july-draft';
+      return json({ versions: [adopted.has(id) ? operationalDraft(id) : referenceDraft(id)] });
+    }
+    return json(referenceDraft('july-draft'));
+  });
+  const user = userEvent.setup();
+  renderPanel();
+  expect(await screen.findByText('Settings source: Reference workbook · July 2026 · Employee')).toBeInTheDocument();
+  await user.selectOptions(screen.getByLabelText('Performance level'), 'Managerial');
+  expect(await screen.findByLabelText('QualityErrors target')).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Use original upload settings' })).not.toBeInTheDocument();
+  expect(adoptCalls()).toHaveLength(0);
+  expect(screen.getByLabelText('Evaluation scope')).toHaveValue('managerial');
+  await user.selectOptions(screen.getByLabelText('Performance level'), 'Employee');
+  fireEvent.click(await screen.findByRole('button', { name: 'Use original upload settings' }));
+  fireEvent.change(screen.getByLabelText('Reporting month'), { target: { value: '8' } });
+  expect(await screen.findByText('Settings source: Reference workbook · August 2026 · Employee')).toBeInTheDocument();
+  expect(screen.queryByRole('group', { name: 'Switch to original upload settings' })).not.toBeInTheDocument();
+  expect(adoptCalls()).toHaveLength(0);
+  fireEvent.click(screen.getByRole('button', { name: 'Use original upload settings' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm switch' }));
+  expect(await screen.findByText('Settings source: Original upload · August 2026 · Employee')).toBeInTheDocument();
+  expect(adoptCalls()).toHaveLength(1);
+  expect(String(adoptCalls()[0][0])).toContain('/versions/august-draft/adopt-operational');
+  expect(String(adoptCalls()[0][0])).not.toContain('july-draft');
+  expect(JSON.parse(String(adoptCalls()[0][1]?.body)).expected_checksum).toBe('sum-august-draft');
+});
+
+it('does not apply a late adoption response to the month now on screen', async () => {
+  window.history.replaceState(null, '', '/?period=2026-07');
+  let releaseJuly: (value: unknown) => void = () => {};
+  const julyPending = new Promise((resolve) => { releaseJuly = resolve; });
+  assignEvaluationFetch(async (url: string, init?: RequestInit) => {
+    const href = String(url);
+    if (href.includes('/catalog')) return json({ scopes: [{ ...scope, id: 'outbound', display_name: 'Outbound' }] });
+    if (href.includes('/adopt-operational') && init?.method === 'POST') return julyPending;
+    if (href.includes('/periods')) {
+      const month = new URL(href, window.location.origin).searchParams.get('month');
+      return json({ versions: [referenceDraft(month === '8' ? 'august-draft' : 'july-draft')] });
+    }
+    return json(referenceDraft('july-draft'));
+  });
+  renderPanel();
+  fireEvent.click(await screen.findByRole('button', { name: 'Use original upload settings' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm switch' }));
+  await waitFor(() => expect(adoptCalls()).toHaveLength(1));
+  fireEvent.change(screen.getByLabelText('Reporting month'), { target: { value: '8' } });
+  expect(await screen.findByText('Settings source: Reference workbook · August 2026 · Employee')).toBeInTheDocument();
+  await act(async () => { releaseJuly(json(operationalDraft('july-draft', 'approved-july'))); });
+  expect(screen.getByText('Settings source: Reference workbook · August 2026 · Employee')).toBeInTheDocument();
+  expect(screen.queryByText(/This month now uses the original upload settings/)).not.toBeInTheDocument();
+  expect(screen.getByLabelText('Productivity weight')).toBeInTheDocument();
+  expect(String(adoptCalls()[0][0])).toContain('/versions/july-draft/adopt-operational');
+  expect(adoptCalls()).toHaveLength(1);
+});
+
+it('keeps an operational row direction read-only when the uploaded row selects UTZ or Abandon', async () => {
+  window.history.replaceState(null, '', '/?period=2026-08');
+  const other = { kpi_key: 'Other', label: 'Abandon Rate', weight: 0.1, direction: 'lower_better', target: null, target_mode: 'workbook', unit: '%', row_selection: 'utz_or_abandon' };
+  const attendance = { kpi_key: 'Attendance', label: 'Attendance', weight: 0.9, direction: 'higher_better', target: 0.5, target_mode: 'fixed', unit: '%' };
+  assignEvaluationFetch(async (url: string, init?: RequestInit) => {
+    const href = String(url);
+    if (href.includes('/catalog')) return json({ scopes: [{ ...scope, id: 'inbound', display_name: 'Inbound' }] });
+    if (href.includes('/periods')) {
+      return json({
+        versions: [{
+          ...draft,
+          id: 'inbound-draft',
+          checksum: 'sum-inbound',
+          contract: 'operational_upload',
+          revision_choice: { available: false, contract: 'operational_upload', code: null, message: 'This version uses the operational upload contract.' },
+          lines: [attendance, other],
+        }],
+      });
+    }
+    if (init?.method === 'PATCH') return json({ ...draft, id: 'inbound-draft', checksum: 'sum-inbound', lines: JSON.parse(String(init.body)).lines });
+    return json(draft);
+  });
+  renderPanel();
+  expect(await screen.findByText('Settings source: Original upload · August 2026 · Employee')).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Use original upload settings' })).not.toBeInTheDocument();
+  const direction = screen.getByLabelText('Other direction');
+  expect(direction).toHaveValue('Uploaded row');
+  expect(direction).toHaveAttribute('readonly');
+  expect(screen.getByText(/UTZ when that cell is present, otherwise Abandon/)).toBeInTheDocument();
+  fireEvent.change(direction, { target: { value: 'higher_better' } });
+  expect(direction).toHaveValue('Uploaded row');
+  const attendanceDirection = screen.getByLabelText('Attendance direction');
+  expect(attendanceDirection).toHaveValue('Higher is better');
+  expect(attendanceDirection).toHaveAttribute('readonly');
+  fireEvent.change(attendanceDirection, { target: { value: 'Lower is better' } });
+  expect(attendanceDirection).toHaveValue('Higher is better');
+  fireEvent.change(screen.getByLabelText('Attendance target'), { target: { value: '60' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+  await waitFor(() => expect(calls('/drafts/inbound-draft', 'PATCH')).toHaveLength(1));
+  const saved = JSON.parse(String(calls('/drafts/inbound-draft', 'PATCH')[0][1]?.body));
+  expect(saved.lines.find((item: { kpi_key: string }) => item.kpi_key === 'Other')).toMatchObject({ direction: 'lower_better', row_selection: 'utz_or_abandon', weight: 0.1 });
+  expect(saved.lines.find((item: { kpi_key: string }) => item.kpi_key === 'Attendance')).toMatchObject({ direction: 'higher_better', target: 0.6, weight: 0.9 });
 });

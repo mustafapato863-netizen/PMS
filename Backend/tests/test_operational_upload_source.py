@@ -1054,3 +1054,457 @@ def test_non_admin_cannot_open_or_apply_and_admin_can(db):
         world.workflow.impact_preview(world.manager_actor, draft["id"])
     with pytest.raises(AccessDenied):
         world.workflow.apply(world.manager_actor, outbound["id"], 2026, 5)
+
+
+_TRACKING_WEIGHTS = {"Attendance": 0.8, "Booking": 0.0, "Quality": 0.1, "Other": 0.1}
+
+
+def _cloned(lines: list[dict]) -> list[dict]:
+    return [dict(line) for line in lines]
+
+
+def _gate_version(month: int, lines: list[dict], *, cap: str = "final_total"):
+    return SimpleNamespace(
+        id="operational-gate",
+        version_number=1,
+        performance_level="Employee",
+        position_name="",
+        effective_from_year=2026,
+        effective_from_month=month,
+        config_snapshot={
+            "contract": "operational_upload",
+            "policy": "operational_upload",
+            "cap": cap,
+            "lines": lines,
+            "grade_thresholds": {"A": 95, "B": 85, "C": 75, "D": 65},
+        },
+    )
+
+
+def _reason(caught) -> str:
+    return caught.value.data["capability_reason"]
+
+
+def test_tracking_only_weight_saves_previews_applies_and_rolls_back_one_month(db):
+    world = _World(db)
+    outbound = world.scope("Outbound")
+    may = _seed_outbound(world, "May", "SYN-TRACK")
+    september = _seed_outbound(world, "September", "SYN-OTHER")
+    draft = world.workflow.open_draft(world.actor, outbound["id"], 2026, 5)
+    edited = world.workflow.edit_draft(
+        world.actor, draft["id"], _edit_weights(draft["lines"], _TRACKING_WEIGHTS),
+    )
+    assert _weights_of(edited["lines"])["Booking"] == pytest.approx(0.0)
+    assert edited["lines"][0]["direction"] == draft["lines"][0]["direction"]
+    preview = world.workflow.impact_preview(world.actor, edited["id"])
+    booking = next(item for item in preview["comparisons"][0]["kpis"] if item["kpi_key"] == "Booking")
+    assert preview["comparisons"][0]["after_score"] == 50.0
+    assert booking["after_achievement"] == pytest.approx(_BOOKING_ACH)
+    assert booking["after_contribution"] == pytest.approx(0.0)
+    assert preview["writes"] == 0
+    world.workflow.approve(world.actor, edited["id"])
+    applied = world.workflow.apply(world.actor, outbound["id"], 2026, 5)
+    assert applied["records"][0]["score"] == 50.0
+    may_row = _reload(db, may.id, 2026)
+    september_row = _reload(db, september.id, 2026)
+    assert float(may_row.score) == pytest.approx(50.0)
+    assert float(_kpi_map(may_row)["Booking"].actual_value) == pytest.approx(_BOOKING_ACTUAL)
+    assert float(_kpi_map(may_row)["Booking"].weight_applied) == pytest.approx(0.0)
+    assert float(_kpi_map(may_row)["Booking"].contribution) == pytest.approx(0.0)
+    assert float(september_row.score) == pytest.approx(65.0)
+    assert float(_kpi_map(september_row)["Booking"].weight_applied) == pytest.approx(0.10)
+    rolled = world.workflow.rollback(world.actor, applied["revision_id"])
+    assert rolled["status"] == "rolled_back"
+    may_row = _reload(db, may.id, 2026)
+    september_row = _reload(db, september.id, 2026)
+    assert float(may_row.score) == pytest.approx(65.0)
+    assert float(_kpi_map(may_row)["Booking"].weight_applied) == pytest.approx(0.10)
+    assert float(september_row.score) == pytest.approx(65.0)
+
+
+def test_missing_tracking_evidence_is_not_scored_as_zero(db):
+    world = _World(db)
+    outbound = world.scope("Outbound")
+    record = _seed_outbound(world, "May", "SYN-MISS")
+    booking = next(value for value in record.kpi_values if value.kpi_key == "Booking")
+    world.db.delete(booking)
+    world.db.commit()
+    draft = world.workflow.open_draft(world.actor, outbound["id"], 2026, 5)
+    edited = world.workflow.edit_draft(
+        world.actor, draft["id"], _edit_weights(draft["lines"], _TRACKING_WEIGHTS),
+    )
+    preview = world.workflow.impact_preview(world.actor, edited["id"])
+    assert preview["comparisons"][0]["after_score"] == 50.0
+    assert preview["writes"] == 0
+    assert "Booking" not in {item["kpi_key"] for item in preview["comparisons"][0]["kpis"]}
+    reloaded = _reload(db, record.id, 2026)
+    assert "Booking" not in _kpi_map(reloaded)
+    assert float(reloaded.score) == pytest.approx(65.0)
+    sample = world.workflow.preview(world.actor, edited["id"], [
+        {"kpi_key": "Attendance", "actual": _ATTEND_ACTUAL, "workbook_target": _ATTEND_TARGET},
+        {"kpi_key": "Booking", "actual": None, "workbook_target": _BOOKING_TARGET},
+        {"kpi_key": "Quality", "actual": _QUALITY_ACTUAL, "workbook_target": _QUALITY_TARGET},
+        {"kpi_key": "Other", "actual": _OTHER_ACTUAL, "workbook_target": _OTHER_TARGET},
+    ])
+    absent = next(row for row in sample["rows"] if row["kpi_key"] == "Booking")
+    assert absent["actual"] is None
+    assert absent["achievement"] is None
+    assert absent["contribution"] is None
+    assert sample["score"] == 50.0
+
+
+def test_june_quality_redistribution_uses_source_formula_and_evidence(db):
+    from config.loader import load_team_config
+    from services.seeding_service import DatabaseSeeder, pin_upload_score
+
+    world = _World(db)
+    outbound = world.scope("Outbound")
+    record = _seed_outbound(world, "June", "SYN-JUNE")
+    draft = world.workflow.open_draft(world.actor, outbound["id"], 2026, 6)
+    assert _weights_of(draft["lines"])["Quality"] == pytest.approx(0.0)
+    edited = world.workflow.edit_draft(
+        world.actor,
+        draft["id"],
+        _edit_weights(draft["lines"], {
+            "Attendance": 0.70, "Booking": 0.10, "Quality": 0.20, "Other": 0.0,
+        }),
+    )
+    stored = db.query(TeamConfigurationVersion).filter(TeamConfigurationVersion.id == uuid.UUID(edited["id"])).one()
+    require_approved_capability(
+        stored, team_name="Outbound", config=load_team_config("Outbound"), year=2026, month=6,
+    )
+    DatabaseSeeder._refuse_unsupported_outbound_binding(SimpleNamespace(team="Outbound", month="June"), stored, 2026)
+    preview = world.workflow.impact_preview(world.actor, edited["id"])
+    quality = next(item for item in preview["comparisons"][0]["kpis"] if item["kpi_key"] == "Quality")
+    other = next(item for item in preview["comparisons"][0]["kpis"] if item["kpi_key"] == "Other")
+    assert quality["after_achievement"] == pytest.approx(_QUALITY_ACH)
+    assert quality["after_contribution"] == pytest.approx(_QUALITY_ACH * 0.20)
+    assert other["weight"] == pytest.approx(0.0)
+    assert other["after_contribution"] == pytest.approx(0.0)
+    evidence = [
+        {"kpi_key": "Attendance", "actual": _ATTEND_ACTUAL, "workbook_target": _ATTEND_TARGET},
+        {"kpi_key": "Booking", "actual": _BOOKING_ACTUAL, "workbook_target": _BOOKING_TARGET},
+        {"kpi_key": "Quality", "actual": _QUALITY_ACTUAL, "workbook_target": _QUALITY_TARGET},
+        {"kpi_key": "Other", "actual": _OTHER_ACTUAL, "workbook_target": _OTHER_TARGET},
+    ]
+    pinned = pin_upload_score(stored, evidence)
+    pinned_quality = next(item for item in pinned["rows"] if item["kpi_key"] == "Quality")
+    assert pinned_quality["achievement"] == pytest.approx(_QUALITY_ACH)
+    assert pinned_quality["contribution"] == pytest.approx(_QUALITY_ACH * 0.20)
+    with pytest.raises(EvaluationError) as omitted:
+        pin_upload_score(stored, [row for row in evidence if row["kpi_key"] != "Quality"])
+    assert omitted.value.data["code"] == "incomplete_evidence"
+    assert "Quality" in omitted.value.data["missing"]
+    quality_row = next(value for value in record.kpi_values if value.kpi_key == "Quality")
+    world.db.delete(quality_row)
+    world.db.commit()
+    with pytest.raises(EvaluationError) as missing:
+        world.workflow.impact_preview(world.actor, edited["id"])
+    assert missing.value.data["code"] == "missing_evidence"
+    assert missing.value.data["missing_evidence"][0]["kpi_key"] == "Quality"
+
+
+def test_operational_gate_rejects_identity_direction_cap_and_nonfinite_weights():
+    from config.loader import load_team_config
+    from services.operational_upload_contract import operational_lines
+    from services.outbound_period_basis import period_capability
+
+    config = load_team_config("Outbound")
+    base = _cloned(operational_lines("Outbound", 2026, 5))
+    tracking = _cloned(base)
+    for line in tracking:
+        line["weight"] = _TRACKING_WEIGHTS[line["kpi_key"]]
+    allowed = require_approved_capability(
+        _gate_version(5, tracking), team_name="Outbound", config=config, year=2026, month=5,
+    )
+    assert allowed.allows_ratio_edit is True
+
+    unknown = _cloned(base) + [{
+        "kpi_key": "Productivity", "weight": 0.0, "direction": "higher_better", "cap_each": False,
+    }]
+    with pytest.raises(EvaluationError) as unknown_key:
+        require_approved_capability(_gate_version(5, unknown), team_name="Outbound", config=config, year=2026, month=5)
+    assert _reason(unknown_key) == "kpi_key"
+
+    duplicate = _cloned(base)
+    duplicate.append(dict(duplicate[1]))
+    with pytest.raises(EvaluationError) as repeated:
+        require_approved_capability(_gate_version(5, duplicate), team_name="Outbound", config=config, year=2026, month=5)
+    assert _reason(repeated) == "duplicate_kpi"
+
+    missing = [line for line in _cloned(base) if line["kpi_key"] != "Booking"]
+    for line in missing:
+        if line["kpi_key"] == "Attendance":
+            line["weight"] = 0.80
+    with pytest.raises(EvaluationError) as scored_missing:
+        require_approved_capability(_gate_version(5, missing), team_name="Outbound", config=config, year=2026, month=5)
+    assert _reason(scored_missing) == "scored_keys"
+
+    lowered = _cloned(base)
+    lowered[0]["direction"] = "lower_better"
+    with pytest.raises(EvaluationError) as direction:
+        require_approved_capability(_gate_version(5, lowered), team_name="Outbound", config=config, year=2026, month=5)
+    assert _reason(direction) == "direction"
+
+    capped = _cloned(base)
+    capped[0]["cap_each"] = True
+    with pytest.raises(EvaluationError) as cap:
+        require_approved_capability(_gate_version(5, capped), team_name="Outbound", config=config, year=2026, month=5)
+    assert _reason(cap) == "cap"
+    with pytest.raises(EvaluationError) as snapshot_cap:
+        require_approved_capability(
+            _gate_version(5, _cloned(base), cap="per_kpi"), team_name="Outbound", config=config, year=2026, month=5,
+        )
+    assert _reason(snapshot_cap) == "cap"
+
+    nonfinite = _cloned(base)
+    nonfinite[0]["weight"] = float("nan")
+    with pytest.raises(EvaluationError) as weight:
+        require_approved_capability(_gate_version(5, nonfinite), team_name="Outbound", config=config, year=2026, month=5)
+    assert _reason(weight) == "weight"
+
+    inbound = _cloned(operational_lines("Inbound", 2026, 4))
+    for line in inbound:
+        if line["kpi_key"] == "Other":
+            line["row_selection"] = "fixed_other"
+    with pytest.raises(EvaluationError) as selection:
+        require_approved_capability(
+            _gate_version(4, inbound), team_name="Inbound", config=load_team_config("Inbound"), year=2026, month=4,
+        )
+    assert _reason(selection) == "row_selection"
+
+    reference = _cloned(period_capability(2026, 8)["lines"])
+    for line in reference:
+        if line["kpi_key"] == "Booking":
+            line["weight"] = 0.0
+    reference_version = SimpleNamespace(
+        performance_level="Employee",
+        position_name="",
+        effective_from_year=2026,
+        effective_from_month=8,
+        config_snapshot={"policy": "employee_ratio", "lines": reference},
+    )
+    with pytest.raises(EvaluationError) as canonical:
+        require_approved_capability(reference_version, team_name="Outbound", config=config, year=2026, month=8)
+    assert _reason(canonical) == "scored_keys"
+
+
+def test_operational_binding_uses_mapped_keys_not_baseline_positive_weights():
+    from services.operational_upload_contract import operational_lines
+    from services.outbound_period_basis import OutboundUnsupportedApprovedBinding
+    from services.seeding_service import DatabaseSeeder
+
+    lines = _cloned(operational_lines("Outbound", 2026, 5))
+    for line in lines:
+        line["weight"] = _TRACKING_WEIGHTS[line["kpi_key"]]
+    version = _gate_version(5, lines)
+    DatabaseSeeder._refuse_unsupported_outbound_binding(SimpleNamespace(team="Outbound", month="May"), version, 2026)
+    dropped = [line for line in lines if line["kpi_key"] != "Booking"]
+    with pytest.raises(OutboundUnsupportedApprovedBinding):
+        DatabaseSeeder._refuse_unsupported_outbound_binding(
+            SimpleNamespace(team="Outbound", month="May"), _gate_version(5, dropped), 2026,
+        )
+
+
+def _adopt_app(world: _World):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from api.routers.evaluation_settings import router
+    from config.database import get_db
+
+    app = FastAPI()
+    app.include_router(router, prefix="/evaluation")
+    holder = {"user": dict(world.actor)}
+
+    @app.middleware("http")
+    async def actor(request, call_next):
+        if holder["user"]:
+            request.state.user = holder["user"]
+        return await call_next(request)
+
+    def session():
+        yield world.db
+
+    app.dependency_overrides[get_db] = session
+    return app, holder, TestClient
+
+
+def test_stale_adoption_keeps_the_newer_edit_and_requires_a_checksum(db):
+    world = _World(db)
+    outbound = world.scope("Outbound")
+    draft = world.workflow.open_reference_draft(world.actor, outbound["id"], 2026, 8)
+    edited = world.workflow.edit_draft(world.actor, draft["id"], _edit_target(draft["lines"], "Booking", 0.4))
+    app, holder, client_type = _adopt_app(world)
+    route = f'/evaluation/versions/{draft["id"]}/adopt-operational'
+    with client_type(app) as client:
+        stale = client.post(route, json={"confirm": True, "expected_checksum": draft["checksum"]})
+        assert stale.status_code == 409
+        assert stale.json()["detail"]["code"] == "stale_draft"
+        missing = client.post(route, json={"confirm": True})
+        assert missing.status_code == 409
+        assert missing.json()["detail"]["code"] == "draft_precondition_required"
+        holder["user"] = dict(world.manager_actor)
+        denied = client.post(f"/evaluation/versions/{uuid.uuid4()}/adopt-operational", json={"confirm": True})
+        assert denied.status_code == 403
+        detail = denied.json()["detail"]
+        if isinstance(detail, dict):
+            assert detail.get("code") not in {"not_found", "stale_draft", "draft_precondition_required"}
+        holder["user"] = {"user_id": world.manager_actor["user_id"], "role": "Admin"}
+        spoofed = client.post(f"/evaluation/versions/{uuid.uuid4()}/adopt-operational", json={"confirm": True})
+        assert spoofed.status_code == 403
+        disabled = _user("Admin", "disabled-admin")
+        disabled.is_active = False
+        db.add(disabled)
+        db.commit()
+        holder["user"] = {"user_id": str(disabled.id), "role": "Admin"}
+        inactive = client.post(f"/evaluation/versions/{uuid.uuid4()}/adopt-operational", json={"confirm": True})
+        assert inactive.status_code == 403
+    stored = db.query(TeamConfigurationVersion).filter(TeamConfigurationVersion.id == uuid.UUID(draft["id"])).one()
+    assert stored.config_checksum == edited["checksum"]
+    assert stored.config_snapshot["contract"] == "reference_workbook"
+    booking = next(line for line in stored.config_snapshot["lines"] if line["kpi_key"] == "Booking")
+    assert booking["target"] == pytest.approx(0.4)
+    adopted = world.workflow.adopt_operational_contract(
+        world.actor, draft["id"], confirm=True, expected_checksum=edited["checksum"], require_precondition=True,
+    )
+    db.refresh(stored)
+    assert adopted["id"] == draft["id"]
+    assert adopted["contract"] == "operational_upload"
+    assert adopted["checksum"] != edited["checksum"]
+    assert "Adopted the operational upload contract." in (adopted["notes"] or "")
+    assert "Productivity" not in _weights_of(adopted["lines"])
+    assert stored.config_snapshot["contract"] == "operational_upload"
+
+
+def test_already_operational_adoption_does_not_reset_edits(db):
+    world = _World(db)
+    outbound = world.scope("Outbound")
+    may = _seed_outbound(world, "May", "SYN-IDEM")
+    draft = world.workflow.open_draft(world.actor, outbound["id"], 2026, 5)
+    edited = world.workflow.edit_draft(
+        world.actor, draft["id"], _edit_weights(draft["lines"], _TRACKING_WEIGHTS),
+    )
+    before = db.query(TeamConfigurationVersion).count()
+    note = edited["notes"]
+    with pytest.raises(EvaluationConflict) as stale:
+        world.workflow.adopt_operational_contract(
+            world.actor, edited["id"], confirm=True, expected_checksum="a" * 64,
+        )
+    assert stale.value.data["code"] == "stale_draft"
+    again = world.workflow.adopt_operational_contract(
+        world.actor, edited["id"], confirm=True, expected_checksum=edited["checksum"],
+    )
+    trusted = world.workflow.adopt_operational_contract(world.actor, edited["id"], confirm=True)
+    assert again["id"] == edited["id"]
+    assert again["checksum"] == edited["checksum"]
+    assert again["notes"] == note
+    assert trusted["checksum"] == edited["checksum"]
+    assert trusted["notes"] == note
+    assert _weights_of(again["lines"])["Booking"] == pytest.approx(0.0)
+    assert db.query(TeamConfigurationVersion).count() == before
+    world.workflow.impact_preview(world.actor, edited["id"])
+    approved = world.workflow.approve(world.actor, edited["id"])
+    approved_count = db.query(TeamConfigurationVersion).count()
+    repeated = world.workflow.adopt_operational_contract(
+        world.actor, approved["id"], confirm=True, expected_checksum=approved["checksum"],
+    )
+    assert repeated["id"] == approved["id"]
+    assert repeated["status"] == "approved"
+    assert repeated["checksum"] == approved["checksum"]
+    assert db.query(TeamConfigurationVersion).count() == approved_count
+    drafts = db.query(TeamConfigurationVersion).filter(
+        TeamConfigurationVersion.status == "draft",
+        TeamConfigurationVersion.effective_from_month == 5,
+    ).count()
+    assert drafts == 0
+    assert float(_reload(db, may.id, 2026).score) == pytest.approx(65.0)
+
+
+def test_open_apply_and_existing_draft_block_contract_adoption(db):
+    import copy
+
+    from models.models import EvaluationApplyControl, ProcessingJob
+    from services.evaluation.apply_job_schema import known_actor_snapshot
+    from services.evaluation.scoring import ENGINE_VERSION
+
+    world = _World(db)
+    outbound = world.scope("Outbound")
+    draft = world.workflow.open_reference_draft(world.actor, outbound["id"], 2026, 8)
+    edited = world.workflow.edit_draft(world.actor, draft["id"], _edit_target(draft["lines"], "Booking", 0.4))
+    stored = db.query(TeamConfigurationVersion).filter(TeamConfigurationVersion.id == uuid.UUID(draft["id"])).one()
+    sealed = copy.deepcopy(stored.config_snapshot)
+    job = ProcessingJob(
+        id=uuid.uuid4(),
+        kind="evaluation_apply",
+        status="queued",
+        requested_by_user_id=world.admin.id,
+        requested_by_name=world.admin.username,
+        request_json={"scope_id": outbound["id"], "year": 2026, "month": 8},
+        claim_epoch=0,
+        idempotency_key=f"synthetic-adopt-{uuid.uuid4().hex}",
+    )
+    db.add(job)
+    db.flush()
+    control = EvaluationApplyControl(
+        job_id=job.id,
+        scope_id=uuid.UUID(outbound["id"]),
+        version_id=stored.id,
+        team_id=world.teams["Outbound"].id,
+        performance_level="Employee",
+        position_name="",
+        year=2026,
+        month=8,
+        engine_version=ENGINE_VERSION,
+        rules_checksum="b" * 64,
+        proof_source_fingerprint="c" * 64,
+        lineage_fingerprint="d" * 64,
+        requested_by_user_id=world.admin.id,
+        actor_snapshot=known_actor_snapshot(world.admin.id),
+        state="pending",
+        claim_epoch=0,
+        staged_count=0,
+        promoted_count=0,
+    )
+    db.add(control)
+    db.commit()
+    with pytest.raises(EvaluationConflict) as blocked:
+        world.workflow.adopt_operational_contract(
+            world.actor, draft["id"], confirm=True, expected_checksum=edited["checksum"], require_precondition=True,
+        )
+    assert blocked.value.data["code"] == "apply_open"
+    db.refresh(stored)
+    assert stored.config_snapshot == sealed
+    assert stored.config_checksum == edited["checksum"]
+    control.state = "cancelled"
+    db.commit()
+    world.workflow.impact_preview(world.actor, draft["id"])
+    approved = world.workflow.approve(world.actor, draft["id"])
+    db.refresh(stored)
+    approved_snapshot = copy.deepcopy(stored.config_snapshot)
+    approved_checksum = stored.config_checksum
+    approved_notes = stored.notes
+    approved_number = stored.version_number
+    revised = world.workflow.revise(world.actor, approved["id"])
+    with pytest.raises(EvaluationConflict) as conflict:
+        world.workflow.adopt_operational_contract(world.actor, stored.id, confirm=True)
+    assert conflict.value.data["code"] == "draft_exists"
+    assert conflict.value.data["draft_id"] == revised["id"]
+    db.refresh(stored)
+    assert stored.status == "approved"
+    assert stored.version_number == approved_number
+    assert stored.config_checksum == approved_checksum
+    assert stored.config_snapshot == approved_snapshot
+    assert stored.notes == approved_notes
+    assert revised["source_version_id"] == approved["id"]
+    converted = world.workflow.adopt_operational_contract(
+        world.actor, revised["id"], confirm=True, expected_checksum=revised["checksum"],
+    )
+    assert converted["id"] == revised["id"]
+    assert converted["contract"] == "operational_upload"
+    assert converted["source_version_id"] == approved["id"]
+    assert converted["source_checksum"] == approved_checksum
+    db.refresh(stored)
+    assert stored.status == "approved"
+    assert stored.config_checksum == approved_checksum
+    assert stored.config_snapshot == approved_snapshot
+    assert stored.notes == approved_notes

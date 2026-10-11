@@ -31,9 +31,14 @@ class ExcelProcessor:
         """Crop columns and convert data types for consistency."""
         df = df.copy()
         from cleaned import preserve_productivity_columns
+        from services.upload_header_notices import attach_header_notices
+
+        source_headers = list(df.columns)
+        header_notices = attach_header_notices(df, sheet_name, source_headers)
 
         if crop_col in df.columns:
             df = preserve_productivity_columns(df, crop_col)
+            df.attrs["column_warnings"] = header_notices
             
         # Standardize column names by removing spaces
         df.columns = df.columns.str.replace(r'\s+', '', regex=True)
@@ -63,18 +68,22 @@ class ExcelProcessor:
         if is_outbound_sheet(sheet_name):
             from utils.excel_percent_serial import restore_known_percent_serials
             raw = restore_known_percent_serials(raw, excel_file, sheet_name)
+        source_headers = list(raw.columns)
         role_col = next((column for column in raw.columns if str(column).strip().lower() == "role"), None)
         if role_col is None:
             logger.warning("Legacy %s sheet has no Role column; defaulting rows to Employee", sheet_name)
-            return legacy_processor(excel_file)
-
-        from cleaned import clean_sheet_data
-        roles = raw[role_col].copy()
-        df = clean_sheet_data(raw, sheet_name=sheet_name)
-        df.columns = df.columns.str.replace(r'\s+', '', regex=True)
-        if "Role" not in df.columns:
-            df["Role"] = roles
-        return df
+            frame = legacy_processor(excel_file)
+        else:
+            from cleaned import clean_sheet_data
+            roles = raw[role_col].copy()
+            frame = clean_sheet_data(raw, sheet_name=sheet_name)
+            frame.columns = frame.columns.str.replace(r'\s+', '', regex=True)
+            if "Role" not in frame.columns:
+                frame["Role"] = roles
+        if is_outbound_sheet(sheet_name):
+            from services.upload_header_notices import apply_outbound_quality_target_alias
+            apply_outbound_quality_target_alias(frame, source_headers, sheet_name)
+        return frame
 
     def process_sheet_inbound(self, excel_file) -> pd.DataFrame:
         return self._process_team_sheet(excel_file, "Inbound", process_inbound)

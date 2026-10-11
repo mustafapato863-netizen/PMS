@@ -9,12 +9,12 @@ const processingJob = vi.hoisted(() => ({
     job_id: 'job-1',
     id: 'job-1',
     kind: 'pms_upload',
-    status: 'running' as const,
+    status: 'running' as 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled',
     progress: 42,
     attempt: 1,
     max_attempts: 3,
-    result: null,
-    error: null,
+    result: null as Record<string, unknown> | null,
+    error: null as { message?: string } | null,
     status_url: '/api/jobs/job-1',
   },
 }));
@@ -47,6 +47,8 @@ describe('UploadJobProvider', () => {
   beforeEach(() => {
     processingJob.data.status = 'running';
     processingJob.data.progress = 42;
+    processingJob.data.result = null;
+    processingJob.data.error = null;
   });
 
   it('keeps the processing note visible after navigating away from the upload page', () => {
@@ -68,5 +70,65 @@ describe('UploadJobProvider', () => {
     fireEvent.click(screen.getByRole('link', { name: 'Go to dashboard' }));
     expect(screen.getByText('Dashboard page')).toBeInTheDocument();
     expect(screen.getByRole('status')).toHaveTextContent('Your file is processing in the background.');
+  });
+
+  it('shows sheet header notices when a background upload succeeds or fails', () => {
+    processingJob.data.status = 'succeeded';
+    processingJob.data.result = {
+      records_imported: 1,
+      column_warnings: [
+        {
+          sheet: 'Outbound',
+          code: 'unmapped_columns',
+          headers: ['Side Note', '<img src=x onerror=alert(1)>'],
+          truncated: false,
+        },
+      ],
+    };
+    const { container } = render(
+      <MemoryRouter initialEntries={['/settings']}>
+        <UploadJobProvider>
+          <Routes>
+            <Route path="/settings" element={<UploadPage />} />
+          </Routes>
+        </UploadJobProvider>
+      </MemoryRouter>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Start upload' }));
+
+    expect(screen.getByRole('status')).toHaveTextContent('Upload complete — 1 records are ready.');
+    expect(screen.getByRole('heading', { name: 'Columns not mapped to scoring' })).toBeInTheDocument();
+    expect(screen.getByText('These columns do not change your scoring rules. Review their names in Excel.')).toBeInTheDocument();
+    expect(screen.getByText('Outbound: <img src=x onerror=alert(1)>')).toBeInTheDocument();
+    expect(container.querySelector('img')).toBeNull();
+  });
+
+  it('shows a target conflict notice when a background upload fails', () => {
+    processingJob.data.status = 'failed';
+    processingJob.data.error = { message: 'Neither value was used as the quality target.' };
+    processingJob.data.result = {
+      column_warnings: [
+        {
+          sheet: 'Outbound',
+          code: 'ambiguous_alias',
+          headers: ['T.Quality%', 'T.Quality Target'],
+          truncated: false,
+        },
+      ],
+    };
+    render(
+      <MemoryRouter initialEntries={['/settings']}>
+        <UploadJobProvider>
+          <Routes>
+            <Route path="/settings" element={<UploadPage />} />
+          </Routes>
+        </UploadJobProvider>
+      </MemoryRouter>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Start upload' }));
+
+    expect(screen.getByRole('alert')).toHaveTextContent('Neither value was used as the quality target.');
+    expect(screen.getByRole('heading', { name: 'Conflicting target columns' })).toBeInTheDocument();
+    expect(screen.getByText('Outbound: T.Quality Target')).toBeInTheDocument();
   });
 });

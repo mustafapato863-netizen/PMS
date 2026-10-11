@@ -12,6 +12,8 @@ import {
   UNSAVED_PREVIEW_NOTE,
   UNSUPPORTED_FORMULA_NOTE,
   applyVersion,
+  contractLabel,
+  lockedDirectionLabel,
   emptyPeriod,
   initialReportingPeriod,
   lineFormulaSupported,
@@ -19,6 +21,7 @@ import {
   monthHasApprovedVersion,
   revisionLabel,
   toPeriodData,
+  versionFromPayload,
   versionLabel,
   type EvaluationLine,
   type EvaluationPeriodData,
@@ -118,10 +121,11 @@ function rulesChecksum(version: { checksum?: string | null }) {
   return typeof version.checksum === 'string' ? version.checksum.trim() : '';
 }
 
-function storeVersion(current: EvaluationPeriodData, version: Partial<EvaluationVersion>): EvaluationPeriodData {
-  const applied = applyVersion(current, version);
-  const token = rulesChecksum(version);
-  const versionId = version.id || applied.versionId;
+function storeVersion(current: EvaluationPeriodData, version: unknown): EvaluationPeriodData {
+  const parsed = versionFromPayload(version);
+  const applied = applyVersion(current, parsed);
+  const token = rulesChecksum(parsed);
+  const versionId = parsed.id || applied.versionId;
   return {
     ...applied,
     checksum: token,
@@ -179,6 +183,7 @@ export function EvaluationSettingsPanel() {
   const [notice, setNotice] = useState<{ key: string; text: string } | null>(null);
   const [actionError, setActionError] = useState<{ key: string; text: string; missingIndicators?: MissingIndicator[] } | null>(null);
   const [rollbackConfirm, setRollbackConfirm] = useState<{ key: string; revisionId: string } | null>(null);
+  const [adoptConfirm, setAdoptConfirm] = useState<{ key: string; versionId: string } | null>(null);
   const [conflict, setConflict] = useState<{ key: string; text: string } | null>(null);
   const [backgroundNote, setBackgroundNote] = useState<string | null>(null);
   const gate = useRef(false);
@@ -429,7 +434,38 @@ export function EvaluationSettingsPanel() {
     onSettled: () => { gate.current = false; },
   });
 
-  const busy = save.isPending || openDraft.isPending || revise.isPending || impact.isPending || approve.isPending || apply.isPending || rollback.isPending || applyJobs.pending;
+  const adopt = useMutation({
+    retry: false,
+    mutationFn: async (vars: Selection & { versionId: string; checksum: string }) => {
+      const checksum = vars.checksum.trim();
+      if (!checksum) throw new Error(MISSING_CHECKSUM_MESSAGE);
+      await queryClient.cancelQueries({ queryKey: periodQueryKey(vars.scopeId, vars.year, vars.month) });
+      const response = await fetchWithRole(`${API_BASE}/api/settings/evaluation/versions/${vars.versionId}/adopt-operational`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirm: true, expected_checksum: checksum }),
+      });
+      return readJson(response) as Promise<EvaluationVersion>;
+    },
+    onSuccess: (version, vars) => {
+      const key = selectionKey(vars);
+      remember(key, (current) => storeVersion(current, version));
+      invalidateSettings(vars);
+      if (!isCurrent(vars)) return;
+      setEditor((current) => current?.key === key ? null : current);
+      setProof(null);
+      setConflict(null);
+      setAdoptConfirm(null);
+      setNotice({ key, text: 'This month now uses the original upload settings. Approved results stay unchanged until you preview, approve, and Apply. Other months were not changed.' });
+    },
+    onError: (caught, vars) => {
+      if (!isCurrent(vars)) return;
+      setActionError({ key: selectionKey(vars), text: errorText(caught) });
+    },
+    onSettled: () => { gate.current = false; },
+  });
+
+  const busy = save.isPending || openDraft.isPending || revise.isPending || impact.isPending || approve.isPending || apply.isPending || rollback.isPending || adopt.isPending || applyJobs.pending;
   const period = periodQuery.data;
   const serverLines = period?.lines ?? [];
   const editorActive = editor?.key === currentKey ? editor : null;
@@ -469,6 +505,10 @@ export function EvaluationSettingsPanel() {
   const comparisons = visibleProof?.comparisons ?? [];
   const comparisonPage = pageSlice(comparisons, page);
   const pendingRollback = rollbackConfirm?.key === currentKey ? period?.revisions.find((item) => item.id === rollbackConfirm.revisionId && item.canRollback) : undefined;
+  const pendingAdopt = adoptConfirm?.key === currentKey && adoptConfirm.versionId === period?.versionId ? adoptConfirm : undefined;
+  const revisionChoice = period?.revisionChoice;
+  const canAdopt = Boolean(actionsReady && revisionChoice?.available && revisionChoice.code === 'adopt_operational_upload' && period?.versionId);
+  const directionOwned = period?.contract === 'operational_upload';
 
   const begin = () => {
     if (gate.current || busy) return false;
@@ -491,6 +531,7 @@ export function EvaluationSettingsPanel() {
     setProof(null);
     setConflict(null);
     setRollbackConfirm(null);
+    setAdoptConfirm(null);
     setPage(0);
     setBackgroundNote(leavingOpenJob ? BACKGROUND_CONTINUES_NOTE : null);
   };
@@ -657,6 +698,30 @@ export function EvaluationSettingsPanel() {
     rollback.mutate({ ...selection, revisionId: revision.id });
   };
 
+  const requestAdopt = () => {
+    if (!canAdopt || !period?.versionId || controlsLocked || versionDrift || conflictText) return;
+    setActionError(null);
+    setAdoptConfirm({ key: currentKey, versionId: period.versionId });
+  };
+
+  const runAdopt = () => {
+    const current = selectionRef.current;
+    const key = selectionKey(current);
+    if (!adoptConfirm || adoptConfirm.key !== key || adoptConfirm.versionId !== period?.versionId) return;
+    const active = editor?.key === key ? editor : null;
+    if (active && (active.versionId !== period?.versionId || active.scopeId !== current.scopeId || active.year !== current.year || active.month !== current.month)) {
+      setConflict({ key, text: VERSION_DRIFT_MESSAGE });
+      return;
+    }
+    const checksum = (active?.checksum || period?.checksum || '').trim();
+    if (!checksum) {
+      setActionError({ key, text: MISSING_CHECKSUM_MESSAGE });
+      return;
+    }
+    if (!begin()) return;
+    adopt.mutate({ ...current, versionId: adoptConfirm.versionId, checksum });
+  };
+
   if (!isAdmin) {
     return (
       <div className="min-w-0 space-y-4">
@@ -737,6 +802,9 @@ export function EvaluationSettingsPanel() {
         </label>
       </div>
       <p className="text-xs text-[var(--text-muted)]" role="status">{catalogQuery.isPending ? 'Loading scopes…' : levelScopes.length === 0 ? `No evaluation scopes are available for ${level}. Choose another performance level.` : `${levelScopes.length} ${levelScopes.length === 1 ? 'scope' : 'scopes'} · ${scopeLabel}`}</p>
+      {!blocked && period?.contract && <p role="status" className="text-xs font-semibold text-[var(--text-secondary)]">Settings source: {contractLabel(period.contract)} · {monthName} {year} · {level}</p>}
+      {!blocked && canAdopt && <p role="status" className="text-xs text-[var(--text-secondary)]">Switching uses the original uploader&apos;s supported indicators, targets, and weights for this month. Approved results and history stay unchanged until you preview, approve, and Apply. Unsaved edits are discarded only after you confirm.</p>}
+      {!blocked && canAdopt && <button type="button" onClick={requestAdopt} disabled={controlsLocked || versionDrift || Boolean(conflictText)} className="rounded-xl border border-[var(--border-light)] px-3 py-2 text-xs font-bold disabled:cursor-not-allowed disabled:opacity-50">Use original upload settings</button>}
       {blocked && <div role="status" className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs text-amber-800">{readinessSource?.block_reason} {readinessSource?.history_note}</div>}
       {actionsReady && <div className="flex flex-wrap gap-2">
         {!monthApproved && <button type="button" onClick={() => runOpen(false)} disabled={controlsLocked} className="rounded-xl border border-[var(--border-light)] px-3 py-2 text-xs font-bold disabled:cursor-not-allowed disabled:opacity-50">New draft</button>}
@@ -876,12 +944,13 @@ export function EvaluationSettingsPanel() {
                   {weightProblem && <span role="status" className="mt-1 block font-semibold normal-case tracking-normal text-amber-800">{weightProblem.message}</span>}
                 </label>
                 <label className="text-[10px] font-bold uppercase tracking-wide text-[var(--text-muted)]">Direction
-                  {supported ? (
+                  {supported && !directionOwned ? (
                     <select aria-label={`${line.kpi_key} direction`} value={line.direction} onChange={(event) => updateLine(line.kpi_key, { direction: event.target.value })} className="mt-1 w-full rounded-lg border border-[var(--border-light)] bg-transparent px-2 py-2 text-sm">
                       <option value="higher_better">Higher is better</option>
                       <option value="lower_better">Lower is better</option>
                     </select>
-                  ) : <input aria-label={`${line.kpi_key} direction`} value={line.direction} readOnly className="mt-1 w-full rounded-lg border border-[var(--border-light)] bg-transparent px-2 py-2 text-sm" />}
+                  ) : <input aria-label={`${line.kpi_key} direction`} value={directionOwned ? (line.row_selection === 'utz_or_abandon' ? 'Uploaded row' : lockedDirectionLabel(line.direction)) : line.direction} readOnly className="mt-1 w-full rounded-lg border border-[var(--border-light)] bg-transparent px-2 py-2 text-sm" />}
+                  {directionOwned && line.row_selection === 'utz_or_abandon' && <span className="mt-1 block font-normal normal-case tracking-normal text-[var(--text-muted)]">This indicator follows the uploaded row: UTZ when that cell is present, otherwise Abandon.</span>}
                 </label>
                 <label className="text-[10px] font-bold uppercase tracking-wide text-[var(--text-muted)]">Source
                   {supported ? (
@@ -896,6 +965,15 @@ export function EvaluationSettingsPanel() {
           );
         })}
       </div>
+      {pendingAdopt && <div role="group" aria-label="Switch to original upload settings" className="space-y-2 rounded-xl border border-[var(--border-light)] p-3">
+        <p className="text-xs text-[var(--text-secondary)]">{dirty
+          ? `Unsaved target and weight edits for ${monthName} ${year} are discarded only after you confirm. Switching uses the original uploader's supported indicators, targets, and weights for this month. Approved results and history stay unchanged until you preview, approve, and Apply. Other months stay unchanged.`
+          : `Switching uses the original uploader's supported indicators, targets, and weights for ${scopeLabel}, ${monthName} ${year}. ${approved ? 'The approved version stays in history and a new draft is created.' : 'This draft is updated for this month only.'} Approved results stay unchanged until you preview, approve, and Apply. Nothing changes until you confirm.`}</p>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" onClick={runAdopt} disabled={busy} className="rounded-xl border border-[var(--border-light)] px-3 py-2 text-xs font-bold disabled:opacity-50">Confirm switch</button>
+          <button type="button" onClick={() => setAdoptConfirm(null)} className="rounded-xl border border-[var(--border-light)] px-3 py-2 text-xs font-bold">Keep current settings</button>
+        </div>
+      </div>}
       {pendingRollback && <div role="group" aria-label="Rollback confirmation" className="space-y-2 rounded-xl border border-[var(--border-light)] p-3">
         <p className="text-xs text-[var(--text-secondary)]">{ROLLBACK_CONFIRM_NOTE}</p>
         <div className="flex flex-wrap gap-2">

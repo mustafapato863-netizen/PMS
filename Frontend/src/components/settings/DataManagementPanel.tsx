@@ -8,8 +8,10 @@ import { refreshPerformanceData } from '../../hooks/usePerformanceData';
 import OverlayPortal from '../common/OverlayPortal';
 import type { ManagementUploadItem, UploadHistoryItem } from './types';
 import { refreshManagementData } from './settingsUtils';
+import { UploadColumnNotices } from './UploadColumnNotices';
+import { readColumnWarnings, type ColumnWarning } from './uploadHeaderNotices';
 
-type Status = { type: 'success' | 'error'; message: string } | null;
+type Status = { type: 'success' | 'error'; message: string; columnWarnings?: ColumnWarning[] } | null;
 
 function readableUploadError(value: unknown, fallback: string): string {
   if (typeof value === 'string' && value.trim()) return value;
@@ -35,6 +37,11 @@ function readableUploadError(value: unknown, fallback: string): string {
 
 function asArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+}
+
+function columnWarningsFrom(value: unknown): ColumnWarning[] {
+  if (!value || typeof value !== 'object') return [];
+  return readColumnWarnings((value as { column_warnings?: unknown }).column_warnings);
 }
 
 function formatDate(value?: string | null) {
@@ -385,7 +392,14 @@ export function DataManagementPanel() {
       const response = await fetchWithRole(`${API_BASE}/api/uploads/pms`, { method: 'POST', body });
       const result = await response.json().catch(() => ({}));
       if (!response.ok || !result?.success) {
-        throw new Error(readableUploadError(result?.detail ?? result?.message, 'Upload failed'));
+        const detail = result?.detail;
+        const message = readableUploadError(detail ?? result?.message, 'Upload failed');
+        const columnWarnings = columnWarningsFrom(detail && typeof detail === 'object' ? (detail as { report?: unknown }).report : undefined);
+        if (columnWarnings.length) {
+          setEmployeeStatus({ type: 'error', message, columnWarnings });
+          return;
+        }
+        throw new Error(message);
       }
       const uploadData = result?.data as Record<string, unknown> | undefined;
       const jobId = typeof uploadData?.job_id === 'string' ? uploadData.job_id : null;
@@ -396,6 +410,7 @@ export function DataManagementPanel() {
       setEmployeeStatus({
         type: 'success',
         message: `Processed ${Number(uploadData?.records_imported || 0)} records across ${asArray(uploadData?.teams).length} team sheets.`,
+        columnWarnings: readColumnWarnings(uploadData?.column_warnings),
       });
       refreshPerformanceData();
       await loadUploads();
@@ -529,6 +544,7 @@ export function DataManagementPanel() {
         />
         {isEmployeeBusy && <ProcessingBanner busyType="employee" />}
         <StatusBanner status={employeeStatus} />
+        <UploadColumnNotices warnings={employeeStatus?.columnWarnings ?? []} />
         <UploadHistory items={uploads} loading={loading} busy={busy} onDelete={handleDeleteRequest} />
       </section>
 

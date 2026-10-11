@@ -316,6 +316,7 @@ class ProcessingJobService:
         message: str,
         retryable: bool,
         worker_id: str | None = None,
+        result: dict[str, Any] | None = None,
     ) -> ProcessingJob | None:
         job = _legacy_running_job(db, job_id, worker_id, match_worker=bool(worker_id))
         if job is None:
@@ -336,6 +337,8 @@ class ProcessingJobService:
             job.finished_at = utcnow()
             job.worker_id = None
             job.lease_expires_at = None
+            if result is not None:
+                job.result_json = jsonable_encoder(result)
         db.commit()
         db.refresh(job)
         return job
