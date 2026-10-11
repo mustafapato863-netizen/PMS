@@ -117,7 +117,18 @@ def operational_period_status(team: str, year, month) -> str:
     return "operational_upload"
 
 
+def operational_mapped_keys(lines: list[dict] | None) -> list[str]:
+    """Contract identity, including a known KPI saved at weight zero for tracking."""
+    found = []
+    for line in lines or []:
+        key = str(line.get("kpi_key") or "")
+        if key and key not in found:
+            found.append(key)
+    return found
+
+
 def operational_scored_keys(lines: list[dict] | None) -> list[str]:
+    """Default positive weights. Not the set Admin must keep positive."""
     found = []
     for line in lines or []:
         try:

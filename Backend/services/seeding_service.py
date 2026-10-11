@@ -528,18 +528,15 @@ class DatabaseSeeder:
 
         snapshot = version.config_snapshot if isinstance(version.config_snapshot, dict) else {}
         if snapshot.get("contract") == "operational_upload":
-            from services.operational_upload_contract import operational_lines, operational_scored_keys
+            from services.operational_upload_contract import operational_lines, operational_mapped_keys
 
-            expected = set(operational_scored_keys(operational_lines("Outbound", year, record.month)))
-            scored = {
-                str(line.get("kpi_key"))
-                for line in snapshot_lines(version)
-                if float(line.get("weight") or 0) > 0
-            }
-            if scored != expected:
+            template = operational_lines("Outbound", year, record.month) or []
+            expected = set(operational_mapped_keys(template))
+            present = [str(line.get("kpi_key") or "") for line in snapshot_lines(version)]
+            if len(present) != len(set(present)) or set(present) != expected:
                 raise OutboundUnsupportedApprovedBinding(
                     str(record.month),
-                    "approved lines are not the operational scored lines",
+                    "approved lines are not the operational mapped lines",
                 )
             return
         decision = period_capability(year, record.month)
