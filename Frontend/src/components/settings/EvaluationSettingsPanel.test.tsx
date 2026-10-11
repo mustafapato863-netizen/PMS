@@ -204,17 +204,191 @@ it('uses a valid period in the URL', async () => {
   expect(screen.getByLabelText('Reporting year')).toHaveValue(2026);
 });
 
+it('separates scope options by level without refetching the catalog or writing changes', async () => {
+  const managerial = { ...blocked, id: 'managerial', display_name: 'Inbound', performance_level: 'Managerial' };
+  const corporate = { ...blocked, id: 'corporate', display_name: 'Inbound', performance_level: 'Corporate' };
+  const marketing = { ...blocked, id: 'marketing', display_name: 'Marketing', position_name: 'Media Buyer' };
+  const unlinked = { ...blocked, id: 'unlinked', display_name: 'Marketing', position_name: 'Content Writer', readiness: 'unlinked_baseline' };
+  const catalog = [scope, managerial, corporate, marketing, unlinked];
+  assignEvaluationFetch(async (url) => {
+    if (url.includes('/catalog')) return json({ scopes: catalog });
+    const selected = catalog.find((item) => item.id === new URL(url, window.location.origin).searchParams.get('scope_id'));
+    return json({ scope: selected, versions: selected?.id === scope.id ? [draft] : [] });
+  });
+  window.history.replaceState(null, '', '/?period=2026-08');
+  const user = userEvent.setup();
+  renderPanel();
+  await screen.findByLabelText('QualityErrors target');
+  const levelSelect = screen.getByLabelText('Performance level');
+  const scopeSelect = screen.getByLabelText('Evaluation scope');
+  expect(levelSelect).toHaveValue('Employee');
+  expect(within(scopeSelect).getAllByRole('option').map((item) => item.textContent)).toEqual([
+    'Coding', 'Marketing · Media Buyer · blocked', 'Marketing · Content Writer · unlinked',
+  ]);
+  await user.selectOptions(levelSelect, 'Managerial');
+  expect(scopeSelect).toHaveValue('managerial');
+  expect(within(scopeSelect).getAllByRole('option')).toHaveLength(1);
+  expect(within(scopeSelect).getByRole('option', { name: 'Inbound · blocked' })).toBeInTheDocument();
+  await user.selectOptions(levelSelect, 'Corporate');
+  expect(scopeSelect).toHaveValue('corporate');
+  expect(within(scopeSelect).getAllByRole('option')).toHaveLength(1);
+  await user.selectOptions(levelSelect, 'Employee');
+  expect(scopeSelect).toHaveValue('scope-1');
+  expect(screen.getByLabelText('Reporting month')).toHaveValue('8');
+  expect(screen.getByLabelText('Reporting year')).toHaveValue(2026);
+  expect(calls('/catalog')).toHaveLength(1);
+  expect(mocks.fetchWithRole.mock.calls.filter((call) => ['POST', 'PATCH', 'DELETE'].includes(call[1]?.method))).toHaveLength(0);
+  expect(performanceRefresh).not.toHaveBeenCalled();
+});
+
+it('shows an empty level without retaining editors or requesting an out-of-level period', async () => {
+  const user = userEvent.setup();
+  renderPanel();
+  await screen.findByLabelText('QualityErrors target');
+  const periodRequests = calls('/periods').length;
+  await user.selectOptions(screen.getByLabelText('Performance level'), 'Corporate');
+  expect(screen.getByLabelText('Evaluation scope')).toBeDisabled();
+  expect(screen.getByRole('option', { name: 'No scopes for this level' })).toBeInTheDocument();
+  expect(screen.getByText('No evaluation scopes are available for Corporate. Choose another performance level.')).toBeInTheDocument();
+  expect(screen.queryByLabelText('QualityErrors target')).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Apply' })).not.toBeInTheDocument();
+  expect(calls('/periods')).toHaveLength(periodRequests);
+  await user.selectOptions(screen.getByLabelText('Performance level'), 'Employee');
+  expect(await screen.findByLabelText('QualityErrors target')).toHaveValue('55');
+});
+
+it('keeps an unsupported managerial scope blocked after changing levels', async () => {
+  const managerial = { ...blocked, id: 'managerial', performance_level: 'Managerial' };
+  assignEvaluationFetch(async (url) => {
+    if (url.includes('/catalog')) return json({ scopes: [scope, managerial] });
+    return url.includes('scope_id=managerial')
+      ? json({ scope: managerial, versions: [] })
+      : json({ scope, versions: [draft] });
+  });
+  const user = userEvent.setup();
+  renderPanel();
+  await screen.findByLabelText('QualityErrors target');
+  await user.selectOptions(screen.getByLabelText('Performance level'), 'Managerial');
+  expect(await screen.findByText(/No supported importer is registered/)).toBeInTheDocument();
+  expect(screen.queryByLabelText('QualityErrors target')).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument();
+  expect(screen.getByRole('option', { name: 'Future Desk · blocked' })).toBeInTheDocument();
+});
+
+it('asks before discarding unsaved draft edits when changing levels', async () => {
+  const user = userEvent.setup();
+  const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+  try {
+    renderPanel();
+    const target = await screen.findByLabelText('QualityErrors target');
+    fireEvent.change(target, { target: { value: '70' } });
+    await user.selectOptions(screen.getByLabelText('Performance level'), 'Corporate');
+    expect(screen.getByLabelText('Performance level')).toHaveValue('Employee');
+    expect(target).toHaveValue('70');
+    expect(confirm).toHaveBeenCalledWith('Discard unsaved draft edits and change performance level?');
+    confirm.mockReturnValue(true);
+    await user.selectOptions(screen.getByLabelText('Performance level'), 'Corporate');
+    expect(screen.queryByLabelText('QualityErrors target')).not.toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText('Performance level'), 'Employee');
+    expect(await screen.findByLabelText('QualityErrors target')).toHaveValue('55');
+    expect(calls('/drafts', 'PATCH')).toHaveLength(0);
+  } finally {
+    confirm.mockRestore();
+  }
+});
+
+it('does not display a late period response after switching to another level', async () => {
+  const managerial = { ...blocked, id: 'managerial', performance_level: 'Managerial' };
+  let resolveOldPeriod: (value: unknown) => void = () => {};
+  const oldPeriod = new Promise((resolve) => { resolveOldPeriod = resolve; });
+  assignEvaluationFetch(async (url) => {
+    if (url.includes('/catalog')) return json({ scopes: [scope, managerial] });
+    if (url.includes('scope_id=scope-1')) return oldPeriod;
+    return json({ scope: managerial, versions: [] });
+  });
+  const user = userEvent.setup();
+  renderPanel();
+  await screen.findByRole('option', { name: 'Coding' });
+  await waitFor(() => expect(calls('/periods')).toHaveLength(1));
+  await user.selectOptions(screen.getByLabelText('Performance level'), 'Managerial');
+  await screen.findByText(/No supported importer is registered/);
+  await act(async () => { resolveOldPeriod(json({ scope, versions: [draft] })); });
+  expect(screen.getByLabelText('Performance level')).toHaveValue('Managerial');
+  expect(screen.getByLabelText('Evaluation scope')).toHaveValue('managerial');
+  expect(screen.queryByLabelText('QualityErrors target')).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument();
+});
+
 it.each(['Manager', 'Performance Team'])('makes no evaluation request and shows no editors for %s', async (role) => {
   roleState.role = role;
   renderPanel();
   expect(screen.getByText('Evaluation settings are limited to Admin.')).toBeInTheDocument();
   expect(screen.queryByLabelText('Reporting month')).not.toBeInTheDocument();
+  expect(screen.queryByLabelText('Performance level')).not.toBeInTheDocument();
   expect(screen.queryByLabelText('QualityErrors target')).not.toBeInTheDocument();
   expect(screen.queryByLabelText('QualityErrors weight')).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument();
   expect(screen.queryByRole('spinbutton', { name: 'Reporting year' })).not.toBeInTheDocument();
   await act(async () => { await Promise.resolve(); });
   expect(mocks.fetchWithRole).not.toHaveBeenCalled();
+});
+
+it('names missing scored indicators and keeps the saved draft editable after a failed preview', async () => {
+  const productivity = { ...line, kpi_key: 'Productivity', label: 'Productivity', weight: 0.1, target: 0.8 };
+  assignEvaluationFetch(async (url) => {
+    if (url.includes('/catalog')) return json({ scopes: [scope] });
+    if (url.includes('/periods')) return json({ versions: [{ ...draft, lines: [{ ...line, weight: 0.9 }, productivity] }] });
+    if (url.includes('/impact-preview')) return json({
+      code: 'missing_evidence',
+      message: 'A weighted KPI has no stored actual. Impact preview was not stored.',
+      missing_evidence: [
+        { kpi_key: 'Productivity', record_id: 'record-a', reason: 'missing_source' },
+        { kpi_key: 'Productivity', record_id: 'record-b', reason: 'missing_source' },
+        { kpi_key: 'Productivity', record_id: 'record-a', reason: 'missing_source' },
+      ],
+    }, false);
+    return json(draft);
+  });
+  renderPanel();
+  await screen.findByLabelText('QualityErrors target');
+  fireEvent.click(screen.getByRole('button', { name: 'Impact preview' }));
+  const alert = await screen.findByRole('alert');
+  expect(within(alert).getByText('Productivity: 2 records need a saved actual value.')).toBeInTheDocument();
+  expect(within(alert).getByText(/Your draft is still editable/)).toBeInTheDocument();
+  expect(screen.getByLabelText('Productivity weight')).toBeEnabled();
+  expect(screen.getByRole('button', { name: 'Save draft' })).toBeEnabled();
+  expect(screen.getByRole('button', { name: 'Approve' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Apply' })).toBeDisabled();
+  fireEvent.change(screen.getByLabelText('Reporting month'), { target: { value: '7' } });
+  expect(screen.queryByText('Productivity: 2 records need a saved actual value.')).not.toBeInTheDocument();
+});
+
+it('lets an Admin explicitly make an indicator tracking-only without changing other weights', async () => {
+  assignEvaluationFetch(async (url, init) => {
+    if (url.includes('/catalog')) return json({ scopes: [scope] });
+    if (url.includes('/periods')) return json({ versions: [{ ...draft, lines: [
+      { ...line, weight: 0.9 },
+      { ...line, kpi_key: 'AHT', label: 'AHT', weight: 0.1, unit: 'min', target: 2.5, direction: 'lower_better' },
+    ] }] });
+    if (init?.method === 'PATCH') return json({ ...draft, lines: JSON.parse(String(init.body)).lines });
+    return json(draft);
+  });
+  renderPanel();
+  await screen.findByLabelText('AHT weight');
+  fireEvent.click(screen.getByRole('button', { name: 'Track AHT only' }));
+  expect(screen.getByLabelText('AHT weight')).toHaveValue('0');
+  expect(screen.getByLabelText('QualityErrors weight')).toHaveValue('90');
+  expect(within(screen.getByRole('group', { name: 'AHT' })).getByText('Tracking only')).toBeInTheDocument();
+  expect(screen.getByText('Total weight: 90%')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Save draft' })).toBeDisabled();
+  fireEvent.change(screen.getByLabelText('QualityErrors weight'), { target: { value: '100' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+  await waitFor(() => expect(calls('/drafts/draft-1', 'PATCH')).toHaveLength(1));
+  const saved = JSON.parse(String(calls('/drafts/draft-1', 'PATCH')[0][1]?.body));
+  expect(saved.lines.find((item: { kpi_key: string }) => item.kpi_key === 'AHT')).toMatchObject({ weight: 0, target: 2.5, direction: 'lower_better' });
+  expect(saved.lines.find((item: { kpi_key: string }) => item.kpi_key === 'QualityErrors')).toMatchObject({ weight: 1 });
+  expect(calls('/approve', 'POST')).toHaveLength(0);
+  expect(calls('/apply', 'POST')).toHaveLength(0);
 });
 
 it('revises the selected approved month, saves, proves impact, approves without applying, then applies and rolls back', async () => {
@@ -779,10 +953,10 @@ it('labels the selected scope with the exact month admission, not the current ca
   });
   renderPanel();
   expect(await screen.findByLabelText('QualityErrors target')).toBeEnabled();
-  expect(screen.getByRole('option', { name: 'Coding · Employee' })).toBeInTheDocument();
+  expect(screen.getByRole('option', { name: 'Coding' })).toBeInTheDocument();
   fireEvent.change(screen.getByLabelText('Reporting month'), { target: { value: '9' } });
   expect(await screen.findByText(/This exact month is not admitted/)).toBeInTheDocument();
-  expect(screen.getByRole('option', { name: 'Coding · Employee · blocked' })).toBeInTheDocument();
+  expect(screen.getByRole('option', { name: 'Coding · blocked' })).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Save draft' })).not.toBeInTheDocument();
 });
 
@@ -792,17 +966,17 @@ it('saves explicit percents as fractions and leaves other units and untouched pr
   const hours = { kpi_key: 'HandleTime', label: 'Handle time', weight: 0, direction: 'lower_better', target: 2.5, target_mode: 'fixed', unit: 'hours' };
   const count = { kpi_key: 'Calls', label: 'Rework percentage', weight: 0.6, direction: 'higher_better', target: 65, target_mode: 'fixed', unit: 'count' };
   const unknown = { kpi_key: 'Mystery', label: 'Mystery', weight: preciseWeight, direction: 'higher_better', target: 65, target_mode: 'fixed' };
-  const workbook = { kpi_key: 'Quality', label: 'Quality', weight: 0.5, direction: 'higher_better', target: null, target_mode: 'workbook', unit: '%' };
+  const workbook = { kpi_key: 'Quality', label: 'Quality', weight: 0.1, direction: 'higher_better', target: null, target_mode: 'workbook', unit: '%' };
   assignEvaluationFetch(async (url: string, init?: RequestInit) => {
     const href = String(url);
     if (href.includes('/catalog')) return json({ scopes: [scope] });
-    if (href.includes('/periods')) return json({ versions: [{ ...draft, lines: [{ ...line, target: 0.65, weight: 1, target_mode: 'workbook' }, hours, count, unknown, workbook] }] });
+    if (href.includes('/periods')) return json({ versions: [{ ...draft, lines: [{ ...line, target: 0.65, weight: 0.1, target_mode: 'workbook' }, hours, count, unknown, workbook] }] });
     if (init?.method === 'PATCH') return json({ ...draft, lines: JSON.parse(String(init.body)).lines });
     return json(draft);
   });
   renderPanel();
   expect(await screen.findByLabelText('QualityErrors target')).toHaveValue('65');
-  expect(screen.getByLabelText('QualityErrors weight')).toHaveValue('100');
+  expect(screen.getByLabelText('QualityErrors weight')).toHaveValue('10');
   expect(screen.getByLabelText('HandleTime target')).toHaveValue('2.5');
   expect(screen.getByLabelText('HandleTime weight')).toHaveValue('0');
   expect(screen.getByLabelText('Calls target')).toHaveValue('65');
@@ -819,13 +993,13 @@ it('saves explicit percents as fractions and leaves other units and untouched pr
   const saved = JSON.parse(String(calls('/drafts/draft-1', 'PATCH')[0][1]?.body));
   expect(saved.expected_checksum).toBe('sum-draft');
   const byKey = Object.fromEntries(saved.lines.map((item: { kpi_key: string }) => [item.kpi_key, item]));
-  expect(byKey.QualityErrors).toMatchObject({ target: 0.7, weight: 1, target_mode: 'fixed' });
+  expect(byKey.QualityErrors).toMatchObject({ target: 0.7, weight: 0.1, target_mode: 'fixed' });
   expect(byKey.HandleTime).toMatchObject({ target: 2.5, weight: 0, unit: 'hours' });
   expect(byKey.Calls).toMatchObject({ target: 65, weight: 0.5, unit: 'count' });
   expect(byKey.Mystery.target).toBe(65);
   expect(byKey.Mystery.weight).toBe(preciseWeight);
   expect(byKey.Quality.target).toBeNull();
-  expect(byKey.Quality).toMatchObject({ target_mode: 'workbook', weight: 0.5 });
+  expect(byKey.Quality).toMatchObject({ target_mode: 'workbook', weight: 0.1 });
 });
 
 it('does not save a blank or unfinished percent, and keeps the stored value visible', async () => {

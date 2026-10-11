@@ -5,6 +5,7 @@ import { API_BASE } from '../../config';
 import { refreshPerformanceData } from '../../hooks/usePerformanceData';
 import { useUserRole } from '../../context/RoleContext';
 import { canAccessSettingsContent } from '../../lib/access';
+import type { PerformanceLevel } from '../../types';
 import {
   MONTHS,
   READ_ONLY_APPROVED_NOTE,
@@ -73,7 +74,22 @@ type Scope = PeriodScope & {
   position_name: string;
 };
 
-type RequestError = Error & { code?: string };
+type MissingIndicator = { kpiKey: string; count: number };
+type RequestError = Error & { code?: string; missingIndicators?: MissingIndicator[] };
+
+function missingIndicators(value: unknown): MissingIndicator[] {
+  if (!Array.isArray(value)) return [];
+  const records = new Map<string, Set<string>>();
+  value.forEach((item: unknown, index) => {
+    if (!item || typeof item !== 'object' || !('kpi_key' in item) || typeof item.kpi_key !== 'string' || !item.kpi_key.trim()) return;
+    const key = item.kpi_key.trim();
+    const ids = records.get(key) ?? new Set<string>();
+    const id = 'record_id' in item ? item.record_id : undefined;
+    ids.add(typeof id === 'string' || typeof id === 'number' ? `record:${id}` : `entry:${index}`);
+    records.set(key, ids);
+  });
+  return [...records].map(([kpiKey, ids]) => ({ kpiKey, count: ids.size }));
+}
 
 type ProofState = { key: string; versionId: string; proof: ImpactProof };
 
@@ -92,6 +108,7 @@ type EditorState = {
 const STALE_SAVE_MESSAGE = 'This draft changed after you opened it. Reload the draft or discard your edits. Nothing was saved.';
 const VERSION_DRIFT_MESSAGE = 'This month is showing a different version from the one you started editing. Reload the draft or discard your edits. Saving will not write that other version.';
 const MISSING_CHECKSUM_MESSAGE = 'Save is unavailable until this draft has a rules checksum. Reload the month. An empty checksum is not sent.';
+const EVALUATION_LEVELS: readonly PerformanceLevel[] = ['Employee', 'Managerial', 'Corporate'];
 
 function selectionKey(selection: Selection) {
   return `${selection.scopeId}|${selection.year}|${selection.month}`;
@@ -136,6 +153,7 @@ async function readJson(response: Response) {
     const message = typeof detail === 'string' ? detail : detail?.message || body?.message || 'Evaluation request failed';
     const error = new Error(message) as RequestError;
     if (detail && typeof detail === 'object' && typeof detail.code === 'string') error.code = detail.code;
+    if (error.code === 'missing_evidence') error.missingIndicators = missingIndicators(detail.missing_evidence);
     throw error;
   }
   return body?.data ?? body;
@@ -153,12 +171,13 @@ export function EvaluationSettingsPanel() {
   const isAdmin = canAccessSettingsContent(role);
   const [year, setYear] = useState(() => initialReportingPeriod(window.location.search).year);
   const [month, setMonth] = useState(() => initialReportingPeriod(window.location.search).month);
+  const [level, setLevel] = useState<PerformanceLevel>('Employee');
   const [scopeId, setScopeId] = useState<string | null>(null);
   const [editor, setEditor] = useState<EditorState | null>(null);
   const [proof, setProof] = useState<ProofState | null>(null);
   const [page, setPage] = useState(0);
   const [notice, setNotice] = useState<{ key: string; text: string } | null>(null);
-  const [actionError, setActionError] = useState<{ key: string; text: string } | null>(null);
+  const [actionError, setActionError] = useState<{ key: string; text: string; missingIndicators?: MissingIndicator[] } | null>(null);
   const [rollbackConfirm, setRollbackConfirm] = useState<{ key: string; revisionId: string } | null>(null);
   const [conflict, setConflict] = useState<{ key: string; text: string } | null>(null);
   const [backgroundNote, setBackgroundNote] = useState<string | null>(null);
@@ -173,7 +192,13 @@ export function EvaluationSettingsPanel() {
     },
   });
   const scopes = catalogQuery.data ?? [];
-  const resolvedScopeId = scopeId ?? scopes.find((item) => item.readiness === 'supported')?.id ?? scopes[0]?.id ?? '';
+  const levelScopes = useMemo(
+    () => (catalogQuery.data ?? []).filter((item) => item.performance_level === level),
+    [catalogQuery.data, level],
+  );
+  const resolvedScopeId = levelScopes.find((item) => item.id === scopeId)?.id
+    ?? levelScopes.find((item) => item.readiness === 'supported')?.id
+    ?? levelScopes[0]?.id ?? '';
   const selection = useMemo(
     () => ({ scopeId: resolvedScopeId, year, month }),
     [resolvedScopeId, year, month],
@@ -332,7 +357,7 @@ export function EvaluationSettingsPanel() {
     onError: (caught, vars) => {
       if (!isCurrent(vars)) return;
       setProof(null);
-      setActionError({ key: selectionKey(vars), text: errorText(caught) });
+      setActionError({ key: selectionKey(vars), text: errorText(caught), missingIndicators: (caught as RequestError).missingIndicators });
     },
     onSettled: () => { gate.current = false; },
   });
@@ -414,6 +439,10 @@ export function EvaluationSettingsPanel() {
   const frozenLines = editorActive ? linesFromFrozenBase(editorActive) : null;
   const draftCommit = frozenLines ? commitLineInputs(frozenLines, textDrafts) : null;
   const inputBlocked = Boolean(draftCommit && !draftCommit.ok);
+  const effectiveLines = draftCommit?.ok ? draftCommit.lines : lines;
+  const totalWeight = effectiveLines.reduce((sum, line) => sum + line.weight, 0);
+  // Match the API's 0.0001 tolerance, allowing floating-point summation noise.
+  const weightTotalInvalid = !Number.isFinite(totalWeight) || Math.abs(totalWeight - 1) > 0.0001 + Number.EPSILON;
   const draftProblems = draftCommit && !draftCommit.ok ? draftCommit.errors : [];
   const dirty = editorActive != null && (
     lineSignature(editorActive.lines) !== lineSignature(editorActive.baseLines) || numericDraftsDirty(editorActive.baseLines, textDrafts)
@@ -434,6 +463,7 @@ export function EvaluationSettingsPanel() {
   const message = notice?.key === currentKey ? notice.text : '';
   const loadError = periodQuery.error instanceof Error ? periodQuery.error.message : catalogQuery.error instanceof Error ? catalogQuery.error.message : '';
   const error = (actionError?.key === currentKey ? actionError.text : '') || loadError;
+  const missing = actionError?.key === currentKey ? actionError.missingIndicators ?? [] : [];
   const monthApproved = monthHasApprovedVersion(period);
   const actionsReady = Boolean(period) && !periodLoading && !blocked;
   const comparisons = visibleProof?.comparisons ?? [];
@@ -463,6 +493,16 @@ export function EvaluationSettingsPanel() {
     setRollbackConfirm(null);
     setPage(0);
     setBackgroundNote(leavingOpenJob ? BACKGROUND_CONTINUES_NOTE : null);
+  };
+
+  const changeLevel = (nextLevel: string) => {
+    const validLevel = EVALUATION_LEVELS.find((item) => item === nextLevel);
+    if (!validLevel || validLevel === level) return;
+    if (dirty && !window.confirm('Discard unsaved draft edits and change performance level?')) return;
+    const candidates = scopes.filter((item) => item.performance_level === validLevel);
+    const nextScope = candidates.find((item) => item.readiness === 'supported') ?? candidates[0];
+    changeSelection({ scopeId: nextScope?.id ?? '' });
+    setLevel(validLevel);
   };
 
   const ensureEditor = (current: EditorState | null): EditorState => {
@@ -532,7 +572,7 @@ export function EvaluationSettingsPanel() {
   };
 
   const runSave = () => {
-    if (!period?.versionId || period.status !== 'draft' || unsupported || inputBlocked || checksumMissing || versionDrift || conflictText) return;
+    if (!period?.versionId || period.status !== 'draft' || unsupported || inputBlocked || weightTotalInvalid || checksumMissing || versionDrift || conflictText) return;
     const active = editor?.key === currentKey ? editor : null;
     let payload = serverLines;
     let versionId = period.versionId;
@@ -636,9 +676,17 @@ export function EvaluationSettingsPanel() {
     <div className="min-w-0 space-y-4" aria-busy={periodLoading || busy}>
       <header>
         <h2 className="text-xl font-black text-[var(--text-primary)]">Evaluation settings</h2>
-        <p className="mt-1 text-xs text-[var(--text-muted)]">Revise an approved month, review the stored impact, then approve and apply as separate steps. July and August stay independent. Supported scopes only.</p>
+        <p className="mt-1 text-xs text-[var(--text-muted)]">Choose a team and month, then edit targets and weights using its saved performance values. No new upload is needed when those values are available. Other months stay unchanged.</p>
+        <p className="mt-2 text-xs text-[var(--text-secondary)]">Save draft → Preview the score changes → Approve → Apply. Use 0% weight to track an indicator without changing the score.</p>
       </header>
-      {error && <div role="alert" className="flex items-start gap-2 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-xs font-semibold text-red-600"><AlertCircle size={16} />{error}</div>}
+      {error && <div role="alert" className="flex items-start gap-2 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-xs font-semibold text-red-600">
+        <AlertCircle size={16} className="shrink-0" />
+        {missing.length ? <div className="space-y-2">
+          <p>Some scored indicators are missing saved values. Your draft is still editable; approval and application are blocked until this is resolved.</p>
+          <ul className="list-disc space-y-1 pl-4">{missing.map((item) => <li key={item.kpiKey}>{lines.find((line) => line.kpi_key === item.kpiKey)?.label || item.kpiKey}: {item.count} {item.count === 1 ? 'record needs' : 'records need'} a saved actual value.</li>)}</ul>
+          <p>If an indicator is only for monitoring, choose tracking only and adjust the other weights to total 100%. Otherwise, its saved values must be restored before scoring.</p>
+        </div> : error}
+      </div>}
       {message && <p className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-xs font-semibold text-emerald-700" role="status">{message}</p>}
       {applyJobs.mode === 'pending' && <p role="status" className="text-xs text-[var(--text-muted)]">{CHECKING_APPLY_NOTE}</p>}
       {applyJobs.mode === 'unavailable' && <div role="alert" className="space-y-2 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-xs font-semibold text-red-600">
@@ -663,13 +711,19 @@ export function EvaluationSettingsPanel() {
         onRecover={runRecoverApply}
       />}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <label className="min-w-0 text-xs font-bold text-[var(--text-secondary)]">Performance level
+          <select aria-label="Performance level" value={level} onChange={(event) => changeLevel(event.target.value)} className="mt-1 w-full rounded-xl border border-[var(--border-light)] bg-[var(--bg-surface)] px-3 py-2 text-sm text-[var(--text-primary)]">
+            {EVALUATION_LEVELS.map((item) => <option key={item} value={item}>{item}</option>)}
+          </select>
+        </label>
         <label className="min-w-0 text-xs font-bold text-[var(--text-secondary)]">Evaluation scope
-          <select aria-label="Evaluation scope" value={resolvedScopeId} onChange={(event) => changeSelection({ scopeId: event.target.value })} className="mt-1 w-full rounded-xl border border-[var(--border-light)] bg-[var(--bg-surface)] px-3 py-2 text-sm text-[var(--text-primary)]">
-            {scopes.map((item) => {
+          <select aria-label="Evaluation scope" value={resolvedScopeId} disabled={levelScopes.length === 0} onChange={(event) => changeSelection({ scopeId: event.target.value })} className="mt-1 w-full rounded-xl border border-[var(--border-light)] bg-[var(--bg-surface)] px-3 py-2 text-sm text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50">
+            {levelScopes.length === 0 && <option value="">{catalogQuery.isPending ? 'Loading scopes…' : 'No scopes for this level'}</option>}
+            {levelScopes.map((item) => {
               const readiness = item.id === resolvedScopeId && !periodLoading && !periodQuery.isError
                 ? readinessSource?.readiness ?? item.readiness
                 : item.readiness;
-              return <option key={item.id} value={item.id}>{item.display_name} · {item.performance_level}{item.position_name ? ` · ${item.position_name}` : ''}{readiness === 'supported' ? '' : readiness === 'unlinked_baseline' ? ' · unlinked' : ' · blocked'}</option>;
+              return <option key={item.id} value={item.id}>{item.display_name}{item.position_name ? ` · ${item.position_name}` : ''}{readiness === 'supported' ? '' : readiness === 'unlinked_baseline' ? ' · unlinked' : ' · blocked'}</option>;
             })}
           </select>
         </label>
@@ -681,14 +735,14 @@ export function EvaluationSettingsPanel() {
         <label className="min-w-0 text-xs font-bold text-[var(--text-secondary)]">Reporting year
           <input aria-label="Reporting year" type="number" min={2000} max={2100} value={year} onChange={(event) => changeSelection({ year: Number(event.target.value) })} className="mt-1 w-full rounded-xl border border-[var(--border-light)] bg-[var(--bg-surface)] px-3 py-2 text-sm" />
         </label>
-        <div className="min-w-0 self-end text-xs text-[var(--text-muted)]">{scopes.length === 0 && catalogQuery.isPending ? 'Loading scopes…' : scopeLabel}</div>
       </div>
+      <p className="text-xs text-[var(--text-muted)]" role="status">{catalogQuery.isPending ? 'Loading scopes…' : levelScopes.length === 0 ? `No evaluation scopes are available for ${level}. Choose another performance level.` : `${levelScopes.length} ${levelScopes.length === 1 ? 'scope' : 'scopes'} · ${scopeLabel}`}</p>
       {blocked && <div role="status" className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs text-amber-800">{readinessSource?.block_reason} {readinessSource?.history_note}</div>}
       {actionsReady && <div className="flex flex-wrap gap-2">
         {!monthApproved && <button type="button" onClick={() => runOpen(false)} disabled={controlsLocked} className="rounded-xl border border-[var(--border-light)] px-3 py-2 text-xs font-bold disabled:cursor-not-allowed disabled:opacity-50">New draft</button>}
         {!monthApproved && <button type="button" onClick={() => runOpen(true)} disabled={controlsLocked} className="inline-flex items-center gap-1 rounded-xl border border-[var(--border-light)] px-3 py-2 text-xs font-bold disabled:cursor-not-allowed disabled:opacity-50"><Copy size={14} />Copy previous month</button>}
         {approved && <button type="button" onClick={runRevise} disabled={controlsLocked || !period?.versionId} className="rounded-xl border border-[var(--border-light)] px-3 py-2 text-xs font-bold disabled:cursor-not-allowed disabled:opacity-50">Revise this month</button>}
-        {!approved && <button type="button" onClick={runSave} disabled={controlsLocked || !period?.versionId || period?.status !== 'draft' || unsupported || inputBlocked || checksumMissing || versionDrift || Boolean(conflictText)} className="inline-flex items-center gap-1 rounded-xl border border-[var(--border-light)] px-3 py-2 text-xs font-bold disabled:cursor-not-allowed disabled:opacity-50"><Save size={14} />Save draft</button>}
+        {!approved && <button type="button" onClick={runSave} disabled={controlsLocked || !period?.versionId || period?.status !== 'draft' || unsupported || inputBlocked || weightTotalInvalid || checksumMissing || versionDrift || Boolean(conflictText)} className="inline-flex items-center gap-1 rounded-xl border border-[var(--border-light)] px-3 py-2 text-xs font-bold disabled:cursor-not-allowed disabled:opacity-50"><Save size={14} />Save draft</button>}
         {!approved && <button type="button" onClick={runImpact} disabled={controlsLocked || !period?.versionId || period?.status !== 'draft' || dirty || unsupported} className="rounded-xl border border-[var(--border-light)] px-3 py-2 text-xs font-bold disabled:cursor-not-allowed disabled:opacity-50">Impact preview</button>}
         {!approved && <button type="button" onClick={runApprove} disabled={controlsLocked || !period?.versionId || dirty || period?.status !== 'draft' || !approvalReady} className="inline-flex items-center gap-1 rounded-xl bg-blue-600 px-3 py-2 text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"><Check size={14} />Approve</button>}
         {(applyJobs.mode === 'sync' || applyJobs.mode === 'async') && <button type="button" onClick={runApply} disabled={controlsLocked || period?.status !== 'approved' || dirty || applyJobs.blockEnqueue} className="rounded-xl bg-slate-900 px-3 py-2 text-xs font-bold text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--sgh-cyan-primary,#00A3E0)] disabled:cursor-not-allowed disabled:opacity-50">Apply</button>}
@@ -772,6 +826,10 @@ export function EvaluationSettingsPanel() {
         </div>}
       </section>}
       <div className="min-w-0 space-y-3">
+        {!periodLoading && !blocked && lines.length > 0 && <div role="status" className="rounded-xl border border-[var(--border-light)] px-3 py-2 text-xs text-[var(--text-secondary)]">
+          <p className="font-bold">{inputBlocked || !Number.isFinite(totalWeight) ? 'Total weight: check the weight fields' : `Total weight: ${Number((totalWeight * 100).toFixed(2))}%`}</p>
+          <p>{weightTotalInvalid || inputBlocked ? 'Set the scored indicators to a total of 100% before saving. Other weights are not changed automatically.' : 'Weights are ready to save. Tracking-only indicators do not contribute to the score.'}</p>
+        </div>}
         {periodLoading && <p className="text-xs text-[var(--text-muted)]">Loading this month…</p>}
         {!periodLoading && !blocked && lines.map((line) => {
           const supported = lineFormulaSupported(line);
@@ -791,6 +849,12 @@ export function EvaluationSettingsPanel() {
           return (
             <fieldset key={line.kpi_key} disabled={locked} className="min-w-0 rounded-2xl border border-[var(--border-light)] p-3 disabled:opacity-60">
               <legend className="px-1 text-xs font-black text-[var(--text-primary)]">{line.label || line.kpi_key}</legend>
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs">
+                <span className="rounded-full bg-[var(--bg-sunken)] px-2 py-1 font-semibold">{weightValue.trim() !== '' && Number(weightValue) === 0 ? 'Tracking only' : 'Included in score'}</span>
+                {weightValue.trim() !== '' && Number(weightValue) === 0
+                  ? <span className="text-[var(--text-muted)]">Enter a weight above 0% to include in the score.</span>
+                  : <button type="button" onClick={() => editText(line.kpi_key, 'weightText', '0')} className="rounded-lg border border-[var(--border-light)] px-3 py-2 font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-50">Track {line.label || line.kpi_key} only</button>}
+              </div>
               {!supported && <p role="status" className="mb-2 text-xs text-amber-800">{UNSUPPORTED_FORMULA_NOTE}</p>}
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 <label className="text-[10px] font-bold text-[var(--text-muted)]">
