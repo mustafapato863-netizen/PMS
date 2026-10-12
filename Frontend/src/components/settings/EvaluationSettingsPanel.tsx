@@ -1,6 +1,5 @@
 import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertCircle, Check, Copy, History, Save } from 'lucide-react';
 import { API_BASE } from '../../config';
 import { refreshPerformanceData } from '../../hooks/usePerformanceData';
 import { useUserRole } from '../../context/RoleContext';
@@ -8,21 +7,15 @@ import { canAccessSettingsContent } from '../../lib/access';
 import type { PerformanceLevel } from '../../types';
 import {
   MONTHS,
-  READ_ONLY_APPROVED_NOTE,
-  UNSAVED_PREVIEW_NOTE,
-  UNSUPPORTED_FORMULA_NOTE,
   applyVersion,
   contractLabel,
-  lockedDirectionLabel,
   emptyPeriod,
   initialReportingPeriod,
   lineFormulaSupported,
   lineSignature,
   monthHasApprovedVersion,
-  revisionLabel,
   toPeriodData,
   versionFromPayload,
-  versionLabel,
   type EvaluationLine,
   type EvaluationPeriodData,
   type EvaluationRevision,
@@ -30,30 +23,15 @@ import {
   type PeriodScope,
 } from './evaluationSettings';
 import {
-  WEIGHT_FIELD_HELP,
-  WEIGHT_FIELD_LABEL,
   commitLineInputs,
-  formatIdentifiedTarget,
-  isExplicitPercentUnit,
   inputToStoredTarget,
   numericDraftsDirty,
-  savedTargetSummary,
-  savedWeightSummary,
-  storedTargetToInput,
-  storedWeightToInput,
   targetDraftUnchanged,
-  targetFieldHelp,
-  targetFieldLabel,
   type NumericDrafts,
 } from './evaluationInputUnits';
 import {
   EVIDENCE_CHANGED_NOTE,
-  FIXED_MISMATCH_NOTE,
-  ROLLBACK_CONFIRM_NOTE,
-  displayNumber,
   formatApplyResult,
-  formatKpiLine,
-  formatImpactSummary,
   formatReviseNotice,
   formatRollbackResult,
   invalidateCommittedEvidence,
@@ -66,7 +44,17 @@ import {
   type ImpactProof,
 } from './monthlyCorrection';
 import { EvaluationApplyProgress } from './EvaluationApplyProgress';
-import { BACKGROUND_CONTINUES_NOTE, CHECKING_APPLY_NOTE, useEvaluationApplyJobs } from './evaluationApplyJobs';
+import { BACKGROUND_CONTINUES_NOTE, useEvaluationApplyJobs } from './evaluationApplyJobs';
+import { EvaluationActions } from './evaluation/EvaluationActions';
+import { EvaluationAlerts, EvaluationDraftNotes, EvaluationSettingsNotes } from './evaluation/EvaluationNotices';
+import { EvaluationConfirmations } from './evaluation/EvaluationConfirmations';
+import { EvaluationContextBar } from './evaluation/EvaluationContextBar';
+import { EvaluationHistory } from './evaluation/EvaluationHistory';
+import { EvaluationImpactProof } from './evaluation/EvaluationImpactProof';
+import { EvaluationKpiLines } from './evaluation/EvaluationKpiLines';
+import { EvaluationStepper } from './evaluation/EvaluationStepper';
+import { MISSING_CHECKSUM_MESSAGE, STALE_SAVE_MESSAGE, VERSION_DRIFT_MESSAGE } from './evaluation/evaluationMessages';
+import { deriveWorkflowState } from './evaluation/evaluationWorkflowState';
 
 type Selection = { scopeId: string; year: number; month: number };
 
@@ -108,9 +96,6 @@ type EditorState = {
   text: NumericDrafts;
 };
 
-const STALE_SAVE_MESSAGE = 'This draft changed after you opened it. Reload the draft or discard your edits. Nothing was saved.';
-const VERSION_DRIFT_MESSAGE = 'This month is showing a different version from the one you started editing. Reload the draft or discard your edits. Saving will not write that other version.';
-const MISSING_CHECKSUM_MESSAGE = 'Save is unavailable until this draft has a rules checksum. Reload the month. An empty checksum is not sent.';
 const EVALUATION_LEVELS: readonly PerformanceLevel[] = ['Employee', 'Managerial', 'Corporate'];
 
 function selectionKey(selection: Selection) {
@@ -783,33 +768,65 @@ export function EvaluationSettingsPanel() {
 
   const scopeLabel = catalogScope ? `${catalogScope.display_name} · ${catalogScope.performance_level}${catalogScope.position_name ? ` · ${catalogScope.position_name}` : ''}` : 'No scope';
   const monthName = MONTHS[month - 1] || '';
+  const workflow = deriveWorkflowState({
+    loading: catalogQuery.isPending || periodLoading,
+    blocked,
+    unavailable: periodQuery.isError || !resolvedScopeId || !yearValid,
+    hasVersion: Boolean(period?.versionId),
+    periodStatus: period?.status ?? '',
+    versionId: period?.versionId ?? '',
+    revisions: period?.revisions ?? [],
+    dirty,
+    inputBlocked,
+    weightTotalInvalid,
+    unsupported,
+    checksumMissing,
+    versionDrift,
+    conflictPresent: Boolean(conflictText),
+    approvalReady,
+    controlsLocked,
+    applyMode: applyJobs.mode,
+    blockEnqueue: applyJobs.blockEnqueue,
+  });
+  // Each disabled expression below is the one the button had before the split. The workflow state mirrors it, and its tests check the mirror.
+  const saveDisabled = controlsLocked || !period?.versionId || period?.status !== 'draft' || unsupported || inputBlocked || weightTotalInvalid || checksumMissing || versionDrift || Boolean(conflictText);
+  const impactDisabled = controlsLocked || !period?.versionId || period?.status !== 'draft' || dirty || unsupported;
+  const approveDisabled = controlsLocked || !period?.versionId || dirty || period?.status !== 'draft' || !approvalReady;
+  const reviseDisabled = controlsLocked || !period?.versionId;
+  const applyDisabled = controlsLocked || period?.status !== 'approved' || dirty || applyJobs.blockEnqueue;
+  const deleteDisabled = controlsLocked || !deleteChecksum;
+  const adoptDisabled = controlsLocked || versionDrift || Boolean(conflictText);
+  const scopeOptions = levelScopes.map((item) => {
+    const readiness = item.id === resolvedScopeId && !periodLoading && !periodQuery.isError
+      ? readinessSource?.readiness ?? item.readiness
+      : item.readiness;
+    const suffix = readiness === 'supported' ? '' : readiness === 'unlinked_baseline' ? ' · unlinked' : ' · blocked';
+    return { id: item.id, label: `${item.display_name}${item.position_name ? ` · ${item.position_name}` : ''}${suffix}` };
+  });
+  const scopeCountText = catalogQuery.isPending
+    ? 'Loading scopes…'
+    : levelScopes.length === 0
+      ? `No evaluation scopes are available for ${level}. Choose another performance level.`
+      : `${levelScopes.length} ${levelScopes.length === 1 ? 'scope' : 'scopes'} · ${scopeLabel}`;
 
   return (
     <div className="min-w-0 space-y-4" aria-busy={periodLoading || busy}>
       <header>
         <h2 className="text-xl font-black text-[var(--text-primary)]">Evaluation settings</h2>
-        <p className="mt-1 text-xs text-[var(--text-muted)]">Choose a team and month, then edit targets and weights using its saved performance values. No new upload is needed when those values are available. Other months stay unchanged.</p>
-        <p className="mt-2 text-xs text-[var(--text-secondary)]">Save draft → Preview the score changes → Approve → Apply. Use 0% weight to track an indicator without changing the score.</p>
+        <p className="mt-1 text-xs text-[var(--text-muted)]">Choose a team and month, then edit targets and weights using its saved performance values. No new upload is needed when those values are available. Other months stay unchanged. Use 0% weight to track an indicator without changing the score.</p>
       </header>
-      {error && <div role="alert" className="flex items-start gap-2 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-xs font-semibold text-red-600">
-        <AlertCircle size={16} className="shrink-0" />
-        {missing.length ? <div className="space-y-2">
-          <p>Some scored indicators are missing saved values. Your draft is still editable; approval and application are blocked until this is resolved.</p>
-          <ul className="list-disc space-y-1 pl-4">{missing.map((item) => <li key={item.kpiKey}>{lines.find((line) => line.kpi_key === item.kpiKey)?.label || item.kpiKey}: {item.count} {item.count === 1 ? 'record needs' : 'records need'} a saved actual value.</li>)}</ul>
-          <p>If an indicator is only for monitoring, choose tracking only and adjust the other weights to total 100%. Otherwise, its saved values must be restored before scoring.</p>
-        </div> : error}
-      </div>}
-      {message && <p className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-xs font-semibold text-emerald-700" role="status">{message}</p>}
-      {applyJobs.mode === 'pending' && <p role="status" className="text-xs text-[var(--text-muted)]">{CHECKING_APPLY_NOTE}</p>}
-      {applyJobs.mode === 'unavailable' && <div role="alert" className="space-y-2 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-xs font-semibold text-red-600">
-        <p>{applyJobs.unavailableMessage}</p>
-        <button type="button" onClick={applyJobs.retryAvailability} className="rounded-xl border border-red-500/30 px-3 py-2 text-xs font-bold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--sgh-cyan-primary,#00A3E0)]">Retry availability check</button>
-      </div>}
-      {backgroundNote && <p role="status" className="break-words rounded-xl border border-[var(--border-light)] bg-[var(--bg-sunken)] px-4 py-3 text-xs text-[var(--text-secondary)]">{backgroundNote}</p>}
-      {applyJobs.problem && <div role="alert" className="space-y-2 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-xs font-semibold text-red-600">
-        <p>{applyJobs.problem}</p>
-        <button type="button" onClick={applyJobs.refreshJob} className="rounded-xl border border-red-500/30 px-3 py-2 text-xs font-bold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--sgh-cyan-primary,#00A3E0)]">Refresh background apply</button>
-      </div>}
+      <EvaluationAlerts
+        error={error}
+        missing={missing}
+        lines={lines}
+        message={message}
+        applyMode={applyJobs.mode}
+        unavailableMessage={applyJobs.unavailableMessage}
+        onRetryAvailability={applyJobs.retryAvailability}
+        backgroundNote={backgroundNote}
+        problem={applyJobs.problem}
+        onRefreshJob={applyJobs.refreshJob}
+      />
       {applyJobs.presentation && applyJobs.job && applyJobs.actions && <EvaluationApplyProgress
         job={applyJobs.job}
         presentation={applyJobs.presentation}
@@ -822,232 +839,124 @@ export function EvaluationSettingsPanel() {
         onRetry={runRetryApply}
         onRecover={runRecoverApply}
       />}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <label className="min-w-0 text-xs font-bold text-[var(--text-secondary)]">Performance level
-          <select aria-label="Performance level" value={level} onChange={(event) => changeLevel(event.target.value)} className="mt-1 w-full rounded-xl border border-[var(--border-light)] bg-[var(--bg-surface)] px-3 py-2 text-sm text-[var(--text-primary)]">
-            {EVALUATION_LEVELS.map((item) => <option key={item} value={item}>{item}</option>)}
-          </select>
-        </label>
-        <label className="min-w-0 text-xs font-bold text-[var(--text-secondary)]">Evaluation scope
-          <select aria-label="Evaluation scope" value={resolvedScopeId} disabled={levelScopes.length === 0} onChange={(event) => changeSelection({ scopeId: event.target.value })} className="mt-1 w-full rounded-xl border border-[var(--border-light)] bg-[var(--bg-surface)] px-3 py-2 text-sm text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50">
-            {levelScopes.length === 0 && <option value="">{catalogQuery.isPending ? 'Loading scopes…' : 'No scopes for this level'}</option>}
-            {levelScopes.map((item) => {
-              const readiness = item.id === resolvedScopeId && !periodLoading && !periodQuery.isError
-                ? readinessSource?.readiness ?? item.readiness
-                : item.readiness;
-              return <option key={item.id} value={item.id}>{item.display_name}{item.position_name ? ` · ${item.position_name}` : ''}{readiness === 'supported' ? '' : readiness === 'unlinked_baseline' ? ' · unlinked' : ' · blocked'}</option>;
-            })}
-          </select>
-        </label>
-        <label className="min-w-0 text-xs font-bold text-[var(--text-secondary)]">Reporting month
-          <select aria-label="Reporting month" value={month} onChange={(event) => changeSelection({ month: Number(event.target.value) })} className="mt-1 w-full rounded-xl border border-[var(--border-light)] bg-[var(--bg-surface)] px-3 py-2 text-sm">
-            {MONTHS.map((name, index) => <option key={name} value={index + 1}>{name}</option>)}
-          </select>
-        </label>
-        <label className="min-w-0 text-xs font-bold text-[var(--text-secondary)]">Reporting year
-          <input aria-label="Reporting year" type="number" min={2000} max={2100} value={year} onChange={(event) => changeSelection({ year: Number(event.target.value) })} className="mt-1 w-full rounded-xl border border-[var(--border-light)] bg-[var(--bg-surface)] px-3 py-2 text-sm" />
-        </label>
-      </div>
-      <p className="text-xs text-[var(--text-muted)]" role="status">{catalogQuery.isPending ? 'Loading scopes…' : levelScopes.length === 0 ? `No evaluation scopes are available for ${level}. Choose another performance level.` : `${levelScopes.length} ${levelScopes.length === 1 ? 'scope' : 'scopes'} · ${scopeLabel}`}</p>
-      {!blocked && period?.contract && <p role="status" className="text-xs font-semibold text-[var(--text-secondary)]">Settings source: {contractLabel(period.contract)} · {monthName} {year} · {level}</p>}
-      {!blocked && canAdopt && <p role="status" className="text-xs text-[var(--text-secondary)]">Switching uses the original uploader&apos;s supported indicators, targets, and weights for this month. Approved results and history stay unchanged until you preview, approve, and Apply. Unsaved edits are discarded only after you confirm.</p>}
-      {!blocked && canAdopt && <button type="button" onClick={requestAdopt} disabled={controlsLocked || versionDrift || Boolean(conflictText)} className="rounded-xl border border-[var(--border-light)] px-3 py-2 text-xs font-bold disabled:cursor-not-allowed disabled:opacity-50">Use original upload settings</button>}
-      {blocked && <div role="status" className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs text-amber-800">{readinessSource?.block_reason} {readinessSource?.history_note}</div>}
-      {actionsReady && <div className="flex flex-wrap gap-2">
-        {!monthApproved && <button type="button" onClick={() => runOpen(false)} disabled={controlsLocked} className="rounded-xl border border-[var(--border-light)] px-3 py-2 text-xs font-bold disabled:cursor-not-allowed disabled:opacity-50">New draft</button>}
-        {!monthApproved && <button type="button" onClick={() => runOpen(true)} disabled={controlsLocked} className="inline-flex items-center gap-1 rounded-xl border border-[var(--border-light)] px-3 py-2 text-xs font-bold disabled:cursor-not-allowed disabled:opacity-50"><Copy size={14} />Copy previous month</button>}
-        {approved && <button type="button" onClick={runRevise} disabled={controlsLocked || !period?.versionId} className="rounded-xl border border-[var(--border-light)] px-3 py-2 text-xs font-bold disabled:cursor-not-allowed disabled:opacity-50">Revise this month</button>}
-        {!approved && <button type="button" onClick={runSave} disabled={controlsLocked || !period?.versionId || period?.status !== 'draft' || unsupported || inputBlocked || weightTotalInvalid || checksumMissing || versionDrift || Boolean(conflictText)} className="inline-flex items-center gap-1 rounded-xl border border-[var(--border-light)] px-3 py-2 text-xs font-bold disabled:cursor-not-allowed disabled:opacity-50"><Save size={14} />Save draft</button>}
-        {!approved && <button type="button" onClick={runImpact} disabled={controlsLocked || !period?.versionId || period?.status !== 'draft' || dirty || unsupported} className="rounded-xl border border-[var(--border-light)] px-3 py-2 text-xs font-bold disabled:cursor-not-allowed disabled:opacity-50">Impact preview</button>}
-        {!approved && <button type="button" onClick={runApprove} disabled={controlsLocked || !period?.versionId || dirty || period?.status !== 'draft' || !approvalReady} className="inline-flex items-center gap-1 rounded-xl bg-blue-600 px-3 py-2 text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"><Check size={14} />Approve</button>}
-        {canDeleteDraft && <button type="button" onClick={requestDelete} disabled={controlsLocked || !deleteChecksum} className="rounded-xl border border-red-500/30 px-3 py-2 text-xs font-bold text-red-600 disabled:cursor-not-allowed disabled:opacity-50">Delete draft</button>}
-        {(applyJobs.mode === 'sync' || applyJobs.mode === 'async') && <button type="button" onClick={runApply} disabled={controlsLocked || period?.status !== 'approved' || dirty || applyJobs.blockEnqueue} className="rounded-xl bg-slate-900 px-3 py-2 text-xs font-bold text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--sgh-cyan-primary,#00A3E0)] disabled:cursor-not-allowed disabled:opacity-50">Apply</button>}
-      </div>}
-      {!blocked && approved && <p role="status" className="text-xs text-[var(--text-secondary)]">{READ_ONLY_APPROVED_NOTE}</p>}
-      {!blocked && checksumMissing && <p role="status" className="text-xs font-semibold text-amber-800">{MISSING_CHECKSUM_MESSAGE}</p>}
-      {!blocked && conflictText && <p role="status" className="text-xs font-semibold text-[var(--text-secondary)]">{conflictText}</p>}
-      {!blocked && conflictText && <div className="flex flex-wrap gap-2">
-        <button type="button" onClick={reloadDraft} className="rounded-xl border border-[var(--border-light)] px-3 py-2 text-xs font-bold">Reload draft</button>
-        <button type="button" onClick={discardDraft} className="rounded-xl border border-[var(--border-light)] px-3 py-2 text-xs font-bold">Discard edits</button>
-      </div>}
-      {!blocked && dirty && <p role="status" className="text-xs font-semibold text-[var(--text-secondary)]">{UNSAVED_PREVIEW_NOTE}</p>}
-      {!blocked && unsupported && <p role="status" className="text-xs font-semibold text-amber-800">{UNSUPPORTED_FORMULA_NOTE}</p>}
-      {!!period?.sourceVersionId && <p className="text-xs [overflow-wrap:anywhere] text-[var(--text-secondary)]">Source version {period.sourceVersionId}{period.sourceChecksum ? ` · source checksum ${period.sourceChecksum}` : ''}. The source version remains in this month's history.</p>}
-      {!!period?.notes && <p className="text-xs text-[var(--text-muted)]">{period.notes}</p>}
-      {visibleProof && <section className="min-w-0 space-y-3" aria-label="Impact proof">
-        <p className="text-xs text-[var(--text-secondary)]">{formatImpactSummary(visibleProof)}</p>
-        {visibleProof.writes === 0 && <p className="text-xs text-[var(--text-muted)]">Impact preview wrote no scores.</p>}
-        {visibleProof.rulesChecksum && <p className="text-xs [overflow-wrap:anywhere] text-[var(--text-muted)]">Rules checksum {visibleProof.rulesChecksum}.</p>}
-        {visibleProof.conflicts.length > 0 && <div className="space-y-2">
-          <p className="text-xs text-[var(--text-secondary)]">{FIXED_MISMATCH_NOTE}</p>
-          <p className="text-xs text-[var(--text-muted)]">Mismatch numbers use the explicit unit on that KPI's rule. A missing unit stays on the stored scale.</p>
-          <div className="min-w-0 overflow-x-auto">
-            <table className="w-full min-w-[36rem] text-left text-xs">
-              <caption className="mb-2 text-left text-xs font-bold text-[var(--text-secondary)]">Fixed target mismatches</caption>
-              <thead>
-                <tr>
-                  <th scope="col" className="px-2 py-1">Record</th>
-                  <th scope="col" className="px-2 py-1">KPI</th>
-                  <th scope="col" className="px-2 py-1">Workbook target</th>
-                  <th scope="col" className="px-2 py-1">Approved fixed target</th>
-                </tr>
-              </thead>
-              <tbody>
-                {visibleProof.conflicts.map((conflict) => {
-                  const rule = lines.find((item) => item.kpi_key === conflict.kpiKey);
-                  return (
-                    <tr key={`${conflict.recordId || 'record'}-${conflict.kpiKey}`}>
-                      <td className="px-2 py-1">{conflict.recordId || '—'}</td>
-                      <td className="px-2 py-1">{conflict.kpiKey}</td>
-                      <td className="px-2 py-1">{formatIdentifiedTarget(conflict.workbookTarget, rule?.unit)}</td>
-                      <td className="px-2 py-1">{formatIdentifiedTarget(conflict.approvedTarget, rule?.unit)}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>}
-        {comparisons.length > 0 && <div className="space-y-2">
-          <div className="min-w-0 overflow-x-auto">
-            <table className="w-full min-w-[42rem] text-left text-xs">
-              <caption className="mb-2 text-left text-xs font-bold text-[var(--text-secondary)]">Before and after scores</caption>
-              <thead>
-                <tr>
-                  <th scope="col" className="px-2 py-1">Employee</th>
-                  <th scope="col" className="px-2 py-1">Before score</th>
-                  <th scope="col" className="px-2 py-1">After score</th>
-                  <th scope="col" className="px-2 py-1">Before grade</th>
-                  <th scope="col" className="px-2 py-1">After grade</th>
-                </tr>
-              </thead>
-              <tbody>
-                {comparisonPage.rows.map((row, index) => <tr key={row.recordId || `${row.employeeCode || 'employee'}-${index}`}>
-                  <th scope="row" className="px-2 py-1 font-semibold">{row.employeeCode || row.employeeId || '—'}
-                    {row.kpis.map((kpi) => <span key={kpi.kpiKey} className="mt-1 block font-normal text-[var(--text-muted)]">{formatKpiLine(kpi)}</span>)}
-                  </th>
-                  <td className="px-2 py-1">{displayNumber(row.beforeScore)}</td>
-                  <td className="px-2 py-1">{displayNumber(row.afterScore)}</td>
-                  <td className="px-2 py-1">{row.beforeGrade || '—'}</td>
-                  <td className="px-2 py-1">{row.afterGrade || '—'}</td>
-                </tr>)}
-              </tbody>
-            </table>
-          </div>
-          <p className="text-xs text-[var(--text-muted)]">Page {comparisonPage.page + 1} of {comparisonPage.pages}</p>
-          <div className="flex flex-wrap gap-2">
-            <button type="button" onClick={() => setPage(comparisonPage.page - 1)} disabled={comparisonPage.page === 0} className="rounded-lg border border-[var(--border-light)] px-2 py-1 text-xs font-bold disabled:opacity-50">Previous impact page</button>
-            <button type="button" onClick={() => setPage(comparisonPage.page + 1)} disabled={comparisonPage.page >= comparisonPage.pages - 1} className="rounded-lg border border-[var(--border-light)] px-2 py-1 text-xs font-bold disabled:opacity-50">Next impact page</button>
-          </div>
-        </div>}
-      </section>}
-      <div className="min-w-0 space-y-3">
-        {!periodLoading && !blocked && lines.length > 0 && <div role="status" className="rounded-xl border border-[var(--border-light)] px-3 py-2 text-xs text-[var(--text-secondary)]">
-          <p className="font-bold">{inputBlocked || !Number.isFinite(totalWeight) ? 'Total weight: check the weight fields' : `Total weight: ${Number((totalWeight * 100).toFixed(2))}%`}</p>
-          <p>{weightTotalInvalid || inputBlocked ? 'Set the scored indicators to a total of 100% before saving. Other weights are not changed automatically.' : 'Weights are ready to save. Tracking-only indicators do not contribute to the score.'}</p>
-        </div>}
-        {periodLoading && <p className="text-xs text-[var(--text-muted)]">Loading this month…</p>}
-        {!periodLoading && !blocked && lines.map((line) => {
-          const supported = lineFormulaSupported(line);
-          const locked = busy || approved || !supported;
-          const savedLine = referenceLines.find((item) => item.kpi_key === line.kpi_key) ?? line;
-          const entry = textDrafts[line.kpi_key];
-          const targetValue = entry?.targetText !== undefined ? entry.targetText : storedTargetToInput(savedLine.target, savedLine.unit);
-          const weightValue = entry?.weightText !== undefined ? entry.weightText : storedWeightToInput(savedLine.weight);
-          const targetProblem = draftProblems.find((item) => item.kpiKey === line.kpi_key && item.field === 'target');
-          const weightProblem = draftProblems.find((item) => item.kpiKey === line.kpi_key && item.field === 'weight');
-          const unitSuffix = isExplicitPercentUnit(savedLine.unit)
-            ? '%'
-            : typeof savedLine.unit === 'string' && savedLine.unit.trim()
-              ? savedLine.unit.trim()
-              : 'as stored';
-          const fieldKey = line.kpi_key.replace(/[^A-Za-z0-9_-]/g, '-');
-          return (
-            <fieldset key={line.kpi_key} disabled={locked} className="min-w-0 rounded-2xl border border-[var(--border-light)] p-3 disabled:opacity-60">
-              <legend className="px-1 text-xs font-black text-[var(--text-primary)]">{line.label || line.kpi_key}</legend>
-              <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs">
-                <span className="rounded-full bg-[var(--bg-sunken)] px-2 py-1 font-semibold">{weightValue.trim() !== '' && Number(weightValue) === 0 ? 'Tracking only' : 'Included in score'}</span>
-                {weightValue.trim() !== '' && Number(weightValue) === 0
-                  ? <span className="text-[var(--text-muted)]">Enter a weight above 0% to include in the score.</span>
-                  : <button type="button" onClick={() => editText(line.kpi_key, 'weightText', '0')} className="rounded-lg border border-[var(--border-light)] px-3 py-2 font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-50">Track {line.label || line.kpi_key} only</button>}
-              </div>
-              {!supported && <p role="status" className="mb-2 text-xs text-amber-800">{UNSUPPORTED_FORMULA_NOTE}</p>}
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                <label className="text-[10px] font-bold text-[var(--text-muted)]">
-                  <span className="uppercase tracking-wide">{targetFieldLabel(savedLine.unit)}</span>
-                  <span className="mt-1 flex items-center gap-2">
-                    <input aria-label={`${line.kpi_key} target`} aria-describedby={`${fieldKey}-target-help`} aria-invalid={targetProblem ? true : undefined} type="text" inputMode="decimal" autoComplete="off" spellCheck={false} value={targetValue} onChange={(event) => editText(line.kpi_key, 'targetText', event.target.value)} className="w-full rounded-lg border border-[var(--border-light)] bg-transparent px-2 py-2 text-sm normal-case" />
-                    <span className="shrink-0 text-xs font-bold normal-case">{unitSuffix}</span>
-                  </span>
-                  <span id={`${fieldKey}-target-help`} className="mt-1 block font-normal normal-case tracking-normal">{targetFieldHelp(savedLine.unit)} Saved target: {savedTargetSummary(savedLine)}.</span>
-                  {targetProblem && <span role="status" className="mt-1 block font-semibold normal-case tracking-normal text-amber-800">{targetProblem.message}</span>}
-                </label>
-                <label className="text-[10px] font-bold text-[var(--text-muted)]">
-                  <span className="uppercase tracking-wide">{WEIGHT_FIELD_LABEL}</span>
-                  <span className="mt-1 flex items-center gap-2">
-                    <input aria-label={`${line.kpi_key} weight`} aria-describedby={`${fieldKey}-weight-help`} aria-invalid={weightProblem ? true : undefined} type="text" inputMode="decimal" autoComplete="off" spellCheck={false} value={weightValue} onChange={(event) => editText(line.kpi_key, 'weightText', event.target.value)} className="w-full rounded-lg border border-[var(--border-light)] bg-transparent px-2 py-2 text-sm normal-case" />
-                    <span className="shrink-0 text-xs font-bold normal-case">%</span>
-                  </span>
-                  <span id={`${fieldKey}-weight-help`} className="mt-1 block font-normal normal-case tracking-normal">{WEIGHT_FIELD_HELP} Saved weight: {savedWeightSummary(savedLine.weight)}.</span>
-                  {weightProblem && <span role="status" className="mt-1 block font-semibold normal-case tracking-normal text-amber-800">{weightProblem.message}</span>}
-                </label>
-                <label className="text-[10px] font-bold uppercase tracking-wide text-[var(--text-muted)]">Direction
-                  {supported && !directionOwned ? (
-                    <select aria-label={`${line.kpi_key} direction`} value={line.direction} onChange={(event) => updateLine(line.kpi_key, { direction: event.target.value })} className="mt-1 w-full rounded-lg border border-[var(--border-light)] bg-transparent px-2 py-2 text-sm">
-                      <option value="higher_better">Higher is better</option>
-                      <option value="lower_better">Lower is better</option>
-                    </select>
-                  ) : <input aria-label={`${line.kpi_key} direction`} value={directionOwned ? (line.row_selection === 'utz_or_abandon' ? 'Uploaded row' : lockedDirectionLabel(line.direction)) : line.direction} readOnly className="mt-1 w-full rounded-lg border border-[var(--border-light)] bg-transparent px-2 py-2 text-sm" />}
-                  {directionOwned && line.row_selection === 'utz_or_abandon' && <span className="mt-1 block font-normal normal-case tracking-normal text-[var(--text-muted)]">This indicator follows the uploaded row: UTZ when that cell is present, otherwise Abandon.</span>}
-                </label>
-                <label className="text-[10px] font-bold uppercase tracking-wide text-[var(--text-muted)]">Source
-                  {supported ? (
-                    <select aria-label={`${line.kpi_key} source`} value={line.target_mode} onChange={(event) => updateLine(line.kpi_key, { target_mode: event.target.value })} className="mt-1 w-full rounded-lg border border-[var(--border-light)] bg-transparent px-2 py-2 text-sm">
-                      <option value="workbook">Workbook</option>
-                      <option value="fixed">Fixed</option>
-                    </select>
-                  ) : <input aria-label={`${line.kpi_key} source`} value={line.target_mode} readOnly className="mt-1 w-full rounded-lg border border-[var(--border-light)] bg-transparent px-2 py-2 text-sm" />}
-                </label>
-              </div>
-            </fieldset>
-          );
-        })}
-      </div>
-      {pendingAdopt && <div role="group" aria-label="Switch to original upload settings" className="space-y-2 rounded-xl border border-[var(--border-light)] p-3">
-        <p className="text-xs text-[var(--text-secondary)]">{dirty
-          ? `Unsaved target and weight edits for ${monthName} ${year} are discarded only after you confirm. Switching uses the original uploader's supported indicators, targets, and weights for this month. Approved results and history stay unchanged until you preview, approve, and Apply. Other months stay unchanged.`
-          : `Switching uses the original uploader's supported indicators, targets, and weights for ${scopeLabel}, ${monthName} ${year}. ${approved ? 'The approved version stays in history and a new draft is created.' : 'This draft is updated for this month only.'} Approved results stay unchanged until you preview, approve, and Apply. Nothing changes until you confirm.`}</p>
-        <div className="flex flex-wrap gap-2">
-          <button type="button" onClick={runAdopt} disabled={busy} className="rounded-xl border border-[var(--border-light)] px-3 py-2 text-xs font-bold disabled:opacity-50">Confirm switch</button>
-          <button type="button" onClick={() => setAdoptConfirm(null)} className="rounded-xl border border-[var(--border-light)] px-3 py-2 text-xs font-bold">Keep current settings</button>
-        </div>
-      </div>}
-      {pendingDelete && <div role="group" aria-label="Delete draft confirmation" className="space-y-2 rounded-xl border border-red-500/30 p-3">
-        <p className="text-xs text-[var(--text-secondary)]">This draft and any unsaved edits will be removed. Approved versions and existing scores are not changed. This cannot be undone.</p>
-        <div className="flex flex-wrap gap-2">
-          <button type="button" onClick={runDelete} disabled={busy} className="rounded-xl border border-red-500/40 px-3 py-2 text-xs font-bold text-red-600 disabled:opacity-50">Delete draft</button>
-          <button type="button" onClick={() => setDeleteConfirm(null)} className="rounded-xl border border-[var(--border-light)] px-3 py-2 text-xs font-bold">Keep draft</button>
-        </div>
-      </div>}
-      {pendingRollback && <div role="group" aria-label="Rollback confirmation" className="space-y-2 rounded-xl border border-[var(--border-light)] p-3">
-        <p className="text-xs text-[var(--text-secondary)]">{ROLLBACK_CONFIRM_NOTE}</p>
-        <div className="flex flex-wrap gap-2">
-          <button type="button" onClick={() => runRollback(pendingRollback)} disabled={busy} className="rounded-xl border border-[var(--border-light)] px-3 py-2 text-xs font-bold disabled:opacity-50">Restore saved values</button>
-          <button type="button" onClick={() => setRollbackConfirm(null)} className="rounded-xl border border-[var(--border-light)] px-3 py-2 text-xs font-bold">Keep current records</button>
-        </div>
-      </div>}
-      <section className="min-w-0">
-        <h3 className="mb-2 flex items-center gap-2 text-xs font-black uppercase tracking-wide text-[var(--text-muted)]"><History size={14} />History</h3>
-        <ul className="space-y-2 text-xs [overflow-wrap:anywhere] text-[var(--text-secondary)]">
-          {periodLoading && <li>Loading this month…</li>}
-          {!periodLoading && (period?.history ?? []).map((item) => <li key={item.id}>{versionLabel(item, monthName)}</li>)}
-          {!periodLoading && (period?.revisions ?? []).map((item) => <li key={item.id} className="flex flex-wrap items-center gap-2">
-            <span>{revisionLabel(item)}</span>
-            {item.canRollback && <button type="button" onClick={() => setRollbackConfirm({ key: currentKey, revisionId: item.id })} disabled={busy} className="rounded-lg border border-[var(--border-light)] px-2 py-1 text-xs font-bold disabled:opacity-50">Rollback</button>}
-          </li>)}
-          {!periodLoading && !(period?.history ?? []).length && !(period?.revisions ?? []).length && <li>No saved versions for this month.</li>}
-        </ul>
-      </section>
+      <EvaluationContextBar
+        level={level}
+        levels={EVALUATION_LEVELS}
+        onLevelChange={changeLevel}
+        scopeId={resolvedScopeId}
+        scopeOptions={scopeOptions}
+        emptyScopeText={levelScopes.length === 0 ? (catalogQuery.isPending ? 'Loading scopes…' : 'No scopes for this level') : null}
+        scopeDisabled={levelScopes.length === 0}
+        onScopeChange={(value) => changeSelection({ scopeId: value })}
+        month={month}
+        onMonthChange={(value) => changeSelection({ month: value })}
+        year={year}
+        onYearChange={(value) => changeSelection({ year: value })}
+        scopeCountText={scopeCountText}
+        status={{ label: workflow.label, tone: workflow.tone }}
+      />
+      <EvaluationSettingsNotes
+        blocked={blocked}
+        settingsSource={period?.contract ? contractLabel(period.contract) : null}
+        monthName={monthName}
+        year={year}
+        level={level}
+        canAdopt={canAdopt}
+        blockReason={readinessSource?.block_reason}
+        historyNote={readinessSource?.history_note}
+      />
+      <EvaluationStepper steps={workflow.steps} />
+      {actionsReady && <EvaluationActions
+        primary={workflow.primaryAction}
+        approved={approved}
+        monthApproved={monthApproved}
+        canDeleteDraft={canDeleteDraft}
+        applyVisible={applyJobs.mode === 'sync' || applyJobs.mode === 'async'}
+        adoptVisible={!blocked && canAdopt}
+        disabled={{
+          new_draft: controlsLocked,
+          copy_previous: controlsLocked,
+          revise: reviseDisabled,
+          save: saveDisabled,
+          impact: impactDisabled,
+          approve: approveDisabled,
+          delete: deleteDisabled,
+          apply: applyDisabled,
+          adopt: adoptDisabled,
+        }}
+        onAction={{
+          new_draft: () => runOpen(false),
+          copy_previous: () => runOpen(true),
+          revise: runRevise,
+          save: runSave,
+          impact: runImpact,
+          approve: runApprove,
+          delete: requestDelete,
+          apply: runApply,
+          adopt: requestAdopt,
+        }}
+      />}
+      <EvaluationDraftNotes
+        blocked={blocked}
+        approved={approved}
+        checksumMissing={checksumMissing}
+        conflictText={conflictText}
+        dirty={dirty}
+        unsupported={unsupported}
+        sourceVersionId={period?.sourceVersionId}
+        sourceChecksum={period?.sourceChecksum}
+        notes={period?.notes}
+        onReload={reloadDraft}
+        onDiscard={discardDraft}
+      />
+      {visibleProof && <EvaluationImpactProof
+        proof={visibleProof}
+        lines={lines}
+        comparisons={comparisons}
+        comparisonPage={comparisonPage}
+        onPageChange={setPage}
+      />}
+      <EvaluationKpiLines
+        lines={lines}
+        referenceLines={referenceLines}
+        textDrafts={textDrafts}
+        draftProblems={draftProblems}
+        totalWeight={totalWeight}
+        inputBlocked={inputBlocked}
+        weightTotalInvalid={weightTotalInvalid}
+        periodLoading={periodLoading}
+        blocked={blocked}
+        busy={busy}
+        approved={approved}
+        directionOwned={directionOwned}
+        onEditText={editText}
+        onUpdateLine={updateLine}
+      />
+      <EvaluationConfirmations
+        adoptPending={Boolean(pendingAdopt)}
+        dirty={dirty}
+        approved={approved}
+        busy={busy}
+        monthName={monthName}
+        year={year}
+        scopeLabel={scopeLabel}
+        onConfirmAdopt={runAdopt}
+        onKeepAdopt={() => setAdoptConfirm(null)}
+        deletePending={Boolean(pendingDelete)}
+        onConfirmDelete={runDelete}
+        onKeepDraft={() => setDeleteConfirm(null)}
+        rollbackRevision={pendingRollback}
+        onConfirmRollback={runRollback}
+        onKeepRecords={() => setRollbackConfirm(null)}
+      />
+      <EvaluationHistory
+        history={period?.history ?? []}
+        revisions={period?.revisions ?? []}
+        periodLoading={periodLoading}
+        monthName={monthName}
+        busy={busy}
+        onRequestRollback={(revisionId) => setRollbackConfirm({ key: currentKey, revisionId })}
+      />
     </div>
   );
 }
