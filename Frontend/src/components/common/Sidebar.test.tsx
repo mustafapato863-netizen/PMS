@@ -258,6 +258,14 @@ describe('Sidebar General Manager navigation (stored role string)', () => {
     expect(screen.getByText('Manager')).toBeInTheDocument();
   });
 
+  it('keeps Administration active on /settings/evaluation while other items still match exactly', () => {
+    authState.user = ADMIN_USER;
+    renderSidebar('/settings/evaluation');
+
+    expect(screen.getByRole('link', { name: 'Administration' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('link', { name: 'Reports' })).not.toHaveAttribute('aria-current');
+  });
+
   it('shows separate Administration and Account settings links to Admin', () => {
     authState.user = ADMIN_USER;
     renderSidebar();

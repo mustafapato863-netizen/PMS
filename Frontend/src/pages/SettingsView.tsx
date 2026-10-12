@@ -1,7 +1,7 @@
 import './PageEnhancements.css';
-import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Settings, ShieldAlert } from 'lucide-react';
+import { ShieldAlert } from 'lucide-react';
+import { Navigate, useLocation, useParams } from 'react-router-dom';
 import { useUserRole } from '../context/RoleContext';
 import { canAccessSettingsContent } from '../lib/access';
 import { SettingsLayout } from '../components/settings/SettingsLayout';
@@ -10,12 +10,15 @@ import { EvaluationSettingsPanel } from '../components/settings/EvaluationSettin
 import { UserManagementPanel } from '../components/settings/UserManagementPanel';
 import { CorrectiveActionDataPanel } from '../components/settings/CorrectiveActionDataPanel';
 import { SystemErrorsPanel } from '../components/settings/SystemErrorsPanel';
-import type { SettingsSection } from '../components/settings/types';
+import { AdminOverview } from '../components/settings/shell/AdminOverview';
+import { AdminPageHeader } from '../components/settings/shell/AdminPageHeader';
+import { pageForLegacyTab, pageForSlug, settingsPathFor } from '../components/settings/shell/settingsNavigation';
 import TeamManagementView from './TeamManagementView';
 
 const SettingsView = () => {
   const { role } = useUserRole();
-  const [activeSection, setActiveSection] = useState<SettingsSection>('upload');
+  const { section } = useParams();
+  const { search } = useLocation();
   // Admin-only content. Every other role, General Manager included, gets the soft-lock panel.
   const isAdmin = canAccessSettingsContent(role);
 
@@ -31,19 +34,25 @@ const SettingsView = () => {
     );
   }
 
+  const page = pageForSlug(section);
+  if (page === null) {
+    // `/settings` opens the overview, or the section a legacy `?tab=` shortcut names. An unknown slug opens the overview.
+    // The query string is kept so that Evaluation's year and month survive the redirect.
+    const legacyPage = section === undefined ? pageForLegacyTab(new URLSearchParams(search).get('tab')) : null;
+    return <Navigate replace to={{ pathname: settingsPathFor(legacyPage ?? 'overview'), search }} />;
+  }
+
   return (
     <motion.main initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="app-page-shell rf-page rf-page--settings">
-      <header className="rf-page-hero flex items-center gap-3">
-        <div className="rounded-2xl bg-blue-500/10 p-3 text-blue-600 dark:text-blue-400"><Settings size={22} /></div>
-        <div><h1 className="text-2xl font-black tracking-tight text-[var(--text-primary)]">Settings & Administration</h1><p className="mt-1 text-xs text-[var(--text-muted)]">Manage data, KPI definitions, users and team onboarding.</p></div>
-      </header>
-      <SettingsLayout activeSection={activeSection} onSectionChange={setActiveSection}>
-        {activeSection === 'upload' && <DataManagementPanel />}
-        {activeSection === 'corrective_actions' && <CorrectiveActionDataPanel />}
-        {activeSection === 'kpis' && <EvaluationSettingsPanel />}
-        {activeSection === 'users' && <UserManagementPanel />}
-        {activeSection === 'teams' && <div className="glass-panel rounded-3xl p-5 shadow-sm"><TeamManagementView /></div>}
-        {activeSection === 'system_errors' && <SystemErrorsPanel />}
+      <AdminPageHeader title="Administration" description="Configure data, evaluation settings, users and system health." />
+      <SettingsLayout activePage={page}>
+        {page === 'overview' && <AdminOverview />}
+        {page === 'upload' && <DataManagementPanel />}
+        {page === 'corrective_actions' && <CorrectiveActionDataPanel />}
+        {page === 'kpis' && <EvaluationSettingsPanel />}
+        {page === 'users' && <UserManagementPanel />}
+        {page === 'teams' && <div className="glass-panel rounded-3xl p-5 shadow-sm"><TeamManagementView /></div>}
+        {page === 'system_errors' && <SystemErrorsPanel />}
       </SettingsLayout>
     </motion.main>
   );

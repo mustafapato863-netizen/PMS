@@ -101,6 +101,7 @@ function AnimatedRoutes() {
         {/* Settings: unguarded; SettingsView soft-locks every non-Admin role, General Manager included. */}
         <Route path="/account" element={<Suspense fallback={<RouteLoadingFallback />}><AccountView /></Suspense>} />
         <Route path="/settings" element={<Suspense fallback={<RouteLoadingFallback />}><SettingsView /></Suspense>} />
+        <Route path="/settings/:section" element={<Suspense fallback={<RouteLoadingFallback />}><SettingsView /></Suspense>} />
 
         {/* Reporting workspace */}
         <Route
