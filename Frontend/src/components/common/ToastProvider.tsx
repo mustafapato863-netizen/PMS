@@ -9,9 +9,10 @@
  *   toast.success('Report exported successfully');
  *   toast.error('Upload failed — please try again');
  */
-import { useCallback, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { CheckCircle2, AlertCircle, AlertTriangle, Info, X } from 'lucide-react';
+import { setRateLimitNotifier } from '../../lib/rateLimit';
 import { ToastContext, type ToastActions, type ToastItem, type ToastType } from './toastContext';
 
 /* ── Constants ──────────────────────────────────────────────── */
@@ -110,6 +111,12 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     },
     [dismiss],
   );
+
+  // Rate-limit notices from the request layer come through here, as one warning per retry window.
+  useEffect(() => {
+    setRateLimitNotifier((message) => push('warning', message));
+    return () => setRateLimitNotifier(null);
+  }, [push]);
 
   const toast: ToastActions = {
     success: (msg, dur) => push('success', msg, dur),

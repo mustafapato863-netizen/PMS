@@ -31,6 +31,15 @@ from api.middleware.error_handling_middleware import (
     ErrorHandlingMiddleware,
     install_api_error_handlers,
 )
+from api.middleware.rate_limit_middleware import (
+    RateLimitPostAuthMiddleware,
+    RateLimitPreAuthMiddleware,
+)
+from services.rate_limit.enforcement import (
+    RATE_LIMIT_HEADERS,
+    RateLimitExceeded,
+    rate_limit_exception_handler,
+)
 from config.database import SessionLocal
 from config.logging_config import setup_logging
 from config import settings
@@ -71,6 +80,11 @@ app = FastAPI(
     lifespan=lifespan
 )
 install_api_error_handlers(app)
+app.add_exception_handler(RateLimitExceeded, rate_limit_exception_handler)
+
+# Per-user rate limits run after AuthMiddleware. Added before the security-header
+# middleware, so the 429 responses it produces still carry the baseline headers.
+app.add_middleware(RateLimitPostAuthMiddleware)
 
 
 @app.middleware("http")
@@ -92,7 +106,10 @@ async def add_security_headers(request: Request, call_next):
 # Register AuthMiddleware
 app.add_middleware(AuthMiddleware)
 
-# Register ErrorHandlingMiddleware (to catch database/internal exceptions)
+# Address rate limits run before authentication, so unauthenticated requests still count.
+app.add_middleware(RateLimitPreAuthMiddleware)
+
+# Register ErrorHandlingMiddleware (to catch database/internal exceptions and set request_id)
 app.add_middleware(ErrorHandlingMiddleware)
 
 # Compress JSON responses large enough to benefit from it. CORS remains the
@@ -107,7 +124,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["X-Request-ID", "Server-Timing", "X-Response-Time-Ms"],
+    expose_headers=["X-Request-ID", "Server-Timing", "X-Response-Time-Ms", *RATE_LIMIT_HEADERS],
 )
 
 
