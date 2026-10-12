@@ -18,7 +18,7 @@ vi.mock('./adminOverviewData', async (importOriginal) => ({
   currentTime: () => clock.now,
 }));
 
-type Route = 'uploads' | 'management' | 'users' | 'errors';
+type Route = 'uploads' | 'management' | 'users' | 'errors' | 'evaluation';
 type Reply = () => Promise<Response> | Response;
 
 let replies: Record<Route, Reply>;
@@ -32,6 +32,7 @@ function routeOf(url: string): Route | null {
   if (url.endsWith('/api/uploads/')) return 'uploads';
   if (url.endsWith('/api/users/')) return 'users';
   if (url.includes('/api/settings/system-errors')) return 'errors';
+  if (url.includes('/api/settings/evaluation/overview')) return 'evaluation';
   return null;
 }
 
@@ -41,7 +42,13 @@ const hanging: Reply = () => new Promise<Response>(() => {});
 
 /** Every area empty and healthy, unless a test overrides it. */
 function defaultReplies(): Record<Route, Reply> {
-  return { uploads: ok([]), management: ok([]), users: ok([]), errors: ok([]) };
+  return {
+    uploads: ok([]),
+    management: ok([]),
+    users: ok([]),
+    errors: ok([]),
+    evaluation: ok({ drafts: 0, approved_not_applied: 0, applied: 0, attention: [] }),
+  };
 }
 
 function setReplies(overrides: Partial<Record<Route, Reply>>) {
@@ -259,7 +266,7 @@ describe('AdminOverview loading, errors and Retry', () => {
     for (const title of ['Data', 'Access', 'System']) {
       expect(screen.getByRole('status', { name: `Loading ${title}` })).toBeInTheDocument();
     }
-    expect(card('Evaluation')).not.toHaveAttribute('aria-busy', 'true');
+    expect(card('Evaluation')).toHaveAttribute('aria-busy', 'true');
     expect(screen.getByText('Checking areas…')).toBeInTheDocument();
   });
 
@@ -372,7 +379,7 @@ describe('AdminOverview malformed payloads', () => {
 });
 
 describe('AdminOverview requests', () => {
-  it('makes no request to any evaluation endpoint', async () => {
+  it('makes one request to the evaluation overview and to no other evaluation endpoint', async () => {
     setReplies({
       uploads: ok([{ id: 'u1', filename: 'PMS.xlsx', uploaded_at: daysAgo(1), uploaded_by: 'Sara', status: 'success' }]),
       users: ok([{ id: '1', role: 'Admin', is_active: true }]),
@@ -380,7 +387,9 @@ describe('AdminOverview requests', () => {
     });
     renderOverview();
     await waitFor(() => expect(screen.getByText('1 server error in the last 24 hours')).toBeInTheDocument());
-    expect(requestedUrls().filter((url) => url.includes('evaluation'))).toHaveLength(0);
+    expect(requestedUrls().filter((url) => url.includes('evaluation'))).toEqual([
+      expect.stringMatching(/\/api\/settings\/evaluation\/overview$/),
+    ]);
     expect(requestedUrls()).toEqual(expect.arrayContaining([
       expect.stringContaining('/api/uploads/'),
       expect.stringContaining('/api/team-management/management-kpi-config/uploads'),

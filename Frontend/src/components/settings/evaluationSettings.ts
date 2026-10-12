@@ -35,6 +35,11 @@ export type EvaluationVersion = {
   source_checksum?: string | null;
   contract?: EvaluationContract | null;
   revisionChoice?: RevisionChoice | null;
+  /** Who and when. Optional: an older server omits them, and a missing value is left out of the history. */
+  created_at?: string | null;
+  approved_at?: string | null;
+  created_by?: string | null;
+  approved_by?: string | null;
 };
 
 export type EvaluationRevision = {
@@ -186,7 +191,16 @@ function readVersion(value: unknown): EvaluationVersion | null {
   if ('revision_choice' in item || 'revisionChoice' in item) {
     parsed.revisionChoice = readRevisionChoice(item.revision_choice ?? item.revisionChoice);
   }
+  const who = item as { created_at?: unknown; approved_at?: unknown; created_by?: unknown; approved_by?: unknown };
+  if ('created_at' in who) parsed.created_at = readText(who.created_at);
+  if ('approved_at' in who) parsed.approved_at = readText(who.approved_at);
+  if ('created_by' in who) parsed.created_by = readText(who.created_by);
+  if ('approved_by' in who) parsed.approved_by = readText(who.approved_by);
   return parsed;
+}
+
+function readText(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
 /** Keep contract fields only when this payload actually carried them. */

@@ -183,6 +183,17 @@ export function EvaluationSettingsPanel() {
     },
   });
   const scopes = catalogQuery.data ?? [];
+  // The Overview links here with ?scope=<id>. The id is read once, when the catalog first lists it. An unknown id changes nothing.
+  const [pendingScopeId, setPendingScopeId] = useState(() => new URLSearchParams(window.location.search).get('scope')?.trim() || null);
+  if (pendingScopeId && catalogQuery.data) {
+    const match = catalogQuery.data.find((item) => item.id === pendingScopeId);
+    const matchedLevel = EVALUATION_LEVELS.find((item) => item === match?.performance_level);
+    setPendingScopeId(null);
+    if (match && matchedLevel) {
+      setLevel(matchedLevel);
+      setScopeId(match.id);
+    }
+  }
   const levelScopes = useMemo(
     () => (catalogQuery.data ?? []).filter((item) => item.performance_level === level),
     [catalogQuery.data, level],

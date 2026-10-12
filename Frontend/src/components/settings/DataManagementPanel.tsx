@@ -62,21 +62,23 @@ function quotedNames(names: string[]): string {
 
 /**
  * The requested ids the server removed. The employee endpoint lists the ids it did not find. The management endpoint returns one
- * result per batch it removed and skips the rest without saying why, so a batch with no removed rows counts as not removed.
+ * result per batch it removed. When it also sends `failed_ids`, those are the batches whose delete raised, and they are not removed
+ * whatever their result says. Without that field (an older server), a batch with no removed rows counts as not removed.
  */
-function removedUploadIds(management: boolean, ids: string[], data: unknown): Set<string> {
+function removedUploadIds(management: boolean, ids: string[], body: { data?: unknown; failed_ids?: unknown }): Set<string> {
   if (!management) {
-    const missing = new Set(asArray((data as { missing_ids?: unknown } | null | undefined)?.missing_ids));
+    const missing = new Set(asArray((body.data as { missing_ids?: unknown } | null | undefined)?.missing_ids));
     return new Set(ids.filter((id) => !missing.has(id)));
   }
+  const failed = Array.isArray(body.failed_ids) ? new Set(asArray(body.failed_ids)) : null;
   const removedRows = new Map<string, number>();
-  const results = Array.isArray(data) ? (data as Record<string, unknown>[]) : [];
+  const results = Array.isArray(body.data) ? (body.data as Record<string, unknown>[]) : [];
   for (const result of results) {
     const rows = ['config_rows_deleted', 'snapshot_rows_deleted', 'history_rows_deleted']
       .reduce((sum, key) => sum + Number(result[key] ?? 0), 0);
     removedRows.set(String(result.upload_batch_id), rows);
   }
-  return new Set(ids.filter((id) => (removedRows.get(id) ?? 0) > 0));
+  return new Set(ids.filter((id) => !failed?.has(id) && (removedRows.get(id) ?? 0) > 0));
 }
 
 /** The notice for a batch the server answered. Only a batch where every upload was removed reads as a success. */
@@ -458,7 +460,7 @@ export function DataManagementPanel() {
       if (!response.ok || !result?.success) {
         throw new Error(readableUploadError(result?.detail ?? result?.message, 'Delete failed'));
       }
-      setStatus(batchNotice(management, items, removedUploadIds(management, ids, result.data)));
+      setStatus(batchNotice(management, items, removedUploadIds(management, ids, result)));
     } catch (error) {
       // A 429 already shows the one rate-limit notice, so it gets no second message here.
       if (!isRateLimitError(error)) {

@@ -28,6 +28,8 @@ function VersionRow({ entry }: { entry: VersionEntry }) {
       <div className="min-w-0 flex-1 space-y-1">
         <p className="text-[14px] font-bold text-[var(--text-primary)]">{entry.title}</p>
         <p className="text-xs capitalize text-[var(--text-secondary)]">{entry.detail}</p>
+        {entry.created && <p className="text-xs text-[var(--text-secondary)]" title={entry.created.title ?? undefined}>{entry.created.text}</p>}
+        {entry.approved && <p className="text-xs text-[var(--text-secondary)]" title={entry.approved.title ?? undefined}>{entry.approved.text}</p>}
         {entry.checksum && entry.shortChecksum && <ChecksumCopy value={entry.checksum} short={entry.shortChecksum} subject={entry.title} />}
         {entry.sourceVersionId && <p className="truncate text-xs text-[var(--text-muted)]" title={`Built from ${entry.sourceVersionId}`}>Built from {entry.sourceVersionId}</p>}
       </div>

@@ -87,6 +87,7 @@ PUBLIC_ROUTES = {
     ("GET", "/versions/{version_id}"),
     ("GET", "/versions/{version_id}/export"),
     ("GET", "/periods"),
+    ("GET", "/overview"),
     ("GET", "/reads"),
     ("POST", "/apply"),
     ("POST", "/revisions/{revision_id}/rollback"),

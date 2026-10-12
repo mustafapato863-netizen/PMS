@@ -169,3 +169,74 @@ export function summarizeSystemErrors(rows: unknown[], now: number, windowMs = S
     lastError: newest(dated),
   };
 }
+
+export type EvaluationAttentionState = 'draft' | 'approved_not_applied';
+
+/** One month that needs action. The link opens Evaluation settings on this scope and month. */
+export interface EvaluationAttentionItem {
+  scopeId: string;
+  scopeName: string;
+  performanceLevel: string | null;
+  positionName: string;
+  year: number;
+  month: number;
+  monthName: string;
+  state: EvaluationAttentionState;
+  versionId: string;
+  versionNumber: number | null;
+}
+
+/**
+ * Counts from GET /api/settings/evaluation/overview. A null count means the server could not decide it, so the card
+ * shows what is known and does not say nothing is pending. `approvedUnconfirmed` is approved months with no revision on
+ * record for their period. It is neutral: it does not raise the tone and is never an attention item.
+ */
+export interface EvaluationOverview {
+  drafts: number;
+  approvedNotApplied: number | null;
+  approvedUnconfirmed: number | null;
+  applied: number | null;
+  attention: EvaluationAttentionItem[];
+}
+
+function readWholeCount(value: unknown): number | null {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : null;
+}
+
+function readAttention(row: unknown): EvaluationAttentionItem | null {
+  if (!isRecord(row)) return null;
+  const state = row.state === 'draft' || row.state === 'approved_not_applied' ? row.state : null;
+  const scopeId = readText(row.scope_id);
+  const versionId = readText(row.version_id);
+  const year = readWholeCount(row.year);
+  const month = readWholeCount(row.month);
+  const monthName = readText(row.month_name);
+  if (!state || !scopeId || !versionId || year === null || month === null || month < 1 || month > 12 || !monthName) return null;
+  return {
+    scopeId,
+    scopeName: readText(row.scope_display_name) ?? 'Scope',
+    performanceLevel: readText(row.performance_level),
+    positionName: readText(row.position_name) ?? '',
+    year,
+    month,
+    monthName,
+    state,
+    versionId,
+    versionNumber: typeof row.version_number === 'number' && Number.isFinite(row.version_number) ? row.version_number : null,
+  };
+}
+
+/** Null when the payload is not the overview shape, so the card shows its error state instead of guessing. */
+export function readEvaluationOverview(payload: unknown): EvaluationOverview | null {
+  if (!isRecord(payload) || payload.success === false || !isRecord(payload.data)) return null;
+  const data = payload.data;
+  const drafts = readWholeCount(data.drafts);
+  if (drafts === null || !Array.isArray(data.attention)) return null;
+  return {
+    drafts,
+    approvedNotApplied: readWholeCount(data.approved_not_applied),
+    approvedUnconfirmed: readWholeCount(data.approved_unconfirmed),
+    applied: readWholeCount(data.applied),
+    attention: data.attention.map(readAttention).filter((item): item is EvaluationAttentionItem => item !== null),
+  };
+}

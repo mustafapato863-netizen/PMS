@@ -242,6 +242,12 @@ def evaluation_period(
     return StandardResponse(success=True, message="Evaluation period", data=_run(lambda: EvaluationWorkflow(db).period(actor, scope_id, year, month)))
 
 
+@router.get("/overview", response_model=StandardResponse)
+def evaluation_overview(request: Request, db: Session = Depends(get_db)):
+    actor = _actor(request, db)
+    return StandardResponse(success=True, message="Evaluation overview", data=_run(lambda: EvaluationWorkflow(db).overview(actor)))
+
+
 @router.get("/reads", response_model=StandardResponse)
 def evaluation_reads(
     request: Request,
