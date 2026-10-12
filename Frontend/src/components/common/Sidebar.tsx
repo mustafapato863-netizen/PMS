@@ -387,7 +387,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed: collapsedPreference = false, 
         >
           {isCollapsed ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}
         </button>
-        <button ref={closeRef} type="button" onClick={() => setIsOpen(false)} aria-label="Close navigation sidebar" className="navigation-close min-h-11 min-w-11 rounded-lg text-[var(--text-muted)] xl:hidden">
+        <button ref={closeRef} type="button" onClick={() => setIsOpen(false)} aria-label="Close navigation sidebar" className="navigation-close min-h-11 min-w-11 [@media(max-width:768px)]:min-w-[44px] rounded-lg text-[var(--text-muted)] xl:hidden">
           <X size={18} className="mx-auto" />
         </button>
       </div>

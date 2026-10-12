@@ -21,8 +21,8 @@ import { KPI_TARGET_HELP_ID, KPI_WEIGHT_HELP_ID, fieldKeyFor, isRowEdited, type 
 export const KPI_COLUMNS = 'lg:grid-cols-[minmax(0,2fr)_minmax(0,1.1fr)_minmax(0,0.9fr)_minmax(0,1fr)_minmax(0,0.8fr)]';
 
 const CONTROL = `h-[44px] w-full min-w-0 rounded-lg border border-[var(--border-light)] bg-transparent px-2 text-[14px] text-[var(--text-primary)] normal-case lg:h-[36px] disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--sgh-cyan-primary,#00A3E0)]`;
-const FIELD_CAPTION = 'mb-1 block text-[12px] font-bold text-[var(--text-muted)] lg:hidden';
-const TRACK_BUTTON = '!min-h-[44px] w-fit rounded-lg border border-[var(--border-light)] px-3 text-[12px] font-semibold text-[var(--text-primary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--sgh-cyan-primary,#00A3E0)] disabled:cursor-not-allowed disabled:opacity-50 lg:!min-h-[32px]';
+const FIELD_CAPTION = 'mb-1 block text-xs font-bold text-[var(--text-muted)] lg:hidden';
+const TRACK_BUTTON = 'min-h-[44px] w-fit rounded-lg border border-[var(--border-light)] px-3 text-xs font-semibold text-[var(--text-primary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--sgh-cyan-primary,#00A3E0)] disabled:cursor-not-allowed disabled:opacity-50 lg:!min-h-[32px]';
 
 export type ProblemMessage = { message: string };
 
@@ -75,13 +75,13 @@ export function EvaluationKpiRow({
       <div className="col-span-2 flex min-w-0 flex-col gap-1.5 lg:col-span-1">
         <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
           <span id={nameId} className="text-[14px] font-bold text-[var(--text-primary)]">{label}</span>
-          <span className="rounded-full bg-[var(--bg-sunken)] px-2 py-0.5 text-[12px] font-semibold text-[var(--text-secondary)]">{tracking ? 'Tracking only' : 'Included in score'}</span>
-          {edited && <span className="inline-flex items-center gap-1 text-[12px] font-semibold text-blue-700 dark:text-blue-300"><PencilLine size={12} aria-hidden="true" />Edited</span>}
+          <span className="rounded-full bg-[var(--bg-sunken)] px-2 py-0.5 text-xs font-semibold text-[var(--text-secondary)]">{tracking ? 'Tracking only' : 'Included in score'}</span>
+          {edited && <span className="inline-flex items-center gap-1 text-xs font-semibold text-blue-700 dark:text-blue-300"><PencilLine size={12} aria-hidden="true" />Edited</span>}
         </div>
         {tracking
-          ? <span className="text-[12px] text-[var(--text-muted)]">Enter a weight above 0% to include in the score.</span>
+          ? <span className="text-xs text-[var(--text-muted)]">Enter a weight above 0% to include in the score.</span>
           : <button type="button" disabled={locked} onClick={() => onEditText(line.kpi_key, 'weightText', '0')} className={TRACK_BUTTON}>Track {label} only</button>}
-        {!supported && <p role="status" className="text-[12px] text-amber-800 dark:text-amber-300">{UNSUPPORTED_FORMULA_NOTE}</p>}
+        {!supported && <p role="status" className="text-xs text-amber-800 dark:text-amber-300">{UNSUPPORTED_FORMULA_NOTE}</p>}
       </div>
 
       <div className="min-w-0">
@@ -100,10 +100,10 @@ export function EvaluationKpiRow({
             onChange={(event) => onEditText(line.kpi_key, 'targetText', event.target.value)}
             className={CONTROL}
           />
-          <span className="shrink-0 text-[12px] font-bold text-[var(--text-secondary)]">{unitSuffix}</span>
+          <span className="shrink-0 text-xs font-bold text-[var(--text-secondary)]">{unitSuffix}</span>
         </div>
-        <span id={targetSavedId} className="mt-1 block text-[12px] text-[var(--text-muted)]">Saved target: {savedTargetSummary(savedLine)}.</span>
-        {targetProblem && <span role="status" className="mt-1 block text-[12px] font-semibold text-amber-800 dark:text-amber-300">{targetProblem.message}</span>}
+        <span id={targetSavedId} className="mt-1 block text-xs text-[var(--text-muted)]">Saved target: {savedTargetSummary(savedLine)}.</span>
+        {targetProblem && <span role="status" className="mt-1 block text-xs font-semibold text-amber-800 dark:text-amber-300">{targetProblem.message}</span>}
       </div>
 
       <div className="min-w-0">
@@ -122,10 +122,10 @@ export function EvaluationKpiRow({
             onChange={(event) => onEditText(line.kpi_key, 'weightText', event.target.value)}
             className={CONTROL}
           />
-          <span className="shrink-0 text-[12px] font-bold text-[var(--text-secondary)]">%</span>
+          <span className="shrink-0 text-xs font-bold text-[var(--text-secondary)]">%</span>
         </div>
-        <span id={weightSavedId} className="mt-1 block text-[12px] text-[var(--text-muted)]">Saved weight: {savedWeightSummary(savedLine.weight)}.</span>
-        {weightProblem && <span role="status" className="mt-1 block text-[12px] font-semibold text-amber-800 dark:text-amber-300">{weightProblem.message}</span>}
+        <span id={weightSavedId} className="mt-1 block text-xs text-[var(--text-muted)]">Saved weight: {savedWeightSummary(savedLine.weight)}.</span>
+        {weightProblem && <span role="status" className="mt-1 block text-xs font-semibold text-amber-800 dark:text-amber-300">{weightProblem.message}</span>}
       </div>
 
       <div className="min-w-0">
@@ -136,7 +136,7 @@ export function EvaluationKpiRow({
             <option value="lower_better">Lower is better</option>
           </select>
         ) : <input aria-label={`${line.kpi_key} direction`} value={directionOwned ? (line.row_selection === 'utz_or_abandon' ? 'Uploaded row' : lockedDirectionLabel(line.direction)) : line.direction} readOnly disabled={locked} className={CONTROL} />}
-        {directionOwned && line.row_selection === 'utz_or_abandon' && <span className="mt-1 block text-[12px] text-[var(--text-muted)]">This indicator follows the uploaded row: UTZ when that cell is present, otherwise Abandon.</span>}
+        {directionOwned && line.row_selection === 'utz_or_abandon' && <span className="mt-1 block text-xs text-[var(--text-muted)]">This indicator follows the uploaded row: UTZ when that cell is present, otherwise Abandon.</span>}
       </div>
 
       <div className="min-w-0">

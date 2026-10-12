@@ -154,14 +154,14 @@ export function SystemErrorsPanel() {
         </td>
         <td className={`${BODY_CELL_CLASS} font-extrabold text-[var(--text-primary)]`}>{item.error_class}</td>
         <td className={BODY_CELL_CLASS}>
-          <span className="rounded-md bg-[var(--bg-sunken)] px-1.5 py-0.5 font-mono text-[12px] font-bold text-[var(--text-secondary)]">{item.method}</span>
+          <span className="rounded-md bg-[var(--bg-sunken)] px-1.5 py-0.5 font-mono text-xs font-bold text-[var(--text-secondary)]">{item.method}</span>
         </td>
         <td className={`${BODY_CELL_CLASS} max-w-[200px]`}>
-          <span className="block truncate font-mono text-[12px]" title={item.endpoint}>{item.endpoint}</span>
+          <span className="block truncate font-mono text-xs" title={item.endpoint}>{item.endpoint}</span>
         </td>
         <td className={BODY_CELL_CLASS}>
           {item.request_id
-            ? <span className="block max-w-[120px] truncate font-mono text-[12px]" title={item.request_id}>{item.request_id}</span>
+            ? <span className="block max-w-[120px] truncate font-mono text-xs" title={item.request_id}>{item.request_id}</span>
             : <span className="text-[var(--text-muted)]">—</span>}
         </td>
         <td className={`${BODY_CELL_CLASS} text-right`}>
@@ -170,7 +170,7 @@ export function SystemErrorsPanel() {
             aria-pressed={selected}
             aria-label={`Details for ${item.error_class} at ${item.endpoint}`}
             onClick={() => void openDetails(item)}
-            className="!min-h-[44px] rounded-lg border border-[var(--border-light)] px-3 text-[12px] font-bold text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-sunken)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--sgh-cyan-primary,#00A3E0)] lg:!min-h-[32px]"
+            className="min-h-[44px] rounded-lg border border-[var(--border-light)] px-3 text-xs font-bold text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-sunken)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--sgh-cyan-primary,#00A3E0)] lg:!min-h-[32px]"
           >
             Details
           </button>
@@ -246,7 +246,7 @@ export function SystemErrorsPanel() {
               <div className="flex min-h-36 flex-col items-center justify-center rounded-2xl border border-dashed border-[var(--border-light)] px-5 text-center">
                 <ShieldCheck size={22} className="text-emerald-500" />
                 <p className="mt-2 text-sm font-bold text-[var(--text-primary)]">{requestIdFilter ? 'No error found for this reference' : 'No recent server errors'}</p>
-                <p className="mt-1 max-w-sm text-[12px] leading-relaxed text-[var(--text-muted)]">
+                <p className="mt-1 max-w-sm text-xs leading-relaxed text-[var(--text-muted)]">
                   {requestIdFilter ? 'Check the reference and try again.' : 'New server failures will appear here with a reference you can search.'}
                 </p>
               </div>

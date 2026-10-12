@@ -29,13 +29,13 @@ export function ChecksumCopy({ value, short, subject }: ChecksumCopyProps) {
   };
 
   return (
-    <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-[var(--text-secondary)]">
+    <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[var(--text-secondary)]">
       <span>Checksum <code className="font-mono text-[var(--text-primary)]">{short}</code></span>
       <button
         type="button"
         onClick={() => void copy()}
         aria-label={`Copy checksum for ${subject}`}
-        className="inline-flex !min-h-[44px] items-center gap-1 rounded-lg border border-[var(--border-light)] px-2 font-bold text-[var(--text-primary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--sgh-cyan-primary,#00A3E0)] lg:!min-h-[32px]"
+        className="inline-flex min-h-[44px] items-center gap-1 rounded-lg border border-[var(--border-light)] px-2 font-bold text-[var(--text-primary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--sgh-cyan-primary,#00A3E0)] lg:!min-h-[32px]"
       >
         {state === 'copied' ? <Check size={12} aria-hidden="true" /> : <Copy size={12} aria-hidden="true" />}
         Copy checksum

@@ -307,7 +307,7 @@ const Header = ({ onMenuClick }: HeaderProps) => {
             aria-label="Open navigation sidebar"
             aria-haspopup="dialog"
             aria-controls="responsive-navigation"
-            className="-ml-1 flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-xl p-1.5 text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-sunken)] hover:text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 xl:hidden"
+            className="-ml-1 flex min-h-11 min-w-11 [@media(max-width:768px)]:min-w-[44px] shrink-0 items-center justify-center rounded-xl p-1.5 text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-sunken)] hover:text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 xl:hidden"
           >
             <Menu size={20} aria-hidden="true" />
           </button>
