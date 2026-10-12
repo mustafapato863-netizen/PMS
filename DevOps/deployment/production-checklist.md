@@ -29,3 +29,11 @@ This checklist contains the pre-flight verification checks required before deplo
 - [ ] **Host Storage Checks:** Run `df -h` on the host VPS to ensure at least 20% available storage space.
 - [ ] **Backup Automation:** Confirm `scripts/backup-db.sh` is mapped to run daily via cron.
 - [ ] **Recovery Audit:** Run a database restore dry-run using a generated SQL dump on a staging instance to verify backup file integrity.
+
+## 4. Rate Limiting and Proxy Trust
+
+- [ ] **Network migration:** On an existing host, the one-time `down` / `up` in `self-hosted-vps.md`, section 3a, has been run. The `private` network reports the subnet configured for this host.
+- [ ] **Subnet is free:** No host or Docker network overlaps `PMS_PRIVATE_SUBNET` (default `10.218.10.0/24`).
+- [ ] **Trusted proxy matches:** `PMS_TRUSTED_PROXY_CIDRS` equals `PMS_PRIVATE_SUBNET`, and the gateway's address is inside it.
+- [ ] **Mode:** `PMS_RATE_LIMIT_MODE` is `enforce` in production (the default when `APP_ENV=production`).
+- [ ] **Redis:** `REDIS_URL` is set, so counters are shared. Without it each process keeps its own counters.

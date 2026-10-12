@@ -1,3 +1,4 @@
+import ipaddress
 import os
 from config.environment import load_project_environment
 from config.runtime_validation import resolve_jwt_secret, validate_seed_settings
@@ -169,6 +170,51 @@ if REDIS_SOCKET_TIMEOUT_SECONDS <= 0:
     raise ValueError("REDIS_SOCKET_TIMEOUT_SECONDS must be greater than zero.")
 if REDIS_RETRY_INTERVAL_SECONDS < 0:
     raise ValueError("REDIS_RETRY_INTERVAL_SECONDS cannot be negative.")
+
+# API rate limiting. "report" logs would-be rejections and still answers normally;
+# "off" skips the limiter entirely. Production and staging enforce, and the test
+# profile stays off so the existing suite is unaffected.
+PMS_RATE_LIMIT_MODE = os.environ.get(
+    "PMS_RATE_LIMIT_MODE",
+    {"production": "enforce", "staging": "enforce", "test": "off"}.get(APP_ENV, "report"),
+).strip().lower()
+if PMS_RATE_LIMIT_MODE not in {"off", "report", "enforce"}:
+    raise ValueError("PMS_RATE_LIMIT_MODE must be off, report, or enforce.")
+
+
+def _positive_int_setting(name: str, default: int) -> int:
+    value = int(os.environ.get(name, str(default)))
+    if value <= 0:
+        raise ValueError(f"{name} must be greater than zero.")
+    return value
+
+
+# Per client address. Sized for an office where many staff share one public address. The
+# per-username login rule below is the brute-force control, alongside the account lockout.
+PMS_RATE_LIMIT_LOGIN_PER_MINUTE = _positive_int_setting("PMS_RATE_LIMIT_LOGIN_PER_MINUTE", 60)
+PMS_RATE_LIMIT_LOGIN_USERNAME_PER_MINUTE = _positive_int_setting("PMS_RATE_LIMIT_LOGIN_USERNAME_PER_MINUTE", 5)
+PMS_RATE_LIMIT_REFRESH_PER_MINUTE = _positive_int_setting("PMS_RATE_LIMIT_REFRESH_PER_MINUTE", 300)
+# Flood ceiling for every /api request from one address. Deliberately high: many users share an office address.
+PMS_RATE_LIMIT_API_PER_MINUTE = _positive_int_setting("PMS_RATE_LIMIT_API_PER_MINUTE", 1200)
+PMS_RATE_LIMIT_HEAVY_PER_MINUTE = _positive_int_setting("PMS_RATE_LIMIT_HEAVY_PER_MINUTE", 10)
+PMS_RATE_LIMIT_WRITE_PER_MINUTE = _positive_int_setting("PMS_RATE_LIMIT_WRITE_PER_MINUTE", 120)
+PMS_RATE_LIMIT_READ_PER_MINUTE = _positive_int_setting("PMS_RATE_LIMIT_READ_PER_MINUTE", 600)
+# Upper bound on counters kept in this process while Redis is absent or failing.
+PMS_RATE_LIMIT_FALLBACK_MAX_KEYS = _positive_int_setting("PMS_RATE_LIMIT_FALLBACK_MAX_KEYS", 50_000)
+
+
+def _trusted_proxy_networks(value: str) -> tuple[str, ...]:
+    networks = tuple(item.strip() for item in value.split(",") if item.strip())
+    for network in networks:
+        try:
+            ipaddress.ip_network(network, strict=False)
+        except ValueError as exc:
+            raise ValueError(f"PMS_TRUSTED_PROXY_CIDRS contains an invalid network: {network}") from exc
+    return networks
+
+
+# Proxies whose X-Forwarded-For is honored. Empty means no header is trusted.
+PMS_TRUSTED_PROXY_CIDRS = _trusted_proxy_networks(os.environ.get("PMS_TRUSTED_PROXY_CIDRS", ""))
 
 # Socket.IO presence is process-local. Disable it by default on serverless hosts.
 PMS_REALTIME_MODE = os.environ.get(

@@ -22,6 +22,17 @@ The following properties configure the FastAPI application server, database mapp
 | `REDIS_URL` | Connection URL | N/A | Redis caching instance string (`redis://:pass@host:6379/0`). |
 | `REDIS_SOCKET_TIMEOUT_SECONDS` | Decimal seconds | `0.25` | Upper bound for a Redis connection or command attempt before falling back. |
 | `REDIS_RETRY_INTERVAL_SECONDS` | Decimal seconds | `30` | Cooldown before retrying an unavailable Redis service. |
+| `PMS_RATE_LIMIT_MODE` | Enum String | `enforce` in production and staging; `off` in test; `report` otherwise | `enforce` answers 429 when a limit is exceeded. `report` logs the would-be rejection and answers normally. `off` skips the limiter. Counters live in Redis when `REDIS_URL` is set, and in process otherwise. |
+| `PMS_TRUSTED_PROXY_CIDRS` | CSV CIDRs | empty (no proxy trusted) | Proxies whose `X-Forwarded-For` the backend honors. The client is the right-most address that is not a trusted proxy. Production sets it to the private subnet the gateway uses (`10.218.10.0/24` in `compose.production.yml`). Leave it empty when no proxy sits in front of the backend. |
+| `PMS_PRIVATE_SUBNET` | CIDR | `10.218.10.0/24` | Subnet of the Compose `private` network, which the gateway uses to reach the backend. Override it only together with `PMS_TRUSTED_PROXY_CIDRS`, and only when the default collides with a host or Docker network. See `self-hosted-vps.md`, section 3a. |
+| `PMS_RATE_LIMIT_LOGIN_PER_MINUTE` | Integer | `60` | Login attempts per minute from one client address. Sized for an office where many staff share one address. The per-username rule is the brute-force control. |
+| `PMS_RATE_LIMIT_LOGIN_USERNAME_PER_MINUTE` | Integer | `5` | Login attempts per minute for one username from one client address (username is case-insensitive). |
+| `PMS_RATE_LIMIT_REFRESH_PER_MINUTE` | Integer | `300` | Session refresh calls per minute from one client address. |
+| `PMS_RATE_LIMIT_API_PER_MINUTE` | Integer | `1200` | Flood ceiling for all `/api` requests from one client address, authenticated or not. Set high because many users share an office address. |
+| `PMS_RATE_LIMIT_HEAVY_PER_MINUTE` | Integer | `10` | Per authenticated user: workbook uploads and imports, evaluation calculate, preview, apply and rollback, and report generation or export. |
+| `PMS_RATE_LIMIT_WRITE_PER_MINUTE` | Integer | `120` | Per authenticated user: other POST, PUT, PATCH and DELETE requests. |
+| `PMS_RATE_LIMIT_READ_PER_MINUTE` | Integer | `600` | Per authenticated user: GET requests. |
+| `PMS_RATE_LIMIT_FALLBACK_MAX_KEYS` | Integer | `50000` | Maximum counters kept in process while Redis is absent or failing. |
 | `PMS_REALTIME_MODE` | Enum String | `disabled` on Vercel; `in_process` elsewhere | Enables process-local Socket.IO only on a compatible single-process runtime. |
 | `PMS_REPORT_CENTER_ENABLED` | Boolean | `true` locally; explicitly staged in hosted environments | Enables the role-adaptive Reports Center routes. Keep the legacy report workspace available for rollback during the first release. |
 | `PMS_SCOPED_PERFORMANCE_API_ENABLED` | Boolean | `false` | Enables the new performance summary/history dashboard paths. Roll out only with the matching frontend flag. The authenticated, scope-enforced bounded records roster is always available, including with legacy dashboards. |

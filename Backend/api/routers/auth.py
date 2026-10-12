@@ -31,6 +31,7 @@ from services.auth_service import (
     RefreshTokenError,
     RefreshTokenReuseError,
 )
+from services.rate_limit.enforcement import enforce_login_username_limit
 from services.user_identity_service import UserIdentityService
 from repositories.user_repository import UserRepository
 from services.user_presence_service import UserPresenceService
@@ -124,6 +125,9 @@ async def login(payload: LoginPayload, request: Request, response: Response, db:
     """
     Authenticate user and return JWT token.
     """
+    # Per (address, username) limit, checked before any credential work. It stays outside the
+    # try block below, because that block turns unexpected exceptions into a 500.
+    await enforce_login_username_limit(request, payload.username)
     try:
         user_agent, client_host = _request_metadata(request)
         tokens = AuthenticationService.authenticate_user_with_session(

@@ -3,6 +3,7 @@ import type { User } from '../types';
 import { usePresenceHeartbeat } from '../hooks/usePresenceHeartbeat';
 import { discardPerformanceCache } from '../hooks/usePerformanceData';
 import { apiFetch, getAccessToken, refreshAccessToken, setAccessToken, terminateClientSession } from '../lib/apiClient';
+import { isRateLimitError } from '../lib/rateLimit';
 import { AuthContext } from './auth';
 import type { AuthContextProps } from './auth';
 
@@ -122,7 +123,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setInitializationStatus('loadingNavigation');
       setInitializationStatus('ready');
       return { success: true };
-    } catch {
+    } catch (error) {
+      // Shown inline on the login form. The shared notice is not raised for login.
+      if (isRateLimitError(error)) return { success: false, error: error.message };
       return { success: false, error: 'Failed to connect to authentication server' };
     }
   };

@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useCallback } from 'react';
 import { useAuth } from './auth';
 import { getAccessToken } from '../lib/apiClient';
+import { RATE_LIMIT_STATUS, rejectRateLimited } from '../lib/rateLimit';
 import type { User } from '../types';
 
 export type UserRole = User['role'];
@@ -31,7 +32,10 @@ export const RoleProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (token) {
       headers.set('Authorization', `Bearer ${token}`);
     }
-    return fetch(input, { ...init, headers, credentials: 'include' });
+    const response = await fetch(input, { ...init, headers, credentials: 'include' });
+    // Callers read the response shape themselves. A 429 is not a shape they can handle, so it becomes a typed error.
+    if (response.status === RATE_LIMIT_STATUS) throw rejectRateLimited(response, { notify: true });
+    return response;
   }, [role]);
 
   return (

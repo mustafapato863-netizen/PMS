@@ -1,5 +1,6 @@
 import { API_BASE, API_TIMEOUT_MS, API_UPLOAD_TIMEOUT_MS } from '../config';
 import { clearAuthenticatedQueryState } from './queryClient';
+import { RATE_LIMIT_STATUS, RateLimitError, rejectRateLimited } from './rateLimit';
 
 type ApiErrorPayload = {
   message?: unknown;
@@ -144,6 +145,8 @@ async function requestRefreshAccessToken(): Promise<boolean> {
       credentials: 'include',
       headers,
     });
+    // A rate-limited refresh is not a dead session. Surface it, so the caller does not end the session.
+    if (response.status === RATE_LIMIT_STATUS) throw rejectRateLimited(response, { notify: true });
     if (!response.ok) return false;
     const payload = await response.json() as AccessTokenResponse;
     const accessToken = payload.data?.access_token;
@@ -151,7 +154,8 @@ async function requestRefreshAccessToken(): Promise<boolean> {
     setAccessToken(accessToken);
     if (payload.data?.csrf_token) localStorage.setItem('pms_csrf_token', payload.data.csrf_token);
     return true;
-  } catch {
+  } catch (error) {
+    if (error instanceof RateLimitError) throw error;
     return false;
   }
 }
@@ -295,6 +299,11 @@ export async function apiFetch<T>(
     throw err;
   });
 
+  if (res.status === RATE_LIMIT_STATUS) {
+    // The login form shows its own inline message, so the shared notice is kept for every other request.
+    throw rejectRateLimited(res, { notify: !cleanEndpoint.includes('/auth/login') });
+  }
+
   if (res.status === 401) {
     // Login and refresh errors belong to their callers.
     if (cleanEndpoint.includes('/auth/login') || cleanEndpoint.includes('/auth/refresh')) {
@@ -312,6 +321,7 @@ export async function apiFetch<T>(
         credentials: 'include',
       });
       if (retry.status !== 401) {
+        if (retry.status === RATE_LIMIT_STATUS) throw rejectRateLimited(retry, { notify: true });
         if (!retry.ok) {
           const error = await retry.json().catch(() => ({ message: retry.statusText }));
           throw new ApiError(apiErrorMessage(error, retry.status), retry.status);
