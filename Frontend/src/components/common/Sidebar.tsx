@@ -374,7 +374,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed: collapsedPreference = false, 
             <SghHeartSvg size={isCollapsed ? 22 : 26} glow />
           </div>
           <div className={isCollapsed ? 'xl:hidden' : ''}>
-            <h1 className="text-[14px] font-extrabold tracking-tight text-[var(--text-primary)]">SGH Hub</h1>
+            <h2 className="text-[14px] font-extrabold tracking-tight text-[var(--text-primary)]">SGH Hub</h2>
             <span className="mt-0.5 block text-[10px] font-bold uppercase tracking-widest text-[var(--sgh-cyan-primary)]">Intelligence</span>
           </div>
         </div>
