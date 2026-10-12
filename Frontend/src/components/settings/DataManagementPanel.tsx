@@ -9,6 +9,8 @@ import OverlayPortal from '../common/OverlayPortal';
 import type { ManagementUploadItem, UploadHistoryItem } from './types';
 import { refreshManagementData } from './settingsUtils';
 import { UploadColumnNotices } from './UploadColumnNotices';
+import { UploadHistory } from './UploadHistory';
+import { asArray } from './uploadFormat';
 import { readColumnWarnings, type ColumnWarning } from './uploadHeaderNotices';
 
 type Status = { type: 'success' | 'error'; message: string; columnWarnings?: ColumnWarning[] } | null;
@@ -35,19 +37,9 @@ function readableUploadError(value: unknown, fallback: string): string {
   return fallback;
 }
 
-function asArray(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
-}
-
 function columnWarningsFrom(value: unknown): ColumnWarning[] {
   if (!value || typeof value !== 'object') return [];
   return readColumnWarnings((value as { column_warnings?: unknown }).column_warnings);
-}
-
-function formatDate(value?: string | null) {
-  if (!value) return 'Unknown date';
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
 }
 
 function StatusBanner({ status }: { status: Status }) {
@@ -171,166 +163,6 @@ function DeleteConfirmModal({
         </div>
       </div>
     </OverlayPortal>
-  );
-}
-
-interface HistoryProps {
-  items: UploadHistoryItem[];
-  management?: boolean;
-  loading?: boolean;
-  busy: string | null | string[];
-  onDelete: (item: UploadHistoryItem, management: boolean) => void;
-  onBatchDelete?: (items: UploadHistoryItem[], management: boolean) => void;
-}
-
-function UploadHistory({ items, management = false, loading = false, busy, onDelete, onBatchDelete }: HistoryProps) {
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-
-  const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.checked) {
-      setSelectedIds(new Set(items.map(i => i.id)));
-    } else {
-      setSelectedIds(new Set());
-    }
-  };
-
-  const handleSelectOne = (id: string, checked: boolean) => {
-    const next = new Set(selectedIds);
-    if (checked) next.add(id);
-    else next.delete(id);
-    setSelectedIds(next);
-  };
-
-  const handleBatchDelete = () => {
-    if (!onBatchDelete) return;
-    const selectedItems = items.filter(i => selectedIds.has(i.id));
-    onBatchDelete(selectedItems, management);
-    setSelectedIds(new Set());
-  };
-
-  const isBatchDeleting = Array.isArray(busy);
-
-  return (
-    <div className="overflow-hidden rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)]">
-      {onBatchDelete && selectedIds.size > 0 && (
-        <div className="flex items-center justify-between bg-rose-50/50 px-4 py-2 border-b border-[var(--border-light)] dark:bg-rose-950/20">
-          <span className="text-xs font-semibold text-rose-600 dark:text-rose-400">
-            {selectedIds.size} item{selectedIds.size > 1 ? 's' : ''} selected
-          </span>
-          <button
-            onClick={handleBatchDelete}
-            disabled={isBatchDeleting}
-            className="flex items-center gap-2 rounded-lg bg-rose-500 px-3 py-1.5 text-xs font-bold text-white transition-all hover:bg-rose-600 disabled:opacity-60"
-          >
-            {isBatchDeleting ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
-            Delete Selected
-          </button>
-        </div>
-      )}
-      <div className="max-h-72 overflow-auto">
-        <table className="w-full min-w-[620px] text-left text-xs">
-          <thead className="sticky top-0 bg-[var(--bg-sunken)] text-[10px] uppercase tracking-wider text-[var(--text-muted)] border-b border-[var(--border-light)]">
-            <tr>
-              {onBatchDelete && (
-                <th className="px-4 py-3 w-10">
-                  <input 
-                    type="checkbox" 
-                    className="rounded border-[var(--border-light)] text-blue-600 focus:ring-blue-500"
-                    checked={items.length > 0 && selectedIds.size === items.length}
-                    onChange={handleSelectAll}
-                  />
-                </th>
-              )}
-              <th className="px-4 py-3">File</th>
-              <th className="px-4 py-3">Uploaded</th>
-              <th className="px-4 py-3">Scope</th>
-              {!management && <th className="px-4 py-3">Records</th>}
-              <th className="px-4 py-3 text-right">Action</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-[var(--border-light)]">
-            {loading ? (
-              [1, 2, 3].map((i) => (
-                <tr key={i} className="animate-pulse">
-                  {onBatchDelete && <td className="px-4 py-3.5"><div className="h-4 w-4 rounded bg-[var(--border-light)]/60" /></td>}
-                  <td className="px-4 py-3.5"><div className="h-3.5 w-44 rounded bg-[var(--border-light)]/60" /></td>
-                  <td className="px-4 py-3.5"><div className="h-3.5 w-32 rounded bg-[var(--border-light)]/60" /></td>
-                  <td className="px-4 py-3.5"><div className="h-3.5 w-28 rounded bg-[var(--border-light)]/60" /></td>
-                  {!management && <td className="px-4 py-3.5"><div className="h-3.5 w-12 rounded bg-[var(--border-light)]/60" /></td>}
-                  <td className="px-4 py-3.5 text-right"><div className="ml-auto h-6 w-6 rounded bg-[var(--border-light)]/60" /></td>
-                </tr>
-              ))
-            ) : (
-              items.map((item) => {
-                const details = item as ManagementUploadItem;
-                const isDeleting = busy === item.id || (isBatchDeleting && selectedIds.has(item.id));
-                return (
-                  <tr key={item.id} className="transition-colors hover:bg-[var(--bg-sunken)]/40">
-                    {onBatchDelete && (
-                      <td className="px-4 py-3.5">
-                        <input 
-                          type="checkbox" 
-                          className="rounded border-[var(--border-light)] text-blue-600 focus:ring-blue-500"
-                          checked={selectedIds.has(item.id)}
-                          onChange={(e) => handleSelectOne(item.id, e.target.checked)}
-                        />
-                      </td>
-                    )}
-                    <td className="px-4 py-3.5 text-[var(--text-primary)]">
-                      <p className="font-extrabold">{item.filename || 'Unnamed file'}</p>
-                      {!management && (
-                        <p className="mt-0.5 text-[10px] font-semibold text-[var(--text-muted)]">
-                          One workbook · {item.team_count || asArray(details.teams).length || 0} teams
-                        </p>
-                      )}
-                    </td>
-                    <td className="px-4 py-3.5 text-[var(--text-secondary)]">
-                      {formatDate(item.uploaded_at)} · <span className="font-semibold">{item.uploaded_by || 'Unknown'}</span>
-                    </td>
-                    <td className="max-w-[300px] px-4 py-3.5 text-[var(--text-secondary)]">
-                      <p className="truncate font-semibold" title={asArray(details.teams).join(', ')}>
-                        {asArray(details.teams).join(', ') || 'All teams'}
-                      </p>
-                      <p className="mt-0.5 truncate text-[10px] text-[var(--text-muted)]" title={asArray(details.periods).join(', ')}>
-                        {asArray(details.periods).join(', ') || 'No period detected'}
-                      </p>
-                    </td>
-                    {!management && (
-                      <td className="px-4 py-3.5 font-extrabold tabular-nums text-[var(--text-primary)]">
-                        {(item.record_count || 0).toLocaleString()}
-                      </td>
-                    )}
-                    <td className="px-4 py-3.5 text-right">
-                      <button
-                        aria-label={`Delete ${item.filename || 'upload'}`}
-                        disabled={Array.isArray(busy) || busy !== null}
-                        onClick={() => onDelete(item, management)}
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-rose-500 hover:bg-rose-500/10 disabled:opacity-40 transition-colors"
-                      >
-                        {isDeleting ? <Loader2 size={15} className="animate-spin text-rose-500" /> : <Trash2 size={14} />}
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })
-            )}
-            {!loading && !items.length && (
-              <tr>
-                <td
-                  colSpan={management ? (onBatchDelete ? 5 : 4) : (onBatchDelete ? 6 : 5)}
-                  className="px-4 py-10 text-center text-[var(--text-muted)]"
-                >
-                  <div className="flex flex-col items-center justify-center gap-1.5">
-                    <FileSpreadsheet size={24} className="opacity-40 mb-1" />
-                    <p className="font-semibold">No upload history found.</p>
-                  </div>
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-    </div>
   );
 }
 

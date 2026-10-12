@@ -1,8 +1,40 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
-import { Activity, AlertCircle, Bug, ChevronRight, Clock3, Loader2, RefreshCw, Search, ShieldCheck, X } from 'lucide-react';
+import { formatDistanceToNow } from 'date-fns';
+import { Activity, AlertCircle, Clock3, Loader2, RefreshCw, Search, ShieldCheck, X } from 'lucide-react';
 import { API_BASE } from '../../config';
 import { useUserRole } from '../../context/RoleContext';
+import { AdminTableShell } from './shell/AdminTableShell';
+import { BODY_CELL_CLASS, BODY_ROW_CLASS, HEAD_CELL_CLASS } from './shell/adminTableClasses';
+import { SortableHeaderCell } from './shell/SortableHeaderCell';
+import { TablePagination } from './shell/TablePagination';
+import { usePagination } from './shell/usePagination';
+import { directionFor, useTableSort, type SortColumn } from './shell/useTableSort';
+
+const ERRORS_PER_PAGE = 25;
+
+type ErrorSortKey = 'time' | 'errorClass' | 'method' | 'endpoint';
+
+/** The sortable columns. Reference and Details are not sortable. */
+const SYSTEM_ERROR_SORT_COLUMNS: SortColumn<SystemError, ErrorSortKey>[] = [
+  { key: 'time', value: (item) => timestampOf(item.occurred_at) },
+  { key: 'errorClass', value: (item) => item.error_class },
+  { key: 'method', value: (item) => item.method },
+  { key: 'endpoint', value: (item) => item.endpoint },
+];
+
+function timestampOf(value: string | null): number | null {
+  if (!value) return null;
+  const time = Date.parse(value);
+  return Number.isNaN(time) ? null : time;
+}
+
+/** How long ago, read from the time; the absolute time is shown in the cell's title. */
+function relativeTime(value: string | null) {
+  if (!value) return 'Time unavailable';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : formatDistanceToNow(date, { addSuffix: true });
+}
 
 type SystemError = {
   id: string;
@@ -107,6 +139,46 @@ export function SystemErrorsPanel() {
     void loadErrors(filter);
   };
 
+  const { rows: sortedErrors, sort, toggle } = useTableSort(errors, SYSTEM_ERROR_SORT_COLUMNS);
+  const pagination = usePagination(sortedErrors, ERRORS_PER_PAGE, `${requestIdFilter}|${sort?.key ?? ''}|${sort?.direction ?? ''}`);
+
+  const renderErrorRow = (item: SystemError) => {
+    const selected = selectedError?.id === item.id;
+    return (
+      <tr key={item.id} className={`${BODY_ROW_CLASS} ${selected ? 'bg-blue-500/[0.06]' : ''}`}>
+        <td className={BODY_CELL_CLASS}>
+          <time dateTime={item.occurred_at ?? undefined} title={formatDate(item.occurred_at)} className="inline-flex items-center gap-1.5 whitespace-nowrap">
+            <Clock3 size={12} aria-hidden="true" />
+            {relativeTime(item.occurred_at)}
+          </time>
+        </td>
+        <td className={`${BODY_CELL_CLASS} font-extrabold text-[var(--text-primary)]`}>{item.error_class}</td>
+        <td className={BODY_CELL_CLASS}>
+          <span className="rounded-md bg-[var(--bg-sunken)] px-1.5 py-0.5 font-mono text-[12px] font-bold text-[var(--text-secondary)]">{item.method}</span>
+        </td>
+        <td className={`${BODY_CELL_CLASS} max-w-[200px]`}>
+          <span className="block truncate font-mono text-[12px]" title={item.endpoint}>{item.endpoint}</span>
+        </td>
+        <td className={BODY_CELL_CLASS}>
+          {item.request_id
+            ? <span className="block max-w-[120px] truncate font-mono text-[12px]" title={item.request_id}>{item.request_id}</span>
+            : <span className="text-[var(--text-muted)]">—</span>}
+        </td>
+        <td className={`${BODY_CELL_CLASS} text-right`}>
+          <button
+            type="button"
+            aria-pressed={selected}
+            aria-label={`Details for ${item.error_class} at ${item.endpoint}`}
+            onClick={() => void openDetails(item)}
+            className="!min-h-[44px] rounded-lg border border-[var(--border-light)] px-3 text-[12px] font-bold text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-sunken)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--sgh-cyan-primary,#00A3E0)] lg:!min-h-[32px]"
+          >
+            Details
+          </button>
+        </td>
+      </tr>
+    );
+  };
+
   return (
     <div className="space-y-5">
       <header className="flex flex-wrap items-start justify-between gap-3">
@@ -164,8 +236,8 @@ export function SystemErrorsPanel() {
           </div>
         )}
 
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(320px,0.85fr)]">
-          <div className="space-y-2" aria-busy={loading}>
+        <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_minmax(320px,0.85fr)]">
+          <div className="min-w-0 space-y-2" aria-busy={loading}>
             {loading ? (
               <div role="status" className="flex min-h-36 items-center justify-center gap-2 text-xs font-semibold text-[var(--text-muted)]">
                 <Loader2 size={17} className="animate-spin" /> Loading server errors…
@@ -174,38 +246,32 @@ export function SystemErrorsPanel() {
               <div className="flex min-h-36 flex-col items-center justify-center rounded-2xl border border-dashed border-[var(--border-light)] px-5 text-center">
                 <ShieldCheck size={22} className="text-emerald-500" />
                 <p className="mt-2 text-sm font-bold text-[var(--text-primary)]">{requestIdFilter ? 'No error found for this reference' : 'No recent server errors'}</p>
-                <p className="mt-1 max-w-sm text-xs leading-relaxed text-[var(--text-muted)]">
+                <p className="mt-1 max-w-sm text-[12px] leading-relaxed text-[var(--text-muted)]">
                   {requestIdFilter ? 'Check the reference and try again.' : 'New server failures will appear here with a reference you can search.'}
                 </p>
               </div>
-            ) : errors.map((item) => {
-              const selected = selectedError?.id === item.id;
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => void openDetails(item)}
-                  aria-pressed={selected}
-                  className={`w-full rounded-2xl border p-3.5 text-left transition sm:p-4 ${selected ? 'border-blue-500/40 bg-blue-500/[0.06]' : 'border-[var(--border-light)] bg-[var(--bg-surface)] hover:border-blue-500/25 hover:bg-[var(--bg-sunken)]'}`}
-                >
-                  <div className="flex items-start gap-3">
-                    <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-rose-500/10 text-rose-600 dark:text-rose-300"><Bug size={17} /></span>
-                    <span className="min-w-0 flex-1">
-                      <span className="flex flex-wrap items-center gap-2">
-                        <span className="text-xs font-extrabold text-[var(--text-primary)]">{item.error_class}</span>
-                        <span className="rounded-md bg-[var(--bg-sunken)] px-1.5 py-0.5 font-mono text-[10px] font-bold text-[var(--text-secondary)]">{item.method}</span>
-                      </span>
-                      <span className="mt-1 block break-all font-mono text-[11px] text-[var(--text-secondary)]">{item.endpoint}</span>
-                      <span className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-[var(--text-muted)]">
-                        <span className="inline-flex items-center gap-1"><Clock3 size={12} />{formatDate(item.occurred_at)}</span>
-                        {item.request_id && <span className="break-all font-mono">Ref: {item.request_id}</span>}
-                      </span>
-                    </span>
-                    <ChevronRight size={16} className={`mt-1 shrink-0 text-[var(--text-muted)] transition-transform ${selected ? 'rotate-90 text-blue-500' : ''}`} />
-                  </div>
-                </button>
-              );
-            })}
+            ) : (
+              <AdminTableShell
+                tableLabel="Recent server errors"
+                maxHeightClass="max-h-[560px]"
+                minWidthClass="min-w-[720px]"
+                footer={<TablePagination page={pagination.page} pageCount={pagination.pageCount} from={pagination.from} to={pagination.to} total={pagination.total} onPageChange={pagination.goTo} label="Server error pages" />}
+              >
+                <thead>
+                  <tr>
+                    <SortableHeaderCell label="Time" direction={directionFor(sort, 'time')} onSort={() => toggle('time')} />
+                    <SortableHeaderCell label="Error class" direction={directionFor(sort, 'errorClass')} onSort={() => toggle('errorClass')} />
+                    <SortableHeaderCell label="Method" direction={directionFor(sort, 'method')} onSort={() => toggle('method')} />
+                    <SortableHeaderCell label="Endpoint" direction={directionFor(sort, 'endpoint')} onSort={() => toggle('endpoint')} />
+                    <th scope="col" className={HEAD_CELL_CLASS}>Reference</th>
+                    <th scope="col" className={`${HEAD_CELL_CLASS} text-right`}>Details</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[var(--border-light)]">
+                  {pagination.rows.map((item) => renderErrorRow(item))}
+                </tbody>
+              </AdminTableShell>
+            )}
           </div>
 
           <aside className="min-h-48 rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] p-4" aria-label="Error details">

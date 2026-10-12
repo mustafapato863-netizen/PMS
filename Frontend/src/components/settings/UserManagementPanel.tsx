@@ -10,6 +10,35 @@ import type { TeamConfigItem } from './types';
 import { UserFormModal, type UserFormValue } from './UserFormModal';
 import { USER_BRANCH_OPTIONS, USER_ROLE_OPTIONS, readHasUnrestrictedTeamAccess } from '../../lib/access';
 import { safeUserName, userInitials } from './settingsUtils';
+import { AdminTableShell, TableEmptyRow } from './shell/AdminTableShell';
+import { BODY_CELL_CLASS, BODY_ROW_CLASS, HEAD_CELL_CLASS } from './shell/adminTableClasses';
+import { SortableHeaderCell } from './shell/SortableHeaderCell';
+import { TablePagination } from './shell/TablePagination';
+import { usePagination } from './shell/usePagination';
+import { directionFor, useTableSort, type SortColumn } from './shell/useTableSort';
+
+const USERS_PER_PAGE = 25;
+
+const FILTER_SELECT = 'rounded-xl border border-[var(--border-light)] bg-[var(--bg-sunken)] px-3 py-2 text-[12px] font-semibold text-[var(--text-secondary)]';
+
+type UserSortKey = 'name' | 'username' | 'role' | 'account' | 'presence';
+
+/** Presence sorts by recent activity: online users first, then the most recently seen. Never seen sorts last. */
+function presenceValue(user: User): number | null {
+  if (user?.is_online) return Number.POSITIVE_INFINITY;
+  if (!user?.last_seen_at) return null;
+  const seen = Date.parse(user.last_seen_at);
+  return Number.isNaN(seen) ? null : seen;
+}
+
+/** The sortable columns. Access scope and Actions are not sortable. */
+const USER_SORT_COLUMNS: SortColumn<User, UserSortKey>[] = [
+  { key: 'name', value: (user) => safeUserName(user) },
+  { key: 'username', value: (user) => user?.username || null },
+  { key: 'role', value: (user) => user?.role || null },
+  { key: 'account', value: (user) => ((user?.is_active ?? true) ? 'Active' : 'Disabled') },
+  { key: 'presence', value: (user) => presenceValue(user) },
+];
 
 function lastSeenText(value?: string | null) {
   if (!value) return 'Never seen';
@@ -196,19 +225,96 @@ export function UserManagementPanel() {
     setDeleteBusy(false);
   };
 
+  const { rows: sortedUsers, sort, toggle } = useTableSort(filteredUsers, USER_SORT_COLUMNS);
+  const pagination = usePagination(sortedUsers, USERS_PER_PAGE, `${search}|${roleFilter}|${presenceFilter}|${sort?.key ?? ''}|${sort?.direction ?? ''}`);
+
+  const renderUserRow = (user: User) => {
+    const self = currentUser?.username === user?.username;
+    const active = user?.is_active ?? true;
+    const online = Boolean(user?.is_online);
+    const lastAdmin = user?.role === 'Admin' && users.filter((candidate) => candidate?.role === 'Admin').length <= 1;
+    return (
+      <tr key={user.id} className={`${BODY_ROW_CLASS} ${!active ? 'opacity-60' : ''}`}>
+        <td className={BODY_CELL_CLASS}>
+          <div className="flex items-center gap-3">
+            <span className="relative flex h-8 w-8 items-center justify-center rounded-full bg-blue-500/10 text-[12px] font-black text-blue-600">
+              {userInitials(user)}
+              <span aria-label={online ? 'Online' : 'Offline'} className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-[var(--bg-surface)] ${online ? 'bg-emerald-500' : 'bg-slate-400'}`} />
+            </span>
+            <span className="font-bold text-[var(--text-primary)]">
+              {safeUserName(user)}
+              {self && <span className="ml-2 text-[12px] uppercase text-blue-500">You</span>}
+            </span>
+          </div>
+        </td>
+        <td className={`${BODY_CELL_CLASS} font-mono text-[var(--text-secondary)]`}>@{user?.username || 'unknown'}</td>
+        <td className={`${BODY_CELL_CLASS} text-[var(--text-secondary)]`}>
+          {user?.role || 'Unknown'}
+          {user?.legacy_role_needs_reassignment && <span className="ml-1 rounded bg-amber-100 px-1.5 py-0.5 text-[12px] font-bold text-amber-800">REASSIGN</span>}
+        </td>
+        <td className={`${BODY_CELL_CLASS} max-w-[280px] whitespace-normal`}>{accessScopeText(user)}</td>
+        <td className={BODY_CELL_CLASS}>
+          <span className={`rounded-full px-2 py-1 text-[12px] font-bold ${active ? 'bg-emerald-500/10 text-emerald-600' : 'bg-slate-500/10 text-slate-500'}`}>{active ? 'Active' : 'Disabled'}</span>
+        </td>
+        <td className={BODY_CELL_CLASS}>
+          <div className="flex flex-col items-start gap-1">
+            <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-[12px] font-bold ${online ? 'bg-emerald-500/10 text-emerald-600' : 'bg-slate-500/10 text-slate-500'}`}>
+              <span className={`h-1.5 w-1.5 rounded-full ${online ? 'bg-emerald-500' : 'bg-slate-400'}`} />
+              {online ? 'Online' : 'Offline'}
+            </span>
+            {!online && <span className="text-[12px] text-[var(--text-muted)]">{lastSeenText(user?.last_seen_at)}</span>}
+          </div>
+        </td>
+        <td className={`${BODY_CELL_CLASS} relative text-right`}>
+          <button aria-label={`Actions for ${safeUserName(user)}`} aria-expanded={menuState?.userId === user.id} onClick={(e) => {
+            if (menuState?.userId === user.id) { setMenuState(null); return; }
+            setMenuState({ userId: user.id, trigger: e.currentTarget });
+          }} className="!min-h-[44px] !min-w-[44px] rounded-lg p-2 text-[var(--text-muted)] hover:bg-[var(--bg-sunken)] lg:!min-h-[32px] lg:!min-w-[32px]"><MoreHorizontal size={17} /></button>
+          {menuState?.userId === user.id && <UserActionsPopover trigger={menuState.trigger} onClose={closeMenu}>
+            <button onClick={() => { setEditingUser(user); setError(null); setModalOpen(true); setMenuState(null); }} className="block w-full px-3 py-2 text-left text-[12px] hover:bg-[var(--bg-sunken)]">Edit</button>
+            <button disabled={self} onClick={() => runAction(() => toggleUserActive(user.id, !active), active ? 'User disabled.' : 'User enabled.')} className="block w-full px-3 py-2 text-left text-[12px] hover:bg-[var(--bg-sunken)] disabled:opacity-40">{active ? 'Disable' : 'Enable'}</button>
+            <button disabled={self || lastAdmin || deleteBusy} onClick={() => requestDelete(user)} className="block w-full px-3 py-2 text-left text-[12px] text-red-500 hover:bg-red-500/10 disabled:opacity-40">Delete</button>
+          </UserActionsPopover>}
+        </td>
+      </tr>
+    );
+  };
+
   return <div className="space-y-6">
     <header className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-xl font-black text-[var(--text-primary)]">User Management</h2><p className="mt-1 text-xs text-[var(--text-muted)]">Manage accounts, roles, branch access and function access.</p></div><button onClick={() => { setEditingUser(null); setError(null); setModalOpen(true); }} className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-bold text-white"><Plus size={15} /> Add user</button></header>
     {error && <div role="alert" className="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-xs font-semibold text-red-600">{error}</div>}{success && <div role="status" className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-xs font-semibold text-emerald-600">{success}</div>}
-    <section className="glass-panel overflow-hidden rounded-3xl border border-[var(--border-light)] shadow-sm">
-      <div className="flex flex-wrap gap-3 border-b border-[var(--border-light)] p-4"><label className="flex min-w-[240px] flex-1 items-center gap-2 rounded-xl border border-[var(--border-light)] bg-[var(--bg-sunken)] px-3 py-2"><Search size={14} className="text-[var(--text-muted)]" /><input aria-label="Search users" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search name or username" className="min-w-0 flex-1 bg-transparent text-xs text-[var(--text-primary)] outline-none" /></label><select aria-label="Filter by role" value={roleFilter} onChange={(event) => setRoleFilter(event.target.value)} className="rounded-xl border border-[var(--border-light)] bg-[var(--bg-sunken)] px-3 py-2 text-xs font-semibold text-[var(--text-secondary)]"><option>All</option>{roleFilterOptions.map((role) => <option key={role}>{role}</option>)}</select><select aria-label="Filter by presence" value={presenceFilter} onChange={(event) => setPresenceFilter(event.target.value)} className="rounded-xl border border-[var(--border-light)] bg-[var(--bg-sunken)] px-3 py-2 text-xs font-semibold text-[var(--text-secondary)]"><option>All</option><option>Online</option><option>Offline</option></select></div>
-      <div className="max-h-[560px] overflow-auto"><table className="w-full min-w-[980px] text-left text-xs"><thead className="sticky top-0 z-10 bg-[var(--bg-sunken)] text-[10px] uppercase tracking-wider text-[var(--text-muted)]"><tr><th className="px-5 py-3">User</th><th className="px-5 py-3">Username</th><th className="px-5 py-3">Role</th><th className="px-5 py-3">Access scope</th><th className="px-5 py-3">Account</th><th className="px-5 py-3">Presence</th><th className="px-5 py-3 text-right">Actions</th></tr></thead><tbody className="divide-y divide-[var(--border-light)]">{filteredUsers.map((user) => { const self = currentUser?.username === user?.username; const active = user?.is_active ?? true; const online = Boolean(user?.is_online); const lastAdmin = user?.role === 'Admin' && users.filter((candidate) => candidate?.role === 'Admin').length <= 1; return <tr key={user.id} className={!active ? 'opacity-60' : ''}><td className="px-5 py-3"><div className="flex items-center gap-3"><span className="relative flex h-8 w-8 items-center justify-center rounded-full bg-blue-500/10 text-[10px] font-black text-blue-600">{userInitials(user)}<span aria-label={online ? 'Online' : 'Offline'} className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-[var(--bg-surface)] ${online ? 'bg-emerald-500' : 'bg-slate-400'}`} /></span><span className="font-bold text-[var(--text-primary)]">{safeUserName(user)}{self && <span className="ml-2 text-[9px] uppercase text-blue-500">You</span>}</span></div></td><td className="px-5 py-3 font-mono text-[var(--text-secondary)]">@{user?.username || 'unknown'}</td><td className="px-5 py-3 text-[var(--text-secondary)]">{user?.role || 'Unknown'}{user?.legacy_role_needs_reassignment && <span className="ml-1 rounded bg-amber-100 px-1.5 py-0.5 text-[9px] font-bold text-amber-800">REASSIGN</span>}</td><td className="max-w-[280px] whitespace-normal px-5 py-3 text-[var(--text-secondary)]">{accessScopeText(user)}</td><td className="px-5 py-3"><span className={`rounded-full px-2 py-1 text-[10px] font-bold ${active ? 'bg-emerald-500/10 text-emerald-600' : 'bg-slate-500/10 text-slate-500'}`}>{active ? 'Active' : 'Disabled'}</span></td><td className="px-5 py-3"><div className="flex flex-col items-start gap-1"><span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-[10px] font-bold ${online ? 'bg-emerald-500/10 text-emerald-600' : 'bg-slate-500/10 text-slate-500'}`}><span className={`h-1.5 w-1.5 rounded-full ${online ? 'bg-emerald-500' : 'bg-slate-400'}`} />{online ? 'Online' : 'Offline'}</span>{!online && <span className="text-[10px] text-[var(--text-muted)]">{lastSeenText(user?.last_seen_at)}</span>}</div></td><td className="relative px-5 py-3 text-right">
-        <button aria-label={`Actions for ${safeUserName(user)}`} aria-expanded={menuState?.userId === user.id} onClick={(e) => {
-          if (menuState?.userId === user.id) { setMenuState(null); return; }
-          setMenuState({ userId: user.id, trigger: e.currentTarget });
-        }} className="rounded-lg p-2 text-[var(--text-muted)] hover:bg-[var(--bg-sunken)]"><MoreHorizontal size={17} /></button>
-        {menuState?.userId === user.id && <UserActionsPopover trigger={menuState.trigger} onClose={closeMenu}><button onClick={() => { setEditingUser(user); setError(null); setModalOpen(true); setMenuState(null); }} className="block w-full px-3 py-2 text-left hover:bg-[var(--bg-sunken)] text-xs">Edit</button><button disabled={self} onClick={() => runAction(() => toggleUserActive(user.id, !active), active ? 'User disabled.' : 'User enabled.')} className="block w-full px-3 py-2 text-left hover:bg-[var(--bg-sunken)] disabled:opacity-40 text-xs">{active ? 'Disable' : 'Enable'}</button><button disabled={self || lastAdmin || deleteBusy} onClick={() => requestDelete(user)} className="block w-full px-3 py-2 text-left text-red-500 hover:bg-red-500/10 disabled:opacity-40 text-xs">Delete</button></UserActionsPopover>}
-        </td></tr>; })}{!filteredUsers.length && <tr><td colSpan={7} className="px-5 py-12 text-center text-[var(--text-muted)]"><Users size={25} className="mx-auto mb-2" />No users match the current filters.</td></tr>}</tbody></table></div>
-    </section>
+    <AdminTableShell
+      tableLabel="Users"
+      maxHeightClass="max-h-[560px]"
+      minWidthClass="min-w-[860px]"
+      toolbar={
+        <div className="flex flex-wrap gap-3">
+          <label className="flex min-w-[240px] flex-1 items-center gap-2 rounded-xl border border-[var(--border-light)] bg-[var(--bg-sunken)] px-3 py-2">
+            <Search size={14} className="text-[var(--text-muted)]" />
+            <input aria-label="Search users" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search name or username" className="min-w-0 flex-1 bg-transparent text-[13px] text-[var(--text-primary)] outline-none" />
+          </label>
+          <select aria-label="Filter by role" value={roleFilter} onChange={(event) => setRoleFilter(event.target.value)} className={FILTER_SELECT}><option>All</option>{roleFilterOptions.map((role) => <option key={role}>{role}</option>)}</select>
+          <select aria-label="Filter by presence" value={presenceFilter} onChange={(event) => setPresenceFilter(event.target.value)} className={FILTER_SELECT}><option>All</option><option>Online</option><option>Offline</option></select>
+        </div>
+      }
+      footer={<TablePagination page={pagination.page} pageCount={pagination.pageCount} from={pagination.from} to={pagination.to} total={pagination.total} onPageChange={pagination.goTo} label="Users pages" />}
+    >
+      <thead>
+        <tr>
+          <SortableHeaderCell label="User" direction={directionFor(sort, 'name')} onSort={() => toggle('name')} />
+          <SortableHeaderCell label="Username" direction={directionFor(sort, 'username')} onSort={() => toggle('username')} />
+          <SortableHeaderCell label="Role" direction={directionFor(sort, 'role')} onSort={() => toggle('role')} />
+          <th scope="col" className={HEAD_CELL_CLASS}>Access scope</th>
+          <SortableHeaderCell label="Account" direction={directionFor(sort, 'account')} onSort={() => toggle('account')} />
+          <SortableHeaderCell label="Presence" direction={directionFor(sort, 'presence')} onSort={() => toggle('presence')} />
+          <th scope="col" className={`${HEAD_CELL_CLASS} text-right`}>Actions</th>
+        </tr>
+      </thead>
+      <tbody className="divide-y divide-[var(--border-light)]">
+        {pagination.rows.map((user) => renderUserRow(user))}
+        {!pagination.rows.length && <TableEmptyRow colSpan={7} icon={Users} message="No users match the current filters." />}
+      </tbody>
+    </AdminTableShell>
     {modalOpen && <UserFormModal open user={editingUser} teams={teams} busy={busy} error={error} onClose={() => { setModalOpen(false); setEditingUser(null); setError(null); }} onSubmit={submit} />}
     {deleteTarget && <div role="presentation" className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm" onMouseDown={(event) => { if (event.target === event.currentTarget && !deleteBusy) setDeleteTarget(null); }}><div role="alertdialog" aria-modal="true" aria-labelledby="delete-user-title" aria-describedby="delete-user-description" className="w-full max-w-md rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] p-6 shadow-2xl"><div className="flex items-start gap-3"><div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-500/10 text-red-600">!</div><div><h3 id="delete-user-title" className="text-base font-black text-[var(--text-primary)]">Delete user?</h3><p id="delete-user-description" className="mt-1 text-xs leading-5 text-[var(--text-secondary)]">This permanently removes <strong>{safeUserName(deleteTarget)}</strong> and revokes their active sessions.</p></div></div>{deleteError && <div role="alert" className="mt-4 rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs font-semibold text-red-600">{deleteError}</div>}<div className="mt-6 flex justify-end gap-2"><button type="button" disabled={deleteBusy} onClick={() => setDeleteTarget(null)} className="rounded-xl border border-[var(--border-light)] px-4 py-2.5 text-xs font-bold text-[var(--text-secondary)] disabled:opacity-50">Cancel</button><button type="button" disabled={deleteBusy} onClick={() => void confirmDelete()} className="rounded-xl bg-red-600 px-4 py-2.5 text-xs font-bold text-white disabled:opacity-50">{deleteBusy ? 'Deleting…' : 'Delete user'}</button></div></div></div>}
   </div>;
