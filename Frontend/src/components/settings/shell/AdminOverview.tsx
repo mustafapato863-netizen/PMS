@@ -3,8 +3,8 @@ import { formatDistanceToNow } from 'date-fns';
 import { ArrowRight, Activity, Database, SlidersHorizontal, Users } from 'lucide-react';
 import { AdminNotice } from './AdminNotice';
 import { AdminSection } from './AdminSection';
-import { OverviewCard, type CardStatus } from './OverviewCard';
-import { isFailedStatus, latestUpload, type OverviewUpload, type SystemErrorSummary, type UserSummary } from './adminOverviewData';
+import { OverviewCard, type CardStatus, type CardTone } from './OverviewCard';
+import { isFailedStatus, latestUpload, type EvaluationAttentionItem, type EvaluationOverview, type OverviewUpload, type SystemErrorSummary, type UserSummary } from './adminOverviewData';
 import { settingsPathFor } from './settingsNavigation';
 import { useAdminOverview } from './useAdminOverview';
 
@@ -113,6 +113,54 @@ function SystemSummary({ summary }: { summary: SystemErrorSummary }) {
   );
 }
 
+/** The month a Needs attention link opens: Evaluation settings on that exact scope and period. */
+function evaluationLinkFor(item: EvaluationAttentionItem) {
+  const query = new URLSearchParams({ scope: item.scopeId, year: String(item.year), month: String(item.month) });
+  return `${settingsPathFor('kpis')}?${query.toString()}`;
+}
+
+function evaluationScopeLabel(item: EvaluationAttentionItem) {
+  return [item.scopeName, item.performanceLevel, item.positionName].filter(Boolean).join(' · ');
+}
+
+function evaluationHeadline(overview: EvaluationOverview) {
+  if (overview.drafts > 0) return `${overview.drafts.toLocaleString()} ${overview.drafts === 1 ? 'draft' : 'drafts'} waiting`;
+  // A null count is unknown. Saying nothing is waiting would claim more than the server reported.
+  if (overview.approvedNotApplied === null) return 'No drafts waiting';
+  if (overview.approvedNotApplied > 0) return `${overview.approvedNotApplied.toLocaleString()} approved, not applied`;
+  return 'Nothing waiting';
+}
+
+function evaluationTone(overview: EvaluationOverview): CardTone {
+  if (overview.drafts > 0 || (overview.approvedNotApplied ?? 0) > 0) return 'warning';
+  if (overview.approvedNotApplied === null) return 'info';
+  return 'good';
+}
+
+function EvaluationSummary({ overview }: { overview: EvaluationOverview }) {
+  const { drafts, approvedNotApplied, approvedUnconfirmed, applied } = overview;
+  if (drafts === 0 && approvedNotApplied === 0 && (approvedUnconfirmed ?? 0) === 0 && applied === 0) {
+    return (
+      <div className="space-y-1">
+        <p className="text-xl font-black text-[var(--text-primary)]">No evaluation months yet</p>
+        <p className="text-sm text-[var(--text-secondary)]">Open evaluation settings to start a month.</p>
+      </div>
+    );
+  }
+  const parts: string[] = [];
+  if (drafts > 0 && approvedNotApplied !== null && approvedNotApplied > 0) parts.push(`${approvedNotApplied.toLocaleString()} approved, not applied`);
+  // Neutral wording. It describes months with no apply on record and does not change the tone.
+  if (approvedUnconfirmed !== null && approvedUnconfirmed > 0) parts.push(`${approvedUnconfirmed.toLocaleString()} approved with no apply on record`);
+  if (approvedNotApplied === null) parts.push('Approved months could not be checked');
+  if (applied !== null) parts.push(`${applied.toLocaleString()} applied`);
+  return (
+    <div className="min-w-0 space-y-1 text-sm">
+      <p className="text-xl font-black text-[var(--text-primary)]">{evaluationHeadline(overview)}</p>
+      {parts.length > 0 && <p className="text-[var(--text-secondary)]">{parts.join(' · ')}</p>}
+    </div>
+  );
+}
+
 interface AttentionItem {
   key: string;
   text: string;
@@ -121,14 +169,16 @@ interface AttentionItem {
 }
 
 export function AdminOverview() {
-  const { uploads, users, systemErrors } = useAdminOverview();
+  const { uploads, users, systemErrors, evaluation } = useAdminOverview();
   const uploadsStatus = statusOf(uploads);
   const usersStatus = statusOf(users);
   const systemStatus = statusOf(systemErrors);
+  const evaluationStatus = statusOf(evaluation);
 
   const latest = uploadsStatus === 'ready' && uploads.data ? latestUpload(uploads.data) : null;
   const uploadFailed = latest !== null && isFailedStatus(latest.status);
   const systemSummary = systemStatus === 'ready' && systemErrors.data ? systemErrors.data : null;
+  const evaluationOverview = evaluationStatus === 'ready' && evaluation.data ? evaluation.data : null;
   const errorCount = systemSummary ? systemSummary.count : 0;
   const reassignments = usersStatus === 'ready' && users.data ? users.data.needsReassignment : 0;
 
@@ -142,13 +192,21 @@ export function AdminOverview() {
   if (reassignments > 0) {
     attention.push({ key: 'access', text: `${reassignments.toLocaleString()} ${reassignments === 1 ? 'user needs' : 'users need'} a role reassignment.`, actionLabel: 'Go to users', to: settingsPathFor('users') });
   }
+  for (const item of evaluationOverview?.attention ?? []) {
+    const month = `${item.monthName} ${item.year}`;
+    const scope = evaluationScopeLabel(item);
+    attention.push(item.state === 'draft'
+      ? { key: `evaluation-${item.versionId}`, text: `Draft for ${scope} · ${month} is waiting for approval.`, actionLabel: 'Open draft', to: evaluationLinkFor(item) }
+      : { key: `evaluation-${item.versionId}`, text: `${scope} · ${month} is approved but not applied.`, actionLabel: 'Open to apply', to: evaluationLinkFor(item) });
+  }
 
   const unavailable = [
     uploadsStatus === 'error' ? 'Data' : null,
     usersStatus === 'error' ? 'Access' : null,
     systemStatus === 'error' ? 'System' : null,
+    evaluationStatus === 'error' ? 'Evaluation' : null,
   ].filter((name): name is string => name !== null);
-  const checking = [uploadsStatus, usersStatus, systemStatus].includes('loading');
+  const checking = [uploadsStatus, usersStatus, systemStatus, evaluationStatus].includes('loading');
 
   return (
     <div className="space-y-4">
@@ -175,8 +233,12 @@ export function AdminOverview() {
               icon={SlidersHorizontal}
               actionLabel="Open evaluation settings"
               to={settingsPathFor('kpis')}
-              status="static"
-            />
+              status={evaluationStatus}
+              tone={evaluationOverview ? evaluationTone(evaluationOverview) : 'info'}
+              onRetry={() => void evaluation.refetch()}
+            >
+              {evaluationOverview && <EvaluationSummary overview={evaluationOverview} />}
+            </OverviewCard>
           </li>
           <li className="flex">
             <OverviewCard

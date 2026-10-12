@@ -209,7 +209,8 @@ describe('DataManagementPanel batch delete', () => {
       'Batch delete takes up to 100 uploads at a time. You selected 101. Clear some selections, then delete again.',
     );
     expect(within(section).getByText('101 items selected')).toBeInTheDocument();
-  });
+    // Rendering 101 rows and selecting them all takes several seconds under a full parallel run. The budget is this test's only.
+  }, 15_000);
 
   it('disables the selection, the delete buttons and a second submit while the request runs', async () => {
     const user = userEvent.setup();

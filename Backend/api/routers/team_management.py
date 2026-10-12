@@ -3,7 +3,9 @@ Team Management Router
 API endpoints for managing teams (CRUD operations).
 """
 
+import logging
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import JSONResponse
 from typing import List
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -22,6 +24,8 @@ from services.team_onboarding_service import TeamOnboardingService
 from services.management_bsc_service import ManagementBSCService, ManagementBSCSchemaError
 from api.middleware.rbac_middleware import require_permission
 from services.cache_invalidation_service import CacheInvalidationService
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/team-management", tags=["Team Management"])
 
@@ -375,6 +379,10 @@ async def delete_management_kpi_upload(
 class BatchDeleteManagementRequest(BaseModel):
     upload_ids: list[str] = Field(min_length=1, max_length=100)
 
+
+def _rows_removed(result: dict) -> int:
+    return sum(int(result.get(key) or 0) for key in ("config_rows_deleted", "snapshot_rows_deleted", "history_rows_deleted"))
+
 @router.post("/management-kpi-config/uploads/batch-delete")
 async def batch_delete_management_kpi_uploads(
     request: BatchDeleteManagementRequest,
@@ -383,18 +391,34 @@ async def batch_delete_management_kpi_uploads(
 ):
     try:
         results = []
+        failed_ids = []
         svc = ManagementBSCService(db)
         for batch_id in request.upload_ids:
             try:
                 results.append(svc.delete_upload_batch(batch_id))
             except Exception:
-                pass
+                # Logged by id only. The batch's contents are not written to the log.
+                logger.exception("Management upload batch %s could not be deleted", batch_id)
+                failed_ids.append(batch_id)
         if results:
             CacheInvalidationService.bump_config_version()
+        # A result removed rows only when one of its counts is above zero. A zero result is an id that was not there.
+        removed = sum(1 for result in results if _rows_removed(result) > 0)
+        requested = len(request.upload_ids)
+        message = f"Deleted {removed} of {requested} management upload batches."
+        if failed_ids:
+            message += f" {len(failed_ids)} could not be deleted."
+        if not results:
+            # Every requested id failed: the same status a failed single delete answers with.
+            return JSONResponse(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                content={"success": False, "message": message, "detail": message, "data": [], "failed_ids": failed_ids},
+            )
         return {
             "success": True,
             "data": results,
-            "message": f"Successfully deleted {len(results)} management upload batches",
+            "failed_ids": failed_ids,
+            "message": message,
         }
     except Exception as exc:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to batch delete.") from exc

@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from types import SimpleNamespace
 
-from sqlalchemy import func, inspect
+from sqlalchemy import and_, case, func, inspect, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 from sqlalchemy.orm.attributes import flag_modified
@@ -50,11 +50,16 @@ from services.outbound_period_basis import (
     productivity_actual,
     productivity_target,
 )
+from services.user_identity_service import UserIdentityService
 from utils.performance_status import status_for_grade
 from utils.report_scope import filter_records_by_scope, filter_records_by_team_levels
 from utils.team_identity import logical_team_name
+from utils.user_identity import humanize_username
 
 logger = logging.getLogger(__name__)
+
+# The Overview lists at most this many items that need action, newest period first.
+OVERVIEW_ATTENTION_LIMIT = 10
 
 
 def _now() -> datetime:
@@ -309,6 +314,19 @@ def _source_number(value):
     if not number.is_finite():
         raise EvaluationError("A stored source value is not a finite number.", code="invalid_evidence")
     return number
+
+
+def _snapshot_name(snapshot) -> str | None:
+    """The approver's name from the snapshot stored at approval. Only a known actor has one."""
+    if not isinstance(snapshot, dict) or snapshot.get("state") != "known":
+        return None
+    full_name = snapshot.get("full_name")
+    if isinstance(full_name, str) and full_name.strip():
+        return full_name.strip()
+    username = snapshot.get("username")
+    if isinstance(username, str) and username.strip():
+        return humanize_username(username)
+    return None
 
 
 def _known_actor(user) -> dict:
@@ -1466,6 +1484,121 @@ class EvaluationWorkflow:
             "stored_actuals": self._stored_actuals(scope_row, int(year), number, actor),
         }
 
+    def overview(self, actor: dict) -> dict:
+        """Counts and the newest items that need action, across every scope.
+
+        Each approved monthly version gets one of three states, the same three-way rule the month view applies
+        (approvedStatus in the frontend). Applied: an active revision points at this version. Approved, not
+        applied: no active revision for this version, but the period has revisions on record. Approved,
+        unconfirmed: the period has no revisions on record, so nothing says it was applied, and the month view
+        says only "Approved". A month approved before its data arrived is scored with the approved settings and
+        never gets a revision, so it stays unconfirmed and is not flagged.
+
+        Only drafts and approved, not applied, months need action. The number of queries does not depend on the
+        number of scopes: the admin check, the table check, one aggregate over the versions, one page of versions,
+        and one lookup each for the teams and scopes those versions name. Monthly rows only (performance_level is
+        set); superseded rows are not counted. Without the revision table, applied, approved_not_applied and
+        approved_unconfirmed are null, and only drafts are listed.
+        """
+        self._require_admin(actor)
+        has_revisions = self._has_revision_table()
+        monthly = TeamConfigurationVersion.performance_level.isnot(None)
+        if has_revisions:
+            approved = TeamConfigurationVersion.status == "approved"
+            applied_now = (
+                self.db.query(EvaluationRevision.id)
+                .filter(EvaluationRevision.version_id == TeamConfigurationVersion.id, EvaluationRevision.status == "active")
+                .exists()
+            )
+            period_has_revisions = (
+                self.db.query(EvaluationRevision.id)
+                .filter(
+                    EvaluationRevision.team_id == TeamConfigurationVersion.team_id,
+                    EvaluationRevision.performance_level == TeamConfigurationVersion.performance_level,
+                    EvaluationRevision.position_name == TeamConfigurationVersion.position_name,
+                    EvaluationRevision.year == TeamConfigurationVersion.effective_from_year,
+                    EvaluationRevision.month == TeamConfigurationVersion.effective_from_month,
+                )
+                .exists()
+            )
+            totals = self.db.query(
+                func.count(case((TeamConfigurationVersion.status == "draft", 1))),
+                func.count(case((and_(approved, applied_now), 1))),
+                func.count(case((and_(approved, ~applied_now, period_has_revisions), 1))),
+                func.count(case((and_(approved, ~applied_now, ~period_has_revisions), 1))),
+            ).filter(monthly, TeamConfigurationVersion.status.in_(("draft", "approved"))).one()
+            drafts, applied, approved_not_applied, approved_unconfirmed = (int(value or 0) for value in totals)
+            needs_action = or_(
+                TeamConfigurationVersion.status == "draft",
+                and_(approved, ~applied_now, period_has_revisions),
+            )
+        else:
+            drafts = int(
+                self.db.query(func.count(TeamConfigurationVersion.id))
+                .filter(monthly, TeamConfigurationVersion.status == "draft")
+                .scalar() or 0
+            )
+            applied = None
+            approved_not_applied = None
+            approved_unconfirmed = None
+            needs_action = TeamConfigurationVersion.status == "draft"
+        rows = (
+            self.db.query(TeamConfigurationVersion)
+            .filter(monthly, needs_action)
+            .order_by(
+                TeamConfigurationVersion.effective_from_year.desc(),
+                TeamConfigurationVersion.effective_from_month.desc(),
+                TeamConfigurationVersion.version_number.desc(),
+                TeamConfigurationVersion.id,
+            )
+            .limit(OVERVIEW_ATTENTION_LIMIT)
+            .all()
+        )
+        attention = self._overview_attention(rows)
+        return {
+            "drafts": drafts,
+            "approved_not_applied": approved_not_applied,
+            "approved_unconfirmed": approved_unconfirmed,
+            "applied": applied,
+            "attention": attention,
+            "generated_at": _iso(_now()),
+        }
+
+    def _overview_attention(self, rows: list[TeamConfigurationVersion]) -> list[dict]:
+        if not rows:
+            return []
+        teams = {
+            team.id: team
+            for team in self.db.query(Team).filter(Team.id.in_(list({row.team_id for row in rows}))).all()
+        }
+        keys = {logical_team_name(team).casefold() for team in teams.values()}
+        scopes = {}
+        if keys:
+            for scope in self.db.query(EvaluationScope).filter(EvaluationScope.team_key.in_(keys)).all():
+                scopes[(scope.team_key, scope.performance_level, scope.position_name or "")] = scope
+        items = []
+        for row in rows:
+            team = teams.get(row.team_id)
+            if team is None:
+                continue
+            # The same identity _scope_for_version uses. A version with no live scope cannot be linked, so it is left out.
+            scope = scopes.get((logical_team_name(team).casefold(), row.performance_level, row.position_name or ""))
+            if scope is None:
+                continue
+            items.append({
+                "scope_id": str(scope.id),
+                "scope_display_name": scope.display_name,
+                "performance_level": scope.performance_level,
+                "position_name": scope.position_name or "",
+                "year": row.effective_from_year,
+                "month": row.effective_from_month,
+                "month_name": month_name(row.effective_from_month),
+                "state": "draft" if row.status == "draft" else "approved_not_applied",
+                "version_id": str(row.id),
+                "version_number": row.version_number,
+            })
+        return items
+
     def reads(self, actor: dict, scope_id, year: int, months: list) -> dict:
         scope_row = self._scope(scope_id, sync=False)
         require_action(actor, self._team_name(scope_row), "applied", scope_row.performance_level)
@@ -2317,7 +2450,21 @@ class EvaluationWorkflow:
             "source_version_number": lineage.get("source_version_number"),
             "source_checksum": lineage.get("source_checksum"),
             "proof": summary,
+            # Who and when. Names only: no email and no user id. published_at has a database default, so a draft row carries
+            # a timestamp that is not an approval. Only a version that was approved has an approval time.
+            "created_at": _iso(version.created_at),
+            "approved_at": _iso(version.published_at) if version.status in ("approved", "superseded") else None,
+            "created_by": self._person_name(version.created_by_user_id),
+            "approved_by": _snapshot_name(version.actor_published_snapshot),
         }
+
+    def _person_name(self, user_id) -> str | None:
+        if user_id is None:
+            return None
+        user = self.db.query(User).filter(User.id == user_id).one_or_none()
+        if user is None:
+            return None
+        return UserIdentityService.display_name(self.db, user)
 
     def _bump(self, kind: str) -> None:
         try:
