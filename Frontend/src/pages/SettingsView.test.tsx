@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -6,9 +7,13 @@ import SettingsView from './SettingsView';
 import { initialReportingPeriod } from '../components/settings/evaluationSettings';
 
 const roleState = vi.hoisted(() => ({ role: 'General Manager' as string }));
+// The overview's cards read through fetchWithRole. An empty, successful reply resolves every card to its empty state.
+const requests = vi.hoisted(() => ({
+  fetchWithRole: vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ success: true, data: [] }) })),
+}));
 
 vi.mock('../context/RoleContext', () => ({
-  useUserRole: () => ({ role: roleState.role }),
+  useUserRole: () => ({ role: roleState.role, fetchWithRole: requests.fetchWithRole }),
 }));
 
 vi.mock('../components/settings/DataManagementPanel', () => ({ DataManagementPanel: () => <p>Data management panel</p> }));
@@ -42,15 +47,19 @@ function HistoryControls() {
 function renderAt(path: string) {
   // Evaluation settings reads its month from window.location, so the address bar is mirrored here too.
   window.history.replaceState(null, '', path);
+  // A fresh client per render keeps each test's overview cache separate. Retry is off so failures surface at once.
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <MemoryRouter initialEntries={[path]}>
-      <HistoryControls />
-      <Address />
-      <Routes>
-        <Route path="/settings" element={<SettingsView />} />
-        <Route path="/settings/:section" element={<SettingsView />} />
-      </Routes>
-    </MemoryRouter>,
+    <QueryClientProvider client={client}>
+      <MemoryRouter initialEntries={[path]}>
+        <HistoryControls />
+        <Address />
+        <Routes>
+          <Route path="/settings" element={<SettingsView />} />
+          <Route path="/settings/:section" element={<SettingsView />} />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
   );
 }
 
