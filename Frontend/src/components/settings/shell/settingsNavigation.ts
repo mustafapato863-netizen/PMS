@@ -1,10 +1,9 @@
 import type { SettingsSection } from '../types';
 
-/** Pages with a URL. `teams` has no slug, so it stays unreachable from the address bar and from navigation. */
-export type SettingsRoutePage = 'overview' | Exclude<SettingsSection, 'teams'>;
+/** Every page the shell renders. Each one has a URL slug, including the Access section `teams`. */
+export type SettingsRoutePage = 'overview' | SettingsSection;
 
-/** Every page the shell can render, including the unreachable `teams` section. */
-export type SettingsPage = SettingsRoutePage | 'teams';
+export type SettingsPage = SettingsRoutePage;
 
 const PAGE_SLUGS: Record<SettingsRoutePage, string> = {
   overview: 'overview',
@@ -12,6 +11,7 @@ const PAGE_SLUGS: Record<SettingsRoutePage, string> = {
   corrective_actions: 'corrective-actions',
   kpis: 'evaluation',
   users: 'users',
+  teams: 'teams',
   system_errors: 'system-errors',
 };
 
@@ -32,7 +32,7 @@ export function settingsPathFor(page: SettingsRoutePage): string {
   return `/settings/${PAGE_SLUGS[page]}`;
 }
 
-/** Returns null for an unknown or missing slug. `teams` is never returned, because it has no slug. */
+/** Returns null for an unknown or missing slug. */
 export function pageForSlug(slug: string | undefined): SettingsPage | null {
   if (slug === undefined) return null;
   return SLUG_PAGES.get(slug) ?? null;

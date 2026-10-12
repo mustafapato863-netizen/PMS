@@ -2279,6 +2279,9 @@ body {
   .above-navigation-dock { bottom: calc(78px + env(safe-area-inset-bottom)); }
 
   .app-header-control { min-height: 44px; }
+
+  /* Icon-only header controls stay square up to 1279px. Text controls are already wider than 44px, so they keep their width. */
+  .app-header-actions .app-header-control { min-width: 44px; }
 }
 
 @media (min-width: 640px) and (max-width: 1279px) {
@@ -2344,7 +2347,6 @@ body {
   }
 
   .app-header-actions .app-header-control {
-    min-width: 44px;
     min-height: 44px;
   }
 }

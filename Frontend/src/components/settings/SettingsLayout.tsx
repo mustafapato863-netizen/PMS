@@ -1,6 +1,6 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { Activity, ClipboardCheck, Database, LayoutDashboard, SlidersHorizontal, Users, type LucideIcon } from 'lucide-react';
+import { Activity, ClipboardCheck, Database, LayoutDashboard, SlidersHorizontal, Users, UsersRound, type LucideIcon } from 'lucide-react';
 import { settingsPathFor, type SettingsPage, type SettingsRoutePage } from './shell/settingsNavigation';
 
 interface SettingsLayoutProps {
@@ -30,7 +30,7 @@ const NAV_GROUPS: NavGroup[] = [
     ],
   },
   { label: 'Evaluation', items: [{ page: 'kpis', label: 'Evaluation settings', icon: SlidersHorizontal }] },
-  { label: 'Access', items: [{ page: 'users', label: 'Users', icon: Users }] },
+  { label: 'Access', items: [{ page: 'users', label: 'Users', icon: Users }, { page: 'teams', label: 'Teams', icon: UsersRound }] },
   { label: 'System', items: [{ page: 'system_errors', label: 'System errors', icon: Activity }] },
 ];
 
@@ -77,7 +77,8 @@ export function SettingsLayout({ activePage, children }: SettingsLayoutProps) {
   return (
     <div className="grid gap-4 xl:grid-cols-[248px_minmax(0,1fr)]">
       <aside className="glass-panel h-fit min-w-0 rounded-2xl border border-[var(--border-light)] p-2 shadow-sm xl:sticky xl:top-24">
-        <nav aria-label="Settings sections" ref={railRef} className="-mx-1 overflow-x-auto px-1 pb-1 xl:mx-0 xl:overflow-visible xl:p-0">
+        {/* `relative` makes the rail the containing block of the sr-only group labels, so their overflow stays clipped by this scroller. */}
+        <nav aria-label="Settings sections" ref={railRef} className="relative -mx-1 overflow-x-auto px-1 pb-1 xl:mx-0 xl:overflow-visible xl:p-0">
           <ul className="flex w-max items-stretch gap-1 xl:w-auto xl:flex-col xl:gap-4">
             <li className="flex">{renderItem(OVERVIEW_ITEM)}</li>
             {NAV_GROUPS.map((group, index) => (

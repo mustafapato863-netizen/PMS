@@ -136,11 +136,11 @@ describe('SettingsView routing', () => {
     expect(screen.getByRole('heading', { name: 'Areas' })).toBeInTheDocument();
   });
 
-  it('keeps the teams section unreachable by URL', async () => {
+  it('renders the teams section at /settings/teams for Admin', async () => {
     roleState.role = 'Admin';
     renderAt('/settings/teams');
-    await waitFor(() => expect(screen.getByTestId('address').textContent).toBe('/settings/overview'));
-    expect(screen.queryByText('Team management panel')).not.toBeInTheDocument();
+    expect(await screen.findByText('Team management panel')).toBeInTheDocument();
+    expect(screen.getByTestId('address').textContent).toBe('/settings/teams');
   });
 
   it('shows the Administration page header above the panels', async () => {

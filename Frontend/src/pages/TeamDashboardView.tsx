@@ -45,6 +45,7 @@ import { aggregateConfiguredTeamKpis, calculateAggregatedTeamPerformance, displa
 import { resolveAvailableTeamPeriods } from '../features/team/teamPeriods';
 import { canAccessBroadAppPages, hasAllTeamsScope, isScopedDirectorRole } from '../lib/access';
 import { directorScope } from '../lib/directorScope';
+import { teamExportFailureAlert } from '../features/team/teamExportFailure';
 import { useFunctionScope } from '../features/executive/useFunctionScope';
 
 const TeamChartsSection = lazy(() => import('../components/team/TeamChartsSection'));
@@ -1680,8 +1681,9 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
       a.download = `PMS_${displayName}_${month}.xlsx`;
       a.click();
       URL.revokeObjectURL(url);
-    } catch {
-      alert('Export failed: backend offline.');
+    } catch (error) {
+      const message = teamExportFailureAlert(error);
+      if (message) alert(message);
     }
   };
 
