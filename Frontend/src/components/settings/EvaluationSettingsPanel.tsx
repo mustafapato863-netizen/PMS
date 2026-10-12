@@ -184,6 +184,7 @@ export function EvaluationSettingsPanel() {
   const [actionError, setActionError] = useState<{ key: string; text: string; missingIndicators?: MissingIndicator[] } | null>(null);
   const [rollbackConfirm, setRollbackConfirm] = useState<{ key: string; revisionId: string } | null>(null);
   const [adoptConfirm, setAdoptConfirm] = useState<{ key: string; versionId: string } | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<{ key: string; versionId: string } | null>(null);
   const [conflict, setConflict] = useState<{ key: string; text: string } | null>(null);
   const [backgroundNote, setBackgroundNote] = useState<string | null>(null);
   const gate = useRef(false);
@@ -465,7 +466,38 @@ export function EvaluationSettingsPanel() {
     onSettled: () => { gate.current = false; },
   });
 
-  const busy = save.isPending || openDraft.isPending || revise.isPending || impact.isPending || approve.isPending || apply.isPending || rollback.isPending || adopt.isPending || applyJobs.pending;
+  const deleteDraft = useMutation({
+    retry: false,
+    mutationFn: async (vars: Selection & { versionId: string; checksum: string }) => {
+      const checksum = vars.checksum.trim();
+      if (!checksum) throw new Error(MISSING_CHECKSUM_MESSAGE);
+      await queryClient.cancelQueries({ queryKey: periodQueryKey(vars.scopeId, vars.year, vars.month) });
+      const response = await fetchWithRole(`${API_BASE}/api/settings/evaluation/drafts/${vars.versionId}?expected_checksum=${encodeURIComponent(checksum)}`, { method: 'DELETE' });
+      return readJson(response);
+    },
+    onSuccess: (_result, vars) => {
+      const key = selectionKey(vars);
+      invalidateSettings(vars);
+      if (!isCurrent(vars)) return;
+      setEditor(null);
+      setProof(null);
+      setConflict(null);
+      setDeleteConfirm(null);
+      setNotice({ key, text: 'Draft deleted. You can start a new draft.' });
+    },
+    onError: (caught, vars) => {
+      if (!isCurrent(vars)) return;
+      const key = selectionKey(vars);
+      if (isDraftConflictCode((caught as RequestError).code)) {
+        setConflict({ key, text: STALE_SAVE_MESSAGE });
+      }
+      setDeleteConfirm(null);
+      setActionError({ key, text: errorText(caught) });
+    },
+    onSettled: () => { gate.current = false; },
+  });
+
+  const busy = save.isPending || openDraft.isPending || revise.isPending || impact.isPending || approve.isPending || apply.isPending || rollback.isPending || adopt.isPending || deleteDraft.isPending || applyJobs.pending;
   const period = periodQuery.data;
   const serverLines = period?.lines ?? [];
   const editorActive = editor?.key === currentKey ? editor : null;
@@ -506,6 +538,9 @@ export function EvaluationSettingsPanel() {
   const comparisonPage = pageSlice(comparisons, page);
   const pendingRollback = rollbackConfirm?.key === currentKey ? period?.revisions.find((item) => item.id === rollbackConfirm.revisionId && item.canRollback) : undefined;
   const pendingAdopt = adoptConfirm?.key === currentKey && adoptConfirm.versionId === period?.versionId ? adoptConfirm : undefined;
+  const pendingDelete = deleteConfirm?.key === currentKey && deleteConfirm.versionId === period?.versionId ? deleteConfirm : undefined;
+  const deleteChecksum = (period?.checksum ?? '').trim();
+  const canDeleteDraft = Boolean(period?.status === 'draft' && period.versionId);
   const revisionChoice = period?.revisionChoice;
   const canAdopt = Boolean(actionsReady && revisionChoice?.available && revisionChoice.code === 'adopt_operational_upload' && period?.versionId);
   const directionOwned = period?.contract === 'operational_upload';
@@ -532,6 +567,7 @@ export function EvaluationSettingsPanel() {
     setConflict(null);
     setRollbackConfirm(null);
     setAdoptConfirm(null);
+    setDeleteConfirm(null);
     setPage(0);
     setBackgroundNote(leavingOpenJob ? BACKGROUND_CONTINUES_NOTE : null);
   };
@@ -698,6 +734,17 @@ export function EvaluationSettingsPanel() {
     rollback.mutate({ ...selection, revisionId: revision.id });
   };
 
+  const requestDelete = () => {
+    if (!canDeleteDraft || !period?.versionId || controlsLocked || !deleteChecksum) return;
+    setActionError(null);
+    setDeleteConfirm({ key: currentKey, versionId: period.versionId });
+  };
+
+  const runDelete = () => {
+    if (!pendingDelete || !period?.versionId || !canDeleteDraft || !deleteChecksum || !begin()) return;
+    deleteDraft.mutate({ ...selection, versionId: period.versionId, checksum: deleteChecksum });
+  };
+
   const requestAdopt = () => {
     if (!canAdopt || !period?.versionId || controlsLocked || versionDrift || conflictText) return;
     setActionError(null);
@@ -813,6 +860,7 @@ export function EvaluationSettingsPanel() {
         {!approved && <button type="button" onClick={runSave} disabled={controlsLocked || !period?.versionId || period?.status !== 'draft' || unsupported || inputBlocked || weightTotalInvalid || checksumMissing || versionDrift || Boolean(conflictText)} className="inline-flex items-center gap-1 rounded-xl border border-[var(--border-light)] px-3 py-2 text-xs font-bold disabled:cursor-not-allowed disabled:opacity-50"><Save size={14} />Save draft</button>}
         {!approved && <button type="button" onClick={runImpact} disabled={controlsLocked || !period?.versionId || period?.status !== 'draft' || dirty || unsupported} className="rounded-xl border border-[var(--border-light)] px-3 py-2 text-xs font-bold disabled:cursor-not-allowed disabled:opacity-50">Impact preview</button>}
         {!approved && <button type="button" onClick={runApprove} disabled={controlsLocked || !period?.versionId || dirty || period?.status !== 'draft' || !approvalReady} className="inline-flex items-center gap-1 rounded-xl bg-blue-600 px-3 py-2 text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"><Check size={14} />Approve</button>}
+        {canDeleteDraft && <button type="button" onClick={requestDelete} disabled={controlsLocked || !deleteChecksum} className="rounded-xl border border-red-500/30 px-3 py-2 text-xs font-bold text-red-600 disabled:cursor-not-allowed disabled:opacity-50">Delete draft</button>}
         {(applyJobs.mode === 'sync' || applyJobs.mode === 'async') && <button type="button" onClick={runApply} disabled={controlsLocked || period?.status !== 'approved' || dirty || applyJobs.blockEnqueue} className="rounded-xl bg-slate-900 px-3 py-2 text-xs font-bold text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--sgh-cyan-primary,#00A3E0)] disabled:cursor-not-allowed disabled:opacity-50">Apply</button>}
       </div>}
       {!blocked && approved && <p role="status" className="text-xs text-[var(--text-secondary)]">{READ_ONLY_APPROVED_NOTE}</p>}
@@ -972,6 +1020,13 @@ export function EvaluationSettingsPanel() {
         <div className="flex flex-wrap gap-2">
           <button type="button" onClick={runAdopt} disabled={busy} className="rounded-xl border border-[var(--border-light)] px-3 py-2 text-xs font-bold disabled:opacity-50">Confirm switch</button>
           <button type="button" onClick={() => setAdoptConfirm(null)} className="rounded-xl border border-[var(--border-light)] px-3 py-2 text-xs font-bold">Keep current settings</button>
+        </div>
+      </div>}
+      {pendingDelete && <div role="group" aria-label="Delete draft confirmation" className="space-y-2 rounded-xl border border-red-500/30 p-3">
+        <p className="text-xs text-[var(--text-secondary)]">This draft and any unsaved edits will be removed. Approved versions and existing scores are not changed. This cannot be undone.</p>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" onClick={runDelete} disabled={busy} className="rounded-xl border border-red-500/40 px-3 py-2 text-xs font-bold text-red-600 disabled:opacity-50">Delete draft</button>
+          <button type="button" onClick={() => setDeleteConfirm(null)} className="rounded-xl border border-[var(--border-light)] px-3 py-2 text-xs font-bold">Keep draft</button>
         </div>
       </div>}
       {pendingRollback && <div role="group" aria-label="Rollback confirmation" className="space-y-2 rounded-xl border border-[var(--border-light)] p-3">

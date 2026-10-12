@@ -2121,3 +2121,85 @@ it('keeps an operational row direction read-only when the uploaded row selects U
   expect(saved.lines.find((item: { kpi_key: string }) => item.kpi_key === 'Other')).toMatchObject({ direction: 'lower_better', row_selection: 'utz_or_abandon', weight: 0.1 });
   expect(saved.lines.find((item: { kpi_key: string }) => item.kpi_key === 'Attendance')).toMatchObject({ direction: 'higher_better', target: 0.6, weight: 0.9 });
 });
+
+it('hides Delete draft when the selected month has no draft or its current version is approved', async () => {
+  october();
+  assignEvaluationFetch(async (url: string) => {
+    const href = String(url);
+    if (href.includes('/catalog')) return json({ scopes: [scope] });
+    if (href.includes('/periods')) return json({ versions: [] });
+    return json(draft);
+  });
+  const first = renderPanel();
+  expect(await screen.findByRole('button', { name: 'New draft' })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Delete draft' })).not.toBeInTheDocument();
+  first.unmount();
+
+  assignEvaluationFetch(async (url: string) => {
+    const href = String(url);
+    if (href.includes('/catalog')) return json({ scopes: [scope] });
+    if (href.includes('/periods')) return json({ versions: [{ ...draft, id: 'approved-1', status: 'approved', checksum: 'sum-approved' }] });
+    return json(draft);
+  });
+  renderPanel();
+  expect(await screen.findByRole('button', { name: 'Revise this month' })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Delete draft' })).not.toBeInTheDocument();
+});
+
+it('opens a delete confirmation and keeps the draft when Keep draft is chosen', async () => {
+  october();
+  renderPanel();
+  fireEvent.click(await screen.findByRole('button', { name: 'Delete draft' }));
+  const group = screen.getByRole('group', { name: 'Delete draft confirmation' });
+  expect(group).toHaveTextContent(/draft and any unsaved edits will be removed/i);
+  expect(group).toHaveTextContent(/Approved versions and existing scores are not changed/);
+  expect(group).toHaveTextContent(/cannot be undone/);
+  fireEvent.click(within(group).getByRole('button', { name: 'Keep draft' }));
+  expect(screen.queryByRole('group', { name: 'Delete draft confirmation' })).not.toBeInTheDocument();
+  expect(calls('/drafts/draft-1', 'DELETE')).toHaveLength(0);
+  expect(screen.getByLabelText('QualityErrors target')).toHaveValue('55');
+});
+
+it('deletes the draft with its checksum, then shows the month without it', async () => {
+  october();
+  let deleted = false;
+  assignEvaluationFetch(async (url: string, init?: RequestInit) => {
+    const href = String(url);
+    if (href.includes('/catalog')) return json({ scopes: [scope] });
+    if (href.includes('/periods')) return json({ versions: deleted ? [] : [draft] });
+    if (href.includes('/drafts/draft-1') && init?.method === 'DELETE') {
+      deleted = true;
+      return json({ deleted_version_id: 'draft-1', scope_id: 'scope-1', year: 2026, month: 10 });
+    }
+    return json(draft);
+  });
+  renderPanel();
+  fireEvent.click(await screen.findByRole('button', { name: 'Delete draft' }));
+  fireEvent.click(within(screen.getByRole('group', { name: 'Delete draft confirmation' })).getByRole('button', { name: 'Delete draft' }));
+  expect(await screen.findByText('Draft deleted. You can start a new draft.')).toBeInTheDocument();
+  expect(calls('/drafts/draft-1?expected_checksum=sum-draft', 'DELETE')).toHaveLength(1);
+  expect(screen.queryByRole('group', { name: 'Delete draft confirmation' })).not.toBeInTheDocument();
+  expect(await screen.findByRole('button', { name: 'New draft' })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Delete draft' })).not.toBeInTheDocument();
+});
+
+it('shows the server refusal and keeps the draft visible', async () => {
+  october();
+  assignEvaluationFetch(async (url: string, init?: RequestInit) => {
+    const href = String(url);
+    if (href.includes('/catalog')) return json({ scopes: [scope] });
+    if (href.includes('/periods')) return json({ versions: [draft] });
+    if (href.includes('/drafts/draft-1') && init?.method === 'DELETE') {
+      return json({ message: 'This draft changed after you opened it. Reload the draft before deleting it; no changes were made.', code: 'stale_draft' }, false);
+    }
+    return json(draft);
+  });
+  renderPanel();
+  fireEvent.click(await screen.findByRole('button', { name: 'Delete draft' }));
+  fireEvent.click(within(screen.getByRole('group', { name: 'Delete draft confirmation' })).getByRole('button', { name: 'Delete draft' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('stale_draft');
+  expect(screen.getByText(/Reload the draft or discard your edits/)).toBeInTheDocument();
+  expect(screen.getByLabelText('QualityErrors target')).toHaveValue('55');
+  expect(screen.getByRole('button', { name: 'Delete draft' })).toBeInTheDocument();
+  expect(screen.queryByText('Draft deleted. You can start a new draft.')).not.toBeInTheDocument();
+});

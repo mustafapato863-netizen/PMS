@@ -1322,6 +1322,49 @@ class EvaluationWorkflow:
         body["diagnostics"] = notes
         return body
 
+    def delete_draft(self, actor: dict, version_id, *, expected_checksum: str | None = None) -> dict:
+        """Discard one DRAFT row so the month can open a fresh draft. Approved and superseded rows are never removed here."""
+        self._require_admin(actor)
+        if not expected_checksum:
+            raise EvaluationConflict(
+                "Load this draft before deleting it. A rules checksum is required.",
+                code="draft_precondition_required",
+            )
+        self._ready()
+        version = self._version(version_id)
+        scope_row = self._scope_for_version(version)
+        self._guard_period(scope_row, version.effective_from_year, version.effective_from_month, actor)
+        if version.status != "draft":
+            raise EvaluationConflict(
+                "Only a draft can be deleted. Approved and superseded months are kept.",
+                code="not_draft",
+            )
+        version = self._version(version.id, lock=True)
+        if version.status != "draft":
+            raise EvaluationConflict(
+                "Only a draft can be deleted. Approved and superseded months are kept.",
+                code="not_draft",
+            )
+        if expected_checksum != version.config_checksum:
+            raise EvaluationConflict(
+                "This draft changed after you opened it. Reload the draft before deleting it; no changes were made.",
+                code="stale_draft",
+            )
+        result = {
+            "deleted_version_id": str(version.id),
+            "scope_id": str(scope_row.id),
+            "year": int(version.effective_from_year),
+            "month": int(version.effective_from_month),
+        }
+        self.db.delete(version)
+        try:
+            self.db.flush()
+        except IntegrityError as exc:
+            self.db.rollback()
+            raise EvaluationConflict("This draft is referenced by an evaluation apply and was not deleted.", code="draft_in_use") from exc
+        self.db.commit()
+        return result
+
     def approve(self, actor: dict, version_id) -> dict:
         self._require_admin(actor)
         self._ready()

@@ -77,6 +77,7 @@ PUBLIC_ROUTES = {
     ("GET", "/catalog"),
     ("POST", "/drafts"),
     ("PATCH", "/drafts/{version_id}"),
+    ("DELETE", "/drafts/{version_id}"),
     ("POST", "/drafts/{version_id}/preview"),
     ("POST", "/drafts/{version_id}/impact-preview"),
     ("POST", "/drafts/{version_id}/approve"),

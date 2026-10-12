@@ -161,6 +161,18 @@ def edit_draft(version_id: str, body: EditRequest, request: Request, db: Session
     return StandardResponse(success=True, message="Evaluation draft updated", data=data)
 
 
+@router.delete("/drafts/{version_id}", response_model=StandardResponse)
+def delete_draft(
+    version_id: str,
+    request: Request,
+    expected_checksum: str | None = Query(default=None, max_length=128),
+    db: Session = Depends(get_db),
+):
+    actor = _actor(request, db)
+    data = _run(lambda: EvaluationWorkflow(db).delete_draft(actor, version_id, expected_checksum=expected_checksum))
+    return StandardResponse(success=True, message="Evaluation draft deleted", data=data)
+
+
 @router.post("/drafts/{version_id}/preview", response_model=StandardResponse)
 def preview_draft(version_id: str, body: PreviewRequest, request: Request, db: Session = Depends(get_db)):
     actor = _actor(request, db)
