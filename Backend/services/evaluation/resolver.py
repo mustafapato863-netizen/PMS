@@ -405,12 +405,14 @@ def require_approved_capability(
 
     A blocked decision raises ``EvaluationError`` with
     ``code="unsupported_calculation"``, ``edit_mode="blocked"``, and
-    ``weight_only_allowed=False``. For an admitted Outbound month the weighted
-    keys must match ``period_capability`` for that exact month. Admin-changed
-    weights are accepted. The function does not read or write performance
-    evidence and does not query the database, so the original workbook values
-    stay in place. Historical reads do not call it. ``score_basis`` stays a
-    pure function of the version and the rows.
+    ``weight_only_allowed=False``. A reference-workbook Outbound month still
+    requires the canonical positive-weight set from ``period_capability``.
+    An operational upload snapshot requires the mapped key set instead: a
+    known KPI may be tracking-only when the weights are an explicit total of
+    1. The function does not read or write performance evidence and does not
+    query the database, so the original workbook values stay in place.
+    Historical reads do not call it. ``score_basis`` stays a pure function of
+    the version and the rows.
     """
     from services.evaluation.catalog import calculation_for
 
@@ -462,15 +464,21 @@ def require_approved_capability(
 
 
 def _assert_operational_version_lines(version: TeamConfigurationVersion, team_name: str, year: int, month: int) -> None:
-    """Operational snapshots keep the upload key set. Weight numbers may change.
+    """Operational snapshots keep the mapped upload keys. Positive weights may change.
 
-    Individual KPIs are not capped. A zero-weight mapped line stays visible.
+    A known contract KPI may be saved at weight zero for tracking. The default
+    positive-weight set is not required, and weights are not normalized to it.
+    The mapped keys, directions, row selection, and final-total cap stay on
+    the source contract. Unknown monitoring KPIs are not activated.
     """
+    from decimal import Decimal
+
+    from services.evaluation.scoring import _decimal as _finite_decimal
     from services.operational_upload_contract import (
+        FINAL_TOTAL_CAP,
         OPERATIONAL_CONTRACT,
         is_operational_team,
         operational_lines,
-        operational_scored_keys,
     )
 
     level = str(getattr(version, "performance_level", "") or "")
@@ -481,22 +489,45 @@ def _assert_operational_version_lines(version: TeamConfigurationVersion, team_na
             "scope",
         )
     lines = operational_lines(team_name, year, month) or []
-    expected = {str(line.get("kpi_key") or ""): line for line in lines}
-    scored_expected = set(operational_scored_keys(lines))
+    expected: dict[str, dict] = {}
+    for raw in lines:
+        key = str(raw.get("kpi_key") or "")
+        if not key or key in expected:
+            _refuse_capability(
+                "Approved recomputation is refused for this monthly configuration. The operational upload contract has a blank or duplicate KPI key.",
+                "kpi_key",
+            )
+        expected[key] = raw
     snapshot = version.config_snapshot if isinstance(version.config_snapshot, dict) else {}
     if str(snapshot.get("policy") or "") != "operational_upload" or snapshot.get("contract") != OPERATIONAL_CONTRACT:
         _refuse_capability(
             "Approved recomputation is refused for this monthly configuration. The snapshot is not the operational upload contract.",
             "policy",
         )
-    weighted = set()
+    if snapshot.get("cap") != FINAL_TOTAL_CAP:
+        _refuse_capability(
+            "Approved recomputation is refused for this monthly configuration. The operational contract caps the final total.",
+            "cap",
+        )
+    seen: set[str] = set()
+    total = Decimal("0")
     for line in snapshot_lines(version):
         key = str(line.get("kpi_key") or "")
-        try:
-            weight = float(line.get("weight") or 0)
-        except (TypeError, ValueError):
+        if not key:
             _refuse_capability(
-                "Approved recomputation is refused for this monthly configuration. A line weight is not a number.",
+                "Approved recomputation is refused for this monthly configuration. A mapped KPI key is blank.",
+                "kpi_key",
+            )
+        if key in seen:
+            _refuse_capability(
+                "Approved recomputation is refused for this monthly configuration. A draft cannot repeat a KPI key.",
+                "duplicate_kpi",
+            )
+        seen.add(key)
+        weight = _finite_decimal(line.get("weight"))
+        if weight is None or weight < 0:
+            _refuse_capability(
+                "Approved recomputation is refused for this monthly configuration. A line weight is not a finite number.",
                 "weight",
             )
         template = expected.get(key)
@@ -507,25 +538,36 @@ def _assert_operational_version_lines(version: TeamConfigurationVersion, team_na
                 "kpi_key",
             )
         direction = str(line.get("direction") or "")
-        if direction and direction != str(template.get("direction") or ""):
+        if direction != str(template.get("direction") or ""):
             _refuse_capability(
                 "Approved recomputation is refused for this monthly configuration. "
                 f"{key} direction does not match the operational upload contract.",
                 "direction",
             )
-        if line.get("cap_each") is True:
+        if str(line.get("row_selection") or "") != str(template.get("row_selection") or ""):
+            _refuse_capability(
+                "Approved recomputation is refused for this monthly configuration. "
+                f"{key} row selection does not match the operational upload contract.",
+                "row_selection",
+            )
+        if line.get("cap_each") is True or line.get("capping") not in (None, "") or line.get("cap_achievement") is False:
             _refuse_capability(
                 "Approved recomputation is refused for this monthly configuration. The operational contract caps the final total.",
                 "cap",
             )
-        if weight > 0:
-            weighted.add(key)
-    if weighted != scored_expected:
+        total += weight
+    if seen != set(expected):
         _refuse_capability(
             "Approved recomputation is refused for this monthly configuration. "
-            "The weighted KPI set does not match the operational upload contract. "
-            "Weight values may differ from the source defaults, but the scored keys may not.",
+            "The mapped KPI set does not match the operational upload contract. "
+            "A known KPI may be tracking-only, but a mapped key cannot be added or removed.",
             "scored_keys",
+        )
+    if abs(total - Decimal("1")) > Decimal("0.0001"):
+        _refuse_capability(
+            "Approved recomputation is refused for this monthly configuration. "
+            f"Weights total {float(total):.4f}. The total must be 1 and is not normalized.",
+            "weight",
         )
 
 

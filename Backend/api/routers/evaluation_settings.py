@@ -45,6 +45,7 @@ class ApplyRequest(BaseModel):
 
 class AdoptOperationalRequest(BaseModel):
     confirm: bool = False
+    expected_checksum: str | None = None
 
 
 class ApplyJobCreate(BaseModel):
@@ -160,6 +161,18 @@ def edit_draft(version_id: str, body: EditRequest, request: Request, db: Session
     return StandardResponse(success=True, message="Evaluation draft updated", data=data)
 
 
+@router.delete("/drafts/{version_id}", response_model=StandardResponse)
+def delete_draft(
+    version_id: str,
+    request: Request,
+    expected_checksum: str | None = Query(default=None, max_length=128),
+    db: Session = Depends(get_db),
+):
+    actor = _actor(request, db)
+    data = _run(lambda: EvaluationWorkflow(db).delete_draft(actor, version_id, expected_checksum=expected_checksum))
+    return StandardResponse(success=True, message="Evaluation draft deleted", data=data)
+
+
 @router.post("/drafts/{version_id}/preview", response_model=StandardResponse)
 def preview_draft(version_id: str, body: PreviewRequest, request: Request, db: Session = Depends(get_db)):
     actor = _actor(request, db)
@@ -198,7 +211,10 @@ def revise_version(version_id: str, request: Request, db: Session = Depends(get_
 @router.post("/versions/{version_id}/adopt-operational", response_model=StandardResponse)
 def adopt_operational_version(version_id: str, body: AdoptOperationalRequest, request: Request, db: Session = Depends(get_db)):
     actor = _actor(request, db)
-    data = _run(lambda: EvaluationWorkflow(db).adopt_operational_contract(actor, version_id, confirm=body.confirm))
+    data = _run(lambda: EvaluationWorkflow(db).adopt_operational_contract(
+        actor, version_id, confirm=body.confirm,
+        expected_checksum=body.expected_checksum, require_precondition=True,
+    ))
     return StandardResponse(success=True, message="Operational upload contract adopted", data=data)
 
 

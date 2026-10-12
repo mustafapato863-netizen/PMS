@@ -37,7 +37,11 @@ def clean_sheet_data(df, sheet_name, column_name="Performance Grade"):
     encoding may not support decorative Unicode characters, so diagnostics use
     structured logging only.
     """
+    from services.upload_header_notices import attach_header_notices
+
     logger.debug("Processing sheet: %s", sheet_name)
+    source_headers = list(df.columns)
+    header_notices = attach_header_notices(df, sheet_name, source_headers)
 
     df.columns = [str(col).strip() for col in df.columns]
 
@@ -61,4 +65,10 @@ def clean_sheet_data(df, sheet_name, column_name="Performance Grade"):
     else:
         df["Is_New"] = False
 
+    # Cropping can replace the frame. Keep the pre-crop header notice on the
+    # frame that callers score, without putting dropped columns back.
+    df.attrs["column_warnings"] = header_notices
+    df.attrs["source_header_names"] = [
+        str(column) for column in source_headers if str(column).strip()
+    ]
     return df

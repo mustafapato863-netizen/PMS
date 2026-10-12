@@ -1145,8 +1145,41 @@ class EvaluationWorkflow:
         self.db.commit()
         return self._serialize_version(created, scope_row)
 
-    def adopt_operational_contract(self, actor: dict, version_id, *, confirm: bool = False) -> dict:
-        """Explicit Admin adoption. Reading a version does not call this."""
+    def _open_apply_job(self, scope_row: EvaluationScope, year: int, month: int):
+        from models.models import EvaluationApplyControl
+
+        return (
+            self.db.query(EvaluationApplyControl.job_id)
+            .filter(
+                EvaluationApplyControl.scope_id == scope_row.id,
+                EvaluationApplyControl.year == int(year),
+                EvaluationApplyControl.month == int(month),
+                EvaluationApplyControl.state.in_(("pending", "staging", "promoting")),
+            )
+            .first()
+        )
+
+    def _refuse_open_apply(self, scope_row: EvaluationScope, year: int, month: int) -> None:
+        if self._open_apply_job(scope_row, year, month) is not None:
+            raise EvaluationConflict(
+                "An evaluation apply is open for this month. The operational contract was not adopted.",
+                code="apply_open",
+            )
+
+    def adopt_operational_contract(
+        self,
+        actor: dict,
+        version_id,
+        *,
+        confirm: bool = False,
+        expected_checksum: str | None = None,
+        require_precondition: bool = False,
+    ) -> dict:
+        """Explicit Admin adoption. Reading a version does not call this.
+
+        HTTP sets ``require_precondition``. A trusted caller may omit the
+        checksum. Persisted Admin is checked before either disclosure.
+        """
         from services.operational_upload_contract import (
             OPERATIONAL_CONTRACT,
             is_operational_team,
@@ -1154,12 +1187,17 @@ class EvaluationWorkflow:
             snapshot_contract,
         )
 
+        self._require_admin(actor)
+        if require_precondition and not expected_checksum:
+            raise EvaluationConflict(
+                "Load this draft before saving it. A rules checksum is required.",
+                code="draft_precondition_required",
+            )
         if confirm is not True:
             raise EvaluationError(
                 "Adopting the operational upload contract requires explicit confirmation.",
                 code="confirmation_required",
             )
-        self._require_admin(actor)
         source = self._version(version_id)
         scope_row = self._scope_for_version(source)
         team_name = self._team_name(scope_row)
@@ -1171,8 +1209,22 @@ class EvaluationWorkflow:
         year = int(source.effective_from_year)
         month = int(source.effective_from_month)
         self._guard_period(scope_row, year, month, actor)
+        source = self._version(source.id, lock=True)
+        if source.status not in {"draft", "approved"}:
+            raise EvaluationError(
+                "Only a draft or an approved version can adopt the operational contract.",
+                code="immutable",
+            )
+        if expected_checksum is not None and expected_checksum != source.config_checksum:
+            raise EvaluationConflict(
+                "This draft changed after you opened it. Reload the draft before saving; no changes were made.",
+                code="stale_draft",
+            )
+        if snapshot_contract(source.config_snapshot) == OPERATIONAL_CONTRACT:
+            return self._serialize_version(source, scope_row)
         lines = self.catalog.baseline_lines(scope_row, year, month)
         if source.status == "draft":
+            self._refuse_open_apply(scope_row, year, month)
             snapshot = dict(source.config_snapshot or {})
             snapshot = _operational_snapshot(scope_row, year, month, lines, snapshot, self.catalog.thresholds(scope_row))
             self._require_lines(scope_row, year, month, lines, snapshot)
@@ -1182,11 +1234,13 @@ class EvaluationWorkflow:
             source.notes = ((source.notes or "") + " Adopted the operational upload contract.").strip()
             self.db.commit()
             return self._serialize_version(source, scope_row)
-        if source.status != "approved":
-            raise EvaluationError("Only a draft or an approved version can adopt the operational contract.", code="immutable")
         source_id = str(source.id)
         source_checksum = source.config_checksum
         source_number = int(source.version_number)
+        approved_snapshot = copy.deepcopy(source.config_snapshot)
+        approved_notes = source.notes
+        approved_status = source.status
+        approved_number = int(source.version_number)
         adopted_from = snapshot_contract(source.config_snapshot) or "reference_workbook"
         existing = self._find_version(scope_row, year, month, "draft", lock=True)
         if existing is not None:
@@ -1195,6 +1249,7 @@ class EvaluationWorkflow:
                 code="draft_exists",
                 draft_id=str(existing.id),
             )
+        self._refuse_open_apply(scope_row, year, month)
         snapshot = _operational_snapshot(
             scope_row, year, month, lines, None, self.catalog.thresholds(scope_row),
         )
@@ -1212,6 +1267,18 @@ class EvaluationWorkflow:
             "Adopted the operational upload contract from an approved version.",
             actor, snapshot=snapshot,
         )
+        if (
+            source.status != approved_status
+            or source.config_checksum != source_checksum
+            or source.notes != approved_notes
+            or int(source.version_number) != approved_number
+            or source.config_snapshot != approved_snapshot
+        ):
+            self.db.rollback()
+            raise EvaluationError(
+                "The approved source changed while the operational contract was being adopted.",
+                code="immutable",
+            )
         self.db.commit()
         return self._serialize_version(created, scope_row)
 
@@ -1254,6 +1321,49 @@ class EvaluationWorkflow:
         body = self._serialize_version(version, scope_row)
         body["diagnostics"] = notes
         return body
+
+    def delete_draft(self, actor: dict, version_id, *, expected_checksum: str | None = None) -> dict:
+        """Discard one DRAFT row so the month can open a fresh draft. Approved and superseded rows are never removed here."""
+        self._require_admin(actor)
+        if not expected_checksum:
+            raise EvaluationConflict(
+                "Load this draft before deleting it. A rules checksum is required.",
+                code="draft_precondition_required",
+            )
+        self._ready()
+        version = self._version(version_id)
+        scope_row = self._scope_for_version(version)
+        self._guard_period(scope_row, version.effective_from_year, version.effective_from_month, actor)
+        if version.status != "draft":
+            raise EvaluationConflict(
+                "Only a draft can be deleted. Approved and superseded months are kept.",
+                code="not_draft",
+            )
+        version = self._version(version.id, lock=True)
+        if version.status != "draft":
+            raise EvaluationConflict(
+                "Only a draft can be deleted. Approved and superseded months are kept.",
+                code="not_draft",
+            )
+        if expected_checksum != version.config_checksum:
+            raise EvaluationConflict(
+                "This draft changed after you opened it. Reload the draft before deleting it; no changes were made.",
+                code="stale_draft",
+            )
+        result = {
+            "deleted_version_id": str(version.id),
+            "scope_id": str(scope_row.id),
+            "year": int(version.effective_from_year),
+            "month": int(version.effective_from_month),
+        }
+        self.db.delete(version)
+        try:
+            self.db.flush()
+        except IntegrityError as exc:
+            self.db.rollback()
+            raise EvaluationConflict("This draft is referenced by an evaluation apply and was not deleted.", code="draft_in_use") from exc
+        self.db.commit()
+        return result
 
     def approve(self, actor: dict, version_id) -> dict:
         self._require_admin(actor)

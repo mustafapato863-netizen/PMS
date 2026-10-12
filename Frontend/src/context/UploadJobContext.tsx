@@ -5,6 +5,8 @@ import { useAuth } from './auth';
 import { UploadJobContext } from './uploadJobState';
 import { refreshPerformanceData } from '../hooks/usePerformanceData';
 import { useProcessingJob, type ProcessingJob } from '../hooks/api/useProcessingJobs';
+import { UploadColumnNotices } from '../components/settings/UploadColumnNotices';
+import { readColumnWarnings } from '../components/settings/uploadHeaderNotices';
 
 const terminalStatuses = new Set(['succeeded', 'failed', 'cancelled']);
 
@@ -38,6 +40,9 @@ function UploadProgressNote({
     message = job?.error?.message || (status === 'cancelled' ? 'Upload processing was cancelled.' : 'Upload processing failed.');
   }
 
+  const columnWarnings = readColumnWarnings(
+    job?.result && typeof job.result === 'object' ? job.result.column_warnings : undefined,
+  );
   const tone = isFailed
     ? 'border-rose-200 bg-rose-50 text-rose-900 dark:border-rose-900/70 dark:bg-rose-950/95 dark:text-rose-100'
     : isSucceeded
@@ -55,6 +60,11 @@ function UploadProgressNote({
         <div className="min-w-0 flex-1">
           <p className="text-sm font-bold">Employee PMS upload</p>
           <p className="mt-0.5 text-xs leading-relaxed opacity-80">{message}</p>
+          {isTerminal && columnWarnings.length > 0 && (
+            <div className="mt-2">
+              <UploadColumnNotices warnings={columnWarnings} />
+            </div>
+          )}
           {!isTerminal && (
             <div
               className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700"

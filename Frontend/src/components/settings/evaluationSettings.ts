@@ -3,6 +3,8 @@ const PERIOD_KEY = /^(\d{4})-(0[1-9]|1[0-2])$/;
 const SUPPORTED_DIRECTIONS = new Set(['higher_better', 'lower_better']);
 const SUPPORTED_TARGET_MODES = new Set(['workbook', 'fixed']);
 
+export type EvaluationContract = 'operational_upload' | 'reference_workbook';
+
 export type EvaluationLine = {
   kpi_key: string;
   label?: string;
@@ -11,6 +13,14 @@ export type EvaluationLine = {
   target: number | null;
   target_mode: 'workbook' | 'fixed' | string;
   unit?: string;
+  row_selection?: string;
+};
+
+export type RevisionChoice = {
+  available: boolean;
+  contract: string;
+  code: string | null;
+  message: string;
 };
 
 export type EvaluationVersion = {
@@ -23,6 +33,8 @@ export type EvaluationVersion = {
   checksum?: string | null;
   source_version_id?: string | null;
   source_checksum?: string | null;
+  contract?: EvaluationContract | null;
+  revisionChoice?: RevisionChoice | null;
 };
 
 export type EvaluationRevision = {
@@ -56,6 +68,8 @@ export type EvaluationPeriodData = {
   sourceChecksum: string;
   versionNumber: number | null;
   checksum: string;
+  contract: EvaluationContract | null;
+  revisionChoice: RevisionChoice | null;
 };
 
 export const UNSAVED_PREVIEW_NOTE = 'Save the draft before impact preview or approval. Unsaved edits are not previewed.';
@@ -96,7 +110,21 @@ export function emptyPeriod(): EvaluationPeriodData {
     sourceChecksum: '',
     versionNumber: null,
     checksum: '',
+    contract: null,
+    revisionChoice: null,
   };
+}
+
+export function contractLabel(contract: string | null | undefined): string {
+  if (contract === 'operational_upload') return 'Original upload';
+  if (contract === 'reference_workbook') return 'Reference workbook';
+  return '';
+}
+
+export function lockedDirectionLabel(direction: string): string {
+  if (direction === 'higher_better') return 'Higher is better';
+  if (direction === 'lower_better') return 'Lower is better';
+  return direction;
 }
 
 function finiteNumber(value: unknown): number | null {
@@ -116,19 +144,36 @@ function readLine(value: unknown): EvaluationLine | null {
     direction: typeof line.direction === 'string' ? line.direction : '',
     target: target === null && line.target != null ? null : target,
     target_mode: typeof line.target_mode === 'string' ? line.target_mode : 'workbook',
+    row_selection: typeof line.row_selection === 'string' && line.row_selection ? line.row_selection : undefined,
+  };
+}
+
+function readContract(value: unknown): EvaluationContract | null {
+  return value === 'operational_upload' || value === 'reference_workbook' ? value : null;
+}
+
+function readRevisionChoice(value: unknown): RevisionChoice | null {
+  if (!value || typeof value !== 'object') return null;
+  const item = value as { available?: unknown; contract?: unknown; code?: unknown; message?: unknown };
+  if (typeof item.available !== 'boolean' || typeof item.message !== 'string' || !item.message.trim()) return null;
+  return {
+    available: item.available,
+    contract: typeof item.contract === 'string' ? item.contract : '',
+    code: typeof item.code === 'string' && item.code ? item.code : null,
+    message: item.message,
   };
 }
 
 function readVersion(value: unknown): EvaluationVersion | null {
   if (!value || typeof value !== 'object') return null;
-  const item = value as EvaluationVersion;
+  const item = value as EvaluationVersion & { revision_choice?: unknown };
   if (typeof item.id !== 'string' || !item.id) return null;
-  return {
+  const parsed: EvaluationVersion = {
     id: item.id,
     status: typeof item.status === 'string' ? item.status : '',
     lines: Array.isArray(item.lines) ? item.lines.flatMap((line) => {
-      const parsed = readLine(line);
-      return parsed ? [parsed] : [];
+      const parsedLine = readLine(line);
+      return parsedLine ? [parsedLine] : [];
     }) : [],
     notes: typeof item.notes === 'string' ? item.notes : null,
     month_name: typeof item.month_name === 'string' ? item.month_name : undefined,
@@ -137,6 +182,21 @@ function readVersion(value: unknown): EvaluationVersion | null {
     source_version_id: typeof item.source_version_id === 'string' ? item.source_version_id : null,
     source_checksum: typeof item.source_checksum === 'string' ? item.source_checksum : null,
   };
+  if ('contract' in item) parsed.contract = readContract(item.contract);
+  if ('revision_choice' in item || 'revisionChoice' in item) {
+    parsed.revisionChoice = readRevisionChoice(item.revision_choice ?? item.revisionChoice);
+  }
+  return parsed;
+}
+
+/** Keep contract fields only when this payload actually carried them. */
+export function versionFromPayload(data: unknown): Partial<EvaluationVersion> {
+  const parsed = readVersion(data);
+  if (!parsed || !data || typeof data !== 'object') return {};
+  const raw = data as { contract?: unknown; revision_choice?: unknown; revisionChoice?: unknown };
+  if (!('contract' in raw)) delete parsed.contract;
+  if (!('revision_choice' in raw) && !('revisionChoice' in raw)) delete parsed.revisionChoice;
+  return parsed;
 }
 
 /** Draft wins. Otherwise the last approved row in payload order is the open version. */
@@ -197,6 +257,8 @@ function periodFromVersion(version: EvaluationVersion | undefined, history: Eval
     sourceChecksum: version?.source_checksum || '',
     versionNumber: version?.version_number ?? null,
     checksum: version?.checksum || '',
+    contract: version?.contract ?? null,
+    revisionChoice: version?.revisionChoice ?? null,
   };
 }
 
@@ -224,6 +286,8 @@ export function applyVersion(current: EvaluationPeriodData, version: Partial<Eva
     checksum: version.checksum ?? current.checksum,
     source_version_id: version.source_version_id ?? current.sourceVersionId,
     source_checksum: version.source_checksum ?? current.sourceChecksum,
+    contract: 'contract' in version ? readContract(version.contract) : current.contract,
+    revisionChoice: 'revisionChoice' in version ? version.revisionChoice ?? null : current.revisionChoice,
   };
   const history = nextVersion.id
     ? current.history.some((item) => item.id === nextVersion.id)
