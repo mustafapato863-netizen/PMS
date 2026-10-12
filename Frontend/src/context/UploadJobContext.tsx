@@ -83,7 +83,7 @@ function UploadProgressNote({
         </div>
         <button
           type="button"
-          onClick={() => navigate('/settings')}
+          onClick={() => navigate('/settings/data')}
           className="shrink-0 rounded-lg px-2 py-1 text-xs font-bold text-blue-700 hover:bg-blue-500/10 focus-visible:outline-2 focus-visible:outline-blue-500 dark:text-blue-300"
         >
           Uploads

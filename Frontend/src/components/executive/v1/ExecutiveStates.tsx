@@ -131,7 +131,7 @@ export function ExecutiveEmptyState({ monthLabel, canUpload, dataStatus, onPickM
                 </li>
               ))}
             </ol>
-            <Link to="/settings" className="inline-flex items-center gap-[4px] self-start text-[12px] font-semibold text-[var(--insights-accent-text)]">Open data upload <ArrowRight aria-hidden="true" className="size-[13px]" /></Link>
+            <Link to="/settings/data" className="inline-flex items-center gap-[4px] self-start text-[12px] font-semibold text-[var(--insights-accent-text)]">Open data upload <ArrowRight aria-hidden="true" className="size-[13px]" /></Link>
           </section>
         )}
       </div>

@@ -247,7 +247,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed: collapsedPreference = false, 
   };
 
   const renderLink = (
-    item: { id?: string; name: string; path: string; icon: React.ReactNode },
+    item: { id?: string; name: string; path: string; icon: React.ReactNode; matchSubpaths?: boolean },
     performanceLevel?: PerformanceLevel,
     nested = false,
     resetQuery = false,
@@ -259,7 +259,9 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed: collapsedPreference = false, 
       : activeScope === 'employee'
         ? effectiveSelectedLevel === 'Employee'
         : !performanceLevel || effectiveSelectedLevel === performanceLevel;
-    const active = pathname === item.path && levelMatches;
+    // Exact match for every item. Only an item that opts in (Administration) also stays active on its sub-pages.
+    const onPath = pathname === item.path || (item.matchSubpaths === true && pathname.startsWith(`${item.path}/`));
+    const active = onPath && levelMatches;
     const destination = resetQuery
       ? `${item.path}${performanceLevel ? `?performance_level=${performanceLevel}` : ''}`
       : linkFor(item.path, performanceLevel);
@@ -577,7 +579,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed: collapsedPreference = false, 
       <div className={`mt-auto shrink-0 space-y-2 border-t border-[var(--border-light)] p-3 ${isCollapsed ? 'xl:p-2' : ''}`}>
         <div className={isCollapsed ? 'sidebar-collapsed-theme' : ''}><ThemeToggle variant="pill" /></div>
         {renderLink({ name: 'Account settings', path: '/account', icon: <User size={18} /> }, undefined, false, true)}
-        {canAccessSettingsContent(role) && renderLink({ name: 'Administration', path: '/settings', icon: <Settings size={18} /> }, undefined, false, true)}
+        {canAccessSettingsContent(role) && renderLink({ name: 'Administration', path: '/settings', icon: <Settings size={18} />, matchSubpaths: true }, undefined, false, true)}
         <div className={`sidebar-user-menu flex items-center justify-between gap-2 rounded-xl border border-[var(--border-light)] bg-[var(--bg-raised)] p-2.5 shadow-sm ${isCollapsed ? 'xl:justify-center xl:p-2' : ''}`}>
           <div className={`flex min-w-0 items-center gap-2 ${isCollapsed ? 'xl:justify-center' : ''}`}>
             <div className="sidebar-user-avatar flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[11px] font-bold text-white shadow-sm" style={{ background: 'var(--sidebar-active-text)' }}>

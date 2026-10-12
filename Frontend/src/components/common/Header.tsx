@@ -49,6 +49,8 @@ function getInitials(name: string): string {
 
 function resolveRoute(pathname: string) {
   if (ROUTE_TITLES[pathname]) return ROUTE_TITLES[pathname];
+  // Administration owns /settings and its sub-pages. A bare prefix would also catch an unrelated /settings-* path.
+  if (pathname === '/settings' || pathname.startsWith('/settings/')) return ROUTE_TITLES['/settings'];
   if (pathname.startsWith('/function-summary/')) return ROUTE_TITLES['/function-summary'];
   if (pathname.startsWith('/employee')) return ROUTE_TITLES['/employee'];
   if (pathname.startsWith('/team')) return ROUTE_TITLES['/team'];
