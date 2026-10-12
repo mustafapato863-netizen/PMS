@@ -1,4 +1,5 @@
 import io
+import math
 import os
 from pathlib import Path
 
@@ -187,34 +188,29 @@ async def test_config_api_resolves_one_marketing_position_without_mixing_kpis():
     os.environ.get("CI") == "true" or not REAL_WORKBOOK.exists(),
     reason="User acceptance workbook is only available in the local acceptance environment",
 )
-def test_real_marketing_workbook_imports_with_incomplete_rows_excluded():
-    result = MarketingImportService().parse_excel(pd.ExcelFile(REAL_WORKBOOK))
-    scores = {
-        (record.employee_name, record.month): record.evaluation.score
-        for record in result.records
-    }
+def test_real_marketing_workbook_imports_with_consistent_totals():
+    """The acceptance workbook is a live file: months are added and earlier rows are corrected.
 
-    assert result.report["total_rows"] == 68
-    assert result.report["employee_rows"] == 68
-    assert result.report["excluded_non_employee_rows"] == 0
-    assert result.report["excluded_incomplete_rows"] == 6
-    assert result.report["employees"] == 9
-    assert result.report["performance_records"] == 17
-    assert result.report["months"] == ["May", "June", "July"]
-    assert result.report["years"] == [2026]
-    assert sum(warning["code"] == "INCOMPLETE_KPI_ROW" for warning in result.report["warnings"]) == 6
-    assert {warning["code"] for warning in result.report["warnings"]} <= {
-        "INCOMPLETE_KPI_ROW",
-        "DERIVED_VALUE_MISMATCH",
-    }
-    assert scores[("Bahy Hamed Amer", "June")] == 51.10
-    assert scores[("Abdelrahman Yousry", "May")] == 97.50
-    assert scores[("Abdelrahman Yousry", "June")] == 78.75
-    assert scores[("Asser Mohamed", "July")] == 93.50
-    assert scores[("Dina Samir", "May")] == 100.0
-    assert scores[("Dina Samir", "June")] == 98.75
-    assert scores[("Dina Samir", "July")] == 100.0
-    assert scores[("Nourshan", "July")] == 98.0
+    A frozen snapshot of its counts and scores goes stale on the next edit, so this checks
+    what must hold for any version of the workbook. Exact scoring is pinned by the
+    synthetic-frame tests in this module.
+    """
+    result = MarketingImportService().parse_excel(pd.ExcelFile(REAL_WORKBOOK))
+    report = result.report
+    warning_codes = [warning["code"] for warning in report["warnings"]]
+    record_keys = {(record.employee_name, record.month, record.year) for record in result.records}
+    calendar = ["January", "February", "March", "April", "May", "June",
+                "July", "August", "September", "October", "November", "December"]
+
+    assert report["total_rows"] > 0
+    assert report["employee_rows"] + report["excluded_non_employee_rows"] == report["total_rows"]
+    assert report["excluded_incomplete_rows"] == warning_codes.count("INCOMPLETE_KPI_ROW")
+    assert set(warning_codes) <= {"INCOMPLETE_KPI_ROW", "DERIVED_VALUE_MISMATCH"}
+    assert report["performance_records"] == len(result.records) == len(record_keys)
+    assert report["employees"] == len({record.employee_name for record in result.records})
+    assert report["months"] == [month for month in calendar if month in {record.month for record in result.records}]
+    assert report["years"] == sorted({record.year for record in result.records})
+    assert all(math.isfinite(record.evaluation.score) and record.evaluation.score >= 0 for record in result.records)
 
 
 def test_zero_target_and_actual_produce_zero_higher_better_contribution():
