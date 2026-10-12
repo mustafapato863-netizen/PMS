@@ -9,6 +9,11 @@ import { ThemeProvider } from '../context/ThemeContext';
 import { insightsWorkspaceUrl } from '../hooks/api/useInsightsWorkspace';
 import type { InsightFilters } from '../features/insights/types';
 
+// Each test renders the whole Insights view and then runs several user-event steps. Alone the slowest test takes about 1.5s,
+// but in a full parallel run the same steps took 3-5s, and one hit the 5s default. The cost is CPU load, not a wrong result,
+// so only this file gets a longer budget. The global default stays at 5s.
+vi.setConfig({ testTimeout: 15_000 });
+
 const query = vi.hoisted(() => ({ refetch: vi.fn() }));
 const latestFilters = vi.hoisted(() => ({ current: {} as InsightFilters }));
 const teamDataCalls = vi.hoisted(() => ({ calls: [] as unknown[][] }));

@@ -2179,6 +2179,11 @@ body {
   min-height: 40px;
 }
 
+/* Icon-only header controls are square: the width follows the height of the range (40px from 1280px, 44px up to 1279px). */
+.app-header-actions .app-header-control {
+  min-width: 40px;
+}
+
 .app-header-title-compact {
   display: none;
 }

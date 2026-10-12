@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { flushSync } from 'react-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { AlertCircle, CheckCircle2, Download, FileSpreadsheet, Loader2, Trash2, Upload, X } from 'lucide-react';
 import { API_BASE } from '../../config';
 import { useUserRole } from '../../context/RoleContext';
 import { useUploadJob } from '../../context/uploadJobState';
 import { refreshPerformanceData } from '../../hooks/usePerformanceData';
+import { isRateLimitError } from '../../lib/rateLimit';
 import OverlayPortal from '../common/OverlayPortal';
 import type { ManagementUploadItem, UploadHistoryItem } from './types';
 import { refreshManagementData } from './settingsUtils';
@@ -14,6 +16,11 @@ import { asArray } from './uploadFormat';
 import { readColumnWarnings, type ColumnWarning } from './uploadHeaderNotices';
 
 type Status = { type: 'success' | 'error'; message: string; columnWarnings?: ColumnWarning[] } | null;
+
+/** The server accepts at most this many ids per batch request. */
+const BATCH_DELETE_LIMIT = 100;
+/** The confirmation names this many files, then says how many more there are. */
+const BATCH_DELETE_LISTED_NAMES = 5;
 
 function readableUploadError(value: unknown, fallback: string): string {
   if (typeof value === 'string' && value.trim()) return value;
@@ -40,6 +47,54 @@ function readableUploadError(value: unknown, fallback: string): string {
 function columnWarningsFrom(value: unknown): ColumnWarning[] {
   if (!value || typeof value !== 'object') return [];
   return readColumnWarnings((value as { column_warnings?: unknown }).column_warnings);
+}
+
+function plural(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? '' : 's'}`;
+}
+
+/** The first few names in quotes, then how many more. */
+function quotedNames(names: string[]): string {
+  const shown = names.slice(0, BATCH_DELETE_LISTED_NAMES).map((name) => `“${name}”`).join(', ');
+  const more = names.length - BATCH_DELETE_LISTED_NAMES;
+  return more > 0 ? `${shown} and ${more} more` : shown;
+}
+
+/**
+ * The requested ids the server removed. The employee endpoint lists the ids it did not find. The management endpoint returns one
+ * result per batch it removed and skips the rest without saying why, so a batch with no removed rows counts as not removed.
+ */
+function removedUploadIds(management: boolean, ids: string[], data: unknown): Set<string> {
+  if (!management) {
+    const missing = new Set(asArray((data as { missing_ids?: unknown } | null | undefined)?.missing_ids));
+    return new Set(ids.filter((id) => !missing.has(id)));
+  }
+  const removedRows = new Map<string, number>();
+  const results = Array.isArray(data) ? (data as Record<string, unknown>[]) : [];
+  for (const result of results) {
+    const rows = ['config_rows_deleted', 'snapshot_rows_deleted', 'history_rows_deleted']
+      .reduce((sum, key) => sum + Number(result[key] ?? 0), 0);
+    removedRows.set(String(result.upload_batch_id), rows);
+  }
+  return new Set(ids.filter((id) => (removedRows.get(id) ?? 0) > 0));
+}
+
+/** The notice for a batch the server answered. Only a batch where every upload was removed reads as a success. */
+function batchNotice(management: boolean, items: UploadHistoryItem[], removed: Set<string>): Status {
+  const kept = items.filter((item) => !removed.has(item.id)).map((item) => item.filename || 'Unnamed file');
+  const noun = management ? 'management upload' : 'upload';
+  const refreshed = management ? '' : ' and refreshed performance data';
+  if (kept.length === 0) {
+    return { type: 'success', message: `Deleted ${plural(items.length, noun)}${refreshed}.` };
+  }
+  if (removed.size > 0) {
+    return {
+      type: 'error',
+      message: `Deleted ${removed.size} of ${plural(items.length, noun)}${refreshed}. ${kept.length} not deleted: ${quotedNames(kept)}.`,
+    };
+  }
+  if (items.length === 1) return { type: 'error', message: `${quotedNames(kept)} was not deleted.` };
+  return { type: 'error', message: `None of the ${plural(items.length, noun)} were deleted: ${quotedNames(kept)}.` };
 }
 
 function StatusBanner({ status }: { status: Status }) {
@@ -85,15 +140,38 @@ function ProcessingBanner({ busyType }: { busyType: 'employee' | 'management' })
   );
 }
 
+/** The file names a batch confirmation lists, then how many more. */
+function BatchDeleteNames({ items }: { items: UploadHistoryItem[] }) {
+  const more = items.length - BATCH_DELETE_LISTED_NAMES;
+  return (
+    <>
+      <span className="block">
+        The records imported from {items.length === 1 ? 'this file' : 'these files'} are removed. This cannot be undone.
+      </span>
+      <ul className="mt-2 space-y-0.5 font-semibold text-[var(--text-secondary)]">
+        {items.slice(0, BATCH_DELETE_LISTED_NAMES).map((item) => (
+          <li key={item.id} className="truncate">{item.filename || 'Unnamed file'}</li>
+        ))}
+        {more > 0 && <li>and {more} more</li>}
+      </ul>
+    </>
+  );
+}
+
+/** The one in-page confirmation both delete flows use. Callers supply the wording. */
 function DeleteConfirmModal({
-  filename,
-  management,
+  title,
+  description,
+  confirmLabel,
+  cancelLabel,
   busy,
   onCancel,
   onConfirm,
 }: {
-  filename: string;
-  management: boolean;
+  title: string;
+  description: ReactNode;
+  confirmLabel: string;
+  cancelLabel: string;
   busy: boolean;
   onCancel: () => void;
   onConfirm: () => void;
@@ -124,7 +202,7 @@ function DeleteConfirmModal({
                     Confirm Deletion
                   </p>
                   <h3 id="delete-confirm-title" className="mt-1 text-lg font-black text-[var(--text-primary)] leading-snug break-words">
-                    Delete “{filename}”?
+                    {title}
                   </h3>
                 </div>
                 <button
@@ -136,9 +214,9 @@ function DeleteConfirmModal({
                   <X size={18} />
                 </button>
               </div>
-              <p id="delete-confirm-desc" className="mt-3 text-xs leading-relaxed text-[var(--text-muted)]">
-                This action cannot be undone. This {management ? 'management template' : 'employee PMS data'} file and its calculated records will be permanently removed.
-              </p>
+              <div id="delete-confirm-desc" className="mt-3 text-xs leading-relaxed text-[var(--text-muted)]">
+                {description}
+              </div>
             </div>
           </div>
           <div className="flex items-center justify-end gap-2.5 border-t border-[var(--border-light)] bg-[var(--bg-sunken)]/50 px-6 py-4">
@@ -148,7 +226,7 @@ function DeleteConfirmModal({
               onClick={onCancel}
               className="min-h-10 rounded-xl border border-[var(--border-light)] bg-[var(--bg-surface)] px-4 text-xs font-extrabold text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] transition-colors"
             >
-              Cancel
+              {cancelLabel}
             </button>
             <button
               type="button"
@@ -157,7 +235,7 @@ function DeleteConfirmModal({
               className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-rose-600 px-5 text-xs font-extrabold text-white shadow-lg shadow-rose-600/20 hover:bg-rose-700 disabled:opacity-50 transition-colors"
             >
               {busy ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
-              Delete file
+              {confirmLabel}
             </button>
           </div>
         </div>
@@ -172,13 +250,19 @@ export function DataManagementPanel() {
   const { activeJobId, trackJob } = useUploadJob();
   const employeeInput = useRef<HTMLInputElement>(null);
   const managementInput = useRef<HTMLInputElement>(null);
+  const employeeSection = useRef<HTMLElement>(null);
+  const managementSection = useRef<HTMLElement>(null);
   const [uploads, setUploads] = useState<UploadHistoryItem[]>([]);
   const [managementUploads, setManagementUploads] = useState<ManagementUploadItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState<'employee' | 'management' | string | null>(null);
+  /** An upload id while one is deleted, the selected ids while a batch runs, or a marker while an upload or template runs. */
+  const [busy, setBusy] = useState<'employee' | 'management' | string | string[] | null>(null);
   const [employeeStatus, setEmployeeStatus] = useState<Status>(null);
   const [managementStatus, setManagementStatus] = useState<Status>(null);
   const [pendingDelete, setPendingDelete] = useState<{ item: UploadHistoryItem; management: boolean } | null>(null);
+  const [pendingBatchDelete, setPendingBatchDelete] = useState<{ items: UploadHistoryItem[]; management: boolean } | null>(null);
+  /** Where focus goes when the batch confirmation closes: the control that opened it, and the list it belongs to. */
+  const batchFocusReturn = useRef<{ trigger: HTMLElement | null; section: HTMLElement | null } | null>(null);
 
   const loadUploads = useCallback(async () => {
     const [employeeResponse, managementResponse] = await Promise.all([
@@ -329,6 +413,79 @@ export function DataManagementPanel() {
     }
   };
 
+  const handleBatchDeleteRequest = (items: UploadHistoryItem[], management: boolean) => {
+    if (items.length > BATCH_DELETE_LIMIT) {
+      // Blocked before the confirmation: nothing is sent, and nothing from the selection is dropped.
+      const message = `Batch delete takes up to ${BATCH_DELETE_LIMIT} uploads at a time. You selected ${items.length}. Clear some selections, then delete again.`;
+      if (management) setManagementStatus({ type: 'error', message });
+      else setEmployeeStatus({ type: 'error', message });
+      return;
+    }
+    const section = (management ? managementSection.current : employeeSection.current) ?? null;
+    const active = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    batchFocusReturn.current = { trigger: active && section?.contains(active) ? active : null, section };
+    setPendingBatchDelete({ items, management });
+  };
+
+  const cancelBatchDelete = () => {
+    if (Array.isArray(busy)) return;
+    const returnTo = batchFocusReturn.current;
+    const deleteSelected = Array.from(returnTo?.section?.querySelectorAll<HTMLButtonElement>('button') ?? [])
+      .find((button) => button.textContent?.trim() === 'Delete Selected');
+    (returnTo?.trigger ?? deleteSelected)?.focus();
+    batchFocusReturn.current = null;
+    setPendingBatchDelete(null);
+  };
+
+  const confirmBatchDelete = async () => {
+    if (!pendingBatchDelete) return;
+    const { items, management } = pendingBatchDelete;
+    const ids = items.map((item) => item.id);
+    const setStatus = management ? setManagementStatus : setEmployeeStatus;
+    // The list's previous notice belongs to an earlier request, so it goes before this one starts.
+    setStatus(null);
+    setBusy(ids);
+    try {
+      const endpoint = management
+        ? `${API_BASE}/api/team-management/management-kpi-config/uploads/batch-delete`
+        : `${API_BASE}/api/uploads/batch-delete`;
+      const response = await fetchWithRole(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ upload_ids: ids }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !result?.success) {
+        throw new Error(readableUploadError(result?.detail ?? result?.message, 'Delete failed'));
+      }
+      setStatus(batchNotice(management, items, removedUploadIds(management, ids, result.data)));
+    } catch (error) {
+      // A 429 already shows the one rate-limit notice, so it gets no second message here.
+      if (!isRateLimitError(error)) {
+        setStatus({ type: 'error', message: error instanceof Error ? error.message : 'Delete failed' });
+      }
+    } finally {
+      // The same refresh single delete runs, for every outcome, so both lists show what the server now holds.
+      try {
+        if (management) await refreshManagementData(queryClient, loadUploads);
+        else {
+          refreshPerformanceData();
+          await loadUploads();
+        }
+      } catch (error) {
+        console.error('Failed to reload upload history', error);
+      }
+      const section = batchFocusReturn.current?.section ?? (management ? managementSection.current : employeeSection.current);
+      batchFocusReturn.current = null;
+      // Selection is spent once the batch ends, so focus goes to the list's select-all control, which stays in place.
+      flushSync(() => {
+        setBusy(null);
+        setPendingBatchDelete(null);
+      });
+      section?.querySelector<HTMLInputElement>('input[aria-label="Select all uploads"]')?.focus();
+    }
+  };
+
   const isEmployeeBusy = busy === 'employee';
   const isManagementBusy = busy === 'management';
 
@@ -339,7 +496,7 @@ export function DataManagementPanel() {
         <p className="mt-1 text-xs text-[var(--text-muted)]">Upload employee PMS data and management scorecard templates independently.</p>
       </header>
 
-      <section className="glass-panel space-y-4 rounded-3xl p-6 shadow-sm">
+      <section ref={employeeSection} className="glass-panel space-y-4 rounded-3xl p-6 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h3 className="flex items-center gap-2 text-sm font-black text-[var(--text-primary)]">
@@ -377,10 +534,10 @@ export function DataManagementPanel() {
         {isEmployeeBusy && <ProcessingBanner busyType="employee" />}
         <StatusBanner status={employeeStatus} />
         <UploadColumnNotices warnings={employeeStatus?.columnWarnings ?? []} />
-        <UploadHistory items={uploads} loading={loading} busy={busy} onDelete={handleDeleteRequest} />
+        <UploadHistory items={uploads} loading={loading} busy={busy} onDelete={handleDeleteRequest} onBatchDelete={handleBatchDeleteRequest} />
       </section>
 
-      <section className="glass-panel space-y-4 rounded-3xl p-6 shadow-sm">
+      <section ref={managementSection} className="glass-panel space-y-4 rounded-3xl p-6 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h3 className="flex items-center gap-2 text-sm font-black text-[var(--text-primary)]">
@@ -425,16 +582,29 @@ export function DataManagementPanel() {
         />
         {isManagementBusy && <ProcessingBanner busyType="management" />}
         <StatusBanner status={managementStatus} />
-        <UploadHistory items={managementUploads} management loading={loading} busy={busy} onDelete={handleDeleteRequest} />
+        <UploadHistory items={managementUploads} management loading={loading} busy={busy} onDelete={handleDeleteRequest} onBatchDelete={handleBatchDeleteRequest} />
       </section>
 
       {pendingDelete && (
         <DeleteConfirmModal
-          filename={pendingDelete.item.filename || 'this upload'}
-          management={pendingDelete.management}
+          title={`Delete “${pendingDelete.item.filename || 'this upload'}”?`}
+          description={`This action cannot be undone. This ${pendingDelete.management ? 'management template' : 'employee PMS data'} file and its calculated records will be permanently removed.`}
+          confirmLabel="Delete file"
+          cancelLabel="Cancel"
           busy={busy === pendingDelete.item.id}
           onCancel={() => setPendingDelete(null)}
           onConfirm={confirmDeleteUpload}
+        />
+      )}
+      {pendingBatchDelete && (
+        <DeleteConfirmModal
+          title={`Delete ${plural(pendingBatchDelete.items.length, `${pendingBatchDelete.management ? 'management' : 'employee'} upload`)}?`}
+          description={<BatchDeleteNames items={pendingBatchDelete.items} />}
+          confirmLabel={`Delete ${plural(pendingBatchDelete.items.length, 'upload')}`}
+          cancelLabel="Keep uploads"
+          busy={Array.isArray(busy)}
+          onCancel={cancelBatchDelete}
+          onConfirm={confirmBatchDelete}
         />
       )}
     </div>
