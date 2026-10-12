@@ -27,7 +27,7 @@ export type EvaluationKpiLinesProps = {
 /** The instructions, once, above the grid. Each input refers to them, so a row never repeats them on screen. */
 function KpiHelp({ targets }: { targets: readonly string[] }) {
   return (
-    <div className="rounded-xl bg-[var(--bg-sunken)] px-3 py-2 text-[12px] text-[var(--text-secondary)]">
+    <div className="rounded-xl bg-[var(--bg-sunken)] px-3 py-2 text-xs text-[var(--text-secondary)]">
       <p><span className="font-bold text-[var(--text-primary)]">Target:</span> <span id={KPI_TARGET_HELP_ID}>{targets.join(' ')}</span></p>
       <p><span className="font-bold text-[var(--text-primary)]">Weight:</span> <span id={KPI_WEIGHT_HELP_ID}>{WEIGHT_FIELD_HELP}</span></p>
     </div>
@@ -55,7 +55,7 @@ export function EvaluationKpiLines(props: EvaluationKpiLinesProps) {
   const targetHelp = distinctTargetHelp(lines.map((line) => (referenceLines.find((item) => item.kpi_key === line.kpi_key) ?? line).unit));
   return (
     <AdminSection title="Indicators">
-      {ready && lines.length > 0 && <div role="status" className={`flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3 py-2 text-[12px] ${weightReady ? 'border-emerald-500/20 bg-emerald-500/5' : 'border-amber-500/30 bg-amber-500/10'}`}>
+      {ready && lines.length > 0 && <div role="status" className={`flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3 py-2 text-xs ${weightReady ? 'border-emerald-500/20 bg-emerald-500/5' : 'border-amber-500/30 bg-amber-500/10'}`}>
         <div className="flex min-w-0 items-center gap-2">
           {weightReady
             ? <CircleCheck size={16} aria-hidden="true" className="shrink-0 text-emerald-600 dark:text-emerald-400" />
@@ -66,14 +66,14 @@ export function EvaluationKpiLines(props: EvaluationKpiLinesProps) {
         <p className={weightReady ? 'text-[var(--text-secondary)]' : 'font-semibold text-amber-800 dark:text-amber-300'}>{weightReady ? 'Weights are ready to save. Tracking-only indicators do not contribute to the score.' : 'Set the scored indicators to a total of 100% before saving. Other weights are not changed automatically.'}</p>
       </div>}
       {periodLoading && <>
-        <p className="text-[12px] text-[var(--text-muted)]">Loading this month…</p>
+        <p className="text-xs text-[var(--text-muted)]">Loading this month…</p>
         <KpiSkeleton />
       </>}
-      {ready && lines.length === 0 && <p className="text-[12px] text-[var(--text-secondary)]">This month has no indicators to edit.</p>}
+      {ready && lines.length === 0 && <p className="text-xs text-[var(--text-secondary)]">This month has no indicators to edit.</p>}
       {ready && lines.length > 0 && <>
         <KpiHelp targets={targetHelp} />
         <div className="min-w-0">
-          <div className={`hidden gap-4 border-b border-[var(--border-light)] px-3 py-2 text-[12px] font-bold text-[var(--text-muted)] lg:grid ${KPI_COLUMNS}`}>
+          <div className={`hidden gap-4 border-b border-[var(--border-light)] px-3 py-2 text-xs font-bold text-[var(--text-muted)] lg:grid ${KPI_COLUMNS}`}>
             <span>Indicator</span>
             <span>Target</span>
             <span>Weight</span>

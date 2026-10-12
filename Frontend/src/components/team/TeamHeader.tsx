@@ -133,7 +133,7 @@ const TeamHeader = ({
         <button
           onClick={onBack}
           aria-label="Go back"
-          className="team-header-back flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-sunken)] hover:text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 cursor-pointer"
+          className="team-header-back flex h-11 w-11 [@media(max-width:768px)]:w-[44px] shrink-0 items-center justify-center rounded-xl text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-sunken)] hover:text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 cursor-pointer"
         >
           <ArrowLeft size={19} aria-hidden="true" />
         </button>

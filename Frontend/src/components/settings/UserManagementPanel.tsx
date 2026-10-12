@@ -19,7 +19,7 @@ import { directionFor, useTableSort, type SortColumn } from './shell/useTableSor
 
 const USERS_PER_PAGE = 25;
 
-const FILTER_SELECT = 'rounded-xl border border-[var(--border-light)] bg-[var(--bg-sunken)] px-3 py-2 text-[12px] font-semibold text-[var(--text-secondary)]';
+const FILTER_SELECT = 'rounded-xl border border-[var(--border-light)] bg-[var(--bg-sunken)] px-3 py-2 text-xs font-semibold text-[var(--text-secondary)]';
 
 type UserSortKey = 'name' | 'username' | 'role' | 'account' | 'presence';
 
@@ -237,43 +237,43 @@ export function UserManagementPanel() {
       <tr key={user.id} className={`${BODY_ROW_CLASS} ${!active ? 'opacity-60' : ''}`}>
         <td className={BODY_CELL_CLASS}>
           <div className="flex items-center gap-3">
-            <span className="relative flex h-8 w-8 items-center justify-center rounded-full bg-blue-500/10 text-[12px] font-black text-blue-600">
+            <span className="relative flex h-8 w-8 items-center justify-center rounded-full bg-blue-500/10 text-xs font-black text-blue-600">
               {userInitials(user)}
               <span aria-label={online ? 'Online' : 'Offline'} className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-[var(--bg-surface)] ${online ? 'bg-emerald-500' : 'bg-slate-400'}`} />
             </span>
             <span className="font-bold text-[var(--text-primary)]">
               {safeUserName(user)}
-              {self && <span className="ml-2 text-[12px] uppercase text-blue-500">You</span>}
+              {self && <span className="ml-2 text-xs uppercase text-blue-500">You</span>}
             </span>
           </div>
         </td>
         <td className={`${BODY_CELL_CLASS} font-mono text-[var(--text-secondary)]`}>@{user?.username || 'unknown'}</td>
         <td className={`${BODY_CELL_CLASS} text-[var(--text-secondary)]`}>
           {user?.role || 'Unknown'}
-          {user?.legacy_role_needs_reassignment && <span className="ml-1 rounded bg-amber-100 px-1.5 py-0.5 text-[12px] font-bold text-amber-800">REASSIGN</span>}
+          {user?.legacy_role_needs_reassignment && <span className="ml-1 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-bold text-amber-800">REASSIGN</span>}
         </td>
         <td className={`${BODY_CELL_CLASS} max-w-[280px] whitespace-normal`}>{accessScopeText(user)}</td>
         <td className={BODY_CELL_CLASS}>
-          <span className={`rounded-full px-2 py-1 text-[12px] font-bold ${active ? 'bg-emerald-500/10 text-emerald-600' : 'bg-slate-500/10 text-slate-500'}`}>{active ? 'Active' : 'Disabled'}</span>
+          <span className={`rounded-full px-2 py-1 text-xs font-bold ${active ? 'bg-emerald-500/10 text-emerald-600' : 'bg-slate-500/10 text-slate-500'}`}>{active ? 'Active' : 'Disabled'}</span>
         </td>
         <td className={BODY_CELL_CLASS}>
           <div className="flex flex-col items-start gap-1">
-            <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-[12px] font-bold ${online ? 'bg-emerald-500/10 text-emerald-600' : 'bg-slate-500/10 text-slate-500'}`}>
+            <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-xs font-bold ${online ? 'bg-emerald-500/10 text-emerald-600' : 'bg-slate-500/10 text-slate-500'}`}>
               <span className={`h-1.5 w-1.5 rounded-full ${online ? 'bg-emerald-500' : 'bg-slate-400'}`} />
               {online ? 'Online' : 'Offline'}
             </span>
-            {!online && <span className="text-[12px] text-[var(--text-muted)]">{lastSeenText(user?.last_seen_at)}</span>}
+            {!online && <span className="text-xs text-[var(--text-muted)]">{lastSeenText(user?.last_seen_at)}</span>}
           </div>
         </td>
         <td className={`${BODY_CELL_CLASS} relative text-right`}>
           <button aria-label={`Actions for ${safeUserName(user)}`} aria-expanded={menuState?.userId === user.id} onClick={(e) => {
             if (menuState?.userId === user.id) { setMenuState(null); return; }
             setMenuState({ userId: user.id, trigger: e.currentTarget });
-          }} className="!min-h-[44px] !min-w-[44px] rounded-lg p-2 text-[var(--text-muted)] hover:bg-[var(--bg-sunken)] lg:!min-h-[32px] lg:!min-w-[32px]"><MoreHorizontal size={17} /></button>
+          }} className="min-h-[44px] !min-w-[44px] rounded-lg p-2 text-[var(--text-muted)] hover:bg-[var(--bg-sunken)] lg:!min-h-[32px] lg:!min-w-[32px]"><MoreHorizontal size={17} /></button>
           {menuState?.userId === user.id && <UserActionsPopover trigger={menuState.trigger} onClose={closeMenu}>
-            <button onClick={() => { setEditingUser(user); setError(null); setModalOpen(true); setMenuState(null); }} className="block w-full px-3 py-2 text-left text-[12px] hover:bg-[var(--bg-sunken)]">Edit</button>
-            <button disabled={self} onClick={() => runAction(() => toggleUserActive(user.id, !active), active ? 'User disabled.' : 'User enabled.')} className="block w-full px-3 py-2 text-left text-[12px] hover:bg-[var(--bg-sunken)] disabled:opacity-40">{active ? 'Disable' : 'Enable'}</button>
-            <button disabled={self || lastAdmin || deleteBusy} onClick={() => requestDelete(user)} className="block w-full px-3 py-2 text-left text-[12px] text-red-500 hover:bg-red-500/10 disabled:opacity-40">Delete</button>
+            <button onClick={() => { setEditingUser(user); setError(null); setModalOpen(true); setMenuState(null); }} className="block w-full px-3 py-2 text-left text-xs hover:bg-[var(--bg-sunken)]">Edit</button>
+            <button disabled={self} onClick={() => runAction(() => toggleUserActive(user.id, !active), active ? 'User disabled.' : 'User enabled.')} className="block w-full px-3 py-2 text-left text-xs hover:bg-[var(--bg-sunken)] disabled:opacity-40">{active ? 'Disable' : 'Enable'}</button>
+            <button disabled={self || lastAdmin || deleteBusy} onClick={() => requestDelete(user)} className="block w-full px-3 py-2 text-left text-xs text-red-500 hover:bg-red-500/10 disabled:opacity-40">Delete</button>
           </UserActionsPopover>}
         </td>
       </tr>

@@ -67,13 +67,13 @@ export function UploadHistory({ items, management = false, loading = false, busy
 
   const selectionBar = onBatchDelete && selectedIds.size > 0 ? (
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <span className="text-[12px] font-semibold text-rose-600 dark:text-rose-400">
+      <span className="text-xs font-semibold text-rose-600 dark:text-rose-400">
         {selectedIds.size} item{selectedIds.size > 1 ? 's' : ''} selected
       </span>
       <button
         onClick={handleBatchDelete}
         disabled={isBatchDeleting}
-        className="flex !min-h-[44px] items-center gap-2 rounded-lg bg-rose-500 px-3 text-[12px] font-bold text-white transition-all hover:bg-rose-600 disabled:opacity-60 lg:!min-h-[32px]"
+        className="flex min-h-[44px] items-center gap-2 rounded-lg bg-rose-500 px-3 text-xs font-bold text-white transition-all hover:bg-rose-600 disabled:opacity-60 lg:!min-h-[32px]"
       >
         {isBatchDeleting ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
         Delete Selected
@@ -136,7 +136,7 @@ export function UploadHistory({ items, management = false, loading = false, busy
                 <td className={`${BODY_CELL_CLASS} text-[var(--text-primary)]`}>
                   <p className="font-extrabold">{item.filename || 'Unnamed file'}</p>
                   {!management && (
-                    <p className="mt-0.5 text-[12px] font-semibold text-[var(--text-muted)]">
+                    <p className="mt-0.5 text-xs font-semibold text-[var(--text-muted)]">
                       One workbook · {item.team_count || teams.length || 0} teams
                     </p>
                   )}
@@ -147,7 +147,7 @@ export function UploadHistory({ items, management = false, loading = false, busy
                 </td>
                 <td className={`${BODY_CELL_CLASS} max-w-[260px]`}>
                   <p className="truncate font-semibold" title={teams.join(', ')}>{teams.join(', ') || 'All teams'}</p>
-                  <p className="mt-0.5 truncate text-[12px] text-[var(--text-muted)]" title={periods.join(', ')}>
+                  <p className="mt-0.5 truncate text-xs text-[var(--text-muted)]" title={periods.join(', ')}>
                     {periods.join(', ') || 'No period detected'}
                   </p>
                 </td>
@@ -161,7 +161,7 @@ export function UploadHistory({ items, management = false, loading = false, busy
                     aria-label={`Delete ${name}`}
                     disabled={Array.isArray(busy) || busy !== null}
                     onClick={() => onDelete(item, management)}
-                    className="inline-flex !min-h-[44px] !min-w-[44px] items-center justify-center rounded-lg text-rose-500 hover:bg-rose-500/10 disabled:opacity-40 transition-colors lg:!min-h-[32px] lg:!min-w-[32px]"
+                    className="inline-flex min-h-[44px] !min-w-[44px] items-center justify-center rounded-lg text-rose-500 hover:bg-rose-500/10 disabled:opacity-40 transition-colors lg:!min-h-[32px] lg:!min-w-[32px]"
                   >
                     {isDeleting ? <Loader2 size={15} className="animate-spin text-rose-500" /> : <Trash2 size={14} />}
                   </button>
