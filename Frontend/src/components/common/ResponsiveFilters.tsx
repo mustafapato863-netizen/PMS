@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { Eraser, Filter, X } from 'lucide-react';
@@ -18,42 +18,68 @@ interface FloatingPosition {
   y: number;
 }
 
+interface SafeArea {
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
+}
+
 const FILTER_POSITION_KEY = 'pms:responsive-filter-position:v1';
 
 function filterButtonSize() {
   return window.innerWidth <= 639 ? 50 : 54;
 }
 
+function edgeMargin() {
+  return window.innerWidth <= 639 ? 12 : 14;
+}
+
+/**
+ * Where the launcher may sit: below the app header, above the bottom dock when the dock is shown, and inset by the
+ * edge margin on every side. Measured from the DOM, so the compact scale is respected. Where the header or dock is
+ * not mounted (login, tests), that side has nothing to clear and only the window edge limits the launcher.
+ */
+function safeArea(): SafeArea {
+  const edge = edgeMargin();
+  const size = filterButtonSize();
+  const header = document.querySelector<HTMLElement>('header.app-header');
+  const headerBottom = header ? header.offsetHeight : 0;
+  const dock = document.querySelector<HTMLElement>('nav.navigation-dock');
+  const dockShown = dock !== null && !dock.hidden && window.getComputedStyle(dock).display !== 'none';
+  const dockTop = dockShown ? dock.getBoundingClientRect().top : window.innerHeight;
+  const minX = edge;
+  const maxX = Math.max(minX, window.innerWidth - size - edge);
+  const minY = headerBottom + edge;
+  const maxY = Math.max(minY, dockTop - size - edge);
+  return { minX, maxX, minY, maxY };
+}
+
 function clampPosition(position: FloatingPosition): FloatingPosition {
   if (typeof window === 'undefined') return position;
-  const size = filterButtonSize();
+  const area = safeArea();
   return {
-    x: Math.round(Math.max(0, Math.min(position.x, window.innerWidth - size))),
-    y: Math.round(Math.max(0, Math.min(position.y, window.innerHeight - size))),
+    x: Math.round(Math.min(Math.max(position.x, area.minX), area.maxX)),
+    y: Math.round(Math.min(Math.max(position.y, area.minY), area.maxY)),
   };
 }
 
+/** The top-right corner of the safe area. */
 function defaultFilterPosition(): FloatingPosition {
   if (typeof window === 'undefined') return { x: 0, y: 0 };
-  const size = filterButtonSize();
-  const edge = window.innerWidth <= 639 ? 12 : 14;
-  return clampPosition({
-    x: window.innerWidth - size - edge,
-    y: edge,
-  });
+  const area = safeArea();
+  return { x: area.maxX, y: area.minY };
 }
 
-function initialFilterPosition(): FloatingPosition {
-  const fallback = defaultFilterPosition();
-  if (typeof window === 'undefined') return fallback;
+function readStoredPosition(): FloatingPosition | null {
   try {
     const stored = window.localStorage.getItem(FILTER_POSITION_KEY);
-    if (!stored) return fallback;
+    if (!stored) return null;
     const parsed = JSON.parse(stored) as Partial<FloatingPosition>;
-    if (typeof parsed.x !== 'number' || typeof parsed.y !== 'number') return fallback;
-    return clampPosition({ x: parsed.x, y: parsed.y });
+    if (typeof parsed.x !== 'number' || typeof parsed.y !== 'number') return null;
+    return { x: parsed.x, y: parsed.y };
   } catch {
-    return fallback;
+    return null;
   }
 }
 
@@ -67,7 +93,13 @@ const ResponsiveFilters = ({
   className = '',
 }: ResponsiveFiltersProps) => {
   const [isOpen, setIsOpen] = useState(false);
-  const [position, setPosition] = useState(initialFilterPosition);
+  const [initial] = useState(() => {
+    const stored = readStoredPosition();
+    return { stored, position: stored ? clampPosition(stored) : defaultFilterPosition() };
+  });
+  const [position, setPosition] = useState<FloatingPosition>(initial.position);
+  // Until the user moves the launcher it stays at the top-right of the safe area and follows the window.
+  const followDefault = useRef(initial.stored === null);
   const [isDragging, setIsDragging] = useState(false);
   const titleId = useId();
   const panelId = `${titleId}-panel`;
@@ -92,14 +124,23 @@ const ResponsiveFilters = ({
     : Math.max(220, Math.min(470, window.innerWidth - 24, panelOpensRight ? rightSpace : leftSpace));
 
   useEffect(() => {
-    const handleResize = () => setPosition((current) => clampPosition(current));
+    const handleResize = () => setPosition((current) => (followDefault.current ? defaultFilterPosition() : clampPosition(current)));
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // The header and dock can mount in the same commit as the launcher, so measure again once they are in the DOM.
+  useLayoutEffect(() => {
+    setPosition((current) => (followDefault.current ? defaultFilterPosition() : clampPosition(current)));
   }, []);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
       try {
+        if (followDefault.current) {
+          window.localStorage.removeItem(FILTER_POSITION_KEY);
+          return;
+        }
         window.localStorage.setItem(FILTER_POSITION_KEY, JSON.stringify(position));
       } catch {
         // The floating button remains usable when browser storage is unavailable.
@@ -128,6 +169,7 @@ const ResponsiveFilters = ({
     const deltaY = event.clientY - drag.startY;
     if (!drag.moved && Math.hypot(deltaX, deltaY) < 5) return;
     drag.moved = true;
+    followDefault.current = false;
     suppressClickRef.current = true;
     setIsDragging(true);
     event.preventDefault();
@@ -155,12 +197,14 @@ const ResponsiveFilters = ({
     };
     if (event.key === 'Home') {
       event.preventDefault();
+      followDefault.current = true;
       setPosition(defaultFilterPosition());
       return;
     }
     const move = moves[event.key];
     if (!move) return;
     event.preventDefault();
+    followDefault.current = false;
     setPosition((current) => clampPosition({ x: current.x + move.x, y: current.y + move.y }));
   };
 

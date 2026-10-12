@@ -7,6 +7,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { API_BASE } from '../../config';
+import { isRateLimitError } from '../../lib/rateLimit';
 import type { ReportingSelection } from './monthlyCorrection';
 
 export const APPLY_JOB_POLL_MS = 2000;
@@ -446,6 +447,8 @@ export async function enqueueMonthlyApply(input: {
     });
   } catch (caught) {
     if (isAbortError(caught)) throw caught;
+    // A 429 means the server refused the POST, so nothing was queued. Report it instead of looking up a job.
+    if (isRateLimitError(caught)) throw caught;
     return adoptOrThrow(input.fetchWithRole, input.selection, caught);
   }
   try {

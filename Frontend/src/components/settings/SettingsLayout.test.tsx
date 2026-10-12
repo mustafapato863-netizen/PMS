@@ -48,8 +48,8 @@ describe('SettingsLayout', () => {
     expect(screen.getByTestId('address')).toHaveTextContent(/^\/settings\/users$/);
   });
 
-  it('does not list the teams section, which stays unreachable', () => {
+  it('lists the teams section as a link to /settings/teams', () => {
     renderLayout('upload');
-    expect(screen.queryByRole('link', { name: /team/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Teams' })).toHaveAttribute('href', '/settings/teams');
   });
 });

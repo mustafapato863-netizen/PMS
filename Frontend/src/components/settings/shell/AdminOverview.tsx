@@ -153,7 +153,7 @@ export function AdminOverview() {
   return (
     <div className="space-y-4">
       <AdminSection title="Areas" description="Each card shows the current state of its area. Choose an area to configure it.">
-        <ul className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <ul className="grid grid-cols-[minmax(0,1fr)] gap-3 md:grid-cols-2 xl:grid-cols-4">
           <li className="flex">
             <OverviewCard
               title="Data"

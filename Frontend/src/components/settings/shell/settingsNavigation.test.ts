@@ -11,10 +11,10 @@ describe('settings slugs', () => {
     expect(pageForSlug('system-errors')).toBe('system_errors');
   });
 
-  it('gives no page for a missing or unknown slug, and never for teams', () => {
+  it('gives no page for a missing or unknown slug', () => {
     expect(pageForSlug(undefined)).toBeNull();
     expect(pageForSlug('')).toBeNull();
-    expect(pageForSlug('teams')).toBeNull();
+    expect(pageForSlug('teams')).toBe('teams');
     expect(pageForSlug('constructor')).toBeNull();
   });
 
