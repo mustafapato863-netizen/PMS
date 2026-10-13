@@ -59,6 +59,13 @@ from services.evaluation.resolver import (
     require_approved_capability,
     score_basis,
 )
+from services.evaluation.not_evaluated import (
+    actuals_by_key,
+    missing_weighted_keys,
+    not_evaluated_reason,
+    reason_text,
+    weighted_keys,
+)
 from services.evaluation.scoring import ENGINE_VERSION
 from services.evaluation.workflow import (
     EvaluationConflict,
@@ -110,6 +117,20 @@ _QUANTUM = {
     "score": Decimal("0.01"),
     "kpi": Decimal("0.0001"),
 }
+
+
+def resolved_lines(version) -> list[dict]:
+    """Approved basis lines for the not-evaluated check."""
+    from services.evaluation.resolver import snapshot_lines
+
+    return snapshot_lines(version)
+
+
+def _stored_raw(record) -> dict | None:
+    """The workbook row kept in the stored payload (``raw_data``), or None."""
+    payload = record.record_payload if isinstance(record.record_payload, dict) else {}
+    raw = payload.get("raw_data")
+    return raw if isinstance(raw, dict) else None
 
 
 class StreamingChecksum:
@@ -657,6 +678,9 @@ class BoundedApplyService:
                         "Stored evidence changed before promotion. Nothing was promoted.",
                         code="evidence_changed",
                     )
+                if stage.after_row.get("not_evaluated"):
+                    written += 1  # covered by the stage, never written
+                    continue
                 self._apply_after(record, stage.after_row)
                 written += 1
             self.db.flush()
@@ -700,6 +724,16 @@ class BoundedApplyService:
         before = _evidence_item(record)
         missing, rows, _conflicts = record_source_rows(version, record, resolved)
         if missing:
+            lines = resolved_lines(version)
+            actuals = actuals_by_key(rows)
+            label = not_evaluated_reason(lines, actuals, _stored_raw(record))
+            if label is not None:
+                # Not evaluated: staged as unchanged, so coverage holds and promotion writes nothing.
+                unchanged = dict(before)
+                unchanged["not_evaluated"] = reason_text(
+                    label, missing_weighted_keys(lines, actuals), weighted_keys(lines),
+                )
+                return before, unchanged
             raise EvaluationError(
                 "A weighted KPI has no stored actual. Staging is blocked.",
                 code="missing_evidence",
@@ -913,6 +947,11 @@ class BoundedApplyService:
                 if stage is None:
                     raise EvaluationConflict("Stored evidence no longer matches the applied snapshot. Rollback made no changes.", code="evidence_changed")
                 current = _evidence_item(record)
+                if stage.after_row.get("not_evaluated"):
+                    if canonical_row_hash(current) != stage.before_hash or current != stage.before_row:
+                        raise EvaluationConflict("Stored evidence no longer matches the applied snapshot. Rollback made no changes.", code="evidence_changed")
+                    restored += 1  # never written by apply, so rollback does not write it either
+                    continue
                 if canonical_row_hash(current) != stage.after_hash or current != stage.after_row:
                     raise EvaluationConflict("Stored evidence no longer matches the applied snapshot. Rollback made no changes.", code="evidence_changed")
                 self._apply_before(record, stage.before_row)

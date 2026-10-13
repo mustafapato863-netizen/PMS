@@ -450,6 +450,32 @@ class DatabaseSeeder:
                 month=version.effective_from_month,
             )
             evidence = [self._pin_evidence_row(record, version, row) for row in rows]
+            from services.evaluation.not_evaluated import (
+                actuals_by_key,
+                missing_weighted_keys,
+                not_evaluated_reason,
+                reason_text,
+                weighted_keys,
+            )
+            from services.evaluation.resolver import snapshot_lines
+
+            lines = snapshot_lines(version)
+            actuals = actuals_by_key(evidence)
+            label = not_evaluated_reason(lines, actuals, getattr(record, "raw_data", None))
+            if label is not None:
+                # Saved exactly as the legacy path saves it: no pin, no changed fields.
+                summaries.append({
+                    "employee_id": str(record.employee_id),
+                    "team": str(getattr(record, "team", "") or ""),
+                    "month": record.month,
+                    "year": year,
+                    "score": float(record.evaluation.score),
+                    "rows": [],
+                    "not_evaluated": reason_text(
+                        label, missing_weighted_keys(lines, actuals), weighted_keys(lines),
+                    ),
+                })
+                continue
             scored = pin_upload_score(version, evidence)
             by_key = {item["kpi_key"]: item for item in scored["rows"]}
             for row in rows:
@@ -484,6 +510,22 @@ class DatabaseSeeder:
                 ],
             })
         return summaries
+
+    @staticmethod
+    def _not_evaluated_report(scored_rows) -> dict:
+        """Count and per-row reasons for employee-months the approved basis did not score."""
+        rows = [
+            {
+                "team": item.get("team", ""),
+                "employee_id": item.get("employee_id"),
+                "month": item.get("month"),
+                "year": item.get("year"),
+                "reason": item.get("not_evaluated"),
+            }
+            for item in scored_rows or []
+            if item.get("not_evaluated")
+        ]
+        return {"count": len(rows), "rows": rows}
 
     @staticmethod
     def _checked_in_config(team_name: str) -> dict | None:
@@ -599,6 +641,7 @@ class DatabaseSeeder:
         actual = row.get("actual_value")
         workbook_target = row.get("target_value")
         snapshot = version.config_snapshot if isinstance(version.config_snapshot, dict) else {}
+
         if str(row.get("kpi_key") or "") == "Productivity" and snapshot.get("contract") != "operational_upload":
             from services.evaluation.workflow import _productivity_from_raw
 
@@ -614,12 +657,40 @@ class DatabaseSeeder:
                 workbook_target = float(raw_target)
             elif not target_found:
                 workbook_target = None
+        elif snapshot.get("contract") != "operational_upload":
+            # A blank workbook cell is no actual. The stored KPI column holds 0 there.
+            cell_found, cell_actual = DatabaseSeeder._workbook_cell_actual(record, str(row.get("kpi_key") or ""))
+            if cell_found and cell_actual is None:
+                actual = None  # only a blank cell changes: it was stored as 0 and is not an actual
         return {
             "kpi_key": row.get("kpi_key"),
             "actual": actual,
             "workbook_target": workbook_target,
             "precomputed_achievement": row.get("achievement_ratio"),
         }
+
+    @staticmethod
+    def _workbook_cell_actual(record, key: str):
+        """(found, actual) from the KPI's workbook actual cell. Not found when the row has no such column."""
+        raw = getattr(record, "raw_data", None)
+        if not key or not isinstance(raw, dict):
+            return False, None
+        from services.evaluation.not_evaluated import normalise_actual_cells
+        from services.evaluation.workflow import _config_source
+
+        try:
+            team_config = resolve_team_config(
+                load_team_config(record.team),
+                getattr(record, "performance_level", None) or "Employee",
+                getattr(record, "position", None),
+            )
+        except Exception:
+            return False, None
+        # A missing marker is no actual; it is never parsed as a number.
+        actual_found, actual, _target_found, _target = _config_source(
+            team_config, key, normalise_actual_cells(team_config, raw),
+        )
+        return actual_found, (None if actual is None else float(actual))
 
     def _workbook_rows(self, record) -> list[dict]:
         existing = list(getattr(record, "kpi_values", None) or [])
@@ -1665,6 +1736,20 @@ class DatabaseSeeder:
             if isinstance(exc, OutboundMonthlyActualMissing):
                 raise UploadProcessingError(str(exc), {"failed_teams": failed_teams}) from exc
             raise
+        not_evaluated_report = self._not_evaluated_report(scored_rows)
+        for item in not_evaluated_report["rows"]:
+            upload_warnings.append({
+                "code": "not_evaluated",
+                "team": item["team"],
+                "employee_id": item["employee_id"],
+                "month": item["month"],
+                "year": item["year"],
+                "reason": item["reason"],
+                "message": (
+                    f"{item['reason']} for {item['month']} {item['year']} (employee {item['employee_id']}): "
+                    "saved as the workbook has it and not scored by the approved basis."
+                ),
+            })
 
         if dry_run:
             return {
@@ -1679,6 +1764,7 @@ class DatabaseSeeder:
                 "warnings": upload_warnings,
                 "column_warnings": column_warnings,
                 "scored_rows": scored_rows,
+                "not_evaluated": not_evaluated_report,
             }
 
         # Vercel Production Safety: Do not write to JSON repositories. DB is the sole runtime persistence.
@@ -1743,4 +1829,5 @@ class DatabaseSeeder:
             "warnings": upload_warnings,
             "column_warnings": column_warnings,
             "scored_rows": scored_rows,
+            "not_evaluated": not_evaluated_report,
         }

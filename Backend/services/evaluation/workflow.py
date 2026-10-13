@@ -42,6 +42,14 @@ from services.evaluation.resolver import (
     snapshot_lines,
 )
 from services.evaluation.scoring import SUPPORTED_DIRECTIONS, decimal_places
+from services.evaluation.not_evaluated import (
+    actuals_by_key,
+    missing_weighted_keys,
+    normalise_actual_cells,
+    not_evaluated_reason,
+    reason_text,
+    weighted_keys,
+)
 from services.outbound_period_basis import (
     PRODUCTIVITY_KEY,
     SOURCE_TARGETS,
@@ -342,6 +350,29 @@ def _known_actor(user) -> dict:
     }
 
 
+def _row_raw(record) -> dict | None:
+    """The workbook row kept with a stored or uploaded record (``raw_data``), or None."""
+    raw = _payload_dict(record).get("raw_data")
+    if isinstance(raw, dict):
+        return raw
+    own = getattr(record, "raw_data", None)
+    return own if isinstance(own, dict) else None
+
+
+def _not_evaluated_item(record, label: str, lines, rows) -> dict:
+    """One not-evaluated row for the impact proof and the approval report."""
+    employee = getattr(record, "employee", None)
+    actuals = actuals_by_key(rows)
+    return {
+        "record_id": str(record.id),
+        "employee_id": str(record.employee_id),
+        "employee_code": getattr(employee, "employee_id", None) if employee is not None else None,
+        "month": record.month,
+        "year": int(record.year),
+        "reason": reason_text(label, missing_weighted_keys(lines, actuals), weighted_keys(lines)),
+    }
+
+
 def _payload_dict(record: PerformanceRecord) -> dict:
     payload = record.record_payload
     return dict(payload) if isinstance(payload, dict) else {}
@@ -516,6 +547,8 @@ def record_source_rows(version: TeamConfigurationVersion, record: PerformanceRec
     missing = []
     rows = []
     conflicts = []
+    # Missing markers and NaN in actual cells become None before any number is parsed.
+    lookup_raw = normalise_actual_cells(config, raw)
     for line in snapshot_lines(version):
         key = str(line.get("kpi_key"))
         weight = _decimal(line.get("weight")) or Decimal("0")
@@ -539,7 +572,7 @@ def record_source_rows(version: TeamConfigurationVersion, record: PerformanceRec
                     record, raw, apply_reference_targets=not operational,
                 )
             else:
-                actual_found, raw_actual, target_found, raw_target = _config_source(config, key, raw)
+                actual_found, raw_actual, target_found, raw_target = _config_source(config, key, lookup_raw)
             workbook_present = key == PRODUCTIVITY_KEY and _has_raw_workbook(raw)
             if actual_found or target_found:
                 origin = "workbook_raw"
@@ -1683,11 +1716,17 @@ class EvaluationWorkflow:
         comparisons = []
         conflicts = []
         missing = []
+        not_evaluated = []
+        lines = snapshot_lines(version)
         for record in records:
             record_missing, rows, record_conflicts = self._record_inputs(version, record)
-            missing.extend(record_missing)
             conflicts.extend(record_conflicts)
             if record_missing:
+                label = not_evaluated_reason(lines, actuals_by_key(rows), _row_raw(record))
+                if label is None:
+                    missing.extend(record_missing)
+                else:
+                    not_evaluated.append(_not_evaluated_item(record, label, lines, rows))
                 continue
             scored = score_basis(version, rows, check_conflicts=False)
             if scored.get("score") is None or not scored.get("grade"):
@@ -1745,6 +1784,8 @@ class EvaluationWorkflow:
             "config_validated": True,
             "comparisons": comparisons,
             "conflicts": conflicts,
+            # Listed so the proof still describes the full scope; never scored or written.
+            "not_evaluated": not_evaluated,
         }
         self._store_proof(version, proof)
         self.db.commit()
@@ -1763,6 +1804,8 @@ class EvaluationWorkflow:
             "unchanged_count": len(comparisons) - len(changed),
             "conflicts": conflicts,
             "missing_evidence": [],
+            "not_evaluated": not_evaluated,
+            "not_evaluated_count": len(not_evaluated),
             "comparisons": comparisons,
             "rules_checksum": stored.get("rules_checksum") or version.config_checksum,
             "source_fingerprint": fingerprint,
@@ -1797,8 +1840,11 @@ class EvaluationWorkflow:
                     code="insufficient_data",
                 )
             prior = _full_snapshot(records)
+            not_evaluated_ids = []
             for record in records:
-                self._apply_scores(version, record)
+                outcome = self._apply_scores(version, record)
+                if outcome.get("not_evaluated"):
+                    not_evaluated_ids.append(str(record.id))
             self.db.flush()
             for record in records:
                 for value in list(record.kpi_values):
@@ -1806,6 +1852,8 @@ class EvaluationWorkflow:
                 self.db.expire(record)
             records = self._exact_records(scope_row, int(year), number, lock=True)
             applied = _full_snapshot(records)
+            applied["not_evaluated"] = not_evaluated_ids
+            prior["not_evaluated"] = not_evaluated_ids
             applied_rows = [
                 {"id": item["id"], "score": float(item["score"]), "grade": item["grade"]}
                 for item in applied["records"]
@@ -1953,7 +2001,9 @@ class EvaluationWorkflow:
             if key == PRODUCTIVITY_KEY:
                 actual_found, raw_actual, target_found, raw_target = _productivity_from_raw(record, raw)
             else:
-                actual_found, raw_actual, target_found, raw_target = _config_source(config, key, raw)
+                actual_found, raw_actual, target_found, raw_target = _config_source(
+                    config, key, normalise_actual_cells(config, raw),
+                )
             if actual_found or target_found:
                 origin = "workbook_raw"
                 actual = raw_actual
@@ -2012,6 +2062,9 @@ class EvaluationWorkflow:
         if not fresh:
             return
         rows = self._upload_rows(record, team, fresh)
+        if not_evaluated_reason(snapshot_lines(version), actuals_by_key(rows), _row_raw(record)) is not None:
+            # Not evaluated: no approved pin and no changed fields. The legacy save stands.
+            return
         scored = score_basis(version, rows)
         by_key = {item["kpi_key"]: item for item in scored["rows"]}
         payload = dict(record.record_payload or {})
@@ -2251,6 +2304,9 @@ class EvaluationWorkflow:
     def _apply_scores(self, version: TeamConfigurationVersion, record: PerformanceRecord) -> dict:
         missing, rows, _conflicts = self._record_inputs(version, record)
         if missing:
+            label = not_evaluated_reason(snapshot_lines(version), actuals_by_key(rows), _row_raw(record))
+            if label is not None:
+                return {"not_evaluated": label}
             raise EvaluationError(
                 "A weighted KPI has no stored actual. Apply is blocked.",
                 code="missing_evidence",
@@ -2335,7 +2391,10 @@ class EvaluationWorkflow:
                 code="evidence_changed",
             )
         restored = []
+        skipped = {str(value) for value in (snapshot.get("not_evaluated") or [])}
         for item in items:
+            if str(item["id"]) in skipped:
+                continue  # never scored or written by apply, so rollback leaves it as stored
             record = (
                 self.db.query(PerformanceRecord)
                 .filter(PerformanceRecord.id == uuid.UUID(str(item["id"])), PerformanceRecord.year == int(item["year"]))
