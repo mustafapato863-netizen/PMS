@@ -138,111 +138,114 @@ export default function ScoreTrendChart({ points, comparisonLabel, title }: {
       <div ref={boxRef} className="w-full" style={{ height: CHART_HEIGHT }}>
       {measuredIndexes.length ? (
         <div className="relative w-full" style={{ height: CHART_HEIGHT }}>
-          <svg
-            role="group"
-            aria-label={description}
-            width={width}
-            height={CHART_HEIGHT}
-            viewBox={'0 0 ' + width + ' ' + CHART_HEIGHT}
-            className="block overflow-visible"
-            data-testid="executive-trend-chart"
-          >
-            <defs><linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={lineColor} stopOpacity={0.2} /><stop offset="100%" stopColor={lineColor} stopOpacity={0.015} /></linearGradient></defs>
-            {ticks.map((tick) => <line key={'grid-' + tick} x1={plot.left} x2={plot.right} y1={y(tick)} y2={y(tick)} stroke="var(--exec-card-border)" strokeOpacity={0.7} />)}
-            {ticks.map((tick) => (
-              <text key={tick} x={plot.left - 8} y={y(tick)} dominantBaseline="middle" textAnchor="end" fontSize={12} fill="var(--text-muted)" data-testid="executive-trend-tick">
-                {tick + '%'}
+          {/* The svg is drawn at a fixed pixel width; below 768px it scrolls inside this box instead of widening the page. */}
+          <div className="max-md:w-full max-md:min-w-0 max-md:overflow-x-auto custom-scrollbar">
+            <svg
+              role="group"
+              aria-label={description}
+              width={width}
+              height={CHART_HEIGHT}
+              viewBox={'0 0 ' + width + ' ' + CHART_HEIGHT}
+              className="block overflow-visible"
+              data-testid="executive-trend-chart"
+            >
+              <defs><linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={lineColor} stopOpacity={0.2} /><stop offset="100%" stopColor={lineColor} stopOpacity={0.015} /></linearGradient></defs>
+              {ticks.map((tick) => <line key={'grid-' + tick} x1={plot.left} x2={plot.right} y1={y(tick)} y2={y(tick)} stroke="var(--exec-card-border)" strokeOpacity={0.7} />)}
+              {ticks.map((tick) => (
+                <text key={tick} x={plot.left - 8} y={y(tick)} dominantBaseline="middle" textAnchor="end" fontSize={12} fill="var(--text-muted)" data-testid="executive-trend-tick">
+                  {tick + '%'}
+                </text>
+              ))}
+              <path d={'M' + plot.left + ' ' + plot.bottom + ' H' + plot.right} stroke="var(--exec-card-border)" strokeWidth={1} data-testid="executive-trend-baseline" />
+              <path d={'M' + plot.left + ' ' + y(target) + ' H' + plot.right} stroke="var(--text-muted)" strokeOpacity={0.75} strokeWidth={1.25} strokeDasharray="4 4" fill="none" data-testid="executive-trend-target" />
+              <text x={plot.right} y={y(target) - 6} textAnchor="end" fontSize={12} fontWeight={600} fill="var(--text-muted)" data-testid="executive-trend-target-label">
+                {'Target ' + target.toFixed(0) + '%'}
               </text>
-            ))}
-            <path d={'M' + plot.left + ' ' + plot.bottom + ' H' + plot.right} stroke="var(--exec-card-border)" strokeWidth={1} data-testid="executive-trend-baseline" />
-            <path d={'M' + plot.left + ' ' + y(target) + ' H' + plot.right} stroke="var(--text-muted)" strokeOpacity={0.75} strokeWidth={1.25} strokeDasharray="4 4" fill="none" data-testid="executive-trend-target" />
-            <text x={plot.right} y={y(target) - 6} textAnchor="end" fontSize={12} fontWeight={600} fill="var(--text-muted)" data-testid="executive-trend-target-label">
-              {'Target ' + target.toFixed(0) + '%'}
-            </text>
-            {actualSegments.map((segment, index) => segment.length > 1 && (
-              <path key={'area-' + index} d={smoothPath(segment, x, y) + ' L' + x(segment[segment.length - 1].index).toFixed(1) + ' ' + plot.bottom + ' L' + x(segment[0].index).toFixed(1) + ' ' + plot.bottom + ' Z'} fill={`url(#${gradientId})`} pointerEvents="none" data-testid="executive-trend-area" />
-            ))}
-            {activeX !== null && (
-              <line data-testid="executive-trend-crosshair" x1={activeX} x2={activeX} y1={plot.top} y2={plot.bottom} stroke="var(--exec-card-border)" strokeWidth={1} pointerEvents="none" />
-            )}
-            {actualSegments.map((segment, index) => segment.length > 1 && (
-              <path key={'actual-' + index} d={smoothPath(segment, x, y)} stroke={lineColor} strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" fill="none" data-series="actual" data-testid="executive-trend-series" />
-            ))}
-            {comparisonSegments.map((segment, index) => segment.length > 1 && (
-              <path key={'comparison-' + index} d={straightPath(segment, x, y)} stroke="var(--exec-comparison-line)" strokeWidth={1.75} strokeDasharray="2 3" strokeLinecap="round" fill="none" data-series="comparison" data-testid="executive-trend-series" />
-            ))}
-            {points.map((point, index) => point.comparison_score !== null && Number.isFinite(point.comparison_score) && (
-              <circle key={point.period.key + '-comparison'} cx={x(index)} cy={y(point.comparison_score)} r={2.5} fill="var(--exec-comparison-line)" />
-            ))}
-            {points.map((point, index) => point.score !== null && Number.isFinite(point.score) && (
-              <g
-                key={point.period.key}
-                ref={(node) => { pointRefs.current[index] = node; }}
-                role="img"
-                tabIndex={index === tabStop ? 0 : -1}
-                aria-label={shortMonth(point.period) + ': score ' + fmtScore(point.score) + ', target ' + fmtScore(point.target)
-                  + (point.comparison_score !== null ? ', ' + (comparisonLabel || 'comparison') + ' ' + fmtScore(point.comparison_score) : '')
-                  + (point.measured_records !== undefined ? ', ' + point.measured_records + ' measured records' : '')}
-                data-testid={'executive-trend-point-' + point.period.key}
-                className="group outline-none"
-                onFocus={() => {
-                  setDismissed(false);
-                  setFocusedIndex(index);
-                  setRovingIndex(index);
-                }}
-                onBlur={() => setFocusedIndex((current) => current === index ? null : current)}
-                onKeyDown={(event) => {
-                  const keys: Record<string, number | 'first' | 'last'> = {
-                    ArrowRight: 1, ArrowUp: 1, ArrowLeft: -1, ArrowDown: -1, Home: 'first', End: 'last',
-                  };
-                  if (event.key === 'Escape') {
-                    setHoveredIndex(null);
-                    setDismissed(true);
-                  } else if (event.key in keys) {
-                    event.preventDefault();
-                    moveFocus(index, keys[event.key]);
-                  }
-                }}
-              >
-                <circle
-                  cx={x(index)}
-                  cy={y(point.score)}
-                  r={8}
-                  fill="none"
-                  stroke="var(--insights-heading)"
-                  strokeOpacity={0.55}
-                  strokeWidth={1.5}
-                  className="opacity-0 transition-opacity group-focus-visible:opacity-100"
-                  pointerEvents="none"
-                  data-testid="executive-trend-focus-ring"
-                />
-                <circle
-                  cx={x(index)}
-                  cy={y(point.score)}
-                  r={activeIndex === index ? 5.5 : 4}
-                  fill={lineColor}
-                  stroke="var(--bg-surface)"
-                  strokeWidth={2.5}
-                />
-              </g>
-            ))}
-            {points.map((point, index) => (
-              <text key={point.period.key + '-label'} x={x(index)} y={CHART_HEIGHT - 7} textAnchor="middle" fontSize={12} fill="var(--text-muted)">
-                {shortMonth(point.period)}
-              </text>
-            ))}
-            <rect
-              data-testid="executive-trend-hover-area"
-              x={plot.left}
-              y={0}
-              width={Math.max(0, plot.right - plot.left)}
-              height={plot.bottom}
-              fill="transparent"
-              onPointerMove={onPointerMove}
-              onPointerDown={onPointerMove}
-              onPointerLeave={() => setHoveredIndex(null)}
-            />
-          </svg>
+              {actualSegments.map((segment, index) => segment.length > 1 && (
+                <path key={'area-' + index} d={smoothPath(segment, x, y) + ' L' + x(segment[segment.length - 1].index).toFixed(1) + ' ' + plot.bottom + ' L' + x(segment[0].index).toFixed(1) + ' ' + plot.bottom + ' Z'} fill={`url(#${gradientId})`} pointerEvents="none" data-testid="executive-trend-area" />
+              ))}
+              {activeX !== null && (
+                <line data-testid="executive-trend-crosshair" x1={activeX} x2={activeX} y1={plot.top} y2={plot.bottom} stroke="var(--exec-card-border)" strokeWidth={1} pointerEvents="none" />
+              )}
+              {actualSegments.map((segment, index) => segment.length > 1 && (
+                <path key={'actual-' + index} d={smoothPath(segment, x, y)} stroke={lineColor} strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" fill="none" data-series="actual" data-testid="executive-trend-series" />
+              ))}
+              {comparisonSegments.map((segment, index) => segment.length > 1 && (
+                <path key={'comparison-' + index} d={straightPath(segment, x, y)} stroke="var(--exec-comparison-line)" strokeWidth={1.75} strokeDasharray="2 3" strokeLinecap="round" fill="none" data-series="comparison" data-testid="executive-trend-series" />
+              ))}
+              {points.map((point, index) => point.comparison_score !== null && Number.isFinite(point.comparison_score) && (
+                <circle key={point.period.key + '-comparison'} cx={x(index)} cy={y(point.comparison_score)} r={2.5} fill="var(--exec-comparison-line)" />
+              ))}
+              {points.map((point, index) => point.score !== null && Number.isFinite(point.score) && (
+                <g
+                  key={point.period.key}
+                  ref={(node) => { pointRefs.current[index] = node; }}
+                  role="img"
+                  tabIndex={index === tabStop ? 0 : -1}
+                  aria-label={shortMonth(point.period) + ': score ' + fmtScore(point.score) + ', target ' + fmtScore(point.target)
+                    + (point.comparison_score !== null ? ', ' + (comparisonLabel || 'comparison') + ' ' + fmtScore(point.comparison_score) : '')
+                    + (point.measured_records !== undefined ? ', ' + point.measured_records + ' measured records' : '')}
+                  data-testid={'executive-trend-point-' + point.period.key}
+                  className="group outline-none"
+                  onFocus={() => {
+                    setDismissed(false);
+                    setFocusedIndex(index);
+                    setRovingIndex(index);
+                  }}
+                  onBlur={() => setFocusedIndex((current) => current === index ? null : current)}
+                  onKeyDown={(event) => {
+                    const keys: Record<string, number | 'first' | 'last'> = {
+                      ArrowRight: 1, ArrowUp: 1, ArrowLeft: -1, ArrowDown: -1, Home: 'first', End: 'last',
+                    };
+                    if (event.key === 'Escape') {
+                      setHoveredIndex(null);
+                      setDismissed(true);
+                    } else if (event.key in keys) {
+                      event.preventDefault();
+                      moveFocus(index, keys[event.key]);
+                    }
+                  }}
+                >
+                  <circle
+                    cx={x(index)}
+                    cy={y(point.score)}
+                    r={8}
+                    fill="none"
+                    stroke="var(--insights-heading)"
+                    strokeOpacity={0.55}
+                    strokeWidth={1.5}
+                    className="opacity-0 transition-opacity group-focus-visible:opacity-100"
+                    pointerEvents="none"
+                    data-testid="executive-trend-focus-ring"
+                  />
+                  <circle
+                    cx={x(index)}
+                    cy={y(point.score)}
+                    r={activeIndex === index ? 5.5 : 4}
+                    fill={lineColor}
+                    stroke="var(--bg-surface)"
+                    strokeWidth={2.5}
+                  />
+                </g>
+              ))}
+              {points.map((point, index) => (
+                <text key={point.period.key + '-label'} x={x(index)} y={CHART_HEIGHT - 7} textAnchor="middle" fontSize={12} fill="var(--text-muted)">
+                  {shortMonth(point.period)}
+                </text>
+              ))}
+              <rect
+                data-testid="executive-trend-hover-area"
+                x={plot.left}
+                y={0}
+                width={Math.max(0, plot.right - plot.left)}
+                height={plot.bottom}
+                fill="transparent"
+                onPointerMove={onPointerMove}
+                onPointerDown={onPointerMove}
+                onPointerLeave={() => setHoveredIndex(null)}
+              />
+            </svg>
+          </div>
 
           {activePoint && activeScore !== null && activeIndex !== null && activeY !== null && (
             <div

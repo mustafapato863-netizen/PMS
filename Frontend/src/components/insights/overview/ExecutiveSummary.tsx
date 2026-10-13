@@ -218,96 +218,99 @@ function PerformanceTrendChart({ series }: { series: TrendSeries }) {
 
   return (
     <div ref={boxRef} className="relative w-full" style={{ height: CHART_HEIGHT }}>
-      <svg
-        role="group"
-        aria-label={`${series.source === 'overall' ? 'Overall score' : `Leading KPI${series.kpiLabel ? ` ${series.kpiLabel}` : ''}`} trend, last six months: ${points.map((point) => `${point.label} ${point.actual === null ? 'no data' : `${point.actual.toFixed(1)}%`}`).join(', ')}. Use arrow keys to move between months.`}
-        width={width}
-        height={CHART_HEIGHT}
-        viewBox={`0 0 ${width} ${CHART_HEIGHT}`}
-        className="block overflow-visible"
-        data-testid="performance-trend-chart"
-        data-source={series.source}
-      >
-        {ticks.map((tick) => (
-          <text key={tick} x={plot.left - 8} y={y(tick)} dominantBaseline="middle" textAnchor="end" fontSize={12} fill="var(--text-muted)" data-testid="performance-trend-tick">{`${tick}%`}</text>
-        ))}
-        <path d={`M${plot.left} ${plot.bottom}H${plot.right}`} stroke="var(--insights-card-border)" strokeWidth={1} data-testid="performance-trend-baseline" />
-        {targetPath && (
-          <>
-            <path data-testid="performance-trend-target" d={targetPath} stroke="var(--insights-target)" strokeOpacity={0.75} strokeWidth={1.25} strokeDasharray="4 4" fill="none" />
-            <text x={plot.right} y={y(lastTarget as number) - 6} textAnchor="end" fontSize={12} fontWeight={600} fill="var(--text-muted)" data-testid="performance-trend-target-label">{`Target ${(lastTarget as number).toFixed(0)}%`}</text>
-          </>
-        )}
-        {activeX !== null && (
-          <line data-testid="performance-trend-crosshair" x1={activeX} x2={activeX} y1={plot.top} y2={plot.bottom} stroke="var(--insights-card-border)" strokeWidth={1} pointerEvents="none" />
-        )}
-        {segments.map((segmentPoints) => segmentPoints.length > 1 && (
-          <path key={segmentPoints[0].index} d={curve(segmentPoints)} stroke="var(--insights-accent)" strokeWidth={2.25} strokeLinecap="round" strokeLinejoin="round" fill="none" />
-        ))}
-        {points.map((point, index) => point.actual !== null && (
-          <g
-            key={point.key}
-            ref={(node) => { pointRefs.current[index] = node; }}
-            role="img"
-            tabIndex={index === tabStop ? 0 : -1}
-            aria-label={describe(point, index)}
-            data-testid={`performance-trend-point-${point.key}`}
-            className="group outline-none"
-            onFocus={() => {
-              setDismissed(false);
-              setFocusedIndex(index);
-              setRovingIndex(index);
-            }}
-            onBlur={() => setFocusedIndex((current) => (current === index ? null : current))}
-            onKeyDown={(event) => {
-              const keys: Record<string, number | 'first' | 'last'> = { ArrowRight: 1, ArrowUp: 1, ArrowLeft: -1, ArrowDown: -1, Home: 'first', End: 'last' };
-              if (event.key === 'Escape') {
-                setHoveredIndex(null);
-                setDismissed(true);
-              } else if (event.key in keys) {
-                event.preventDefault();
-                moveFocus(index, keys[event.key]);
-              }
-            }}
-          >
-            {/* Subtle ring on the keyboard-focused point only (:focus-visible). */}
-            <circle
-              data-testid="performance-trend-focus-ring"
-              cx={x(index)}
-              cy={y(point.actual)}
-              r={8}
-              fill="none"
-              stroke="var(--insights-heading)"
-              strokeOpacity={0.55}
-              strokeWidth={1.5}
-              className="opacity-0 transition-opacity group-focus-visible:opacity-100"
-              pointerEvents="none"
-            />
-            <circle
-              cx={x(index)}
-              cy={y(point.actual)}
-              r={activeIndex === index ? 4.5 : 3}
-              fill="var(--insights-accent)"
-              stroke="var(--bg-surface)"
-              strokeWidth={activeIndex === index ? 2 : 1.5}
-            />
-          </g>
-        ))}
-        {points.map((point, index) => (
-          <text key={`${point.key}-label`} x={x(index)} y={CHART_HEIGHT - 8} textAnchor="middle" fontSize={12} fill="var(--text-muted)">{point.label}</text>
-        ))}
-        {/* Hover anywhere over the plot shows the nearest month, like the app's Recharts tooltips. */}
-        <rect
-          data-testid="performance-trend-hover-area"
-          x={plot.left}
-          y={0}
-          width={Math.max(0, plot.right - plot.left)}
-          height={plot.bottom}
-          fill="transparent"
-          onMouseMove={onPointerMove}
-          onMouseLeave={() => setHoveredIndex(null)}
-        />
-      </svg>
+        {/* The svg is drawn at a fixed pixel width; below 768px it scrolls inside this box instead of widening the page. */}
+        <div className="max-md:w-full max-md:min-w-0 max-md:overflow-x-auto custom-scrollbar">
+        <svg
+          role="group"
+          aria-label={`${series.source === 'overall' ? 'Overall score' : `Leading KPI${series.kpiLabel ? ` ${series.kpiLabel}` : ''}`} trend, last six months: ${points.map((point) => `${point.label} ${point.actual === null ? 'no data' : `${point.actual.toFixed(1)}%`}`).join(', ')}. Use arrow keys to move between months.`}
+          width={width}
+          height={CHART_HEIGHT}
+          viewBox={`0 0 ${width} ${CHART_HEIGHT}`}
+          className="block overflow-visible"
+          data-testid="performance-trend-chart"
+          data-source={series.source}
+        >
+          {ticks.map((tick) => (
+            <text key={tick} x={plot.left - 8} y={y(tick)} dominantBaseline="middle" textAnchor="end" fontSize={12} fill="var(--text-muted)" data-testid="performance-trend-tick">{`${tick}%`}</text>
+          ))}
+          <path d={`M${plot.left} ${plot.bottom}H${plot.right}`} stroke="var(--insights-card-border)" strokeWidth={1} data-testid="performance-trend-baseline" />
+          {targetPath && (
+            <>
+              <path data-testid="performance-trend-target" d={targetPath} stroke="var(--insights-target)" strokeOpacity={0.75} strokeWidth={1.25} strokeDasharray="4 4" fill="none" />
+              <text x={plot.right} y={y(lastTarget as number) - 6} textAnchor="end" fontSize={12} fontWeight={600} fill="var(--text-muted)" data-testid="performance-trend-target-label">{`Target ${(lastTarget as number).toFixed(0)}%`}</text>
+            </>
+          )}
+          {activeX !== null && (
+            <line data-testid="performance-trend-crosshair" x1={activeX} x2={activeX} y1={plot.top} y2={plot.bottom} stroke="var(--insights-card-border)" strokeWidth={1} pointerEvents="none" />
+          )}
+          {segments.map((segmentPoints) => segmentPoints.length > 1 && (
+            <path key={segmentPoints[0].index} d={curve(segmentPoints)} stroke="var(--insights-accent)" strokeWidth={2.25} strokeLinecap="round" strokeLinejoin="round" fill="none" />
+          ))}
+          {points.map((point, index) => point.actual !== null && (
+            <g
+              key={point.key}
+              ref={(node) => { pointRefs.current[index] = node; }}
+              role="img"
+              tabIndex={index === tabStop ? 0 : -1}
+              aria-label={describe(point, index)}
+              data-testid={`performance-trend-point-${point.key}`}
+              className="group outline-none"
+              onFocus={() => {
+                setDismissed(false);
+                setFocusedIndex(index);
+                setRovingIndex(index);
+              }}
+              onBlur={() => setFocusedIndex((current) => (current === index ? null : current))}
+              onKeyDown={(event) => {
+                const keys: Record<string, number | 'first' | 'last'> = { ArrowRight: 1, ArrowUp: 1, ArrowLeft: -1, ArrowDown: -1, Home: 'first', End: 'last' };
+                if (event.key === 'Escape') {
+                  setHoveredIndex(null);
+                  setDismissed(true);
+                } else if (event.key in keys) {
+                  event.preventDefault();
+                  moveFocus(index, keys[event.key]);
+                }
+              }}
+            >
+              {/* Subtle ring on the keyboard-focused point only (:focus-visible). */}
+              <circle
+                data-testid="performance-trend-focus-ring"
+                cx={x(index)}
+                cy={y(point.actual)}
+                r={8}
+                fill="none"
+                stroke="var(--insights-heading)"
+                strokeOpacity={0.55}
+                strokeWidth={1.5}
+                className="opacity-0 transition-opacity group-focus-visible:opacity-100"
+                pointerEvents="none"
+              />
+              <circle
+                cx={x(index)}
+                cy={y(point.actual)}
+                r={activeIndex === index ? 4.5 : 3}
+                fill="var(--insights-accent)"
+                stroke="var(--bg-surface)"
+                strokeWidth={activeIndex === index ? 2 : 1.5}
+              />
+            </g>
+          ))}
+          {points.map((point, index) => (
+            <text key={`${point.key}-label`} x={x(index)} y={CHART_HEIGHT - 8} textAnchor="middle" fontSize={12} fill="var(--text-muted)">{point.label}</text>
+          ))}
+          {/* Hover anywhere over the plot shows the nearest month, like the app's Recharts tooltips. */}
+          <rect
+            data-testid="performance-trend-hover-area"
+            x={plot.left}
+            y={0}
+            width={Math.max(0, plot.right - plot.left)}
+            height={plot.bottom}
+            fill="transparent"
+            onMouseMove={onPointerMove}
+            onMouseLeave={() => setHoveredIndex(null)}
+          />
+        </svg>
+        </div>
       {activePoint && activeValue !== null && activeIndex !== null && activeY !== null && (
         <div
           ref={tooltipRef}
