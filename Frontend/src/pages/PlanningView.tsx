@@ -317,8 +317,8 @@ export default function PlanningView() {
         </div>
       </ResponsiveFilters>
 
-      <div className="grid min-h-[612px] gap-4 lg:grid-cols-[390px_minmax(0,1fr)]">
-        <aside className={`${mobileDetail ? 'hidden lg:flex' : 'flex'} min-h-0 flex-col rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] shadow-sm`}>
+      <div className="grid min-h-[612px] gap-4 grid-cols-[minmax(0,1fr)] lg:grid-cols-[390px_minmax(0,1fr)]">
+        <aside className={`${mobileDetail ? 'hidden lg:flex' : 'flex'} min-h-0 min-w-0 flex-col rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] shadow-sm`}>
           <div className="border-b border-[var(--border-light)] p-3"><p className="px-1 text-xs font-semibold text-[var(--text-muted)]">{plans.data?.length || 0} plan{plans.data?.length === 1 ? '' : 's'} in this view</p></div>
           <div className="custom-scrollbar max-h-[calc(100vh-285px)] flex-1 space-y-3 overflow-y-auto p-3">{plans.data?.map((plan) => <PlanCardView key={plan.id} plan={plan} active={effectiveSelected === plan.id} onClick={() => { setSelected(plan.id); setTab('Overview'); setMobileDetail(true); }} />)}{!plans.data?.length && <EmptyState icon={ClipboardCheck} title="No plans in this view" copy="Change the filters or create a new performance plan." />}</div>
         </aside>
