@@ -18,6 +18,10 @@ from utils.helpers import convert_percentage
 logger = logging.getLogger(__name__)
 
 
+# Numerator and denominator of the initial rejection rate, matched case-insensitively.
+READ_COLUMNS = ("RejectedClaimsAmount3MonthPrevious", "RAClaimsAmount(3MonthPrevious)")
+
+
 def _normalize_grade_value(value) -> str:
     if pd.isna(value):
         return ""

@@ -37,6 +37,15 @@ TARGET_CODE = "offshore_fixed_target_applied"
 MAX_ROW_ERRORS_SHOWN = 25
 
 
+# Raw counts for the June 2026 method, then the precomputed columns the warnings read.
+READ_COLUMNS = (
+    *RAW_COUNT_COLUMNS,
+    "RejectionRate",
+    "InitialError%",
+    "%ofSubmissionWithinDuedate",
+)
+
+
 def _text(value):
     if value is None or (isinstance(value, float) and np.isnan(value)):
         return ""

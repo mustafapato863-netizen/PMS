@@ -24,6 +24,20 @@ BASELINE = 0.80
 EXCLUDED_VALUES = {"-", "leave", "new staff"}
 
 
+# Headers read by name; the first spelling of each pair that the importer accepts.
+READ_COLUMNS = (
+    "AssignedRequest",
+    "AssignedRequests",
+    "ApprovedRequests",
+    "ApprovedRequest",
+    "SubmittedWithinMonth(Untill3rdofnextmonth)",
+    "T.AcceptanceRate",
+    "T.AcceptanceRate%",
+    "T.SubmissionWithinMonth%",
+    "T.%ofSubmissionWithinDuedate",
+)
+
+
 def _numbers(frame: pd.DataFrame, column: str | None) -> pd.Series:
     if not column or column not in frame.columns:
         return pd.Series(float("nan"), index=frame.index, dtype="float64")

@@ -24,6 +24,24 @@ SHEET_NAME = "Pre-Approvals OP Final SHJAJM"
 EXCLUDED_VALUES = {"-", "leave", "new staff"}
 
 
+# Headers read by name; the first spelling of each pair that the importer accepts.
+READ_COLUMNS = (
+    "SubmittedRequests",
+    "SubmittedRequest",
+    "ManualRequest",
+    "ManualRequests",
+    "SubmittedWithinHour",
+    "SubmittedWithinHours",
+    "SubmittedWithinHourCount",
+    "RejectedRequests",
+    "RejectedRequest",
+    "T.InitialRejection",
+    "T.InitialRejection%",
+    "T.SubmissionWithinHour%",
+    "T.SubmissionWithinTAT%",
+)
+
+
 def _numbers(frame: pd.DataFrame, column: str | None) -> pd.Series:
     if not column or column not in frame.columns:
         return pd.Series(float("nan"), index=frame.index, dtype="float64")

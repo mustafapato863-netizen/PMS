@@ -4,6 +4,11 @@ from cleaned import clean_sheet_data
 from utils import add_computed_columns
 
 
+# The trend sums read the anchor column and the three columns after it, by position.
+READ_ANCHORS = (("Dubai_Booking", 4), ("Dubai_Attend", 4))
+READ_COLUMNS = ("UTZ%Ach%",)
+
+
 def process_inbound(file_path):
     # --- 1. Load and Clean Data ---
     sheet_name = "Inbound"

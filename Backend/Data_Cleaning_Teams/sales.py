@@ -4,6 +4,28 @@ from cleaned import clean_sheet_data
 from utils import add_computed_columns
 
 
+# Sheet headers read by name, matched after whitespace and case are removed. The
+# A./T. census and revenue pairs are the configured sales.json names. The Ach%
+# columns are read only when a pair is missing (parse_percentage_col).
+READ_COLUMNS = (
+    "A.OPCensus",
+    "T.OPCensus",
+    "A.OPRevenue",
+    "T.OPRevenue",
+    "A.IPCensus",
+    "T.IPCensus",
+    "A.IPRevenue",
+    "T.IPRevenue",
+    "OPCensusAch%",
+    "OPRevenueAch%",
+    "IPCensusAch%",
+    "IPRevenueAch%",
+)
+# Activity columns are summed by keyword. The Ach% spellings are excluded.
+READ_PATTERNS = ("clinicactivity", "corporateactivity", "cbdtour", "visits")
+READ_PATTERN_EXCLUDE = ("ach%",)
+
+
 def process_sales(file_path):
     # --- 1. Load and Clean Data ---
     sheet_name = "Sales"

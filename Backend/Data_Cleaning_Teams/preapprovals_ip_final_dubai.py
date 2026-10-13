@@ -18,6 +18,19 @@ IP_DISCHARGE = "IP Discharge"
 BASELINE = 0.8
 
 
+# Headers read by name. The A. targets are the configured baselines for this sheet.
+READ_COLUMNS = (
+    "AssignedRequest",
+    "ApprovedRequests",
+    "SubmittedWithinMonth(Untill3rdofnextmonth)",
+    "DischargeRequests",
+    "DischargeWithinHour",
+    "A.AcceptanceRate",
+    "A.SubmissionWithinMonth%",
+    "A.Discharge%Within1Hour",
+)
+
+
 def _numbers(frame: pd.DataFrame, column: str) -> pd.Series:
     if column not in frame.columns:
         return pd.Series(float("nan"), index=frame.index, dtype="float64")
