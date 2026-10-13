@@ -40,7 +40,7 @@ const StatCard = ({ title, value, subtitle, comparison, isPositive, status, icon
           </div>
         </div>
         {status && (
-          <div className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider ${
+          <div className={`px-2 py-1 rounded-md text-xs font-bold uppercase tracking-wider ${
             status === 'good' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 
             status === 'bad' ? 'bg-red-50 text-red-600 border border-red-100' : 
             'bg-slate-50 text-slate-500 border border-slate-200'
@@ -50,7 +50,7 @@ const StatCard = ({ title, value, subtitle, comparison, isPositive, status, icon
         )}
       </div>
       <div className="relative z-10">
-        <p className="text-[11px] font-bold text-slate-400 uppercase tracking-[0.1em] mb-1.5">{title}</p>
+        <p className="text-xs font-bold text-slate-400 uppercase tracking-[0.1em] mb-1.5">{title}</p>
         <h3 className="text-3xl font-black text-slate-800 tracking-tight">{value}</h3>
         {subtitle && <p className="text-xs text-slate-500 font-medium mt-1">{subtitle}</p>}
         
@@ -59,10 +59,10 @@ const StatCard = ({ title, value, subtitle, comparison, isPositive, status, icon
             <div className={`flex items-center justify-center p-0.5 rounded-full ${isPositive ? 'bg-emerald-100 text-emerald-600' : 'bg-red-100 text-red-600'}`}>
               {isPositive ? <TrendingUp size={12} strokeWidth={3} /> : <TrendingDown size={12} strokeWidth={3} />}
             </div>
-            <span className={`text-[11px] font-bold ${isPositive ? 'text-emerald-600' : 'text-red-600'}`}>
+            <span className={`text-xs font-bold ${isPositive ? 'text-emerald-600' : 'text-red-600'}`}>
               {comparison}
             </span>
-            <span className="text-[11px] font-medium text-slate-400">vs last month</span>
+            <span className="text-xs font-medium text-slate-400">vs last month</span>
           </div>
         )}
       </div>

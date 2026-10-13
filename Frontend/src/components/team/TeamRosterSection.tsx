@@ -114,7 +114,7 @@ const TeamRosterSection = ({
                 <th
                   key={label}
                   onClick={col ? () => toggleSort(col) : undefined}
-                    className={`px-4 py-3 text-left text-[11px] font-extrabold uppercase tracking-[0.08em] text-[var(--text-faint)] ${
+                    className={`px-4 py-3 text-left text-xs font-extrabold uppercase tracking-[0.08em] text-[var(--text-faint)] ${
                     col ? 'cursor-pointer select-none hover:text-[var(--text-primary)]' : ''
                   }`}
                 >
@@ -215,7 +215,7 @@ const TeamRosterSection = ({
                           >
                             {row.rootCauseAuto || 'Other'}
                           </Link>
-                          <div className="mt-1 text-[10px] font-semibold text-[var(--text-faint)]">Primary issue</div>
+                          <div className="mt-1 text-xs font-semibold text-[var(--text-faint)]">Primary issue</div>
                         </div>
                       )}
                     </td>
@@ -300,7 +300,7 @@ const TeamRosterSection = ({
                   >
                     {row.name}
                   </Link>
-                  <div className="mt-1 truncate text-[10px] font-semibold text-[var(--text-faint)] sm:text-[11px]">
+                  <div className="mt-1 truncate text-xs font-semibold text-[var(--text-faint)]">
                     {row.id}
                   </div>
                 </div>
@@ -311,7 +311,7 @@ const TeamRosterSection = ({
                   }`}>
                     {score.toFixed(1)}%
                   </div>
-                  <div className={`mt-1 whitespace-nowrap text-[10px] font-bold ${
+                  <div className={`mt-1 whitespace-nowrap text-xs font-bold ${
                     delta === null || Math.abs(delta) <= 2
                       ? 'text-[var(--text-faint)]'
                       : delta > 0
@@ -450,7 +450,7 @@ const TeamRosterSection = ({
               </div>
               <div className="min-w-0">
                 <h4 className="truncate text-xs font-extrabold uppercase tracking-[0.14em] text-emerald-700 dark:text-emerald-400 sm:text-sm">Top 3 Performers</h4>
-                <p className="mt-1 text-[11px] font-medium text-[var(--text-secondary)]">Highest performance scores</p>
+                <p className="mt-1 text-xs font-medium text-[var(--text-secondary)]">Highest performance scores</p>
               </div>
             </div>
             {renderCompactRoster(rosterData.top3, 'top')}
@@ -464,7 +464,7 @@ const TeamRosterSection = ({
               </div>
               <div className="min-w-0">
                 <h4 className="truncate text-xs font-extrabold uppercase tracking-[0.14em] text-rose-600 dark:text-rose-400 sm:text-sm">Bottom 3 Performers</h4>
-                <p className="mt-1 text-[11px] font-medium text-[var(--text-secondary)]">Lowest performance scores</p>
+                <p className="mt-1 text-xs font-medium text-[var(--text-secondary)]">Lowest performance scores</p>
               </div>
             </div>
 

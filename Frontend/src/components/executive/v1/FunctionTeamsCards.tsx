@@ -40,7 +40,7 @@ export function TeamLeaderboardCard({ teams, fn, effective, previous }: { teams:
   const rows = [...teams].sort((l, r) => (r.score ?? -1) - (l.score ?? -1));
   const [params] = useSearchParams();
   const roleMode = fn === 'Marketing';
-  const head = 'text-[10px] font-semibold uppercase tracking-[0.6px] text-[var(--text-muted)]';
+  const head = 'text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]';
   const vs = previous ? `vs ${previous.month.slice(0, 3)}` : 'vs last';
   return (
     <ExecCard aria-labelledby="fs-leaderboard-title">
@@ -58,10 +58,10 @@ export function TeamLeaderboardCard({ teams, fn, effective, previous }: { teams:
           </div>
           {rows.map((team, index) => (
             <div role="row" key={team.team} className="flex items-center gap-[10px] border-b border-[var(--insights-row-border)] px-[12px] py-[10px] last:border-b-0" data-testid="leaderboard-row">
-              <span role="cell" className="flex w-[24px]"><span className="flex size-[22px] items-center justify-center rounded-full bg-[var(--exec-chip-bg)] text-[11px] font-bold text-[var(--exec-chip-text)]">{index + 1}</span></span>
+              <span role="cell" className="flex w-[24px]"><span className="flex size-[22px] items-center justify-center rounded-full bg-[var(--exec-chip-bg)] text-xs font-bold text-[var(--exec-chip-text)]">{index + 1}</span></span>
               <span role="cell" className="flex min-w-0 flex-1 flex-col gap-[2px]">
                 <Link to={leaderboardPath(team, params)} className="text-[13px] font-semibold leading-[1.3] text-[var(--insights-heading)] hover:underline">{team.team}</Link>
-                <span className="truncate text-[11px] text-[var(--text-muted)]">{[team.regions.join(' + '), `${team.employees} people`].filter(Boolean).join(' · ')}</span>
+                <span className="truncate text-xs text-[var(--text-muted)]">{[team.regions.join(' + '), `${team.employees} people`].filter(Boolean).join(' · ')}</span>
               </span>
               <span role="cell" className="w-[56px] text-right"><ScoreText score={team.score} className="text-[13px]">{fmtScore(team.score)}</ScoreText></span>
               <span role="cell" className="flex w-[36px] justify-center"><GradeSquare score={team.score} /></span>
@@ -93,7 +93,7 @@ export function TeamsNeedingAttentionCard({ teams, fn }: { teams: ExecutiveTeam[
                 <div className="flex items-start gap-[8px]">
                   <span className="flex min-w-0 flex-1 flex-col">
                     <Link to={leaderboardPath(team, params)} className="text-[13px] font-semibold text-[var(--insights-heading)] hover:underline">{team.team}</Link>
-                    <span className="text-[11px] text-[var(--text-muted)]">{team.regions.join(' + ')}</span>
+                    <span className="text-xs text-[var(--text-muted)]">{team.regions.join(' + ')}</span>
                   </span>
                   <ScoreText score={team.score} className="text-[14px]">{fmtScore(team.score)}</ScoreText>
                   <GradeSquare score={team.score} />
@@ -106,7 +106,7 @@ export function TeamsNeedingAttentionCard({ teams, fn }: { teams: ExecutiveTeam[
                   ))}
                 </div>
                 {detail && (
-                  <p className="text-[11px] text-[var(--text-secondary)]">
+                  <p className="text-xs text-[var(--text-secondary)]">
                     {detail.kpi_label} at {fmtKpiValue(detail.current_value, detail.unit)}
                     {detail.target_value !== null ? ` vs ${fmtKpiValue(detail.target_value, detail.unit)} target` : ''} ({isLowerBetter(detail.kpi_direction) ? '↓' : '↑'} better)
                   </p>

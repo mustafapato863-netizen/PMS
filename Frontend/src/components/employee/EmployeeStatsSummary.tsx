@@ -36,7 +36,7 @@ const StatCard = ({ title, value, subtext, icon: Icon, colorClass, delay }: Stat
     className="bg-[var(--bg-surface-elevated)] p-5 rounded-2xl border border-[var(--border-light)] shadow-sm flex flex-col justify-between min-w-[160px] flex-1 md:flex-none relative overflow-hidden group hover:shadow-md transition-all duration-300"
   >
     <div className="flex justify-between items-start mb-2">
-      <p className="text-[11px] sm:text-[12px] text-[var(--text-muted)] font-extrabold uppercase tracking-wider leading-tight">{title}</p>
+      <p className="text-xs sm:text-[12px] text-[var(--text-muted)] font-extrabold uppercase tracking-wider leading-tight">{title}</p>
       <div className={`p-2 rounded-lg ${colorClass} bg-opacity-10 backdrop-blur-md`}>
         <Icon className={`w-4 h-4 ${colorClass.replace('bg-', 'text-').replace('10', '')}`} />
       </div>
@@ -44,7 +44,7 @@ const StatCard = ({ title, value, subtext, icon: Icon, colorClass, delay }: Stat
     
     <div>
       <h4 className="text-[25px] font-black text-[var(--text-primary)] tracking-tight leading-none mb-1">{value}</h4>
-      {subtext && <span className="text-[11px] text-[var(--text-muted)] font-bold">{subtext}</span>}
+      {subtext && <span className="text-xs text-[var(--text-muted)] font-bold">{subtext}</span>}
     </div>
     
     <div className={`absolute -right-4 -bottom-4 w-16 h-16 rounded-full opacity-0 group-hover:opacity-5 transition-opacity duration-300 blur-xl ${colorClass}`} />
@@ -73,7 +73,7 @@ export const EmployeeStatsSummary: React.FC<EmployeeStatsSummaryProps> = ({
     }
     
     return (
-      <div className={`flex items-center gap-1.5 text-[11px] font-extrabold px-2.5 py-1 rounded-full border ${colorClass}`}>
+      <div className={`flex items-center gap-1.5 text-xs font-extrabold px-2.5 py-1 rounded-full border ${colorClass}`}>
         {icon}
         <span className="uppercase tracking-wider">{text}</span>
       </div>
@@ -90,7 +90,7 @@ export const EmployeeStatsSummary: React.FC<EmployeeStatsSummaryProps> = ({
         <div className="relative z-10 flex justify-between items-center gap-4">
           {/* Left Side */}
           <div className="space-y-3">
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 backdrop-blur-md text-[11px] font-extrabold uppercase tracking-widest border border-white/10 shadow-sm text-yellow-300">
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 backdrop-blur-md text-xs font-extrabold uppercase tracking-widest border border-white/10 shadow-sm text-yellow-300">
               <Zap className="w-3.5 h-3.5 fill-yellow-300 text-yellow-300" />
               {archetype}
             </div>
@@ -106,7 +106,7 @@ export const EmployeeStatsSummary: React.FC<EmployeeStatsSummaryProps> = ({
           
           {/* Right Side */}
           <div className="text-right flex flex-col items-end gap-1">
-            <div className="text-[11px] font-extrabold text-white/50 uppercase tracking-wider">Consistency</div>
+            <div className="text-xs font-extrabold text-white/50 uppercase tracking-wider">Consistency</div>
             <div className="text-[25px] font-black leading-none mb-1.5">{consistencyScore}<span className="text-[13px] text-white/40 font-semibold">/100</span></div>
             {getStabilityBadge()}
           </div>
@@ -168,10 +168,10 @@ export const EmployeeStatsSummary: React.FC<EmployeeStatsSummaryProps> = ({
                   <div className={`w-full h-full rounded-sm ${color} ${count === 0 ? 'opacity-20' : ''}`}
                     style={{ transform: `scaleY(${height / 100})`, transformOrigin: 'bottom', transition: 'transform 0.3s' }} />
                 </div>
-                <div className="absolute -top-6 bg-black text-white text-[10px] px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="absolute -top-6 bg-black text-white text-xs px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity">
                   {count} {count === 1 ? 'Month' : 'Months'}
                 </div>
-                <span className="text-[11px] font-bold text-[var(--text-muted)] mt-1.5">{grade}</span>
+                <span className="text-xs font-bold text-[var(--text-muted)] mt-1.5">{grade}</span>
               </div>
             );
           })}

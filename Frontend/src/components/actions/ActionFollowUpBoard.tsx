@@ -47,7 +47,7 @@ function badgeClass(action: PMSAction): string {
 function SummaryChip({ label, value, tone }: { label: string; value: string | number; tone: string }) {
   return (
     <article className={`rounded-2xl border px-3 py-2 ${tone}`}>
-      <p className="text-[10px] font-black uppercase tracking-wide">{label}</p>
+      <p className="text-xs font-black uppercase tracking-wide">{label}</p>
       <p className="mt-1 text-xl font-black text-[var(--text-primary)]">{value}</p>
     </article>
   );
@@ -55,7 +55,7 @@ function SummaryChip({ label, value, tone }: { label: string; value: string | nu
 
 function DueBadge({ action }: { action: PMSAction }) {
   return (
-    <span className={`inline-flex rounded-full px-2 py-1 text-[10px] font-black ${badgeClass(action)}`}>
+    <span className={`inline-flex rounded-full px-2 py-1 text-xs font-black ${badgeClass(action)}`}>
       {dueBadgeLabel(action.due_date, action.days_to_due)}
     </span>
   );
@@ -84,7 +84,7 @@ function DueDateSetter({ action, onStatusChange }: { action: PMSAction; onStatus
         void onStatusChange(action.id, { status: (action.status || 'Open') as ActionStatus, due_date: dueDate });
       }}
     >
-      <label className="text-[10px] font-bold text-[var(--text-muted)]">
+      <label className="text-xs font-bold text-[var(--text-muted)]">
         Set due date
         <input
           aria-label={`Set due date for ${action.action_text}`}
@@ -95,7 +95,7 @@ function DueDateSetter({ action, onStatusChange }: { action: PMSAction; onStatus
           className="mt-1 block min-h-9 rounded-lg border border-[var(--border-light)] bg-[var(--bg-surface)] px-2 text-xs"
         />
       </label>
-      <button type="submit" className="min-h-9 rounded-lg bg-blue-600 px-2 text-[10px] font-black text-white">Save</button>
+      <button type="submit" className="min-h-9 rounded-lg bg-blue-600 px-2 text-xs font-black text-white">Save</button>
     </form>
   );
 }
@@ -165,7 +165,7 @@ export function ActionFollowUpBoard({
         <>
           <div className="hidden overflow-x-auto rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] md:block">
             <table className="w-full min-w-[920px] text-left">
-              <thead className="text-[10px] font-black uppercase tracking-wide text-[var(--text-muted)]">
+              <thead className="text-xs font-black uppercase tracking-wide text-[var(--text-muted)]">
                 <tr>
                   {['Employee', 'Team', 'Type', 'Action', 'Owner', 'Due date', 'Due', 'Status'].map((heading) => (
                     <th key={heading} className="px-3 py-2">{heading}</th>
@@ -206,9 +206,9 @@ export function ActionFollowUpBoard({
                   <EmployeeCell action={action} />
                   <StatusPill status={action.status || 'Open'} />
                 </div>
-                <p className="text-[11px] font-semibold text-[var(--text-muted)]">{action.team || 'Unassigned'} · {action.action_type}</p>
+                <p className="text-xs font-semibold text-[var(--text-muted)]">{action.team || 'Unassigned'} · {action.action_type}</p>
                 <p className="text-xs font-semibold text-[var(--text-secondary)]">{action.action_text}</p>
-                <p className="text-[11px] font-semibold text-[var(--text-muted)]">Owner {action.owner?.name || 'Unassigned'}</p>
+                <p className="text-xs font-semibold text-[var(--text-muted)]">Owner {action.owner?.name || 'Unassigned'}</p>
                 <div className="flex flex-wrap items-center gap-2">
                   <DueBadge action={action} />
                   {canEdit ? <DueDateSetter action={action} onStatusChange={onStatusChange} /> : <span className="text-xs font-semibold">{action.due_date || 'No due date'}</span>}

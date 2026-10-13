@@ -85,7 +85,7 @@ function TrendEmpty({ source }: { source: TrendSeries['source'] }) {
     <div data-testid="performance-trend-empty" className="flex w-full flex-col items-center justify-center gap-[6px] rounded-[8px] border border-dashed border-[var(--insights-card-border)] px-6 text-center" style={{ height: CHART_HEIGHT }}>
       <LineChartIcon aria-hidden="true" className="size-[20px] text-[var(--text-faint)]" strokeWidth={1.5} />
       <p className="text-[12px] font-semibold text-[var(--insights-heading)]">No trend data for this scope</p>
-      <p className="max-w-[260px] text-[11px] text-[var(--text-muted)]">
+      <p className="max-w-[260px] text-xs text-[var(--text-muted)]">
         {source === 'overall' ? 'No measured score' : 'No measured leading-KPI value'} in the last six months for the selected filters.
       </p>
     </div>
@@ -229,13 +229,13 @@ function PerformanceTrendChart({ series }: { series: TrendSeries }) {
         data-source={series.source}
       >
         {ticks.map((tick) => (
-          <text key={tick} x={plot.left - 8} y={y(tick)} dominantBaseline="middle" textAnchor="end" fontSize={10} fill="var(--text-muted)" data-testid="performance-trend-tick">{`${tick}%`}</text>
+          <text key={tick} x={plot.left - 8} y={y(tick)} dominantBaseline="middle" textAnchor="end" fontSize={12} fill="var(--text-muted)" data-testid="performance-trend-tick">{`${tick}%`}</text>
         ))}
         <path d={`M${plot.left} ${plot.bottom}H${plot.right}`} stroke="var(--insights-card-border)" strokeWidth={1} data-testid="performance-trend-baseline" />
         {targetPath && (
           <>
             <path data-testid="performance-trend-target" d={targetPath} stroke="var(--insights-target)" strokeOpacity={0.75} strokeWidth={1.25} strokeDasharray="4 4" fill="none" />
-            <text x={plot.right} y={y(lastTarget as number) - 6} textAnchor="end" fontSize={10} fontWeight={600} fill="var(--text-muted)" data-testid="performance-trend-target-label">{`Target ${(lastTarget as number).toFixed(0)}%`}</text>
+            <text x={plot.right} y={y(lastTarget as number) - 6} textAnchor="end" fontSize={12} fontWeight={600} fill="var(--text-muted)" data-testid="performance-trend-target-label">{`Target ${(lastTarget as number).toFixed(0)}%`}</text>
           </>
         )}
         {activeX !== null && (
@@ -294,7 +294,7 @@ function PerformanceTrendChart({ series }: { series: TrendSeries }) {
           </g>
         ))}
         {points.map((point, index) => (
-          <text key={`${point.key}-label`} x={x(index)} y={CHART_HEIGHT - 8} textAnchor="middle" fontSize={10} fill="var(--text-muted)">{point.label}</text>
+          <text key={`${point.key}-label`} x={x(index)} y={CHART_HEIGHT - 8} textAnchor="middle" fontSize={12} fill="var(--text-muted)">{point.label}</text>
         ))}
         {/* Hover anywhere over the plot shows the nearest month, like the app's Recharts tooltips. */}
         <rect
@@ -321,7 +321,7 @@ function PerformanceTrendChart({ series }: { series: TrendSeries }) {
           }}
           data-placement={placeLeft ? 'left' : 'right'}
         >
-          <p className="mb-[6px] border-b border-[var(--insights-row-border)] pb-[5px] text-[11px] font-bold uppercase tracking-[0.08em] text-[var(--text-muted)]">{activePoint.label}</p>
+          <p className="mb-[6px] border-b border-[var(--insights-row-border)] pb-[5px] text-xs font-bold uppercase tracking-[0.08em] text-[var(--text-muted)]">{activePoint.label}</p>
           <div className="flex items-center justify-between gap-3 text-[12px]">
             <span className="inline-flex items-center gap-[7px] font-medium text-[var(--text-secondary)]"><span className="size-[8px] rounded-full bg-[var(--insights-accent)]" />{valueLabel}</span>
             <strong className="font-semibold tabular-nums text-[var(--insights-heading)]">{activeValue.toFixed(1)}%</strong>
@@ -336,18 +336,18 @@ function PerformanceTrendChart({ series }: { series: TrendSeries }) {
             </div>
           )}
           {series.source === 'kpi' && activePoint.raw && (
-            <p className="mt-[5px] text-[11px] text-[var(--text-muted)]" data-testid="performance-trend-tooltip-raw">
+            <p className="mt-[5px] text-xs text-[var(--text-muted)]" data-testid="performance-trend-tooltip-raw">
               {formatRaw(activePoint.raw.actual, activePoint.raw.unit)} vs {formatRaw(activePoint.raw.target, activePoint.raw.unit)} target
             </p>
           )}
           {movement && (
-            <p className="mt-[3px] flex items-center gap-[4px] text-[11px] font-semibold" style={{ color: TONE_COLOR[movement.tone] }} data-testid="performance-trend-tooltip-movement" data-tone={movement.tone}>
+            <p className="mt-[3px] flex items-center gap-[4px] text-xs font-semibold" style={{ color: TONE_COLOR[movement.tone] }} data-testid="performance-trend-tooltip-movement" data-tone={movement.tone}>
               <span aria-hidden="true">{movement.delta > 0 ? '▲' : movement.delta < 0 ? '▼' : '→'}</span>
               {movement.text} vs {movement.against}
             </p>
           )}
           {activePoint.basisMessage && (
-            <p className="mt-[5px] whitespace-normal break-words text-[11px] leading-4 text-[var(--text-secondary)]">{activePoint.basisMessage}</p>
+            <p className="mt-[5px] whitespace-normal break-words text-xs leading-4 text-[var(--text-secondary)]">{activePoint.basisMessage}</p>
           )}
         </div>
       )}
@@ -375,7 +375,7 @@ function PerformanceTrend({ series, loading, filterKey }: { series: TrendSeries;
           Last 6 months
         </span>
       </div>
-      <p className="-mt-[4px] truncate text-[11px] text-[var(--text-muted)]" title={explanation} data-testid="performance-trend-subtitle">
+      <p className="-mt-[4px] truncate text-xs text-[var(--text-muted)]" title={explanation} data-testid="performance-trend-subtitle">
         {overall
           ? 'Overall score · % of target'
           : `${series.kpiLabel ?? 'Leading KPI'} · % of target${lowerBetter ? ' · lower is better' : ''}`}
@@ -407,7 +407,7 @@ function TrendBadge({ change, previousLabel }: { change: number | null; previous
   }[tone];
   const spoken = `${tone === 'down' ? 'Down' : tone === 'up' ? 'Up' : 'No change'} ${Math.abs(change).toFixed(1)}% ${previousLabel.toLowerCase()}`;
   return (
-    <span data-testid="executive-trend-badge" data-tone={tone} className={`inline-flex shrink-0 items-center whitespace-nowrap rounded-full px-[8px] py-[3px] text-[11px] font-semibold leading-normal ${styles}`}>
+    <span data-testid="executive-trend-badge" data-tone={tone} className={`inline-flex shrink-0 items-center whitespace-nowrap rounded-full px-[8px] py-[3px] text-xs font-semibold leading-normal ${styles}`}>
       <span aria-hidden="true">{`${glyph} ${Math.abs(change).toFixed(1)}%`}</span>
       <span className="sr-only">{spoken}</span>
     </span>
@@ -494,7 +494,7 @@ export default function ExecutiveSummary({
           className="flex w-full items-center gap-[12px] rounded-[9px] border border-[var(--insights-info-border)] bg-[var(--insights-info-bg)] px-[12px] py-[10px]"
           title={story ? cleanScope(story.recommended_focus) : undefined}
         >
-          <span className="shrink-0 whitespace-nowrap rounded-full bg-[var(--insights-info-pill-bg)] px-[10px] py-[4px] text-[10px] font-semibold uppercase leading-normal tracking-[0.4px] text-[var(--insights-info-pill-text)]">Priority focus</span>
+          <span className="shrink-0 whitespace-nowrap rounded-full bg-[var(--insights-info-pill-bg)] px-[10px] py-[4px] text-xs font-semibold uppercase leading-normal tracking-[0.4px] text-[var(--insights-info-pill-text)]">Priority focus</span>
           <p className="min-w-0 flex-1 text-[13px] font-semibold leading-normal text-[var(--insights-info-text)]">{priorityFocusText(story)}</p>
         </div>
         <div className="flex w-full flex-col gap-[12px]">

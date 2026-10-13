@@ -170,7 +170,7 @@ function EmployeeRoster({ summary, filterKey }: { summary: ExecutiveSummary; fil
                 <Link to={executivePersonPath(person, summary.period.effective, summary.scope.branch)} className="flex items-center gap-[10px] rounded-[8px] border-b border-[var(--insights-row-border)] px-[6px] py-[10px] hover:bg-[var(--exec-tile-bg)] focus-visible:outline-2 focus-visible:outline-[var(--insights-accent)]">
                   <span className="flex min-w-0 flex-1 flex-col gap-[3px]">
                     <span className="truncate text-[13px] font-semibold text-[var(--insights-heading)]">{person.name}</span>
-                    <span className="truncate text-[11px] text-[var(--text-muted)]">{[person.team, person.position, person.performance_level].filter(Boolean).join(' · ')}</span>
+                    <span className="truncate text-xs text-[var(--text-muted)]">{[person.team, person.position, person.performance_level].filter(Boolean).join(' · ')}</span>
                   </span>
                   <ScoreText score={person.score} className="text-[14px]">{fmtScore(person.score)}</ScoreText>
                   <GradeSquare score={person.score} />

@@ -24,7 +24,7 @@ export default function RosterViewTiles({ value, onChange, label = 'Employee ros
             <Icon size={18} aria-hidden="true" className="shrink-0" />
             <span className="min-w-0">
               <span className="block text-xs font-bold sm:text-sm">{option.label}</span>
-              <span className="mt-0.5 hidden text-[11px] text-[var(--text-secondary)] sm:block">{option.description}</span>
+              <span className="mt-0.5 hidden text-xs text-[var(--text-secondary)] sm:block">{option.description}</span>
             </span>
           </button>
         );

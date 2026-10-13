@@ -12,11 +12,11 @@ function Stat({ label, value, valueColor, sub, subColor, icon: Icon }: { label: 
   return (
     <div className="relative flex min-w-0 flex-col gap-[8px] rounded-[16px] border p-[14px]" style={{ background: `color-mix(in srgb, ${valueColor} 5%, var(--bg-surface))`, borderColor: `color-mix(in srgb, ${valueColor} 10%, var(--exec-card-border))` }}>
       <div className="flex min-h-[30px] items-start justify-between gap-[6px]">
-        <span className="text-[10px] font-semibold uppercase leading-[1.5] tracking-[0.5px] text-[var(--text-muted)]">{label}</span>
+        <span className="text-xs font-semibold uppercase leading-[1.5] tracking-[0.5px] text-[var(--text-muted)]">{label}</span>
         <span aria-hidden="true" className="flex size-[28px] shrink-0 items-center justify-center rounded-[9px]" style={{ background: `color-mix(in srgb, ${valueColor} 9%, transparent)`, color: valueColor }}><Icon className="size-[17px]" strokeWidth={1.8} /></span>
       </div>
       <span className="text-[clamp(24px,2.3vw,34px)] font-bold leading-[1.1] tracking-[-0.04em] tabular-nums" style={{ color: valueColor }}>{value}</span>
-      <span className="text-[11px] font-medium leading-[1.5]" style={{ color: subColor ?? 'var(--text-muted)' }}>{sub}</span>
+      <span className="text-xs font-medium leading-[1.5]" style={{ color: subColor ?? 'var(--text-muted)' }}>{sub}</span>
     </div>
   );
 }
@@ -50,7 +50,7 @@ export default function ExecutiveHero({ summary }: { summary: ExecutiveSummary }
           <span aria-hidden="true" className="flex size-[40px] items-center justify-center rounded-[12px] bg-[var(--insights-accent-tag)]">
             <EyebrowIcon className="size-[23px] text-[var(--insights-accent)]" strokeWidth={1.8} />
           </span>
-          <span className="text-[11px] font-bold uppercase tracking-[1px] text-[var(--text-muted)]">{scope.view === 'function' ? `${hero.label} function` : eyebrow.label}</span>
+          <span className="text-xs font-bold uppercase tracking-[1px] text-[var(--text-muted)]">{scope.view === 'function' ? `${hero.label} function` : eyebrow.label}</span>
           <GradePill score={hero.score} className="!px-[12px] !py-[5px] !text-[12px]" />
           {scope.view === 'function' && summary.highlights.most_improved?.name === hero.label && <StatusPill tone="success" icon={TrendingUp}>Most improved</StatusPill>}
         </div>

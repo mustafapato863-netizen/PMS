@@ -47,7 +47,7 @@ export function KpiTablePanel({
           <div className="bsc-sub">Click a row to view its trend analysis below</div>
         </div>
         {selectedPerspective && (
-          <span style={{ fontSize: 11, fontWeight: 700, color: '#8A8F99', background: '#EEF0F3', padding: '3px 8px', borderRadius: 99 }}>
+          <span style={{ fontSize: 12, fontWeight: 700, color: '#8A8F99', background: '#EEF0F3', padding: '3px 8px', borderRadius: 99 }}>
             Filtered: {selectedPerspective}
           </span>
         )}
@@ -108,7 +108,7 @@ export function KpiTablePanel({
                       })()}
                     </td>
                     <td>
-                      <span style={{ fontSize: 10, fontWeight: 700, color: row.direction === 'lower_better' ? '#C2740A' : '#1A8C53' }}>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: row.direction === 'lower_better' ? '#C2740A' : '#1A8C53' }}>
                         {row.direction === 'lower_better' ? '↓ Lower' : '↑ Higher'}
                       </span>
                     </td>

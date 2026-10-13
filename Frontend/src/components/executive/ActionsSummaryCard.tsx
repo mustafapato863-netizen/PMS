@@ -176,10 +176,10 @@ const ActionsSummaryCard = ({ month, stats }: ActionsSummaryCardProps) => {
             <Users size={16} />
           </span>
           <span className="min-w-0 flex-1">
-            <span className="block text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)]">Filter by team</span>
+            <span className="block text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Filter by team</span>
             <span className="block truncate text-sm font-bold text-[var(--text-primary)]">{effectiveTeam}</span>
           </span>
-          <span className="hidden text-[10px] font-semibold text-[var(--text-muted)] sm:block">
+          <span className="hidden text-xs font-semibold text-[var(--text-muted)] sm:block">
             {visibleStats.total} {visibleStats.total === 1 ? 'action' : 'actions'}
           </span>
           <ChevronDown
@@ -225,17 +225,17 @@ const ActionsSummaryCard = ({ month, stats }: ActionsSummaryCardProps) => {
         <div className="action-summary-stat action-summary-stat-blue flex min-h-[85px] flex-col items-center justify-center rounded-xl border p-2.5 text-center">
           <ClipboardCheck size={16} className="mb-1" />
           <div className="text-2xl font-extrabold leading-none">{visibleStats.total}</div>
-          <div className="action-summary-stat-label mt-1.5 text-[11px] font-bold leading-tight">Actions This Month</div>
+          <div className="action-summary-stat-label mt-1.5 text-xs font-bold leading-tight">Actions This Month</div>
         </div>
         <div className="action-summary-stat action-summary-stat-emerald flex min-h-[85px] flex-col items-center justify-center rounded-xl border p-2.5 text-center">
           <UserCheck size={16} className="mb-1" />
           <div className="text-2xl font-extrabold leading-none">{visibleStats.employeesActioned}</div>
-          <div className="action-summary-stat-label mt-1.5 text-[11px] font-bold leading-tight">Employees Actioned</div>
+          <div className="action-summary-stat-label mt-1.5 text-xs font-bold leading-tight">Employees Actioned</div>
         </div>
         <div className="action-summary-stat action-summary-stat-amber flex min-h-[85px] flex-col items-center justify-center rounded-xl border p-2.5 text-center">
           <Clock size={16} className="mb-1" />
           <div className="text-2xl font-extrabold leading-none">{pendingFollowUp.length}</div>
-          <div className="action-summary-stat-label mt-1.5 text-[11px] font-bold leading-tight">Pending Sync</div>
+          <div className="action-summary-stat-label mt-1.5 text-xs font-bold leading-tight">Pending Sync</div>
         </div>
       </div>
 
@@ -243,7 +243,7 @@ const ActionsSummaryCard = ({ month, stats }: ActionsSummaryCardProps) => {
       <div>
         <div className="mb-3 flex items-center justify-between gap-3">
           <h4 className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Breakdown by Action Type</h4>
-          <span className="max-w-[120px] truncate rounded-full bg-[var(--bg-sunken)] px-2 py-1 text-[10px] font-bold text-[var(--text-secondary)]">
+          <span className="max-w-[120px] truncate rounded-full bg-[var(--bg-sunken)] px-2 py-1 text-xs font-bold text-[var(--text-secondary)]">
             {effectiveTeam}
           </span>
         </div>
@@ -285,14 +285,14 @@ const ActionsSummaryCard = ({ month, stats }: ActionsSummaryCardProps) => {
             </h4>
             <span
               title="Shows the KPI most frequently recorded in corrective actions."
-              className="flex h-4 w-4 cursor-help items-center justify-center rounded-full border border-[var(--border-medium)] text-[9px] font-bold text-[var(--text-muted)]"
+              className="flex h-5 w-5 cursor-help items-center justify-center rounded-full border border-[var(--border-medium)] text-xs font-bold text-[var(--text-muted)]"
             >
               i
             </span>
           </div>
 
           <div className="overflow-hidden rounded-xl border border-[var(--border-light)]">
-            <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)_auto] gap-2 bg-[var(--bg-sunken)] px-3 py-2 text-[9px] font-bold uppercase tracking-wider text-[var(--text-muted)]">
+            <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)_auto] gap-2 bg-[var(--bg-sunken)] px-3 py-2 text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">
               <span>Team</span>
               <span>Top Root Cause</span>
                 <span className="text-right">Action mentions</span>
@@ -312,7 +312,7 @@ const ActionsSummaryCard = ({ month, stats }: ActionsSummaryCardProps) => {
                       <span className="truncate text-xs font-semibold text-[var(--text-primary)]">{teamVisual.label}</span>
                     </div>
                     <div className="flex min-w-0 items-center gap-2">
-                      <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white ${
+                      <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white ${
                         i === 0 ? 'bg-red-500' : i === 1 ? 'bg-orange-400' : 'bg-amber-400'
                       }`}>
                         {i + 1}
@@ -343,7 +343,7 @@ const ActionsSummaryCard = ({ month, stats }: ActionsSummaryCardProps) => {
                 <User size={12} className="text-amber-600 shrink-0" />
                 <span className="text-xs font-bold text-amber-700 dark:text-amber-400 flex-1 truncate">{action.employee_name}</span>
                 <span
-                  className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${ACTION_TYPE_CONFIG[action.action_type]?.class || ''}`}
+                  className={`text-xs font-bold px-1.5 py-0.5 rounded ${ACTION_TYPE_CONFIG[action.action_type]?.class || ''}`}
                 >
                   {action.action_type}
                 </span>

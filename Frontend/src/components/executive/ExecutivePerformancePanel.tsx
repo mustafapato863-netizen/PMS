@@ -77,7 +77,7 @@ const ExecutivePerformancePanel = ({
               <Info size={14} className="text-[var(--text-muted)]" />
             </span>
           </div>
-          <p className="mt-0.5 text-[11px] font-semibold text-[var(--text-muted)]">All teams combined</p>
+          <p className="mt-0.5 text-xs font-semibold text-[var(--text-muted)]">All teams combined</p>
         </div>
 
         <div
@@ -90,7 +90,7 @@ const ExecutivePerformancePanel = ({
               type="button"
               aria-pressed={displayMode === mode}
               onClick={() => setDisplayMode(mode)}
-              className={`rounded-md px-3 py-1.5 text-[11px] font-bold capitalize transition-all ${
+              className={`rounded-md px-3 py-1.5 text-xs font-bold capitalize transition-all ${
                 displayMode === mode
                   ? 'bg-[var(--bg-surface)] text-[var(--text-primary)] shadow-sm'
                   : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
@@ -125,7 +125,7 @@ const ExecutivePerformancePanel = ({
               <Info size={13} className="text-[var(--text-muted)]" />
             </span>
           </div>
-          <p className="text-[10px] font-semibold text-[var(--text-muted)]">Teams with the highest D + E concentration</p>
+          <p className="text-xs font-semibold text-[var(--text-muted)]">Teams with the highest D + E concentration</p>
         </div>
 
         {riskTeams.length === 0 ? (
@@ -134,7 +134,7 @@ const ExecutivePerformancePanel = ({
           </div>
         ) : (
           <div className="overflow-hidden rounded-xl border border-[var(--border-light)]">
-            <div className="hidden grid-cols-[34px_minmax(130px,1.2fr)_minmax(150px,1fr)_100px_115px_20px] items-center gap-3 bg-[var(--bg-sunken)] px-3 py-2 text-[9px] font-bold uppercase tracking-wider text-[var(--text-muted)] md:grid">
+            <div className="hidden grid-cols-[34px_minmax(130px,1.2fr)_minmax(150px,1fr)_100px_115px_20px] items-center gap-3 bg-[var(--bg-sunken)] px-3 py-2 text-xs font-bold uppercase tracking-wider text-[var(--text-muted)] md:grid">
               <span>Rank</span>
               <span>Team</span>
               <span>D + E %</span>
@@ -155,13 +155,13 @@ const ExecutivePerformancePanel = ({
                     className="grid w-full grid-cols-[28px_minmax(0,1fr)_20px] items-center gap-2 px-3 py-3 text-left transition-colors hover:bg-[var(--sidebar-active-bg)] focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500/40 md:grid-cols-[34px_minmax(130px,1.2fr)_minmax(150px,1fr)_100px_115px_20px] md:gap-3 md:py-2.5"
                     aria-label={`Open ${team.teamName} dashboard`}
                   >
-                    <span className={`flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-extrabold ${RANK_CLASSES[index] || RANK_CLASSES[RANK_CLASSES.length - 1]}`}>
+                    <span className={`flex h-5 w-5 items-center justify-center rounded-full text-xs font-extrabold ${RANK_CLASSES[index] || RANK_CLASSES[RANK_CLASSES.length - 1]}`}>
                       {index + 1}
                     </span>
 
                     <div className="min-w-0">
                       <div className="truncate text-xs font-bold text-[var(--text-primary)]">{team.teamName}</div>
-                      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] font-semibold text-[var(--text-muted)] md:hidden">
+                      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-semibold text-[var(--text-muted)] md:hidden">
                         <span>{team.percentage.toFixed(1)}% D + E</span>
                         <span>{team.affectedEmployees} affected</span>
                         <span className={isWorsening ? 'text-red-600 dark:text-red-400' : isImproving ? 'text-emerald-600 dark:text-emerald-400' : ''}>

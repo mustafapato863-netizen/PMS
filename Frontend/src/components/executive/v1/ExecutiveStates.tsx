@@ -27,7 +27,7 @@ export function ScopeBanner({ children, icon = 'lock' }: { children: ReactNode; 
 
 export function ReadOnlyBadge() {
   return (
-    <span className="inline-flex items-center gap-[4px] rounded-full bg-[var(--exec-chip-bg)] px-[8px] py-[2px] text-[11px] font-semibold text-[var(--exec-chip-text)]">
+    <span className="inline-flex items-center gap-[4px] rounded-full bg-[var(--exec-chip-bg)] px-[8px] py-[2px] text-xs font-semibold text-[var(--exec-chip-text)]">
       <Eye aria-hidden="true" className="size-[11px]" strokeWidth={2} />Read-only
     </span>
   );
@@ -58,7 +58,7 @@ export function ExecutiveEmptyState({ monthLabel, canUpload, dataStatus, onPickM
             </span>
           </span>
         </span>
-        <span className="inline-flex items-center gap-[4px] rounded-full bg-[var(--exec-warning-bg)] px-[8px] py-[2px] text-[11px] font-semibold text-[var(--exec-warning-text)]">
+        <span className="inline-flex items-center gap-[4px] rounded-full bg-[var(--exec-warning-bg)] px-[8px] py-[2px] text-xs font-semibold text-[var(--exec-warning-text)]">
           <Info aria-hidden="true" className="size-[11px]" />No data · {monthLabel}
         </span>
         <h2 id="exec-empty-title" className="text-[24px] font-bold text-[var(--insights-heading)]">No performance data for {monthLabel}</h2>
@@ -101,7 +101,7 @@ export function ExecutiveEmptyState({ monthLabel, canUpload, dataStatus, onPickM
                 <CheckCircle2 aria-hidden="true" className="mt-px size-[14px] shrink-0 text-[var(--insights-positive)]" />
                 <span className="flex flex-col text-left">
                   <span className="text-[13px] font-semibold text-[var(--insights-heading)]">{title}</span>
-                  <span className="text-[11px] text-[var(--text-muted)]">{text}</span>
+                  <span className="text-xs text-[var(--text-muted)]">{text}</span>
                 </span>
               </li>
             ))}
@@ -123,10 +123,10 @@ export function ExecutiveEmptyState({ monthLabel, canUpload, dataStatus, onPickM
                 ['Review and publish', 'Scores and grades go live for every role at once'],
               ].map(([title, text], index) => (
                 <li key={title} className="flex gap-[10px]">
-                  <span className="flex size-[22px] shrink-0 items-center justify-center rounded-full bg-[var(--exec-info-bg)] text-[11px] font-bold text-[var(--exec-info-text)]">{index + 1}</span>
+                  <span className="flex size-[22px] shrink-0 items-center justify-center rounded-full bg-[var(--exec-info-bg)] text-xs font-bold text-[var(--exec-info-text)]">{index + 1}</span>
                   <span className="flex flex-col">
                     <span className="text-[13px] font-semibold text-[var(--insights-heading)]">{title}</span>
-                    <span className="text-[11px] text-[var(--text-muted)]">{text}</span>
+                    <span className="text-xs text-[var(--text-muted)]">{text}</span>
                   </span>
                 </li>
               ))}

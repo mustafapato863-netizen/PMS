@@ -27,12 +27,12 @@ const LocationProfitabilityChart = ({ data }: LocationProfitabilityChartProps) =
         </h3>
         
         {/* Dynamic Alert */}
-        <div className="mt-3 mb-2 flex items-center gap-2 bg-red-50 text-red-700 px-3 py-2 rounded-lg border border-red-100 text-[11px] font-semibold">
+        <div className="mt-3 mb-2 flex items-center gap-2 bg-red-50 text-red-700 px-3 py-2 rounded-lg border border-red-100 text-xs font-semibold">
           <span className="text-red-500">⚠️</span> 
           <span>{worstLocation.location} has the highest no-show rate ({worstLocation.noShowRate.toFixed(1)}%). Focus retention efforts here.</span>
         </div>
 
-        <div className="flex items-center gap-4 mt-2 text-[11px]">
+        <div className="flex items-center gap-4 mt-2 text-xs">
           <div className="flex items-center gap-1.5">
             <div className="w-2.5 h-2.5 rounded-sm bg-blue-500" />
             <span className="text-slate-500 font-medium">Booking Volume</span>
@@ -49,14 +49,14 @@ const LocationProfitabilityChart = ({ data }: LocationProfitabilityChartProps) =
             <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
             <XAxis
               dataKey="location"
-              tick={{ fontSize: 11, fill: '#64748b', fontWeight: 600 }}
+              tick={{ fontSize: 12, fill: '#64748b', fontWeight: 600 }}
               axisLine={{ stroke: '#e2e8f0' }}
               tickLine={false}
-              label={{ value: 'Branch', position: 'insideBottomRight', offset: -5, fontSize: 10, fill: '#94a3b8' }}
+              label={{ value: 'Branch', position: 'insideBottomRight', offset: -5, fontSize: 12, fill: '#94a3b8' }}
             />
             <YAxis
               yAxisId="left"
-              tick={{ fontSize: 10, fill: '#94a3b8' }}
+              tick={{ fontSize: 12, fill: '#94a3b8' }}
               axisLine={false}
               tickLine={false}
               label={{
@@ -64,7 +64,7 @@ const LocationProfitabilityChart = ({ data }: LocationProfitabilityChartProps) =
                 angle: -90,
                 position: 'insideLeft',
                 offset: 10,
-                fontSize: 10,
+                fontSize: 12,
                 fill: '#94a3b8',
                 style: { textAnchor: 'middle' },
               }}
@@ -73,7 +73,7 @@ const LocationProfitabilityChart = ({ data }: LocationProfitabilityChartProps) =
               yAxisId="right"
               orientation="right"
               domain={[0, 100]}
-              tick={{ fontSize: 10, fill: '#94a3b8' }}
+              tick={{ fontSize: 12, fill: '#94a3b8' }}
               axisLine={false}
               tickLine={false}
               tickFormatter={(v: number) => `${v}`}
@@ -82,7 +82,7 @@ const LocationProfitabilityChart = ({ data }: LocationProfitabilityChartProps) =
                 angle: 90,
                 position: 'insideRight',
                 offset: 10,
-                fontSize: 10,
+                fontSize: 12,
                 fill: '#94a3b8',
                 style: { textAnchor: 'middle' },
               }}
@@ -122,7 +122,7 @@ const LocationProfitabilityChart = ({ data }: LocationProfitabilityChartProps) =
                 dataKey="noShowRate"
                 position="top"
                 formatter={(v) => `${Number(v ?? 0)}%`}
-                style={{ fontSize: 11, fontWeight: 700, fill: '#dc2626' }}
+                style={{ fontSize: 12, fontWeight: 700, fill: '#dc2626' }}
               />
             </Line>
             <Legend content={() => null} />

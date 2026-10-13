@@ -79,10 +79,10 @@ const ConversionFunnel = ({ data }: ConversionFunnelProps) => {
                 <svg className="lg:hidden w-5 h-5 text-slate-300 rotate-90" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
                 </svg>
-                <span className="text-[11px] font-bold text-emerald-600">
+                <span className="text-xs font-bold text-emerald-600">
                   {(rates[i]!.rate * 100).toFixed(1)}%
                 </span>
-                <span className="text-[9px] text-red-400 font-semibold">
+                <span className="text-xs text-red-400 font-semibold">
                   -{(rates[i]!.dropoff * 100).toFixed(1)}%
                 </span>
               </div>
@@ -105,7 +105,7 @@ const ConversionFunnel = ({ data }: ConversionFunnelProps) => {
                 <div className={`w-9 h-9 rounded-xl bg-gradient-to-br ${step.gradient} flex items-center justify-center shadow-md shrink-0`}>
                   <step.icon className="w-4.5 h-4.5 text-white" />
                 </div>
-                <p className={`text-[11px] font-bold ${step.text} uppercase tracking-wider`}>
+                <p className={`text-xs font-bold ${step.text} uppercase tracking-wider`}>
                   {step.label}
                 </p>
               </div>

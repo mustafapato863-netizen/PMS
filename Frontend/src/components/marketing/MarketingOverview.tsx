@@ -199,7 +199,7 @@ const MarketingOverview = ({
                   <h4 className="truncate text-sm font-extrabold text-[var(--text-primary)]" title={summary.position}>
                     {summary.position}
                   </h4>
-                  <span className={`mt-2 inline-flex rounded-full border px-2 py-0.5 text-[9px] font-extrabold uppercase tracking-wide ${status.tone}`}>
+                  <span className={`mt-2 inline-flex rounded-full border px-2 py-0.5 text-xs font-extrabold uppercase tracking-wide ${status.tone}`}>
                     {status.label}
                   </span>
                 </div>
@@ -208,7 +208,7 @@ const MarketingOverview = ({
                   <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-500/10 text-violet-600 dark:text-violet-400">
                     <BriefcaseBusiness size={18} />
                   </span>
-                  <div className="grid flex-1 grid-cols-3 gap-1.5">
+                  <div className="grid flex-1 grid-cols-[auto_1fr_1fr] gap-1.5">
                     <PositionMetric label="Employees" value={String(summary.employeeCount)} />
                     <PositionMetric label="KPIs" value={String(summary.kpiCount)} />
                     <PositionMetric label="Score" value={summary.averageScore === null ? '—' : `${summary.averageScore.toFixed(1)}%`} />
@@ -216,7 +216,7 @@ const MarketingOverview = ({
                 </div>
 
                 <div className="mt-4 flex-1 border-t border-[var(--border-light)] pt-3">
-                  <p className="text-[9px] font-bold uppercase tracking-wide text-[var(--text-muted)]">Weakest KPI</p>
+                  <p className="text-xs font-bold uppercase tracking-wide text-[var(--text-muted)]">Weakest KPI</p>
                   <div className="mt-1 flex items-center justify-between gap-2">
                     <span className="min-w-0 truncate text-xs font-extrabold text-[var(--text-primary)]">
                       {summary.weakestKpi?.label || '—'}
@@ -247,8 +247,8 @@ const MarketingOverview = ({
             <ResponsiveContainer width="100%" height={250}>
               <BarChart data={performanceData} layout="vertical" margin={{ left: 30, right: 25, top: 8 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border-light)" horizontal={false} />
-                <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 10, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
-                <YAxis type="category" dataKey="position" width={135} tick={{ fontSize: 10, fill: 'var(--text-secondary)' }} axisLine={false} tickLine={false} />
+                <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 12, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
+                <YAxis type="category" dataKey="position" width={135} tick={{ fontSize: 12, fill: 'var(--text-secondary)' }} axisLine={false} tickLine={false} />
                 <Tooltip formatter={(value) => [`${Number(value).toFixed(1)}%`, 'Average score']} />
                 <Bar dataKey="score" radius={[0, 6, 6, 0]} barSize={17}>
                   {performanceData.map((entry) => (
@@ -275,12 +275,12 @@ const MarketingOverview = ({
                 </ResponsiveContainer>
                 <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
                   <span className="text-2xl font-extrabold text-[var(--text-primary)]">{gradeTotal}</span>
-                  <span className="text-[10px] font-semibold text-[var(--text-muted)]">Employees</span>
+                  <span className="text-xs font-semibold text-[var(--text-muted)]">Employees</span>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-x-4 gap-y-2 xl:grid-cols-1">
                 {gradeData.map((grade) => (
-                  <div key={grade.grade} className="flex items-center justify-between gap-3 text-[11px] font-semibold">
+                  <div key={grade.grade} className="flex items-center justify-between gap-3 text-xs font-semibold">
                     <span className="flex items-center gap-2 text-[var(--text-secondary)]">
                       <span className="h-2 w-2 rounded-full" style={{ backgroundColor: grade.color }} />
                       {grade.name}
@@ -312,7 +312,7 @@ const MarketingOverview = ({
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-xs font-extrabold text-[var(--text-primary)]">{position.position}</span>
-                  <span className="mt-1 block truncate text-[10px] font-medium text-[var(--text-muted)]">
+                  <span className="mt-1 block truncate text-xs font-medium text-[var(--text-muted)]">
                     Weakest KPI: {position.weakestKpi?.label || 'Not available'}
                   </span>
                 </span>
@@ -333,8 +333,8 @@ const MarketingOverview = ({
             <ResponsiveContainer width="100%" height={250}>
               <LineChart data={analytics.trend} margin={{ top: 20, right: 15, left: -15 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border-light)" vertical={false} />
-                <XAxis dataKey="period" tick={{ fontSize: 10, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
-                <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
+                <XAxis dataKey="period" tick={{ fontSize: 12, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
+                <YAxis domain={[0, 100]} tick={{ fontSize: 12, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
                 <Tooltip formatter={(value) => [`${Number(value).toFixed(1)}%`, 'Average score']} />
                 <Line type="monotone" dataKey="score" stroke="#7C3AED" strokeWidth={2.5} dot={{ r: 3.5, fill: '#7C3AED' }} activeDot={{ r: 5 }} />
               </LineChart>
@@ -359,7 +359,7 @@ const MarketingOverview = ({
 
 const PositionMetric = ({ label, value }: { label: string; value: string }) => (
   <div className="flex min-w-0 flex-col items-center justify-center rounded-xl border border-[var(--border-light)]/50 bg-[var(--bg-sunken)]/60 px-1 py-1.5 text-center">
-    <span className="truncate max-w-full text-[9px] font-extrabold uppercase tracking-tight text-[var(--text-muted)]">{label}</span>
+    <span className="truncate max-w-full text-xs font-extrabold uppercase tracking-tighter text-[var(--text-muted)]">{label}</span>
     <span className="mt-0.5 whitespace-nowrap text-xs font-black text-[var(--text-primary)] tabular-nums">{value}</span>
   </div>
 );
@@ -400,7 +400,7 @@ const InsightRow = ({
       <Icon size={17} className={`shrink-0 ${style.iconClass}`} />
       <span className="min-w-0 flex-1">
         <span className="block text-xs font-extrabold text-[var(--text-primary)]">{insight.title}</span>
-        <span className="mt-1 block text-[10px] font-medium leading-4 text-[var(--text-muted)]">{insight.detail}</span>
+        <span className="mt-1 block text-xs font-medium leading-4 text-[var(--text-muted)]">{insight.detail}</span>
       </span>
       {insight.position && <ChevronRight size={15} className="shrink-0 text-[var(--text-muted)]" />}
     </button>

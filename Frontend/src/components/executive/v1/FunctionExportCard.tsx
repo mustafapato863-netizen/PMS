@@ -25,7 +25,7 @@ export default function FunctionExportCard({ fn, period, functionExportSupported
         iconColor="var(--insights-positive)"
         title="Reports & export"
         subtitle={`Function-locked: exports contain ${fn} only`}
-        action={<span className="rounded-full bg-[var(--exec-info-bg)] px-[8px] py-[2px] text-[11px] font-semibold text-[var(--exec-info-text)]">{fn}</span>}
+        action={<span className="rounded-full bg-[var(--exec-info-bg)] px-[8px] py-[2px] text-xs font-semibold text-[var(--exec-info-text)]">{fn}</span>}
       />
       <div className="flex flex-wrap gap-[8px]">
         <button type="button" disabled={!functionExportSupported} title={functionExportSupported ? undefined : disabledNote} className="inline-flex items-center gap-[6px] rounded-[8px] bg-gradient-to-r from-[#0069B4] to-[#00A859] px-[14px] py-[8px] text-[13px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">
@@ -41,7 +41,7 @@ export default function FunctionExportCard({ fn, period, functionExportSupported
             <Icon aria-hidden="true" className="size-[15px] text-[var(--exec-info-text)]" />
             <span className="flex min-w-0 flex-1 flex-col">
               <span className="truncate text-[13px] font-semibold text-[var(--insights-heading)]">{title}</span>
-              <span className="text-[11px] text-[var(--text-muted)]">{sub}</span>
+              <span className="text-xs text-[var(--text-muted)]">{sub}</span>
             </span>
             <Download aria-hidden="true" className="size-[14px] text-[var(--text-muted)] opacity-50" />
           </li>
@@ -50,9 +50,9 @@ export default function FunctionExportCard({ fn, period, functionExportSupported
           <Lock aria-hidden="true" className="size-[15px] text-[var(--text-muted)]" />
           <span className="flex min-w-0 flex-1 flex-col">
             <span className="truncate text-[13px] font-semibold text-[var(--text-secondary)]">Company-wide executive report</span>
-            <span className="text-[11px] text-[var(--text-muted)]">Admin / GM only</span>
+            <span className="text-xs text-[var(--text-muted)]">Admin / GM only</span>
           </span>
-          <span className="rounded-full bg-[var(--exec-chip-bg)] px-[8px] py-[2px] text-[10px] font-semibold text-[var(--exec-chip-text)]">Not in your scope</span>
+          <span className="rounded-full bg-[var(--exec-chip-bg)] px-[8px] py-[2px] text-xs font-semibold text-[var(--exec-chip-text)]">Not in your scope</span>
         </li>
       </ul>
       {!functionExportSupported && (

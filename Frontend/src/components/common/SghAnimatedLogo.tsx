@@ -77,7 +77,7 @@ export const SghAnimatedLogo: React.FC<SghAnimatedLogoProps> = ({
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ duration: 0.5, delay: 0.3 }}
-              className="mt-1 text-[11px] font-bold uppercase tracking-[0.22em] text-[var(--sgh-cyan-primary,#00A3E0)]"
+              className="mt-1 text-xs font-bold uppercase tracking-[0.22em] text-[var(--sgh-cyan-primary,#00A3E0)]"
             >
               {subtitle}
             </motion.p>

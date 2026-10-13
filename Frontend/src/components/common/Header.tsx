@@ -121,7 +121,7 @@ function ProfileMenu({
       >
         <div
           className="w-7 h-7 rounded-lg flex items-center
-            justify-center text-[10px] font-bold text-white shadow-sm"
+            justify-center text-xs font-bold text-white shadow-sm"
           style={{ background: 'var(--sidebar-active-text)' }}
           aria-hidden="true"
         >
@@ -130,11 +130,11 @@ function ProfileMenu({
         <div className="app-header-profile-details hidden sm:flex flex-col text-left">
           <span className="text-xs font-bold text-[var(--text-primary)] leading-none">{name}</span>
           <div className="flex items-center gap-1.5 mt-0.5">
-            <span className="text-[11px] text-[var(--text-muted)] uppercase tracking-wider font-semibold">
+            <span className="text-xs text-[var(--text-muted)] uppercase tracking-wider font-semibold">
               {getRoleDisplayLabel(role)}
             </span>
             <span
-              className="text-[10px] uppercase tracking-[0.14em] font-extrabold px-1.5 py-0.5 rounded-full border"
+              className="text-xs uppercase tracking-[0.14em] font-extrabold px-1.5 py-0.5 rounded-full border"
               style={{
                 color: role === 'Admin' ? 'rgb(0, 105, 180)' : isGeneralManagerRole(role) ? 'rgb(79, 70, 229)' : role === 'Manager' ? 'rgb(5, 150, 105)' : role === 'Executive' ? 'rgb(217, 119, 6)' : 'rgb(100, 116, 139)',
                 background: role === 'Admin' ? 'rgba(0, 163, 224, 0.12)' : isGeneralManagerRole(role) ? 'rgba(99, 102, 241, 0.12)' : role === 'Manager' ? 'rgba(16, 185, 129, 0.12)' : role === 'Executive' ? 'rgba(251, 191, 36, 0.12)' : 'rgba(148, 163, 184, 0.12)',
@@ -179,18 +179,18 @@ function ProfileMenu({
               <div className="px-3 py-2.5 border-b border-[var(--border-light)] mb-1">
                 <p className="text-xs font-bold text-[var(--text-primary)] leading-snug">{name}</p>
                 {username && (
-                  <p className="text-[10px] text-[var(--text-muted)] font-mono mt-0.5">@{username}</p>
+                  <p className="text-xs text-[var(--text-muted)] font-mono mt-0.5">@{username}</p>
                 )}
-                <p className="text-[10px] font-bold uppercase tracking-wider mt-1" style={{
+                <p className="text-xs font-bold uppercase tracking-wider mt-1" style={{
                   color: role === 'Admin' ? 'rgb(0, 105, 180)' : isGeneralManagerRole(role) ? 'rgb(79, 70, 229)' : role === 'Manager' ? 'rgb(5, 150, 105)' : role === 'Executive' ? 'rgb(217, 119, 6)' : 'rgb(100, 116, 139)',
                 }}>
                   {getRoleDisplayLabel(role)} access
                 </p>
                 {isGeneralManagerRole(role) && (
-                  <p className="text-[10px] text-[var(--text-muted)] mt-1">General Manager: all teams</p>
+                  <p className="text-xs text-[var(--text-muted)] mt-1">General Manager: all teams</p>
                 )}
                 {role === 'Manager' && (
-                  <p className="text-[10px] text-[var(--text-muted)] mt-1">
+                  <p className="text-xs text-[var(--text-muted)] mt-1">
                     {hasUnrestrictedTeamAccess
                       ? 'All-teams manager: full team access'
                       : `${accessibleTeamCount || 0} / ${totalTeamCount || 0} teams accessible`}
@@ -326,7 +326,7 @@ const Header = ({ onMenuClick }: HeaderProps) => {
               <span className="app-header-title-full">{title}</span>
               <span className="app-header-title-compact" aria-hidden="true">{compactTitle}</span>
             </h1>
-            <p className="app-header-subtitle mt-0.5 hidden sm:flex items-center gap-1 truncate text-[10px] font-semibold text-blue-600 dark:text-blue-400">
+            <p className="app-header-subtitle mt-0.5 hidden sm:flex items-center gap-1 truncate text-xs font-semibold tracking-tight text-blue-600 dark:text-blue-400">
               <Sparkles size={10} className="text-blue-400 flex-shrink-0" aria-hidden="true" />
               {subtitle}
             </p>

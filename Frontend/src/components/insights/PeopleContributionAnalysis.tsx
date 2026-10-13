@@ -129,12 +129,12 @@ export default function PeopleContributionAnalysis({
                 onClick={() => onOpenEmployee(row.employee_id, row.performance_level)}
                 className="grid w-full grid-cols-[24px_minmax(88px,1fr)_minmax(70px,1.2fr)_52px] items-center gap-2 text-left"
               >
-                <span className="grid h-6 w-6 place-items-center rounded-full bg-rose-500/10 text-[10px] font-black text-rose-600">
+                <span className="grid h-6 w-6 place-items-center rounded-full bg-rose-500/10 text-xs font-black text-rose-600">
                   {index + 1}
                 </span>
                 <span className="min-w-0">
-                  <strong className="block truncate text-[11px] text-[var(--text-primary)]">{row.employee_name}</strong>
-                  <span className="block truncate text-[9px] text-[var(--text-muted)]">{row.position}</span>
+                  <strong className="block truncate text-xs text-[var(--text-primary)]">{row.employee_name}</strong>
+                  <span className="block truncate text-xs text-[var(--text-muted)]">{row.position}</span>
                 </span>
                 <span className="h-2 overflow-hidden rounded-full bg-[var(--bg-sunken)]">
                   <span
@@ -142,13 +142,13 @@ export default function PeopleContributionAnalysis({
                     style={{ width: `${Math.max(8, (Math.abs(row.weighted_impact ?? 0) / maxNegativeImpact) * 100)}%` }}
                   />
                 </span>
-                <strong className="text-right text-[10px] text-rose-600">{signedValue(row.weighted_impact)}</strong>
+                <strong className="text-right text-xs text-rose-600">{signedValue(row.weighted_impact)}</strong>
               </button>
             )) : (
               <p className="py-10 text-center text-xs text-[var(--text-muted)]">No negative contributors for this KPI.</p>
             )}
           </div>
-          <p className="mt-5 border-t border-[var(--border-light)] pt-3 text-center text-[9px] text-[var(--text-muted)]">
+          <p className="mt-5 border-t border-[var(--border-light)] pt-3 text-center text-xs text-[var(--text-muted)]">
             Weighted impact on {analysis.kpi_label}
           </p>
         </aside>
@@ -162,7 +162,7 @@ export default function PeopleContributionAnalysis({
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[860px] text-left">
                   <thead>
-                    <tr className="bg-[var(--bg-sunken)]/50 text-[9px] font-extrabold uppercase text-[var(--text-faint)]">
+                    <tr className="bg-[var(--bg-sunken)]/50 text-xs font-extrabold uppercase text-[var(--text-faint)]">
                       <th className="px-3 py-3">#</th>
                       <th className="px-3 py-3">Employee</th>
                       <th className="px-3 py-3">Position</th>
@@ -186,11 +186,11 @@ export default function PeopleContributionAnalysis({
                         direction: row.direction ?? analysis.direction,
                       });
                       return (
-                        <tr key={`${row.team}-${row.employee_id}-${row.performance_level}-${row.position}`} className="border-t border-[var(--border-light)] text-[10px]">
+                        <tr key={`${row.team}-${row.employee_id}-${row.performance_level}-${row.position}`} className="border-t border-[var(--border-light)] text-xs">
                           <td className="px-3 py-3 font-bold text-[var(--text-muted)]">{(currentPage - 1) * pageSize + index + 1}</td>
                           <td className="px-3 py-3">
                             <strong className="block text-[var(--text-primary)]">{row.employee_name}</strong>
-                            <span className="text-[9px] text-[var(--text-muted)]">{row.employee_id}</span>
+                            <span className="text-xs text-[var(--text-muted)]">{row.employee_id}</span>
                           </td>
                           <td className="px-3 py-3 text-[var(--text-secondary)]">{row.position}</td>
                           <td className="px-3 py-3 font-bold text-[var(--text-primary)]">{formatContributionMetric(row.current_value, row.target_value, row.unit)}</td>
@@ -206,7 +206,7 @@ export default function PeopleContributionAnalysis({
                             )}
                           </td>
                           <td className="px-3 py-3">
-                            <span className={`rounded-full px-2 py-1 text-[9px] font-extrabold ${severityClasses[row.severity] || severityClasses['Data issue']}`}>
+                            <span className={`rounded-full px-2 py-1 text-xs font-extrabold ${severityClasses[row.severity] || severityClasses['Data issue']}`}>
                               {row.severity}
                             </span>
                           </td>
@@ -234,7 +234,7 @@ export default function PeopleContributionAnalysis({
         </div>
       </div>
 
-      <footer className="border-t border-[var(--border-light)] bg-[var(--bg-sunken)]/35 px-5 py-3 text-[10px] text-[var(--text-muted)]">
+      <footer className="border-t border-[var(--border-light)] bg-[var(--bg-sunken)]/35 px-5 py-3 text-xs text-[var(--text-muted)]">
         Weighted impact is each employee&apos;s share of the selected KPI score gap using the active weight, actual, target, and scoring direction.
       </footer>
     </section>

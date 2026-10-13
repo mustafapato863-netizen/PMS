@@ -32,7 +32,7 @@ const CustomTooltip = ({ active, payload, label }: CustomTooltipProps) => {
   
   return (
     <div className="bg-[var(--bg-surface-elevated)] border border-[var(--border-medium)] rounded-2xl px-4 py-3 shadow-xl text-sm min-w-[160px] backdrop-blur-md">
-      <div className="text-[11px] text-[var(--text-muted)] font-extrabold uppercase tracking-widest mb-2 border-b border-[var(--border-light)] pb-1.5">{label}</div>
+      <div className="text-xs text-[var(--text-muted)] font-extrabold uppercase tracking-widest mb-2 border-b border-[var(--border-light)] pb-1.5">{label}</div>
       {payload.map((entry, index) => {
         const score = entry.value;
         let color = entry.color;
@@ -63,7 +63,7 @@ const CustomDot = (props: CustomDotProps) => {
     return (
       <g>
         <circle cx={cx} cy={cy} r={10} fill="var(--bg-surface)" stroke="#F59E0B" strokeWidth={2} />
-        <text x={cx} y={cy} dy={3.5} textAnchor="middle" fontSize="10">🏆</text>
+        <text x={cx} y={cy} dy={3.5} textAnchor="middle" fontSize="12">🏆</text>
       </g>
     );
   }
@@ -87,13 +87,13 @@ const ScoreTrendChart = ({ data, targetScore = 80, benchmarkName = 'Benchmark' }
         <CartesianGrid strokeDasharray="3 3" stroke="var(--border-light)" vertical={false} />
         <XAxis
           dataKey="month"
-          tick={{ fontSize: 11, fill: 'var(--text-muted)' }}
+          tick={{ fontSize: 12, fill: 'var(--text-muted)' }}
           axisLine={false}
           tickLine={false}
           padding={{ left: 10, right: 10 }}
         />
         <YAxis
-          tick={{ fontSize: 11, fill: 'var(--text-muted)' }}
+          tick={{ fontSize: 12, fill: 'var(--text-muted)' }}
           axisLine={false}
           tickLine={false}
           domain={[0, (dataMax: number) => Math.max(100, Math.ceil(dataMax / 10) * 10)]}
@@ -105,7 +105,7 @@ const ScoreTrendChart = ({ data, targetScore = 80, benchmarkName = 'Benchmark' }
             verticalAlign="top" 
             height={36}
             iconType="circle"
-            wrapperStyle={{ fontSize: '11px', fontWeight: 500 }}
+            wrapperStyle={{ fontSize: '12px', fontWeight: 500 }}
           />
         )}
 
@@ -114,7 +114,7 @@ const ScoreTrendChart = ({ data, targetScore = 80, benchmarkName = 'Benchmark' }
           stroke="var(--color-meet)"
           strokeDasharray="4 4"
           strokeOpacity={0.4}
-          label={{ value: `Target Threshold (${targetScore}%)`, position: 'insideTopLeft', fontSize: 10, fill: 'var(--color-meet)', fontWeight: 600, dy: -8 }}
+          label={{ value: `Target Threshold (${targetScore}%)`, position: 'insideTopLeft', fontSize: 12, fill: 'var(--color-meet)', fontWeight: 600, dy: -8 }}
         />
 
         {hasBenchmark && (

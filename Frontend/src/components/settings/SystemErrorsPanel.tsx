@@ -279,19 +279,19 @@ export function SystemErrorsPanel() {
               <div className="space-y-3">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <p className="text-[10px] font-black uppercase tracking-wider text-rose-600 dark:text-rose-300">Admin diagnostics</p>
+                    <p className="text-xs font-black uppercase tracking-wider text-rose-600 dark:text-rose-300">Admin diagnostics</p>
                     <h3 className="mt-1 break-all text-sm font-black text-[var(--text-primary)]">{selectedError.error_class}</h3>
                   </div>
                   {loadingDetails && <Loader2 size={16} className="animate-spin text-blue-500" />}
                 </div>
                 {selectedError.request_id && (
-                  <p className="break-all rounded-lg bg-[var(--bg-sunken)] px-2.5 py-2 font-mono text-[10px] text-[var(--text-secondary)]">
+                  <p className="break-all rounded-lg bg-[var(--bg-sunken)] px-2.5 py-2 font-mono text-xs text-[var(--text-secondary)]">
                     Reference: {selectedError.request_id}
                   </p>
                 )}
                 {selectedError.error_message && (
                   <div>
-                    <p className="mb-1 text-[10px] font-extrabold uppercase tracking-wider text-[var(--text-muted)]">Message</p>
+                    <p className="mb-1 text-xs font-extrabold uppercase tracking-wider text-[var(--text-muted)]">Message</p>
                     <p className="break-words rounded-xl border border-[var(--border-light)] bg-[var(--bg-sunken)] p-3 text-xs leading-relaxed text-[var(--text-primary)]">{selectedError.error_message}</p>
                   </div>
                 )}
@@ -300,7 +300,7 @@ export function SystemErrorsPanel() {
                     <summary className="flex min-h-9 cursor-pointer list-none items-center gap-2 text-xs font-bold text-blue-600 hover:text-blue-700 dark:text-blue-400">
                       <Activity size={14} /> Technical trace
                     </summary>
-                    <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-xl bg-slate-950 p-3 text-[10px] leading-relaxed text-slate-100">{selectedError.stack_trace}</pre>
+                    <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-xl bg-slate-950 p-3 text-xs leading-relaxed text-slate-100">{selectedError.stack_trace}</pre>
                   </details>
                 )}
               </div>
@@ -308,7 +308,7 @@ export function SystemErrorsPanel() {
               <div className="flex h-full min-h-40 flex-col items-center justify-center text-center">
                 <Activity size={22} className="text-blue-500/70" />
                 <p className="mt-2 text-xs font-bold text-[var(--text-primary)]">Select an error to inspect it</p>
-                <p className="mt-1 max-w-xs text-[11px] leading-relaxed text-[var(--text-muted)]">The technical trace is loaded on demand and visible only in this Admin workspace.</p>
+                <p className="mt-1 max-w-xs text-xs leading-relaxed text-[var(--text-muted)]">The technical trace is loaded on demand and visible only in this Admin workspace.</p>
               </div>
             )}
           </aside>

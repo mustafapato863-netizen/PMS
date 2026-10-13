@@ -264,7 +264,7 @@ const EmployeeRowActions = ({
           <aside className="h-full w-full max-w-md overflow-y-auto border-l border-[var(--border-medium)] bg-[var(--bg-surface)] p-5 shadow-2xl" onMouseDown={(event) => event.stopPropagation()}>
             <div className="mb-6 flex items-start justify-between gap-4">
               <div>
-                <p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-blue-500">{row.id}</p>
+                <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-blue-500">{row.id}</p>
                 <h3 className="mt-1 text-lg font-extrabold text-[var(--text-primary)]">{row.name}</h3>
                 <p className="mt-1 text-xs font-semibold text-[var(--text-secondary)]">{row.team} / {month}</p>
               </div>
@@ -277,7 +277,7 @@ const EmployeeRowActions = ({
               <div className="space-y-3">
                 <div className={`score-grade-${row.gradeClass} flex items-center justify-between rounded-2xl border p-4`}>
                   <div>
-                    <p className="text-[10px] font-extrabold uppercase tracking-wider opacity-75">Monthly score</p>
+                    <p className="text-xs font-extrabold uppercase tracking-wider opacity-75">Monthly score</p>
                     <p className="mt-1 text-3xl font-black">{row.score.toFixed(1)}%</p>
                   </div>
                   <span className={`grade-badge grade-${row.gradeClass} inline-flex h-10 min-w-10 items-center justify-center rounded-xl px-3 font-extrabold`}>{row.gradeClass}</span>
@@ -287,11 +287,11 @@ const EmployeeRowActions = ({
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <p className="text-xs font-extrabold text-[var(--text-primary)]">{kpi.label}</p>
-                        <p className="mt-1 text-[11px] font-semibold text-[var(--text-faint)]">Actual {formatKpiValue(kpi.actual, kpi.unit)} / Target {formatKpiValue(kpi.target, kpi.unit)}</p>
+                        <p className="mt-1 text-xs font-semibold text-[var(--text-faint)]">Actual {formatKpiValue(kpi.actual, kpi.unit)} / Target {formatKpiValue(kpi.target, kpi.unit)}</p>
                       </div>
                       <div className="text-right">
                         <p className={`text-sm font-extrabold ${kpi.achievement >= 80 ? 'text-emerald-600' : 'text-rose-500'}`}>{kpi.achievement.toFixed(1)}%</p>
-                        {kpi.contribution !== undefined && <p className="text-[10px] font-semibold text-[var(--text-faint)]">Contribution {kpi.contribution.toFixed(1)}%</p>}
+                        {kpi.contribution !== undefined && <p className="text-xs font-semibold text-[var(--text-faint)]">Contribution {kpi.contribution.toFixed(1)}%</p>}
                       </div>
                     </div>
                     <div className="mt-3 h-2 overflow-hidden rounded-full bg-[var(--bg-sunken)]">
@@ -309,11 +309,11 @@ const EmployeeRowActions = ({
                 ) : actions.map((action) => (
                   <div key={action.id} className="rounded-xl border border-[var(--border-light)] p-4">
                     <div className="flex items-center justify-between gap-3">
-                      <span className={`rounded-lg px-2 py-1 text-[10px] font-extrabold action-${action.action_type}`}>{action.action_type}</span>
-                      <span className="text-[10px] font-semibold text-[var(--text-faint)]">{new Date(action.created_at).toLocaleDateString()}</span>
+                      <span className={`rounded-lg px-2 py-1 text-xs font-extrabold action-${action.action_type}`}>{action.action_type}</span>
+                      <span className="text-xs font-semibold text-[var(--text-faint)]">{new Date(action.created_at).toLocaleDateString()}</span>
                     </div>
                     <p className="mt-3 text-sm font-bold text-[var(--text-primary)]">{action.action_text}</p>
-                    <p className="mt-2 text-[11px] font-semibold text-[var(--text-secondary)]">{action.created_by || 'Unknown owner'} / {action.synced ? 'Saved' : 'Pending sync'}</p>
+                    <p className="mt-2 text-xs font-semibold text-[var(--text-secondary)]">{action.created_by || 'Unknown owner'} / {action.synced ? 'Saved' : 'Pending sync'}</p>
                   </div>
                 ))}
               </div>
@@ -323,11 +323,11 @@ const EmployeeRowActions = ({
               <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-3">
                   <div className="rounded-2xl border border-blue-500/15 bg-blue-500/10 p-4">
-                    <p className="text-[10px] font-extrabold uppercase tracking-wider text-blue-500">Employee</p>
+                    <p className="text-xs font-extrabold uppercase tracking-wider text-blue-500">Employee</p>
                     <p className="mt-2 text-2xl font-black text-blue-600 dark:text-blue-400">{row.score.toFixed(1)}%</p>
                   </div>
                   <div className="rounded-2xl border border-violet-500/15 bg-violet-500/10 p-4">
-                    <p className="text-[10px] font-extrabold uppercase tracking-wider text-violet-500">Team average</p>
+                    <p className="text-xs font-extrabold uppercase tracking-wider text-violet-500">Team average</p>
                     <p className="mt-2 text-2xl font-black text-violet-600 dark:text-violet-400">{teamAverage.toFixed(1)}%</p>
                   </div>
                 </div>

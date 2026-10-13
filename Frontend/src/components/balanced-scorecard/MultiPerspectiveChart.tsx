@@ -32,7 +32,7 @@ export function MultiPerspectiveChart({
   const validHistory = useMemo(() => history.filter(h => h.perspective_scores != null), [history]);
 
   if (!validHistory.length || !perspectives.length) return (
-    <div style={{ height: H, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--bsc-panel-muted)', fontSize: 11 }}>
+    <div style={{ height: H, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--bsc-panel-muted)', fontSize: 12 }}>
       No history
     </div>
   );
@@ -172,7 +172,7 @@ export function MultiPerspectiveChart({
               <text
                 x={x + 8}
                 y={y + 3}
-                fontSize="9"
+                fontSize="12"
                 fontWeight="800"
                 fill={pc(p.key)}
               >
@@ -184,7 +184,7 @@ export function MultiPerspectiveChart({
 
         {/* Month labels */}
         {validHistory.map((h, i) => (
-          <text key={i} x={toX(i)} y={H - 1} fontSize="8.5" fill="var(--bsc-panel-muted)" textAnchor="middle" fontWeight="600">
+          <text key={i} x={toX(i)} y={H - 1} fontSize="12" fill="var(--bsc-panel-muted)" textAnchor="middle" fontWeight="600">
             {`${h.month}`.slice(0, 1)}
           </text>
         ))}
@@ -234,7 +234,7 @@ export function MultiPerspectiveChart({
         >
           <div
             style={{
-              fontSize: 10,
+              fontSize: 12,
               fontWeight: 800,
               color: 'var(--bsc-panel-muted)',
               textTransform: 'uppercase',
@@ -248,7 +248,7 @@ export function MultiPerspectiveChart({
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             {activeTooltip.scores.map((s, idx) => (
-              <div key={idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 11.5 }}>
+              <div key={idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 12 }}>
                 <span style={{ display: 'flex', alignItems: 'center', gap: 5, color: 'var(--bsc-panel-subtle)', fontWeight: 600 }}>
                   <span style={{ width: 6.5, height: 6.5, borderRadius: '50%', background: s.color }} />
                   {s.label.split(' ')[0]}:

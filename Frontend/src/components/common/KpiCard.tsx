@@ -70,7 +70,7 @@ export function KpiCard({
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
-          <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--text-muted)] mb-1.5">{label}</p>
+          <p className="text-xs font-bold uppercase tracking-[0.08em] text-[var(--text-muted)] mb-1.5">{label}</p>
           <div className="text-[20px] font-extrabold text-[var(--text-primary)] leading-none tracking-tight">{value}</div>
         </div>
         <div
@@ -82,7 +82,7 @@ export function KpiCard({
       </div>
       <div className="mt-2.5">
         {sub && (
-          <p className="text-[11px] text-[var(--text-secondary)] font-medium leading-snug">{sub}</p>
+          <p className="text-xs text-[var(--text-secondary)] font-medium leading-snug">{sub}</p>
         )}
         <MoMIndicator
           delta={trendDelta}
@@ -91,7 +91,7 @@ export function KpiCard({
           className="mt-1"
         />
         {note && (
-          <p className="text-[10px] text-[var(--text-muted)] font-medium mt-1 leading-snug">{note}</p>
+          <p className="text-xs text-[var(--text-muted)] font-medium mt-1 leading-snug">{note}</p>
         )}
       </div>
     </div>

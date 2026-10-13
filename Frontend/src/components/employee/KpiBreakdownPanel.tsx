@@ -108,7 +108,7 @@ const KpiBar = ({ label, actual, target, unit, isLowerBetter = false, color, ach
         </div>
         <div className="text-right">
           <span className="block font-extrabold text-sm" style={{ color: displayColor }}>{targetRequiresReview ? '—' : `${achievement.toFixed(1)}%`}</span>
-          <span className="text-[10px] text-[var(--text-muted)] font-semibold">Achievement</span>
+          <span className="text-xs text-[var(--text-muted)] font-semibold">Achievement</span>
         </div>
       </div>
       <div className="h-2.5 bg-[var(--bg-sunken)] rounded-full overflow-hidden">
@@ -117,19 +117,19 @@ const KpiBar = ({ label, actual, target, unit, isLowerBetter = false, color, ach
           style={{ transform: `scaleX(${pct / 100})`, transformOrigin: 'left', transition: 'transform 0.7s', background: barColor }}
         />
       </div>
-      <div className="grid grid-cols-2 gap-2 text-[11px]">
+      <div className="grid grid-cols-2 gap-2 text-xs">
         <div className="rounded-lg bg-[var(--bg-sunken)] px-2.5 py-2">
-          <div className="text-[10px] uppercase tracking-wider text-[var(--text-muted)] font-bold">Actual</div>
+          <div className="text-xs uppercase tracking-wider text-[var(--text-muted)] font-bold">Actual</div>
           <div className="font-extrabold text-[var(--text-primary)]">{formatVal(actual)}</div>
-          {actualVolume !== undefined && <div className="text-[10px] text-[var(--text-muted)] font-semibold">{actualVolume.toLocaleString()} {volumeUnit || ''}</div>}
+          {actualVolume !== undefined && <div className="text-xs text-[var(--text-muted)] font-semibold">{actualVolume.toLocaleString()} {volumeUnit || ''}</div>}
         </div>
         <div className="rounded-lg bg-[var(--bg-sunken)] px-2.5 py-2">
-          <div className="text-[10px] uppercase tracking-wider text-[var(--text-muted)] font-bold">Target</div>
+          <div className="text-xs uppercase tracking-wider text-[var(--text-muted)] font-bold">Target</div>
           <div className="font-extrabold text-[var(--text-primary)]">{formatTarget(target)}</div>
-          {targetVolume !== undefined && <div className="text-[10px] text-[var(--text-muted)] font-semibold">{targetVolume.toLocaleString()} {volumeUnit || ''}</div>}
+          {targetVolume !== undefined && <div className="text-xs text-[var(--text-muted)] font-semibold">{targetVolume.toLocaleString()} {volumeUnit || ''}</div>}
         </div>
       </div>
-      <div className="flex items-center justify-between text-[11px]">
+      <div className="flex items-center justify-between text-xs">
         <div className="text-[var(--text-secondary)] font-semibold">
           Contribution
           <span className="ml-1 font-extrabold text-[var(--text-primary)]">{contribution !== undefined ? `${contribution.toFixed(1)}%` : '-'}</span>
@@ -185,10 +185,10 @@ const KpiBreakdownPanel = ({ score: propScore, agent, teamWeights }: KpiBreakdow
       {isScopedPreApprovalsTeam && (
         <div className="flex items-center justify-between gap-3 rounded-xl border border-blue-500/15 bg-blue-500/5 px-3 py-2.5">
           <div className="min-w-0">
-            <div className="text-[10px] font-extrabold uppercase tracking-wider text-blue-600 dark:text-blue-400">Employee workstream</div>
+            <div className="text-xs font-extrabold uppercase tracking-wider text-blue-600 dark:text-blue-400">Employee workstream</div>
             <div className="truncate text-sm font-bold text-[var(--text-primary)]">{resolvePreApprovalsWorkstream(agent) === 'er' ? 'ER / IP Approval' : 'IP Elective'}</div>
           </div>
-          <span className="shrink-0 rounded-full bg-white/70 px-2 py-1 text-[10px] font-bold text-[var(--text-secondary)] dark:bg-slate-800/60">2 KPIs · 60/40</span>
+          <span className="shrink-0 rounded-full bg-white/70 px-2 py-1 text-xs font-bold text-[var(--text-secondary)] dark:bg-slate-800/60">2 KPIs · 60/40</span>
         </div>
       )}
       {/* Overall Score */}

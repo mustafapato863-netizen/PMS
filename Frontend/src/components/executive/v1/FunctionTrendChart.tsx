@@ -17,6 +17,9 @@ export default function FunctionTrendChart({ points, title, color }: {
   const maximum = Math.max(100, Math.ceil(Math.max(...values) / 25) * 25);
   const ticks = [minimum, (minimum + maximum) / 2, maximum];
   const plot = { left: 34, right: 314, top: 38, bottom: 162 };
+  // The svg is 330 units wide and scales with its card, which renders it 252–300px wide (252 at 1440, 300 at 390/768).
+  // 15.7 units draws labels at 12px in the narrowest card; at 300px they draw at 14.3px. A fixed unit size cannot hold 12px at both.
+  const labelFontSize = (12 * 330) / 252;
   const x = (index: number) => points.length > 1 ? 58 + index * (232 / (points.length - 1)) : 174;
   const y = (value: number) => plot.bottom - ((Math.max(minimum, Math.min(value, maximum)) - minimum) / (maximum - minimum)) * (plot.bottom - plot.top);
   const description = `${title} trend, last six months: ` + points.map((point) => `${shortMonth(point.period)} ${point.score !== null && Number.isFinite(point.score) ? fmtScore(point.score) : 'no data'}`).join(', ');
@@ -25,7 +28,7 @@ export default function FunctionTrendChart({ points, title, color }: {
       <defs><linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={color} stopOpacity={0.2} /><stop offset="100%" stopColor={color} stopOpacity={0.015} /></linearGradient></defs>
       {ticks.map((tick) => <g key={tick}>
         <line x1={plot.left} x2={plot.right} y1={y(tick)} y2={y(tick)} stroke="var(--exec-card-border)" strokeDasharray="3 4" />
-        <text x={plot.left - 6} y={y(tick)} dominantBaseline="middle" textAnchor="end" fontSize={10} fill="var(--text-muted)" data-testid="function-trend-tick">{tick}%</text>
+        <text x={plot.left - 6} y={y(tick)} dominantBaseline="middle" textAnchor="end" fontSize={labelFontSize} fill="var(--text-muted)" data-testid="function-trend-tick">{tick}%</text>
       </g>)}
       <line x1={plot.left} x2={plot.right} y1={y(100)} y2={y(100)} stroke="var(--text-muted)" strokeOpacity={0.65} strokeDasharray="4 4" />
       {segments.map((segment, index) => segment.length > 1 && <g key={index}>
@@ -37,10 +40,10 @@ export default function FunctionTrendChart({ points, title, color }: {
           <circle cx={x(index)} cy={y(point.score)} r={4} fill="var(--bg-surface)" stroke={color} strokeWidth={2.5} data-testid="function-trend-point" />
           <g data-testid="function-trend-value">
             <rect x={x(index) - 23} y={y(point.score) - 32} width={46} height={23} rx={8} fill="var(--bg-surface)" stroke={color} strokeOpacity={0.16} />
-            <text x={x(index)} y={y(point.score) - 17} textAnchor="middle" fontSize={10} fontWeight={700} fill={color}>{fmtScore(point.score)}</text>
+            <text x={x(index)} y={y(point.score) - 17} textAnchor="middle" fontSize={labelFontSize} fontWeight={700} fill={color}>{fmtScore(point.score)}</text>
           </g>
         </>}
-        <text x={x(index)} y={184} textAnchor="middle" fontSize={10} fill="var(--text-muted)">{shortMonth(point.period)}</text>
+        <text x={x(index)} y={184} textAnchor="middle" fontSize={labelFontSize} fill="var(--text-muted)">{shortMonth(point.period)}</text>
       </g>)}
     </svg>
   );

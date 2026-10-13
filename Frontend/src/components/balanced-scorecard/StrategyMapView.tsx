@@ -93,7 +93,7 @@ export function StrategyMapView({
               </h2>
               {badgeTitle && (
                 <span style={{
-                  fontSize: 11,
+                  fontSize: 12,
                   fontWeight: 600,
                   padding: '3px 11px',
                   borderRadius: 99,

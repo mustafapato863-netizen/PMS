@@ -35,7 +35,7 @@ export default function GradeDistributionCard({ distribution, previous }: { dist
                     <div className="flex items-center gap-[8px]">
                       <span className="flex-1 truncate text-[13px] font-medium text-[var(--insights-heading)]">{GRADE_PALETTE[grade].label}</span>
                       <span className="text-[13px] font-bold text-[var(--insights-heading)]">{distribution.counts[grade]}</span>
-                      <span className="w-[40px] text-right text-[11px] text-[var(--text-muted)]">{distribution.percents[grade].toFixed(1)}%</span>
+                      <span className="w-[40px] text-right text-xs text-[var(--text-muted)]">{distribution.percents[grade].toFixed(1)}%</span>
                     </div>
                     <div aria-hidden="true" className="h-[6px] w-full rounded-[3px] bg-[var(--insights-track)]">
                       <div className="h-full rounded-[3px]" style={{ width: `${distribution.percents[grade]}%`, background: gradeTokenVar(grade, 'solid') }} />

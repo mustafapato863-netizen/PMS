@@ -152,7 +152,7 @@ const ActionTimeline = ({
     <div className="flex items-center gap-1 p-0.5 bg-[var(--bg-sunken)] rounded-lg border border-[var(--border-light)] mb-4">
       <button
         onClick={() => setFilterMode('month')}
-        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-bold transition-all cursor-pointer ${
+        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer ${
           filterMode === 'month'
             ? 'bg-blue-600 text-white shadow-sm'
             : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-raised)]'
@@ -163,7 +163,7 @@ const ActionTimeline = ({
       </button>
       <button
         onClick={() => setFilterMode('all')}
-        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-bold transition-all cursor-pointer ${
+        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer ${
           filterMode === 'all'
             ? 'bg-blue-600 text-white shadow-sm'
             : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-raised)]'
@@ -235,7 +235,7 @@ const ActionTimeline = ({
                       </span>
                     )}
                     {action.synced && <CheckCircle2 size={11} className="text-emerald-400" />}
-                    <span className="text-[10px] text-[var(--text-muted)] font-semibold">{date}</span>
+                    <span className="text-xs text-[var(--text-muted)] font-semibold">{date}</span>
                   </div>
                 </div>
                 <p className="text-sm font-semibold text-[var(--text-primary)] leading-snug">{action.text}</p>
@@ -245,8 +245,8 @@ const ActionTimeline = ({
                   </p>
                 )}
                 <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <span className="text-[10px] font-bold text-[var(--text-muted)]">Due {action.dueDate || 'not set'}</span>
-                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-black ${action.daysToDue != null && action.daysToDue < 0 && action.status !== 'Completed' && action.status !== 'Cancelled' ? 'bg-rose-500/10 text-rose-700 dark:text-rose-300' : 'bg-[var(--bg-surface)] text-[var(--text-secondary)]'}`}>
+                  <span className="text-xs font-bold text-[var(--text-muted)]">Due {action.dueDate || 'not set'}</span>
+                  <span className={`rounded-full px-2 py-0.5 text-xs font-black ${action.daysToDue != null && action.daysToDue < 0 && action.status !== 'Completed' && action.status !== 'Cancelled' ? 'bg-rose-500/10 text-rose-700 dark:text-rose-300' : 'bg-[var(--bg-surface)] text-[var(--text-secondary)]'}`}>
                     {dueBadgeLabel(action.dueDate, action.daysToDue)}
                   </span>
                   <ActionStatusMenu
@@ -263,7 +263,7 @@ const ActionTimeline = ({
                   </p>
                 )}
                 <div className="flex items-center justify-between mt-2 pt-2 border-t border-[var(--border-light)]">
-                  <div className="flex items-center gap-1 text-[10px] text-[var(--text-muted)] font-semibold">
+                  <div className="flex items-center gap-1 text-xs text-[var(--text-muted)] font-semibold">
                     <User size={9} /> {formatCreatedBy(action.createdBy)}
                   </div>
                   {canModify && (
@@ -337,7 +337,7 @@ const ActionTimeline = ({
 
               {/* Action Preview Card */}
               <div className="bg-[var(--bg-sunken)] border border-[var(--border-medium)] rounded-xl p-3 text-left">
-                <span className="text-[9px] font-bold uppercase tracking-wider text-rose-500">
+                <span className="text-xs font-bold uppercase tracking-wider text-rose-500">
                   {actionToDelete.type}
                 </span>
                 <p className="text-xs font-semibold text-[var(--text-secondary)] line-clamp-2 mt-0.5 leading-snug">

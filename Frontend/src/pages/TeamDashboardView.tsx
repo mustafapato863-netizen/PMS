@@ -2086,7 +2086,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
                           <div className="flex items-center gap-2.5 flex-wrap">
                             <span className="text-sm font-bold text-[var(--text-primary)] dark:text-slate-100">{bullet.title}</span>
                             {bullet.badgeText && (
-                              <span className={`text-[9px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-md ${config.badge}`}>
+                              <span className={`text-xs font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-md ${config.badge}`}>
                                 {bullet.badgeText}
                               </span>
                             )}
@@ -2142,7 +2142,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
                           Key Action Required
                         </span>
                         {!isEditingAction && (
-                          <span className="animate-pulse rounded-md border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 text-[9px] font-extrabold uppercase tracking-wider text-amber-700 dark:text-amber-400">
+                          <span className="animate-pulse rounded-md border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 text-xs font-extrabold uppercase tracking-wider text-amber-700 dark:text-amber-400">
                             HIGH PRIOR
                           </span>
                         )}
@@ -2165,7 +2165,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
                                   {teamActionSaveError.requestId && (
                                     <p className="pt-1 text-xs font-semibold">
                                       Reference:{' '}
-                                      <code className="select-all rounded bg-white/70 px-1.5 py-0.5 font-mono text-[11px] dark:bg-black/20">
+                                      <code className="select-all rounded bg-white/70 px-1.5 py-0.5 font-mono text-xs dark:bg-black/20">
                                         {teamActionSaveError.requestId}
                                       </code>
                                     </p>
@@ -2252,7 +2252,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
                                   >
                                     {act.employee_name}
                                   </Link>
-                                  <span className="text-[9px] font-bold uppercase text-[var(--text-muted)] dark:text-slate-400">
+                                  <span className="text-xs font-bold uppercase text-[var(--text-muted)] dark:text-slate-400">
                                     {act.action_type}
                                   </span>
                                 </div>
@@ -2271,7 +2271,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
                                   {act.action_text}
                                 </p>
                                 {act.root_cause_note && (
-                                  <p className="text-[11px] italic leading-relaxed text-[var(--text-muted)] dark:text-slate-400">
+                                  <p className="text-xs italic leading-relaxed text-[var(--text-muted)] dark:text-slate-400">
                                     "{act.root_cause_note}"
                                   </p>
                                 )}

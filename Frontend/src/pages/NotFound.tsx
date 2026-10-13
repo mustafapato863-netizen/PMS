@@ -40,7 +40,7 @@ const NotFound = () => {
           </div>
           <div>
             <span className="text-sm font-extrabold tracking-tight text-[var(--text-primary)]">SGH Hub</span>
-            <span className="text-[9px] font-bold uppercase tracking-widest text-blue-600 block leading-none mt-0.5">Intelligence</span>
+            <span className="text-xs font-bold uppercase tracking-widest text-blue-600 block leading-none mt-0.5">Intelligence</span>
           </div>
         </motion.div>
 
@@ -62,7 +62,7 @@ const NotFound = () => {
             >
               <Compass className="text-white w-12 h-12 stroke-[1.5]" />
               {/* Absctract 404 tag badge */}
-              <div className="absolute -bottom-2 -right-2 px-2.5 py-1 rounded-lg bg-[var(--bg-surface)] border border-[var(--border-light)] text-[10px] font-extrabold text-blue-600 tracking-wider shadow-md uppercase">
+              <div className="absolute -bottom-2 -right-2 px-2.5 py-1 rounded-lg bg-[var(--bg-surface)] border border-[var(--border-light)] text-xs font-extrabold text-blue-600 tracking-wider shadow-md uppercase">
                 Code 404
               </div>
             </div>
@@ -105,7 +105,7 @@ const NotFound = () => {
           initial={{ opacity: 0 }}
           animate={{ opacity: 0.6 }}
           transition={{ duration: 0.5, delay: 0.3 }}
-          className="mt-6 text-[10px] font-extrabold text-[var(--text-faint)] tracking-widest uppercase"
+          className="mt-6 text-xs font-extrabold text-[var(--text-faint)] tracking-widest uppercase"
         >
           Saudi German Health · PMS Dashboard
         </motion.p>

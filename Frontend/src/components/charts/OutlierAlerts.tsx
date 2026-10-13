@@ -64,11 +64,11 @@ const AlertCard = ({ title, description, agents, icon, color, renderDetail }: Al
           <div>
             <div className="flex items-center gap-2">
               <h4 className={`text-sm font-bold ${cs.title}`}>{title}</h4>
-              <span className={`${cs.badge} text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full`}>
+              <span className={`${cs.badge} text-white text-xs font-bold px-1.5 py-0.5 rounded-full`}>
                 {count}
               </span>
             </div>
-            <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">{description}</p>
+            <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">{description}</p>
           </div>
         </div>
         {count > 0 && (
@@ -106,7 +106,7 @@ const AlertCard = ({ title, description, agents, icon, color, renderDetail }: Al
                 </div>
               ))}
               {agents.length > 10 && (
-                <p className="text-[10px] text-slate-400 text-center py-1">
+                <p className="text-xs text-slate-400 text-center py-1">
                   +{agents.length - 10} more agents
                 </p>
               )}

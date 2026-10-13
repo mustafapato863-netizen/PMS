@@ -87,7 +87,7 @@ export function SettingsLayout({ activePage, children }: SettingsLayoutProps) {
   return (
     <div className="@container/settings">
       <div className="grid gap-4 @min-[900px]/settings:grid-cols-[208px_minmax(0,1fr)]">
-        <aside className="glass-panel h-fit min-w-0 rounded-2xl border border-[var(--border-light)] p-2 shadow-sm @min-[900px]/settings:sticky @min-[900px]/settings:top-24">
+        <aside className="glass-panel h-fit min-w-0 rounded-2xl border border-[var(--border-light)] p-2 shadow-sm @min-[900px]/settings:sticky @min-[900px]/settings:top-24 @min-[900px]/settings:max-h-[calc(100dvh-14rem)] @min-[900px]/settings:overflow-y-auto">
           {/* `relative` makes the rail the containing block of the sr-only group labels, so their overflow stays clipped by this scroller. */}
           <nav aria-label="Settings sections" ref={railRef} className="relative -mx-1 overflow-x-auto px-1 pb-1 @min-[900px]/settings:mx-0 @min-[900px]/settings:overflow-visible @min-[900px]/settings:p-0">
             <ul ref={listRef} className="flex w-max items-stretch gap-1 @min-[900px]/settings:w-auto @min-[900px]/settings:flex-col @min-[900px]/settings:gap-4">

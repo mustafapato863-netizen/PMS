@@ -165,7 +165,7 @@ export default function ReportConfigModal({
       >
         <header className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-[var(--border-light)] bg-[var(--bg-surface)]/95 px-5 py-4 backdrop-blur md:px-7">
           <div>
-            <p className="text-[10px] font-extrabold uppercase tracking-[0.18em] text-[var(--sgh-cyan-primary,#00A3E0)]">Configure report</p>
+            <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-[var(--sgh-cyan-primary,#00A3E0)]">Configure report</p>
             <h2 id="report-dialog-title" className="mt-1 text-xl font-extrabold text-[var(--text-primary)]">{template.name}</h2>
             <p className="mt-1 text-sm text-[var(--text-muted)]">Preview the authorized data before generating a PDF, PowerPoint, or Excel workbook.</p>
           </div>
@@ -215,8 +215,8 @@ export default function ReportConfigModal({
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="text-xs font-extrabold text-blue-800 dark:text-[var(--sgh-cyan-light,#38BDF8)]">Output format</p>
-                <p className="text-[11px] text-blue-700 dark:text-[var(--sgh-cyan-primary,#00A3E0)]">PowerPoint is selected by default.</p>
-                <p className="mt-0.5 text-[11px] text-blue-700 dark:text-[var(--sgh-cyan-primary,#00A3E0)]">Preview is required before export.</p>
+                <p className="text-xs text-blue-700 dark:text-[var(--sgh-cyan-primary,#00A3E0)]">PowerPoint is selected by default.</p>
+                <p className="mt-0.5 text-xs text-blue-700 dark:text-[var(--sgh-cyan-primary,#00A3E0)]">Preview is required before export.</p>
                 </div>
                 <Presentation size={20} className="text-[var(--sgh-cyan-primary,#00A3E0)]" />
               </div>
@@ -240,7 +240,7 @@ export default function ReportConfigModal({
                       </span>
                       <span>
                         <span className="block text-sm font-extrabold">{format.label}</span>
-                        <span className="block text-[11px] opacity-80">{format.description}</span>
+                        <span className="block text-xs opacity-80">{format.description}</span>
                       </span>
                     </button>
                   );
@@ -300,14 +300,14 @@ export default function ReportConfigModal({
                   <p className="mt-1 text-xs text-[var(--text-muted)]">{previewMutation.data.scope} · {previewMutation.data.period}</p>
                   <div className="mt-2 flex flex-wrap gap-1.5">
                     {Object.entries(previewMutation.data.filters).filter(([, value]) => value != null && value !== '').slice(0, 6).map(([key, value]) => (
-                      <span key={key} className="rounded-full border border-[var(--border-light)] bg-[var(--bg-surface)] px-2 py-1 text-[10px] font-bold text-[var(--text-secondary)]">{key.replaceAll('_', ' ')}: {String(value)}</span>
+                      <span key={key} className="rounded-full border border-[var(--border-light)] bg-[var(--bg-surface)] px-2 py-1 text-xs font-bold text-[var(--text-secondary)]">{key.replaceAll('_', ' ')}: {String(value)}</span>
                     ))}
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   {Object.entries(previewMutation.data.summary).filter(([, value]) => typeof value !== 'object').slice(0, 6).map(([key, value]) => (
                     <div key={key} className="rounded-xl border border-[var(--border-light)] bg-[var(--bg-surface)] p-3">
-                      <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-faint)]">{key.replaceAll('_', ' ')}</p>
+                      <p className="text-xs font-bold uppercase tracking-wider text-[var(--text-faint)]">{key.replaceAll('_', ' ')}</p>
                       <p className="mt-1 text-lg font-extrabold text-[var(--text-primary)]">{value == null ? 'N/A' : String(value)}</p>
                     </div>
                   ))}
@@ -315,7 +315,7 @@ export default function ReportConfigModal({
                 {previewMutation.data.warnings.map((warning) => <p key={warning} className="rounded-xl bg-amber-500/10 p-3 text-xs font-semibold text-amber-700 dark:text-amber-300">{warning}</p>)}
                 {previewMutation.data.table_preview.length > 0 && (
                   <div className="overflow-x-auto rounded-xl border border-[var(--border-light)]">
-                    <table className="min-w-full text-left text-[11px]">
+                    <table className="min-w-full text-left text-xs">
                       <thead className="bg-[var(--bg-sunken)] text-[var(--text-faint)]">
                         <tr>{Object.keys(previewMutation.data.table_preview[0]).slice(0, 4).map((key) => <th key={key} className="whitespace-nowrap px-3 py-2 font-extrabold">{key}</th>)}</tr>
                       </thead>

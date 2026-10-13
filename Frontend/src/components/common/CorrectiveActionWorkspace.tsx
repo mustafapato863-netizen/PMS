@@ -70,7 +70,7 @@ const CorrectiveActionWorkspace: React.FC<CorrectiveActionWorkspaceProps> = ({ e
                   <span className="flex items-center gap-1"><Calendar size={12} /> {action.dueDate}</span>
                 </div>
               </div>
-              <span className={`px-2 py-1 rounded-full text-[10px] uppercase tracking-wider font-bold ${
+              <span className={`px-2 py-1 rounded-full text-xs uppercase tracking-wider font-bold ${
                 action.status === 'Completed' ? 'bg-emerald-100 text-emerald-700' :
                 action.status === 'In Progress' ? 'bg-blue-100 text-blue-700' :
                 'bg-slate-100 text-slate-600'

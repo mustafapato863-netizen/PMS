@@ -19,7 +19,7 @@ export default function TeamsAtRiskCard({ teams }: { teams: ExecutiveTeam[] }) {
       if (right.score === null) return -1;
       return left.score - right.score || left.team.localeCompare(right.team);
     });
-  const head = 'text-[10px] font-semibold uppercase tracking-[0.6px] text-[var(--text-muted)]';
+  const head = 'text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]';
   const teamHref = (team: string) => {
     const params = new URLSearchParams();
     const branch = searchParams.get('branch')?.trim().toLowerCase();
@@ -56,7 +56,7 @@ export default function TeamsAtRiskCard({ teams }: { teams: ExecutiveTeam[] }) {
             <div role="row" key={team.team} className="flex items-center gap-[10px] border-b border-[var(--insights-row-border)] px-[12px] py-[10px] last:border-b-0" data-testid="risk-row">
               <div role="cell" className="flex min-w-0 flex-1 flex-col gap-[2px]">
                 <Link to={teamHref(team.team)} title={`View ${team.team} team details`} className="text-[13px] font-semibold leading-[1.3] text-[var(--insights-heading)] hover:underline">{team.team}</Link>
-                <span className="truncate text-[11px] text-[var(--text-muted)]">{[team.function, team.regions.join(' + ')].filter(Boolean).join(' · ')}</span>
+                <span className="truncate text-xs text-[var(--text-muted)]">{[team.function, team.regions.join(' + ')].filter(Boolean).join(' · ')}</span>
               </div>
               <span role="cell" className="w-[56px] text-right"><ScoreText score={team.score} className="text-[13px]">{fmtScore(team.score)}</ScoreText></span>
               <span role="cell" className="flex w-[36px] justify-center"><GradeSquare score={team.score} /></span>
@@ -66,7 +66,7 @@ export default function TeamsAtRiskCard({ teams }: { teams: ExecutiveTeam[] }) {
                 {FLAG_ORDER.filter((flag) => team.flags.includes(flag)).slice(0, 2).map((flag) => (
                   <StatusPill key={flag} tone="danger" icon={flag.startsWith('grade') ? AlertTriangle : TrendingDown}>{FLAG_LABEL[flag]}</StatusPill>
                 ))}
-                {showAllTeams && team.flags.length === 0 && <span className="text-[11px] text-[var(--text-muted)]">No active risk flags</span>}
+                {showAllTeams && team.flags.length === 0 && <span className="text-xs text-[var(--text-muted)]">No active risk flags</span>}
               </span>
             </div>
           ))}

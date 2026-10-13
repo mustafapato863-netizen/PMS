@@ -91,7 +91,7 @@ export function ProfileSettingsForms({
             <fieldset disabled={nameBusy || passwordBusy} className="min-w-0">
             <div className="mb-4 flex items-center gap-3">
               <span className="rounded-xl bg-blue-500/10 p-2 text-blue-600"><UserRound size={18} /></span>
-              <div><h3 className="text-sm font-black text-[var(--text-primary)]">Profile information</h3><p className="text-[10px] text-[var(--text-muted)]">Your username remains unchanged.</p></div>
+              <div><h3 className="text-sm font-black text-[var(--text-primary)]">Profile information</h3><p className="text-xs text-[var(--text-muted)]">Your username remains unchanged.</p></div>
             </div>
             {nameError && <div role="alert" className="mb-3 rounded-xl bg-red-500/10 px-3 py-2 text-xs font-semibold text-red-600">{nameError}</div>}
             {nameSuccess && <div role="status" className="mb-3 rounded-xl bg-emerald-500/10 px-3 py-2 text-xs font-semibold text-emerald-600">{nameSuccess}</div>}
@@ -107,7 +107,7 @@ export function ProfileSettingsForms({
             <fieldset disabled={nameBusy || passwordBusy} className="min-w-0">
             <div className="mb-4 flex items-center gap-3">
               <span className="rounded-xl bg-violet-500/10 p-2 text-violet-600"><KeyRound size={18} /></span>
-              <div><h3 className="text-sm font-black text-[var(--text-primary)]">Change password</h3><p className="text-[10px] text-[var(--text-muted)]">Use 12+ characters with uppercase, lowercase, number and symbol.</p></div>
+              <div><h3 className="text-sm font-black text-[var(--text-primary)]">Change password</h3><p className="text-xs text-[var(--text-muted)]">Use 12+ characters with uppercase, lowercase, number and symbol.</p></div>
             </div>
             {passwordError && <div role="alert" className="mb-3 rounded-xl bg-red-500/10 px-3 py-2 text-xs font-semibold text-red-600">{passwordError}</div>}
             {passwordSuccess && <div role="status" className="mb-3 rounded-xl bg-emerald-500/10 px-3 py-2 text-xs font-semibold text-emerald-600">{passwordSuccess}</div>}

@@ -61,8 +61,8 @@ const TeamChartsSection = ({ pieData, trendData }: TeamChartsSectionProps) => {
         <ResponsiveContainer width="100%" height={200}>
           <LineChart data={trendData} margin={{ top: 5, right: 8, left: -20, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="var(--border-light)" vertical={false} />
-            <XAxis dataKey="month" tick={{ fontSize: 11, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
-            <YAxis tick={{ fontSize: 11, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} domain={[0, 100]} />
+            <XAxis dataKey="month" tick={{ fontSize: 12, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
+            <YAxis tick={{ fontSize: 12, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} domain={[0, 100]} />
             <RechartsTooltip 
               formatter={(v) => [`${Number(v ?? 0).toFixed(1)}%`, 'Avg Score']}
               contentStyle={{ backgroundColor: 'var(--bg-surface)', borderColor: 'var(--border-medium)', borderRadius: '0.75rem', color: 'var(--text-primary)' }}

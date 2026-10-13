@@ -132,7 +132,7 @@ export default function ScoreTrendChart({ points, comparisonLabel, title }: {
     <section className="flex min-w-0 flex-col justify-between gap-[20px] rounded-[18px] border border-[var(--exec-card-border)] bg-[var(--bg-surface)] p-[16px] sm:p-[20px]">
       <div className="flex flex-wrap items-center justify-between gap-[10px]">
         <h3 className="text-[16px] font-bold text-[var(--insights-heading)]">{title}</h3>
-        {range && <span className="inline-flex items-center gap-[6px] rounded-[9px] border border-[var(--exec-card-border)] bg-[var(--exec-chip-bg)] px-[10px] py-[7px] text-[11px] font-semibold text-[var(--exec-chip-text)]"><Calendar aria-hidden="true" className="size-[14px]" />{range}</span>}
+        {range && <span className="inline-flex items-center gap-[6px] rounded-[9px] border border-[var(--exec-card-border)] bg-[var(--exec-chip-bg)] px-[10px] py-[7px] text-xs font-semibold text-[var(--exec-chip-text)]"><Calendar aria-hidden="true" className="size-[14px]" />{range}</span>}
       </div>
 
       <div ref={boxRef} className="w-full" style={{ height: CHART_HEIGHT }}>
@@ -150,13 +150,13 @@ export default function ScoreTrendChart({ points, comparisonLabel, title }: {
             <defs><linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={lineColor} stopOpacity={0.2} /><stop offset="100%" stopColor={lineColor} stopOpacity={0.015} /></linearGradient></defs>
             {ticks.map((tick) => <line key={'grid-' + tick} x1={plot.left} x2={plot.right} y1={y(tick)} y2={y(tick)} stroke="var(--exec-card-border)" strokeOpacity={0.7} />)}
             {ticks.map((tick) => (
-              <text key={tick} x={plot.left - 8} y={y(tick)} dominantBaseline="middle" textAnchor="end" fontSize={10} fill="var(--text-muted)" data-testid="executive-trend-tick">
+              <text key={tick} x={plot.left - 8} y={y(tick)} dominantBaseline="middle" textAnchor="end" fontSize={12} fill="var(--text-muted)" data-testid="executive-trend-tick">
                 {tick + '%'}
               </text>
             ))}
             <path d={'M' + plot.left + ' ' + plot.bottom + ' H' + plot.right} stroke="var(--exec-card-border)" strokeWidth={1} data-testid="executive-trend-baseline" />
             <path d={'M' + plot.left + ' ' + y(target) + ' H' + plot.right} stroke="var(--text-muted)" strokeOpacity={0.75} strokeWidth={1.25} strokeDasharray="4 4" fill="none" data-testid="executive-trend-target" />
-            <text x={plot.right} y={y(target) - 6} textAnchor="end" fontSize={10} fontWeight={600} fill="var(--text-muted)" data-testid="executive-trend-target-label">
+            <text x={plot.right} y={y(target) - 6} textAnchor="end" fontSize={12} fontWeight={600} fill="var(--text-muted)" data-testid="executive-trend-target-label">
               {'Target ' + target.toFixed(0) + '%'}
             </text>
             {actualSegments.map((segment, index) => segment.length > 1 && (
@@ -227,7 +227,7 @@ export default function ScoreTrendChart({ points, comparisonLabel, title }: {
               </g>
             ))}
             {points.map((point, index) => (
-              <text key={point.period.key + '-label'} x={x(index)} y={CHART_HEIGHT - 7} textAnchor="middle" fontSize={10} fill="var(--text-muted)">
+              <text key={point.period.key + '-label'} x={x(index)} y={CHART_HEIGHT - 7} textAnchor="middle" fontSize={12} fill="var(--text-muted)">
                 {shortMonth(point.period)}
               </text>
             ))}
@@ -253,7 +253,7 @@ export default function ScoreTrendChart({ points, comparisonLabel, title }: {
               className="pointer-events-none absolute z-10 rounded-[12px] border border-[var(--exec-card-border)] bg-[var(--bg-surface)] px-[12px] py-[9px] shadow-[0_10px_24px_rgba(15,23,42,0.16)]"
               style={{ width: tooltipWidth, left: tooltipLeft, top: tooltipTop }}
             >
-              <p className="mb-[6px] border-b border-[var(--insights-row-border)] pb-[5px] text-[11px] font-bold uppercase tracking-[0.08em] text-[var(--text-muted)]">
+              <p className="mb-[6px] border-b border-[var(--insights-row-border)] pb-[5px] text-xs font-bold uppercase tracking-[0.08em] text-[var(--text-muted)]">
                 {shortMonth(activePoint.period) + ' ' + activePoint.period.year}
               </p>
               <div className="flex items-center justify-between gap-3 text-[12px]">
@@ -274,17 +274,17 @@ export default function ScoreTrendChart({ points, comparisonLabel, title }: {
                 <strong className="font-semibold tabular-nums text-[var(--insights-heading)]">{fmtScore(activePoint.target)}</strong>
               </div>
               {activePoint.measured_records !== undefined && (
-                <p className="mt-[5px] text-[11px] text-[var(--text-muted)]">
+                <p className="mt-[5px] text-xs text-[var(--text-muted)]">
                   {activePoint.measured_records.toLocaleString() + ' measured record' + (activePoint.measured_records === 1 ? '' : 's')}
                 </p>
               )}
               {movement !== null && (
-                <p className="mt-[3px] text-[11px] font-semibold" style={{ color: movement > 0 ? 'var(--insights-positive)' : movement < 0 ? 'var(--insights-negative)' : 'var(--text-muted)' }}>
+                <p className="mt-[3px] text-xs font-semibold" style={{ color: movement > 0 ? 'var(--insights-positive)' : movement < 0 ? 'var(--insights-negative)' : 'var(--text-muted)' }}>
                   {formatMovement(movement) + ' vs ' + shortMonth(points[activeIndex - 1].period)}
                 </p>
               )}
               {activePoint.basis_context?.message && (
-                <p className="mt-[5px] whitespace-normal break-words text-[11px] leading-4 text-[var(--text-secondary)]">{activePoint.basis_context.message}</p>
+                <p className="mt-[5px] whitespace-normal break-words text-xs leading-4 text-[var(--text-secondary)]">{activePoint.basis_context.message}</p>
               )}
             </div>
           )}
@@ -293,7 +293,7 @@ export default function ScoreTrendChart({ points, comparisonLabel, title }: {
         <div data-testid="executive-trend-empty" className="flex w-full flex-col items-center justify-center gap-[6px] rounded-[8px] border border-dashed border-[var(--exec-card-border)] px-6 text-center" style={{ height: CHART_HEIGHT }}>
           <LineChart aria-hidden="true" className="size-[20px] text-[var(--text-faint)]" strokeWidth={1.5} />
           <p className="text-[12px] font-semibold text-[var(--insights-heading)]">No trend data for this scope</p>
-          <p className="max-w-[260px] text-[11px] text-[var(--text-muted)]">No measured score in the last six months.</p>
+          <p className="max-w-[260px] text-xs text-[var(--text-muted)]">No measured score in the last six months.</p>
         </div>
       )}
       </div>

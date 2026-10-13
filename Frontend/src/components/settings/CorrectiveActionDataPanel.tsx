@@ -151,7 +151,7 @@ export function CorrectiveActionDataPanel() {
         </div>
 
         <StatusBanner status={status} />
-        <p className="text-[11px] leading-relaxed text-[var(--text-muted)]">
+        <p className="text-xs leading-relaxed text-[var(--text-muted)]">
           Import is an upsert: matching action IDs are updated and new actions are added. No existing action is deleted. Make sure the destination database already contains the related employees and teams.
         </p>
       </section>

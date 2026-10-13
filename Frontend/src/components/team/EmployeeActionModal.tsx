@@ -322,7 +322,7 @@ const EmployeeActionModal = ({ employee, month, teamWeights, onClose, onSaved, e
                 rows={2}
                 className="w-full bg-[var(--bg-sunken)] border border-[var(--border-medium)] rounded-xl px-3.5 py-2.5 text-sm font-medium focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400 transition-all resize-none text-[var(--text-primary)]"
               />
-              <div className="mt-2 text-[11px] font-semibold text-[var(--text-muted)]">
+              <div className="mt-2 text-xs font-semibold text-[var(--text-muted)]">
                 {detectedRootCauseKpis.length > 0 ? (
                   <>Detected KPIs: <span className="text-[var(--text-primary)]">{formatKpiMentions(rootCauseNote)}</span></>
                 ) : (
@@ -337,7 +337,7 @@ const EmployeeActionModal = ({ employee, month, teamWeights, onClose, onSaved, e
                 <label className="block text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider">
                   KPI Gaps
                 </label>
-                <span className="text-[10px] font-semibold text-[var(--text-faint)]">
+                <span className="text-xs font-semibold text-[var(--text-faint)]">
                   Tap to add to root cause
                 </span>
               </div>
@@ -364,14 +364,14 @@ const EmployeeActionModal = ({ employee, month, teamWeights, onClose, onSaved, e
                     >
                       <div className="flex items-center justify-between gap-3">
                         <span className="font-bold">{kpi.label}</span>
-                        <span className="text-[11px] font-extrabold uppercase tracking-wider">
+                        <span className="text-xs font-extrabold uppercase tracking-wider">
                           {kpi.isLowerBetter ? 'Higher than target' : 'Below target'}
                         </span>
                       </div>
                       <div className="mt-1 text-[12px] font-semibold text-[var(--text-muted)]">
                         Actual {formatKpiValue(kpi.label, kpi.actual, kpi.target, kpi.unit)}
                       </div>
-                      <div className="mt-0.5 text-[10px] font-medium text-[var(--text-faint)]">
+                      <div className="mt-0.5 text-xs font-medium text-[var(--text-faint)]">
                         Delta {delta > 0 ? '+' : ''}{delta.toFixed(1)} {kpi.unit === 'min' ? 'min' : '%'}
                       </div>
                     </button>
@@ -402,7 +402,7 @@ const EmployeeActionModal = ({ employee, month, teamWeights, onClose, onSaved, e
                     </button>
                   ))}
               </div>
-              <p className="mt-2 text-[11px] font-semibold text-[var(--text-muted)]">
+              <p className="mt-2 text-xs font-semibold text-[var(--text-muted)]">
                 Recommended for current KPI gaps: {recommendedActionLabels.join(' · ')}
               </p>
             </div>

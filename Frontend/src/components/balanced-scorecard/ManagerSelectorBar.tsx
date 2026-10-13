@@ -48,7 +48,7 @@ export function ManagerSelectorBar({
 
       <div className="bsc-manager-selector-actions">
         <div className="flex items-center gap-2">
-          <span className="text-[11px] font-bold text-[var(--bsc-panel-muted)] uppercase tracking-wider">Switch manager</span>
+          <span className="text-xs font-bold text-[var(--bsc-panel-muted)] uppercase tracking-wider">Switch manager</span>
           <CustomDropdown
             value={activeManager.employeeId}
             options={managers.map((manager) => ({

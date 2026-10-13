@@ -113,7 +113,7 @@ export function ManagerRosterPanel({
                           <strong className="text-sm font-extrabold text-[var(--text-primary)]">{manager.employeeName}</strong>
                           {manager.role && (
                             <span style={{
-                              fontSize: 10,
+                              fontSize: 12,
                               fontWeight: 600,
                               padding: '1px 7px',
                               borderRadius: 99,
@@ -127,7 +127,7 @@ export function ManagerRosterPanel({
                             </span>
                           )}
                         </div>
-                        <small style={{ color: 'var(--text-muted, #9CA3AF)', fontSize: 11, fontWeight: 500 }}>{manager.employeeId}</small>
+                        <small style={{ color: 'var(--text-muted, #9CA3AF)', fontSize: 12, fontWeight: 500 }}>{manager.employeeId}</small>
                       </div>
                     </div>
                   </td>
