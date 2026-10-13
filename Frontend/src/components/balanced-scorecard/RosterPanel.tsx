@@ -41,7 +41,7 @@ export function RosterPanel({
           <h2>{selectedPerspectiveRow?.label || 'All Perspectives'} Contributor Roster</h2>
           <div className="bsc-sub">People driving or impacting this perspective</div>
         </div>
-        <span style={{ fontSize: 11, fontWeight: 700, color: '#8A8F99', background: '#EEF0F3', padding: '3px 8px', borderRadius: 99 }}>
+        <span style={{ fontSize: 12, fontWeight: 700, color: '#8A8F99', background: '#EEF0F3', padding: '3px 8px', borderRadius: 99 }}>
           {filtered.length} People
         </span>
       </div>

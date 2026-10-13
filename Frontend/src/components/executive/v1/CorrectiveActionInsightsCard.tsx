@@ -74,14 +74,14 @@ function RankedActions({ title, rows, total, empty, testId }: {
           const accent: Accent = testId === 'action-type-rank' ? accentForAction(row.label) : testId === 'action-team-rank' ? 'teal' : 'blue';
           return (
             <li key={row.label} className="flex items-start gap-[9px]" data-testid={testId}>
-              <span aria-hidden="true" className="flex size-[21px] shrink-0 items-center justify-center rounded-full bg-[var(--bg-sunken)] text-[10px] font-bold text-[var(--text-secondary)]">{index + 1}</span>
+              <span aria-hidden="true" className="flex size-[21px] shrink-0 items-center justify-center rounded-full bg-[var(--bg-sunken)] text-xs font-bold text-[var(--text-secondary)]">{index + 1}</span>
               <span aria-hidden="true" data-testid="ranked-row-icon" data-icon-for={row.label} className={`flex size-[28px] shrink-0 items-center justify-center rounded-[8px] ${ACCENTS[accent].surface} ${ACCENTS[accent].icon}`}>
                 <Icon className="size-[15px]" strokeWidth={1.8} />
               </span>
               <div className="min-w-0 flex-1">
                 <div className="mb-[7px] flex items-start justify-between gap-[8px] text-[12px]">
                   <span className="font-medium text-[var(--text-primary)]">{row.label}</span>
-                  <span className="shrink-0 rounded-full bg-[var(--bg-sunken)] px-[7px] py-[2px] text-[10px] font-semibold tabular-nums text-[var(--text-secondary)]">{row.count} {row.count === 1 ? 'action' : 'actions'}</span>
+                  <span className="shrink-0 rounded-full bg-[var(--bg-sunken)] px-[7px] py-[2px] text-xs font-semibold tabular-nums text-[var(--text-secondary)]">{row.count} {row.count === 1 ? 'action' : 'actions'}</span>
                 </div>
                 <div aria-hidden="true" className="h-[5px] overflow-hidden rounded-full bg-[var(--bg-sunken)]">
                   <div className="h-full rounded-full bg-[var(--insights-accent)] transition-[width] duration-200 ease-out motion-reduce:transition-none" style={{ width: `${total ? row.count / total * 100 : 0}%` }} />
@@ -125,14 +125,14 @@ export default function CorrectiveActionInsightsCard({ data, effective, scopeLab
                 <Icon className="size-[17px]" strokeWidth={1.8} />
               </span>
               <div className="min-w-0">
-                <p className="text-[11px] leading-[1.3] text-[var(--text-muted)]">{label}</p>
+                <p className="text-xs leading-[1.3] text-[var(--text-muted)]">{label}</p>
                 <p className="mt-[3px] text-[23px] font-bold leading-none tabular-nums text-[var(--insights-heading)]">{count}</p>
               </div>
             </div>
           ))}
         </div>
         <div className="flex flex-col gap-[6px] sm:items-start">
-          <label htmlFor={selectId} className="flex items-center gap-[6px] text-[11px] font-semibold text-[var(--text-secondary)]">
+          <label htmlFor={selectId} className="flex items-center gap-[6px] text-xs font-semibold text-[var(--text-secondary)]">
             <Users aria-hidden="true" className="size-[13px] text-[var(--insights-accent-text)]" />Filter actions by team
           </label>
           <select id={selectId} value={effectiveTeam} onChange={(event) => setSelectedTeam(event.target.value)}

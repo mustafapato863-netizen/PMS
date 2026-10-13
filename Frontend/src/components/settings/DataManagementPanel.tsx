@@ -132,7 +132,7 @@ function ProcessingBanner({ busyType }: { busyType: 'employee' | 'management' })
         <p className="font-extrabold text-xs">
           {isEmployee ? 'Processing Excel File & Recalculating Metrics…' : 'Processing Management Template…'}
         </p>
-        <p className="text-[11px] opacity-80 mt-0.5">
+        <p className="text-xs opacity-80 mt-0.5">
           {isEmployee
             ? 'Parsing team sheets, calculating employee weighted scores, and syncing database records.'
             : 'Updating balanced scorecard configurations and team performance targets.'}
@@ -200,7 +200,7 @@ function DeleteConfirmModal({
             <div className="min-w-0 flex-1">
               <div className="flex items-start justify-between gap-2">
                 <div>
-                  <p className="text-[10px] font-extrabold uppercase tracking-widest text-rose-600 dark:text-rose-400">
+                  <p className="text-xs font-extrabold uppercase tracking-widest text-rose-600 dark:text-rose-400">
                     Confirm Deletion
                   </p>
                   <h3 id="delete-confirm-title" className="mt-1 text-lg font-black text-[var(--text-primary)] leading-snug break-words">

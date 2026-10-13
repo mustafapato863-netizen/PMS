@@ -48,7 +48,7 @@ export default function KpiSixMonthTrend({ trend }: { trend: InsightKpiTrend }) 
             </p>
           </div>
         </div>
-        <span className="rounded-full bg-[var(--bg-sunken)] px-3 py-1 text-[10px] font-bold text-[var(--text-muted)]">
+        <span className="rounded-full bg-[var(--bg-sunken)] px-3 py-1 text-xs font-bold text-[var(--text-muted)]">
           {measuredMonths} of 6 months measured
         </span>
       </div>
@@ -58,13 +58,13 @@ export default function KpiSixMonthTrend({ trend }: { trend: InsightKpiTrend }) 
           <ResponsiveContainer width="100%" height={250} minWidth={0} minHeight={250}>
             <LineChart data={data} margin={{ top: 12, right: 12, left: 0, bottom: 0 }}>
               <CartesianGrid vertical={false} stroke="var(--border-light)" strokeDasharray="4 4" />
-              <XAxis dataKey="period" axisLine={false} tickLine={false} tick={{ fill: 'var(--text-muted)', fontSize: 10, fontWeight: 600 }} />
+              <XAxis dataKey="period" axisLine={false} tickLine={false} tick={{ fill: 'var(--text-muted)', fontSize: 12, fontWeight: 600 }} />
               <YAxis
                 axisLine={false}
                 tickLine={false}
                 reversed={lowerBetter}
                 width={46}
-                tick={{ fill: 'var(--text-muted)', fontSize: 10 }}
+                tick={{ fill: 'var(--text-muted)', fontSize: 12 }}
                 tickFormatter={(value) => `${value}${trend.unit === '%' ? '%' : ''}`}
               />
               <Tooltip
@@ -86,7 +86,7 @@ export default function KpiSixMonthTrend({ trend }: { trend: InsightKpiTrend }) 
                   return `${label} · ${records} measured record${records === 1 ? '' : 's'}${status}`;
                 }}
               />
-              <Legend iconType="circle" wrapperStyle={{ fontSize: 11, fontWeight: 700 }} formatter={(value) => value === 'actual' ? 'Actual' : 'Target'} />
+              <Legend iconType="circle" wrapperStyle={{ fontSize: 12, fontWeight: 700 }} formatter={(value) => value === 'actual' ? 'Actual' : 'Target'} />
               <Line type="monotone" dataKey="actual" name="actual" stroke="#2563eb" strokeWidth={3} connectNulls={false} dot={(props: { cx?: number; cy?: number; index?: number; payload?: { status: KpiStatus | null } }) => {
                   // Dot colour = per-point status (on track / at risk / critical), consistent with the axis direction.
                   if (props.cx === undefined || props.cy === undefined || props.payload?.status === undefined) return <g key={props.index} />;

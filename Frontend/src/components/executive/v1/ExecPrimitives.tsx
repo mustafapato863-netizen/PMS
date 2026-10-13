@@ -62,7 +62,7 @@ export function GradePill({ score, className = '' }: { score: number | null | un
   return (
     <span
       data-grade={grade ?? 'na'}
-      className={`inline-flex shrink-0 items-center rounded-full px-[8px] py-[2px] text-[11px] font-bold leading-normal ${className}`}
+      className={`inline-flex shrink-0 items-center rounded-full px-[8px] py-[2px] text-xs font-bold leading-normal ${className}`}
       style={{ background: tone.badgeBg, color: tone.badgeText }}
     >
       {grade ? `Grade ${grade}` : 'No grade'}
@@ -86,7 +86,7 @@ export function ScoreText({ score, className = 'text-[26px]', children }: { scor
 
 export function StatLabel({ children, icon: Icon }: { children: ReactNode; icon?: LucideIcon }) {
   return (
-    <span className="inline-flex items-center gap-[5px] text-[10px] font-semibold uppercase tracking-[0.6px] text-[var(--text-muted)]">
+    <span className="inline-flex items-center gap-[5px] text-xs font-semibold uppercase tracking-[0.6px] text-[var(--text-muted)]">
       {Icon && <Icon aria-hidden="true" className="size-[14px]" strokeWidth={1.75} />}
       {children}
     </span>
@@ -99,7 +99,7 @@ export function ToneText({ tone, children, className = 'text-[13px] font-bold' }
 
 export function Chip({ icon: Icon, children }: { icon?: LucideIcon; children: ReactNode }) {
   return (
-    <span className="inline-flex items-center gap-[5px] rounded-full bg-[var(--exec-chip-bg)] px-[10px] py-[4px] text-[11px] font-semibold text-[var(--exec-chip-text)]">
+    <span className="inline-flex items-center gap-[5px] rounded-full bg-[var(--exec-chip-bg)] px-[10px] py-[4px] text-xs font-semibold text-[var(--exec-chip-text)]">
       {Icon && <Icon aria-hidden="true" className="size-[11px]" strokeWidth={2} />}
       {children}
     </span>
@@ -113,7 +113,7 @@ export function DirectionTag({ direction }: { direction: string | null | undefin
   return (
     <span
       data-direction={lower ? 'lower_better' : 'higher_better'}
-      className="inline-flex shrink-0 items-center rounded-[4px] px-[5px] py-px text-[10px] font-semibold leading-normal"
+      className="inline-flex shrink-0 items-center rounded-[4px] px-[5px] py-px text-xs font-semibold leading-normal"
       style={{ background: lower ? 'var(--exec-dir-lower-bg)' : 'var(--exec-dir-higher-bg)', color: lower ? 'var(--exec-dir-lower-text)' : 'var(--exec-dir-higher-text)' }}
     >
       {lower ? '↓ better' : '↑ better'}
@@ -130,7 +130,7 @@ export function StatusPill({ tone, icon: Icon, children }: { tone: 'danger' | 'w
     neutral: ['var(--exec-chip-bg)', 'var(--exec-chip-text)'],
   }[tone];
   return (
-    <span className="inline-flex shrink-0 items-center gap-[4px] rounded-full px-[8px] py-[2px] text-[11px] font-semibold leading-normal" style={{ background: palette[0], color: palette[1] }}>
+    <span className="inline-flex shrink-0 items-center gap-[4px] rounded-full px-[8px] py-[2px] text-xs font-semibold leading-normal" style={{ background: palette[0], color: palette[1] }}>
       {Icon && <Icon aria-hidden="true" className="size-[11px]" strokeWidth={2} />}
       {children}
     </span>
@@ -139,7 +139,7 @@ export function StatusPill({ tone, icon: Icon, children }: { tone: 'danger' | 'w
 
 export function Footnote({ children }: { children: ReactNode }) {
   return (
-    <p className="flex items-start gap-[6px] text-[11px] leading-[1.45] text-[var(--text-muted)]">
+    <p className="flex items-start gap-[6px] text-xs leading-[1.45] text-[var(--text-muted)]">
       <Info aria-hidden="true" className="mt-px size-[12px] shrink-0" strokeWidth={1.75} />
       <span>{children}</span>
     </p>
@@ -256,7 +256,7 @@ export function Sparkline({
         <span
           aria-hidden="true"
           data-testid="sparkline-latest-score"
-          className="pointer-events-none absolute z-[1] -translate-y-1/2 whitespace-nowrap rounded-full border px-[8px] py-[4px] text-[10px] font-bold leading-none shadow-sm"
+          className="pointer-events-none absolute z-[1] -translate-y-1/2 whitespace-nowrap rounded-full border px-[8px] py-[4px] text-xs font-bold leading-none shadow-sm"
           style={{
             left: `${(last.x / width) * 100}%`,
             top: `${(badgeTop / height) * 100}%`,

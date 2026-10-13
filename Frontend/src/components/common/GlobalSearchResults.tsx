@@ -80,7 +80,7 @@ export default function GlobalSearchResults({
     <div className="max-h-[min(60vh,34rem)] overflow-y-auto p-2">
       {groupedResults.map((group, groupIndex) => (
         <section key={group.group} className="mb-2 last:mb-0">
-          <div className="px-3 py-2 text-[10px] font-extrabold uppercase tracking-[0.18em] text-[var(--text-muted)]">
+          <div className="px-3 py-2 text-xs font-extrabold uppercase tracking-[0.18em] text-[var(--text-muted)]">
             {GROUP_LABELS[group.group]}
           </div>
           <div className="space-y-1">

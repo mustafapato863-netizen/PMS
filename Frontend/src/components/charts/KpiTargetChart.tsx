@@ -82,7 +82,7 @@ const KpiTargetChart = ({ data }: KpiTargetChartProps) => {
                   <Icon className={`w-4 h-4 ${colors.icon}`} />
                   <span className="text-sm font-semibold text-slate-700">{kpi.label}</span>
                 </div>
-                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold border ${colors.badge}`}>
+                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold border ${colors.badge}`}>
                   {kpi.isMet ? <Check className="w-3 h-3" /> : <X className="w-3 h-3" />}
                   {kpi.isMet ? 'On Target' : 'Below Target'}
                 </span>
@@ -102,7 +102,7 @@ const KpiTargetChart = ({ data }: KpiTargetChartProps) => {
                   style={{ left: `${targetPos}%` }}
                   title={`Target: ${formatValue(kpi.target, kpi.unit)}`}
                 >
-                  <div className="absolute -top-5 left-1/2 -translate-x-1/2 text-[9px] font-bold text-slate-500 whitespace-nowrap">
+                  <div className="absolute -top-5 left-1/2 -translate-x-1/2 text-xs font-bold text-slate-500 whitespace-nowrap">
                     Target
                   </div>
                 </div>

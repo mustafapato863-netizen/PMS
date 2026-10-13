@@ -54,7 +54,7 @@ const TeamPerformanceAnalysis = ({ insights, loading = false }: TeamPerformanceA
             type="button"
             onClick={() => setShowAll((current) => !current)}
             aria-expanded={showAll}
-            className="inline-flex min-h-8 items-center gap-1 rounded-lg border border-[var(--border-medium)] px-2.5 text-[10px] font-extrabold text-[var(--text-secondary)] transition hover:bg-[var(--bg-sunken)]"
+            className="inline-flex min-h-8 items-center gap-1 rounded-lg border border-[var(--border-medium)] px-2.5 text-xs font-extrabold text-[var(--text-secondary)] transition hover:bg-[var(--bg-sunken)]"
           >
             {showAll ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
             {showAll ? 'Show priority only' : `Show all ${analysisItems.length}`}
@@ -80,7 +80,7 @@ const TeamPerformanceAnalysis = ({ insights, loading = false }: TeamPerformanceA
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block text-xs font-extrabold text-[var(--text-primary)]">{item.title}</span>
-                  <span className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px] font-semibold text-[var(--text-muted)]">
+                  <span className="mt-1 flex flex-wrap items-center gap-1.5 text-xs font-semibold text-[var(--text-muted)]">
                     <TrendIcon size={11} />
                     {item.trend_label}
                     {item.impact_points !== null && (
@@ -90,13 +90,13 @@ const TeamPerformanceAnalysis = ({ insights, loading = false }: TeamPerformanceA
                     )}
                   </span>
                 </span>
-                <span className="hidden shrink-0 rounded-md bg-current/10 px-2 py-1 text-[9px] font-extrabold uppercase sm:inline-flex">
+                <span className="hidden shrink-0 rounded-md bg-current/10 px-2 py-1 text-xs font-extrabold uppercase sm:inline-flex">
                   {severityLabel[item.severity]}
                 </span>
                 {isExpanded ? <ChevronUp size={14} className="mt-1 shrink-0" /> : <ChevronDown size={14} className="mt-1 shrink-0" />}
               </button>
               {isExpanded && (
-                <div className="border-t border-current/10 px-4 py-3 text-[11px] font-medium leading-relaxed text-[var(--text-secondary)]">
+                <div className="border-t border-current/10 px-4 py-3 text-xs font-medium leading-relaxed text-[var(--text-secondary)]">
                   <p>{item.explanation}</p>
                   <p className="mt-2 font-bold text-violet-700 dark:text-violet-300">Recommended focus: {item.detail.recommended_focus}</p>
                 </div>
@@ -108,10 +108,10 @@ const TeamPerformanceAnalysis = ({ insights, loading = false }: TeamPerformanceA
 
       {recommendations.length > 0 && (
         <div className="mt-3 flex flex-col gap-2 rounded-xl border border-violet-500/15 bg-violet-500/[0.055] p-3">
-          <span className="text-[10px] font-extrabold text-violet-700 dark:text-violet-300">Recommended focus</span>
+          <span className="text-xs font-extrabold text-violet-700 dark:text-violet-300">Recommended focus</span>
           <div className="flex flex-wrap gap-2">
             {recommendations.map((recommendation) => (
-              <span key={recommendation} className="rounded-md border border-violet-500/20 bg-[var(--bg-surface)] px-2.5 py-1 text-[9px] font-bold text-violet-700 dark:text-violet-300">
+              <span key={recommendation} className="rounded-md border border-violet-500/20 bg-[var(--bg-surface)] px-2.5 py-1 text-xs font-bold text-violet-700 dark:text-violet-300">
                 {recommendation}
               </span>
             ))}

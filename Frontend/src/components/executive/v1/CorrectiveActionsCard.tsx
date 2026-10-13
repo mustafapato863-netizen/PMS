@@ -10,7 +10,7 @@ import { ExecCard, ExecCardHeader, SoftEmpty, StatusPill } from './ExecPrimitive
 function Tile({ label, value, icon: Icon, color }: { label: string; value: number | null; icon: LucideIcon; color: string }) {
   return (
     <div className="flex flex-col gap-[6px] rounded-[10px] bg-[var(--exec-tile-bg)] px-[16px] py-[14px]" data-testid={`action-tile-${label.toLowerCase().replace(/\s+/g, '-')}`}>
-      <span className="inline-flex items-center gap-[6px] text-[10px] font-semibold uppercase tracking-[0.6px] text-[var(--text-muted)]">
+      <span className="inline-flex items-center gap-[6px] text-xs font-semibold uppercase tracking-[0.6px] text-[var(--text-muted)]">
         <Icon aria-hidden="true" className="size-[14px]" strokeWidth={1.75} />
         {label}
       </span>
@@ -32,7 +32,7 @@ export default function CorrectiveActionsCard({ data, effective, variant, canCre
   const title = variant === 'team' ? 'My corrective actions' : 'Corrective actions';
   const scope = scopeLabel ?? (variant === 'team' ? 'Your team' : 'Company-wide');
   const workspaceHref = variant === 'function' && scopeLabel ? `/corrective-actions?function=${encodeURIComponent(scopeLabel)}` : '/corrective-actions';
-  const head = 'text-[10px] font-semibold uppercase tracking-[0.6px] text-[var(--text-muted)]';
+  const head = 'text-xs font-semibold uppercase tracking-[0.6px] text-[var(--text-muted)]';
   const action = (
     <div className="flex flex-wrap gap-[8px]">
       {variant === 'team' && canCreate && (
@@ -72,12 +72,12 @@ export default function CorrectiveActionsCard({ data, effective, variant, canCre
                   <li key={item.id} className="flex items-center gap-[12px] border-b border-[var(--insights-row-border)] py-[10px] last:border-b-0" data-testid="action-row">
                     <span className="flex min-w-0 flex-1 flex-col gap-[2px]">
                           <Link to={item.employee_id ? `/employee/${encodeURIComponent(item.employee_id)}${item.month ? `?month=${encodeURIComponent(item.month)}` : ''}` : workspaceHref} className="truncate text-[13px] font-semibold text-[var(--insights-heading)] hover:underline">{item.title}</Link>
-                      <span className="truncate text-[11px] text-[var(--text-muted)]">{item.employee_name || 'Whole team'}</span>
+                      <span className="truncate text-xs text-[var(--text-muted)]">{item.employee_name || 'Whole team'}</span>
                     </span>
                     <span className="flex shrink-0 flex-col items-end gap-[3px]">
                       <StatusPill tone={status.tone} icon={status.icon}>{status.label}</StatusPill>
                       {canEdit && onStatusChange && <ActionStatusMenu status={item.status} canEdit ariaLabel={`Status for ${item.title}`} compact onChange={(update) => onStatusChange(item.id, update)} />}
-                      <span className="text-[11px]" style={{ color: status.tone === 'danger' ? 'var(--insights-negative)' : 'var(--text-muted)' }}>Due {fmtDate(item.due_date)}</span>
+                      <span className="text-xs" style={{ color: status.tone === 'danger' ? 'var(--insights-negative)' : 'var(--text-muted)' }}>Due {fmtDate(item.due_date)}</span>
                     </span>
                   </li>
                 );

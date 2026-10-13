@@ -22,7 +22,7 @@ function Sparkline({ data, color = '#3b82f6', height = 30 }: { data: number[]; c
   
   if (data.length < 2) {
     return (
-      <div className="flex items-center justify-center text-[10px] text-[var(--text-muted)] font-medium h-[30px]">
+      <div className="flex items-center justify-center text-xs text-[var(--text-muted)] font-medium h-[30px]">
         No trend data
       </div>
     );
@@ -171,12 +171,12 @@ export function ManagerSummarySection({
         <div className="flex items-center justify-between gap-4">
           <div>
             <h2 className="text-sm font-extrabold text-[var(--text-primary)]">Executive summary</h2>
-            <p className="text-[10px] text-[var(--text-secondary)] font-medium mt-0.5">
+            <p className="text-xs text-[var(--text-secondary)] font-medium mt-0.5">
               Decision-ready performance signals for the selected manager
             </p>
           </div>
           <div className="hidden sm:flex items-center gap-3 min-w-[150px]">
-            <span className={`text-[9px] font-extrabold uppercase tracking-wider whitespace-nowrap ${trendClass}`}>{trendLabel}</span>
+            <span className={`text-xs font-extrabold uppercase tracking-wider whitespace-nowrap ${trendClass}`}>{trendLabel}</span>
             <div className="h-7 flex-1" aria-hidden="true">
               <Sparkline data={overallTrendData} color="#10b981" height={22} />
             </div>
@@ -186,10 +186,10 @@ export function ManagerSummarySection({
         <div className="grid w-full grid-cols-2 gap-3 lg:grid-cols-4">
           {/* metric 1 */}
           <div className="flex min-h-[83px] min-w-[125px] flex-1 flex-col justify-between rounded-xl border border-slate-200/20 bg-[var(--bg-sunken)]/60 p-3 text-center dark:border-slate-800/40 dark:bg-slate-900/50">
-            <p className="text-[9px] font-bold uppercase tracking-wider text-[var(--text-muted)] mb-1">Overall Score</p>
+            <p className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)] mb-1">Overall Score</p>
             <div className="text-xl font-extrabold text-[var(--text-primary)] leading-none">{managerScore.toFixed(1)}%</div>
             <div>
-              <span className={`inline-block text-[9px] font-extrabold px-1.5 py-0.5 rounded-md mt-1.5 ${getStatusPill(managerScore).cls}`}>
+              <span className={`inline-block text-xs font-extrabold px-1.5 py-0.5 rounded-md mt-1.5 ${getStatusPill(managerScore).cls}`}>
                 {getStatusPill(managerScore).text}
               </span>
             </div>
@@ -197,10 +197,10 @@ export function ManagerSummarySection({
 
           {/* metric 2 */}
           <div className="flex min-h-[83px] min-w-[125px] flex-1 flex-col justify-between rounded-xl border border-slate-200/20 bg-[var(--bg-sunken)]/60 p-3 text-center dark:border-slate-800/40 dark:bg-slate-900/50">
-            <p className="text-[9px] font-bold uppercase tracking-wider text-[var(--text-muted)] mb-1">Team Ranking</p>
+            <p className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)] mb-1">Team Ranking</p>
             <div className="text-xl font-extrabold text-[var(--text-primary)] leading-none">#{rank} / {totalRank}</div>
             <div>
-              <span className="inline-block text-[9px] font-extrabold text-blue-600 dark:text-blue-400 bg-blue-500/10 px-1.5 py-0.5 rounded-md mt-1.5 border border-blue-500/20">
+              <span className="inline-block text-xs font-extrabold text-blue-600 dark:text-blue-400 bg-blue-500/10 px-1.5 py-0.5 rounded-md mt-1.5 border border-blue-500/20">
                 {rank === 1 ? 'Top Performer' : 'Active Contributor'}
               </span>
             </div>
@@ -208,12 +208,12 @@ export function ManagerSummarySection({
 
           {/* metric 3 */}
           <div className="flex min-h-[83px] min-w-[125px] flex-1 flex-col justify-between rounded-xl border border-slate-200/20 bg-[var(--bg-sunken)]/60 p-3 text-center dark:border-slate-800/40 dark:bg-slate-900/50">
-            <p className="text-[9px] font-bold uppercase tracking-wider text-[var(--text-muted)] mb-1">vs Target ({targetVal}%)</p>
+            <p className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)] mb-1">vs Target ({targetVal}%)</p>
             <div className="text-xl font-extrabold text-[var(--text-primary)] leading-none">
               {targetGap >= 0 ? '+' : ''}{targetGap.toFixed(1)}%
             </div>
             <div>
-              <span className={`inline-block text-[9px] font-extrabold px-1.5 py-0.5 rounded-md mt-1.5 ${targetGap >= 0 ? 'bg-emerald-500/10 text-emerald-600 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-600 border border-rose-500/20'}`}>
+              <span className={`inline-block text-xs font-extrabold px-1.5 py-0.5 rounded-md mt-1.5 ${targetGap >= 0 ? 'bg-emerald-500/10 text-emerald-600 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-600 border border-rose-500/20'}`}>
                 {targetGap >= 0 ? 'Above Target' : 'Below Target'}
               </span>
             </div>
@@ -221,12 +221,12 @@ export function ManagerSummarySection({
 
           {/* metric 4 */}
           <div className="flex min-h-[83px] min-w-[125px] flex-1 flex-col justify-between rounded-xl border border-slate-200/20 bg-[var(--bg-sunken)]/60 p-3 text-center dark:border-slate-800/40 dark:bg-slate-900/50">
-            <p className="text-[9px] font-bold uppercase tracking-wider text-[var(--text-muted)] mb-1">vs Team Avg ({teamAvg.toFixed(1)}%)</p>
+            <p className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)] mb-1">vs Team Avg ({teamAvg.toFixed(1)}%)</p>
             <div className="text-xl font-extrabold text-[var(--text-primary)] leading-none">
               {teamAvgGap >= 0 ? '+' : ''}{teamAvgGap.toFixed(1)}%
             </div>
             <div>
-              <span className={`inline-block text-[9px] font-extrabold px-1.5 py-0.5 rounded-md mt-1.5 ${teamAvgGap >= 0 ? 'bg-emerald-500/10 text-emerald-600 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-600 border border-rose-500/20'}`}>
+              <span className={`inline-block text-xs font-extrabold px-1.5 py-0.5 rounded-md mt-1.5 ${teamAvgGap >= 0 ? 'bg-emerald-500/10 text-emerald-600 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-600 border border-rose-500/20'}`}>
                 {teamAvgGap >= 0 ? 'Above Avg' : 'Below Avg'}
               </span>
             </div>
@@ -244,12 +244,12 @@ export function ManagerSummarySection({
                 <AlertTriangle size={15} className="text-amber-500" />
                 Priority attention
               </h3>
-              <p className="text-[10px] text-[var(--text-secondary)] font-medium">KPIs that need the most attention to hit target limits</p>
+              <p className="text-xs text-[var(--text-secondary)] font-medium">KPIs that need the most attention to hit target limits</p>
             </div>
             <button
               type="button"
               onClick={() => onSelectKpi(worstKpi.kpi_key)}
-              className="min-h-11 text-[10px] font-extrabold text-blue-600 dark:text-blue-400 bg-blue-500/10 hover:bg-blue-500/20 px-3 py-2 rounded-lg border border-blue-500/20 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+              className="min-h-11 text-xs font-extrabold text-blue-600 dark:text-blue-400 bg-blue-500/10 hover:bg-blue-500/20 px-3 py-2 rounded-lg border border-blue-500/20 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
             >
               Inspect KPI
             </button>
@@ -259,10 +259,10 @@ export function ManagerSummarySection({
           <div className="glass-card rounded-xl p-4 bg-[var(--bg-surface)] border border-slate-200/50 dark:border-slate-800/60 shadow-sm flex flex-1 flex-col justify-between gap-5">
             <div className="space-y-1">
               <div className="flex items-center gap-2">
-                <span className="text-[9px] font-extrabold uppercase tracking-wider text-amber-500">
+                <span className="text-xs font-extrabold uppercase tracking-wider text-amber-500">
                   {getPerspectiveMeta(worstKpi.perspective).label}
                 </span>
-                <span className="text-[8px] font-extrabold uppercase tracking-wider bg-amber-500/10 text-amber-600 dark:text-amber-400 px-1.5 py-0.5 rounded border border-amber-500/20">
+                <span className="text-xs font-extrabold uppercase tracking-wider bg-amber-500/10 text-amber-600 dark:text-amber-400 px-1.5 py-0.5 rounded border border-amber-500/20">
                   Monitor
                 </span>
               </div>
@@ -276,7 +276,7 @@ export function ManagerSummarySection({
 
             <div className="flex items-end justify-between gap-4">
               <div className="text-right">
-                <p className="text-[9px] font-bold uppercase tracking-wider text-[var(--text-muted)]">Actual vs Target</p>
+                <p className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Actual vs Target</p>
                 <div className="text-lg font-extrabold text-[var(--text-primary)] mt-0.5">
                   {fmtVal(worstKpi.actual_value, worstKpi.unit)}
                   <span className="text-[var(--text-muted)] text-sm font-semibold mx-1">/</span>
@@ -303,7 +303,7 @@ export function ManagerSummarySection({
         <div className="flex flex-col gap-3 pb-2 border-b border-slate-200/50 dark:border-slate-800/60">
           <div>
             <h3 className="text-sm font-extrabold text-[var(--text-primary)]">KPI performance overview</h3>
-            <p className="text-[10px] text-[var(--text-secondary)] font-medium">Filter indicators by perspective to focus on key areas</p>
+            <p className="text-xs text-[var(--text-secondary)] font-medium">Filter indicators by perspective to focus on key areas</p>
           </div>
           
           {/* Tab Filter Pills */}
@@ -318,7 +318,7 @@ export function ManagerSummarySection({
                     role="tab"
                     aria-selected={active}
                     onClick={() => setActiveTab(tab.key)}
-                    className={`min-h-11 text-[11px] font-bold px-3 py-2 rounded-xl transition-colors duration-150 flex items-center gap-1.5 border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+                    className={`min-h-11 text-xs font-bold px-3 py-2 rounded-xl transition-colors duration-150 flex items-center gap-1.5 border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
                       active
                         ? tab.isAlert
                           ? 'bg-amber-500 text-white border-amber-500 shadow-sm'
@@ -330,7 +330,7 @@ export function ManagerSummarySection({
                   >
                     {tab.isAlert && <AlertTriangle size={12} aria-hidden="true" />}
                     <span>{tab.label}</span>
-                    <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-extrabold ${
+                    <span className={`text-xs px-1.5 py-0.5 rounded-full font-extrabold ${
                       active
                         ? 'bg-white/25 text-white'
                         : 'bg-slate-200 dark:bg-slate-800 text-[var(--text-muted)]'
@@ -378,10 +378,10 @@ export function ManagerSummarySection({
                 >
                   <div className="space-y-2">
                     <div className="flex items-start justify-between gap-2">
-                      <span className={`text-[9px] font-extrabold uppercase tracking-wider ${persp.cls}`}>
+                      <span className={`text-xs font-extrabold uppercase tracking-wider ${persp.cls}`}>
                         {persp.label}
                       </span>
-                      <span className="text-[9px] font-extrabold px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 whitespace-nowrap">
+                      <span className="text-xs font-extrabold px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 whitespace-nowrap">
                         Weight: {weightPct <= 0.01 ? 'View' : `${weightPct.toFixed(0)}%`}
                       </span>
                     </div>
@@ -398,7 +398,7 @@ export function ManagerSummarySection({
                             const scoreGap = kpi.score != null ? kpi.score - 100 : 0;
                             const isPos = scoreGap >= 0;
                             return (
-                              <span className={`text-[10px] font-bold flex items-center ${isPos ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
+                              <span className={`text-xs font-bold flex items-center ${isPos ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
                                 <ArrowUpRight size={10} className={`mr-0.5 ${isPos ? '' : 'rotate-90'}`} />
                                 {isPos ? '+' : ''}{scoreGap.toFixed(1)}%
                               </span>
@@ -409,7 +409,7 @@ export function ManagerSummarySection({
                           <span className="text-xs font-bold text-blue-600 dark:text-blue-400">
                             {weightPct <= 0.01 ? '0.0%' : `${contribPct.toFixed(1)}%`}
                           </span>
-                          <span className="text-[9px] text-[var(--text-muted)] block font-semibold">
+                          <span className="text-xs text-[var(--text-muted)] block font-semibold">
                             {weightPct <= 0.01 ? 'View Only Metric' : `Contrib of ${weightPct.toFixed(0)}%`}
                           </span>
                         </div>
@@ -418,13 +418,13 @@ export function ManagerSummarySection({
                   </div>
 
                   <div className="mt-3 space-y-2">
-                    <div className="flex items-center justify-between text-[10px] font-semibold">
+                    <div className="flex items-center justify-between text-xs font-semibold">
                       <span className="text-[var(--text-secondary)]">
                         Actual: <strong className="text-[var(--text-primary)]">{fmtVal(kpi.actual_value, kpi.unit)}</strong>
                         <span className="text-[var(--text-muted)] mx-1.5">·</span>
                         Target: <strong className="text-[var(--text-primary)]">{fmtVal(kpi.target_value, kpi.unit)}</strong>
                       </span>
-                      <span className={`text-[8px] font-extrabold px-1.5 py-0.5 rounded-sm ${status.cls}`}>
+                      <span className={`text-xs font-extrabold px-1.5 py-0.5 rounded-sm ${status.cls}`}>
                         {status.text}
                       </span>
                     </div>

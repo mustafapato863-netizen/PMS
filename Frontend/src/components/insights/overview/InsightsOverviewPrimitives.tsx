@@ -82,7 +82,7 @@ export function ViewAllButton({
   variant?: 'button' | 'link';
 }) {
   const look = variant === 'link'
-    ? 'text-[11px] text-[var(--insights-link)] hover:bg-[var(--insights-link-hover-bg)] hover:underline'
+    ? 'text-xs text-[var(--insights-link)] hover:bg-[var(--insights-link-hover-bg)] hover:underline'
     : 'border border-[var(--insights-accent-border)] bg-[var(--insights-accent-soft)] text-[12px] text-[var(--insights-accent-text)] hover:border-[var(--insights-accent)]';
   return (
     <button
@@ -105,7 +105,7 @@ export function GradeBadge({ score }: { score: number | null | undefined }) {
   return (
     <span
       data-grade={tone.grade ?? 'na'}
-      className="inline-flex shrink-0 items-center whitespace-nowrap rounded-full px-[8px] py-[3px] text-[11px] font-semibold leading-normal"
+      className="inline-flex shrink-0 items-center whitespace-nowrap rounded-full px-[8px] py-[3px] text-xs font-semibold leading-normal"
       style={{ background: tone.badgeBg, color: tone.badgeText }}
     >
       {tone.grade ? `${tone.grade} · ${tone.label}` : tone.label}

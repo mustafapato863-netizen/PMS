@@ -20,12 +20,12 @@ function DriverRow({ driver, side, metric, max }: { driver: ExecutiveDriver; sid
       <div className="flex items-start gap-[10px]">
         <div className="flex min-w-0 flex-1 flex-col gap-[3px]">
           <span className="truncate text-[13px] font-semibold text-[var(--insights-heading)]">{driver.kpi_label}</span>
-          {sub && <span className="truncate text-[11px] text-[var(--text-muted)]">{sub}</span>}
+          {sub && <span className="truncate text-xs text-[var(--text-muted)]">{sub}</span>}
           <div className="flex flex-wrap items-center gap-[6px]">
             <DirectionTag direction={driver.kpi_direction} />
             {driver.current_value !== null && <span className="text-[12px] font-bold text-[var(--insights-heading)]">{fmtKpiValue(driver.current_value, driver.unit)}</span>}
             {changeDelta !== null && (
-              <span data-tone={movement} className="text-[11px] font-semibold" style={{ color: toneColor(movement) }}>
+              <span data-tone={movement} className="text-xs font-semibold" style={{ color: toneColor(movement) }}>
                 {arrow(changeDelta)} {fmtKpiDelta(changeDelta, driver.unit)}
               </span>
             )}

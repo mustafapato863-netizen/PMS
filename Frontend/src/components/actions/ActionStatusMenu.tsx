@@ -66,12 +66,12 @@ export function ActionStatusMenu({ status, canEdit, ariaLabel, compact = false, 
           value={current}
           disabled={saving}
           onChange={(event) => choose(event.target.value)}
-          className={`rounded-lg border border-[var(--border-light)] bg-[var(--bg-surface)] font-bold text-[var(--text-primary)] ${compact ? 'min-h-8 px-2 text-[10px]' : 'min-h-10 px-2 text-xs'}`}
+          className={`rounded-lg border border-[var(--border-light)] bg-[var(--bg-surface)] font-bold text-[var(--text-primary)] ${compact ? 'min-h-8 px-2 text-xs' : 'min-h-10 px-2 text-xs'}`}
         >
           {ACTION_STATUSES.map((value) => <option key={value} value={value}>{value}</option>)}
         </select>
       ) : (
-        <span className={`inline-flex items-center rounded-full px-2 py-1 font-black uppercase tracking-wide ${compact ? 'text-[9px]' : 'text-[10px]'} ${STATUS_CLASS[current]}`}>{current}</span>
+        <span className={`inline-flex items-center rounded-full px-2 py-1 font-black uppercase tracking-wide ${compact ? 'text-xs' : 'text-xs'} ${STATUS_CLASS[current]}`}>{current}</span>
       )}
       {pending && (
         <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/50 p-4" role="presentation">
@@ -104,5 +104,5 @@ export function ActionStatusMenu({ status, canEdit, ariaLabel, compact = false, 
 
 export function StatusPill({ status }: { status: string }) {
   const current = status || 'Open';
-  return <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-black uppercase tracking-wide ${STATUS_CLASS[current] || STATUS_CLASS.Open}`}>{current}</span>;
+  return <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-black uppercase tracking-wide ${STATUS_CLASS[current] || STATUS_CLASS.Open}`}>{current}</span>;
 }

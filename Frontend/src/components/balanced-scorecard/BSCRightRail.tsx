@@ -126,7 +126,7 @@ function MicroStat({
     <div>
       <div
         style={{
-          fontSize: 9.5,
+          fontSize: 12,
           fontWeight: 800,
           letterSpacing: "0.06em",
           textTransform: "uppercase",
@@ -189,7 +189,7 @@ export function BSCRightRail({
       >
         <div>
           <div className="flex items-center justify-between gap-2 mb-2">
-            <span className="text-[10px] font-extrabold uppercase tracking-wider text-[var(--bsc-panel-muted)]">
+            <span className="text-xs font-extrabold uppercase tracking-wider text-[var(--bsc-panel-muted)]">
               {subjectLabel ? `${subjectLabel} performance` : "Overall performance"}
             </span>
             {scoreDelta != null && <TrendBadge delta={scoreDelta} compact />}
@@ -202,7 +202,7 @@ export function BSCRightRail({
               </div>
               <div className="mt-2 flex items-center gap-2">
                 <span
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-extrabold"
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-extrabold"
                   style={{
                     background: tone.background,
                     color: tone.badgeText,
@@ -239,7 +239,7 @@ export function BSCRightRail({
           <div className="flex items-start justify-between gap-2 mb-2">
             <div>
               <h3 className="text-xs font-black text-[var(--bsc-panel-text)] tracking-tight">Score trend</h3>
-              <p className="text-[10px] font-semibold text-[var(--bsc-panel-muted)] mt-0.5">
+              <p className="text-xs font-semibold text-[var(--bsc-panel-muted)] mt-0.5">
                 Monthly movement in overall performance
               </p>
             </div>
@@ -255,7 +255,7 @@ export function BSCRightRail({
           </div>
         </div>
 
-        <div className="mt-2 pt-2 border-t border-[var(--border-light)] flex items-center justify-between text-[10px]">
+        <div className="mt-2 pt-2 border-t border-[var(--border-light)] flex items-center justify-between text-xs">
           <span className="font-semibold text-[var(--bsc-panel-muted)]">Target Baseline</span>
           <span className="font-extrabold text-[var(--text-primary)]">{scoreTarget != null ? `${scoreTarget.toFixed(1)}%` : '90.0%'}</span>
         </div>
@@ -271,13 +271,13 @@ export function BSCRightRail({
             <div className="flex items-start justify-between gap-2 mb-2">
               <div>
                 <h3 className="text-xs font-black text-[var(--bsc-panel-text)] tracking-tight">Perspective trends</h3>
-                <p className="text-[10px] font-semibold text-[var(--bsc-panel-muted)] mt-0.5">
+                <p className="text-xs font-semibold text-[var(--bsc-panel-muted)] mt-0.5">
                   Latest movement across 4 perspectives
                 </p>
               </div>
             </div>
 
-            <div className="flex items-center gap-2 mb-2 flex-wrap text-[9px] font-semibold">
+            <div className="flex items-center gap-2 mb-2 flex-wrap text-xs font-semibold">
               {perspectives.map((perspective) => (
                 <div key={perspective.key} className="flex items-center gap-1">
                   <span className="w-2 h-2 rounded-full" style={{ background: pc(perspective.key) }} />
@@ -300,7 +300,7 @@ export function BSCRightRail({
             <div className="flex items-start justify-between gap-2 mb-2">
               <div>
                 <h3 className="text-xs font-black text-[var(--bsc-panel-text)] tracking-tight">Manager comparison</h3>
-                <p className="text-[10px] font-semibold text-[var(--bsc-panel-muted)] mt-0.5">
+                <p className="text-xs font-semibold text-[var(--bsc-panel-muted)] mt-0.5">
                   Top performing team leaders
                 </p>
               </div>
@@ -308,7 +308,7 @@ export function BSCRightRail({
 
             <div className="space-y-1.5">
               {(rosterManagers || []).slice(0, 3).map((m, idx) => (
-                <div key={m.employeeId} className="flex items-center justify-between text-[11px] p-1.5 rounded-lg bg-[var(--bg-sunken)]/60">
+                <div key={m.employeeId} className="flex items-center justify-between text-xs p-1.5 rounded-lg bg-[var(--bg-sunken)]/60">
                   <span className="font-bold text-[var(--text-primary)] truncate max-w-[140px]">{idx + 1}. {m.employeeName}</span>
                   <span className="font-extrabold" style={{ color: getGaugeTone(m.score).text }}>{(m.score ?? 0).toFixed(1)}%</span>
                 </div>
@@ -317,7 +317,7 @@ export function BSCRightRail({
           </div>
         )}
 
-        <div className="mt-2 pt-2 border-t border-[var(--border-light)] flex items-center justify-between text-[10px]">
+        <div className="mt-2 pt-2 border-t border-[var(--border-light)] flex items-center justify-between text-xs">
           <span className="font-semibold text-[var(--bsc-panel-muted)]">Data Status</span>
           <span className="inline-flex items-center gap-1.5 font-extrabold text-emerald-600 dark:text-emerald-400">
             <span className="h-1.5 w-1.5 rounded-full bg-current" aria-hidden="true" />

@@ -611,7 +611,7 @@ const EmployeeProfileView = () => {
                 <p className="mt-0.5 text-xs font-medium text-[var(--text-muted)]">Filter this team by department / position and switch profiles without leaving the page.</p>
               </div>
             </div>
-            <span className="w-fit rounded-full bg-[var(--bg-sunken)] px-3 py-1 text-[10px] font-bold text-[var(--text-muted)]" aria-live="polite">
+            <span className="w-fit rounded-full bg-[var(--bg-sunken)] px-3 py-1 text-xs font-bold text-[var(--text-muted)]" aria-live="polite">
               {directoryRows.length} employee{directoryRows.length === 1 ? '' : 's'}
             </span>
           </div>
@@ -791,10 +791,10 @@ const EmployeeProfileView = () => {
               <div className="mb-4 flex items-start justify-between gap-3">
                 <div>
                   <h3 className="text-sm font-bold text-[var(--text-muted)] uppercase tracking-wider">KPI Breakdown</h3>
-                  <p className="mt-1 text-[11px] font-medium text-[var(--text-faint)]">Canonical employee score and weighted contribution</p>
+                  <p className="mt-1 text-xs font-medium text-[var(--text-faint)]">Canonical employee score and weighted contribution</p>
                 </div>
                 {profileAgent && isPreApprovalsIpElectiveTeam(profileAgent.identity.team) && (
-                  <span className="shrink-0 rounded-full border border-blue-500/20 bg-blue-500/10 px-2 py-1 text-[10px] font-bold text-blue-600 dark:text-blue-400">Scoped KPIs</span>
+                  <span className="shrink-0 rounded-full border border-blue-500/20 bg-blue-500/10 px-2 py-1 text-xs font-bold text-blue-600 dark:text-blue-400">Scoped KPIs</span>
                 )}
               </div>
               <KpiBreakdownPanel
@@ -839,7 +839,7 @@ const EmployeeProfileView = () => {
                     <button
                       key={mode}
                       onClick={() => setComparisonMode(mode)}
-                      className={`relative z-10 px-2 sm:px-3 md:px-3.5 py-1 text-[10px] sm:text-[11px] md:text-xs font-extrabold rounded-xl transition-all duration-200 cursor-pointer h-full flex items-center justify-center gap-1 ${isActive
+                      className={`relative z-10 px-2 sm:px-3 md:px-3.5 py-1 text-xs font-extrabold rounded-xl transition-all duration-200 cursor-pointer h-full flex items-center justify-center gap-1 ${isActive
                         ? 'text-blue-600 dark:text-blue-400 bg-white dark:bg-slate-800 shadow-sm border border-[var(--border-light)]'
                         : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] bg-transparent border border-transparent'
                         }`}
@@ -867,7 +867,7 @@ const EmployeeProfileView = () => {
                       <User size={24} />
                     </div>
                     <div>
-                      <div className="text-[10px] font-extrabold text-blue-500 uppercase tracking-widest">
+                      <div className="text-xs font-extrabold text-blue-500 uppercase tracking-widest">
                         {comparisonMode === 'personal_best' ? 'Personal Peak Performance' : comparisonMode === 'team_avg' ? 'Team Average Benchmark' : 'Team Elite Benchmark'}
                       </div>
                       <h4 className="text-base font-bold text-[var(--text-primary)] flex items-center gap-2 mt-0.5">
@@ -992,7 +992,7 @@ const EmployeeProfileView = () => {
                           <motion.span
                             initial={{ opacity: 0, scale: 0.9 }}
                             animate={{ opacity: 1, scale: 1 }}
-                            className={`inline-flex items-center gap-1 text-[10px] font-extrabold px-2 py-0.5 rounded-full border ${isPositive
+                            className={`inline-flex items-center gap-1 text-xs font-extrabold px-2 py-0.5 rounded-full border ${isPositive
                               ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20 dark:bg-emerald-500/20 dark:text-emerald-400 dark:border-emerald-500/30'
                               : 'bg-rose-500/10 text-rose-600 border-rose-500/20 dark:bg-rose-500/20 dark:text-rose-400 dark:border-rose-500/30'
                               }`}
@@ -1007,7 +1007,7 @@ const EmployeeProfileView = () => {
                           <motion.span
                             initial={{ opacity: 0, scale: 0.9 }}
                             animate={{ opacity: 1, scale: 1 }}
-                            className="inline-flex items-center gap-1 text-[10px] font-extrabold px-2 py-0.5 rounded-full border bg-slate-500/10 text-slate-600 border-slate-500/20 dark:bg-slate-500/20 dark:text-slate-400 dark:border-slate-500/30 font-mono"
+                            className="inline-flex items-center gap-1 text-xs font-extrabold px-2 py-0.5 rounded-full border bg-slate-500/10 text-slate-600 border-slate-500/20 dark:bg-slate-500/20 dark:text-slate-400 dark:border-slate-500/30 font-mono"
                           >
                             <span>Equal</span>
                           </motion.span>
@@ -1021,7 +1021,7 @@ const EmployeeProfileView = () => {
                       <div className="flex flex-col">
                         <span className="text-[var(--text-secondary)] font-semibold">{kpi.label}</span>
                         {weight !== undefined && weight !== null && (
-                          <span className="text-[10px] text-[var(--text-faint)] font-medium">
+                          <span className="text-xs text-[var(--text-faint)] font-medium">
                             Weight: {(weight * 100).toFixed(0)}%
                           </span>
                         )}
@@ -1044,7 +1044,7 @@ const EmployeeProfileView = () => {
                             </span>
                           </div>
                           {actualVol && (
-                            <span className="text-[10px] text-[var(--text-muted)] font-bold font-mono">
+                            <span className="text-xs text-[var(--text-muted)] font-bold font-mono">
                               ({actualVol})
                             </span>
                           )}
@@ -1100,7 +1100,7 @@ const EmployeeProfileView = () => {
                             </span>
                             <span className="text-xs text-[var(--text-faint)]">/ 100%</span>
                           </div>
-                          <span className="text-[10px] text-[var(--text-muted)] font-bold font-mono">
+                          <span className="text-xs text-[var(--text-muted)] font-bold font-mono">
                             {Math.round(aTotalCensus).toLocaleString()} / {Math.round(tTotalCensus).toLocaleString()} Census
                           </span>
                         </div>
@@ -1119,7 +1119,7 @@ const EmployeeProfileView = () => {
                             </span>
                             <span className="text-xs text-[var(--text-faint)]">/ 100%</span>
                           </div>
-                          <span className="text-[10px] text-[var(--text-muted)] font-bold font-mono">
+                          <span className="text-xs text-[var(--text-muted)] font-bold font-mono">
                             {Math.round(aTotalRevenue).toLocaleString()} / {Math.round(tTotalRevenue).toLocaleString()} Rev
                           </span>
                         </div>

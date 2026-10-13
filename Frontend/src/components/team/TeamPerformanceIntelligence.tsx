@@ -71,7 +71,7 @@ export const TeamPerformanceIntelligence = ({ displayName, month, averageScore, 
               <div key={row.label} className="flex items-center gap-3 rounded-xl border border-[var(--border-light)] bg-[var(--bg-sunken)]/35 p-3">
                 <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${row.color}`}><Icon size={16} /></span>
                 <div className="min-w-0">
-                  <p className="text-[10px] font-extrabold uppercase tracking-wide text-[var(--text-muted)]">{row.label}</p>
+                  <p className="text-xs font-extrabold uppercase tracking-wide text-[var(--text-muted)]">{row.label}</p>
                   <p className="mt-0.5 text-xs font-extrabold text-[var(--text-primary)]">{row.value}</p>
                 </div>
               </div>
@@ -90,13 +90,13 @@ export const TeamPerformanceIntelligence = ({ displayName, month, averageScore, 
               <button
                 type="button"
                 onClick={toggleAllExpanded}
-                className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-[var(--border-medium)] px-3 text-[10px] font-extrabold text-[var(--text-secondary)] hover:bg-[var(--bg-sunken)] transition-colors"
+                className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-[var(--border-medium)] px-3 text-xs font-extrabold text-[var(--text-secondary)] hover:bg-[var(--bg-sunken)] transition-colors"
               >
                 {allExpanded ? 'Collapse all' : 'Expand all'}
               </button>
             )}
             {kpis.length > 4 && (
-              <button type="button" onClick={() => setShowAll((value) => !value)} className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-[var(--border-medium)] px-3 text-[10px] font-extrabold text-[var(--text-secondary)]">
+              <button type="button" onClick={() => setShowAll((value) => !value)} className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-[var(--border-medium)] px-3 text-xs font-extrabold text-[var(--text-secondary)]">
                 {showAll ? <ChevronUp size={13} /> : <ChevronDown size={13} />}{showAll ? 'Show priority only' : `Show all ${kpis.length}`}
               </button>
             )}
@@ -162,35 +162,35 @@ export const TeamPerformanceIntelligence = ({ displayName, month, averageScore, 
                     </span>
                     <span className="min-w-0 flex-1">
                       <span className="flex flex-wrap items-center gap-2 text-sm font-extrabold text-[var(--text-primary)]">
-                        {kpi.label}<small className="rounded-full bg-[var(--bg-surface)]/75 px-2 py-0.5 text-[9px] font-bold text-[var(--text-muted)]">{kpi.lowerBetter ? 'Lower is better' : 'Higher is better'}</small>
+                        {kpi.label}<small className="rounded-full bg-[var(--bg-surface)]/75 px-2 py-0.5 text-xs font-bold text-[var(--text-muted)]">{kpi.lowerBetter ? 'Lower is better' : 'Higher is better'}</small>
                       </span>
-                      <span className={`mt-1.5 flex flex-wrap items-center gap-1.5 text-[10px] font-bold ${movementTone}`}>
+                      <span className={`mt-1.5 flex flex-wrap items-center gap-1.5 text-xs font-bold ${movementTone}`}>
                         <TrendIcon size={12} />{movementText}{kpi.movementPercent !== null && kpi.movementPositive !== null && <strong className="rounded-full bg-current/10 px-1.5 py-0.5">{Math.abs(kpi.movementPercent).toFixed(1)}% {kpi.movementPositive ? 'improvement' : 'decline'}</strong>}
                       </span>
                     </span>
                     <span className="flex shrink-0 items-center gap-2">
                       {isImprovingOffTarget ? (
-                        <span className="hidden items-center gap-1 rounded-full bg-slate-500/10 px-2.5 py-1 text-[9px] font-extrabold uppercase sm:inline-flex">
+                        <span className="hidden items-center gap-1 rounded-full bg-slate-500/10 px-2.5 py-1 text-xs font-extrabold uppercase sm:inline-flex">
                           <span className="text-emerald-600 dark:text-emerald-300">Improving</span><span className="text-[var(--text-muted)]">·</span><span className="text-rose-600 dark:text-rose-300">Still {kpi.lowerBetter ? 'above' : 'below'} target</span>
                         </span>
                       ) : (
-                        <span className="hidden rounded-full bg-current/10 px-2.5 py-1 text-[9px] font-extrabold uppercase sm:inline-flex">{statusLabel[kpi.severity]}</span>
+                        <span className="hidden rounded-full bg-current/10 px-2.5 py-1 text-xs font-extrabold uppercase sm:inline-flex">{statusLabel[kpi.severity]}</span>
                       )}
                       {isExpanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
                     </span>
                   </span>
 
-                  <span className="mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-current/10 pt-2 text-[10px] font-bold text-[var(--text-muted)]">
+                  <span className="mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-current/10 pt-2 text-xs font-bold text-[var(--text-muted)]">
                     <span className="rounded-md bg-[var(--bg-surface)]/75 px-2 py-1 text-[var(--text-secondary)]">{month}</span>
                     <span>Actual <strong className="text-blue-700 dark:text-blue-300">{formatTeamKpiValue(kpi.actual, kpi.unit)}</strong></span>
                     <span aria-hidden="true">·</span>
-                    <span>Best <strong className="text-[var(--text-primary)]">{baselineAvailable ? formatTeamKpiValue(kpi.baselineActual!, kpi.unit) : 'N/A'}</strong>{kpi.baselineMonth && <small className="ml-1 text-[9px] text-[var(--text-faint)]"> {'('}{kpi.baselineMonth}{')'}</small>}</span>
+                    <span>Best <strong className="text-[var(--text-primary)]">{baselineAvailable ? formatTeamKpiValue(kpi.baselineActual!, kpi.unit) : 'N/A'}</strong>{kpi.baselineMonth && <small className="ml-1 text-xs text-[var(--text-faint)]"> {'('}{kpi.baselineMonth}{')'}</small>}</span>
                     <span aria-hidden="true">·</span>
                     <strong className={!baselineAvailable ? 'text-amber-600 dark:text-amber-300' : matchesBest || currentIsBetter ? 'text-emerald-600 dark:text-emerald-300' : 'text-rose-600 dark:text-rose-300'}>{baselinePosition}</strong>
                   </span>
                 </button>
                 {isExpanded && (
-                  <div className="space-y-1.5 border-t border-current/10 bg-[var(--bg-surface)]/35 px-4 py-3 text-[11px] font-medium leading-relaxed text-[var(--text-secondary)]">
+                  <div className="space-y-1.5 border-t border-current/10 bg-[var(--bg-surface)]/35 px-4 py-3 text-xs font-medium leading-relaxed text-[var(--text-secondary)]">
                     <p><strong className="text-[var(--text-primary)]">Movement:</strong> {movementStory}</p>
                     <p className={baselineAvailable ? matchesBest || currentIsBetter ? 'text-emerald-600 dark:text-emerald-300' : 'text-rose-600 dark:text-rose-300' : 'text-amber-600 dark:text-amber-300'}><strong>Baseline:</strong> {baselineStory}</p>
                     {kpi.target > 0 && <p><strong className="text-[var(--text-primary)]">Target:</strong> {kpi.lowerBetter ? 'Maximum' : 'Minimum'} {formatTeamKpiValue(kpi.target, kpi.unit)} · Current result is {kpi.targetMet ? 'on target' : 'off target'}.</p>}
@@ -215,38 +215,38 @@ export const TeamPerformanceIntelligence = ({ displayName, month, averageScore, 
                       const secondaryLabel = isBookingRate ? 'Total Attended' : 'Total Bookings';
                       return (
                         <div className="mt-2 rounded-lg border border-[var(--border-light)] bg-[var(--bg-sunken)]/50 p-3 space-y-2">
-                          <p className="flex items-center gap-1.5 text-[10px] font-extrabold uppercase tracking-wide text-[var(--text-muted)]">
+                          <p className="flex items-center gap-1.5 text-xs font-extrabold uppercase tracking-wide text-[var(--text-muted)]">
                             <Hash size={10} />
                             Actual Volume Numbers
                           </p>
                           {/* Primary metric row */}
                           <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
                             <div className="flex flex-col gap-0.5">
-                              <span className="text-[9px] font-bold uppercase text-[var(--text-muted)]">{primaryLabel}</span>
+                              <span className="text-xs font-bold uppercase text-[var(--text-muted)]">{primaryLabel}</span>
                               <span className="text-base font-extrabold tabular-nums text-[var(--text-primary)]">{currentTotal.toLocaleString()}</span>
                               {delta !== null && (
-                                <span className={`flex items-center gap-1 text-[10px] font-bold ${deltaPositive ? 'text-emerald-600 dark:text-emerald-400' : delta < 0 ? 'text-rose-600 dark:text-rose-400' : 'text-[var(--text-muted)]'}`}>
+                                <span className={`flex items-center gap-1 text-xs font-bold ${deltaPositive ? 'text-emerald-600 dark:text-emerald-400' : delta < 0 ? 'text-rose-600 dark:text-rose-400' : 'text-[var(--text-muted)]'}`}>
                                   {deltaPositive ? <TrendingUp size={10} /> : delta! < 0 ? <TrendingDown size={10} /> : null}
                                   {delta! > 0 ? '+' : ''}{delta!.toLocaleString()} vs last month
                                 </span>
                               )}
                               {bestTotal !== null && (
-                                <span className="text-[9px] text-[var(--text-muted)]">Best: <strong className="text-[var(--text-secondary)]">{bestTotal.toLocaleString()}</strong>{bestMonth && <span className="ml-1 text-[var(--text-faint)]">{bestMonth}</span>}{bestTotal > 0 && currentTotal > 0 && <span className={`ml-1.5 font-bold ${currentTotal >= bestTotal ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>{currentTotal >= bestTotal ? '🏆 New best' : `${(currentTotal - bestTotal).toLocaleString()} vs best`}</span>}</span>
+                                <span className="text-xs text-[var(--text-muted)]">Best: <strong className="text-[var(--text-secondary)]">{bestTotal.toLocaleString()}</strong>{bestMonth && <span className="ml-1 text-[var(--text-faint)]">{bestMonth}</span>}{bestTotal > 0 && currentTotal > 0 && <span className={`ml-1.5 font-bold ${currentTotal >= bestTotal ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>{currentTotal >= bestTotal ? '🏆 New best' : `${(currentTotal - bestTotal).toLocaleString()} vs best`}</span>}</span>
                               )}
                             </div>
                             <div className="w-px self-stretch bg-[var(--border-light)]" aria-hidden="true" />
                             {/* Secondary metric */}
                             <div className="flex flex-col gap-0.5">
-                              <span className="text-[9px] font-bold uppercase text-[var(--text-muted)]">{secondaryLabel}</span>
+                              <span className="text-xs font-bold uppercase text-[var(--text-muted)]">{secondaryLabel}</span>
                               <span className="text-base font-extrabold tabular-nums text-[var(--text-primary)]">{currentTotalOther.toLocaleString()}</span>
                               {deltaOther !== null && (
-                                <span className={`flex items-center gap-1 text-[10px] font-bold ${deltaOtherPositive ? 'text-emerald-600 dark:text-emerald-400' : deltaOther! < 0 ? 'text-rose-600 dark:text-rose-400' : 'text-[var(--text-muted)]'}`}>
+                                <span className={`flex items-center gap-1 text-xs font-bold ${deltaOtherPositive ? 'text-emerald-600 dark:text-emerald-400' : deltaOther! < 0 ? 'text-rose-600 dark:text-rose-400' : 'text-[var(--text-muted)]'}`}>
                                   {deltaOtherPositive ? <TrendingUp size={10} /> : deltaOther! < 0 ? <TrendingDown size={10} /> : null}
                                   {deltaOther! > 0 ? '+' : ''}{deltaOther!.toLocaleString()} vs last month
                                 </span>
                               )}
                               {bestTotalOther !== null && (
-                                <span className="text-[9px] text-[var(--text-muted)]">Best: <strong className="text-[var(--text-secondary)]">{bestTotalOther.toLocaleString()}</strong>{bestMonthOther && <span className="ml-1 text-[var(--text-faint)]">{bestMonthOther}</span>}{bestTotalOther > 0 && currentTotalOther > 0 && <span className={`ml-1.5 font-bold ${currentTotalOther >= bestTotalOther ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>{currentTotalOther >= bestTotalOther ? '🏆 New best' : `${(currentTotalOther - bestTotalOther).toLocaleString()} vs best`}</span>}</span>
+                                <span className="text-xs text-[var(--text-muted)]">Best: <strong className="text-[var(--text-secondary)]">{bestTotalOther.toLocaleString()}</strong>{bestMonthOther && <span className="ml-1 text-[var(--text-faint)]">{bestMonthOther}</span>}{bestTotalOther > 0 && currentTotalOther > 0 && <span className={`ml-1.5 font-bold ${currentTotalOther >= bestTotalOther ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>{currentTotalOther >= bestTotalOther ? '🏆 New best' : `${(currentTotalOther - bestTotalOther).toLocaleString()} vs best`}</span>}</span>
                               )}
                             </div>
                           </div>
@@ -261,8 +261,8 @@ export const TeamPerformanceIntelligence = ({ displayName, month, averageScore, 
         </div>
         {attention.length > 0 && (
           <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-violet-500/15 bg-violet-500/[0.055] p-3">
-            <span className="mr-1 text-[10px] font-extrabold text-violet-700 dark:text-violet-300">Recommended focus</span>
-            {attention.slice(0, 3).map((kpi) => <span key={kpi.key} className="rounded-md border border-violet-500/20 bg-[var(--bg-surface)] px-2.5 py-1 text-[9px] font-extrabold text-violet-700 dark:text-violet-300">{buildTeamKpiRecommendation(kpi)}</span>)}
+            <span className="mr-1 text-xs font-extrabold text-violet-700 dark:text-violet-300">Recommended focus</span>
+            {attention.slice(0, 3).map((kpi) => <span key={kpi.key} className="rounded-md border border-violet-500/20 bg-[var(--bg-surface)] px-2.5 py-1 text-xs font-extrabold text-violet-700 dark:text-violet-300">{buildTeamKpiRecommendation(kpi)}</span>)}
           </div>
         )}
       </div>

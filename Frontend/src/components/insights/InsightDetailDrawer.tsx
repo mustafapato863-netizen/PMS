@@ -48,7 +48,7 @@ export default function InsightDetailDrawer({ insight, onClose }: { insight: Ins
       <aside role="dialog" aria-modal="true" aria-labelledby="insight-drawer-title" className="absolute inset-y-0 right-0 flex w-full max-w-xl flex-col border-l border-[var(--border-light)] bg-[var(--bg-surface)] shadow-2xl">
         <header className="flex items-start justify-between gap-4 border-b border-[var(--border-light)] p-5 md:p-6">
           <div>
-            <span data-testid="insight-drawer-severity" className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-extrabold uppercase tracking-wide ${SEVERITY_STYLES[severityDisplay(insight)]}`}>{SEVERITY_LABELS[severityDisplay(insight)]}</span>
+            <span data-testid="insight-drawer-severity" className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-extrabold uppercase tracking-wide ${SEVERITY_STYLES[severityDisplay(insight)]}`}>{SEVERITY_LABELS[severityDisplay(insight)]}</span>
             <h2 id="insight-drawer-title" className="mt-3 text-xl font-extrabold text-[var(--text-primary)]">{insight.title}</h2>
             <p className="mt-1 text-sm text-[var(--text-muted)]">{insight.scope} · {insight.trend_label}</p>
           </div>
@@ -74,7 +74,7 @@ export default function InsightDetailDrawer({ insight, onClose }: { insight: Ins
               ['Status', insight.status],
             ].map(([label, value]) => (
               <div key={label} className="rounded-xl border border-[var(--border-light)] bg-[var(--bg-sunken)]/50 p-3">
-                <p className="text-[10px] font-extrabold uppercase tracking-wide text-[var(--text-faint)]">{label}</p>
+                <p className="text-xs font-extrabold uppercase tracking-wide text-[var(--text-faint)]">{label}</p>
                 <p className="mt-1 break-words text-sm font-bold capitalize text-[var(--text-primary)]">{value}</p>
               </div>
             ))}

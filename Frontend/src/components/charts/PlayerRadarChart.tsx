@@ -55,12 +55,12 @@ const PlayerRadarChart: React.FC<PlayerRadarChartProps> = ({ data, employeeName,
           <PolarGrid stroke="var(--border-light)" />
           <PolarAngleAxis 
             dataKey="subject" 
-            tick={{ fill: 'var(--text-secondary)', fontSize: 11, fontWeight: 500 }} 
+            tick={{ fill: 'var(--text-secondary)', fontSize: 12, fontWeight: 500 }} 
           />
           <PolarRadiusAxis 
             angle={30} 
             domain={[0, Math.max(100, ...data.map(d => Math.max(d.A || 0, d.B || 0)))]} 
-            tick={{ fill: 'var(--text-muted)', fontSize: 10 }}
+            tick={{ fill: 'var(--text-muted)', fontSize: 12 }}
           />
           <Tooltip content={<CustomTooltip />} />
           <Legend 

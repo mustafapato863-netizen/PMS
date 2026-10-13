@@ -32,7 +32,7 @@ function FunctionCard({ card, previous, linkable }: { card: ExecutiveFunctionCar
         <FunctionIcon fn={card.function} size={40} />
         <div className="min-w-0">
           <h3 className="text-[17px] font-bold leading-[1.3] tracking-[-0.025em] text-[var(--insights-heading)]">{card.function}</h3>
-          <p className="mt-[2px] text-[11px] leading-[1.5] text-[var(--text-muted)]">
+          <p className="mt-[2px] text-xs leading-[1.5] text-[var(--text-muted)]">
             {card.teams.length} {card.teams.length === 1 ? 'team' : 'teams'} · {card.employees} people{card.regions.length ? ` · ${card.regions.join(' + ')}` : ''}
           </p>
         </div>
@@ -59,7 +59,7 @@ function FunctionCard({ card, previous, linkable }: { card: ExecutiveFunctionCar
       </div>
       <FunctionTrendChart color={trendColor} title={`${card.function} score`} points={card.trend} />
       <div className="mt-auto flex flex-col gap-[10px] border-t border-[var(--insights-row-border)] pt-[10px]">
-        <p className="min-w-0 text-[11px] leading-[1.6] text-[var(--text-secondary)]">{card.teams.join(' · ')}</p>
+        <p className="min-w-0 text-xs leading-[1.6] text-[var(--text-secondary)]">{card.teams.join(' · ')}</p>
         {linkable && <Link to={`/function-summary/${functionSlug(card.function)}`} aria-label={`View ${card.function} function`} className="inline-flex min-h-[44px] items-center justify-center gap-[8px] rounded-[10px] border px-[12px] py-[8px] text-[13px] font-bold transition-[filter] hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--insights-accent-ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-surface)] motion-reduce:transition-none" style={{ background: style.bg, color: style.color, borderColor: `color-mix(in srgb, ${style.color} 25%, transparent)` }}>View function <ArrowRight aria-hidden="true" className="size-[16px]" /></Link>}
       </div>
       <span className="sr-only">{tone.label}</span>
@@ -73,7 +73,7 @@ export default function FunctionCards({ cards, previous, linkable }: { cards: Ex
       <div className="flex flex-wrap items-center justify-between gap-[8px]">
         <div className="flex items-center gap-[8px]">
           <h2 id="exec-functions-title" className="text-[17px] font-bold text-[var(--insights-heading)]">Functions</h2>
-          <span className="rounded-full bg-[var(--exec-chip-bg)] px-[8px] py-[2px] text-[11px] font-semibold text-[var(--exec-chip-text)]">{cards.length} functions</span>
+          <span className="rounded-full bg-[var(--exec-chip-bg)] px-[8px] py-[2px] text-xs font-semibold text-[var(--exec-chip-text)]">{cards.length} functions</span>
         </div>
         {linkable && <span className="text-[12px] text-[var(--text-muted)]">Click a function to open its Function Summary →</span>}
       </div>

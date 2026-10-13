@@ -119,14 +119,14 @@ export default function AffectedAgentKpiBreakdown({
 
   const headerAction = (
     <div className="flex flex-wrap items-center gap-[8px]">
-    <label className="flex items-center gap-[7px] text-[11px] font-semibold text-[var(--text-secondary)]">
+    <label className="flex items-center gap-[7px] text-xs font-semibold text-[var(--text-secondary)]">
       <span className="sr-only">Affected agent</span>
       <select
         aria-label="Affected agent"
         value={selectedKey}
         disabled={!options.length}
         onChange={(event) => setRequestedEmployeeId(event.target.value)}
-        className="min-h-[34px] max-w-[220px] rounded-[8px] border border-[var(--exec-card-border)] bg-[var(--bg-surface)] px-[9px] text-[11px] font-semibold text-[var(--insights-heading)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--insights-accent)]"
+        className="min-h-[34px] max-w-[220px] rounded-[8px] border border-[var(--exec-card-border)] bg-[var(--bg-surface)] px-[9px] text-xs font-semibold text-[var(--insights-heading)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--insights-accent)]"
       >
         {!options.length && <option value="">No affected agents</option>}
         {options.map(({ person, reasons }) => (

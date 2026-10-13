@@ -128,8 +128,8 @@ const CallCenterChannelSummary = ({ rows, onChannelSelect, channelKpiAnalysis = 
           </span>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <p className="text-[10px] font-extrabold uppercase tracking-[0.1em] text-blue-600 dark:text-blue-300">Decision overview</p>
-              <span className="rounded-full border border-[var(--border-light)] bg-[var(--bg-sunken)] px-2 py-0.5 text-[9px] font-extrabold uppercase tracking-wide text-[var(--text-muted)]">No pooled KPI score</span>
+              <p className="text-xs font-extrabold uppercase tracking-[0.1em] text-blue-600 dark:text-blue-300">Decision overview</p>
+              <span className="rounded-full border border-[var(--border-light)] bg-[var(--bg-sunken)] px-2 py-0.5 text-xs font-extrabold uppercase tracking-wide text-[var(--text-muted)]">No pooled KPI score</span>
             </div>
             <h3 id="call-center-overview" className="mt-1 heading-3">Call Center Overview</h3>
             <p className="mt-1 max-w-3xl text-xs font-medium leading-5 text-[var(--text-secondary)]">
@@ -137,7 +137,7 @@ const CallCenterChannelSummary = ({ rows, onChannelSelect, channelKpiAnalysis = 
             </p>
           </div>
         </div>
-        <div className="flex w-fit shrink-0 items-center gap-3 text-[10px] font-extrabold text-[var(--text-secondary)]">
+        <div className="flex w-fit shrink-0 items-center gap-3 text-xs font-extrabold text-[var(--text-secondary)]">
           <span className="flex items-center gap-1.5"><Users size={13} className="text-blue-500" />{totalEmployees} employees</span>
           <span className="h-3 w-px bg-[var(--border-light)]" aria-hidden="true" />
           <span>2 channels</span>
@@ -147,19 +147,19 @@ const CallCenterChannelSummary = ({ rows, onChannelSelect, channelKpiAnalysis = 
       <div className="mt-4 grid gap-3 md:grid-cols-3">
         <article className="rounded-2xl border border-blue-500/20 bg-blue-500/[0.045] p-4">
           <div className="flex items-center justify-between gap-3">
-            <p className="text-[10px] font-extrabold uppercase tracking-[0.08em] text-blue-700 dark:text-blue-300">Department performance</p>
-            <span className={`rounded-full border px-2 py-1 text-[9px] font-extrabold uppercase tracking-wide ${overallSignal.tone}`}>{overallSignal.label}</span>
+            <p className="text-xs font-extrabold uppercase tracking-[0.08em] text-blue-700 dark:text-blue-300">Department performance</p>
+            <span className={`rounded-full border px-2 py-1 text-xs font-extrabold uppercase tracking-wide ${overallSignal.tone}`}>{overallSignal.label}</span>
           </div>
           <p className="mt-3 text-3xl font-extrabold tracking-tight text-[var(--text-primary)]">{overallScore === null ? '—' : `${overallScore.toFixed(1)}%`}</p>
-          <p className="mt-1 text-[11px] font-medium leading-4 text-[var(--text-secondary)]">Overall employee score: average across {totalEmployees} active employees; channel KPI definitions stay separate.</p>
+          <p className="mt-1 text-xs font-medium leading-4 text-[var(--text-secondary)]">Overall employee score: average across {totalEmployees} active employees; channel KPI definitions stay separate.</p>
         </article>
 
         <article className={`rounded-2xl border p-4 ${primaryDrag ? 'border-amber-500/25 bg-amber-500/[0.06]' : 'border-emerald-500/20 bg-emerald-500/[0.05]'}`}>
-          <p className={`text-[10px] font-extrabold uppercase tracking-[0.08em] ${primaryDrag ? 'text-amber-700 dark:text-amber-300' : 'text-emerald-700 dark:text-emerald-300'}`}>Measured KPI drag</p>
+          <p className={`text-xs font-extrabold uppercase tracking-[0.08em] ${primaryDrag ? 'text-amber-700 dark:text-amber-300' : 'text-emerald-700 dark:text-emerald-300'}`}>Measured KPI drag</p>
           <p className="mt-3 truncate text-base font-extrabold text-[var(--text-primary)]" title={primaryDrag ? `${CALL_CENTER_CHANNEL_LABELS[primaryDrag.channel]} · ${primaryDrag.analysis.label}` : undefined}>
             {primaryDrag ? `${CALL_CENTER_CHANNEL_LABELS[primaryDrag.channel]} · ${primaryDrag.analysis.label}` : 'No measured drag'}
           </p>
-          <p className="mt-1 text-[11px] font-medium leading-4 text-[var(--text-secondary)]">
+          <p className="mt-1 text-xs font-medium leading-4 text-[var(--text-secondary)]">
             {primaryDrag
               ? `Actual ${formatKpiValue(primaryDrag.analysis.actual, primaryDrag.analysis.unit)} / Target ${formatKpiValue(primaryDrag.analysis.target, primaryDrag.analysis.unit)}`
               : 'All available channel KPIs are at target or awaiting data.'}
@@ -167,9 +167,9 @@ const CallCenterChannelSummary = ({ rows, onChannelSelect, channelKpiAnalysis = 
         </article>
 
         <article className="rounded-2xl border border-rose-500/20 bg-rose-500/[0.045] p-4">
-          <p className="text-[10px] font-extrabold uppercase tracking-[0.08em] text-rose-700 dark:text-rose-300">Employees affecting average</p>
+          <p className="text-xs font-extrabold uppercase tracking-[0.08em] text-rose-700 dark:text-rose-300">Employees affecting average</p>
           <p className="mt-3 text-2xl font-extrabold tracking-tight text-[var(--text-primary)]">{impactingEmployees.length} priority employees</p>
-          <p className="mt-1 text-[11px] font-medium leading-4 text-[var(--text-secondary)]">Lowest score gaps versus the department average; this is mathematical influence, not a root-cause claim.</p>
+          <p className="mt-1 text-xs font-medium leading-4 text-[var(--text-secondary)]">Lowest score gaps versus the department average; this is mathematical influence, not a root-cause claim.</p>
         </article>
       </div>
 
@@ -180,7 +180,7 @@ const CallCenterChannelSummary = ({ rows, onChannelSelect, channelKpiAnalysis = 
               <Activity size={16} className="text-indigo-500" />
               <h4 className="text-sm font-extrabold text-[var(--text-primary)]">Channel comparison</h4>
             </div>
-            <span className="text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--text-muted)]">Average score</span>
+            <span className="text-xs font-bold uppercase tracking-[0.08em] text-[var(--text-muted)]">Average score</span>
           </div>
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             {snapshots.map((snapshot) => {
@@ -204,15 +204,15 @@ const CallCenterChannelSummary = ({ rows, onChannelSelect, channelKpiAnalysis = 
                       </span>
                       <div>
                         <h5 className="text-sm font-extrabold text-[var(--text-primary)]">{CALL_CENTER_CHANNEL_LABELS[snapshot.channel]}</h5>
-                        <p className="mt-0.5 text-[11px] font-semibold text-[var(--text-muted)]">{snapshot.count} employees</p>
+                        <p className="mt-0.5 text-xs font-semibold text-[var(--text-muted)]">{snapshot.count} employees</p>
                       </div>
                     </div>
-                    <span className={`rounded-full border px-2 py-1 text-[9px] font-extrabold uppercase tracking-wide ${signal.tone}`}>{signal.label}</span>
+                    <span className={`rounded-full border px-2 py-1 text-xs font-extrabold uppercase tracking-wide ${signal.tone}`}>{signal.label}</span>
                   </div>
                   <div className="mt-4 flex items-end justify-between gap-3">
                     <div>
                       <p className="text-2xl font-extrabold tracking-tight text-[var(--text-primary)]">{snapshot.score === null ? 'No data' : `${snapshot.score.toFixed(1)}%`}</p>
-                      <p className="mt-1 text-[11px] font-medium text-[var(--text-secondary)]">Average employee score</p>
+                      <p className="mt-1 text-xs font-medium text-[var(--text-secondary)]">Average employee score</p>
                     </div>
                     <span className="flex h-8 w-8 items-center justify-center rounded-full border border-[var(--border-light)] text-[var(--text-muted)] transition-colors duration-200 group-hover:border-current group-hover:text-[var(--text-primary)]" aria-hidden="true">
                       <ArrowRight size={15} />
@@ -227,9 +227,9 @@ const CallCenterChannelSummary = ({ rows, onChannelSelect, channelKpiAnalysis = 
             <div className="flex flex-wrap items-end justify-between gap-2">
               <div>
                 <h4 className="text-sm font-extrabold text-[var(--text-primary)]">Employees affecting the average</h4>
-                <p className="mt-1 text-[11px] font-medium text-[var(--text-secondary)]">The largest negative score gaps in the current department view.</p>
+                <p className="mt-1 text-xs font-medium text-[var(--text-secondary)]">The largest negative score gaps in the current department view.</p>
               </div>
-              <span className="text-[10px] font-extrabold uppercase tracking-[0.08em] text-[var(--text-muted)]">Priority review</span>
+              <span className="text-xs font-extrabold uppercase tracking-[0.08em] text-[var(--text-muted)]">Priority review</span>
             </div>
             {impactingEmployees.length === 0 ? (
               <div className="mt-3 rounded-xl border border-emerald-500/20 bg-emerald-500/[0.06] px-3 py-3 text-xs font-semibold text-emerald-700 dark:text-emerald-300">
@@ -252,7 +252,7 @@ const CallCenterChannelSummary = ({ rows, onChannelSelect, channelKpiAnalysis = 
                         <span className="min-w-0 truncate text-xs font-extrabold text-[var(--text-primary)]" title={row.name}>{row.name}</span>
                         <span className="shrink-0 text-xs font-extrabold text-rose-600 dark:text-rose-300">{row.score.toFixed(1)}%</span>
                       </div>
-                      <div className="mt-2 flex items-center justify-between gap-2 text-[10px] font-semibold text-[var(--text-muted)]">
+                      <div className="mt-2 flex items-center justify-between gap-2 text-xs font-semibold text-[var(--text-muted)]">
                         <span>{employeeChannel ? CALL_CENTER_CHANNEL_LABELS[employeeChannel] : 'Call Center'}</span>
                         <span>−{scoreGap.toFixed(1)}% vs avg</span>
                       </div>
@@ -268,18 +268,18 @@ const CallCenterChannelSummary = ({ rows, onChannelSelect, channelKpiAnalysis = 
           <div>
             <div className="flex items-center gap-2">
               <CheckCircle2 size={16} className="text-blue-600 dark:text-blue-300" />
-              <p className="text-[10px] font-extrabold uppercase tracking-[0.1em] text-blue-700 dark:text-blue-300">Next decision</p>
+              <p className="text-xs font-extrabold uppercase tracking-[0.1em] text-blue-700 dark:text-blue-300">Next decision</p>
             </div>
             <h4 className="mt-3 text-lg font-extrabold text-[var(--text-primary)]">{primaryDrag ? 'Fix measured KPI drag' : `Review ${focusLabel}`}</h4>
             <p className="mt-1 text-xs font-medium leading-5 text-[var(--text-secondary)]">{decisionDetail}</p>
           </div>
           <div className="mt-5 grid grid-cols-2 gap-2">
             <div className="rounded-xl border border-[var(--border-light)] bg-[var(--bg-surface)]/80 p-3">
-              <p className="text-[9px] font-extrabold uppercase tracking-wide text-[var(--text-muted)]">Channel gap</p>
+              <p className="text-xs font-extrabold uppercase tracking-wide text-[var(--text-muted)]">Channel gap</p>
               <p className="mt-1 text-base font-extrabold text-[var(--text-primary)]">{scoreSpread === null ? '—' : `${scoreSpread.toFixed(1)}%`}</p>
             </div>
             <div className="rounded-xl border border-[var(--border-light)] bg-[var(--bg-surface)]/80 p-3">
-              <p className="text-[9px] font-extrabold uppercase tracking-wide text-[var(--text-muted)]">Signal</p>
+              <p className="text-xs font-extrabold uppercase tracking-wide text-[var(--text-muted)]">Signal</p>
               <p className="mt-1 truncate text-base font-extrabold text-[var(--text-primary)]">{focusSignal.label}</p>
             </div>
           </div>

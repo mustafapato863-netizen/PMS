@@ -66,7 +66,7 @@ export function EmployeeHeroStats({
           {grade}
         </span>
         <div className="min-w-0">
-          <p className="text-[11px] font-bold uppercase tracking-wide text-[var(--text-faint)]">
+          <p className="text-xs font-bold uppercase tracking-wide text-[var(--text-faint)]">
             Grade
           </p>
           <p
@@ -88,7 +88,7 @@ export function EmployeeHeroStats({
           )}
         </span>
         <div className="min-w-0">
-          <p className="text-[11px] font-bold uppercase tracking-wide text-[var(--text-faint)]">
+          <p className="text-xs font-bold uppercase tracking-wide text-[var(--text-faint)]">
             Score
           </p>
           <p className="text-sm font-extrabold text-[var(--text-primary)]">
@@ -110,7 +110,7 @@ export function EmployeeHeroStats({
           <Trophy size={20} />
         </span>
         <div className="min-w-0">
-          <p className="text-[11px] font-bold uppercase tracking-wide text-[var(--text-faint)]">
+          <p className="text-xs font-bold uppercase tracking-wide text-[var(--text-faint)]">
             Rank
           </p>
           <p className="text-sm font-extrabold text-[var(--text-primary)]">
@@ -128,7 +128,7 @@ export function EmployeeHeroStats({
           <StabilityIcon size={20} />
         </span>
         <div className="min-w-0">
-          <p className="text-[11px] font-bold uppercase tracking-wide text-[var(--text-faint)]">
+          <p className="text-xs font-bold uppercase tracking-wide text-[var(--text-faint)]">
             Stability
           </p>
           <p className={`text-sm font-extrabold ${STABILITY_META[stability].color}`}>
@@ -143,7 +143,7 @@ export function EmployeeHeroStats({
           <Sparkles size={20} />
         </span>
         <div className="min-w-0">
-          <p className="text-[11px] font-bold uppercase tracking-wide text-[var(--text-faint)]">
+          <p className="text-xs font-bold uppercase tracking-wide text-[var(--text-faint)]">
             Archetype
           </p>
           <p className="truncate text-sm font-extrabold text-violet-600 dark:text-violet-400">

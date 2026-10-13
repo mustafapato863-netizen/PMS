@@ -347,7 +347,7 @@ export function LineChart({
               x={PAD_LEFT - 8}
               y={tick.y + 3.5}
               fill="var(--bsc-panel-muted)"
-              fontSize="9"
+              fontSize="12"
               textAnchor="end"
             >
               {tick.label}
@@ -375,7 +375,7 @@ export function LineChart({
               y={Math.max(PAD_TOP + 10, targetY - 6)}
               fill={color}
               fillOpacity="0.82"
-              fontSize="9.5"
+              fontSize="12"
               fontWeight="700"
               textAnchor="end"
             >
@@ -519,7 +519,7 @@ export function LineChart({
                 x={toX(index)}
                 y={chartHeight - 5}
                 fill="var(--bsc-panel-muted)"
-                fontSize="9"
+                fontSize="12"
                 fontWeight="600"
                 textAnchor="middle"
               >
@@ -552,7 +552,7 @@ export function LineChart({
           }}
         >
           <div
-            className="mb-1.5 border-b pb-1.5 text-[10px] font-extrabold uppercase tracking-[0.08em]"
+            className="mb-1.5 border-b pb-1.5 text-xs font-extrabold uppercase tracking-[0.08em]"
             style={{ borderColor: 'var(--bsc-table-row)', color: 'var(--bsc-panel-muted)' }}
           >
             {formatMonthMmm(activeTooltip.month, activeTooltip.year)}

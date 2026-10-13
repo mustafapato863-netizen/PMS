@@ -25,7 +25,7 @@ export default function AgentRanking({ agents }: AgentRankingProps) {
           </div>
           <div>
             <p className="text-sm font-bold text-slate-800">{agent.identity.name}</p>
-            <p className={`text-[10px] font-semibold mt-0.5 ${isTop ? 'text-emerald-600' : 'text-red-500'}`}>
+            <p className={`text-xs font-semibold mt-0.5 ${isTop ? 'text-emerald-600' : 'text-red-500'}`}>
               Score: {agent.evaluation.score.toFixed(1)}%
             </p>
           </div>
@@ -34,13 +34,13 @@ export default function AgentRanking({ agents }: AgentRankingProps) {
         {/* Context Tags */}
         <div className="flex flex-col items-end gap-1">
           {noShowRate > 30 && (
-             <div className="flex items-center gap-1 text-[9px] font-bold bg-amber-50 text-amber-600 px-2 py-0.5 rounded-full border border-amber-100">
+             <div className="flex items-center gap-1 text-xs font-bold bg-amber-50 text-amber-600 px-2 py-0.5 rounded-full border border-amber-100">
                <UserX className="w-3 h-3" />
                High No-Show
              </div>
           )}
           {parseAHTtoSeconds(agent.calls.aht_raw) > 150 && (
-            <div className="flex items-center gap-1 text-[9px] font-bold bg-rose-50 text-rose-600 px-2 py-0.5 rounded-full border border-rose-100">
+            <div className="flex items-center gap-1 text-xs font-bold bg-rose-50 text-rose-600 px-2 py-0.5 rounded-full border border-rose-100">
               <Clock className="w-3 h-3" />
               High AHT
             </div>

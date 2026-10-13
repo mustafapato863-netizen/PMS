@@ -6,9 +6,9 @@ export default function FunctionSwitcher({ functions, value, onChange, assigned 
   return (
     <div className="flex min-w-0 flex-col gap-[4px]">
       <div className="flex items-center gap-[6px]">
-        <span className="text-[10px] font-semibold uppercase tracking-[0.6px] text-[var(--text-muted)]">Function</span>
-        {assigned && value === functions[0] && <span className="rounded-full bg-[var(--insights-accent-tag)] px-[6px] py-px text-[9px] font-semibold text-[var(--insights-accent-text)]">Primary</span>}
-        <span className="text-[9px] font-semibold text-[var(--text-muted)]">{functions.length} {assigned ? 'assigned' : 'available'}</span>
+        <span className="text-xs font-semibold uppercase tracking-[0.6px] text-[var(--text-muted)]">Function</span>
+        {assigned && value === functions[0] && <span className="rounded-full bg-[var(--insights-accent-tag)] px-[6px] py-px text-xs font-semibold text-[var(--insights-accent-text)]">Primary</span>}
+        <span className="text-xs font-semibold text-[var(--text-muted)]">{functions.length} {assigned ? 'assigned' : 'available'}</span>
       </div>
       <div role="radiogroup" aria-label="Function" className="flex min-h-[34px] min-w-0 flex-wrap items-center gap-[2px] rounded-[8px] border-[1.5px] border-[var(--insights-accent)] bg-[var(--bg-surface)] p-[2px]">
         {functions.map((fn) => {

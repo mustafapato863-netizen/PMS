@@ -17,14 +17,14 @@ export default function LevelBreakdownCard({ levels, title = 'Level breakdown', 
                 <GradeSquare score={level.score} />
                 <span className="flex min-w-0 flex-1 flex-col">
                   <span className="truncate text-[13px] font-semibold text-[var(--insights-heading)]">{level.level}</span>
-                  <span className="text-[11px] text-[var(--text-muted)]">{level.employees} {level.employees === 1 ? 'person' : 'people'}</span>
+                  <span className="text-xs text-[var(--text-muted)]">{level.employees} {level.employees === 1 ? 'person' : 'people'}</span>
                 </span>
                 <span aria-hidden="true" className="hidden h-[6px] w-[90px] rounded-[3px] bg-[var(--insights-track)] sm:block">
                   <span className="block h-full rounded-[3px]" style={{ width: `${Math.min(100, level.score ?? 0)}%`, background: tone.solid }} />
                 </span>
                 <span className="flex w-[64px] flex-col items-end">
                   <ScoreText score={level.score} className="text-[13px]">{fmtScore(level.score)}</ScoreText>
-                  <span className="text-[11px]" style={{ color: toneColor(scoreTone(level.change)) }}>{level.change === null ? '—' : `${arrow(level.change)} ${fmtSigned(level.change)}`}</span>
+                  <span className="text-xs" style={{ color: toneColor(scoreTone(level.change)) }}>{level.change === null ? '—' : `${arrow(level.change)} ${fmtSigned(level.change)}`}</span>
                 </span>
               </li>
             );

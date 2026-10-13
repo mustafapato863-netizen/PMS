@@ -375,7 +375,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed: collapsedPreference = false, 
           </div>
           <div className={isCollapsed ? 'xl:hidden' : ''}>
             <h2 className="text-[14px] font-extrabold tracking-tight text-[var(--text-primary)]">SGH Hub</h2>
-            <span className="mt-0.5 block text-[10px] font-bold uppercase tracking-widest text-[var(--sgh-cyan-primary)]">Intelligence</span>
+            <span className="mt-0.5 block text-xs font-bold uppercase tracking-widest text-[var(--sgh-cyan-primary)]">Intelligence</span>
           </div>
         </div>
         <button
@@ -432,7 +432,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed: collapsedPreference = false, 
                 <span className={`h-4 w-1 rounded-full ${level.color}`} />
                 <span className="text-[var(--text-faint)]">{level.icon}</span>
                 <span className={`flex-1 ${isCollapsed ? 'xl:hidden' : ''}`}>{level.name}</span>
-                <span aria-hidden="true" className={`rounded-md bg-[var(--bg-sunken)] px-1.5 py-0.5 text-[10px] text-[var(--text-muted)] ${isCollapsed ? 'xl:hidden' : ''}`}>{teams.length}</span>
+                <span aria-hidden="true" className={`rounded-md bg-[var(--bg-sunken)] px-1.5 py-0.5 text-xs text-[var(--text-muted)] ${isCollapsed ? 'xl:hidden' : ''}`}>{teams.length}</span>
                 <ChevronDown size={14} className={`transition-transform ${isLevelOpen ? '' : '-rotate-90'} ${isCollapsed ? 'xl:hidden' : ''}`} />
               </button>
               <AnimatePresence initial={false}>
@@ -483,7 +483,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed: collapsedPreference = false, 
                             title={isCollapsed ? region.label : undefined}
                             data-tooltip={isCollapsed ? region.label : undefined}
                             onClick={() => setRegionOpen((state) => ({ ...state, [key]: !isRegionOpen }))}
-                            className={`sidebar-tooltip-trigger flex min-h-10 w-full items-center gap-2 px-2 text-left text-[11px] font-extrabold uppercase tracking-wider text-[var(--text-faint)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--sgh-cyan-primary)] ${isCollapsed ? 'xl:justify-center xl:px-1' : ''}`}
+                            className={`sidebar-tooltip-trigger flex min-h-10 w-full items-center gap-2 px-2 text-left text-xs font-extrabold uppercase tracking-wider text-[var(--text-faint)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--sgh-cyan-primary)] ${isCollapsed ? 'xl:justify-center xl:px-1' : ''}`}
                           >
                             <span className={`h-3 w-1 rounded-full ${region.color}`} />
                             <span className={`flex-1 ${isCollapsed ? 'xl:hidden' : ''}`}>{region.label}</span>
@@ -582,14 +582,14 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed: collapsedPreference = false, 
         {canAccessSettingsContent(role) && renderLink({ name: 'Administration', path: '/settings', icon: <Settings size={18} />, matchSubpaths: true }, undefined, false, true)}
         <div className={`sidebar-user-menu flex items-center justify-between gap-2 rounded-xl border border-[var(--border-light)] bg-[var(--bg-raised)] p-2.5 shadow-sm ${isCollapsed ? 'xl:justify-center xl:p-2' : ''}`}>
           <div className={`flex min-w-0 items-center gap-2 ${isCollapsed ? 'xl:justify-center' : ''}`}>
-            <div className="sidebar-user-avatar flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[11px] font-bold text-white shadow-sm" style={{ background: 'var(--sidebar-active-text)' }}>
+            <div className="sidebar-user-avatar flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xs font-bold text-white shadow-sm" style={{ background: 'var(--sidebar-active-text)' }}>
               {currentUser ? currentUser.name.split(' ').map((name) => name[0]).join('') : 'U'}
             </div>
             <div className={`min-w-0 ${isCollapsed ? 'xl:hidden' : ''}`}>
               <p className="truncate text-xs font-bold text-[var(--text-primary)]">{currentUser?.name}</p>
               {isFunctionViewer
-                ? <p className="mt-0.5 flex items-center gap-1 truncate text-[10px] font-semibold uppercase tracking-wider text-[var(--text-faint)]"><Eye size={11} aria-hidden="true" /><span title={roleLabel}>Read-only</span><span className="sr-only"> · {roleLabel}</span></p>
-                : <p className="mt-0.5 truncate text-[10px] font-semibold uppercase tracking-wider text-[var(--text-faint)]">{roleLabel}</p>}
+                ? <p className="mt-0.5 flex items-center gap-1 truncate text-xs font-semibold uppercase tracking-wider text-[var(--text-faint)]"><Eye size={11} aria-hidden="true" /><span title={roleLabel}>Read-only</span><span className="sr-only"> · {roleLabel}</span></p>
+                : <p className="mt-0.5 truncate text-xs font-semibold uppercase tracking-wider text-[var(--text-faint)]">{roleLabel}</p>}
             </div>
           </div>
           <button onClick={logout} aria-label="Log out" title="Log out" data-tooltip="Log out" className="sidebar-logout-button sidebar-tooltip-trigger min-h-9 min-w-9 rounded-lg text-[var(--text-muted)] transition-colors hover:bg-red-100 hover:text-red-600">

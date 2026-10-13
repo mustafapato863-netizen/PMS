@@ -40,6 +40,8 @@ export function GaugeSVG({
   const tone = getGaugeTone(score);
   const needle = polarPoint(180 + (normalizedScore / 100) * 180, 25.5);
   const gaugeHeight = Math.round(size * (VIEWBOX_HEIGHT / VIEWBOX_WIDTH));
+  // Label text is in viewBox units; the svg draws them at size / VIEWBOX_WIDTH, so this keeps them at 12px on screen.
+  const labelFontSize = (12 * VIEWBOX_WIDTH) / size;
   const ticks = [0, 25, 50, 75, 100];
 
   return (
@@ -198,9 +200,9 @@ export function GaugeSVG({
 
       <text
         x="10"
-        y="58"
+        y="66"
         textAnchor="middle"
-        fontSize="5"
+        fontSize={labelFontSize}
         fontWeight="700"
         fill="var(--bsc-panel-muted, #94A3B8)"
       >
@@ -208,9 +210,9 @@ export function GaugeSVG({
       </text>
       <text
         x="48"
-        y="8"
+        y="4"
         textAnchor="middle"
-        fontSize="5"
+        fontSize={labelFontSize}
         fontWeight="700"
         fill="var(--bsc-panel-muted, #94A3B8)"
       >
@@ -218,9 +220,9 @@ export function GaugeSVG({
       </text>
       <text
         x="86"
-        y="58"
+        y="66"
         textAnchor="middle"
-        fontSize="5"
+        fontSize={labelFontSize}
         fontWeight="700"
         fill="var(--bsc-panel-muted, #94A3B8)"
       >

@@ -99,7 +99,7 @@ function DepartmentalSummaryPage({ view }: { view: Exclude<ExecutiveViewKind, 'f
       subtitle={subtitleFor(summary, view, summaryViewLabel(role, view))}
       intro={<SummaryScopeWelcome role={role} user={currentUser} scope={summary?.scope} />}
       titleBadge={managerial
-        ? <span className="rounded-full bg-[var(--insights-accent-tag)] px-[8px] py-[2px] text-[11px] font-semibold text-[var(--insights-accent-text)]">Team scope</span>
+        ? <span className="rounded-full bg-[var(--insights-accent-tag)] px-[8px] py-[2px] text-xs font-semibold text-[var(--insights-accent-text)]">Team scope</span>
         : isCorporateReadOnly(role) ? <ReadOnlyBadge /> : null}
       groupLabel="Departmental filters"
       onClearFilters={clearFilters}

@@ -99,16 +99,16 @@ const RoleSelector = () => {
           
           <div className="absolute right-0 mt-2 w-72 bg-white rounded-2xl shadow-xl border border-slate-100 p-2 z-50 animate-in fade-in slide-in-from-top-2 duration-200">
             <div className="px-3 py-2 border-b border-slate-100 mb-1">
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Select Security Role</p>
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Select Security Role</p>
               <p className="text-xs text-slate-500 font-medium">Demonstrates endpoint permission locking</p>
             </div>
 
             <div className="px-3 py-2 mb-1 rounded-xl bg-slate-50 border border-slate-100">
               <div className="flex items-center gap-2 text-slate-600">
                 <Lock size={12} />
-                <p className="text-[10px] font-bold uppercase tracking-wider">Role controls what you can see</p>
+                <p className="text-xs font-bold uppercase tracking-wider">Role controls what you can see</p>
               </div>
-              <p className="text-[11px] text-slate-500 mt-1 leading-snug">
+              <p className="text-xs text-slate-500 mt-1 leading-snug">
                 Admin manages settings. Managers keep their current team access. Employee access is self-only; director access follows assigned regions, branches or functions.
               </p>
             </div>
@@ -138,7 +138,7 @@ const RoleSelector = () => {
                           <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.6)]" />
                         )}
                       </div>
-                      <p className="text-[11px] text-slate-500 font-medium truncate mt-0.5">{item.desc}</p>
+                      <p className="text-xs text-slate-500 font-medium truncate mt-0.5">{item.desc}</p>
                     </div>
                   </button>
                 );

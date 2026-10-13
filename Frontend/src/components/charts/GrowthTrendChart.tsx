@@ -59,10 +59,10 @@ const GrowthTrendChart = ({ data }: GrowthTrendChartProps) => {
             tick={{ fontSize: 12, fill: '#64748b', fontWeight: 600 }}
             axisLine={{ stroke: '#e2e8f0' }}
             tickLine={false}
-            label={{ value: 'Branch', position: 'insideBottomRight', offset: -5, fontSize: 11, fill: '#94a3b8' }}
+            label={{ value: 'Branch', position: 'insideBottomRight', offset: -5, fontSize: 12, fill: '#94a3b8' }}
           />
           <YAxis
-            tick={{ fontSize: 11, fill: '#94a3b8' }}
+            tick={{ fontSize: 12, fill: '#94a3b8' }}
             axisLine={false}
             tickLine={false}
             tickFormatter={(v: number) => v.toLocaleString()}
@@ -71,7 +71,7 @@ const GrowthTrendChart = ({ data }: GrowthTrendChartProps) => {
               angle: -90,
               position: 'insideLeft',
               offset: 0,
-              fontSize: 11,
+              fontSize: 12,
               fill: '#94a3b8',
               style: { textAnchor: 'middle' },
             }}

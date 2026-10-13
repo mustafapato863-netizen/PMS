@@ -14,7 +14,7 @@ const GradeCell = ({ count, total, grade }: { count: number; total: number; grad
     <div className={`inline-flex flex-col items-center`}>
       <span className="text-sm font-bold" style={{ color: gradeTokenVar(grade, 'text') }}>{count}</span>
       {total > 0 && (
-        <span className="text-[10px] text-[var(--text-muted)] font-medium">
+        <span className="text-xs text-[var(--text-muted)] font-medium">
           {((count / total) * 100).toFixed(0)}%
         </span>
       )}

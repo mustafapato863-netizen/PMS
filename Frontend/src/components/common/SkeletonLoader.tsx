@@ -87,7 +87,7 @@ export const InlineLoadingBadge = ({ label = 'Loading' }: { label?: string }) =>
   <span
     role="status"
     aria-live="polite"
-    className="inline-flex min-h-7 items-center gap-2 rounded-full border border-blue-500/15 bg-blue-500/[0.07] px-2.5 text-[10px] font-extrabold uppercase tracking-[0.08em] text-blue-600 dark:border-blue-400/20 dark:bg-blue-400/10 dark:text-blue-300"
+    className="inline-flex min-h-7 items-center gap-2 rounded-full border border-blue-500/15 bg-blue-500/[0.07] px-2.5 text-xs font-extrabold uppercase tracking-[0.08em] text-blue-600 dark:border-blue-400/20 dark:bg-blue-400/10 dark:text-blue-300"
   >
     <span aria-hidden="true" className="relative h-3.5 w-3.5 shrink-0">
       <span className="absolute inset-0 rounded-full border-2 border-blue-500/20 dark:border-blue-300/20" />

@@ -28,7 +28,7 @@ function PaginatedKpiTable({ rows, effective, previous, score, reportHref, title
   const pageIndex = Math.min(page, pageCount - 1);
   const offset = pageIndex * PAGE_SIZE;
   const pageRows = rows.slice(offset, offset + PAGE_SIZE);
-  const head = 'text-[10px] font-semibold uppercase tracking-[0.6px] text-[var(--text-muted)]';
+  const head = 'text-xs font-semibold uppercase tracking-[0.6px] text-[var(--text-muted)]';
   const vs = previous ? `vs ${previous.month.slice(0, 3)}` : 'vs last';
   return (
     <ExecCard aria-labelledby={titleId}>
@@ -42,7 +42,7 @@ function PaginatedKpiTable({ rows, effective, previous, score, reportHref, title
         action={(
           <div className="flex flex-wrap items-center justify-end gap-[8px]">
             {headerAction}
-            <span className="rounded-full bg-[var(--exec-chip-bg)] px-[8px] py-[2px] text-[11px] font-semibold text-[var(--exec-chip-text)]">{rows.length} KPIs</span>
+            <span className="rounded-full bg-[var(--exec-chip-bg)] px-[8px] py-[2px] text-xs font-semibold text-[var(--exec-chip-text)]">{rows.length} KPIs</span>
             {reportHref && <Link to={reportHref} className="inline-flex items-center rounded-[8px] border border-[var(--insights-accent-border)] bg-[var(--insights-accent-soft)] px-[10px] py-[6px] text-[12px] font-semibold text-[var(--insights-accent-text)]">Open team report</Link>}
           </div>
         )}
@@ -104,7 +104,7 @@ function PaginatedKpiTable({ rows, effective, previous, score, reportHref, title
           </span>
         </nav>
       )}
-      <div className="flex flex-wrap items-center justify-between gap-[8px] text-[11px] text-[var(--text-muted)]">
+      <div className="flex flex-wrap items-center justify-between gap-[8px] text-xs text-[var(--text-muted)]">
         <span className="flex flex-wrap items-center gap-[8px]">
           <DirectionTag direction="higher_better" /> higher is better
           <DirectionTag direction="lower_better" /> lower is better

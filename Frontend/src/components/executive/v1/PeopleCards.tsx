@@ -11,14 +11,14 @@ function PersonRow({ person, vs }: { person: ExecutivePerson; vs: string }) {
   return (
     <li>
       <Link to={`/employee/${encodeURIComponent(person.employee_id)}`} className="flex items-center gap-[10px] rounded-[8px] px-[4px] py-[6px] hover:bg-[var(--exec-tile-bg)]">
-        <span aria-hidden="true" className="flex size-[30px] shrink-0 items-center justify-center rounded-full bg-[var(--exec-info-bg)] text-[11px] font-semibold text-[var(--exec-info-text)]">{initials(person.name)}</span>
+        <span aria-hidden="true" className="flex size-[30px] shrink-0 items-center justify-center rounded-full bg-[var(--exec-info-bg)] text-xs font-semibold text-[var(--exec-info-text)]">{initials(person.name)}</span>
         <span className="flex min-w-0 flex-1 flex-col">
           <span className="truncate text-[13px] font-semibold text-[var(--insights-heading)]">{person.name}</span>
-          <span className="truncate text-[11px] text-[var(--text-muted)]">{person.position ?? '—'}</span>
+          <span className="truncate text-xs text-[var(--text-muted)]">{person.position ?? '—'}</span>
         </span>
         <span className="flex flex-col items-end">
           <ScoreText score={person.score} className="text-[13px]">{fmtScore(person.score)}</ScoreText>
-          <span className="text-[11px] font-medium" style={{ color: toneColor(tone) }}>{person.change === null ? 'new' : `${arrow(person.change)} ${fmtSigned(person.change)} ${vs}`}</span>
+          <span className="text-xs font-medium" style={{ color: toneColor(tone) }}>{person.change === null ? 'new' : `${arrow(person.change)} ${fmtSigned(person.change)} ${vs}`}</span>
         </span>
         <GradeSquare score={person.score} />
       </Link>

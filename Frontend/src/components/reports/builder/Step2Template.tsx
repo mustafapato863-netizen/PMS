@@ -79,15 +79,15 @@ export default function Step2Template() {
             <div className="mb-5 flex items-start justify-between gap-3">
               <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-[var(--sgh-cyan-primary,#00A3E0)]/10 text-[var(--sgh-cyan-primary,#00A3E0)]"><Icon /></span>
               <div className="flex flex-wrap justify-end gap-2">
-                {metadata?.recommended && <span className="rounded-full bg-[var(--sgh-cyan-primary,#00A3E0)] px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wide text-white">Recommended</span>}
-                {metadata?.mode && metadata.mode !== 'standard' && <span className="rounded-full bg-[var(--bg-sunken)] px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wide text-[var(--text-secondary)]">{metadata.mode}</span>}
+                {metadata?.recommended && <span className="rounded-full bg-[var(--sgh-cyan-primary,#00A3E0)] px-2.5 py-1 text-xs font-extrabold uppercase tracking-wide text-white">Recommended</span>}
+                {metadata?.mode && metadata.mode !== 'standard' && <span className="rounded-full bg-[var(--bg-sunken)] px-2.5 py-1 text-xs font-extrabold uppercase tracking-wide text-[var(--text-secondary)]">{metadata.mode}</span>}
               </div>
             </div>
             <h3 className="text-lg font-extrabold text-[var(--text-primary)]">{template.name}</h3>
             <p className="mt-2 flex-1 text-sm leading-6 text-[var(--text-muted)]">{template.description}</p>
             <div className="mt-4 rounded-xl bg-[var(--bg-sunken)] p-3 text-xs text-[var(--text-secondary)]">
               <div className="flex items-center justify-between font-bold"><span>Estimated story</span><span>{estimatedPages(template)} pages</span></div>
-              {metadata?.pages_per_team ? <p className="mt-1 text-[11px] text-[var(--text-muted)]">Includes one filtered page for each team with data.</p> : null}
+              {metadata?.pages_per_team ? <p className="mt-1 text-xs text-[var(--text-muted)]">Includes one filtered page for each team with data.</p> : null}
             </div>
             <button type="button" onClick={() => setPreview(template)} className="mt-4 inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-[var(--sgh-cyan-primary,#00A3E0)]/30 bg-[var(--sgh-cyan-primary,#00A3E0)]/[0.07] px-4 text-sm font-extrabold text-[var(--sgh-cyan-primary,#00A3E0)] dark:text-[var(--sgh-cyan-light,#38BDF8)] transition hover:bg-[var(--sgh-cyan-primary,#00A3E0)]/15">
               Preview story <ArrowRight size={16} />

@@ -52,10 +52,10 @@ const DonutGauge = ({
         </div>
       </div>
       <p className="text-xs font-bold text-slate-700 mt-2 text-center">{label}</p>
-      <div className="bg-red-50 text-red-600 px-2 py-1 rounded-md text-[10px] font-bold mt-1">
+      <div className="bg-red-50 text-red-600 px-2 py-1 rounded-md text-xs font-bold mt-1">
         ~{absoluteValue.toLocaleString()} {absoluteLabel}
       </div>
-      <p className="text-[10px] text-slate-400 mt-1 text-center max-w-[140px] leading-tight">
+      <p className="text-xs text-slate-400 mt-1 text-center max-w-[140px] leading-tight">
         {description}
       </p>
     </div>
@@ -68,7 +68,7 @@ const ValueLeakageChart = ({ data }: ValueLeakageChartProps) => {
       <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wide mb-1">
         Value Leakage (Business Impact)
       </h3>
-      <div className="flex items-center gap-4 mb-4 text-[11px]">
+      <div className="flex items-center gap-4 mb-4 text-xs">
         <span className="text-slate-500">
           <span className="font-bold text-slate-700">Total Lost Visits:</span>{' '}
           {data.lostVisits.toLocaleString()}

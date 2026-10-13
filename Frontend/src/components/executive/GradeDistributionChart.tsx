@@ -69,7 +69,7 @@ const GradeDistributionChart = ({ classCounts, displayMode = 'headcount' }: Grad
             axisLine={false}
           />
           <YAxis
-            tick={{ fontSize: 10, fill: 'var(--text-muted)' }}
+            tick={{ fontSize: 12, fill: 'var(--text-muted)' }}
             tickLine={false}
             axisLine={false}
             allowDecimals={displayMode === 'percentage'}
@@ -81,7 +81,7 @@ const GradeDistributionChart = ({ classCounts, displayMode = 'headcount' }: Grad
             <LabelList
               dataKey="value"
               position="top"
-              style={{ fontSize: '11px', fontWeight: 700, fill: 'var(--text-muted)' }}
+              style={{ fontSize: '12px', fontWeight: 700, fill: 'var(--text-muted)' }}
               formatter={(value) => displayMode === 'percentage' ? `${Number(value ?? 0).toFixed(1)}%` : Number(value ?? 0)}
             />
             {data.map((entry) => (
@@ -92,7 +92,7 @@ const GradeDistributionChart = ({ classCounts, displayMode = 'headcount' }: Grad
       </ResponsiveContainer>
       <div className="grid grid-cols-5 gap-1 px-2">
         {GRADE_CONFIG.map((grade) => (
-          <div key={grade.key} className="text-center text-[9px] font-semibold text-[var(--text-muted)] sm:text-[10px]">
+          <div key={grade.key} className="text-center text-xs font-semibold text-[var(--text-muted)]">
             {grade.desc}
           </div>
         ))}

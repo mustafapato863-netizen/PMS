@@ -72,9 +72,9 @@ function ActionCard({ action }: { action: PMSAction }) {
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h2 className="truncate text-sm font-black text-[var(--text-primary)]">{action.employee_name || 'Unknown employee'}</h2>
-          <p className="mt-1 truncate text-[11px] font-semibold text-[var(--text-muted)]">{action.team || 'Unassigned team'} · {action.employee_id}</p>
+          <p className="mt-1 truncate text-xs font-semibold text-[var(--text-muted)]">{action.team || 'Unassigned team'} · {action.employee_id}</p>
         </div>
-        <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wide ${style.className}`}>
+        <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-black uppercase tracking-wide ${style.className}`}>
           {style.label}
         </span>
       </div>
@@ -82,23 +82,23 @@ function ActionCard({ action }: { action: PMSAction }) {
       {action.due_date && (
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <StatusPill status={action.status || 'Open'} />
-          <span className={`rounded-full px-2 py-0.5 text-[10px] font-black ${action.is_overdue || action.follow_up_state === 'overdue' ? 'bg-rose-500/10 text-rose-700 dark:text-rose-300' : action.follow_up_state === 'due_soon' ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300' : 'bg-[var(--bg-sunken)] text-[var(--text-secondary)]'}`}>
+          <span className={`rounded-full px-2 py-0.5 text-xs font-black ${action.is_overdue || action.follow_up_state === 'overdue' ? 'bg-rose-500/10 text-rose-700 dark:text-rose-300' : action.follow_up_state === 'due_soon' ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300' : 'bg-[var(--bg-sunken)] text-[var(--text-secondary)]'}`}>
             {dueBadgeLabel(action.due_date, action.days_to_due)}
           </span>
         </div>
       )}
       <p className="mt-4 whitespace-pre-line text-xs font-semibold leading-5 text-[var(--text-secondary)]">{action.action_text || 'No action details provided.'}</p>
-      <div className="mt-4 rounded-xl border border-amber-500/15 bg-amber-500/5 px-3 py-2.5 text-[11px] leading-4 text-[var(--text-secondary)]">
+      <div className="mt-4 rounded-xl border border-amber-500/15 bg-amber-500/5 px-3 py-2.5 text-xs leading-4 text-[var(--text-secondary)]">
         <span className="font-black text-amber-700 dark:text-amber-300">Root-cause note: </span>
         {action.root_cause_note || 'No note recorded.'}
       </div>
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-2 text-[10px] font-semibold text-[var(--text-muted)]">
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-2 text-xs font-semibold text-[var(--text-muted)]">
         <span className="inline-flex items-center gap-1.5"><CalendarDays size={13} />{action.month} · {formatDate(action.created_at)}</span>
         <span className="inline-flex items-center gap-1.5"><Users size={13} />By {action.created_by || 'Unknown'}</span>
       </div>
       <Link
         to={`/employee/${encodeURIComponent(action.employee_id)}?month=${encodeURIComponent(action.month)}`}
-        className="mt-3 inline-flex items-center gap-1 text-[11px] font-black text-blue-600 hover:underline dark:text-blue-400"
+        className="mt-3 inline-flex items-center gap-1 text-xs font-black text-blue-600 hover:underline dark:text-blue-400"
       >
         Open profile <span aria-hidden="true">↗</span>
       </Link>
@@ -106,7 +106,7 @@ function ActionCard({ action }: { action: PMSAction }) {
         href={buildOutlookComposeUrl(action)}
         target="_blank"
         rel="noreferrer"
-        className="ml-4 mt-3 inline-flex items-center gap-1 rounded-lg border border-blue-500/25 px-2.5 py-1.5 text-[11px] font-black text-blue-600 transition-colors hover:bg-blue-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:text-blue-400"
+        className="ml-4 mt-3 inline-flex items-center gap-1 rounded-lg border border-blue-500/25 px-2.5 py-1.5 text-xs font-black text-blue-600 transition-colors hover:bg-blue-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:text-blue-400"
         aria-label={`Forward corrective action for ${action.employee_name || action.employee_id} in Outlook`}
       >
         <Mail size={13} aria-hidden="true" />
@@ -169,7 +169,7 @@ export default function CorrectiveActionsView() {
     <div className="app-page-shell rf-page rf-page--corrective-actions executive-v1">
       <header className="rf-page-hero flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <div className="flex items-center gap-2 text-blue-600 dark:text-blue-400"><ClipboardCheck size={19} /><span className="text-[11px] font-black uppercase tracking-[0.18em]">Executive workspace</span></div>
+          <div className="flex items-center gap-2 text-blue-600 dark:text-blue-400"><ClipboardCheck size={19} /><span className="text-xs font-black uppercase tracking-[0.18em]">Executive workspace</span></div>
           <h1 className="mt-2 text-3xl font-black tracking-tight text-[var(--text-primary)]">Corrective Actions</h1>
           <p className="mt-1 max-w-2xl text-sm text-[var(--text-muted)]">Review corrective actions assigned to employees, with their notes and performance period.</p>
         </div>
@@ -189,7 +189,7 @@ export default function CorrectiveActionsView() {
         <button type="button" role="tab" aria-selected={pageTab === 'all'} onClick={() => setPageTab('all')} className={`min-h-10 rounded-xl px-4 text-sm font-black ${pageTab === 'all' ? 'bg-blue-600 text-white' : 'border border-[var(--border-light)] bg-[var(--bg-surface)] text-[var(--text-secondary)]'}`}>All actions</button>
         <button type="button" role="tab" aria-selected={pageTab === 'follow-up'} onClick={() => setPageTab('follow-up')} className={`inline-flex min-h-10 items-center gap-2 rounded-xl px-4 text-sm font-black ${pageTab === 'follow-up' ? 'bg-blue-600 text-white' : 'border border-[var(--border-light)] bg-[var(--bg-surface)] text-[var(--text-secondary)]'}`}>
           Follow-up
-          {overdueCount > 0 && <span className="rounded-full bg-rose-600 px-2 py-0.5 text-[10px] font-black text-white" aria-label={`${overdueCount} overdue`}>{overdueCount}</span>}
+          {overdueCount > 0 && <span className="rounded-full bg-rose-600 px-2 py-0.5 text-xs font-black text-white" aria-label={`${overdueCount} overdue`}>{overdueCount}</span>}
         </button>
       </div>
 
@@ -200,10 +200,10 @@ export default function CorrectiveActionsView() {
       {pageTab === 'all' && <CorrectiveActionsCard data={actionSummary} effective={MONTHS.includes(monthFilter) ? periodOf(new Date().getFullYear(), monthFilter) : null} variant="company" scopeLabel={functionFilter ?? (teamFilter !== 'All teams' ? teamFilter : 'Your authorized scope')} canEdit={canEditActionFollowUp(role)} onStatusChange={(id, update) => updateStatus.mutateAsync({ id, ...update })} />}
 
       {pageTab === 'all' && <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Corrective action summary">
-        <article className="rf-stat-card rounded-2xl border border-blue-500/15 bg-blue-500/5 p-4"><p className="text-[10px] font-black uppercase tracking-wider text-blue-700 dark:text-blue-300">Visible actions</p><p className="mt-2 text-3xl font-black text-[var(--text-primary)]">{filteredActions.length}</p></article>
-        <article className="rf-stat-card rounded-2xl border border-purple-500/15 bg-purple-500/5 p-4"><p className="text-[10px] font-black uppercase tracking-wider text-purple-700 dark:text-purple-300">Employees actioned</p><p className="mt-2 text-3xl font-black text-[var(--text-primary)]">{employeesActioned}</p></article>
-        <article className="rf-stat-card rounded-2xl border border-emerald-500/15 bg-emerald-500/5 p-4"><p className="text-[10px] font-black uppercase tracking-wider text-emerald-700 dark:text-emerald-300">Teams represented</p><p className="mt-2 text-3xl font-black text-[var(--text-primary)]">{teamsRepresented}</p></article>
-        <article className="rf-stat-card rounded-2xl border border-amber-500/15 bg-amber-500/5 p-4"><p className="text-[10px] font-black uppercase tracking-wider text-amber-700 dark:text-amber-300">Pending sync</p><p className="mt-2 text-3xl font-black text-[var(--text-primary)]">{pendingSync}</p></article>
+        <article className="rf-stat-card rounded-2xl border border-blue-500/15 bg-blue-500/5 p-4"><p className="text-xs font-black uppercase tracking-wider text-blue-700 dark:text-blue-300">Visible actions</p><p className="mt-2 text-3xl font-black text-[var(--text-primary)]">{filteredActions.length}</p></article>
+        <article className="rf-stat-card rounded-2xl border border-purple-500/15 bg-purple-500/5 p-4"><p className="text-xs font-black uppercase tracking-wider text-purple-700 dark:text-purple-300">Employees actioned</p><p className="mt-2 text-3xl font-black text-[var(--text-primary)]">{employeesActioned}</p></article>
+        <article className="rf-stat-card rounded-2xl border border-emerald-500/15 bg-emerald-500/5 p-4"><p className="text-xs font-black uppercase tracking-wider text-emerald-700 dark:text-emerald-300">Teams represented</p><p className="mt-2 text-3xl font-black text-[var(--text-primary)]">{teamsRepresented}</p></article>
+        <article className="rf-stat-card rounded-2xl border border-amber-500/15 bg-amber-500/5 p-4"><p className="text-xs font-black uppercase tracking-wider text-amber-700 dark:text-amber-300">Pending sync</p><p className="mt-2 text-3xl font-black text-[var(--text-primary)]">{pendingSync}</p></article>
       </section>}
 
       {pageTab === 'all' && <ResponsiveFilters
