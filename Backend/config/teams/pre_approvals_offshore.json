@@ -14,13 +14,15 @@
     {
       "key": "Rejection",
       "label": "Rejection Rate",
+      "description": "From June 2026: controllable rejection rate = (rejections minus policy rejections) / assigned requests, fixed target 1%. Earlier months: all rejections / assigned requests with the workbook target.",
+      "effective_from": "2026-06",
       "weight": 0.50,
       "direction": "lower_better",
       "unit": "%",
       "color": "#EF4444",
       "actual_col": "IPInitialRejection%",
       "target_col": "T.Rejection%",
-      "aggregation": {"method": "ratio", "numerator_col": "RejectedRequests", "denominator_col": "AssignedRequest"},
+      "aggregation": {"method": "ratio", "numerator_col": "ControllableRejections", "denominator_col": "AssignedRequest"},
       "achievement_col": "RejectionRate"
     },
     {
@@ -46,6 +48,18 @@
       "target_col": "T.Submission%",
       "aggregation": {"method": "ratio", "numerator_col": "ApprovalWithin48HR", "denominator_col": "ApprovedRequests"},
       "achievement_col": "%ofSubmissionWithinDuedate"
+    }
+  ],
+  "tracking_indicators": [
+    {
+      "key": "PolicyRejection",
+      "label": "Policy Rejection Rate",
+      "description": "Tracking only, weight 0, never in the score. Policy rejections / assigned requests, from June 2026. Policy share of all rejections is stored alongside it.",
+      "effective_from": "2026-06",
+      "weight": 0,
+      "unit": "%",
+      "color": "#64748B",
+      "actual_col": "PolicyRejectionRate"
     }
   ]
 }

@@ -23,6 +23,14 @@ from repositories.json_repos import (
 from processors.excel_processor import ExcelProcessor
 from services.kpi_service import KPIService
 from services.legacy_kpi_evidence import build_legacy_employee_kpi_values
+from services.preapprovals_offshore_scoring import (
+    TEAM_NAME as OFFSHORE_TEAM_NAME,
+    config_kpi_meta,
+    kpi_values as offshore_kpi_values,
+    reporting_period_from_row,
+    score_offshore_row,
+    uses_new_method,
+)
 from services.analysis_service import AnalysisService
 from services.learning_service import LearningService
 from services.planning_service import PlanningService
@@ -1499,7 +1507,22 @@ class DatabaseSeeder:
 
                     row_dict = row.to_dict()
                     team_trace["kpi_attempted"] = True
-                    if performance_level == "Employee" and position:
+                    offshore_scored = None
+                    if team_name == OFFSHORE_TEAM_NAME and performance_level == "Employee":
+                        offshore_period = reporting_period_from_row(row_dict)
+                        if offshore_period is not None and uses_new_method(*offshore_period):
+                            offshore_config = load_team_config(team_name)
+                            offshore_scored = score_offshore_row(row_dict, offshore_config)
+                    if offshore_scored is not None:
+                        score = offshore_scored.score
+                        grade = offshore_scored.grade
+                        kpi_values = offshore_kpi_values(offshore_scored, config_kpi_meta(offshore_config))
+                        achievements = {
+                            key: (value if value is not None else 0.0)
+                            for key, value in offshore_scored.achievements.items()
+                        }
+                        weights_used = dict(offshore_scored.weights)
+                    elif performance_level == "Employee" and position:
                         score, grade, kpi_values = self.kpi_service.calculate_performance_multi_team(
                             team_name,
                             row_dict,

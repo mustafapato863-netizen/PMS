@@ -738,8 +738,15 @@ function isPreApprovalsIpOffshoreTeam(value: string | null | undefined): boolean
   return normalizeTeamIdentity(value) === normalizeTeamIdentity('Pre-Approvals IP Offshore');
 }
 
+// Rows the backend scored with the June 2026 method carry this marker in raw_data.
+// Earlier rows have no marker and keep the all-rejections figures and targets.
+const OFFSHORE_CONTROLLABLE_METHOD = 'preapprovals_offshore_v2';
+const OFFSHORE_CONTROLLABLE_TARGET = 0.01;
+const OFFSHORE_SUBMISSION_TARGET = 0.90;
+
 function buildPreApprovalsIpOffshoreKpis(agent: AgentRecord): KPIConfig[] {
   const raw = agent.raw_data;
+  const controllable = String(raw?.ScoringMethod ?? '') === OFFSHORE_CONTROLLABLE_METHOD;
   const persisted = new Map((agent.kpi_values || []).map((kpi) => [normalizeWorkstream(kpi.kpi_key), kpi]));
   const sourceKpi = (key: string) => persisted.get(normalizeWorkstream(key));
 
@@ -747,13 +754,15 @@ function buildPreApprovalsIpOffshoreKpis(agent: AgentRecord): KPIConfig[] {
   const initialError = sourceKpi('InitialError');
   const submission = sourceKpi('Submission');
 
-  const rejectionActual = getPreApprovalsCountRatio(
-    raw,
-    ['RejectedRequests', 'RejectedRequest'],
-    ['AssignedRequests', 'AssignedRequest'],
-  ) ?? getRawNumber(raw, ['IPInitialRejection%', 'A.IPInitialRejectionRate', 'A.IPInitialRejection%', 'RejectionRate'])
-    ?? normalizeRate(rejection?.actual_value)
-    ?? 0;
+  const rejectionActual = controllable
+    ? (getRawNumber(raw, ['ControllableRejectionRate']) ?? normalizeRate(rejection?.actual_value) ?? 0)
+    : (getPreApprovalsCountRatio(
+      raw,
+      ['RejectedRequests', 'RejectedRequest'],
+      ['AssignedRequests', 'AssignedRequest'],
+    ) ?? getRawNumber(raw, ['IPInitialRejection%', 'A.IPInitialRejectionRate', 'A.IPInitialRejection%', 'RejectionRate'])
+      ?? normalizeRate(rejection?.actual_value)
+      ?? 0);
   const errorActual = getPreApprovalsCountRatio(
     raw,
     ['ErrosClaims', 'ErrorsClaims', 'ErrorClaims'],
@@ -769,16 +778,17 @@ function buildPreApprovalsIpOffshoreKpis(agent: AgentRecord): KPIConfig[] {
     ?? normalizeRate(submission?.actual_value)
     ?? 0;
 
-  const rejectionTarget = getRawNumber(raw, [
+  // June 2026 rows use fixed targets. Per-row workbook targets from older uploads are not used.
+  const rejectionTarget = controllable ? OFFSHORE_CONTROLLABLE_TARGET : (getRawNumber(raw, [
     'T.IPInitialRejection%', 'T.Rejection%', 'T.InitialRejection%', 'T.Rejection', 'T.InitialRejectionRate', 'T.InitialRejection',
-  ]) ?? normalizeRate(rejection?.target_value) ?? 0.03;
-  const errorTarget = getRawNumber(raw, [
+  ]) ?? normalizeRate(rejection?.target_value) ?? 0.03);
+  const errorTarget = controllable ? OFFSHORE_CONTROLLABLE_TARGET : (getRawNumber(raw, [
     'T.InitialError%', 'T.InitialError', 'T.InitialErrorRate', 'T.Error%', 'T.Error',
-  ]) ?? normalizeRate(initialError?.target_value) ?? 0.03;
-  const submissionTarget = getRawNumber(raw, [
+  ]) ?? normalizeRate(initialError?.target_value) ?? 0.03);
+  const submissionTarget = controllable ? OFFSHORE_SUBMISSION_TARGET : (getRawNumber(raw, [
     'T.%ofApprovalwithin48hrs', 'T.%OfApprovalwithin48HR', 'T.%OfApprovalwithin48hrs', 'T.%ofApprovalwithin48HR',
     'T.Submission%', 'T.Submission', 'T.SubmissionRate', 'T.%ofSubmissionWithinDuedate', 'T.%OfSubmissionWithin48HR',
-  ]) ?? normalizeRate(submission?.target_value) ?? 0.90;
+  ]) ?? normalizeRate(submission?.target_value) ?? 0.90);
 
   const build = (
     source: NonNullable<AgentRecord['kpi_values']>[number] | undefined,
@@ -810,7 +820,7 @@ function buildPreApprovalsIpOffshoreKpis(agent: AgentRecord): KPIConfig[] {
   };
 
   return [
-    build(rejection, 'Rejection', 'Rejection Rate', rejectionActual, rejectionTarget, true, '#EF4444', 0.50),
+    build(rejection, 'Rejection', controllable ? 'Controllable Rejection Rate' : 'Rejection Rate', rejectionActual, rejectionTarget, true, '#EF4444', 0.50),
     build(initialError, 'InitialError', 'Initial Error Rate', errorActual, errorTarget, true, '#F59E0B', 0.20),
     build(submission, 'Submission', 'Submission Rate', submissionActual, submissionTarget, false, '#10B981', 0.30),
   ];
