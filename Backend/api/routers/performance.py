@@ -330,11 +330,13 @@ def get_performance_catalog(
     rows = filter_records_by_scope(rows, scope)
     rows = filter_records_by_team_levels(rows, scope)
 
+    counted = PerformanceDashboardReadService(db, scope).counted_period_keys()
     periods = sorted(
         {
             (int(row["year"]), MONTHS[str(row["month"])], str(row["month"]))
             for row in rows
             if row.get("year") and str(row.get("month")) in MONTHS
+            and f"{int(row['year']):04d}-{MONTHS[str(row['month'])]:02d}" in counted
         },
         reverse=True,
     )

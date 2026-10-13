@@ -1,4 +1,5 @@
 from sqlalchemy.orm import Session, selectinload
+from utils.scoring_rules import score_percent_sql
 from repositories.base_repository import BaseRepository
 from sqlalchemy import String, and_, case, cast, false, func, or_
 
@@ -185,11 +186,7 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
         if branch:
             query = query.filter(func.lower(PerformanceRecord.branch_key) == str(branch).strip().casefold())
         if score_lt is not None:
-            normalized_score = case(
-                (and_(PerformanceRecord.score > 0, PerformanceRecord.score <= 10), PerformanceRecord.score * 100),
-                else_=PerformanceRecord.score,
-            )
-            query = query.filter(normalized_score < score_lt)
+            query = query.filter(score_percent_sql(PerformanceRecord.score) < score_lt)
         if periods:
             period_clauses = [
                 and_(PerformanceRecord.year == period_year, PerformanceRecord.month == period_month)
@@ -378,6 +375,7 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
         grade: str | None = None,
         status: str | None = None,
         kpi: str | None = None,
+        max_score: float | None = None,
     ) -> list[dict[str, object]]:
         """Return scalar summary fields without loading KPI child rows."""
         position_name = func.coalesce(PerformanceRecord.position_name, Employee.position_name)
@@ -397,6 +395,7 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
             PerformanceRecord.grade.label("grade"),
             PerformanceRecord.status.label("status"),
             PerformanceRecord.record_payload.label("record_payload"),
+            PerformanceRecord.branch_key.label("branch_key"),
         ).join(
             Team, PerformanceRecord.team_id == Team.id
         ).join(
@@ -420,8 +419,17 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
                 KPIValue,
                 and_(KPIValue.record_id == PerformanceRecord.id, KPIValue.record_year == PerformanceRecord.year),
             ).filter(func.lower(KPIValue.kpi_key) == str(kpi).casefold())
+        if max_score is not None:
+            query = query.filter(PerformanceRecord.score <= max_score)
         query = self._apply_scope(query, scope)
         return [dict(row._mapping) for row in query.all()]
+
+    def get_active_period_pairs(self, *, scope: dict | None = None) -> list[tuple[int, str]]:
+        """(year, month) of scope rows with a score above zero; those rows always count under the activity rule."""
+        query = self._dashboard_query().filter(PerformanceRecord.score > 0)
+        query = self._apply_scope(query, scope)
+        rows = query.with_entities(PerformanceRecord.year, PerformanceRecord.month).distinct().all()
+        return [(int(row.year), str(row.month)) for row in rows]
 
     def get_dashboard_record_page(
         self,
@@ -444,6 +452,7 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
         cursor: dict | None = None,
         page_size: int = 50,
         include_total: bool = False,
+        exclude_record_ids: list | None = None,
     ) -> tuple[list[PerformanceRecord], int | None]:
         """Return one SQL-paginated dashboard page after applying authorization."""
         query = self._dashboard_query()
@@ -468,14 +477,13 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
                 and_(KPIValue.record_id == PerformanceRecord.id, KPIValue.record_year == PerformanceRecord.year),
             ).filter(func.lower(KPIValue.kpi_key) == str(kpi).casefold())
         query = self._apply_scope(query, scope)
+        if exclude_record_ids:
+            query = query.filter(PerformanceRecord.id.not_in(list(exclude_record_ids)))
 
         name_key = func.lower(Employee.name)
         employee_key = func.lower(Employee.employee_id)
         record_key = func.replace(func.lower(cast(PerformanceRecord.id, String)), "-", "")
-        score_key = case(
-            (and_(PerformanceRecord.score > 0, PerformanceRecord.score <= 10), PerformanceRecord.score * 100),
-            else_=PerformanceRecord.score,
-        )
+        score_key = score_percent_sql(PerformanceRecord.score)
         normalized_sort = str(sort or "name").strip().lower()
         if normalized_sort not in {"name", "score_desc", "score_asc"}:
             raise ValueError("sort must be name, score_desc, or score_asc")

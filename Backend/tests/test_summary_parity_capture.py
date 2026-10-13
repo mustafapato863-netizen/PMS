@@ -75,6 +75,7 @@ def _seed(db):
         "TA-IB-01": ("Test Agent IB-01", "Inbound", "EGY"),
         "TA-IB-02": ("Test Agent IB-02", "Inbound", "EGY"),
         "TA-IB-03": ("Test Agent IB-03", "Inbound", "EGY"),
+        "TA-IB-04": ("Test Agent IB-04", "Inbound", "EGY"),
         "TA-CD-01": ("Test Agent CD-01", "Coding", "UAE"),
         "TA-CD-02": ("Test Agent CD-02", "Coding", "UAE"),
     }
@@ -107,6 +108,9 @@ def _seed(db):
         row("TA-IB-02", 2026, "August", 63.0, "E", raw_branch="SHJ AJM"),
         row("TA-IB-03", 2026, "August", 0, "E"),
         row("TA-IB-03", 2026, "September", 0, "E"),
+        # Ratio-form scores: 1 is a ratio (100), 0.85 is a ratio (85).
+        row("TA-IB-04", 2026, "July", 1, "A"),
+        row("TA-IB-04", 2026, "August", 0.85, "C"),
         # Coding (UAE): branch_key disagrees with the raw branch text (data-quality edge).
         row("TA-CD-01", 2026, "July", 92.0, "B", branch="dubai", region="UAE"),
         row("TA-CD-01", 2026, "August", 90.0, "B", region="UAE"),
@@ -215,6 +219,20 @@ def test_capture_summary_parity_bundle(monkeypatch):
             records = _data(client.get("/api/performance/summary-records", headers=headers))
             actions = _data(client.get("/api/corrective-actions/", headers=headers))
             follow_up = _data(client.get("/api/corrective-actions/follow-up", headers=headers))
+            rosters = {}
+            for period in PERIODS:
+                for branch in (None, "dubai", "sharjah"):
+                    params = {"period": period, "score_lt": 90, "sort": "score_asc", "detail": "table", "page_size": 100, "include_total": "false"}
+                    if branch:
+                        params["branch"] = branch
+                    items = []
+                    while True:
+                        page = _data(client.get("/api/performance/records", params=params, headers=headers))
+                        items.extend(page["items"])
+                        if not page["has_more"]:
+                            break
+                        params["cursor"] = page["next_cursor"]
+                    rosters[f"period={period}|branch={branch or 'All'}"] = items
 
         # The reviewed anchor: the persisted Outbound scores are the QA values at two decimals.
         stored = {(row.employee_id, row.month): float(row.score) for row in db.query(PerformanceRecord).all()}
@@ -231,6 +249,7 @@ def test_capture_summary_parity_bundle(monkeypatch):
             "summary_records": records,
             "corrective_actions": actions,
             "follow_up": follow_up,
+            "below_90_rosters": rosters,
         }
         out = Path(os.environ[OUT_ENV])
         out.mkdir(parents=True, exist_ok=True)

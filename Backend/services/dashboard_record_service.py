@@ -1,4 +1,5 @@
 from __future__ import annotations
+from utils.scoring_rules import letter_grade
 
 from sqlalchemy.orm import Session
 
@@ -422,16 +423,7 @@ class DashboardRecordService:
                             min(sum(float(value["contribution"]) for value in repaired_kpis), 1.0) * 100.0,
                             2,
                         )
-                        if reconciled_score >= 95.0:
-                            reconciled_grade = "A"
-                        elif reconciled_score >= 90.0:
-                            reconciled_grade = "B"
-                        elif reconciled_score >= 80.0:
-                            reconciled_grade = "C"
-                        elif reconciled_score >= 70.0:
-                            reconciled_grade = "D"
-                        else:
-                            reconciled_grade = "E"
+                        reconciled_grade = letter_grade(reconciled_score)
                     rich_evaluation = rich_record.evaluation.model_copy(
                         update={"score": reconciled_score, "grade": reconciled_grade}
                     )

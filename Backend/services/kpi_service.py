@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 import logging
 from typing import Dict, Any, Tuple, Optional, List
+from utils.scoring_rules import letter_grade
 from models.schemas import PerformanceRecord, KPIWeight, Target
 from repositories.base import KPIWeightsRepository, TargetsRepository
 from config.loader import (
@@ -669,28 +670,18 @@ class KPIService:
 
     @staticmethod
     def assign_grade(score: float) -> str:
-        """Assign performance grade based on unified thresholds.
-        
+        """Assign performance grade from the shared thresholds (utils/scoring_rules.py).
+
         Thresholds:
         - A: score >= 95
-        - B: score >= 85
-        - C: score >= 75
-        - D: score >= 65
-        - E: score < 65
-        
-        These thresholds are unified with Frontend (constants/grades.ts)
-        to ensure consistent grading across the system.
+        - B: score >= 90
+        - C: score >= 80
+        - D: score >= 70
+        - E: score < 70
+
+        These match the frontend grade thresholds (constants/grades.ts).
         """
-        if score >= 95.0:
-            return "A"
-        elif score >= 90.0:
-            return "B"
-        elif score >= 80.0:
-            return "C"
-        elif score >= 70.0:
-            return "D"
-        else:
-            return "E"
+        return letter_grade(score)
 
     def calculate_performance_multi_team(
         self,

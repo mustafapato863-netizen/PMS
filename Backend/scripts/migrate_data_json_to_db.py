@@ -7,6 +7,7 @@ import sys
 import json
 import uuid
 from pathlib import Path
+from utils.scoring_rules import score_percent
 from decimal import Decimal
 from datetime import datetime
 
@@ -164,8 +165,7 @@ def migrate():
                             score = 0.0
 
                     # Multiply by 100 if score is in 0-1 range
-                    if score <= 1.0 and score > 0:
-                        score = score * 100
+                    score = score_percent(score)
                     
                     grade = eval_data.get('grade', 'E')
                     if len(grade) > 1:

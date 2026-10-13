@@ -21,6 +21,7 @@ import { usePerformanceLevelParam } from '../hooks/usePerformanceLevelParam';
 import ActionsSummaryCard from '../components/executive/ActionsSummaryCard';
 import ExecutivePerformancePanel from '../components/executive/ExecutivePerformancePanel';
 import { ExecutiveViewSkeleton } from '../components/common/SkeletonLoader';
+import { FallbackNotice } from '../components/executive/v1/ExecutiveStates';
 import NoDataEmptyState from '../components/common/NoDataEmptyState';
 import KpiCard from '../components/common/KpiCard';
 import { summarizeRootCauses } from '../utils/rootCauseInsights';
@@ -328,6 +329,10 @@ const ExecutiveOverview = () => {
         <>
           {scopedPerformanceApiEnabled && (
             <BasisComparisonNote messages={[scopedSummary.basisContext?.message]} />
+          )}
+          {/* A month was picked but has no counted rows in this scope: say which month is shown instead. */}
+          {scopedPerformanceApiEnabled && selectedMonth !== 'All' && scopedSummary.periodNotice && (
+            <FallbackNotice notice={scopedSummary.periodNotice} />
           )}
           {/* All-Months Warning Banner */}
           {selectedMonth === 'All' && (

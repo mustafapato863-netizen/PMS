@@ -126,13 +126,7 @@ export function resolveRecordGradeClass(record: AgentRecord, score?: number): im
   if (storedGrade === 'A' || storedGrade === 'B' || storedGrade === 'C' || storedGrade === 'D' || storedGrade === 'E') {
     return storedGrade;
   }
-  if (sameTeam(record.identity.team, 'Marketing')) {
-    if (resolvedScore >= 95) return 'A';
-    if (resolvedScore >= 85) return 'B';
-    if (resolvedScore >= 75) return 'C';
-    if (resolvedScore >= 65) return 'D';
-    return 'E';
-  }
+  // Marketing grades come from the backend; this fallback uses the same shared cut-offs as every other team.
   return getGradeClass(resolvedScore);
 }
 

@@ -15,7 +15,7 @@ export default function GradeDistributionCard({ distribution, previous }: { dist
         iconBg="var(--pms-grade-a-badge-bg)"
         iconColor="var(--pms-grade-a-text)"
         title="Grade distribution"
-        subtitle={distribution ? `${distribution.total} employees · movement vs ${vs.slice(0, 3)}` : 'Grade mix'}
+        subtitle={distribution ? `${distribution.people ?? distribution.total} employees · movement vs ${vs.slice(0, 3)}` : 'Grade mix'}
       />
       {distribution && distribution.total > 0 ? (
         <>
