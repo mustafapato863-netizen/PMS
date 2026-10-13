@@ -15,6 +15,30 @@ from data_cleaning.standard_mappings import calculate_grade
 logger = logging.getLogger(__name__)
 
 
+# Every header the importer resolves by name (_require_column aliases). A missing one
+# stops the upload with an error, so none of these is silently ignored.
+READ_COLUMNS = (
+    "AllocatedClaims",
+    "AllocatedClaim",
+    "G",
+    "QualitySamples",
+    "QualitySample",
+    "J",
+    "FinalErrorsClaimsraisedbyQualityinthesamemonth",
+    "FinalErrorsClaims",
+    "K",
+    "TotalSubmittedWithinTAT",
+    "SubmittedWithinTAT",
+    "L",
+    "RemittanceAmount",
+    "Remittance",
+    "O",
+    "RejectedClaimsfromtheprevious3monthsbyinsurance",
+    "RejectedClaimsPrevious3Months",
+    "Q",
+)
+
+
 def _normalize_grade_value(value) -> str:
     if pd.isna(value):
         return ""

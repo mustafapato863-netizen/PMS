@@ -17,6 +17,23 @@ FINAL_SUBMISSION = "Final Submission"
 CALLS = "Calls"
 
 
+# Headers read by name. Targets are read from the sheet rows, not from config.
+READ_COLUMNS = (
+    "AssignedRequest",
+    "SubmittedRequests",
+    "SubmittedWithinDay",
+    "SubmittedWithinHour",
+    "RejectedRequests",
+    "TotalNumberOfCallsperDay",
+    "TotalAttendedCallsPerDay",
+    "TotalAbandonedCallsPerDay",
+    "T.InitialRejection",
+    "T.SubmissionWithinHour%",
+    "T.%AbandonedCalls",
+    "T.%ofAttendedCalls",
+)
+
+
 def _numbers(frame: pd.DataFrame, column: str) -> pd.Series:
     if column not in frame.columns:
         return pd.Series(0.0, index=frame.index, dtype="float64")

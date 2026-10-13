@@ -2,13 +2,21 @@
 
 Notices use the raw header row only. They do not read employee cells, register
 columns, or change a score. The ordinary Outbound template below is the only
-workbook header list confirmed for this phase. Other sheets recognize shared
-metadata and the columns named by that team's configuration.
+workbook header list confirmed for this phase.
+
+Other sheets list a header as unmapped only when no importer step reads it.
+A column counts as read when the team configuration names it, when the shared
+cleaner or the seeder reads it by name, or when the team's importer declares it
+next to its own code (READ_COLUMNS, READ_ANCHORS, READ_PATTERNS). Workbook
+layout (the side KPI table, pandas duplicate suffixes such as "Date.1") is never
+a data column and is never listed.
 """
 
 from __future__ import annotations
 
+import importlib
 import math
+import re
 from contextvars import ContextVar, Token
 from functools import wraps
 from typing import Any, Callable, Iterable, Mapping
@@ -100,6 +108,70 @@ SHARED_METADATA_COLUMNS = (
     "HR ID",
 )
 
+# Read by the shared cleaner (AHT -> AHT_Minutes) and the seeder (aht_raw, calls and
+# geo counts) for every team sheet. A drift test checks that each name still appears
+# in cleaned.py or services/seeding_service.py.
+SHARED_READ_COLUMNS = (
+    "AHT",
+    "A.AHT",
+    "A.AHT.1",
+    "InboundCalls",
+    "OutboundCalls",
+    "TotalHandledCalls",
+    "AbandonedCalls",
+    "Dubai_Booking",
+    "Sharjah_Booking",
+    "Ajman_Booking",
+    "Clinics_Booking",
+    "clinics_Booking",
+    "Dubai_Attend",
+    "Sharjah_Attend",
+    "Ajman_Attend",
+    "Clinics_Attend",
+    "clinics_Attend",
+    "clinics.Attend",
+    "Clinics.Attend",
+)
+
+# The cleaner crops every column after this one (preserve_productivity_columns).
+GRADE_COLUMN = "Performance Grade"
+
+# Workbook layout around the data table. The side KPI table and its headings are
+# not data columns, so they are never listed.
+LAYOUT_COLUMNS = (
+    "KPI",
+    "Weight",
+    "Target",
+    "Direction",
+    "Achievement Score Formula",
+    "Weighted Score",
+    "Score Range",
+    "Classification",
+    "Distribution",
+)
+_LAYOUT_TITLE = re.compile(r"^updatedpre-approvals.*kpitable$")
+# pandas renames a repeated header to "<name>.<n>"; the repeat is never read by name.
+_DUPLICATE_SUFFIX = re.compile(r"^(?P<base>.+)\.\d+$")
+
+# Team sheet -> the importer module that declares what it reads. Outbound is not
+# listed: its template above is the only confirmed header list for that sheet.
+_READ_MODULES = {
+    "Inbound": "Data_Cleaning_Teams.inbound",
+    "Inbound UAE": "Data_Cleaning_Teams.inbound_UAE",
+    "Sales": "Data_Cleaning_Teams.sales",
+    "Coding": "Data_Cleaning_Teams.coding",
+    "CSR": "Data_Cleaning_Teams.csr",
+    "Pharmacy": "Data_Cleaning_Teams.pharmacy",
+    "Submission": "Data_Cleaning_Teams.submission",
+    "Re-Submission": "Data_Cleaning_Teams.re_submission",
+    "Pre-Approvals IP Offshore": "Data_Cleaning_Teams.preapprovals_offshore",
+    "Pre-Approvals OP Dubai": "Data_Cleaning_Teams.preapprovals_op_dubai",
+    "Pre-Approvals IP Final Dubai": "Data_Cleaning_Teams.preapprovals_ip_final_dubai",
+    "Pre-Approvals IP Elective Dubai": "Data_Cleaning_Teams.preapprovals_ip_elective_dubai",
+    "Pre-Approvals OP Final SHJAJM": "Data_Cleaning_Teams.preapprovals_op_final_shj_ajm",
+    "Pre-Approvals IP Final SHJAJM": "Data_Cleaning_Teams.preapprovals_ip_final_shj_ajm",
+}
+
 UNMAPPED_CODE = "unmapped_columns"
 OPTIONAL_CODE = "optional_columns"
 AMBIGUOUS_CODE = "ambiguous_alias"
@@ -113,6 +185,11 @@ _notices: ContextVar[list[dict[str, Any]] | None] = ContextVar(
 def header_identity(value: Any) -> str:
     """Compare headers after case and whitespace differences only."""
     return "".join(char for char in str(value).casefold() if not char.isspace())
+
+
+def _loose(value: Any) -> str:
+    """Header identity without underscores and dots (the pharmacy and sales match rule)."""
+    return header_identity(value).replace("_", "").replace(".", "")
 
 
 def is_padding_header(value: Any) -> bool:
@@ -191,6 +268,20 @@ def _configured_names(team_name: str) -> set[str]:
     return names
 
 
+def _declared_reads(sheet_name: str) -> tuple[tuple[str, ...], tuple[tuple[str, int], ...], tuple[str, ...], tuple[str, ...]]:
+    """What the team's importer declares it reads: names, positional runs, patterns, exclusions."""
+    module_name = _READ_MODULES.get(sheet_name)
+    if module_name is None:
+        return (), (), (), ()
+    module = importlib.import_module(module_name)
+    return (
+        tuple(getattr(module, "READ_COLUMNS", ())),
+        tuple(getattr(module, "READ_ANCHORS", ())),
+        tuple(getattr(module, "READ_PATTERNS", ())),
+        tuple(getattr(module, "READ_PATTERN_EXCLUDE", ())),
+    )
+
+
 def _known_identities(sheet_name: str) -> set[str]:
     known = {header_identity(name) for name in SHARED_METADATA_COLUMNS}
     if is_outbound_sheet(sheet_name):
@@ -199,17 +290,51 @@ def _known_identities(sheet_name: str) -> set[str]:
         known.add(header_identity(QUALITY_TARGET_COLUMN))
         known.update(_configured_names("Outbound"))
     else:
+        known.update(header_identity(name) for name in SHARED_READ_COLUMNS)
         known.update(_configured_names(sheet_name))
+        names, _anchors, _patterns, _excludes = _declared_reads(sheet_name)
+        known.update(header_identity(name) for name in names)
     return known
 
 
-def _optional_identities(sheet_name: str) -> set[str]:
-    if not is_outbound_sheet(sheet_name):
+def _anchor_identities(texts: list[str], anchors: Iterable[tuple[str, int]]) -> set[str]:
+    """Positional reads: the importer slices N columns from an anchor, up to the grade column."""
+    identities = [header_identity(text) for text in texts]
+    grade = header_identity(GRADE_COLUMN)
+    read: set[str] = set()
+    for anchor, count in anchors:
+        anchor_identity = header_identity(anchor)
+        if anchor_identity not in identities:
+            continue
+        start = identities.index(anchor_identity)
+        for index in range(start, min(start + count, len(identities))):
+            if identities[index] == grade:
+                break
+            read.add(identities[index])
+    return read
+
+
+def _pattern_identities(texts: list[str], patterns: Iterable[str], excludes: Iterable[str]) -> set[str]:
+    """Name-pattern reads (a keyword in the loose name), with the excluded spellings removed."""
+    wanted = tuple(patterns)
+    if not wanted:
         return set()
-    return {
-        header_identity(name)
-        for name in (*PRODUCTIVITY_ACTUAL_ALIASES, *PRODUCTIVITY_TARGET_ALIASES)
-    }
+    banned = tuple(excludes)
+    read: set[str] = set()
+    for text in texts:
+        loose = _loose(text)
+        if any(pattern in loose for pattern in wanted) and not any(item in loose for item in banned):
+            read.add(header_identity(text))
+    return read
+
+
+def _is_layout(identity: str, row_identities: set[str]) -> bool:
+    if identity in {header_identity(name) for name in LAYOUT_COLUMNS}:
+        return True
+    if _LAYOUT_TITLE.match(identity):
+        return True
+    match = _DUPLICATE_SUFFIX.match(identity)
+    return bool(match and match.group("base") in row_identities)
 
 
 def _collect(columns: Iterable[Any], accepted) -> tuple[list[str], bool]:
@@ -242,20 +367,42 @@ def classify_raw_headers(sheet_name: str, columns: Iterable[Any]) -> list[dict[s
     column_list = list(columns)
     optional_ids = _optional_identities(sheet_name)
     known_ids = _known_identities(sheet_name) - optional_ids
+    texts = [text for text in (exact_header_text(column) for column in column_list) if text is not None]
+    row_ids = {header_identity(text) for text in texts}
+    layout_ids: set[str] | None = None
+    if not is_outbound_sheet(sheet_name):
+        _names, anchors, patterns, excludes = _declared_reads(sheet_name)
+        known_ids |= _anchor_identities(texts, anchors)
+        known_ids |= _pattern_identities(texts, patterns, excludes)
+        layout_ids = row_ids
     optional_headers, optional_truncated = _collect(
         column_list,
         lambda identity: identity in optional_ids,
     )
-    unmapped_headers, unmapped_truncated = _collect(
-        column_list,
-        lambda identity: identity not in known_ids and identity not in optional_ids,
-    )
+
+    def unmapped(identity: str) -> bool:
+        if identity in known_ids or identity in optional_ids:
+            return False
+        if layout_ids is not None and _is_layout(identity, layout_ids):
+            return False
+        return True
+
+    unmapped_headers, unmapped_truncated = _collect(column_list, unmapped)
     notices = []
     if unmapped_headers:
         notices.append(_notice(sheet_name, UNMAPPED_CODE, unmapped_headers, unmapped_truncated))
     if optional_headers:
         notices.append(_notice(sheet_name, OPTIONAL_CODE, optional_headers, optional_truncated))
     return notices
+
+
+def _optional_identities(sheet_name: str) -> set[str]:
+    if not is_outbound_sheet(sheet_name):
+        return set()
+    return {
+        header_identity(name)
+        for name in (*PRODUCTIVITY_ACTUAL_ALIASES, *PRODUCTIVITY_TARGET_ALIASES)
+    }
 
 
 def bound_column_warnings(warnings: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:

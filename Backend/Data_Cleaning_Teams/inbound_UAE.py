@@ -2,6 +2,10 @@ import pandas as pd
 import numpy as np
 from cleaned import clean_sheet_data
 
+# The trend sums read the anchor column and the three columns after it, by position.
+READ_ANCHORS = (("Dubai_Booking", 4), ("Dubai_Attend", 4))
+
+
 def process_inbound_uae(file_path):
     # --- 1. Load and Clean Data ---
     sheet_name = "Inbound UAE"

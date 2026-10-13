@@ -44,6 +44,23 @@ TARGET_PAIR_WORKSTREAMS = {
 }
 
 
+# Headers read by name; the first spelling of each pair that the importer accepts.
+READ_COLUMNS = (
+    "AssignedRequests",
+    "AssignedRequest",
+    "ApprovedRequests",
+    "ApprovedRequest",
+    "RejectedRequests",
+    "RejectedRequest",
+    "ApprovalWithin48HR",
+    "ApprovalWithin1.5HR",
+    "ApprovalWithin48HR/1.5HR",
+    "ApprovalWithin48HRor1.5HR",
+    "T.InitialRejection%",
+    "T.%OfApprovalwithin48HR/1.5HR",
+)
+
+
 def _numbers(frame: pd.DataFrame, column: str) -> pd.Series:
     """Return a numeric series while treating missing/NA markers as missing."""
     if column not in frame.columns:

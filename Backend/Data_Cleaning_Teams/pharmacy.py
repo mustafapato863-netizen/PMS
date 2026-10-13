@@ -17,6 +17,11 @@ from data_cleaning.standard_mappings import calculate_achievement, calculate_gra
 logger = logging.getLogger(__name__)
 
 
+# Prescription achievement is found by name fragment: the lookup removes spaces,
+# underscores and dots, then matches these fragments.
+READ_PATTERNS = ("noofprescriptionach", "prescriptionach")
+
+
 def parse_percentage(value: Any) -> float:
     """
     Parse percentage value from various formats.
