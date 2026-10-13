@@ -4,6 +4,7 @@ import { getKPIsForAgent, isPreApprovalsIpElectiveTeam, resolvePreApprovalsWorks
 import { getProgressColor, getProgressFill } from '../../utils/progressColor';
 import { getWeightForLabel, resolveDisplayScore } from '../../utils/kpiScore';
 import { getGradeTone } from '../../constants/grades';
+import { formatPercentRatio } from '../../utils/percentForm';
 
 interface KpiBreakdownPanelProps {
   score: number;          // 0-100
@@ -81,14 +82,14 @@ const KpiBar = ({ label, actual, target, unit, isLowerBetter = false, color, ach
     if (unit === 'min') return `${v.toFixed(1)} min`;
     if (unit === 'currency') return `AED ${Math.round(v).toLocaleString()}`;
     if (unit === 'number') return Math.round(v).toLocaleString();
-    return v > 1 ? `${v.toFixed(1)}%` : `${(v * 100).toFixed(1)}%`;
+    return formatPercentRatio(v);
   };
 
   const formatTarget = (v: number) => {
     if (unit === 'min') return `${v.toFixed(1)} min`;
     if (unit === 'currency') return `AED ${Math.round(v).toLocaleString()}`;
     if (unit === 'number') return Math.round(v).toLocaleString();
-    return v > 1 ? `${v.toFixed(1)}%` : `${(v * 100).toFixed(1)}%`;
+    return formatPercentRatio(v);
   };
 
   const displayColor = targetRequiresReview

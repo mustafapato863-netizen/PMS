@@ -20,6 +20,7 @@ import type { TeamAgentRow } from '../../hooks/usePerformanceData';
 import type { PerformanceLevelFilter, PMSAction } from '../../types';
 import { getKPIsForAgent } from '../../types';
 import { apiFetch } from '../../lib/apiClient';
+import { formatPercentRatio } from '../../utils/percentForm';
 
 type DrawerView = 'performance' | 'history' | 'compare' | null;
 
@@ -40,7 +41,7 @@ interface StandardResponse {
 }
 
 const formatKpiValue = (value: number, unit: string) => {
-  if (unit === '%') return `${(value * 100).toFixed(1)}%`;
+  if (unit === '%') return formatPercentRatio(value);
   if (unit === 'min') return `${value.toFixed(1)} min`;
   return value.toLocaleString(undefined, { maximumFractionDigits: 1 });
 };

@@ -10,6 +10,7 @@ import { todayIso } from '../actions/dueBadge';
 import { getKPIsForAgent } from '../../types';
 import type { TeamAgentRow } from '../../hooks/usePerformanceData';
 import { getWeightForLabel } from '../../utils/kpiScore';
+import { formatPercentRatio } from '../../utils/percentForm';
 import { extractKpiMentions, formatKpiMentions } from '../../utils/rootCauseInsights';
 import OverlayPortal from '../common/OverlayPortal';
 
@@ -78,8 +79,8 @@ const formatKpiValue = (label: string, actual: number, target: number, unit: str
   if (unit === 'min') return `${actual.toFixed(1)} min / ${target.toFixed(1)} min`;
   if (label.includes('Time')) return `${actual.toFixed(1)} / ${target.toFixed(1)}`;
   if (unit === '%') {
-    const normalizePercent = (value: number) => Math.abs(value) <= 1 ? value * 100 : value;
-    return `${normalizePercent(actual).toFixed(1)}% / ${normalizePercent(target).toFixed(1)}%`;
+    // Stored percent values are ratios: one conversion, in the shared formatter.
+    return `${formatPercentRatio(actual)} / ${formatPercentRatio(target)}`;
   }
   const formattedActual = actual.toLocaleString(undefined, { maximumFractionDigits: 1 });
   const formattedTarget = target.toLocaleString(undefined, { maximumFractionDigits: 1 });
