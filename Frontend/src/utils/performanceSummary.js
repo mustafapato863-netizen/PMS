@@ -1,3 +1,5 @@
+import { normalizePerformanceScore } from './kpiScore';
+
 const TEAM_ALIASES = {
   inbound: 'Inbound',
   outbound: 'Outbound',
@@ -24,10 +26,7 @@ function normalizeMonth(month = '') {
 }
 
 function normalizeScore(score) {
-  const n = Number(score);
-  if (!Number.isFinite(n) || n <= 0) return 0;
-  if (n <= 1) return n * 100;
-  return Math.min(n, 100);
+  return normalizePerformanceScore(Number(score));
 }
 
 function getGradeClass(record) {

@@ -316,6 +316,24 @@ def get_summary_records(
     return StandardResponse(success=True, message="Authorized summary evidence retrieved", data=data)
 
 
+def _catalog_row_counted(row: dict) -> bool:
+    """Whether an option row marks its period as counted in the catalog.
+
+    This is a deliberate approximation, for the catalog only: a row counts when its
+    score is above zero. The summary keeps the full activity rule (_has_real_activity),
+    so a period with zero-score rows that have activity can be listed by the summary
+    and not by the catalog. A row that carries no score information counts (fail open),
+    so a period is never hidden because evidence is absent.
+    """
+    score = row.get("score")
+    if score is None:
+        return True
+    try:
+        return float(score) > 0
+    except (TypeError, ValueError):
+        return True
+
+
 @router.get("/catalog", response_model=StandardResponse)
 def get_performance_catalog(
     request: Request,
@@ -326,7 +344,7 @@ def get_performance_catalog(
     rows = DashboardRecordService(
         db,
         sql_repository_cls=SQLPerformanceRepository,
-    ).list_option_rows(scope)
+    ).list_option_rows(scope, include_scores=True)
     rows = filter_records_by_scope(rows, scope)
     rows = filter_records_by_team_levels(rows, scope)
 
@@ -334,7 +352,7 @@ def get_performance_catalog(
         {
             (int(row["year"]), MONTHS[str(row["month"])], str(row["month"]))
             for row in rows
-            if row.get("year") and str(row.get("month")) in MONTHS
+            if row.get("year") and str(row.get("month")) in MONTHS and _catalog_row_counted(row)
         },
         reverse=True,
     )

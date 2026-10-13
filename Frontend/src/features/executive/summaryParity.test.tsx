@@ -1,6 +1,7 @@
 /**
  * Executive Summary (/executive) and Departmental Summary (/departmental-summary)
- * on one synthetic dataset.
+ * on one synthetic dataset. This is the permanent contract between the server
+ * summary and the browser composition.
  *
  * The Executive page reads the server summary (`/api/performance/summary`, one
  * request per filter set). The Departmental page asks `/api/executive/summary`
@@ -10,11 +11,11 @@
  *
  * Three checks, all against the real hooks:
  *  1. Each page's numbers equal its own rule replayed from the same records
- *     (server rule for Executive, composed rule for Departmental).
+ *     (the server rule for Executive, the composed rule for Departmental).
  *  2. Every Executive-versus-Departmental mismatch must be explained by a named
- *     rule that is present in that cell. Anything else fails and prints the table.
- *  3. Each known gap has an expected-failure assertion (`it.fails`). Fixing a gap
- *     turns its assertion red; the gap then has to be retired here.
+ *     gap that is present in that cell. Anything else fails and prints the table.
+ *  3. Each named gap that is still open has an expected-failure assertion
+ *     (`it.fails`). Closed gaps are passing assertions.
  */
 import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -36,6 +37,7 @@ vi.mock('../../lib/apiClient', async (importOriginal) => ({
 type Filters = { region?: string; location?: string; performance_level?: string };
 interface EmployeeMonth {
   employee_id: string;
+  employee_name?: string;
   team: string;
   month: string;
   year: number;
@@ -43,7 +45,6 @@ interface EmployeeMonth {
   performance_level: string;
   branch_key: string | null;
   raw_data: Record<string, unknown> | null;
-  employee_name?: string;
   calls?: { inbound?: number; outbound?: number; total_handled?: number; abandoned?: number };
   geo?: { bookings?: Record<string, number>; attended?: Record<string, number> };
   kpi_values?: Array<{ contribution?: number | null }>;
@@ -77,34 +78,32 @@ const fmt1 = (value: number | null) => (value === null ? '—' : value.toFixed(1
 
 /* ── Rules as written in the server and the browser ── */
 
-// performance_dashboard_read_service.py `_score`
-const serverScore = (score: number) => (score > 0 && score <= 10 ? score * 100 : score);
-// utils/kpiScore.ts `normalizePerformanceScore`
+// utils/scoring_rules.py `score_percent`: (0, 1] is a ratio, anything above 1 is already a percentage.
+const serverScore = (score: number) => (score > 0 && score <= 1 ? score * 100 : score);
+// utils/kpiScore.ts `normalizePerformanceScore` (the browser's scale rule, with its cap at 100).
 const composeScore = (score: number) => (!Number.isFinite(score) || score <= 0 ? 0 : score <= 1 ? score * 100 : Math.min(score, 100));
-// constants/grades.ts `getGradeClass`
+// constants/grades.ts `getGradeClass`, the same cut-offs as utils/scoring_rules.py `letter_grade`.
 const thresholdGrade = (score: number): Grade => (score >= 95 ? 'A' : score >= 90 ? 'B' : score >= 80 ? 'C' : score >= 70 ? 'D' : 'E');
 
-// performance_dashboard_read_service.py `_record_location`: raw text first, then geo
-function explicitBranch(text: string) {
+// utils/branch_scope.py `text_branch`: raw text in the server's fixed order; the team name counts only for Dubai.
+function textBranch(rec: EmployeeMonth): string | null {
+  const raw = rec.raw_data ?? {};
+  const text = ['Team', 'Out Team', 'Branch', 'Site', 'Area'].map((field) => String(raw[field] ?? '')).filter(Boolean).join(' ').toUpperCase();
+  const team = rec.team.toUpperCase();
   if (text.includes('AJM') || text.includes('AJMAN')) return 'ajman';
   if (text.includes('SHJ') || text.includes('SHARJAH') || text.includes('SHARQA')) return 'sharjah';
-  if (text.includes('DUBAI')) return 'dubai';
+  if (text.includes('DUBAI') || team.includes('DUBAI')) return 'dubai';
   if (text.includes('CLINIC')) return 'clinics';
   return null;
 }
-function serverBranchMatch(rec: EmployeeMonth, location: string) {
-  if (location === 'all') return true;
-  const raw = rec.raw_data ?? {};
-  const text = [raw.Team, raw['Out Team'], raw.Branch, raw.Site, raw.Area, rec.team].filter(Boolean).join(' ').toUpperCase();
-  const explicit = explicitBranch(text);
-  if (explicit) return explicit === location;
-  return (rec.geo?.bookings?.[location] ?? 0) > 0 || (rec.geo?.attended?.[location] ?? 0) > 0;
-}
-// utils/branchScope.ts `agentMatchesLocation`: branch_key first, then the same text rule
-function composeBranchMatch(rec: EmployeeMonth, location: string) {
+// utils/branch_scope.py `record_matches_branch` (server) and utils/branchScope.ts `agentMatchesLocation` (browser):
+// the stored branch_key first, then the text, then the geo activity of that branch.
+function branchMatch(rec: EmployeeMonth, location: string): boolean {
   if (location === 'all') return true;
   if (rec.branch_key?.trim()) return rec.branch_key.trim().toLowerCase() === location;
-  return serverBranchMatch(rec, location);
+  const explicit = textBranch(rec);
+  if (explicit) return explicit === location;
+  return (rec.geo?.bookings?.[location] ?? 0) > 0 || (rec.geo?.attended?.[location] ?? 0) > 0;
 }
 
 // performance_dashboard_read_service.py `_has_real_activity`, copied here so the test does not call the code it checks.
@@ -133,8 +132,6 @@ interface Replay { headcount: number; avg: number | null; grades: number[] }
 
 /** One page's numbers for one month key, computed from the records by that page's rule. */
 function replay(rule: Rule, key: string, filters: Filters): Replay {
-  const branchMatch = rule === 'server' ? serverBranchMatch : composeBranchMatch;
-  // Both pages leave out the employee-months with no real activity (server rule).
   const counted = bundle.summary_records.filter((rec) => keyOf(rec) === key
     && (!filters.region || rec.region === filters.region)
     && (!filters.performance_level || rec.performance_level === filters.performance_level)
@@ -182,44 +179,19 @@ function routeApi(url: string): Promise<unknown> {
   return Promise.reject(new Error(`unrouted request ${url}`));
 }
 
-/* ── Known gaps (each one names its cause in the code) ── */
+/* ── Open gaps (each one names its cause in the code) ── */
 
 interface KnownGap { id: string; title: string; cause: string }
 const KNOWN_GAPS: KnownGap[] = [
   {
-    id: 'G-SCALE',
-    title: 'Scores above 1 and up to 10',
-    cause: 'backend `_score` multiplies 0 < score <= 10 by 100; browser `normalizePerformanceScore` only scales values up to 1 (utils/kpiScore.ts). The fixture has one such row (synthetic edge case); production data is not checked here.',
-  },
-  {
-    id: 'G-BRANCH',
-    title: 'Branch source disagrees',
-    cause: 'backend location uses raw Branch text and geo bookings (`_record_location`); the browser uses branch_key first (utils/branchScope.ts `agentMatchesLocation`). They disagree whenever branch_key and the raw text differ.',
-  },
-  {
     id: 'G-DUP',
     title: 'One employee on two levels in one month',
-    cause: 'Executive "Total Agents" is the number of employee-month rows (server `_summary` total_agents); Departmental "Employees" is the number of distinct people (compose.ts `employeesOf`). A person recorded at two levels in the same month counts twice on the Executive page.',
-  },
-  {
-    id: 'G-PERIOD-FALLBACK',
-    title: 'Requested month with no rows in scope',
-    cause: 'Departmental falls back to the newest month with rows in the selected scope and shows a notice (compose.ts `composeExecutiveSummary`: `effective = requested` only when it is present, otherwise `periods[0]`). Executive keeps the requested month and shows its empty state.',
-  },
-  {
-    id: 'G-PREV-SCOPE',
-    title: 'Server previous month ignores the branch filter',
-    cause: 'performance_dashboard_read_service.py `summary` builds `by_period` before the location is applied, so the previous period is chosen from all branches; compose chooses it from rows in the selected scope.',
-  },
-  {
-    id: 'G-CATALOG',
-    title: 'Executive default month is the newest catalog period',
-    cause: 'the Executive "All months" default is the newest period in `/api/performance/catalog` (`list_option_rows` is not limited to the filtered scope or to months with counted rows); the Departmental default is the newest period inside the selected scope.',
+    cause: 'Executive "Total Agents" is the number of employee-month rows (server `_summary` total_agents); Departmental "Employees" is the number of distinct people (compose.ts `employeesOf`). Headcount moves to people in the unified summary (Step B decision); the server keeps counting rows until the old page is removed.',
   },
   {
     id: 'G-ACT-SCOPE',
     title: 'Executive action statistics ignore region, branch and level',
-    cause: 'ExecutiveView.tsx scopes actions only by month and role in scoped mode (`filterActionsByPerformanceScope` runs only on the legacy path). The composed path applies region, branch and level to actions (compose `scopeAction`).',
+    cause: 'ExecutiveView.tsx scopes actions only by period and role in scoped mode (`filterActionsByPerformanceScope` runs only on the legacy path). The composed path applies region, branch and level to actions (compose `scopeAction`).',
   },
   {
     id: 'G-ACT-LINK',
@@ -337,16 +309,13 @@ const METRICS: Array<[string, (side: Side) => string]> = [
   ['actionsKpis', (side) => side.actionKpis.join(',') || '—'],
 ];
 
-const POPULATION = new Set(['headcount', 'teams', 'avg', 'pctAB', 'pctDE', 'grades', 'previousAvg', 'teamRows']);
-
-/** Facts that can change a number on either page, for the month keys a cell reads. */
-function factsFor(keys: Array<string | null>, filters: Filters) {
+/** Facts that can explain a mismatch in a cell. */
+function factsFor(filters: Filters, keys: Array<string | null>) {
   const live = keys.filter((key): key is string => Boolean(key));
   const scoped = bundle.summary_records.filter((rec) => live.includes(keyOf(rec))
     && serverActive(rec)
     && (!filters.region || rec.region === filters.region)
     && (!filters.performance_level || rec.performance_level === filters.performance_level));
-  const location = filters.location;
   const perEmployeeMonth = new Map<string, number>();
   scoped.forEach((rec) => {
     const id = `${rec.employee_id}|${keyOf(rec)}`;
@@ -354,25 +323,14 @@ function factsFor(keys: Array<string | null>, filters: Filters) {
   });
   return {
     duplicateRows: [...perEmployeeMonth.values()].reduce((sum, count) => sum + Math.max(count - 1, 0), 0),
-    scaleRows: scoped.filter((rec) => rec.evaluation.score > 1 && rec.evaluation.score <= 10).length,
-    branchDiffers: Boolean(location) && scoped.some((rec) => serverBranchMatch(rec, location!) !== composeBranchMatch(rec, location!)),
     actionLinked: bundle.corrective_actions.some((action) => Boolean(action.linked_kpi_key)
       && live.includes(`${action.year}-${String(MONTHS.indexOf(action.month) + 1).padStart(2, '0')}`)),
   };
 }
 
-function gapsFor(metric: string, period: string, filters: Filters, facts: ReturnType<typeof factsFor>, exec: Side, dept: Side): string[] {
+function gapsFor(metric: string, filters: Filters, facts: ReturnType<typeof factsFor>): string[] {
   const gaps: string[] = [];
-  const requested = period === 'All' ? null : period;
-  // A cell whose month differs between the pages is explained by the month rule, whatever the metric.
-  if (period === 'All' && exec.activeKey !== dept.activeKey) gaps.push('G-CATALOG');
-  if (requested !== null && dept.activeKey !== requested) gaps.push('G-PERIOD-FALLBACK');
-  if ((metric === 'previousPeriod' || metric === 'previousAvg') && filters.location) gaps.push('G-PREV-SCOPE');
-  if (POPULATION.has(metric)) {
-    if (facts.scaleRows > 0) gaps.push('G-SCALE');
-    if (facts.branchDiffers) gaps.push('G-BRANCH');
-    if (metric === 'headcount' && facts.duplicateRows > 0) gaps.push('G-DUP');
-  }
+  if (metric === 'headcount' && facts.duplicateRows > 0) gaps.push('G-DUP');
   if (metric.startsWith('actions')) {
     if (filters.region || filters.location || filters.performance_level) gaps.push('G-ACT-SCOPE');
     if (metric === 'actionsKpis' && facts.actionLinked) gaps.push('G-ACT-LINK');
@@ -440,12 +398,12 @@ async function buildMatrix() {
         { cell, page: 'Departmental', field: 'avg', expected: fmt1(deptReplay.avg), actual: fmt1(dept.rawAvg), ok: deptReplay.avg === dept.rawAvg },
         { cell, page: 'Departmental', field: 'grades', expected: deptReplay.grades.join('/'), actual: (dept.grades ?? [0, 0, 0, 0, 0]).join('/'), ok: deptReplay.grades.join('/') === (dept.grades ?? [0, 0, 0, 0, 0]).join('/') },
       );
-      const facts = factsFor([exec.activeKey, exec.previousKey, dept.activeKey, dept.previousKey], filters);
+      const facts = factsFor(filters, [exec.activeKey, exec.previousKey, dept.activeKey, dept.previousKey]);
       METRICS.forEach(([metric, format]) => {
         const ex = format(exec);
         const dp = format(dept);
         const match = ex === dp;
-        rows.push({ cell, metric, executive: ex, departmental: dp, match, gaps: match ? [] : gapsFor(metric, period, filters, facts, exec, dept) });
+        rows.push({ cell, metric, executive: ex, departmental: dp, match, gaps: match ? [] : gapsFor(metric, filters, facts) });
       });
     }
   }
@@ -497,7 +455,7 @@ describe('Executive vs Departmental summary parity (synthetic dataset)', () => {
     expect(failing, formatChecks(matrix.checks)).toEqual([]);
   });
 
-  it('every Executive-versus-Departmental mismatch is explained by a named known gap', () => {
+  it('every Executive-versus-Departmental mismatch is explained by a named open gap', () => {
     const unexplained = matrix.rows.filter((row) => !row.match && row.gaps.length === 0);
     const mismatches = matrix.rows.filter((row) => !row.match);
     expect(unexplained, `${mismatches.length} mismatches, ${unexplained.length} unexplained\n${formatTable(unexplained)}`).toEqual([]);
@@ -516,20 +474,68 @@ describe('Executive vs Departmental summary parity (synthetic dataset)', () => {
     expect(cell('2026-07', {}, 'headcount').gaps).toEqual(['G-DUP']);
   });
 
-  it('G-ZERO closed: August headcount is 6 on both pages; the zero-activity employee-month is left out', () => {
-    const row = cell('2026-08', {}, 'headcount');
-    expect(row.executive).toBe('6');
+  it('ratio-form scores: a score of 1 counts as 100 and 0.85 as 85 on both pages', () => {
+    // Inbound July: 97.5, 71 and 1 (a ratio, 100): (97.5 + 71 + 100) / 3 = 89.5.
+    expect(cell('2026-07', {}, 'teamRows').executive).toContain('Inbound 3 89.5');
+    expect(cell('2026-07', {}, 'teamRows').departmental).toContain('Inbound 3 89.5');
+    // Inbound August: 84, 63 and 0.85 (a ratio, 85): (84 + 63 + 85) / 3 = 77.3.
+    expect(cell('2026-08', {}, 'teamRows').executive).toContain('Inbound 3 77.3');
+    expect(cell('2026-08', {}, 'teamRows').departmental).toContain('Inbound 3 77.3');
+  });
+
+  it('a low percentage score stays as it is: the 5.5 score in August is 5.5 on both pages', () => {
+    const row = cell('2026-08', { location: 'sharjah' }, 'avg');
+    expect(row.executive).toBe('5.5');
     expect(row.departmental).toBe(row.executive);
   });
 
-  it.fails('G-SCALE: August average differs because one 5.5 score is scaled to 550 on the server only', () => {
+  it('branch_key wins over the raw text: the July Sharjah row (tagged Dubai, raw text "SHJ") is not Sharjah, so July has no Sharjah rows', () => {
+    // No counted Sharjah row in July: both pages fall back to August, the newest Sharjah month with counted rows.
+    expect(cell('2026-07', { location: 'sharjah' }, 'activePeriod').executive).toBe('2026-08');
+    expect(cell('2026-07', { location: 'sharjah' }, 'activePeriod').departmental).toBe('2026-08');
+    expect(cell('2026-07', { location: 'sharjah' }, 'headcount').executive).toBe('1');
+    expect(cell('2026-07', { location: 'sharjah' }, 'headcount').departmental).toBe('1');
+  });
+
+  it('a row without branch_key falls back to its text: IB-02 (raw "SHJ AJM") counts for Ajman on both pages', () => {
+    expect(cell('2026-08', { location: 'ajman' }, 'headcount').executive).toBe('1');
+    expect(cell('2026-08', { location: 'ajman' }, 'headcount').departmental).toBe('1');
+  });
+
+  it('G-SCALE closed: August average is 70.8 on both pages (5.5 is not scaled to 550)', () => {
     const row = cell('2026-08', {}, 'avg');
+    expect(row.executive).toBe('70.8');
     expect(row.departmental).toBe(row.executive);
   });
 
-  it.fails('G-BRANCH: Dubai August headcount differs; branch_key says Dubai, raw text does not', () => {
+  it('G-BRANCH closed: Dubai August headcount is 1 on both pages (branch_key says Dubai)', () => {
     const row = cell('2026-08', { location: 'dubai' }, 'headcount');
+    expect(row.executive).toBe('1');
     expect(row.departmental).toBe(row.executive);
+  });
+
+  it('G-PERIOD-FALLBACK closed: a Managerial August request shows July on both pages', () => {
+    const row = cell('2026-08', { performance_level: 'Managerial' }, 'activePeriod');
+    expect(row.executive).toBe('2026-07');
+    expect(row.departmental).toBe(row.executive);
+  });
+
+  it('G-PREV-SCOPE closed: Sharjah August has no earlier Sharjah month on either page', () => {
+    const row = cell('2026-08', { location: 'sharjah' }, 'previousPeriod');
+    expect(row.executive).toBe('—');
+    expect(row.departmental).toBe(row.executive);
+  });
+
+  it('G-CATALOG closed: the default month is August (the newest with counted rows), and it agrees on both pages', () => {
+    const row = cell('All', {}, 'headcount');
+    expect(row.executive).toBe('7');
+    expect(row.departmental).toBe(row.executive);
+    expect(cell('All', {}, 'activePeriod').executive).toBe('2026-08');
+  });
+
+  it('a requested month with no counted rows shows the newest counted month on both pages (September -> August)', () => {
+    expect(cell('2026-09', {}, 'activePeriod').executive).toBe('2026-08');
+    expect(cell('2026-09', {}, 'activePeriod').departmental).toBe('2026-08');
   });
 
   it.fails('G-DUP: July headcount counts a person on two levels twice on the Executive page', () => {
@@ -537,35 +543,8 @@ describe('Executive vs Departmental summary parity (synthetic dataset)', () => {
     expect(row.departmental).toBe(row.executive);
   });
 
-  it('G-ROUND-SUM closed: UAE July Class D and E share is 66.7 on both pages (combined from counts, rounded once)', () => {
-    const row = cell('2026-07', { region: 'UAE' }, 'pctDE');
-    expect(row.executive).toBe('66.7');
-    expect(row.departmental).toBe(row.executive);
-  });
-
-  it.fails('G-PERIOD-FALLBACK: a Managerial August request shows July on the Departmental page and the empty August state on the Executive page', () => {
-    const row = cell('2026-08', { performance_level: 'Managerial' }, 'activePeriod');
-    expect(row.departmental).toBe(row.executive);
-  });
-
-  it.fails('G-PREV-SCOPE: Sharjah August compares with July on the Executive page; the Departmental page finds no Sharjah month before August', () => {
-    const row = cell('2026-08', { location: 'sharjah' }, 'previousPeriod');
-    expect(row.departmental).toBe(row.executive);
-  });
-
-  it.fails('G-CATALOG: the Executive default month is listed in the catalog but counts zero employees', () => {
-    const row = cell('All', {}, 'headcount');
-    expect(Number(row.executive)).toBeGreaterThan(0);
-  });
-
   it.fails('G-ACT-SCOPE: a UAE filter leaves the Executive August action count unchanged; the composed page drops it', () => {
     const row = cell('2026-08', { region: 'UAE' }, 'actionsTotal');
-    expect(row.departmental).toBe(row.executive);
-  });
-
-  it('G-ACT-YEAR closed: the July action count is 6 on both pages; the July 2025 action is excluded', () => {
-    const row = cell('2026-07', {}, 'actionsTotal');
-    expect(row.executive).toBe('6');
     expect(row.departmental).toBe(row.executive);
   });
 

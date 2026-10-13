@@ -31,9 +31,19 @@ class PerformanceCatalogData(BaseModel):
     as_of: str
 
 
+class PeriodSelection(BaseModel):
+    requested: str
+    effective: str | None = None
+    fallback_applied: bool = False
+    reason: str
+    notice: str | None = None
+
+
 class PerformanceSummaryData(BaseModel):
     scope: PerformanceScope
-    period: PerformancePeriod
+    period: PerformancePeriod | None = None
+    requested_period: PerformancePeriod | None = None
+    period_selection: PeriodSelection | None = None
     previous_period: PerformancePeriod | None = None
     basis_context: BasisComparisonContext | None = None
     current: dict[str, Any] = Field(default_factory=dict)

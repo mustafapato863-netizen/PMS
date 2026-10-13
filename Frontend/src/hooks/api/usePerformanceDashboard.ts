@@ -22,9 +22,20 @@ export interface PerformanceScopeFilters {
   location?: string;
 }
 
+export interface PeriodSelection {
+  requested: string;
+  effective: string | null;
+  fallback_applied: boolean;
+  reason: string;
+  notice: string | null;
+}
+
 export interface PerformanceSummary {
   scope: PerformanceScopeFilters;
-  period: PerformancePeriod;
+  /** The month the numbers describe: the requested one, or the newest counted month in scope. */
+  period: PerformancePeriod | null;
+  requested_period?: PerformancePeriod | null;
+  period_selection?: PeriodSelection | null;
   previous_period: PerformancePeriod | null;
   basis_context?: BasisComparisonContext | null;
   current: PerformanceSummaryPeriod;
@@ -136,6 +147,8 @@ export interface ScopedExecutiveSummary {
   activePeriod: PerformancePeriod | null;
   previousPeriod: PerformancePeriod | null;
   basisContext?: BasisComparisonContext | null;
+  /** Notice from the server when the requested month had no counted rows in this scope. */
+  periodNotice: string | null;
   previousTotalAgents: number;
   previousOverallAvgScore: number;
   previousPctAB: number;
@@ -221,7 +234,8 @@ function summaryMatchesRequest(
   request: PerformanceScopeFilters,
   placeholder: boolean,
 ): boolean {
-  if (placeholder || !summary || summary.period?.key !== request.period) return false;
+  if (placeholder || !summary) return false;
+  // The server may describe an earlier counted month than the one requested; the scope keeps the request.
   const scope = summary.scope;
   if (!scope || scope.period !== request.period) return false;
   return scopeToken(scope.region) === scopeToken(request.region)
@@ -295,6 +309,7 @@ export function useScopedExecutiveSummary(
     activePeriod: summary?.period || activePeriod,
     previousPeriod: summaryIsCurrent ? rawSummary?.previous_period ?? null : null,
     basisContext: summary?.basis_context ?? null,
+    periodNotice: summary?.period_selection?.notice ?? null,
     previousTotalAgents,
     previousOverallAvgScore: Number(previous?.average_score || 0),
     previousPctAB: previousTotalAgents ? ((previousClassCounts.A + previousClassCounts.B) / previousTotalAgents) * 100 : 0,

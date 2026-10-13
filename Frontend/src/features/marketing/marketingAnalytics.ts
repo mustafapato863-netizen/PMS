@@ -1,4 +1,5 @@
 import type { AgentRecord, GradeClass } from '../../types';
+import { normalizePerformanceScore } from '../../utils/kpiScore';
 import type {
   MarketingAnalytics,
   MarketingEmployeeRow,
@@ -29,10 +30,7 @@ const MONTH_ORDER: Record<string, number> = {
 
 const GRADES: GradeClass[] = ['A', 'B', 'C', 'D', 'E'];
 
-export const normalizeMarketingScore = (score: number): number => {
-  if (!Number.isFinite(score) || score <= 0) return 0;
-  return score <= 1 ? score * 100 : Math.min(score, 100);
-};
+export const normalizeMarketingScore = (score: number): number => normalizePerformanceScore(score);
 
 export const getMarketingGrade = (
   record: AgentRecord,

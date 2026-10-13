@@ -25,6 +25,8 @@ from services.cache_service import CacheService
 from services.dashboard_record_service import DashboardRecordService
 from services.evaluation.cache_identity import evaluation_cache_identity
 from services.scoring_basis_comparison import compare_adjacent_records
+from utils.branch_scope import record_matches_branch
+from utils.scoring_rules import letter_grade, score_percent
 
 
 _MONTH_BY_NUMBER = {number: name for name, number in MONTHS.items()}
@@ -92,36 +94,24 @@ def _scope_identity(scope: dict) -> dict[str, Any]:
     }
 
 
+def _fallback_notice(requested_key: str, effective_key: str | None) -> str | None:
+    """Same wording as the browser composition, so both pages show one notice."""
+    if effective_key is None or effective_key == requested_key:
+        return None
+    requested_year, requested_month = int(requested_key[:4]), _MONTH_BY_NUMBER[int(requested_key[5:7])]
+    effective_year, effective_month = int(effective_key[:4]), _MONTH_BY_NUMBER[int(effective_key[5:7])]
+    return (
+        f"No performance data for {requested_month} {requested_year} yet — "
+        f"showing {effective_month} {effective_year}, the latest month with data."
+    )
+
+
 def _record_location(record, location: str) -> bool:
     normalized = str(location or "all").strip().casefold()
     if normalized not in _LOCATION_KEYS:
         raise HTTPException(status_code=422, detail="location must be all, dubai, sharjah, ajman, or clinics")
-    if normalized == "all":
-        return True
+    return record_matches_branch(record, normalized)
 
-    raw = record.raw_data or {}
-    branch_text = " ".join(
-        str(raw.get(key) or "")
-        for key in ("Team", "Out Team", "Branch", "Site", "Area")
-    ).upper()
-    identity_team = str(record.team or "").upper()
-    explicit = None
-    if "AJM" in branch_text or "AJMAN" in branch_text:
-        explicit = "ajman"
-    elif "SHJ" in branch_text or "SHARJAH" in branch_text or "SHARQA" in branch_text:
-        explicit = "sharjah"
-    elif "DUBAI" in branch_text or "DUBAI" in identity_team:
-        explicit = "dubai"
-    elif "CLINIC" in branch_text:
-        explicit = "clinics"
-    if explicit:
-        return explicit == normalized
-
-    geo = record.geo
-    return (
-        _number(getattr(geo.bookings, normalized, 0)) > 0
-        or _number(getattr(geo.attended, normalized, 0)) > 0
-    )
 
 
 def _has_real_activity(record) -> bool:
@@ -153,21 +143,19 @@ def _has_real_activity(record) -> bool:
 
 
 def _score(record) -> float:
-    score = _number(record.evaluation.score)
-    return score * 100 if 0 < score <= 10 else score
+    return score_percent(_number(record.evaluation.score))
 
 
 def _stored_score(record) -> float:
-    """Return the relational score scale used by SQL cursor predicates."""
-    score = _number(getattr(record, "score", 0))
-    return score * 100 if 0 < score <= 10 else score
+    """Return the percentage score used by SQL cursor predicates (same rule as ``_score``)."""
+    return score_percent(_number(getattr(record, "score", 0)))
 
 
 def _grade(record, score: float) -> str:
     raw = str(record.evaluation.grade or "").strip().upper()
     if raw and raw[0] in "ABCDE":
         return raw[0]
-    return "A" if score >= 95 else "B" if score >= 85 else "C" if score >= 75 else "D" if score >= 65 else "E"
+    return letter_grade(score)
 
 
 def _active_records(records: Iterable, location: str) -> list:
@@ -213,6 +201,7 @@ def _summary_record(row: dict[str, Any]) -> SummaryRecord:
         "region": row.get("region") or rich_record.region,
         "performance_level": str(row.get("performance_level") or rich_record.performance_level),
         "position": row.get("position") or rich_record.position,
+        "branch_key": row.get("branch_key") or None,
         "status": row.get("status") or rich_record.status,
         "evaluation": rich_record.evaluation.model_copy(update={"score": score, "grade": grade}),
     })
@@ -345,7 +334,7 @@ class PerformanceDashboardReadService:
         data_version = CacheInvalidationService.get_data_version()
         config_version = CacheInvalidationService.get_config_version()
         payload = {
-            "hierarchy_version": 2,
+            "hierarchy_version": 3,
             "basis_context_version": 1 if endpoint == "summary" else None,
             "endpoint": endpoint,
             "filters": filters,
@@ -360,6 +349,16 @@ class PerformanceDashboardReadService:
     @staticmethod
     def _ttl(seconds: int) -> int:
         return max(1, int(round(seconds * random.uniform(0.9, 1.1))))
+
+    def counted_period_keys(self) -> set[str]:
+        """Periods that hold at least one counted row for this caller (activity rule, scope applied)."""
+        positive = self.repository.get_active_period_pairs(scope=self.scope)
+        keys = {period_key(int(year), str(month)) for year, month in positive}
+        for row in self.repository.get_dashboard_summary_rows(periods=None, scope=self.scope, max_score=0):
+            record = _summary_record(row)
+            if _has_real_activity(record):
+                keys.add(period_key(int(record.year), str(record.month)))
+        return keys
 
     def summary(
         self,
@@ -379,6 +378,9 @@ class PerformanceDashboardReadService:
         year, month = parse_period(period)
         if not 1 <= trend_months <= 24:
             raise HTTPException(status_code=422, detail="trend_months must be between 1 and 24")
+        location_key = str(location or "all").strip().casefold()
+        if location_key not in _LOCATION_KEYS:
+            raise HTTPException(status_code=422, detail="location must be all, dubai, sharjah, ajman, or clinics")
         filters = {
             "period": period,
             "team": team,
@@ -397,7 +399,9 @@ class PerformanceDashboardReadService:
         if cached is not None:
             return cached
 
-        periods = _periods_ending(year, month, trend_months)
+        # One read of every month this scope and filter set has. A month counts only when it
+        # holds rows that the activity rule keeps and that match the location. The reported
+        # month, the previous month, the trend and the default all use these months.
         summary_rows = self.repository.get_dashboard_summary_rows(
             team=team,
             performance_level=performance_level,
@@ -407,42 +411,66 @@ class PerformanceDashboardReadService:
             grade=grade,
             status=status,
             kpi=kpi,
-            periods=periods,
+            periods=None,
             scope=self.scope,
         )
         rows = [_summary_record(row) for row in summary_rows]
-        by_period: dict[str, list] = {period_key(row_year, row_month): [] for row_year, row_month in periods}
+        by_period: dict[str, list] = {}
         for row in rows:
             by_period.setdefault(period_key(int(row.year), str(row.month)), []).append(row)
+        counted: dict[str, list] = {}
+        for candidate, candidate_rows in by_period.items():
+            if _active_records(candidate_rows, location_key):
+                counted[candidate] = candidate_rows
+        counted_keys = sorted(counted, reverse=True)
 
-        current_key = period_key(year, month)
-        current = _summary(by_period.get(current_key, []), location)
+        requested_key = period_key(year, month)
+        if requested_key in counted:
+            effective_key, reason = requested_key, "requested_period_has_counted_rows"
+        elif counted_keys:
+            effective_key, reason = counted_keys[0], "requested_period_has_no_counted_rows_in_scope"
+        else:
+            effective_key, reason = None, "no_counted_rows_in_scope"
+        selection = {
+            "requested": requested_key,
+            "effective": effective_key,
+            "fallback_applied": effective_key is not None and effective_key != requested_key,
+            "reason": reason,
+            "notice": _fallback_notice(requested_key, effective_key),
+        }
+
+        basis_year, basis_month = (
+            (int(effective_key[:4]), _MONTH_BY_NUMBER[int(effective_key[5:7])]) if effective_key else (year, month)
+        )
+        effective_rows = by_period.get(effective_key, []) if effective_key else []
+        current = _summary(effective_rows, location_key)
+        previous_key = next((candidate for candidate in counted_keys if effective_key and candidate < effective_key), None)
         previous_period = None
         previous = None
-        for candidate_year, candidate_month in periods[1:]:
-            candidate_key = period_key(candidate_year, candidate_month)
-            if by_period.get(candidate_key):
-                previous_period = _period_ref(candidate_year, candidate_month)
-                previous = _summary(by_period[candidate_key], location)
-                break
-
-        trend = []
-        for trend_year, trend_month in reversed(periods):
-            trend_key = period_key(trend_year, trend_month)
-            if by_period.get(trend_key):
-                trend.append({
-                    **_period_ref(trend_year, trend_month),
-                    **_summary(by_period[trend_key], location),
-                })
+        if previous_key:
+            previous_period = _period_ref(int(previous_key[:4]), _MONTH_BY_NUMBER[int(previous_key[5:7])])
+            previous = {
+                **_summary(by_period[previous_key], location_key),
+                "team_breakdown": _team_breakdown(by_period[previous_key], location_key),
+            }
+        trend: list[dict[str, Any]] = []
+        if effective_key:
+            for trend_year, trend_month in reversed(_periods_ending(basis_year, basis_month, trend_months)):
+                trend_key = period_key(trend_year, trend_month)
+                if trend_key in counted:
+                    trend.append({
+                        **_period_ref(trend_year, trend_month),
+                        **_summary(by_period[trend_key], location_key),
+                    })
 
         # Scalar summary payloads intentionally do not hydrate child KPIs.
         # Applied rule pins live in evaluation_basis, while their exact actuals,
         # effective targets and weights live in KPIValue. Read only the two
         # comparison periods' pinned evidence in bounded batches; no employees
         # or historical roster is hydrated and no score is recalculated.
-        adjacent_keys = {period_key(y, m) for y, m in _periods_ending(year, month, 2)}
+        adjacent_keys = {period_key(y, m) for y, m in _periods_ending(basis_year, basis_month, 2)}
         basis_rows = _active_records(
-            [row for key in adjacent_keys for row in by_period.get(key, [])], location,
+            [row for key_ in adjacent_keys for row in by_period.get(key_, [])], location_key,
         )
         payload_by_record = {
             (str(item.get("record_id")), item.get("year")): item.get("record_payload")
@@ -460,7 +488,7 @@ class PerformanceDashboardReadService:
                     continue
                 pinned[record_key] = (row, basis)
         keys = list(pinned)
-        evidence = {key: [] for key in keys}
+        evidence = {key_: [] for key_ in keys}
         for start in range(0, len(keys), 500):
             values = self.db.query(
                 KPIValue.record_id, KPIValue.record_year, KPIValue.kpi_key,
@@ -488,34 +516,35 @@ class PerformanceDashboardReadService:
                 "position": position,
                 "location": location,
             },
-            "period": _period_ref(year, month),
+            # The month the numbers describe: the requested month, or the newest counted month in
+            # this scope when the requested one has no counted rows (see period_selection).
+            "period": _period_ref(basis_year, basis_month) if effective_key else None,
+            "requested_period": _period_ref(year, month),
+            "period_selection": selection,
             "previous_period": previous_period,
-            # Compare the exact adjacent calendar month, not the older period
-            # the numeric overview may fall back to. Reuse already scoped rows.
             "basis_context": compare_adjacent_records(
                 basis_rows,
-                year=year,
-                month=month,
+                year=basis_year,
+                month=basis_month,
             ),
             "current": current,
-            "previous": (
-                {
-                    **previous,
-                    "team_breakdown": _team_breakdown(
-                        by_period.get(period_key(previous_period["year"], previous_period["month"]), []),
-                        location,
-                    ),
-                }
-                if previous and previous_period
-                else None
-            ),
+            "previous": previous,
             "trend": trend,
-            "team_breakdown": _team_breakdown(by_period.get(current_key, []), location),
+            "team_breakdown": _team_breakdown(effective_rows, location_key),
             "data_version": CacheInvalidationService.get_data_version(),
             "as_of": datetime.now(timezone.utc).isoformat(),
         }
         CacheService.set_json(key, data, ttl=self._ttl(180), cache_type="performance_summary")
         return data
+
+    def _inactive_record_ids(self, *, year: int, month: str) -> list:
+        """Record ids of zero-score rows in this scope and period that the activity rule drops."""
+        candidates = self.repository.get_dashboard_summary_rows(
+            periods=[(year, month)],
+            scope=self.scope,
+            max_score=0,
+        )
+        return [row["record_id"] for row in candidates if not _has_real_activity(_summary_record(row))]
 
     def records_page(
         self,
@@ -576,8 +605,15 @@ class PerformanceDashboardReadService:
         if cached is not None:
             return cached
 
-        use_sql_page = str(location or "all").casefold() == "all"
+        # The SQL page covers the default location without a branch filter. A branch filter
+        # uses the one branch rule, which reads source text and geo as well as branch_key,
+        # so it runs on the Python path.
+        use_sql_page = str(location or "all").casefold() == "all" and not branch
         if use_sql_page:
+            # Zero-score rows are the only ones the activity rule can drop; their payloads
+            # (calls, geo, raw values) are checked here and excluded inside the query, so
+            # keyset paging and the total both count only the rows that the rule keeps.
+            inactive_ids = self._inactive_record_ids(year=year, month=month)
             rows, total = self.repository.get_dashboard_record_page(
                 scope=self.scope,
                 team=team,
@@ -597,6 +633,7 @@ class PerformanceDashboardReadService:
                 cursor=cursor_data,
                 page_size=page_size,
                 include_total=include_total,
+                exclude_record_ids=inactive_ids,
             )
             resolved = self.records.resolve_records(rows)
         else:
@@ -616,7 +653,7 @@ class PerformanceDashboardReadService:
             )
             resolved = _active_records(all_rows, location)
             if branch:
-                resolved = [row for row in resolved if str(getattr(row, "branch_key", "") or "").strip().casefold() == str(branch).strip().casefold()]
+                resolved = [row for row in resolved if record_matches_branch(row, branch)]
             if score_lt is not None:
                 resolved = [row for row in resolved if _score(row) < score_lt]
             if sort == "score_desc":

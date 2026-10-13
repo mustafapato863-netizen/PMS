@@ -1,4 +1,5 @@
 from __future__ import annotations
+from utils.scoring_rules import letter_grade
 
 from sqlalchemy.orm import Session
 
@@ -431,16 +432,7 @@ class DashboardRecordService:
                             min(sum(float(value["contribution"]) for value in repaired_kpis), 1.0) * 100.0,
                             2,
                         )
-                        if reconciled_score >= 95.0:
-                            reconciled_grade = "A"
-                        elif reconciled_score >= 90.0:
-                            reconciled_grade = "B"
-                        elif reconciled_score >= 80.0:
-                            reconciled_grade = "C"
-                        elif reconciled_score >= 70.0:
-                            reconciled_grade = "D"
-                        else:
-                            reconciled_grade = "E"
+                        reconciled_grade = letter_grade(reconciled_score)
                     rich_evaluation = rich_record.evaluation.model_copy(
                         update={"score": reconciled_score, "grade": reconciled_grade}
                     )
@@ -522,9 +514,14 @@ class DashboardRecordService:
             
         return result
 
-    def list_option_rows(self, scope: dict | None = None) -> list[dict[str, object]]:
-        """Return lightweight dimensions without loading KPI/config payloads."""
+    def list_option_rows(self, scope: dict | None = None, *, include_scores: bool = False) -> list[dict[str, object]]:
+        """Return lightweight dimensions without loading KPI/config payloads.
+
+        ``include_scores`` adds the score to the same query (the catalog's period check).
+        """
         sql_repository = self.sql_repository_cls(self.db, PerformanceRecord)
+        if include_scores:
+            return sql_repository.get_option_rows(scope, include_scores=True)
         return sql_repository.get_option_rows(scope)
 
     def list_kpi_options(self, scope: dict | None = None) -> list[str]:
