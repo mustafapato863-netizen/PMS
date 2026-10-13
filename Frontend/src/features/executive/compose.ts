@@ -82,6 +82,36 @@ export function formatPeriod(period: ExecutivePeriod | null | undefined): string
   return period ? `${period.month} ${period.year}` : '';
 }
 
+const ACTIVITY_BRANCHES = ['dubai', 'sharjah', 'ajman', 'clinics'] as const;
+
+/** Mirrors the server's `_number`: only a number above zero counts; anything else is zero. */
+function aboveZero(value: unknown): boolean {
+  if (typeof value === 'number') return Number.isFinite(value) && value > 0;
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'string') {
+    const parsed = Number(value.trim().replace('%', ''));
+    return Number.isFinite(parsed) && parsed > 0;
+  }
+  return false;
+}
+
+/**
+ * The server's rule for an employee-month with no activity (`_has_real_activity`,
+ * performance_dashboard_read_service.py). The row is active when any of these is above
+ * zero: the score, a KPI contribution, a call count, a geo booking or attendance count,
+ * or a raw value. A row named "total" is never active. Inactive rows are left out of
+ * headcount, averages, grade shares, teams, levels and regions.
+ */
+export function hasRealActivity(agent: AgentRecord): boolean {
+  if ((agent.identity?.name ?? '').trim().toLowerCase() === 'total') return false;
+  if (aboveZero(agent.evaluation?.score)) return true;
+  if ((agent.kpi_values ?? []).some((kpi) => aboveZero(kpi?.contribution))) return true;
+  const calls = agent.calls;
+  if ([calls?.inbound, calls?.outbound, calls?.total_handled, calls?.abandoned].some(aboveZero)) return true;
+  if (ACTIVITY_BRANCHES.some((branch) => aboveZero(agent.geo?.bookings?.[branch]) || aboveZero(agent.geo?.attended?.[branch]))) return true;
+  return Object.values(agent.raw_data ?? {}).some(aboveZero);
+}
+
 export function toExecRecords(agents: AgentRecord[], fallbackYear = new Date().getFullYear()): ExecRecord[] {
   return agents.flatMap((agent) => {
     const month = agent.identity?.month;
@@ -89,6 +119,7 @@ export function toExecRecords(agents: AgentRecord[], fallbackYear = new Date().g
     if (!month || !MONTHS.includes(month) || !team) return [];
     if ((agent.identity.name || '').trim().toLowerCase() === 'total') return [];
     if (agent.evaluation?.score == null) return [];
+    if (!hasRealActivity(agent)) return [];
     const raw = Number(agent.evaluation?.score);
     if (!Number.isFinite(raw)) return [];
     return [{
@@ -183,6 +214,11 @@ export function gradeDistribution(current: ExecRecord[], previous: ExecRecord[])
   const total = current.length;
   const percents = emptyCounts();
   GRADE_CLASSES.forEach((grade) => { percents[grade] = round1((counts[grade] / total) * 100); });
+  // Combined shares come from the counts and are rounded once, never from the rounded per-grade shares.
+  const combined_percents = {
+    AB: round1(((counts.A + counts.B) / total) * 100),
+    DE: round1(((counts.D + counts.E) / total) * 100),
+  };
   let previousCounts: Record<GradeClass, number> | null = null;
   let movement: Record<GradeClass, number> | null = null;
   if (previous.length) {
@@ -192,7 +228,7 @@ export function gradeDistribution(current: ExecRecord[], previous: ExecRecord[])
     movement = emptyCounts();
     GRADE_CLASSES.forEach((grade) => { movement![grade] = counts[grade] - prev[grade]; });
   }
-  return { total, counts, percents, previous_counts: previousCounts, movement };
+  return { total, counts, percents, combined_percents, previous_counts: previousCounts, movement };
 }
 
 const TOLERANCE = 1e-9;
