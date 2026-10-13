@@ -38,7 +38,7 @@ import { useRcmGroupParam } from '../hooks/useRcmGroupParam';
 import { resolveDisplayScore } from '../utils/kpiScore';
 import { matchesTeamConfig, normalizeTeamName } from '../hooks/api/useKpiWeights';
 import { useTeamConfig } from '../hooks/useTeamConfig';
-import { GRADE_PALETTE } from '../constants/grades';
+import { GRADE_PALETTE, GRADE_THRESHOLDS } from '../constants/grades';
 import { buildTeamKpiAnalysis } from '../features/team/teamKpiAnalysis';
 import { aggregatePreApprovalsIpMetrics } from '../features/team/preApprovalsIpMetrics';
 import { aggregateConfiguredTeamKpis, calculateAggregatedTeamPerformance, displayedTeamScore, recordsUseAppliedPin } from '../features/team/teamKpiAggregator';
@@ -1835,7 +1835,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
       showStableTrend: false,
     },
     {
-      label: 'Class A & B (>=80%)',
+      label: `Class A & B (≥${GRADE_THRESHOLDS.B}%)`,
       value: `${metrics.pctAB.toFixed(1)}%`,
       sub: `${metrics.classCounts.A + metrics.classCounts.B} agents meeting expectations`,
       icon: <Award size={17} />,
@@ -1845,7 +1845,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
       showStableTrend: false,
     },
     {
-      label: 'Class D & E (<70%)',
+      label: `Class D & E (<${GRADE_THRESHOLDS.C}%)`,
       value: `${metrics.pctDE.toFixed(1)}%`,
       sub: `${metrics.classCounts.D + metrics.classCounts.E} agents need attention`,
       icon: <AlertTriangle size={17} />,

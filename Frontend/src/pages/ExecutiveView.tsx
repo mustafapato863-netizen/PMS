@@ -27,6 +27,8 @@ import { summarizeRootCauses } from '../utils/rootCauseInsights';
 import type { LocationKey } from '../types';
 import { apiFetch } from '../lib/apiClient';
 import { filterActionsByPerformanceScope } from '../features/executive/actionScope';
+import { actionsInActivePeriod } from '../features/executive/actionAnalytics';
+import { GRADE_THRESHOLDS } from '../constants/grades';
 import BasisComparisonNote from '../features/evaluation/BasisComparisonNote';
 
 type RegionFilter = 'All' | 'EGY' | 'UAE';
@@ -176,8 +178,10 @@ const ExecutiveOverview = () => {
       ? scopedActions.filter((action) => String(action.employee_id || '') === String(currentUser.employee_id || ''))
       : scopedActions)
     : filterActionsByPerformanceScope(scopedActions, allAgents);
+  // Scoped mode matches the reporting period by year and month; the legacy path has no period key.
+  const activePeriodKey = scopedPerformanceApiEnabled ? (scopedSummary.activePeriod?.key ?? null) : null;
   const actionStats = summarizeRootCauses(
-    dashboardScopedActions.filter((action) => action.month === activeMonth)
+    actionsInActivePeriod(dashboardScopedActions, activeMonth, activePeriodKey)
   );
   const setRegion = (value: RegionFilter) => {
     if (assigned.regionLocked) return;
@@ -357,7 +361,7 @@ const ExecutiveOverview = () => {
             />
             <KpiCard
               icon={<Award size={17} />}
-              label="Class A & B (≥80%)"
+              label={`Class A & B (≥${GRADE_THRESHOLDS.B}%)`}
               value={`${pctAB.toFixed(1)}%`}
               sub={`${(allClassCounts.A + allClassCounts.B)} agents meeting expectations`}
               trendDelta={pctABMoM}
@@ -365,7 +369,7 @@ const ExecutiveOverview = () => {
             />
             <KpiCard
               icon={<AlertTriangle size={17} />}
-              label="Class D & E (<70%)"
+              label={`Class D & E (<${GRADE_THRESHOLDS.C}%)`}
               value={`${pctDE.toFixed(1)}%`}
               sub={`${(allClassCounts.D + allClassCounts.E)} agents need attention`}
               trendDelta={pctDEMoM}

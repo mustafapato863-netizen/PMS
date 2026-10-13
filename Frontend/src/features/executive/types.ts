@@ -171,6 +171,8 @@ export interface ExecutiveGradeDistribution {
   total: number;
   counts: Record<GradeClass, number>;
   percents: Record<GradeClass, number>;
+  /** Combined shares computed from counts (A+B, D+E), rounded once. Optional for hand-built fixtures. */
+  combined_percents?: { AB: number; DE: number };
   previous_counts: Record<GradeClass, number> | null;
   movement: Record<GradeClass, number> | null;
 }

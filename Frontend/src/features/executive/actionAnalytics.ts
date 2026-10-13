@@ -5,14 +5,43 @@ import type { ExecutiveActionAnalytics, ExecutivePeriod } from './types';
 
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
-function actionPeriod(action: FollowUpAction, effective: ExecutivePeriod): string | null {
+/**
+ * Period key `YYYY-MM` for a corrective action. A stored `YYYY-MM` is used as it is; a month
+ * name takes its year from `created_at`. Null when neither gives a usable date.
+ */
+export function actionPeriodKey(action: { month?: string | null; created_at?: string | null }): string | null {
   const month = action.month?.trim() ?? '';
   if (/^\d{4}-\d{2}(?:$|-)/.test(month)) return month.slice(0, 7);
   const monthIndex = MONTH_NAMES.findIndex((name) => name.toLowerCase() === month.toLowerCase());
   const createdYear = action.created_at?.match(/^(\d{4})-/)?.[1];
-  // Legacy actions store only a month name. Use their recorded year when available.
-  if (monthIndex >= 0) return `${createdYear ?? effective.year}-${String(monthIndex + 1).padStart(2, '0')}`;
-  return action.created_at?.match(/^\d{4}-\d{2}-/) ? action.created_at.slice(0, 7) : null;
+  if (monthIndex >= 0 && createdYear) return `${createdYear}-${String(monthIndex + 1).padStart(2, '0')}`;
+  if (monthIndex < 0 && action.created_at?.match(/^\d{4}-\d{2}-/)) return action.created_at.slice(0, 7);
+  return null;
+}
+
+function actionPeriod(action: FollowUpAction, effective: ExecutivePeriod): string | null {
+  const key = actionPeriodKey(action);
+  if (key) return key;
+  // Legacy actions with a month name but no recorded year use the reporting year.
+  const monthIndex = MONTH_NAMES.findIndex((name) => name.toLowerCase() === (action.month?.trim() ?? '').toLowerCase());
+  return monthIndex >= 0 ? `${effective.year}-${String(monthIndex + 1).padStart(2, '0')}` : null;
+}
+
+/**
+ * Actions in the active reporting period, for the Executive action card. A dated action must
+ * match the active period key. An undated action (or a page without a period key) keeps the
+ * month-name match.
+ */
+export function actionsInActivePeriod<T extends { month?: string | null; created_at?: string | null }>(
+  actions: T[],
+  monthName: string,
+  periodKey: string | null,
+): T[] {
+  return actions.filter((action) => {
+    const key = actionPeriodKey(action);
+    if (key && periodKey) return key === periodKey;
+    return action.month === monthName;
+  });
 }
 
 /** Same KPI-mention classification as the original ActionsSummaryCard; all statuses count. */

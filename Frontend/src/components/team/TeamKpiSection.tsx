@@ -7,6 +7,7 @@ import {
 import { getWeightForLabel } from '../../utils/kpiScore';
 import KpiCard from '../common/KpiCard';
 import PerformanceKpiCard from '../common/PerformanceKpiCard';
+import { GRADE_THRESHOLDS } from '../../constants/grades';
 import { calculateKpiTargetProgress, normalizePercentageKpiForDisplay } from '../common/performanceKpiProgress';
 
 const getKpiIcon = (label: string): LucideIcon => {
@@ -432,7 +433,7 @@ const TeamKpiSection = ({
           <>
             <KpiCard
               icon={<Award size={17} />}
-              label="Class A & B (≥80%)"
+              label={`Class A & B (≥${GRADE_THRESHOLDS.B}%)`}
               value={`${pctAB.toFixed(1)}%`}
               sub={`${classCounts.A + classCounts.B} agents`}
               note={renderTrendNote(pctABDelta)}
@@ -440,7 +441,7 @@ const TeamKpiSection = ({
             />
             <KpiCard
               icon={<AlertTriangle size={17} />}
-              label="Class D & E (<70%)"
+              label={`Class D & E (<${GRADE_THRESHOLDS.C}%)`}
               value={`${pctDE.toFixed(1)}%`}
               sub={`${classCounts.D + classCounts.E} agents`}
               note={renderTrendNote(pctDEDelta, true)}

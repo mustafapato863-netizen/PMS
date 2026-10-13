@@ -24,7 +24,7 @@ import bundleJson from './summary-parity.fixture.json';
 import { ApiError } from '../../lib/apiClient';
 import { mapBackendAction } from '../../hooks/useActionStore';
 import { summarizeRootCauses } from '../../utils/rootCauseInsights';
-import { actionAnalyticsStats } from './actionAnalytics';
+import { actionAnalyticsStats, actionsInActivePeriod } from './actionAnalytics';
 import type { ExecutiveSummary } from './types';
 
 const mocks = vi.hoisted(() => ({ apiFetch: vi.fn() }));
@@ -43,7 +43,10 @@ interface EmployeeMonth {
   performance_level: string;
   branch_key: string | null;
   raw_data: Record<string, unknown> | null;
+  employee_name?: string;
+  calls?: { inbound?: number; outbound?: number; total_handled?: number; abandoned?: number };
   geo?: { bookings?: Record<string, number>; attended?: Record<string, number> };
+  kpi_values?: Array<{ contribution?: number | null }>;
   evaluation: { score: number; grade: string };
 }
 interface CorrectiveAction {
@@ -69,8 +72,6 @@ const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 
 const GRADES = ['A', 'B', 'C', 'D', 'E'] as const;
 type Grade = (typeof GRADES)[number];
 const keyOf = (rec: { year: number; month: string }) => `${rec.year}-${String(MONTHS.indexOf(rec.month) + 1).padStart(2, '0')}`;
-const monthNameOf = (key: string) => MONTHS[Number(key.slice(5, 7)) - 1];
-const yearOf = (key: string) => Number(key.slice(0, 4));
 const round = (value: number, places: number) => Math.round(value * 10 ** places) / 10 ** places;
 const fmt1 = (value: number | null) => (value === null ? '—' : value.toFixed(1));
 
@@ -106,18 +107,39 @@ function composeBranchMatch(rec: EmployeeMonth, location: string) {
   return serverBranchMatch(rec, location);
 }
 
+// performance_dashboard_read_service.py `_has_real_activity`, copied here so the test does not call the code it checks.
+const serverNumber = (value: unknown) => {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+  if (typeof value === 'boolean') return value ? 1 : 0;
+  if (typeof value === 'string') {
+    const parsed = Number(value.trim().replace('%', ''));
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
+};
+function serverActive(rec: EmployeeMonth): boolean {
+  if ((rec.employee_name ?? '').trim().toLowerCase() === 'total') return false;
+  if (serverNumber(rec.evaluation.score) > 0) return true;
+  if ((rec.kpi_values ?? []).some((kpi) => serverNumber(kpi.contribution) > 0)) return true;
+  const calls = rec.calls ?? {};
+  if ([calls.inbound, calls.outbound, calls.total_handled, calls.abandoned].some((value) => serverNumber(value) > 0)) return true;
+  const branches = ['dubai', 'sharjah', 'ajman', 'clinics'];
+  if (branches.some((branch) => serverNumber(rec.geo?.bookings?.[branch]) > 0 || serverNumber(rec.geo?.attended?.[branch]) > 0)) return true;
+  return Object.values(rec.raw_data ?? {}).some((value) => serverNumber(value) > 0);
+}
+
 type Rule = 'server' | 'compose';
 interface Replay { headcount: number; avg: number | null; grades: number[] }
 
 /** One page's numbers for one month key, computed from the records by that page's rule. */
 function replay(rule: Rule, key: string, filters: Filters): Replay {
   const branchMatch = rule === 'server' ? serverBranchMatch : composeBranchMatch;
-  const rows = bundle.summary_records.filter((rec) => keyOf(rec) === key
+  // Both pages leave out the employee-months with no real activity (server rule).
+  const counted = bundle.summary_records.filter((rec) => keyOf(rec) === key
     && (!filters.region || rec.region === filters.region)
     && (!filters.performance_level || rec.performance_level === filters.performance_level)
-    && branchMatch(rec, filters.location ?? 'all'));
-  // The server drops employee-months with no real activity (zero score here); the browser keeps them.
-  const counted = rule === 'server' ? rows.filter((rec) => rec.evaluation.score > 0) : rows;
+    && branchMatch(rec, filters.location ?? 'all')
+    && serverActive(rec));
   const scores = counted.map((rec) => (rule === 'server' ? serverScore(rec.evaluation.score) : composeScore(rec.evaluation.score)));
   const mean = scores.length ? scores.reduce((sum, value) => sum + value, 0) / scores.length : null;
   const grades = [0, 0, 0, 0, 0];
@@ -165,11 +187,6 @@ function routeApi(url: string): Promise<unknown> {
 interface KnownGap { id: string; title: string; cause: string }
 const KNOWN_GAPS: KnownGap[] = [
   {
-    id: 'G-ZERO',
-    title: 'Zero-score employee-months',
-    cause: 'backend summary drops rows with no real activity (performance_dashboard_read_service.py `_has_real_activity`, `_active_records`); the browser keeps any non-null score (compose.ts `toExecRecords`, `scoreOf`) and grades them E.',
-  },
-  {
     id: 'G-SCALE',
     title: 'Scores above 1 and up to 10',
     cause: 'backend `_score` multiplies 0 < score <= 10 by 100; browser `normalizePerformanceScore` only scales values up to 1 (utils/kpiScore.ts). The fixture has one such row (synthetic edge case); production data is not checked here.',
@@ -183,11 +200,6 @@ const KNOWN_GAPS: KnownGap[] = [
     id: 'G-DUP',
     title: 'One employee on two levels in one month',
     cause: 'Executive "Total Agents" is the number of employee-month rows (server `_summary` total_agents); Departmental "Employees" is the number of distinct people (compose.ts `employeesOf`). A person recorded at two levels in the same month counts twice on the Executive page.',
-  },
-  {
-    id: 'G-ROUND-SUM',
-    title: 'Class share adds two rounded percentages',
-    cause: 'compose.ts `gradeDistribution` rounds each grade to 1 dp and the Departmental page then adds D and E; the Executive page computes (D + E) / total once. The gap is at most 0.1 point.',
   },
   {
     id: 'G-PERIOD-FALLBACK',
@@ -210,11 +222,6 @@ const KNOWN_GAPS: KnownGap[] = [
     cause: 'ExecutiveView.tsx scopes actions only by month and role in scoped mode (`filterActionsByPerformanceScope` runs only on the legacy path). The composed path applies region, branch and level to actions (compose `scopeAction`).',
   },
   {
-    id: 'G-ACT-YEAR',
-    title: 'Executive action month matches by name only',
-    cause: 'ExecutiveView.tsx compares `action.month` to the month name, so a same-named action from another year is counted. actionAnalytics.ts assigns the period from the stored year.',
-  },
-  {
     id: 'G-ACT-LINK',
     title: 'Linked KPI counted only on the Departmental side',
     cause: 'actionAnalytics.ts adds `linked_kpi_key` to KPI mentions; ExecutiveView uses summarizeRootCauses, which reads `root_cause_note` only.',
@@ -230,8 +237,6 @@ interface Side {
   rawAvg: number | null;
   pctAB: number | null;
   pctDE: number | null;
-  rawPctAB: number | null;
-  rawPctDE: number | null;
   grades: number[] | null;
   previousAvg: number | null;
   previousKey: string | null;
@@ -262,8 +267,8 @@ type MappedAction = ReturnType<typeof mapBackendAction>;
 
 const sideFromExecutive = (e: ScopedResult, actions: MappedAction[]): Side => {
   const activeMonth = e.activePeriod?.month ?? '';
-  // Mirrors ExecutiveView.tsx: actions filtered by the active month name, then summarised.
-  const stats = summarizeRootCauses(actions.filter((action) => action.month === activeMonth));
+  // Mirrors ExecutiveView.tsx: actions in the active period (year and month), then summarised.
+  const stats = summarizeRootCauses(actionsInActivePeriod(actions, activeMonth, e.activePeriod?.key ?? null));
   const empty = e.totalAgents === 0;
   return {
     headcount: e.totalAgents,
@@ -272,8 +277,6 @@ const sideFromExecutive = (e: ScopedResult, actions: MappedAction[]): Side => {
     rawAvg: empty ? null : e.overallAvgScore,
     pctAB: empty ? null : round(e.pctAB, 1),
     pctDE: empty ? null : round(e.pctDE, 1),
-    rawPctAB: empty ? null : e.pctAB,
-    rawPctDE: empty ? null : e.pctDE,
     grades: empty ? null : GRADES.map((grade) => e.allClassCounts[grade]),
     previousAvg: e.previousPeriod ? round(e.previousOverallAvgScore, 1) : null,
     previousKey: e.previousPeriod?.key ?? null,
@@ -291,16 +294,13 @@ const sideFromComposed = (summary: ExecutiveSummary): Side => {
   const stats = analytics ? actionAnalyticsStats(analytics.actions) : null;
   const empty = summary.hero.employees === 0;
   const distribution = summary.grade_distribution;
-  const percent = (letters: Grade[]) => (distribution ? round(letters.reduce((sum, letter) => sum + distribution.percents[letter], 0), 1) : null);
   return {
     headcount: summary.hero.employees,
     teams: summary.hero.teams_count,
     avg: empty ? null : summary.hero.score,
     rawAvg: empty ? null : summary.hero.score,
-    pctAB: empty ? null : percent(['A', 'B']),
-    pctDE: empty ? null : percent(['D', 'E']),
-    rawPctAB: null,
-    rawPctDE: null,
+    pctAB: empty ? null : (distribution?.combined_percents?.AB ?? null),
+    pctDE: empty ? null : (distribution?.combined_percents?.DE ?? null),
     grades: distribution ? GRADES.map((grade) => distribution.counts[grade]) : null,
     previousAvg: summary.period.previous ? summary.hero.previous_score : null,
     previousKey: summary.period.previous?.key ?? null,
@@ -343,6 +343,7 @@ const POPULATION = new Set(['headcount', 'teams', 'avg', 'pctAB', 'pctDE', 'grad
 function factsFor(keys: Array<string | null>, filters: Filters) {
   const live = keys.filter((key): key is string => Boolean(key));
   const scoped = bundle.summary_records.filter((rec) => live.includes(keyOf(rec))
+    && serverActive(rec)
     && (!filters.region || rec.region === filters.region)
     && (!filters.performance_level || rec.performance_level === filters.performance_level));
   const location = filters.location;
@@ -353,10 +354,8 @@ function factsFor(keys: Array<string | null>, filters: Filters) {
   });
   return {
     duplicateRows: [...perEmployeeMonth.values()].reduce((sum, count) => sum + Math.max(count - 1, 0), 0),
-    zeroRows: scoped.filter((rec) => rec.evaluation.score <= 0).length,
     scaleRows: scoped.filter((rec) => rec.evaluation.score > 1 && rec.evaluation.score <= 10).length,
     branchDiffers: Boolean(location) && scoped.some((rec) => serverBranchMatch(rec, location!) !== composeBranchMatch(rec, location!)),
-    actionYearMismatch: live.some((key) => bundle.corrective_actions.some((action) => action.month === monthNameOf(key) && action.year !== yearOf(key))),
     actionLinked: bundle.corrective_actions.some((action) => Boolean(action.linked_kpi_key)
       && live.includes(`${action.year}-${String(MONTHS.indexOf(action.month) + 1).padStart(2, '0')}`)),
   };
@@ -365,27 +364,17 @@ function factsFor(keys: Array<string | null>, filters: Filters) {
 function gapsFor(metric: string, period: string, filters: Filters, facts: ReturnType<typeof factsFor>, exec: Side, dept: Side): string[] {
   const gaps: string[] = [];
   const requested = period === 'All' ? null : period;
-  const fellBack = requested !== null && dept.activeKey !== requested;
-  const defaultMonthDiffers = period === 'All' && exec.activeKey !== dept.activeKey;
-  if (metric === 'activePeriod' || metric === 'previousPeriod' || metric === 'previousAvg' || POPULATION.has(metric)) {
-    if (defaultMonthDiffers) gaps.push('G-CATALOG');
-    if (fellBack) gaps.push('G-PERIOD-FALLBACK');
-  }
+  // A cell whose month differs between the pages is explained by the month rule, whatever the metric.
+  if (period === 'All' && exec.activeKey !== dept.activeKey) gaps.push('G-CATALOG');
+  if (requested !== null && dept.activeKey !== requested) gaps.push('G-PERIOD-FALLBACK');
   if ((metric === 'previousPeriod' || metric === 'previousAvg') && filters.location) gaps.push('G-PREV-SCOPE');
   if (POPULATION.has(metric)) {
-    if (facts.zeroRows > 0) gaps.push('G-ZERO');
     if (facts.scaleRows > 0) gaps.push('G-SCALE');
     if (facts.branchDiffers) gaps.push('G-BRANCH');
     if (metric === 'headcount' && facts.duplicateRows > 0) gaps.push('G-DUP');
-    if ((metric === 'pctAB' || metric === 'pctDE') && exec.rawPctAB !== null && exec.rawPctDE !== null && dept.pctAB !== null && dept.pctDE !== null) {
-      const raw = metric === 'pctAB' ? exec.rawPctAB : exec.rawPctDE;
-      const shown = metric === 'pctAB' ? dept.pctAB : dept.pctDE;
-      if (Math.abs(raw - shown) <= 0.1 + 1e-9) gaps.push('G-ROUND-SUM');
-    }
   }
   if (metric.startsWith('actions')) {
     if (filters.region || filters.location || filters.performance_level) gaps.push('G-ACT-SCOPE');
-    if (facts.actionYearMismatch && metric !== 'actionsKpis') gaps.push('G-ACT-YEAR');
     if (metric === 'actionsKpis' && facts.actionLinked) gaps.push('G-ACT-LINK');
   }
   return [...new Set(gaps)];
@@ -527,8 +516,9 @@ describe('Executive vs Departmental summary parity (synthetic dataset)', () => {
     expect(cell('2026-07', {}, 'headcount').gaps).toEqual(['G-DUP']);
   });
 
-  it.fails('G-ZERO: Departmental August headcount counts a zero-score employee-month that the Executive page excludes', () => {
+  it('G-ZERO closed: August headcount is 6 on both pages; the zero-activity employee-month is left out', () => {
     const row = cell('2026-08', {}, 'headcount');
+    expect(row.executive).toBe('6');
     expect(row.departmental).toBe(row.executive);
   });
 
@@ -547,8 +537,9 @@ describe('Executive vs Departmental summary parity (synthetic dataset)', () => {
     expect(row.departmental).toBe(row.executive);
   });
 
-  it.fails('G-ROUND-SUM: UAE July Class D and E share is 66.7 on the Executive page and 66.6 on the Departmental page', () => {
+  it('G-ROUND-SUM closed: UAE July Class D and E share is 66.7 on both pages (combined from counts, rounded once)', () => {
     const row = cell('2026-07', { region: 'UAE' }, 'pctDE');
+    expect(row.executive).toBe('66.7');
     expect(row.departmental).toBe(row.executive);
   });
 
@@ -572,8 +563,9 @@ describe('Executive vs Departmental summary parity (synthetic dataset)', () => {
     expect(row.departmental).toBe(row.executive);
   });
 
-  it.fails('G-ACT-YEAR: the Executive July action count includes a July 2025 action', () => {
+  it('G-ACT-YEAR closed: the July action count is 6 on both pages; the July 2025 action is excluded', () => {
     const row = cell('2026-07', {}, 'actionsTotal');
+    expect(row.executive).toBe('6');
     expect(row.departmental).toBe(row.executive);
   });
 
