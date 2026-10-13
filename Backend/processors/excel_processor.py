@@ -99,7 +99,16 @@ class ExcelProcessor:
         return self._process_team_sheet(excel_file, "Inbound UAE", process_inbound_uae)
 
     def process_sheet_preapprovals(self, excel_file) -> pd.DataFrame:
-        return self._process_team_sheet(excel_file, "Pre-Approvals IP Offshore", process_preapprovals_offshore)
+        # Offshore always runs its own importer: the June 2026 method, the row
+        # import errors and the warnings live there. The generic Role-column
+        # branch in _process_team_sheet would skip them, so only Role is kept.
+        frame = process_preapprovals_offshore(excel_file)
+        if "Role" not in frame.columns:
+            raw = pd.read_excel(excel_file, sheet_name="Pre-Approvals IP Offshore")
+            role_col = next((column for column in raw.columns if str(column).strip().lower() == "role"), None)
+            if role_col is not None and len(raw) == len(frame):
+                frame["Role"] = raw[role_col].values
+        return frame
 
     def process_sheet_preapprovals_op_dubai(self, excel_file) -> pd.DataFrame:
         return process_preapprovals_op_dubai(excel_file)

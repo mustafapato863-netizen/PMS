@@ -123,7 +123,7 @@ class CleanerFactory:
             'inbound': {'class': 'InboundCleaner', 'function': 'process_inbound'},
             'outbound': {'class': 'OutboundCleaner', 'function': 'process_outbound'},
             'inbound_uae': {'class': 'InboundUAECleaner', 'function': 'process_inbound_uae'},
-            'pre_approvals_offshore': {'class': 'PreApprovalsOffshoreCleaner', 'function': 'process_preapprovals_offshore'},
+            'preapprovals_ip_offshore': {'module': 'preapprovals_offshore', 'class': None, 'function': 'process_preapprovals_offshore'},
             'preapprovals_op_dubai': {'class': None, 'function': 'process_preapprovals_op_dubai'},
             'preapprovals_ip_final_dubai': {'class': None, 'function': 'process_preapprovals_ip_final_dubai'},
             'preapprovals_ip_elective_dubai': {'class': None, 'function': 'process_preapprovals_ip_elective_dubai'},
@@ -138,14 +138,16 @@ class CleanerFactory:
         }
         
         for module_name, config in cleaner_modules.items():
+            # The registration key can differ from the file name ('module' overrides it).
+            source_module = config.get('module', module_name)
             try:
                 # Try to import module
                 try:
-                    module = import_module(module_name)
+                    module = import_module(source_module)
                 except ImportError:
                     # Try from Data_Cleaning_Teams subdirectory
                     sys.path.insert(0, cleaners_dir)
-                    module = __import__(module_name)
+                    module = __import__(source_module)
                 
                 # Load class-based cleaner if specified
                 if config['class']:

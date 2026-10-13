@@ -22,6 +22,11 @@ from services.learning_service import LearningService
 from services.planning_service import PlanningService
 from services.trend_service import TrendService
 from services.insights_service import InsightsService
+from services.preapprovals_offshore_scoring import (
+    NEW_METHOD_ID as NEW_OFFSHORE_METHOD_ID,
+    OffshoreDataError,
+    actuals_from_row,
+)
 from models.models import (
     User,
     Team,
@@ -292,12 +297,21 @@ def serialize_performance_record(r) -> Dict[str, Any]:
     # Offshore Pre-Approvals is counter-based; persisted actual columns can be
     # stale after an upload, so use the source ratios first for that team.
     is_offshore_pre_approvals = str(getattr(r, "team", "")).strip().casefold() == "pre-approvals ip offshore"
+    # Rows scored by the June 2026 method show the same actuals that were scored.
+    offshore_actuals = None
+    if is_offshore_pre_approvals and raw_data.get("ScoringMethod") == NEW_OFFSHORE_METHOD_ID:
+        try:
+            offshore_actuals = actuals_from_row(raw_data)
+        except OffshoreDataError:
+            offshore_actuals = None
     actual_booking = r.actual.booking_rate or safe_float(raw_data.get("A.Booking%", 0.0))
     actual_attend = r.actual.attend_rate or safe_float(raw_data.get("A.Attend%", 0.0))
     actual_abandon = r.actual.abandon_rate or safe_float(raw_data.get("A.AbandonRate%", 0.0))
     actual_reachability = r.actual.reachability_rate or safe_float(raw_data.get("A.Reachability%", 0.0))
     actual_rejection = (
-        raw_ratio(("RejectedRequests", "RejectedRequest"), ("AssignedRequests", "AssignedRequest"))
+        (offshore_actuals["Rejection"] if offshore_actuals else raw_ratio(
+            ("RejectedRequests", "RejectedRequest"), ("AssignedRequests", "AssignedRequest")
+        ))
         if is_offshore_pre_approvals else None
     )
     actual_rejection = actual_rejection if actual_rejection is not None else (
@@ -309,12 +323,16 @@ def serialize_performance_record(r) -> Dict[str, Any]:
         )
     )
     actual_error = (
-        raw_ratio(("ErrosClaims", "ErrorsClaims", "ErrorClaims"), ("SubmittedClaims", "SubmittedClaim"))
+        (offshore_actuals["InitialError"] if offshore_actuals else raw_ratio(
+            ("ErrosClaims", "ErrorsClaims", "ErrorClaims"), ("SubmittedClaims", "SubmittedClaim")
+        ))
         if is_offshore_pre_approvals else None
     )
     actual_error = actual_error if actual_error is not None else (r.actual.initial_error_rate or safe_float(raw_data.get("Error%", 0.0)))
     actual_submission = (
-        raw_ratio(("ApprovalWithin48HR", "ApprovalWithin48hrs"), ("ApprovedRequests", "ApprovedRequest"))
+        (offshore_actuals["Submission"] if offshore_actuals else raw_ratio(
+            ("ApprovalWithin48HR", "ApprovalWithin48hrs"), ("ApprovedRequests", "ApprovedRequest")
+        ))
         if is_offshore_pre_approvals else None
     )
     actual_submission = actual_submission if actual_submission is not None else (

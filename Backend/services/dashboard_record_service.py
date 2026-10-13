@@ -15,6 +15,7 @@ from config.loader import (
 from models.schemas import PerformanceRecord as SchemaPerformanceRecord
 from pydantic import ValidationError
 from services.legacy_kpi_evidence import build_legacy_employee_kpi_values
+from services.preapprovals_offshore_scoring import NEW_METHOD_ID as NEW_OFFSHORE_METHOD_ID
 from utils.performance_status import reconciled_status
 from utils.kpi_direction import (
     find_kpi_definition,
@@ -376,9 +377,17 @@ class DashboardRecordService:
                 candidate_raw_data = payload.get("raw_data")
                 if isinstance(candidate_raw_data, dict):
                     payload_raw_data = candidate_raw_data
+            # Rows scored by the June 2026 Offshore method keep their stored KPI
+            # values. Rebuilding them with the legacy formula would show the old
+            # actuals and targets beside the new score.
+            keep_stored_offshore_kpis = (
+                team_name == "Pre-Approvals IP Offshore"
+                and payload_raw_data.get("ScoringMethod") == NEW_OFFSHORE_METHOD_ID
+            )
+            if isinstance(payload, dict):
                 try:
                     rich_record = SchemaPerformanceRecord.model_validate(payload)
-                    repaired_kpis = build_legacy_employee_kpi_values(
+                    repaired_kpis = [] if keep_stored_offshore_kpis else build_legacy_employee_kpi_values(
                         team_name,
                         rich_record.raw_data,
                         weights=persisted_weights,
@@ -456,7 +465,7 @@ class DashboardRecordService:
             # legacy formula-based teams. Older KPIValue rows can contain an
             # achievement copied into actual_value (the source of the 58.7%
             # Initial Error Rate card), while the row counters remain correct.
-            repaired_fallback_kpis = build_legacy_employee_kpi_values(
+            repaired_fallback_kpis = [] if keep_stored_offshore_kpis else build_legacy_employee_kpi_values(
                 team_name,
                 payload_raw_data,
                 weights=persisted_weights,
