@@ -195,8 +195,12 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
             query = query.filter(or_(*period_clauses)) if period_clauses else query.filter(false())
         return query
 
-    def get_option_rows(self, scope: dict | None = None) -> list[dict[str, object]]:
-        """Return only scalar dimensions needed by filter-option endpoints."""
+    def get_option_rows(self, scope: dict | None = None, *, include_scores: bool = False) -> list[dict[str, object]]:
+        """Return only scalar dimensions needed by filter-option endpoints.
+
+        ``include_scores`` adds one score column to the same query. The default
+        projection does not carry it.
+        """
         logical_team_name = func.coalesce(Team.display_name, Team.name)
         position_name = func.coalesce(PerformanceRecord.position_name, Employee.position_name)
         region_name = func.coalesce(PerformanceRecord.region, Employee.region)
@@ -213,13 +217,14 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
                 PerformanceRecord.branch_key,
                 PerformanceRecord.grade,
                 PerformanceRecord.status,
+                *([PerformanceRecord.score.label("score")] if include_scores else []),
             )
             .join(Employee, PerformanceRecord.employee_id == Employee.id)
             .join(Team, PerformanceRecord.team_id == Team.id)
             .filter(Team.team_level == "employee")
         )
         rows = self._apply_scope(query, scope).all()
-        return [
+        items = [
             {
                 "employee_id": str(employee_id),
                 "employee_name": str(employee_name),
@@ -245,8 +250,12 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
                 branch_key,
                 grade,
                 status,
-            ) in rows
+            ) in [tuple(row)[:11] for row in rows]
         ]
+        if include_scores:
+            for item, row in zip(items, rows):
+                item["score"] = float(row[11]) if row[11] is not None else None
+        return items
 
     def get_option_kpi_keys(self, scope: dict | None = None) -> list[str]:
         """Return KPI keys for the same authorized employee-record scope."""

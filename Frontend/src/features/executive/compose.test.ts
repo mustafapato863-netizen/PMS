@@ -224,6 +224,18 @@ describe('grades use the live 95/90/80/70 palette', () => {
     const distribution = gradeDistribution(current, previous)!;
     expect(distribution.movement).toEqual({ A: 1, B: 0, C: -1, D: 0, E: 0 });
   });
+
+  it('counts people separately from employee-month rows; the shares stay on rows', () => {
+    const rows = [
+      record(96, { employeeId: 'a' }),
+      record(91, { employeeId: 'a' }),
+      record(70, { employeeId: 'b' }),
+    ];
+    const distribution = gradeDistribution(rows, [])!;
+    expect(distribution.total).toBe(3);
+    expect(distribution.people).toBe(2);
+    expect(distribution.percents.A).toBeCloseTo(33.3, 1);
+  });
 });
 
 describe('direction-aware KPI rows', () => {

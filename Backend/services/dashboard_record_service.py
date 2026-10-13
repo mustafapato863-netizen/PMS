@@ -514,9 +514,14 @@ class DashboardRecordService:
             
         return result
 
-    def list_option_rows(self, scope: dict | None = None) -> list[dict[str, object]]:
-        """Return lightweight dimensions without loading KPI/config payloads."""
+    def list_option_rows(self, scope: dict | None = None, *, include_scores: bool = False) -> list[dict[str, object]]:
+        """Return lightweight dimensions without loading KPI/config payloads.
+
+        ``include_scores`` adds the score to the same query (the catalog's period check).
+        """
         sql_repository = self.sql_repository_cls(self.db, PerformanceRecord)
+        if include_scores:
+            return sql_repository.get_option_rows(scope, include_scores=True)
         return sql_repository.get_option_rows(scope)
 
     def list_kpi_options(self, scope: dict | None = None) -> list[str]:

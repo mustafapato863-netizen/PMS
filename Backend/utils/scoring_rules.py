@@ -1,8 +1,9 @@
 """Shared score rules: scale and grade cut-offs.
 
-Stored evaluation scores are percentages. A value in (0, 1] is a ratio and is
-multiplied by 100 (0.85 -> 85). A value above 1 is already a percentage and is
-used as it is, so a low real score such as 5.48 stays 5.48.
+Stored evaluation scores are percentages. One rule for every team: a value in
+(0, 1] is a ratio and is multiplied by 100 (0.85 -> 85). A value above 1 is already
+a percentage and is used as it is, so a low real score such as 5.48 stays 5.48 and
+a percentage such as 51.28 is returned unchanged.
 
 The grade cut-offs are the shared thresholds (frontend `constants/grades.ts`):
 A >= 95, B >= 90, C >= 80, D >= 70, E below 70.

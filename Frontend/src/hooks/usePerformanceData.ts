@@ -809,8 +809,7 @@ export function usePerformanceData(
         sumBooking += a.actual.booking_rate;
         sumAttend += a.actual.attend_rate;
         sumAbandon += a.actual.abandon_rate;
-        let sc = a.evaluation.score;
-        if (sc <= 10.0 && sc > 0) sc = sc * 100;
+        const sc = normalizeScore(a.evaluation.score);
         sumScore += sc;
       }
       const count = monthAgents.length;
@@ -997,13 +996,11 @@ export function usePerformanceData(
         const ahtDiff = currAHT - prevAHT;
 
         const currScore = currAgents.length > 0 ? currAgents.reduce((s, a) => {
-          let sc = a.evaluation.score;
-          if (sc <= 10.0 && sc > 0) sc = sc * 100;
+          const sc = normalizeScore(a.evaluation.score);
           return s + sc;
         }, 0) / currAgents.length : 0;
         const prevScore = prevAgents.length > 0 ? prevAgents.reduce((s, a) => {
-          let sc = a.evaluation.score;
-          if (sc <= 10.0 && sc > 0) sc = sc * 100;
+          const sc = normalizeScore(a.evaluation.score);
           return s + sc;
         }, 0) / prevAgents.length : 0;
         const scoreDiff = currScore - prevScore;
