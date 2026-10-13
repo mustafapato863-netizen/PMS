@@ -3,6 +3,7 @@ import json
 import time
 import threading
 from typing import Any, List, Optional
+from utils.scoring_rules import score_percent
 from config.settings import APP_ENV, DATA_DIR
 from models.schemas import (
     Employee, PerformanceRecord, KPIWeight, Target, UploadRecord, ManagerNote, CorrectiveAction, TeamAction, UserRecord
@@ -33,9 +34,7 @@ def _normalize_percentage_score(value: Any) -> float | None:
     score = _coerce_float(value)
     if score is None:
         return None
-    if 0.0 < score <= 1.0:
-        score *= 100.0
-    return max(0.0, min(score, 100.0))
+    return max(0.0, min(score_percent(score), 100.0))
 
 
 def _sanitize_performance_record_item(item: dict[str, Any]) -> dict[str, Any]:

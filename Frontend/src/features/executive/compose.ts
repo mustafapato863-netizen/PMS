@@ -228,7 +228,8 @@ export function gradeDistribution(current: ExecRecord[], previous: ExecRecord[])
     movement = emptyCounts();
     GRADE_CLASSES.forEach((grade) => { movement![grade] = counts[grade] - prev[grade]; });
   }
-  return { total, counts, percents, combined_percents, previous_counts: previousCounts, movement };
+  const people = new Set(current.map((record) => record.employeeId)).size;
+  return { total, people, counts, percents, combined_percents, previous_counts: previousCounts, movement };
 }
 
 const TOLERANCE = 1e-9;

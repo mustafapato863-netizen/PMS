@@ -60,3 +60,58 @@ def explicit_branch_key(record: Any) -> str | None:
         if any(re.search(rf"(?<![A-Z0-9]){re.escape(alias)}(?![A-Z0-9])", text) for alias in aliases)
     }
     return next(iter(matches)) if len(matches) == 1 else None
+
+
+_TEXT_BRANCH_FIELDS = ("Team", "Out Team", "Branch", "Site", "Area")
+
+
+def _positive(value: Any) -> bool:
+    try:
+        return float(value) > 0
+    except (TypeError, ValueError):
+        return False
+
+
+def text_branch(record: Any) -> str | None:
+    """Branch named by the source text of a record, in the fixed server order.
+
+    Raw Team, Out Team, Branch, Site and Area are read first. The team name only
+    contributes Dubai, and only when the raw text names no other branch. A row
+    that names several branches resolves to the first match in this order.
+    """
+
+    raw = _raw_data(record)
+    branch_text = " ".join(str(raw.get(field) or "") for field in _TEXT_BRANCH_FIELDS).upper()
+    team_text = str(_value(record, "team") or "").upper()
+    if "AJM" in branch_text or "AJMAN" in branch_text:
+        return "ajman"
+    if "SHJ" in branch_text or "SHARJAH" in branch_text or "SHARQA" in branch_text:
+        return "sharjah"
+    if "DUBAI" in branch_text or "DUBAI" in team_text:
+        return "dubai"
+    if "CLINIC" in branch_text:
+        return "clinics"
+    return None
+
+
+def record_matches_branch(record: Any, branch: str | None) -> bool:
+    """The one branch rule for summaries, team breakdowns, basis rows and record pages.
+
+    A stored ``branch_key`` decides when present; ingest writes it from the same
+    source text. Otherwise the text rule above decides, and geo bookings or
+    attendance for the branch decide when the text names no branch.
+    """
+
+    wanted = str(branch or "").strip().casefold()
+    if not wanted or wanted == "all":
+        return True
+    stored = str(_value(record, "branch_key") or "").strip().casefold()
+    if stored:
+        return stored == wanted
+    explicit = text_branch(record)
+    if explicit:
+        return explicit == wanted
+    geo = _value(record, "geo")
+    if geo is None:
+        return False
+    return any(_positive(_value(_value(geo, name), wanted)) for name in ("bookings", "attended"))
