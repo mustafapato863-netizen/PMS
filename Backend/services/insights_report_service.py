@@ -14,6 +14,7 @@ from statistics import mean
 from typing import Any, Iterable
 
 from utils.kpi_direction import DEFAULT_DIRECTION, apply_kpi_direction, kpi_variant, normalize_direction
+from services.tracking_indicators import tracking_indicator_keys
 from services.kpi_aggregation import (
     AggregatedKpiMetric,
     aggregate_kpi_metric,
@@ -309,6 +310,16 @@ def _normalize_record(record: Any) -> dict[str, Any]:
     raw_kpis = _record_value(record, "kpis", None)
     if raw_kpis is None:
         raw_kpis = _record_value(record, "kpi_values", [])
+    team_name = _text(_record_value(record, "team"))
+    # One rule, shared with the workspace: a declared tracking indicator is never
+    # a KPI row in the report. Its stored row (weight 0) stays on the record.
+    tracking_keys = tracking_indicator_keys(team_name)
+    if tracking_keys:
+        raw_kpis = [
+            item
+            for item in raw_kpis or []
+            if not (isinstance(item, dict) and _text(item.get("kpi_key") or item.get("key")) in tracking_keys)
+        ]
     return {
         "employee_id": _text(_record_value(record, "employee_id")),
         "employee_name": _text(_record_value(record, "employee_name"), "Unknown employee"),
