@@ -191,6 +191,46 @@ export interface InsightKpiTrend {
  * month, computed exactly like `executive_story.current_score` for the same
  * filters and access scope. The frontend consumes it when present.
  */
+export interface InsightKpiDiagnosisTeam {
+  team: string;
+  actual: number | null;
+  target: number | null;
+  achievement_percent: number | null;
+  status: InsightKpiStatus | null;
+}
+
+/** One month of a KPI's six-month sparkline. */
+export interface InsightKpiSixMonth {
+  year: number;
+  month: string;
+  actual_value: number | null;
+  status: InsightKpiStatus | null;
+}
+
+/** One scored KPI in the scope: team actual against target, points lost to people below target, six months. */
+export interface InsightKpiDiagnosisRow {
+  key: string;
+  label: string;
+  unit: string | null;
+  direction: string | null;
+  weight: number;
+  actual: number | null;
+  target: number | null;
+  achievement_percent: number | null;
+  status: InsightKpiStatus | null;
+  /** People to review's weighted impact, summed over the scope. Negative is below target. */
+  effect_points: number | null;
+  /** Employees below target on this KPI in scope. */
+  people_below_target: number;
+  six_months: InsightKpiSixMonth[];
+  /** Present only when the scope has more than one team. */
+  most_below_team: InsightKpiDiagnosisTeam | null;
+  /** Other cohorts of this KPI in scope (variant, direction, unit). The row uses the dominant one. */
+  other_cohorts: string[];
+  /** Teams holding this KPI in scope. One team for a team's own KPI. */
+  teams: string[];
+}
+
 export interface InsightOverallTrendPoint {
   period: InsightPeriod;
   score: number | null;
@@ -304,6 +344,8 @@ export interface InsightsWorkspace {
   overall_trend?: InsightOverallTrendPoint[] | null;
   role_summaries?: InsightRoleSummary[];
   kpi_overview?: InsightKpiOverview;
+  /** One row per scored KPI in the scope. Optional for responses that predate it. */
+  kpi_diagnosis?: InsightKpiDiagnosisRow[];
   /** Tracking-only indicators. Not scored: no target, achievement, grade or status. */
   tracking_indicators?: InsightTrackingIndicator[];
   team_summaries: Array<{

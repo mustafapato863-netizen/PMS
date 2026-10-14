@@ -49,6 +49,7 @@ const workspaceMock = vi.hoisted(() => ({
 }));
 const actionMocks = vi.hoisted(() => ({
   getActionsForEmployee: vi.fn(() => []),
+  getAllActions: vi.fn((): unknown[] => []),
   refreshPerformanceData: vi.fn(),
 }));
 
@@ -165,14 +166,14 @@ vi.mock('../hooks/api/useInsightsWorkspace', async (importOriginal) => {
             performance_level: 'Employee', position: 'Media Buyer', kpi_key: 'cpl',
             kpi_label: 'CPL', unit: 'AED', direction: 'lower_better',
             current_value: 136, target_value: 60, gap: -76, weighted_impact: -2.8,
-            trend: 81, severity: 'High', classification: 'negative', performance_score: 74.2,
+            trend: 81, severity: 'High', classification: 'negative', performance_score: 74.2, target_status: 'missed',
           },
           {
             employee_id: 'E2', employee_name: 'Analyst Two', team: 'Marketing',
             performance_level: 'Employee', position: 'Media Buyer', kpi_key: 'cpl',
             kpi_label: 'CPL', unit: 'AED', direction: 'lower_better',
             current_value: 75, target_value: 60, gap: -15, weighted_impact: -1,
-            trend: 10, severity: 'Medium', classification: 'negative', performance_score: 85,
+            trend: 10, severity: 'Medium', classification: 'negative', performance_score: 85, target_status: 'missed',
           },
         ],
       },
@@ -204,6 +205,40 @@ vi.mock('../hooks/api/useInsightsWorkspace', async (importOriginal) => {
         { scope: 'EGY', current_score: 85.3, previous_score: 86, score_change: -0.7, gap_points: -14.7, gap_contribution_percent: 17.3, impacted_employees: 1, total_employees: 3, affected_percentage: 33.3 },
       ],
       kpi_overview: { total_kpis: 12, on_track: 7, at_risk: 3, critical: 2, points: [] },
+      kpi_diagnosis: [
+        {
+          key: 'cpl', label: 'CPL', unit: 'AED', direction: 'lower_better', weight: 0.2,
+          actual: 136, target: 60, achievement_percent: 44.12, status: 'critical',
+          effect_points: -3.8,
+          people_below_target: 2,
+          six_months: [
+            { year: 2026, month: 'June', actual_value: 136, status: 'critical' },
+          ],
+          most_below_team: { team: 'Marketing', actual: 136, target: 60, achievement_percent: 44.12, status: 'critical' },
+          other_cohorts: [],
+          teams: ['Marketing'],
+        },
+        {
+          key: 'no_show_rate', label: 'No Show Rate', unit: '%', direction: 'lower_better', weight: 0.1,
+          actual: 0.51, target: 0.2, achievement_percent: 39.22, status: 'critical',
+          effect_points: null,
+          people_below_target: 0,
+          six_months: [],
+          most_below_team: null,
+          other_cohorts: ['Inbound · Other'],
+          teams: ['Inbound'],
+        },
+        {
+          key: 'booking', label: 'Booking rate', unit: '%', direction: 'higher_better', weight: 0.3,
+          actual: 0.6, target: 0.5, achievement_percent: 100, status: 'on_track',
+          effect_points: 0,
+          people_below_target: 0,
+          six_months: [],
+          most_below_team: null,
+          other_cohorts: [],
+          teams: ['Marketing'],
+        },
+      ],
       role_summaries: [
         { role: 'Media Buyer', team: 'Marketing', current_score: 69.9, previous_score: 90, movement: -20.1, net_impact: -5.6, affected_employees: 2, total_employees: 5, primary_insight_id: 'cpl-risk' },
       ],
@@ -248,6 +283,7 @@ vi.mock('../lib/apiClient', async (importOriginal) => ({
 vi.mock('../hooks/useActionStore', () => ({
   useActionStore: () => ({
     getActionsForEmployee: actionMocks.getActionsForEmployee,
+    getAllActions: actionMocks.getAllActions,
   }),
 }));
 
@@ -400,428 +436,6 @@ describe('InsightsView', () => {
     expect(within(filters).getByRole('combobox', { name: 'Performance level' })).toBeInTheDocument();
   });
 
-  it('builds the executive summary from executive_story', () => {
-    renderInsights();
-    const summary = section('Executive Summary');
-
-    expect(within(summary).getByTestId('executive-headline')).toHaveTextContent('June 2026 performance is 22.5% below target.');
-    const priority = within(summary).getByTestId('executive-priority-focus');
-    expect(within(priority).getByText('Priority focus')).toBeInTheDocument();
-    expect(within(priority).getByText('Review CPL first — largest weighted gap.')).toBeInTheDocument();
-    expect(priority).toHaveAttribute('title', 'Review CPL in Marketing · Media Buyer first.');
-    const status = within(summary).getByTestId('executive-status-row');
-    expect(within(status).getByText('D · Below Average')).toHaveAttribute('data-grade', 'D');
-    const trendBadge = within(status).getByTestId('executive-trend-badge');
-    expect(trendBadge).toHaveAttribute('data-tone', 'down');
-    expect(trendBadge).toHaveTextContent('↓ 1.9%');
-    expect(trendBadge).toHaveTextContent('Down 1.9% vs. previous month');
-    expect(within(summary).getByText('77.5%')).toBeInTheDocument();
-    expect(within(summary).getByText('100.0%')).toBeInTheDocument();
-    expect(within(summary).getByText('-22.5%')).toBeInTheDocument();
-    expect(within(summary).getByText('vs. Previous Month')).toBeInTheDocument();
-    expect(within(summary).getByText('-1.9%')).toBeInTheDocument();
-    const grades = within(summary).getAllByText('D · Below Average');
-    expect(grades).toHaveLength(2);
-    const currentGrade = grades[1];
-    expect(currentGrade).toHaveAttribute('data-grade', 'D');
-    expect(currentGrade).toHaveStyle({ background: 'var(--pms-grade-d-badge-bg)', color: 'var(--pms-grade-d-badge-text)' });
-  });
-
-  describe('performance trend', () => {
-    // Chart geometry in jsdom (no ResizeObserver → 388px fallback): month x = 58 + 59.6 * index.
-    const monthX = (index: number) => 58 + 59.6 * index;
-    const hoverMonth = (index: number) => fireEvent.mouseMove(screen.getByTestId('performance-trend-hover-area'), { clientX: monthX(index) });
-    const overallTrend = [81.2, 79.0, 80.4, 78.6, 79.4, 77.5].map((score, index) => ({
-      period: { year: 2026, month: ['January', 'February', 'March', 'April', 'May', 'June'][index], key: `2026-0${index + 1}` },
-      score, target: 100, measured_records: 10,
-    }));
-
-    it('plots the overall score series so the latest month equals the Current score', () => {
-      workspaceMock.overrides = { overall_trend: overallTrend };
-      renderInsights();
-      const summary = section('Executive Summary');
-
-      expect(within(summary).getByRole('heading', { name: 'Performance trend' })).toBeInTheDocument();
-      expect(within(summary).getByTestId('performance-trend-subtitle')).toHaveTextContent('Overall score · % of target');
-      const chart = within(summary).getByTestId('performance-trend-chart');
-      expect(chart).toHaveAttribute('data-source', 'overall');
-      expect(chart).toHaveAccessibleName(/^Overall score trend/);
-      // Executive Summary Current = 77.5%, and so is June on the trend.
-      expect(chart).toHaveAccessibleName(/Jun 77\.5%/);
-      expect(within(summary).getByText('Overall score')).toBeInTheDocument();
-      expect(within(summary).getByTestId('performance-trend-target-label')).toHaveTextContent('Target 100%');
-
-      hoverMonth(5);
-      const tooltip = screen.getByTestId('performance-trend-tooltip');
-      expect(within(tooltip).getByText('Score')).toBeInTheDocument();
-      expect(within(tooltip).getByText('77.5%')).toBeInTheDocument();
-      // Overall score is always higher-is-better: 79.4 → 77.5 is a decline.
-      const movement = within(tooltip).getByTestId('performance-trend-tooltip-movement');
-      expect(movement).toHaveAttribute('data-tone', 'bad');
-      expect(movement).toHaveTextContent('▼-1.9% vs May');
-    });
-
-    it('labels the leading-KPI fallback honestly when the API has no overall series', () => {
-      renderInsights();
-      const summary = section('Executive Summary');
-
-      expect(within(summary).getByRole('heading', { name: 'Leading KPI trend' })).toBeInTheDocument();
-      expect(within(summary).queryByRole('heading', { name: 'Performance trend' })).not.toBeInTheDocument();
-      expect(within(summary).getByTestId('performance-trend-subtitle')).toHaveTextContent('CPL · % of target · lower is better');
-      expect(within(summary).getByText(/It is not the overall score\./)).toBeInTheDocument();
-      expect(within(summary).getByText('KPI actual')).toBeInTheDocument();
-      const chart = within(summary).getByTestId('performance-trend-chart');
-      expect(chart).toHaveAttribute('data-source', 'kpi');
-      // CPL is lower-better: target 60 / actual 136 = 44.1% of target in June; February has no data.
-      expect(chart).toHaveAccessibleName(/Jun 44\.1%/);
-      expect(chart).toHaveAccessibleName(/Feb no data/);
-      expect(within(summary).getByTestId('performance-trend-target')).toHaveAttribute('stroke-dasharray', '4 4');
-    });
-
-    it('shows the tooltip on hover without a click and hides it on mouse leave', () => {
-      renderInsights();
-      const chart = screen.getByTestId('performance-trend-chart');
-      expect(screen.queryByTestId('performance-trend-tooltip')).not.toBeInTheDocument();
-
-      hoverMonth(2);
-      let tooltip = screen.getByTestId('performance-trend-tooltip');
-      expect(tooltip).toHaveTextContent('Mar');
-      expect(within(tooltip).getByText('Actual')).toBeInTheDocument();
-      expect(within(tooltip).getByText('115.4%')).toBeInTheDocument();
-      expect(within(tooltip).getByTestId('performance-trend-tooltip-target')).toHaveTextContent('Target100%');
-      expect(within(tooltip).getByTestId('performance-trend-tooltip-raw')).toHaveTextContent('52 AED vs 60 AED target');
-      expect(within(chart).getByTestId('performance-trend-crosshair')).toBeInTheDocument();
-
-      // Moving across the plot follows the nearest measured month (February has no data).
-      fireEvent.mouseMove(screen.getByTestId('performance-trend-hover-area'), { clientX: monthX(1) + 5 });
-      expect(screen.getByTestId('performance-trend-tooltip')).toHaveTextContent('Mar');
-      hoverMonth(5);
-      tooltip = screen.getByTestId('performance-trend-tooltip');
-      expect(tooltip).toHaveTextContent('Jun');
-
-      fireEvent.mouseLeave(screen.getByTestId('performance-trend-hover-area'));
-      expect(screen.queryByTestId('performance-trend-tooltip')).not.toBeInTheDocument();
-      expect(within(chart).queryByTestId('performance-trend-crosshair')).not.toBeInTheDocument();
-      expect(screen.queryByRole('button', { name: /^Jun:/ })).not.toBeInTheDocument();
-    });
-
-    it('colours tooltip movement by KPI direction (lower is better)', () => {
-      renderInsights();
-      // CPL 55 → 136 AED: an increase of a lower-is-better KPI is bad.
-      hoverMonth(5);
-      const movement = screen.getByTestId('performance-trend-tooltip-movement');
-      expect(movement).toHaveAttribute('data-tone', 'bad');
-      expect(movement).toHaveTextContent('▲+81 AED vs May');
-      expect(movement).toHaveStyle({ color: 'var(--insights-negative)' });
-
-      // 52 → 55 AED in April is also worse; 55 → 55 in May is flat.
-      hoverMonth(3);
-      expect(screen.getByTestId('performance-trend-tooltip-movement')).toHaveAttribute('data-tone', 'bad');
-      hoverMonth(4);
-      expect(screen.getByTestId('performance-trend-tooltip-movement')).toHaveAttribute('data-tone', 'flat');
-    });
-
-    it('shows a falling lower-is-better KPI as an improvement with a down arrow', () => {
-      workspaceMock.overrides = {
-        kpi_trend: {
-          kpi_key: 'rejection_rate', kpi_label: 'Rejection Rate', unit: '%', direction: 'lower_better',
-          points: [
-            { period: { year: 2026, month: 'May', key: '2026-05' }, actual_value: 0.12, target_value: 0.05, measured_records: 3 },
-            { period: { year: 2026, month: 'June', key: '2026-06' }, actual_value: 0.08, target_value: 0.05, measured_records: 3 },
-          ],
-        },
-      };
-      renderInsights();
-      fireEvent.focus(screen.getByTestId('performance-trend-point-2026-06'));
-      const movement = screen.getByTestId('performance-trend-tooltip-movement');
-      expect(movement).toHaveAttribute('data-tone', 'good');
-      expect(movement).toHaveTextContent('▼-4% vs May');
-      expect(movement).toHaveStyle({ color: 'var(--insights-positive)' });
-      expect(screen.getByTestId('performance-trend-point-2026-06')).toHaveAccessibleName(/-4% vs May, improving/);
-    });
-
-    it('shows the tooltip for keyboard focus, hides it with Escape and keeps a single roving tab stop', () => {
-      renderInsights();
-      const points = ['01', '03', '04', '05', '06'].map((month) => screen.getByTestId(`performance-trend-point-2026-${month}`));
-      expect(points.map((point) => point.getAttribute('tabindex'))).toEqual(['-1', '-1', '-1', '-1', '0']);
-      expect(points[4]).toHaveAccessibleName('Jun: actual 44.1% of target, target 100%, value 136 AED, +81 AED vs May, worsening');
-
-      const junePoint = points[4];
-      fireEvent.focus(junePoint);
-      expect(screen.getByTestId('performance-trend-tooltip')).toHaveTextContent('Jun');
-      fireEvent.keyDown(junePoint, { key: 'Escape' });
-      expect(screen.queryByTestId('performance-trend-tooltip')).not.toBeInTheDocument();
-
-      fireEvent.keyDown(junePoint, { key: 'ArrowLeft' });
-      expect(points[3]).toHaveFocus();
-      expect(screen.getByTestId('performance-trend-tooltip')).toHaveTextContent('May');
-      expect(points[3]).toHaveAttribute('tabindex', '0');
-      expect(junePoint).toHaveAttribute('tabindex', '-1');
-      fireEvent.keyDown(points[3], { key: 'Home' });
-      expect(points[0]).toHaveFocus();
-      fireEvent.keyDown(points[0], { key: 'End' });
-      expect(junePoint).toHaveFocus();
-    });
-
-    it('closes a hover tooltip with Escape anywhere or a tap outside the chart', async () => {
-      const user = userEvent.setup();
-      renderInsights();
-      hoverMonth(5);
-      fireEvent.keyDown(document.body, { key: 'Escape' });
-      expect(screen.queryByTestId('performance-trend-tooltip')).not.toBeInTheDocument();
-
-      hoverMonth(5);
-      fireEvent.mouseDown(screen.getByTestId('performance-trend-chart'));
-      expect(screen.getByTestId('performance-trend-tooltip')).toBeInTheDocument();
-      await user.click(screen.getByRole('heading', { level: 1, name: 'Insights' }));
-      expect(screen.queryByTestId('performance-trend-tooltip')).not.toBeInTheDocument();
-    });
-
-    it('resets the tooltip when a filter changes', async () => {
-      const user = userEvent.setup();
-      renderInsights();
-      hoverMonth(5);
-      expect(screen.getByTestId('performance-trend-tooltip')).toBeInTheDocument();
-      await user.selectOptions(screen.getByRole('combobox', { name: 'Function' }), 'Call Center');
-      expect(screen.queryByTestId('performance-trend-tooltip')).not.toBeInTheDocument();
-    });
-
-    it('keeps the focus ring subtle and on the keyboard-focused point only', () => {
-      renderInsights();
-      const rings = screen.getAllByTestId('performance-trend-focus-ring');
-      expect(rings).toHaveLength(5);
-      rings.forEach((ring) => {
-        expect(ring).toHaveClass('opacity-0', 'group-focus-visible:opacity-100');
-        expect(ring).toHaveAttribute('stroke-opacity', '0.55');
-      });
-      // Minimal chart: no grid lines, only a baseline and sensible % ticks.
-      const chart = screen.getByTestId('performance-trend-chart');
-      expect(chart.querySelectorAll('[data-testid="performance-trend-grid"]')).toHaveLength(0);
-      expect(within(chart).getAllByTestId('performance-trend-tick').map((tick) => tick.textContent)).toEqual(['0%', '50%', '100%', '125%']);
-      expect(within(chart).getByTestId('performance-trend-baseline')).toBeInTheDocument();
-    });
-
-    it('shows an honest empty state when the scope has no measured months', () => {
-      workspaceMock.overrides = { overall_trend: [] };
-      renderInsights();
-      const empty = screen.getByTestId('performance-trend-empty');
-      expect(empty).toHaveTextContent('No trend data for this scope');
-      expect(empty).toHaveTextContent('No measured score in the last six months for the selected filters.');
-      expect(screen.queryByTestId('performance-trend-chart')).not.toBeInTheDocument();
-      // An empty overall series never silently falls back to the leading KPI.
-      expect(screen.getByRole('heading', { name: 'Performance trend' })).toBeInTheDocument();
-    });
-
-    it('shows a KPI empty state when the leading KPI has no trend', () => {
-      workspaceMock.overrides = { kpi_trend: null };
-      renderInsights();
-      expect(screen.getByTestId('performance-trend-empty')).toHaveTextContent('No measured leading-KPI value');
-    });
-
-    it('shows a skeleton while placeholder data from the previous filters is displayed', () => {
-      workspaceMock.query = { isPlaceholderData: true, isFetching: true };
-      renderInsights();
-      const loading = screen.getByTestId('performance-trend-loading');
-      expect(loading).toHaveAttribute('role', 'status');
-      expect(loading).toHaveAccessibleName('Loading performance trend');
-      expect(screen.queryByTestId('performance-trend-chart')).not.toBeInTheDocument();
-      expect(screen.queryByTestId('performance-trend-empty')).not.toBeInTheDocument();
-    });
-  });
-
-  it('colours the insight summary trend by KPI direction', async () => {
-    const user = userEvent.setup();
-    renderInsights();
-    await user.click(screen.getByRole('button', { name: 'Expand all' }));
-    const weighted = section('Weighted score contribution');
-    // CPL rose 55 → 136 AED (lower is better): worsening, red, up arrow.
-    let trend = within(weighted).getByTestId('spotlight-trend');
-    expect(trend).toHaveAttribute('data-tone', 'bad');
-    expect(trend).toHaveClass('text-rose-600');
-    expect(trend.querySelector('svg')).toHaveClass('lucide-trending-up');
-
-    // No Show Rate fell 52% → 51% (lower is better): improving, green, down arrow.
-    await user.click(within(weighted).getByRole('button', { name: 'No Show Rate for Outbound · Agent' }));
-    trend = within(weighted).getByTestId('spotlight-trend');
-    expect(trend).toHaveAttribute('data-tone', 'good');
-    expect(trend).toHaveClass('text-emerald-600');
-    expect(trend.querySelector('svg')).toHaveClass('lucide-trending-down');
-  });
-
-  describe('PR #15 direction fields', () => {
-    const spotlightInsight = (detail: Record<string, unknown>, extra: Record<string, unknown> = {}) => ({
-      ...insight,
-      id: 'spot',
-      title: 'Spotlight KPI',
-      trend_label: 'Spotlight trend',
-      ...extra,
-      detail: { ...insight.detail, ...detail },
-    });
-    const renderSpotlight = async (item: ReturnType<typeof spotlightInsight>) => {
-      workspaceMock.overrides = {
-        team_analyses: [item],
-        priority_insights: [item],
-        performance_drivers: [{ id: 'spot-driver', driver: 'Spotlight KPI', scope: 'Marketing · Media Buyer', impact_points: -4, direction: 'negative', insight_id: 'spot' }],
-      };
-      const user = userEvent.setup();
-      renderInsights();
-      await user.click(screen.getByRole('button', { name: 'Expand all' }));
-      return within(section('Weighted score contribution'));
-    };
-    const arrow = (trend: HTMLElement) => trend.querySelector('svg')?.getAttribute('class') ?? '';
-
-    it('higher-better without PR #15 fields: a rise is green with an up arrow, a fall red with a down arrow', async () => {
-      let panel = await renderSpotlight(spotlightInsight({ direction: 'higher_better', current_value: 0.8, previous_value: 0.7, target_value: 0.9 }));
-      let trend = panel.getByTestId('spotlight-trend');
-      expect(trend).toHaveAttribute('data-tone', 'good');
-      expect(arrow(trend)).toContain('lucide-trending-up');
-      cleanup();
-
-      panel = await renderSpotlight(spotlightInsight({ direction: 'higher_better', current_value: 0.6, previous_value: 0.7, target_value: 0.9 }));
-      trend = panel.getByTestId('spotlight-trend');
-      expect(trend).toHaveAttribute('data-tone', 'bad');
-      expect(arrow(trend)).toContain('lucide-trending-down');
-    });
-
-    it('uses trend_status for the colour and raw_change for the arrow when the API sends them', async () => {
-      // Lower-better improving: raw value fell, so a DOWN arrow in GREEN.
-      let panel = await renderSpotlight(spotlightInsight({
-        direction: 'lower_better', current_value: 0.08, previous_value: 0.12, raw_change: -0.04, change_value: 0.04, trend_status: 'improving',
-      }));
-      let trend = panel.getByTestId('spotlight-trend');
-      expect(trend).toHaveAttribute('data-tone', 'good');
-      expect(trend).toHaveClass('text-emerald-600');
-      expect(arrow(trend)).toContain('lucide-trending-down');
-      cleanup();
-
-      // Unknown direction locally, but the API knows it is declining (rising lower-better KPI): red, up arrow.
-      panel = await renderSpotlight(spotlightInsight({
-        direction: null, current_value: null, previous_value: null, raw_change: 0.03, change_value: -0.03, trend_status: 'declining',
-      }));
-      trend = panel.getByTestId('spotlight-trend');
-      expect(trend).toHaveAttribute('data-tone', 'bad');
-      expect(trend).toHaveClass('text-rose-600');
-      expect(arrow(trend)).toContain('lucide-trending-up');
-      cleanup();
-
-      // Stable stays neutral without an arrow.
-      panel = await renderSpotlight(spotlightInsight({ direction: 'higher_better', raw_change: 0, change_value: 0, trend_status: 'stable' }));
-      trend = panel.getByTestId('spotlight-trend');
-      expect(trend).toHaveAttribute('data-tone', 'flat');
-      expect(trend.querySelector('svg')).toBeNull();
-    });
-
-    it('labels on-target-but-worsening `information` items as Watch, and data-quality items as Data issue', async () => {
-      let panel = await renderSpotlight(spotlightInsight(
-        { direction: 'lower_better', current_value: 0.04, previous_value: 0.03, target_value: 0.05, trend_status: 'declining', target_status: 'met' },
-        { severity: 'information', insight_type: 'kpi_driver' },
-      ));
-      const watch = panel.getAllByText('Watch')[0];
-      expect(watch).toHaveClass('bg-slate-50');
-      expect(panel.queryByText('Data issue')).not.toBeInTheDocument();
-      cleanup();
-
-      panel = await renderSpotlight(spotlightInsight({}, { severity: 'information', insight_type: 'data_quality' }));
-      expect(panel.getAllByText('Data issue')[0]).toHaveClass('bg-blue-50');
-      expect(panel.queryByText('Watch')).not.toBeInTheDocument();
-    });
-
-    it('names the information tab "Watch & data issues" and counts its rows', () => {
-      const watchItem = { ...noShowInsight, id: 'watch-1', severity: 'information', insight_type: 'kpi_driver' };
-      const dataItem = { ...noShowInsight, id: 'data-1', severity: 'information', insight_type: 'data_quality' };
-      workspaceMock.overrides = { team_analyses: [insight, watchItem, dataItem] };
-      renderInsights('/insights?function=Marketing&period=2026-06');
-      expect(screen.getByRole('button', { name: 'Watch & data issues (2)' })).toBeInTheDocument();
-      expect(screen.queryByRole('button', { name: /^Data issues/ })).not.toBeInTheDocument();
-    });
-
-    it('plots the API achievement_percent on the leading-KPI trend and colours movement by trend_status', () => {
-      workspaceMock.overrides = {
-        kpi_trend: {
-          kpi_key: 'rejection_rate', kpi_label: 'Rejection Rate', unit: '%', direction: 'lower_better', trend_status: 'declining',
-          points: [
-            { period: { year: 2026, month: 'May', key: '2026-05' }, actual_value: 0.04, target_value: 0.05, measured_records: 3, achievement_percent: 100, status: 'on_track', change_value: null, trend_status: null },
-            { period: { year: 2026, month: 'June', key: '2026-06' }, actual_value: 0.1, target_value: 0.05, measured_records: 3, achievement_percent: 50, status: 'critical', change_value: -0.06, trend_status: 'declining' },
-          ],
-        },
-      };
-      renderInsights();
-      const chart = screen.getByTestId('performance-trend-chart');
-      // API values (capped at 100) are used as-is: May 100%, not the uncapped 125%.
-      expect(chart).toHaveAccessibleName(/May 100\.0%, Jun 50\.0%/);
-      fireEvent.focus(screen.getByTestId('performance-trend-point-2026-06'));
-      const movement = screen.getByTestId('performance-trend-tooltip-movement');
-      expect(movement).toHaveAttribute('data-tone', 'bad');
-      expect(movement).toHaveTextContent('▲+6% vs May');
-    });
-  });
-
-  it('splits weighted drivers into negative and positive panels and links them to the insight drawer', async () => {
-    const user = userEvent.setup();
-    renderInsights();
-    const drivers = section('Key drivers of the gap');
-
-    const negative = within(drivers).getByRole('list', { name: 'Top negative drivers' });
-    const negativeRows = within(negative).getAllByRole('button');
-    expect(negativeRows.map((row) => row.getAttribute('aria-label'))).toEqual([
-      'CPL for Marketing · Media Buyer: -5.6%',
-      'No Show Rate for Outbound · Agent: -3.1%',
-    ]);
-    const positive = within(drivers).getByRole('list', { name: 'Top positive drivers' });
-    expect(within(positive).getByText('Booking Rate')).toBeInTheDocument();
-    expect(within(positive).getByText('+2.4%')).toBeInTheDocument();
-
-    await user.click(negativeRows[0]);
-    expect(screen.getByRole('dialog', { name: 'CPL contributed to the performance gap' })).toBeInTheDocument();
-  });
-
-  it('opens the weighted score contribution analysis from "View all drivers"', async () => {
-    const user = userEvent.setup();
-    renderInsights();
-
-    expect(screen.queryByRole('region', { name: 'Weighted score contribution' })).not.toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: /View all drivers/ }));
-    const weighted = section('Weighted score contribution');
-    expect(within(weighted).getByText('Widening the gap')).toBeInTheDocument();
-    expect(within(weighted).getByRole('heading', { name: 'Insight summary' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Weighted score contribution/ })).toHaveAttribute('aria-expanded', 'true');
-  });
-
-  it('renders geography performance with grade badges and gap share, and focuses a region on click', async () => {
-    const user = userEvent.setup();
-    renderInsights();
-    const geography = section('Geography performance');
-
-    expect(within(geography).getByText('74.6%')).toBeInTheDocument();
-    expect(within(geography).getByText('-25.4%')).toBeInTheDocument();
-    expect(within(geography).getByText('82.7% gap share')).toBeInTheDocument();
-    expect(within(geography).getByText('C · Average')).toHaveAttribute('data-grade', 'C');
-    expect(within(geography).getByText('17.3% gap share')).toBeInTheDocument();
-
-    await user.click(within(geography).getByRole('button', { name: /Focus UAE/ }));
-    expect(latestFilters.current.region).toBe('UAE');
-  });
-
-  it('lists teams needing attention with A–E grades and drills into a team through the Team filter', async () => {
-    const user = userEvent.setup();
-    renderInsights();
-    const teams = section('Teams needing attention');
-    const rows = within(within(teams).getByRole('list', { name: 'Teams needing attention' })).getAllByRole('button');
-
-    expect(rows).toHaveLength(3);
-    expect(within(rows[0]).getByText('Marketing')).toBeInTheDocument();
-    expect(within(rows[0]).getByText('E · Unsatisfactory')).toHaveAttribute('data-grade', 'E');
-    expect(within(rows[0]).getByText('-30.1%')).toBeInTheDocument();
-    expect(within(rows[0]).getByRole('img', { name: 'Score moved from 90.0% to 69.9%' })).toBeInTheDocument();
-    expect(within(rows[2]).getByText('B · Meet Expectations')).toHaveAttribute('data-grade', 'B');
-    expect(within(rows[2]).getByText('B · Meet Expectations')).toHaveStyle({ background: 'var(--pms-grade-b-badge-bg)', color: 'var(--pms-grade-b-badge-text)' });
-
-    await user.click(rows[0]);
-    expect(latestFilters.current.team).toBe('Marketing');
-    expect(screen.getByRole('combobox', { name: 'Team' })).toHaveValue('Marketing');
-    expect(currentSearch().get('team')).toBe('Marketing');
-  });
-
   it('shows people to review from the leading KPI and opens the employee profile', async () => {
     const user = userEvent.setup();
     renderInsights();
@@ -841,18 +455,6 @@ describe('InsightsView', () => {
     expect(screen.getByText('Employee profile page')).toBeInTheDocument();
   });
 
-  it('orders sections as in Figma 18:3 v2 and renders section "View all" actions as text links', () => {
-    renderInsights();
-    const headings = screen.getAllByRole('heading', { level: 2 }).map((heading) => heading.textContent);
-    const order = ['Executive Summary', 'Key drivers of the gap', 'Recommended actions', 'People to review', 'More analysis (optional)'];
-    const positions = order.map((title) => headings.indexOf(title));
-    expect(positions.every((position) => position >= 0)).toBe(true);
-    expect([...positions].sort((a, b) => a - b)).toEqual(positions);
-
-    expect(within(section('People to review')).getByRole('button', { name: 'Full CPL analysis' })).toBeInTheDocument();
-    expect(within(section('Key drivers of the gap')).getByRole('button', { name: /View all drivers/ })).toHaveAttribute('data-variant', 'button');
-  });
-
   it('opens the full people contribution analysis for the leading KPI from its own link, and "Back to overview" returns', async () => {
     const user = userEvent.setup();
     renderInsights();
@@ -864,84 +466,6 @@ describe('InsightsView', () => {
     await user.click(within(section('People to review')).getByRole('button', { name: 'Back to overview' }));
     expect(latestFilters.current.kpi).toBeUndefined();
     expect(screen.queryByRole('heading', { name: 'People Contribution Analysis' })).not.toBeInTheDocument();
-  });
-
-  it('derives recommended actions from the leading driver and low-performing teams', async () => {
-    const user = userEvent.setup();
-    renderInsights();
-    const actions = section('Recommended actions');
-
-    expect(within(actions).getByRole('button', { name: /Focus on CPL/ })).toHaveTextContent('Largest performance gap (-5.6%)');
-    expect(within(actions).getByRole('button', { name: /Review low-performing teams/ })).toHaveTextContent('Marketing');
-    await user.click(within(actions).getByRole('button', { name: /Coach affected employees/ }));
-    expect(screen.getByText('Planning page')).toBeInTheDocument();
-  });
-
-  it('expands and collapses every More analysis accordion', async () => {
-    const user = userEvent.setup();
-    renderInsights();
-
-    await user.click(screen.getByRole('button', { name: 'Expand all' }));
-    ['KPI overview', 'Performance by role', 'Weighted score contribution', 'Recent critical alerts'].forEach((name) => {
-      expect(section(name)).toBeInTheDocument();
-    });
-    expect(within(section('KPI overview')).getByText('91.7%')).toBeInTheDocument();
-    expect(within(section('Performance by role')).getByText('Media Buyer')).toBeInTheDocument();
-    expect(within(section('Recent critical alerts')).getByText('All positions average declined by 94.4%')).toBeInTheDocument();
-
-    await user.click(screen.getByRole('button', { name: 'Collapse all' }));
-    expect(screen.queryByRole('region', { name: 'KPI overview' })).not.toBeInTheDocument();
-  });
-
-  it('renders evidence-based summaries and opens insight details', async () => {
-    const user = userEvent.setup();
-    const { container } = renderInsights();
-
-    await user.click(screen.getByRole('button', { name: /Weighted score contribution/ }));
-    expect(screen.getAllByText('-5.6%').length).toBeGreaterThan(1);
-    expect(screen.getAllByText('CPL contributed to the performance gap').length).toBeGreaterThan(0);
-    await user.click(screen.getByRole('button', { name: 'View KPI details' }));
-    const dialog = screen.getByRole('dialog', { name: 'CPL contributed to the performance gap' });
-    expect(dialog).toBeInTheDocument();
-    expect(container).not.toContainElement(dialog);
-    expect(dialog.closest('.fixed')?.parentElement).toBe(document.body);
-    expect(screen.getAllByText('136.00 AED').length).toBeGreaterThan(0);
-  });
-
-  it('requires confirmation before preparing unsaved planning context', async () => {
-    const user = userEvent.setup();
-    renderInsights();
-    await user.click(screen.getByRole('button', { name: /Weighted score contribution/ }));
-    await user.click(screen.getByRole('button', { name: 'View KPI details' }));
-    await user.click(screen.getByRole('button', { name: /Create Plan/i }));
-
-    expect(screen.getByText(/does not create or save a plan/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Confirm and prepare draft/i })).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: /Confirm and prepare draft/i }));
-    expect(screen.getByRole('button', { name: /Open Planning to assign owner and due date/i })).toBeInTheDocument();
-  });
-
-  it('renders authorized team analyses and opens the canonical detail drawer', async () => {
-    const user = userEvent.setup();
-    renderInsights();
-
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Function' }), 'Marketing');
-    expect(screen.getByRole('heading', { name: 'Team KPI Analysis' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Team Risk Matrix' })).toBeInTheDocument();
-    expect(screen.getAllByText('Sales').length).toBeGreaterThan(0);
-    expect(screen.getByText('No measured issue')).toBeInTheDocument();
-    expect(screen.getAllByText('Outbound').length).toBeGreaterThan(0);
-    expect(screen.getByText(/Showing 1–10 of 13 analyses/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '2' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '11' })).not.toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: '2' }));
-    expect(screen.getByText(/Showing 11–13 of 13 analyses/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Previous page' })).toBeEnabled();
-    await user.click(screen.getByRole('button', { name: 'Previous page' }));
-    await user.click(screen.getByRole('button', { name: 'View No Show Rate is improving but remains above target' }));
-
-    expect(screen.getByRole('dialog', { name: 'No Show Rate is improving but remains above target' })).toBeInTheDocument();
-    expect(screen.getByText(/does not contribute to the weighted score/)).toBeInTheDocument();
   });
 
   it('shows detailed people analysis and the raw KPI trend after selecting a KPI', async () => {
@@ -1123,7 +647,7 @@ describe('InsightsView', () => {
     it('keeps a Team=Marketing history entry as a team (legacy function links are read on first load only)', async () => {
       const user = userEvent.setup();
       renderWithHistory(['/executive', '/insights']);
-      await user.click(within(within(section('Teams needing attention')).getByRole('list', { name: 'Teams needing attention' })).getAllByRole('button')[0]);
+      await user.selectOptions(screen.getByRole('combobox', { name: 'Team' }), 'Marketing');
       expect(Object.fromEntries(currentSearch())).toEqual({ team: 'Marketing' });
       expect(latestFilters.current).toEqual({ team: 'Marketing' });
       await user.selectOptions(screen.getByRole('combobox', { name: 'Performance level' }), 'Employee');
@@ -1158,23 +682,6 @@ describe('InsightsView', () => {
       await back(user);
       expect(screen.getByText('Executive page')).toBeInTheDocument();
     });
-  });
-
-  it('keeps focus on the chart point when Escape hides its tooltip (QA BUG-2)', async () => {
-    const user = userEvent.setup();
-    renderInsights('/insights', false);
-    const june = screen.getByTestId('performance-trend-point-2026-06');
-    june.focus();
-    await user.keyboard('{ArrowLeft}');
-    const may = screen.getByTestId('performance-trend-point-2026-05');
-    expect(may).toHaveFocus();
-    await user.keyboard('{Escape}');
-    // Closed header dropdowns used to restore focus to their trigger on the next frame.
-    await new Promise((resolve) => window.requestAnimationFrame(() => resolve(null)));
-    expect(may).toHaveFocus();
-    expect(screen.queryByTestId('performance-trend-tooltip')).not.toBeInTheDocument();
-    await user.keyboard('{ArrowLeft}');
-    expect(screen.getByTestId('performance-trend-point-2026-04')).toHaveFocus();
   });
 
   describe('switching functions directly (QA BUG-5)', () => {
@@ -1436,6 +943,201 @@ describe('InsightsView', () => {
       expect(latestFilters.current).toMatchObject({ teamFunction: 'Call Center', team: 'Outbound' });
       expect(latestFilters.current.performanceLevel).toBeUndefined();
       expect(currentSearch().get('performance_level')).toBeNull();
+    });
+  });
+
+  describe('KPI diagnosis, summary, actions and the Executive Summary link', () => {
+    beforeEach(() => {
+      scopeMock.mode = 'pr14';
+      scopeMock.teamFunctionsOverride = null;
+      workspaceMock.overrides = {};
+      workspaceMock.query = {};
+      actionMocks.getAllActions.mockReturnValue([]);
+    });
+
+    const action = (overrides: Record<string, unknown>) => ({
+      id: 'act-1', employee_id: 'E1', employee_name: 'Analyst One', team: 'Marketing', month: 'June',
+      action_type: 'Coaching', action_text: 'Coach the booking script', root_cause_note: '', created_by: 'Manager',
+      created_at: '2026-06-01', synced: true, status: 'Open', owner: { id: 'u1', name: 'Ada Owner' }, due_date: '2026-06-30',
+      linked_kpi_key: 'cpl', is_overdue: false, ...overrides,
+    });
+
+    it('orders the sections: KPI diagnosis, People to review, Actions, and drops the removed sections', () => {
+      renderInsights();
+      const headings = screen.getAllByRole('heading', { level: 2 }).map((heading) => heading.textContent);
+      const order = ['KPI diagnosis', 'People to review', 'Actions'];
+      const positions = order.map((title) => headings.indexOf(title));
+      expect(positions.every((position) => position >= 0)).toBe(true);
+      expect([...positions].sort((a, b) => a - b)).toEqual(positions);
+      for (const removed of ['Key drivers of the gap', 'Recommended actions', 'Team KPI Analysis', 'Team Risk Matrix', 'Decision Support Notes', 'More analysis (optional)', 'Geography performance', 'Teams needing attention']) {
+        expect(headings).not.toContain(removed);
+      }
+    });
+
+    it('shows the summary strip with the team score, its change and the KPIs below target', () => {
+      renderInsights();
+      const strip = screen.getByRole('region', { name: 'Summary' });
+      expect(strip).toHaveTextContent('77.5%');
+      expect(strip).toHaveTextContent('1.9 pts vs previous month');
+      expect(strip).toHaveTextContent('2 of 3 KPIs below target');
+    });
+
+    it('shows a critical alert inline only when there are critical priority insights', () => {
+      const { unmount } = renderInsights();
+      expect(screen.getByRole('button', { name: /2 critical alerts/ })).toBeInTheDocument();
+      unmount();
+
+      workspaceMock.overrides = { priority_insights: [] };
+      renderInsights();
+      expect(screen.queryByRole('button', { name: /critical alerts?/ })).not.toBeInTheDocument();
+    });
+
+    it('lists one row per scored KPI in the order the API sends, with the signed effect and the status', () => {
+      renderInsights();
+      const rows = within(within(section('KPI diagnosis')).getByRole('table')).getAllByRole('row').slice(1);
+      expect(rows).toHaveLength(3);
+      expect(within(rows[0]).getByRole('button', { name: 'CPL' })).toHaveAttribute('aria-pressed', 'false');
+      expect(rows[0]).toHaveTextContent('136 AED vs ≤ 60 AED');
+      expect(rows[0]).toHaveTextContent('−3.80 pts');
+      expect(rows[0]).toHaveTextContent('Critical');
+      expect(rows[0]).toHaveTextContent('Marketing · 44% of target');
+      expect(rows[1]).toHaveTextContent('Also in scope: Inbound · Other');
+      expect(rows[1]).toHaveTextContent('51.0% vs ≤ 20.0%');
+      expect(rows[1]).toHaveTextContent('Critical');
+      expect(rows[2]).toHaveTextContent('On target');
+    });
+
+    it('shows no team for a KPI when the scope has one team', () => {
+      workspaceMock.overrides = {
+        kpi_diagnosis: [{
+          key: 'cpl', label: 'CPL', unit: 'AED', direction: 'lower_better', weight: 0.2,
+          actual: 136, target: 60, achievement_percent: 44.12, status: 'critical', effect_points: -3.8,
+          six_months: [], people_below_target: 0, most_below_team: null, other_cohorts: [], teams: ['Marketing'],
+        }],
+      };
+      renderInsights();
+      const row = within(within(section('KPI diagnosis')).getByRole('table')).getAllByRole('row')[1];
+      expect(within(row).getAllByRole('cell').at(-1)).toHaveTextContent('—');
+    });
+
+    it('shows the ten largest negative effects first in a multi-team scope, with a Team column and Show all', async () => {
+      const user = userEvent.setup();
+      // Backend order: largest negative effect first. Twelve KPIs across two teams.
+      workspaceMock.overrides = {
+        kpi_diagnosis: Array.from({ length: 12 }, (_, index) => ({
+          key: `kpi${index}`, label: `KPI ${index}`, unit: '%', direction: 'higher_better', weight: 0.1,
+          actual: 0.5, target: 1, achievement_percent: 50, status: 'critical', effect_points: index - 12,
+          people_below_target: 1, six_months: [], most_below_team: null, other_cohorts: [],
+          teams: [index % 2 === 0 ? 'Marketing' : 'Inbound'],
+        })),
+      };
+      renderInsights();
+      const table = within(section('KPI diagnosis')).getByRole('table');
+      expect(within(table).getByRole('columnheader', { name: 'Team' })).toBeInTheDocument();
+      expect(within(table).getAllByRole('row').slice(1)).toHaveLength(10);
+      expect(within(table).getAllByRole('row')[1]).toHaveTextContent('KPI 0');
+
+      await user.click(within(section('KPI diagnosis')).getByRole('button', { name: 'Show all 12' }));
+      expect(within(within(section('KPI diagnosis')).getByRole('table')).getAllByRole('row').slice(1)).toHaveLength(12);
+      await user.click(within(section('KPI diagnosis')).getByRole('button', { name: 'Show top 10' }));
+      expect(within(within(section('KPI diagnosis')).getByRole('table')).getAllByRole('row').slice(1)).toHaveLength(10);
+    });
+
+    it('filters the multi-team table by a team chip and clears the filter with All teams', async () => {
+      const user = userEvent.setup();
+      renderInsights();
+      const diagnosis = section('KPI diagnosis');
+
+      await user.click(within(diagnosis).getByRole('button', { name: 'Inbound' }));
+      expect(within(diagnosis).getByRole('button', { name: 'Inbound' })).toHaveAttribute('aria-pressed', 'true');
+      expect(within(within(diagnosis).getByRole('table')).getAllByRole('row').slice(1)).toHaveLength(1);
+
+      await user.click(within(diagnosis).getByRole('button', { name: 'All teams' }));
+      expect(within(within(diagnosis).getByRole('table')).getAllByRole('row').slice(1)).toHaveLength(3);
+    });
+
+    it('names the effect column for what it measures, with the same explanation as its tooltip', () => {
+      renderInsights();
+      const header = within(section('KPI diagnosis')).getByRole('columnheader', { name: 'Points lost by people below target' });
+      expect(header).toHaveAttribute('title', "Effect on team score: the sum of each employee's weighted impact on this KPI, as in People to review.");
+    });
+
+    it('notes a KPI that is on target for the team while people below target still lose points', () => {
+      workspaceMock.overrides = {
+        kpi_diagnosis: [{
+          key: 'rejection', label: 'Rejection Rate', unit: '%', direction: 'lower_better', weight: 0.2,
+          actual: 0.0089, target: 0.01, achievement_percent: 112.36, status: 'on_track', effect_points: -8.12,
+          people_below_target: 4, six_months: [], most_below_team: null, other_cohorts: [], teams: ['Offshore'],
+        }],
+      };
+      renderInsights();
+      const row = within(within(section('KPI diagnosis')).getByRole('table')).getAllByRole('row')[1];
+      expect(row).toHaveTextContent('−8.12 pts');
+      expect(row).toHaveTextContent('Team on target · 4 people below');
+    });
+
+    it('selects a KPI from its row: the KPI filter follows and the detail and People to review open for it', async () => {
+      const user = userEvent.setup();
+      renderInsights();
+      await user.click(within(section('KPI diagnosis')).getByRole('button', { name: 'CPL' }));
+
+      expect(latestFilters.current.kpi).toBe('cpl');
+      expect(screen.getByRole('region', { name: 'Selected KPI trend' })).toBeInTheDocument();
+      expect(within(section('People to review')).getByText(/People pulling the team score down most on CPL/)).toBeInTheDocument();
+    });
+
+    it('lists the corrective actions recorded for the selected KPI and counts people below target with no action', async () => {
+      const user = userEvent.setup();
+      actionMocks.getAllActions.mockReturnValue([action({ is_overdue: true })]);
+      renderInsights();
+      await user.click(within(section('KPI diagnosis')).getByRole('button', { name: 'CPL' }));
+
+      const actions = section('Actions');
+      expect(within(actions).getByText('Coach the booking script')).toBeInTheDocument();
+      expect(within(actions).getByText('Ada Owner')).toBeInTheDocument();
+      expect(within(actions).getByText(/overdue/)).toHaveClass('text-rose-600');
+      expect(actions).toHaveTextContent('1 people below target on CPL have no action yet');
+      expect(within(actions).getByRole('button', { name: 'Add action for Analyst Two' })).toBeInTheDocument();
+      expect(within(actions).getByRole('link', { name: 'Open follow-up board' })).toHaveAttribute('href', '/corrective-actions');
+    });
+
+    it('says so when no action is recorded for the selected KPI, and counts every person below target', async () => {
+      const user = userEvent.setup();
+      renderInsights();
+      await user.click(within(section('KPI diagnosis')).getByRole('button', { name: 'CPL' }));
+
+      const actions = section('Actions');
+      expect(actions).toHaveTextContent('No corrective actions are recorded for this KPI in scope.');
+      expect(actions).toHaveTextContent('2 people below target on CPL have no action yet');
+    });
+
+    it('counts actions with no linked KPI without listing them under a KPI', async () => {
+      const user = userEvent.setup();
+      actionMocks.getAllActions.mockReturnValue([action({ id: 'act-9', linked_kpi_key: null, action_text: 'General coaching' })]);
+      renderInsights();
+      await user.click(within(section('KPI diagnosis')).getByRole('button', { name: 'CPL' }));
+
+      const actions = section('Actions');
+      expect(within(actions).queryByText('General coaching')).not.toBeInTheDocument();
+      expect(actions).toHaveTextContent('1 action in scope has no linked KPI');
+    });
+
+    it('links to the Executive Summary for teams and regions, keeping the scope filters', () => {
+      renderInsights('/insights?region=UAE');
+      const link = screen.getByRole('link', { name: 'Teams and regions are on the Executive Summary' });
+      expect(link.getAttribute('href')).toMatch(/^\/executive\?/);
+      expect(link.getAttribute('href')).toContain('region=UAE');
+    });
+
+    it('shows the same team score as the Executive Summary story for the scope and month', () => {
+      renderInsights();
+      // executive_story.current_score is the score the Executive Summary shows for the same filters.
+      expect(screen.getByRole('region', { name: 'Summary' })).toHaveTextContent('77.5%');
+    });
+
+    it('counts KPIs below target by KPI status, not by the Executive Summary person rule (score under 90)', () => {
+      renderInsights();
+      expect(screen.getByRole('region', { name: 'Summary' })).toHaveTextContent('2 of 3 KPIs below target');
     });
   });
 });
