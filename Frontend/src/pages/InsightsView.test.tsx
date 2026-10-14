@@ -828,13 +828,13 @@ describe('InsightsView', () => {
     const people = section('People to review');
     const rows = within(within(people).getByRole('list', { name: 'People to review' })).getAllByRole('button');
 
-    expect(within(people).getByText(/· CPL/)).toBeInTheDocument();
+    expect(within(people).getByText(/People pulling the team score down most on CPL/)).toBeInTheDocument();
     expect(rows).toHaveLength(2);
     expect(within(rows[0]).getByText('Analyst One')).toBeInTheDocument();
     expect(within(rows[0]).getByText('Marketing')).toBeInTheDocument();
     expect(within(rows[0]).getByText(/74\.2%/)).toBeInTheDocument();
     expect(within(rows[0]).getByText('D · Below Average')).toBeInTheDocument();
-    expect(within(rows[0]).getByText('-2.8%')).toBeInTheDocument();
+    expect(within(rows[0]).getByText('−2.8 pts')).toBeInTheDocument();
     expect(within(rows[1]).getByText('C · Average')).toBeInTheDocument();
 
     await user.click(rows[0]);
@@ -849,17 +849,21 @@ describe('InsightsView', () => {
     expect(positions.every((position) => position >= 0)).toBe(true);
     expect([...positions].sort((a, b) => a - b)).toEqual(positions);
 
-    expect(within(section('People to review')).getByRole('button', { name: /View all/ })).toHaveAttribute('data-variant', 'link');
+    expect(within(section('People to review')).getByRole('button', { name: 'Full CPL analysis' })).toBeInTheDocument();
     expect(within(section('Key drivers of the gap')).getByRole('button', { name: /View all drivers/ })).toHaveAttribute('data-variant', 'button');
   });
 
-  it('opens the full people contribution analysis for the leading KPI from "View all"', async () => {
+  it('opens the full people contribution analysis for the leading KPI from its own link, and "Back to overview" returns', async () => {
     const user = userEvent.setup();
     renderInsights();
 
-    await user.click(within(section('People to review')).getByRole('button', { name: /View all/ }));
+    await user.click(within(section('People to review')).getByRole('button', { name: 'Full CPL analysis' }));
     expect(latestFilters.current.kpi).toBe('cpl');
     expect(screen.getByRole('heading', { name: 'People Contribution Analysis' })).toBeInTheDocument();
+
+    await user.click(within(section('People to review')).getByRole('button', { name: 'Back to overview' }));
+    expect(latestFilters.current.kpi).toBeUndefined();
+    expect(screen.queryByRole('heading', { name: 'People Contribution Analysis' })).not.toBeInTheDocument();
   });
 
   it('derives recommended actions from the leading driver and low-performing teams', async () => {

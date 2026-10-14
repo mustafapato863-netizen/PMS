@@ -739,7 +739,9 @@ export default function InsightsView() {
       <PeopleToReviewSection
         analysis={workspace.people_contribution_analysis}
         onOpenEmployee={openEmployee}
-        onViewAll={filters.kpi || !leadingPeopleKpi ? undefined : () => update('kpi', leadingPeopleKpi)}
+        fullAnalysisOpen={Boolean(leadingPeopleKpi) && filters.kpi === leadingPeopleKpi}
+        onOpenFullAnalysis={leadingPeopleKpi ? () => update('kpi', leadingPeopleKpi) : undefined}
+        onBackToOverview={() => update('kpi', '')}
       />
 
       {filters.kpi && selectedKpiTrend && (
