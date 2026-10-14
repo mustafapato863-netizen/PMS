@@ -53,6 +53,7 @@ from services.planning_service import PlanningService, MONTH_ORDER
 from services.scoring_basis_comparison import compare_scoring_basis, previous_calendar_month
 from services.tracking_indicators import tracking_definitions, tracking_indicator_keys
 import utils.kpi_direction as _kd
+from utils.scoring_rules import score_percent
 from utils.report_scope import (
     filter_records_by_scope,
     filter_records_by_team_levels,
@@ -1687,6 +1688,7 @@ class InsightsService:
                     classification = "affected"
                     severity = "On target"
 
+            performance_score = _evaluation_value(record, "score")
             rows.append(InsightPersonContribution(
                 employee_id=str(_value(record, "employee_id", "")),
                 employee_name=str(_value(record, "employee_name", "") or _value(record, "employee_id", "")),
@@ -1708,6 +1710,7 @@ class InsightsService:
                 change_value=round(change_value, 2) if change_value is not None else None,
                 trend_status=_trend_status(change_value),
                 target_status=target_status,
+                performance_score=round(score_percent(float(performance_score)), 2) if performance_score is not None else None,
             ))
 
         rows.sort(key=lambda row: (

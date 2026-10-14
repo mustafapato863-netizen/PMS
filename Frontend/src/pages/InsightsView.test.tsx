@@ -165,14 +165,14 @@ vi.mock('../hooks/api/useInsightsWorkspace', async (importOriginal) => {
             performance_level: 'Employee', position: 'Media Buyer', kpi_key: 'cpl',
             kpi_label: 'CPL', unit: 'AED', direction: 'lower_better',
             current_value: 136, target_value: 60, gap: -76, weighted_impact: -2.8,
-            trend: 81, severity: 'High', classification: 'negative',
+            trend: 81, severity: 'High', classification: 'negative', performance_score: 74.2,
           },
           {
             employee_id: 'E2', employee_name: 'Analyst Two', team: 'Marketing',
             performance_level: 'Employee', position: 'Media Buyer', kpi_key: 'cpl',
             kpi_label: 'CPL', unit: 'AED', direction: 'lower_better',
             current_value: 75, target_value: 60, gap: -15, weighted_impact: -1,
-            trend: 10, severity: 'Medium', classification: 'negative',
+            trend: 10, severity: 'Medium', classification: 'negative', performance_score: 85,
           },
         ],
       },
@@ -831,8 +831,9 @@ describe('InsightsView', () => {
     expect(within(people).getByText(/· CPL/)).toBeInTheDocument();
     expect(rows).toHaveLength(2);
     expect(within(rows[0]).getByText('Analyst One')).toBeInTheDocument();
-    expect(within(rows[0]).getByText('136 AED / 60 AED')).toBeInTheDocument();
-    expect(within(rows[0]).getByText('E · Unsatisfactory')).toBeInTheDocument();
+    expect(within(rows[0]).getByText('Marketing')).toBeInTheDocument();
+    expect(within(rows[0]).getByText(/74\.2%/)).toBeInTheDocument();
+    expect(within(rows[0]).getByText('D · Below Average')).toBeInTheDocument();
     expect(within(rows[0]).getByText('-2.8%')).toBeInTheDocument();
     expect(within(rows[1]).getByText('C · Average')).toBeInTheDocument();
 
