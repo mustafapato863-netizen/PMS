@@ -265,6 +265,37 @@ const resolveKpiValue = (record: AgentRecord, key: string) => (
   record.kpi_values?.find((value) => value.kpi_key === key)
 );
 
+/**
+ * The config lists the KPIs it knows. A stored KPI it does not know (one the sheet added) gets a
+ * definition built from its stored row, so it still shows with its own label, unit and weight.
+ */
+export const definitionsWithStoredKpis = (
+  definitions: MarketingKpiConfig[],
+  records: AgentRecord[],
+): MarketingKpiConfig[] => {
+  const known = new Set(definitions.map((definition) => definition.key));
+  const stored = new Map<string, MarketingKpiConfig>();
+  let displayOrder = definitions.reduce((highest, definition) => Math.max(highest, definition.display_order), 0);
+  records.forEach((record) => {
+    (record.kpi_values || []).forEach((value) => {
+      if (known.has(value.kpi_key) || stored.has(value.kpi_key)) return;
+      displayOrder += 1;
+      stored.set(value.kpi_key, {
+        key: value.kpi_key,
+        label: value.label || value.kpi_key,
+        perspective: value.perspective || '',
+        weight: value.weight_applied,
+        direction: value.direction,
+        unit: value.unit,
+        color: value.color || '#64748B',
+        display_order: displayOrder,
+        aggregation: { method: 'weighted_average', weight_col: 'Target Value' },
+      });
+    });
+  });
+  return [...definitions, ...stored.values()];
+};
+
 interface MarketingKpiAggregationContext {
   historicalRecords?: AgentRecord[];
   currentPeriod?: MarketingPeriod | null;
@@ -502,13 +533,13 @@ export const buildMarketingAnalytics = (
     const kpis = aggregateMarketingKpis(
       currentPositionRecords,
       previousPositionRecords,
-      definition?.kpis || [],
+      definitionsWithStoredKpis(definition?.kpis || [], currentPositionRecords),
       { historicalRecords: historicalPositionRecords, currentPeriod, previousPeriod },
     );
     return {
       position,
       employeeCount: isAllMonths ? currentEmployees.length : uniqueEmployeeCount(currentPositionRecords),
-      kpiCount: definition?.kpis.length || 0,
+      kpiCount: definitionsWithStoredKpis(definition?.kpis || [], currentPositionRecords).length,
       averageScore: currentPositionRecords.length ? currentScore : null,
       classABPercentage: currentEmployees.length
         ? ((currentGrades.A + currentGrades.B) / currentEmployees.length) * 100
@@ -532,7 +563,7 @@ export const buildMarketingAnalytics = (
     ? aggregateMarketingKpis(
         currentRecords,
         previousRecords,
-        selectedConfig.kpis,
+        definitionsWithStoredKpis(selectedConfig.kpis, currentRecords),
         { historicalRecords: historicalScopeRecords, currentPeriod, previousPeriod },
       )
     : [];
@@ -547,7 +578,7 @@ export const buildMarketingAnalytics = (
       const previous = previousByEmployee.get(recordId(record));
       const score = employee.score;
       const previousScore = previous ? normalizeMarketingScore(previous.evaluation.score) : null;
-      const definitions = config.positions[recordPosition(record)]?.kpis || [];
+      const definitions = definitionsWithStoredKpis(config.positions[recordPosition(record)]?.kpis || [], [record]);
       const employeeHistory = historicalScopeRecords.filter(
         (historicalRecord) => recordId(historicalRecord) === recordId(record),
       );
