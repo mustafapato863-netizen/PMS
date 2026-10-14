@@ -1,6 +1,6 @@
 import { INSIGHT_FUNCTIONS, teamBelongsToFunction, type TeamFunctionMap } from '../insights/filterCascade';
 import type { ExecutiveFunction } from './types';
-import { canonicalTeamName, isPreApprovalsUaeTeam } from '../../types';
+import { CALL_CENTER_TEAM, PRE_APPROVALS_UAE_TEAM, RCM_TEAM, canonicalTeamName, isCallCenterTeam, isPreApprovalsUaeTeam, isRcmTeam, teamPath } from '../../types';
 import { isFunctionViewerRole } from '../../lib/access';
 
 const IP_OFFSHORE_TEAM = 'Pre-Approvals IP Offshore';
@@ -75,9 +75,55 @@ export function isExecutiveFunction(value: string | null | undefined): value is 
   return EXECUTIVE_FUNCTIONS.some((name) => name === value);
 }
 
-/** Team dashboard path, same slug rule as the sidebar team links. */
-export function teamPath(team: string): string {
-  return `/team/${team.trim().toLowerCase().replace(/&/g, 'and').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')}`;
+/**
+ * Parent view a team sits under, only when that parent page shows the team:
+ * the UAE workflows (OP/IP Final merged views, IP Elective) under the UAE
+ * Pre-Approvals view, Inbound and Outbound under Call Center, other RCM teams
+ * under RCM. Pre-Approvals IP Offshore is not on the UAE parent page, so it has
+ * no Pre-Approvals crumb. Parent views and stand-alone teams have none.
+ */
+export function parentTeamView(team: string | null | undefined): string | null {
+  const name = canonicalTeamName(team);
+  if (!name || name === PRE_APPROVALS_UAE_TEAM || name === CALL_CENTER_TEAM || name === RCM_TEAM) return null;
+  if (isPreApprovalsUaeTeam(name)) return PRE_APPROVALS_UAE_TEAM;
+  if (isCallCenterTeam(name)) return CALL_CENTER_TEAM;
+  if (isRcmTeam(name)) return RCM_TEAM;
+  return null;
+}
+
+export interface TeamBreadcrumb {
+  label: string;
+  href?: string;
+  icon?: 'home' | 'teams' | 'team';
+}
+
+/**
+ * Executive Summary > Function > Team or parent view > Sub-team. The function
+ * crumb opens the Function Summary when `canOpenFunctionSummary`, otherwise the
+ * Executive Summary filtered to that function. A crumb that would repeat the
+ * name above it (RCM, Call Center, Sales) is left out. `team` is the resolved
+ * team name, or null for the all-teams view.
+ */
+export function teamBreadcrumbs({ team, displayName, canOpenFunctionSummary, allTeamsHref }: {
+  team: string | null;
+  displayName: string;
+  canOpenFunctionSummary: boolean;
+  allTeamsHref: string;
+}): TeamBreadcrumb[] {
+  const summary: TeamBreadcrumb = { label: 'Executive Summary', href: '/executive', icon: 'home' };
+  if (!team) return [summary, { label: 'Team Performance', href: allTeamsHref, icon: 'teams' }];
+  const crumbs: TeamBreadcrumb[] = [summary];
+  const fn = executiveFunctionForTeam(team);
+  const parent = parentTeamView(team);
+  if (fn && fn !== canonicalTeamName(team)) {
+    crumbs.push({
+      label: fn,
+      href: canOpenFunctionSummary ? `/function-summary/${functionSlug(fn)}` : `/executive?function=${encodeURIComponent(fn)}`,
+    });
+  }
+  if (parent && parent !== fn) crumbs.push({ label: parent, href: teamPath(parent) });
+  crumbs.push({ label: displayName, icon: 'team' });
+  return crumbs;
 }
 
 /**

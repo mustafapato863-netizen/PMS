@@ -3,7 +3,7 @@ import { AlertTriangle, ArrowRight, CheckCircle2, ClipboardList, ExternalLink, X
 import { useNavigate } from 'react-router-dom';
 import type { InsightItem } from '../../features/insights/types';
 import { SEVERITY_LABELS, SEVERITY_STYLES, severityDisplay } from '../../features/insights/severity';
-import { buildTeamPath } from '../../lib/searchNavigation';
+import { teamPath } from '../../types';
 import OverlayPortal from '../common/OverlayPortal';
 import BasisComparisonNote from '../../features/evaluation/BasisComparisonNote';
 
@@ -36,7 +36,7 @@ export default function InsightDetailDrawer({ insight, onClose }: { insight: Ins
       if (insight.performance_level) params.set('performance_level', insight.performance_level);
       if (insight.position) params.set('position', insight.position);
       if (insight.kpi_key) params.set('selected_kpi', insight.kpi_key);
-      navigate(`${buildTeamPath(insight.team)}${params.size ? `?${params}` : ''}`);
+      navigate(`${teamPath(insight.team)}${params.size ? `?${params}` : ''}`);
     }
     onClose();
   };

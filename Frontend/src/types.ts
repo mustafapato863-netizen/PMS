@@ -423,6 +423,59 @@ export const TEAM_DB_NAME_MAP: Record<string, string> = {
   'marketing': 'Marketing',
 };
 
+/** Letters and digits only: "Pre-Approvals IP Offshore", "pre-approvals-ip-offshore" and "PRE Approvals IP Offshore" share one key. */
+const teamRouteKey = (value: string | null | undefined) =>
+  String(value ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+
+/**
+ * Alias table beside the maps above: every name in TEAM_ID_MAP, TEAM_NAME_MAP
+ * (display) and TEAM_DB_NAME_MAP (DB), keyed by letters-and-digits, to its
+ * canonical route id. Derived from the maps, so no name is listed twice. A
+ * segment that is already a route id is matched first (resolveTeamRouteId).
+ */
+export const TEAM_ROUTE_ALIASES: ReadonlyMap<string, string> = (() => {
+  const aliases = new Map<string, string>();
+  const add = (name: string, id: string) => {
+    const key = teamRouteKey(name);
+    if (key && !aliases.has(key)) aliases.set(key, id);
+  };
+  Object.entries(TEAM_ID_MAP).forEach(([name, id]) => add(name, id));
+  Object.entries(TEAM_NAME_MAP).forEach(([id, name]) => add(name, id));
+  Object.entries(TEAM_DB_NAME_MAP).forEach(([id, name]) => add(name, id));
+  return aliases;
+})();
+
+/**
+ * Canonical route id for a `:teamId` URL segment, or null when no team matches.
+ * Accepts a route id (current or legacy, any case) or the slug of a display or
+ * DB name. Source OP/IP Final teams keep their own ids and resolve to the same
+ * page as their merged view.
+ */
+export function resolveTeamRouteId(segment: string | null | undefined): string | null {
+  const lower = String(segment ?? '').trim().toLowerCase();
+  if (!lower) return null;
+  if (Object.prototype.hasOwnProperty.call(TEAM_NAME_MAP, lower)) return lower;
+  return TEAM_ROUTE_ALIASES.get(teamRouteKey(lower)) ?? null;
+}
+
+/** Canonical route id for a known team name (display, DB or config name), or null for an unknown team. */
+export function teamRouteIdForName(name: string | null | undefined): string | null {
+  return TEAM_ROUTE_ALIASES.get(teamRouteKey(canonicalTeamName(name)))
+    ?? TEAM_ROUTE_ALIASES.get(teamRouteKey(name))
+    ?? null;
+}
+
+/**
+ * The only team link builder. A known team gets its canonical route id, so
+ * saved links to the legacy ids keep working. An unknown team gets a slug,
+ * which the team page does not resolve, so it shows the not-found state.
+ */
+export function teamPath(team: string): string {
+  const id = teamRouteIdForName(team);
+  if (id) return `/team/${id}`;
+  return `/team/${team.trim().toLowerCase().replace(/&/g, 'and').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')}`;
+}
+
 // --- Action / CRM Types ---
 
 export type ActionType = 'Training' | 'Reward' | 'PIP' | 'Monitor' | 'Coaching';

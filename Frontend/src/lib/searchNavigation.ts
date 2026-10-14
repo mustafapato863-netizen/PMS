@@ -1,4 +1,4 @@
-import { TEAM_ID_MAP, type User } from '../types';
+import { teamPath, type User } from '../types';
 import {
   canAccessCorrectiveActions,
   canAccessFunctionSummary,
@@ -52,26 +52,6 @@ export interface GlobalSearchResponse {
   teams: GlobalSearchTeam[];
   employees: GlobalSearchEmployee[];
 }
-
-const slugifyTeam = (value: string) =>
-  value
-    .trim()
-    .toLowerCase()
-    .replace(/&/g, 'and')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-
-const normalizeTeam = (value: string) =>
-  value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim();
-
-export const buildTeamPath = (teamName: string) => {
-  const known = Object.entries(TEAM_ID_MAP).find(([name]) => normalizeTeam(name) === normalizeTeam(teamName));
-  return `/team/${known?.[1] || slugifyTeam(teamName)}`;
-};
 
 const includesQuery = (value: string, query: string) => value.toLowerCase().includes(query.toLowerCase());
 
@@ -318,7 +298,7 @@ export function buildRemoteSearchResults(data: GlobalSearchResponse): SearchResu
       label: team.name,
       subtitle: team.subtitle,
       icon: 'team' as const,
-      path: buildTeamPath(team.name),
+      path: teamPath(team.name),
     })),
   ];
 }

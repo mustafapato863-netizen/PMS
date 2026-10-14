@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from models.models import Action, Team, User
 from repositories.action_repository import ActionRepository
 from utils.report_scope import user_can_access_team
-from utils.team_identity import get_scoped_team, logical_team_name
+from utils.team_identity import logical_team_name
 
 
 class TeamActionService:
@@ -16,11 +16,15 @@ class TeamActionService:
         self.db = db
         self.actions = ActionRepository(db)
 
-    # Frontend slug → display_name alias map (mirrors types.ts TEAM_NAME_MAP)
+    # Frontend route id → display_name of the team row that stores its team-level
+    # notes. Mirrors the canonical route ids in types.ts TEAM_ID_MAP (plus the legacy
+    # ids and the elective display slug the frontend still accepts).
     _SLUG_ALIASES: dict[str, str] = {
+        "rcm": "RCM",
+        "call-center": "Call Center",
+        "pre-approvals-uae": "Pre-Approvals",
         "inbound": "Inbound",
         "outbound": "Outbound",
-        "call-center": "Call Center",
         "inbound-uae": "Inbound UAE",
         "pre-approvals": "Pre-Approvals IP Offshore",
         "sales": "Sales",
@@ -38,46 +42,45 @@ class TeamActionService:
         "pre-approvals-ip-final-dubai": "Pre-Approvals IP Final Dubai",
         "pre-approvals-ip-final": "Pre-Approvals IP Final Dubai",
         "pre-approvals-ip-final-shj-ajm": "Pre-Approvals IP Final Dubai",
+        "pre-approvals-ip-elective": "Pre-Approvals IP Elective Dubai",
         "pre-approvals-ip-elective-dubai": "Pre-Approvals IP Elective Dubai",
         "marketing": "Marketing",
     }
+    # Parent views. Call Center is a merged dashboard backed by Inbound and Outbound;
+    # its employee-level identity may be inactive after the source teams were split,
+    # but the dashboard still stores a parent-level action. RCM and the UAE
+    # Pre-Approvals parent are looked up the same way.
+    _PARENT_ROUTES: frozenset[str] = frozenset({"call-center", "rcm", "pre-approvals-uae"})
+
+    @staticmethod
+    def _route_slug(value: str) -> str:
+        return str(value).strip().casefold().replace("_", "-").replace(" ", "-")
 
     def _team(self, reference: str) -> Team:
-        normalized = reference.strip().casefold().replace("_", "-")
-
-        # Resolve frontend slug alias to display_name first
-        resolved_display = self._SLUG_ALIASES.get(normalized, "").casefold()
-
-        teams = self.db.query(Team).filter(Team.is_active.is_(True), Team.team_level == "employee").all()
-        for team in teams:
-            candidates = {
-                str(team.id).casefold(),
-                team.name.casefold(),
-                team.db_name.casefold(),
-                logical_team_name(team).casefold(),
-            }
-            candidates |= {value.replace(" ", "-").replace("_", "-") for value in candidates}
-            # Also add the resolved display name so slug aliases work
-            if resolved_display:
-                candidates.add(resolved_display)
-                candidates.add(resolved_display.replace(" ", "-").replace("_", "-"))
-            if normalized in candidates or reference.strip().casefold() in candidates:
-                return team
-
-        # Call Center is a merged dashboard backed by Inbound and Outbound.
-        # Its employee-level identity may be inactive after the source teams
-        # were split, but the dashboard still stores a parent-level action.
-        if normalized == "call-center":
-            parent = get_scoped_team(
-                self.db,
-                "Call Center",
-                "employee",
-                include_inactive=True,
-            )
-            if parent:
-                return parent
-
-        raise ValueError("Team not found")
+        normalized = self._route_slug(reference)
+        if not normalized:
+            raise ValueError("Team not found")
+        # A route id names the team row that stores its notes. Any other reference is
+        # matched only against a team's own names: the alias of one team is never
+        # offered to every team, which is how every page used to land on the first row.
+        alias = self._SLUG_ALIASES.get(normalized)
+        wanted = self._route_slug(alias if alias is not None else reference)
+        query = self.db.query(Team).filter(Team.team_level == "employee")
+        if normalized not in self._PARENT_ROUTES:
+            query = query.filter(Team.is_active.is_(True))
+        teams = query.all()
+        matches = [team for team in teams if self._route_slug(logical_team_name(team)) == wanted]
+        if not matches and alias is None:
+            matches = [
+                team
+                for team in teams
+                if normalized in {str(team.id).casefold(), self._route_slug(team.name), self._route_slug(team.db_name)}
+            ]
+        if not matches:
+            raise ValueError("Team not found")
+        if len(matches) > 1:
+            raise ValueError("Team reference matches more than one team")
+        return matches[0]
 
     @staticmethod
     def _ensure_team_action_scope(scope: dict, team_name: str) -> None:

@@ -1,7 +1,7 @@
 /** Page-level helpers for the Executive / Function Summary headers. */
 import type { FilterOption } from '../../components/insights/overview/InsightsHeader';
 import { MONTHS, formatPeriod, periodOf } from './compose';
-import { teamPath } from './functions';
+import { teamPath } from '../../types';
 import type { ExecutivePerson, ExecutivePeriod, ExecutiveSummary, ExecutiveView } from './types';
 import { hasAllTeamsScope } from '../../lib/access';
 

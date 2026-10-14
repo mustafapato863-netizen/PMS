@@ -26,6 +26,15 @@ function team(name: string, score: number | null, flags: ExecutiveTeamFlag[]): E
 }
 
 describe('TeamsAtRiskCard', () => {
+  it('opens a Pre-Approvals team on its canonical page and keeps the branch and level filters', () => {
+    render(<MemoryRouter initialEntries={['/executive?branch=sharjah&level=Managerial']}><TeamsAtRiskCard teams={[
+      team('Pre-Approvals IP Offshore', 70, ['grade_d']),
+    ]} /></MemoryRouter>);
+
+    expect(screen.getByRole('link', { name: 'Pre-Approvals IP Offshore' }))
+      .toHaveAttribute('href', '/team/pre-approvals?branch=sharjah&performance_level=Managerial');
+  });
+
   it('includes Grade C/D/E and declining healthy teams, with matching flag labels', () => {
     render(<MemoryRouter><TeamsAtRiskCard teams={[
       team('Grade C team', 89.9, ['grade_c']),

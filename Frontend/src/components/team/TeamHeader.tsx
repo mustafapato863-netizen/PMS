@@ -39,7 +39,7 @@ interface TeamHeaderProps {
   disabledPerformanceLevel?: boolean;
   lockedBranch?: string;
   lockedRegion?: string;
-  scopedNavigation?: boolean;
+  breadcrumbs: BreadcrumbItem[];
 }
 
 const TeamHeader = ({
@@ -73,7 +73,7 @@ const TeamHeader = ({
   disabledPerformanceLevel,
   lockedBranch,
   lockedRegion,
-  scopedNavigation = false,
+  breadcrumbs,
 }: TeamHeaderProps) => {
   const [branchesOpen, setBranchesOpen] = useState(false);
   const branchesRef = useRef<HTMLDivElement>(null);
@@ -109,13 +109,6 @@ const TeamHeader = ({
       : [...selectedBranches, value];
     setBranchSelections(next.length > 0 ? next : ['all']);
   };
-  const breadcrumbItems: BreadcrumbItem[] = [
-    { label: 'Dashboard', href: '/executive', icon: 'home' },
-    { label: 'Team Performance', href: scopedNavigation || lockedBranch || lockedRegion ? '/executive' : '/team/all', icon: 'teams' },
-    ...(displayName && displayName !== 'All Teams'
-      ? [{ label: displayName, icon: 'team' as const }]
-      : []),
-  ];
   const activeFilterCount = [
     !disabledPerformanceLevel && performanceLevel !== 'All',
     showPreApprovalsWorkflowFilter && preApprovalsWorkflow !== 'all',
@@ -141,7 +134,7 @@ const TeamHeader = ({
           <h2 className="team-header-title text-xl font-extrabold leading-tight tracking-tight text-[var(--text-primary)] sm:text-2xl">
             {displayName}{performanceLevel !== 'All' && !disabledPerformanceLevel ? ` · ${performanceLevel}` : ''}
           </h2>
-          <Breadcrumb items={breadcrumbItems} />
+          <Breadcrumb items={breadcrumbs} />
         </div>
       </div>
       <ResponsiveFilters activeCount={activeFilterCount}>

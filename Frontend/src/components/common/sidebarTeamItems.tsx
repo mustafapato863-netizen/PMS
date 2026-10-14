@@ -24,6 +24,7 @@ import {
   ClipboardCheck,
   PhoneCall,
 } from 'lucide-react';
+import { teamPath } from '../../types';
 
 export const getTeamIcon = (teamName: string) => {
   const norm = teamName.trim().toLowerCase();
@@ -63,8 +64,8 @@ export const isHiddenTeam = (teamName: string) =>
   HIDDEN_TEAM_NAMES.has(teamName.trim().toLowerCase());
 
 export const TEAM_ITEMS = [
-  { name: 'Call Center', path: '/team/call-center', icon: <PhoneCall size={17} />, team: 'Call Center', region: 'egy' },
-  { name: 'Sales', path: '/team/sales', icon: <Target size={17} />, team: 'Sales', region: 'uae' },
-  { name: 'CSR', path: '/team/csr', icon: <Headphones size={17} />, team: 'CSR', region: 'uae' },
-  { name: 'Pharmacy', path: '/team/pharmacy', icon: <Pill size={17} />, team: 'Pharmacy', region: 'uae' },
+  { name: 'Call Center', path: teamPath('Call Center'), icon: <PhoneCall size={17} />, team: 'Call Center', region: 'egy' },
+  { name: 'Sales', path: teamPath('Sales'), icon: <Target size={17} />, team: 'Sales', region: 'uae' },
+  { name: 'CSR', path: teamPath('CSR'), icon: <Headphones size={17} />, team: 'CSR', region: 'uae' },
+  { name: 'Pharmacy', path: teamPath('Pharmacy'), icon: <Pill size={17} />, team: 'Pharmacy', region: 'uae' },
 ] as const;

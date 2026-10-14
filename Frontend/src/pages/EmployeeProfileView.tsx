@@ -5,6 +5,7 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, User, Plus, AlertTriangle, Loader2, Users, ChevronLeft, ChevronRight } from 'lucide-react';
 import Breadcrumb from '../components/common/Breadcrumb';
+import { teamPath } from '../types';
 import { PageLoadingSkeleton } from '../components/common/SkeletonLoader';
 import { usePerformanceData, useTeamData } from '../hooks/usePerformanceData';
 import { useActionStore } from '../hooks/useActionStore';
@@ -587,7 +588,7 @@ const EmployeeProfileView = () => {
           <Breadcrumb
             items={[
               { label: 'Dashboard', href: '/executive', icon: 'home' },
-              { label: 'Team Performance', href: employee ? `/team/${employee.team.toLowerCase().replace(/\s+/g, '-')}` : '/executive', icon: 'teams' },
+              { label: 'Team Performance', href: employee ? teamPath(employee.team) : '/executive', icon: 'teams' },
               { label: employee?.team || 'Team', icon: 'team' },
               { label: employee?.name || 'Employee', icon: 'employee' },
             ]}

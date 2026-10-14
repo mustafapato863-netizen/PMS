@@ -1,7 +1,7 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { ChevronDown, FileBarChart, LayoutGrid } from 'lucide-react';
-import { canonicalTeamName } from '../../types';
-import { executiveFunctionForTeam, functionSlug, isTeamInFunctions, teamPath } from '../../features/executive/functions';
+import { canonicalTeamName, teamPath } from '../../types';
+import { executiveFunctionForTeam, functionSlug, isTeamInFunctions } from '../../features/executive/functions';
 import type { ExecutiveFunction } from '../../features/executive/types';
 import { getTeamIcon, isHiddenTeam } from './sidebarTeamItems';
 

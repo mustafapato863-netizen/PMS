@@ -10,7 +10,8 @@ describe('team scoped filters', () => {
     render(<MemoryRouter><TeamHeader
       displayName="Inbound" month="June" uniqueMonths={['June', 'May']} setMonth={vi.fn()}
       region="UAE" setRegion={setRegion} location="dubai" setLocation={setLocation}
-      lockedBranch="Dubai" lockedRegion="UAE" scopedNavigation
+      lockedBranch="Dubai" lockedRegion="UAE"
+      breadcrumbs={[{ label: 'Executive Summary', href: '/executive', icon: 'home' }, { label: 'Inbound', icon: 'team' }]}
       performanceLevel="All" setPerformanceLevel={vi.fn()} onBack={vi.fn()}
     /></MemoryRouter>);
     fireEvent.click(screen.getByRole('button', { name: /^Filters,/ }));
@@ -20,6 +21,6 @@ describe('team scoped filters', () => {
     expect(screen.getByRole('combobox', { name: 'Region' })).toHaveValue('UAE');
     expect(setLocation).not.toHaveBeenCalled();
     expect(setRegion).not.toHaveBeenCalled();
-    expect(screen.getByRole('link', { name: /Team Performance/ })).toHaveAttribute('href', '/executive');
+    expect(screen.getByRole('link', { name: 'Executive Summary' })).toHaveAttribute('href', '/executive');
   });
 });

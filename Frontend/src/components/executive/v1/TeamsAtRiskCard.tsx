@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { AlertTriangle, TrendingDown, Users } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
 import type { ExecutiveTeam } from '../../../features/executive/types';
-import { teamPath } from '../../../features/executive/functions';
+import { teamPath } from '../../../types';
 import { FLAG_LABEL, FLAG_ORDER } from './execModel';
 import { arrow, fmtScore, fmtSigned } from '../../../features/executive/format';
 import { ExecCard, ExecCardHeader, GradeSquare, ScoreText, SoftEmpty, Sparkline, StatusPill } from './ExecPrimitives';
