@@ -299,6 +299,35 @@ class InsightComparison(BaseModel):
     note: str | None = None
 
 
+class InsightTrackingTrendPoint(BaseModel):
+    period: InsightPeriod
+    value: float | None = None
+    record_count: int = 0
+
+
+class InsightTrackingIndicator(BaseModel):
+    """A tracking-only indicator. Never scored: no target, achievement, grade or status."""
+    key: str
+    label: str
+    description: str | None = None
+    unit: str | None = None
+    team: str
+    effective_from: str
+    period: InsightPeriod
+    value: float | None = None
+    numerator: float = 0
+    denominator: float = 0
+    denominator_label: str | None = None
+    share_denominator: float | None = None
+    share_denominator_label: str | None = None
+    policy_share: float | None = None
+    record_count: int = 0
+    previous_period: InsightPeriod | None = None
+    previous_value: float | None = None
+    change: float | None = None
+    trend: list[InsightTrackingTrendPoint] = Field(default_factory=list)
+
+
 class InsightsWorkspace(BaseModel):
     summary: InsightSummary
     priority_insights: list[InsightItem]
@@ -315,6 +344,7 @@ class InsightsWorkspace(BaseModel):
     overall_trend: list[InsightOverallTrendPoint] = Field(default_factory=list)
     role_summaries: list[InsightRoleSummary] = Field(default_factory=list)
     kpi_overview: InsightKpiOverview = Field(default_factory=InsightKpiOverview)
+    tracking_indicators: list[InsightTrackingIndicator] = Field(default_factory=list)
     options: InsightFilterOptions
     comparison: InsightComparison
     deferred_capabilities: list[str] = Field(default_factory=list)

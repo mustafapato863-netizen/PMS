@@ -59,7 +59,14 @@
       "weight": 0,
       "unit": "%",
       "color": "#64748B",
-      "actual_col": "PolicyRejectionRate"
+      "actual_col": "PolicyRejectionRate",
+      "aggregation": {
+        "numerator_col": "PolicyRej",
+        "denominator_col": "AssignedRequest",
+        "denominator_label": "assigned requests",
+        "share_denominator_col": "RejectedRequests",
+        "share_denominator_label": "rejections"
+      }
     }
   ]
 }

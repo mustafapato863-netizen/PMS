@@ -242,6 +242,39 @@ export interface InsightOptions {
   team_functions?: Record<string, string[]>;
 }
 
+export interface InsightTrackingTrendPoint {
+  period: InsightPeriod;
+  /** Ratio of sums (0.0656 is 6.56%). Null when the month has no measured rows. */
+  value: number | null;
+  record_count: number;
+}
+
+/** A tracking-only indicator from the team configuration. It is never scored. */
+export interface InsightTrackingIndicator {
+  key: string;
+  label: string;
+  description: string | null;
+  unit: string | null;
+  team: string;
+  effective_from: string;
+  period: InsightPeriod;
+  /** Ratio of sums of the raw counts for the current period (0.0656 is 6.56%). */
+  value: number | null;
+  numerator: number;
+  denominator: number;
+  denominator_label: string | null;
+  share_denominator: number | null;
+  share_denominator_label: string | null;
+  /** Policy rejections over all rejections (0.962 is 96.2%). */
+  policy_share: number | null;
+  record_count: number;
+  previous_period: InsightPeriod | null;
+  previous_value: number | null;
+  /** Current value minus previous value, as a ratio. */
+  change: number | null;
+  trend: InsightTrackingTrendPoint[];
+}
+
 export interface InsightsWorkspace {
   summary: {
     critical: number;
@@ -269,6 +302,8 @@ export interface InsightsWorkspace {
   overall_trend?: InsightOverallTrendPoint[] | null;
   role_summaries?: InsightRoleSummary[];
   kpi_overview?: InsightKpiOverview;
+  /** Tracking-only indicators. Not scored: no target, achievement, grade or status. */
+  tracking_indicators?: InsightTrackingIndicator[];
   team_summaries: Array<{
     team: string;
     current_score: number | null;

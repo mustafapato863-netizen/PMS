@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import hashlib
+import math
+import re
 from collections import Counter, defaultdict
+from dataclasses import dataclass
 from datetime import date
 from functools import lru_cache
 from statistics import mean
@@ -38,6 +41,8 @@ from models.insight_schemas import (
     InsightTeamSummary,
     InsightRoleSummary,
     InsightsWorkspace,
+    InsightTrackingIndicator,
+    InsightTrackingTrendPoint,
 )
 from models.schemas import PerformanceRecord
 from repositories.base import PerformanceRepository
@@ -46,6 +51,7 @@ from services.kpi_aggregation import AggregatedKpiMetric, aggregate_kpi_metric, 
 from services.management_bsc_service import ManagementBSCService
 from services.planning_service import PlanningService, MONTH_ORDER
 from services.scoring_basis_comparison import compare_scoring_basis, previous_calendar_month
+from services.tracking_indicators import tracking_definitions, tracking_indicator_keys
 import utils.kpi_direction as _kd
 from utils.report_scope import (
     filter_records_by_scope,
@@ -386,9 +392,102 @@ def _separate_colliding_cohort_ids(items: list[InsightItem], variants: dict[int,
             item.planning_context["source_insight_id"] = item.id
 
 
+_NOT_A_NUMBER_MARKERS = frozenset({"", "-", "–", "—", "n/a", "na"})
+
+
+def _loose_name(value: Any) -> str:
+    return "".join(char for char in str(value).casefold() if char not in " \t\r\n_.")
+
+
+def _raw_count(raw: Any, column: Any) -> float | None:
+    """A numeric raw cell found by column name (spaces, case, dots and underscores ignored). None when absent or not a number."""
+    if not column or not isinstance(raw, dict):
+        return None
+    value = raw.get(str(column))
+    if value is None:
+        wanted = _loose_name(column)
+        value = next((item for name, item in raw.items() if _loose_name(name) == wanted), None)
+    if value is None:
+        return None
+    if isinstance(value, str):
+        text = value.strip().replace(",", "")
+        if text.casefold() in _NOT_A_NUMBER_MARKERS:
+            return None
+        value = text
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) else None
+
+
+def _parse_effective_period(text: Any) -> tuple[int, int] | None:
+    match = re.match(r"^\s*(\d{4})-(\d{1,2})\s*$", str(text or ""))
+    if not match:
+        return None
+    month = int(match.group(2))
+    return (int(match.group(1)), month) if 1 <= month <= 12 else None
+
+
+def _stores_tracking_row(record: Any, key: str) -> bool:
+    return any(str(_value(value, "kpi_key", "")) == key for value in (_value(record, "kpi_values", []) or []))
+
+
+@dataclass(frozen=True)
+class _TrackingTotals:
+    numerator: float = 0.0
+    denominator: float = 0.0
+    share_denominator: float | None = None
+    count: int = 0
+
+    @property
+    def value(self) -> float | None:
+        return self.numerator / self.denominator if self.denominator > 0 else None
+
+    @property
+    def policy_share(self) -> float | None:
+        if self.share_denominator is None or self.share_denominator <= 0:
+            return None
+        return self.numerator / self.share_denominator
+
+
+def _tracking_totals(records: Iterable[Any], team: str, key: str, aggregation: dict[str, Any]) -> _TrackingTotals:
+    """Sum the raw counts of the employee-months that store this indicator. A row missing a count is left out."""
+    numerator_col = aggregation.get("numerator_col")
+    denominator_col = aggregation.get("denominator_col")
+    share_col = aggregation.get("share_denominator_col")
+    numerator = denominator = share = 0.0
+    count = 0
+    for record in records:
+        if str(_value(record, "team", "")) != team or not _stores_tracking_row(record, key):
+            continue
+        raw = _value(record, "raw_data", {}) or {}
+        record_numerator = _raw_count(raw, numerator_col)
+        record_denominator = _raw_count(raw, denominator_col)
+        record_share = _raw_count(raw, share_col) if share_col else None
+        if record_numerator is None or record_denominator is None or (share_col and record_share is None):
+            continue
+        numerator += record_numerator
+        denominator += record_denominator
+        if share_col:
+            share += record_share
+        count += 1
+    return _TrackingTotals(
+        numerator=numerator,
+        denominator=denominator,
+        share_denominator=share if share_col else None,
+        count=count,
+    )
+
+
 def _configured_kpi_values(record: Any) -> list[Any]:
     persisted = list(_value(record, "kpi_values", []) or [])
     team = str(_value(record, "team", ""))
+    # One rule for every Insights builder: a declared tracking-only indicator is
+    # never a scored KPI row. Its stored row (weight 0) stays on the record.
+    tracking_keys = tracking_indicator_keys(team)
+    if tracking_keys:
+        persisted = [value for value in persisted if str(_value(value, "kpi_key", "")) not in tracking_keys]
     level = str(_value(record, "performance_level", "Employee") or "Employee")
     position = str(_value(record, "position", "") or "")
     config = _analysis_config(team, level, position)
@@ -2133,6 +2232,74 @@ class InsightsService:
         return result
 
     @staticmethod
+    def _tracking_indicators(
+        records: list[Any],
+        current_period: tuple[int, int],
+        previous_period: tuple[int, int] | None,
+    ) -> list[InsightTrackingIndicator]:
+        """Tracking-only indicators for the scoped, filtered records.
+
+        Reported per team and indicator from the config. A period before the
+        indicator's ``effective_from`` is omitted, never shown as zero. Values are
+        ratios of sums of the raw counts. No target, achievement, grade or status.
+        """
+        indicators: list[InsightTrackingIndicator] = []
+        teams = sorted({str(_value(record, "team", "")) for record in records if _value(record, "team")})
+        for team in teams:
+            for definition in tracking_definitions(team):
+                key = str(definition["key"])
+                aggregation = definition.get("aggregation") or {}
+                effective = _parse_effective_period(definition.get("effective_from"))
+                if effective is None or not aggregation.get("numerator_col") or not aggregation.get("denominator_col"):
+                    continue
+                if current_period < effective:
+                    continue
+                current = _tracking_totals(_records_in_period(records, current_period), team, key, aggregation)
+                if current.count == 0:
+                    continue
+                previous_totals = None
+                if previous_period is not None and previous_period >= effective:
+                    previous_totals = _tracking_totals(_records_in_period(records, previous_period), team, key, aggregation)
+                previous_value = previous_totals.value if previous_totals and previous_totals.count else None
+                change = (
+                    current.value - previous_value
+                    if current.value is not None and previous_value is not None
+                    else None
+                )
+                trend = []
+                for period in _trailing_periods(current_period, 6):
+                    if period < effective:
+                        continue
+                    totals = _tracking_totals(_records_in_period(records, period), team, key, aggregation)
+                    trend.append(InsightTrackingTrendPoint(
+                        period=_period_schema(period),
+                        value=totals.value,
+                        record_count=totals.count,
+                    ))
+                indicators.append(InsightTrackingIndicator(
+                    key=key,
+                    label=str(definition.get("label") or key),
+                    description=definition.get("description"),
+                    unit=definition.get("unit"),
+                    team=team,
+                    effective_from=str(definition.get("effective_from")),
+                    period=_period_schema(current_period),
+                    value=current.value,
+                    numerator=current.numerator,
+                    denominator=current.denominator,
+                    denominator_label=aggregation.get("denominator_label"),
+                    share_denominator=current.share_denominator,
+                    share_denominator_label=aggregation.get("share_denominator_label"),
+                    policy_share=current.policy_share,
+                    record_count=current.count,
+                    previous_period=_period_schema(previous_period) if previous_totals and previous_totals.count else None,
+                    previous_value=previous_value,
+                    change=change,
+                    trend=trend,
+                ))
+        return indicators
+
+    @staticmethod
     def _kpi_overview(
         records: list[Any],
         current_period: tuple[int, int],
@@ -2516,6 +2683,7 @@ class InsightsService:
         elif not adjacent:
             comparison_note = "Comparison uses the nearest earlier available period; intermediate period data is missing."
 
+        tracking_indicators = self._tracking_indicators(records, current_period, previous_period)
         return InsightsWorkspace(
             summary=summary,
             priority_insights=priority_items,
@@ -2532,6 +2700,7 @@ class InsightsService:
             overall_trend=overall_trend,
             role_summaries=role_summaries,
             kpi_overview=kpi_overview,
+            tracking_indicators=tracking_indicators,
             options=options,
             comparison=InsightComparison(current=current_schema, previous=previous_schema, is_adjacent=adjacent, note=comparison_note),
             deferred_capabilities=["Overdue corrective actions require a persisted due date, which is not available in the current action model."],
