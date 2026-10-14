@@ -84,7 +84,7 @@ describe('EmployeeActionModal', () => {
       </QueryClientProvider>,
     );
 
-    await user.click(screen.getByRole('checkbox', { name: 'Track as action plan' }));
+    expect(screen.getByRole('checkbox', { name: 'Track as action plan' })).toBeChecked();
     expect(screen.getByLabelText('Owner')).toBeInTheDocument();
     expect(screen.getByLabelText('Due date')).toBeInTheDocument();
     expect(screen.getByLabelText('Priority')).toBeInTheDocument();

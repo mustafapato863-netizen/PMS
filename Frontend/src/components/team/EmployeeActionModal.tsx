@@ -1,8 +1,7 @@
-import { useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Save, AlertCircle, CheckCircle2 } from 'lucide-react';
-import { useActionStore } from '../../hooks/useActionStore';
+import { useActionStore, type ActionTrackingInput } from '../../hooks/useActionStore';
 import { apiFetch } from '../../lib/apiClient';
 import { useAuth } from '../../context/auth';
 import type { ActionPriority, ActionType, EditableCorrectiveAction } from '../../types';
@@ -40,6 +39,8 @@ const COLOR_MAP: Record<string, string> = {
 };
 
 const KPI_ISSUE_THRESHOLD = 80;
+
+type TrackedField = 'owner' | 'due' | 'priority' | 'linkedKpi' | 'plan';
 
 type KpiIssue =
   | 'Attendance'
@@ -94,12 +95,26 @@ const EmployeeActionModal = ({ employee, month, teamWeights, onClose, onSaved, e
   const [actionText, setActionText] = useState(editAction ? editAction.action_text : '');
   const [rootCauseNote, setRootCauseNote] = useState(editAction ? editAction.root_cause_note : '');
   const [result, setResult] = useState<{ success: boolean; message: string; synced?: boolean } | null>(null);
-  const [trackPlan, setTrackPlan] = useState(Boolean(editAction?.due_date || editAction?.owner_id || editAction?.priority || editAction?.plan_id));
+  // A new action is tracked by default (owner and due date are part of the normal form). An existing
+  // action starts tracked only when it already has an owner, due date, priority or plan.
+  const [trackPlan, setTrackPlan] = useState(editAction
+    ? Boolean(editAction.due_date || editAction.owner_id || editAction.priority || editAction.plan_id)
+    : true);
   const [ownerId, setOwnerId] = useState(editAction?.owner_id || '');
   const [dueDate, setDueDate] = useState(editAction?.due_date || '');
   const [priority, setPriority] = useState<ActionPriority>(editAction?.priority || 'Medium');
   const [linkedKpi, setLinkedKpi] = useState(editAction?.linked_kpi_key || '');
   const [planId, setPlanId] = useState(editAction?.plan_id || '');
+  // Fields the user changed. An existing action sends only these, so a field the user did not
+  // clear is never sent as null.
+  const isNewAction = !editAction;
+  const [touched, setTouched] = useState<Record<TrackedField, boolean>>({ owner: false, due: false, priority: false, linkedKpi: false, plan: false });
+  const touch = (field: TrackedField) => setTouched((current) => ({ ...current, [field]: true }));
+  const changeOwner = (value: string) => { setOwnerId(value); touch('owner'); };
+  const changeDueDate = (value: string) => { setDueDate(value); touch('due'); };
+  const changePriority = (value: ActionPriority) => { setPriority(value); touch('priority'); };
+  const changeLinkedKpi = (value: string) => { setLinkedKpi(value); touch('linkedKpi'); };
+  const changePlan = (value: string) => { setPlanId(value); touch('plan'); };
 
   const getScoreColor = (s: number) =>
     s >= 90 ? 'text-emerald-600 dark:text-emerald-400' : s >= 80 ? 'text-blue-600 dark:text-blue-400' : s >= 70 ? 'text-amber-600 dark:text-amber-400' : 'text-red-600 dark:text-red-400';
@@ -206,21 +221,37 @@ const EmployeeActionModal = ({ employee, month, teamWeights, onClose, onSaved, e
       setResult({ success: false, message: 'Please describe the action to take.' });
       return;
     }
-    if (trackPlan && !dueDate) {
+    if (trackPlan && isNewAction && !dueDate) {
       setResult({ success: false, message: 'A due date is required to track this action.' });
       return;
     }
-    if (trackPlan && dueDate < todayIso()) {
+    // The server requires a due date whenever an owner or priority is sent. An existing action may
+    // still be saved without one unless the user is setting an owner or priority, or clearing the date
+    // while an owner is set.
+    if (trackPlan && !isNewAction && !dueDate && (ownerId || touched.priority)) {
+      setResult({ success: false, message: 'A due date is required when an owner or priority is set.' });
+      return;
+    }
+    // A past date is refused only when the user sets it, so an overdue action can still be edited.
+    if (trackPlan && (isNewAction || touched.due) && dueDate && dueDate < todayIso()) {
       setResult({ success: false, message: 'Due date cannot be earlier than today.' });
       return;
     }
     setResult(null);
 
-    const tracking = trackPlan
-      ? { due_date: dueDate, owner_user_id: ownerId || null, priority, linked_kpi_key: linkedKpi || null, plan_id: planId || null }
-      : editAction
-        ? { due_date: null, owner_user_id: null, priority: null, linked_kpi_key: null, plan_id: null }
-        : {};
+    // New action: send the tracking fields as they stand (an empty owner, KPI or plan is null).
+    // Existing action: send only the fields the user changed. An untouched field is not sent, so it
+    // keeps its stored value, and clearing a field is an explicit choice (Unassigned, or emptying the date).
+    let tracking: Partial<ActionTrackingInput> = {};
+    if (trackPlan && isNewAction) {
+      tracking = { due_date: dueDate, owner_user_id: ownerId || null, priority, linked_kpi_key: linkedKpi || null, plan_id: planId || null };
+    } else if (trackPlan) {
+      if (touched.owner) tracking.owner_user_id = ownerId || null;
+      if (touched.due) tracking.due_date = dueDate || null;
+      if (touched.priority) tracking.priority = priority;
+      if (touched.linkedKpi) tracking.linked_kpi_key = linkedKpi || null;
+      if (touched.plan) tracking.plan_id = planId || null;
+    }
     const creatorLabel = `${currentUser?.name || 'Unknown'} - ${currentUser?.role || localStorage.getItem('pms_user_role') || 'Manager'}`;
     let res;
     if (editAction) {
@@ -423,17 +454,22 @@ const EmployeeActionModal = ({ employee, month, teamWeights, onClose, onSaved, e
             {trackPlan && (
               <TrackPlanFields
                 team={employee.team}
+                isNewAction={isNewAction}
+                signedInUserId={currentUser?.id}
+                ownerTouched={touched.owner}
+                dueTouched={touched.due}
+                onOwnerDefault={setOwnerId}
                 ownerId={ownerId}
                 dueDate={dueDate}
                 priority={priority}
                 linkedKpi={linkedKpi}
                 planId={planId}
                 kpiOptions={failedKpis.map((kpi) => kpi.label)}
-                onOwnerId={setOwnerId}
-                onDueDate={setDueDate}
-                onPriority={setPriority}
-                onLinkedKpi={setLinkedKpi}
-                onPlanId={setPlanId}
+                onOwnerId={changeOwner}
+                onDueDate={changeDueDate}
+                onPriority={changePriority}
+                onLinkedKpi={changeLinkedKpi}
+                onPlanId={changePlan}
               />
             )}
 
@@ -490,6 +526,11 @@ const EmployeeActionModal = ({ employee, month, teamWeights, onClose, onSaved, e
 
 function TrackPlanFields({
   team,
+  isNewAction,
+  signedInUserId,
+  ownerTouched,
+  dueTouched,
+  onOwnerDefault,
   ownerId,
   dueDate,
   priority,
@@ -503,6 +544,11 @@ function TrackPlanFields({
   onPlanId,
 }: {
   team: string;
+  isNewAction: boolean;
+  signedInUserId?: string;
+  ownerTouched: boolean;
+  dueTouched: boolean;
+  onOwnerDefault: (value: string) => void;
   ownerId: string;
   dueDate: string;
   priority: ActionPriority;
@@ -515,20 +561,27 @@ function TrackPlanFields({
   onLinkedKpi: (value: string) => void;
   onPlanId: (value: string) => void;
 }) {
-  const owners = useQuery({
-    queryKey: ['corrective-actions', 'owners'],
-    queryFn: async () => {
-      const result = await apiFetch<{ success: boolean; data: Array<{ id: string; name: string }> }>('/api/corrective-actions/owners');
-      return result?.data ?? [];
-    },
-  });
-  const plans = useQuery({
-    queryKey: ['planning', 'linkable', team],
-    queryFn: async () => {
-      const result = await apiFetch<{ success: boolean; data: Array<{ id: string; name: string; team: string; status: string }> }>('/api/planning');
-      return (result?.data ?? []).filter((plan) => plan.team === team && plan.status !== 'Completed' && plan.status !== 'Archived');
-    },
-  });
+  // Owners are the users the signed-in user may assign today (GET /api/corrective-actions/owners).
+  const [owners, setOwners] = useState<Array<{ id: string; name: string }>>([]);
+  const [plans, setPlans] = useState<Array<{ id: string; name: string }>>([]);
+  useEffect(() => {
+    let active = true;
+    apiFetch<{ success: boolean; data: Array<{ id: string; name: string }> }>('/api/corrective-actions/owners')
+      .then((result) => { if (active) setOwners(result?.data ?? []); })
+      .catch(() => { if (active) setOwners([]); });
+    apiFetch<{ success: boolean; data: Array<{ id: string; name: string; team: string; status: string }> }>('/api/planning')
+      .then((result) => {
+        if (active) setPlans((result?.data ?? []).filter((plan) => plan.team === team && plan.status !== 'Completed' && plan.status !== 'Archived'));
+      })
+      .catch(() => { if (active) setPlans([]); });
+    return () => { active = false; };
+  }, [team]);
+  // A new action is owned by the signed-in user when the owner list includes them. Anyone else starts
+  // Unassigned, and a choice the user makes (including Unassigned) is never overwritten.
+  useEffect(() => {
+    if (!isNewAction || ownerTouched || ownerId || !signedInUserId) return;
+    if (owners.some((owner) => owner.id === signedInUserId)) onOwnerDefault(signedInUserId);
+  }, [isNewAction, ownerTouched, ownerId, owners, signedInUserId, onOwnerDefault]);
   const fieldClass = 'mt-1 w-full min-h-10 rounded-xl border border-[var(--border-medium)] bg-[var(--bg-sunken)] px-3 text-sm font-semibold text-[var(--text-primary)]';
   const kpiChoices = Array.from(new Set([linkedKpi, ...kpiOptions].filter(Boolean)));
 
@@ -538,13 +591,21 @@ function TrackPlanFields({
         Owner
         <select aria-label="Owner" value={ownerId} onChange={(event) => onOwnerId(event.target.value)} className={fieldClass}>
           <option value="">Unassigned</option>
-          {(owners.data ?? []).map((owner) => <option key={owner.id} value={owner.id}>{owner.name}</option>)}
+          {owners.map((owner) => <option key={owner.id} value={owner.id}>{owner.name}</option>)}
         </select>
       </label>
-      <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)]">
-        Due date
-        <input aria-label="Due date" type="date" min={todayIso()} value={dueDate} onChange={(event) => onDueDate(event.target.value)} className={fieldClass} />
-      </label>
+      <div>
+        <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)]">
+          Due date
+          {/* min applies only to a date the user is setting: an existing overdue date must still submit. */}
+          <input aria-label="Due date" type="date" min={isNewAction || dueTouched ? todayIso() : undefined} value={dueDate} onChange={(event) => onDueDate(event.target.value)} className={fieldClass} />
+        </label>
+        {dueDate && (
+          <button type="button" aria-label="Clear due date" onClick={() => onDueDate('')} className="mt-1 text-xs font-semibold text-[var(--text-muted)] hover:underline">
+            Clear due date
+          </button>
+        )}
+      </div>
       <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)]">
         Priority
         <select aria-label="Priority" value={priority} onChange={(event) => onPriority(event.target.value as ActionPriority)} className={fieldClass}>
@@ -564,7 +625,7 @@ function TrackPlanFields({
         Link to plan
         <select aria-label="Link to plan" value={planId} onChange={(event) => onPlanId(event.target.value)} className={fieldClass}>
           <option value="">No linked plan</option>
-          {(plans.data ?? []).map((plan) => <option key={plan.id} value={plan.id}>{plan.name}</option>)}
+          {plans.map((plan) => <option key={plan.id} value={plan.id}>{plan.name}</option>)}
         </select>
       </label>
     </div>
