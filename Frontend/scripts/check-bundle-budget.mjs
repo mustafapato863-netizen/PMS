@@ -17,7 +17,11 @@ const budgets = [
     gzipKb: 130,
   },
   { name: 'animation', pattern: /^animation-.*\.js$/, rawKb: 160, gzipKb: 50 },
-  { name: 'team dashboard route', pattern: /^TeamDashboardView-.*\.js$/, rawKb: 220, gzipKb: 60 },
+  // Removing the old Executive page (2026-10-14) moved about 87 kB of performance code that only the team
+  // dashboard still uses out of the entry bundle into this route: the entry bundle shrank by 85 kB and the
+  // total JavaScript by 42 kB. The route budget follows the move; the entry budget keeps the gain.
+  { name: 'team dashboard route', pattern: /^TeamDashboardView-.*\.js$/, rawKb: 235, gzipKb: 64 },
+  { name: 'entry bundle', pattern: /^index-.*\.js$/, rawKb: 440, gzipKb: 130 },
 ];
 
 const files = await readdir(assetsDir);
