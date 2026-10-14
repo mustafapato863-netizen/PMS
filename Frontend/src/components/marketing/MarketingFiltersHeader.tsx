@@ -2,6 +2,7 @@ import { ArrowLeft, Download, Megaphone } from 'lucide-react';
 import Breadcrumb from '../common/Breadcrumb';
 import CustomDropdown from '../common/CustomDropdown';
 import ResponsiveFilters from '../common/ResponsiveFilters';
+import { teamPath } from '../../types';
 import type {
   MarketingFilters,
   MarketingPeriod,
@@ -86,7 +87,7 @@ const MarketingFiltersHeader = ({
               items={[
                 { label: 'Executive Dashboard', href: '/executive' },
                 ...(isPositionView ? [
-                  { label: 'Marketing Overview', href: '/team/marketing' },
+                  { label: 'Marketing Overview', href: teamPath('Marketing') },
                   { label: positionName || 'Position Detail' },
                 ] : [
                   { label: 'Marketing Overview' },

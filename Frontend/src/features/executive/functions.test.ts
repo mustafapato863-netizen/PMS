@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { allowedFunctionsFor, functionFromSlug, functionSlug, isTeamInFunctions, teamPath } from './functions';
+import { allowedFunctionsFor, functionFromSlug, functionSlug, isTeamInFunctions } from './functions';
+import { teamPath } from '../../types';
 import { FIXTURE_TEAM_FUNCTIONS } from './executive.fixture';
 
 describe('allowedFunctionsFor', () => {
@@ -34,8 +35,8 @@ describe('function slugs and team paths', () => {
     expect(functionFromSlug('finance')).toBeNull();
   });
 
-  it('uses the sidebar slug rule for team dashboards', () => {
-    expect(teamPath('Pre-Approvals IP Offshore')).toBe('/team/pre-approvals-ip-offshore');
+  it('uses the canonical route id for known teams and a slug only for unknown ones', () => {
+    expect(teamPath('Pre-Approvals IP Offshore')).toBe('/team/pre-approvals');
     expect(teamPath('R&D Team')).toBe('/team/randd-team');
   });
 });

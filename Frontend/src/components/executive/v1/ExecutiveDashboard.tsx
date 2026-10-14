@@ -4,6 +4,7 @@
  */
 import type { ReactNode } from 'react';
 import type { ExecutiveSummary } from '../../../features/executive/types';
+import { teamPath } from '../../../types';
 import { coveredPeriodLabel } from '../../../features/executive/periodLabels';
 import ExecutiveHero from './ExecutiveHero';
 import FunctionCards from './FunctionCards';
@@ -58,10 +59,10 @@ export default function ExecutiveDashboard({ summary, permissions, functionBreak
         </ScopeBanner>
         {notices}
         <ExecutiveHero summary={summary} />
-        <TeamKpiTable rows={summary.kpis} effective={period.effective} previous={previous} range={range} score={summary.hero.score} reportHref={team ? `/team/${encodeURIComponent(team)}` : null} />
+        <TeamKpiTable rows={summary.kpis} effective={period.effective} previous={previous} range={range} score={summary.hero.score} reportHref={team ? teamPath(team) : null} />
         <EmployeesBelowTargetCard summary={summary} />
         <div className="grid gap-[16px] xl:grid-cols-[minmax(0,1fr)_minmax(0,360px)]">
-          <PeopleToReviewCard people={summary.people} team={team} previous={previous} range={range} rosterHref={team ? `/team/${encodeURIComponent(team)}` : null} />
+          <PeopleToReviewCard people={summary.people} team={team} previous={previous} range={range} rosterHref={team ? teamPath(team) : null} />
           <TopPerformersCard people={summary.people} previous={previous} range={range} />
         </div>
         <LevelBreakdownCard levels={summary.levels} subtitle={levelSubtitle} />

@@ -2,7 +2,7 @@ import { AlertTriangle, BarChart3, TrendingDown } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
 import type { ExecutiveTeam, ExecutivePeriod } from '../../../features/executive/types';
 import { arrow, fmtKpiValue, fmtScore, fmtSigned, isLowerBetter, scoreTone } from '../../../features/executive/format';
-import { teamPath } from '../../../features/executive/functions';
+import { teamPath } from '../../../types';
 import { MONTHS } from '../../../features/executive/compose';
 import { ExecCard, ExecCardHeader, Footnote, GradeSquare, ScoreText, SoftEmpty, Sparkline, StatusPill, ToneText } from './ExecPrimitives';
 import { FLAG_LABEL, FLAG_ORDER } from './execModel';

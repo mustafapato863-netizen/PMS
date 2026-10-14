@@ -38,6 +38,18 @@ describe('TeamLeaderboardCard', () => {
       .toEqual(['Submission', 'Coding', 'Re-Submission']);
   });
 
+  it('opens Pre-Approvals teams on their canonical pages and keeps the period and branch', () => {
+    render(<MemoryRouter initialEntries={['/function-summary/rcm?period=2026-06&branch=dubai']}>
+      <TeamLeaderboardCard teams={[team('Pre-Approvals OP Dubai', 70), team('Pre-Approvals IP Offshore', 80)]}
+        fn="RCM" effective={effective} previous={null} />
+    </MemoryRouter>);
+    const hrefs = screen.getAllByTestId('leaderboard-row').map((row) => within(row).getByRole('link').getAttribute('href'));
+    expect(hrefs).toEqual([
+      '/team/pre-approvals?branch=dubai&year=2026&month=June',
+      '/team/pre-approvals-op-final?branch=dubai&year=2026&month=June',
+    ]);
+  });
+
   it('opens Marketing role details on their own sheet while retaining scope', () => {
     render(<MemoryRouter initialEntries={['/function-summary/marketing?region=UAE&level=Managerial']}>
       <TeamLeaderboardCard teams={[{ ...team('Social Media', 88), function: 'Marketing', position: 'Social Media' }]}

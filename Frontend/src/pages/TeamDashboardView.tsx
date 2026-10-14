@@ -10,7 +10,7 @@ import { OperationalViewSkeleton } from '../components/common/SkeletonLoader';
 import { TrendingUp, Target, Activity, Phone, Shield, Lightbulb, Edit2, Check, X, Award, AlertCircle, AlertTriangle, MessageSquare, Code, Headphones, Pill, Users, Send } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { TeamAgentRow, TeamWeightConfig } from '../hooks/usePerformanceData';
-import { TEAM_NAME_MAP, TEAM_DB_NAME_MAP, MERGED_OP_FINAL_TEAM, MERGED_IP_FINAL_TEAM, PRE_APPROVALS_UAE_TEAM, PRE_APPROVALS_UAE_SOURCE_TEAMS, CALL_CENTER_TEAM, RCM_TEAM, callCenterChannelForTeam, isCallCenterChannelTeam, isPreApprovalsWorkflowTeam, isRcmDomainTeam, isRcmGroupTeam, isMergedBranchTeam, isMergedOpFinalTeam, sameCanonicalTeam } from '../types';
+import { TEAM_NAME_MAP, TEAM_DB_NAME_MAP, resolveTeamRouteId, MERGED_OP_FINAL_TEAM, MERGED_IP_FINAL_TEAM, PRE_APPROVALS_UAE_TEAM, PRE_APPROVALS_UAE_SOURCE_TEAMS, CALL_CENTER_TEAM, RCM_TEAM, callCenterChannelForTeam, isCallCenterChannelTeam, isPreApprovalsWorkflowTeam, isRcmDomainTeam, isRcmGroupTeam, isMergedBranchTeam, isMergedOpFinalTeam, sameCanonicalTeam } from '../types';
 import type { AgentRecord, GeoBreakdown, LocationKey, PreApprovalsWorkflowFilter, CallCenterChannelFilter, RcmDomainFilter, RcmGroupFilter } from '../types';
 import { useUserRole } from '../context/RoleContext';
 import { useAuth } from '../context/auth';
@@ -19,6 +19,7 @@ import { apiFetch } from '../lib/apiClient';
 
 // Import sub-components
 import NoDataEmptyState from '../components/common/NoDataEmptyState';
+import Breadcrumb from '../components/common/Breadcrumb';
 import KpiCard from '../components/common/KpiCard';
 import TeamHeader from '../components/team/TeamHeader';
 import TeamKpiSection from '../components/team/TeamKpiSection';
@@ -43,10 +44,11 @@ import { buildTeamKpiAnalysis } from '../features/team/teamKpiAnalysis';
 import { aggregatePreApprovalsIpMetrics } from '../features/team/preApprovalsIpMetrics';
 import { aggregateConfiguredTeamKpis, calculateAggregatedTeamPerformance, displayedTeamScore, recordsUseAppliedPin } from '../features/team/teamKpiAggregator';
 import { resolveAvailableTeamPeriods } from '../features/team/teamPeriods';
-import { canAccessBroadAppPages, hasAllTeamsScope, isScopedDirectorRole } from '../lib/access';
+import { canAccessBroadAppPages, canAccessFunctionSummary, hasAllTeamsScope, isScopedDirectorRole } from '../lib/access';
 import { directorScope } from '../lib/directorScope';
 import { teamExportFailureAlert } from '../features/team/teamExportFailure';
 import { useFunctionScope } from '../features/executive/useFunctionScope';
+import { teamBreadcrumbs } from '../features/executive/functions';
 
 const TeamChartsSection = lazy(() => import('../components/team/TeamChartsSection'));
 const BalancedScorecardWorkspace = lazy(() => import('../components/team/BalancedScorecardWorkspace'));
@@ -112,20 +114,18 @@ const configuredKpiPercent = (
   return actual === undefined ? undefined : actual * 100;
 };
 
-const unslugTeam = (slug: string) =>
-  slug
-    .split('-')
-    .filter(Boolean)
-    .map((part) => (part.length <= 3 ? part.toUpperCase() : part.charAt(0).toUpperCase() + part.slice(1)))
-    .join(' ');
-
 interface TeamDashboardViewProps {
   teamIdOverride?: string;
 }
 
 const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
   const { teamId: routeTeamId } = useParams<{ teamId: string }>();
-  const teamId = teamIdOverride ?? routeTeamId;
+  // Legacy ids and name slugs resolve to the canonical route id for the page itself.
+  // Team actions keep the id the link used (requestedTeamId): the backend matches
+  // that string to a team row, so notes saved before this change stay where they are.
+  const requestedTeamId = teamIdOverride ?? routeTeamId;
+  const teamId = teamIdOverride ?? (routeTeamId === 'all' ? routeTeamId : resolveTeamRouteId(routeTeamId) ?? routeTeamId);
+  const canonicalTeamId = teamId === 'all' ? null : resolveTeamRouteId(teamId);
   const navigate = useNavigate();
   const { role, fetchWithRole } = useUserRole();
   const functionScope = useFunctionScope();
@@ -133,7 +133,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
 
   // Resolve team identity before loading config-driven defaults. New teams should
   // not require another hardcoded region branch in this page.
-  const resolvedTeamName = teamId === 'all' ? null : (TEAM_DB_NAME_MAP[teamId ?? ''] ?? unslugTeam(teamId ?? ''));
+  const resolvedTeamName = canonicalTeamId ? TEAM_DB_NAME_MAP[canonicalTeamId] : null;
   const isPreApprovalsParent = resolvedTeamName === PRE_APPROVALS_UAE_TEAM;
   const isCallCenterParent = resolvedTeamName === CALL_CENTER_TEAM;
   const isRcmParent = resolvedTeamName === RCM_TEAM;
@@ -157,7 +157,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
           ? RCM_TEAM
       : isMergedTeam
       ? mergedTeamName
-      : (TEAM_NAME_MAP[teamId ?? ''] ?? unslugTeam(teamId ?? ''));
+      : (canonicalTeamId ? TEAM_NAME_MAP[canonicalTeamId] : '');
   const [regionSelection, setRegionSelection] = useState<{
     teamName: string | null;
     value: 'All' | 'EGY' | 'UAE';
@@ -176,6 +176,14 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
   const { channel: callCenterChannel, setChannel: setCallCenterChannel } = useCallCenterChannelParam('all');
   const { domain: rcmDomain, setDomain: setRcmDomain } = useRcmDomainParam('all');
   const { group: rcmGroup, setGroup: setRcmGroup } = useRcmGroupParam('all');
+
+  // Executive Summary > Function > Team or parent view > Sub-team (see teamBreadcrumbs).
+  const breadcrumbs = teamBreadcrumbs({
+    team: teamName,
+    displayName,
+    canOpenFunctionSummary: canAccessFunctionSummary(role),
+    allTeamsHref: isScopedDirectorRole(role) || assigned.branchLocked || assigned.regionLocked ? '/executive' : '/team/all',
+  });
 
   const canExport = role === 'Manager' || role === 'Admin' || role === 'General Manager';
   const [hoverTooltip, setHoverTooltip] = useState<{ text: string; x: number; y: number } | null>(null);
@@ -576,7 +584,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
     const fetchTeamAction = async () => {
       try {
         const result = await apiFetch<{ success: boolean; data?: { overall_action: string } }>(
-          `/api/team-actions/?team_id=${teamId}&month=${activeMonth}&year=${insightYear}`
+          `/api/team-actions/?team_id=${requestedTeamId}&month=${activeMonth}&year=${insightYear}`
         );
         if (result.success && result.data) {
           setTeamAction(result.data.overall_action);
@@ -591,10 +599,10 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
         setActionInput('');
       }
     };
-    if (teamId && teamId !== 'all' && insightYear) {
+    if (requestedTeamId && requestedTeamId !== 'all' && insightYear) {
       fetchTeamAction();
     }
-  }, [teamId, activeMonth, insightYear]);
+  }, [requestedTeamId, activeMonth, insightYear]);
 
   const handleSaveTeamAction = async () => {
     setSavingAction(true);
@@ -605,7 +613,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
         {
           method: 'POST',
           body: JSON.stringify({
-            team_id: teamId,
+            team_id: requestedTeamId,
             month: activeMonth,
             year: insightYear,
             overall_action: actionInput,
@@ -1694,6 +1702,22 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
     return <div className="app-page-shell rf-page rf-page--team-dashboard flex min-h-[40vh] items-center justify-center"><p role="status">Checking your function access…</p></div>;
   }
 
+  // An id that is not a known team gets the not-found state, never an invented title or data.
+  if (teamId !== 'all' && !resolvedTeamName) {
+    return (
+      <div className="app-page-shell rf-page rf-page--team-dashboard text-slate-800 dark:text-slate-100">
+        <Breadcrumb items={[
+          { label: 'Executive Summary', href: '/executive', icon: 'home' },
+          { label: 'Team not found', icon: 'team' },
+        ]} />
+        <NoDataEmptyState
+          emptyTitle="Team not found"
+          emptyDescription={`No team matches “${teamId ?? ''}”. Open a team from the Executive Summary or the sidebar.`}
+        />
+      </div>
+    );
+  }
+
   if (!isTeamAccessRestricted && hasBalancedScorecard && teamName) {
     return (
       <Suspense fallback={<div className="app-page-shell rf-page rf-page--team-dashboard flex min-h-[40vh] items-center justify-center" role="status">Loading scorecard…</div>}>
@@ -1725,7 +1749,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
           month={month}
           lockedBranch={assigned.branchLocked ? assigned.branchLabel : undefined}
           lockedRegion={assigned.regionLocked ? assigned.regionLabel : undefined}
-          scopedNavigation={isScopedDirectorRole(role)}
+          breadcrumbs={breadcrumbs}
           uniqueMonths={dashboardMonths}
           setMonth={(m) => {
             setMonth(m);
@@ -1869,7 +1893,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
         month={month}
         lockedBranch={assigned.branchLocked ? assigned.branchLabel : undefined}
         lockedRegion={assigned.regionLocked ? assigned.regionLabel : undefined}
-        scopedNavigation={isScopedDirectorRole(role)}
+        breadcrumbs={breadcrumbs}
         uniqueMonths={dashboardMonths}
         setMonth={(m) => {
           setMonth(m);

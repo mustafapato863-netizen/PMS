@@ -1,5 +1,6 @@
 import { render, screen } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import userEvent from '@testing-library/user-event';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
 import type { InsightItem } from '../../features/insights/types';
 import InsightDetailDrawer from './InsightDetailDrawer';
@@ -37,6 +38,25 @@ const insight = {
   },
   planning_context: { source_insight_id: 'score-1' },
 } as InsightItem;
+
+function LocationProbe() {
+  const location = useLocation();
+  return <p data-testid="location">{`${location.pathname}${location.search}`}</p>;
+}
+
+describe('InsightDetailDrawer team link', () => {
+  it('opens the related dashboard of a Pre-Approvals sub-team on its canonical team page', async () => {
+    const user = userEvent.setup();
+    const teamInsight = { ...insight, team: 'Pre-Approvals IP Offshore', employee_id: null, kpi_key: null } as InsightItem;
+    render(<MemoryRouter initialEntries={['/insights']}><Routes>
+      <Route path="/insights" element={<InsightDetailDrawer insight={teamInsight} onClose={() => undefined} />} />
+      <Route path="/team/:teamId" element={<LocationProbe />} />
+    </Routes></MemoryRouter>);
+
+    await user.click(screen.getByRole('button', { name: 'Open related dashboard' }));
+    expect(screen.getByTestId('location')).toHaveTextContent('/team/pre-approvals?performance_level=Employee&position=Agent');
+  });
+});
 
 describe('InsightDetailDrawer basis note', () => {
   it('shows the settings note outside the data-quality warnings', () => {

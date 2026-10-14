@@ -207,6 +207,15 @@ describe('DepartmentalSummaryView role routing', () => {
     expect(state.lastArgs?.filters).toMatchObject({ teamFunction: 'RCM', team: 'Pre-Approvals' });
   });
 
+  it('opens the canonical team page from the managerial report and roster links', () => {
+    state.role = 'Manager';
+    state.user = { id: 'm1', name: 'Hany Mostafa', role: 'Manager', accessible_teams: ['Pre-Approvals IP Offshore'] };
+    state.summary = build({ view: 'managerial', role: 'Manager', team: 'Pre-Approvals IP Offshore', comparisonRecords: null });
+    renderAt();
+    expect(screen.getByRole('link', { name: 'Open team report' })).toHaveAttribute('href', '/team/pre-approvals');
+    expect(screen.getByRole('link', { name: 'View roster' })).toHaveAttribute('href', '/team/pre-approvals');
+  });
+
   it('Function Viewer is redirected to /function-summary', () => {
     state.role = 'Function Viewer';
     renderAt();

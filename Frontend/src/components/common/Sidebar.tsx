@@ -19,7 +19,7 @@ import { performanceSessionKey } from '../../lib/performanceSessionKey';
 import { normalizeTeamName } from '../../hooks/api/useKpiWeights';
 import { shouldShowMarketingNavigation } from '../../features/marketing/navigation';
 import type { PerformanceLevel } from '../../types';
-import { canonicalTeamName, isCallCenterTeam, CALL_CENTER_TEAM, isRcmTeam, RCM_TEAM } from '../../types';
+import { canonicalTeamName, isCallCenterTeam, CALL_CENTER_TEAM, isRcmTeam, RCM_TEAM, teamPath } from '../../types';
 import { directorScope } from '../../lib/directorScope';
 import ThemeToggle from './ThemeToggle';
 import { TEAM_ITEMS, getTeamIcon, isHiddenTeam } from './sidebarTeamItems';
@@ -59,14 +59,6 @@ const DIRECTOR_LEVELS: Array<{ name: PerformanceLevel; icon: React.ReactNode; co
   { name: 'Managerial', icon: <UsersRound size={17} />, color: 'bg-[var(--sgh-emerald-primary)]' },
   { name: 'Corporate', icon: <Building2 size={17} />, color: 'bg-[var(--sgh-cyan-deep)]' },
 ];
-
-const slugifyTeam = (teamName: string) =>
-  teamName
-    .trim()
-    .toLowerCase()
-    .replace(/&/g, 'and')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
 
 const prettyTeamLabel = (teamName: string) =>
   teamName.length <= 3
@@ -207,7 +199,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed: collapsedPreference = false, 
     .map((teamScope) => ({
       id: teamScope.id,
       name: prettyTeamLabel(teamScope.name),
-      path: `/team/${slugifyTeam(teamScope.name)}`,
+      path: teamPath(teamScope.name),
       icon: getTeamIcon(teamScope.name),
       team: teamScope.name,
     }))
@@ -303,7 +295,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed: collapsedPreference = false, 
   // Manager (Mustafa, binding): Executive, their team, Reports, Corrective Actions, Planning — no Insights.
   const teamsItem = hasAllTeamsScope(role, currentUser) || managerTeams.length || isScopedDirectorRole(role)
     ? [isManager && managerTeams.length === 1
-      ? { name: `My Team · ${managerTeams[0]}`, path: `/team/${slugifyTeam(managerTeams[0])}`, icon: <UsersRound size={18} /> }
+      ? { name: `My Team · ${managerTeams[0]}`, path: teamPath(managerTeams[0]), icon: <UsersRound size={18} /> }
       : { name: isManager ? 'Assigned Teams' : 'All Teams', path: '/team/all', icon: <UsersRound size={18} /> }]
     : [];
   const planningItem = { name: 'Planning', path: '/planning', icon: <CalendarCheck size={18} /> };
@@ -349,7 +341,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed: collapsedPreference = false, 
       if (!quickTeams.has(team.team) || team.level === 'Employee') quickTeams.set(team.team, team);
     }
     for (const { team, level } of [...quickTeams.values()].slice(0, 3)) {
-      dockItems.push({ label: team, destination: linkFor(`/team/${slugifyTeam(team)}`, level), icon: getTeamIcon(team), active: pathname === `/team/${slugifyTeam(team)}` && (selectedLevel || 'Employee') === level, tabletOnly: true });
+      dockItems.push({ label: team, destination: linkFor(teamPath(team), level), icon: getTeamIcon(team), active: pathname === teamPath(team) && (selectedLevel || 'Employee') === level, tabletOnly: true });
     }
   }
   dockItems.push({ label: 'Account', destination: '/account', icon: <User size={20} />, active: pathname === '/account', tabletOnly: canSeeBroadNavigation && !scopedDirector });
@@ -436,7 +428,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed: collapsedPreference = false, 
               <AnimatePresence initial={false}>
                 {isLevelOpen && (
                   <motion.div id={groupId} role="group" aria-label={`${level.name} teams`} initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={groupTransition} className="space-y-0.5 overflow-hidden">
-                    {teams.map(({ team }) => renderLink({ name: team, path: `/team/${slugifyTeam(team)}`, icon: getTeamIcon(team) }, level.name, true))}
+                    {teams.map(({ team }) => renderLink({ name: team, path: teamPath(team), icon: getTeamIcon(team) }, level.name, true))}
                   </motion.div>
                 )}
               </AnimatePresence>
@@ -519,14 +511,14 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed: collapsedPreference = false, 
                   <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={groupTransition} className="overflow-hidden">
                     <div className={`ml-3 border-l border-[var(--border-light)] pl-2 ${isCollapsed ? 'xl:ml-0 xl:border-l-0 xl:pl-0' : ''}`}>
                       {rcmVisible && renderLink(
-                        { name: RCM_TEAM, path: '/team/rcm', icon: getTeamIcon(RCM_TEAM) },
+                        { name: RCM_TEAM, path: teamPath(RCM_TEAM), icon: getTeamIcon(RCM_TEAM) },
                         'Employee',
                         true,
                         true,
                         'employee',
                       )}
                       {marketingVisible && renderLink(
-                        { name: 'Marketing', path: '/team/marketing', icon: <Megaphone size={17} /> },
+                        { name: 'Marketing', path: teamPath('Marketing'), icon: <Megaphone size={17} /> },
                         'Employee',
                         true,
                         true,

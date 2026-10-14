@@ -10,6 +10,15 @@ it('uses a syringe icon for nursing teams', () => {
   expect(container.querySelector('svg')).toHaveClass('lucide-syringe');
 });
 
+it('links each sidebar team item to its canonical team page', () => {
+  expect(TEAM_ITEMS.map((item) => [item.name, item.path])).toEqual([
+    ['Call Center', '/team/call-center'],
+    ['Sales', '/team/sales'],
+    ['CSR', '/team/csr'],
+    ['Pharmacy', '/team/pharmacy'],
+  ]);
+});
+
 it('hides Inbound UAE from navigation without removing its team identity', () => {
   expect(isHiddenTeam('Inbound UAE')).toBe(true);
   expect(TEAM_ITEMS).not.toEqual(
