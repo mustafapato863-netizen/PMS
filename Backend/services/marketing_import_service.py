@@ -15,6 +15,7 @@ from config.loader import (
 )
 from data_cleaning.standard_mappings import calculate_grade
 from models.schemas import Employee, EvaluationData, PerformanceRecord
+from services.scoring.engine import EMPLOYEE_POLICY, achievement as engine_achievement, score as engine_score
 from utils.performance_levels import normalize_performance_level
 from utils.performance_status import status_for_grade
 
@@ -39,7 +40,9 @@ REQUIRED_COLUMNS = (
 ALLOWED_REGIONS = {"EGY": "EGY", "UAE": "UAE", "OTHER": "Other"}
 EMPLOYEE_LEVEL_POSITION_OVERRIDES = {"account manager"}
 DERIVED_TOLERANCE = Decimal("0.0005")
-WEIGHT_TOLERANCE = Decimal("0.0001")
+# Performance Score differences are reported in score points, not ratio.
+SCORE_TOLERANCE_POINTS = Decimal("0.5")
+WEIGHT_SUM_TOLERANCE = Decimal("0.005")
 
 
 class MarketingImportValidationError(ValueError):
@@ -68,9 +71,18 @@ def _lookup_key(value: Any) -> str:
     return _normalized_text(value).casefold()
 
 
+def _slug(value: Any) -> str:
+    return re.sub(r"[^a-z0-9]+", "_", _lookup_key(value)).strip("_") or "kpi"
+
+
+def _generated_kpi_key(position: str, label: str) -> str:
+    """Deterministic key for a KPI label the config does not know: the same label always gets the same key."""
+    return f"mkt_{_slug(position)}_{_slug(label)}"
+
+
 def _clean_employee_id(value: Any) -> str:
     text = _normalized_text(value)
-    for bad_char in ("\u200f", "\u200e", "\u200b", "\ufeff"):
+    for bad_char in ("‏", "‎", "​", "﻿"):
         text = text.replace(bad_char, "")
     if text.endswith(".0"):
         text = text[:-2]
@@ -152,6 +164,10 @@ class MarketingImportService:
         )
 
     @staticmethod
+    def _issue(row: int | None, column: str | None, code: str, message: str, **details: Any) -> dict[str, Any]:
+        return {"sheet": SHEET_NAME, "row": row, "column": column, "code": code, "message": message, **details}
+
+    @staticmethod
     def _warning(
         warnings: list[dict[str, Any]],
         row: int,
@@ -184,71 +200,80 @@ class MarketingImportService:
         return normalize_performance_level(_normalized_text(row.get("Performance Level")))
 
     @staticmethod
-    def _position_kpi_sets(
-        position_config: dict[str, Any],
-        period_date: Any | None = None,
-    ) -> list[tuple[str, list[dict[str, Any]]]]:
-        """Return the default KPI set plus variants effective for a period."""
+    def _position_kpi_sets(position_config: dict[str, Any]) -> list[tuple[str, list[dict[str, Any]]]]:
+        """Every KPI set the config knows for a position: the default set and each period variant."""
         kpi_sets = [("default", position_config.get("kpis", []))]
         for index, variant in enumerate(position_config.get("period_variants", []), start=1):
-            if not isinstance(variant, dict):
-                continue
-            if period_date is not None and variant.get("effective_from"):
-                try:
-                    if pd.Timestamp(variant["effective_from"]).date() > pd.Timestamp(period_date).date():
-                        continue
-                except (TypeError, ValueError):
-                    pass
-            kpi_sets.append((str(variant.get("id") or f"variant_{index}"), variant.get("kpis", [])))
+            if isinstance(variant, dict):
+                kpi_sets.append((str(variant.get("id") or f"variant_{index}"), variant.get("kpis", [])))
         return kpi_sets
 
-    @staticmethod
-    def _kpi_lookup(kpis: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
-        return {
-            _lookup_key(label): item
-            for item in kpis
-            for label in (item["label"], *(item.get("aliases") or []))
-        }
+    @classmethod
+    def _configured_index(cls, position_config: dict[str, Any]) -> dict[str, dict[str, Any]]:
+        """Label and alias (any period set) to its configured KPI. The first set that names a label wins."""
+        index: dict[str, dict[str, Any]] = {}
+        for _, kpis in cls._position_kpi_sets(position_config):
+            for definition in kpis:
+                for label in (definition["label"], *(definition.get("aliases") or [])):
+                    index.setdefault(_lookup_key(label), definition)
+        return index
 
     @classmethod
-    def _select_kpi_set(
-        cls,
-        position_config: dict[str, Any],
+    def _missing_kpi_labels(cls, position_config: dict[str, Any], present_keys: set[str]) -> list[str]:
+        """Labels of the configured set closest to this employee-month's KPIs that the sheet did not provide."""
+        best = min(
+            (kpis for _, kpis in cls._position_kpi_sets(position_config)),
+            key=lambda kpis: (
+                sum(definition["key"] not in present_keys for definition in kpis),
+                -sum(definition["key"] in present_keys for definition in kpis),
+            ),
+        )
+        return [definition["label"] for definition in best if definition["key"] not in present_keys]
+
+    def _reject(
+        self,
+        key: tuple,
         rows: list[dict[str, Any]],
-        period_date: Any | None = None,
-    ) -> tuple[str, list[dict[str, Any]], dict[int, dict[str, Any]]]:
-        """Select the KPI set whose definitions exactly match one employee period.
-
-        Marketing KPI groupings can change between periods. Matching the complete
-        row set keeps legacy periods importable while allowing a new period to
-        use a different KPI grouping and weight distribution.
-        """
-        candidates: list[tuple[int, int, str, list[dict[str, Any]], dict[int, dict[str, Any]]]] = []
-        for index, (set_name, kpis) in enumerate(cls._position_kpi_sets(position_config, period_date)):
-            lookup = cls._kpi_lookup(kpis)
-            matched = {
-                item["row"]: lookup.get(_lookup_key(item["kpi_label"]))
-                for item in rows
-            }
-            matched_count = sum(definition is not None for definition in matched.values())
-            matched_keys = [definition["key"] for definition in matched.values() if definition is not None]
-            expected_keys = {definition["key"] for definition in kpis}
-            exact = (
-                matched_count == len(rows)
-                and len(rows) == len(kpis)
-                and len(matched_keys) == len(set(matched_keys))
-                and set(matched_keys) == expected_keys
-            )
-            candidates.append((0 if exact else 1, -matched_count, set_name, kpis, matched))
-
-        candidates.sort(key=lambda candidate: (candidate[0], candidate[1]))
-        _, _, set_name, kpis, matched = candidates[0]
-        return set_name, kpis, matched
+        issues: list[dict[str, Any]],
+        rejected: list[dict[str, Any]],
+        warnings: list[dict[str, Any]],
+    ) -> None:
+        """Reject one employee-month: none of it is stored, and the upload lists its rows and reasons."""
+        if len(key) == 2:
+            employee_id, year, month = None, None, None
+            label = f"Row {key[1]}"
+        else:
+            employee_id, year, month = key
+            label = f"{employee_id} in {month} {year}"
+        row_numbers = sorted({issue["row"] for issue in issues} | {item["row"] for item in rows})
+        reasons = [
+            {"row": issue["row"], "column": issue["column"], "code": issue["code"], "message": issue["message"]}
+            for issue in issues
+        ]
+        rejected.append({
+            "employee_id": employee_id,
+            "year": year,
+            "month": month,
+            "rows": row_numbers,
+            "reasons": reasons,
+        })
+        details = "; ".join(f"row {reason['row']} {reason['column']}: {reason['message']}" for reason in reasons)
+        warnings.append({
+            "sheet": SHEET_NAME,
+            "row": row_numbers[0],
+            "column": "Employee",
+            "code": "EMPLOYEE_MONTH_REJECTED",
+            "message": f"{label} was not imported ({details})",
+            "employee_id": employee_id,
+            "year": year,
+            "month": month,
+            "rows": row_numbers,
+        })
 
     def parse_frame(self, frame: pd.DataFrame) -> MarketingImportResult:
         total_rows = len(frame.index)
-        errors: list[dict[str, Any]] = []
         warnings: list[dict[str, Any]] = []
+        rejected: list[dict[str, Any]] = []
         missing_columns = [column for column in REQUIRED_COLUMNS if column not in frame.columns]
         base_report = {
             "sheet": SHEET_NAME,
@@ -262,12 +287,17 @@ class MarketingImportService:
             "years": [],
             "periods": [],
             "warnings": warnings,
+            "rejected_employee_months": rejected,
         }
-        for column in missing_columns:
-            self._error(errors, 1, column, "MISSING_COLUMN", f"Required column is missing: {column}")
-        if errors:
+        if missing_columns:
+            # Structural problems fail the whole upload. Row-level problems never do.
+            errors: list[dict[str, Any]] = []
+            for column in missing_columns:
+                self._error(errors, 1, column, "MISSING_COLUMN", f"Required column is missing: {column}")
             raise MarketingImportValidationError(errors, base_report)
 
+        # Row-level problems are kept per employee-month. A problem rejects only that employee-month.
+        issues_by_key: dict[tuple, list[dict[str, Any]]] = {}
         valid_rows: list[dict[str, Any]] = []
         employee_rows = 0
         excluded_rows = 0
@@ -275,16 +305,18 @@ class MarketingImportService:
 
         for zero_index, row in frame.iterrows():
             row_number = int(zero_index) + 2
+            row_errors: list[dict[str, Any]] = []
             try:
                 level = self._effective_level(row)
             except ValueError as exc:
-                self._error(errors, row_number, "Performance Level", "INVALID_LEVEL", str(exc))
+                # The level decides whether the row is an employee row at all, so the row stands on its own.
+                self._error(row_errors, row_number, "Performance Level", "INVALID_LEVEL", str(exc))
+                issues_by_key.setdefault(("row", row_number), []).extend(row_errors)
                 continue
             if level != "Employee":
                 excluded_rows += 1
                 continue
             employee_rows += 1
-            row_error_count = len(errors)
 
             employee_id = _clean_employee_id(row.get("Employee ID"))
             employee_name = _normalized_text(row.get("Employee Name"))
@@ -302,13 +334,13 @@ class MarketingImportService:
                 ("KPI", kpi_label),
             ):
                 if not value:
-                    self._error(errors, row_number, column, "REQUIRED_VALUE", f"{column} is required")
+                    self._error(row_errors, row_number, column, "REQUIRED_VALUE", f"{column} is required")
 
             if team.casefold() != "marketing":
-                self._error(errors, row_number, "Team", "INVALID_TEAM", "Employee rows must belong to Marketing")
+                self._error(row_errors, row_number, "Team", "INVALID_TEAM", "Employee rows must belong to Marketing")
             if region is None:
                 self._error(
-                    errors,
+                    row_errors,
                     row_number,
                     "Region",
                     "INVALID_REGION",
@@ -319,41 +351,90 @@ class MarketingImportService:
                 period_date = _date_value(row.get("Date"))
             except (ValueError, TypeError):
                 period_date = None
-                self._error(errors, row_number, "Date", "INVALID_DATE", "Date must be a valid Excel date")
+                self._error(row_errors, row_number, "Date", "INVALID_DATE", "Date must be a valid Excel date")
+            period_label = (
+                f"{period_date.strftime('%B')} {period_date.year}" if period_date is not None else "an unknown month"
+            )
+
+            key: tuple = (
+                (employee_id, period_date.year, period_date.strftime("%B"))
+                if employee_id and period_date is not None
+                else ("row", row_number)
+            )
 
             try:
                 position_config = resolve_position_config(self.config, "Employee", position)
             except ConfigurationError as exc:
                 position_config = None
-                self._error(errors, row_number, "Position", "UNKNOWN_POSITION", str(exc))
+                self._error(row_errors, row_number, "Position", "UNKNOWN_POSITION", str(exc))
 
-            configured_kpis: list[dict[str, Any]] = []
-            if position_config:
-                configured_kpis = [
-                    definition
-                    for _, kpis in self._position_kpi_sets(position_config, period_date)
-                    for definition in kpis
-                    if _lookup_key(kpi_label)
-                    in {
-                        _lookup_key(label)
-                        for label in (definition["label"], *(definition.get("aliases") or []))
-                    }
-                ]
-                if not configured_kpis:
-                    self._error(
-                        errors,
+            # The sheet defines the KPI. A configured label keeps its key (aliases included), and an
+            # unknown label gets a generated key, so no row is refused for not being in the config.
+            kpi_key = None
+            configured: dict[str, Any] | None = None
+            if position_config and kpi_label:
+                configured = self._configured_index(position_config).get(_lookup_key(kpi_label))
+                kpi_key = configured["key"] if configured else _generated_kpi_key(
+                    position_config["position_name"], kpi_label,
+                )
+
+            perspective = _normalized_text(row.get("Perspective"))
+            if configured is not None and _lookup_key(perspective) != _lookup_key(configured["perspective"]):
+                # Perspective comes from the row. A difference from the config is a warning, not an error.
+                warnings.append(self._issue(
+                    row_number,
+                    "Perspective",
+                    "PERSPECTIVE_MISMATCH",
+                    f"Perspective {perspective or 'blank'} differs from the configured {configured['perspective']} "
+                    f"for {kpi_label}, employee {employee_id} in {period_label}; the row's value is used",
+                    employee_id=employee_id,
+                ))
+
+            direction_text = _normalized_text(row.get("Direction"))
+            uploaded_direction = _direction(direction_text)
+            if configured is not None:
+                # The configured direction wins for a configured KPI. A row that disagrees is a warning.
+                direction = configured["direction"]
+                if uploaded_direction != direction:
+                    warnings.append(self._issue(
                         row_number,
-                        "KPI",
-                        "UNKNOWN_KPI",
-                        f"KPI {kpi_label!r} is not configured for {position}",
-                    )
+                        "Direction",
+                        "DIRECTION_MISMATCH",
+                        f"Direction {direction_text or 'blank'} differs from the configured "
+                        f"{direction.replace('_', ' ')} for {kpi_label}, employee {employee_id} in {period_label}; "
+                        "the configured direction is used",
+                        employee_id=employee_id,
+                    ))
+            elif uploaded_direction:
+                direction = uploaded_direction
+            else:
+                direction = ""
+                self._error(
+                    row_errors,
+                    row_number,
+                    "Direction",
+                    "INVALID_DIRECTION",
+                    "Direction must be Higher Better or Lower Better",
+                )
+
+            unit = _normalized_text(row.get("Target Unit"))
+            if not unit:
+                self._error(row_errors, row_number, "Target Unit", "REQUIRED_VALUE", "Target Unit is required")
+
+            try:
+                weight = _decimal(row.get("Weight"))
+            except (InvalidOperation, ValueError):
+                weight = None
+                self._error(row_errors, row_number, "Weight", "INVALID_NUMBER", "Weight must be numeric")
+            if weight is not None and weight < 0:
+                self._error(row_errors, row_number, "Weight", "NEGATIVE_VALUE", "Weight cannot be negative")
 
             if (
                 position_config
-                and configured_kpis
+                and kpi_label
                 and _is_blank(row.get("Target Value"))
                 and _is_blank(row.get("Actual Value"))
-                and len(errors) == row_error_count
+                and not row_errors
             ):
                 warnings.append(
                     {
@@ -372,7 +453,7 @@ class MarketingImportService:
             except (InvalidOperation, ValueError):
                 actual = None
                 self._error(
-                    errors,
+                    row_errors,
                     row_number,
                     "Actual Value",
                     "INVALID_NUMBER",
@@ -383,23 +464,25 @@ class MarketingImportService:
             except (InvalidOperation, ValueError):
                 target = None
                 self._error(
-                    errors,
+                    row_errors,
                     row_number,
                     "Target Value",
                     "INVALID_NUMBER",
                     "Target Value must be numeric",
                 )
             if actual is not None and actual < 0:
-                self._error(errors, row_number, "Actual Value", "NEGATIVE_VALUE", "Actual Value cannot be negative")
+                self._error(row_errors, row_number, "Actual Value", "NEGATIVE_VALUE", "Actual Value cannot be negative")
             if target is not None and target < 0:
-                self._error(errors, row_number, "Target Value", "NEGATIVE_VALUE", "Target Value cannot be negative")
+                self._error(row_errors, row_number, "Target Value", "NEGATIVE_VALUE", "Target Value cannot be negative")
 
-            if len(errors) != row_error_count:
+            if row_errors:
+                issues_by_key.setdefault(key, []).extend(row_errors)
                 continue
 
             valid_rows.append(
                 {
                     "row": row_number,
+                    "key": key,
                     "employee_id": employee_id,
                     "employee_name": employee_name,
                     "position": position_config["position_name"],
@@ -407,11 +490,13 @@ class MarketingImportService:
                     "date": period_date,
                     "year": period_date.year,
                     "month": period_date.strftime("%B"),
-                    "kpi_label": kpi_label,
-                    "direction": row.get("Direction"),
-                    "perspective": row.get("Perspective"),
-                    "target_unit": row.get("Target Unit"),
-                    "weight": row.get("Weight"),
+                    "kpi_key": kpi_key,
+                    # A configured KPI keeps its configured label, so stored history reads the same.
+                    "kpi_label": configured["label"] if configured else kpi_label,
+                    "direction": direction,
+                    "perspective": perspective,
+                    "unit": unit,
+                    "weight": weight,
                     "actual": actual,
                     "target": target,
                     "uploaded_achievement": _derived_ratio(row.get("Achievement %")),
@@ -423,203 +508,140 @@ class MarketingImportService:
         base_report["employee_rows"] = employee_rows
         base_report["excluded_non_employee_rows"] = excluded_rows
         base_report["excluded_incomplete_rows"] = incomplete_rows
-        if errors:
-            raise MarketingImportValidationError(errors, base_report)
 
-        grouped: dict[tuple[str, int, str], list[dict[str, Any]]] = {}
+        grouped: dict[tuple, list[dict[str, Any]]] = {}
         for item in valid_rows:
-            grouped.setdefault((item["employee_id"], item["year"], item["month"]), []).append(item)
+            grouped.setdefault(item["key"], []).append(item)
+
+        # The KPIs the sheet gives each position in each month, for the missing-KPI hint: the sheet defines the
+        # set, so a short month is compared with its peers in the same month before the configuration.
+        peer_labels: dict[tuple, dict[str, str]] = {}
+        for item in valid_rows:
+            peer_labels.setdefault((item["position"], item["year"], item["month"]), {})[item["kpi_key"]] = item["kpi_label"]
 
         employees_by_id: dict[str, Employee] = {}
         records: list[PerformanceRecord] = []
-        for (employee_id, year, month), rows in grouped.items():
-            first = rows[0]
-            group_columns = {
-                "Employee Name": "employee_name",
-                "Position": "position",
-                "Region": "region",
-            }
-            for column, key in group_columns.items():
-                values = {row[key] for row in rows}
-                if len(values) > 1:
-                    self._error(
-                        errors,
+        for key in dict.fromkeys([*grouped, *issues_by_key]):
+            rows = grouped.get(key, [])
+            issues = list(issues_by_key.get(key, []))
+            if rows:
+                first = rows[0]
+                employee_id, year, month = first["employee_id"], first["year"], first["month"]
+                period_text = f"{employee_id} in {month} {year}"
+                group_columns = {
+                    "Employee Name": "employee_name",
+                    "Position": "position",
+                    "Region": "region",
+                }
+                for column, field in group_columns.items():
+                    if len({row[field] for row in rows}) > 1:
+                        issues.append(self._issue(
+                            first["row"],
+                            column,
+                            "INCONSISTENT_GROUP",
+                            f"{column} must be consistent for {period_text}",
+                        ))
+
+                # The employee-month's own rows are its KPI set. Each KPI key may appear once.
+                row_by_key: dict[str, dict[str, Any]] = {}
+                for item in rows:
+                    if item["kpi_key"] in row_by_key:
+                        issues.append(self._issue(
+                            item["row"],
+                            "KPI",
+                            "DUPLICATE_KPI",
+                            f"KPI {item['kpi_label']} is duplicated for {period_text}",
+                        ))
+                        continue
+                    row_by_key[item["kpi_key"]] = item
+
+                total_weight = sum((item["weight"] for item in rows), Decimal("0"))
+                # A row that failed validation is missing from `rows`, so the weights would be short for a
+                # reason already reported. Weight and KPI-set checks run only when every row of the month was read.
+                rows_complete = not issues_by_key.get(key)
+                if rows_complete and abs(total_weight - Decimal("1")) > WEIGHT_SUM_TOLERANCE:
+                    issues.append(self._issue(
                         first["row"],
-                        column,
-                        "INCONSISTENT_GROUP",
-                        f"{column} must be consistent for {employee_id} in {month} {year}",
-                    )
-
-            position_config = resolve_position_config(self.config, "Employee", first["position"])
-            _, selected_kpis, matched_kpis = self._select_kpi_set(
-                position_config,
-                rows,
-                first["date"],
-            )
-            expected_by_key = {item["key"]: item for item in selected_kpis}
-            row_by_key: dict[str, dict[str, Any]] = {}
-            for item in rows:
-                kpi_definition = matched_kpis.get(item["row"])
-                if kpi_definition is None:
-                    self._error(
-                        errors,
-                        item["row"],
-                        "KPI",
-                        "UNKNOWN_KPI",
-                        f"KPI {item['kpi_label']!r} is not configured for {first['position']}",
-                    )
-                    continue
-
-                item["kpi"] = kpi_definition
-                uploaded_direction = _direction(item.get("direction"))
-                # cw_error_free ("Error-free content ratio") is scored
-                # higher_better (more error-free content is better), matching
-                # the Content Writer workbook. Templates exported while the
-                # config said lower_better are still accepted; the configured
-                # direction is always the scoring source.
-                legacy_direction = (
-                    kpi_definition["key"] == "cw_error_free"
-                    and uploaded_direction == "lower_better"
-                )
-                if uploaded_direction != kpi_definition["direction"] and not legacy_direction:
-                    self._error(
-                        errors,
-                        item["row"],
-                        "Direction",
-                        "CONFIG_MISMATCH",
-                        f"Direction must be {kpi_definition['direction']}",
-                    )
-                if _lookup_key(item.get("perspective")) != _lookup_key(kpi_definition["perspective"]):
-                    self._error(
-                        errors,
-                        item["row"],
-                        "Perspective",
-                        "CONFIG_MISMATCH",
-                        f"Perspective must be {kpi_definition['perspective']}",
-                    )
-                if _lookup_key(item.get("target_unit")) != _lookup_key(kpi_definition["unit"]):
-                    self._error(
-                        errors,
-                        item["row"],
-                        "Target Unit",
-                        "CONFIG_MISMATCH",
-                        f"Target Unit must be {kpi_definition['unit']}",
-                    )
-                try:
-                    uploaded_weight = _decimal(item.get("weight"))
-                except (InvalidOperation, ValueError):
-                    uploaded_weight = None
-                    self._error(errors, item["row"], "Weight", "INVALID_NUMBER", "Weight must be numeric")
-                if (
-                    uploaded_weight is not None
-                    and abs(uploaded_weight - Decimal(str(kpi_definition["weight"]))) > WEIGHT_TOLERANCE
-                ):
-                    self._error(
-                        errors,
-                        item["row"],
                         "Weight",
-                        "CONFIG_MISMATCH",
-                        f"Weight must be {kpi_definition['weight']}",
-                    )
-
-                kpi_key = kpi_definition["key"]
-                if kpi_key in row_by_key:
-                    self._error(
-                        errors,
-                        item["row"],
-                        "KPI",
-                        "DUPLICATE_KPI",
-                        f"KPI {kpi_definition['label']} is duplicated for {employee_id} in {month} {year}",
-                    )
-                row_by_key[kpi_key] = item
-
-            missing = [item["label"] for key, item in expected_by_key.items() if key not in row_by_key]
-            if missing:
-                self._error(
-                    errors,
-                    first["row"],
-                    "KPI",
-                    "MISSING_KPI",
-                    f"Missing KPIs for {employee_id} in {month} {year}: {', '.join(missing)}",
-                )
-            extra = [key for key in row_by_key if key not in expected_by_key]
-            if extra:
-                self._error(
-                    errors,
-                    first["row"],
-                    "KPI",
-                    "EXTRA_KPI",
-                    f"Unexpected KPI keys: {', '.join(extra)}",
-                )
-            if errors:
+                        "WEIGHT_SUM",
+                        f"Weights for {period_text} sum to {float(total_weight):.3f}, not 1",
+                    ))
+                    if total_weight < 1:
+                        peers = peer_labels.get((first["position"], year, month), {})
+                        missing = [label for kpi_key, label in peers.items() if kpi_key not in row_by_key]
+                        source = f"other {first['position']} rows in {month} {year}"
+                        if not missing:
+                            position_config = resolve_position_config(self.config, "Employee", first["position"])
+                            missing = self._missing_kpi_labels(position_config, set(row_by_key))
+                            source = "configured, not in this month's rows"
+                        if missing:
+                            issues.append(self._issue(
+                                first["row"],
+                                "KPI",
+                                "MISSING_KPI",
+                                f"Missing KPIs for {period_text}: {', '.join(missing)} ({source})",
+                            ))
+            if issues:
+                self._reject(key, rows, issues, rejected, warnings)
                 continue
 
-            total_contribution = Decimal("0")
             kpi_values: list[dict[str, Any]] = []
-            for kpi_definition in selected_kpis:
-                item = row_by_key[kpi_definition["key"]]
+            engine_inputs: list[dict[str, Any]] = []
+            for item in rows:
                 actual = item["actual"]
                 target = item["target"]
-                if kpi_definition["direction"] == "lower_better":
-                    achievement = Decimal("1") if actual == 0 else target / actual
-                else:
-                    achievement = Decimal("0") if target == 0 else actual / target
-                effective = max(Decimal("0"), min(achievement, Decimal("1")))
-                weight = Decimal(str(kpi_definition["weight"]))
+                weight = item["weight"]
+                # The engine applies the existing rules: lower_better with zero actual is full
+                # credit, higher_better with zero target is zero, and results are capped to 0..1.
+                result = engine_achievement(float(actual), float(target), item["direction"], policy=EMPLOYEE_POLICY)
+                effective = Decimal(str(result.value))
                 contribution = effective * weight
-                total_contribution += contribution
+                engine_inputs.append({"achievement": result.value, "weight": float(weight)})
 
                 uploaded_achievement = item["uploaded_achievement"]
                 uploaded_weighted = item["uploaded_weighted"]
-                if (
-                    uploaded_achievement is not None
-                    and abs(uploaded_achievement - effective) > DERIVED_TOLERANCE
-                ):
-                    self._warning(
-                        warnings,
-                        item["row"],
-                        "Achievement %",
-                        uploaded_achievement,
-                        effective,
-                    )
+                if uploaded_achievement is not None and abs(uploaded_achievement - effective) > DERIVED_TOLERANCE:
+                    self._warning(warnings, item["row"], "Achievement %", uploaded_achievement, effective)
                 if uploaded_weighted is not None and abs(uploaded_weighted - contribution) > DERIVED_TOLERANCE:
-                    self._warning(
-                        warnings,
-                        item["row"],
-                        "Weighted Score %",
-                        uploaded_weighted,
-                        contribution,
-                    )
+                    self._warning(warnings, item["row"], "Weighted Score %", uploaded_weighted, contribution)
 
                 kpi_values.append(
                     {
-                        "kpi_key": kpi_definition["key"],
-                        "label": kpi_definition["label"],
-                        "perspective": kpi_definition["perspective"],
-                        "direction": kpi_definition["direction"],
-                        "unit": kpi_definition["unit"],
+                        "kpi_key": item["kpi_key"],
+                        "label": item["kpi_label"],
+                        "perspective": item["perspective"],
+                        "direction": item["direction"],
+                        "unit": item["unit"],
                         "actual_value": float(actual),
                         "target_value": float(target),
-                        "achievement_ratio": float(achievement.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)),
+                        "achievement_ratio": float(effective.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)),
                         "weight_applied": float(weight),
                         "contribution": float(contribution.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)),
                     }
                 )
 
-            score = (min(total_contribution, Decimal("1")) * Decimal("100")).quantize(
-                Decimal("0.01"),
-                rounding=ROUND_HALF_UP,
-            )
-            score_ratio = score / Decimal("100")
-            for item in rows:
-                uploaded_score = item["uploaded_score"]
-                if uploaded_score is not None and abs(uploaded_score - score_ratio) > DERIVED_TOLERANCE:
-                    self._warning(
-                        warnings,
-                        item["row"],
-                        "Performance Score",
-                        uploaded_score,
-                        score_ratio,
+            engine_score_points = engine_score(engine_inputs).score or 0.0
+            score = Decimal(str(engine_score_points)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            uploaded_score = next((item["uploaded_score"] for item in rows if item["uploaded_score"] is not None), None)
+            if uploaded_score is not None:
+                uploaded_points = uploaded_score * Decimal("100")
+                if abs(uploaded_points - score) > SCORE_TOLERANCE_POINTS:
+                    warnings.append(
+                        {
+                            "sheet": SHEET_NAME,
+                            "row": first["row"],
+                            "column": "Performance Score",
+                            "code": "DERIVED_VALUE_MISMATCH",
+                            "message": (
+                                f"Performance Score for {employee_id} {first['employee_name']} in {month} {year} "
+                                f"is {float(uploaded_points):.2f} in the sheet and {float(score):.2f} from its KPI rows"
+                            ),
+                            "employee_id": employee_id,
+                            "month": month,
+                            "year": year,
+                            "uploaded": float(uploaded_points),
+                            "calculated": float(score),
+                        }
                     )
 
             grade = calculate_grade(
@@ -657,9 +679,6 @@ class MarketingImportService:
                     kpi_values=kpi_values,
                 )
             )
-
-        if errors:
-            raise MarketingImportValidationError(errors, base_report)
 
         month_order = {
             month: index

@@ -25,10 +25,7 @@ from models.models import (
 import services.marketing_import_service as marketing_import_module
 from repositories import json_repos
 from repositories.json_repos import JSONPerformanceRepository
-from services.marketing_import_service import (
-    MarketingImportService,
-    MarketingImportValidationError,
-)
+from services.marketing_import_service import MarketingImportService
 from services.seeding_service import DatabaseSeeder, UploadProcessingError
 
 
@@ -188,26 +185,46 @@ async def test_config_api_resolves_one_marketing_position_without_mixing_kpis():
     os.environ.get("CI") == "true" or not REAL_WORKBOOK.exists(),
     reason="User acceptance workbook is only available in the local acceptance environment",
 )
-def test_real_marketing_workbook_imports_with_consistent_totals():
+def test_real_marketing_workbook_imports_and_rejects_only_the_bad_employee_month():
     """The acceptance workbook is a live file: months are added and earlier rows are corrected.
 
     A frozen snapshot of its counts and scores goes stale on the next edit, so this checks
-    what must hold for any version of the workbook. Exact scoring is pinned by the
-    synthetic-frame tests in this module.
+    what must hold for any version of the workbook. The one employee-month the current
+    workbook gets wrong (September 2026: weights sum to 0.8 and two configured KPIs are
+    missing) is rejected alone, and the rest still imports. Exact scoring is pinned by the
+    synthetic-frame tests in this module. No employee names or IDs are asserted.
     """
     result = MarketingImportService().parse_excel(pd.ExcelFile(REAL_WORKBOOK))
     report = result.report
     warning_codes = [warning["code"] for warning in report["warnings"]]
-    record_keys = {(record.employee_name, record.month, record.year) for record in result.records}
+    record_keys = {(record.employee_id, record.month, record.year) for record in result.records}
     calendar = ["January", "February", "March", "April", "May", "June",
                 "July", "August", "September", "October", "November", "December"]
 
     assert report["total_rows"] > 0
     assert report["employee_rows"] + report["excluded_non_employee_rows"] == report["total_rows"]
     assert report["excluded_incomplete_rows"] == warning_codes.count("INCOMPLETE_KPI_ROW")
-    assert set(warning_codes) <= {"INCOMPLETE_KPI_ROW", "DERIVED_VALUE_MISMATCH"}
+    assert set(warning_codes) <= {
+        "INCOMPLETE_KPI_ROW",
+        "DERIVED_VALUE_MISMATCH",
+        "DIRECTION_MISMATCH",
+        "PERSPECTIVE_MISMATCH",
+        "EMPLOYEE_MONTH_REJECTED",
+    }
+    # One rejected employee-month, with its rows and reasons, and one warning for it.
+    rejected = report["rejected_employee_months"]
+    assert [(entry["year"], entry["month"]) for entry in rejected] == [(2026, "September")]
+    assert rejected[0]["rows"] == [133, 134, 135, 136, 137]
+    assert {reason["code"] for reason in rejected[0]["reasons"]} == {"WEIGHT_SUM", "MISSING_KPI"}
+    assert warning_codes.count("EMPLOYEE_MONTH_REJECTED") == len(rejected)
+    # The error-free content rule is configured higher-better; sheet rows that say Lower Better only warn.
+    assert warning_codes.count("DIRECTION_MISMATCH") == 3
+    # A rejected employee-month is never stored.
+    rejected_key = (rejected[0]["employee_id"], rejected[0]["year"], rejected[0]["month"])
+    assert all((record.employee_id, record.year, record.month) != rejected_key for record in result.records)
     assert report["performance_records"] == len(result.records) == len(record_keys)
-    assert report["employees"] == len({record.employee_name for record in result.records})
+    # Employees are keyed by ID. One ID can carry different names in different months, so names are not counted.
+    assert report["employees"] == len({record.employee_id for record in result.records})
     assert report["months"] == [month for month in calendar if month in {record.month for record in result.records}]
     assert report["years"] == sorted({record.year for record in result.records})
     assert all(math.isfinite(record.evaluation.score) and record.evaluation.score >= 0 for record in result.records)
@@ -227,45 +244,66 @@ def test_zero_target_and_actual_produce_zero_higher_better_contribution():
     assert record.evaluation.score == 90.0
 
 
+def _reason_codes(result) -> set[str]:
+    return {reason["code"] for entry in result.report["rejected_employee_months"] for reason in entry["reasons"]}
+
+
+# Old: each of these raised MarketingImportValidationError for the whole upload.
+# New: each rejects only its employee-month, and the report carries the reason.
 @pytest.mark.parametrize(
     ("mutator", "code"),
     [
         (lambda frame: frame.__setitem__("Region", "Mars"), "INVALID_REGION"),
         (lambda frame: frame.__setitem__("Position", "Unknown Role"), "UNKNOWN_POSITION"),
         (lambda frame: frame.__setitem__("Actual Value", None), "INVALID_NUMBER"),
-        (lambda frame: frame.__setitem__("Perspective", "Customer"), "CONFIG_MISMATCH"),
     ],
 )
-def test_invalid_marketing_rows_return_structured_errors(mutator, code):
+def test_invalid_marketing_rows_reject_their_employee_month(mutator, code):
     frame = _valid_frame(positions=["Media Buyer"])
     mutator(frame)
 
-    with pytest.raises(MarketingImportValidationError) as exc_info:
-        MarketingImportService().parse_frame(frame)
+    result = MarketingImportService().parse_frame(frame)
 
-    assert any(error["code"] == code for error in exc_info.value.errors)
-    assert all(error["sheet"] == "Marketing" for error in exc_info.value.errors)
+    assert result.records == []
+    assert _reason_codes(result) == {code}
+    assert {warning["code"] for warning in result.report["warnings"]} == {"EMPLOYEE_MONTH_REJECTED"}
 
 
-def test_duplicate_missing_and_inconsistent_group_rows_are_rejected():
+# Old: a Perspective that differed from config raised CONFIG_MISMATCH for the whole upload.
+# New: it is a warning, and the row's own perspective is stored.
+def test_perspective_that_differs_from_config_is_a_warning_and_the_row_value_is_kept():
+    frame = _valid_frame(positions=["Media Buyer"])
+    frame["Perspective"] = "Customer"
+
+    result = MarketingImportService().parse_frame(frame)
+
+    assert len(result.records) == 1
+    assert result.report["rejected_employee_months"] == []
+    assert any(warning["code"] == "PERSPECTIVE_MISMATCH" for warning in result.report["warnings"])
+    assert {value["perspective"] for value in result.records[0].kpi_values} == {"Customer"}
+
+
+# Old: a duplicate KPI, a missing KPI and an inconsistent group each raised for the whole upload.
+# New: each rejects only its employee-month, and the report lists the reasons.
+def test_duplicate_missing_and_inconsistent_group_rows_reject_only_their_employee_month():
     service = MarketingImportService()
 
     duplicate = _valid_frame(positions=["Media Buyer"])
     duplicate = pd.concat([duplicate, duplicate.iloc[[0]]], ignore_index=True)
-    with pytest.raises(MarketingImportValidationError) as duplicate_error:
-        service.parse_frame(duplicate)
-    assert any(error["code"] == "DUPLICATE_KPI" for error in duplicate_error.value.errors)
+    result = service.parse_frame(duplicate)
+    assert result.records == []
+    assert "DUPLICATE_KPI" in _reason_codes(result)
 
     missing = _valid_frame(positions=["Media Buyer"]).iloc[1:].reset_index(drop=True)
-    with pytest.raises(MarketingImportValidationError) as missing_error:
-        service.parse_frame(missing)
-    assert any(error["code"] == "MISSING_KPI" for error in missing_error.value.errors)
+    result = service.parse_frame(missing)
+    assert result.records == []
+    assert {"WEIGHT_SUM", "MISSING_KPI"} <= _reason_codes(result)
 
     inconsistent = _valid_frame(positions=["Media Buyer"])
     inconsistent.loc[0, "Employee Name"] = "Different Name"
-    with pytest.raises(MarketingImportValidationError) as inconsistent_error:
-        service.parse_frame(inconsistent)
-    assert any(error["code"] == "INCONSISTENT_GROUP" for error in inconsistent_error.value.errors)
+    result = service.parse_frame(inconsistent)
+    assert result.records == []
+    assert _reason_codes(result) == {"INCONSISTENT_GROUP"}
 
 
 def test_non_employee_rows_are_excluded_and_derived_mismatch_is_warning():
@@ -467,6 +505,43 @@ def test_dry_run_performs_no_repository_or_database_writes(monkeypatch):
     assert result["marketing"]["performance_records"] == 1
 
 
+def _good_july_and_bad_august_frame() -> pd.DataFrame:
+    good = _valid_frame(positions=["Media Buyer"])
+    bad = _valid_frame(positions=["Media Buyer"])
+    bad["Date"] = pd.Timestamp("2026-08-01")
+    bad.loc[0, "Weight"] = bad.loc[0, "Weight"] + 0.5  # August's weights now sum to more than 1
+    return pd.concat([good, bad], ignore_index=True)
+
+
+def test_dry_run_and_commit_reject_the_same_employee_month(monkeypatch):
+    workbook = _workbook_bytes(_good_july_and_bad_august_frame())
+    seeder = DatabaseSeeder()
+
+    dry_run = seeder.process_uploaded_file("marketing.xlsx", workbook, dry_run=True)
+
+    assert dry_run["marketing"]["performance_records"] == 1
+    assert [(entry["year"], entry["month"]) for entry in dry_run["marketing"]["rejected_employee_months"]] == [
+        (2026, "August"),
+    ]
+    assert any(warning["code"] == "EMPLOYEE_MONTH_REJECTED" for warning in dry_run["marketing"]["warnings"])
+
+    # The commit path reads the same parse result, so it must reject the same month and store the rest.
+    monkeypatch.setattr(seeder.employee_repo, "save_all", lambda rows: rows)
+    monkeypatch.setattr(seeder.performance_repo, "save_all", lambda rows: rows)
+    monkeypatch.setattr(seeder.uploads_repo, "save", lambda row: row)
+    monkeypatch.setattr(seeder, "_sync_to_database", lambda *args, **kwargs: None)
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(bind=engine)
+    session = Session(bind=engine, autoflush=False)
+    monkeypatch.setattr("services.seeding_service.SessionLocal", lambda: session)
+
+    committed = seeder.process_uploaded_file("marketing.xlsx", workbook)
+
+    assert committed["marketing"]["performance_records"] == dry_run["marketing"]["performance_records"]
+    assert committed["marketing"]["rejected_employee_months"] == dry_run["marketing"]["rejected_employee_months"]
+    engine.dispose()
+
+
 def test_database_sync_upserts_marketing_period_and_position_config():
     engine = create_engine(
         "sqlite:///:memory:",
@@ -583,7 +658,9 @@ def test_failed_publish_leaves_json_snapshots_untouched_and_rolls_back_database(
 
 
 @pytest.mark.asyncio
-async def test_upload_router_returns_422_for_marketing_validation_errors(monkeypatch):
+async def test_upload_router_returns_422_for_a_missing_marketing_column(monkeypatch):
+    # Old: a Region of "Mars" returned 422 for the whole upload. New: that is a rejected employee-month,
+    # covered by the tests above. Only a missing required column still fails the whole upload.
     async def noop_notify(*args, **kwargs):
         return None
 
@@ -591,8 +668,7 @@ async def test_upload_router_returns_422_for_marketing_validation_errors(monkeyp
         "services.socket_service.SocketNotificationService.notify_file_upload",
         noop_notify,
     )
-    frame = _valid_frame(positions=["Media Buyer"])
-    frame["Region"] = "Mars"
+    frame = _valid_frame(positions=["Media Buyer"]).drop(columns=["Weight"])
     upload = UploadFile(filename="marketing.xlsx", file=io.BytesIO(_workbook_bytes(frame)))
 
     with pytest.raises(HTTPException) as exc_info:
@@ -600,4 +676,4 @@ async def test_upload_router_returns_422_for_marketing_validation_errors(monkeyp
 
     assert exc_info.value.status_code == 422
     assert exc_info.value.detail["errors"][0]["sheet"] == "Marketing"
-    assert any(error["code"] == "INVALID_REGION" for error in exc_info.value.detail["errors"])
+    assert any(error["code"] == "MISSING_COLUMN" for error in exc_info.value.detail["errors"])

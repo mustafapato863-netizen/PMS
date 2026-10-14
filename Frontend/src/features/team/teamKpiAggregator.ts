@@ -112,6 +112,8 @@ const sourceValue = (
   return Number.isFinite(value) ? value : undefined;
 };
 
+const isMarketingConfig = (config: TeamConfig | undefined) => config?.team.trim().toLowerCase() === 'marketing';
+
 const employeeDefinitions = (config: TeamConfig | undefined, agent: AgentRecord): KPI[] => {
   if (!config) return [];
   if (config.kpis.length > 0) return config.kpis;
@@ -162,7 +164,10 @@ export function aggregateConfiguredTeamKpis(
       const key = normalize(kpi.label);
       const pinned = kpi.evaluationPinned === true;
       const definition = findDefinition(definitions, kpi);
-      if (definitions.length > 0 && !definition && !pinned) return;
+      // Marketing sheets define their own KPIs, so a stored Marketing KPI the config does not know keeps
+      // its stored row (label, unit, weight, direction). Other teams still skip unconfigured KPIs.
+      const storedMarketingKpi = !definition && isMarketingConfig(config);
+      if (definitions.length > 0 && !definition && !pinned && !storedMarketingKpi) return;
       const aggregation = definition && normalize(definition.key) === 'other' && isUtilizationKpi(kpi)
         ? { method: 'average' as const }
         : definition?.aggregation ?? { method: 'average' as const };
