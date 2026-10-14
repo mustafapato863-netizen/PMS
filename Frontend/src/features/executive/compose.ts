@@ -728,6 +728,7 @@ export function mapDrivers(
 /* ── Corrective actions (from /api/corrective-actions/follow-up) ── */
 
 export interface FollowUpAction {
+  action_text?: string | null;
   employee_id?: string | null;
   month?: string;
   created_at?: string | null;
@@ -766,23 +767,40 @@ export function summarizeActions(actions: FollowUpAction[], today: Date, effecti
   const closedInMonth = effective
     ? actions.filter((action) => action.status === 'Completed' && (periodKeys ?? [effective.key]).includes(String(action.completed_at || '').slice(0, 7))).length
     : null;
+  const toItem = (action: FollowUpAction): ExecutiveActionItem => ({
+    id: String(action.id),
+    title: action.title || action.action_type || action.description || 'Corrective action',
+    team: action.team ?? null,
+    region: action.region ?? null,
+    employee_name: action.employee_name ?? null,
+    owner: action.owner ?? null,
+    due_date: dueDate(action),
+    status: String(action.status || ''),
+    follow_up_state: overdue(action) ? 'overdue' : dueThisWeek(action) ? 'due_this_week' : (action.follow_up_state ?? null),
+    employee_id: action.employee_id ?? null,
+    month: action.month,
+    action_type: action.action_type ?? null,
+    action_text: action.action_text ?? action.description ?? null,
+    root_cause: action.root_cause_note ?? null,
+    linked_kpi_key: action.linked_kpi_key ?? null,
+    created_at: action.created_at ?? null,
+    completed_at: action.completed_at ?? null,
+  });
   const rank = (action: FollowUpAction) => (overdue(action) ? 0 : dueThisWeek(action) ? 1 : isOpen(action) ? 2 : 3);
   const items: ExecutiveActionItem[] = actions.filter(isOpen)
     .sort((l, r) => rank(l) - rank(r) || String(dueDate(l) ?? '9999').localeCompare(String(dueDate(r) ?? '9999')))
     .slice(0, 4)
-    .map((action) => ({
-      id: String(action.id),
-      title: action.title || action.action_type || action.description || 'Corrective action',
-      team: action.team ?? null,
-      region: action.region ?? null,
-      employee_name: action.employee_name ?? null,
-      owner: action.owner ?? null,
-      due_date: dueDate(action),
-      status: String(action.status || ''),
-      follow_up_state: overdue(action) ? 'overdue' : dueThisWeek(action) ? 'due_this_week' : (action.follow_up_state ?? null),
-      employee_id: action.employee_id ?? null,
-      month: action.month,
-    }));
+    .map(toItem);
+  // Full list for the card: open actions plus those closed in the period. Overdue first, then due soonest,
+  // then newest; actions without a due date come after the dated ones in their group.
+  const closedInPeriod = (action: FollowUpAction) => effective !== null && action.status === 'Completed'
+    && (periodKeys ?? [effective.key]).includes(String(action.completed_at || '').slice(0, 7));
+  const rows: ExecutiveActionItem[] = actions.filter((action) => isOpen(action) || closedInPeriod(action))
+    .sort((l, r) => rank(l) - rank(r)
+      || String(dueDate(l) ?? '9999-99-99').localeCompare(String(dueDate(r) ?? '9999-99-99'))
+      || String(r.created_at ?? '').localeCompare(String(l.created_at ?? '')))
+    .slice(0, 200)
+    .map(toItem);
   return {
     analytics: summarizeActionAnalytics(actions, effective, pending, periodKeys),
     summary: {
@@ -793,6 +811,7 @@ export function summarizeActions(actions: FollowUpAction[], today: Date, effecti
       closed_in_month: closedInMonth,
     },
     actions: items,
+    rows,
   };
 }
 

@@ -31,7 +31,7 @@ function PaginatedKpiTable({ rows, effective, previous, range = null, score, rep
   const pageIndex = Math.min(page, pageCount - 1);
   const offset = pageIndex * PAGE_SIZE;
   const pageRows = rows.slice(offset, offset + PAGE_SIZE);
-  const head = 'text-xs font-semibold uppercase tracking-[0.6px] text-[var(--text-muted)]';
+  const head = 'text-xs font-semibold text-[var(--text-muted)]';
   const vs = vsLabel(previous, range, 'vs last');
   const label = coveredPeriodLabel(effective, range);
   const noRowsText = range && emptyMessage === MONTH_EMPTY ? RANGE_EMPTY : emptyMessage;

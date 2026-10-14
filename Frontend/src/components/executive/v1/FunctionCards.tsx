@@ -39,7 +39,7 @@ function FunctionCard({ card, previous, range, linkable }: { card: ExecutiveFunc
         </div>
       </div>
       <div className="flex flex-wrap items-center gap-[8px]">
-        <ScoreText score={card.score} className="text-[34px] tracking-[-0.045em] tabular-nums">{fmtScore(card.score)}</ScoreText>
+        <ScoreText score={card.score} className="text-display-tile tracking-[-0.045em] tabular-nums">{fmtScore(card.score)}</ScoreText>
         <GradePill score={card.score} className="!px-[10px] !py-[4px]" />
       </div>
       <div className="flex flex-wrap items-end gap-x-[16px] gap-y-[6px]">

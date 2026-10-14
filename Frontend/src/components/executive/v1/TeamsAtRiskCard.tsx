@@ -19,7 +19,7 @@ export default function TeamsAtRiskCard({ teams, rangeLabel = null }: { teams: E
       if (right.score === null) return -1;
       return left.score - right.score || left.team.localeCompare(right.team);
     });
-  const head = 'text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]';
+  const head = 'text-xs font-semibold text-[var(--text-muted)]';
   const teamHref = (team: string) => {
     const params = new URLSearchParams();
     const branch = searchParams.get('branch')?.trim().toLowerCase();

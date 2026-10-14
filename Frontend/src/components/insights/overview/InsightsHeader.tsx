@@ -38,7 +38,7 @@ function LabeledFilter({
   return (
     <div className={`flex min-w-0 flex-col items-start gap-[4px] ${widthClass}`}>
       <div className="flex items-center gap-[6px]" aria-hidden="true">
-        <span className={`text-xs font-semibold uppercase leading-normal tracking-[0.6px] ${primary ? 'text-[var(--insights-accent-text)]' : 'text-[var(--text-muted)]'}`}>{label}</span>
+        <span className={`text-xs font-semibold leading-normal ${primary ? 'text-[var(--insights-accent-text)]' : 'text-[var(--text-muted)]'}`}>{label}</span>
         {primary && <span className="rounded-full bg-[var(--insights-accent-tag)] px-[6px] py-px text-xs font-semibold leading-normal text-[var(--insights-accent-text)]">Primary</span>}
         {locked && (
           <span className="inline-flex items-center gap-[3px] text-xs font-semibold leading-normal text-[var(--text-muted)]">

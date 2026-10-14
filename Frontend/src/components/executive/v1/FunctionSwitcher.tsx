@@ -6,7 +6,7 @@ export default function FunctionSwitcher({ functions, value, onChange, assigned 
   return (
     <div className="flex min-w-0 flex-col gap-[4px]">
       <div className="flex items-center gap-[6px]">
-        <span className="text-xs font-semibold uppercase tracking-[0.6px] text-[var(--text-muted)]">Function</span>
+        <span className="text-xs font-semibold text-[var(--text-muted)]">Function</span>
         {assigned && value === functions[0] && <span className="rounded-full bg-[var(--insights-accent-tag)] px-[6px] py-px text-xs font-semibold text-[var(--insights-accent-text)]">Primary</span>}
         <span className="text-xs font-semibold text-[var(--text-muted)]">{functions.length} {assigned ? 'assigned' : 'available'}</span>
       </div>

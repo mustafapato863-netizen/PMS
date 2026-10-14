@@ -324,7 +324,7 @@ function PerformanceTrendChart({ series }: { series: TrendSeries }) {
           }}
           data-placement={placeLeft ? 'left' : 'right'}
         >
-          <p className="mb-[6px] border-b border-[var(--insights-row-border)] pb-[5px] text-xs font-bold uppercase tracking-[0.08em] text-[var(--text-muted)]">{activePoint.label}</p>
+          <p className="mb-[6px] border-b border-[var(--insights-row-border)] pb-[5px] text-xs font-semibold text-[var(--text-muted)]">{activePoint.label}</p>
           <div className="flex items-center justify-between gap-3 text-[12px]">
             <span className="inline-flex items-center gap-[7px] font-medium text-[var(--text-secondary)]"><span className="size-[8px] rounded-full bg-[var(--insights-accent)]" />{valueLabel}</span>
             <strong className="font-semibold tabular-nums text-[var(--insights-heading)]">{activeValue.toFixed(1)}%</strong>
@@ -497,27 +497,27 @@ export default function ExecutiveSummary({
           className="flex w-full items-center gap-[12px] rounded-[9px] border border-[var(--insights-info-border)] bg-[var(--insights-info-bg)] px-[12px] py-[10px]"
           title={story ? cleanScope(story.recommended_focus) : undefined}
         >
-          <span className="shrink-0 whitespace-nowrap rounded-full bg-[var(--insights-info-pill-bg)] px-[10px] py-[4px] text-xs font-semibold uppercase leading-normal tracking-[0.4px] text-[var(--insights-info-pill-text)]">Priority focus</span>
+          <span className="shrink-0 whitespace-nowrap rounded-full bg-[var(--insights-info-pill-bg)] px-[10px] py-[4px] text-xs font-semibold leading-normal text-[var(--insights-info-pill-text)]">Priority focus</span>
           <p className="min-w-0 flex-1 text-[13px] font-semibold leading-normal text-[var(--insights-info-text)]">{priorityFocusText(story)}</p>
         </div>
         <div className="flex w-full flex-col gap-[12px]">
           <span aria-hidden="true" className="h-px w-full bg-[var(--insights-card-border)]" />
         <div className="grid w-full grid-cols-2 gap-[20px] sm:flex sm:items-start">
           <SummaryKpi label="Current">
-            <p className="text-[26px] font-bold leading-normal text-[var(--insights-heading)]">{formatPercent(story?.current_score)}</p>
+            <p className="text-display-tile font-bold leading-normal text-[var(--insights-heading)]">{formatPercent(story?.current_score)}</p>
             <GradeBadge score={story?.current_score} />
           </SummaryKpi>
           <Divider />
           <SummaryKpi label="Target">
-            <p className="text-[26px] font-bold leading-normal text-[var(--insights-heading)]">{formatPercent(story?.target_score)}</p>
+            <p className="text-display-tile font-bold leading-normal text-[var(--insights-heading)]">{formatPercent(story?.target_score)}</p>
           </SummaryKpi>
           <Divider />
           <SummaryKpi label="Gap">
-            <p className="text-[26px] font-bold leading-normal" style={{ color: toneColor(gap) }}>{formatSignedPercent(gap)}</p>
+            <p className="text-display-tile font-bold leading-normal" style={{ color: toneColor(gap) }}>{formatSignedPercent(gap)}</p>
           </SummaryKpi>
           <Divider />
           <SummaryKpi label={previousLabel}>
-            <p className="flex items-center gap-[6px] text-[26px] font-bold leading-normal" style={{ color: toneColor(change) }}>
+            <p className="flex items-center gap-[6px] text-display-tile font-bold leading-normal" style={{ color: toneColor(change) }}>
               {formatSignedPercent(change)}
               {change !== null && (change < 0
                 ? <ArrowDownRight aria-hidden="true" className="size-[18px]" strokeWidth={1.875} />

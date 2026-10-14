@@ -39,7 +39,7 @@ function UploadSummary({ uploads }: { uploads: OverviewUpload[] }) {
   if (!latest) {
     return (
       <div className="space-y-1">
-        <p className="text-xl font-black text-[var(--text-primary)]">No uploads yet</p>
+        <p className="text-xl font-bold text-[var(--text-primary)]">No uploads yet</p>
         <p className="text-sm text-[var(--text-secondary)]">Employee and management workbooks will appear here after they are uploaded.</p>
       </div>
     );
@@ -47,11 +47,11 @@ function UploadSummary({ uploads }: { uploads: OverviewUpload[] }) {
   const failed = isFailedStatus(latest.status);
   return (
     <div className="min-w-0 space-y-1 text-sm">
-      {failed && <p className="text-xl font-black text-[var(--text-primary)]">Latest upload failed</p>}
+      {failed && <p className="text-xl font-bold text-[var(--text-primary)]">Latest upload failed</p>}
       {!failed && (
         latest.timestamp === null
-          ? <p className="text-xl font-black text-[var(--text-primary)]">Upload time —</p>
-          : <p className="text-xl font-black text-[var(--text-primary)]"><time dateTime={latest.uploadedAt ?? undefined} title={absoluteTime(latest.timestamp)}>Uploaded {relativeTime(latest.timestamp)}</time></p>
+          ? <p className="text-xl font-bold text-[var(--text-primary)]">Upload time —</p>
+          : <p className="text-xl font-bold text-[var(--text-primary)]"><time dateTime={latest.uploadedAt ?? undefined} title={absoluteTime(latest.timestamp)}>Uploaded {relativeTime(latest.timestamp)}</time></p>
       )}
       <p className="truncate text-[var(--text-secondary)]" title={latest.filename ?? undefined}>{latest.filename ?? 'Unnamed file'} · by {latest.uploadedBy ?? '—'}</p>
       {latest.kind === 'employee' && <p className="text-[var(--text-secondary)]">Status {latest.status ?? '—'}</p>}
@@ -64,14 +64,14 @@ function AccessSummary({ users }: { users: UserSummary }) {
   if (users.total === 0) {
     return (
       <div className="space-y-1">
-        <p className="text-xl font-black text-[var(--text-primary)]">No user accounts</p>
+        <p className="text-xl font-bold text-[var(--text-primary)]">No user accounts</p>
         <p className="text-sm text-[var(--text-secondary)]">Accounts you add will appear here.</p>
       </div>
     );
   }
   return (
     <div className="min-w-0 space-y-2 text-sm">
-      <p className="text-xl font-black text-[var(--text-primary)]">{users.total.toLocaleString()} {users.total === 1 ? 'user' : 'users'}</p>
+      <p className="text-xl font-bold text-[var(--text-primary)]">{users.total.toLocaleString()} {users.total === 1 ? 'user' : 'users'}</p>
       <ul className="flex flex-wrap gap-x-3 gap-y-1 text-[var(--text-secondary)]">
         {users.byRole.map(({ role, count }) => (
           <li key={role}><span className="font-bold text-[var(--text-primary)]">{count}</span> {role}</li>
@@ -88,7 +88,7 @@ function SystemSummary({ summary }: { summary: SystemErrorSummary }) {
     const lastError = summary.lastError;
     return (
       <div className="min-w-0 space-y-1 text-sm">
-        <p className="text-xl font-black text-[var(--text-primary)]">No server errors in the last 24 hours</p>
+        <p className="text-xl font-bold text-[var(--text-primary)]">No server errors in the last 24 hours</p>
         {lastError && lastError.timestamp !== null && (
           <p className="text-[var(--text-secondary)]">
             <time dateTime={lastError.occurredAt ?? undefined} title={absoluteTime(lastError.timestamp)}>Last error {relativeTime(lastError.timestamp)}</time>
@@ -102,7 +102,7 @@ function SystemSummary({ summary }: { summary: SystemErrorSummary }) {
   const message = `${latest?.errorClass ?? 'Unknown error'} · ${[latest?.method, latest?.endpoint].filter(Boolean).join(' ') || '—'}`;
   return (
     <div className="min-w-0 space-y-1 text-sm">
-      <p className="text-xl font-black text-[var(--text-primary)]">{systemErrorHeadline(summary)}</p>
+      <p className="text-xl font-bold text-[var(--text-primary)]">{systemErrorHeadline(summary)}</p>
       {latest && latest.timestamp !== null && (
         <p className="text-[var(--text-secondary)]">
           <time dateTime={latest.occurredAt ?? undefined} title={absoluteTime(latest.timestamp)}>Latest {relativeTime(latest.timestamp)}</time>
@@ -142,7 +142,7 @@ function EvaluationSummary({ overview }: { overview: EvaluationOverview }) {
   if (drafts === 0 && approvedNotApplied === 0 && (approvedUnconfirmed ?? 0) === 0 && applied === 0) {
     return (
       <div className="space-y-1">
-        <p className="text-xl font-black text-[var(--text-primary)]">No evaluation months yet</p>
+        <p className="text-xl font-bold text-[var(--text-primary)]">No evaluation months yet</p>
         <p className="text-sm text-[var(--text-secondary)]">Open evaluation settings to start a month.</p>
       </div>
     );
@@ -155,7 +155,7 @@ function EvaluationSummary({ overview }: { overview: EvaluationOverview }) {
   if (applied !== null) parts.push(`${applied.toLocaleString()} applied`);
   return (
     <div className="min-w-0 space-y-1 text-sm">
-      <p className="text-xl font-black text-[var(--text-primary)]">{evaluationHeadline(overview)}</p>
+      <p className="text-xl font-bold text-[var(--text-primary)]">{evaluationHeadline(overview)}</p>
       {parts.length > 0 && <p className="text-[var(--text-secondary)]">{parts.join(' · ')}</p>}
     </div>
   );
