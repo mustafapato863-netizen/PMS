@@ -21,7 +21,8 @@ describe('CorrectiveActionInsightsCard', () => {
     expect(screen.getAllByTestId('action-kpi-rank')[0]).toHaveTextContent('Booking Rate2 actions');
     const iconLabels = screen.getAllByTestId('ranked-row-icon').map((icon) => icon.getAttribute('data-icon-for'));
     expect(iconLabels).toEqual(expect.arrayContaining(['Coaching', 'Inbound', 'Booking Rate', 'AHT (Handle Time)', 'Quality Score']));
-    expect(screen.getAllByTestId('ranked-row-icon')).toHaveLength(7);
+    expect(screen.getAllByTestId('action-reason-rank')[0]).toHaveTextContent('Booking Rate2 actions');
+    expect(screen.getAllByTestId('ranked-row-icon')).toHaveLength(10);
     expect(screen.getByText('Actions this month').parentElement).toHaveTextContent('3');
     expect(screen.getByText('Company-wide · June 2026 · Decision patterns')).toBeInTheDocument();
     expect(screen.queryByTestId('action-tile-open')).not.toBeInTheDocument();
@@ -51,6 +52,27 @@ describe('CorrectiveActionInsightsCard', () => {
     expect(select).toHaveValue('');
     expect(within(select).queryByRole('option', { name: 'Inbound' })).not.toBeInTheDocument();
     expect(screen.getByTestId('action-kpi-rank')).toHaveTextContent('Quality Score');
+  });
+
+  it('ranks the most common reasons and follows the team filter', () => {
+    render(<CorrectiveActionInsightsCard data={data} effective={period} scopeLabel="Company-wide" />);
+    expect(screen.getByRole('region', { name: 'Most common reasons' })).toBeInTheDocument();
+    fireEvent.change(screen.getByRole('combobox', { name: 'Filter actions by team' }), { target: { value: 'Coding' } });
+    expect(screen.getByRole('region', { name: 'Most common reasons · Coding' })).toBeInTheDocument();
+    expect(screen.getAllByTestId('action-reason-rank')).toHaveLength(1);
+    expect(screen.getByTestId('action-reason-rank')).toHaveTextContent('Quality Score1 action');
+  });
+
+  it('shows Pending Sync only when actions are queued on this device, and follows the team filter', () => {
+    const { rerender } = render(<CorrectiveActionInsightsCard data={data} effective={period} scopeLabel="Company-wide" />);
+    expect(screen.queryByText('Pending Sync')).not.toBeInTheDocument();
+
+    const queued = { ...data, analytics: { ...data.analytics!, pending_sync: [{ id: 'q1', team: 'Inbound' }, { id: 'q2', team: 'Coding' }] } };
+    rerender(<CorrectiveActionInsightsCard data={queued} effective={period} scopeLabel="Company-wide" />);
+    expect(screen.getByText('Pending Sync').parentElement).toHaveTextContent('2');
+    fireEvent.change(screen.getByRole('combobox', { name: 'Filter actions by team' }), { target: { value: 'Inbound' } });
+    expect(screen.getByText('Pending Sync').parentElement).toHaveTextContent('1');
+    expect(screen.getByText('Actions this month').parentElement).toHaveTextContent('2');
   });
 
   it('distinguishes no recorded actions from unavailable analytics', () => {

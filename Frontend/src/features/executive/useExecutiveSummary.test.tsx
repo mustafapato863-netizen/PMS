@@ -3,10 +3,9 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { FIXTURE_TEAM_FUNCTIONS, fixtureActions, fixtureAgentRecords, fixtureDrivers } from './executive.fixture';
-import { composeExecutiveSummary, toExecRecords } from './compose';
-import { executiveSummaryUrl, useExecutiveSummary } from './useExecutiveSummary';
+import type { PMSAction } from '../../types';
+import { useExecutiveSummary, type ExecutiveFilterState } from './useExecutiveSummary';
 import { executiveFunctionForTeam } from './functions';
-import { ApiError } from '../../lib/apiClient';
 
 const mocks = vi.hoisted(() => ({
   apiFetch: vi.fn(),
@@ -14,6 +13,8 @@ const mocks = vi.hoisted(() => ({
   workspaceEnabled: [] as boolean[],
   followUp: vi.fn(),
   agents: [] as unknown[],
+  /** This device's action queue, passed to the hook as `queuedActions`. */
+  queued: [] as PMSAction[],
 }));
 
 vi.mock('../../lib/apiClient', async (importOriginal) => ({
@@ -49,59 +50,28 @@ beforeEach(() => {
   mocks.workspaceFilters = [];
   mocks.workspaceEnabled = [];
   mocks.agents = fixtureAgentRecords();
+  mocks.queued = [];
   mocks.followUp.mockResolvedValue({
     summary: {},
     actions: fixtureActions(TODAY).map((action) => ({ ...action, action_text: action.title, action_type: 'Coaching', team: action.team ?? '' })),
   });
 });
 
-describe('executiveSummaryUrl', () => {
-  it('maps filters to the API_NEEDS query', () => {
-    expect(executiveSummaryUrl('corporate', { periodKey: '2026-06', region: 'UAE', teamFunction: 'RCM', team: 'Coding', performanceLevel: 'Employee' }))
-      .toBe('/api/executive/summary?view=corporate&year=2026&month=6&region=UAE&function=RCM&team=Coding&performance_level=Employee');
-    expect(executiveSummaryUrl('function', {}, 'Pre-Approvals')).toBe('/api/executive/summary?view=function&function=Pre-Approvals');
-  });
-});
-
 describe('useExecutiveSummary', () => {
-  it('does not probe a missing endpoint again when the filters change', async () => {
-    mocks.apiFetch.mockImplementation((url: string) => url.startsWith('/api/executive/summary')
-      ? Promise.reject(new ApiError('Not Found', 404))
-      : Promise.resolve({ success: true, data: mocks.agents }));
+  it('never requests /api/executive/summary, which the backend does not provide', async () => {
+    mocks.apiFetch.mockImplementation((url: string) => url.startsWith('/api/performance/summary-records')
+      ? Promise.resolve({ success: true, data: mocks.agents })
+      : Promise.reject(new Error('Not Found')));
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const sharedWrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
     const { result, rerender } = renderHook(({ team }: { team?: string }) => useExecutiveSummary({ view: 'corporate', role: 'Viewer', filters: { team }, today: TODAY }), { initialProps: { team: undefined } as { team?: string }, wrapper: sharedWrapper });
     await waitFor(() => expect(result.current.source).toBe('composed'));
     rerender({ team: 'Coding' });
     await waitFor(() => expect(result.current.summary?.scope.team).toBe('Coding'));
-    expect(mocks.apiFetch.mock.calls.filter(([url]) => url.startsWith('/api/executive/summary'))).toHaveLength(1);
+    expect(mocks.apiFetch.mock.calls.filter(([url]) => String(url).startsWith('/api/executive/summary'))).toHaveLength(0);
     client.clear();
   });
 
-  it('rechecks endpoint availability after five minutes', async () => {
-    mocks.apiFetch.mockRejectedValue(new ApiError('Not Found', 404));
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    const sharedWrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
-    const { result, rerender } = renderHook(({ team }: { team?: string }) => useExecutiveSummary({ view: 'corporate', role: 'Viewer', filters: { team }, today: TODAY }), { initialProps: { team: undefined } as { team?: string }, wrapper: sharedWrapper });
-    await waitFor(() => expect(result.current.source).toBe('composed'));
-    const capability = client.getQueryCache().findAll({ queryKey: ['executive', 'summary-endpoint-unavailable'] })[0];
-    client.setQueryData(capability.queryKey, Date.now() - 300_001);
-    rerender({ team: 'Coding' });
-    await waitFor(() => expect(mocks.apiFetch.mock.calls.filter(([url]) => url.startsWith('/api/executive/summary'))).toHaveLength(2));
-    client.clear();
-  });
-
-  it.each([403, 500])('does not cache HTTP %s as an unavailable endpoint', async (status) => {
-    mocks.apiFetch.mockRejectedValue(new ApiError('Request failed', status));
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    const sharedWrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
-    const { result, rerender } = renderHook(({ team }: { team?: string }) => useExecutiveSummary({ view: 'corporate', role: 'Viewer', filters: { team }, today: TODAY }), { initialProps: { team: undefined } as { team?: string }, wrapper: sharedWrapper });
-    await waitFor(() => expect(result.current.source).toBe('composed'));
-    rerender({ team: 'Coding' });
-    await waitFor(() => expect(mocks.apiFetch.mock.calls.filter(([url]) => url.startsWith('/api/executive/summary'))).toHaveLength(2));
-    expect(client.getQueryCache().findAll({ queryKey: ['executive', 'summary-endpoint-unavailable'] })).toHaveLength(0);
-    client.clear();
-  });
   it('includes old undated actions and deduplicates tracked records by persisted ID', async () => {
     const action = { id: 'old-action', employee_id: 'old-employee', employee_name: 'Old employee', team: 'Coding', month: 'June', action_text: 'Coaching', action_type: 'Coaching' };
     mocks.followUp.mockResolvedValue({ actions: [{ ...action, status: 'In Progress', due_date: '2026-07-07' }] });
@@ -124,7 +94,29 @@ describe('useExecutiveSummary', () => {
     await waitFor(() => expect(result.current.summary?.corrective_actions?.analytics?.actions).toHaveLength(1));
     expect(result.current.summary?.corrective_actions?.analytics?.actions[0]).toMatchObject({
       id: 'merged', team: 'Inbound', action_type: 'Coaching', kpi_mentions: ['Booking Rate', 'AHT (Handle Time)'],
+      root_cause_note: 'Booking rate and AHT',
     });
+  });
+
+  it('counts only unsynced queued actions in the active period as Pending Sync, and leaves the totals alone', async () => {
+    const queuedAction = (overrides: Pick<PMSAction, 'id' | 'month' | 'synced'> & Partial<PMSAction>): PMSAction => ({
+      employee_id: 'e1', employee_name: 'Queued agent', team: 'Inbound', action_type: 'Training', action_text: 'Train',
+      root_cause_note: '', created_by: 'Admin', created_at: '2026-06-20T09:00:00Z', ...overrides,
+    });
+    mocks.queued = [
+      queuedAction({ id: 'queued-june', month: 'June', synced: false }),
+      queuedAction({ id: 'synced-june', month: 'June', synced: true }),
+      queuedAction({ id: 'queued-may', month: 'May', created_at: '2026-05-20T09:00:00Z', synced: false }),
+    ];
+    mocks.followUp.mockResolvedValue({ actions: [] });
+    mocks.apiFetch.mockImplementation((url: string) => url === '/api/corrective-actions/'
+      ? Promise.resolve({ success: true, data: [] })
+      : Promise.reject(new Error('Not Found')));
+    const { result } = renderHook(() => useExecutiveSummary({ view: 'corporate', role: 'Admin', filters: { periodKey: '2026-06' }, queuedActions: mocks.queued, today: TODAY }), { wrapper });
+    await waitFor(() => expect(result.current.summary?.corrective_actions?.analytics?.pending_sync).toHaveLength(1));
+    expect(result.current.summary?.corrective_actions?.analytics?.pending_sync).toEqual([{ id: 'queued-june', team: 'Inbound' }]);
+    expect(result.current.summary?.corrective_actions?.analytics?.actions).toHaveLength(0);
+    expect(result.current.summary?.corrective_actions?.summary.open).toBe(0);
   });
   it('uses canonical management and employee evidence and scopes function actions', async () => {
     mocks.apiFetch.mockImplementation((url: string) => url.startsWith('/api/performance/summary-records')
@@ -137,18 +129,7 @@ describe('useExecutiveSummary', () => {
     expect(result.current.summary?.people?.below_90).toBeDefined();
     expect(result.current.summary?.corrective_actions?.actions.every((action) => executiveFunctionForTeam(action.team, FIXTURE_TEAM_FUNCTIONS) === 'RCM')).toBe(true);
   });
-  it('uses GET /api/executive/summary as-is when the endpoint answers', async () => {
-    const records = toExecRecords(fixtureAgentRecords());
-    const apiSummary = { ...composeExecutiveSummary({ view: 'corporate', role: 'Admin', records, filters: {}, today: TODAY }), meta: { source: 'api', unavailable: [], driver_metric: 'weighted_gap' } };
-    mocks.apiFetch.mockResolvedValue({ success: true, data: apiSummary });
-    const { result } = renderHook(() => useExecutiveSummary({ view: 'corporate', role: 'Admin', filters: {}, today: TODAY }), { wrapper });
-    await waitFor(() => expect(result.current.source).toBe('api'));
-    expect(result.current.summary?.meta.driver_metric).toBe('weighted_gap');
-    expect(mocks.workspaceEnabled.every((enabled) => !enabled)).toBe(true);
-    expect(mocks.followUp).not.toHaveBeenCalled();
-  });
-
-  it('composes from existing endpoints when the summary endpoint 404s', async () => {
+  it('composes from the existing sources when the summary records are unavailable', async () => {
     mocks.apiFetch.mockRejectedValue(new Error('Not Found'));
     const { result } = renderHook(() => useExecutiveSummary({ view: 'corporate', role: 'Admin', filters: { periodKey: '2026-07' }, today: TODAY }), { wrapper });
     await waitFor(() => expect(result.current.summary?.corrective_actions ?? null).not.toBeNull());
@@ -157,6 +138,8 @@ describe('useExecutiveSummary', () => {
     expect(summary.period.fallback_applied).toBe(true);
     expect(summary.drivers.negative.length).toBeGreaterThan(0);
     expect(summary.corrective_actions?.summary.due_this_week).toBe(3);
+    // The evaluation-basis note comes from the same records, for the effective month.
+    expect(summary.basis_context).toMatchObject({ state: expect.any(String) });
     // Drivers are asked for the effective (fallback) month.
     expect(mocks.workspaceFilters.at(-1)).toMatchObject({ periodKey: '2026-06' });
     expect(result.current.options.regions).toEqual(['EGY', 'UAE']);
@@ -172,6 +155,45 @@ describe('useExecutiveSummary', () => {
     expect(summary.meta.unavailable).toContain('function_average');
     expect(summary.corrective_actions?.actions.every((action) => action.team === 'Inbound')).toBe(true);
     expect(mocks.workspaceFilters.at(-1)).toMatchObject({ team: 'Inbound' });
+  });
+
+  describe('Manager with two assigned teams', () => {
+    const TWO_TEAMS = ['Inbound', 'Outbound'];
+    const renderManager = (filters: ExecutiveFilterState) => renderHook(
+      () => useExecutiveSummary({ view: 'managerial', role: 'Manager', filters, managerTeams: TWO_TEAMS, today: TODAY }),
+      { wrapper },
+    );
+
+    it('shows every assigned team by default, offers exactly those two, and never shows an unassigned team', async () => {
+      mocks.apiFetch.mockRejectedValue(new Error('Not Found'));
+      const { result } = renderManager({});
+      await waitFor(() => expect(result.current.summary?.corrective_actions ?? null).not.toBeNull());
+      expect(result.current.managerTeam).toBeNull();
+      expect(result.current.managerTeamOptions).toEqual(TWO_TEAMS);
+      expect(result.current.summary?.scope.team).toBeNull();
+      expect(result.current.summary?.teams.map((team) => team.team).sort()).toEqual(TWO_TEAMS);
+      expect(result.current.summary?.corrective_actions?.actions.every((action) => TWO_TEAMS.includes(action.team ?? ''))).toBe(true);
+      expect(result.current.summary?.teams.some((team) => team.team === 'Coding')).toBe(false);
+    });
+
+    it('opens on an assigned team named in the URL', async () => {
+      mocks.apiFetch.mockRejectedValue(new Error('Not Found'));
+      const { result } = renderManager({ team: 'Outbound' });
+      await waitFor(() => expect(result.current.summary?.corrective_actions ?? null).not.toBeNull());
+      expect(result.current.managerTeam).toBe('Outbound');
+      expect(result.current.summary?.scope.team).toBe('Outbound');
+      expect(result.current.summary?.teams.map((team) => team.team)).toEqual(['Outbound']);
+      expect(result.current.summary?.corrective_actions?.actions.every((action) => action.team === 'Outbound')).toBe(true);
+    });
+
+    it('ignores an unassigned team in the URL and opens on every assigned team', async () => {
+      mocks.apiFetch.mockRejectedValue(new Error('Not Found'));
+      const { result } = renderManager({ team: 'Coding' });
+      await waitFor(() => expect(result.current.summary?.corrective_actions ?? null).not.toBeNull());
+      expect(result.current.managerTeam).toBeNull();
+      expect(result.current.managerTeamOptions).toEqual(TWO_TEAMS);
+      expect(result.current.summary?.teams.map((team) => team.team).sort()).toEqual(TWO_TEAMS);
+    });
   });
 
   it('does not ask Insights or follow-up for roles without access (Viewer)', async () => {

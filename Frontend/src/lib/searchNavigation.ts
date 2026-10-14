@@ -30,6 +30,8 @@ export interface SearchResultItem {
   subtitle: string;
   icon: SearchIconKey;
   path: string;
+  /** Extra words that find this item (for old names); never shown. */
+  keywords?: string[];
 }
 
 export interface GlobalSearchEmployee {
@@ -92,14 +94,7 @@ const baseNavigation = ({
       subtitle: 'Performance overview across all teams',
       icon: 'layout',
       path: '/executive',
-    });
-    items.push({
-      id: 'nav-departmental-summary',
-      group: 'navigation',
-      label: 'Departmental Summary',
-      subtitle: 'Function, team and region performance',
-      icon: 'layout',
-      path: '/departmental-summary',
+      keywords: ['departmental'],
     });
   }
 
@@ -301,7 +296,9 @@ export function buildLocalSearchResults({
   }
 
   return items.filter((item) => (
-    includesQuery(item.label, normalizedQuery) || includesQuery(item.subtitle, normalizedQuery)
+    includesQuery(item.label, normalizedQuery)
+    || includesQuery(item.subtitle, normalizedQuery)
+    || (item.keywords ?? []).some((keyword) => includesQuery(keyword, normalizedQuery))
   ));
 }
 

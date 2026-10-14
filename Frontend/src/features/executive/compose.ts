@@ -1,6 +1,6 @@
 /**
  * Compose the Executive / Function Summary payload from data that already
- * exists, while `GET /api/executive/summary` is being built (API_NEEDS.md).
+ * exists. The backend has no `GET /api/executive/summary` route (API_NEEDS.md).
  *
  * Inputs are the authorized performance records the existing dashboards use
  * (`usePerformanceData`: scoped records API or legacy `/api/performance`), the
@@ -177,6 +177,12 @@ function asBasisRecords(records: ExecRecord[]): BasisRecord[] {
 /** Exact calendar month, even when the score delta uses a later available month. */
 function basisFor(records: ExecRecord[], period: ExecutivePeriod) {
   return compareScoringBasis(asBasisRecords(inPeriod(records, period)), asBasisRecords(inPeriod(records, exactPreviousPeriod(period))));
+}
+
+/** The one function every listed team belongs to; null when they span several functions (or none). */
+function sharedFunctionOf(teams: string[], teamFunctions?: TeamFunctionMap): ExecutiveFunction | null {
+  const functions = new Set(teams.map((team) => executiveFunctionForTeam(team, teamFunctions)).filter((fn): fn is ExecutiveFunction => fn !== null));
+  return functions.size === 1 ? [...functions][0] : null;
 }
 
 /** Six calendar months ending at `period` (oldest first). */
@@ -637,7 +643,8 @@ export function localIsoDate(date: Date): string {
 const OPEN_STATUSES = new Set(['Open', 'In Progress']);
 
 /** Corrective-action summary; "Due this week" counts from today (Mustafa): today ≤ due ≤ today + 6. */
-export function summarizeActions(actions: FollowUpAction[], today: Date, effective: ExecutivePeriod | null): ExecutiveCorrectiveActions {
+/** `pending` = actions queued on this device and not yet synced (Pending Sync); they never change the totals above. */
+export function summarizeActions(actions: FollowUpAction[], today: Date, effective: ExecutivePeriod | null, pending: FollowUpAction[] = []): ExecutiveCorrectiveActions {
   const todayIso = localIsoDate(today);
   const weekEnd = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 6);
   const weekEndIso = localIsoDate(weekEnd);
@@ -666,7 +673,7 @@ export function summarizeActions(actions: FollowUpAction[], today: Date, effecti
       month: action.month,
     }));
   return {
-    analytics: summarizeActionAnalytics(actions, effective),
+    analytics: summarizeActionAnalytics(actions, effective, pending),
     summary: {
       as_of: todayIso,
       open: actions.filter(isOpen).length,
@@ -688,12 +695,16 @@ export interface ComposeInput {
   requestedPeriodKey?: string | null;
   /** Managerial: the manager's team; Function view: the selected function. */
   team?: string | null;
+  /** Managerial: every team the viewer may see. Records and drivers outside them never enter the summary. */
+  teamScope?: string[] | null;
   functionName?: ExecutiveFunction | null;
   accessibleFunctions?: string[];
   teamFunctions?: TeamFunctionMap;
   drivers?: { drivers: InsightDriver[]; items: InsightItem[] } | null;
   deriveScopedDrivers?: boolean;
   actions?: FollowUpAction[] | null;
+  /** Local actions not yet synced, already filtered to the page scope. Counted as Pending Sync only. */
+  pendingActions?: FollowUpAction[] | null;
   /** Records outside the viewer's scope for aggregate comparisons (never available client-side for Manager / Function Viewer). */
   comparisonRecords?: ExecRecord[] | null;
   today: Date;
@@ -710,6 +721,7 @@ function applyFilters(records: ExecRecord[], input: ComposeInput, teamFunctions?
       ? summaryFunctionMatches(record.team, teamFunction, teamFunctions)
       : teamBelongsToFunction(record.team, teamFunction, teamFunctions)))
     && (!team || summaryTeamMatches(record.team, team))
+    && (!input.teamScope || input.teamScope.some((allowed) => summaryTeamMatches(record.team, allowed)))
   ));
 }
 
@@ -720,6 +732,10 @@ export function composeExecutiveSummary(input: ComposeInput): ExecutiveSummary {
   if (view === 'managerial' && input.team) scopeFilters.team = input.team;
   if (view === 'function' && input.functionName) scopeFilters.teamFunction = input.functionName;
   const scoped = applyFilters(input.records, { ...input, filters: scopeFilters }, teamFunctions);
+  // Managerial: the function of the selected team, or the one function all visible teams share.
+  const managerFunction = view === 'managerial'
+    ? (input.team ? executiveFunctionForTeam(input.team, teamFunctions) : sharedFunctionOf(input.teamScope ?? [], teamFunctions))
+    : null;
 
   const periods = [...new Map(scoped.map((record) => [record.period.key, record.period])).values()]
     .sort((l, r) => r.key.localeCompare(l.key));
@@ -743,7 +759,7 @@ export function composeExecutiveSummary(input: ComposeInput): ExecutiveSummary {
   let comparisonBlock: ExecutiveSummary['hero']['comparison'] = null;
   let comparisonTrend: Array<number | null> | null = null;
   if (view === 'managerial') {
-    const fn = executiveFunctionForTeam(input.team, teamFunctions);
+    const fn = managerFunction;
     if (fn && comparison) {
       const fnRecords = comparison.filter((record) => executiveFunctionForTeam(record.team, teamFunctions) === fn);
       const fnScore = scoreOf(inPeriod(fnRecords, effective));
@@ -771,13 +787,18 @@ export function composeExecutiveSummary(input: ComposeInput): ExecutiveSummary {
     ? mapDrivers(input.drivers.drivers, input.drivers.items, teamFunctions, view === 'function' ? Number.POSITIVE_INFINITY : 3)
     : null;
   // Function view: Insights' function filter is overlapping, Executive membership is disjoint.
-  const driverSplit = rawSplit && view === 'function' && input.functionName
-    ? {
-      ...rawSplit,
-      negative: rawSplit.negative.filter((driver) => input.functionName === 'Pre-Approvals' ? teamBelongsToFunction(driver.team ?? '', 'Pre-Approvals') : driver.function === input.functionName).slice(0, 3),
-      positive: rawSplit.positive.filter((driver) => input.functionName === 'Pre-Approvals' ? teamBelongsToFunction(driver.team ?? '', 'Pre-Approvals') : driver.function === input.functionName).slice(0, 3),
-    }
+  // Managerial: drivers outside the viewer's teams never show, even if Insights returns them.
+  const teamInScope = (team: string | null) => !input.teamScope || (team !== null && input.teamScope.some((allowed) => summaryTeamMatches(team, allowed)));
+  const managerSplit = rawSplit && view === 'managerial' && input.teamScope
+    ? { ...rawSplit, negative: rawSplit.negative.filter((driver) => teamInScope(driver.team)), positive: rawSplit.positive.filter((driver) => teamInScope(driver.team)) }
     : rawSplit;
+  const driverSplit = managerSplit && view === 'function' && input.functionName
+    ? {
+      ...managerSplit,
+      negative: managerSplit.negative.filter((driver) => input.functionName === 'Pre-Approvals' ? teamBelongsToFunction(driver.team ?? '', 'Pre-Approvals') : driver.function === input.functionName).slice(0, 3),
+      positive: managerSplit.positive.filter((driver) => input.functionName === 'Pre-Approvals' ? teamBelongsToFunction(driver.team ?? '', 'Pre-Approvals') : driver.function === input.functionName).slice(0, 3),
+    }
+    : managerSplit;
   if (!driverSplit) unavailable.add('drivers');
   else if (!driverSplit.hasWeightedGap) unavailable.add('drivers_weighted_gap');
 
@@ -785,7 +806,7 @@ export function composeExecutiveSummary(input: ComposeInput): ExecutiveSummary {
   if (!kpis.length) unavailable.add('kpis');
   const grades = gradeDistribution(current, before);
   if (!grades) unavailable.add('grade_mix');
-  const actions = input.actions ? summarizeActions(input.actions, input.today, effective) : null;
+  const actions = input.actions ? summarizeActions(input.actions, input.today, effective, input.pendingActions ?? []) : null;
   if (!actions) unavailable.add('corrective_actions');
 
   // Function view: "most improved" compares against the other functions, which
@@ -801,7 +822,7 @@ export function composeExecutiveSummary(input: ComposeInput): ExecutiveSummary {
   ))[0] ?? null;
   const drag = driverSplit?.negative.find((driver) => !worstFunction || driver.function === worstFunction.function) ?? driverSplit?.negative[0] ?? null;
 
-  const label = view === 'managerial' ? (input.team ?? 'Your team') : view === 'function' ? (input.functionName ?? 'Function') : 'Company';
+  const label = view === 'managerial' ? (input.team ?? 'Your teams') : view === 'function' ? (input.functionName ?? 'Function') : 'Company';
   return {
     period: {
       requested,
@@ -818,7 +839,7 @@ export function composeExecutiveSummary(input: ComposeInput): ExecutiveSummary {
       role: input.role,
       locked: { region: view === 'managerial', function: view === 'managerial', team: view === 'managerial' },
       team: view === 'managerial' ? input.team ?? null : input.filters.team ?? null,
-      function: view === 'function' ? input.functionName ?? null : (view === 'managerial' ? executiveFunctionForTeam(input.team, teamFunctions) : input.filters.teamFunction ?? null),
+      function: view === 'function' ? input.functionName ?? null : (view === 'managerial' ? managerFunction : input.filters.teamFunction ?? null),
       region: view === 'managerial' ? ([...new Set(current.map((record) => record.region).filter(Boolean))][0] ?? null) : input.filters.region ?? null,
       accessible_functions: input.accessibleFunctions ?? [...EXECUTIVE_FUNCTIONS],
       branch: input.filters.branch ?? null,
@@ -859,6 +880,8 @@ export function composeExecutiveSummary(input: ComposeInput): ExecutiveSummary {
         : null,
     },
     corrective_actions: actions,
+    // Same comparison the composed team, function and trend notes use, for the selected month on this scope.
+    basis_context: effective ? basisFor(scoped, effective) : null,
     periods,
     meta: {
       source: 'composed',

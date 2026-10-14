@@ -17,6 +17,7 @@ import LevelBreakdownCard from './LevelBreakdownCard';
 import { TeamLeaderboardCard, TeamsNeedingAttentionCard } from './FunctionTeamsCards';
 import { FallbackNotice, ScopeBanner } from './ExecutiveStates';
 import EmployeesBelowTargetCard from './EmployeesBelowTargetCard';
+import BasisComparisonNote from '../../../features/evaluation/BasisComparisonNote';
 
 export interface ExecutiveDashboardPermissions {
   /** Function cards link to /function-summary/:slug. */
@@ -31,7 +32,13 @@ export interface ExecutiveDashboardPermissions {
 export default function ExecutiveDashboard({ summary, permissions, functionBreakdownSlot = null }: { summary: ExecutiveSummary; permissions: ExecutiveDashboardPermissions; functionBreakdownSlot?: ReactNode }) {
   const { period, scope } = summary;
   const previous = period.previous;
-  const notice = period.fallback_applied && period.notice ? <FallbackNotice notice={period.notice} /> : null;
+  // Fallback month and evaluation-basis notes sit above the hero in every layout.
+  const notices = (
+    <>
+      {period.fallback_applied && period.notice ? <FallbackNotice notice={period.notice} /> : null}
+      <BasisComparisonNote messages={[summary.basis_context?.message]} />
+    </>
+  );
 
   if (scope.view === 'managerial') {
     const fn = scope.function;
@@ -40,11 +47,11 @@ export default function ExecutiveDashboard({ summary, permissions, functionBreak
     return (
       <div className="flex flex-col gap-[16px]" data-testid="executive-managerial">
         <ScopeBanner>
-          Scoped to your team. {comparisonKnown && fn
+          Scoped to your {team ? 'team' : 'teams'}. {comparisonKnown && fn
             ? `Comparisons use the ${fn} function average — other teams are never named.`
-            : 'The function-average comparison appears once the backend summary endpoint is live — other teams are never named.'} Region, function and team filters are fixed by your role.
+            : 'The function-average comparison appears once the backend summary endpoint is live — other teams are never named.'} {team ? 'Region, function and team filters are fixed by your role.' : 'Region and function are fixed by your role; the team filter lists your assigned teams.'}
         </ScopeBanner>
-        {notice}
+        {notices}
         <ExecutiveHero summary={summary} />
         <TeamKpiTable rows={summary.kpis} effective={period.effective} previous={previous} score={summary.hero.score} reportHref={team ? `/team/${encodeURIComponent(team)}` : null} />
         <EmployeesBelowTargetCard summary={summary} />
@@ -53,7 +60,7 @@ export default function ExecutiveDashboard({ summary, permissions, functionBreak
           <TopPerformersCard people={summary.people} previous={previous} />
         </div>
         <LevelBreakdownCard levels={summary.levels} />
-        {permissions.canSeeActions && <CorrectiveActionInsightsCard data={summary.corrective_actions} effective={period.effective} scopeLabel={team ?? 'Your team'} />}
+        {permissions.canSeeActions && <CorrectiveActionInsightsCard data={summary.corrective_actions} effective={period.effective} scopeLabel={team ?? 'Your teams'} />}
       </div>
     );
   }
@@ -63,7 +70,7 @@ export default function ExecutiveDashboard({ summary, permissions, functionBreak
     const vs = previous ? ` vs ${previous.month.slice(0, 3)}` : '';
     return (
       <div className="flex flex-col gap-[16px]" data-testid="executive-function">
-        {notice}
+        {notices}
         <ExecutiveHero summary={summary} />
         <div className="grid gap-[16px] xl:grid-cols-[minmax(0,1fr)_minmax(0,360px)]">
           <TeamLeaderboardCard teams={summary.teams} fn={fn} effective={period.effective} previous={previous} />
@@ -95,7 +102,7 @@ export default function ExecutiveDashboard({ summary, permissions, functionBreak
     : null;
   return (
     <div className="flex flex-col gap-[16px]" data-testid="executive-corporate">
-      {notice}
+      {notices}
       <ExecutiveHero summary={summary} />
       {summary.functions.length > 0 && (
         <FunctionCards cards={summary.functions} previous={previous} linkable={permissions.canOpenFunctions} />

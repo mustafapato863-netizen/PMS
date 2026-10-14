@@ -1,5 +1,6 @@
 /**
- * /departmental-summary — Departmental Summary (Figma 44:2).
+ * /executive — Executive Summary (Figma 44:2). This page replaced the old
+ * Executive Overview; /departmental-summary now redirects here.
  *
  * View by role (access.ts): Admin / GM / Executive / Viewer → Corporate
  * (Executive + Viewer read-only), Manager → Managerial (team-scoped, filters
@@ -31,6 +32,7 @@ import type { ExecutiveView as ExecutiveViewKind } from '../features/executive/t
 import { teamBelongsToFunction, teamOptionsFor } from '../features/insights/filterCascade';
 import { EXECUTIVE_FUNCTIONS, executiveFunctionForTeam, isPreApprovalsSubTeam, preApprovalsSubTeamOptions, summaryTeamOptions } from '../features/executive/functions';
 import { summaryFilterValue } from '../features/executive/filterState';
+import { useActionStore } from '../hooks/useActionStore';
 
 type PageFilters = ExecutiveFilterState & { subTeam?: string };
 const PARAM: Record<keyof PageFilters, string> = {
@@ -53,7 +55,7 @@ function DepartmentalSummaryPage({ view }: { view: Exclude<ExecutiveViewKind, 'f
     const rawSubTeam = read('subTeam');
     const selectedSubTeam = rawSubTeam && rawSubTeam !== 'Pre-Approvals' && isPreApprovalsSubTeam(rawSubTeam) ? rawSubTeam : undefined;
     return view === 'managerial'
-      ? { periodKey: read('periodKey'), branch: read('branch'), performanceLevel: read('performanceLevel') }
+      ? { periodKey: read('periodKey'), branch: read('branch'), performanceLevel: read('performanceLevel'), team: read('team') }
       : { periodKey: read('periodKey'), region: assigned.regionLocked ? assigned.region : read('region'), branch: assigned.branchLocked ? assigned.branch : read('branch'), teamFunction: approvals ? 'RCM' : read('teamFunction'), team: approvals ? 'Pre-Approvals' : rawTeam, subTeam: approvals ? selectedSubTeam || (rawTeam !== 'Pre-Approvals' && isPreApprovalsSubTeam(rawTeam) ? rawTeam : undefined) : undefined, performanceLevel: read('performanceLevel') };
   }, [searchParams, view, assigned.regionLocked, assigned.region, assigned.branchLocked, assigned.branch]);
 
@@ -67,11 +69,16 @@ function DepartmentalSummaryPage({ view }: { view: Exclude<ExecutiveViewKind, 'f
     setSearchParams(next, { replace: true });
   }, [searchParams, setSearchParams]);
 
-  const { summary, options, isLoading, error, managerTeam } = useExecutiveSummary({
+  // This device's action queue, for the Pending Sync count only.
+  const { getAllActions } = useActionStore();
+  const queuedActions = useMemo(() => getAllActions(), [getAllActions]);
+
+  const { summary, options, isLoading, error, managerTeam, managerTeamOptions } = useExecutiveSummary({
     view,
     role,
     filters: { ...filters, team: filters.subTeam || filters.team },
     managerTeams: currentUser?.accessible_teams,
+    queuedActions,
   });
 
   const focusPeriod = useCallback(() => {
@@ -91,11 +98,14 @@ function DepartmentalSummaryPage({ view }: { view: Exclude<ExecutiveViewKind, 'f
   const scope = summary?.scope;
   const managerial = view === 'managerial';
   const teamValues = managerial
-    ? [managerTeam ?? scope?.team ?? ''].filter(Boolean)
+    ? managerTeamOptions
     : summaryTeamOptions(teamOptionsFor(options.teams, filters.teamFunction, options.team_functions));
+  // Several assigned teams: a picker of exactly those teams. One team: the team stays fixed by the role.
+  const managerLocksTeam = managerTeamOptions.length <= 1;
+  const managerialFunction = scope?.function || 'Several functions';
   const header = (
     <InsightsHeader
-      title="Departmental Summary"
+      title="Executive Summary"
       subtitle={subtitleFor(summary, view, summaryViewLabel(role, view))}
       intro={<SummaryScopeWelcome role={role} user={currentUser} scope={summary?.scope} />}
       titleBadge={managerial
@@ -114,12 +124,17 @@ function DepartmentalSummaryPage({ view }: { view: Exclude<ExecutiveViewKind, 'f
       branch={assigned.branchLocked ? assigned.branch ?? assigned.branchLabel : filters.branch ?? ''}
       branchOptions={assigned.branchLocked && !assigned.branch ? toOptions([assigned.branchLabel]) : SUMMARY_BRANCHES}
       onBranchChange={(value) => update({ branch: value, team: undefined, subTeam: undefined })}
-      functionValue={managerial ? scope?.function ?? '' : filters.teamFunction ?? ''}
-      functionOptions={toOptions(managerial ? [scope?.function ?? ''].filter(Boolean) : options.functions.filter((name) => EXECUTIVE_FUNCTIONS.some((fn) => fn === name)))}
+      functionValue={managerial ? managerialFunction : filters.teamFunction ?? ''}
+      functionOptions={toOptions(managerial ? [managerialFunction] : options.functions.filter((name) => EXECUTIVE_FUNCTIONS.some((fn) => fn === name)))}
       onFunctionChange={(value) => update({ teamFunction: value, team: undefined, subTeam: undefined })}
       team={managerial ? managerTeam ?? '' : filters.team ?? ''}
       teamOptions={toOptions(teamValues)}
+      teamAllLabel={managerial ? 'All my teams' : undefined}
       onTeamChange={(value) => {
+        if (managerial) {
+          update({ team: value });
+          return;
+        }
         const primaryFunction = executiveFunctionForTeam(value, options.team_functions);
         const mappedFunction = primaryFunction && options.functions.includes(primaryFunction)
           ? primaryFunction
@@ -132,7 +147,7 @@ function DepartmentalSummaryPage({ view }: { view: Exclude<ExecutiveViewKind, 'f
       level={filters.performanceLevel ?? ''}
       levelOptions={toOptions([...SUMMARY_LEVELS])}
       onLevelChange={(value) => update({ performanceLevel: value })}
-      locked={managerial ? { region: true, function: true, team: true } : { branch: assigned.branchLocked, region: assigned.regionLocked }}
+      locked={managerial ? { region: true, function: true, team: managerLocksTeam } : { branch: assigned.branchLocked, region: assigned.regionLocked }}
     />
   );
 

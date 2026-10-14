@@ -2066,54 +2066,6 @@ body {
   filter: brightness(0.98);
 }
 
-/* Executive action summary cards use the app's class-based theme directly. */
-.action-summary-stat {
-  background: var(--action-summary-bg);
-  border-color: var(--action-summary-border);
-  color: var(--action-summary-text);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
-}
-.action-summary-stat-label { color: var(--action-summary-label); }
-.action-summary-stat-blue {
-  --action-summary-bg: rgba(239, 246, 255, 0.88);
-  --action-summary-border: rgba(147, 197, 253, 0.72);
-  --action-summary-text: #1D4ED8;
-  --action-summary-label: #1E40AF;
-}
-.action-summary-stat-emerald {
-  --action-summary-bg: rgba(236, 253, 245, 0.88);
-  --action-summary-border: rgba(110, 231, 183, 0.72);
-  --action-summary-text: #047857;
-  --action-summary-label: #065F46;
-}
-.action-summary-stat-amber {
-  --action-summary-bg: rgba(255, 251, 235, 0.88);
-  --action-summary-border: rgba(252, 211, 77, 0.74);
-  --action-summary-text: #B45309;
-  --action-summary-label: #92400E;
-}
-.dark .action-summary-stat {
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 8px 22px rgba(0, 0, 0, 0.16);
-}
-.dark .action-summary-stat-blue {
-  --action-summary-bg: rgba(37, 99, 235, 0.14);
-  --action-summary-border: rgba(96, 165, 250, 0.42);
-  --action-summary-text: #93C5FD;
-  --action-summary-label: #BFDBFE;
-}
-.dark .action-summary-stat-emerald {
-  --action-summary-bg: rgba(5, 150, 105, 0.14);
-  --action-summary-border: rgba(52, 211, 153, 0.40);
-  --action-summary-text: #6EE7B7;
-  --action-summary-label: #A7F3D0;
-}
-.dark .action-summary-stat-amber {
-  --action-summary-bg: rgba(217, 119, 6, 0.14);
-  --action-summary-border: rgba(251, 191, 36, 0.42);
-  --action-summary-text: #FCD34D;
-  --action-summary-label: #FDE68A;
-}
-
 /* ────────────────────────────────────────────────────────────── */
 /*  SCORE COLOR UTILITIES                                          */
 /* ────────────────────────────────────────────────────────────── */

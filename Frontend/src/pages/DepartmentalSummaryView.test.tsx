@@ -23,13 +23,20 @@ vi.mock('../context/auth', () => ({ useAuth: () => ({ currentUser: state.user })
 vi.mock('../features/executive/useExecutiveSummary', () => ({
   useExecutiveSummary: (args: UseExecutiveSummaryArgs) => {
     state.lastArgs = args;
+    // Mirrors the hook: every assigned team; the URL team only when assigned; otherwise the single team, or none.
+    const managerTeamOptions = args.view === 'managerial' ? (args.managerTeams ?? ['Inbound']) : [];
+    const requested = args.filters.team;
+    const managerTeam = args.view !== 'managerial' ? null
+      : requested && managerTeamOptions.includes(requested) ? requested
+        : managerTeamOptions.length === 1 ? managerTeamOptions[0] : null;
     return {
       summary: state.summary,
       options: { regions: ['EGY', 'UAE'], functions: ['Call Center', 'RCM', 'Pre-Approvals', 'Marketing'], teams: ['Inbound', 'Outbound', 'Pre-Approvals IP Offshore', 'Pre-Approvals OP Dubai'], levels: ['Employee'] },
       isLoading: state.loading,
       error: null,
       source: 'composed',
-      managerTeam: args.view === 'managerial' ? 'Inbound' : null,
+      managerTeam,
+      managerTeamOptions,
     };
   },
 }));
@@ -47,13 +54,13 @@ const build = (patch: Partial<ComposeInput> = {}) => composeExecutiveSummary({
   drivers: fixtureDrivers(), actions: fixtureActions(TODAY), comparisonRecords: records, today: TODAY, ...patch,
 });
 
-function renderAt(path = '/departmental-summary') {
+function renderAt(path = '/executive') {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const rendered = render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[path]}>
         <Routes>
-          <Route path="/departmental-summary" element={<DepartmentalSummaryView />} />
+          <Route path="/executive" element={<DepartmentalSummaryView />} />
           <Route path="/function-summary" element={<div>Function Summary page</div>} />
         </Routes>
       </MemoryRouter>
@@ -74,7 +81,7 @@ beforeEach(() => {
 
 describe('DepartmentalSummaryView role routing', () => {
   it('treats legacy All filter values as unfiltered when returning from other dashboards', () => {
-    renderAt('/departmental-summary?region=All&branch=all&function=ALL&team=All&level=All');
+    renderAt('/executive?region=All&branch=all&function=ALL&team=All&level=All');
     expect(state.lastArgs?.filters).toMatchObject({
       region: undefined, branch: undefined, teamFunction: undefined, team: undefined, performanceLevel: undefined,
     });
@@ -86,7 +93,7 @@ describe('DepartmentalSummaryView role routing', () => {
   ])('locks $role grant even with a contradictory URL and clear', ({ role, grant, url, filter, value, label }) => {
     state.role = role;
     state.user = { id: 'director', ...grant };
-    renderAt(`/departmental-summary?period=2026-06&${url}&level=Corporate`);
+    renderAt(`/executive?period=2026-06&${url}&level=Corporate`);
     expect(state.lastArgs?.filters[filter as 'branch' | 'region']).toBe(value);
     expect(screen.getByRole('group', { name: label })).toHaveAttribute('aria-disabled', 'true');
     fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
@@ -99,7 +106,7 @@ describe('DepartmentalSummaryView role routing', () => {
     renderAt();
     expect(state.lastArgs?.view).toBe('corporate');
     expect(screen.getByTestId('executive-corporate')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Departmental Summary' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Executive Summary' })).toBeInTheDocument();
   });
 
   it('Manager gets the Managerial view with region/function/team locked', () => {
@@ -123,6 +130,22 @@ describe('DepartmentalSummaryView role routing', () => {
     expect(screen.queryByRole('heading', { name: 'Functions' })).not.toBeInTheDocument();
   });
 
+  it('Manager with two assigned teams sees both, picks from exactly those two plus "All my teams", and ignores an unassigned URL team', () => {
+    state.role = 'Manager';
+    state.user = { id: 'm2', name: 'Two-team manager', role: 'Manager', accessible_teams: ['Inbound', 'Outbound'] };
+    state.summary = build({ view: 'managerial', role: 'Manager', teamScope: ['Inbound', 'Outbound'], comparisonRecords: null });
+    renderAt('/executive?team=Coding');
+    expect(state.lastArgs).toMatchObject({ view: 'managerial', managerTeams: ['Inbound', 'Outbound'] });
+    const filters = screen.getByRole('group', { name: 'Departmental filters' });
+    expect(within(filters).queryByRole('group', { name: /Team: .*fixed by your role/ })).not.toBeInTheDocument();
+    const teamPicker = within(filters).getByRole('button', { name: 'Team' });
+    expect(teamPicker).toHaveTextContent('All my teams');
+    fireEvent.click(teamPicker);
+    const menu = screen.getByRole('listbox', { name: 'Team' });
+    expect(within(menu).getAllByRole('option').map((option) => option.textContent?.trim())).toEqual(['All my teams', 'Inbound', 'Outbound']);
+    expect(screen.getByTestId('executive-managerial')).toBeInTheDocument();
+  });
+
   it('applies the selected team parent function together with the team filter', () => {
     renderAt();
 
@@ -132,7 +155,7 @@ describe('DepartmentalSummaryView role routing', () => {
   });
 
   it('clears scope filters from the icon while preserving the selected period', () => {
-    renderAt('/departmental-summary?period=2026-06&region=UAE&branch=Dubai&function=RCM&team=Inbound&level=Employee');
+    renderAt('/executive?period=2026-06&region=UAE&branch=Dubai&function=RCM&team=Inbound&level=Employee');
 
     fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
 
@@ -140,7 +163,7 @@ describe('DepartmentalSummaryView role routing', () => {
   });
 
   it('restores a sub-team link under RCM and clears both hierarchy selections', () => {
-    renderAt('/departmental-summary?period=2026-06&function=RCM&team=Pre-Approvals&sub_team=Pre-Approvals%20IP%20Offshore&level=Corporate');
+    renderAt('/executive?period=2026-06&function=RCM&team=Pre-Approvals&sub_team=Pre-Approvals%20IP%20Offshore&level=Corporate');
     expect(state.lastArgs?.filters).toMatchObject({ teamFunction: 'RCM', team: 'Pre-Approvals IP Offshore', performanceLevel: 'Corporate' });
     expect(screen.getByLabelText('Team')).toHaveValue('Pre-Approvals');
     expect(screen.getByLabelText('Sub-team')).toHaveValue('Pre-Approvals IP Offshore');
@@ -150,12 +173,12 @@ describe('DepartmentalSummaryView role routing', () => {
   });
 
   it('ignores a sub-team URL value outside the selected parent', () => {
-    renderAt('/departmental-summary?function=RCM&team=Pre-Approvals&sub_team=Coding');
+    renderAt('/executive?function=RCM&team=Pre-Approvals&sub_team=Coding');
     expect(state.lastArgs?.filters.team).toBe('Pre-Approvals');
   });
 
   it('ignores a contradictory legacy function/team link when restoring its new parent', () => {
-    renderAt('/departmental-summary?function=Pre-Approvals&team=Coding');
+    renderAt('/executive?function=Pre-Approvals&team=Coding');
     expect(state.lastArgs?.filters).toMatchObject({ teamFunction: 'RCM', team: 'Pre-Approvals' });
   });
 
@@ -245,7 +268,7 @@ describe('Corporate sections', () => {
 describe('fallback and empty states', () => {
   it('shows the fallback notice when the requested month has no data', () => {
     state.summary = build({ requestedPeriodKey: '2026-07' });
-    renderAt('/departmental-summary?period=2026-07');
+    renderAt('/executive?period=2026-07');
     expect(screen.getByText('No performance data for July 2026 yet — showing June 2026, the latest month with data.')).toBeInTheDocument();
     expect(screen.getByTestId('executive-corporate')).toBeInTheDocument();
     expect(state.lastArgs?.filters.periodKey).toBe('2026-07');
@@ -253,7 +276,7 @@ describe('fallback and empty states', () => {
 
   it('shows the full empty state with Upload for Admin when the scope has no data at all', () => {
     state.summary = build({ records: [], comparisonRecords: [] });
-    renderAt('/departmental-summary?period=2026-07');
+    renderAt('/executive?period=2026-07');
     expect(screen.getByTestId('executive-empty')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'No performance data for July 2026' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Upload performance data' })).toHaveAttribute('href', '/settings');
@@ -263,7 +286,7 @@ describe('fallback and empty states', () => {
   it('tells non-admins to ask their admin instead of offering Upload', () => {
     state.role = 'Manager';
     state.summary = build({ view: 'managerial', role: 'Manager', team: 'Inbound', records: [], comparisonRecords: null });
-    renderAt('/departmental-summary?period=2026-07');
+    renderAt('/executive?period=2026-07');
     expect(screen.queryByRole('link', { name: 'Upload performance data' })).not.toBeInTheDocument();
     expect(screen.getByText('Ask your admin to upload July data.')).toBeInTheDocument();
   });

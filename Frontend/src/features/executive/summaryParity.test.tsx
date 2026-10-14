@@ -4,9 +4,9 @@
  * summary and the browser composition.
  *
  * The Executive page reads the server summary (`/api/performance/summary`, one
- * request per filter set). The Departmental page asks `/api/executive/summary`
- * (not implemented by the backend), then composes the summary in the browser
- * from `/api/performance/summary-records`. The fixture is captured by
+ * request per filter set). The Departmental page (now at /executive) composes the
+ * summary in the browser from `/api/performance/summary-records`; it never asks
+ * `/api/executive/summary`, which the backend does not implement. The fixture is captured by
  * `Backend/tests/test_summary_parity_capture.py` from a synthetic seed.
  *
  * Three checks, all against the real hooks:
@@ -172,7 +172,7 @@ function routeApi(url: string): Promise<unknown> {
     return envelope(bundle.summaries[key]);
   }
   if (path === '/api/performance/summary-records') return envelope(bundle.summary_records);
-  // The backend has no executive summary route; the Departmental page falls back on this 404.
+  // The backend has no executive summary route. The composed page never asks for it; a call here fails loudly.
   if (path === '/api/executive/summary') return Promise.reject(new ApiError('Not Found', 404));
   if (path === '/api/corrective-actions/follow-up') return envelope(bundle.follow_up);
   if (path === '/api/corrective-actions/') return envelope(bundle.corrective_actions);
@@ -191,12 +191,12 @@ const KNOWN_GAPS: KnownGap[] = [
   {
     id: 'G-ACT-SCOPE',
     title: 'Executive action statistics ignore region, branch and level',
-    cause: 'ExecutiveView.tsx scopes actions only by period and role in scoped mode (`filterActionsByPerformanceScope` runs only on the legacy path). The composed path applies region, branch and level to actions (compose `scopeAction`).',
+    cause: 'the retired Executive page (ExecutiveView.tsx, deleted) scoped actions only by period and role in scoped mode (`filterActionsByPerformanceScope`, also deleted, ran only on the legacy path). The composed path applies region, branch and level to actions (compose `scopeAction`).',
   },
   {
     id: 'G-ACT-LINK',
     title: 'Linked KPI counted only on the Departmental side',
-    cause: 'actionAnalytics.ts adds `linked_kpi_key` to KPI mentions; ExecutiveView uses summarizeRootCauses, which reads `root_cause_note` only.',
+    cause: 'actionAnalytics.ts adds `linked_kpi_key` to KPI mentions; the retired Executive page used summarizeRootCauses, which reads `root_cause_note` only.',
   },
 ];
 
@@ -239,7 +239,7 @@ type MappedAction = ReturnType<typeof mapBackendAction>;
 
 const sideFromExecutive = (e: ScopedResult, actions: MappedAction[]): Side => {
   const activeMonth = e.activePeriod?.month ?? '';
-  // Mirrors ExecutiveView.tsx: actions in the active period (year and month), then summarised.
+  // Mirrors the retired ExecutiveView.tsx: actions in the active period (year and month), then summarised.
   const stats = summarizeRootCauses(actionsInActivePeriod(actions, activeMonth, e.activePeriod?.key ?? null));
   const empty = e.totalAgents === 0;
   return {

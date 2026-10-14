@@ -50,8 +50,8 @@ def run():
         begin = time.perf_counter()
         page.get_by_role("button", name="Sign In", exact=True).click()
         page.wait_for_url(re.compile(r"/executive(?:\?|$)"))
-        page.locator("aside").get_by_role("link", name="Departmental Summary", exact=True).click()
-        page.wait_for_url(re.compile(r"/departmental-summary(?:\?|$)"))
+        page.locator("aside").get_by_role("link", name="Executive Summary", exact=True).click()
+        page.wait_for_url(re.compile(r"/executive(?:\?|$)"))
         roster = page.locator('[aria-labelledby="exec-employees-below-title"]')
         expect(roster.locator("li").first).to_be_visible(timeout=60_000)
         result["cold_login_to_roster_ms"] = round((time.perf_counter() - begin) * 1000)
@@ -81,7 +81,7 @@ def run():
             show_teams = page.get_by_role("button", name="Show all teams", exact=True)
             show_teams.click()
             expect(page.get_by_role("table", name="All teams", exact=True)).to_be_visible()
-            assert urlparse(page.url).path == "/departmental-summary"
+            assert urlparse(page.url).path == "/executive"
             page.get_by_role("button", name="Show at-risk teams", exact=True).click()
             result["checks"].append("Show all teams expands inline and can collapse")
 
@@ -122,7 +122,7 @@ def run():
             result["checks"].append("Team navigation opens its details page")
             request_count_before_return = len(result["requests"])
             begin = time.perf_counter()
-            page.locator("aside").get_by_role("link", name="Departmental Summary", exact=True).click()
+            page.locator("aside").get_by_role("link", name="Executive Summary", exact=True).click()
             expect(roster.locator("li").first).to_be_visible()
             assert "team=" not in page.url and "function=" not in page.url
             result["warm_return_to_summary_ms"] = round((time.perf_counter() - begin) * 1000)
@@ -145,8 +145,8 @@ def run():
             result["checks"].append("No visible errors or uncaught browser exceptions")
             for path in ["/api/config/teams", "/api/team-management/management-kpi-config/teams"]:
                 assert len([request for request in result["requests"] if request["path"] == path]) == 1, "Duplicate config reads"
-            assert len([request for request in result["requests"] if request["path"] == "/api/executive/summary" and request["status"] == 404]) <= 1
-            result["checks"].append("Configuration reads are deduplicated; unavailable endpoint is not repeatedly probed")
+            assert len([request for request in result["requests"] if request["path"] == "/api/executive/summary"]) == 0, "The summary endpoint does not exist and must not be requested"
+            result["checks"].append("Configuration reads are deduplicated; the missing summary endpoint is never requested")
             chart = page.locator('[aria-labelledby="exec-hero-title"]').get_by_role("group", name=re.compile(r"trend, last six months:"))
             point = chart.locator('g[role="img"][tabindex="0"]')
             point.focus()
@@ -163,7 +163,7 @@ def run():
             page.wait_for_url(re.compile(r"/function-summary/rcm"))
             expect(page.get_by_role("heading", name="Function Summary", exact=True)).to_be_visible()
             assert not page.get_by_role("heading", name="Reports & export", exact=True).count()
-            page.locator("aside").get_by_role("link", name="Departmental Summary", exact=True).click()
+            page.locator("aside").get_by_role("link", name="Executive Summary", exact=True).click()
             expect(roster.locator("li").first).to_be_visible()
             result["checks"].append("RCM function details open and have no reports/export section")
             samples = []
@@ -172,7 +172,7 @@ def run():
                 expect(team_roster_link).to_be_visible(timeout=60_000)
                 page.wait_for_load_state("networkidle")
                 begin = time.perf_counter()
-                page.locator("aside").get_by_role("link", name="Departmental Summary", exact=True).click()
+                page.locator("aside").get_by_role("link", name="Executive Summary", exact=True).click()
                 expect(roster.locator("li").first).to_be_visible()
                 samples.append(round((time.perf_counter() - begin) * 1000))
             result["warm_return_samples_ms"] = samples
@@ -201,8 +201,8 @@ def run():
                 branch_page.get_by_role("button", name="Sign In", exact=True).click()
             token = login_response.value.json()["data"]["access_token"]
             branch_page.wait_for_url(re.compile(r"/executive(?:\?|$)"))
-            branch_page.locator("aside").get_by_role("link", name="Departmental Summary", exact=True).click()
-            branch_page.wait_for_url(re.compile(r"/departmental-summary(?:\?|$)"))
+            branch_page.locator("aside").get_by_role("link", name="Executive Summary", exact=True).click()
+            branch_page.wait_for_url(re.compile(r"/executive(?:\?|$)"))
             expect(branch_page.locator('[aria-labelledby="exec-employees-below-title"] li').first).to_be_visible(timeout=60_000)
             branch_page.wait_for_load_state("networkidle")
             branch_page.get_by_role("button", name=re.compile(r"^Departmental filters[.,]")).click()

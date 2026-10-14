@@ -1,11 +1,10 @@
 /**
  * Executive + Function Summary v1 data contract.
  *
- * Mirrors `GET /api/executive/summary` as specified in
- * /workspace/pms-exec-function-summary-build/API_NEEDS.md (plus CoS decisions:
- * `weighted_gap_points` on drivers, an optional 95/90/80/70 `grade_counts_v2`).
- * Until the endpoint exists the page composes the same shape from existing
- * endpoints (`compose.ts`). Every field the composition cannot honestly
+ * The shape the Executive and Function Summary pages render. The backend has no
+ * summary route for it (see API_NEEDS.md; CoS decisions: `weighted_gap_points`
+ * on drivers, an optional 95/90/80/70 `grade_counts_v2`), so the page composes it
+ * from existing endpoints (`compose.ts`). Every field the composition cannot honestly
  * produce is `null` / empty, and `meta.unavailable` lists those sections so
  * widgets hide or soften instead of showing invented numbers.
  */
@@ -263,8 +262,11 @@ export interface ExecutiveActionAnalytics {
     employee_id: string | null;
     action_type: string;
     kpi_mentions: string[];
+    root_cause_note?: string | null;
   }>;
   unassigned_period: number;
+  /** Actions queued on this device and not yet synced, in the active period. Shown as Pending Sync only. */
+  pending_sync?: Array<{ id: string; team: string | null }>;
 }
 
 export interface ExecutiveHighlights {
@@ -302,6 +304,8 @@ export interface ExecutiveSummary {
   people: ExecutivePeople | null;
   highlights: ExecutiveHighlights;
   corrective_actions: ExecutiveCorrectiveActions | null;
+  /** Evaluation-basis note for the selected month on this scope (null when the scope has none). */
+  basis_context?: BasisComparisonContext | null;
   /** Available periods (newest first) for the Date filter. */
   periods: ExecutivePeriod[];
   meta: {

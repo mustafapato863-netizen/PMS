@@ -20,7 +20,6 @@ import { ROUTE_ROLES } from './lib/access';
 import PasswordChangeGate from './components/common/PasswordChangeGate';
 import { useDesktopNavigation } from './hooks/useDesktopNavigation';
 
-const ExecutiveView = lazy(() => import('./pages/ExecutiveView'));
 const DepartmentalSummaryView = lazy(() => import('./pages/DepartmentalSummaryView'));
 const FunctionSummaryView = lazy(() => import('./pages/FunctionSummaryView'));
 const MarketingTeamRoute = lazy(() => import('./pages/MarketingTeamRoute'));
@@ -39,6 +38,12 @@ const CorrectiveActionsView = lazy(() => import('./pages/CorrectiveActionsView')
 const NotFound = lazy(() => import('./pages/NotFound'));
 
 const RouteLoadingFallback = () => <PageLoadingSkeleton variant="dashboard" label="Loading page" />;
+
+/** Old summary paths: same query string on the Executive Summary, so saved links keep their filters. */
+function RedirectToExecutiveSummary() {
+  const { search } = useLocation();
+  return <Navigate to={{ pathname: '/executive', search }} replace />;
+}
 
 function AnimatedRoutes() {
   const location = useLocation();
@@ -68,11 +73,9 @@ function AnimatedRoutes() {
         {/* Login Page Redirect when authenticated */}
         <Route path="/login" element={<Navigate to="/executive" replace />} />
 
-        {/* Company overview restored from the pre-v1 executive page. */}
-        <Route path="/executive" element={<Suspense fallback={<RouteLoadingFallback />}><ExecutiveView /></Suspense>} />
-
-        {/* Departmental Summary: the v1 dashboard (corporate, managerial, function redirect). */}
-        <Route path="/departmental-summary" element={<Suspense fallback={<RouteLoadingFallback />}><DepartmentalSummaryView /></Suspense>} />
+        {/* Executive Summary: corporate, managerial (team scope) and function redirect. */}
+        <Route path="/executive" element={<Suspense fallback={<RouteLoadingFallback />}><DepartmentalSummaryView /></Suspense>} />
+        <Route path="/departmental-summary" element={<RedirectToExecutiveSummary />} />
 
         {/* Function Summary: Admin, General Manager, Function Viewer (own functions only). */}
         <Route path="/function-summary" element={<RouteGuard allowedRoles={ROUTE_ROLES.functionSummary}><Suspense fallback={<RouteLoadingFallback />}><FunctionSummaryView /></Suspense></RouteGuard>} />

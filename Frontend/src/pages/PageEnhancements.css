@@ -76,19 +76,15 @@
 
 .team-header-layout,
 .team-header-heading,
-.team-header-copy,
-.executive-page-heading,
-.executive-page-title {
+.team-header-copy {
   min-width: 0;
 }
 
-.team-header-copy,
-.executive-page-title {
+.team-header-copy {
   overflow: hidden;
 }
 
-.team-header-title,
-.executive-page-title > h2 {
+.team-header-title {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -583,8 +579,7 @@
 }
 
 @media (max-width: 768px) {
-  .team-header-layout,
-  .executive-page-heading {
+  .team-header-layout {
     gap: 0.675rem;
   }
 
@@ -597,8 +592,7 @@
     margin-top: -2px;
   }
 
-  .team-header-filters,
-  .executive-page-heading > .responsive-filter-surface {
+  .team-header-filters {
     width: 100%;
   }
 

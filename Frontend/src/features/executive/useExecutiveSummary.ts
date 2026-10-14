@@ -1,23 +1,23 @@
 /**
- * Executive / Function Summary data hook.
+ * Executive Summary data hook (`/executive`; the Function Summary shares it).
  *
- * 1. Asks `GET /api/executive/summary` (API_NEEDS.md). When that endpoint
- *    answers, its payload is used as-is.
- * 2. Until it exists (404 / error) the same shape is composed client-side:
- *    scores, functions, regions, teams, grades and KPIs from performance
- *    records; drivers from the Insights workspace; corrective actions from
- *    the follow-up endpoint. Anything that cannot be derived honestly is
- *    listed in `meta.unavailable` so widgets hide or soften.
+ * The summary is composed in the browser from the performance summary records
+ * (`/api/performance/summary-records`, server-side access scope). Drivers come
+ * from the Insights workspace, corrective actions from the follow-up endpoint,
+ * and Pending Sync from this device's unsynced action queue. Anything that
+ * cannot be derived honestly is listed in `meta.unavailable` so widgets hide or
+ * soften. No request is made to `/api/executive/summary`: that endpoint does
+ * not exist.
  */
-import { useMemo } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ApiError, apiFetch } from '../../lib/apiClient';
+import { useCallback, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { apiFetch } from '../../lib/apiClient';
 import { performanceSessionKey } from '../../lib/performanceSessionKey';
 import { usePerformanceData } from '../../hooks/usePerformanceData';
 import { useInsightsWorkspace } from '../../hooks/api/useInsightsWorkspace';
 import { fetchFollowUp, mapBackendAction } from '../../hooks/useActionStore';
 import { canAccessBroadAppPages, canSeeSummaryActionAnalytics } from '../../lib/access';
-import { canonicalTeamName } from '../../types';
+import { canonicalTeamName, type PMSAction } from '../../types';
 import { teamBelongsToFunction, type TeamFunctionMap } from '../insights/filterCascade';
 import type { InsightFilters } from '../insights/types';
 import { composeExecutiveSummary, SUMMARY_BRANCHES, SUMMARY_LEVELS, toExecRecords, type ExecRecord, type FollowUpAction } from './compose';
@@ -54,6 +54,8 @@ export interface UseExecutiveSummaryArgs {
   /** Function view: the selected function. */
   functionName?: ExecutiveFunction | null;
   accessibleFunctions?: string[];
+  /** Actions queued on this device (the page reads them from the action store). Only the unsynced ones count, as Pending Sync. */
+  queuedActions?: PMSAction[] | null;
   enabled?: boolean;
   /** Injected for tests. */
   today?: Date;
@@ -66,27 +68,11 @@ export interface ExecutiveSummaryResult {
   error: string | null;
   source: 'api' | 'composed' | null;
   managerTeam: string | null;
+  /** Manager: the assigned teams the team filter offers (empty for other views). */
+  managerTeamOptions: string[];
 }
 
 interface ApiEnvelope<T> { success?: boolean; data: T; message?: string }
-
-export function executiveSummaryUrl(view: ExecutiveView, filters: ExecutiveFilterState, functionName?: string | null) {
-  const params = new URLSearchParams();
-  params.set('view', view);
-  if (filters.periodKey) {
-    const [year, month] = filters.periodKey.split('-');
-    params.set('year', year);
-    params.set('month', String(Number(month)));
-  }
-  if (filters.region) params.set('region', filters.region);
-  if (filters.branch) params.set('branch', filters.branch);
-  if (filters.position) params.set('position', filters.position);
-  const fn = functionName ?? filters.teamFunction;
-  if (fn) params.set('function', fn);
-  if (filters.team) params.set('team', filters.team);
-  if (filters.performanceLevel) params.set('performance_level', filters.performanceLevel);
-  return `/api/executive/summary?${params.toString()}`;
-}
 
 const DRIVER_ROLES = new Set(['Admin', 'General Manager', 'Manager', 'Executive']);
 const uniqueSorted = (values: Array<string | null | undefined>) => [...new Set(values.filter((value): value is string => Boolean(value)))].sort((l, r) => l.localeCompare(r));
@@ -111,6 +97,21 @@ function toFollowUp(action: Awaited<ReturnType<typeof fetchFollowUp>>['actions']
   };
 }
 
+/** An action queued on this device, on the same shape as the follow-up rows (analytics fields only). */
+function queuedToFollowUp(action: PMSAction): FollowUpAction {
+  return {
+    id: action.id,
+    title: action.action_text || action.action_type,
+    action_type: action.action_type,
+    team: action.team || null,
+    employee_name: action.employee_name || null,
+    employee_id: action.employee_id,
+    month: action.month,
+    created_at: action.created_at,
+    root_cause_note: action.root_cause_note,
+  };
+}
+
 export function buildExecutiveOptions(records: ExecRecord[], filters: ExecutiveFilterState, view: ExecutiveView, teamFunctions?: TeamFunctionMap, functionName?: string | null): ExecutiveOptions {
   const fn = view === 'function' ? functionName : filters.teamFunction;
   const inFunction = (team: string) => (!fn ? true : view === 'function'
@@ -128,51 +129,27 @@ export function buildExecutiveOptions(records: ExecRecord[], filters: ExecutiveF
 }
 
 export function useExecutiveSummary({
-  view, role, filters, managerTeams, functionName = null, accessibleFunctions, enabled = true, today,
+  view, role, filters, managerTeams, functionName = null, accessibleFunctions, queuedActions = null, enabled = true, today,
 }: UseExecutiveSummaryArgs): ExecutiveSummaryResult {
-  const queryClient = useQueryClient();
-  const unavailableKey = ['executive', 'summary-endpoint-unavailable', performanceSessionKey()];
-  const apiQuery = useQuery({
-    queryKey: ['executive', 'summary', view, filters, functionName, performanceSessionKey()],
-    queryFn: async ({ signal }) => {
-      // The deployed backend may not implement this optional endpoint yet.
-      // Cache only HTTP 404 for five minutes, scoped to this authenticated session.
-      // Never treat authorization, network, or server failures as absent capability.
-      const unavailableSince = queryClient.getQueryData<number>(unavailableKey);
-      if (unavailableSince !== undefined && Date.now() - unavailableSince < 5 * 60_000) {
-        throw new ApiError('Executive summary endpoint unavailable.', 404);
-      }
-      let payload: ApiEnvelope<ExecutiveSummary & { options?: ExecutiveOptions }>;
-      try {
-        payload = await apiFetch(executiveSummaryUrl(view, filters, functionName), { signal });
-      } catch (error) {
-        if (error instanceof ApiError && error.status === 404) {
-          queryClient.setQueryData(unavailableKey, Date.now());
-        }
-        throw error;
-      }
-      if (!payload?.data?.hero) throw new Error('Executive summary payload missing.');
-      return payload.data;
-    },
-    retry: false,
-    staleTime: 5 * 60_000,
-    enabled,
-  });
-  const composeEnabled = enabled && apiQuery.isError;
-
-  const summaryRecords = useSummaryRecords(composeEnabled);
-  const legacyEnabled = composeEnabled && summaryRecords.isError;
+  const summaryRecords = useSummaryRecords(enabled);
+  const legacyEnabled = enabled && summaryRecords.isError;
   const performance = usePerformanceData('All', 'all', 'All', 'All', legacyEnabled);
-  const records = useMemo(() => (composeEnabled ? toExecRecords(summaryRecords.data ?? (legacyEnabled ? performance.agents as never : [])) : []), [composeEnabled, legacyEnabled, performance.agents, summaryRecords.data]);
-  const recordsLoading = composeEnabled && (summaryRecords.isLoading || (legacyEnabled && performance.loading));
+  const records = useMemo(() => (enabled ? toExecRecords(summaryRecords.data ?? (legacyEnabled ? performance.agents as never : [])) : []), [enabled, legacyEnabled, performance.agents, summaryRecords.data]);
+  const recordsLoading = enabled && (summaryRecords.isLoading || (legacyEnabled && performance.loading));
 
-  // Manager: the backend already scopes records to their teams; prefer /auth/me.
+  // Manager: every assigned team (from /auth/me; the records are already scoped to them) is in scope.
+  // The team filter narrows to one of them; an unassigned team in the URL is ignored.
+  const managerTeamOptions = useMemo(() => {
+    if (view !== 'managerial') return [] as string[];
+    const assigned = uniqueSorted((managerTeams ?? []).map((team) => canonicalTeamName(team)));
+    return assigned.length ? assigned : uniqueSorted(records.map((record) => record.team));
+  }, [managerTeams, records, view]);
   const managerTeam = useMemo(() => {
     if (view !== 'managerial') return null;
-    const assigned = (managerTeams ?? []).map((team) => canonicalTeamName(team)).filter(Boolean);
-    if (filters.team && (!assigned.length || assigned.includes(canonicalTeamName(filters.team)))) return canonicalTeamName(filters.team);
-    return assigned[0] ?? uniqueSorted(records.map((record) => record.team))[0] ?? null;
-  }, [filters.team, managerTeams, records, view]);
+    const requested = filters.team ? canonicalTeamName(filters.team) : '';
+    if (requested && (!managerTeamOptions.length || managerTeamOptions.includes(requested))) return requested;
+    return managerTeamOptions.length === 1 ? managerTeamOptions[0] : null;
+  }, [filters.team, managerTeamOptions, view]);
 
   const baseInput = useMemo(() => ({
     view,
@@ -183,13 +160,14 @@ export function useExecutiveSummary({
     },
     requestedPeriodKey: filters.periodKey ?? null,
     team: managerTeam,
+    teamScope: view === 'managerial' ? managerTeamOptions : null,
     functionName,
     accessibleFunctions,
     comparisonRecords: canAccessBroadAppPages(role) ? records : null,
     today: today ?? new Date(),
-  }), [accessibleFunctions, filters, functionName, managerTeam, records, role, today, view]);
+  }), [accessibleFunctions, filters, functionName, managerTeam, managerTeamOptions, records, role, today, view]);
 
-  const preliminary = useMemo(() => (composeEnabled && !recordsLoading ? composeExecutiveSummary(baseInput) : null), [baseInput, composeEnabled, recordsLoading]);
+  const preliminary = useMemo(() => (enabled && !recordsLoading ? composeExecutiveSummary(baseInput) : null), [baseInput, enabled, recordsLoading]);
   const effectiveKey = preliminary?.period.effective?.key;
 
   const insightFilters: InsightFilters = useMemo(() => {
@@ -199,10 +177,10 @@ export function useExecutiveSummary({
   }, [effectiveKey, filters, functionName, managerTeam, view]);
   // The Insights endpoint does not support branch or Marketing role scope yet.
   // Never display a wider cached driver result as if it matches either selection.
-  const driversEnabled = composeEnabled && Boolean(effectiveKey) && DRIVER_ROLES.has(role) && !filters.branch && !filters.position;
+  const driversEnabled = enabled && Boolean(effectiveKey) && DRIVER_ROLES.has(role) && !filters.branch && !filters.position;
   const workspace = useInsightsWorkspace(insightFilters, { enabled: driversEnabled });
 
-  const actionsEnabled = composeEnabled && canSeeSummaryActionAnalytics(role);
+  const actionsEnabled = enabled && canSeeSummaryActionAnalytics(role);
   const followUp = useQuery({
     queryKey: ['corrective-actions', 'executive', 'follow-up', performanceSessionKey()],
     queryFn: async () => {
@@ -234,49 +212,54 @@ export function useExecutiveSummary({
     enabled: actionsEnabled,
     retry: false,
   });
-
   const teamFunctions = workspace.data?.options?.team_functions as TeamFunctionMap | undefined;
+
+  // One scope rule for every action list: the follow-up rows and the Pending Sync queue.
+  const scopeAction = useCallback((action: FollowUpAction) => {
+    const team = canonicalTeamName(action.team);
+    if (view === 'managerial' && !managerTeamOptions.some((allowed) => summaryTeamMatches(team, allowed))) return false;
+    if (view === 'managerial' && managerTeam && !summaryTeamMatches(team, managerTeam)) return false;
+    // Managerial scope is the team filter above (the URL team is validated there), so the raw URL team does not apply again.
+    if (view !== 'managerial' && filters.team && !summaryTeamMatches(team, filters.team)) return false;
+    if (view === 'function' && functionName && !summaryFunctionMatches(team, functionName, teamFunctions)) return false;
+    if (filters.teamFunction && team && !teamBelongsToFunction(team, filters.teamFunction, teamFunctions)) return false;
+    if (filters.region || filters.branch || filters.performanceLevel || filters.position) {
+      const matches = records.filter((record) => action.employee_id ? record.employeeId === action.employee_id : record.team === team);
+      if (!matches.some((record) => (!filters.region || record.region === filters.region)
+        && (!filters.branch || record.branches?.includes(filters.branch))
+        && (!filters.performanceLevel || record.level === filters.performanceLevel)
+        && (!filters.position || record.position === filters.position))) return false;
+    }
+    return true;
+  }, [filters, functionName, managerTeam, managerTeamOptions, records, teamFunctions, view]);
+
+  // Pending Sync: unsynced actions on this device, in the same page scope. Counted only; never added to the totals.
+  const pendingActions = useMemo(() => (actionsEnabled && queuedActions
+    ? queuedActions.filter((action) => !action.synced).map(queuedToFollowUp).filter(scopeAction)
+    : null), [actionsEnabled, queuedActions, scopeAction]);
 
   const composed = useMemo(() => {
     if (!preliminary) return null;
-    const scopeAction = (action: FollowUpAction) => {
-      const team = canonicalTeamName(action.team);
-      if (view === 'managerial' && managerTeam && !summaryTeamMatches(team, managerTeam)) return false;
-      if (filters.team && !summaryTeamMatches(team, filters.team)) return false;
-      if (view === 'function' && functionName && !summaryFunctionMatches(team, functionName, teamFunctions)) return false;
-      if (filters.teamFunction && team && !teamBelongsToFunction(team, filters.teamFunction, teamFunctions)) return false;
-      if (filters.region || filters.branch || filters.performanceLevel || filters.position) {
-        const matches = records.filter((record) => action.employee_id ? record.employeeId === action.employee_id : record.team === team);
-        if (!matches.some((record) => (!filters.region || record.region === filters.region)
-          && (!filters.branch || record.branches?.includes(filters.branch))
-          && (!filters.performanceLevel || record.level === filters.performanceLevel)
-          && (!filters.position || record.position === filters.position))) return false;
-      }
-      return true;
-    };
     return composeExecutiveSummary({
       ...baseInput,
       teamFunctions,
       deriveScopedDrivers: DRIVER_ROLES.has(role) && Boolean(filters.branch || filters.position),
       drivers: driversEnabled && workspace.data ? { drivers: workspace.data.performance_drivers ?? [], items: [...(workspace.data.team_analyses ?? []), ...(workspace.data.priority_insights ?? []), ...(workspace.data.opportunities ?? [])] } : null,
       actions: followUp.data ? followUp.data.actions.map(toFollowUp).filter(scopeAction) : null,
+      pendingActions,
     });
-  }, [baseInput, driversEnabled, filters, functionName, followUp.data, managerTeam, preliminary, records, role, teamFunctions, view, workspace.data]);
+  }, [baseInput, driversEnabled, followUp.data, pendingActions, preliminary, role, scopeAction, teamFunctions, workspace.data, filters.branch, filters.position]);
 
-  const options = useMemo(() => (
-    apiQuery.data?.options ?? buildExecutiveOptions(records, filters, view, teamFunctions, functionName)
-  ), [apiQuery.data, filters, functionName, records, teamFunctions, view]);
+  const options = useMemo(() => buildExecutiveOptions(records, filters, view, teamFunctions, functionName), [filters, functionName, records, teamFunctions, view]);
 
-  if (apiQuery.data) {
-    return { summary: apiQuery.data, options, isLoading: false, error: null, source: 'api', managerTeam: apiQuery.data.scope?.team ?? managerTeam };
-  }
   const waitingSecondary = (driversEnabled && workspace.isLoading) || (actionsEnabled && followUp.isLoading);
   return {
     summary: composed,
     options,
-    isLoading: enabled && (apiQuery.isLoading || recordsLoading || waitingSecondary),
-    error: composeEnabled && performance.dataSource === 'empty' && performance.errorMessage ? performance.errorMessage : null,
+    isLoading: enabled && (recordsLoading || waitingSecondary),
+    error: enabled && performance.dataSource === 'empty' && performance.errorMessage ? performance.errorMessage : null,
     source: composed ? 'composed' : null,
     managerTeam,
+    managerTeamOptions,
   };
 }
