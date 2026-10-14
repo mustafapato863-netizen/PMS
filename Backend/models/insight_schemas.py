@@ -331,6 +331,50 @@ class InsightTrackingIndicator(BaseModel):
     trend: list[InsightTrackingTrendPoint] = Field(default_factory=list)
 
 
+class InsightKpiSixMonth(BaseModel):
+    """One month of a KPI's six-month sparkline. Slim on purpose: the diagnosis table carries six per KPI."""
+
+    year: int
+    month: str
+    actual_value: float | None = None
+    status: InsightKpiStatus | None = None
+
+
+class InsightKpiDiagnosisTeam(BaseModel):
+    """The team furthest below target for one KPI. Present only when the scope has more than one team."""
+
+    team: str
+    actual: float | None = None
+    target: float | None = None
+    achievement_percent: float | None = None
+    status: InsightKpiStatus | None = None
+
+
+class InsightKpiDiagnosisRow(BaseModel):
+    """One scored KPI in the scope: team actual against target, effect on the score, and six months."""
+
+    key: str
+    label: str
+    unit: str | None = None
+    direction: str | None = None
+    weight: float
+    actual: float | None = None
+    target: float | None = None
+    achievement_percent: float | None = None
+    status: InsightKpiStatus | None = None
+    # Sum of People to review's weighted impact over the employees measured for this KPI in scope.
+    effect_points: float | None = None
+    # Employees below target on this KPI in scope (negative weighted impact). Explains a row that is on target
+    # for the team yet loses points.
+    people_below_target: int = 0
+    six_months: list[InsightKpiSixMonth] = Field(default_factory=list)
+    most_below_team: InsightKpiDiagnosisTeam | None = None
+    # Other (direction, unit, variant) cohorts of this KPI in scope. The row uses the dominant cohort.
+    other_cohorts: list[str] = Field(default_factory=list)
+    # Teams with values for this KPI in scope. Each row is one KPI; a key shared by several teams lists all of them.
+    teams: list[str] = Field(default_factory=list)
+
+
 class InsightsWorkspace(BaseModel):
     summary: InsightSummary
     priority_insights: list[InsightItem]
@@ -347,6 +391,8 @@ class InsightsWorkspace(BaseModel):
     overall_trend: list[InsightOverallTrendPoint] = Field(default_factory=list)
     role_summaries: list[InsightRoleSummary] = Field(default_factory=list)
     kpi_overview: InsightKpiOverview = Field(default_factory=InsightKpiOverview)
+    # One row per scored KPI (stored weight > 0) in the scope. Tracking-only indicators are never rows.
+    kpi_diagnosis: list[InsightKpiDiagnosisRow] = Field(default_factory=list)
     tracking_indicators: list[InsightTrackingIndicator] = Field(default_factory=list)
     options: InsightFilterOptions
     comparison: InsightComparison

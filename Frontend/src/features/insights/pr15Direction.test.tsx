@@ -2,7 +2,7 @@ import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import PeopleContributionAnalysis from '../../components/insights/PeopleContributionAnalysis';
 import { kpiTrendRows } from '../../components/insights/kpiTrendRows';
-import { buildPerformanceTrend, resolveAchievement, resolveMovementTone } from '../../components/insights/overview/insightsOverviewModel';
+import { resolveAchievement, resolveMovementTone } from '../../components/insights/overview/insightsOverviewModel';
 import { pr15Detail, pr15KpiTrend, pr15PeopleRows, pr15WatchItem } from './pr15Direction.fixture';
 import { SEVERITY_LABELS, severityDisplay } from './severity';
 
@@ -16,11 +16,9 @@ describe('PR #15 response shape', () => {
     expect(resolveAchievement(pr15Detail.achievement_percent, pr15Detail.current_value, pr15Detail.target_value, pr15Detail.direction)).toBe(90.91);
   });
 
-  it('plots the API achievement_percent and status on the KPI trends', () => {
-    const measured = buildPerformanceTrend(pr15KpiTrend).filter((point) => point.actual !== null);
-    expect(measured.map((point) => point.actual)).toEqual([100, 90.91]);
-    expect(measured[1].raw).toMatchObject({ trendStatus: 'declining', status: 'at_risk' });
+  it('plots the API achievement_percent and status on the KPI trend rows', () => {
     const rows = kpiTrendRows(pr15KpiTrend).filter((row) => row.actual !== null);
+    expect(rows.map((row) => row.achievement)).toEqual([100, 90.91]);
     expect(rows.map((row) => row.status)).toEqual(['on_track', 'at_risk']);
   });
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import math
 import re
+from contextvars import ContextVar
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from datetime import date
@@ -30,6 +31,9 @@ from models.insight_schemas import (
     InsightKpiTrendPoint,
     InsightKpiOverview,
     InsightKpiOverviewPoint,
+    InsightKpiDiagnosisRow,
+    InsightKpiDiagnosisTeam,
+    InsightKpiSixMonth,
     InsightOverallTrendPoint,
     InsightPeriod,
     InsightPeopleContributionAnalysis,
@@ -481,7 +485,34 @@ def _tracking_totals(records: Iterable[Any], team: str, key: str, aggregation: d
     )
 
 
+# Per-build memo of _configured_kpi_values, set by InsightsService.generate_workspace. Each entry keeps its record,
+# so an id cannot be reused while the build runs. Every caller only iterates the list it gets back.
+_CONFIGURED_KPI_MEMO: ContextVar[dict[int, tuple[Any, list[Any]]] | None] = ContextVar(
+    "insights_configured_kpi_memo", default=None,
+)
+
+
 def _configured_kpi_values(record: Any) -> list[Any]:
+    memo = _CONFIGURED_KPI_MEMO.get()
+    if memo is None:
+        return _build_configured_kpi_values(record)
+    entry = memo.get(id(record))
+    if entry is None:
+        entry = memo[id(record)] = (record, _build_configured_kpi_values(record))
+    return entry[1]
+
+
+def _people_record_key(record: Any) -> tuple[str, str, str, str]:
+    """Identity of one employee's row in a month: the same person in the current and previous period."""
+    return (
+        str(_value(record, "team", "")),
+        str(_value(record, "employee_id", "")),
+        str(_value(record, "performance_level", "")),
+        str(_value(record, "position", "") or ""),
+    )
+
+
+def _build_configured_kpi_values(record: Any) -> list[Any]:
     persisted = list(_value(record, "kpi_values", []) or [])
     team = str(_value(record, "team", ""))
     # One rule for every Insights builder: a declared tracking-only indicator is
@@ -1575,42 +1606,187 @@ class InsightsService:
             ))
         return items, analyses, drivers, high_weight_misses
 
+    def _kpi_diagnosis(
+        self,
+        current: list[Any],
+        previous: list[Any],
+        records: list[Any],
+        current_period: tuple[int, int] | None,
+    ) -> list[InsightKpiDiagnosisRow]:
+        """One row per scored KPI in the scope, built from the workspace's own rollups.
+
+        Actual and target use ``aggregate_kpi_metric`` over the dominant cohort (direction, unit,
+        variant); achievement and status use ``_target_achievement`` and ``_kpi_status``; the effect
+        is People to review's weighted impact summed over the scope; the six months come from one pass
+        over the records (``_six_month_values``), and people below target are counted from the same
+        measurements. A value with no stored weight (tracking-only) never makes a row.
+        """
+        tracking_keys_by_team: dict[str, frozenset[str]] = {}
+
+        def is_tracking(record: Any, key: str) -> bool:
+            team = str(_value(record, "team", ""))
+            if team not in tracking_keys_by_team:
+                tracking_keys_by_team[team] = tracking_indicator_keys(team)
+            return key in tracking_keys_by_team[team]
+
+        def cohort(value: Any) -> tuple[str, str, str]:
+            direction, unit = _insight_cohort(value)
+            return direction, unit, str(_kd.kpi_variant(value) or "")
+
+        values_by_key: dict[str, list[Any]] = defaultdict(list)
+        values_by_key_team: dict[str, dict[str, list[Any]]] = defaultdict(lambda: defaultdict(list))
+        labels: dict[str, str] = {}
+        for record in current:
+            team = str(_value(record, "team", ""))
+            for value in _configured_kpi_values(record):
+                key = str(_value(value, "kpi_key", ""))
+                if not key or is_tracking(record, key):
+                    continue
+                if not (configured_weight(value) or 0.0) > 0:
+                    continue
+                values_by_key[key].append(value)
+                values_by_key_team[key][team].append(value)
+                labels.setdefault(key, str(_value(value, "label", key)))
+        teams_in_scope = {str(_value(record, "team", "")) for record in current}
+
+        # Built once for every row instead of one scan of the records per KPI: the six-month values of
+        # each KPI key, and each KPI's own current and previous measurements for People to review.
+        window = self._six_month_window(current_period) if current_period else None
+        trend_index = self._six_month_values(records, window) if window is not None else {}
+        current_pairs: dict[str, list[tuple[Any, Any]]] = defaultdict(list)
+        for record in current:
+            seen: set[str] = set()
+            for value in _configured_kpi_values(record):
+                key = str(_value(value, "kpi_key", ""))
+                if key and key not in seen:
+                    seen.add(key)
+                    current_pairs[key].append((record, value))
+        previous_pairs: dict[str, dict[tuple[str, str, str, str], Any]] = defaultdict(dict)
+        for record in previous:
+            seen = set()
+            for value in _configured_kpi_values(record):
+                key = str(_value(value, "kpi_key", ""))
+                if key and key not in seen:
+                    seen.add(key)
+                    previous_pairs[key][_people_record_key(record)] = value
+
+        rows: list[InsightKpiDiagnosisRow] = []
+        for key, values in values_by_key.items():
+            cohorts = Counter(cohort(value) for value in values)
+            dominant = cohorts.most_common(1)[0][0]
+            dominant_values = [value for value in values if cohort(value) == dominant]
+            meta = {
+                "label": labels[key],
+                "direction": dominant[0] or None,
+                "unit": dominant[1] or None,
+                "aggregation": _value(dominant_values[0], "aggregation"),
+            }
+            metric = aggregate_kpi_metric(dominant_values, meta)
+            achievement = _target_achievement(metric.actual, metric.target, meta["direction"])
+            achievement_percent = round(achievement * 100, 2) if achievement is not None else None
+            weight = _average(configured_weight(value) for value in dominant_values) or 0.0
+
+            people = self._people_contribution_analysis(
+                key, current, previous, pairs=(current_pairs.get(key, []), previous_pairs.get(key, {})),
+            )
+            impacts = [row.weighted_impact for row in people.rows if row.weighted_impact is not None] if people else []
+            trend_label, trend_values = trend_index.get(key, [key, {}])
+            trend = (
+                self._kpi_trend_from_values(key, trend_label, trend_values, current_period, window)
+                if window is not None else None
+            )
+
+            most_below = None
+            if len(teams_in_scope) > 1:
+                scored: list[tuple[float, str, AggregatedKpiMetric]] = []
+                for team, team_values in values_by_key_team[key].items():
+                    team_dominant = [value for value in team_values if cohort(value) == dominant]
+                    if not team_dominant:
+                        continue
+                    team_metric = aggregate_kpi_metric(team_dominant, meta)
+                    team_achievement = _target_achievement(team_metric.actual, team_metric.target, meta["direction"])
+                    if team_achievement is not None:
+                        scored.append((team_achievement, team, team_metric))
+                if scored:
+                    team_achievement, team, team_metric = min(scored, key=lambda item: (item[0], item[1]))
+                    team_percent = round(team_achievement * 100, 2)
+                    most_below = InsightKpiDiagnosisTeam(
+                        team=team,
+                        actual=team_metric.actual,
+                        target=team_metric.target,
+                        achievement_percent=team_percent,
+                        status=_kpi_status(team_percent),
+                    )
+
+            other_cohorts = []
+            for other in cohorts:
+                if other == dominant:
+                    continue
+                variant, direction, unit = other[2], other[0], other[1]
+                other_cohorts.append(" · ".join(part for part in (variant, direction, unit) if part))
+
+            rows.append(InsightKpiDiagnosisRow(
+                key=key,
+                label=labels[key],
+                unit=meta["unit"],
+                direction=meta["direction"],
+                weight=round(weight, 4),
+                actual=metric.actual,
+                target=metric.target,
+                achievement_percent=achievement_percent,
+                status=_kpi_status(achievement_percent),
+                effect_points=round(sum(impacts), 2) if impacts else None,
+                people_below_target=people.negative_contributors if people else 0,
+                six_months=[
+                    InsightKpiSixMonth(
+                        year=point.period.year,
+                        month=point.period.month,
+                        actual_value=point.actual_value,
+                        status=point.status,
+                    )
+                    for point in trend.points
+                ] if trend else [],
+                most_below_team=most_below,
+                other_cohorts=other_cohorts,
+                teams=sorted(values_by_key_team[key]),
+            ))
+        rows.sort(key=lambda row: (row.effect_points is None, row.effect_points or 0.0, row.label.casefold(), row.key))
+        return rows
+
     @staticmethod
     def _people_contribution_analysis(
         selected_kpi: str | None,
         current: list[Any],
         previous: list[Any],
+        pairs: tuple[list[tuple[Any, Any]], dict[tuple[str, str, str, str], Any]] | None = None,
     ) -> InsightPeopleContributionAnalysis | None:
+        """``pairs`` is (measured, previous value by person) for this KPI, built once for many KPIs by
+        ``_kpi_diagnosis``. Without it the records are scanned for ``selected_kpi``."""
         if not selected_kpi:
             return None
 
-        def record_key(record: Any) -> tuple[str, str, str, str]:
-            return (
-                str(_value(record, "team", "")),
-                str(_value(record, "employee_id", "")),
-                str(_value(record, "performance_level", "")),
-                str(_value(record, "position", "") or ""),
-            )
+        if pairs is None:
+            def selected_value(record: Any) -> Any | None:
+                return next(
+                    (
+                        value for value in _configured_kpi_values(record)
+                        if str(_value(value, "kpi_key", "")) == selected_kpi
+                    ),
+                    None,
+                )
 
-        def selected_value(record: Any) -> Any | None:
-            return next(
-                (
-                    value for value in _configured_kpi_values(record)
-                    if str(_value(value, "kpi_key", "")) == selected_kpi
-                ),
-                None,
-            )
-
-        previous_values = {
-            record_key(record): value
-            for record in previous
-            if (value := selected_value(record)) is not None
-        }
-        measured = [
-            (record, value)
-            for record in current
-            if (value := selected_value(record)) is not None
-        ]
+            previous_values = {
+                _people_record_key(record): value
+                for record in previous
+                if (value := selected_value(record)) is not None
+            }
+            measured = [
+                (record, value)
+                for record in current
+                if (value := selected_value(record)) is not None
+            ]
+        else:
+            measured, previous_values = pairs
         if not measured:
             return InsightPeopleContributionAnalysis(
                 kpi_key=selected_kpi,
@@ -1630,7 +1806,7 @@ class InsightsService:
             weight = _value(value, "weight_applied")
             row_direction = _value(value, "direction")
             row_unit = _value(value, "unit")
-            previous_value = previous_values.get(record_key(record))
+            previous_value = previous_values.get(_people_record_key(record))
             previous_actual = _value(previous_value, "actual_value") if previous_value is not None else None
 
             valid = (
@@ -1759,6 +1935,42 @@ class InsightsService:
         return points
 
     @staticmethod
+    def _six_month_window(current_period: tuple[int, int]) -> list[tuple[int, int]]:
+        window: list[tuple[int, int]] = []
+        year, month = current_period
+        for offset in range(5, -1, -1):
+            absolute_month = year * 12 + month - 1 - offset
+            window.append((absolute_month // 12, (absolute_month % 12) + 1))
+        return window
+
+    @staticmethod
+    def _six_month_values(
+        records: list[Any],
+        window: list[tuple[int, int]],
+        values_for: Any = _configured_kpi_values,
+    ) -> dict[str, list[Any]]:
+        """Every KPI key's ``[label, values by window month]`` from one pass over the records.
+
+        The label is the last one seen in the window, as ``_kpi_trend`` has always taken it.
+        """
+        window_set = set(window)
+        index: dict[str, list[Any]] = {}
+        for record in records:
+            record_period = _period(record)
+            if record_period not in window_set:
+                continue
+            for value in values_for(record):
+                key = str(_value(value, "kpi_key", ""))
+                if not key:
+                    continue
+                entry = index.get(key)
+                if entry is None:
+                    entry = index[key] = [key, defaultdict(list)]
+                entry[1][record_period].append(value)
+                entry[0] = str(_value(value, "label", key))
+        return index
+
+    @staticmethod
     def _kpi_trend(
         selected_kpi: str | None,
         records: list[Any],
@@ -1766,25 +1978,20 @@ class InsightsService:
     ) -> InsightKpiTrend | None:
         if not selected_kpi:
             return None
+        window = InsightsService._six_month_window(current_period)
+        label, values_by_period = InsightsService._six_month_values(records, window).get(
+            selected_kpi, [selected_kpi, {}],
+        )
+        return InsightsService._kpi_trend_from_values(selected_kpi, label, values_by_period, current_period, window)
 
-        window: list[tuple[int, int]] = []
-        year, month = current_period
-        for offset in range(5, -1, -1):
-            absolute_month = year * 12 + month - 1 - offset
-            window.append((absolute_month // 12, (absolute_month % 12) + 1))
-
-        values_by_period: dict[tuple[int, int], list[Any]] = defaultdict(list)
-        label = selected_kpi
-        for record in records:
-            record_period = _period(record)
-            if record_period not in window:
-                continue
-            for value in _configured_kpi_values(record):
-                if str(_value(value, "kpi_key", "")) != selected_kpi:
-                    continue
-                values_by_period[record_period].append(value)
-                label = str(_value(value, "label", selected_kpi))
-
+    @staticmethod
+    def _kpi_trend_from_values(
+        selected_kpi: str,
+        label: str,
+        values_by_period: dict[tuple[int, int], list[Any]],
+        current_period: tuple[int, int],
+        window: list[tuple[int, int]],
+    ) -> InsightKpiTrend:
         current_values = values_by_period.get(current_period, [])
         direction, unit, current_uniform = _uniform_cohort(current_values)
         # The response has one unit. A mixed current month has no unit that can
@@ -2365,6 +2572,20 @@ class InsightsService:
         priority_only: bool = False,
         **filters: Any,
     ) -> InsightsWorkspace:
+        # One build reads each record's configured KPI values many times; the memo makes that one read per record.
+        token = _CONFIGURED_KPI_MEMO.set({})
+        try:
+            return self._generate_workspace(scope, priority_only=priority_only, **filters)
+        finally:
+            _CONFIGURED_KPI_MEMO.reset(token)
+
+    def _generate_workspace(
+        self,
+        scope: dict,
+        *,
+        priority_only: bool = False,
+        **filters: Any,
+    ) -> InsightsWorkspace:
         self._validate_scope(filters, scope)
         authorized_records, missing_year_count = self._authorized_records(scope)
         records = self._filter_records(authorized_records, filters)
@@ -2687,6 +2908,7 @@ class InsightsService:
             comparison_note = "Comparison uses the nearest earlier available period; intermediate period data is missing."
 
         tracking_indicators = self._tracking_indicators(records, current_period, previous_period)
+        kpi_diagnosis = [] if priority_only else self._kpi_diagnosis(current, previous, records, current_period)
         return InsightsWorkspace(
             summary=summary,
             priority_insights=priority_items,
@@ -2700,6 +2922,7 @@ class InsightsService:
             executive_story=executive_story,
             people_contribution_analysis=people_contribution_analysis,
             kpi_trend=kpi_trend,
+            kpi_diagnosis=kpi_diagnosis,
             overall_trend=overall_trend,
             role_summaries=role_summaries,
             kpi_overview=kpi_overview,
