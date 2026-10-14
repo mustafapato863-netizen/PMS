@@ -10,7 +10,7 @@ import weightedContributionIcon from '../../../assets/insights/weighted-contribu
 import { GradeBadge, SectionCard, SectionHeader, ShareBar, ViewAllButton } from './InsightsOverviewPrimitives';
 import BasisComparisonNote from '../../../features/evaluation/BasisComparisonNote';
 import {
-  barShare, cleanScope, formatMetric, formatPercent, formatSignedPercent, geographyGap,
+  barShare, cleanScope, formatPercent, formatSignedPercent, geographyGap,
   lowPerformingTeams, MORE_ANALYSIS_KEYS, peopleToReview, sparklinePoints, splitDrivers, teamGap, teamsNeedingAttention,
   type MoreAnalysisKey, type TeamSummary,
 } from './insightsOverviewModel';
@@ -263,6 +263,12 @@ export function TeamsNeedingAttentionSection({ teams, onSelectTeam }: {
 
 const PEOPLE_LIMIT = 3;
 
+/** The backend writes "All positions" for an employee with no position; a dash says so plainly. */
+const positionLabel = (position: string | null | undefined): string => (position && position !== 'All positions' ? position : '—');
+
+/** The employee's stored performance score for the period, one decimal. A dash when none is stored. */
+const formatScore = (score: number | null | undefined): string => (score === null || score === undefined ? '—' : `${score.toFixed(1)}%`);
+
 export function PeopleToReviewSection({ analysis, onOpenEmployee, onViewAll }: {
   analysis: InsightPeopleContributionAnalysis | null | undefined;
   onOpenEmployee: (employeeId: string, performanceLevel: string) => void;
@@ -284,42 +290,41 @@ export function PeopleToReviewSection({ analysis, onOpenEmployee, onViewAll }: {
         icon={<UserRound className="size-[18px]" strokeWidth={1.5} />}
         iconBackground="var(--insights-icon-people)"
         title="People to review"
-        subtitle={<>Employees with the biggest impact on the gap.{analysis ? <span className="text-[var(--text-faint)]"> · {analysis.kpi_label}</span> : null}</>}
+        subtitle={<>Ranked by weighted impact on the gap, largest first.{analysis ? <span className="text-[var(--text-faint)]"> · {analysis.kpi_label}</span> : null}</>}
         action={viewAll}
       />
       {visible.length ? (
-        <div className={scrollX}>
-          <div className="min-w-[880px]">
-            <div aria-hidden="true" className="flex items-start gap-[12px] border-b border-[var(--insights-card-border)] px-[8px] pb-[8px] pt-[6px] text-[12px] font-medium leading-normal text-[var(--text-muted)]">
-              <span className="w-[200px] shrink-0">Employee</span>
-              <span className="min-w-0 flex-1">Role</span>
-              <span className="w-[150px] shrink-0">Team</span>
-              <span className="w-[150px] shrink-0">Actual / Target</span>
-              <span className="w-[150px] shrink-0">Grade</span>
-              <span className="w-[80px] shrink-0">Impact</span>
-              <span className="w-[16px] shrink-0" />
-            </div>
-            <ul id="people-review-list" aria-label="People to review">
-              {visible.map((person) => (
-                <li key={`${person.team}-${person.employee_id}-${person.performance_level}-${person.position}`} className="border-b border-[var(--insights-row-border)] last:border-b-0">
-                  <button
-                    type="button"
-                    onClick={() => onOpenEmployee(person.employee_id, person.performance_level)}
-                    aria-label={`Open ${person.employee_name}: impact ${formatSignedPercent(person.weighted_impact)}`}
-                    className="flex w-full items-center gap-[12px] px-[8px] py-[10px] text-left transition hover:bg-[var(--insights-chip-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--insights-accent)]"
-                  >
-                    <span className="w-[200px] shrink-0 truncate text-[13px] font-semibold leading-normal text-[var(--insights-heading)]">{person.employee_name}</span>
-                    <span className="min-w-0 flex-1 truncate text-[13px] leading-normal text-[var(--text-secondary)]">{person.position}</span>
-                    <span className="w-[150px] shrink-0 truncate text-[13px] leading-normal text-[var(--text-secondary)]">{person.team}</span>
-                    <span className="w-[150px] shrink-0 truncate text-[13px] font-semibold leading-normal text-[var(--insights-heading)]">{formatMetric(person.current_value, person.unit)} / {formatMetric(person.target_value, person.unit)}</span>
-                    <span className="w-[150px] shrink-0"><GradeBadge score={person.achievement} /></span>
-                    <span className="w-[80px] shrink-0 text-[13px] font-bold leading-normal text-[var(--insights-negative)]">{formatSignedPercent(person.weighted_impact)}</span>
-                    <ChevronRight aria-hidden="true" className="size-[16px] shrink-0 text-[var(--insights-chevron)]" strokeWidth={1.5} />
-                  </button>
-                </li>
-              ))}
-            </ul>
+        <div>
+          {/* Columns from md up. Below md each row wraps into lines, so nothing scrolls sideways at 390px. */}
+          <div aria-hidden="true" className="hidden items-start gap-[12px] border-b border-[var(--insights-card-border)] px-[8px] pb-[8px] pt-[6px] text-[12px] font-medium leading-normal text-[var(--text-muted)] md:flex">
+            <span className="w-[150px] shrink-0">Team</span>
+            <span className="w-[200px] shrink-0">Employee</span>
+            <span className="min-w-0 flex-1">Role</span>
+            <span className="w-[96px] shrink-0 text-right">Score</span>
+            <span className="w-[120px] shrink-0">Grade</span>
+            <span className="w-[96px] shrink-0 text-right">Weighted impact</span>
+            <span className="w-[16px] shrink-0" />
           </div>
+          <ul id="people-review-list" aria-label="People to review">
+            {visible.map((person) => (
+              <li key={`${person.team}-${person.employee_id}-${person.performance_level}-${person.position}`} className="border-b border-[var(--insights-row-border)] last:border-b-0">
+                <button
+                  type="button"
+                  onClick={() => onOpenEmployee(person.employee_id, person.performance_level)}
+                  aria-label={`Open ${person.employee_name}: impact ${formatSignedPercent(person.weighted_impact)}`}
+                  className="flex w-full flex-wrap items-center gap-x-[12px] gap-y-[6px] px-[8px] py-[10px] text-left transition hover:bg-[var(--insights-chip-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--insights-accent)] md:flex-nowrap"
+                >
+                  <span className="w-full truncate text-[12px] leading-normal text-[var(--text-secondary)] md:w-[150px] md:shrink-0 md:text-[13px]">{person.team}</span>
+                  <span className="min-w-0 flex-1 truncate text-[13px] font-semibold leading-normal text-[var(--insights-heading)] md:w-[200px] md:flex-none">{person.employee_name}</span>
+                  <span className="w-full truncate text-[12px] leading-normal text-[var(--text-secondary)] md:w-auto md:min-w-0 md:flex-1 md:text-[13px]">{positionLabel(person.position)}</span>
+                  <span className="shrink-0 text-[13px] font-semibold leading-normal tabular-nums text-[var(--insights-heading)] md:w-[96px] md:text-right"><span className="md:hidden">Score </span>{formatScore(person.performance_score)}</span>
+                  <span className="shrink-0 md:w-[120px]"><GradeBadge score={person.performance_score} /></span>
+                  <span className="shrink-0 text-[13px] font-bold leading-normal text-[var(--insights-negative)] md:w-[96px] md:text-right"><span className="md:hidden">Impact </span>{formatSignedPercent(person.weighted_impact)}</span>
+                  <ChevronRight aria-hidden="true" className="size-[16px] shrink-0 text-[var(--insights-chevron)]" strokeWidth={1.5} />
+                </button>
+              </li>
+            ))}
+          </ul>
         </div>
       ) : (
         <p className="px-[8px] py-[12px] text-[13px] text-[var(--text-muted)]">No negative employee contributors were measured for the leading KPI.</p>

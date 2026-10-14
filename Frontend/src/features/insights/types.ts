@@ -148,6 +148,8 @@ export interface InsightPersonContribution {
   change_value?: number | null;
   trend_status?: InsightTrendStatus | null;
   target_status?: InsightTargetStatus | null;
+  /** The employee's stored performance score for the period. Optional: responses cached before the field have none. */
+  performance_score?: number | null;
 }
 
 export interface InsightPeopleContributionAnalysis {

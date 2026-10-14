@@ -42,16 +42,18 @@ describe('TrackingIndicatorsCard', () => {
     render(<TrackingIndicatorsCard indicators={[offshore]} />);
 
     expect(screen.getByText('Policy Rejection Rate')).toBeInTheDocument();
-    expect(screen.getByText('6.6%')).toBeInTheDocument();
+    // The trend also labels its latest point, so the main value is the first match.
+    expect(screen.getAllByText('6.56%')[0]).toBeInTheDocument();
     expect(screen.getByText('25 of 381 assigned requests')).toBeInTheDocument();
-    expect(screen.getByText('96.2% of 26 rejections are policy')).toBeInTheDocument();
-    expect(screen.getByText('+3.9 pts vs August (2.7%)')).toBeInTheDocument();
+    expect(screen.getByText('96.2%')).toBeInTheDocument();
+    expect(screen.getByText('25 of 26 rejections')).toBeInTheDocument();
+    expect(screen.getByText('+3.90 pts vs Aug')).toBeInTheDocument();
   });
 
   it('carries the tracking-only tag and no target, achievement or status', () => {
     render(<TrackingIndicatorsCard indicators={[offshore]} />);
 
-    expect(screen.getByText('Tracking only · not in the score')).toBeInTheDocument();
+    expect(screen.getByText('Tracking only')).toBeInTheDocument();
     expect(screen.queryByText(/target/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/below|on track|at risk|achiev/i)).not.toBeInTheDocument();
   });
@@ -73,6 +75,6 @@ describe('TrackingIndicatorsCard', () => {
   it('describes the monthly trend for screen readers', () => {
     render(<TrackingIndicatorsCard indicators={[offshore]} />);
 
-    expect(screen.getByRole('img', { name: /Policy Rejection Rate monthly trend: Jun 2\.0%, Jul 2\.5%, Aug 2\.7%, Sep 6\.6%/ })).toBeInTheDocument();
+    expect(screen.getByRole('list', { name: /Policy Rejection Rate monthly trend: Jun 2\.00%, Jul 2\.50%, Aug 2\.67%, Sep 6\.56%/ })).toBeInTheDocument();
   });
 });

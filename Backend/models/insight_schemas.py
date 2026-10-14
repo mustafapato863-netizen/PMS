@@ -197,6 +197,9 @@ class InsightPersonContribution(BaseModel):
     change_value: float | None = None
     trend_status: InsightTrendStatus | None = None
     target_status: InsightTargetStatus | None = None
+    # The employee's stored performance score for the period (the evaluation score), the same on every
+    # KPI row of that employee. Optional with a default so responses cached before this field still parse.
+    performance_score: float | None = None
 
 
 class InsightPeopleContributionAnalysis(BaseModel):
