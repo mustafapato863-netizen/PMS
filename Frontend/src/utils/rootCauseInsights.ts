@@ -1,11 +1,18 @@
 import type { PMSAction } from '../types';
 
-export interface RootCauseSummary {
+/** The fields the root-cause count reads; a PMSAction or an analytics row both fit. */
+export interface RootCauseInput {
+  action_type: string;
+  employee_id?: string | null;
+  root_cause_note?: string | null;
+}
+
+export interface RootCauseSummary<T extends RootCauseInput = PMSAction> {
   total: number;
   byType: Record<string, number>;
   rootCauses: Record<string, number>;
   employeesActioned: number;
-  actions: PMSAction[];
+  actions: T[];
 }
 
 type RootCausePattern = {
@@ -214,7 +221,7 @@ export function extractKpiMentions(text: string): string[] {
   return matches;
 }
 
-export function summarizeRootCauses(actions: PMSAction[]): RootCauseSummary {
+export function summarizeRootCauses<T extends RootCauseInput = PMSAction>(actions: T[]): RootCauseSummary<T> {
   const byType = actions.reduce<Record<string, number>>((acc, action) => {
     acc[action.action_type] = (acc[action.action_type] || 0) + 1;
     return acc;

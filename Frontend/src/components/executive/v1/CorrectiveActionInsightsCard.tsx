@@ -7,9 +7,12 @@ import {
 } from 'lucide-react';
 import { actionAnalyticsStats } from '../../../features/executive/actionAnalytics';
 import type { ExecutiveCorrectiveActions, ExecutivePeriod } from '../../../features/executive/types';
+import { summarizeRootCauses } from '../../../utils/rootCauseInsights';
 import { ExecCard, ExecCardHeader, Footnote, SoftEmpty } from './ExecPrimitives';
 
 type Accent = 'blue' | 'violet' | 'amber' | 'green' | 'rose' | 'teal';
+
+type MetricCard = { label: string; count: number; icon: LucideIcon; accent: Accent };
 
 const ACCENTS: Record<Accent, { icon: string; surface: string }> = {
   blue: { icon: 'text-sky-700 dark:text-sky-300', surface: 'bg-sky-100 dark:bg-sky-900/40' },
@@ -103,22 +106,31 @@ export default function CorrectiveActionInsightsCard({ data, effective, scopeLab
   const selectId = useId();
   const [selectedTeam, setSelectedTeam] = useState('');
   const actions = data?.analytics?.actions ?? [];
-  const teams = [...new Set(actions.map((action) => action.team).filter((team): team is string => Boolean(team)))].sort();
+  const pendingSync = data?.analytics?.pending_sync ?? [];
+  const teams = [...new Set([...actions, ...pendingSync].map((action) => action.team).filter((team): team is string => Boolean(team)))].sort();
   const effectiveTeam = teams.includes(selectedTeam) ? selectedTeam : '';
   const visible = effectiveTeam ? actions.filter((action) => action.team === effectiveTeam) : actions;
+  const visiblePending = effectiveTeam ? pendingSync.filter((action) => action.team === effectiveTeam) : pendingSync;
   const stats = actionAnalyticsStats(visible);
+  const reasons = summarizeRootCauses(visible);
+  const reasonRows = Object.entries(reasons.rootCauses)
+    .map(([label, count]) => ({ label, count }))
+    .sort((left, right) => right.count - left.count || left.label.localeCompare(right.label))
+    .slice(0, 5);
   const period = effective ? `${effective.month} ${effective.year}` : 'Selected period';
-  const metricCards: Array<{ label: string; count: number; icon: LucideIcon; accent: Accent }> = [
+  const metricCards: MetricCard[] = [
     { label: 'Actions this month', count: stats.total, icon: ClipboardList, accent: 'blue' },
     { label: 'Employees actioned', count: stats.employees, icon: UserCheck, accent: 'green' },
     { label: 'Teams with actions', count: stats.teams.filter((team) => team.label !== 'Unassigned team').length, icon: Users, accent: 'violet' },
   ];
+  // Queued on this device and not yet synced; hidden when there are none, so an online session stays unchanged.
+  if (visiblePending.length > 0) metricCards.push({ label: 'Pending Sync', count: visiblePending.length, icon: Clock3, accent: 'amber' });
   return (
     <ExecCard aria-labelledby={titleId} data-testid="corrective-action-insights">
       <ExecCardHeader titleId={titleId} icon={ShieldCheck} iconBg="var(--exec-info-bg)" iconColor="var(--exec-info-text)"
         title="Corrective actions" subtitle={`${scopeLabel} · ${period} · Decision patterns`} />
       {!data?.analytics ? <SoftEmpty>Action analysis isn't available for this view yet.</SoftEmpty> : <>
-        <div className="grid gap-[10px] sm:grid-cols-3">
+        <div className={`grid gap-[10px] ${metricCards.length > 3 ? 'sm:grid-cols-4' : 'sm:grid-cols-3'}`}>
           {metricCards.map(({ label, count, icon: Icon, accent }) => (
             <div key={label} className="flex min-w-0 items-center gap-[10px] rounded-[10px] border border-[var(--exec-card-border)] bg-[var(--exec-tile-bg)] px-[12px] py-[10px]">
               <span aria-hidden="true" className={`flex size-[34px] shrink-0 items-center justify-center rounded-[9px] ${ACCENTS[accent].surface} ${ACCENTS[accent].icon}`}>
@@ -141,11 +153,13 @@ export default function CorrectiveActionInsightsCard({ data, effective, scopeLab
             {teams.map((team) => <option key={team} value={team}>{team}</option>)}
           </select>
         </div>
-        {stats.total ? <div className="grid gap-[24px] border-t border-[var(--insights-row-border)] pt-[16px] md:grid-cols-3">
+        {stats.total ? <div className="grid gap-[24px] border-t border-[var(--insights-row-border)] pt-[16px] md:grid-cols-2 xl:grid-cols-4">
           <RankedActions title="Most common action types" rows={stats.types} total={stats.total} empty="No action types recorded." testId="action-type-rank" />
           <RankedActions title="Teams with the most actions" rows={stats.teams} total={stats.total} empty="No teams recorded." testId="action-team-rank" />
           <RankedActions title={effectiveTeam ? `Most repeated KPIs · ${effectiveTeam}` : 'Most repeated KPIs'} rows={stats.kpis.slice(0, 5)} total={stats.total}
             empty="No KPI mentions or linked KPIs recorded for these actions." testId="action-kpi-rank" />
+          <RankedActions title={effectiveTeam ? `Most common reasons · ${effectiveTeam}` : 'Most common reasons'} rows={reasonRows} total={stats.total}
+            empty="No root causes recorded for these actions." testId="action-reason-rank" />
         </div> : <SoftEmpty>No corrective actions recorded for {period} in this scope.</SoftEmpty>}
         <Footnote>
           Counts include all action statuses for the selected performance month. Each KPI counts once per action; an action may mention more than one KPI.

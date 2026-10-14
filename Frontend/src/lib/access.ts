@@ -99,7 +99,13 @@ export const canSeeReportsNav = (role: RoleInput): boolean =>
 /** Insights stays Admin / General Manager only (Mustafa, Executive v1). */
 export const canAccessInsights = (role: RoleInput): boolean => canAccessBroadAppPages(role);
 
-/** Scoped summary analytics are not access to the operational workspace. */
+/**
+ * Scope-wide corrective-action statistics on the summary pages: counts, action types, reasons and teams,
+ * never employee names. Scoped summary analytics are not access to the operational workspace.
+ * Executive gets the same aggregate as Admin and Manager in its scope (product-owner decision, 2026-10-14);
+ * the old Executive page showed only that user's own actions. Viewer is not included: the corrective-action
+ * read endpoints do not allow it (Backend api/routers/users_and_actions.py), so it needs a backend change first.
+ */
 export const canSeeSummaryActionAnalytics = (role: RoleInput): boolean =>
   canAccessCorrectiveActions(role) || isScopedDirectorRole(role);
 

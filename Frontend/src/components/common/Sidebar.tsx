@@ -224,7 +224,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed: collapsedPreference = false, 
   // page-specific team/function/level filters must not narrow the company view.
   // Assigned director boundaries are applied separately below.
   const linkFor = (path: string, performanceLevel?: PerformanceLevel) => {
-    const params = path === '/executive' || path === '/departmental-summary'
+    const params = path === '/executive'
       ? new URLSearchParams([...searchParams].filter(([key]) => ['period', 'month', 'year'].includes(key)))
       : performanceLevel === 'Managerial' || performanceLevel === 'Corporate'
       ? prepareBalancedScorecardTeamParams(searchParams, performanceLevel)
@@ -310,7 +310,6 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed: collapsedPreference = false, 
   const generalItems: Array<{ name: string; path: string; icon: React.ReactNode; resetQuery?: boolean }> = canSeeBroadNavigation
     ? [
         { name: 'Executive Summary', path: '/executive', icon: <Gauge size={18} /> },
-        { name: 'Departmental Summary', path: '/departmental-summary', icon: <Building2 size={18} /> },
         ...(!scopedDirector ? teamsItem : []),
         ...(canSeeReportsNav(role) ? [{ name: 'Reports', path: '/reports', icon: <FileBarChart size={18} /> }] : []),
         // Plain /insights: Insights keeps its own filters in the URL
@@ -332,16 +331,15 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed: collapsedPreference = false, 
       ...(canSeeReportsNav(role) ? [{ label: 'Reports', destination: linkFor('/reports'), icon: <FileBarChart size={20} />, active: pathname.startsWith('/reports') }] : []),
     ]
     : generalItems.map((item) => {
-      const departmental = item.path === '/departmental-summary';
-      const tabletOnly = departmental || primaryDockCount >= 3;
-      if (!departmental) primaryDockCount += 1;
+      const tabletOnly = primaryDockCount >= 3;
+      primaryDockCount += 1;
       return {
-      label: item.path === '/executive' ? 'Summary' : departmental ? 'Departments' : item.path.startsWith('/team') ? 'Teams' : item.name === 'My Profile' ? 'My profile' : item.path === '/corrective-actions' ? 'Actions' : item.name,
+      label: item.path === '/executive' ? 'Summary' : item.path.startsWith('/team') ? 'Teams' : item.name === 'My Profile' ? 'My profile' : item.path === '/corrective-actions' ? 'Actions' : item.name,
       title: item.name,
       tabletOnly,
       destination: item.resetQuery ? item.path : linkFor(item.path),
       icon: item.icon,
-      active: pathname === item.path || (item.path === '/team/all' && pathname.startsWith('/team/')) || (departmental && pathname.startsWith('/departmental-summary')),
+      active: pathname === item.path || (item.path === '/team/all' && pathname.startsWith('/team/')),
       };
     });
   if (scopedDirector) {

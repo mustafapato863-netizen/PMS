@@ -1,15 +1,13 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { AgentRecord, LocationKey, MonthKey, PerformanceLevelFilter, GeoBreakdown, EmployeeCRMRecord, EmployeeStatus, PlanningCategory, Trend, PreApprovalsWorkflowFilter, CallCenterChannelFilter, RcmDomainFilter, RcmGroupFilter } from '../types';
-import { canonicalTeamName, getKPIsForAgent, TEAM_ID_MAP, PRE_APPROVALS_UAE_TEAM, CALL_CENTER_TEAM, RCM_TEAM, isMergedBranchTeam, isPreApprovalsUaeTeam, isPreApprovalsWorkflowTeam, isCallCenterTeam, isCallCenterChannelTeam, isRcmTeam, isRcmDomainTeam, isRcmGroupTeam, sameCanonicalTeam } from '../types';
+import { canonicalTeamName, getKPIsForAgent, PRE_APPROVALS_UAE_TEAM, CALL_CENTER_TEAM, RCM_TEAM, isMergedBranchTeam, isPreApprovalsUaeTeam, isPreApprovalsWorkflowTeam, isCallCenterTeam, isCallCenterChannelTeam, isRcmTeam, isRcmDomainTeam, isRcmGroupTeam, sameCanonicalTeam } from '../types';
 import { getGradeClass } from '../constants/grades';
 import { apiFetch } from '../lib/apiClient';
 import { performanceSessionKey } from '../lib/performanceSessionKey';
 import { normalizePerformanceScore, resolveDisplayScore } from '../utils/kpiScore';
 import { normalizeTeamName } from './api/useKpiWeights';
 import { calculatePerformanceSummary } from '../utils/performanceSummary';
-import { useAllTeamConfigs } from './useTeamConfig';
-import { calculateAggregatedTeamPerformance } from '../features/team/teamKpiAggregator';
 import { scopedPerformanceApiEnabled } from './api/usePerformanceDashboard';
 import { filterByReportingPeriod, parseReportingSelector, previousReportingSelector, reportingMonthName } from './api/scopedPeriod';
 import { agentMatchesLocation } from '../utils/branchScope';
@@ -1105,7 +1103,7 @@ export function useCRMData(month: MonthKey, location: LocationKey, performanceLe
   return { data, loading };
 }
 
-// ─── Team-level hooks (for TeamDashboardView & ExecutiveView) ─────────────────
+// ─── Team-level hooks (for TeamDashboardView) ─────────────────
 
 /** Parse "HH:MM:SS" → total minutes */
 export function parseAHTtoMinutes(aht: string): number {
@@ -1325,132 +1323,4 @@ export function useTeamData(
       prevTotalAgents,
     };
   }, [allAgents, teamName, month, location, loading, dataSource, errorMessage, weightsList, selectedLocations, preApprovalsWorkflow, callCenterChannel, rcmDomain, rcmGroup]);
-}
-
-/** Returns per-team aggregates for the Executive Summary table */
-export function useAllTeamsSummary(
-  month: MonthKey,
-  region: 'All' | 'EGY' | 'UAE' = 'All',
-  location: LocationKey = 'all',
-  performanceLevel: PerformanceLevelFilter = 'All',
-  weightsList?: TeamWeightConfig[],
-  legacyEnabled = true,
-) {
-  const { data: teamConfigs = [], isLoading: configsLoading } = useAllTeamConfigs();
-  const {
-    rows,
-    totalAgents,
-    uniqueTeamCount,
-    currMonthName,
-    loading,
-    dataSource,
-    errorMessage,
-  } = useTeamData(null, month, region, location, weightsList, performanceLevel, undefined, 'all', 'all', 'all', 'all', legacyEnabled);
-
-  return useMemo(() => {
-    const summary = calculatePerformanceSummary(
-      rows.map((row) => ({
-        team: row.team,
-        month: row.month,
-        score: row.score,
-        gradeClass: row.gradeClass,
-        employee_id: row.id,
-      })),
-      {}
-    );
-
-    const teamMap = new Map<string, { teamName: string; agents: import('../types').AgentRecord[] }>();
-
-    rows.forEach((row) => {
-      const rawTeamName = row.team || 'Unknown';
-      const logicalName = isRcmTeam(rawTeamName)
-        ? RCM_TEAM
-        : isPreApprovalsUaeTeam(rawTeamName)
-        ? PRE_APPROVALS_UAE_TEAM
-        : isCallCenterTeam(rawTeamName)
-          ? CALL_CENTER_TEAM
-        : canonicalTeamName(rawTeamName) || 'Unknown';
-      const normalizedTeamKey = normalizeTeamName(logicalName) || logicalName.toLowerCase().replace(/\s+/g, '-');
-      const existing = teamMap.get(normalizedTeamKey);
-      if (existing) {
-        existing.agents.push(row.raw);
-      } else {
-        teamMap.set(normalizedTeamKey, { teamName: logicalName, agents: [row.raw] });
-      }
-    });
-
-    const summaries: import('../types').TeamSummary[] = [];
-
-    teamMap.forEach(({ teamName }, teamKey) => {
-      const classCounts = { A: 0, B: 0, C: 0, D: 0, E: 0 };
-      const snapshotEmployeeIds = new Set<string>();
-
-      const teamRows = rows.filter((row) => sameCanonicalTeam(row.team, teamName));
-      const teamMonths = Array.from(new Set(teamRows.map((r) => r.month))).sort(
-        (a, b) => (MONTH_ORDER[a] || 0) - (MONTH_ORDER[b] || 0)
-      );
-      const selectedMonthName = reportingMonthName(month);
-      const teamLatestMonth = selectedMonthName ?? (teamMonths[teamMonths.length - 1] || currMonthName);
-
-      const latestTeamRows = teamRows.filter((row) => row.month === teamLatestMonth);
-      latestTeamRows.forEach((row) => {
-        if (row.month === teamLatestMonth && row.id) snapshotEmployeeIds.add(row.id);
-        classCounts[row.gradeClass]++;
-      });
-      const config = isMergedBranchTeam(teamName) || isPreApprovalsUaeTeam(teamName) || teamName === CALL_CENTER_TEAM || teamName === RCM_TEAM
-        ? undefined
-        : teamConfigs.find((candidate) => sameCanonicalTeam(candidate.team, teamName));
-      const aggregateScore = calculateAggregatedTeamPerformance(
-        latestTeamRows.map((row) => row.raw),
-        config,
-        { location },
-      )?.score ?? null;
-
-      // The settings endpoint may still be loading when this hook first
-      // renders.  Recreate configured weights from the team definition so the
-      // displayed employee score is stable and does not briefly fall back to
-      // a stale persisted fraction (e.g. 9.3% for Sales).
-      const configuredWeights = config?.kpis.length
-        ? Object.fromEntries(config.kpis.map((kpi) => [kpi.key, kpi.weight]))
-        : undefined;
-      const weightConfig = weightsList?.find((candidate) => sameCanonicalTeam(candidate.team, teamName));
-      const employeeScores = teamName === RCM_TEAM
-        ? latestTeamRows.map((row) => row.score)
-        : latestTeamRows.map((row) => resolveDisplayScore(
-          row.raw,
-          weightConfig?.weights ?? configuredWeights,
-        ));
-
-      summaries.push({
-        teamId: TEAM_ID_MAP[teamName] || teamKey,
-        teamName,
-        agentCount: snapshotEmployeeIds.size,
-        avgScore: reconcileTeamSummaryScore(aggregateScore, employeeScores),
-        classA: classCounts.A,
-        classB: classCounts.B,
-        classC: classCounts.C,
-        classD: classCounts.D,
-        classE: classCounts.E,
-      });
-    });
-
-    summaries.sort((a, b) => b.avgScore - a.avgScore);
-    const scoredTeams = summaries.filter((team) => team.agentCount > 0);
-    const overallAggregateScore = scoredTeams.length > 0
-      ? scoredTeams.reduce((sum, team) => sum + team.avgScore, 0) / scoredTeams.length
-      : 0;
-
-    return {
-      summaries,
-      totalAgents,
-      uniqueTeamCount,
-      overallAvgScore: overallAggregateScore,
-      pctAB: summary.classABPercentage,
-      pctDE: summary.classDEPercentage,
-      allClassCounts: summary.classCounts,
-      loading: loading || configsLoading,
-      dataSource,
-      errorMessage,
-    };
-  }, [rows, month, totalAgents, uniqueTeamCount, currMonthName, loading, dataSource, errorMessage, teamConfigs, configsLoading, location, weightsList]);
 }

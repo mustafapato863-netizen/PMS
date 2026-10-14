@@ -72,7 +72,6 @@ describe('committed evidence cache, legacy mode', () => {
       if (href.startsWith('/api/performance/summary-records')) {
         return { success: true, data: [{ employee_id: 'E1', employee_name: 'Outbound agent', team: 'Outbound', month: 'August', year: 2026, score, raw_data: { 'T.Attend%': 0.65 }, kpi_values: [{ kpi_key: 'Attendance', target_value: target, weight_applied: weight }] }] };
       }
-      if (href.startsWith('/api/executive/summary')) return { success: true, data: { hero: { score }, meta: { source: 'api' } } };
       if (href.startsWith('/api/reports/center')) return { success: true, data: { summary: { current_score: score } } };
       if (href.startsWith('/api/insights/workspace')) return { success: true, data: { priority_insights: [{ id: 'pin', title: String(score) }] } };
       throw new Error(`unexpected ${href}`);
@@ -97,13 +96,12 @@ describe('committed evidence cache, legacy mode', () => {
 
     await waitFor(() => expect(first.result.current.team.agents[0]?.evaluation.score).toBe(79.82));
     await waitFor(() => expect(first.result.current.summary.data?.[0]?.evaluation.score).toBe(79.82));
-    await waitFor(() => expect(first.result.current.executive.source).toBe('api'));
+    await waitFor(() => expect(first.result.current.executive.source).toBe('composed'));
     await waitFor(() => expect(first.result.current.center.data?.summary.current_score).toBe(79.82));
     await waitFor(() => expect(first.result.current.insights.data?.priority_insights?.[0]?.title).toBe('79.82'));
     const warmed = {
       performance: calls('/api/performance').length,
       summary: calls('/api/performance/summary-records').length,
-      executive: calls('/api/executive/summary').length,
       center: calls('/api/reports/center').length,
       insights: calls('/api/insights/workspace').length,
     };
@@ -119,10 +117,10 @@ describe('committed evidence cache, legacy mode', () => {
     }), { wrapper });
     await waitFor(() => expect(remounted.result.current.team.loading).toBe(false));
     expect(remounted.result.current.team.agents[0]?.evaluation.score).toBe(79.82);
-    expect(remounted.result.current.executive.summary?.hero).toMatchObject({ score: 79.82 });
+    // The composed hero rounds to one decimal (the old endpoint mock returned the raw 79.82).
+    expect(remounted.result.current.executive.summary?.hero).toMatchObject({ score: 79.8 });
     expect(calls('/api/performance')).toHaveLength(warmed.performance);
     expect(calls('/api/performance/summary-records')).toHaveLength(warmed.summary);
-    expect(calls('/api/executive/summary')).toHaveLength(warmed.executive);
     expect(calls('/api/reports/center')).toHaveLength(warmed.center);
     expect(calls('/api/insights/workspace')).toHaveLength(warmed.insights);
 
@@ -132,14 +130,14 @@ describe('committed evidence cache, legacy mode', () => {
     act(() => invalidateCommittedEvidence(client, selection, refreshPerformanceData));
     await waitFor(() => expect(remounted.result.current.team.agents[0]?.evaluation.score).toBe(79.93));
     await waitFor(() => expect(remounted.result.current.summary.data?.[0]?.kpi_values?.[0]?.target_value).toBe(0.7));
-    await waitFor(() => expect(remounted.result.current.executive.summary?.hero).toMatchObject({ score: 79.93 }));
+    await waitFor(() => expect(remounted.result.current.executive.summary?.hero).toMatchObject({ score: 79.9 }));
     await waitFor(() => expect(remounted.result.current.center.data?.summary.current_score).toBe(79.93));
     await waitFor(() => expect(remounted.result.current.insights.data?.priority_insights?.[0]?.title).toBe('79.93'));
     expect(client.getQueryData(['reports', 'story', 'draft', 'saved-1'])).toEqual({ id: 'saved-1', name: 'Immutable story' });
     expect(client.getQueryData(['planning', 'linkable', 'Outbound'])).toEqual([{ id: 'plan-1', title: 'Human plan' }]);
     expect(client.getQueryData(['corrective-actions', 'executive', 'follow-up', 'session'])).toEqual({ actions: [{ id: 'action-1' }] });
     expect(calls('/api/performance').length).toBeGreaterThan(warmed.performance);
-    expect(calls('/api/executive/summary').length).toBeGreaterThan(warmed.executive);
+    expect(calls('/api/performance/summary-records').length).toBeGreaterThan(warmed.summary);
     expect(calls('/api/reports/center').length).toBeGreaterThan(warmed.center);
     expect(calls('/api/insights/workspace').length).toBeGreaterThan(warmed.insights);
   });

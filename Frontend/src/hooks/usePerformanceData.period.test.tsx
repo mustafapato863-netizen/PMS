@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiFetch } from '../lib/apiClient';
-import { mapScopedPerformanceRecord, useAllTeamsSummary, usePerformanceData, useTeamData } from './usePerformanceData';
+import { mapScopedPerformanceRecord, usePerformanceData, useTeamData } from './usePerformanceData';
 
 vi.mock('../lib/apiClient', () => ({ apiFetch: vi.fn() }));
 vi.mock('./api/usePerformanceDashboard', () => ({ scopedPerformanceApiEnabled: false }));
@@ -60,7 +60,7 @@ describe('legacy performance period selection', () => {
     await waitFor(() => expect(named.result.current.agents.map((item) => item.identity.employee_id)).toEqual(['E2026']));
   });
 
-  it('counts headcount for the exact year inside team and executive summaries', async () => {
+  it('counts headcount for the exact year inside team summaries', async () => {
     const team = renderHook(() => useTeamData(null, '2025-07'), { wrapper: wrapperFor() });
     await waitFor(() => expect(team.result.current.loading).toBe(false));
     expect(team.result.current.rows.map((row) => row.name)).toEqual(['July 2025']);
@@ -71,10 +71,5 @@ describe('legacy performance period selection', () => {
     const latestJuly = renderHook(() => useTeamData(null, 'July'), { wrapper: wrapperFor() });
     await waitFor(() => expect(latestJuly.result.current.rows.map((row) => row.name)).toEqual(['July 2026']));
     expect(latestJuly.result.current.totalAgents).toBe(1);
-
-    const summary = renderHook(() => useAllTeamsSummary('2026-07'), { wrapper: wrapperFor() });
-    await waitFor(() => expect(summary.result.current.loading).toBe(false));
-    expect(summary.result.current.totalAgents).toBe(1);
-    expect(summary.result.current.summaries.reduce((sum, item) => sum + item.agentCount, 0)).toBe(1);
   });
 });

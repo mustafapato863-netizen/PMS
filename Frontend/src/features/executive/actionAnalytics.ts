@@ -44,10 +44,11 @@ export function actionsInActivePeriod<T extends { month?: string | null; created
   });
 }
 
-/** Same KPI-mention classification as the original ActionsSummaryCard; all statuses count. */
-export function summarizeActionAnalytics(actions: FollowUpAction[], effective: ExecutivePeriod | null): ExecutiveActionAnalytics {
+/** Same KPI-mention classification as the retired ActionsSummaryCard; all statuses count. */
+export function summarizeActionAnalytics(actions: FollowUpAction[], effective: ExecutivePeriod | null, pending: FollowUpAction[] = []): ExecutiveActionAnalytics {
   const unique = [...new Map(actions.map((action) => [String(action.id), action])).values()];
-  const result: ExecutiveActionAnalytics = { actions: [], unassigned_period: 0 };
+  const pendingSync: Array<{ id: string; team: string | null }> = [];
+  const result: ExecutiveActionAnalytics = { actions: [], unassigned_period: 0, pending_sync: pendingSync };
   if (!effective) return result;
   for (const action of unique) {
     const period = actionPeriod(action, effective);
@@ -67,7 +68,12 @@ export function summarizeActionAnalytics(actions: FollowUpAction[], effective: E
       employee_id: action.employee_id || null,
       action_type: action.action_type?.trim() || 'Unclassified',
       kpi_mentions: [...new Set(mentions)],
+      root_cause_note: action.root_cause_note ?? null,
     });
+  }
+  for (const action of pending) {
+    if (actionPeriod(action, effective) !== effective.key) continue;
+    pendingSync.push({ id: String(action.id), team: canonicalTeamName(action.team) || null });
   }
   return result;
 }
