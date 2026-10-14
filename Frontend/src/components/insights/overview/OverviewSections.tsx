@@ -154,7 +154,7 @@ export function GeographySection({ summaries, regionFilter, onSelectRegion }: {
                   <span className="flex min-w-0 flex-col items-start gap-[4px]">
                     <strong className="text-[13px] font-semibold leading-normal text-[var(--insights-heading)]">{summary.scope}</strong>
                     <span className="flex items-center gap-[8px]">
-                      <span className="text-[22px] font-bold leading-normal text-[var(--insights-heading)]">{formatPercent(summary.current_score)}</span>
+                      <span className="text-display-card font-bold leading-normal text-[var(--insights-heading)]">{formatPercent(summary.current_score)}</span>
                       {gap !== null && (negative
                         ? <ArrowDownRight aria-hidden="true" className="size-[14px] text-[var(--insights-negative)]" strokeWidth={1.75} />
                         : <ArrowUpRight aria-hidden="true" className="size-[14px] text-[var(--insights-positive)]" strokeWidth={1.75} />)}

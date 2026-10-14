@@ -258,6 +258,15 @@ export interface ExecutiveActionItem {
   follow_up_state: string | null;
   employee_id?: string | null;
   month?: string;
+  /** Action type badge (Coaching, PIP, ...). */
+  action_type?: string | null;
+  /** The action text the manager wrote; the card shows its first line and the full text on expand. */
+  action_text?: string | null;
+  /** Reason for the action (root cause note). */
+  root_cause?: string | null;
+  linked_kpi_key?: string | null;
+  created_at?: string | null;
+  completed_at?: string | null;
 }
 
 export interface ExecutiveCorrectiveActions {
@@ -271,7 +280,10 @@ export interface ExecutiveCorrectiveActions {
     due_this_week: number;
     closed_in_month: number | null;
   };
+  /** Four-row preview (kept for other consumers). */
   actions: ExecutiveActionItem[];
+  /** Full list for the Corrective actions card: open plus closed this period, overdue first. */
+  rows?: ExecutiveActionItem[];
 }
 
 export interface ExecutiveActionAnalytics {

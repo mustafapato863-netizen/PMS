@@ -113,7 +113,7 @@ const PerformanceKpiCard = ({
     )
     : null;
   return (
-    <article className="glass-card group relative flex min-h-[171px] flex-col justify-between overflow-hidden rounded-2xl p-4 shadow-sm transition-all hover:scale-[1.01]">
+    <article className="glass-card group relative flex flex-col justify-between overflow-hidden rounded-2xl p-4 shadow-sm transition-all hover:scale-[1.01]">
       <div
         className={`pointer-events-none absolute -right-6 -top-6 h-24 w-24 rounded-full opacity-[0.05] transition-opacity duration-500 group-hover:opacity-[0.1] ${iconAccentColor ? '' : iconBgColor}`}
         style={iconAccentColor ? { backgroundColor: iconAccentColor } : undefined}
@@ -129,12 +129,12 @@ const PerformanceKpiCard = ({
         </span>
         <div className="flex items-center gap-1.5">
           {targetValue !== undefined && targetValue !== null && targetValue !== '' && (
-            <span className="rounded-md border border-slate-500/20 bg-slate-500/10 px-2 py-0.5 text-center text-xs font-extrabold text-[var(--text-secondary)]">
+            <span className="rounded-md border border-slate-500/20 bg-slate-500/10 px-2 py-0.5 text-center text-xs font-semibold text-[var(--text-secondary)]">
               Target: {formatTargetBadgeValue(targetValue)}
             </span>
           )}
           {badgeText && (
-            <span className={`max-w-[112px] rounded-md border px-2 py-1 text-center text-xs font-extrabold uppercase leading-4 tracking-wide ${BADGE_CLASSES[badgeType]}`}>
+            <span className={`rounded-md border px-2 py-1 text-center text-xs font-semibold leading-4 whitespace-nowrap ${BADGE_CLASSES[badgeType]}`}>
               {badgeText}
             </span>
           )}
@@ -142,10 +142,10 @@ const PerformanceKpiCard = ({
       </div>
 
       <div className="relative mt-3">
-        <p className="truncate text-xs font-bold uppercase tracking-[0.08em] text-[var(--text-muted)]" title={label}>
+        <p className="truncate text-xs font-semibold text-[var(--text-muted)]" title={label}>
           {label}
         </p>
-        <div className="mt-1 text-[clamp(1.35rem,1.7vw,1.7rem)] font-black leading-none tracking-tight text-[var(--text-primary)]">
+        <div className="mt-1 text-display-card font-bold leading-none tracking-tight text-[var(--text-primary)]">
           {value}
         </div>
         <div className="mt-1.5 flex min-h-5 items-center justify-between gap-2">
@@ -153,7 +153,7 @@ const PerformanceKpiCard = ({
             {detailLabel}
           </p>
           {hasTrend && (
-            <span className={`inline-flex shrink-0 items-center gap-1 text-xs font-bold ${
+            <span className={`inline-flex shrink-0 items-center gap-1 text-xs font-semibold ${
               stableTrend
                 ? 'text-[var(--text-muted)]'
                 : trendIsGood
@@ -183,7 +183,7 @@ const PerformanceKpiCard = ({
               style={{ width: `${visualProgress}%` }}
             />
           </div>
-          <span className="min-w-[74px] text-right text-xs font-bold text-[var(--text-muted)]">
+          <span className="min-w-[74px] text-right text-xs font-semibold text-[var(--text-muted)]">
             {progressLabel}
           </span>
         </div>
@@ -192,7 +192,7 @@ const PerformanceKpiCard = ({
       <div className="relative mt-2 flex items-center justify-between border-t border-[var(--border-light)] pt-2 text-xs font-semibold text-[var(--text-secondary)]">
         <span>
           Contribution
-          <strong className="ml-1 font-extrabold text-[var(--text-primary)]">
+          <strong className="ml-1 font-bold text-[var(--text-primary)]">
             {contributionPercent !== null
               ? `${contributionPercent.toFixed(1)}%`
               : '—'}
@@ -200,7 +200,7 @@ const PerformanceKpiCard = ({
         </span>
         <span>
           Weight
-          <strong className="ml-1 font-extrabold text-[var(--text-primary)]">
+          <strong className="ml-1 font-bold text-[var(--text-primary)]">
             {weight !== undefined && weight !== null ? `${(weight * 100).toFixed(0)}%` : '—'}
           </strong>
         </span>

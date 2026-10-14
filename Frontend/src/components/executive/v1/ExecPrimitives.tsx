@@ -62,7 +62,7 @@ export function GradePill({ score, className = '' }: { score: number | null | un
   return (
     <span
       data-grade={grade ?? 'na'}
-      className={`inline-flex shrink-0 items-center rounded-full px-[8px] py-[2px] text-xs font-bold leading-normal ${className}`}
+      className={`inline-flex shrink-0 items-center rounded-full px-[8px] py-[2px] text-xs font-semibold leading-normal ${className}`}
       style={{ background: tone.badgeBg, color: tone.badgeText }}
     >
       {grade ? `Grade ${grade}` : 'No grade'}
@@ -80,13 +80,13 @@ export function GradeSquare({ score }: { score: number | null | undefined }) {
   );
 }
 
-export function ScoreText({ score, className = 'text-[26px]', children }: { score: number | null | undefined; className?: string; children: ReactNode }) {
+export function ScoreText({ score, className = 'text-display-card', children }: { score: number | null | undefined; className?: string; children: ReactNode }) {
   return <span className={`font-bold leading-[1.1] ${className}`} style={{ color: getGradeTone(score ?? null).text }}>{children}</span>;
 }
 
 export function StatLabel({ children, icon: Icon }: { children: ReactNode; icon?: LucideIcon }) {
   return (
-    <span className="inline-flex items-center gap-[5px] text-xs font-semibold uppercase tracking-[0.6px] text-[var(--text-muted)]">
+    <span className="inline-flex items-center gap-[5px] text-xs font-semibold text-[var(--text-muted)]">
       {Icon && <Icon aria-hidden="true" className="size-[14px]" strokeWidth={1.75} />}
       {children}
     </span>
@@ -256,7 +256,7 @@ export function Sparkline({
         <span
           aria-hidden="true"
           data-testid="sparkline-latest-score"
-          className="pointer-events-none absolute z-[1] -translate-y-1/2 whitespace-nowrap rounded-full border px-[8px] py-[4px] text-xs font-bold leading-none shadow-sm"
+          className="pointer-events-none absolute z-[1] -translate-y-1/2 whitespace-nowrap rounded-full border px-[8px] py-[4px] text-xs font-semibold leading-none shadow-sm"
           style={{
             left: `${(last.x / width) * 100}%`,
             top: `${(badgeTop / height) * 100}%`,

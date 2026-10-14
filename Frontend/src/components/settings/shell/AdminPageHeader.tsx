@@ -12,7 +12,7 @@ export function AdminPageHeader({ title, description, badge, actions }: AdminPag
     <header className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <div className="min-w-0 space-y-1">
         <div className="flex flex-wrap items-center gap-2">
-          <h1 className="text-2xl font-black tracking-tight text-[var(--text-primary)]">{title}</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-[var(--text-primary)]">{title}</h1>
           {badge}
         </div>
         {description && <p className="text-sm text-[var(--text-secondary)]">{description}</p>}

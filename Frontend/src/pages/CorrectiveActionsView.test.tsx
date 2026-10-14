@@ -53,8 +53,8 @@ describe('CorrectiveActionsView', () => {
     render(<MemoryRouter><CorrectiveActionsView /></MemoryRouter>);
 
     expect(screen.getByRole('heading', { name: 'Corrective Actions' })).toBeInTheDocument();
-    expect(screen.getByText('Agent One')).toBeInTheDocument();
-    expect(screen.getByText('Agent Two')).toBeInTheDocument();
+    expect(screen.getAllByText('Agent One').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Agent Two').length).toBeGreaterThan(0);
     expect(screen.getByText('Visible actions').parentElement).toHaveTextContent('2');
     expect(screen.getByText('Pending sync').parentElement).toHaveTextContent('1');
   });
@@ -64,7 +64,7 @@ describe('CorrectiveActionsView', () => {
     getAllActions.mockReturnValue([actions[0], marketingAction]);
     followUpState.actions = [{ ...actions[0], status: 'Open' }, marketingAction];
     render(<MemoryRouter initialEntries={['/corrective-actions?function=Marketing']}><CorrectiveActionsView /></MemoryRouter>);
-    expect(screen.getByText('Agent Two')).toBeInTheDocument();
+    expect(screen.getAllByText('Agent Two').length).toBeGreaterThan(0);
     expect(screen.queryByText('Agent One')).not.toBeInTheDocument();
     expect(screen.getByTestId('action-tile-open')).toHaveTextContent('1');
     fireEvent.click(screen.getByRole('tab', { name: 'Follow-up' }));
@@ -95,7 +95,7 @@ describe('CorrectiveActionsView', () => {
     fireEvent.click(screen.getByRole('button', { name: /Action filters/i }));
     const teamSelect = screen.getAllByLabelText('Filter by team').find((element) => element.tagName === 'SELECT');
     fireEvent.change(teamSelect as HTMLSelectElement, { target: { value: 'Inbound' } });
-    expect(screen.getByText('Agent One')).toBeInTheDocument();
+    expect(screen.getAllByText('Agent One').length).toBeGreaterThan(0);
     expect(screen.queryByText('Agent Two')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Export PowerPoint' }));

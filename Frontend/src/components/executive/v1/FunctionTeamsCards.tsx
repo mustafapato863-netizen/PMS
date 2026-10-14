@@ -40,7 +40,7 @@ export function TeamLeaderboardCard({ teams, fn, effective, previous }: { teams:
   const rows = [...teams].sort((l, r) => (r.score ?? -1) - (l.score ?? -1));
   const [params] = useSearchParams();
   const roleMode = fn === 'Marketing';
-  const head = 'text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]';
+  const head = 'text-xs font-semibold text-[var(--text-muted)]';
   const vs = previous ? `vs ${previous.month.slice(0, 3)}` : 'vs last';
   return (
     <ExecCard aria-labelledby="fs-leaderboard-title">

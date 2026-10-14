@@ -267,7 +267,7 @@ export default function ScoreTrendChart({ points, comparisonLabel, title }: {
               className="pointer-events-none absolute z-10 rounded-[12px] border border-[var(--exec-card-border)] bg-[var(--bg-surface)] px-[12px] py-[9px] shadow-[0_10px_24px_rgba(15,23,42,0.16)]"
               style={{ width: tooltipWidth, left: tooltipLeft, top: tooltipTop }}
             >
-              <p className="mb-[6px] border-b border-[var(--insights-row-border)] pb-[5px] text-xs font-bold uppercase tracking-[0.08em] text-[var(--text-muted)]">
+              <p className="mb-[6px] border-b border-[var(--insights-row-border)] pb-[5px] text-xs font-semibold text-[var(--text-muted)]">
                 {shortMonth(activePoint.period) + ' ' + activePoint.period.year}
               </p>
               <div className="flex items-center justify-between gap-3 text-[12px]">

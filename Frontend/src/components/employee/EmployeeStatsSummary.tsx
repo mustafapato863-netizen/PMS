@@ -36,14 +36,14 @@ const StatCard = ({ title, value, subtext, icon: Icon, colorClass, delay }: Stat
     className="bg-[var(--bg-surface-elevated)] p-5 rounded-2xl border border-[var(--border-light)] shadow-sm flex flex-col justify-between min-w-[160px] flex-1 md:flex-none relative overflow-hidden group hover:shadow-md transition-all duration-300"
   >
     <div className="flex justify-between items-start mb-2">
-      <p className="text-xs sm:text-[12px] text-[var(--text-muted)] font-extrabold uppercase tracking-wider leading-tight">{title}</p>
+      <p className="text-xs text-[var(--text-muted)] font-semibold leading-tight">{title}</p>
       <div className={`p-2 rounded-lg ${colorClass} bg-opacity-10 backdrop-blur-md`}>
         <Icon className={`w-4 h-4 ${colorClass.replace('bg-', 'text-').replace('10', '')}`} />
       </div>
     </div>
     
     <div>
-      <h4 className="text-[25px] font-black text-[var(--text-primary)] tracking-tight leading-none mb-1">{value}</h4>
+      <h4 className="text-display-tile font-bold text-[var(--text-primary)] tracking-tight leading-none mb-1">{value}</h4>
       {subtext && <span className="text-xs text-[var(--text-muted)] font-bold">{subtext}</span>}
     </div>
     
@@ -73,9 +73,9 @@ export const EmployeeStatsSummary: React.FC<EmployeeStatsSummaryProps> = ({
     }
     
     return (
-      <div className={`flex items-center gap-1.5 text-xs font-extrabold px-2.5 py-1 rounded-full border ${colorClass}`}>
+      <div className={`flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full border ${colorClass}`}>
         {icon}
-        <span className="uppercase tracking-wider">{text}</span>
+        <span>{text}</span>
       </div>
     );
   };
@@ -90,15 +90,15 @@ export const EmployeeStatsSummary: React.FC<EmployeeStatsSummaryProps> = ({
         <div className="relative z-10 flex justify-between items-center gap-4">
           {/* Left Side */}
           <div className="space-y-3">
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 backdrop-blur-md text-xs font-extrabold uppercase tracking-widest border border-white/10 shadow-sm text-yellow-300">
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 backdrop-blur-md text-xs font-semibold border border-white/10 shadow-sm text-yellow-300">
               <Zap className="w-3.5 h-3.5 fill-yellow-300 text-yellow-300" />
               {archetype}
             </div>
             <div>
-              <h3 className="text-[25px] font-black tracking-tight leading-none mb-1.5">
+              <h3 className="text-display-tile font-bold tracking-tight leading-none mb-1.5">
                 Rank #{rank} <span className="text-[14px] font-semibold text-white/60">/ {totalEmployees}</span>
               </h3>
-              <p className="text-[12px] font-bold text-blue-200 uppercase tracking-wider">
+              <p className="text-xs font-semibold text-blue-200">
                 Top {percentile}% of Team
               </p>
             </div>
@@ -106,8 +106,8 @@ export const EmployeeStatsSummary: React.FC<EmployeeStatsSummaryProps> = ({
           
           {/* Right Side */}
           <div className="text-right flex flex-col items-end gap-1">
-            <div className="text-xs font-extrabold text-white/50 uppercase tracking-wider">Consistency</div>
-            <div className="text-[25px] font-black leading-none mb-1.5">{consistencyScore}<span className="text-[13px] text-white/40 font-semibold">/100</span></div>
+            <div className="text-xs font-semibold text-white/50">Consistency</div>
+            <div className="text-display-tile font-bold leading-none mb-1.5">{consistencyScore}<span className="text-[13px] text-white/40 font-semibold">/100</span></div>
             {getStabilityBadge()}
           </div>
         </div>
@@ -148,7 +148,7 @@ export const EmployeeStatsSummary: React.FC<EmployeeStatsSummaryProps> = ({
         transition={{ duration: 0.3, delay: 0.4 }}
         className="bg-[var(--bg-surface)] p-4 rounded-xl border border-[var(--border-light)]"
       >
-        <div className="text-xs text-[var(--text-secondary)] font-bold mb-4 uppercase tracking-wider flex items-center gap-2">
+        <div className="text-xs text-[var(--text-secondary)] font-semibold mb-4 flex items-center gap-2">
           <BarChart3 className="w-3.5 h-3.5" /> Grade History
         </div>
         <div className="flex justify-between items-center h-12 px-2">
