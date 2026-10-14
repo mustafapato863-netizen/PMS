@@ -2013,6 +2013,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
       {/* Main Table / Roster Panel */}
       {!isCallCenterAggregate && <TeamRosterSection
         showTopBottomToggle={teamId !== 'all'}
+        showTeamColumn={teamId === 'all' || isPreApprovalsParent || isCallCenterParent || isRcmParent || isMergedTeam}
         rosterView={rosterView}
         setRosterView={setRosterView}
         search={search}

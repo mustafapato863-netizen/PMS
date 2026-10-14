@@ -1,17 +1,18 @@
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Search, Award, AlertTriangle, ChevronLeft, ChevronRight,
-  ChevronsUpDown, ChevronUp, ChevronDown, UsersRound,
-  ArrowLeftRight, Download
+  ChevronsUpDown, ChevronUp, ChevronDown, Download, Plus, User
 } from 'lucide-react';
 import type { TeamAgentRow } from '../../hooks/usePerformanceData';
-import type { PerformanceLevelFilter } from '../../types';
-import type { PMSAction } from '../../types';
-import { GRADE_PALETTE } from '../../constants/grades';
+import type { PerformanceLevelFilter, PMSAction } from '../../types';
+import { GRADE_PALETTE, gradeTokenVar } from '../../constants/grades';
 import EmployeeRowActions from './EmployeeRowActions';
 import RosterViewTiles from './RosterViewTiles';
 
 const PAGE_SIZE = 15;
+const NARROW_QUERY = '(max-width: 767px)';
+const MAIN_ISSUE_SUFFIX = /\s*\(main issue\)\s*$/i;
 
 // ─── Sort Icon ────────────────────────────────────────────────────────────────
 const SortIcon = ({ col, sortCol, sortDir }: { col: string; sortCol: string; sortDir: 'asc' | 'desc' }) => {
@@ -22,15 +23,90 @@ const SortIcon = ({ col, sortCol, sortDir }: { col: string; sortCol: string; sor
 // ─── Trend Cell ───────────────────────────────────────────────────────────────
 const TrendCell = ({ row, prevRows }: { row: TeamAgentRow; prevRows: Map<string, { score: number }> }) => {
   const prev = prevRows.get(row.id);
-  if (!prev || !row.score) return <span className="text-[var(--text-faint)] text-xs font-semibold">→ –</span>;
+  if (!prev || !row.score) {
+    return (
+      <span className="text-xs font-semibold text-[var(--text-faint)]" title="No previous month">
+        —<span className="sr-only"> No previous month</span>
+      </span>
+    );
+  }
   const delta = row.score - prev.score;
-  if (delta > 2) return <span className="text-emerald-600 dark:text-emerald-400 font-bold text-xs">↑ +{delta.toFixed(1)}%</span>;
-  if (delta < -2) return <span className="text-red-500 dark:text-red-400 font-bold text-xs">↓ {delta.toFixed(1)}%</span>;
-  return <span className="text-[var(--text-muted)] font-bold text-xs">→ Stable</span>;
+  if (delta > 2) return <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">↑ +{delta.toFixed(1)}%</span>;
+  if (delta < -2) return <span className="text-xs font-bold text-red-500 dark:text-red-400">↓ {delta.toFixed(1)}%</span>;
+  return <span className="text-xs font-bold text-[var(--text-muted)]">→ Stable</span>;
 };
+
+/** Score and grade as one chip in the grade's tone, e.g. "94.0% · B". */
+function ScoreChip({ row }: { row: TeamAgentRow }) {
+  const grade = row.gradeClass;
+  return (
+    <span
+      className="inline-flex shrink-0 items-center whitespace-nowrap rounded-md border px-2 py-0.5 text-xs font-semibold tabular-nums"
+      style={{
+        background: gradeTokenVar(grade, 'badge-bg'),
+        color: gradeTokenVar(grade, 'badge-text'),
+        borderColor: gradeTokenVar(grade, 'border'),
+      }}
+    >
+      {`${(row.score || 0).toFixed(1)}% · ${grade}`}
+    </span>
+  );
+}
+
+/** Status as a coloured dot plus the grade's status word. */
+function StatusText({ row }: { row: TeamAgentRow }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-xs font-semibold text-[var(--text-secondary)]">
+      <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: gradeTokenVar(row.gradeClass, 'solid') }} aria-hidden="true" />
+      {GRADE_PALETTE[row.gradeClass].statusLabel}
+    </span>
+  );
+}
+
+/** Root cause on one line: the KPI and direction, with "main issue" as a small muted tag and the full text as tooltip. */
+function RootCause({ row, href }: { row: TeamAgentRow; href: string }) {
+  if (row.gradeClass === 'A' || row.gradeClass === 'B') {
+    return <span className="text-xs font-semibold text-[var(--text-faint)]">No gap</span>;
+  }
+  const full = row.rootCauseAuto || 'Other';
+  const kpi = full.replace(MAIN_ISSUE_SUFFIX, '') || 'Other';
+  const isMainIssue = MAIN_ISSUE_SUFFIX.test(full);
+  return (
+    <Link
+      to={href}
+      title={full}
+      className="flex min-w-0 items-center gap-1.5 text-xs font-semibold text-[var(--text-secondary)] hover:text-blue-600 hover:underline dark:hover:text-blue-400"
+    >
+      <span className="truncate">{kpi}</span>
+      {isMainIssue && (
+        <span className="shrink-0 rounded px-1 text-[11px] font-medium text-[var(--text-faint)] ring-1 ring-[var(--border-light)]">main issue</span>
+      )}
+    </Link>
+  );
+}
+
+/** True below 768px, where the roster shows one stacked card per employee instead of a table. */
+function useNarrowViewport(): boolean {
+  const [narrow, setNarrow] = useState(() =>
+    typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia(NARROW_QUERY).matches,
+  );
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
+    const media = window.matchMedia(NARROW_QUERY);
+    const onChange = () => setNarrow(media.matches);
+    media.addEventListener('change', onChange);
+    return () => media.removeEventListener('change', onChange);
+  }, []);
+  return narrow;
+}
+
+const iconButtonClass = 'inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-[var(--border-medium)] bg-[var(--bg-surface)] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-sunken)] hover:text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 max-md:h-[2.75rem] max-md:w-[2.75rem]';
+const cardButtonClass = 'inline-flex min-h-[2.75rem] items-center gap-1.5 rounded-lg border border-[var(--border-medium)] px-3 text-xs font-semibold text-[var(--text-secondary)] hover:bg-[var(--bg-sunken)]';
 
 interface TeamRosterSectionProps {
   showTopBottomToggle: boolean;
+  /** Team column only when the page lists more than one team (All Teams, parent or merged views). */
+  showTeamColumn?: boolean;
   rosterView: 'top_bottom' | 'all';
   setRosterView: (view: 'top_bottom' | 'all') => void;
   search: string;
@@ -62,6 +138,7 @@ interface TeamRosterSectionProps {
 
 const TeamRosterSection = ({
   showTopBottomToggle,
+  showTeamColumn = false,
   rosterView,
   setRosterView,
   search,
@@ -86,18 +163,31 @@ const TeamRosterSection = ({
   canExport,
   onExport,
 }: TeamRosterSectionProps) => {
+  const narrow = useNarrowViewport();
+  // Same rule as the overflow menu's "Add action" item in EmployeeRowActions.
+  const canManageActions = role === 'Admin' || role === 'General Manager' || role === 'Manager';
 
-  const renderAgentTable = (agentRows: TeamAgentRow[]) => {
-    const columns: Array<{ col: 'name' | 'score' | 'status' | null; label: string }> = [
-      { col: 'name', label: 'Employee' },
-      { col: null, label: 'Team' },
-      { col: 'score', label: 'Score' },
-      { col: null, label: 'Grade' },
-      { col: null, label: 'Trend' },
-      { col: 'status', label: 'Status' },
-      { col: null, label: 'Root Cause' },
-      { col: null, label: 'Actions' },
+  const profileHref = (row: TeamAgentRow) =>
+    `/employee/${encodeURIComponent(row.id)}?month=${encodeURIComponent(month)}&performance_level=${encodeURIComponent(performanceLevel)}`;
+
+  const rowTeamAverageFor = (row: TeamAgentRow) => {
+    const matchingTeamRows = filtered.filter((candidate) => candidate.team === row.team);
+    return matchingTeamRows.length > 0
+      ? matchingTeamRows.reduce((sum, candidate) => sum + candidate.score, 0) / matchingTeamRows.length
+      : teamAverage;
+  };
+
+  const renderTable = (agentRows: TeamAgentRow[]) => {
+    const columns: Array<{ col: 'name' | 'score' | 'status' | null; label: string; width: string; show: boolean }> = [
+      { col: 'name', label: 'Employee', width: showTeamColumn ? 'w-[24%]' : 'w-[30%]', show: true },
+      { col: null, label: 'Team', width: 'w-[14%]', show: showTeamColumn },
+      { col: 'score', label: 'Score', width: 'w-[13%]', show: true },
+      { col: 'status', label: 'Status', width: 'w-[12%]', show: true },
+      { col: null, label: 'Root cause', width: showTeamColumn ? 'w-[20%]' : 'w-[24%]', show: true },
+      { col: null, label: 'Trend', width: 'w-[9%]', show: true },
+      { col: null, label: 'Actions', width: 'w-[140px]', show: true },
     ];
+    const visibleColumns = columns.filter((column) => column.show);
     const avatarTones = [
       'bg-blue-500/10 text-blue-600 border-blue-500/10',
       'bg-emerald-500/10 text-emerald-600 border-emerald-500/10',
@@ -106,15 +196,17 @@ const TeamRosterSection = ({
     ];
 
     return (
-      <div className="w-full overflow-x-auto rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)]">
-        <table className="w-full min-w-[1080px] border-collapse">
-          <thead>
-            <tr className="border-b border-[var(--border-light)] bg-[var(--bg-sunken)]/40">
-              {columns.map(({ col, label }) => (
+      <div className="max-h-[70vh] w-full overflow-auto rounded-xl border border-[var(--border-light)] bg-[var(--bg-surface)]">
+        <table className="w-full min-w-[44rem] table-fixed border-collapse">
+          <thead className="sticky top-0 z-10">
+            <tr className="border-b border-[var(--border-light)] bg-[var(--bg-sunken)]">
+              {visibleColumns.map(({ col, label, width }) => (
                 <th
                   key={label}
+                  scope="col"
                   onClick={col ? () => toggleSort(col) : undefined}
-                    className={`px-4 py-3 text-left text-xs font-extrabold uppercase tracking-[0.08em] text-[var(--text-faint)] ${
+                  aria-sort={col && col === sortCol ? (sortDir === 'asc' ? 'ascending' : 'descending') : undefined}
+                  className={`${width} h-10 px-3 text-left text-xs font-semibold text-[var(--text-muted)] ${
                     col ? 'cursor-pointer select-none hover:text-[var(--text-primary)]' : ''
                   }`}
                 >
@@ -129,7 +221,7 @@ const TeamRosterSection = ({
           <tbody>
             {agentRows.length === 0 ? (
               <tr>
-                <td colSpan={8} className="py-12 text-center text-sm font-medium text-[var(--text-muted)]">
+                <td colSpan={visibleColumns.length} className="py-12 text-center text-sm font-medium text-[var(--text-muted)]">
                   No employees found.
                 </td>
               </tr>
@@ -142,95 +234,85 @@ const TeamRosterSection = ({
                   .slice(0, 2)
                   .map((part) => part.charAt(0).toUpperCase())
                   .join('') || '?';
-                const gradePresentation = GRADE_PALETTE[row.gradeClass];
-                const matchingTeamRows = filtered.filter((candidate) => candidate.team === row.team);
-                const rowTeamAverage = matchingTeamRows.length > 0
-                  ? matchingTeamRows.reduce((sum, candidate) => sum + candidate.score, 0) / matchingTeamRows.length
-                  : teamAverage;
 
                 return (
                   <tr
                     key={`${row.id}_${row.month}_${idx}`}
-                    className="border-b border-[var(--border-light)] transition-colors last:border-b-0 hover:bg-blue-500/[0.035]"
+                    className="h-[3rem] border-b border-[var(--border-light)] transition-colors last:border-b-0 hover:bg-blue-500/[0.035]"
                   >
-                    <td className="px-4 py-3">
-                      <div className="flex min-w-[250px] items-center gap-3">
-                        <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border text-sm font-extrabold ${avatarTones[idx % avatarTones.length]}`}>
+                    <td className="px-3">
+                      <div className="flex min-w-0 items-center gap-2.5">
+                        <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border text-xs font-semibold ${avatarTones[idx % avatarTones.length]}`} aria-hidden="true">
                           {initials}
                         </div>
                         <div className="min-w-0">
                           <Link
-                            to={`/employee/${row.id}?month=${encodeURIComponent(month)}&performance_level=${encodeURIComponent(performanceLevel)}`}
-                            className="block max-w-[240px] truncate text-sm font-extrabold text-[var(--text-primary)] transition-colors hover:text-blue-600 dark:hover:text-blue-400"
+                            to={profileHref(row)}
+                            aria-label={row.name}
                             title={row.name}
+                            className="block truncate text-sm font-semibold leading-tight text-[var(--text-primary)] transition-colors hover:text-blue-600 dark:hover:text-blue-400"
                           >
                             {row.name}
                           </Link>
-                          <div className="mt-1 text-xs font-semibold text-[var(--text-faint)]">{row.id}</div>
+                          <div className="truncate text-xs text-[var(--text-muted)]">{row.id}</div>
                         </div>
                       </div>
                     </td>
 
-                    <td className="px-4 py-3">
-                      <div className="flex max-w-[150px] items-center gap-2 text-xs font-bold text-[var(--text-secondary)]">
-                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-violet-500/10 text-violet-600 dark:text-violet-400">
-                          <ArrowLeftRight size={14} />
-                        </span>
-                        <span className="line-clamp-2">{row.team}</span>
-                      </div>
+                    {showTeamColumn && (
+                      <td className="px-3">
+                        <span className="block truncate text-xs text-[var(--text-secondary)]" title={row.team}>{row.team}</span>
+                      </td>
+                    )}
+
+                    <td className="px-3">
+                      <ScoreChip row={row} />
                     </td>
 
-                    <td className="px-4 py-3">
-                      <span className={`score-badge score-grade-${row.gradeClass}`}>
-                        {(row.score || 0).toFixed(1)}%
-                      </span>
+                    <td className="px-3">
+                      <StatusText row={row} />
                     </td>
 
-                    <td className="px-4 py-3">
-                      <span className={`grade-badge grade-${row.gradeClass} inline-flex h-8 min-w-8 items-center justify-center rounded-lg px-2 text-xs font-extrabold`}>
-                        {row.gradeClass}
-                      </span>
+                    <td className="px-3">
+                      <RootCause row={row} href={profileHref(row)} />
                     </td>
 
-                    <td className="px-4 py-3">
+                    <td className="px-3">
                       <TrendCell row={row} prevRows={prevRows} />
                     </td>
 
-                    <td className="px-4 py-3">
-                      <span className={`grade-status-badge status-grade-${row.gradeClass}`}>
-                        <span className="grade-status-dot" />
-                        {gradePresentation.statusLabel}
-                      </span>
-                    </td>
-
-                    <td className="px-4 py-3">
-                      {row.gradeClass === 'A' || row.gradeClass === 'B' ? (
-                        <span className="text-xs font-semibold text-[var(--text-faint)]">No gap</span>
-                      ) : (
-                        <div className="max-w-[150px]">
-                          <Link
-                            to={`/employee/${row.id}?month=${encodeURIComponent(month)}&performance_level=${encodeURIComponent(performanceLevel)}`}
-                            className="line-clamp-1 text-xs font-bold text-[var(--text-secondary)] hover:text-blue-600 hover:underline dark:hover:text-blue-400"
-                            title={row.rootCauseAuto || 'Other'}
+                    <td className="px-3">
+                      <div className="flex items-center justify-end gap-1.5">
+                        {canManageActions && (
+                          <button
+                            type="button"
+                            onClick={() => onAddAction(row)}
+                            aria-label={`Add action for ${row.name}`}
+                            title="Add action"
+                            className={iconButtonClass}
                           >
-                            {row.rootCauseAuto || 'Other'}
-                          </Link>
-                          <div className="mt-1 text-xs font-semibold text-[var(--text-faint)]">Primary issue</div>
-                        </div>
-                      )}
-                    </td>
-
-                    <td className="px-4 py-3">
-                      <EmployeeRowActions
-                        row={row}
-                        role={role}
-                        month={month}
-                        performanceLevel={performanceLevel}
-                        teamAverage={rowTeamAverage}
-                        actions={employeeActions}
-                        onAddAction={onAddAction}
-                        onEmployeeChanged={onEmployeeChanged}
-                      />
+                            <Plus size={16} aria-hidden="true" />
+                          </button>
+                        )}
+                        <Link
+                          to={profileHref(row)}
+                          aria-label={`Open profile for ${row.name}`}
+                          title="Open profile"
+                          className={iconButtonClass}
+                        >
+                          <User size={16} aria-hidden="true" />
+                        </Link>
+                        <EmployeeRowActions
+                          row={row}
+                          role={role}
+                          month={month}
+                          performanceLevel={performanceLevel}
+                          teamAverage={rowTeamAverageFor(row)}
+                          actions={employeeActions}
+                          onAddAction={onAddAction}
+                          onEmployeeChanged={onEmployeeChanged}
+                        />
+                      </div>
                     </td>
                   </tr>
                 );
@@ -238,6 +320,80 @@ const TeamRosterSection = ({
             )}
           </tbody>
         </table>
+      </div>
+    );
+  };
+
+  /** Below 768px: one stacked card per employee, with the two most used actions as labelled buttons. */
+  const renderCards = (agentRows: TeamAgentRow[]) => {
+    if (agentRows.length === 0) {
+      return <div className="rounded-xl border border-dashed border-[var(--border-medium)] p-5 text-center text-sm text-[var(--text-muted)]">No employees found.</div>;
+    }
+    return (
+      <div className="flex flex-col gap-2.5">
+        {agentRows.map((row, idx) => {
+          const employeeActions = getActionsForEmployee(row.id);
+          return (
+            <article key={`${row.id}_${row.month}_${idx}`} className="rounded-xl border border-[var(--border-light)] bg-[var(--bg-surface)] p-3 shadow-sm">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <Link
+                    to={profileHref(row)}
+                    aria-label={row.name}
+                    title={row.name}
+                    className="block truncate text-sm font-semibold text-[var(--text-primary)] hover:text-blue-600 dark:hover:text-blue-400"
+                  >
+                    {row.name}
+                  </Link>
+                  <div className="truncate text-xs text-[var(--text-muted)]">
+                    {row.id}{showTeamColumn ? ` · ${row.team}` : ''}
+                  </div>
+                </div>
+                <ScoreChip row={row} />
+              </div>
+              <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                <StatusText row={row} />
+                <TrendCell row={row} prevRows={prevRows} />
+              </div>
+              <div className="mt-2 min-w-0">
+                <RootCause row={row} href={profileHref(row)} />
+              </div>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                {canManageActions && (
+                  <button
+                    type="button"
+                    onClick={() => onAddAction(row)}
+                    aria-label={`Add action for ${row.name}`}
+                    className={cardButtonClass}
+                  >
+                    <Plus size={15} aria-hidden="true" />
+                    Add action
+                  </button>
+                )}
+                <Link
+                  to={profileHref(row)}
+                  aria-label={`Open profile for ${row.name}`}
+                  className={cardButtonClass}
+                >
+                  <User size={15} aria-hidden="true" />
+                  Open profile
+                </Link>
+                <div className="ml-auto">
+                  <EmployeeRowActions
+                    row={row}
+                    role={role}
+                    month={month}
+                    performanceLevel={performanceLevel}
+                    teamAverage={rowTeamAverageFor(row)}
+                    actions={employeeActions}
+                    onAddAction={onAddAction}
+                    onEmployeeChanged={onEmployeeChanged}
+                  />
+                </div>
+              </div>
+            </article>
+          );
+        })}
       </div>
     );
   };
@@ -294,7 +450,7 @@ const TeamRosterSection = ({
 
                 <div className="min-w-0">
                   <Link
-                    to={`/employee/${row.id}?month=${encodeURIComponent(month)}&performance_level=${encodeURIComponent(performanceLevel)}`}
+                    to={profileHref(row)}
                     className="block truncate text-xs font-extrabold leading-snug text-[var(--text-primary)] hover:text-blue-600 dark:hover:text-blue-400 sm:text-sm"
                     title={row.name}
                   >
@@ -347,55 +503,50 @@ const TeamRosterSection = ({
 
   return (
     <div className="glass-panel rounded-xl p-4 shadow-sm sm:p-5">
-      <div className="mb-4 flex flex-col justify-between gap-3 lg:flex-row lg:items-center">
-        <div className="flex items-center gap-3">
-          <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${
-            isAllView
-              ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400'
-              : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-          }`}>
-            {isAllView ? <UsersRound size={24} /> : <Award size={23} />}
-          </div>
-          <div>
-            <h3 className="heading-3">{isAllView ? 'Employee Roster' : 'Top & Bottom Performers'}</h3>
-            {showTopBottomToggle && (
-              <p className="mt-1 text-xs font-medium text-[var(--text-secondary)]">
-                {rosterView === 'top_bottom' ? 'Top and bottom performing agents' : 'All active agents'}
-              </p>
-            )}
-          </div>
-        </div>
-
-        {showTopBottomToggle && <RosterViewTiles value={rosterView} onChange={setRosterView} />}
+      <div className="mb-3 flex flex-col gap-1">
+        <h3 className="heading-3">{isAllView ? 'Employee roster' : 'Top and bottom performers'}</h3>
+        {showTopBottomToggle && (
+          <p className="text-xs font-medium text-[var(--text-secondary)]">
+            {rosterView === 'top_bottom' ? 'Top and bottom performing agents' : 'All active agents'}
+          </p>
+        )}
       </div>
 
-      {isAllView && <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          {/* Search Input */}
-            <div className="relative w-full sm:w-72">
-              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--text-faint)]" size={18} />
-              <input
-                aria-label="Search employees"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search by name, ID..."
-                className="w-full rounded-xl border border-[var(--border-medium)] bg-[var(--bg-surface)] py-3 pl-11 pr-4 text-sm font-medium text-[var(--text-primary)] shadow-sm transition-all placeholder:text-[var(--text-faint)] focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500/10"
-              />
-            </div>
-          {canExport && (
-            <button
-              type="button"
-              onClick={onExport}
-              className="flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 text-sm font-bold text-white shadow-sm transition-colors hover:bg-emerald-700"
-            >
-              <Download size={16} />
-              Export Excel
-            </button>
-          )}
-      </div>}
+      {/* One compact toolbar: search, the view switch and export. Wraps on narrow screens. */}
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        {isAllView && (
+          <div className="relative min-w-[12rem] flex-1 sm:max-w-sm">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-faint)]" size={16} aria-hidden="true" />
+            <input
+              aria-label="Search employees"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search by name, ID..."
+              className="h-9 w-full rounded-lg border border-[var(--border-medium)] bg-[var(--bg-surface)] pl-9 pr-3 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-faint)] focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500/10"
+            />
+          </div>
+        )}
+        {showTopBottomToggle && (
+          <div className="ml-auto">
+            <RosterViewTiles value={rosterView} onChange={setRosterView} />
+          </div>
+        )}
+        {isAllView && canExport && (
+          <button
+            type="button"
+            onClick={onExport}
+            title="Export to Excel"
+            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[var(--border-medium)] bg-[var(--bg-surface)] px-3 text-xs font-semibold text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-sunken)] hover:text-[var(--text-primary)]"
+          >
+            <Download size={15} aria-hidden="true" />
+            Export
+          </button>
+        )}
+      </div>
 
       {isAllView ? (
         <>
-          {renderAgentTable(paginated)}
+          {narrow ? renderCards(paginated) : renderTable(paginated)}
 
           {/* Pagination */}
           {totalPages > 1 && (
@@ -449,7 +600,7 @@ const TeamRosterSection = ({
                 <Award className="h-5 w-5" />
               </div>
               <div className="min-w-0">
-                <h4 className="truncate text-xs font-extrabold uppercase tracking-[0.14em] text-emerald-700 dark:text-emerald-400 sm:text-sm">Top 3 Performers</h4>
+                <h4 className="truncate text-sm font-semibold text-emerald-700 dark:text-emerald-400">Top 3 performers</h4>
                 <p className="mt-1 text-xs font-medium text-[var(--text-secondary)]">Highest performance scores</p>
               </div>
             </div>
@@ -463,7 +614,7 @@ const TeamRosterSection = ({
                 <AlertTriangle className="h-5 w-5" />
               </div>
               <div className="min-w-0">
-                <h4 className="truncate text-xs font-extrabold uppercase tracking-[0.14em] text-rose-600 dark:text-rose-400 sm:text-sm">Bottom 3 Performers</h4>
+                <h4 className="truncate text-sm font-semibold text-rose-600 dark:text-rose-400">Bottom 3 performers</h4>
                 <p className="mt-1 text-xs font-medium text-[var(--text-secondary)]">Lowest performance scores</p>
               </div>
             </div>
