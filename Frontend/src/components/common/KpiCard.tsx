@@ -1,4 +1,5 @@
 import React from 'react';
+import { Minus, TrendingDown, TrendingUp } from 'lucide-react';
 import { useTheme } from '../../context/ThemeContext';
 import MoMIndicator from './MoMIndicator';
 
@@ -9,6 +10,10 @@ interface KpiCardProps {
   sub?: string;
   note?: React.ReactNode; // ponytail: secondary muted line, e.g. headcount context
   trendDelta?: number;
+  /** Replaces the default "+1.2% MoM" line, e.g. "−0.94 pts vs Aug". */
+  trendText?: string;
+  /** Muted line shown when there is no change, so the card keeps its layout. */
+  trendEmptyText?: string;
   lowerTrendIsBetter?: boolean;
   showStableTrend?: boolean;
   accent: string;
@@ -22,6 +27,8 @@ export function KpiCard({
   sub,
   note,
   trendDelta,
+  trendText,
+  trendEmptyText,
   lowerTrendIsBetter = false,
   showStableTrend = false,
   accent,
@@ -84,12 +91,27 @@ export function KpiCard({
         {sub && (
           <p className="text-xs text-[var(--text-secondary)] font-medium leading-snug">{sub}</p>
         )}
-        <MoMIndicator
-          delta={trendDelta}
-          lowerIsBetter={lowerTrendIsBetter}
-          showStable={showStableTrend}
-          className="mt-1"
-        />
+        {trendText !== undefined && trendDelta !== undefined && Number.isFinite(trendDelta) ? (
+          <span className={`mt-1 inline-flex items-center gap-1 text-xs font-semibold ${
+            trendDelta === 0
+              ? 'text-[var(--text-muted)]'
+              : (lowerTrendIsBetter ? trendDelta < 0 : trendDelta > 0)
+                ? 'text-emerald-600 dark:text-emerald-400'
+                : 'text-rose-600 dark:text-rose-500'
+          }`}>
+            {trendDelta === 0 ? <Minus size={12} /> : trendDelta < 0 ? <TrendingDown size={12} /> : <TrendingUp size={12} />}
+            <span>{trendText}</span>
+          </span>
+        ) : trendEmptyText ? (
+          <span className="mt-1 block text-xs font-semibold text-[var(--text-muted)]">{trendEmptyText}</span>
+        ) : (
+          <MoMIndicator
+            delta={trendDelta}
+            lowerIsBetter={lowerTrendIsBetter}
+            showStable={showStableTrend}
+            className="mt-1"
+          />
+        )}
         {note && (
           <p className="text-xs text-[var(--text-muted)] font-medium mt-1 leading-snug">{note}</p>
         )}

@@ -118,3 +118,28 @@ export function previousReportingSelector(records: readonly DatedMonth[], select
   if (!activeKey) return null;
   return keys.find((key) => key < activeKey) ?? null;
 }
+
+/** `YYYY-MM` for a dated record, or null when the month or year is missing. */
+export function reportingPeriodKey(record: DatedMonth): string | null {
+  return periodStamp(record);
+}
+
+/**
+ * The comparison period for a selected month: the newest period before it that has data.
+ * All compares the latest period with the one before it. Both keep the year.
+ */
+export function previousPeriodKey(records: readonly DatedMonth[], selector: string): string | null {
+  const parsed = parseReportingSelector(selector);
+  if (parsed.kind !== 'all') return previousReportingSelector(records, selector);
+  const keys = Array.from(new Set(
+    records.map(periodStamp).filter((key): key is string => Boolean(key)),
+  )).sort((left, right) => right.localeCompare(left));
+  return keys.length > 1 ? keys[1] : null;
+}
+
+/** Three-letter month for a `YYYY-MM` key, e.g. "Aug". Null when the key is not a period. */
+export function shortMonthLabel(key: string | null | undefined): string | null {
+  if (!key) return null;
+  const name = monthNameFromPeriodKey(key);
+  return name ? name.slice(0, 3) : null;
+}

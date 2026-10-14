@@ -9,7 +9,7 @@ import { normalizePerformanceScore, resolveDisplayScore } from '../utils/kpiScor
 import { normalizeTeamName } from './api/useKpiWeights';
 import { calculatePerformanceSummary } from '../utils/performanceSummary';
 import { scopedPerformanceApiEnabled } from './api/usePerformanceDashboard';
-import { filterByReportingPeriod, parseReportingSelector, previousReportingSelector, reportingMonthName } from './api/scopedPeriod';
+import { filterByReportingPeriod, monthNameFromPeriodKey, parseReportingSelector, previousPeriodKey, previousReportingSelector, reportingMonthName } from './api/scopedPeriod';
 import { agentMatchesLocation } from '../utils/branchScope';
 
 const MONTH_ORDER: Record<string, number> = {
@@ -732,6 +732,11 @@ export function usePerformanceData(
     const uniqueMonths = Array.from(monthsSet);
     uniqueMonths.sort((a, b) => (MONTH_ORDER[a] || 0) - (MONTH_ORDER[b] || 0));
 
+    const matchesRegion = (r: AgentRecord) => {
+      const rRegion = r.region || (sameTeam(r.identity.team, 'Inbound UAE') ? 'UAE' : 'EGY');
+      return rRegion.toUpperCase() === region.toUpperCase();
+    };
+
     // Step 1: Filter by month. An exact key also fixes the year.
     let filtered = levelData;
     if (parseReportingSelector(month).kind !== 'all') {
@@ -740,11 +745,12 @@ export function usePerformanceData(
 
     // Step 1.5: Filter by Region
     if (region !== 'All') {
-      filtered = filtered.filter((r) => {
-        const rRegion = r.region || (sameTeam(r.identity.team, 'Inbound UAE') ? 'UAE' : 'EGY');
-        return rRegion.toUpperCase() === region.toUpperCase();
-      });
+      filtered = filtered.filter(matchesRegion);
     }
+
+    // Every loaded period in this region and level, before the month filter. A month comparison
+    // needs the period before the selected one, which `filtered` has already dropped.
+    const periodAgents = (region === 'All' ? levelData : levelData.filter(matchesRegion)).filter(hasRealActivity);
 
     // Step 2: Separate agents from "Total" rows
     const agents = filtered.filter(hasRealActivity);
@@ -1022,6 +1028,7 @@ export function usePerformanceData(
       uniqueMonths,
       trends,
       agents: agentsWithLocationData,
+      periodAgents,
       totalRows,
       monthSummaries,
       cumulativeData,
@@ -1164,7 +1171,7 @@ export function useTeamData(
   const scopedTeam = scopedPerformanceApiEnabled && teamName
     ? teamName
     : undefined;
-  const { agents: allAgents, loading, dataSource, errorMessage } = usePerformanceData(
+  const { agents: allAgents, periodAgents, loading, dataSource, errorMessage } = usePerformanceData(
     sourceMonth,
     location,
     region,
@@ -1174,41 +1181,48 @@ export function useTeamData(
   );
 
   return useMemo(() => {
-    let filtered = teamName
-      ? allAgents.filter((a) => sameTeam(a.identity.team, teamName))
-      : allAgents;
+    // The same team, workflow, call-centre, RCM and branch scope applies to the selected month
+    // and to the period it is compared with.
+    const scopeAgents = (source: AgentRecord[]) => {
+      let scoped = teamName
+        ? source.filter((a) => sameTeam(a.identity.team, teamName))
+        : source;
 
-    if (teamName && (isPreApprovalsUaeTeam(teamName) || (isRcmTeam(teamName) && rcmDomain === 'pre_approvals')) && preApprovalsWorkflow !== 'all') {
-      filtered = filtered.filter((agent) => isPreApprovalsWorkflowTeam(agent.identity.team, preApprovalsWorkflow));
-    }
-    if (teamName && isCallCenterTeam(teamName) && callCenterChannel !== 'all') {
-      filtered = filtered.filter((agent) => isCallCenterChannelTeam(agent.identity.team, callCenterChannel));
-    }
-    if (teamName && isRcmTeam(teamName) && rcmDomain !== 'all') {
-      filtered = filtered.filter((agent) => isRcmDomainTeam(agent.identity.team, rcmDomain));
-    }
-    if (teamName && isRcmTeam(teamName) && rcmGroup !== 'all') {
-      filtered = filtered.filter((agent) => isRcmGroupTeam(agent.identity.team, rcmGroup, agent.region ?? agent.identity.region));
-    }
+      if (teamName && (isPreApprovalsUaeTeam(teamName) || (isRcmTeam(teamName) && rcmDomain === 'pre_approvals')) && preApprovalsWorkflow !== 'all') {
+        scoped = scoped.filter((agent) => isPreApprovalsWorkflowTeam(agent.identity.team, preApprovalsWorkflow));
+      }
+      if (teamName && isCallCenterTeam(teamName) && callCenterChannel !== 'all') {
+        scoped = scoped.filter((agent) => isCallCenterChannelTeam(agent.identity.team, callCenterChannel));
+      }
+      if (teamName && isRcmTeam(teamName) && rcmDomain !== 'all') {
+        scoped = scoped.filter((agent) => isRcmDomainTeam(agent.identity.team, rcmDomain));
+      }
+      if (teamName && isRcmTeam(teamName) && rcmGroup !== 'all') {
+        scoped = scoped.filter((agent) => isRcmGroupTeam(agent.identity.team, rcmGroup, agent.region ?? agent.identity.region));
+      }
 
-    const branchFilter = selectedLocations && selectedLocations.length > 0
-      ? selectedLocations
-      : [location];
-    if (!branchFilter.includes('all')) {
-      filtered = filtered.filter((a) => branchFilter.some((branch) => agentMatchesLocation(a, branch)));
-    }
+      const branchFilter = selectedLocations && selectedLocations.length > 0
+        ? selectedLocations
+        : [location];
+      if (!branchFilter.includes('all')) {
+        scoped = scoped.filter((a) => branchFilter.some((branch) => agentMatchesLocation(a, branch)));
+      }
+      return scoped;
+    };
+    const filtered = scopeAgents(allAgents);
+    const comparisonAgents = scopeAgents(periodAgents);
 
     const teamMonths = resolveTeamMonths(filtered, null);
 
-    // Get previous month's agents for trend calculation.
-    // Exact keys compare year and month; a bare month name keeps only its latest year.
+    // The comparison period is the newest one before the selected month that has data for this
+    // team and filters. Keys keep the year, so January 2026 compares with December 2025.
     const selectedMonthName = reportingMonthName(month);
     const currMonthName = selectedMonthName ?? (teamMonths[teamMonths.length - 1] || '');
-    const indexedPrev = teamMonths.indexOf(currMonthName) > 0 ? teamMonths[teamMonths.indexOf(currMonthName) - 1] : null;
-    const previousKey = selectedMonthName
-      ? previousReportingSelector(filtered.map(agentPeriod), month)
-      : null;
-    const prevMonth = previousKey ? reportingMonthName(previousKey) : indexedPrev;
+    const prevPeriodKey = previousPeriodKey(comparisonAgents.map(agentPeriod), month);
+    const prevMonth = prevPeriodKey ? monthNameFromPeriodKey(prevPeriodKey) : null;
+    const previousPeriodAgents = prevPeriodKey
+      ? filterByReportingPeriod(comparisonAgents, prevPeriodKey, agentPeriod)
+      : [];
     const headcountSnapshot = resolveHeadcountSnapshot(filtered, month);
 
     // Current month's records for display: when month is 'All', resolve each employee's latest available month
@@ -1284,17 +1298,13 @@ export function useTeamData(
     let prevPctAB = 0;
     let prevPctDE = 0;
     let prevTotalAgents = 0;
-    if (prevMonth) {
-      const prevFiltered = previousKey
-        ? filterByReportingPeriod(filtered, previousKey, agentPeriod)
-        : filtered.filter((agent) => agent.identity.month === prevMonth);
-
-      const prevRowsScores = prevFiltered.map((agent) => {
+    if (prevPeriodKey) {
+      const prevRowsScores = previousPeriodAgents.map((agent) => {
         const rowWeights = weightsList?.find((weightConfig) => sameTeam(weightConfig.team, agent.identity.team))?.weights;
         const score = resolveDisplayScore(agent, rowWeights);
         return { score, grade: resolveRecordGradeClass(agent, score) };
       });
-      prevTotalAgents = resolveHeadcountSnapshot(filtered, previousKey || prevMonth).totalAgents;
+      prevTotalAgents = resolveHeadcountSnapshot(comparisonAgents, prevPeriodKey).totalAgents;
       if (prevRowsScores.length > 0) {
         prevAvgScore = prevRowsScores.reduce((total, item) => total + item.score, 0) / prevRowsScores.length;
         const abCount = prevRowsScores.filter((item) => item.grade === 'A' || item.grade === 'B').length;
@@ -1313,6 +1323,8 @@ export function useTeamData(
       totalAgents: headcountSnapshot.totalAgents,
       uniqueTeamCount: headcountSnapshot.uniqueTeamCount,
       prevMonth,
+      prevPeriodKey,
+      previousPeriodAgents,
       currMonthName,
       loading,
       dataSource,
@@ -1322,5 +1334,5 @@ export function useTeamData(
       prevPctDE,
       prevTotalAgents,
     };
-  }, [allAgents, teamName, month, location, loading, dataSource, errorMessage, weightsList, selectedLocations, preApprovalsWorkflow, callCenterChannel, rcmDomain, rcmGroup]);
+  }, [allAgents, periodAgents, teamName, month, location, loading, dataSource, errorMessage, weightsList, selectedLocations, preApprovalsWorkflow, callCenterChannel, rcmDomain, rcmGroup]);
 }
