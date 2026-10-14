@@ -94,6 +94,7 @@ export default function InsightsHeader({
   period,
   periodOptions,
   onPeriodChange,
+  periodControl,
   region,
   regionOptions,
   onRegionChange,
@@ -167,6 +168,8 @@ export default function InsightsHeader({
   teamLabel?: string;
   groupLabel?: string;
   periodAriaLabel?: string;
+  /** Replaces the single-month Date filter (Executive Summary: month or range). */
+  periodControl?: ReactNode;
   /** Breakpoint where title and filters share one row (longer titles need 2xl). */
   rowFrom?: 'xl' | '2xl';
 }) {
@@ -192,15 +195,17 @@ export default function InsightsHeader({
       </div>
       <ResponsiveFilters activeCount={activeCount} clearableCount={clearableCount} onClear={onClearFilters} label={groupLabel}>
         <div className="responsive-filter-content responsive-filter-content--insights" role="group" aria-label={groupLabel}>
-          <LabeledFilter
-            label="Date"
-            ariaLabel={periodAriaLabel}
-            value={period}
-            options={periodOptions}
-            onChange={onPeriodChange}
-            widthClass="w-[140px]"
-            icon={<Calendar className="size-[16px] text-[var(--text-secondary)]" strokeWidth={1.5} />}
-          />
+          {periodControl ?? (
+            <LabeledFilter
+              label="Date"
+              ariaLabel={periodAriaLabel}
+              value={period}
+              options={periodOptions}
+              onChange={onPeriodChange}
+              widthClass="w-[140px]"
+              icon={<Calendar className="size-[16px] text-[var(--text-secondary)]" strokeWidth={1.5} />}
+            />
+          )}
           <LabeledFilter label="Regions" ariaLabel="Region" value={region} options={regionOptions} allLabel="All regions" onChange={onRegionChange} widthClass="w-[136px]" locked={locked?.region} />
           {onBranchChange && <LabeledFilter label="Branches" ariaLabel="Branch" value={branch ?? ''} options={branchOptions} allLabel="All Branches" onChange={onBranchChange} widthClass="w-[156px]" locked={locked?.branch} />}
           {functionSlot ? <div className="responsive-filter-function-switcher">{functionSlot}</div> : <LabeledFilter

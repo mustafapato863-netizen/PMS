@@ -87,6 +87,14 @@ export default function ScoreTrendChart({ points, comparisonLabel, title }: {
   const tabStop = (rovingIndex !== null && measuredIndexes.includes(rovingIndex) ? rovingIndex : null)
     ?? measuredIndexes[measuredIndexes.length - 1];
   const activeIndex = dismissed ? null : (hoveredIndex ?? focusedIndex);
+  // Range mode: a band behind the months inside the selected range (the trend itself stays monthly).
+  const rangeIndexes = points.map((point, index) => (point.in_range ? index : -1)).filter((index) => index >= 0);
+  const rangeBand = rangeIndexes.length ? (() => {
+    const step = points.length > 1 ? (plot.right - plot.left) / (points.length - 1) : 0;
+    const left = Math.max(x(rangeIndexes[0]) - step / 2, plot.left);
+    const right = Math.min(x(rangeIndexes[rangeIndexes.length - 1]) + step / 2, plot.right);
+    return { left, width: Math.max(right - left, 0) };
+  })() : null;
   const activePoint = activeIndex === null ? null : points[activeIndex];
   const activeScore = activePoint?.score ?? null;
   const activeX = activeIndex === null ? null : x(activeIndex);
@@ -161,6 +169,9 @@ export default function ScoreTrendChart({ points, comparisonLabel, title }: {
               <text x={plot.right} y={y(target) - 6} textAnchor="end" fontSize={12} fontWeight={600} fill="var(--text-muted)" data-testid="executive-trend-target-label">
                 {'Target ' + target.toFixed(0) + '%'}
               </text>
+              {rangeBand && rangeBand.width > 0 && (
+                <rect data-testid="executive-trend-range" x={rangeBand.left} y={plot.top} width={rangeBand.width} height={plot.bottom - plot.top} fill="var(--insights-accent-soft)" fillOpacity={0.55} pointerEvents="none" />
+              )}
               {actualSegments.map((segment, index) => segment.length > 1 && (
                 <path key={'area-' + index} d={smoothPath(segment, x, y) + ' L' + x(segment[segment.length - 1].index).toFixed(1) + ' ' + plot.bottom + ' L' + x(segment[0].index).toFixed(1) + ' ' + plot.bottom + ' Z'} fill={`url(#${gradientId})`} pointerEvents="none" data-testid="executive-trend-area" />
               ))}

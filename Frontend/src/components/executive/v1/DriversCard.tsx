@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import type { ExecutiveDriver, ExecutiveSummary } from '../../../features/executive/types';
 import { arrow, fmtKpiDelta, fmtKpiValue, fmtSigned, kpiChangeDelta, kpiMovementTone, toneColor } from '../../../features/executive/format';
 import { driverImpact } from './execModel';
+import { comparisonName, coveredPeriodLabel, vsLabel } from '../../../features/executive/periodLabels';
 import { DirectionTag, ExecCard, ExecCardHeader, Footnote, SoftEmpty } from './ExecPrimitives';
 
 type Metric = ExecutiveSummary['meta']['driver_metric'];
@@ -76,8 +77,13 @@ function driverImpactOrZero(driver: ExecutiveDriver, side: 'negative' | 'positiv
 export default function DriversCard({ summary, viewAllHref, title }: { summary: ExecutiveSummary; viewAllHref: string | null; title?: string }) {
   const { drivers, meta, period } = summary;
   const previous = period.previous ? period.previous.month : 'last month';
+  const range = period.range ?? null;
   const unavailable = meta.unavailable.includes('drivers');
   const metric = meta.driver_metric;
+  const defaultTitle = range ? `What moved the score ${vsLabel(period.previous, range, '')}` : `What moved the score vs ${previous.slice(0, 3)}`;
+  const subtitle = range
+    ? `Direction-aware: colour shows good/bad, arrow shows the KPI's actual movement · ${coveredPeriodLabel(period.effective, range)}`
+    : "Direction-aware: colour shows good/bad, arrow shows the KPI's actual movement";
   return (
     <ExecCard aria-labelledby="exec-drivers-title">
       <ExecCardHeader
@@ -85,12 +91,12 @@ export default function DriversCard({ summary, viewAllHref, title }: { summary: 
         icon={Activity}
         iconBg="var(--exec-neg-bg)"
         iconColor="var(--insights-negative)"
-        title={title ?? `What moved the score vs ${previous.slice(0, 3)}`}
-        subtitle="Direction-aware: colour shows good/bad, arrow shows the KPI's actual movement"
+        title={title ?? defaultTitle}
+        subtitle={subtitle}
         action={viewAllHref ? <Link to={viewAllHref} className="inline-flex shrink-0 items-center rounded-[8px] border border-[var(--insights-accent-border)] bg-[var(--insights-accent-soft)] px-[10px] py-[6px] text-[12px] font-semibold text-[var(--insights-accent-text)]">View all drivers</Link> : null}
       />
       {unavailable ? (
-        <SoftEmpty>Driver analysis isn&apos;t available for this view yet.</SoftEmpty>
+        <SoftEmpty>{range ? 'Driver analysis is not defined for a range yet; switch to a single month to see it.' : 'Driver analysis isn\'t available for this view yet.'}</SoftEmpty>
       ) : (
         <div className="grid gap-[12px] md:grid-cols-2">
           <Panel side="negative" drivers={drivers.negative} metric={metric} />
@@ -101,7 +107,7 @@ export default function DriversCard({ summary, viewAllHref, title }: { summary: 
         <Footnote>
           {metric === 'weighted_gap'
             ? 'Impact = KPI weight × gap to target (%).'
-            : `Impact = change in the KPI's weighted contribution to the score vs ${previous} (%). Ranking switches to weight × gap once the backend sends it.`}
+            : `Impact = change in the KPI's weighted contribution to the score vs ${range ? (comparisonName(period.previous, range) ?? 'the previous range') : previous} (%). Ranking switches to weight × gap once the backend sends it.`}
         </Footnote>
       )}
     </ExecCard>

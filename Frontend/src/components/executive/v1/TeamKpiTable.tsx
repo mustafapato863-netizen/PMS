@@ -1,27 +1,30 @@
 import { useId, useState, type ReactNode } from 'react';
 import { ChevronLeft, ChevronRight, Target } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import type { ExecutiveKpiRow, ExecutivePeriod } from '../../../features/executive/types';
+import type { ExecutiveKpiRow, ExecutivePeriod, ExecutiveRangeBlock } from '../../../features/executive/types';
 import { arrow, fmtKpiDelta, fmtKpiValue, fmtScore, kpiChangeDelta, kpiGapDelta, kpiMovementTone, toneColor } from '../../../features/executive/format';
+import { coveredPeriodLabel, vsLabel } from '../../../features/executive/periodLabels';
 import { gapTone } from './execModel';
 import { DirectionTag, ExecCard, ExecCardHeader, GradeSquare, ScoreText, SoftEmpty } from './ExecPrimitives';
 
 const PAGE_SIZE = 8;
+const MONTH_EMPTY = 'No KPI breakdown for this month.';
+const RANGE_EMPTY = 'No KPI breakdown for this range.';
 
 type TeamKpiTableProps = {
-  rows: ExecutiveKpiRow[]; effective: ExecutivePeriod | null; previous: ExecutivePeriod | null; score: number | null; reportHref?: string | null;
+  rows: ExecutiveKpiRow[]; effective: ExecutivePeriod | null; previous: ExecutivePeriod | null; range?: ExecutiveRangeBlock | null; score: number | null; reportHref?: string | null;
   title?: string; subtitle?: string; showTeams?: boolean; headerAction?: ReactNode; emptyMessage?: ReactNode; scoreLabel?: string;
 };
 
 export default function TeamKpiTable(props: TeamKpiTableProps) {
   // New periods, scopes or ordering start on page one; value-only refreshes
   // retain the page. Navigation only slices the already loaded rollup.
-  const contextKey = JSON.stringify([props.effective?.key, props.title, props.showTeams,
+  const contextKey = JSON.stringify([props.effective?.key, props.range?.start.key, props.range?.end.key, props.title, props.showTeams,
     props.rows.map((row) => [row.kpi_key, row.teams])]);
   return <PaginatedKpiTable key={contextKey} {...props} />;
 }
 
-function PaginatedKpiTable({ rows, effective, previous, score, reportHref, title = 'Team KPIs — worst first', subtitle, showTeams = false, headerAction = null, emptyMessage = 'No KPI breakdown for this month.', scoreLabel = 'Team score' }: TeamKpiTableProps) {
+function PaginatedKpiTable({ rows, effective, previous, range = null, score, reportHref, title = 'Team KPIs — worst first', subtitle, showTeams = false, headerAction = null, emptyMessage = MONTH_EMPTY, scoreLabel = 'Team score' }: TeamKpiTableProps) {
   const titleId = useId();
   const [page, setPage] = useState(0);
   const pageCount = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
@@ -29,7 +32,9 @@ function PaginatedKpiTable({ rows, effective, previous, score, reportHref, title
   const offset = pageIndex * PAGE_SIZE;
   const pageRows = rows.slice(offset, offset + PAGE_SIZE);
   const head = 'text-xs font-semibold uppercase tracking-[0.6px] text-[var(--text-muted)]';
-  const vs = previous ? `vs ${previous.month.slice(0, 3)}` : 'vs last';
+  const vs = vsLabel(previous, range, 'vs last');
+  const label = coveredPeriodLabel(effective, range);
+  const noRowsText = range && emptyMessage === MONTH_EMPTY ? RANGE_EMPTY : emptyMessage;
   return (
     <ExecCard aria-labelledby={titleId}>
       <ExecCardHeader
@@ -38,7 +43,7 @@ function PaginatedKpiTable({ rows, effective, previous, score, reportHref, title
         iconBg="var(--exec-info-bg)"
         iconColor="var(--exec-info-text)"
         title={title}
-        subtitle={subtitle ?? `Sorted by achievement${effective ? ` · ${effective.month} ${effective.year}` : ''}`}
+        subtitle={subtitle ?? `Sorted by achievement${label ? ` · ${label}` : ''}`}
         action={(
           <div className="flex flex-wrap items-center justify-end gap-[8px]">
             {headerAction}
@@ -75,7 +80,7 @@ function PaginatedKpiTable({ rows, effective, previous, score, reportHref, title
                   </span>
                   <span role="cell" className="w-[84px]"><DirectionTag direction={row.kpi_direction} /></span>
                   <span role="cell" className="w-[72px] text-right text-[13px] font-bold text-[var(--insights-heading)]">{fmtKpiValue(row.actual, row.unit)}</span>
-                  <span role="cell" className="w-[64px] text-right text-[12px] text-[var(--text-secondary)]">{fmtKpiValue(row.target, row.unit)}</span>
+                  <span role="cell" className="w-[64px] text-right text-[12px] text-[var(--text-secondary)]">{row.target_varies ? 'Varies' : fmtKpiValue(row.target, row.unit)}</span>
                   <span role="cell" data-tone={gap} className="w-[80px] text-right text-[12px] font-semibold" style={{ color: toneColor(gap) }}>{gapDelta === null ? '—' : `${arrow(gapDelta)} ${fmtKpiDelta(gapDelta, row.unit)}`}</span>
                   <span role="cell" data-tone={movement} className="w-[80px] text-right text-[12px] font-semibold" style={{ color: toneColor(movement) }}>{changeDelta === null ? '—' : `${arrow(changeDelta)} ${fmtKpiDelta(changeDelta, row.unit)}`}</span>
                   <span role="cell" className="hidden w-[56px] text-right text-[12px] text-[var(--text-secondary)] lg:block">{row.weight === null ? '—' : `${Math.round(row.weight <= 1 ? row.weight * 100 : row.weight)}%`}</span>
@@ -88,7 +93,7 @@ function PaginatedKpiTable({ rows, effective, previous, score, reportHref, title
             })}
           </div>
         </div>
-      ) : <SoftEmpty>{emptyMessage}</SoftEmpty>}
+      ) : <SoftEmpty>{noRowsText}</SoftEmpty>}
       {pageCount > 1 && (
         <nav aria-label={`${title} pages`} className="flex flex-wrap items-center justify-between gap-[12px] border-t border-[var(--insights-row-border)] px-[6px] pt-[12px]">
           <span aria-live="polite" className="text-[12px] text-[var(--text-muted)]">

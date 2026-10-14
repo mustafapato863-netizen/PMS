@@ -23,6 +23,19 @@ export interface ExecutivePeriodBlock {
   previous: ExecutivePeriod | null;
   fallback_applied: boolean;
   notice: string | null;
+  /** Set when the page shows a range of months; `effective` is then the range's last month. */
+  range?: ExecutiveRangeBlock | null;
+}
+
+/** A range of months, averaged person-first. Comparison is the previous range of the same length. */
+export interface ExecutiveRangeBlock {
+  start: ExecutivePeriod;
+  end: ExecutivePeriod;
+  /** Every month in the range, oldest first; months without counted data are included. */
+  months: ExecutivePeriod[];
+  months_with_data: number;
+  /** The range of the same length immediately before; null when it has no counted data in scope. */
+  previous: { start: ExecutivePeriod; end: ExecutivePeriod; months_with_data: number } | null;
 }
 
 export interface ExecutiveDataStatus {
@@ -51,6 +64,8 @@ export interface ExecutiveTrendPoint {
   target: number;
   measured_records?: number;
   basis_context?: BasisComparisonContext | null;
+  /** True for the months inside the selected range (range mode); the trend itself stays monthly. */
+  in_range?: boolean;
 }
 
 export interface ExecutiveHero {
@@ -185,6 +200,8 @@ export interface ExecutiveKpiRow {
   unit: string | null;
   actual: number | null;
   target: number | null;
+  /** Range mode: the target differs between people or months, so `target` is null and the UI shows "Varies". */
+  target_varies?: boolean;
   previous_actual: number | null;
   gap_value: number | null;
   raw_gap: number | null;
@@ -218,6 +235,8 @@ export interface ExecutivePerson {
   previous_score: number | null;
   change: number | null;
   grade: GradeClass | null;
+  /** Range mode: counted months behind the person's score (the average over them). */
+  months?: number;
 }
 
 export interface ExecutivePeople {

@@ -45,7 +45,9 @@ export function actionsInActivePeriod<T extends { month?: string | null; created
 }
 
 /** Same KPI-mention classification as the retired ActionsSummaryCard; all statuses count. */
-export function summarizeActionAnalytics(actions: FollowUpAction[], effective: ExecutivePeriod | null, pending: FollowUpAction[] = []): ExecutiveActionAnalytics {
+export function summarizeActionAnalytics(actions: FollowUpAction[], effective: ExecutivePeriod | null, pending: FollowUpAction[] = [], periodKeys?: string[]): ExecutiveActionAnalytics {
+  // One month by default; a range passes every month inside it.
+  const inScope = (period: string) => (periodKeys ? periodKeys.includes(period) : period === effective?.key);
   const unique = [...new Map(actions.map((action) => [String(action.id), action])).values()];
   const pendingSync: Array<{ id: string; team: string | null }> = [];
   const result: ExecutiveActionAnalytics = { actions: [], unassigned_period: 0, pending_sync: pendingSync };
@@ -56,7 +58,7 @@ export function summarizeActionAnalytics(actions: FollowUpAction[], effective: E
       result.unassigned_period++;
       continue;
     }
-    if (period !== effective.key) continue;
+    if (!inScope(period)) continue;
     const mentions = extractKpiMentions(action.root_cause_note ?? '');
     if (action.linked_kpi_key) {
       const linked = extractKpiMentions(action.linked_kpi_key);
@@ -72,7 +74,8 @@ export function summarizeActionAnalytics(actions: FollowUpAction[], effective: E
     });
   }
   for (const action of pending) {
-    if (actionPeriod(action, effective) !== effective.key) continue;
+    const period = actionPeriod(action, effective);
+    if (!period || !inScope(period)) continue;
     pendingSync.push({ id: String(action.id), team: canonicalTeamName(action.team) || null });
   }
   return result;

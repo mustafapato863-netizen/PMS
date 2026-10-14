@@ -1,7 +1,8 @@
 import { ArrowRight, TrendingDown, TrendingUp } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { FUNCTION_STYLE } from './execModel';
-import type { ExecutiveFunction, ExecutiveFunctionCard, ExecutivePeriod } from '../../../features/executive/types';
+import type { ExecutiveFunction, ExecutiveFunctionCard, ExecutivePeriod, ExecutiveRangeBlock } from '../../../features/executive/types';
+import { coveredPeriodLabel, vsLabel } from '../../../features/executive/periodLabels';
 import { functionSlug } from '../../../features/executive/functions';
 import { arrow, fmtScore, fmtSigned, scoreTone, toneColor } from '../../../features/executive/format';
 import { getGradeTone } from '../../../constants/grades';
@@ -20,12 +21,12 @@ export function FunctionIcon({ fn, size = 32 }: { fn: ExecutiveFunction; size?: 
   );
 }
 
-function FunctionCard({ card, previous, linkable }: { card: ExecutiveFunctionCard; previous: ExecutivePeriod | null; linkable: boolean }) {
+function FunctionCard({ card, previous, range, linkable }: { card: ExecutiveFunctionCard; previous: ExecutivePeriod | null; range: ExecutiveRangeBlock | null; linkable: boolean }) {
   const tone = getGradeTone(card.score);
   const style = FUNCTION_STYLE[card.function];
   const changeTone = scoreTone(card.change);
   const trendColor = changeTone === 'neutral' ? style.color : toneColor(changeTone);
-  const vsLabel = previous ? `vs ${previous.month.slice(0, 3)}` : 'vs last';
+  const comparison = vsLabel(previous, range, 'vs last');
   return (
     <article aria-label={`${card.function} function`} className="flex min-w-0 flex-col gap-[12px] rounded-[16px] border border-[var(--exec-card-border)] bg-[var(--bg-surface)] p-[16px] shadow-[var(--exec-card-shadow)]">
       <div className="flex items-center gap-[10px]">
@@ -47,7 +48,7 @@ function FunctionCard({ card, previous, linkable }: { card: ExecutiveFunctionCar
           <ToneText tone={scoreTone(card.gap)} className="text-[18px] font-bold tabular-nums">{arrow(card.gap)} {fmtSigned(card.gap)}</ToneText>
         </div>
         <div className="flex flex-col gap-[2px]">
-          <StatLabel>{vsLabel}</StatLabel>
+          <StatLabel>{comparison}</StatLabel>
           <ToneText tone={changeTone} className="text-[14px] font-semibold tabular-nums">{arrow(card.change)} {fmtSigned(card.change)}</ToneText>
         </div>
       </div>
@@ -67,19 +68,20 @@ function FunctionCard({ card, previous, linkable }: { card: ExecutiveFunctionCar
   );
 }
 
-export default function FunctionCards({ cards, previous, linkable }: { cards: ExecutiveFunctionCard[]; previous: ExecutivePeriod | null; linkable: boolean }) {
+export default function FunctionCards({ cards, previous, range = null, linkable }: { cards: ExecutiveFunctionCard[]; previous: ExecutivePeriod | null; range?: ExecutiveRangeBlock | null; linkable: boolean }) {
   return (
     <section aria-labelledby="exec-functions-title" className="flex flex-col gap-[12px]">
       <div className="flex flex-wrap items-center justify-between gap-[8px]">
         <div className="flex items-center gap-[8px]">
           <h2 id="exec-functions-title" className="text-[17px] font-bold text-[var(--insights-heading)]">Functions</h2>
           <span className="rounded-full bg-[var(--exec-chip-bg)] px-[8px] py-[2px] text-xs font-semibold text-[var(--exec-chip-text)]">{cards.length} functions</span>
+          {range && <span className="text-[12px] text-[var(--text-muted)]">{coveredPeriodLabel(null, range)}</span>}
         </div>
         {linkable && <span className="text-[12px] text-[var(--text-muted)]">Click a function to open its Function Summary →</span>}
       </div>
       <BasisComparisonNote messages={cards.map((card) => card.basis_context?.message)} />
       <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,260px),1fr))] gap-[12px]">
-        {cards.map((card) => <FunctionCard key={card.function} card={card} previous={previous} linkable={linkable} />)}
+        {cards.map((card) => <FunctionCard key={card.function} card={card} previous={previous} range={range} linkable={linkable} />)}
       </div>
     </section>
   );

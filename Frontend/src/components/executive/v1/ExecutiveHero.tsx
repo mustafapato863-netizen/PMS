@@ -4,6 +4,7 @@ import { getGradeTone } from '../../../constants/grades';
 import type { ExecutiveSummary } from '../../../features/executive/types';
 import { arrow, fmtDate, fmtScore, fmtSigned, scoreTone, toneColor } from '../../../features/executive/format';
 import { formatPeriod } from '../../../features/executive/compose';
+import { comparisonName, coveredPeriodLabel } from '../../../features/executive/periodLabels';
 import { Chip, GradePill, StatusPill } from './ExecPrimitives';
 import ScoreTrendChart from './ScoreTrendChart';
 import { heroHeadline, heroNarrative } from './execModel';
@@ -36,7 +37,9 @@ export default function ExecutiveHero({ summary }: { summary: ExecutiveSummary }
   const EyebrowIcon = eyebrow.icon;
   const narrative = heroNarrative(summary);
   const changeTone = scoreTone(hero.change);
-  const previousLabel = period.previous ? `vs ${formatPeriod(period.previous)}` : 'vs last month';
+  const previousLabel = period.range
+    ? (period.previous ? `vs ${comparisonName(period.previous, period.range)}` : 'vs no earlier range')
+    : (period.previous ? `vs ${formatPeriod(period.previous)}` : 'vs last month');
   const comparison = hero.comparison;
   const upload = !meta.unavailable.includes('upload_meta') ? status.last_upload : null;
   const isFunction = scope.view === 'function';
@@ -68,7 +71,7 @@ export default function ExecutiveHero({ summary }: { summary: ExecutiveSummary }
             label={previousLabel}
             value={fmtSigned(hero.change)}
             valueColor={toneColor(changeTone)}
-            sub={hero.previous_score !== null ? `${arrow(hero.change)} ${fmtScore(hero.previous_score)} → ${fmtScore(hero.score)}` : 'No previous month'}
+            sub={hero.previous_score !== null ? `${arrow(hero.change)} ${fmtScore(hero.previous_score)} → ${fmtScore(hero.score)}` : (period.range ? 'No earlier range to compare' : 'No previous month')}
             subColor={toneColor(changeTone)}
           />
           {comparison && comparison.score !== null && (
@@ -87,7 +90,7 @@ export default function ExecutiveHero({ summary }: { summary: ExecutiveSummary }
             : scope.view === 'function' ? <Chip icon={Layers}>{hero.teams_count} teams</Chip> : null}
           {upload
             ? <Chip icon={Upload}>Data uploaded {fmtDate(upload.uploaded_at)}</Chip>
-            : <Chip icon={Calendar}>{formatPeriod(period.effective)} data</Chip>}
+            : <Chip icon={Calendar}>{coveredPeriodLabel(period.effective, period.range)} data</Chip>}
         </div>
       </div>
       <ScoreTrendChart points={trend} title={chartTitle} comparisonLabel={comparison?.label ?? null} />

@@ -1,7 +1,8 @@
 import { AlertTriangle, Award, TrendingDown, TrendingUp, UserRound } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import type { ExecutivePeople, ExecutivePerson, ExecutivePeriod } from '../../../features/executive/types';
+import type { ExecutivePeople, ExecutivePerson, ExecutivePeriod, ExecutiveRangeBlock } from '../../../features/executive/types';
 import { arrow, fmtScore, fmtSigned, scoreTone, toneColor } from '../../../features/executive/format';
+import { coveredPeriodLabel, vsLabel } from '../../../features/executive/periodLabels';
 import { ExecCard, ExecCardHeader, GradeSquare, ScoreText, SoftEmpty } from './ExecPrimitives';
 
 const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join('');
@@ -14,7 +15,7 @@ function PersonRow({ person, vs }: { person: ExecutivePerson; vs: string }) {
         <span aria-hidden="true" className="flex size-[30px] shrink-0 items-center justify-center rounded-full bg-[var(--exec-info-bg)] text-xs font-semibold text-[var(--exec-info-text)]">{initials(person.name)}</span>
         <span className="flex min-w-0 flex-1 flex-col">
           <span className="truncate text-[13px] font-semibold text-[var(--insights-heading)]">{person.name}</span>
-          <span className="truncate text-xs text-[var(--text-muted)]">{person.position ?? '—'}</span>
+          <span className="truncate text-xs text-[var(--text-muted)]">{person.position ?? '—'}{person.months !== undefined ? ` · ${person.months} ${person.months === 1 ? 'month' : 'months'}` : ''}</span>
         </span>
         <span className="flex flex-col items-end">
           <ScoreText score={person.score} className="text-[13px]">{fmtScore(person.score)}</ScoreText>
@@ -26,8 +27,12 @@ function PersonRow({ person, vs }: { person: ExecutivePerson; vs: string }) {
   );
 }
 
-export function PeopleToReviewCard({ people, team, previous, rosterHref }: { people: ExecutivePeople | null; team: string | null; previous: ExecutivePeriod | null; rosterHref?: string | null }) {
-  const vs = previous ? `vs ${previous.month.slice(0, 3)}` : '';
+export function PeopleToReviewCard({ people, team, previous, range = null, rosterHref }: { people: ExecutivePeople | null; team: string | null; previous: ExecutivePeriod | null; range?: ExecutiveRangeBlock | null; rosterHref?: string | null }) {
+  const vs = vsLabel(previous, range, '');
+  // Month mode keeps the month-on-month wording; range mode ranks range averages and names the range.
+  const subtitle = range
+    ? `Lowest range averages and largest drops against the previous range${team ? ` in ${team}` : ''} · ${coveredPeriodLabel(null, range)}`
+    : `Lowest scores and largest month-on-month drops${team ? ` in ${team}` : ''}`;
   return (
     <ExecCard aria-labelledby="exec-people-title">
       <ExecCardHeader
@@ -36,7 +41,7 @@ export function PeopleToReviewCard({ people, team, previous, rosterHref }: { peo
         iconBg="var(--exec-neg-bg)"
         iconColor="var(--insights-negative)"
         title="People to review"
-        subtitle={`Lowest scores and largest month-on-month drops${team ? ` in ${team}` : ''}`}
+        subtitle={subtitle}
         action={rosterHref ? <Link to={rosterHref} className="inline-flex items-center rounded-[8px] border border-[var(--insights-accent-border)] bg-[var(--insights-accent-soft)] px-[10px] py-[6px] text-[12px] font-semibold text-[var(--insights-accent-text)]">View roster</Link> : null}
       />
       {people && people.bottom.length ? (
@@ -57,11 +62,12 @@ export function PeopleToReviewCard({ people, team, previous, rosterHref }: { peo
   );
 }
 
-export function TopPerformersCard({ people, previous }: { people: ExecutivePeople | null; previous: ExecutivePeriod | null }) {
-  const vs = previous ? `vs ${previous.month.slice(0, 3)}` : '';
+export function TopPerformersCard({ people, previous, range = null }: { people: ExecutivePeople | null; previous: ExecutivePeriod | null; range?: ExecutiveRangeBlock | null }) {
+  const vs = vsLabel(previous, range, '');
+  const subtitle = range ? `Recognise and use as peer coaches · ${coveredPeriodLabel(null, range)}` : 'Recognise and use as peer coaches';
   return (
     <ExecCard aria-labelledby="exec-top-title">
-      <ExecCardHeader titleId="exec-top-title" icon={Award} iconBg="var(--exec-pos-bg)" iconColor="var(--insights-positive)" title="Top performers" subtitle="Recognise and use as peer coaches" />
+      <ExecCardHeader titleId="exec-top-title" icon={Award} iconBg="var(--exec-pos-bg)" iconColor="var(--insights-positive)" title="Top performers" subtitle={subtitle} />
       {people && people.top.length ? (
         <div className="flex flex-col gap-[6px]">
           <h3 className="flex items-center gap-[6px] text-[12px] font-bold text-[var(--insights-positive)]"><TrendingUp aria-hidden="true" className="size-[13px]" />Top {people.top.length} this month</h3>

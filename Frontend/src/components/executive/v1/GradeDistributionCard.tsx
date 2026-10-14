@@ -1,12 +1,14 @@
 import { BarChart3 } from 'lucide-react';
 import { GRADE_CLASSES, GRADE_PALETTE, gradeTokenVar } from '../../../constants/grades';
 import { movementTone } from './execModel';
-import type { ExecutiveGradeDistribution, ExecutivePeriod } from '../../../features/executive/types';
+import type { ExecutiveGradeDistribution, ExecutivePeriod, ExecutiveRangeBlock } from '../../../features/executive/types';
+import { comparisonName, coveredPeriodLabel } from '../../../features/executive/periodLabels';
 import { ExecCard, ExecCardHeader, Footnote, SoftEmpty } from './ExecPrimitives';
 
 
-export default function GradeDistributionCard({ distribution, previous }: { distribution: ExecutiveGradeDistribution | null; previous: ExecutivePeriod | null }) {
-  const vs = previous ? previous.month : 'last month';
+export default function GradeDistributionCard({ distribution, previous, range = null }: { distribution: ExecutiveGradeDistribution | null; previous: ExecutivePeriod | null; range?: ExecutiveRangeBlock | null }) {
+  // Month mode keeps the three-letter comparison month; range mode names the range and the comparison range.
+  const vs = range ? (comparisonName(previous, range) ?? 'no earlier range') : (previous ? previous.month : 'last month').slice(0, 3);
   return (
     <ExecCard aria-labelledby="exec-grades-title">
       <ExecCardHeader
@@ -15,7 +17,11 @@ export default function GradeDistributionCard({ distribution, previous }: { dist
         iconBg="var(--pms-grade-a-badge-bg)"
         iconColor="var(--pms-grade-a-text)"
         title="Grade distribution"
-        subtitle={distribution ? `${distribution.people ?? distribution.total} employees · movement vs ${vs.slice(0, 3)}` : 'Grade mix'}
+        subtitle={distribution
+          ? (range
+            ? `${distribution.people ?? distribution.total} employees · ${coveredPeriodLabel(null, range)} · movement vs ${vs}`
+            : `${distribution.people ?? distribution.total} employees · movement vs ${vs}`)
+          : 'Grade mix'}
       />
       {distribution && distribution.total > 0 ? (
         <>
