@@ -48,6 +48,8 @@ function formatTargetBadgeValue(val: string | number): string {
   if (numMatch) {
     const num = parseFloat(numMatch[1]);
     const unit = numMatch[2];
+    // Percentages below 10 keep the decimals the caller formatted ("1.0%", "0.26%").
+    if (unit === '%' && num < 10) return str;
     const rounded = Math.round(num);
     if (Math.abs(num - rounded) < 0.05) {
       return `${rounded}${unit}`;

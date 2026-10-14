@@ -13,6 +13,7 @@ import { GRADE_CLASSES, getGradeClassOrNull, type GradeClass } from '../../const
 import { canonicalTeamName } from '../../types';
 import type { AgentRecord } from '../../types';
 import { normalizePerformanceScore } from '../../utils/kpiScore';
+import { kpiCountsInScore } from '../../utils/kpiCountsInScore';
 import { compareScoringBasis, type BasisRecord } from '../evaluation/scoringBasisComparison';
 import { agentMatchesLocation } from '../../utils/branchScope';
 import { summarizeActionAnalytics } from './actionAnalytics';
@@ -132,7 +133,8 @@ export function toExecRecords(agents: AgentRecord[], fallbackYear = new Date().g
       branches: SUMMARY_BRANCHES.filter((branch) => agentMatchesLocation(agent, branch.value as Parameters<typeof agentMatchesLocation>[1])).map((branch) => branch.value),
       period: periodOf(agent.year || fallbackYear, month),
       score: normalizePerformanceScore(raw),
-      kpis: agent.kpi_values || [],
+      // Departmental lists show only KPIs that count in the score (stored weight above 0).
+      kpis: (agent.kpi_values || []).filter((kpi) => kpiCountsInScore(kpi.weight_applied)),
     }];
   });
 }
@@ -262,7 +264,7 @@ export function kpiRows(current: ExecRecord[], previous: ExecRecord[]): Executiv
   const collect = (records: ExecRecord[]) => {
     const buckets = new Map<string, Bucket>();
     records.forEach((record) => record.kpis.forEach((kpi) => {
-      if (!kpi?.kpi_key) return;
+      if (!kpi?.kpi_key || !kpiCountsInScore(kpi.weight_applied)) return;
       const bucket = buckets.get(kpi.kpi_key) ?? {
         label: kpi.label || kpi.kpi_key, unit: kpi.unit ?? null, direction: kpi.direction ?? null,
         actual: [], target: [], weight: [], achievement: [], teams: new Set<string>(),
@@ -497,7 +499,8 @@ export function scopedRecordDrivers(current: ExecRecord[], previous: ExecRecord[
   const contributions = (records: ExecRecord[], team: string, key: string) => records
     .filter((record) => record.team === team)
     .flatMap((record) => record.kpis.filter((kpi) => kpi.kpi_key === key
-      && Number.isFinite(kpi.contribution) && Number.isFinite(kpi.weight_applied)));
+      && kpiCountsInScore(kpi.weight_applied)
+      && Number.isFinite(kpi.contribution)));
   const all: ExecutiveDriver[] = [];
   for (const team of new Set(current.map((record) => record.team))) {
     const rows = kpiRows(current.filter((record) => record.team === team), previous.filter((record) => record.team === team));

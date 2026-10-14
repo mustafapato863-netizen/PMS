@@ -8,7 +8,8 @@ import { getWeightForLabel } from '../../utils/kpiScore';
 import KpiCard from '../common/KpiCard';
 import PerformanceKpiCard from '../common/PerformanceKpiCard';
 import { GRADE_THRESHOLDS } from '../../constants/grades';
-import { calculateKpiTargetProgress, normalizePercentageKpiForDisplay } from '../common/performanceKpiProgress';
+import { calculateKpiTargetProgress } from '../common/performanceKpiProgress';
+import { formatPercentPoints, formatPercentRatio, percentPointsFromRatio } from '../../utils/percentForm';
 
 const getKpiIcon = (label: string): LucideIcon => {
   const normalized = label.toLowerCase();
@@ -43,7 +44,8 @@ const getKpiBgColor = (label: string): string => {
 const formatKpiValue = (value: number, unit: string | undefined) => {
   if (!Number.isFinite(value)) return '—';
   if (unit === '%') {
-    return value > 1 ? `${value.toFixed(1)}%` : `${(value * 100).toFixed(1)}%`;
+    // Percent KPI values arrive as ratios (0.884 is 88.4%). Convert once, here.
+    return formatPercentRatio(value);
   }
   if (unit === 'currency') {
     return `AED ${value.toFixed(1)}`;
@@ -228,20 +230,21 @@ const TeamKpiSection = ({
   const rawReachTarget = dynamicReachKpi?.target;
   const rawUtzTarget = dynamicUtzKpi?.target;
 
+  // Dynamic percent targets are ratios; the legacy comparisons use percentage points.
   const attendTarget = Math.round(
     rawAttendTarget && rawAttendTarget > 0
-      ? (rawAttendTarget > 1 ? rawAttendTarget : rawAttendTarget * 100)
+      ? percentPointsFromRatio(rawAttendTarget)
       : (isOutbound ? 55 : 75)
   );
 
   const bookingTarget = Math.round(
     rawBookingTarget && rawBookingTarget > 0
-      ? (rawBookingTarget > 1 ? rawBookingTarget : rawBookingTarget * 100)
+      ? percentPointsFromRatio(rawBookingTarget)
       : (isOutbound ? 46 : (isInboundUAE ? 60 : 45))
   );
 
   const reachabilityTarget = rawReachTarget && rawReachTarget > 0
-    ? (rawReachTarget > 1 ? rawReachTarget : rawReachTarget * 100)
+    ? percentPointsFromRatio(rawReachTarget)
     : 75;
 
   const ahtTargetSec = rawAhtTarget && rawAhtTarget > 0
@@ -249,11 +252,11 @@ const TeamKpiSection = ({
     : 150;
 
   const abandonTarget = rawAbandonTarget && rawAbandonTarget > 0
-    ? (rawAbandonTarget > 1 ? rawAbandonTarget : rawAbandonTarget * 100)
+    ? percentPointsFromRatio(rawAbandonTarget)
     : 1;
 
   const utzTarget = rawUtzTarget && rawUtzTarget > 0
-    ? (rawUtzTarget > 1 ? rawUtzTarget : rawUtzTarget * 100)
+    ? percentPointsFromRatio(rawUtzTarget)
     : 85;
 
   // Target status follows an applied direction when the dynamic KPI has one.
@@ -625,7 +628,12 @@ const TeamKpiSection = ({
                 isTrendGood={delta === undefined ? undefined : (kpi.isLowerBetter ? delta <= 0 : delta >= 0)}
                 trendUnit={kpi.unit === '%' ? '%' : ''}
                 progressPercent={varied ? null : calculateKpiTargetProgress(kpi.actual, kpi.target, kpi.isLowerBetter)}
-                contribution={varied ? null : (kpi.contribution ?? calcContribution(kpi.label, kpi.actual, kpi.target, kpi.isLowerBetter))}
+                contribution={varied ? null : (kpi.contribution ?? calcContribution(
+                  kpi.label,
+                  kpi.unit === '%' ? percentPointsFromRatio(kpi.actual) : kpi.actual,
+                  kpi.unit === '%' ? percentPointsFromRatio(kpi.target) : kpi.target,
+                  kpi.isLowerBetter,
+                ))}
                 weight={varied ? null : (kpi.weight ?? getWeight(kpi.label))}
               />
             );
@@ -783,10 +791,12 @@ const TeamKpiSection = ({
 
             const isPrescription = kpi.label.toLowerCase().includes('prescription');
             const varied = kpi.basisVaries === true;
-            const rawActual = normalizePercentageKpiForDisplay(kpi.actual, kpi.target, kpi.unit);
-            const targetVal = isPrescription && (!kpi.target || kpi.target === 0) ? 100 : (kpi.target > 0 && kpi.target <= 1 ? kpi.target * 100 : kpi.target);
-
-            const displayActual = isPrescription ? (kpi.achievement ?? (rawActual > 15 ? rawActual : 85.9)) : rawActual;
+            // Percent KPIs stay ratios from here to formatting: one conversion, no rescaling.
+            const rawActual = kpi.actual;
+            const targetVal = isPrescription && (!kpi.target || kpi.target === 0) ? 1 : kpi.target;
+            // Prescription keeps its achievement scale (percentage points) as before.
+            const actualPoints = kpi.unit === '%' ? percentPointsFromRatio(rawActual) : rawActual;
+            const displayActual = isPrescription ? (kpi.achievement ?? (actualPoints > 15 ? actualPoints : 85.9)) : rawActual;
             const detailLabelStr = kpi.isLowerBetter ? 'Lower is better' : 'Higher is better';
 
             const isOnTarget = isPrescription ? displayActual >= 85 : (kpi.isLowerBetter ? rawActual <= targetVal : rawActual >= targetVal);
@@ -803,7 +813,12 @@ const TeamKpiSection = ({
               ? null
               : isPrescription
                 ? (displayActual * (weightVal ?? 0))
-                : (kpi.contribution ?? calcContribution(kpi.label, rawActual, targetVal, kpi.isLowerBetter));
+                : (kpi.contribution ?? calcContribution(
+                  kpi.label,
+                  actualPoints,
+                  kpi.unit === '%' ? percentPointsFromRatio(targetVal) : targetVal,
+                  kpi.isLowerBetter,
+                ));
 
             return (
               <PerformanceKpiCard
@@ -811,7 +826,7 @@ const TeamKpiSection = ({
                 icon={Icon}
                 iconBgColor={bgColor}
                 label={kpi.label}
-                value={formatKpiValue(displayActual, kpi.unit)}
+                value={isPrescription ? formatPercentPoints(displayActual) : formatKpiValue(displayActual, kpi.unit)}
                 targetValue={varied ? 'Varies' : `${kpi.isLowerBetter ? '≤ ' : ''}${formatKpiValue(targetVal, kpi.unit)}`}
                 detailLabel={varied ? 'Applied basis varies' : detailLabelStr}
                 badgeText={varied ? 'Basis varies' : (isOnTarget ? 'On Target' : 'Below Target')}

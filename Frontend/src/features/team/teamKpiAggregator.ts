@@ -106,7 +106,9 @@ const sourceValue = (
   const rawText = String(rawValue).replace(/,/g, '').trim();
   const parsed = Number(rawText.replace(/%$/, ''));
   if (!Number.isFinite(parsed)) return undefined;
-  const value = /%$/.test(rawText) || /%/.test(source) ? (parsed > 1 ? parsed / 100 : parsed) : parsed;
+  // Stored percent columns are ratios (the backend converts them on upload). Only
+  // text written with a percent sign is divided here; no size test decides the form.
+  const value = /%$/.test(rawText) ? parsed / 100 : parsed;
   return Number.isFinite(value) ? value : undefined;
 };
 
@@ -383,7 +385,9 @@ const achievementFor = (kpi: AggregatedTeamKpi): number => {
   let rawTarget = (isTimeKpi && kpi.target > 0 && kpi.target < 1.0) ? kpi.target * 1440 : kpi.target;
   let rawActual = kpi.actual;
 
-  if (!isTimeKpi) {
+  // Percent KPIs are ratios on both sides, so their scales are never mixed here.
+  // The rescue below only covers non-percent units that might arrive mixed.
+  if (!isTimeKpi && kpi.unit !== '%') {
     if (rawActual > 0 && rawActual <= 1.0 && rawTarget > 1.0) {
       rawActual = rawActual * 100;
     } else if (rawTarget > 0 && rawTarget <= 1.0 && rawActual > 1.0) {
