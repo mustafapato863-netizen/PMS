@@ -3,7 +3,8 @@ import { useEffect, useRef, useState } from 'react';
 import { AlertTriangle, BarChart3, CheckCircle2, Clock, FileText, Headphones, Pill, Target, Users, type LucideIcon } from 'lucide-react';
 import type { GradeClass } from '../../../constants/grades';
 import type { ExecutiveActionItem, ExecutiveDriver, ExecutiveFunction, ExecutiveKpiRow, ExecutiveSummary, ExecutiveTeam, ExecutiveTeamFlag } from '../../../features/executive/types';
-import { isAtRisk, formatPeriod } from '../../../features/executive/compose';
+import { isAtRisk } from '../../../features/executive/compose';
+import { comparisonName, coveredPeriodLabel } from '../../../features/executive/periodLabels';
 import { fmtSigned, kpiGapDelta, type Tone } from '../../../features/executive/format';
 
 type Metric = ExecutiveSummary['meta']['driver_metric'];
@@ -33,12 +34,12 @@ export function useElementWidth<T extends HTMLElement>(fallback: number) {
 export function heroHeadline(summary: ExecutiveSummary): string {
   const { hero, period, scope } = summary;
   if (hero.story?.headline) return hero.story.headline;
-  const when = formatPeriod(period.effective);
+  const when = coveredPeriodLabel(period.effective, period.range);
   const subject = scope.view === 'corporate' ? `${when} company performance` : `${hero.label} in ${when}`;
   if (hero.gap === null) return `${subject}: no score yet.`;
   const position = Math.abs(hero.gap) < 0.05 ? 'is on target' : `is ${Math.abs(hero.gap).toFixed(1)}% ${hero.gap < 0 ? 'below' : 'above'} target`;
   if (scope.view !== 'corporate' && hero.change !== null && period.previous && Math.abs(hero.change) >= 0.05) {
-    const vs = `${Math.abs(hero.change).toFixed(1)}% vs ${period.previous.month.slice(0, 3)}`;
+    const vs = `${Math.abs(hero.change).toFixed(1)}% vs ${comparisonName(period.previous, period.range) ?? ''}`;
     if (scope.view === 'managerial') return `${hero.label} ${position} and ${hero.change < 0 ? 'slipped' : 'improved'} ${vs}.`;
     const connector = (hero.gap < 0) === (hero.change < 0) ? 'and' : 'but';
     return `${hero.label} ${position} ${connector} ${hero.change < 0 ? 'down' : 'up'} ${vs}.`;

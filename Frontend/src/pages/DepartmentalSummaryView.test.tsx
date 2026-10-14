@@ -4,7 +4,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { User } from '../types';
 import type { ExecutiveSummary } from '../features/executive/types';
-import { composeExecutiveSummary, toExecRecords, type ComposeInput } from '../features/executive/compose';
+import { composeExecutiveSummary, monthsBetween, periodOf, previousRangeOf, toExecRecords, type ComposeInput } from '../features/executive/compose';
 import { FIXTURE_TEAM_FUNCTIONS, fixtureActions, fixtureAgentRecords, fixtureDrivers } from '../features/executive/executive.fixture';
 import type { UseExecutiveSummaryArgs } from '../features/executive/useExecutiveSummary';
 import DepartmentalSummaryView from './DepartmentalSummaryView';
@@ -144,6 +144,31 @@ describe('DepartmentalSummaryView role routing', () => {
     const menu = screen.getByRole('listbox', { name: 'Team' });
     expect(within(menu).getAllByRole('option').map((option) => option.textContent?.trim())).toEqual(['All my teams', 'Inbound', 'Outbound']);
     expect(screen.getByTestId('executive-managerial')).toBeInTheDocument();
+  });
+
+  it('reads a range from the URL, passes it to the summary and shows the Range mode', () => {
+    renderAt('/executive?from=2026-06&to=2026-09');
+    expect(state.lastArgs?.range).toEqual({ from: '2026-06', to: '2026-09' });
+    expect(screen.getByRole('button', { name: 'Range' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Last 3 months' })).toBeInTheDocument();
+  });
+
+  it('names the range on every card in range mode: no label shows the last month on its own', () => {
+    const months = monthsBetween(periodOf(2026, 'June'), periodOf(2026, 'September'));
+    state.role = 'Admin';
+    state.summary = build({ range: { months, previousMonths: previousRangeOf(months) } });
+    renderAt('/executive?from=2026-06&to=2026-09');
+    const text = document.body.textContent ?? '';
+    expect(text).toContain('Jun – Sep 2026');
+    // "Sep 2026" alone is the last month. "Apr – Sep 2026" is a range (the monthly trend axis), so it is allowed.
+    expect(text).not.toMatch(/(?<!– )\b(?:September|Sep) 2026\b/);
+    expect(text).not.toMatch(/(?<!– )\bSeptember\b/);
+  });
+
+  it('treats From after To as no range and says so', () => {
+    renderAt('/executive?from=2026-09&to=2026-06');
+    expect(state.lastArgs?.range).toBeNull();
+    expect(screen.getByText(/From month on or before To/)).toBeInTheDocument();
   });
 
   it('applies the selected team parent function together with the team filter', () => {

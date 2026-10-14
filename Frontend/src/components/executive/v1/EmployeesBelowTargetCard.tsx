@@ -6,6 +6,7 @@ import { apiFetch } from '../../../lib/apiClient';
 import { performanceSessionKey } from '../../../lib/performanceSessionKey';
 import type { ExecutivePerson, ExecutiveSummary } from '../../../features/executive/types';
 import { executivePersonPath } from '../../../features/executive/viewModel';
+import { coveredPeriodLabel } from '../../../features/executive/periodLabels';
 import { fmtScore } from '../../../features/executive/format';
 import { ExecCard, ExecCardHeader, GradeSquare, ScoreText, SoftEmpty } from './ExecPrimitives';
 
@@ -98,6 +99,8 @@ function toExecutivePerson(record: BelowTargetRecord): ExecutivePerson {
 }
 
 export default function EmployeesBelowTargetCard({ summary }: { summary: ExecutiveSummary }) {
+  // Range mode: the people below 90% are the summary's person-first range averages, not one month's rows.
+  if (summary.period.range) return <RangeBelowTargetCard summary={summary} />;
   const filterKey = pageParams(summary).toString();
   // A different scope resets the displayed page without borrowing another scope's rows.
   return <EmployeeRoster key={`${performanceSessionKey()}:${filterKey}`} summary={summary} filterKey={filterKey} />;
@@ -189,6 +192,68 @@ function EmployeeRoster({ summary, filterKey }: { summary: ExecutiveSummary; fil
                   <ChevronLeft aria-hidden="true" className="size-[16px]" />
                 </button>
                 <button type="button" aria-label="Next page" onClick={goToNextPage} disabled={pageIndex >= pageCount - 1} className="inline-flex size-[34px] items-center justify-center rounded-[8px] border border-[var(--exec-card-border)] text-[var(--text-secondary)] enabled:hover:bg-[var(--exec-tile-bg)] disabled:cursor-not-allowed disabled:opacity-40">
+                  <ChevronRight aria-hidden="true" className="size-[16px]" />
+                </button>
+              </span>
+            </nav>
+          )}
+        </>
+      ) : (
+        <SoftEmpty>No employees below 90% in this filtered scope.</SoftEmpty>
+      )}
+    </ExecCard>
+  );
+}
+
+/** Range mode: the summary's people below 90% (range averages, ranked by score), eight per page. */
+function RangeBelowTargetCard({ summary }: { summary: ExecutiveSummary }) {
+  const [page, setPage] = useState(0);
+  const roster = summary.people?.below_90 ?? [];
+  const pageCount = Math.max(1, Math.ceil(roster.length / PAGE_SIZE));
+  const pageIndex = Math.min(page, pageCount - 1);
+  const people = roster.slice(pageIndex * PAGE_SIZE, (pageIndex + 1) * PAGE_SIZE);
+  const firstItem = roster.length === 0 ? 0 : pageIndex * PAGE_SIZE + 1;
+  const lastItem = Math.min((pageIndex + 1) * PAGE_SIZE, roster.length);
+  const label = coveredPeriodLabel(summary.period.effective, summary.period.range);
+  return (
+    <ExecCard aria-labelledby="exec-employees-below-title">
+      <ExecCardHeader
+        titleId="exec-employees-below-title"
+        icon={UserRound}
+        iconBg="var(--exec-neg-bg)"
+        iconColor="var(--insights-negative)"
+        title="Employees below 90%"
+        subtitle={`${roster.length} ${roster.length === 1 ? 'person' : 'people'} below 90% on range averages · ${label}`}
+      />
+      {people.length ? (
+        <>
+          <ul className="grid min-w-0 grid-cols-1 gap-x-[24px] lg:grid-cols-2">
+            {people.map((person) => (
+              <li key={`${person.employee_id}:${person.performance_level ?? ''}`} className="min-w-0">
+                <Link to={executivePersonPath(person, summary.period.effective, summary.scope.branch)} className="flex items-center gap-[10px] rounded-[8px] border-b border-[var(--insights-row-border)] px-[6px] py-[10px] hover:bg-[var(--exec-tile-bg)] focus-visible:outline-2 focus-visible:outline-[var(--insights-accent)]">
+                  <span className="flex min-w-0 flex-1 flex-col gap-[3px]">
+                    <span className="truncate text-[13px] font-semibold text-[var(--insights-heading)]">{person.name}</span>
+                    <span className="truncate text-xs text-[var(--text-muted)]">
+                      {[person.team, person.position, person.performance_level, person.months !== undefined ? `${person.months} ${person.months === 1 ? 'month' : 'months'}` : null].filter(Boolean).join(' · ')}
+                    </span>
+                  </span>
+                  <ScoreText score={person.score} className="text-[14px]">{fmtScore(person.score)}</ScoreText>
+                  <GradeSquare score={person.score} />
+                  <ArrowUpRight aria-hidden="true" className="size-[14px] shrink-0 text-[var(--insights-accent)]" />
+                </Link>
+              </li>
+            ))}
+          </ul>
+          {pageCount > 1 && (
+            <nav aria-label="Employees below 90% pages" className="mt-[12px] flex flex-wrap items-center justify-between gap-[12px] border-t border-[var(--insights-row-border)] px-[6px] pt-[12px]">
+              <span aria-live="polite" className="text-[12px] text-[var(--text-muted)]">
+                Showing {firstItem}–{lastItem} of {roster.length} · Page {pageIndex + 1} of {pageCount}
+              </span>
+              <span className="flex items-center gap-[8px]">
+                <button type="button" aria-label="Previous page" onClick={() => setPage(Math.max(0, pageIndex - 1))} disabled={pageIndex === 0} className="inline-flex size-[34px] items-center justify-center rounded-[8px] border border-[var(--exec-card-border)] text-[var(--text-secondary)] enabled:hover:bg-[var(--exec-tile-bg)] disabled:cursor-not-allowed disabled:opacity-40">
+                  <ChevronLeft aria-hidden="true" className="size-[16px]" />
+                </button>
+                <button type="button" aria-label="Next page" onClick={() => setPage(Math.min(pageCount - 1, pageIndex + 1))} disabled={pageIndex >= pageCount - 1} className="inline-flex size-[34px] items-center justify-center rounded-[8px] border border-[var(--exec-card-border)] text-[var(--text-secondary)] enabled:hover:bg-[var(--exec-tile-bg)] disabled:cursor-not-allowed disabled:opacity-40">
                   <ChevronRight aria-hidden="true" className="size-[16px]" />
                 </button>
               </span>

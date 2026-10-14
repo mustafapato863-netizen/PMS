@@ -65,6 +65,10 @@ export interface ExecRecord {
   period: ExecutivePeriod;
   score: number;
   kpis: NonNullable<AgentRecord['kpi_values']>;
+  /** Range mode only: counted months behind a person's range score. */
+  months?: number;
+  /** Range mode only: KPI keys whose target changed within the range for this person. */
+  targetVaries?: string[];
 }
 
 export function periodOf(year: number, month: string): ExecutivePeriod {
@@ -194,6 +198,99 @@ export function trailingPeriods(period: ExecutivePeriod, count = 6): ExecutivePe
   });
 }
 
+function shiftPeriod(period: ExecutivePeriod, delta: number): ExecutivePeriod {
+  const value = period.year * 12 + MONTHS.indexOf(period.month) + delta;
+  return periodOf(Math.floor(value / 12), MONTHS[((value % 12) + 12) % 12]);
+}
+
+/** Every month from `start` to `end` inclusive, oldest first. Empty when `end` is before `start`. */
+export function monthsBetween(start: ExecutivePeriod, end: ExecutivePeriod): ExecutivePeriod[] {
+  const count = (end.year * 12 + MONTHS.indexOf(end.month)) - (start.year * 12 + MONTHS.indexOf(start.month)) + 1;
+  return Array.from({ length: Math.max(0, count) }, (_, index) => shiftPeriod(start, index));
+}
+
+/** The range of the same length immediately before `months` (Jun–Sep compares with Feb–May). */
+export function previousRangeOf(months: ExecutivePeriod[]): ExecutivePeriod[] {
+  if (!months.length) return [];
+  return monthsBetween(shiftPeriod(months[0], -months.length), shiftPeriod(months[0], -1));
+}
+
+const shortMonth = (period: ExecutivePeriod) => period.month.slice(0, 3);
+
+type KpiRecord = ExecRecord['kpis'][number];
+
+/** One KPI per person across the range: mean actual, achievement and weight; the target only when it never changed. */
+function collapseKpis(records: ExecRecord[]): ExecRecord['kpis'] {
+  const buckets = new Map<string, { template: KpiRecord; actual: number[]; achievement: number[]; weight: number[]; targets: number[] }>();
+  records.forEach((record) => record.kpis.forEach((kpi) => {
+    if (!kpi?.kpi_key) return;
+    const bucket = buckets.get(kpi.kpi_key) ?? { template: kpi, actual: [], achievement: [], weight: [], targets: [] };
+    if (Number.isFinite(kpi.actual_value)) bucket.actual.push(Number(kpi.actual_value));
+    if (Number.isFinite(kpi.achievement_ratio)) bucket.achievement.push(Number(kpi.achievement_ratio));
+    if (Number.isFinite(kpi.weight_applied)) bucket.weight.push(Number(kpi.weight_applied));
+    if (Number.isFinite(kpi.target_value)) bucket.targets.push(Number(kpi.target_value));
+    buckets.set(kpi.kpi_key, bucket);
+  }));
+  return [...buckets.values()].map(({ template, actual, achievement, weight, targets }) => ({
+    ...template,
+    actual_value: mean(actual) ?? template.actual_value,
+    achievement_ratio: mean(achievement) ?? template.achievement_ratio,
+    weight_applied: mean(weight) ?? template.weight_applied,
+    // The mean target; `collapseRange` records when it changed (`targetVaries`), and the table shows "Varies".
+    target_value: mean(targets) ?? template.target_value,
+  }));
+}
+
+/**
+ * Range mode, person-first. One record per person (employee and level) for the whole range: the person's
+ * score is the mean of their counted months, which sets their range grade. A month with several rows counts
+ * once, as the mean of its rows. Team, region, position and level come from the latest counted month. The
+ * record sits at `anchor` (the range's last month) so the single-month aggregates apply unchanged.
+ */
+export function collapseRange(monthly: ExecRecord[], months: ExecutivePeriod[], anchor: ExecutivePeriod): ExecRecord[] {
+  const keys = new Set(months.map((period) => period.key));
+  const groups = new Map<string, ExecRecord[]>();
+  monthly.forEach((record) => {
+    if (!keys.has(record.period.key)) return;
+    const groupKey = `${record.employeeId}:${record.level}`;
+    groups.set(groupKey, [...(groups.get(groupKey) ?? []), record]);
+  });
+  return [...groups.values()].map((records) => {
+    const byMonth = new Map<string, ExecRecord[]>();
+    records.forEach((record) => byMonth.set(record.period.key, [...(byMonth.get(record.period.key) ?? []), record]));
+    const monthKeys = [...byMonth.keys()].sort();
+    const monthScores = monthKeys.map((key) => mean(byMonth.get(key)!.map((record) => record.score)) ?? 0);
+    const latest = byMonth.get(monthKeys[monthKeys.length - 1])![0];
+    const targetVaries = [...new Set(records.flatMap((record) => record.kpis.map((kpi) => kpi.kpi_key)))]
+      .filter((kpiKey) => new Set(records.flatMap((record) => record.kpis
+        .filter((kpi) => kpi.kpi_key === kpiKey && Number.isFinite(kpi.target_value))
+        .map((kpi) => Number(kpi.target_value).toFixed(4)))).size > 1);
+    return {
+      ...latest,
+      period: anchor,
+      score: mean(monthScores) ?? 0,
+      months: monthKeys.length,
+      kpis: collapseKpis(records),
+      targetVaries,
+    };
+  });
+}
+
+/**
+ * Evaluation-basis note for a scope. One month: as today. A range: every month inside it that shows a basis
+ * change against its own previous month, labelled by month; no note when none does.
+ */
+function basisForScope(monthly: ExecRecord[], effective: ExecutivePeriod, months: ExecutivePeriod[] | null) {
+  // One month, as today: the exact note, unchanged.
+  if (!months || months.length <= 1) return basisFor(monthly, effective);
+  const changed = months
+    .filter((month) => inPeriod(monthly, month).length > 0)
+    .map((month) => ({ month, context: basisFor(monthly, month) }))
+    .filter(({ context }) => context.state === 'changed' && context.message);
+  if (!changed.length) return { ...basisFor(monthly, effective), message: null };
+  return { ...changed[0].context, message: changed.map(({ month, context }) => `${shortMonth(month)}: ${context.message}`).join(' ') };
+}
+
 function trendOf(records: ExecRecord[], period: ExecutivePeriod) {
   return trailingPeriods(period).map((point) => ({ period: point, score: scoreOf(inPeriod(records, point)) }));
 }
@@ -265,7 +362,7 @@ function executivePercentValue(value: number, unit: string | null | undefined, t
 }
 
 /** Direction-aware KPI rows (worst achievement first) from per-employee `kpi_values`. */
-export function kpiRows(current: ExecRecord[], previous: ExecRecord[]): ExecutiveKpiRow[] {
+export function kpiRows(current: ExecRecord[], previous: ExecRecord[], options?: { range?: boolean }): ExecutiveKpiRow[] {
   type Bucket = { label: string; unit: string | null; direction: string | null; actual: number[]; target: number[]; weight: number[]; achievement: number[]; teams: Set<string> };
   const collect = (records: ExecRecord[]) => {
     const buckets = new Map<string, Bucket>();
@@ -292,7 +389,12 @@ export function kpiRows(current: ExecRecord[], previous: ExecRecord[]): Executiv
   const rows: ExecutiveKpiRow[] = [];
   now.forEach((bucket, key) => {
     const actual = mean(bucket.actual);
-    const target = mean(bucket.target);
+    // A range shows a target only when every person and month shares it; otherwise "Varies".
+    const targetVaries = Boolean(options?.range) && (current.some((record) => record.targetVaries?.includes(key))
+      || new Set(current.flatMap((record) => record.kpis
+        .filter((kpi) => kpi.kpi_key === key && Number.isFinite(kpi.target_value))
+        .map((kpi) => Number(kpi.target_value).toFixed(4)))).size > 1);
+    const target = targetVaries ? null : mean(bucket.target);
     const previousActual = before.has(key) ? mean(before.get(key)!.actual) : null;
     const direction = String(bucket.direction ?? '').toLowerCase();
     const lower = direction.startsWith('lower');
@@ -320,6 +422,7 @@ export function kpiRows(current: ExecRecord[], previous: ExecRecord[]): Executiv
       grade: getGradeClassOrNull(achievement),
       target_status: gapValue === null ? null : (gapValue >= -TOLERANCE ? 'met' : 'missed'),
       teams: [...bucket.teams].sort(),
+      ...(options?.range ? { target_varies: targetVaries } : {}),
     });
   });
   return rows.sort((left, right) => (left.achievement_percent ?? 101) - (right.achievement_percent ?? 101) || left.kpi_label.localeCompare(right.kpi_label));
@@ -353,6 +456,7 @@ function people(current: ExecRecord[], previous: ExecRecord[]): ExecutivePeople 
       previous_score: previousScore,
       change: diff(score, previousScore),
       grade: getGradeClassOrNull(score),
+      ...(record.months !== undefined ? { months: record.months } : {}),
     };
   });
   const byName = (left: ExecutivePerson, right: ExecutivePerson) => left.name.localeCompare(right.name);
@@ -372,15 +476,20 @@ function teamsOf(
   previous: ExecutivePeriod | null,
   teamFunctions: TeamFunctionMap | undefined,
   byRole = false,
+  monthly: ExecRecord[] | null = null,
+  rangeMonths: ExecutivePeriod[] | null = null,
 ): ExecutiveTeam[] {
   const groupName = (record: ExecRecord) => byRole ? record.position || record.team : record.team;
+  const monthlyRecords = monthly ?? scoped;
   const names = [...new Set(inPeriod(scoped, effective).map(groupName))];
   const base = names.map((team) => {
     const records = scoped.filter((record) => groupName(record) === team);
+    // The trend and the basis note read the team's monthly records; the aggregates read `records`.
+    const monthlyTeam = monthlyRecords.filter((record) => groupName(record) === team);
     const current = inPeriod(records, effective);
     const score = scoreOf(current);
     const previousScore = scoreOf(inPeriod(records, previous));
-    const trend = trendOf(records, effective);
+    const trend = trendOf(monthlyTeam, effective);
     const worstKpi = kpiRows(current, inPeriod(records, previous))[0];
     return {
       team,
@@ -398,7 +507,7 @@ function teamsOf(
       vs_function_avg: null as number | null,
       rank_in_function: null as number | null,
       flags: [] as ExecutiveTeamFlag[],
-      basis_context: basisFor(records, effective),
+      basis_context: basisForScope(monthlyTeam, effective, rangeMonths),
       flag_detail: worstKpi && worstKpi.achievement_percent !== null && worstKpi.achievement_percent < 100 ? {
         kpi_key: worstKpi.kpi_key,
         kpi_label: worstKpi.kpi_label,
@@ -438,14 +547,16 @@ export function isAtRisk(team: ExecutiveTeam) {
   return team.flags.some((flag) => flag === 'grade_c' || flag === 'grade_d' || flag === 'grade_e' || flag === 'falling_2_months');
 }
 
-function functionCards(scoped: ExecRecord[], effective: ExecutivePeriod, previous: ExecutivePeriod | null, teamFunctions?: TeamFunctionMap): ExecutiveFunctionCard[] {
+function functionCards(scoped: ExecRecord[], effective: ExecutivePeriod, previous: ExecutivePeriod | null, teamFunctions?: TeamFunctionMap, monthly: ExecRecord[] | null = null, rangeMonths: ExecutivePeriod[] | null = null): ExecutiveFunctionCard[] {
+  const monthlyRecords = monthly ?? scoped;
   const cards = EXECUTIVE_FUNCTIONS.flatMap((name): ExecutiveFunctionCard[] => {
     const records = scoped.filter((record) => executiveFunctionForTeam(record.team, teamFunctions) === name);
     const current = inPeriod(records, effective);
     if (!current.length) return [];
     const score = scoreOf(current);
     const previousScore = scoreOf(inPeriod(records, previous));
-    const trend = trendOf(records, effective);
+    const monthlyFunction = monthlyRecords.filter((record) => executiveFunctionForTeam(record.team, teamFunctions) === name);
+    const trend = trendOf(monthlyFunction, effective);
     return [{
       function: name,
       score,
@@ -459,7 +570,7 @@ function functionCards(scoped: ExecRecord[], effective: ExecutivePeriod, previou
       falling_months: fallingMonths(trend),
       trend,
       is_most_improved: false,
-      basis_context: basisFor(records, effective),
+      basis_context: basisForScope(monthlyFunction, effective, rangeMonths),
     }];
   });
   const improved = cards.filter((card) => (card.change ?? 0) > 0).sort((l, r) => (r.change ?? 0) - (l.change ?? 0))[0];
@@ -644,7 +755,7 @@ const OPEN_STATUSES = new Set(['Open', 'In Progress']);
 
 /** Corrective-action summary; "Due this week" counts from today (Mustafa): today ≤ due ≤ today + 6. */
 /** `pending` = actions queued on this device and not yet synced (Pending Sync); they never change the totals above. */
-export function summarizeActions(actions: FollowUpAction[], today: Date, effective: ExecutivePeriod | null, pending: FollowUpAction[] = []): ExecutiveCorrectiveActions {
+export function summarizeActions(actions: FollowUpAction[], today: Date, effective: ExecutivePeriod | null, pending: FollowUpAction[] = [], periodKeys?: string[]): ExecutiveCorrectiveActions {
   const todayIso = localIsoDate(today);
   const weekEnd = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 6);
   const weekEndIso = localIsoDate(weekEnd);
@@ -653,7 +764,7 @@ export function summarizeActions(actions: FollowUpAction[], today: Date, effecti
   const overdue = (action: FollowUpAction) => isOpen(action) && (action.follow_up_state === 'overdue' || (dueDate(action) !== null && dueDate(action)! < todayIso));
   const dueThisWeek = (action: FollowUpAction) => isOpen(action) && !overdue(action) && dueDate(action) !== null && dueDate(action)! >= todayIso && dueDate(action)! <= weekEndIso;
   const closedInMonth = effective
-    ? actions.filter((action) => action.status === 'Completed' && String(action.completed_at || '').slice(0, 7) === effective.key).length
+    ? actions.filter((action) => action.status === 'Completed' && (periodKeys ?? [effective.key]).includes(String(action.completed_at || '').slice(0, 7))).length
     : null;
   const rank = (action: FollowUpAction) => (overdue(action) ? 0 : dueThisWeek(action) ? 1 : isOpen(action) ? 2 : 3);
   const items: ExecutiveActionItem[] = actions.filter(isOpen)
@@ -673,7 +784,7 @@ export function summarizeActions(actions: FollowUpAction[], today: Date, effecti
       month: action.month,
     }));
   return {
-    analytics: summarizeActionAnalytics(actions, effective, pending),
+    analytics: summarizeActionAnalytics(actions, effective, pending, periodKeys),
     summary: {
       as_of: todayIso,
       open: actions.filter(isOpen).length,
@@ -703,6 +814,8 @@ export interface ComposeInput {
   drivers?: { drivers: InsightDriver[]; items: InsightItem[] } | null;
   deriveScopedDrivers?: boolean;
   actions?: FollowUpAction[] | null;
+  /** Range mode: the months to average (oldest first) and the range of the same length before them. */
+  range?: { months: ExecutivePeriod[]; previousMonths: ExecutivePeriod[] } | null;
   /** Local actions not yet synced, already filtered to the page scope. Counted as Pending Sync only. */
   pendingActions?: FollowUpAction[] | null;
   /** Records outside the viewer's scope for aggregate comparisons (never available client-side for Manager / Function Viewer). */
@@ -731,27 +844,53 @@ export function composeExecutiveSummary(input: ComposeInput): ExecutiveSummary {
   const scopeFilters = { ...input.filters };
   if (view === 'managerial' && input.team) scopeFilters.team = input.team;
   if (view === 'function' && input.functionName) scopeFilters.teamFunction = input.functionName;
-  const scoped = applyFilters(input.records, { ...input, filters: scopeFilters }, teamFunctions);
+  // The monthly, scope-filtered records: the trend, the month list and the monthly basis read these.
+  const monthly = applyFilters(input.records, { ...input, filters: scopeFilters }, teamFunctions);
   // Managerial: the function of the selected team, or the one function all visible teams share.
   const managerFunction = view === 'managerial'
     ? (input.team ? executiveFunctionForTeam(input.team, teamFunctions) : sharedFunctionOf(input.teamScope ?? [], teamFunctions))
     : null;
 
-  const periods = [...new Map(scoped.map((record) => [record.period.key, record.period])).values()]
+  const periods = [...new Map(monthly.map((record) => [record.period.key, record.period])).values()]
     .sort((l, r) => r.key.localeCompare(l.key));
-  const requested = input.requestedPeriodKey ? periodFromKey(input.requestedPeriodKey) : null;
-  const effective = requested && periods.some((period) => period.key === requested.key) ? requested : periods[0] ?? null;
+  // Range mode: each person's counted months are averaged into one record at the range's last month, and the
+  // range of the same length before it into another. The aggregates then run exactly as for one month.
+  const range = input.range ?? null;
+  const rangeEnd = range && range.months.length ? range.months[range.months.length - 1] : null;
+  const previousEnd = range && range.previousMonths.length ? range.previousMonths[range.previousMonths.length - 1] : null;
+  const rangeCurrent = range && rangeEnd ? collapseRange(monthly, range.months, rangeEnd) : [];
+  const rangePrevious = range && previousEnd ? collapseRange(monthly, range.previousMonths, previousEnd) : [];
+  const scoped = range ? [...rangeCurrent, ...rangePrevious] : monthly;
+  const requested = range || !input.requestedPeriodKey ? null : periodFromKey(input.requestedPeriodKey);
+  const effective = range
+    ? (rangeCurrent.length ? rangeEnd : null)
+    : (requested && periods.some((period) => period.key === requested.key) ? requested : periods[0] ?? null);
   const fallbackApplied = Boolean(requested && effective && requested.key !== effective.key);
-  const previous = effective ? periods.find((period) => period.key < effective.key) ?? null : null;
+  const previous = range
+    ? (rangePrevious.length ? previousEnd : null)
+    : (effective ? periods.find((period) => period.key < effective.key) ?? null : null);
+  const rangeMonths = range && rangeEnd ? range.months : null;
+  const rangeBlock = range && rangeEnd ? {
+    start: range.months[0],
+    end: rangeEnd,
+    months: range.months,
+    months_with_data: range.months.filter((month) => inPeriod(monthly, month).length > 0).length,
+    previous: range.previousMonths.length && previousEnd && rangePrevious.length ? {
+      start: range.previousMonths[0],
+      end: previousEnd,
+      months_with_data: range.previousMonths.filter((month) => inPeriod(monthly, month).length > 0).length,
+    } : null,
+  } : null;
 
   const current = inPeriod(scoped, effective);
   const before = inPeriod(scoped, previous);
   const score = scoreOf(current);
   const previousScore = scoreOf(before);
 
-  const teams = effective ? teamsOf(scoped, effective, previous, teamFunctions, view === 'function' && input.functionName === 'Marketing') : [];
-  const functions = effective ? functionCards(scoped, effective, previous, teamFunctions) : [];
-  const comparison = input.comparisonRecords && effective
+  const teams = effective ? teamsOf(scoped, effective, previous, teamFunctions, view === 'function' && input.functionName === 'Marketing', monthly, rangeMonths) : [];
+  const functions = effective ? functionCards(scoped, effective, previous, teamFunctions, monthly, rangeMonths) : [];
+  // The company or function comparison is per month; a range does not compare with it.
+  const comparison = input.comparisonRecords && effective && !range
     ? applyFilters(input.comparisonRecords, { ...input, filters: { region: input.filters.region, branch: input.filters.branch, performanceLevel: input.filters.performanceLevel } }, teamFunctions)
     : null;
 
@@ -779,8 +918,15 @@ export function composeExecutiveSummary(input: ComposeInput): ExecutiveSummary {
     }
   }
 
+  // The score trend stays monthly; in range mode the months inside the range are flagged.
   const trend: ExecutiveTrendPoint[] = effective
-    ? trendOf(scoped, effective).map((point, index) => ({ ...point, comparison_score: comparisonTrend?.[index] ?? null, target: TARGET, basis_context: basisFor(scoped, point.period) }))
+    ? trendOf(monthly, effective).map((point, index) => ({
+      ...point,
+      comparison_score: comparisonTrend?.[index] ?? null,
+      target: TARGET,
+      basis_context: basisFor(monthly, point.period),
+      ...(rangeMonths ? { in_range: rangeMonths.some((month) => month.key === point.period.key) } : {}),
+    }))
     : [];
 
   const rawSplit = input.deriveScopedDrivers ? scopedRecordDrivers(current, before, teamFunctions) : input.drivers
@@ -802,11 +948,11 @@ export function composeExecutiveSummary(input: ComposeInput): ExecutiveSummary {
   if (!driverSplit) unavailable.add('drivers');
   else if (!driverSplit.hasWeightedGap) unavailable.add('drivers_weighted_gap');
 
-  const kpis = kpiRows(current, before);
+  const kpis = kpiRows(current, before, range ? { range: true } : undefined);
   if (!kpis.length) unavailable.add('kpis');
   const grades = gradeDistribution(current, before);
   if (!grades) unavailable.add('grade_mix');
-  const actions = input.actions ? summarizeActions(input.actions, input.today, effective, input.pendingActions ?? []) : null;
+  const actions = input.actions ? summarizeActions(input.actions, input.today, effective, input.pendingActions ?? [], rangeMonths?.map((month) => month.key)) : null;
   if (!actions) unavailable.add('corrective_actions');
 
   // Function view: "most improved" compares against the other functions, which
@@ -832,8 +978,9 @@ export function composeExecutiveSummary(input: ComposeInput): ExecutiveSummary {
       notice: fallbackApplied && requested && effective
         ? `No performance data for ${formatPeriod(requested)} yet — showing ${formatPeriod(effective)}, the latest month with data.`
         : null,
+      ...(rangeBlock ? { range: rangeBlock } : {}),
     },
-    data_status: { has_data: periods.length > 0, last_upload: null, effective_uploaded_at: null },
+    data_status: { has_data: range ? rangeCurrent.length > 0 : periods.length > 0, last_upload: null, effective_uploaded_at: null },
     scope: {
       view,
       role: input.role,
@@ -881,7 +1028,7 @@ export function composeExecutiveSummary(input: ComposeInput): ExecutiveSummary {
     },
     corrective_actions: actions,
     // Same comparison the composed team, function and trend notes use, for the selected month on this scope.
-    basis_context: effective ? basisFor(scoped, effective) : null,
+    basis_context: effective ? (rangeMonths ? basisForScope(monthly, effective, rangeMonths) : basisFor(scoped, effective)) : null,
     periods,
     meta: {
       source: 'composed',

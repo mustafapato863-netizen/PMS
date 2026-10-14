@@ -6,7 +6,8 @@ import {
   TriangleAlert, UserCheck, Users, type LucideIcon,
 } from 'lucide-react';
 import { actionAnalyticsStats } from '../../../features/executive/actionAnalytics';
-import type { ExecutiveCorrectiveActions, ExecutivePeriod } from '../../../features/executive/types';
+import type { ExecutiveCorrectiveActions, ExecutivePeriod, ExecutiveRangeBlock } from '../../../features/executive/types';
+import { coveredPeriodLabel } from '../../../features/executive/periodLabels';
 import { summarizeRootCauses } from '../../../utils/rootCauseInsights';
 import { ExecCard, ExecCardHeader, Footnote, SoftEmpty } from './ExecPrimitives';
 
@@ -99,8 +100,8 @@ function RankedActions({ title, rows, total, empty, testId }: {
 }
 
 /** Read-only decision patterns for summary pages. Operational follow-up stays in its own workspace. */
-export default function CorrectiveActionInsightsCard({ data, effective, scopeLabel }: {
-  data: ExecutiveCorrectiveActions | null; effective: ExecutivePeriod | null; scopeLabel: string;
+export default function CorrectiveActionInsightsCard({ data, effective, scopeLabel, range = null }: {
+  data: ExecutiveCorrectiveActions | null; effective: ExecutivePeriod | null; scopeLabel: string; range?: ExecutiveRangeBlock | null;
 }) {
   const titleId = useId();
   const selectId = useId();
@@ -117,7 +118,7 @@ export default function CorrectiveActionInsightsCard({ data, effective, scopeLab
     .map(([label, count]) => ({ label, count }))
     .sort((left, right) => right.count - left.count || left.label.localeCompare(right.label))
     .slice(0, 5);
-  const period = effective ? `${effective.month} ${effective.year}` : 'Selected period';
+  const period = coveredPeriodLabel(effective, range) || 'Selected period';
   const metricCards: MetricCard[] = [
     { label: 'Actions this month', count: stats.total, icon: ClipboardList, accent: 'blue' },
     { label: 'Employees actioned', count: stats.employees, icon: UserCheck, accent: 'green' },
@@ -162,7 +163,7 @@ export default function CorrectiveActionInsightsCard({ data, effective, scopeLab
             empty="No root causes recorded for these actions." testId="action-reason-rank" />
         </div> : <SoftEmpty>No corrective actions recorded for {period} in this scope.</SoftEmpty>}
         <Footnote>
-          Counts include all action statuses for the selected performance month. Each KPI counts once per action; an action may mention more than one KPI.
+          Counts include all action statuses for the {range ? 'selected range' : 'selected performance month'}. Each KPI counts once per action; an action may mention more than one KPI.
           {stats.withoutKpi > 0 && ` ${stats.withoutKpi} ${stats.withoutKpi === 1 ? 'action has' : 'actions have'} no recorded KPI.`}
           {(data.analytics.unassigned_period ?? 0) > 0 && ` ${data.analytics.unassigned_period} undated actions are excluded from monthly analysis.`}
         </Footnote>

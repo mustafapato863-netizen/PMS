@@ -20,7 +20,7 @@ import { canAccessBroadAppPages, canSeeSummaryActionAnalytics } from '../../lib/
 import { canonicalTeamName, type PMSAction } from '../../types';
 import { teamBelongsToFunction, type TeamFunctionMap } from '../insights/filterCascade';
 import type { InsightFilters } from '../insights/types';
-import { composeExecutiveSummary, SUMMARY_BRANCHES, SUMMARY_LEVELS, toExecRecords, type ExecRecord, type FollowUpAction } from './compose';
+import { composeExecutiveSummary, monthsBetween, periodFromKey, previousRangeOf, SUMMARY_BRANCHES, SUMMARY_LEVELS, toExecRecords, type ExecRecord, type FollowUpAction } from './compose';
 import { useSummaryRecords } from './useSummaryRecords';
 import { EXECUTIVE_FUNCTIONS, summaryFunctionMatches, summaryTeamMatches } from './functions';
 import type { ExecutiveFunction, ExecutiveSummary, ExecutiveView } from './types';
@@ -56,6 +56,8 @@ export interface UseExecutiveSummaryArgs {
   accessibleFunctions?: string[];
   /** Actions queued on this device (the page reads them from the action store). Only the unsynced ones count, as Pending Sync. */
   queuedActions?: PMSAction[] | null;
+  /** Range mode: the first and last month (YYYY-MM), both inclusive. Null for a single month. */
+  range?: { from: string; to: string } | null;
   enabled?: boolean;
   /** Injected for tests. */
   today?: Date;
@@ -129,7 +131,7 @@ export function buildExecutiveOptions(records: ExecRecord[], filters: ExecutiveF
 }
 
 export function useExecutiveSummary({
-  view, role, filters, managerTeams, functionName = null, accessibleFunctions, queuedActions = null, enabled = true, today,
+  view, role, filters, managerTeams, functionName = null, accessibleFunctions, queuedActions = null, range = null, enabled = true, today,
 }: UseExecutiveSummaryArgs): ExecutiveSummaryResult {
   const summaryRecords = useSummaryRecords(enabled);
   const legacyEnabled = enabled && summaryRecords.isError;
@@ -151,6 +153,17 @@ export function useExecutiveSummary({
     return managerTeamOptions.length === 1 ? managerTeamOptions[0] : null;
   }, [filters.team, managerTeamOptions, view]);
 
+  // Range mode: the months averaged, and the range of the same length before them.
+  const rangeFromKey = range?.from ?? '';
+  const rangeToKey = range?.to ?? '';
+  const rangeInput = useMemo(() => {
+    const from = rangeFromKey ? periodFromKey(rangeFromKey) : null;
+    const to = rangeToKey ? periodFromKey(rangeToKey) : null;
+    if (!from || !to) return null;
+    const months = monthsBetween(from, to);
+    return months.length ? { months, previousMonths: previousRangeOf(months) } : null;
+  }, [rangeFromKey, rangeToKey]);
+
   const baseInput = useMemo(() => ({
     view,
     role,
@@ -158,14 +171,15 @@ export function useExecutiveSummary({
     filters: view === 'managerial' ? { branch: filters.branch, performanceLevel: filters.performanceLevel } : {
       region: filters.region, branch: filters.branch, position: filters.position, teamFunction: view === 'function' ? undefined : filters.teamFunction, team: filters.team, performanceLevel: filters.performanceLevel,
     },
-    requestedPeriodKey: filters.periodKey ?? null,
+    requestedPeriodKey: rangeInput ? null : (filters.periodKey ?? null),
+    range: rangeInput,
     team: managerTeam,
     teamScope: view === 'managerial' ? managerTeamOptions : null,
     functionName,
     accessibleFunctions,
     comparisonRecords: canAccessBroadAppPages(role) ? records : null,
     today: today ?? new Date(),
-  }), [accessibleFunctions, filters, functionName, managerTeam, managerTeamOptions, records, role, today, view]);
+  }), [accessibleFunctions, filters, functionName, managerTeam, managerTeamOptions, rangeInput, records, role, today, view]);
 
   const preliminary = useMemo(() => (enabled && !recordsLoading ? composeExecutiveSummary(baseInput) : null), [baseInput, enabled, recordsLoading]);
   const effectiveKey = preliminary?.period.effective?.key;
@@ -177,7 +191,8 @@ export function useExecutiveSummary({
   }, [effectiveKey, filters, functionName, managerTeam, view]);
   // The Insights endpoint does not support branch or Marketing role scope yet.
   // Never display a wider cached driver result as if it matches either selection.
-  const driversEnabled = enabled && Boolean(effectiveKey) && DRIVER_ROLES.has(role) && !filters.branch && !filters.position;
+  // Range mode hides the Insights drivers: they are defined for one month, not for an average over several.
+  const driversEnabled = enabled && !rangeInput && Boolean(effectiveKey) && DRIVER_ROLES.has(role) && !filters.branch && !filters.position;
   const workspace = useInsightsWorkspace(insightFilters, { enabled: driversEnabled });
 
   const actionsEnabled = enabled && canSeeSummaryActionAnalytics(role);

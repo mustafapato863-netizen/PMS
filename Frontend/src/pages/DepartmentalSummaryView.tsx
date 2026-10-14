@@ -33,6 +33,8 @@ import { teamBelongsToFunction, teamOptionsFor } from '../features/insights/filt
 import { EXECUTIVE_FUNCTIONS, executiveFunctionForTeam, isPreApprovalsSubTeam, preApprovalsSubTeamOptions, summaryTeamOptions } from '../features/executive/functions';
 import { summaryFilterValue } from '../features/executive/filterState';
 import { useActionStore } from '../hooks/useActionStore';
+import PeriodRangeControl, { type PeriodMode } from '../components/executive/v1/PeriodRangeControl';
+import { rangeLabel, rangeMonthKeys, rangePeriods, rangeRequestIsInvalid, readRangeSelection, type RangeSelection } from '../features/executive/rangeParams';
 
 type PageFilters = ExecutiveFilterState & { subTeam?: string };
 const PARAM: Record<keyof PageFilters, string> = {
@@ -47,6 +49,9 @@ function DepartmentalSummaryPage({ view }: { view: Exclude<ExecutiveViewKind, 'f
   const { currentUser } = useAuth();
   const assigned = directorScope(role, currentUser);
   const [searchParams, setSearchParams] = useSearchParams();
+  // A range (from / to) replaces the single month (period) in the URL; an invalid range shows the month.
+  const rangeSelection = readRangeSelection(searchParams);
+  const rangeInvalid = rangeRequestIsInvalid(searchParams);
   const filters: PageFilters = useMemo(() => {
     const read = (key: keyof PageFilters) => summaryFilterValue(searchParams.get(PARAM[key]));
     const rawTeam = read('team');
@@ -79,7 +84,31 @@ function DepartmentalSummaryPage({ view }: { view: Exclude<ExecutiveViewKind, 'f
     filters: { ...filters, team: filters.subTeam || filters.team },
     managerTeams: currentUser?.accessible_teams,
     queuedActions,
+    range: rangeSelection,
   });
+
+  // Month choices come from the catalog; a range can pick only those months.
+  const periodChoices = periodOptionsFor(summary, filters.periodKey);
+  const catalogKeys = [...new Set(periodChoices.map((option) => option.value))].sort();
+  const writeMonth = useCallback((period: string | undefined) => {
+    const next = new URLSearchParams(searchParams);
+    next.delete('from');
+    next.delete('to');
+    if (period) next.set('period', period);
+    else next.delete('period');
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
+  const writeRange = useCallback((selection: RangeSelection) => {
+    const next = new URLSearchParams(searchParams);
+    next.delete('period');
+    next.set('from', selection.from);
+    next.set('to', selection.to);
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
+  const rangeTitle = rangeSelection ? rangePeriods(rangeSelection) : null;
+  const rangeHeading = rangeSelection && rangeTitle
+    ? `${rangeLabel(rangeTitle.first, rangeTitle.last)} · ${summary?.period.range?.months_with_data ?? 0} of ${rangeMonthKeys(rangeSelection).length} months with data`
+    : null;
 
   const focusPeriod = useCallback(() => {
     document.querySelector<HTMLElement>('[aria-label="Departmental period"]')?.focus();
@@ -106,7 +135,20 @@ function DepartmentalSummaryPage({ view }: { view: Exclude<ExecutiveViewKind, 'f
   const header = (
     <InsightsHeader
       title="Executive Summary"
-      subtitle={subtitleFor(summary, view, summaryViewLabel(role, view))}
+      subtitle={rangeHeading ?? subtitleFor(summary, view, summaryViewLabel(role, view))}
+      periodControl={(
+        <PeriodRangeControl
+          mode={(rangeSelection ? 'range' : 'month') as PeriodMode}
+          onModeChange={(next) => { if (next === 'month') writeMonth(rangeSelection?.to ?? filters.periodKey); }}
+          period={filters.periodKey ?? summary?.period.effective?.key ?? ''}
+          periodOptions={periodChoices}
+          onPeriodChange={(value) => writeMonth(value)}
+          periodAriaLabel="Departmental period"
+          selection={rangeSelection}
+          catalogKeys={catalogKeys}
+          onSelectionChange={writeRange}
+        />
+      )}
       intro={<SummaryScopeWelcome role={role} user={currentUser} scope={summary?.scope} />}
       titleBadge={managerial
         ? <span className="rounded-full bg-[var(--insights-accent-tag)] px-[8px] py-[2px] text-xs font-semibold text-[var(--insights-accent-text)]">Team scope</span>
@@ -116,7 +158,7 @@ function DepartmentalSummaryPage({ view }: { view: Exclude<ExecutiveViewKind, 'f
       periodAriaLabel="Departmental period"
       rowFrom="2xl"
       period={filters.periodKey ?? summary?.period.effective?.key ?? ''}
-      periodOptions={periodOptionsFor(summary, filters.periodKey)}
+      periodOptions={periodChoices}
       onPeriodChange={(value) => update({ periodKey: value })}
       region={managerial ? scope?.region ?? '' : assigned.regionLocked ? assigned.regionLabel : filters.region ?? ''}
       regionOptions={toOptions(managerial ? [scope?.region ?? ''].filter(Boolean) : assigned.regionLocked ? [assigned.regionLabel] : options.regions)}
@@ -160,7 +202,7 @@ function DepartmentalSummaryPage({ view }: { view: Exclude<ExecutiveViewKind, 'f
     const [year, month] = key.split('-').map(Number);
     body = (
       <ExecutiveEmptyState
-        monthLabel={`${MONTHS[(month || 1) - 1]} ${year}`}
+        monthLabel={rangeTitle ? rangeLabel(rangeTitle.first, rangeTitle.last) : `${MONTHS[(month || 1) - 1]} ${year}`}
         canUpload={canAccessSettingsContent(role)}
         dataStatus={summary?.data_status ?? { has_data: false, last_upload: null }}
         onPickMonth={focusPeriod}
@@ -183,6 +225,11 @@ function DepartmentalSummaryPage({ view }: { view: Exclude<ExecutiveViewKind, 'f
   return (
     <div className="app-page-shell rf-page rf-page--executive executive-v1 [--app-section-gap:16px] [--rf-page-gap:16px]">
       {header}
+      {rangeInvalid && (
+        <p role="status" className="rounded-[12px] border border-[var(--insights-accent-border)] bg-[var(--insights-accent-soft)] px-[12px] py-[8px] text-[12px] text-[var(--insights-accent-text)]">
+          The range needs a From month on or before To. Showing the selected month instead.
+        </p>
+      )}
       {body}
     </div>
   );

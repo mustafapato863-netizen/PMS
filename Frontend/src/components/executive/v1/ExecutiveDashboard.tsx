@@ -4,6 +4,7 @@
  */
 import type { ReactNode } from 'react';
 import type { ExecutiveSummary } from '../../../features/executive/types';
+import { coveredPeriodLabel } from '../../../features/executive/periodLabels';
 import ExecutiveHero from './ExecutiveHero';
 import FunctionCards from './FunctionCards';
 import DriversCard from './DriversCard';
@@ -32,6 +33,10 @@ export interface ExecutiveDashboardPermissions {
 export default function ExecutiveDashboard({ summary, permissions, functionBreakdownSlot = null }: { summary: ExecutiveSummary; permissions: ExecutiveDashboardPermissions; functionBreakdownSlot?: ReactNode }) {
   const { period, scope } = summary;
   const previous = period.previous;
+  // Range mode: the cards name the range ("Jun – Sep 2026") instead of the last month. Month mode is unchanged.
+  const range = period.range ?? null;
+  const rangeLabel = range ? coveredPeriodLabel(period.effective, range) : null;
+  const levelSubtitle = rangeLabel ? `Score, grade and headcount by performance level · ${rangeLabel}` : undefined;
   // Fallback month and evaluation-basis notes sit above the hero in every layout.
   const notices = (
     <>
@@ -53,14 +58,14 @@ export default function ExecutiveDashboard({ summary, permissions, functionBreak
         </ScopeBanner>
         {notices}
         <ExecutiveHero summary={summary} />
-        <TeamKpiTable rows={summary.kpis} effective={period.effective} previous={previous} score={summary.hero.score} reportHref={team ? `/team/${encodeURIComponent(team)}` : null} />
+        <TeamKpiTable rows={summary.kpis} effective={period.effective} previous={previous} range={range} score={summary.hero.score} reportHref={team ? `/team/${encodeURIComponent(team)}` : null} />
         <EmployeesBelowTargetCard summary={summary} />
         <div className="grid gap-[16px] xl:grid-cols-[minmax(0,1fr)_minmax(0,360px)]">
-          <PeopleToReviewCard people={summary.people} team={team} previous={previous} rosterHref={team ? `/team/${encodeURIComponent(team)}` : null} />
-          <TopPerformersCard people={summary.people} previous={previous} />
+          <PeopleToReviewCard people={summary.people} team={team} previous={previous} range={range} rosterHref={team ? `/team/${encodeURIComponent(team)}` : null} />
+          <TopPerformersCard people={summary.people} previous={previous} range={range} />
         </div>
-        <LevelBreakdownCard levels={summary.levels} />
-        {permissions.canSeeActions && <CorrectiveActionInsightsCard data={summary.corrective_actions} effective={period.effective} scopeLabel={team ?? 'Your teams'} />}
+        <LevelBreakdownCard levels={summary.levels} subtitle={levelSubtitle} />
+        {permissions.canSeeActions && <CorrectiveActionInsightsCard data={summary.corrective_actions} effective={period.effective} scopeLabel={team ?? 'Your teams'} range={range} />}
       </div>
     );
   }
@@ -105,19 +110,19 @@ export default function ExecutiveDashboard({ summary, permissions, functionBreak
       {notices}
       <ExecutiveHero summary={summary} />
       {summary.functions.length > 0 && (
-        <FunctionCards cards={summary.functions} previous={previous} linkable={permissions.canOpenFunctions} />
+        <FunctionCards cards={summary.functions} previous={previous} range={range} linkable={permissions.canOpenFunctions} />
       )}
       <EmployeesBelowTargetCard summary={summary} />
       <div className="grid gap-[16px] xl:grid-cols-[minmax(0,1fr)_minmax(0,400px)]">
         <DriversCard summary={summary} viewAllHref={insightsHref} />
-        <RegionSplitCard regions={summary.regions} previous={previous} />
+        <RegionSplitCard regions={summary.regions} previous={previous} range={range} />
       </div>
       <div className="grid gap-[16px] xl:grid-cols-[minmax(0,1fr)_minmax(0,400px)]">
-        <TeamsAtRiskCard key={JSON.stringify([scope, period.effective?.key])} teams={summary.teams} />
-        <GradeDistributionCard distribution={summary.grade_distribution} previous={previous} />
+        <TeamsAtRiskCard key={JSON.stringify([scope, period.effective?.key, range?.start.key])} teams={summary.teams} rangeLabel={rangeLabel} />
+        <GradeDistributionCard distribution={summary.grade_distribution} previous={previous} range={range} />
       </div>
       {permissions.canSeeActions && (
-        <CorrectiveActionInsightsCard data={summary.corrective_actions} effective={period.effective} scopeLabel={scope.team ?? scope.function ?? 'Company-wide'} />
+        <CorrectiveActionInsightsCard data={summary.corrective_actions} effective={period.effective} scopeLabel={scope.team ?? scope.function ?? 'Company-wide'} range={range} />
       )}
     </div>
   );
