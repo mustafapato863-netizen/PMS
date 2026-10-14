@@ -562,3 +562,71 @@ def test_status_route_rejects_executive_viewers(db):
         headers={"X-User-Role": "Executive"},
     )
     assert response.status_code == 403
+
+
+def _saved_with_owner_and_due(db):
+    team = _team(db, "Inbound")
+    employee = _employee(db, team)
+    manager = _user(db, "inbound-manager", "Manager")
+    _assign(db, manager, team)
+    scope = _scope(manager, "Inbound")
+    created, _ = _service(db).save(
+        employee_identifier=employee.employee_id,
+        month="September",
+        year=2026,
+        manager_action="Coaching: Review the workflow",
+        manager_notes="Booking gap",
+        scope=scope,
+        due_date=dt.date(2026, 9, 29),
+        owner_user_id=str(manager.id),
+        priority="High",
+        user_id=str(manager.id),
+    )
+    return employee, manager, scope, created
+
+
+def test_update_without_tracking_fields_keeps_owner_and_due_date(db):
+    employee, manager, _scope_, created = _saved_with_owner_and_due(db)
+
+    updated, is_update = _service(db).save(
+        employee_identifier=employee.employee_id,
+        month="September",
+        year=2026,
+        manager_action="Coaching: Review the workflow again",
+        manager_notes="Booking gap",
+        action_id=created["id"],
+    )
+
+    assert is_update is True
+    assert updated["due_date"] == "2026-09-29"
+    assert updated["owner"] == {"id": str(manager.id), "name": "Inbound Manager"}
+    assert updated["priority"] == "High"
+
+
+def test_explicit_null_clears_owner_and_due_date(db):
+    employee, _manager, scope, created = _saved_with_owner_and_due(db)
+
+    cleared, _ = _service(db).save(
+        employee_identifier=employee.employee_id,
+        month="September",
+        year=2026,
+        manager_action="Coaching: Review the workflow",
+        manager_notes="Booking gap",
+        action_id=created["id"],
+        scope=scope,
+        due_date=None,
+        owner_user_id=None,
+    )
+
+    assert cleared["due_date"] is None
+    assert cleared["owner"] is None
+    assert cleared["priority"] == "High"
+
+
+def test_route_passes_only_the_tracking_fields_the_client_sent():
+    from api.routers.employee import _tracking_fields
+
+    assert _tracking_fields({"manager_action": "Coaching: x", "month": "September"}) == {}
+    assert _tracking_fields({"due_date": None}) == {"due_date": None}
+    assert _tracking_fields({"owner_user_id": ""}) == {"owner_user_id": None}
+    assert _tracking_fields({"owner_user_id": "u-1", "priority": "High"}) == {"owner_user_id": "u-1", "priority": "High"}
