@@ -15,6 +15,10 @@ interface PerformanceKpiCardProps {
   badgeType?: PerformanceKpiBadgeType;
   trendDelta?: number | null;
   trendUnit?: string;
+  /** Replaces the default "+1.2% MoM" line, e.g. "−0.94 pts vs Aug". */
+  trendText?: string;
+  /** Muted line shown when there is no change, so the card keeps its layout. */
+  trendEmptyText?: string;
   isTrendGood?: boolean;
   progressPercent?: number | null;
   /** Score points from the caller. 0.7 means 0.7%, including values at or below 1. */
@@ -80,6 +84,8 @@ const PerformanceKpiCard = ({
   badgeType = 'neutral',
   trendDelta,
   trendUnit = '%',
+  trendText,
+  trendEmptyText,
   isTrendGood,
   progressPercent,
   contribution,
@@ -161,8 +167,15 @@ const PerformanceKpiCard = ({
                   : 'text-rose-600 dark:text-rose-500'
             }`}>
               <TrendIcon size={11} />
-              <span>{trendDelta > 0 ? '+' : ''}{trendDelta.toFixed(trendUnit === 's' ? 0 : 1)}{trendUnit} MoM</span>
+              <span>
+                {trendText ?? (
+                  <>{trendDelta > 0 ? '+' : ''}{trendDelta.toFixed(trendUnit === 's' ? 0 : 1)}{trendUnit} MoM</>
+                )}
+              </span>
             </span>
+          )}
+          {!hasTrend && trendEmptyText && (
+            <span className="shrink-0 text-xs font-semibold text-[var(--text-muted)]">{trendEmptyText}</span>
           )}
         </div>
       </div>

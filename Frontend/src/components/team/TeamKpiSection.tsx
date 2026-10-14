@@ -2,7 +2,7 @@ import type { LucideIcon } from 'lucide-react';
 import {
   Users, TrendingUp, Award, AlertTriangle, Clock,
   PhoneCall, Calendar, UserCheck, AlertCircle,
-  TrendingDown, Activity, HelpCircle, ShieldCheck, DollarSign, FileText
+  TrendingDown, Activity, HelpCircle, ShieldCheck, DollarSign, FileText, Minus
 } from 'lucide-react';
 import { getWeightForLabel } from '../../utils/kpiScore';
 import KpiCard from '../common/KpiCard';
@@ -10,6 +10,7 @@ import PerformanceKpiCard from '../common/PerformanceKpiCard';
 import { GRADE_THRESHOLDS } from '../../constants/grades';
 import { calculateKpiTargetProgress } from '../common/performanceKpiProgress';
 import { formatPercentPoints, formatPercentRatio, percentPointsFromRatio } from '../../utils/percentForm';
+import { formatMonthChange, missingMonthChangeText } from '../../features/team/monthChange';
 
 const getKpiIcon = (label: string): LucideIcon => {
   const normalized = label.toLowerCase();
@@ -156,6 +157,8 @@ interface TeamKpiSectionProps {
   prevPctDE?: number;
   month?: string;
   teamName?: string;
+  /** Short name of the previous month that has data, e.g. "Aug". Null when there is none. */
+  prevMonthLabel?: string | null;
 }
 
 const TeamKpiSection = ({
@@ -177,28 +180,47 @@ const TeamKpiSection = ({
   prevPctDE,
   month,
   teamName,
+  prevMonthLabel,
 }: TeamKpiSectionProps) => {
-  // Calculate Deltas for Trend display using relative percentage change where applicable
-  const attendDelta = prevTeamMetrics && prevTeamMetrics.attendCR !== 0 ? ((teamMetrics.attendCR - prevTeamMetrics.attendCR) / prevTeamMetrics.attendCR) * 100 : undefined;
-  const bookingDelta = prevTeamMetrics && prevTeamMetrics.bookingCR !== 0 ? ((teamMetrics.bookingCR - prevTeamMetrics.bookingCR) / prevTeamMetrics.bookingCR) * 100 : undefined;
+  // Changes against the previous month. Percent KPIs are points; other units keep their own unit.
+  const monthLabel = prevMonthLabel ?? '';
+  const hasPreviousMonth = Boolean(prevMonthLabel);
+  /** Difference between two values of one measure; undefined when either is missing. */
+  const deltaFrom = (current: number | undefined, previous: number | undefined) => (
+    current !== undefined && previous !== undefined && Number.isFinite(current) && Number.isFinite(previous)
+      ? current - previous
+      : undefined
+  );
+  /** Change of a dynamic KPI in its own unit. Percent KPIs arrive as ratios, so compare in points. */
+  const dynamicChange = (kpi: DynamicKpi, previousActual: number | undefined) => deltaFrom(
+    kpi.unit === '%' ? percentPointsFromRatio(kpi.actual) : kpi.actual,
+    previousActual === undefined ? undefined : (kpi.unit === '%' ? percentPointsFromRatio(previousActual) : previousActual),
+  );
+  /** Trend text, or the muted fallback when there is no change to show. */
+  const monthTrend = (delta: number | undefined, unit: string | undefined) => ({
+    trendText: delta === undefined ? undefined : formatMonthChange(delta, unit, monthLabel),
+    trendEmptyText: delta === undefined ? missingMonthChangeText(hasPreviousMonth) : undefined,
+  });
+  const attendDelta = deltaFrom(teamMetrics.attendCR, prevTeamMetrics?.attendCR);
+  const bookingDelta = deltaFrom(teamMetrics.bookingCR, prevTeamMetrics?.bookingCR);
   const ahtDeltaSec = prevTeamMetrics ? avgAHTSec - prevTeamMetrics.avgAHTSec : undefined; // AHT uses absolute seconds difference
-  const abandonDelta = prevTeamMetrics && prevTeamMetrics.abandonRate !== 0 ? ((teamMetrics.abandonRate - prevTeamMetrics.abandonRate) / prevTeamMetrics.abandonRate) * 100 : undefined;
-  const reachabilityDelta = prevTeamMetrics && prevTeamMetrics.reachabilityRate !== 0 ? ((teamMetrics.reachabilityRate - prevTeamMetrics.reachabilityRate) / prevTeamMetrics.reachabilityRate) * 100 : undefined;
-  const utzDelta = prevTeamMetrics && prevTeamMetrics.utzRate !== 0 ? ((teamMetrics.utzRate - prevTeamMetrics.utzRate) / prevTeamMetrics.utzRate) * 100 : undefined;
+  const abandonDelta = deltaFrom(teamMetrics.abandonRate, prevTeamMetrics?.abandonRate);
+  const reachabilityDelta = deltaFrom(teamMetrics.reachabilityRate, prevTeamMetrics?.reachabilityRate);
+  const utzDelta = deltaFrom(teamMetrics.utzRate, prevTeamMetrics?.utzRate);
 
-  const submissionDelta = prevTeamMetrics && prevTeamMetrics.submissionRate !== 0 && teamMetrics.submissionRate !== undefined && prevTeamMetrics.submissionRate !== undefined ? ((teamMetrics.submissionRate - prevTeamMetrics.submissionRate) / prevTeamMetrics.submissionRate) * 100 : undefined;
-  const rejectionDelta = prevTeamMetrics && prevTeamMetrics.rejectionRate !== 0 && teamMetrics.rejectionRate !== undefined && prevTeamMetrics.rejectionRate !== undefined ? ((teamMetrics.rejectionRate - prevTeamMetrics.rejectionRate) / prevTeamMetrics.rejectionRate) * 100 : undefined;
-  const errorDelta = prevTeamMetrics && prevTeamMetrics.errorRate !== 0 && teamMetrics.errorRate !== undefined && prevTeamMetrics.errorRate !== undefined ? ((teamMetrics.errorRate - prevTeamMetrics.errorRate) / prevTeamMetrics.errorRate) * 100 : undefined;
+  const submissionDelta = deltaFrom(teamMetrics.submissionRate, prevTeamMetrics?.submissionRate);
+  const rejectionDelta = deltaFrom(teamMetrics.rejectionRate, prevTeamMetrics?.rejectionRate);
+  const errorDelta = deltaFrom(teamMetrics.errorRate, prevTeamMetrics?.errorRate);
 
   const scoreDelta = prevAvgScore !== undefined && prevAvgScore !== 0 ? avgScore - prevAvgScore : undefined;
   const pctABDelta = prevPctAB !== undefined && prevPctAB !== 0 ? pctAB - prevPctAB : undefined;
   const pctDEDelta = prevPctDE !== undefined && prevPctDE !== 0 ? pctDE - prevPctDE : undefined;
 
-  const opCensusDelta = prevTeamMetrics && prevTeamMetrics.opCensusRate !== 0 && teamMetrics.opCensusRate !== undefined && prevTeamMetrics.opCensusRate !== undefined ? ((teamMetrics.opCensusRate - prevTeamMetrics.opCensusRate) / prevTeamMetrics.opCensusRate) * 100 : undefined;
-  const opRevenueDelta = prevTeamMetrics && prevTeamMetrics.opRevenueRate !== 0 && teamMetrics.opRevenueRate !== undefined && prevTeamMetrics.opRevenueRate !== undefined ? ((teamMetrics.opRevenueRate - prevTeamMetrics.opRevenueRate) / prevTeamMetrics.opRevenueRate) * 100 : undefined;
-  const ipCensusDelta = prevTeamMetrics && prevTeamMetrics.ipCensusRate !== 0 && teamMetrics.ipCensusRate !== undefined && prevTeamMetrics.ipCensusRate !== undefined ? ((teamMetrics.ipCensusRate - prevTeamMetrics.ipCensusRate) / prevTeamMetrics.ipCensusRate) * 100 : undefined;
-  const ipRevenueDelta = prevTeamMetrics && prevTeamMetrics.ipRevenueRate !== 0 && teamMetrics.ipRevenueRate !== undefined && prevTeamMetrics.ipRevenueRate !== undefined ? ((teamMetrics.ipRevenueRate - prevTeamMetrics.ipRevenueRate) / prevTeamMetrics.ipRevenueRate) * 100 : undefined;
-  const activityDelta = prevTeamMetrics && prevTeamMetrics.activityRate !== 0 && teamMetrics.activityRate !== undefined && prevTeamMetrics.activityRate !== undefined ? ((teamMetrics.activityRate - prevTeamMetrics.activityRate) / prevTeamMetrics.activityRate) * 100 : undefined;
+  const opCensusDelta = deltaFrom(teamMetrics.opCensusRate, prevTeamMetrics?.opCensusRate);
+  const opRevenueDelta = deltaFrom(teamMetrics.opRevenueRate, prevTeamMetrics?.opRevenueRate);
+  const ipCensusDelta = deltaFrom(teamMetrics.ipCensusRate, prevTeamMetrics?.ipCensusRate);
+  const ipRevenueDelta = deltaFrom(teamMetrics.ipRevenueRate, prevTeamMetrics?.ipRevenueRate);
+  const activityDelta = deltaFrom(teamMetrics.activityRate, prevTeamMetrics?.activityRate);
 
   const isOutbound = teamId?.toLowerCase() === 'outbound';
   const isInboundUAE = teamId?.toLowerCase() === 'inbound-uae';
@@ -274,16 +296,21 @@ const TeamKpiSection = ({
   const isAbandonGood = abandonDelta !== undefined ? (abandonLower ? abandonDelta <= 0 : abandonDelta >= 0) : undefined;
   const isReachabilityGood = reachabilityDelta !== undefined ? (reachLower ? reachabilityDelta <= 0 : reachabilityDelta >= 0) : undefined;
   const isUtzGood = utzDelta !== undefined ? (utzLower ? utzDelta <= 0 : utzDelta >= 0) : undefined;
-  const renderTrendNote = (delta: number | undefined, lowerBetter = false) => {
-    if (delta === undefined || delta === 0) return null;
+  const renderTrendNote = (delta: number | undefined, lowerBetter = false, unit = '%') => {
+    if (delta === undefined) {
+      return <span className="text-xs font-semibold text-[var(--text-muted)]">{missingMonthChangeText(hasPreviousMonth)}</span>;
+    }
     const isDown = delta < 0;
     const isGood = lowerBetter ? isDown : !isDown;
-    const Icon = isDown ? TrendingDown : TrendingUp;
-    const colorClass = isGood ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-500';
+    const stable = delta === 0;
+    const Icon = stable ? Minus : isDown ? TrendingDown : TrendingUp;
+    const colorClass = stable
+      ? 'text-[var(--text-muted)]'
+      : isGood ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-500';
     return (
       <span className={`inline-flex items-center gap-1 font-semibold ${colorClass}`}>
         <Icon size={12} />
-        <span>{delta >= 0 ? '+' : ''}{delta.toFixed(1)}% MoM</span>
+        <span>{formatMonthChange(delta, unit, monthLabel)}</span>
       </span>
     );
   };
@@ -348,8 +375,8 @@ const TeamKpiSection = ({
       return weight !== undefined && weight !== null && weight > 0;
     })
     : [];
-  const qualityDelta = qualityKpi && previousQualityKpi && previousQualityKpi.actual !== 0
-    ? ((qualityKpi.actual - previousQualityKpi.actual) / previousQualityKpi.actual) * 100
+  const qualityDelta = qualityKpi && previousQualityKpi
+    ? dynamicChange(qualityKpi, previousQualityKpi.actual)
     : undefined;
   const qualityLower = appliedLowerBetter(qualityKpi, false);
   const isQualityOnTarget = !!qualityKpi && (
@@ -366,6 +393,7 @@ const TeamKpiSection = ({
     targetText: string,
     onTarget: boolean,
     trendGood: boolean | undefined,
+    unit = '%',
   ) => {
     if (metricVaries(kpi)) {
       return {
@@ -374,6 +402,7 @@ const TeamKpiSection = ({
         badgeType: 'neutral' as const,
         detailLabel: 'Applied basis varies',
         trendDelta: delta,
+        ...monthTrend(delta, unit),
         isTrendGood: undefined,
         progressPercent: null as number | null,
         contribution: null as number | null,
@@ -388,6 +417,7 @@ const TeamKpiSection = ({
       badgeType: (onTarget ? 'success' : 'danger') as 'success' | 'danger',
       detailLabel: statesDirection ? (lower ? 'Lower is better' : 'Higher is better') : detailLabel,
       trendDelta: delta,
+      ...monthTrend(delta, unit),
       isTrendGood: trendGood,
       progressPercent: calculateKpiTargetProgress(actual, numericTarget, lower),
       contribution: calcContribution(label, actual, numericTarget, lower),
@@ -515,6 +545,7 @@ const TeamKpiSection = ({
               formatSecondsAsClock(ahtTargetSec),
               isAhtOnTarget,
               isAhtGood,
+              's',
             )}
           />
 
@@ -597,6 +628,7 @@ const TeamKpiSection = ({
                 formatKpiValue(qualityKpi.target, qualityKpi.unit),
                 isQualityOnTarget,
                 qualityDelta === undefined ? undefined : (qualityLower ? qualityDelta <= 0 : qualityDelta >= 0),
+                qualityKpi.unit,
               )}
             />
           )}
@@ -607,9 +639,7 @@ const TeamKpiSection = ({
         <div className="mt-2 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {additionalScoredCallCenterKpis.map((kpi) => {
             const previous = prevTeamMetrics?.dynamicKpis?.find((candidate) => candidate.label === kpi.label);
-            const delta = previous && previous.actual !== 0
-              ? ((kpi.actual - previous.actual) / previous.actual) * 100
-              : undefined;
+            const delta = previous ? dynamicChange(kpi, previous.actual) : undefined;
             const varied = metricVaries(kpi);
             const onTarget = !varied && (kpi.isLowerBetter ? kpi.actual <= kpi.target : kpi.actual >= kpi.target);
             const Icon = getKpiIcon(kpi.label);
@@ -625,6 +655,7 @@ const TeamKpiSection = ({
                 badgeText={varied ? 'Basis varies' : (onTarget ? 'On Target' : 'Below Target')}
                 badgeType={varied ? 'neutral' : (onTarget ? 'success' : 'danger')}
                 trendDelta={delta}
+                {...monthTrend(delta, kpi.unit)}
                 isTrendGood={delta === undefined ? undefined : (kpi.isLowerBetter ? delta <= 0 : delta >= 0)}
                 trendUnit={kpi.unit === '%' ? '%' : ''}
                 progressPercent={varied ? null : calculateKpiTargetProgress(kpi.actual, kpi.target, kpi.isLowerBetter)}
@@ -653,6 +684,7 @@ const TeamKpiSection = ({
             badgeText={(teamMetrics.rejectionRate || 0) <= 3.0 ? 'On Target' : 'Below Target'}
             badgeType={(teamMetrics.rejectionRate || 0) <= 3.0 ? 'success' : 'danger'}
             trendDelta={rejectionDelta}
+            {...monthTrend(rejectionDelta, '%')}
             isTrendGood={(rejectionDelta || 0) <= 0}
             progressPercent={calculateKpiTargetProgress(teamMetrics.rejectionRate || 0, 3.0, true)}
             contribution={teamMetrics.rejectionContribution ?? calcContribution('IP Rejection Rate', teamMetrics.rejectionRate || 0, 3.0, true)}
@@ -668,6 +700,7 @@ const TeamKpiSection = ({
             badgeText={(teamMetrics.errorRate || 0) <= 3.0 ? 'On Target' : 'Below Target'}
             badgeType={(teamMetrics.errorRate || 0) <= 3.0 ? 'success' : 'danger'}
             trendDelta={errorDelta}
+            {...monthTrend(errorDelta, '%')}
             isTrendGood={(errorDelta || 0) <= 0}
             progressPercent={calculateKpiTargetProgress(teamMetrics.errorRate || 0, 3.0, true)}
             contribution={teamMetrics.errorContribution ?? calcContribution('Initial Error Rate', teamMetrics.errorRate || 0, 3.0, true)}
@@ -683,6 +716,7 @@ const TeamKpiSection = ({
             badgeText={(teamMetrics.submissionRate || 0) >= 90.0 ? 'On Target' : 'Below Target'}
             badgeType={(teamMetrics.submissionRate || 0) >= 90.0 ? 'success' : 'danger'}
             trendDelta={submissionDelta}
+            {...monthTrend(submissionDelta, '%')}
             isTrendGood={(submissionDelta || 0) >= 0}
             progressPercent={calculateKpiTargetProgress(teamMetrics.submissionRate || 0, 90.0)}
             contribution={teamMetrics.submissionContribution ?? calcContribution('Submission Rate', teamMetrics.submissionRate || 0, 90.0)}
@@ -703,6 +737,7 @@ const TeamKpiSection = ({
             badgeText={(teamMetrics.opCensusRate || 0) >= 100 ? 'On Target' : 'Below Target'}
             badgeType={(teamMetrics.opCensusRate || 0) >= 100 ? 'success' : 'danger'}
             trendDelta={opCensusDelta}
+            {...monthTrend(opCensusDelta, '%')}
             isTrendGood={(opCensusDelta || 0) >= 0}
             progressPercent={calculateKpiTargetProgress(teamMetrics.opCensusRate || 0, 100)}
             contribution={calcContribution('OP Census Ach', teamMetrics.opCensusRate || 0, 100)}
@@ -718,6 +753,7 @@ const TeamKpiSection = ({
             badgeText={(teamMetrics.opRevenueRate || 0) >= 100 ? 'On Target' : 'Below Target'}
             badgeType={(teamMetrics.opRevenueRate || 0) >= 100 ? 'success' : 'danger'}
             trendDelta={opRevenueDelta}
+            {...monthTrend(opRevenueDelta, '%')}
             isTrendGood={(opRevenueDelta || 0) >= 0}
             progressPercent={calculateKpiTargetProgress(teamMetrics.opRevenueRate || 0, 100)}
             contribution={calcContribution('OP Revenue Ach', teamMetrics.opRevenueRate || 0, 100)}
@@ -733,6 +769,7 @@ const TeamKpiSection = ({
             badgeText={(teamMetrics.ipCensusRate || 0) >= 100 ? 'On Target' : 'Below Target'}
             badgeType={(teamMetrics.ipCensusRate || 0) >= 100 ? 'success' : 'danger'}
             trendDelta={ipCensusDelta}
+            {...monthTrend(ipCensusDelta, '%')}
             isTrendGood={(ipCensusDelta || 0) >= 0}
             progressPercent={calculateKpiTargetProgress(teamMetrics.ipCensusRate || 0, 100)}
             contribution={calcContribution('IP Census Ach', teamMetrics.ipCensusRate || 0, 100)}
@@ -748,6 +785,7 @@ const TeamKpiSection = ({
             badgeText={(teamMetrics.ipRevenueRate || 0) >= 100 ? 'On Target' : 'Below Target'}
             badgeType={(teamMetrics.ipRevenueRate || 0) >= 100 ? 'success' : 'danger'}
             trendDelta={ipRevenueDelta}
+            {...monthTrend(ipRevenueDelta, '%')}
             isTrendGood={(ipRevenueDelta || 0) >= 0}
             progressPercent={calculateKpiTargetProgress(teamMetrics.ipRevenueRate || 0, 100)}
             contribution={calcContribution('IP Revenue Ach', teamMetrics.ipRevenueRate || 0, 100)}
@@ -763,6 +801,7 @@ const TeamKpiSection = ({
             badgeText={(teamMetrics.activityRate || 0) >= 100 ? 'On Target' : 'Below Target'}
             badgeType={(teamMetrics.activityRate || 0) >= 100 ? 'success' : 'danger'}
             trendDelta={activityDelta}
+            {...monthTrend(activityDelta, '%')}
             isTrendGood={(activityDelta || 0) >= 0}
             progressPercent={calculateKpiTargetProgress(teamMetrics.activityRate || 0, 100)}
             contribution={calcContribution('Activity Score', teamMetrics.activityRate || 0, 100)}
@@ -787,7 +826,7 @@ const TeamKpiSection = ({
           {teamMetrics.dynamicKpis.map((kpi) => {
             // Find corresponding prev KPI for trend
             const prevKpi = prevTeamMetrics?.dynamicKpis?.find((pk) => pk.label === kpi.label);
-            const trendDelta = prevKpi && prevKpi.actual !== 0 ? ((kpi.actual - prevKpi.actual) / prevKpi.actual) * 100 : undefined;
+            const trendDelta = prevKpi ? dynamicChange(kpi, prevKpi.actual) : undefined;
 
             const isPrescription = kpi.label.toLowerCase().includes('prescription');
             const varied = kpi.basisVaries === true;
@@ -832,6 +871,7 @@ const TeamKpiSection = ({
                 badgeText={varied ? 'Basis varies' : (isOnTarget ? 'On Target' : 'Below Target')}
                 badgeType={varied ? 'neutral' : (isOnTarget ? 'success' : 'danger')}
                 trendDelta={trendDelta}
+                {...monthTrend(trendDelta, kpi.unit)}
                 isTrendGood={isTrendGood}
                 trendUnit={kpi.unit === '%' ? '%' : ''}
                 progressPercent={progress}

@@ -43,6 +43,8 @@ import { GRADE_PALETTE, GRADE_THRESHOLDS } from '../constants/grades';
 import { buildTeamKpiAnalysis } from '../features/team/teamKpiAnalysis';
 import { aggregatePreApprovalsIpMetrics } from '../features/team/preApprovalsIpMetrics';
 import { aggregateConfiguredTeamKpis, calculateAggregatedTeamPerformance, displayedTeamScore, recordsUseAppliedPin } from '../features/team/teamKpiAggregator';
+import { formatMonthChange, missingMonthChangeText } from '../features/team/monthChange';
+import { shortMonthLabel } from '../hooks/api/scopedPeriod';
 import { resolveAvailableTeamPeriods } from '../features/team/teamPeriods';
 import { canAccessBroadAppPages, canAccessFunctionSummary, hasAllTeamsScope, isScopedDirectorRole } from '../lib/access';
 import { directorScope } from '../lib/directorScope';
@@ -304,7 +306,8 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
     pctDE: hookPctDE,
     totalAgents: hookTotalAgents,
     uniqueTeamCount: hookUniqueTeamCount,
-    prevMonth,
+    prevPeriodKey,
+    previousPeriodAgents,
     loading,
     dataSource,
     errorMessage,
@@ -383,10 +386,9 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
   // Previous month's data for trend calculation
   const prevRows = useMemo(() => {
     const map = new Map<string, { score: number }>();
-    if (!prevMonth) return map;
+    if (!prevPeriodKey) return map;
 
-    let prevAgents = allAgents.filter((a) => {
-      if (a.identity.month !== prevMonth) return false;
+    let prevAgents = previousPeriodAgents.filter((a) => {
       if (isCallCenterParent && callCenterChannel !== 'all' && !isCallCenterChannelTeam(a.identity.team, callCenterChannel)) return false;
       return !teamName || sameTeam(a.identity.team, teamName);
     });
@@ -405,7 +407,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
     });
 
     return map;
-  }, [prevMonth, allAgents, teamName, location, weightsList, isCallCenterParent, callCenterChannel]);
+  }, [prevPeriodKey, previousPeriodAgents, teamName, location, weightsList, isCallCenterParent, callCenterChannel]);
 
   // Table state
   const [search, setSearch] = useState('');
@@ -445,14 +447,13 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
     : month;
 
   const previousTeamAgents = useMemo(() => {
-    if (!prevMonth) return [];
-    return allAgents.filter((agent) => {
-      if (agent.identity.month !== prevMonth) return false;
+    if (!prevPeriodKey) return [];
+    return previousPeriodAgents.filter((agent) => {
       if (teamName && !sameTeam(agent.identity.team, teamName)) return false;
       if (!matchesPresentationScope(agent)) return false;
       return location === 'all' || agentMatchesLocation(agent, location);
     });
-  }, [prevMonth, allAgents, teamName, location, matchesPresentationScope]);
+  }, [prevPeriodKey, previousPeriodAgents, teamName, location, matchesPresentationScope]);
   const historicalTeamAgents = useMemo(
     () => allAgents.filter((agent) => {
       if (teamName && !sameTeam(agent.identity.team, teamName)) return false;
@@ -668,13 +669,13 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
   }, [teamId, activeMonth, getCanonicalTeamScore, hookAvgScore, rows, isMergedTeam]);
 
   const calculatedPrevAvgScore = useMemo(() => {
-    if (teamId === 'all' || isMergedTeam || !prevMonth) return prevAvgScore;
+    if (teamId === 'all' || isMergedTeam || !prevPeriodKey) return prevAvgScore;
     return displayedTeamScore(
       getCanonicalTeamScore(previousTeamAgents),
       prevAvgScore,
       recordsUseAppliedPin(previousTeamAgents),
     );
-  }, [teamId, prevMonth, getCanonicalTeamScore, prevAvgScore, previousTeamAgents, isMergedTeam]);
+  }, [teamId, prevPeriodKey, getCanonicalTeamScore, prevAvgScore, previousTeamAgents, isMergedTeam]);
 
   // Compute metrics dynamically for the current month
   const metrics = useMemo(() => {
@@ -991,10 +992,9 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
 
   // Compute call center metrics for the previous month (for MoM delta calculation)
   const prevTeamMetrics = useMemo(() => {
-    if (!prevMonth) return null;
+    if (!prevPeriodKey) return null;
 
-    let prevAgents = allAgents.filter((a) => {
-      if (a.identity.month !== prevMonth) return false;
+    let prevAgents = previousPeriodAgents.filter((a) => {
       if (isCallCenterParent && callCenterChannel !== 'all' && !isCallCenterChannelTeam(a.identity.team, callCenterChannel)) return false;
       return !teamName || sameTeam(a.identity.team, teamName);
     });
@@ -1231,7 +1231,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
       submissionContribution: preApprovalsIpMetrics?.submissionContribution,
       dynamicKpis,
     };
-  }, [prevMonth, allAgents, teamName, location, teamId, teamConfig, isMergedTeam, isCallCenterParent, callCenterChannel]);
+  }, [prevPeriodKey, previousPeriodAgents, teamName, location, teamId, teamConfig, isMergedTeam, isCallCenterParent, callCenterChannel]);
 
   // Filter and compute Top 3 / Bottom 3 performers on the fly
   const rosterData = useMemo(() => {
@@ -1832,6 +1832,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
     return <Phone size={18} className="text-white" />;
   };
 
+  const prevMonthShort = shortMonthLabel(prevPeriodKey);
   const summaryCards = teamId === 'all' ? [
     {
       label: role === 'Manager' ? 'Assigned Teams' : 'All Teams',
@@ -1842,9 +1843,8 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
       note: headcountNote,
       icon: <Users size={17} />,
       accent: 'border-l-blue-500',
-      trendDelta: month !== 'All' && prevMonth && prevTotalAgents > 0
-        ? ((metrics.totalAgents - prevTotalAgents) / prevTotalAgents) * 100
-        : undefined,
+      trendDelta: prevPeriodKey && prevTotalAgents > 0 ? metrics.totalAgents - prevTotalAgents : undefined,
+      trendUnit: '',
       lowerTrendIsBetter: false,
       showStableTrend: true,
     },
@@ -1854,7 +1854,8 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
       sub: 'All teams combined',
       icon: <TrendingUp size={17} />,
       accent: 'border-l-indigo-500',
-      trendDelta: month !== 'All' && prevMonth && prevAvgScore !== 0 ? metrics.avgScore - prevAvgScore : undefined,
+      trendDelta: prevPeriodKey && prevAvgScore !== 0 ? metrics.avgScore - prevAvgScore : undefined,
+      trendUnit: '%',
       lowerTrendIsBetter: false,
       showStableTrend: false,
     },
@@ -1864,7 +1865,8 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
       sub: `${metrics.classCounts.A + metrics.classCounts.B} agents meeting expectations`,
       icon: <Award size={17} />,
       accent: 'border-l-emerald-500',
-      trendDelta: month !== 'All' && prevMonth && prevPctAB !== 0 ? metrics.pctAB - prevPctAB : undefined,
+      trendDelta: prevPeriodKey && prevPctAB !== 0 ? metrics.pctAB - prevPctAB : undefined,
+      trendUnit: '%',
       lowerTrendIsBetter: false,
       showStableTrend: false,
     },
@@ -1874,7 +1876,8 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
       sub: `${metrics.classCounts.D + metrics.classCounts.E} agents need attention`,
       icon: <AlertTriangle size={17} />,
       accent: 'border-l-red-500',
-      trendDelta: month !== 'All' && prevMonth && prevPctDE !== 0 ? metrics.pctDE - prevPctDE : undefined,
+      trendDelta: prevPeriodKey && prevPctDE !== 0 ? metrics.pctDE - prevPctDE : undefined,
+      trendUnit: '%',
       lowerTrendIsBetter: true,
       showStableTrend: false,
     },
@@ -1948,6 +1951,8 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
               sub={card.sub}
               note={card.note}
               trendDelta={card.trendDelta}
+              trendText={card.trendDelta === undefined ? undefined : formatMonthChange(card.trendDelta, card.trendUnit, prevMonthShort ?? '')}
+              trendEmptyText={card.trendDelta === undefined ? missingMonthChangeText(Boolean(prevPeriodKey)) : undefined}
               lowerTrendIsBetter={card.lowerTrendIsBetter}
               showStableTrend={card.showStableTrend}
               accent={card.accent}
@@ -1990,6 +1995,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
             prevAvgScore={calculatedPrevAvgScore}
             prevPctAB={prevPctAB}
             prevPctDE={prevPctDE}
+            prevMonthLabel={prevMonthShort}
             month={month}
             teamName={(isRcmParent && workflowConfigTeam ? workflowConfigTeam : teamName) ?? undefined}
           />
