@@ -3,9 +3,10 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session
 
-from api.dependencies import performance_repo, require_authenticated_scope
+from api.dependencies import require_authenticated_scope
 from api.middleware.rbac_middleware import require_permission
 from config.database import get_db
+from services.database_record_source import DatabaseRecordSource
 from models.planning_schemas import (
     PlanCreate,
     PlanItemUpdate,
@@ -22,7 +23,7 @@ router = APIRouter(prefix="/planning", tags=["Planning"])
 
 
 def _service(db: Session) -> PlanningService:
-    return PlanningService(performance_repo, db=db)
+    return PlanningService(DatabaseRecordSource(db), db=db)
 
 
 def _scope(db: Session, request: Request) -> dict:

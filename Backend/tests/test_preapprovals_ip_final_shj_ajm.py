@@ -12,7 +12,22 @@ from Data_Cleaning_Teams.preapprovals_ip_final_shj_ajm import (
     process_preapprovals_ip_final_shj_ajm,
 )
 from services.kpi_service import KPIService
+from services import seeding_service
 from services.seeding_service import DatabaseSeeder
+from models.models import Base
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
+
+
+@pytest.fixture(autouse=True)
+def _upload_database(monkeypatch):
+    """The upload reads the database (including the Action table), so the seeder gets a database with the full schema."""
+    engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    Base.metadata.create_all(bind=engine)
+    monkeypatch.setattr(seeding_service, "SessionLocal", sessionmaker(bind=engine))
+    yield engine
+    engine.dispose()
 
 
 TEAM = "Pre-Approvals IP Final SHJAJM"

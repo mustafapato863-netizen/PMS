@@ -13,7 +13,7 @@ x-backend-environment: &backend-environment
   MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-26214400}
   PMS_REALTIME_MODE: ${PMS_REALTIME_MODE:-in_process}
   PMS_ASYNC_JOBS_ENABLED: ${PMS_ASYNC_JOBS_ENABLED:-true}
-  PMS_DATA_DIR: /app/data
+  PMS_JOB_DATA_DIR: /app/job_data
 
 services:
   redis:
@@ -44,7 +44,7 @@ services:
     ports:
       - "7860:7860"
     volumes:
-      - backend_data:/app/data
+      - job_data:/app/job_data
     depends_on:
       - redis
       - migrate
@@ -60,7 +60,7 @@ services:
     command: ["sh", "-c", "exec python worker.py"]
     environment: *backend-environment
     volumes:
-      - backend_data:/app/data
+      - job_data:/app/job_data
     depends_on:
       - redis
       - migrate
@@ -82,4 +82,4 @@ networks:
 
 volumes:
   redis_data:
-  backend_data:
+  job_data:

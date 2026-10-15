@@ -23,8 +23,7 @@ x-backend-environment: &backend-environment
   PMS_AUTO_SEED: "false"
   PMS_SEED_PERMISSIONS_ON_STARTUP: "false"
   PMS_SEED_DEMO_LEVELS: "false"
-  PMS_DATA_DIR: /app/data
-  PMS_DEFAULT_FILE_PATH: /app/data/PMS_Trend_All.xlsx
+  PMS_JOB_DATA_DIR: /app/job_data
   JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
   JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
   JWT_EXPIRE_MINUTES: ${JWT_EXPIRE_MINUTES:-10}
@@ -72,7 +71,7 @@ services:
       dockerfile: DevOps/docker/Dockerfile.backend
     environment: *backend-environment
     volumes:
-      - backend_data:/app/data
+      - job_data:/app/job_data
     depends_on:
       redis:
         condition: service_healthy
@@ -97,7 +96,7 @@ services:
     command: ["sh", "-c", "exec python worker.py"]
     environment: *backend-environment
     volumes:
-      - backend_data:/app/data
+      - job_data:/app/job_data
     depends_on:
       redis:
         condition: service_healthy
@@ -170,6 +169,6 @@ networks:
 
 volumes:
   redis_data:
-  backend_data:
+  job_data:
   caddy_data:
   caddy_config:

@@ -20,6 +20,7 @@ from sqlalchemy.pool import StaticPool
 
 from api.routers import upload as upload_router
 from models.models import (
+    Action,
     Employee,
     EmployeeUploadBatch,
     EvaluationRevision,
@@ -86,6 +87,7 @@ def db():
             EvaluationRevision.__table__,
             EmployeeUploadBatch.__table__,
             UploadLog.__table__,
+            Action.__table__,
         ],
     )
     session = sessionmaker(bind=engine, autoflush=False, autocommit=False)()
@@ -97,8 +99,6 @@ def db():
 
 def _seeder() -> DatabaseSeeder:
     seeder = DatabaseSeeder()
-    seeder.performance_repo.get_all = lambda: []
-    seeder.performance_repo.save_all = lambda *_args, **_kwargs: None
     return seeder
 
 
@@ -575,6 +575,7 @@ def test_job_result_keeps_success_and_ambiguous_notices(monkeypatch, tmp_path):
             TeamKPIConfig.__table__,
             EmployeeUploadBatch.__table__,
             UploadLog.__table__,
+            Action.__table__,
             User.__table__,
             ProcessingJob.__table__,
         ],
@@ -591,9 +592,7 @@ def test_job_result_keeps_success_and_ambiguous_notices(monkeypatch, tmp_path):
     monkeypatch.setattr(worker.JobLeaseHeartbeat, "start", lambda self: None)
     monkeypatch.setattr(worker.JobLeaseHeartbeat, "stop", lambda self: None)
     monkeypatch.setattr(worker, "clear_serialization_cache", lambda: None)
-    previous_data = settings.PMS_DATA_DIR
     previous_jobs = settings.PMS_JOB_DATA_DIR
-    settings.PMS_DATA_DIR = str(tmp_path)
     settings.PMS_JOB_DATA_DIR = str(tmp_path / "jobs")
     try:
         success = _run_job(db, _ordinary_bytes(), dry_run=True)
@@ -611,7 +610,6 @@ def test_job_result_keeps_success_and_ambiguous_notices(monkeypatch, tmp_path):
         assert "T.Quality Target" in failed.safe_error_message
         assert db.query(PerformanceRecord).count() == 0
     finally:
-        settings.PMS_DATA_DIR = previous_data
         settings.PMS_JOB_DATA_DIR = previous_jobs
         db.close()
         engine.dispose()

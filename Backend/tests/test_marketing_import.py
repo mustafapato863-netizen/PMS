@@ -15,6 +15,7 @@ from api.routers.config import get_team_config
 from config.loader import load_team_config
 from models.schemas import Employee, EvaluationData, PerformanceRecord
 from models.models import (
+    Action,
     Base,
     Employee as DBEmployee,
     KPIValue,
@@ -23,13 +24,21 @@ from models.models import (
     TeamKPIConfig,
 )
 import services.marketing_import_service as marketing_import_module
-from repositories import json_repos
-from repositories.json_repos import JSONPerformanceRepository
 from services.marketing_import_service import MarketingImportService
 from services.seeding_service import DatabaseSeeder, UploadProcessingError
 
 
 REAL_WORKBOOK = Path(r"D:\Trend\PMS_Trend_All.xlsx")
+
+
+@pytest.fixture(autouse=True)
+def _upload_database(monkeypatch):
+    """Uploads read the database (including the Action table). Tests that do not bring their own session get this one."""
+    engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    Base.metadata.create_all(bind=engine)
+    monkeypatch.setattr("services.seeding_service.SessionLocal", sessionmaker(bind=engine))
+    yield engine
+    engine.dispose()
 
 
 def _valid_frame(*, positions: list[str] | None = None) -> pd.DataFrame:
@@ -426,73 +435,9 @@ def test_marketing_grade_uses_the_canonical_system_rule_not_uploaded_data(monkey
     assert result.records[0].status == "Below"
 
 
-def test_json_reupload_replaces_same_employee_period_and_preserves_other_rows(monkeypatch):
-    existing = PerformanceRecord(
-        id="EMP1_May",
-        employee_id="EMP1",
-        employee_name="Old",
-        team="Marketing",
-        month="May",
-        year=2026,
-        evaluation=EvaluationData(score=40, grade="E"),
-    )
-    other = PerformanceRecord(
-        id="EMP2_2026_May",
-        employee_id="EMP2",
-        employee_name="Other",
-        team="Marketing",
-        month="May",
-        year=2026,
-        evaluation=EvaluationData(score=80, grade="C"),
-    )
-    state = [existing.model_dump(), other.model_dump()]
-
-    monkeypatch.setattr(json_repos, "_load_json", lambda filename, default: list(state))
-    monkeypatch.setattr(
-        json_repos,
-        "_save_json",
-        lambda filename, data: state.__setitem__(slice(None), list(data)),
-    )
-    replacement = existing.model_copy(
-        update={
-            "id": "EMP1_2026_May",
-            "employee_name": "New",
-            "evaluation": EvaluationData(score=90, grade="B"),
-        }
-    )
-
-    JSONPerformanceRepository().save_all([replacement])
-    records = [PerformanceRecord(**item) for item in state]
-
-    assert len(records) == 2
-    assert next(record for record in records if record.employee_id == "EMP1").employee_name == "New"
-    assert next(record for record in records if record.employee_id == "EMP2").employee_name == "Other"
-
-
-def test_json_repository_filters_marketing_by_year_position_and_region(monkeypatch):
-    parsed = MarketingImportService().parse_frame(
-        _valid_frame(positions=["Media Buyer", "Graphic Designer"])
-    )
-    repo = JSONPerformanceRepository()
-    monkeypatch.setattr(repo, "get_all", lambda: parsed.records)
-
-    records = repo.get_filtered(
-        team="Marketing",
-        year=2026,
-        position="Media Buyer",
-        region="EGY",
-    )
-
-    assert len(records) == 1
-    assert records[0].position == "Media Buyer"
-
-
-def test_dry_run_performs_no_repository_or_database_writes(monkeypatch):
+def test_dry_run_performs_no_repository_or_database_writes(monkeypatch, tmp_path):
     seeder = DatabaseSeeder()
     fail = lambda *args, **kwargs: pytest.fail("dry run attempted a write")
-    monkeypatch.setattr(seeder.employee_repo, "save_all", fail)
-    monkeypatch.setattr(seeder.performance_repo, "save_all", fail)
-    monkeypatch.setattr(seeder.uploads_repo, "save", fail)
     monkeypatch.setattr(seeder, "_sync_to_database", fail)
 
     result = seeder.process_uploaded_file(
@@ -503,6 +448,7 @@ def test_dry_run_performs_no_repository_or_database_writes(monkeypatch):
 
     assert result["dry_run"] is True
     assert result["marketing"]["performance_records"] == 1
+    assert list(tmp_path.iterdir()) == []
 
 
 def _good_july_and_bad_august_frame() -> pd.DataFrame:
@@ -526,9 +472,6 @@ def test_dry_run_and_commit_reject_the_same_employee_month(monkeypatch):
     assert any(warning["code"] == "EMPLOYEE_MONTH_REJECTED" for warning in dry_run["marketing"]["warnings"])
 
     # The commit path reads the same parse result, so it must reject the same month and store the rest.
-    monkeypatch.setattr(seeder.employee_repo, "save_all", lambda rows: rows)
-    monkeypatch.setattr(seeder.performance_repo, "save_all", lambda rows: rows)
-    monkeypatch.setattr(seeder.uploads_repo, "save", lambda row: row)
     monkeypatch.setattr(seeder, "_sync_to_database", lambda *args, **kwargs: None)
     engine = create_engine("sqlite:///:memory:")
     Base.metadata.create_all(bind=engine)
@@ -556,6 +499,7 @@ def test_database_sync_upserts_marketing_period_and_position_config():
             DBPerformanceRecord.__table__,
             KPIValue.__table__,
             TeamKPIConfig.__table__,
+            Action.__table__,
         ],
     )
     session = sessionmaker(bind=engine, autocommit=False, autoflush=False)()
@@ -590,29 +534,8 @@ def test_database_sync_upserts_marketing_period_and_position_config():
         session.close()
 
 
-def test_failed_publish_leaves_json_snapshots_untouched_and_rolls_back_database(monkeypatch):
+def test_failed_publish_rolls_back_database_and_writes_no_data_file(monkeypatch, tmp_path):
     seeder = DatabaseSeeder()
-    existing_employee = Employee(id="OLD", name="Old", team="Inbound")
-    existing_record = PerformanceRecord(
-        id="OLD_2026_May",
-        employee_id="OLD",
-        employee_name="Old",
-        team="Inbound",
-        month="May",
-        year=2026,
-        evaluation=EvaluationData(score=80, grade="C"),
-    )
-    restored = {}
-
-    monkeypatch.setattr(seeder.employee_repo, "get_all", lambda: [existing_employee])
-    monkeypatch.setattr(seeder.performance_repo, "get_all", lambda: [existing_record])
-    monkeypatch.setattr(seeder.uploads_repo, "get_all", lambda: [])
-    monkeypatch.setattr(seeder.employee_repo, "replace_all", lambda rows: restored.setdefault("employees", rows))
-    monkeypatch.setattr(seeder.performance_repo, "replace_all", lambda rows: restored.setdefault("records", rows))
-    monkeypatch.setattr(seeder.uploads_repo, "replace_all", lambda rows: restored.setdefault("uploads", rows))
-    monkeypatch.setattr(seeder.employee_repo, "save_all", lambda rows: rows)
-    monkeypatch.setattr(seeder.performance_repo, "save_all", lambda rows: rows)
-    monkeypatch.setattr(seeder.uploads_repo, "save", lambda row: row)
     monkeypatch.setattr(
         seeder,
         "_sync_to_database",
@@ -644,9 +567,8 @@ def test_failed_publish_leaves_json_snapshots_untouched_and_rolls_back_database(
         )
 
     assert session.rolled_back is True
-    # Hosted runtime persistence is database-only. A failed transaction must
-    # not write to or rewrite the legacy JSON snapshots.
-    assert restored == {}
+    # Runtime persistence is database-only. A failed transaction writes no data file at all.
+    assert list(tmp_path.iterdir()) == []
     # A real transaction also proves that the staged upload batch was removed.
     from models.models import EmployeeUploadBatch
 

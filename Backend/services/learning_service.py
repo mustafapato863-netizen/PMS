@@ -1,21 +1,21 @@
 from typing import Dict, List, Optional, Tuple
 from models.schemas import CorrectiveAction
-from repositories.base import CorrectiveActionsRepository
 
 class LearningService:
-    def __init__(self, actions_repo: CorrectiveActionsRepository):
-        self.actions_repo = actions_repo
+    def __init__(self, action_history):
+        # Any object with get_history(), such as services.action_history.DatabaseActionHistory.
+        self.action_history = action_history
 
     def get_historical_recommendations(
         self, team: str, score: float, grade: str, root_cause: str, default_suggestion: str
     ) -> Tuple[str, Dict[str, float]]:
         """
-        Analyzes corrective_actions.json to find similar employees.
+        Finds similar past employee-month actions in the database to recommend an action.
         Returns:
           - primary_recommendation (str): Action with highest percentage (e.g. "PIP (70% historical manager preference)")
           - preferences (dict): Map of action to percentage
         """
-        history = self.actions_repo.get_history()
+        history = self.action_history.get_history()
         if not history:
             return f"{default_suggestion} (100% AI recommendation - no manager history yet)", {default_suggestion: 100.0}
 

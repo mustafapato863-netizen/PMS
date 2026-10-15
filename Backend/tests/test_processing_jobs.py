@@ -124,11 +124,9 @@ def test_job_retry_becomes_terminal_after_attempt_limit(job_db):
 
 
 def test_job_file_staging_is_atomic_and_confined(tmp_path):
-    previous_data_dir = settings.PMS_DATA_DIR
     previous_job_dir = settings.PMS_JOB_DATA_DIR
     job_id = uuid.uuid4()
     try:
-        settings.PMS_DATA_DIR = str(tmp_path)
         settings.PMS_JOB_DATA_DIR = str(tmp_path / "jobs")
         relative = stage_upload(job_id, "edited.xlsx", b"valid-test-bytes")
         resolved = resolve_input_path(relative)
@@ -138,5 +136,4 @@ def test_job_file_staging_is_atomic_and_confined(tmp_path):
         cleanup_job_files(job_id)
         assert not resolved.exists()
     finally:
-        settings.PMS_DATA_DIR = previous_data_dir
         settings.PMS_JOB_DATA_DIR = previous_job_dir

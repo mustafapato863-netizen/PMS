@@ -11,14 +11,11 @@ from decimal import Decimal
 
 from sqlalchemy import and_, or_
 
-from config.settings import DEFAULT_FILE_PATH
+from types import SimpleNamespace
+
 from models.schemas import (
     Employee, PerformanceRecord, CallsData, GeoBreakdown, GeoData,
     ActualMetrics, AchievementMetrics, EvaluationData, UploadRecord
-)
-from repositories.json_repos import (
-    JSONEmployeeRepository, JSONPerformanceRepository, JSONKPIWeightsRepository,
-    JSONTargetsRepository, JSONManagerNotesRepository, JSONCorrectiveActionsRepository, JSONUploadsRepository
 )
 from processors.excel_processor import ExcelProcessor
 from services.kpi_service import KPIService
@@ -31,10 +28,8 @@ from services.preapprovals_offshore_scoring import (
     score_offshore_row,
     uses_new_method,
 )
+from services.action_history import DatabaseActionHistory
 from services.analysis_service import AnalysisService
-from services.learning_service import LearningService
-from services.planning_service import PlanningService
-from services.trend_service import TrendService
 from config.loader import (
     load_team_config,
     resolve_team_config,
@@ -157,19 +152,10 @@ def safe_decimal(val, default: str = "0"):
 
 class DatabaseSeeder:
     def __init__(self):
-        self.employee_repo = JSONEmployeeRepository()
-        self.performance_repo = JSONPerformanceRepository()
-        self.weights_repo = JSONKPIWeightsRepository()
-        self.targets_repo = JSONTargetsRepository()
-        self.notes_repo = JSONManagerNotesRepository()
-        self.actions_repo = JSONCorrectiveActionsRepository()
-        self.uploads_repo = JSONUploadsRepository()
         self.excel_processor = ExcelProcessor()
-        
-        self.kpi_service = KPIService(self.weights_repo, self.targets_repo)
-        self.analysis_service = AnalysisService(self.targets_repo)
-        self.planning_service = PlanningService(self.performance_repo)
-        self.trend_service = TrendService()
+
+        self.kpi_service = KPIService()
+        self.analysis_service = AnalysisService()
         self.marketing_import_service = MarketingImportService()
 
     @staticmethod
@@ -183,27 +169,11 @@ class DatabaseSeeder:
             return normalized_value in excluded_grades
         return False
 
-    def seed_database(self):
-        """Initializes the database from the default Excel file if performance repository is empty."""
-        if not os.path.exists(DEFAULT_FILE_PATH):
-            print(f"⚠️ Default Excel file not found at {DEFAULT_FILE_PATH}. Skipping seeding.")
-            return
-
-        if len(self.performance_repo.get_all()) > 0:
-            print("✓ Performance database is already populated. Skipping seeding.")
-            return
-
-        print("🌱 Seeding database from default Excel file...")
-        try:
-            excel_file = self.excel_processor.load_excel(DEFAULT_FILE_PATH)
-            self._process_and_save_excel(excel_file)
-            print("🌱 Seeding completed successfully!")
-        except Exception as e:
-            print(f"❌ Seeding database failed: {str(e)}")
-
     def seed_demo_performance_levels(self):
         """Opt-in demo data that deliberately uses the real Excel import path."""
-        if any(str(employee.id).startswith("DEMO-") for employee in self.employee_repo.get_all()):
+        with SessionLocal() as db:
+            demo_exists = db.query(DBEmployee.id).filter(DBEmployee.employee_id.like("DEMO-%")).first() is not None
+        if demo_exists:
             return {"skipped": True, "reason": "Demo performance-level data already exists"}
 
         sheets = {}
@@ -383,12 +353,14 @@ class DatabaseSeeder:
         lock_team_rows(db, team_ids)
         teams = {team.id: team for team in db.query(Team).filter(Team.id.in_(team_ids)).all()} if team_ids else {}
         workflow = EvaluationWorkflow(db)
+        # The schema was checked above and cannot change during the upload; each approved version is looked up once.
+        version_memo: dict = {}
         for record in record_list:
             group = grouped.get(record.id)
             team = teams.get(record.team_id)
             if not group or team is None:
                 continue
-            workflow.rescore_uploaded(record, team, group, 0)
+            workflow.rescore_uploaded(record, team, group, 0, schema_checked=True, version_memo=version_memo)
 
     def _pin_uploaded_records(self, db, records) -> list[dict]:
         """Score dry-run and commit with the same approved basis.
@@ -399,11 +371,15 @@ class DatabaseSeeder:
         """
         if db is None or not records:
             return []
-        from services.evaluation.resolver import approved_version, lock_team_rows, require_approved_capability, schema_ready
+        from services.evaluation.resolver import (
+            approved_version_memo, lock_team_rows, require_approved_capability, schema_ready,
+        )
         from utils.team_identity import logical_team_name
 
         if not schema_ready(db):
             return []
+        # The schema was checked above and cannot change during the upload; each approved version is looked up once.
+        version_memo: dict = {}
         by_name: dict[str, Team] = {}
         for team in db.query(Team).all():
             for label in (team.name, team.db_name, team.display_name):
@@ -422,8 +398,9 @@ class DatabaseSeeder:
             rows = self._workbook_rows(record)
             version = None
             if team is not None and rows:
-                version = approved_version(
+                version = approved_version_memo(
                     db,
+                    version_memo,
                     team_id=team.id,
                     level=getattr(record, "performance_level", None) or "Employee",
                     position=getattr(record, "position", None) or "",
@@ -1351,6 +1328,8 @@ class DatabaseSeeder:
     ):
         from services.outbound_period_basis import resolve_outbound_sheet_name
 
+        # One read of the latest actions per upload, not one query per imported row.
+        latest_actions = DatabaseActionHistory(db_session).latest_by_employee_and_period() if db_session is not None else {}
         sheet_names = set(excel_file.sheet_names)
         inbound_df = self.excel_processor.process_sheet_inbound(excel_file) if "Inbound" in sheet_names else pd.DataFrame()
         outbound_df = self.excel_processor.process_sheet_outbound(excel_file) if resolve_outbound_sheet_name(sheet_names) else pd.DataFrame()
@@ -1644,8 +1623,9 @@ class DatabaseSeeder:
                             root_cause.target = root_value["target_value"]
                     suggested_action = self.analysis_service.generate_suggested_action(score, is_new, root_cause)
 
-                    note_rec = self.notes_repo.get_note(emp_id, month)
-                    action_rec = self.actions_repo.get_latest_by_employee_and_month(emp_id, month)
+                    # The same year the stored record gets: its Date column, as _upload_year reads it.
+                    action_year = self._upload_year(SimpleNamespace(year=None, raw_data=row_dict))
+                    action_rec = latest_actions.get((str(emp_id), str(month), int(action_year)))
 
                     evaluation = EvaluationData(
                         score=score,
@@ -1653,7 +1633,7 @@ class DatabaseSeeder:
                         root_cause=root_cause,
                         suggested_action=suggested_action,
                         corrective_action=action_rec.manager_action if action_rec else None,
-                        manager_notes=note_rec.notes if note_rec else None
+                        manager_notes=None,
                     )
 
                     record = PerformanceRecord(
@@ -1786,36 +1766,8 @@ class DatabaseSeeder:
             }
             raise UploadProcessingError(str(exc), report) from exc
 
-        # Post-processing: trend calculation and planning classification.
-        # Wrapped in try/except because on Vercel, JSON repos may be empty (no /var/task/data files),
-        # and save_all will silently fail. This must NOT crash the upload response.
-        try:
-            all_history = self.performance_repo.get_all()
-            if all_history:
-                from services.planning_service import MONTH_ORDER
-                for r in all_new_records:
-                    emp_history = [h for h in all_history if h.employee_id == r.employee_id]
-                    emp_history.sort(key=lambda x: (x.year or 0, MONTH_ORDER.get(x.month, 0)))
-                    
-                    curr_idx = -1
-                    for i, h in enumerate(emp_history):
-                        if h.id == r.id:
-                            curr_idx = i
-                            break
-
-                    if curr_idx >= 0:
-                        trend_status = self.trend_service.calculate_trends(emp_history, curr_idx)
-                        r.evaluation.trend_status = trend_status
-
-                    planning_lists = self.planning_service.classify_all(r.month)
-                    r.evaluation.planning_category = []
-                    for cat, recs in planning_lists.items():
-                        if any(x.id == r.id for x in recs):
-                            r.evaluation.planning_category.append(cat)
-
-                self.performance_repo.save_all(all_new_records)
-        except Exception as trend_exc:
-            logger.warning("Post-upload trend/planning enrichment skipped: %s", trend_exc)
+        # No trend or planning enrichment here. The database never stored those values, nothing in database mode
+        # read them, and the JSON mirror that carried them is no longer written.
 
         return {
             "records_imported": len(all_new_records),

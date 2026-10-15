@@ -5,12 +5,14 @@ from typing import Any, Dict, List
 from uuid import UUID
 
 from api.dependencies import (
-    employee_repo, performance_repo, notes_repo, learning_service,
     serialize_performance_record, require_role, get_current_user_scope, filter_records_by_scope, user_can_access_team
 )
+from services.action_history import DatabaseActionHistory
+from services.database_record_source import DatabaseRecordSource
+from services.learning_service import LearningService
 from config.database import get_db
 from sqlalchemy.orm import Session
-from models.schemas import StandardResponse, ManagerNote
+from models.schemas import StandardResponse
 from services.corrective_action_service import (
     CorrectiveActionAccessError,
     CorrectiveActionNotFoundError,
@@ -458,39 +460,6 @@ def  restore_employee(
         )
 
 
-@router.post("/{employee_id}/notes", response_model=StandardResponse)
-def  save_notes(
-    employee_id: str,
-    payload: Dict[str, str],
-    role: str = Depends(require_role(["Admin", "General Manager", "Manager"]))
-):
-    try:
-        month = payload.get("month", "")
-        notes_text = payload.get("notes", "")
-        if not month:
-            raise HTTPException(status_code=400, detail="Month is required")
-
-        note = ManagerNote(
-            employee_id=employee_id,
-            month=month,
-            notes=notes_text,
-            updated_at=datetime.datetime.now().isoformat()
-        )
-        notes_repo.save(note)
-
-        perf = performance_repo.get_by_employee_and_month(employee_id, month)
-        if perf:
-            perf.evaluation.manager_notes = notes_text
-            performance_repo.save(perf)
-
-        return StandardResponse(
-            success=True,
-            message="Manager notes saved successfully",
-            data=note.model_dump()
-        )
-    except Exception as e:
-        return StandardResponse(success=False, message="Failed to save manager notes.")
-
 def _tracking_fields(payload: Dict[str, Any]) -> dict[str, Any]:
     """Pass only tracking fields the caller actually sent.
 
@@ -606,16 +575,17 @@ async def delete_corrective_action(
         return StandardResponse(success=False, message="Failed to delete corrective action.")
 
 @router.get("/{employee_id}/recommendations", response_model=StandardResponse)
-def get_action_recommendations(employee_id: str, month: str = Query(...)):
+def get_action_recommendations(employee_id: str, month: str = Query(...), db: Session = Depends(get_db)):
     try:
-        perf = performance_repo.get_by_employee_and_month(employee_id, month)
+        perf = DatabaseRecordSource(db).get_by_employee_and_month(employee_id, month)
         if not perf:
             raise HTTPException(status_code=404, detail="Performance record not found")
 
         root_kpi = perf.evaluation.root_cause.kpi if perf.evaluation.root_cause else "None"
         default_suggest = perf.evaluation.suggested_action or "Performance Monitoring"
 
-        recommendation, preferences = learning_service.get_historical_recommendations(
+        learning = LearningService(DatabaseActionHistory(db))
+        recommendation, preferences = learning.get_historical_recommendations(
             team=perf.team,
             score=perf.evaluation.score,
             grade=perf.evaluation.grade,

@@ -15,7 +15,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from config.database import Base
-from models.models import Employee as DBEmployee, KPIValue, PerformanceRecord as DBPerformanceRecord, Team, TeamKPIConfig
+from models.models import Action, Employee as DBEmployee, KPIValue, PerformanceRecord as DBPerformanceRecord, Team, TeamKPIConfig
 from models.schemas import Employee, EvaluationData, PerformanceRecord
 from services.seeding_service import DatabaseSeeder
 from services.upload_record_collisions import (
@@ -32,7 +32,7 @@ FINAL_DUBAI = "Pre-Approvals IP Final Dubai"
 def session():
     engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     Base.metadata.create_all(bind=engine, tables=[
-        Team.__table__, DBEmployee.__table__, DBPerformanceRecord.__table__, KPIValue.__table__, TeamKPIConfig.__table__,
+        Team.__table__, DBEmployee.__table__, DBPerformanceRecord.__table__, KPIValue.__table__, TeamKPIConfig.__table__, Action.__table__,
     ])
     db = sessionmaker(bind=engine, autocommit=False, autoflush=False)()
     try:

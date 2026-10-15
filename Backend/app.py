@@ -50,15 +50,15 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    from services.obsolete_json_data import warn_obsolete_json_files
+    warn_obsolete_json_files(settings.DATA_DIR)
     if not os.environ.get("VERCEL"):
         try:
             from services.seeding_service import DatabaseSeeder
             from services.permission_seed import seed_role_permissions
 
             seed_demo_levels = settings.PMS_SEED_DEMO_LEVELS
-            seeder = DatabaseSeeder() if settings.PMS_AUTO_SEED or seed_demo_levels else None
-            if settings.PMS_AUTO_SEED and seeder is not None:
-                seeder.seed_database()
+            seeder = DatabaseSeeder() if seed_demo_levels else None
             if seed_demo_levels and seeder is not None:
                 seeder.seed_demo_performance_levels()
             

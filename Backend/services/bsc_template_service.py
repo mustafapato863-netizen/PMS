@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import io
-import json
 import re
 from datetime import date, datetime
 from pathlib import Path
@@ -9,12 +8,11 @@ from typing import Any
 
 from openpyxl import load_workbook
 from openpyxl.utils.datetime import from_excel
-from config.settings import DATA_DIR
+from config.settings import BASE_DIR
 from utils.performance_levels import normalize_performance_level
 
 
-_STORE_PATH = Path(DATA_DIR) / "bsc_management_templates.json"
-_TEMPLATE_PATH = Path(DATA_DIR) / "templates" / "Template_Managment.xlsx"
+_TEMPLATE_PATH = Path(BASE_DIR) / "data" / "templates" / "Template_Managment.xlsx"
 _PERSPECTIVE_ORDER = ["Financial", "Customer", "Internal Process", "Learning & Growth"]
 _DEFAULT_STRATEGY_LINKS = [
     {"from": "Learning & Growth", "to": "Internal Process"},
@@ -27,19 +25,6 @@ _DEFAULT_PERSPECTIVE_META = {
     "Internal Process": {"label": "Internal Process", "focus": "Operational accuracy & compliance", "display_order": 3, "icon_key": "settings"},
     "Learning & Growth": {"label": "Learning & Growth", "focus": "Staff capacity & digital transformation", "display_order": 4, "icon_key": "graduation-cap"},
 }
-
-
-def _load_store() -> list[dict[str, Any]]:
-    if not _STORE_PATH.exists():
-        return []
-    with _STORE_PATH.open("r", encoding="utf-8") as handle:
-        return json.load(handle)
-
-
-def _save_store(rows: list[dict[str, Any]]) -> None:
-    _STORE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with _STORE_PATH.open("w", encoding="utf-8") as handle:
-        json.dump(rows, handle, indent=2, ensure_ascii=False)
 
 
 def _coerce_number(value: Any) -> float | None:
@@ -295,50 +280,6 @@ class BSCTemplateService:
         return {
             "config_rows": config_rows,
             "snapshots": snapshots,
-        }
-
-    def save_upload(self, *, team: str, filename: str, contents: bytes, uploaded_by: str) -> dict[str, Any]:
-        rows = self.parse_upload(contents)
-
-        store = [item for item in _load_store() if item.get("team") != team]
-        record = {
-            "team": team,
-            "filename": filename,
-            "uploaded_by": uploaded_by,
-            "uploaded_at": datetime.utcnow().isoformat(),
-            "sheet_name": self.sheet_name,
-            "rows": rows,
-        }
-        store.append(record)
-        _save_store(store)
-
-        return {
-            "team": team,
-            "filename": filename,
-            "sheet_name": self.sheet_name,
-            **self.summarize_rows(rows),
-        }
-
-    def get_dataset(self, *, team: str, performance_level: str, base_config: dict[str, Any]) -> dict[str, Any] | None:
-        template = next((item for item in reversed(_load_store()) if item.get("team") == team), None)
-        if not template:
-            return None
-
-        level = normalize_performance_level(performance_level)
-        level_rows = [row for row in template.get("rows", []) if row.get("performance_level") == level]
-        if not level_rows:
-            return None
-
-        records = self._rows_to_records(level_rows, team=team, performance_level=level)
-        config = self._rows_to_config(level_rows, team=team, performance_level=level, base_config=base_config)
-        return {
-            "records": records,
-            "config": config,
-            "meta": {
-                "filename": template.get("filename"),
-                "uploaded_at": template.get("uploaded_at"),
-                "uploaded_by": template.get("uploaded_by"),
-            },
         }
 
     def _read_template_rows(

@@ -21,6 +21,7 @@ from config.loader import load_team_config
 from data_cleaning.standard_mappings import calculate_grade
 from exports.report_exporter import ReportExporter
 from models.models import (
+    Action,
     Employee,
     EmployeeUploadBatch,
     EvaluationRevision,
@@ -99,6 +100,7 @@ def db():
             EvaluationRevision.__table__,
             EmployeeUploadBatch.__table__,
             UploadLog.__table__,
+            Action.__table__,
         ],
     )
     session = sessionmaker(bind=engine, autoflush=False, autocommit=False)()
@@ -160,8 +162,6 @@ def _august_bytes(**overrides) -> bytes:
 
 def _seeder():
     seeder = DatabaseSeeder()
-    seeder.performance_repo.get_all = lambda: []
-    seeder.performance_repo.save_all = lambda *_args, **_kwargs: None
     return seeder
 
 

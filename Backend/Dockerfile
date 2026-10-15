@@ -31,8 +31,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PATH="/opt/venv/bin:$PATH" \
     PYTHONPATH="/app" \
-    PMS_DATA_DIR="/app/data" \
-    PMS_DEFAULT_FILE_PATH="/app/data/PMS_Trend_All.xlsx" \
+    PMS_JOB_DATA_DIR="/app/job_data" \
     PORT=7860
 
 WORKDIR /app
@@ -47,8 +46,8 @@ RUN groupadd -g 10001 pmsgroup && \
 # Copy application files (with correct ownership)
 COPY --chown=pmsuser:pmsgroup . .
 
-# Create persistent data directory and set permissions
-RUN mkdir -p /app/data && chown -R pmsuser:pmsgroup /app/data
+# Job files are shared with the worker through the job_data volume (see compose). Reference data stays in the image.
+RUN mkdir -p /app/job_data && chown -R pmsuser:pmsgroup /app/job_data
 
 # Switch to non-root user
 USER pmsuser

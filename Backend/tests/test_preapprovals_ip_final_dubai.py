@@ -21,7 +21,17 @@ from Data_Cleaning_Teams.preapprovals_ip_final_dubai import (
 )
 from services.kpi_service import KPIService
 from services.seeding_service import DatabaseSeeder
-from models.models import Employee as DBEmployee, KPIValue, PerformanceRecord as DBPerformanceRecord, Team, TeamKPIConfig
+
+
+@pytest.fixture(autouse=True)
+def _upload_database(monkeypatch):
+    """Uploads read the database (including the Action table), so the seeder gets a database with the full schema."""
+    engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    Base.metadata.create_all(bind=engine)
+    monkeypatch.setattr("services.seeding_service.SessionLocal", sessionmaker(bind=engine))
+    yield engine
+    engine.dispose()
+from models.models import Action, Employee as DBEmployee, KPIValue, PerformanceRecord as DBPerformanceRecord, Team, TeamKPIConfig
 from models.schemas import Employee, EvaluationData, PerformanceRecord
 
 
@@ -124,7 +134,7 @@ def test_team_is_discoverable_from_config_api():
 
 def test_database_sync_creates_team_and_position_configuration_atomically():
     engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool)
-    Base.metadata.create_all(bind=engine, tables=[Team.__table__, DBEmployee.__table__, DBPerformanceRecord.__table__, KPIValue.__table__, TeamKPIConfig.__table__])
+    Base.metadata.create_all(bind=engine, tables=[Team.__table__, DBEmployee.__table__, DBPerformanceRecord.__table__, KPIValue.__table__, TeamKPIConfig.__table__, Action.__table__])
     session = sessionmaker(bind=engine, autocommit=False, autoflush=False)()
     try:
         row = _clean(_source_rows()).iloc[0]

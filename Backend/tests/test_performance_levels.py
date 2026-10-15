@@ -3,7 +3,6 @@ import pytest
 
 from config.loader import ConfigurationError, resolve_team_config, validate_team_config
 from models.schemas import EvaluationData, PerformanceRecord
-from repositories.json_repos import JSONPerformanceRepository
 from services.seeding_service import DatabaseSeeder, UploadProcessingError
 from utils.performance_levels import normalize_performance_level
 
@@ -92,35 +91,6 @@ def test_resolve_team_config_requires_non_employee_override():
             },
             "Corporate",
         )
-
-
-def test_json_performance_repository_filters_by_performance_level(monkeypatch):
-    records = [
-        PerformanceRecord(
-            id="1_January",
-            employee_id="1",
-            employee_name="Emp",
-            team="Inbound",
-            month="January",
-            performance_level="Employee",
-            evaluation=EvaluationData(score=82, grade="B"),
-        ),
-        PerformanceRecord(
-            id="2_January",
-            employee_id="2",
-            employee_name="Mgr",
-            team="Inbound",
-            month="January",
-            performance_level="Managerial",
-            evaluation=EvaluationData(score=91, grade="A"),
-        ),
-    ]
-
-    repo = JSONPerformanceRepository()
-    monkeypatch.setattr(repo, "get_all", lambda: records)
-
-    assert [r.employee_id for r in repo.get_filtered(performance_level="Employee")] == ["1"]
-    assert [r.employee_id for r in repo.get_filtered(performance_level="Managerial")] == ["2"]
 
 
 def test_normalize_sheet_levels_defaults_missing_role_to_employee():

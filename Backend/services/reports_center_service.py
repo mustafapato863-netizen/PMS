@@ -139,10 +139,12 @@ class ReportsCenterService:
 
     def _workspace(self, filters: ReportCenterFilters, period: dict[str, Any]):
         # Imports are local to keep the router/dependency import graph acyclic.
-        from api.dependencies import performance_repo, planning_service
+        from services.database_record_source import DatabaseRecordSource
         from services.insights_service import InsightsService
+        from services.planning_service import PlanningService
 
-        return InsightsService(performance_repo, planning_service, db=self.db).generate_workspace(
+        source = DatabaseRecordSource(self.db)
+        return InsightsService(source, PlanningService(source, db=self.db), db=self.db).generate_workspace(
             self.data_scope,
             month=period["month"],
             year=period["year"],

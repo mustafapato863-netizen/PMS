@@ -228,8 +228,10 @@ def approved_version(
     position: str | None,
     year: int,
     month,
+    schema_checked: bool = False,
 ) -> TeamConfigurationVersion | None:
-    if not schema_ready(db):
+    # ``schema_checked`` is for a caller that has already run schema_ready on this session and must not re-check it.
+    if not schema_checked and not schema_ready(db):
         return None
     number = month_number(month)
     return (
@@ -244,6 +246,17 @@ def approved_version(
         )
         .one_or_none()
     )
+
+
+def approved_version_memo(db: Session, memo: dict, *, team_id, level: str, position, year: int, month):
+    """``approved_version`` for one upload, which has already checked the schema. Each distinct lookup runs once;
+    a missing version is remembered too."""
+    key = (team_id, level, position, int(year), month)
+    if key not in memo:
+        memo[key] = approved_version(
+            db, team_id=team_id, level=level, position=position, year=year, month=month, schema_checked=True,
+        )
+    return memo[key]
 
 
 def snapshot_lines(version: TeamConfigurationVersion | None) -> list[dict]:

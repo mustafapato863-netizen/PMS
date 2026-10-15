@@ -6,10 +6,10 @@ from config.runtime_validation import resolve_jwt_secret, validate_seed_settings
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 load_project_environment(BASE_DIR)
 
-DATA_DIR = os.environ.get("PMS_DATA_DIR", os.path.join(BASE_DIR, "data"))
-PMS_DATA_DIR = DATA_DIR
+# Read-only reference data shipped with the code (for example the team KPI weights and targets until those move to the
+# database). Uploads, job files and runtime state never go here.
+DATA_DIR = os.path.join(BASE_DIR, "data")
 
-DEFAULT_FILE_PATH = os.environ.get("PMS_DEFAULT_FILE_PATH", r"D:\Trend\PMS_Trend_All.xlsx")
 APP_ENV = os.environ.get("APP_ENV", "development").strip().lower()
 PORT = int(os.environ.get("PORT", "8000"))
 PMS_AUTO_SEED = os.environ.get(
@@ -76,7 +76,7 @@ PMS_ASYNC_JOBS_ENABLED = parse_bool(
     os.environ.get("PMS_ASYNC_JOBS_ENABLED"),
     default=False,
 )
-PMS_JOB_DATA_DIR = os.environ.get("PMS_JOB_DATA_DIR", os.path.join(DATA_DIR, "jobs"))
+PMS_JOB_DATA_DIR = os.environ.get("PMS_JOB_DATA_DIR", os.path.join(BASE_DIR, "job_data"))
 PMS_JOB_POLL_SECONDS = float(os.environ.get("PMS_JOB_POLL_SECONDS", "1.0"))
 PMS_JOB_LEASE_SECONDS = int(os.environ.get("PMS_JOB_LEASE_SECONDS", "300"))
 PMS_JOB_MAX_ATTEMPTS = int(os.environ.get("PMS_JOB_MAX_ATTEMPTS", "3"))
@@ -234,7 +234,6 @@ class _SettingsCompatibility:
     MAX_UPLOAD_ROWS_PER_SHEET = MAX_UPLOAD_ROWS_PER_SHEET
     MAX_UPLOAD_COLUMNS_PER_SHEET = MAX_UPLOAD_COLUMNS_PER_SHEET
     PMS_ASYNC_JOBS_ENABLED = PMS_ASYNC_JOBS_ENABLED
-    PMS_DATA_DIR = DATA_DIR
     PMS_JOB_DATA_DIR = PMS_JOB_DATA_DIR
     PMS_JOB_POLL_SECONDS = PMS_JOB_POLL_SECONDS
     PMS_JOB_LEASE_SECONDS = PMS_JOB_LEASE_SECONDS

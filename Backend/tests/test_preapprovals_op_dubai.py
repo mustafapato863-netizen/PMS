@@ -17,8 +17,19 @@ from Data_Cleaning_Teams.preapprovals_op_dubai import (
 )
 from services.kpi_service import KPIService
 from services.seeding_service import DatabaseSeeder
+
+
+@pytest.fixture(autouse=True)
+def _upload_database(monkeypatch):
+    """Uploads read the database (including the Action table), so the seeder gets a database with the full schema."""
+    engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    Base.metadata.create_all(bind=engine)
+    monkeypatch.setattr("services.seeding_service.SessionLocal", sessionmaker(bind=engine))
+    yield engine
+    engine.dispose()
 from config.database import Base
 from models.models import (
+    Action,
     Employee as DBEmployee,
     KPIValue,
     PerformanceRecord as DBPerformanceRecord,
@@ -238,6 +249,7 @@ def test_database_sync_reactivates_team_and_persists_position_configuration():
             DBPerformanceRecord.__table__,
             KPIValue.__table__,
             TeamKPIConfig.__table__,
+            Action.__table__,
         ],
     )
     session = sessionmaker(bind=engine, autocommit=False, autoflush=False)()
