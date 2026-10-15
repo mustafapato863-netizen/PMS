@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime
+import hashlib
 import re
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
@@ -75,9 +76,21 @@ def _slug(value: Any) -> str:
     return re.sub(r"[^a-z0-9]+", "_", _lookup_key(value)).strip("_") or "kpi"
 
 
+# kpi_values.kpi_key (and the other KPI key columns it feeds) is VARCHAR(50).
+GENERATED_KPI_KEY_MAX_LENGTH = 50
+
+
 def _generated_kpi_key(position: str, label: str) -> str:
-    """Deterministic key for a KPI label the config does not know: the same label always gets the same key."""
-    return f"mkt_{_slug(position)}_{_slug(label)}"
+    """Deterministic key for a KPI label the config does not know: the same label always gets the same key.
+
+    A key that would not fit the 50-character KPI key columns keeps a readable prefix and ends with a short
+    hash of the full key, so it stays unique and stable.
+    """
+    key = f"mkt_{_slug(position)}_{_slug(label)}"
+    if len(key) <= GENERATED_KPI_KEY_MAX_LENGTH:
+        return key
+    digest = hashlib.sha1(key.encode("utf-8")).hexdigest()[:8]
+    return f"{key[:GENERATED_KPI_KEY_MAX_LENGTH - 9].rstrip('_')}_{digest}"
 
 
 def _clean_employee_id(value: Any) -> str:
