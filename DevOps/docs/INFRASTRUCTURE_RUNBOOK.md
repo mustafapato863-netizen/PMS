@@ -47,6 +47,10 @@ DevOps/scripts/backup-db.sh
 ```
 *Backups are saved as SQL files under `backups/`.*
 
+### Moving a Database or Copying Business Data
+To move a whole database to a new host, or to copy business data between environments, follow
+[DATABASE_MOVE_RUNBOOK.md](DATABASE_MOVE_RUNBOOK.md).
+
 ### Database Restoration
 To restore a snapshot:
 ```bash

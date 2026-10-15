@@ -17,6 +17,7 @@ from .reports import router as reports_router
 from .insights import router as insights_router
 from .planning import router as planning_router
 from .jobs import router as jobs_router
+from .data_snapshot import router as data_snapshot_router
 
 router = APIRouter()
 
@@ -38,4 +39,5 @@ router.include_router(reports_router)
 router.include_router(insights_router)
 router.include_router(planning_router)
 router.include_router(jobs_router)
+router.include_router(data_snapshot_router)
 
