@@ -57,6 +57,9 @@ def get_insights_workspace(
     insight_type: str | None = Query(default=None),
     status_filter: str | None = Query(default=None, alias="status"),
     view: Literal["full", "priority"] = Query(default="full"),
+    # Comma-separated InsightsWorkspace fields to compute, for example `options,comparison,kpi_trend`. Absent
+    # means every field, as before; unrequested fields are not computed and come back empty.
+    sections: str | None = None,
     _role: str = Depends(require_role([
         "Admin", "General Manager", "Manager", "Executive", "Performance Team",
         "Regional Manager", "Branch Director", "Function Director",
@@ -77,6 +80,7 @@ def get_insights_workspace(
         ).generate_workspace(
             scope,
             priority_only=view == "priority",
+            sections=sections,
             month=month,
             year=year,
             region=region,
