@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import math
 import re
+import uuid
 from contextvars import ContextVar
 from collections import Counter, defaultdict
 from dataclasses import dataclass
@@ -84,6 +85,12 @@ WORKSPACE_SECTIONS: tuple[str, ...] = (
     "kpi_trend", "overall_trend", "role_summaries", "kpi_overview", "kpi_diagnosis", "tracking_indicators",
     "options", "comparison", "deferred_capabilities",
 )
+
+
+# The sections that read only the current month C, the month before it and the six months ending at C, besides
+# the values a period window takes from the light record index. The overall trend also reads the month before the
+# six (for its basis) and the KPI overview reads every period, so a request for either loads every record.
+PERIOD_WINDOW_SECTIONS: frozenset[str] = frozenset(WORKSPACE_SECTIONS) - {"overall_trend", "kpi_overview"}
 
 
 def normalize_workspace_sections(sections: Iterable[str] | str | None) -> frozenset[str] | None:
@@ -905,6 +912,20 @@ def _legacy_basis_warning(records: list[Any], current: list[Any], month: str) ->
     return {"type": "warning", "message": " ".join(messages)}
 
 
+@dataclass
+class _WindowedRecords:
+    """A workspace's records with only the window's months resolved, and the values that span every month."""
+
+    authorized_records: list[Any]
+    records: list[Any]
+    missing_year_count: int
+    explicit_periods: list[tuple[int, int]]
+    current_period: tuple[int, int]
+    # Light rows: the authorized ones give the options' periods, the filtered ones the duplicate count.
+    period_source: list[Any]
+    duplicate_source: list[Any]
+
+
 class InsightsService:
     """Canonical deterministic insight orchestration over existing PMS records."""
 
@@ -914,11 +935,15 @@ class InsightsService:
         planning_service: PlanningService,
         db: Session | None = None,
         record_service: DashboardRecordService | None = None,
+        *,
+        period_window: bool = True,
     ):
+        """``period_window`` False always resolves every record; the equality tests compare both paths."""
         self.performance_repo = performance_repo
         self.planning_service = planning_service
         self.db = db
         self.record_service = record_service or (DashboardRecordService(db) if db is not None else None)
+        self.period_window = period_window
 
     def generate_insights(self, month: str, performance_level: str | None = None) -> List[Dict[str, str]]:
         """Preserve the legacy insights contract used by ``/api/performance/insights``."""
@@ -1003,6 +1028,90 @@ class InsightsService:
         """Return scope-filtered source records for adjacent workspaces."""
         return self._authorized_records(scope)
 
+    def _windowed_records(
+        self,
+        scope: dict,
+        filters: dict[str, Any],
+        sections: frozenset[str] | None,
+    ) -> _WindowedRecords | None:
+        """The workspace's records with only the months the requested sections read resolved, or None to resolve
+        every record.
+
+        The sections in PERIOD_WINDOW_SECTIONS read the current month C, the month before it and the six months
+        ending at C. The values that span every month come from the light record index, through the same scope and
+        page filters: the options' completed periods, the records without a period, the current period when no
+        month is selected, the explicit periods and the duplicate count. The planning classification also reads
+        each current employee's two records before C, wherever they fall, so those are resolved as well. The
+        options read every authorized record of C. The resolved records keep the order of the full list.
+
+        Every record is resolved without sections, for other sections, for a ``status`` filter (the status is
+        reconciled at resolve time), for the Branch Director (the branch scope can read the source row) and for a
+        record service without the index.
+        """
+        if not self.period_window or sections is None or not sections <= PERIOD_WINDOW_SECTIONS:
+            return None
+        if filters.get("status") or scope.get("role") == "Branch Director":
+            return None
+        index_loader = getattr(self.record_service, "list_record_index", None)
+        keys_loader = getattr(self.record_service, "list_records_by_keys", None)
+        if self.db is None or not callable(index_loader) or not callable(keys_loader):
+            return None
+        index = index_loader()
+        if index is None:
+            return None
+        management_records = ManagementBSCService(self.db).list_analysis_records()
+        light_authorized = filter_records_by_team_levels(
+            filter_records_by_scope([*index, *management_records], scope), scope,
+        )
+        light_records = self._filter_records(light_authorized, filters)
+        current_period = self._resolve_current_period(light_records, filters)
+        if current_period is None:
+            return None
+
+        window = set(self._six_month_window(current_period))
+        wanted: set[tuple[str, int]] = set()
+        for row in light_authorized:
+            key = _value(row, "record_key")
+            if key is not None and _period(row) == current_period:
+                wanted.add(key)
+        history: dict[str, list[Any]] = defaultdict(list)
+        for row in light_records:
+            key = _value(row, "record_key")
+            if key is None:
+                continue
+            if _period(row) in window:
+                wanted.add(key)
+            history[row.employee_id].append(row)
+        # PlanningService.classify_records orders each employee's records as below and reads the two before the
+        # employee's first record of the month.
+        month = _period_schema(current_period).month
+        for rows in history.values():
+            rows.sort(key=lambda row: (row.year or 0, MONTH_ORDER.get(row.month, 0)))
+            first_current = next(
+                (position for position, row in enumerate(rows) if row.month == month and row.year == current_period[0]),
+                -1,
+            )
+            if first_current > 0:
+                wanted.update(row.record_key for row in rows[max(first_current - 2, 0):first_current])
+
+        employee_records = keys_loader([
+            (uuid.UUID(hex=row.record_key[0]), row.record_key[1]) for row in index if row.record_key in wanted
+        ])
+        if employee_records is None:
+            return None
+        authorized_records = filter_records_by_team_levels(
+            filter_records_by_scope([*employee_records, *management_records], scope), scope,
+        )
+        return _WindowedRecords(
+            authorized_records=authorized_records,
+            records=self._filter_records(authorized_records, filters),
+            missing_year_count=len([row for row in light_authorized if _period(row) is None]),
+            explicit_periods=sorted({_period(row) for row in light_records if _period(row)}),
+            current_period=current_period,
+            period_source=light_authorized,
+            duplicate_source=light_records,
+        )
+
     @staticmethod
     def _resolve_current_period(records: list[Any], filters: dict[str, Any]) -> tuple[int, int] | None:
         """Resolve the reporting period exactly as the workspace does.
@@ -1029,7 +1138,9 @@ class InsightsService:
         records: list[Any],
         filters: dict[str, Any] | None = None,
         current_period: tuple[int, int] | None = None,
+        period_source: list[Any] | None = None,
     ) -> InsightFilterOptions:
+        """``period_source`` gives the completed periods when ``records`` hold only some months."""
         today = date.today()
         active_filters = filters or {}
         if current_period is None:
@@ -1040,7 +1151,10 @@ class InsightsService:
         # The period selector is the only list that spans every completed
         # period; every other list describes the period currently on screen.
         completed_periods = [
-            period for period in sorted({_period(record) for record in records if _period(record)}, reverse=True)
+            period for period in sorted(
+                {_period(record) for record in (records if period_source is None else period_source) if _period(record)},
+                reverse=True,
+            )
             if period < (today.year, today.month)
         ]
         period_records = (
@@ -2223,7 +2337,9 @@ class InsightsService:
         current: list[Any],
         previous_period: tuple[int, int] | None,
         missing_year_count: int,
+        duplicate_source: list[Any] | None = None,
     ) -> list[InsightItem]:
+        """``duplicate_source`` gives the duplicate count when ``records`` hold only some months."""
         issues: list[InsightItem] = []
 
         def add(title: str, explanation: str, count: int, warning: str) -> None:
@@ -2289,7 +2405,7 @@ class InsightsService:
             )
         record_keys = [
             (str(_value(record, "employee_id")), str(_value(record, "team")), str(_value(record, "performance_level")), _period(record))
-            for record in records if _period(record)
+            for record in (records if duplicate_source is None else duplicate_source) if _period(record)
         ]
         duplicate_count = sum(count - 1 for count in Counter(record_keys).values() if count > 1)
         if duplicate_count:
@@ -2671,14 +2787,23 @@ class InsightsService:
             return sections is None or name in sections
 
         self._validate_scope(filters, scope)
-        authorized_records, missing_year_count = self._authorized_records(scope)
-        records = self._filter_records(authorized_records, filters)
-        explicit_periods = sorted({_period(record) for record in records if _period(record)})
-        current_period = self._resolve_current_period(records, filters)
+        windowed = self._windowed_records(scope, filters, sections)
+        period_source: list[Any] | None = None
+        duplicate_source: list[Any] | None = None
+        if windowed is None:
+            authorized_records, missing_year_count = self._authorized_records(scope)
+            records = self._filter_records(authorized_records, filters)
+            explicit_periods = sorted({_period(record) for record in records if _period(record)})
+            current_period = self._resolve_current_period(records, filters)
+        else:
+            authorized_records, records = windowed.authorized_records, windowed.records
+            missing_year_count, explicit_periods = windowed.missing_year_count, windowed.explicit_periods
+            current_period = windowed.current_period
+            period_source, duplicate_source = windowed.period_source, windowed.duplicate_source
         options = (
             InsightFilterOptions()
             if priority_only or not wanted("options")
-            else self._options(authorized_records, filters, current_period)
+            else self._options(authorized_records, filters, current_period, period_source=period_source)
         )
         if current_period is None:
             issues_needed = any(wanted(name) for name in ("summary", "priority_insights", "data_issues"))
@@ -2744,7 +2869,9 @@ class InsightsService:
                 categories = sorted(classifications_by_employee.get(str(item.employee_id), []))
                 if categories:
                     item.planning_context["existing_classifications"] = ", ".join(categories)
-            data_issues = self._data_quality_items(records, current, previous_period, missing_year_count)
+            data_issues = self._data_quality_items(
+                records, current, previous_period, missing_year_count, duplicate_source=duplicate_source,
+            )
             items.extend(kpi_items)
             items.extend(operational_analyses)
             items.extend(employee_items)

@@ -354,6 +354,24 @@ class DashboardRecordService:
             return self.resolve_records(records, kpi_rows=kpi_loader([(item.id, item.year) for item in records]))
         return self.resolve_records(records)
 
+    def list_record_index(self):
+        """list_records()' rows in the same order, as light rows with only the values a filter or a period reads
+        (see get_dashboard_record_index), or None when the repository cannot read them."""
+        sql_repository = self.sql_repository_cls(self.db, PerformanceRecord)
+        loader = getattr(sql_repository, "get_dashboard_record_index", None)
+        return loader() if callable(loader) else None
+
+    def list_records_by_keys(self, keys: list[tuple]):
+        """The resolved records for the given (record id, year) keys, in the order of the keys, or None when the
+        repository cannot read them by key."""
+        sql_repository = self.sql_repository_cls(self.db, PerformanceRecord)
+        loader = getattr(sql_repository, "get_dashboard_record_rows_by_keys", None)
+        kpi_loader = getattr(sql_repository, "get_kpi_value_rows", None)
+        if not callable(loader) or not callable(kpi_loader):
+            return None
+        records = loader(keys)
+        return self.resolve_records(records, kpi_rows=kpi_loader([(item.id, item.year) for item in records]))
+
     def resolve_records(self, records, kpi_rows: dict[tuple, list] | None = None):
         """``kpi_rows`` holds each record's KPI value rows by (record id, year), read as plain columns by
         list_records. Without it the records' own ``kpi_values`` are read."""
