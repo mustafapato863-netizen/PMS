@@ -691,7 +691,6 @@ def test_upload_dry_run_and_commit_share_the_approved_pin(db, monkeypatch):
 
     seeder = DatabaseSeeder()
     # The optional JSON trend file is not the pin. Keep this test off the workspace copy.
-    seeder.performance_repo.get_all = lambda: []
 
     conflict = _coding_workbook(
         quality_actual=60, quality_target=50,

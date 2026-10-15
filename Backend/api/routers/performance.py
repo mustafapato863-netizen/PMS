@@ -5,9 +5,6 @@ from typing import List
 from datetime import datetime, timezone
 
 from api.dependencies import (
-    performance_repo,
-    planning_service,
-    insights_service,
     serialize_performance_record,
     require_role,
     get_current_user_scope,
@@ -30,6 +27,8 @@ from services.bsc_template_service import bsc_template_service
 from services.management_bsc_service import ManagementBSCService, ManagementBSCSchemaError
 from services.dashboard_record_service import DashboardRecordService
 from services.insights_service import InsightsService
+from services.database_record_source import DatabaseRecordSource
+from services.planning_service import PlanningService
 from api.middleware.rbac_middleware import require_permission
 from services.upload_security import read_validated_excel
 from models.report_schemas import MONTHS
@@ -298,9 +297,10 @@ def get_summary_records(
 ):
     """Authorized employee and management evidence for summary and 360 views."""
     scope = require_authenticated_scope(db, request)
+    source = DatabaseRecordSource(db)
     service = InsightsService(
-        performance_repo,
-        planning_service,
+        source,
+        PlanningService(source, db=db),
         db=db,
         record_service=DashboardRecordService(db, sql_repository_cls=SQLPerformanceRepository),
     )
@@ -728,10 +728,11 @@ def get_by_status(
 def get_planning_categories(
     month: str = Query(...),
     performance_level: str = Query(None),
+    db: Session = Depends(get_db),
     role: str = Depends(require_role(["Admin", "General Manager", "Manager", "Executive"]))
 ):
     try:
-        categories = planning_service.classify_all(month, _level_filter(performance_level))
+        categories = PlanningService(DatabaseRecordSource(db), db=db).classify_all(month, _level_filter(performance_level))
         flat_categories = {}
         for cat, recs in categories.items():
             flat_categories[cat] = [serialize_performance_record(r) for r in recs]
@@ -749,10 +750,14 @@ def get_planning_categories(
 def get_insights(
     month: str = Query(...),
     performance_level: str = Query(None),
+    db: Session = Depends(get_db),
     role: str = Depends(require_role(["Admin", "General Manager", "Manager", "Executive"]))
 ):
     try:
-        insights = insights_service.generate_insights(month, _level_filter(performance_level))
+        source = DatabaseRecordSource(db)
+        insights = InsightsService(source, PlanningService(source, db=db), db=db).generate_insights(
+            month, _level_filter(performance_level),
+        )
         return StandardResponse(
             success=True,
             message="Insights compiled successfully",

@@ -5,10 +5,12 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session
 
-from api.dependencies import performance_repo, planning_service, require_authenticated_scope, require_role
+from api.dependencies import require_authenticated_scope, require_role
 from config.database import get_db
 from models.insight_schemas import InsightFilterOptions, InsightKpiOverview, InsightsWorkspace, InsightsWorkspaceResponse
+from services.database_record_source import DatabaseRecordSource
 from services.insights_service import InsightAccessError, InsightValidationError, InsightsService
+from services.planning_service import PlanningService
 
 
 router = APIRouter(prefix="/insights", tags=["Insights"])
@@ -67,9 +69,10 @@ def get_insights_workspace(
         )
     scope = require_authenticated_scope(db, request)
     try:
+        source = DatabaseRecordSource(db)
         workspace = InsightsService(
-            performance_repo,
-            planning_service,
+            source,
+            PlanningService(source, db=db),
             db=db,
         ).generate_workspace(
             scope,

@@ -16,6 +16,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from models.models import (
+    Action,
     Employee,
     EmployeeUploadBatch,
     EvaluationRevision,
@@ -82,6 +83,7 @@ def db(monkeypatch):
             EvaluationRevision.__table__,
             EmployeeUploadBatch.__table__,
             UploadLog.__table__,
+            Action.__table__,
         ],
     )
     session = sessionmaker(bind=engine, autoflush=False, autocommit=False)()

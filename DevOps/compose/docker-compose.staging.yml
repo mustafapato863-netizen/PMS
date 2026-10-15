@@ -60,12 +60,12 @@ services:
       - AUTH_REMEMBER_SESSION_DAYS=${AUTH_REMEMBER_SESSION_DAYS:-30}
       - AUTH_COOKIE_SECURE=${AUTH_COOKIE_SECURE:-true}
       - AUTH_COOKIE_SAMESITE=${AUTH_COOKIE_SAMESITE:-none}
-      - PMS_DATA_DIR=/app/data
+      - PMS_JOB_DATA_DIR=/app/job_data
       - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS}
       - MAX_UPLOAD_BYTES=${MAX_UPLOAD_BYTES:-26214400}
       - PORT=7860
     volumes:
-      - backend_data_staging:/app/data
+      - job_data_staging:/app/job_data
     depends_on:
       db:
         condition: service_healthy
@@ -97,7 +97,7 @@ services:
       - PMS_JOB_POLL_SECONDS=${PMS_JOB_POLL_SECONDS:-1}
       - PMS_JOB_LEASE_SECONDS=${PMS_JOB_LEASE_SECONDS:-300}
       - PMS_JOB_MAX_ATTEMPTS=${PMS_JOB_MAX_ATTEMPTS:-3}
-      - PMS_DATA_DIR=/app/data
+      - PMS_JOB_DATA_DIR=/app/job_data
       - JWT_SECRET=${JWT_SECRET}
       - JWT_ALGORITHM=HS256
       - JWT_EXPIRE_MINUTES=10
@@ -106,7 +106,7 @@ services:
       - AUTH_COOKIE_SECURE=${AUTH_COOKIE_SECURE:-true}
       - AUTH_COOKIE_SAMESITE=${AUTH_COOKIE_SAMESITE:-none}
     volumes:
-      - backend_data_staging:/app/data
+      - job_data_staging:/app/job_data
     depends_on:
       db:
         condition: service_healthy
@@ -117,4 +117,4 @@ services:
 volumes:
   postgres_data_staging:
   redis_data_staging:
-  backend_data_staging:
+  job_data_staging:

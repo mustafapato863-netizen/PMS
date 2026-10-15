@@ -3,6 +3,7 @@ import numpy as np
 from typing import Dict, Any, Optional
 from models.schemas import RootCauseInfo, PerformanceRecord
 from repositories.base import TargetsRepository
+from services.kpi_service import DEFAULT_TARGETS
 
 def safe_float(val, default=0.0) -> float:
     if val is None or (isinstance(val, float) and np.isnan(val)) or pd.isna(val):
@@ -13,7 +14,7 @@ def safe_float(val, default=0.0) -> float:
         return default
 
 class AnalysisService:
-    def __init__(self, targets_repo: TargetsRepository):
+    def __init__(self, targets_repo: TargetsRepository | None = None):
         self.targets_repo = targets_repo
 
     def run_root_cause_analysis(
@@ -53,8 +54,10 @@ class AnalysisService:
         actual_val = 0.0
         target_val = 1.0
 
-        t_record = self.targets_repo.get_by_team(team)
-        targets = t_record.targets if t_record else {}
+        # A stored target wins key by key; the code default (DEFAULT_TARGETS) fills what is not stored.
+        # The literals below are only the last resort for a key that neither source has.
+        t_record = self.targets_repo.get_by_team(team) if self.targets_repo is not None else None
+        targets = {**DEFAULT_TARGETS.get(team, {}), **(t_record.targets if t_record else {})}
 
         # Resolve KPI actual name and targets depending on sheet
         if team == "Inbound":

@@ -140,7 +140,7 @@ DEFAULT_TARGETS = {
         "Leakage": 0.10,
         "TenderCompliance": 0.75,
         "ATV": 600.0,
-        "Prescription": 100.0
+        "Prescription": 0.07  # Contribution share: the workbook's "A.No of Prescriptions Contribution" is 0.002-0.08
     },
     "Submission": {
         "initial_rejection_rate": 0.04,
@@ -156,11 +156,12 @@ DEFAULT_TARGETS = {
 class KPIService:
     def __init__(
         self,
-        weights_repo: KPIWeightsRepository,
-        targets_repo: TargetsRepository,
+        weights_repo: KPIWeightsRepository | None = None,
+        targets_repo: TargetsRepository | None = None,
         *,
         initialize_defaults: bool | None = None,
     ):
+        # Without a repository, the code defaults (DEFAULT_WEIGHTS, DEFAULT_TARGETS) are the only source.
         self.weights_repo = weights_repo
         self.targets_repo = targets_repo
         # Retained as a keyword-only compatibility argument for deterministic
@@ -187,11 +188,11 @@ class KPIService:
                 {value['kpi_key']: value['weight_applied'] for value in kpi_values_list},
             )
 
-        # Load weights and targets (fallback to defaults if repo fails)
-        w_record = self.weights_repo.get_by_team(team)
+        # Load weights and targets: a stored record wins, otherwise the code default for the team
+        w_record = self.weights_repo.get_by_team(team) if self.weights_repo is not None else None
         weights = w_record.weights if w_record else DEFAULT_WEIGHTS.get(team, {})
 
-        target_rec = self.targets_repo.get_by_team(team)
+        target_rec = self.targets_repo.get_by_team(team) if self.targets_repo is not None else None
         targets = target_rec.targets if target_rec else DEFAULT_TARGETS.get(team, {})
 
         achievements = {}

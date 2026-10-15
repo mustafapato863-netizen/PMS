@@ -4,15 +4,12 @@ import pytest
 from services.kpi_service import KPIService
 from services.kpi_aggregation import capped_achievement, AggregatedKpiMetric
 from services.management_bsc_service import _direction_ratio
-from repositories.json_repos import JSONKPIWeightsRepository, JSONTargetsRepository
 from config.loader import load_team_config
 
 
 @pytest.fixture
 def kpi_service():
-    weights_repo = JSONKPIWeightsRepository()
-    targets_repo = JSONTargetsRepository()
-    return KPIService(weights_repo, targets_repo)
+    return KPIService()
 
 
 class TestScoringCharacterization:

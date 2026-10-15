@@ -9,19 +9,9 @@ import pandas as pd
 from fastapi import Header, HTTPException, Request
 from typing import List, Dict, Any
 
-from repositories.json_repos import (
-    JSONPerformanceRepository, JSONEmployeeRepository,
-    JSONKPIWeightsRepository, JSONTargetsRepository, JSONUploadsRepository,
-    JSONManagerNotesRepository, JSONCorrectiveActionsRepository,
-    JSONUserRepository
-)
 from processors.excel_processor import ExcelProcessor
 from services.kpi_service import KPIService
 from services.analysis_service import AnalysisService
-from services.learning_service import LearningService
-from services.planning_service import PlanningService
-from services.trend_service import TrendService
-from services.insights_service import InsightsService
 from services.preapprovals_offshore_scoring import (
     NEW_METHOD_ID as NEW_OFFSHORE_METHOD_ID,
     OffshoreDataError,
@@ -166,23 +156,9 @@ def clear_serialization_cache() -> None:
     with _serialize_lock:
         _serialize_cache.clear()
 
-# Instantiate JSON-based repositories (single source of truth)
-performance_repo = JSONPerformanceRepository()
-employee_repo = JSONEmployeeRepository()
-weights_repo = JSONKPIWeightsRepository()
-targets_repo = JSONTargetsRepository()
-uploads_repo = JSONUploadsRepository()
-notes_repo = JSONManagerNotesRepository()
-actions_repo = JSONCorrectiveActionsRepository()
-user_repo = JSONUserRepository()
-
-# Instantiate services
-kpi_service = KPIService(weights_repo, targets_repo)
-analysis_service = AnalysisService(targets_repo)
-learning_service = LearningService(actions_repo)
-planning_service = PlanningService(performance_repo)
-trend_service = TrendService()
-insights_service = InsightsService(performance_repo, planning_service)
+# Weights and targets come from the code defaults (DEFAULT_WEIGHTS, DEFAULT_TARGETS). Everything else is read from the database.
+kpi_service = KPIService()
+analysis_service = AnalysisService()
 excel_processor = ExcelProcessor()
 
 def safe_float(val) -> float:

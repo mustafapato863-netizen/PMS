@@ -26,8 +26,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PATH="/opt/venv/bin:$PATH" \
     PYTHONPATH="/app" \
-    PMS_DATA_DIR="/app/data" \
-    PMS_DEFAULT_FILE_PATH="/app/data/PMS_Trend_All.xlsx" \
+    PMS_JOB_DATA_DIR="/app/job_data" \
     ENABLE_FILE_LOGGING="false" \
     PORT=7860
 
@@ -42,7 +41,7 @@ RUN groupadd -g 10001 pmsgroup && \
 COPY --chown=pmsuser:pmsgroup Backend/ /app/
 
 # Create persistent data directory and set permissions
-RUN mkdir -p /app/data && chown -R pmsuser:pmsgroup /app/data
+RUN mkdir -p /app/job_data && chown -R pmsuser:pmsgroup /app/job_data
 
 USER pmsuser
 

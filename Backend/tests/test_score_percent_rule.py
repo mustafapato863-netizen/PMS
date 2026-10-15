@@ -5,7 +5,6 @@ import pytest
 from sqlalchemy import Column, Float, MetaData, String, Table, create_engine, select
 from sqlalchemy.orm import sessionmaker
 
-from repositories.json_repos import _sanitize_performance_record_item
 from utils.scoring_rules import score_percent, score_percent_sql
 
 OFFSHORE = "Pre-Approvals IP Offshore"
@@ -61,11 +60,3 @@ def test_sql_form_matches_the_python_rule():
         assert sql_values[item_id] == pytest.approx(score_percent(stored))
     assert sql_values["a"] == pytest.approx(85.0)
     assert sql_values["d"] == pytest.approx(51.28)
-
-
-def test_legacy_json_loader_applies_the_one_rule():
-    ratio = _sanitize_performance_record_item({"team": INBOUND, "evaluation": {"score": 0.5}})
-    percent = _sanitize_performance_record_item({"team": OFFSHORE, "evaluation": {"score": 51.28}})
-
-    assert ratio["evaluation"]["score"] == 50.0
-    assert percent["evaluation"]["score"] == 51.28

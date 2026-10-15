@@ -62,7 +62,6 @@ def _approved_july(db, monkeypatch, month: int = 7):
     workflow.impact_preview(actor, draft["id"])
     workflow.approve(actor, draft["id"])
     seeder = DatabaseSeeder()
-    seeder.performance_repo.get_all = lambda: []
     return actor, workflow, scope, seeder
 
 
@@ -130,7 +129,6 @@ def test_not_evaluated_rows_are_stored_unpinned_like_the_legacy_path(db, monkeyp
 def test_active_row_with_a_missing_actual_still_blocks_with_todays_message(db, monkeypatch):
     _approved_july(db, monkeypatch)
     seeder = DatabaseSeeder()
-    seeder.performance_repo.get_all = lambda: []
     blocked = _workbook([_row("C-4", "Active", quality=None, rejection=55, tat=55)])
 
     for dry_run in (True, False):
@@ -142,7 +140,6 @@ def test_active_row_with_a_missing_actual_still_blocks_with_todays_message(db, m
 def test_new_row_with_a_missing_weighted_actual_is_not_evaluated_and_does_not_block(db, monkeypatch):
     _approved_july(db, monkeypatch)
     seeder = DatabaseSeeder()
-    seeder.performance_repo.get_all = lambda: []
     partial = _workbook([_row("C-5", "Active - New", quality=60, rejection=None, tat=None)])
 
     for dry_run in (True, False):
@@ -156,7 +153,6 @@ def test_the_real_new_employee_shape_uploads_as_not_evaluated_in_dry_run_and_com
     # Four new rows: a real number, a dash in the rejection cell, a real number.
     _approved_july(db, monkeypatch)
     seeder = DatabaseSeeder()
-    seeder.performance_repo.get_all = lambda: []
     book = _workbook([_row(f"N-{index}", "Active - New", quality=0, rejection="-", tat=0.8) for index in range(4)])
 
     preview = seeder.process_uploaded_file("coding-new-shape.xlsx", book, dry_run=True)
@@ -172,7 +168,6 @@ def test_the_real_new_employee_shape_uploads_as_not_evaluated_in_dry_run_and_com
 def test_an_all_blank_leave_row_is_not_evaluated(db, monkeypatch):
     _approved_july(db, monkeypatch)
     seeder = DatabaseSeeder()
-    seeder.performance_repo.get_all = lambda: []
     book = _workbook([_row("L-1", "Leave"), _row("L-2", "Leave")])
 
     committed = seeder.process_uploaded_file("coding-leave.xlsx", book, dry_run=False)
@@ -184,7 +179,6 @@ def test_an_all_blank_leave_row_is_not_evaluated(db, monkeypatch):
 def test_fully_populated_leave_and_inactive_rows_are_scored_and_pinned(db, monkeypatch):
     _approved_july(db, monkeypatch)
     seeder = DatabaseSeeder()
-    seeder.performance_repo.get_all = lambda: []
     book = _workbook([
         _row("L-3", "Leave", quality=60, rejection=55, tat=55),
         _row("I-1", "Inactive", quality=60, rejection=55, tat=55),
@@ -201,7 +195,6 @@ def test_fully_populated_leave_and_inactive_rows_are_scored_and_pinned(db, monke
 def test_active_row_with_a_dash_in_a_weighted_actual_blocks_with_the_missing_message(db, monkeypatch):
     _approved_july(db, monkeypatch)
     seeder = DatabaseSeeder()
-    seeder.performance_repo.get_all = lambda: []
     blocked = _workbook([_row("A-1", "Active", quality=60, rejection="-", tat=55)])
 
     for dry_run in (True, False):
@@ -214,7 +207,6 @@ def test_active_row_with_a_dash_in_a_weighted_actual_blocks_with_the_missing_mes
 def test_active_row_with_malformed_text_still_raises_invalid_evidence(db, monkeypatch):
     _approved_july(db, monkeypatch)
     seeder = DatabaseSeeder()
-    seeder.performance_repo.get_all = lambda: []
     malformed = _workbook([_row("A-2", "Active", quality="12abc", rejection=55, tat=55)])
 
     for dry_run in (True, False):
@@ -232,7 +224,6 @@ def test_upload_for_a_month_without_an_approved_version_is_unchanged(db, monkeyp
     db.add(Team(id=uuid.uuid4(), name="Coding", db_name="Coding", display_name="Coding", region="UAE", team_level="employee"))
     db.commit()
     seeder = DatabaseSeeder()
-    seeder.performance_repo.get_all = lambda: []
 
     result = seeder.process_uploaded_file("coding-august.xlsx", _workbook([_row("C-2", "Leave", month=8)]), dry_run=False)
     db.rollback()
@@ -254,7 +245,6 @@ def test_impact_preview_apply_and_rollback_leave_not_evaluated_rows_untouched(db
     workflow = EvaluationWorkflow(db)
     scope = _coding_scope(workflow, actor)
     seeder = DatabaseSeeder()
-    seeder.performance_repo.get_all = lambda: []
     # Stored before approval: the legacy upload saves all three rows.
     seeder.process_uploaded_file("coding-stored.xlsx", _workbook(MIXED), dry_run=False)
     db.rollback()
@@ -299,7 +289,6 @@ def test_the_gate_still_fails_for_an_evaluated_row_with_a_missing_actual(db, mon
     workflow = EvaluationWorkflow(db)
     scope = _coding_scope(workflow, actor)
     seeder = DatabaseSeeder()
-    seeder.performance_repo.get_all = lambda: []
     seeder.process_uploaded_file(
         "coding-gate.xlsx",
         _workbook(MIXED + [_row("C-4", "Active", quality=None, rejection=55, tat=55)]),
@@ -326,7 +315,6 @@ def test_a_stored_row_with_no_status_evidence_and_no_actual_stays_missing_eviden
     workflow = EvaluationWorkflow(db)
     scope = _coding_scope(workflow, actor)
     seeder = DatabaseSeeder()
-    seeder.performance_repo.get_all = lambda: []
     seeder.process_uploaded_file(
         "coding-no-status.xlsx",
         _workbook([_row("C-6", None, quality=None, rejection=None, tat=None), _row("C-7", "Active", quality=60, rejection=55, tat=55)]),
@@ -364,7 +352,6 @@ def _stored_coding_month(db, monkeypatch, rows):
     workflow = EvaluationWorkflow(db)
     scope = _coding_scope(workflow, actor)
     seeder = DatabaseSeeder()
-    seeder.performance_repo.get_all = lambda: []
     seeder.process_uploaded_file("coding-stored-markers.xlsx", _workbook(rows), dry_run=False)
     db.rollback()
     return actor, workflow, scope
@@ -440,7 +427,6 @@ def test_reupload_of_stored_rows_after_approval_skips_not_evaluated_rows(db, mon
     workflow.impact_preview(actor, draft["id"])
     workflow.approve(actor, draft["id"])
     seeder = DatabaseSeeder()
-    seeder.performance_repo.get_all = lambda: []
     before = {code: _snapshot(_stored(db, code)) for code in ("C-2", "C-3", "C-6")}
 
     result = seeder.process_uploaded_file("coding-reupload.xlsx", _workbook(MIXED + [_row("C-6", "Active - New", quality=0, rejection="-", tat=0.8)]), dry_run=False)
@@ -477,7 +463,6 @@ def test_the_real_august_shape_uploads_under_an_approved_month_with_six_rows_not
     # 1 populated leave, 1 populated inactive, 22 active with all actuals.
     _approved_july(db, monkeypatch, month=8)
     seeder = DatabaseSeeder()
-    seeder.performance_repo.get_all = lambda: []
     rows = [_row(f"N-{index}", "Active - New", quality=0, rejection="-", tat=0.8, month=8) for index in range(4)]
     rows += [_row(f"L-{index}", "Leave", month=8) for index in range(2)]
     rows += [_row("L-full", "Leave", quality=0.9, rejection=0.02, tat=0.95, month=8)]

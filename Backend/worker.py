@@ -37,7 +37,7 @@ from services.report_story_service import (
     StoryValidationError,
 )
 from services.seeding_service import DatabaseSeeder, UploadProcessingError
-from services.job_storage import cleanup_job_files, resolve_input_path
+from services.job_storage import cleanup_job_files, resolve_input_path, sweep_stale_job_files
 from services.processing_job_service import JOB_KINDS, ProcessingJobService
 from services.socket_service import SocketNotificationService
 
@@ -273,6 +273,9 @@ def process_job_once(job_id: str, worker_id: str) -> None:
             )
         finally:
             db.close()
+        # A retryable failure keeps the staged workbook for the next attempt; a terminal one does not need it.
+        if failed is not None and failed.status == "failed" and kind == "pms_upload":
+            _remove_staged_upload(job_id)
         if failed:
             _notify(SocketNotificationService.notify_job_updated(job_id, kind, failed.status))
         logger.exception("Processing job failed", extra={"job_id": job_id, "kind": kind})
@@ -300,9 +303,27 @@ def _run_optional_evaluation_tick(worker_id: str) -> None:
         db.close()
 
 
+def _remove_staged_upload(job_id: str) -> None:
+    try:
+        cleanup_job_files(job_id)
+    except OSError:
+        logger.warning("Could not remove the staged upload of a failed job", extra={"job_id": job_id}, exc_info=True)
+
+
+def _sweep_stale_job_files() -> None:
+    try:
+        removed = sweep_stale_job_files()
+    except OSError:
+        logger.warning("Could not sweep stale processing job files", exc_info=True)
+        return
+    if removed:
+        logger.info("Removed stale processing job files", extra={"count": len(removed)})
+
+
 def run_worker(*, once: bool = False) -> None:
     worker_id = f"{socket.gethostname()}:{os.getpid()}"
     logger.info("Processing worker started", extra={"worker_id": worker_id})
+    _sweep_stale_job_files()
     while True:
         _run_optional_evaluation_tick(worker_id)
         db = SessionLocal()

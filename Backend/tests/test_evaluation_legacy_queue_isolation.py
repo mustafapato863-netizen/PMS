@@ -1024,7 +1024,69 @@ def test_process_job_once_legacy_nonretryable_error_fails_without_cleanup(world,
     assert job.worker_id is None
     assert job.lease_expires_at is None
     assert job.finished_at is not None
+    # A terminal failure deletes the job's staged workbook. Only an upload has one, so the report kinds delete nothing.
+    assert cleaned == ([str(job.id)] if kind == "pms_upload" else [])
+
+
+def test_upload_workbook_survives_retryable_failures_until_the_final_attempt(world, monkeypatch):
+    _engine, db, user = world
+    factory = _SessionFactory(db)
+    cleaned = []
+
+    class _Heartbeat:
+        def __init__(self, *_args, **_kwargs) -> None:
+            return None
+
+        def start(self) -> None:
+            return None
+
+        def stop(self) -> None:
+            return None
+
+    def fail_retryably(_job_id, _payload):
+        raise RuntimeError("storage offline")  # not a non-retryable error, so the job may be requeued
+
+    monkeypatch.setattr(worker_module, "SessionLocal", factory)
+    monkeypatch.setattr(worker_module, "JobLeaseHeartbeat", _Heartbeat)
+    monkeypatch.setattr(worker_module, "_notify", lambda coro: coro.close())
+    monkeypatch.setattr(worker_module, "cleanup_job_files", lambda job_id: cleaned.append(job_id))
+    monkeypatch.setattr(worker_module, "_execute_upload", fail_retryably)
+
+    # Attempt 1 of 3 fails: the job is requeued and its workbook stays for the next attempt.
+    first = add_job(
+        db,
+        user,
+        kind="pms_upload",
+        status="running",
+        attempt_count=1,
+        max_attempts=3,
+        progress=0,
+        worker_id="worker-test",
+        request_json={"filename": "first.xlsx"},
+        idempotency_key="upload-attempt-1",
+    )
+    worker_module.process_job_once(str(first.id), "worker-test")
+    db.refresh(first)
+    assert first.status == "queued"
     assert cleaned == []
+
+    # Attempt 3 of 3 fails: no attempts remain, so the job is failed and its workbook is deleted.
+    final = add_job(
+        db,
+        user,
+        kind="pms_upload",
+        status="running",
+        attempt_count=3,
+        max_attempts=3,
+        progress=0,
+        worker_id="worker-test",
+        request_json={"filename": "final.xlsx"},
+        idempotency_key="upload-attempt-3",
+    )
+    worker_module.process_job_once(str(final.id), "worker-test")
+    db.refresh(final)
+    assert final.status == "failed"
+    assert cleaned == [str(final.id)]
 
 
 def _running_report(db, user) -> ProcessingJob:

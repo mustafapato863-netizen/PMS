@@ -33,6 +33,7 @@ from services.evaluation.catalog import EvaluationCatalog
 from services.evaluation.periods import month_aliases, month_name, month_number, previous_period
 from services.evaluation.resolver import (
     approved_version,
+    approved_version_memo,
     assert_schema,
     basis_payload,
     lock_team_rows,
@@ -2031,23 +2032,47 @@ class EvaluationWorkflow:
             )
         return rows
 
-    def rescore_uploaded(self, record: PerformanceRecord, team: Team, values: list[KPIValue], start: int) -> None:
+    def rescore_uploaded(
+        self,
+        record: PerformanceRecord,
+        team: Team,
+        values: list[KPIValue],
+        start: int,
+        *,
+        schema_checked: bool = False,
+        version_memo: dict | None = None,
+    ) -> None:
         """Pin an approved basis onto rows the upload is about to save. No basis leaves the rows unchanged.
 
         Scoring uses the same full-precision workbook evidence as the upload pin.
         Original targets are stored before KPI targets are replaced. raw_data stays
         untouched. Rounded KPI columns are not a second scoring pass.
+
+        ``schema_checked`` and ``version_memo`` are for an upload that checks the schema once and resolves each
+        approved version once. The defaults keep the single-record behaviour.
         """
-        if not schema_ready(self.db):
+        if not schema_checked and not schema_ready(self.db):
             return
-        version = approved_version(
-            self.db,
-            team_id=team.id,
-            level=record.performance_level,
-            position=record.position_name,
-            year=record.year,
-            month=record.month,
-        )
+        if version_memo is not None:
+            version = approved_version_memo(
+                self.db,
+                version_memo,
+                team_id=team.id,
+                level=record.performance_level,
+                position=record.position_name,
+                year=record.year,
+                month=record.month,
+            )
+        else:
+            version = approved_version(
+                self.db,
+                team_id=team.id,
+                level=record.performance_level,
+                position=record.position_name,
+                year=record.year,
+                month=record.month,
+                schema_checked=schema_checked,
+            )
         if version is None:
             return
         team_name = logical_team_name(team)
