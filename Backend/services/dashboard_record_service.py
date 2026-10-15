@@ -14,7 +14,8 @@ from config.loader import (
 )
 from models.schemas import PerformanceRecord as SchemaPerformanceRecord
 from pydantic import ValidationError
-from services.legacy_kpi_evidence import build_legacy_employee_kpi_values
+from services.legacy_kpi_evidence import build_legacy_employee_kpi_values, normalized_text_memo
+from services.outbound_period_basis import normalized_name_memo
 from services.preapprovals_offshore_scoring import NEW_METHOD_ID as NEW_OFFSHORE_METHOD_ID
 from utils.performance_status import reconciled_status
 from utils.kpi_direction import (
@@ -34,7 +35,7 @@ def _pinned_basis(item) -> dict | None:
     return None
 
 
-def _pinned_schema_record(item, employee, team_name: str, basis: dict):
+def _pinned_schema_record(item, employee, team_name: str, basis: dict, item_kpi_values=None):
     """Keep the stored payload and overlay identity, stored score, and pinned KPIs.
 
     The current team file is not consulted. A later configuration change cannot
@@ -57,7 +58,7 @@ def _pinned_schema_record(item, employee, team_name: str, basis: dict):
     lines = {str(line.get("kpi_key")): line for line in basis.get("lines") or []}
     stored_kpis = {str(value.get("kpi_key")): value for value in (record.kpi_values or []) if isinstance(value, dict)}
     kpi_values = []
-    for value in item.kpi_values:
+    for value in (item.kpi_values if item_kpi_values is None else item_kpi_values):
         line = lines.get(str(value.kpi_key), {})
         stored = stored_kpis.get(str(value.kpi_key), {})
         kpi_values.append(
@@ -122,12 +123,64 @@ def _operational_outbound_evidence(team: str | None, values: list) -> bool:
     return marked
 
 
+def _float_or(value: dict, key: str, default: float = 0.0) -> float:
+    try:
+        number = float(value.get(key, default))
+    except (TypeError, ValueError):
+        return default
+    return number if number == number else default
+
+
+def _definition(memo: dict, config: dict | None, value: dict) -> dict | None:
+    """find_kpi_definition for a KPI the resolved config does not list, memoised for one resolve call."""
+    key = (id(config), value.get("kpi_key"), value.get("label"))
+    try:
+        return memo[key]
+    except KeyError:
+        found = memo[key] = find_kpi_definition(config, value.get("kpi_key"), value.get("label"))
+        return found
+    except TypeError:
+        return find_kpi_definition(config, value.get("kpi_key"), value.get("label"))
+
+
+def _direction(
+    memo: dict,
+    team: str | None,
+    value: dict,
+    persisted_direction: str | None,
+    definition: dict | None,
+) -> tuple[str, str]:
+    """resolve_kpi_direction(team, {**value, "direction": persisted_direction}, definition), memoised for one
+    resolve call on every input it reads. A default is never memoised, so its warning is logged each time, as before.
+    """
+    key = (
+        team,
+        bool(value.get("evaluation_pinned")),
+        persisted_direction,
+        value.get("kpi_key"),
+        value.get("key"),
+        value.get("label"),
+        (definition or {}).get("direction"),
+    )
+    try:
+        cached = memo.get(key)
+    except TypeError:
+        return resolve_kpi_direction(team, {**value, "direction": persisted_direction}, definition)
+    if cached is not None:
+        return cached
+    resolved = resolve_kpi_direction(team, {**value, "direction": persisted_direction}, definition)
+    if resolved[1] != "default":
+        memo[key] = resolved
+    return resolved
+
+
 def _normalise_kpi_values(
     values: list[dict],
     config: dict | None,
     config_by_key: dict[str, dict],
     team: str | None = None,
     persisted_directions: dict[str, str] | None = None,
+    memo: dict | None = None,
 ) -> list[dict]:
     """Return KPI evidence on one consistent achievement/contribution scale.
 
@@ -143,35 +196,27 @@ def _normalise_kpi_values(
     direction (e.g. Marketing ``cw_error_free`` scored lower-is-better before
     the config fix) has its contribution corrected here, so the reconciled
     record score is direction-correct at read time.
+
+    ``memo`` carries the definition and direction lookups of one resolve_records call.
     """
     result: list[dict] = []
     persisted_directions = persisted_directions or {}
+    memo = {} if memo is None else memo
+    definitions = memo.setdefault("definitions", {})
+    directions = memo.setdefault("directions", {})
     operational_outbound = _operational_outbound_evidence(team, values)
     for raw_value in values:
         value = dict(raw_value)
         kpi_key = str(value.get("kpi_key"))
-        definition = config_by_key.get(kpi_key) or find_kpi_definition(
-            config, value.get("kpi_key"), value.get("label")
-        )
+        definition = config_by_key.get(kpi_key) or _definition(definitions, config, value)
         persisted_direction = value.get("direction") or persisted_directions.get(kpi_key)
-        direction, direction_source = resolve_kpi_direction(
-            team,
-            {**value, "direction": persisted_direction},
-            definition,
-        )
+        direction, direction_source = _direction(directions, team, value, persisted_direction, definition)
         value["direction"] = direction
         value["direction_source"] = direction_source
-        def _number(key: str, default: float = 0.0) -> float:
-            try:
-                number = float(value.get(key, default))
-            except (TypeError, ValueError):
-                return default
-            return number if number == number else default
-
-        weight = _number("weight_applied")
+        weight = _float_or(value, "weight_applied")
         if weight > 1.0:
             weight /= 100.0
-        ratio = _number("achievement_ratio")
+        ratio = _float_or(value, "achievement_ratio")
         if ratio > 2.0 and not operational_outbound:
             ratio /= 100.0
         ratio = max(ratio, 0.0)
@@ -194,7 +239,7 @@ def _normalise_kpi_values(
         if not operational_outbound:
             ratio = min(ratio, GLOBAL_KPI_ACHIEVEMENT_CAP)
 
-        contribution = _number("contribution")
+        contribution = _float_or(value, "contribution")
         if contribution > 1.0 and not operational_outbound:
             contribution /= 100.0
         contribution = max(contribution, 0.0)
@@ -221,6 +266,27 @@ def _normalise_kpi_values(
         value["cap_achievement"] = not operational_outbound
         result.append(value)
     return result
+
+
+def _relational_kpi(value, config_by_key: dict[str, dict]) -> dict:
+    """One persisted KPI value row as KPI evidence, before normalisation."""
+    definition = config_by_key.get(value.kpi_key, {})
+    achievement_ratio = float(value.achievement_ratio)
+    contribution = float(value.contribution)
+    return {
+        "kpi_key": value.kpi_key,
+        "label": definition.get("label", value.kpi_key),
+        "perspective": definition.get("perspective"),
+        "unit": definition.get("unit", "number"),
+        "color": definition.get("color", "#3B82F6"),
+        # KPIValue has no direction column; the resolver in _normalise_kpi_values decides (never a silent default).
+        "direction": None,
+        "actual_value": float(value.actual_value),
+        "target_value": float(value.target_value),
+        "achievement_ratio": achievement_ratio / 100.0 if achievement_ratio > 2.0 else achievement_ratio,
+        "weight_applied": float(value.weight_applied),
+        "contribution": contribution / 100.0 if contribution > 1.0 else contribution,
+    }
 
 
 def _payload_directions(payload) -> dict[str, str]:
@@ -264,7 +330,11 @@ class DashboardRecordService:
         kpi: str | None = None,
     ):
         sql_repository = self.sql_repository_cls(self.db, PerformanceRecord)
-        records = sql_repository.get_dashboard_records(
+        # The light path reads the same rows without ORM objects; a repository without it keeps the ORM path.
+        light_loader = getattr(sql_repository, "get_dashboard_record_rows", None)
+        kpi_loader = getattr(sql_repository, "get_kpi_value_rows", None)
+        loader = light_loader if callable(light_loader) and callable(kpi_loader) else sql_repository.get_dashboard_records
+        records = loader(
             team=team,
             month=month,
             employee_id=employee_id,
@@ -280,19 +350,31 @@ class DashboardRecordService:
             employee_search=employee_search,
             kpi=kpi,
         )
+        if loader is light_loader:
+            return self.resolve_records(records, kpi_rows=kpi_loader([(item.id, item.year) for item in records]))
         return self.resolve_records(records)
 
-    def resolve_records(self, records):
+    def resolve_records(self, records, kpi_rows: dict[tuple, list] | None = None):
+        """``kpi_rows`` holds each record's KPI value rows by (record id, year), read as plain columns by
+        list_records. Without it the records' own ``kpi_values`` are read."""
+        # The column names of the source rows recur on every record; normalise each once for this call only.
+        with normalized_text_memo(), normalized_name_memo():
+            return self._resolve_records(records, kpi_rows)
+
+    def _resolve_records(self, records, kpi_rows: dict[tuple, list] | None):
         result = []
         resolved_configs: dict[tuple[str, str, str], dict | None] = {}
         team_configs: dict[str, dict | None] = {}
+        # Definition and direction lookups, for this call only.
+        memo: dict = {}
         for item in records:
+            item_kpi_values = item.kpi_values if kpi_rows is None else kpi_rows.get((item.id, item.year), [])
             employee = item.employee
             record_team = getattr(item, "team", None) or employee.team
             team_name = logical_team_name(record_team)
             pinned_basis = _pinned_basis(item)
             if pinned_basis is not None:
-                result.append(_pinned_schema_record(item, employee, team_name, pinned_basis))
+                result.append(_pinned_schema_record(item, employee, team_name, pinned_basis, item_kpi_values))
                 continue
 
             config = None
@@ -328,37 +410,26 @@ class DashboardRecordService:
             # KPI rows are the canonical persisted scoring breakdown.  They
             # must override any stale/missing copy inside record_payload so
             # every dashboard consumer sees the same weights/contributions.
-            kpi_values = [
-                {
-                    "kpi_key": value.kpi_key,
-                    "label": config_by_key.get(value.kpi_key, {}).get("label", value.kpi_key),
-                    "perspective": config_by_key.get(value.kpi_key, {}).get("perspective"),
-                    "unit": config_by_key.get(value.kpi_key, {}).get("unit", "number"),
-                    "color": config_by_key.get(value.kpi_key, {}).get("color", "#3B82F6"),
-                    # KPIValue has no direction column; the resolver in
-                    # _normalise_kpi_values decides (never a silent default).
-                    "direction": None,
-                    "actual_value": float(value.actual_value),
-                    "target_value": float(value.target_value),
-                    "achievement_ratio": (
-                        float(value.achievement_ratio) / 100.0
-                        if float(value.achievement_ratio) > 2.0
-                        else float(value.achievement_ratio)
-                    ),
-                    "weight_applied": float(value.weight_applied),
-                    "contribution": (
-                        float(value.contribution) / 100.0
-                        if float(value.contribution) > 1.0
-                        else float(value.contribution)
-                    ),
-                }
-                for value in item.kpi_values
-            ]
+            def relational_kpis() -> list[dict]:
+                return [_relational_kpi(value, config_by_key) for value in item_kpi_values]
+
             payload = getattr(item, "record_payload", None)
             persisted_directions = _payload_directions(payload)
-            kpi_values = _normalise_kpi_values(
-                kpi_values, config, config_by_key, team_name, persisted_directions
-            )
+            scoped_cache: list[list[dict]] = []
+
+            def scoped_relational() -> list[dict]:
+                # The relational KPI values, normalised once and only when used. Elective Dubai keeps its
+                # configured KPIs.
+                if not scoped_cache:
+                    normalised = _normalise_kpi_values(
+                        relational_kpis(), config, config_by_key, team_name, persisted_directions, memo
+                    )
+                    scoped_cache.append(
+                        [value for value in normalised if value["kpi_key"] in config_by_key]
+                        if team_name == "Pre-Approvals IP Elective Dubai" and config_by_key
+                        else normalised
+                    )
+                return scoped_cache[0]
 
             # Keep normalized persisted weights available for both the rich
             # payload and compatibility paths. If the JSON payload is
@@ -370,7 +441,7 @@ class DashboardRecordService:
                     if float(value.weight_applied) > 1.0
                     else float(value.weight_applied)
                 )
-                for value in item.kpi_values
+                for value in item_kpi_values
             }
             payload_raw_data: dict = {}
             if isinstance(payload, dict):
@@ -393,17 +464,13 @@ class DashboardRecordService:
                         weights=persisted_weights,
                         config=config,
                     )
-                    scoped_kpis = (
-                        [value for value in kpi_values if value["kpi_key"] in config_by_key]
-                        if team_name == "Pre-Approvals IP Elective Dubai" and config_by_key
-                        else kpi_values
-                    )
                     canonical_kpis = _normalise_kpi_values(
-                        repaired_kpis or scoped_kpis or rich_record.kpi_values,
+                        repaired_kpis or scoped_relational() or rich_record.kpi_values,
                         config,
                         config_by_key,
                         team_name,
                         persisted_directions,
+                        memo,
                     )
                     reconciled_score = float(item.score)
                     reconciled_grade = item.grade
@@ -471,13 +538,9 @@ class DashboardRecordService:
                 weights=persisted_weights,
                 config=config,
             ) if payload_raw_data else []
-            fallback_kpis = repaired_fallback_kpis or (
-                [value for value in kpi_values if value["kpi_key"] in config_by_key]
-                if team_name == "Pre-Approvals IP Elective Dubai" and config_by_key
-                else kpi_values
-            )
+            fallback_kpis = repaired_fallback_kpis or scoped_relational()
             fallback_kpis = _normalise_kpi_values(
-                fallback_kpis, config, config_by_key, team_name, persisted_directions
+                fallback_kpis, config, config_by_key, team_name, persisted_directions, memo
             )
             fallback_score = float(item.score)
             fallback_grade = item.grade
