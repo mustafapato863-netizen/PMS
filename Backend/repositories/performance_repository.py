@@ -7,6 +7,7 @@ from sqlalchemy import String, and_, case, cast, false, func, or_, select, tuple
 
 from models.models import PerformanceRecord, Employee, KPIValue, Team
 from utils.report_scope import FUNCTION_SCOPED_ROLES, _team_keys, selection_team_keys
+from utils.team_identity import logical_team_name
 import logging
 
 logger = logging.getLogger(__name__)
@@ -53,6 +54,11 @@ def _team_name_clause(team_values: set[str]):
         func.lower(Team.name).in_(team_values),
         func.lower(Team.db_name).in_(team_values),
     )
+
+
+def _uuid_key(value) -> str:
+    """A UUID as lowercase hex without dashes, whether the driver gives text, hex or a UUID."""
+    return str(value).replace("-", "").lower()
 
 
 class PerformanceRepository(BaseRepository[PerformanceRecord]):
@@ -368,7 +374,60 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
         values are read with get_kpi_value_rows.
         """
         query = self._dashboard_records_query(False, **filters)
-        rows = self.db.connection().execute(query.statement).mappings().all()
+        return self._with_relations(self.db.connection().execute(query.statement).mappings().all())
+
+    def get_dashboard_record_rows_by_keys(self, keys: list[tuple]) -> list[SimpleNamespace]:
+        """get_dashboard_record_rows' rows for the given (record id, year) keys, in the order of the keys."""
+        rows = []
+        for start in range(0, len(keys), 500):
+            query = self._dashboard_records_query(False).filter(
+                tuple_(PerformanceRecord.id, PerformanceRecord.year).in_(keys[start:start + 500])
+            )
+            rows.extend(self.db.connection().execute(query.statement).mappings().all())
+        position = {key: index for index, key in enumerate(keys)}
+        rows.sort(key=lambda row: position[(row["id"], row["year"])])
+        return self._with_relations(rows)
+
+    def get_dashboard_record_index(self) -> list[SimpleNamespace]:
+        """Every row of get_dashboard_record_rows(), in the same order, with only the values a filter or a period
+        reads: the key, the employee code, the team name, the region, the position and level, the year and month.
+
+        The identical SELECT runs as driver SQL, so no column is converted (no payload is decoded). The values
+        are the resolver's: the team's display name or name, and the record's region and position or else the
+        employee's. ``record_key`` is the record id as lowercase hex without dashes, and the year.
+        """
+        connection = self.db.connection()
+        compiled = self._dashboard_records_query(False).statement.compile(dialect=connection.dialect)
+        params = compiled.construct_params()
+        arguments = tuple(params[name] for name in compiled.positiontup) if compiled.positional else params
+        rows = connection.exec_driver_sql(compiled.string, arguments).mappings().all()
+        employees = {
+            _uuid_key(employee.id): employee
+            for employee in self.db.execute(
+                select(Employee.id, Employee.employee_id, Employee.region, Employee.position_name)
+            )
+        }
+        teams = {
+            _uuid_key(team.id): team
+            for team in self.db.execute(select(Team.id, Team.name, Team.display_name))
+        }
+        index = []
+        for row in rows:
+            employee = employees[_uuid_key(row["employee_id"])]
+            index.append(SimpleNamespace(
+                record_key=(_uuid_key(row["id"]), int(row["year"])),
+                employee_id=str(employee.employee_id),
+                team=logical_team_name(teams[_uuid_key(row["team_id"])]),
+                region=row["region"] or employee.region,
+                position=row["position_name"] or employee.position_name,
+                performance_level=str(row["performance_level"]),
+                year=int(row["year"]),
+                month=str(row["month"]),
+            ))
+        return index
+
+    def _with_relations(self, rows) -> list[SimpleNamespace]:
+        """Dashboard rows as light objects, each with ``employee`` and ``team`` (and the employee's ``team``)."""
         employee_ids = list({row["employee_id"] for row in rows})
         employees: dict = {}
         for start in range(0, len(employee_ids), 500):
