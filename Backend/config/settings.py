@@ -47,6 +47,10 @@ if APP_ENV == "production" and "*" in CORS_ORIGINS:
 MAX_UPLOAD_BYTES = int(os.environ.get("MAX_UPLOAD_BYTES", str(25 * 1024 * 1024)))
 if MAX_UPLOAD_BYTES <= 0:
     raise ValueError("MAX_UPLOAD_BYTES must be greater than zero.")
+# Largest data snapshot the admin import accepts (api/routers/data_snapshot.py).
+DATA_SNAPSHOT_MAX_BYTES = int(os.environ.get("DATA_SNAPSHOT_MAX_BYTES", str(100 * 1024 * 1024)))
+if DATA_SNAPSHOT_MAX_BYTES <= 0:
+    raise ValueError("DATA_SNAPSHOT_MAX_BYTES must be greater than zero.")
 MAX_UPLOAD_ARCHIVE_BYTES = int(
     os.environ.get("MAX_UPLOAD_ARCHIVE_BYTES", str(200 * 1024 * 1024))
 )

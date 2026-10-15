@@ -9,6 +9,7 @@ import { DataManagementPanel } from '../components/settings/DataManagementPanel'
 import { EvaluationSettingsPanel } from '../components/settings/EvaluationSettingsPanel';
 import { UserManagementPanel } from '../components/settings/UserManagementPanel';
 import { CorrectiveActionDataPanel } from '../components/settings/CorrectiveActionDataPanel';
+import { DataSnapshotPanel } from '../components/settings/DataSnapshotPanel';
 import { SystemErrorsPanel } from '../components/settings/SystemErrorsPanel';
 import { AdminOverview } from '../components/settings/shell/AdminOverview';
 import { AdminPageHeader } from '../components/settings/shell/AdminPageHeader';
@@ -47,7 +48,12 @@ const SettingsView = () => {
       <AdminPageHeader title="Administration" description="Configure data, evaluation settings, users and system health." />
       <SettingsLayout activePage={page}>
         {page === 'overview' && <AdminOverview />}
-        {page === 'upload' && <DataManagementPanel />}
+        {page === 'upload' && (
+          <>
+            <DataManagementPanel />
+            <DataSnapshotPanel />
+          </>
+        )}
         {page === 'corrective_actions' && <CorrectiveActionDataPanel />}
         {page === 'kpis' && <EvaluationSettingsPanel />}
         {page === 'users' && <UserManagementPanel />}
