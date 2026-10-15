@@ -16,7 +16,7 @@ import { PeopleToReviewSection } from '../components/insights/overview/OverviewS
 import EmployeeActionModal from '../components/team/EmployeeActionModal';
 import EmployeeRowActions from '../components/team/EmployeeRowActions';
 import type { InsightFilters, InsightItem } from '../features/insights/types';
-import { useInsightsWorkspace } from '../hooks/api/useInsightsWorkspace';
+import { INSIGHTS_PAGE_SECTIONS, useInsightsWorkspace } from '../hooks/api/useInsightsWorkspace';
 import {
   apiTeamParam,
   functionOptionsFor,
@@ -145,7 +145,8 @@ export default function InsightsView() {
   const [exportState, setExportState] = useState<'idle' | 'exporting' | 'error'>('idle');
   const [exportError, setExportError] = useState<string | null>(null);
   const [modalEmployee, setModalEmployee] = useState<TeamAgentRow | null>(null);
-  const query = useInsightsWorkspace(filters);
+  // The page renders only these fields; the backend computes nothing else for this request.
+  const query = useInsightsWorkspace(filters, { sections: INSIGHTS_PAGE_SECTIONS });
   const workspace = query.data;
   // Cascade auto-clear: once the API has answered for the *current* filters
   // (not placeholder data from the previous request), drop any header

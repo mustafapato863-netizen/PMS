@@ -77,6 +77,30 @@ class InsightValidationError(ValueError):
     pass
 
 
+# Every field of InsightsWorkspace, in response order. ``sections`` selects which of them a build computes.
+WORKSPACE_SECTIONS: tuple[str, ...] = (
+    "summary", "priority_insights", "team_analyses", "performance_drivers", "risks", "opportunities",
+    "data_issues", "team_summaries", "geography_summaries", "executive_story", "people_contribution_analysis",
+    "kpi_trend", "overall_trend", "role_summaries", "kpi_overview", "kpi_diagnosis", "tracking_indicators",
+    "options", "comparison", "deferred_capabilities",
+)
+
+
+def normalize_workspace_sections(sections: Iterable[str] | str | None) -> frozenset[str] | None:
+    """``None`` means every section, as before the parameter existed. A comma-separated string or an iterable
+    names the sections a build should compute. Unknown or empty requests are validation errors."""
+    if sections is None:
+        return None
+    parts = sections.split(",") if isinstance(sections, str) else list(sections)
+    names = {str(part).strip() for part in parts if str(part).strip()}
+    if not names:
+        raise InsightValidationError("sections must name at least one workspace section")
+    unknown = sorted(names - set(WORKSPACE_SECTIONS))
+    if unknown:
+        raise InsightValidationError(f"Unknown workspace sections: {', '.join(unknown)}")
+    return frozenset(names)
+
+
 def _value(item: Any, key: str, default: Any = None) -> Any:
     if isinstance(item, dict):
         return item.get(key, default)
@@ -1606,12 +1630,78 @@ class InsightsService:
             ))
         return items, analyses, drivers, high_weight_misses
 
+    @staticmethod
+    def _person_pairs(
+        current: list[Any],
+        previous: list[Any],
+    ) -> tuple[dict[str, list[tuple[Any, Any]]], dict[str, dict[tuple[str, str, str, str], Any]]]:
+        """Every KPI's measurements in one pass: current (record, value) pairs, and previous value by person.
+        The first matching value of a record is used, as ``_people_contribution_analysis`` always has."""
+        current_pairs: dict[str, list[tuple[Any, Any]]] = defaultdict(list)
+        for record in current:
+            seen: set[str] = set()
+            for value in _configured_kpi_values(record):
+                key = str(_value(value, "kpi_key", ""))
+                if key and key not in seen:
+                    seen.add(key)
+                    current_pairs[key].append((record, value))
+        previous_pairs: dict[str, dict[tuple[str, str, str, str], Any]] = defaultdict(dict)
+        for record in previous:
+            seen = set()
+            for value in _configured_kpi_values(record):
+                key = str(_value(value, "kpi_key", ""))
+                if key and key not in seen:
+                    seen.add(key)
+                    previous_pairs[key][_people_record_key(record)] = value
+        return current_pairs, previous_pairs
+
+    @staticmethod
+    def _people_impacts(measured: list[tuple[Any, Any]]) -> tuple[list[float], int]:
+        """People to review's weighted impacts for one KPI, and how many people are below target, without
+        building the people rows. The arithmetic is ``_people_contribution_analysis``'s, so the sums agree exactly
+        (a test compares them for every KPI)."""
+        represented_records = len(measured)
+        impacts: list[float] = []
+        below_target = 0
+        for _record, value in measured:
+            actual = _value(value, "actual_value")
+            target = _value(value, "target_value")
+            contribution = _value(value, "contribution")
+            weight = _value(value, "weight_applied")
+            row_direction = _value(value, "direction")
+            valid = (
+                actual is not None
+                and target is not None
+                and float(target) > 0
+                and contribution is not None
+                and weight is not None
+                and row_direction in {"higher_better", "lower_better"}
+            )
+            if not valid:
+                continue
+            actual_value = float(actual)
+            target_value = float(target)
+            contribution_value = float(contribution)
+            weight_value = float(weight)
+            contribution_points = contribution_value * (100 if abs(contribution_value) <= 1 else 1)
+            weight_points = weight_value * (100 if abs(weight_value) <= 1 else 1)
+            weighted_impact = (contribution_points - weight_points) / represented_records
+            impacts.append(round(weighted_impact, 2))
+            if _target_achievement(actual_value, target_value, row_direction) is not None and weighted_impact < -0.005:
+                below_target += 1
+        # The full analysis lists rows by weighted impact, so its sum runs in this order. Keep the same order.
+        impacts.sort()
+        return impacts, below_target
+
     def _kpi_diagnosis(
         self,
         current: list[Any],
         previous: list[Any],
         records: list[Any],
         current_period: tuple[int, int] | None,
+        *,
+        trend_index: dict[str, list[Any]] | None = None,
+        person_pairs: tuple[dict[str, list[tuple[Any, Any]]], dict[str, dict[tuple[str, str, str, str], Any]]] | None = None,
     ) -> list[InsightKpiDiagnosisRow]:
         """One row per scored KPI in the scope, built from the workspace's own rollups.
 
@@ -1652,23 +1742,11 @@ class InsightsService:
         # Built once for every row instead of one scan of the records per KPI: the six-month values of
         # each KPI key, and each KPI's own current and previous measurements for People to review.
         window = self._six_month_window(current_period) if current_period else None
-        trend_index = self._six_month_values(records, window) if window is not None else {}
-        current_pairs: dict[str, list[tuple[Any, Any]]] = defaultdict(list)
-        for record in current:
-            seen: set[str] = set()
-            for value in _configured_kpi_values(record):
-                key = str(_value(value, "kpi_key", ""))
-                if key and key not in seen:
-                    seen.add(key)
-                    current_pairs[key].append((record, value))
-        previous_pairs: dict[str, dict[tuple[str, str, str, str], Any]] = defaultdict(dict)
-        for record in previous:
-            seen = set()
-            for value in _configured_kpi_values(record):
-                key = str(_value(value, "kpi_key", ""))
-                if key and key not in seen:
-                    seen.add(key)
-                    previous_pairs[key][_people_record_key(record)] = value
+        if trend_index is None:
+            trend_index = self._six_month_values(records, window) if window is not None else {}
+        if person_pairs is None:
+            person_pairs = self._person_pairs(current, previous)
+        current_pairs = person_pairs[0]
 
         rows: list[InsightKpiDiagnosisRow] = []
         for key, values in values_by_key.items():
@@ -1686,10 +1764,7 @@ class InsightsService:
             achievement_percent = round(achievement * 100, 2) if achievement is not None else None
             weight = _average(configured_weight(value) for value in dominant_values) or 0.0
 
-            people = self._people_contribution_analysis(
-                key, current, previous, pairs=(current_pairs.get(key, []), previous_pairs.get(key, {})),
-            )
-            impacts = [row.weighted_impact for row in people.rows if row.weighted_impact is not None] if people else []
+            impacts, people_below = self._people_impacts(current_pairs.get(key, []))
             trend_label, trend_values = trend_index.get(key, [key, {}])
             trend = (
                 self._kpi_trend_from_values(key, trend_label, trend_values, current_period, window)
@@ -1736,7 +1811,7 @@ class InsightsService:
                 achievement_percent=achievement_percent,
                 status=_kpi_status(achievement_percent),
                 effect_points=round(sum(impacts), 2) if impacts else None,
-                people_below_target=people.negative_contributors if people else 0,
+                people_below_target=people_below,
                 six_months=[
                     InsightKpiSixMonth(
                         year=point.period.year,
@@ -2570,12 +2645,17 @@ class InsightsService:
         scope: dict,
         *,
         priority_only: bool = False,
+        sections: Iterable[str] | str | None = None,
         **filters: Any,
     ) -> InsightsWorkspace:
+        """``sections`` names the InsightsWorkspace fields to compute. Without it every field is computed. An
+        unrequested field is not computed and comes back as its empty default. The priority view keeps its own
+        compact output and ignores ``sections``."""
+        wanted = None if priority_only else normalize_workspace_sections(sections)
         # One build reads each record's configured KPI values many times; the memo makes that one read per record.
         token = _CONFIGURED_KPI_MEMO.set({})
         try:
-            return self._generate_workspace(scope, priority_only=priority_only, **filters)
+            return self._generate_workspace(scope, priority_only=priority_only, sections=wanted, **filters)
         finally:
             _CONFIGURED_KPI_MEMO.reset(token)
 
@@ -2584,8 +2664,12 @@ class InsightsService:
         scope: dict,
         *,
         priority_only: bool = False,
+        sections: frozenset[str] | None = None,
         **filters: Any,
     ) -> InsightsWorkspace:
+        def wanted(name: str) -> bool:
+            return sections is None or name in sections
+
         self._validate_scope(filters, scope)
         authorized_records, missing_year_count = self._authorized_records(scope)
         records = self._filter_records(authorized_records, filters)
@@ -2593,23 +2677,24 @@ class InsightsService:
         current_period = self._resolve_current_period(records, filters)
         options = (
             InsightFilterOptions()
-            if priority_only
+            if priority_only or not wanted("options")
             else self._options(authorized_records, filters, current_period)
         )
         if current_period is None:
-            data_issues = self._data_quality_items(records, [], None, missing_year_count)
+            issues_needed = any(wanted(name) for name in ("summary", "priority_insights", "data_issues"))
+            data_issues = self._data_quality_items(records, [], None, missing_year_count) if issues_needed else []
             return InsightsWorkspace(
-                summary=InsightSummary(data_issues=len(data_issues)),
-                priority_insights=self._sort_items(data_issues),
+                summary=InsightSummary(data_issues=len(data_issues)) if wanted("summary") else InsightSummary(),
+                priority_insights=self._sort_items(data_issues) if wanted("priority_insights") else [],
                 performance_drivers=[],
-                risks=[InsightRisk(key="data", label="Missing or incomplete data", count=max(missing_year_count, 1), explanation="No explicit reporting period is available in the authorized scope.", filter_type="data_quality")],
+                risks=[InsightRisk(key="data", label="Missing or incomplete data", count=max(missing_year_count, 1), explanation="No explicit reporting period is available in the authorized scope.", filter_type="data_quality")] if wanted("risks") else [],
                 opportunities=[],
-                data_issues=data_issues,
+                data_issues=data_issues if wanted("data_issues") else [],
                 role_summaries=[],
                 kpi_overview=InsightKpiOverview(),
                 options=options,
-                comparison=InsightComparison(note="No explicit reporting period is available."),
-                deferred_capabilities=["Overdue corrective actions require a persisted due date, which is not available in the current action model."],
+                comparison=InsightComparison(note="No explicit reporting period is available.") if wanted("comparison") else InsightComparison(),
+                deferred_capabilities=["Overdue corrective actions require a persisted due date, which is not available in the current action model."] if wanted("deferred_capabilities") else [],
             )
 
         adjacent_period = (current_period[0] - 1, 12) if current_period[1] == 1 else (current_period[0], current_period[1] - 1)
@@ -2617,58 +2702,67 @@ class InsightsService:
         current = _records_in_period(records, current_period)
         previous = _records_in_period(records, previous_period)
 
-        items = self._score_insights(current, previous, current_period, previous_period)
-        kpi_items, team_analyses, drivers, high_weight_misses = self._kpi_insights(current, previous)
-        operational_analyses = self._operational_kpi_insights(current, previous)
-        team_analyses.extend(operational_analyses)
-        employee_items = self._employee_risks(current, previous)
-        # Team Dashboard's priority view does not render planning classifications.
-        # Avoid the extra classification pass there while keeping the full view's
-        # planning context and priority ordering unchanged.
-        planning: dict[str, list[Any]] = {}
-        if not priority_only:
-            planning_records = [record for record in records if isinstance(record, PerformanceRecord)]
-            planning = self.planning_service.classify_records(
-                planning_records,
-                month=_period_schema(current_period).month,
-                year=current_period[0],
-            )
-        classifications_by_employee: dict[str, list[str]] = defaultdict(list)
-        for category, category_records in planning.items():
-            for record in category_records:
-                classifications_by_employee[str(record.employee_id)].append(category)
-        for item in employee_items:
-            categories = sorted(classifications_by_employee.get(str(item.employee_id), []))
-            if categories:
-                item.planning_context["existing_classifications"] = ", ".join(categories)
-        data_issues = self._data_quality_items(records, current, previous_period, missing_year_count)
-        items.extend(kpi_items)
-        items.extend(operational_analyses)
-        items.extend(employee_items)
-        items.extend(data_issues)
-        for item in items:
-            item.planning_context["period"] = f"{_period_schema(current_period).month} {current_period[0]}"
-        basis_index = _BasisScopeIndex(records)
-        _annotate_basis_notes(
-            items,
-            records,
-            current_period[0],
-            _period_schema(current_period).month,
-            index=basis_index,
+        item_sections = (
+            "summary", "priority_insights", "opportunities", "data_issues", "risks",
+            "performance_drivers", "executive_story", "people_contribution_analysis", "kpi_trend",
         )
+        # The item pipeline feeds the priority list, the summary, the drivers and the reference KPI. Team analyses,
+        # team summaries and role summaries need only the KPI analyses.
+        needs_items = any(wanted(name) for name in item_sections)
+        needs_kpi = needs_items or any(wanted(name) for name in ("team_analyses", "team_summaries", "role_summaries"))
+        items: list[InsightItem] = self._score_insights(current, previous, current_period, previous_period) if needs_items else []
+        kpi_items, team_analyses, drivers, high_weight_misses = (
+            self._kpi_insights(current, previous) if needs_kpi else ([], [], [], [])
+        )
+        operational_analyses = self._operational_kpi_insights(current, previous) if needs_kpi else []
+        team_analyses.extend(operational_analyses)
+        employee_items = self._employee_risks(current, previous) if needs_items else []
+        # The basis index is shared by the item notes, the team summaries, the executive story and the overall trend.
+        basis_index = (
+            _BasisScopeIndex(records)
+            if needs_items or wanted("team_summaries") or wanted("executive_story") or wanted("overall_trend")
+            else None
+        )
+        data_issues: list[InsightItem] = []
+        if needs_items:
+            # Team Dashboard's priority view does not render planning classifications.
+            # Avoid the extra classification pass there while keeping the full view's
+            # planning context and priority ordering unchanged.
+            planning: dict[str, list[Any]] = {}
+            if not priority_only:
+                planning_records = [record for record in records if isinstance(record, PerformanceRecord)]
+                planning = self.planning_service.classify_records(
+                    planning_records,
+                    month=_period_schema(current_period).month,
+                    year=current_period[0],
+                )
+            classifications_by_employee: dict[str, list[str]] = defaultdict(list)
+            for category, category_records in planning.items():
+                for record in category_records:
+                    classifications_by_employee[str(record.employee_id)].append(category)
+            for item in employee_items:
+                categories = sorted(classifications_by_employee.get(str(item.employee_id), []))
+                if categories:
+                    item.planning_context["existing_classifications"] = ", ".join(categories)
+            data_issues = self._data_quality_items(records, current, previous_period, missing_year_count)
+            items.extend(kpi_items)
+            items.extend(operational_analyses)
+            items.extend(employee_items)
+            items.extend(data_issues)
+            for item in items:
+                item.planning_context["period"] = f"{_period_schema(current_period).month} {current_period[0]}"
+            _annotate_basis_notes(
+                items,
+                records,
+                current_period[0],
+                _period_schema(current_period).month,
+                index=basis_index,
+            )
 
         selected_kpi = filters.get("kpi")
         selected_severity = filters.get("severity")
         selected_type = filters.get("insight_type")
         selected_status = filters.get("insight_status")
-        filtered_items = [
-            item for item in items
-            if (not selected_kpi or item.kpi_key == selected_kpi)
-            and (not selected_severity or item.severity == selected_severity)
-            and (not selected_type or item.insight_type == selected_type)
-            and (not selected_status or item.status == selected_status)
-        ]
-        sorted_items = self._sort_items(filtered_items)
         filtered_team_analyses = [
             item for item in team_analyses
             if (not selected_kpi or item.kpi_key == selected_kpi)
@@ -2676,15 +2770,29 @@ class InsightsService:
             and (not selected_type or item.insight_type == selected_type)
             and (not selected_status or item.status == selected_status)
         ]
-        priority_items = sorted_items[:50]
-        item_ids = {item.id for item in sorted_items}
-        scoped_drivers = sorted(
-            [driver for driver in drivers if driver.insight_id in item_ids],
-            key=lambda driver: (-abs(driver.impact_points), driver.id),
-        )
-        visible_drivers = scoped_drivers[:10]
-        opportunities = [item for item in sorted_items if item.severity == "opportunity"]
-        visible_data_issues = [item for item in sorted_items if item.insight_type == "data_quality"]
+        sorted_items: list[InsightItem] = []
+        priority_items: list[InsightItem] = []
+        visible_drivers: list[InsightDriver] = []
+        opportunities: list[InsightItem] = []
+        visible_data_issues: list[InsightItem] = []
+        if needs_items:
+            filtered_items = [
+                item for item in items
+                if (not selected_kpi or item.kpi_key == selected_kpi)
+                and (not selected_severity or item.severity == selected_severity)
+                and (not selected_type or item.insight_type == selected_type)
+                and (not selected_status or item.status == selected_status)
+            ]
+            sorted_items = self._sort_items(filtered_items)
+            priority_items = sorted_items[:50]
+            item_ids = {item.id for item in sorted_items}
+            scoped_drivers = sorted(
+                [driver for driver in drivers if driver.insight_id in item_ids],
+                key=lambda driver: (-abs(driver.impact_points), driver.id),
+            )
+            visible_drivers = scoped_drivers[:10]
+            opportunities = [item for item in sorted_items if item.severity == "opportunity"]
+            visible_data_issues = [item for item in sorted_items if item.insight_type == "data_quality"]
         reference_kpi = selected_kpi
         if not reference_kpi:
             for driver in visible_drivers:
@@ -2704,61 +2812,79 @@ class InsightsService:
                 ),
                 None,
             )
-        people_contribution_analysis = (
-            None
-            if priority_only
-            else self._people_contribution_analysis(reference_kpi, current, previous)
+        # Shared by the six-month trend and the diagnosis: one pass over the records for every KPI's six months,
+        # and one pass over the current and previous months for every KPI's measurements.
+        window = self._six_month_window(current_period)
+        full_view = not priority_only
+        trend_index = (
+            self._six_month_values(records, window)
+            if full_view and (wanted("kpi_trend") or wanted("kpi_diagnosis"))
+            else None
         )
-        kpi_trend = (
-            None
-            if priority_only
-            else self._kpi_trend(reference_kpi, records, current_period)
+        person_pairs = (
+            self._person_pairs(current, previous)
+            if full_view and (wanted("people_contribution_analysis") or wanted("kpi_diagnosis"))
+            else None
         )
+        people_contribution_analysis = None
+        if full_view and wanted("people_contribution_analysis") and reference_kpi:
+            people_contribution_analysis = self._people_contribution_analysis(
+                reference_kpi,
+                current,
+                previous,
+                pairs=(person_pairs[0].get(reference_kpi, []), person_pairs[1].get(reference_kpi, {})),
+            )
+        kpi_trend = None
+        if full_view and wanted("kpi_trend") and reference_kpi:
+            trend_label, trend_values = trend_index.get(reference_kpi, [reference_kpi, {}])
+            kpi_trend = self._kpi_trend_from_values(reference_kpi, trend_label, trend_values, current_period, window)
 
-        selected_kpi_key = str(selected_kpi or "")
-        expected_kpis = 0
-        analyzed_kpis = 0
-        for record in current:
-            for kpi in _configured_kpi_values(record):
-                key = str(_value(kpi, "kpi_key", ""))
-                if selected_kpi_key and key != selected_kpi_key:
-                    continue
-                expected_kpis += 1
-                target = _value(kpi, "target_value")
-                if (
-                    key
-                    and _value(kpi, "actual_value") is not None
-                    and target is not None
-                    and float(target) > 0
-                    and _value(kpi, "contribution") is not None
-                    and _value(kpi, "weight_applied") is not None
-                    and _value(kpi, "direction") in {"higher_better", "lower_better"}
-                ):
-                    analyzed_kpis += 1
+        summary = InsightSummary()
+        if wanted("summary"):
+            selected_kpi_key = str(selected_kpi or "")
+            expected_kpis = 0
+            analyzed_kpis = 0
+            for record in current:
+                for kpi in _configured_kpi_values(record):
+                    key = str(_value(kpi, "kpi_key", ""))
+                    if selected_kpi_key and key != selected_kpi_key:
+                        continue
+                    expected_kpis += 1
+                    target = _value(kpi, "target_value")
+                    if (
+                        key
+                        and _value(kpi, "actual_value") is not None
+                        and target is not None
+                        and float(target) > 0
+                        and _value(kpi, "contribution") is not None
+                        and _value(kpi, "weight_applied") is not None
+                        and _value(kpi, "direction") in {"higher_better", "lower_better"}
+                    ):
+                        analyzed_kpis += 1
 
-        critical_issue_keys = {
-            (item.team or "", item.position or "All positions", item.kpi_key or item.title)
-            for item in filtered_team_analyses
-            if item.severity == "critical"
-        }
-        weighted_analyses = [item for item in filtered_team_analyses if item.impact_points is not None]
-        negative_impact = sum(abs(item.impact_points or 0) for item in weighted_analyses if (item.impact_points or 0) < 0)
-        positive_impact = sum(item.impact_points or 0 for item in weighted_analyses if (item.impact_points or 0) > 0)
-        summary = InsightSummary(
-            critical=sum(item.severity == "critical" for item in sorted_items),
-            at_risk=sum(item.severity == "risk" for item in sorted_items),
-            opportunities=len(opportunities),
-            data_issues=len(visible_data_issues),
-            critical_issues=len(critical_issue_keys),
-            negative_weighted_drivers=sum((item.impact_points or 0) < 0 for item in weighted_analyses),
-            positive_weighted_drivers=sum((item.impact_points or 0) > 0 for item in weighted_analyses),
-            weighted_negative_impact=round(negative_impact, 2),
-            weighted_positive_impact=round(positive_impact, 2),
-            weighted_net_impact=round(positive_impact - negative_impact, 2),
-            analyzed_kpis=analyzed_kpis,
-            expected_kpis=expected_kpis,
-            coverage_percent=round((analyzed_kpis / expected_kpis) * 100, 1) if expected_kpis else None,
-        )
+            critical_issue_keys = {
+                (item.team or "", item.position or "All positions", item.kpi_key or item.title)
+                for item in filtered_team_analyses
+                if item.severity == "critical"
+            }
+            weighted_analyses = [item for item in filtered_team_analyses if item.impact_points is not None]
+            negative_impact = sum(abs(item.impact_points or 0) for item in weighted_analyses if (item.impact_points or 0) < 0)
+            positive_impact = sum(item.impact_points or 0 for item in weighted_analyses if (item.impact_points or 0) > 0)
+            summary = InsightSummary(
+                critical=sum(item.severity == "critical" for item in sorted_items),
+                at_risk=sum(item.severity == "risk" for item in sorted_items),
+                opportunities=len(opportunities),
+                data_issues=len(visible_data_issues),
+                critical_issues=len(critical_issue_keys),
+                negative_weighted_drivers=sum((item.impact_points or 0) < 0 for item in weighted_analyses),
+                positive_weighted_drivers=sum((item.impact_points or 0) > 0 for item in weighted_analyses),
+                weighted_negative_impact=round(negative_impact, 2),
+                weighted_positive_impact=round(positive_impact, 2),
+                weighted_net_impact=round(positive_impact - negative_impact, 2),
+                analyzed_kpis=analyzed_kpis,
+                expected_kpis=expected_kpis,
+                coverage_percent=round((analyzed_kpis / expected_kpis) * 100, 1) if expected_kpis else None,
+            )
 
         if priority_only:
             current_schema = _period_schema(current_period)
@@ -2793,132 +2919,148 @@ class InsightsService:
                 ],
             )
 
-        analyses_by_team: dict[str, list[InsightItem]] = defaultdict(list)
-        for item in filtered_team_analyses:
-            if item.team:
-                analyses_by_team[item.team].append(item)
-        current_by_team: dict[str, list[Any]] = defaultdict(list)
-        previous_by_team: dict[str, list[Any]] = defaultdict(list)
-        for record in current:
-            current_by_team[str(_value(record, "team", ""))].append(record)
-        for record in previous:
-            previous_by_team[str(_value(record, "team", ""))].append(record)
-
         team_summaries: list[InsightTeamSummary] = []
-        for team in sorted(current_by_team):
-            team_records = current_by_team[team]
-            previous_records = previous_by_team.get(team, [])
-            current_score = _average(_evaluation_value(record, "score") for record in team_records)
-            previous_score = _average(_evaluation_value(record, "score") for record in previous_records)
-            team_items = analyses_by_team.get(team, [])
-            ranked_items = self._sort_items(team_items)
-            employee_ids = {
-                str(_value(record, "employee_id"))
-                for record in team_records
-                if _value(record, "employee_id")
-            }
-            impacted_ids = {
-                str(_value(record, "employee_id"))
-                for record in team_records
-                if _value(record, "employee_id")
-                and _evaluation_value(record, "score") is not None
-                and float(_evaluation_value(record, "score")) < 70
-            }
-            team_summaries.append(InsightTeamSummary(
-                team=team,
-                current_score=round(current_score, 1) if current_score is not None else None,
-                previous_score=round(previous_score, 1) if previous_score is not None else None,
-                score_change=round(current_score - previous_score, 1) if current_score is not None and previous_score is not None else None,
-                impacted_employees=len(impacted_ids),
-                total_employees=len(employee_ids) or len(team_records),
-                critical=len({(item.position or "", item.kpi_key or item.title) for item in team_items if item.severity == "critical"}),
-                at_risk=len({(item.position or "", item.kpi_key or item.title) for item in team_items if item.severity == "risk"}),
-                opportunities=len({(item.position or "", item.kpi_key or item.title) for item in team_items if item.severity == "opportunity"}),
-                gap_points=round(current_score - 100.0, 1) if current_score is not None else None,
-                main_insight_id=ranked_items[0].id if ranked_items else None,
-                main_cause=ranked_items[0].title if ranked_items else None,
-                basis_context=basis_index.context(
-                    current_period[0],
-                    _period_schema(current_period).month,
+        if wanted("team_summaries") or wanted("executive_story"):
+            analyses_by_team: dict[str, list[InsightItem]] = defaultdict(list)
+            for item in filtered_team_analyses:
+                if item.team:
+                    analyses_by_team[item.team].append(item)
+            current_by_team: dict[str, list[Any]] = defaultdict(list)
+            previous_by_team: dict[str, list[Any]] = defaultdict(list)
+            for record in current:
+                current_by_team[str(_value(record, "team", ""))].append(record)
+            for record in previous:
+                previous_by_team[str(_value(record, "team", ""))].append(record)
+
+            for team in sorted(current_by_team):
+                team_records = current_by_team[team]
+                previous_records = previous_by_team.get(team, [])
+                current_score = _average(_evaluation_value(record, "score") for record in team_records)
+                previous_score = _average(_evaluation_value(record, "score") for record in previous_records)
+                team_items = analyses_by_team.get(team, [])
+                ranked_items = self._sort_items(team_items)
+                employee_ids = {
+                    str(_value(record, "employee_id"))
+                    for record in team_records
+                    if _value(record, "employee_id")
+                }
+                impacted_ids = {
+                    str(_value(record, "employee_id"))
+                    for record in team_records
+                    if _value(record, "employee_id")
+                    and _evaluation_value(record, "score") is not None
+                    and float(_evaluation_value(record, "score")) < 70
+                }
+                team_summaries.append(InsightTeamSummary(
                     team=team,
-                ),
+                    current_score=round(current_score, 1) if current_score is not None else None,
+                    previous_score=round(previous_score, 1) if previous_score is not None else None,
+                    score_change=round(current_score - previous_score, 1) if current_score is not None and previous_score is not None else None,
+                    impacted_employees=len(impacted_ids),
+                    total_employees=len(employee_ids) or len(team_records),
+                    critical=len({(item.position or "", item.kpi_key or item.title) for item in team_items if item.severity == "critical"}),
+                    at_risk=len({(item.position or "", item.kpi_key or item.title) for item in team_items if item.severity == "risk"}),
+                    opportunities=len({(item.position or "", item.kpi_key or item.title) for item in team_items if item.severity == "opportunity"}),
+                    gap_points=round(current_score - 100.0, 1) if current_score is not None else None,
+                    main_insight_id=ranked_items[0].id if ranked_items else None,
+                    main_cause=ranked_items[0].title if ranked_items else None,
+                    basis_context=basis_index.context(
+                        current_period[0],
+                        _period_schema(current_period).month,
+                        team=team,
+                    ),
+                ))
+            total_team_gap_impact = sum(
+                max(-(item.gap_points or 0), 0) * item.total_employees
+                for item in team_summaries
+            )
+            for item in team_summaries:
+                item.gap_contribution_percent = round(
+                    (max(-(item.gap_points or 0), 0) * item.total_employees / total_team_gap_impact) * 100,
+                    1,
+                ) if total_team_gap_impact else 0.0
+                item.affected_percentage = round(
+                    (item.impacted_employees / item.total_employees) * 100,
+                    1,
+                ) if item.total_employees else None
+            team_summaries.sort(key=lambda item: (- (item.gap_contribution_percent or 0), -item.critical, -item.at_risk, item.team))
+
+        role_summaries = self._role_summaries(current, previous, filtered_team_analyses) if wanted("role_summaries") else []
+        kpi_overview = self._kpi_overview(records, current_period, explicit_periods) if wanted("kpi_overview") else InsightKpiOverview()
+
+        geography_summaries = (
+            self._scope_summaries(current, previous, "region")
+            if wanted("geography_summaries") or wanted("executive_story")
+            else []
+        )
+        executive_story = None
+        if wanted("executive_story"):
+            executive_story = self._executive_story(
+                current,
+                previous,
+                current_period,
+                team_summaries,
+                geography_summaries,
+                visible_drivers,
+                scope_label=" · ".join(filter(None, [
+                    str(filters.get("region") or "All regions"),
+                    str(filters.get("team") or "All teams"),
+                    str(filters.get("kpi")) if filters.get("kpi") else None,
+                    f"{_period_schema(current_period).month} {_period_schema(current_period).year}",
+                ])),
+            )
+            executive_story.basis_context = basis_index.context(
+                current_period[0],
+                _period_schema(current_period).month,
+            )
+
+        overall_trend = self._overall_trend(records, current_period, basis_index) if wanted("overall_trend") else []
+
+        risk_cards: list[InsightRisk] = []
+        if wanted("risks"):
+            repeated_employees = {item.employee_id for item in employee_items if item.employee_id}
+            declining_teams = {
+                item.team for item in items
+                if item.insight_type == "performance" and item.impact_points is not None and item.impact_points < 0 and item.team
+            }
+            risk_cards = [
+                InsightRisk(key="teams", label="Declining teams", count=len(declining_teams), explanation="Teams with a material score decline in the latest available comparison.", filter_type="performance"),
+                InsightRisk(key="employees", label="Repeatedly below target", count=len(repeated_employees), explanation="Employees below the 70% review threshold for two available periods.", filter_type="employee_risk"),
+                InsightRisk(key="kpis", label="High-weight KPI risks", count=len(high_weight_misses), explanation="High-weight KPIs that currently miss their configured target.", filter_type="kpi_driver"),
+                InsightRisk(key="data", label="Data or configuration issues", count=len(data_issues), explanation="Detected source, period or KPI configuration issues.", filter_type="data_quality"),
+            ]
+
+        comparison = InsightComparison()
+        if wanted("comparison"):
+            current_schema = _period_schema(current_period)
+            previous_schema = _period_schema(previous_period)
+            adjacent = bool(previous_period and (
+                (previous_period[0] == current_period[0] and previous_period[1] == current_period[1] - 1)
+                or (previous_period == (current_period[0] - 1, 12) and current_period[1] == 1)
             ))
-        total_team_gap_impact = sum(
-            max(-(item.gap_points or 0), 0) * item.total_employees
-            for item in team_summaries
+            comparison_note = None
+            if previous_period is None:
+                comparison_note = "No earlier explicit period is available in the selected scope."
+            elif not adjacent:
+                comparison_note = "Comparison uses the nearest earlier available period; intermediate period data is missing."
+            comparison = InsightComparison(current=current_schema, previous=previous_schema, is_adjacent=adjacent, note=comparison_note)
+
+        tracking_indicators = self._tracking_indicators(records, current_period, previous_period) if wanted("tracking_indicators") else []
+        kpi_diagnosis = (
+            self._kpi_diagnosis(current, previous, records, current_period, trend_index=trend_index, person_pairs=person_pairs)
+            if not priority_only and wanted("kpi_diagnosis")
+            else []
         )
-        for item in team_summaries:
-            item.gap_contribution_percent = round(
-                (max(-(item.gap_points or 0), 0) * item.total_employees / total_team_gap_impact) * 100,
-                1,
-            ) if total_team_gap_impact else 0.0
-            item.affected_percentage = round(
-                (item.impacted_employees / item.total_employees) * 100,
-                1,
-            ) if item.total_employees else None
-        team_summaries.sort(key=lambda item: (- (item.gap_contribution_percent or 0), -item.critical, -item.at_risk, item.team))
-
-        role_summaries = self._role_summaries(current, previous, filtered_team_analyses)
-        kpi_overview = self._kpi_overview(records, current_period, explicit_periods)
-
-        geography_summaries = self._scope_summaries(current, previous, "region")
-        executive_story = self._executive_story(
-            current,
-            previous,
-            current_period,
-            team_summaries,
-            geography_summaries,
-            visible_drivers,
-            scope_label=" · ".join(filter(None, [
-                str(filters.get("region") or "All regions"),
-                str(filters.get("team") or "All teams"),
-                str(filters.get("kpi")) if filters.get("kpi") else None,
-                f"{_period_schema(current_period).month} {_period_schema(current_period).year}",
-            ])),
-        )
-        executive_story.basis_context = basis_index.context(
-            current_period[0],
-            _period_schema(current_period).month,
-        )
-
-        overall_trend = self._overall_trend(records, current_period, basis_index)
-
-        repeated_employees = {item.employee_id for item in employee_items if item.employee_id}
-        declining_teams = {
-            item.team for item in items
-            if item.insight_type == "performance" and item.impact_points is not None and item.impact_points < 0 and item.team
-        }
-        risk_cards = [
-            InsightRisk(key="teams", label="Declining teams", count=len(declining_teams), explanation="Teams with a material score decline in the latest available comparison.", filter_type="performance"),
-            InsightRisk(key="employees", label="Repeatedly below target", count=len(repeated_employees), explanation="Employees below the 70% review threshold for two available periods.", filter_type="employee_risk"),
-            InsightRisk(key="kpis", label="High-weight KPI risks", count=len(high_weight_misses), explanation="High-weight KPIs that currently miss their configured target.", filter_type="kpi_driver"),
-            InsightRisk(key="data", label="Data or configuration issues", count=len(data_issues), explanation="Detected source, period or KPI configuration issues.", filter_type="data_quality"),
-        ]
-
-        current_schema = _period_schema(current_period)
-        previous_schema = _period_schema(previous_period)
-        adjacent = bool(previous_period and (
-            (previous_period[0] == current_period[0] and previous_period[1] == current_period[1] - 1)
-            or (previous_period == (current_period[0] - 1, 12) and current_period[1] == 1)
-        ))
-        comparison_note = None
-        if previous_period is None:
-            comparison_note = "No earlier explicit period is available in the selected scope."
-        elif not adjacent:
-            comparison_note = "Comparison uses the nearest earlier available period; intermediate period data is missing."
-
-        tracking_indicators = self._tracking_indicators(records, current_period, previous_period)
-        kpi_diagnosis = [] if priority_only else self._kpi_diagnosis(current, previous, records, current_period)
         return InsightsWorkspace(
             summary=summary,
-            priority_insights=priority_items,
-            team_analyses=self._sort_items(filtered_team_analyses)[:100],
-            performance_drivers=visible_drivers,
+            priority_insights=priority_items if wanted("priority_insights") else [],
+            team_analyses=self._sort_items(filtered_team_analyses)[:100] if wanted("team_analyses") else [],
+            performance_drivers=visible_drivers if wanted("performance_drivers") else [],
             risks=risk_cards,
-            opportunities=opportunities,
-            data_issues=visible_data_issues,
-            team_summaries=team_summaries,
-            geography_summaries=geography_summaries,
+            opportunities=opportunities if wanted("opportunities") else [],
+            data_issues=visible_data_issues if wanted("data_issues") else [],
+            team_summaries=team_summaries if wanted("team_summaries") else [],
+            geography_summaries=geography_summaries if wanted("geography_summaries") else [],
             executive_story=executive_story,
             people_contribution_analysis=people_contribution_analysis,
             kpi_trend=kpi_trend,
@@ -2928,6 +3070,10 @@ class InsightsService:
             kpi_overview=kpi_overview,
             tracking_indicators=tracking_indicators,
             options=options,
-            comparison=InsightComparison(current=current_schema, previous=previous_schema, is_adjacent=adjacent, note=comparison_note),
-            deferred_capabilities=["Overdue corrective actions require a persisted due date, which is not available in the current action model."],
+            comparison=comparison,
+            deferred_capabilities=(
+                ["Overdue corrective actions require a persisted due date, which is not available in the current action model."]
+                if wanted("deferred_capabilities")
+                else []
+            ),
         )
