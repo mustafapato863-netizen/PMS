@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import math
+from contextlib import contextmanager
+from contextvars import ContextVar
 from typing import Any, Mapping
 
 from utils.kpi_direction import kpi_direction
@@ -37,25 +39,27 @@ def _first(row: Mapping[str, Any], *keys: str) -> float | None:
     return None
 
 
+_WEIGHT_ALIASES = {
+    "Attendance": ("Attendance", "Attend"),
+    "Booking": ("Booking",),
+    "Quality": ("Quality",),
+    "AHT": ("AHT",),
+    "Other": ("Other",),
+    "Productivity": ("Productivity",),
+    "Rejection": ("Rejection",),
+    "InitialError": ("InitialError",),
+    "Submission": ("Submission",),
+    "OPCensus": ("OPCensus",),
+    "OPRevenue": ("OPRevenue",),
+    "IPCensus": ("IPCensus",),
+    "IPRevenue": ("IPRevenue",),
+    "Activity": ("Activity",),
+}
+
+
 def _weight(weights: Mapping[str, float], key: str) -> float:
     normalized_weights = {str(name).casefold(): value for name, value in weights.items()}
-    aliases = {
-        "Attendance": ("Attendance", "Attend"),
-        "Booking": ("Booking",),
-        "Quality": ("Quality",),
-        "AHT": ("AHT",),
-        "Other": ("Other",),
-        "Productivity": ("Productivity",),
-        "Rejection": ("Rejection",),
-        "InitialError": ("InitialError",),
-        "Submission": ("Submission",),
-        "OPCensus": ("OPCensus",),
-        "OPRevenue": ("OPRevenue",),
-        "IPCensus": ("IPCensus",),
-        "IPRevenue": ("IPRevenue",),
-        "Activity": ("Activity",),
-    }
-    for alias in aliases.get(key, (key,)):
+    for alias in _WEIGHT_ALIASES.get(key, (key,)):
         value = _number(normalized_weights.get(alias.casefold()))
         if value is not None:
             return max(value, 0.0)
@@ -79,8 +83,29 @@ def _rate(value: Any, fallback: float = 0.0) -> float:
     return parsed / 100.0 if parsed > 1.0 else parsed
 
 
+# Column-name normalisation memo for one record-resolver call (normalized_text_memo); None outside such a call.
+_TEXT_MEMO: ContextVar[dict[str, str] | None] = ContextVar("legacy_normalized_text_memo", default=None)
+
+
+@contextmanager
+def normalized_text_memo():
+    """Memoise _normalized_text while one call runs. The same column names recur on every record of a call."""
+    token = _TEXT_MEMO.set({})
+    try:
+        yield
+    finally:
+        _TEXT_MEMO.reset(token)
+
+
 def _normalized_text(value: Any) -> str:
-    return "".join(char.lower() for char in str(value or "") if char.isalnum())
+    text = str(value or "")
+    memo = _TEXT_MEMO.get()
+    if memo is None:
+        return "".join(char.lower() for char in text if char.isalnum())
+    normalized = memo.get(text)
+    if normalized is None:
+        normalized = memo[text] = "".join(char.lower() for char in text if char.isalnum())
+    return normalized
 
 
 def _first_normalized(row: Mapping[str, Any], *keys: str) -> float | None:

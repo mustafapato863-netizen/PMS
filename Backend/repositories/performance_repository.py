@@ -1,7 +1,9 @@
+from types import SimpleNamespace
+
 from sqlalchemy.orm import Session, selectinload
 from utils.scoring_rules import score_percent_sql
 from repositories.base_repository import BaseRepository
-from sqlalchemy import String, and_, case, cast, false, func, or_
+from sqlalchemy import String, and_, case, cast, false, func, or_, select, tuple_
 
 from models.models import PerformanceRecord, Employee, KPIValue, Team
 from utils.report_scope import FUNCTION_SCOPED_ROLES, _team_keys, selection_team_keys
@@ -56,14 +58,18 @@ def _team_name_clause(team_values: set[str]):
 class PerformanceRepository(BaseRepository[PerformanceRecord]):
     """Repository for PerformanceRecord model"""
 
-    def _dashboard_query(self):
+    def _dashboard_query(self, *, kpi_values: bool = True):
+        # Without kpi_values the KPI rows are not loaded as objects; get_kpi_value_rows reads only the columns the
+        # record resolver uses.
+        options = [
+            selectinload(PerformanceRecord.team),
+            selectinload(PerformanceRecord.employee).selectinload(Employee.team),
+        ]
+        if kpi_values:
+            options.insert(0, selectinload(PerformanceRecord.kpi_values))
         return (
             self.db.query(PerformanceRecord)
-            .options(
-                selectinload(PerformanceRecord.kpi_values),
-                selectinload(PerformanceRecord.team),
-                selectinload(PerformanceRecord.employee).selectinload(Employee.team),
-            )
+            .options(*options)
             .join(Team, PerformanceRecord.team_id == Team.id)
             .join(Employee, PerformanceRecord.employee_id == Employee.id)
             .filter(Team.team_level == "employee")
@@ -347,7 +353,106 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
         kpi: str | None = None,
     ) -> list[PerformanceRecord]:
         """Return canonical employee performance rows for analysis workspaces with SQL-level filtering."""
-        query = self._dashboard_query()
+        return self._dashboard_records_query(
+            True,
+            team=team, month=month, employee_id=employee_id, employee_ids=employee_ids, grade=grade, status=status,
+            performance_level=performance_level, year=year, position=position, region=region, periods=periods,
+            scope=scope, employee_search=employee_search, kpi=kpi,
+        ).all()
+
+    def get_dashboard_record_rows(self, **filters) -> list[SimpleNamespace]:
+        """get_dashboard_records' rows as light objects, for the record resolver.
+
+        The same SELECT runs without the ORM, so the rows come back in the same order and no ORM object is built.
+        Each row carries ``employee`` and ``team`` (and the employee's ``team``) from two column lookups. The KPI
+        values are read with get_kpi_value_rows.
+        """
+        query = self._dashboard_records_query(False, **filters)
+        rows = self.db.connection().execute(query.statement).mappings().all()
+        employee_ids = list({row["employee_id"] for row in rows})
+        employees: dict = {}
+        for start in range(0, len(employee_ids), 500):
+            for employee in self.db.execute(
+                select(
+                    Employee.id,
+                    Employee.employee_id,
+                    Employee.name,
+                    Employee.region,
+                    Employee.position_name,
+                    Employee.team_id,
+                ).where(Employee.id.in_(employee_ids[start:start + 500]))
+            ):
+                employees[employee.id] = employee
+        team_ids = list({row["team_id"] for row in rows} | {employee.team_id for employee in employees.values()})
+        teams: dict = {}
+        for start in range(0, len(team_ids), 500):
+            for team in self.db.execute(
+                select(Team.id, Team.name, Team.display_name).where(Team.id.in_(team_ids[start:start + 500]))
+            ):
+                teams[team.id] = SimpleNamespace(id=team.id, name=team.name, display_name=team.display_name)
+        people = {
+            key: SimpleNamespace(
+                id=employee.id,
+                employee_id=employee.employee_id,
+                name=employee.name,
+                region=employee.region,
+                position_name=employee.position_name,
+                team=teams.get(employee.team_id),
+            )
+            for key, employee in employees.items()
+        }
+        return [
+            SimpleNamespace(**row, employee=people.get(row["employee_id"]), team=teams.get(row["team_id"]))
+            for row in rows
+        ]
+
+    def get_kpi_value_rows(self, keys: list[tuple]) -> dict[tuple, list]:
+        """The KPI value columns the record resolver reads, grouped by (record id, record year).
+
+        The rows are read with the same tuple IN filter, in batches of the same size, as the KPI relationship's
+        selectin load, so each record's values come back in the same order. The record id is read as text and
+        matched by its hex form, so no UUID object is built per KPI value.
+        """
+        grouped: dict[tuple, list] = {key: [] for key in keys}
+        by_hex = {(key[0].hex, key[1]): grouped[key] for key in keys}
+        for start in range(0, len(keys), 500):
+            batch = keys[start:start + 500]
+            rows = self.db.execute(
+                select(
+                    cast(KPIValue.record_id, String).label("record_id"),
+                    KPIValue.record_year,
+                    KPIValue.kpi_key,
+                    KPIValue.actual_value,
+                    KPIValue.target_value,
+                    KPIValue.achievement_ratio,
+                    KPIValue.weight_applied,
+                    KPIValue.contribution,
+                ).where(tuple_(KPIValue.record_id, KPIValue.record_year).in_(batch))
+            ).all()
+            for row in rows:
+                by_hex[(str(row.record_id).replace("-", "").lower(), row.record_year)].append(row)
+        return grouped
+
+    def _dashboard_records_query(
+        self,
+        kpi_values: bool,
+        *,
+        team: str | None = None,
+        month: str | None = None,
+        employee_id: str | None = None,
+        employee_ids: list[str] | None = None,
+        grade: str | None = None,
+        status: str | None = None,
+        performance_level: str | None = None,
+        year: int | None = None,
+        position: str | None = None,
+        region: str | None = None,
+        periods: list[tuple[int, str]] | None = None,
+        scope: dict | None = None,
+        employee_search: str | None = None,
+        kpi: str | None = None,
+    ):
+        query = self._dashboard_query(kpi_values=kpi_values)
         query = self._apply_dashboard_filters(
             query,
             team=team,
@@ -368,8 +473,7 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
                 KPIValue,
                 and_(KPIValue.record_id == PerformanceRecord.id, KPIValue.record_year == PerformanceRecord.year),
             ).filter(func.lower(KPIValue.kpi_key) == str(kpi).casefold())
-        query = self._apply_scope(query, scope)
-        return query.all()
+        return self._apply_scope(query, scope)
 
     def get_dashboard_summary_rows(
         self,

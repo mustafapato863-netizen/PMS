@@ -37,6 +37,8 @@ from __future__ import annotations
 
 import datetime
 import math
+from contextlib import contextmanager
+from contextvars import ContextVar
 from typing import Any, Mapping
 
 from services.evaluation.periods import MONTHS, PeriodError, month_number
@@ -143,8 +145,29 @@ class OutboundMonthlyActualMissing(ValueError):
         )
 
 
+# Column-name normalisation memo for one record-resolver call (normalized_name_memo); None outside such a call.
+_NAME_MEMO: ContextVar[dict[str, str] | None] = ContextVar("outbound_normalized_name_memo", default=None)
+
+
+@contextmanager
+def normalized_name_memo():
+    """Memoise _norm while one call runs. The same column names recur on every record of a call."""
+    token = _NAME_MEMO.set({})
+    try:
+        yield
+    finally:
+        _NAME_MEMO.reset(token)
+
+
 def _norm(value: Any) -> str:
-    return "".join(char.lower() for char in str(value or "") if not char.isspace())
+    text = str(value or "")
+    memo = _NAME_MEMO.get()
+    if memo is None:
+        return "".join(char.lower() for char in text if not char.isspace())
+    normalized = memo.get(text)
+    if normalized is None:
+        normalized = memo[text] = "".join(char.lower() for char in text if not char.isspace())
+    return normalized
 
 
 _PRODUCTIVITY_NORMS = {_norm(name) for name in PRODUCTIVITY_ACTUAL_ALIASES}
