@@ -120,7 +120,9 @@ def test_september_case_imports_and_configured_labels_keep_their_keys():
     social_record = next(record for record in result.records if record.position == "Social Media Specialist")
     keys = {value["label"]: value["kpi_key"] for value in social_record.kpi_values}
     assert keys["Response rate (%)"] == "sms_response_rate"
-    assert keys["Content calendar adherence"] == "mkt_social_media_specialist_content_calendar_adherence"
+    # The full key is 54 characters; KPI key columns are VARCHAR(50), so it is shortened with a stable hash.
+    assert keys["Content calendar adherence"] == "mkt_social_media_specialist_content_calen_afe3843e"
+    assert len(keys["Content calendar adherence"]) <= 50
     assert keys["Reporting"] == "mkt_social_media_specialist_reporting"
 
 
