@@ -1001,3 +1001,18 @@ def test_router_forwards_function_and_maps_scope_errors(monkeypatch):
         assert exc.status_code == 403
     else:
         raise AssertionError("Expected a 403 for a function outside the caller's scope")
+
+
+def test_branch_filter_narrows_workspace_and_options():
+    r1 = _scoped_record("E1", "Pre-Approvals OP Dubai", region="UAE", level="Employee")
+    r1.branch_key = "dubai"
+    r2 = _scoped_record("E2", "Pre-Approvals OP Final SHJAJM", region="UAE", level="Employee")
+    r2.branch_key = "sharjah"
+    records = [r1, r2]
+
+    service = _service(records)
+    workspace = service.generate_workspace(_scope(), month="June", year=2026, branch="dubai")
+
+    assert "dubai" in workspace.options.branches
+    assert "sharjah" in workspace.options.branches
+    assert workspace.options.teams == ["Pre-Approvals OP Dubai"]

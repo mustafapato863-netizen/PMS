@@ -424,11 +424,11 @@ describe('InsightsView', () => {
     expect(screen.getByRole('heading', { level: 1, name: 'Insights' })).toBeInTheDocument();
     expect(screen.getByText('Understand what happened, why it happened, and what to do next.')).toBeInTheDocument();
     const filters = screen.getByRole('group', { name: 'Insights filters' });
-    ['Date', 'Regions', 'Functions', 'Teams', 'Levels'].forEach((label) => {
+    ['Date', 'Regions', 'Branches', 'Functions', 'Teams', 'Levels'].forEach((label) => {
       expect(within(filters).getByText(label)).toBeInTheDocument();
     });
     const order = within(filters).getAllByRole('combobox').map((select) => select.getAttribute('aria-label'));
-    expect(order).toEqual(['Insight period', 'Region', 'Function', 'Team', 'Performance level']);
+    expect(order).toEqual(['Insight period', 'Region', 'Branch', 'Function', 'Team', 'Performance level']);
     expect(within(filters).getByRole('combobox', { name: 'Team' })).toHaveValue('');
     expect(within(filters).getByText('Primary')).toBeInTheDocument();
     expect(within(filters).getByRole('combobox', { name: 'Insight period' })).toHaveValue('2026-06');
@@ -1138,6 +1138,19 @@ describe('InsightsView', () => {
     it('counts KPIs below target by KPI status, not by the Executive Summary person rule (score under 90)', () => {
       renderInsights();
       expect(screen.getByRole('region', { name: 'Summary' })).toHaveTextContent('2 of 3 KPIs below target');
+    });
+
+    it('supports branch filter and removes severity, insight type, and status filters', async () => {
+      const user = userEvent.setup();
+      renderInsights();
+      expect(screen.queryByRole('combobox', { name: 'Severity' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('combobox', { name: 'Insight type' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('combobox', { name: 'Status' })).not.toBeInTheDocument();
+
+      const branchSelect = screen.getByRole('combobox', { name: 'Branch' });
+      expect(branchSelect).toBeInTheDocument();
+      await user.selectOptions(branchSelect, 'dubai');
+      expect(latestFilters.current.branch).toBe('dubai');
     });
   });
 });

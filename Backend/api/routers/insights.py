@@ -56,6 +56,7 @@ def get_insights_workspace(
     severity: str | None = Query(default=None),
     insight_type: str | None = Query(default=None),
     status_filter: str | None = Query(default=None, alias="status"),
+    branch: str | None = Query(default=None, description="Branch key (dubai, sharjah, ajman, clinics). Narrows records to the selected branch."),
     view: Literal["full", "priority"] = Query(default="full"),
     # Comma-separated InsightsWorkspace fields to compute, for example `options,comparison,kpi_trend`. Absent
     # means every field, as before; unrequested fields are not computed and come back empty.
@@ -93,6 +94,7 @@ def get_insights_workspace(
             severity=severity,
             insight_type=insight_type,
             insight_status=status_filter,
+            branch=branch if isinstance(branch, str) else None,
         )
     except InsightAccessError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc

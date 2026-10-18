@@ -24,6 +24,7 @@ interface PerformanceKpiCardProps {
   /** Score points from the caller. 0.7 means 0.7%, including values at or below 1. */
   contribution?: number | null;
   weight?: number | null;
+  weightLabel?: string;
   targetValue?: string | number | null;
 }
 
@@ -90,6 +91,7 @@ const PerformanceKpiCard = ({
   progressPercent,
   contribution,
   weight,
+  weightLabel = 'Weight',
   targetValue,
 }: PerformanceKpiCardProps) => {
   useEffect(() => {
@@ -212,7 +214,7 @@ const PerformanceKpiCard = ({
           </strong>
         </span>
         <span>
-          Weight
+          {weightLabel}
           <strong className="ml-1 font-bold text-[var(--text-primary)]">
             {weight !== undefined && weight !== null ? `${(weight * 100).toFixed(0)}%` : '—'}
           </strong>

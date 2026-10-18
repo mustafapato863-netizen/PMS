@@ -268,9 +268,9 @@ def _normalise_kpi_values(
     return result
 
 
-def _relational_kpi(value, config_by_key: dict[str, dict]) -> dict:
+def _relational_kpi(value, config_by_key: dict[str, dict], stored_metadata: dict | None = None) -> dict:
     """One persisted KPI value row as KPI evidence, before normalisation."""
-    definition = config_by_key.get(value.kpi_key, {})
+    definition = {**config_by_key.get(value.kpi_key, {}), **(stored_metadata or {})}
     achievement_ratio = float(value.achievement_ratio)
     contribution = float(value.contribution)
     return {
@@ -287,6 +287,25 @@ def _relational_kpi(value, config_by_key: dict[str, dict]) -> dict:
         "weight_applied": float(value.weight_applied),
         "contribution": contribution / 100.0 if contribution > 1.0 else contribution,
     }
+
+
+def _payload_kpi_metadata(payload) -> dict[str, dict]:
+    """Display metadata only. Numeric evidence must always come from SQL KPI rows."""
+    values = payload.get("kpi_values") if isinstance(payload, dict) else None
+    if not isinstance(values, list):
+        return {}
+    result = {}
+    for value in values:
+        if not isinstance(value, dict):
+            continue
+        key = value.get("kpi_key")
+        if not isinstance(key, str) or not key or key in result:
+            continue
+        result[key] = {
+            field: value[field] for field in ("label", "unit", "perspective", "color")
+            if isinstance(value.get(field), str) and value[field].strip()
+        }
+    return result
 
 
 def _payload_directions(payload) -> dict[str, str]:
@@ -428,10 +447,17 @@ class DashboardRecordService:
             # KPI rows are the canonical persisted scoring breakdown.  They
             # must override any stale/missing copy inside record_payload so
             # every dashboard consumer sees the same weights/contributions.
-            def relational_kpis() -> list[dict]:
-                return [_relational_kpi(value, config_by_key) for value in item_kpi_values]
-
             payload = getattr(item, "record_payload", None)
+            # Marketing's uploaded employee-month rows own their display definitions,
+            # including KPIs not in the static catalog. Do not replace SQL numbers.
+            stored_metadata = _payload_kpi_metadata(payload) if (
+                team_name == "Marketing" and str(item.performance_level) == "Employee"
+            ) else {}
+
+            def relational_kpis() -> list[dict]:
+                return [_relational_kpi(value, config_by_key, stored_metadata.get(value.kpi_key))
+                        for value in item_kpi_values]
+
             persisted_directions = _payload_directions(payload)
             scoped_cache: list[list[dict]] = []
 

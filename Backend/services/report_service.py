@@ -449,6 +449,7 @@ class ReportService:
             "performance_level": configuration.performance_level,
             "position": configuration.position,
             "region": self._canonical_report_region(configuration),
+            "branch": configuration.branch,
         }
         if configuration.kpi:
             filters["kpi"] = configuration.kpi

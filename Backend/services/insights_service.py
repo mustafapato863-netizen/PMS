@@ -1171,13 +1171,14 @@ class InsightsService:
                 {key: value for key, value in active_filters.items() if key in filter_keys},
             )
 
-        region_records = narrowed("team", "function", "performance_level")
-        team_records = narrowed("region", "function", "performance_level")
-        level_records = narrowed("region", "team", "function")
+        region_records = narrowed("team", "function", "performance_level", "branch")
+        team_records = narrowed("region", "function", "performance_level", "branch")
+        level_records = narrowed("region", "team", "function", "branch")
         # A function is the parent of a team, so the function list ignores both
         # team-dimension selections (the frontend may send a function as `team`).
-        function_records = narrowed("region", "performance_level")
-        position_records = narrowed("region", "team", "function", "performance_level")
+        function_records = narrowed("region", "performance_level", "branch")
+        position_records = narrowed("region", "team", "function", "performance_level", "branch")
+        branch_records = narrowed("region", "team", "function", "performance_level")
         # KPI choices must reflect the currently selected operational scope.
         # The KPI selector itself is deliberately excluded so a user can switch
         # directly from one KPI to another without first clearing the filter.
@@ -1215,6 +1216,7 @@ class InsightsService:
             if _value(record, "team")
             for function in functions_for_team(str(_value(record, "team")))
         })
+        branches = sorted({str(_value(record, "branch_key")) for record in branch_records if _value(record, "branch_key")})
         return InsightFilterOptions(
             periods=[_period_schema(period) for period in completed_periods if _period_schema(period)],
             regions=sorted({str(_value(record, "region")) for record in region_records if _value(record, "region")}),
@@ -1225,6 +1227,7 @@ class InsightsService:
             kpis=[{"key": key, "label": label} for key, label in sorted(kpis.items(), key=lambda item: item[1])],
             functions=functions,
             team_functions={team: functions_for_team(team) for team in teams},
+            branches=branches,
         )
 
     @staticmethod
@@ -1271,6 +1274,12 @@ class InsightsService:
             result = [
                 record for record in result
                 if str(_value(record, "team", "")).casefold() in team_values
+            ]
+        selected_branch = filters.get("branch")
+        if selected_branch:
+            result = [
+                record for record in result
+                if str(_value(record, "branch_key", "")).casefold() == str(selected_branch).casefold()
             ]
         for filter_key, record_key in mapping.items():
             selected = filters.get(filter_key)

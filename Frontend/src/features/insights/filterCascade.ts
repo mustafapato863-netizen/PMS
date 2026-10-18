@@ -22,7 +22,7 @@ export const INSIGHT_FUNCTIONS = ['Call Center', 'RCM', 'Marketing', 'Sales', 'C
 /** `options.team_functions` from PR #14: source team name → every function it rolls up into. */
 export type TeamFunctionMap = Record<string, string[]>;
 
-type CascadeOptions = Pick<InsightOptions, 'regions' | 'teams' | 'performance_levels' | 'functions' | 'team_functions'>;
+type CascadeOptions = Pick<InsightOptions, 'regions' | 'teams' | 'performance_levels' | 'functions' | 'team_functions' | 'branches'>;
 
 const identity = (value: string | null | undefined) => canonicalTeamName(value).trim().toLowerCase();
 
@@ -147,6 +147,12 @@ export function reconcileCascade(filters: InsightFilters, options: CascadeOption
   const regionInvalid = Boolean(filters.region && !includesValue(options.regions, filters.region));
   const functionInvalid = Boolean(filters.teamFunction && !includesValue(functionOptionsFor(options), filters.teamFunction)
     && !(filters.teamFunction === 'Pre-Approvals' && options.teams.some((team) => teamBelongsToFunction(team, 'Pre-Approvals', teamFunctions))));
+  const branchInvalid = Boolean(
+    filters.branch
+    && Array.isArray(options.branches)
+    && options.branches.length > 0
+    && !includesValue(options.branches, filters.branch)
+  );
   const teamInvalid = Boolean(filters.team
     && !includesValue(teamOptionsFor(options.teams, filters.teamFunction, teamFunctions), canonicalTeamName(filters.team)));
   const levelInvalid = Boolean(filters.performanceLevel && !includesValue(options.performance_levels, filters.performanceLevel));
@@ -174,6 +180,8 @@ export function reconcileCascade(filters: InsightFilters, options: CascadeOption
     Object.assign(cleared, { teamFunction: undefined, team: undefined });
   } else if (teamInvalid) {
     cleared.team = undefined;
+  } else if (branchInvalid) {
+    cleared.branch = undefined;
   } else if (levelInvalid) {
     cleared.performanceLevel = undefined;
   } else if (regionInvalid) {

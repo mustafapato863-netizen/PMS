@@ -270,6 +270,7 @@ export interface InsightKpiOverview {
 export interface InsightOptions {
   periods: InsightPeriod[];
   regions: string[];
+  branches?: string[];
   teams: string[];
   performance_levels: string[];
   positions: string[];
@@ -375,6 +376,7 @@ export interface InsightsWorkspace {
 export interface InsightFilters {
   periodKey?: string;
   region?: string;
+  branch?: string;
   /** Header "Functions" selection (URL `function`); sent to the API as `team` when no team is chosen. */
   teamFunction?: string;
   team?: string;

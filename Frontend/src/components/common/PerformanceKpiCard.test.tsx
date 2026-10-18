@@ -9,6 +9,24 @@ import {
 } from './performanceKpiProgress';
 
 describe('PerformanceKpiCard', () => {
+  it('identifies an average weight for a mixed employee-period cohort', () => {
+    render(
+      <PerformanceKpiCard
+        icon={Activity}
+        label="Reporting"
+        value="90%"
+        targetValue="100%"
+        contribution={4.5}
+        weight={0.05}
+        weightLabel="Avg. weight"
+      />,
+    );
+    const card = screen.getByText('Reporting').closest('article');
+    expect(card).toHaveTextContent('Avg. weight5%');
+    expect(card).toHaveTextContent('Contribution4.5%');
+    expect(screen.getByText('Target: 100%')).toBeInTheDocument();
+  });
+
   it('calculates target progress for higher and lower better KPIs', () => {
     expect(calculateKpiTargetProgress(34, 42)).toBeCloseTo(80.95);
     expect(calculateKpiTargetProgress(136, 60, true)).toBeCloseTo(44.12);

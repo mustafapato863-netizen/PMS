@@ -421,6 +421,7 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
                 region=row["region"] or employee.region,
                 position=row["position_name"] or employee.position_name,
                 performance_level=str(row["performance_level"]),
+                branch_key=row["branch_key"],
                 year=int(row["year"]),
                 month=str(row["month"]),
             ))

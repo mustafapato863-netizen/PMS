@@ -28,10 +28,11 @@ import { PageLoadingSkeleton } from '../components/common/SkeletonLoader';
 import { refreshPerformanceData, useTeamData, type TeamAgentRow } from '../hooks/usePerformanceData';
 import { useActionStore } from '../hooks/useActionStore';
 import { useUserRole } from '../context/RoleContext';
-import { canonicalTeamName, type PerformanceLevelFilter } from '../types';
+import { canonicalTeamName, type PerformanceLevelFilter, type LocationKey } from '../types';
 import CustomDropdown from '../components/common/CustomDropdown';
 import { API_BASE } from '../config';
 import { waitForProcessingJob } from '../hooks/api/useProcessingJobs';
+import { SUMMARY_BRANCHES } from '../features/executive/compose';
 
 function FilterSelect({ label, value, onChange, options, allLabel }: {
   label: string;
@@ -62,6 +63,7 @@ function FilterSelect({ label, value, onChange, options, allLabel }: {
 
 const insightUrlFilters: Array<[keyof InsightFilters, string]> = [
   ['region', 'region'],
+  ['branch', 'branch'],
   ['teamFunction', 'function'],
   ['team', 'team'],
   ['performanceLevel', 'performance_level'],
@@ -161,7 +163,7 @@ export default function InsightsView() {
   const scopeRejected = Boolean(
     query.error
     && INSIGHT_SCOPE_ERROR.test(query.error.message)
-    && (filters.team || filters.teamFunction || filters.performanceLevel),
+    && (filters.team || filters.teamFunction || filters.performanceLevel || filters.branch),
   );
   if (urlNavigated) {
     setSyncedUrlKey(urlFiltersKey);
@@ -173,6 +175,7 @@ export default function InsightsView() {
   } else if (scopeRejected) {
     setFilters({
       ...filters,
+      branch: undefined,
       teamFunction: undefined,
       team: undefined,
       performanceLevel: undefined,
@@ -190,11 +193,14 @@ export default function InsightsView() {
   const quickActionMonth = workspace?.comparison.current?.month || 'All';
   const quickActionLevel = (filters.performanceLevel || 'All') as PerformanceLevelFilter;
   const quickActionRegion = filters.region === 'EGY' || filters.region === 'UAE' ? filters.region : 'All';
+  const quickActionLocation: LocationKey = (filters.branch && ['dubai', 'sharjah', 'ajman', 'clinics'].includes(filters.branch.toLowerCase())
+    ? filters.branch.toLowerCase() as LocationKey
+    : 'all');
   const quickActionData = useTeamData(
     apiTeamParam(filters) || null,
     quickActionMonth,
     quickActionRegion,
-    'all',
+    quickActionLocation,
     undefined,
     quickActionLevel,
   );
@@ -247,26 +253,33 @@ export default function InsightsView() {
     );
   }
 
+  const branchOptions = useMemo(() => {
+    if (workspace?.options?.branches?.length) {
+      const available = new Set(workspace.options.branches.map((b) => b.toLowerCase()));
+      const filtered = SUMMARY_BRANCHES.filter((item) => available.has(item.value.toLowerCase()));
+      if (filtered.length > 0) return filtered;
+    }
+    return SUMMARY_BRANCHES;
+  }, [workspace?.options?.branches]);
+
   const analysisDepth = filters.employeeId
     ? 'Employee evidence'
     : filters.kpi
       ? 'KPI diagnosis'
       : filters.team || filters.teamFunction
         ? 'Team contribution'
-        : filters.region
+        : filters.region || filters.branch
           ? 'Geography contribution'
           : 'Executive overview';
   const activeFilterEntries = [
     filters.region ? { key: 'region' as const, label: 'Region', value: filters.region } : null,
+    filters.branch ? { key: 'branch' as const, label: 'Branch', value: branchOptions.find((b) => b.value.toLowerCase() === filters.branch?.toLowerCase())?.label || filters.branch } : null,
     filters.teamFunction ? { key: 'teamFunction' as const, label: 'Function', value: filters.teamFunction } : null,
     filters.team ? { key: 'team' as const, label: 'Team', value: filters.team } : null,
     filters.performanceLevel ? { key: 'performanceLevel' as const, label: 'Level', value: filters.performanceLevel } : null,
     filters.position ? { key: 'position' as const, label: 'Position', value: filters.position } : null,
     filters.employeeId ? { key: 'employeeId' as const, label: 'Employee', value: filters.employeeId } : null,
     filters.kpi ? { key: 'kpi' as const, label: 'KPI', value: workspace.options.kpis.find((item) => item.key === filters.kpi)?.label || filters.kpi } : null,
-    filters.severity ? { key: 'severity' as const, label: 'Severity', value: filters.severity } : null,
-    filters.insightType ? { key: 'insightType' as const, label: 'Type', value: filters.insightType } : null,
-    filters.status ? { key: 'status' as const, label: 'Status', value: filters.status } : null,
   ].filter(Boolean) as Array<{ key: keyof InsightFilters; label: string; value: string }>;
   const clearFilter = (key: keyof InsightFilters) => {
     // Clearing the function keeps a team, like picking "All functions" (QA BUG-4).
@@ -281,6 +294,17 @@ export default function InsightsView() {
       // Function / team / level stay selected and are auto-cleared by the
       // cascade only if the new region's options no longer contain them.
       region: scope || undefined,
+      branch: scope === 'EGY' ? undefined : current.branch,
+      position: undefined,
+      employeeId: undefined,
+      kpi: undefined,
+    }));
+  };
+  const selectBranch = (value: string) => {
+    setUserFilters((current) => ({
+      ...current,
+      branch: value || undefined,
+      team: undefined,
       position: undefined,
       employeeId: undefined,
       kpi: undefined,
@@ -334,6 +358,7 @@ export default function InsightsView() {
           start_month: period.month,
           start_year: period.year,
           region: filters.region || null,
+          branch: filters.branch || null,
           team: apiTeamParam(filters) || null,
           position: filters.position || null,
           performance_level: filters.performanceLevel || null,
@@ -402,14 +427,11 @@ export default function InsightsView() {
   const leadingPeopleKpi = workspace.people_contribution_analysis?.kpi_key;
   const functionOptions = functionOptionsFor(workspace.options).map((value) => ({ value, label: value }));
   const teamOptions = teamOptionsFor(workspace.options.teams, filters.teamFunction, workspace.options.team_functions).map((value) => ({ value, label: value }));
-  const additionalActiveCount = [filters.position, filters.kpi, filters.severity, filters.insightType, filters.status].filter(Boolean).length;
+  const additionalActiveCount = [filters.position, filters.kpi].filter(Boolean).length;
   const additionalFilterControls = (
     <div className="responsive-filter-content responsive-filter-content--insights-extra">
       <FilterSelect label="Position" value={filters.position || ''} onChange={(value) => { update('position', value); update('employeeId', ''); }} allLabel="All positions" options={workspace.options.positions.map((value) => ({ value, label: value }))} />
       <FilterSelect label="KPI" value={filters.kpi || ''} onChange={(value) => update('kpi', value)} allLabel="All KPIs" options={workspace.options.kpis.map((kpi) => ({ value: kpi.key, label: kpi.label }))} />
-      <FilterSelect label="Severity" value={filters.severity || ''} onChange={(value) => update('severity', value)} allLabel="All severities" options={workspace.options.severities.map((value) => ({ value, label: value.replace('_', ' ') }))} />
-      <FilterSelect label="Insight type" value={filters.insightType || ''} onChange={(value) => update('insightType', value)} allLabel="All types" options={workspace.options.insight_types.map((value) => ({ value, label: value.replace('_', ' ') }))} />
-      <FilterSelect label="Status" value={filters.status || ''} onChange={(value) => update('status', value)} allLabel="All statuses" options={workspace.options.statuses.map((value) => ({ value, label: value.replace('_', ' ') }))} />
       <button type="button" onClick={clearAnalysis} className="min-h-11 rounded-xl border border-[var(--input-border)] px-4 text-sm font-bold text-[var(--text-secondary)] hover:text-red-600">Clear analysis</button>
     </div>
   );
@@ -449,6 +471,9 @@ export default function InsightsView() {
         region={filters.region || ''}
         regionOptions={workspace.options.regions.map((value) => ({ value, label: value }))}
         onRegionChange={selectRegion}
+        branch={filters.branch || ''}
+        branchOptions={branchOptions}
+        onBranchChange={selectBranch}
         functionValue={filters.teamFunction || ''}
         functionOptions={functionOptions}
         onFunctionChange={selectFunction}

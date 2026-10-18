@@ -35,6 +35,7 @@ export function insightsWorkspaceUrl(
     params.set('month', month);
   }
   if (filters.region) params.set('region', filters.region);
+  if (filters.branch) params.set('branch', filters.branch);
   // `function` (live since PR #14) expands to the function's source teams with
   // the same `_team_keys` rules and access checks as a parent `team` value; a
   // selected team narrows further. Report export and quick-action team data

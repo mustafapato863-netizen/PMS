@@ -265,35 +265,54 @@ const resolveKpiValue = (record: AgentRecord, key: string) => (
   record.kpi_values?.find((value) => value.kpi_key === key)
 );
 
+const storedWeight = (records: AgentRecord[], key: string) => {
+  const values = records.map(record => resolveKpiValue(record, key));
+  if (!values.some(Boolean) || values.some(value => value && finiteValue(value.weight_applied) === null)) return null;
+  // A KPI absent from a member of the selected cohort contributes zero weight.
+  const weights = values.map(value => value ? finiteValue(value.weight_applied) ?? 0 : 0);
+  return {
+    weight: weights.reduce((total, weight) => total + weight, 0) / weights.length,
+    weightVaries: weights.some(weight => Math.abs(weight - weights[0]) > 1e-9),
+  };
+};
+
 /**
- * The config lists the KPIs it knows. A stored KPI it does not know (one the sheet added) gets a
- * definition built from its stored row, so it still shows with its own label, unit and weight.
+ * Stored employee-period definitions override catalog defaults, including known KPIs
+ * whose weights changed. The catalog still supplies ordering/aggregation and legacy fallbacks.
  */
 export const definitionsWithStoredKpis = (
   definitions: MarketingKpiConfig[],
   records: AgentRecord[],
 ): MarketingKpiConfig[] => {
-  const known = new Set(definitions.map((definition) => definition.key));
+  const configured = new Map(definitions.map(definition => [definition.key, definition]));
   const stored = new Map<string, MarketingKpiConfig>();
   let displayOrder = definitions.reduce((highest, definition) => Math.max(highest, definition.display_order), 0);
   records.forEach((record) => {
     (record.kpi_values || []).forEach((value) => {
-      if (known.has(value.kpi_key) || stored.has(value.kpi_key)) return;
-      displayOrder += 1;
+      if (stored.has(value.kpi_key)) return;
+      const base = configured.get(value.kpi_key);
+      if (!base) displayOrder += 1;
       stored.set(value.kpi_key, {
         key: value.kpi_key,
-        label: value.label || value.kpi_key,
-        perspective: value.perspective || '',
+        label: value.label || base?.label || value.kpi_key,
+        perspective: value.perspective || base?.perspective || '',
         weight: value.weight_applied,
         direction: value.direction,
         unit: value.unit,
-        color: value.color || '#64748B',
-        display_order: displayOrder,
-        aggregation: { method: 'weighted_average', weight_col: 'Target Value' },
+        color: value.color || base?.color || '#64748B',
+        display_order: base?.display_order ?? displayOrder,
+        aggregation: base?.aggregation ?? { method: 'weighted_average', weight_col: 'Target Value' },
       });
     });
   });
-  return [...definitions, ...stored.values()];
+  for (const [key, definition] of stored) {
+    const sourceWeight = storedWeight(records, key);
+    if (sourceWeight) stored.set(key, { ...definition, ...sourceWeight });
+  }
+  return [
+    ...definitions.map(definition => stored.get(definition.key) ?? definition),
+    ...[...stored.values()].filter(definition => !configured.has(definition.key)),
+  ];
 };
 
 interface MarketingKpiAggregationContext {
@@ -358,9 +377,19 @@ export const aggregateMarketingKpis = (
     const averageAchievement = achievementPercent(currentMetric, definition);
     const previousAchievement = achievementPercent(previousMetric, definition);
     const currentRatio = achievementRatio(currentMetric.actual, currentMetric.target, definition.direction);
-    const averageContribution = currentRatio === null
-      ? null
-      : Math.min(Math.max(currentRatio, 0), 1) * definition.weight * 100;
+    const sourceWeight = storedWeight(records, definition.key);
+    const weight = sourceWeight?.weight ?? (
+      !values.length && records.some(record => record.kpi_values?.length) ? 0 : definition.weight
+    );
+    const contributions = values.map(value => finiteValue(value.contribution));
+    const hasStoredContributions = values.length > 0 && contributions.every(value => value !== null);
+    // Average canonical score points over the whole selected cohort, not a fresh
+    // calculation from pooled actuals and an obsolete configured weight.
+    const averageContribution = hasStoredContributions
+      ? contributions.reduce<number>((total, contribution) => total + (contribution ?? 0), 0) / records.length * 100
+      : contributions.some(value => value !== null) || currentRatio === null
+        ? null
+        : Math.min(Math.max(currentRatio, 0), 1) * weight * 100;
     const employeeValues = new Map<string, MarketingKpiValue[]>();
     records.forEach((record) => {
       const value = resolveKpiValue(record, definition.key);
@@ -393,6 +422,8 @@ export const aggregateMarketingKpis = (
         : averageActual > previousBaseline.actual);
     return {
       ...definition,
+      weight,
+      weightVaries: sourceWeight?.weightVaries ?? false,
       currentPeriodLabel: currentPeriod?.label ?? null,
       previousPeriodLabel: previousPeriod?.label ?? null,
       averageActual,

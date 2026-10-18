@@ -70,6 +70,7 @@ class ReportConfiguration(BaseModel):
     comparison_month: str | None = None
     comparison_year: int | None = Field(default=None, ge=2000, le=2100)
     region: str | None = None
+    branch: str | None = None
     team: str | None = None
     position: str | None = None
     performance_level: str | None = None

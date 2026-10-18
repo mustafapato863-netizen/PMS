@@ -17,6 +17,8 @@ export interface MarketingKpiConfig {
   label: string;
   perspective: string;
   weight: number;
+  /** Displayed weight is an average across differing employee-period bases. */
+  weightVaries?: boolean;
   direction: 'higher_better' | 'lower_better';
   unit: string;
   color: string;

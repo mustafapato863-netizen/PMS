@@ -293,6 +293,7 @@ class InsightFilterOptions(BaseModel):
     # empty by default so existing consumers keep working unchanged.
     functions: list[str] = Field(default_factory=list)
     team_functions: dict[str, list[str]] = Field(default_factory=dict)
+    branches: list[str] = Field(default_factory=list)
 
 
 class InsightComparison(BaseModel):

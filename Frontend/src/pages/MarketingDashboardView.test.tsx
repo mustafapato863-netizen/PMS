@@ -138,6 +138,42 @@ const renderDashboard = ({
 };
 
 describe('MarketingDashboardContent', () => {
+  it('renders uploaded KPI labels and percentage units with source weights', () => {
+    const source = marketingRecord('Social Media Specialist', 'September');
+    source.kpi_values![0].weight_applied = .8;
+    source.kpi_values![0].contribution = .72;
+    source.kpi_values!.push(
+      {
+        kpi_key: 'mkt_social_media_specialist_reporting', label: 'Reporting', unit: '%',
+        direction: 'higher_better', actual_value: .9, target_value: 1,
+        achievement_ratio: .9, weight_applied: .1, contribution: .09,
+      },
+      {
+        kpi_key: 'mkt_social_media_specialist_content_calen_afe3843e',
+        label: 'Content calendar adherence', unit: '%', direction: 'higher_better',
+        actual_value: .97, target_value: 1, achievement_ratio: .97,
+        weight_applied: .1, contribution: .097,
+      },
+    );
+    renderDashboard({
+      initial: '/team/marketing?year=2026&month=September&region=All&position_view=Social%20Media%20Specialist',
+      records: [source],
+    });
+    for (const [label, actual, contribution] of [
+      ['Reporting', '90%', '9.0%'],
+      ['Content calendar adherence', '97%', '9.7%'],
+    ]) {
+      const card = screen.getByRole('progressbar', { name: `${label} progress to target` }).closest('article');
+      expect(card).toHaveTextContent(label);
+      expect(card).toHaveTextContent(actual);
+      expect(card).toHaveTextContent('Target: 100%');
+      expect(card).toHaveTextContent('Weight10%');
+      expect(card).toHaveTextContent(`Contribution${contribution}`);
+      expect(card).not.toHaveTextContent('number');
+      expect(card).not.toHaveTextContent('mkt_social_media_specialist_');
+    }
+  });
+
   it('shows all configured positions and distinguishes missing uploads', () => {
     renderDashboard();
     expect(screen.getByRole('heading', { name: 'Marketing Overview' })).toBeInTheDocument();

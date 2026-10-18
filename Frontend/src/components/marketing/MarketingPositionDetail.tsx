@@ -80,6 +80,7 @@ const PositionKpiCard = ({ kpi }: { kpi: MarketingKpiAggregate }) => {
       progressPercent={targetState.progressPercent}
       contribution={kpi.averageContribution}
       weight={kpi.weight}
+      weightLabel={kpi.weightVaries ? 'Avg. weight' : undefined}
     />
   );
 };
