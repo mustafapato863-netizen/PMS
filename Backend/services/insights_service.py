@@ -59,6 +59,7 @@ from services.scoring_basis_comparison import compare_scoring_basis, previous_ca
 from services.tracking_indicators import tracking_definitions, tracking_indicator_keys
 import utils.kpi_direction as _kd
 from utils.scoring_rules import score_percent
+from utils.branch_scope import BRANCH_KEYS, record_matches_branch
 from utils.report_scope import (
     filter_records_by_scope,
     filter_records_by_team_levels,
@@ -1050,7 +1051,7 @@ class InsightsService:
         """
         if not self.period_window or sections is None or not sections <= PERIOD_WINDOW_SECTIONS:
             return None
-        if filters.get("status") or scope.get("role") == "Branch Director":
+        if filters.get("status") or scope.get("role") == "Branch Director" or filters.get("branch"):
             return None
         index_loader = getattr(self.record_service, "list_record_index", None)
         keys_loader = getattr(self.record_service, "list_records_by_keys", None)
@@ -1216,7 +1217,17 @@ class InsightsService:
             if _value(record, "team")
             for function in functions_for_team(str(_value(record, "team")))
         })
-        branches = sorted({str(_value(record, "branch_key")) for record in branch_records if _value(record, "branch_key")})
+        known_branches = [
+            branch
+            for branch in BRANCH_KEYS
+            if any(record_matches_branch(record, branch) for record in branch_records)
+        ]
+        other_branches = sorted({
+            str(_value(record, "branch_key")).casefold()
+            for record in branch_records
+            if _value(record, "branch_key") and str(_value(record, "branch_key")).casefold() not in known_branches
+        })
+        branches = known_branches + other_branches
         return InsightFilterOptions(
             periods=[_period_schema(period) for period in completed_periods if _period_schema(period)],
             regions=sorted({str(_value(record, "region")) for record in region_records if _value(record, "region")}),
@@ -1279,7 +1290,7 @@ class InsightsService:
         if selected_branch:
             result = [
                 record for record in result
-                if str(_value(record, "branch_key", "")).casefold() == str(selected_branch).casefold()
+                if record_matches_branch(record, str(selected_branch))
             ]
         for filter_key, record_key in mapping.items():
             selected = filters.get(filter_key)

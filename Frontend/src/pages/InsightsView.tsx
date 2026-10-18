@@ -304,7 +304,7 @@ export default function InsightsView() {
     setUserFilters((current) => ({
       ...current,
       branch: value || undefined,
-      team: undefined,
+      region: value && current.region === 'EGY' ? undefined : current.region,
       position: undefined,
       employeeId: undefined,
       kpi: undefined,

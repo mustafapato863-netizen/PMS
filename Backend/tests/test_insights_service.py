@@ -1016,3 +1016,37 @@ def test_branch_filter_narrows_workspace_and_options():
     assert "dubai" in workspace.options.branches
     assert "sharjah" in workspace.options.branches
     assert workspace.options.teams == ["Pre-Approvals OP Dubai"]
+
+
+def test_call_center_branch_filtering_matches_geo_activity():
+    r1 = _scoped_record("CC1", "Inbound", region="UAE", level="Employee")
+    r1.branch_key = None
+    r1.geo = GeoData(
+        bookings=GeoBreakdown(dubai=50, sharjah=0),
+        attended=GeoBreakdown(dubai=40, sharjah=0),
+    )
+
+    r2 = _scoped_record("CC2", "Inbound", region="UAE", level="Employee")
+    r2.branch_key = None
+    r2.geo = GeoData(
+        bookings=GeoBreakdown(dubai=0, sharjah=30),
+        attended=GeoBreakdown(dubai=0, sharjah=25),
+    )
+
+    records = [r1, r2]
+    service = _service(records)
+
+    # 1. Branch Dubai only:
+    ws_dubai = service.generate_workspace(_scope(), month="June", year=2026, branch="dubai")
+    assert "dubai" in ws_dubai.options.branches
+    assert "sharjah" in ws_dubai.options.branches
+    assert "Call Center" in ws_dubai.options.functions
+    assert "Inbound" in ws_dubai.options.teams
+
+    # 2. Branch Dubai + Function Call Center:
+    ws_combined = service.generate_workspace(_scope(), month="June", year=2026, branch="dubai", function="Call Center")
+    assert "Call Center" in ws_combined.options.functions
+    assert "Inbound" in ws_combined.options.teams
+    # People to review and diagnosis should only measure CC1 (Dubai)
+    assert ws_combined.people_contribution_analysis is not None
+

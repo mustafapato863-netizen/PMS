@@ -1152,5 +1152,26 @@ describe('InsightsView', () => {
       await user.selectOptions(branchSelect, 'dubai');
       expect(latestFilters.current.branch).toBe('dubai');
     });
+
+    it('preserves function and team filters when branch is selected, narrowing to branch scope', async () => {
+      const user = userEvent.setup();
+      renderInsights();
+
+      await user.selectOptions(screen.getByRole('combobox', { name: 'Function' }), 'Call Center');
+      await user.selectOptions(screen.getByRole('combobox', { name: 'Team' }), 'Inbound');
+      expect(latestFilters.current).toMatchObject({ teamFunction: 'Call Center', team: 'Inbound' });
+
+      const branchSelect = screen.getByRole('combobox', { name: 'Branch' });
+      await user.selectOptions(branchSelect, 'dubai');
+
+      expect(latestFilters.current).toMatchObject({
+        branch: 'dubai',
+        teamFunction: 'Call Center',
+        team: 'Inbound',
+      });
+      expect(currentSearch().get('branch')).toBe('dubai');
+      expect(currentSearch().get('function')).toBe('Call Center');
+      expect(currentSearch().get('team')).toBe('Inbound');
+    });
   });
 });
