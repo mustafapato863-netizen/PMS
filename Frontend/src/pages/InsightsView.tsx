@@ -227,6 +227,15 @@ export default function InsightsView() {
     ]));
   }, [quickActionData.rows]);
 
+  const branchOptions = useMemo(() => {
+    if (workspace?.options?.branches?.length) {
+      const available = new Set(workspace.options.branches.map((b) => b.toLowerCase()));
+      const filtered = SUMMARY_BRANCHES.filter((item) => available.has(item.value.toLowerCase()));
+      if (filtered.length > 0) return filtered;
+    }
+    return SUMMARY_BRANCHES;
+  }, [workspace?.options?.branches]);
+
   const effectivePeriod = filters.periodKey || workspace?.comparison.current?.key || '';
   const update = (key: keyof InsightFilters, value: string) => {
     setUserFilters((current) => ({ ...current, [key]: value || undefined }));
@@ -252,15 +261,6 @@ export default function InsightsView() {
       </div>
     );
   }
-
-  const branchOptions = useMemo(() => {
-    if (workspace?.options?.branches?.length) {
-      const available = new Set(workspace.options.branches.map((b) => b.toLowerCase()));
-      const filtered = SUMMARY_BRANCHES.filter((item) => available.has(item.value.toLowerCase()));
-      if (filtered.length > 0) return filtered;
-    }
-    return SUMMARY_BRANCHES;
-  }, [workspace?.options?.branches]);
 
   const analysisDepth = filters.employeeId
     ? 'Employee evidence'
