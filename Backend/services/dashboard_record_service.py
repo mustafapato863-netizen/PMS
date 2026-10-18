@@ -347,6 +347,7 @@ class DashboardRecordService:
         scope: dict | None = None,
         employee_search: str | None = None,
         kpi: str | None = None,
+        branch: str | None = None,
     ):
         sql_repository = self.sql_repository_cls(self.db, PerformanceRecord)
         # The light path reads the same rows without ORM objects; a repository without it keeps the ORM path.
@@ -370,8 +371,13 @@ class DashboardRecordService:
             kpi=kpi,
         )
         if loader is light_loader:
-            return self.resolve_records(records, kpi_rows=kpi_loader([(item.id, item.year) for item in records]))
-        return self.resolve_records(records)
+            resolved = self.resolve_records(records, kpi_rows=kpi_loader([(item.id, item.year) for item in records]))
+        else:
+            resolved = self.resolve_records(records)
+        if branch:
+            from utils.branch_scope import record_matches_branch
+            resolved = [record for record in resolved if record_matches_branch(record, branch)]
+        return resolved
 
     def list_record_index(self):
         """list_records()' rows in the same order, as light rows with only the values a filter or a period reads

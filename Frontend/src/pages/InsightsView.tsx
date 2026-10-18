@@ -234,7 +234,7 @@ export default function InsightsView() {
       if (filtered.length > 0) return filtered;
     }
     return SUMMARY_BRANCHES;
-  }, [workspace?.options?.branches]);
+  }, [workspace]);
 
   const effectivePeriod = filters.periodKey || workspace?.comparison.current?.key || '';
   const update = (key: keyof InsightFilters, value: string) => {
