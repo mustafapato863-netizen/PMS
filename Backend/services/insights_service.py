@@ -59,7 +59,7 @@ from services.scoring_basis_comparison import compare_scoring_basis, previous_ca
 from services.tracking_indicators import tracking_definitions, tracking_indicator_keys
 import utils.kpi_direction as _kd
 from utils.scoring_rules import score_percent
-from utils.branch_scope import BRANCH_KEYS, record_matches_branch
+from utils.branch_scope import BRANCH_KEYS, project_record_for_branch, record_matches_branch
 from utils.report_scope import (
     filter_records_by_scope,
     filter_records_by_team_levels,
@@ -1289,12 +1289,20 @@ class InsightsService:
         selected_branch = filters.get("branch")
         if selected_branch:
             result = [
-                record for record in result
+                project_record_for_branch(record, str(selected_branch))
+                for record in result
                 if record_matches_branch(record, str(selected_branch))
             ]
         for filter_key, record_key in mapping.items():
             selected = filters.get(filter_key)
             if selected:
+                if filter_key == "region" and selected_branch:
+                    result = [
+                        record for record in result
+                        if str(_value(record, "region", "")).casefold() == str(selected).casefold()
+                        or (str(selected).casefold() == "uae" and str(selected_branch).casefold() in BRANCH_KEYS)
+                    ]
+                    continue
                 result = [record for record in result if str(_value(record, record_key, "")).casefold() == str(selected).casefold()]
         return result
 

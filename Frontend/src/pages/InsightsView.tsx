@@ -192,7 +192,7 @@ export default function InsightsView() {
     : workspace?.kpi_trend;
   const quickActionMonth = workspace?.comparison.current?.month || 'All';
   const quickActionLevel = (filters.performanceLevel || 'All') as PerformanceLevelFilter;
-  const quickActionRegion = filters.region === 'EGY' || filters.region === 'UAE' ? filters.region : 'All';
+  const quickActionRegion = filters.branch ? 'All' : (filters.region === 'EGY' || filters.region === 'UAE' ? filters.region : 'All');
   const quickActionLocation: LocationKey = (filters.branch && ['dubai', 'sharjah', 'ajman', 'clinics'].includes(filters.branch.toLowerCase())
     ? filters.branch.toLowerCase() as LocationKey
     : 'all');
@@ -228,10 +228,10 @@ export default function InsightsView() {
   }, [quickActionData.rows]);
 
   const branchOptions = useMemo(() => {
-    if (workspace?.options?.branches?.length) {
+    if (Array.isArray(workspace?.options?.branches)) {
+      if (workspace.options.branches.length === 0) return [];
       const available = new Set(workspace.options.branches.map((b) => b.toLowerCase()));
-      const filtered = SUMMARY_BRANCHES.filter((item) => available.has(item.value.toLowerCase()));
-      if (filtered.length > 0) return filtered;
+      return SUMMARY_BRANCHES.filter((item) => available.has(item.value.toLowerCase()));
     }
     return SUMMARY_BRANCHES;
   }, [workspace]);

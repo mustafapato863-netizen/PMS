@@ -150,7 +150,6 @@ export function reconcileCascade(filters: InsightFilters, options: CascadeOption
   const branchInvalid = Boolean(
     filters.branch
     && Array.isArray(options.branches)
-    && options.branches.length > 0
     && !includesValue(options.branches, filters.branch)
   );
   const teamInvalid = Boolean(filters.team

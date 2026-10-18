@@ -375,8 +375,12 @@ class DashboardRecordService:
         else:
             resolved = self.resolve_records(records)
         if branch:
-            from utils.branch_scope import record_matches_branch
-            resolved = [record for record in resolved if record_matches_branch(record, branch)]
+            from utils.branch_scope import project_record_for_branch, record_matches_branch
+            resolved = [
+                project_record_for_branch(record, branch)
+                for record in resolved
+                if record_matches_branch(record, branch)
+            ]
         return resolved
 
     def list_record_index(self):
