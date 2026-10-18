@@ -35,6 +35,7 @@ const ReportPreviewView = lazy(() => import('./pages/ReportPreviewView'));
 const InsightsView = lazy(() => import('./pages/InsightsView'));
 const PlanningView = lazy(() => import('./pages/PlanningView'));
 const CorrectiveActionsView = lazy(() => import('./pages/CorrectiveActionsView'));
+const MaintenanceView = lazy(() => import('./pages/MaintenanceView'));
 const NotFound = lazy(() => import('./pages/NotFound'));
 
 const RouteLoadingFallback = () => <PageLoadingSkeleton variant="dashboard" label="Loading page" />;
@@ -53,6 +54,7 @@ function AnimatedRoutes() {
     return (
       <AnimatePresence mode="wait">
         <Routes location={location} key={location.pathname}>
+          <Route path="/maintenance" element={<Suspense fallback={<RouteLoadingFallback />}><MaintenanceView mode="maintenance" /></Suspense>} />
           <Route path="/account" element={<Suspense fallback={<RouteLoadingFallback />}><AccountView /></Suspense>} />
           <Route
             path="/employee/:employeeId"
@@ -161,6 +163,9 @@ function AnimatedRoutes() {
           }
         />
 
+        {/* Maintenance / Status Page */}
+        <Route path="/maintenance" element={<Suspense fallback={<RouteLoadingFallback />}><MaintenanceView mode="maintenance" /></Suspense>} />
+
         {/* 404 Page Not Found */}
         <Route path="*" element={<Suspense fallback={<RouteLoadingFallback />}><NotFound /></Suspense>} />
       </Routes>
@@ -225,10 +230,11 @@ function AppContent() {
     );
   }
 
-  // If not logged in, render only LoginView and redirect all other paths to /login
+  // If not logged in, allow maintenance route, render LoginView, or redirect other paths to /login
   if (!currentUser) {
     return (
       <Routes>
+        <Route path="/maintenance" element={<Suspense fallback={<RouteLoadingFallback />}><MaintenanceView mode="maintenance" /></Suspense>} />
         <Route path="/login" element={<LoginView />} />
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>

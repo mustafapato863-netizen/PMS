@@ -1,4 +1,5 @@
-import { Component, type ReactNode } from 'react';
+import { Component, type ErrorInfo, type ReactNode } from 'react';
+import MaintenanceView from '../../pages/MaintenanceView';
 
 type Props = {
   children: ReactNode;
@@ -6,30 +7,50 @@ type Props = {
 
 type State = {
   hasError: boolean;
+  error: Error | null;
+  componentStack: string | null;
 };
 
 export class AppErrorBoundary extends Component<Props, State> {
-  state: State = { hasError: false };
+  state: State = {
+    hasError: false,
+    error: null,
+    componentStack: null,
+  };
 
-  static getDerivedStateFromError() {
-    return { hasError: true };
+  static getDerivedStateFromError(error: Error): Partial<State> {
+    return { hasError: true, error };
   }
 
-  componentDidCatch(error: Error) {
-    console.error('App crashed safely:', error);
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.error('App crashed safely:', error, errorInfo);
+    this.setState({
+      error,
+      componentStack: errorInfo.componentStack || null,
+    });
   }
+
+  handleReset = () => {
+    this.setState({
+      hasError: false,
+      error: null,
+      componentStack: null,
+    });
+    window.location.reload();
+  };
 
   render() {
     if (this.state.hasError) {
       return (
-        <div className="min-h-screen flex items-center justify-center bg-slate-950 text-slate-100 p-6">
-          <div className="max-w-md rounded-2xl border border-slate-800 bg-slate-900/90 p-6 text-center shadow-2xl">
-            <h1 className="text-xl font-semibold">Something went wrong</h1>
-            <p className="mt-2 text-sm text-slate-400">
-              The app hit an unexpected error and recovered to this safe screen.
-            </p>
-          </div>
-        </div>
+        <MaintenanceView
+          mode="error"
+          error={this.state.error}
+          componentStack={this.state.componentStack}
+          onRetry={this.handleReset}
+          onGoHome={() => {
+            window.location.href = '/executive';
+          }}
+        />
       );
     }
 
