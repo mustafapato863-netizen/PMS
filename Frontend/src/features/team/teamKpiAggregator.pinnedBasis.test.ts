@@ -6,7 +6,7 @@ import { validateTeamConfig } from '../../schemas/teamConfig.schema';
 import type { TeamConfig } from '../../schemas/teamConfig.schema';
 import type { AgentRecord } from '../../types';
 import { buildTeamKpiAnalysis } from './teamKpiAnalysis';
-import { aggregateConfiguredTeamKpis, calculateAggregatedTeamPerformance, displayedScoreDelta, displayedScorePoint, displayedTeamScore, recordsUseAppliedPin, trendPointScore } from './teamKpiAggregator';
+import { aggregateConfiguredTeamKpis, calculateAggregatedTeamPerformance, displayedScoreDelta, displayedScorePoint, displayedTeamScore, headlineTeamScore, recordsUseAppliedPin, scoreMonthKey, trendPointScore } from './teamKpiAggregator';
 
 const ATTENDANCE_POOLED = (0.5 / 0.7) * 0.5 * 100;
 const PRODUCTIVITY_ACTUAL = 0.7780694444444445;
@@ -602,5 +602,45 @@ describe('displayed team score', () => {
       previousScore: 90.44,
       computedScore: 88.14,
     })).toBe(88.1);
+    expect(scoreMonthKey('2026-09')).toBe(scoreMonthKey('September'));
+    // The open month prints the contribution-sum headline. An employee average
+    // on the same month must not replace it.
+    expect(trendPointScore({
+      month: 'September',
+      activeMonth: '2026-09',
+      previousMonth: 'August',
+      useHeadline: true,
+      headlineScore: 92.64,
+      previousScore: 91.4,
+      computedScore: 91.46,
+    })).toBe(92.6);
+    expect(displayedScoreDelta(92.64, 91.4)).toBeCloseTo(1.2);
+  });
+
+  it('uses the pooled contribution total for a single team and the employee average for merged branches', () => {
+    expect(headlineTeamScore({
+      scope: 'pooled',
+      employeeAverage: 91.46,
+      pooledScore: 92.64,
+      appliedPin: false,
+    })).toBe(92.64);
+    expect(headlineTeamScore({
+      scope: 'merged-branches',
+      employeeAverage: 91.46,
+      pooledScore: 92.64,
+      appliedPin: false,
+    })).toBe(91.46);
+    expect(headlineTeamScore({
+      scope: 'all-teams',
+      employeeAverage: 85,
+      pooledScore: 92.64,
+      appliedPin: false,
+    })).toBe(85);
+    expect(headlineTeamScore({
+      scope: 'pooled',
+      employeeAverage: 91.46,
+      pooledScore: null,
+      appliedPin: false,
+    })).toBe(91.46);
   });
 });

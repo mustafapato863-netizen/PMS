@@ -461,6 +461,34 @@ export function displayedScoreDelta(current: number, previous: number): number {
   return displayedScorePoint(current) - displayedScorePoint(previous);
 }
 
+const SCORE_MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+
+/** "September", "Sep", and "2026-09" are the same chart month. */
+export function scoreMonthKey(value: string): string {
+  const trimmed = value.trim();
+  const exact = /^(\d{4})-(0[1-9]|1[0-2])$/.exec(trimmed);
+  if (exact) return SCORE_MONTHS[Number(exact[2]) - 1];
+  return trimmed.slice(0, 3).toLowerCase();
+}
+
+/**
+ * Which headline a team view prints.
+ * A single team, including Call Center with one channel selected, prints the
+ * pooled KPI score — the same total as the sum of the card contributions.
+ * All Teams and the merged branch views keep the employee-score average.
+ */
+export type HeadlineScoreScope = 'all-teams' | 'merged-branches' | 'pooled';
+
+export function headlineTeamScore(input: {
+  scope: HeadlineScoreScope;
+  employeeAverage: number;
+  pooledScore: number | null;
+  appliedPin: boolean;
+}): number {
+  if (input.scope !== 'pooled') return input.employeeAverage;
+  return displayedTeamScore(input.pooledScore, input.employeeAverage, input.appliedPin);
+}
+
 /**
  * The open month and the comparison month on the chart are the printed headline.
  * Other months keep their own computed score, at the same one-decimal rounding.
@@ -474,10 +502,11 @@ export function trendPointScore(input: {
   previousScore: number;
   computedScore: number;
 }): number {
-  if (input.useHeadline && input.month === input.activeMonth) {
+  const month = scoreMonthKey(input.month);
+  if (input.useHeadline && month === scoreMonthKey(input.activeMonth)) {
     return displayedScorePoint(input.headlineScore);
   }
-  if (input.useHeadline && input.previousMonth && input.month === input.previousMonth) {
+  if (input.useHeadline && input.previousMonth && month === scoreMonthKey(input.previousMonth)) {
     return displayedScorePoint(input.previousScore);
   }
   return displayedScorePoint(input.computedScore);

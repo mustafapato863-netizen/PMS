@@ -46,7 +46,7 @@ describe('TeamKpiSection active monthly KPI cards', () => {
 
     const qualityCard = screen.getByText('Quality Score').closest('article');
     expect(qualityCard).toHaveTextContent('97.7%');
-    expect(qualityCard).toHaveTextContent('Target: 95%');
+    expect(qualityCard).toHaveTextContent('95%');
     expect(qualityCard).toHaveTextContent('Contribution5.0%');
     expect(qualityCard).toHaveTextContent('Weight5%');
   });
@@ -93,7 +93,7 @@ describe('TeamKpiSection active monthly KPI cards', () => {
     expect(screen.getByText('Patient Attendance Rate').closest('article')).toHaveTextContent('Weight70%');
     expect(screen.getByText('Booking Conversion').closest('article')).toHaveTextContent('Contribution10.0%');
     expect(screen.getByText('Booking Conversion').closest('article')).toHaveTextContent('Weight10%');
-    expect(screen.getByText('Avg. Handle Time').closest('article')).toHaveTextContent('Target: 2:45');
+    expect(screen.getByText('Avg. Handle Time').closest('article')).toHaveTextContent('2:45');
     expect(screen.getByText('Avg. Handle Time').closest('article')).toHaveTextContent('Contribution4.6%');
     expect(screen.getByText('Avg. Handle Time').closest('article')).toHaveTextContent('Weight5%');
   });
@@ -130,7 +130,7 @@ describe('TeamKpiSection active monthly KPI cards', () => {
 
     const noShowCard = screen.getByText('No Show Rate').closest('article');
     expect(noShowCard).toHaveTextContent('3.2%');
-    expect(noShowCard).toHaveTextContent('Target: ≤ 2.0%');
+    expect(noShowCard).toHaveTextContent('≤ 2.0%');
     expect(noShowCard).toHaveTextContent('Contribution3.1%');
     expect(noShowCard).toHaveTextContent('Weight5%');
   });
@@ -172,13 +172,13 @@ describe('TeamKpiSection active monthly KPI cards', () => {
     const errorCard = screen.getByText('Initial Error Rate').closest('article');
     const submissionCard = screen.getByText('Submission Rate').closest('article');
     expect(rejectionCard).toHaveTextContent('6.4%');
-    expect(rejectionCard).toHaveTextContent('Target: ≤ 3.0%');
+    expect(rejectionCard).toHaveTextContent('≤ 3.0%');
     expect(rejectionCard).toHaveTextContent('Weight54%');
     expect(errorCard).toHaveTextContent('3.1%');
-    expect(errorCard).toHaveTextContent('Target: ≤ 3.0%');
+    expect(errorCard).toHaveTextContent('≤ 3.0%');
     expect(errorCard).toHaveTextContent('Weight12%');
     expect(submissionCard).toHaveTextContent('76.3%');
-    expect(submissionCard).toHaveTextContent('Target: 90%');
+    expect(submissionCard).toHaveTextContent('90%');
     expect(submissionCard).toHaveTextContent('Weight34%');
   });
 
@@ -211,7 +211,7 @@ describe('TeamKpiSection active monthly KPI cards', () => {
     );
 
     for (const label of ['OP Census Ach', 'OP Revenue Ach', 'IP Census Ach', 'IP Revenue Ach', 'Activity Score']) {
-      expect(screen.getByText(label).closest('article')).toHaveTextContent('Target: 100%');
+      expect(screen.getByText(label).closest('article')).toHaveTextContent('100%');
     }
   });
 
@@ -248,7 +248,7 @@ describe('TeamKpiSection active monthly KPI cards', () => {
     );
 
     const rejectionCard = screen.getByText('Initial Rejection Rate').closest('article');
-    expect(rejectionCard).toHaveTextContent('Target: ≤ 5.3%');
+    expect(rejectionCard).toHaveTextContent('≤ 5.3%');
     expect(rejectionCard).toHaveTextContent('Contribution50.3%');
     expect(rejectionCard).toHaveTextContent('Weight60%');
   });
@@ -285,7 +285,7 @@ describe('TeamKpiSection active monthly KPI cards', () => {
     );
 
     const submissionCard = screen.getByText('Submission Within Month %').closest('article');
-    expect(submissionCard).toHaveTextContent('Target: 96%');
+    expect(submissionCard).toHaveTextContent('96%');
     expect(submissionCard).toHaveTextContent('Contribution30.0%');
     expect(submissionCard).toHaveTextContent('Weight30%');
   });
@@ -323,7 +323,7 @@ describe('TeamKpiSection active monthly KPI cards', () => {
 
     const tatCard = screen.getByText('TAT').closest('article');
     expect(tatCard).toHaveTextContent('107.7%');
-    expect(tatCard).toHaveTextContent('Target: 100%');
+    expect(tatCard).toHaveTextContent('100%');
     expect(tatCard).toHaveTextContent('On Target');
   });
 });
@@ -390,15 +390,15 @@ describe('TeamKpiSection applied call-center basis', () => {
       'Productivity',
     ]) {
       const card = screen.getByText(label).closest('article');
-      expect(card).toHaveTextContent('Target: Varies');
+      expect(card).toHaveTextContent('Varies');
       expect(card).toHaveTextContent('Basis varies');
       expect(card).toHaveTextContent('Applied basis varies');
       expect(card).toHaveTextContent('Contribution—');
       expect(card).toHaveTextContent('Weight—');
-      expect(card).not.toHaveTextContent('Target: 55%');
-      expect(card).not.toHaveTextContent('Target: 46%');
-      expect(card).not.toHaveTextContent('Target: 75%');
-      expect(card).not.toHaveTextContent('Target: 2:30');
+      expect(card).not.toHaveTextContent('55%');
+      expect(card).not.toHaveTextContent('46%');
+      expect(card).not.toHaveTextContent('75%');
+      expect(card).not.toHaveTextContent('2:30');
       expect(card).not.toHaveTextContent('Weight70%');
       expect(card).not.toHaveTextContent('Weight10%');
     }
@@ -433,9 +433,9 @@ describe('TeamKpiSection applied call-center basis', () => {
       </ThemeProvider>,
     );
     const utilization = screen.getByText('Utilization').closest('article');
-    expect(utilization).toHaveTextContent('Target: Varies');
+    expect(utilization).toHaveTextContent('Varies');
     expect(utilization).toHaveTextContent('Basis varies');
-    expect(utilization).not.toHaveTextContent('Target: 85%');
+    expect(utilization).not.toHaveTextContent('85%');
     expect(utilization).toHaveTextContent('Weight—');
     unmount();
 
@@ -458,9 +458,9 @@ describe('TeamKpiSection applied call-center basis', () => {
       </ThemeProvider>,
     );
     const abandon = screen.getByText('Call Abandon Rate').closest('article');
-    expect(abandon).toHaveTextContent('Target: Varies');
+    expect(abandon).toHaveTextContent('Varies');
     expect(abandon).toHaveTextContent('Basis varies');
-    expect(abandon).not.toHaveTextContent('Target: 1%');
+    expect(abandon).not.toHaveTextContent('1%');
     expect(abandon).toHaveTextContent('Weight—');
   });
 
@@ -496,13 +496,13 @@ describe('TeamKpiSection applied call-center basis', () => {
     );
 
     const attendance = screen.getByText('Patient Attendance Rate').closest('article');
-    expect(attendance).toHaveTextContent('Target: 70%');
+    expect(attendance).toHaveTextContent('70%');
     expect(attendance).toHaveTextContent('On Target');
     expect(attendance).toHaveTextContent('116.7% of target');
     expect(attendance).not.toHaveTextContent('Below Target');
 
     const handleTime = screen.getByText('Avg. Handle Time').closest('article');
-    expect(handleTime).toHaveTextContent('Target: 2:30');
+    expect(handleTime).toHaveTextContent('2:30');
     expect(handleTime).toHaveTextContent('Higher is better');
     expect(handleTime).toHaveTextContent('Below Target');
     expect(handleTime).toHaveTextContent('66.7% of target');
@@ -524,7 +524,7 @@ describe('TeamKpiSection applied call-center basis', () => {
       </ThemeProvider>,
     );
     const attendance = screen.getByText('Patient Attendance Rate').closest('article');
-    expect(attendance).toHaveTextContent('Target: 55%');
+    expect(attendance).toHaveTextContent('55%');
     expect(attendance).not.toHaveTextContent('Basis varies');
     expect(attendance?.parentElement).toHaveClass('xl:grid-cols-4');
     unmount();
@@ -554,9 +554,9 @@ describe('TeamKpiSection applied call-center basis', () => {
         />
       </ThemeProvider>,
     );
-    expect(screen.getByText('Patient Attendance Rate').closest('article')).toHaveTextContent('Target: 75%');
+    expect(screen.getByText('Patient Attendance Rate').closest('article')).toHaveTextContent('75%');
     const handleTime = screen.getByText('Avg. Handle Time').closest('article');
-    expect(handleTime).toHaveTextContent('Target: 2:30');
+    expect(handleTime).toHaveTextContent('2:30');
     expect(handleTime).toHaveTextContent('Lower is better');
     expect(handleTime).toHaveTextContent('Weight0%');
     expect(handleTime).not.toHaveTextContent('Basis varies');

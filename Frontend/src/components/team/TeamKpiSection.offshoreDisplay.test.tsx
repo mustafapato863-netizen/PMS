@@ -73,7 +73,7 @@ describe('Pre-Approvals IP Offshore team cards show each percentage once', () =>
     renderOffshore(offshoreMetrics);
     const card = screen.getByText('Controllable Rejection Rate').closest('article');
     expect(card).toHaveTextContent('0.26%');
-    expect(card).toHaveTextContent('Target: ≤ 1.0%');
+    expect(card).toHaveTextContent('≤ 1.0%');
     expect(card).toHaveTextContent('On Target');
     expect(card).toHaveTextContent('Contribution50.0%');
     expect(card).not.toHaveTextContent('≤ 100');
@@ -83,7 +83,7 @@ describe('Pre-Approvals IP Offshore team cards show each percentage once', () =>
     renderOffshore(offshoreMetrics);
     const card = screen.getByText('Initial Error Rate').closest('article');
     expect(card).toHaveTextContent('1.6%');
-    expect(card).toHaveTextContent('Target: ≤ 1.0%');
+    expect(card).toHaveTextContent('≤ 1.0%');
     expect(card).toHaveTextContent('Below Target');
     expect(card).toHaveTextContent('61.5% of target');
     expect(card).toHaveTextContent('Contribution12.3%');
@@ -93,7 +93,7 @@ describe('Pre-Approvals IP Offshore team cards show each percentage once', () =>
     renderOffshore(offshoreMetrics);
     const card = screen.getByText('Submission Rate').closest('article');
     expect(card).toHaveTextContent('78.9%');
-    expect(card).toHaveTextContent('Target: 90%');
+    expect(card).toHaveTextContent('90%');
     expect(card).toHaveTextContent('87.7% of target');
     expect(card).toHaveTextContent('Contribution26.3%');
   });
@@ -113,6 +113,6 @@ describe('Pre-Approvals IP Offshore team cards show each percentage once', () =>
     });
     const card = screen.getByText('Probe Rate').closest('article');
     expect(card).toHaveTextContent('0.30%');
-    expect(card).toHaveTextContent('Target: ≤ 0.50%');
+    expect(card).toHaveTextContent('≤ 0.50%');
   });
 });

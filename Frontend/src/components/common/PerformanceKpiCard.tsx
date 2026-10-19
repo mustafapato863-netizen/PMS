@@ -110,6 +110,9 @@ const PerformanceKpiCard = ({
     && Number.isFinite(progressPercent);
   const visualProgress = progressAvailable ? Math.min(Math.max(progressPercent, 0), 100) : 0;
   const progressLabel = progressAvailable ? formatProgressLabel(progressPercent) : 'Target unavailable';
+  const formattedTarget = targetValue !== undefined && targetValue !== null && targetValue !== ''
+    ? formatTargetBadgeValue(targetValue)
+    : '';
   const normalizedWeight = weight !== undefined && weight !== null
     ? (weight > 1 ? weight / 100 : weight)
     : null;
@@ -127,7 +130,7 @@ const PerformanceKpiCard = ({
         style={iconAccentColor ? { backgroundColor: iconAccentColor } : undefined}
       />
 
-      <div className="relative flex items-center justify-between gap-2">
+      <div className="relative flex items-start justify-between gap-2">
         <span
           data-kpi-icon-accent={iconAccentColor || undefined}
           className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-white shadow-sm ${iconAccentColor ? '' : iconBgColor}`}
@@ -135,18 +138,16 @@ const PerformanceKpiCard = ({
         >
           <Icon size={17} />
         </span>
-        <div className="flex items-center gap-1.5">
-          {targetValue !== undefined && targetValue !== null && targetValue !== '' && (
-            <span className="rounded-md border border-slate-500/20 bg-slate-500/10 px-2 py-0.5 text-center text-xs font-semibold text-[var(--text-secondary)]">
-              Target: {formatTargetBadgeValue(targetValue)}
-            </span>
-          )}
-          {badgeText && (
-            <span className={`rounded-md border px-2 py-1 text-center text-xs font-semibold leading-4 whitespace-nowrap ${BADGE_CLASSES[badgeType]}`}>
-              {badgeText}
-            </span>
-          )}
-        </div>
+        {badgeText ? (
+          <span className={`flex flex-col items-end rounded-md border px-2 py-1 text-right text-xs font-semibold leading-4 ${BADGE_CLASSES[badgeType]}`}>
+            <span className="whitespace-nowrap">{badgeText}</span>
+            {formattedTarget && (
+              <span className="whitespace-nowrap text-[11px] font-medium leading-4 opacity-80">{formattedTarget}</span>
+            )}
+          </span>
+        ) : formattedTarget ? (
+          <span className="text-[11px] font-semibold leading-4 text-[var(--text-secondary)]">{formattedTarget}</span>
+        ) : null}
       </div>
 
       <div className="relative mt-3">

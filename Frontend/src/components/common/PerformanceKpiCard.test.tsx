@@ -24,7 +24,8 @@ describe('PerformanceKpiCard', () => {
     const card = screen.getByText('Reporting').closest('article');
     expect(card).toHaveTextContent('Avg. weight5%');
     expect(card).toHaveTextContent('Contribution4.5%');
-    expect(screen.getByText('Target: 100%')).toBeInTheDocument();
+    expect(screen.getByText('100%')).toBeInTheDocument();
+    expect(screen.queryByText('Target: 100%')).not.toBeInTheDocument();
   });
 
   it('calculates target progress for higher and lower better KPIs', () => {
@@ -52,6 +53,29 @@ describe('PerformanceKpiCard', () => {
 
   it('keeps an above-target fractional percentage on the percentage scale', () => {
     expect(normalizePercentageKpiForDisplay(1.077, 1, '%')).toBeCloseTo(107.7);
+  });
+
+  it('puts the target under the status and leaves the Target badge off the card', () => {
+    render(
+      <PerformanceKpiCard
+        icon={Activity}
+        label="Booking Conversion"
+        value="62.0%"
+        targetValue="65%"
+        badgeText="Below Target"
+        badgeType="danger"
+        progressPercent={95.4}
+        contribution={9.5}
+        weight={0.1}
+      />,
+    );
+
+    const card = screen.getByText('Booking Conversion').closest('article');
+    const status = screen.getByText('Below Target');
+    const target = screen.getByText('65%');
+    expect(status.compareDocumentPosition(target) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(card).toHaveTextContent('65%');
+    expect(screen.queryByText('Target: 65%')).not.toBeInTheDocument();
   });
 
   it('places the monthly movement beside the detail and renders target progress', () => {
@@ -115,7 +139,8 @@ describe('PerformanceKpiCard', () => {
       />,
     );
 
-    expect(screen.getByText('Target: 600')).toBeInTheDocument();
+    expect(screen.getByText('600')).toBeInTheDocument();
+    expect(screen.queryByText('Target: 600')).not.toBeInTheDocument();
     expect(screen.queryByText('Target: 600%')).not.toBeInTheDocument();
   });
 

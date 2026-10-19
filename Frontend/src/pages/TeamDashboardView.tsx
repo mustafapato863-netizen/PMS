@@ -42,9 +42,9 @@ import { useTeamConfig } from '../hooks/useTeamConfig';
 import { GRADE_PALETTE, GRADE_THRESHOLDS } from '../constants/grades';
 import { buildTeamKpiAnalysis } from '../features/team/teamKpiAnalysis';
 import { aggregatePreApprovalsIpMetrics } from '../features/team/preApprovalsIpMetrics';
-import { aggregateConfiguredTeamKpis, calculateAggregatedTeamPerformance, displayedTeamScore, recordsUseAppliedPin, trendPointScore } from '../features/team/teamKpiAggregator';
+import { aggregateConfiguredTeamKpis, calculateAggregatedTeamPerformance, displayedTeamScore, headlineTeamScore, recordsUseAppliedPin, scoreMonthKey, trendPointScore } from '../features/team/teamKpiAggregator';
 import { formatMonthChange, missingMonthChangeText } from '../features/team/monthChange';
-import { shortMonthLabel } from '../hooks/api/scopedPeriod';
+import { reportingMonthName, shortMonthLabel } from '../hooks/api/scopedPeriod';
 import { resolveAvailableTeamPeriods } from '../features/team/teamPeriods';
 import { canAccessBroadAppPages, canAccessFunctionSummary, hasAllTeamsScope, isScopedDirectorRole } from '../lib/access';
 import { directorScope } from '../lib/directorScope';
@@ -451,6 +451,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
   const activeMonth = month === 'All'
     ? (dashboardMonths[dashboardMonths.length - 1] || 'January')
     : month;
+  const activeMonthName = reportingMonthName(activeMonth) ?? activeMonth;
 
   const previousTeamAgents = useMemo(() => {
     if (!prevPeriodKey) return [];
@@ -489,7 +490,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
         || (isCallCenterParent && callCenterChannel === 'all')
         || (isRcmParent && (rcmDomain === 'all' || (rcmDomain === 'pre_approvals' && preApprovalsWorkflow === 'all' && rcmGroup !== 'offshore_egy')))) return [];
       return buildTeamKpiAnalysis(
-        (rows || []).map((row) => row.raw).filter((record) => record.identity.month === activeMonth),
+        (rows || []).map((row) => row.raw).filter((record) => record.identity.month === activeMonthName),
         previousTeamAgents,
         {
           includeNoShow: isCallCenterView,
@@ -501,7 +502,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
         },
       );
     },
-    [rows, previousTeamAgents, historicalTeamAgents, activeMonth, isCallCenterView, scoredTeamId, location, activeTeamWeights, teamConfig, isPreApprovalsParent, preApprovalsWorkflow, isCallCenterParent, callCenterChannel, isRcmParent, rcmDomain, rcmGroup],
+    [rows, previousTeamAgents, historicalTeamAgents, activeMonthName, isCallCenterView, scoredTeamId, location, activeTeamWeights, teamConfig, isPreApprovalsParent, preApprovalsWorkflow, isCallCenterParent, callCenterChannel, isRcmParent, rcmDomain, rcmGroup],
   );
   const callCenterChannelKpiAnalysis = useMemo(
     () => {
@@ -511,7 +512,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
         const channelTeam = channel === 'inbound' ? 'Inbound' : 'Outbound';
         const currentRecords = (rows || [])
           .map((row) => row.raw)
-          .filter((record) => record.identity.month === activeMonth && callCenterChannelForTeam(record.identity.team) === channel);
+          .filter((record) => record.identity.month === activeMonthName && callCenterChannelForTeam(record.identity.team) === channel);
         const previousRecords = previousTeamAgents.filter((agent) => callCenterChannelForTeam(agent.identity.team) === channel);
         const baselineRecords = historicalTeamAgents.filter((agent) => callCenterChannelForTeam(agent.identity.team) === channel);
         const teamWeights = weightsList.find((weightConfig) => matchesTeamConfig(
@@ -535,18 +536,18 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
         };
       });
     },
-    [activeMonth, historicalTeamAgents, inboundTeamConfig, isCallCenterAggregate, location, outboundTeamConfig, previousTeamAgents, rows, weightsList],
+    [activeMonthName, historicalTeamAgents, inboundTeamConfig, isCallCenterAggregate, location, outboundTeamConfig, previousTeamAgents, rows, weightsList],
   );
 
   const insightYear = useMemo(() => {
     const currentRowYear = (rows || []).find((row) => row.raw.year)?.raw.year;
     if (currentRowYear) return currentRowYear;
     return allAgents.find((agent) =>
-      agent.identity.month === activeMonth && (!teamName || sameTeam(agent.identity.team, teamName)) && agent.year
+      agent.identity.month === activeMonthName && (!teamName || sameTeam(agent.identity.team, teamName)) && agent.year
     )?.year;
-  }, [rows, allAgents, activeMonth, teamName]);
-  const insightPeriodKey = insightYear && MONTH_NUMBER[activeMonth]
-    ? `${insightYear}-${String(MONTH_NUMBER[activeMonth]).padStart(2, '0')}`
+  }, [rows, allAgents, activeMonthName, teamName]);
+  const insightPeriodKey = insightYear && MONTH_NUMBER[activeMonthName]
+    ? `${insightYear}-${String(MONTH_NUMBER[activeMonthName]).padStart(2, '0')}`
     : undefined;
   const canViewTeamInsights = ['Admin', 'General Manager', 'Manager', 'Executive'].includes(role || '');
   const teamInsightsQuery = useInsightsWorkspace(
@@ -655,33 +656,41 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
 
   // Team overall is calculated from pooled KPI totals, never by averaging
   // employee performance scores. Individual scores remain the source for the
-  // roster and grade distribution only.
+  // roster and grade distribution only. Merged OP/IP Final is the exception
+  // and keeps the employee-score average; its KPI cards still use pooled totals.
+  // Call Center with a channel selected is one team, so its Avg Score is the
+  // pooled total — the same number as the sum of the card contributions.
+  const headlineScope = teamId === 'all'
+    ? 'all-teams' as const
+    : isMergedBranchTeam(resolvedTeamName)
+      ? 'merged-branches' as const
+      : 'pooled' as const;
   const getCanonicalTeamScore = useCallback((agents: AgentRecord[]) => (
     calculateAggregatedTeamPerformance(agents, teamConfig, { location, preferConfiguredWeights: isMergedTeam })?.score ?? null
   ), [location, teamConfig, isMergedTeam]);
+  const agentsForHeadline = useCallback((agents: AgentRecord[]) => {
+    const sameMonth = agents.filter((record) => scoreMonthKey(record.identity.month || '') === scoreMonthKey(activeMonthName));
+    return sameMonth.length > 0 ? sameMonth : agents;
+  }, [activeMonthName]);
   // Memoized current month aggregate performance score
   const calculatedAvgScore = useMemo(() => {
-    if (teamId === 'all') return hookAvgScore;
-    // The merged OP Final view is intentionally an employee-score average
-    // across the selected branches; KPI cards still use their configured
-    // pooled KPI aggregation below.
-    if (isMergedTeam) return hookAvgScore;
-    const teamAgents = (rows || []).map((row) => row.raw).filter((record) => record.identity.month === activeMonth);
-    return displayedTeamScore(
-      getCanonicalTeamScore(teamAgents),
-      hookAvgScore,
-      recordsUseAppliedPin(teamAgents),
-    );
-  }, [teamId, activeMonth, getCanonicalTeamScore, hookAvgScore, rows, isMergedTeam]);
+    const teamAgents = agentsForHeadline((rows || []).map((row) => row.raw));
+    return headlineTeamScore({
+      scope: headlineScope,
+      employeeAverage: hookAvgScore,
+      pooledScore: getCanonicalTeamScore(teamAgents),
+      appliedPin: recordsUseAppliedPin(teamAgents),
+    });
+  }, [headlineScope, agentsForHeadline, getCanonicalTeamScore, hookAvgScore, rows]);
 
   const calculatedPrevAvgScore = useMemo(() => {
-    if (teamId === 'all' || isMergedTeam || !prevPeriodKey) return prevAvgScore;
+    if (headlineScope !== 'pooled' || !prevPeriodKey) return prevAvgScore;
     return displayedTeamScore(
       getCanonicalTeamScore(previousTeamAgents),
       prevAvgScore,
       recordsUseAppliedPin(previousTeamAgents),
     );
-  }, [teamId, prevPeriodKey, getCanonicalTeamScore, prevAvgScore, previousTeamAgents, isMergedTeam]);
+  }, [headlineScope, prevPeriodKey, getCanonicalTeamScore, prevAvgScore, previousTeamAgents]);
 
   // Compute metrics dynamically for the current month
   const metrics = useMemo(() => {
@@ -1335,7 +1344,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
       filteredAgents = filteredAgents.filter((a) => agentMatchesLocation(a, location));
     }
 
-    const useHeadline = teamId !== 'all' && !isMergedTeam;
+    const useHeadline = teamId !== 'all';
     const previousHeadlineMonth = useHeadline
       ? previousTeamAgents.find((agent) => agent.identity.month)?.identity.month ?? null
       : null;
@@ -1357,7 +1366,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
         month: m.slice(0, 3),
         score: trendPointScore({
           month: m,
-          activeMonth,
+          activeMonth: activeMonthName,
           previousMonth: previousHeadlineMonth,
           useHeadline,
           headlineScore: calculatedAvgScore,
@@ -1366,7 +1375,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
         }),
       };
     });
-  }, [dashboardMonths, allAgents, teamName, location, getCanonicalTeamScore, activeTeamWeights, isCallCenterParent, callCenterChannel, matchesPresentationScope, teamId, isMergedTeam, previousTeamAgents, activeMonth, calculatedAvgScore, calculatedPrevAvgScore]);
+  }, [dashboardMonths, allAgents, teamName, location, getCanonicalTeamScore, activeTeamWeights, isCallCenterParent, callCenterChannel, matchesPresentationScope, teamId, previousTeamAgents, activeMonthName, calculatedAvgScore, calculatedPrevAvgScore]);
 
   const performanceBullets = useMemo(() => {
     const bullets: Array<{

@@ -252,7 +252,8 @@ describe('TeamKpiSection canonical contribution display', () => {
     expect(attendance?.weight).toBeNull();
 
     const card = screen.getByText('Patient Attendance Rate').closest('article');
-    expect(card).toHaveTextContent('Target: Varies');
+    expect(card).toHaveTextContent('Varies');
+    expect(card).not.toHaveTextContent('Target:');
     expect(card).toHaveTextContent('Basis varies');
     expect(card).toHaveTextContent('Contribution—');
     expect(card).toHaveTextContent('Weight—');
