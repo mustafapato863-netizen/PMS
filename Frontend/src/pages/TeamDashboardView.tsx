@@ -42,7 +42,7 @@ import { useTeamConfig } from '../hooks/useTeamConfig';
 import { GRADE_PALETTE, GRADE_THRESHOLDS } from '../constants/grades';
 import { buildTeamKpiAnalysis } from '../features/team/teamKpiAnalysis';
 import { aggregatePreApprovalsIpMetrics } from '../features/team/preApprovalsIpMetrics';
-import { aggregateConfiguredTeamKpis, calculateAggregatedTeamPerformance, displayedTeamScore, recordsUseAppliedPin } from '../features/team/teamKpiAggregator';
+import { aggregateConfiguredTeamKpis, calculateAggregatedTeamPerformance, displayedTeamScore, recordsUseAppliedPin, trendPointScore } from '../features/team/teamKpiAggregator';
 import { formatMonthChange, missingMonthChangeText } from '../features/team/monthChange';
 import { shortMonthLabel } from '../hooks/api/scopedPeriod';
 import { resolveAvailableTeamPeriods } from '../features/team/teamPeriods';
@@ -1335,6 +1335,11 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
       filteredAgents = filteredAgents.filter((a) => agentMatchesLocation(a, location));
     }
 
+    const useHeadline = teamId !== 'all' && !isMergedTeam;
+    const previousHeadlineMonth = useHeadline
+      ? previousTeamAgents.find((agent) => agent.identity.month)?.identity.month ?? null
+      : null;
+
     return dashboardMonths.slice(-6).map((m) => {
       const monthAgents = filteredAgents.filter((a) => a.identity.month === m && hasRealActivity(a));
       const canonicalScore = getCanonicalTeamScore(monthAgents);
@@ -1342,7 +1347,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
         ? monthAgents.reduce((sum, a) => sum + resolveDisplayScore(a, activeTeamWeights), 0) / monthAgents.length
         : 0;
 
-      const avgScore = displayedTeamScore(
+      const computedScore = displayedTeamScore(
         canonicalScore,
         fallbackScore,
         recordsUseAppliedPin(monthAgents),
@@ -1350,10 +1355,18 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
 
       return {
         month: m.slice(0, 3),
-        score: Math.round(avgScore * 10) / 10,
+        score: trendPointScore({
+          month: m,
+          activeMonth,
+          previousMonth: previousHeadlineMonth,
+          useHeadline,
+          headlineScore: calculatedAvgScore,
+          previousScore: calculatedPrevAvgScore,
+          computedScore,
+        }),
       };
     });
-  }, [dashboardMonths, allAgents, teamName, location, getCanonicalTeamScore, activeTeamWeights, isCallCenterParent, callCenterChannel, matchesPresentationScope]);
+  }, [dashboardMonths, allAgents, teamName, location, getCanonicalTeamScore, activeTeamWeights, isCallCenterParent, callCenterChannel, matchesPresentationScope, teamId, isMergedTeam, previousTeamAgents, activeMonth, calculatedAvgScore, calculatedPrevAvgScore]);
 
   const performanceBullets = useMemo(() => {
     const bullets: Array<{

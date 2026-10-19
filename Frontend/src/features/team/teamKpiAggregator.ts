@@ -450,6 +450,39 @@ export function displayedTeamScore(
   return employeeAverage;
 }
 
+/** One decimal, the same rounding the score card and the trend chart print. */
+export function displayedScorePoint(score: number): number {
+  if (!Number.isFinite(score)) return 0;
+  return Math.round(score * 10) / 10;
+}
+
+/** Change between two printed score points, so the card and the chart describe one series. */
+export function displayedScoreDelta(current: number, previous: number): number {
+  return displayedScorePoint(current) - displayedScorePoint(previous);
+}
+
+/**
+ * The open month and the comparison month on the chart are the printed headline.
+ * Other months keep their own computed score, at the same one-decimal rounding.
+ */
+export function trendPointScore(input: {
+  month: string;
+  activeMonth: string;
+  previousMonth: string | null;
+  useHeadline: boolean;
+  headlineScore: number;
+  previousScore: number;
+  computedScore: number;
+}): number {
+  if (input.useHeadline && input.month === input.activeMonth) {
+    return displayedScorePoint(input.headlineScore);
+  }
+  if (input.useHeadline && input.previousMonth && input.month === input.previousMonth) {
+    return displayedScorePoint(input.previousScore);
+  }
+  return displayedScorePoint(input.computedScore);
+}
+
 /**
  * Canonical team roll-up: pool KPI source totals first, then apply the KPI
  * achievement formulas and effective weights. Employee scores are never

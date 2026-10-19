@@ -117,4 +117,30 @@ describe('team KPI card change against the previous month', () => {
 
     expect(screen.getByText('−0.94 pts vs Dec')).toBeInTheDocument();
   });
+
+  it('prints the average and its month change from the same one-decimal points', () => {
+    render(
+      <ThemeProvider>
+        <TeamKpiSection
+          totalAgents={10}
+          avgScore={91.46}
+          pctAB={50}
+          pctDE={10}
+          classCounts={{ A: 1, B: 4, C: 3, D: 1, E: 1 }}
+          isCallCenterView={false}
+          isInbound={true}
+          teamMetrics={teamMetrics([])}
+          prevTeamMetrics={null}
+          avgAHTSec={180}
+          teamId="inbound"
+          prevAvgScore={90.44}
+          prevMonthLabel="Aug"
+        />
+      </ThemeProvider>,
+    );
+
+    expect(screen.getByText('91.5%')).toBeInTheDocument();
+    expect(screen.getByText('+1.1 pts vs Aug')).toBeInTheDocument();
+    expect(screen.queryByText('+1.0 pts vs Aug')).not.toBeInTheDocument();
+  });
 });

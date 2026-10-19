@@ -954,11 +954,11 @@ function geoBookingCount(agent: AgentRecord): number | null {
 }
 
 /**
- * Egypt Inbound Booking CR is that agent's bookings divided by that agent's inbound calls.
+ * Egypt Inbound booking counters: bookings over inbound calls.
  * A positive geo total wins. Raw booking columns cover rows whose geo block is empty or zero.
  * Returns null when the counters are missing, so a stored rate can stay.
  */
-export function inboundBookingRateFromAgent(agent: AgentRecord): number | null {
+export function inboundBookingEvidence(agent: AgentRecord): { bookings: number; calls: number } | null {
   if ((agent.identity.team || '').trim().toLowerCase() !== 'inbound') return null;
   const calls = inboundCallCount(agent);
   if (calls <= 0) return null;
@@ -966,7 +966,32 @@ export function inboundBookingRateFromAgent(agent: AgentRecord): number | null {
   const fromRaw = rawBookingCount(agent.raw_data);
   const bookings = fromGeo != null && fromGeo > 0 ? fromGeo : fromRaw;
   if (bookings == null) return null;
-  return bookings / calls;
+  return { bookings, calls };
+}
+
+/**
+ * Egypt Inbound Booking CR is that agent's bookings divided by that agent's inbound calls.
+ * Returns null when the counters are missing, so a stored rate can stay.
+ */
+export function inboundBookingRateFromAgent(agent: AgentRecord): number | null {
+  const evidence = inboundBookingEvidence(agent);
+  if (!evidence) return null;
+  return evidence.bookings / evidence.calls;
+}
+
+/** Profile fraction under Booking CR. Egypt Inbound uses inbound calls; other teams keep handled calls. */
+export function bookingVolumeText(agent: AgentRecord): string {
+  const evidence = inboundBookingEvidence(agent);
+  if (evidence) {
+    return `${evidence.bookings.toLocaleString()} / ${evidence.calls.toLocaleString()}`;
+  }
+  const geo = agent.geo?.bookings;
+  const bookings = (Number(geo?.dubai) || 0)
+    + (Number(geo?.sharjah) || 0)
+    + (Number(geo?.ajman) || 0)
+    + (Number(geo?.clinics) || 0);
+  const totalCalls = agent.calls?.total_handled || 0;
+  return `${bookings.toLocaleString()} / ${totalCalls.toLocaleString()}`;
 }
 
 /** Booking CR shown for an agent. Egypt Inbound replaces a stored handled-call rate. */

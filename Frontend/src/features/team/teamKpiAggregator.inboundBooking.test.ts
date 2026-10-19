@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { TeamConfig } from '../../schemas/teamConfig.schema';
-import { applyInboundBookingDisplay, displayBookingRate, getKPIsForAgent, inboundBookingRateFromAgent, type AgentRecord } from '../../types';
+import { applyInboundBookingDisplay, bookingVolumeText, displayBookingRate, getKPIsForAgent, inboundBookingEvidence, inboundBookingRateFromAgent, type AgentRecord } from '../../types';
 import { resolveDisplayScore } from '../../utils/kpiScore';
 import { aggregateConfiguredTeamKpis, calculateAggregatedTeamPerformance } from './teamKpiAggregator';
 
@@ -112,6 +112,24 @@ describe('Inbound Booking CR', () => {
 
     expect(inboundBookingRateFromAgent(agent)).toBeNull();
     expect(displayBookingRate(agent)).toBeCloseTo(40 / 150);
+  });
+
+  it('prints Egypt Inbound bookings over inbound calls, including a split geo total', () => {
+    const agent = inboundAgent('SGHD70250', 165, 408, 463, 165 / 463);
+    agent.geo.bookings = { dubai: 55, sharjah: 18, ajman: 82, clinics: 10 };
+
+    expect(inboundBookingEvidence(agent)).toEqual({ bookings: 165, calls: 408 });
+    expect(inboundBookingRateFromAgent(agent)).toBeCloseTo(165 / 408);
+    expect(bookingVolumeText(agent)).toBe(`${(165).toLocaleString()} / ${(408).toLocaleString()}`);
+    expect(bookingVolumeText(agent)).not.toContain((463).toLocaleString());
+  });
+
+  it('keeps an outbound booking fraction on handled calls', () => {
+    const agent = inboundAgent('Outbound agent', 10, 20, 40, 10 / 40);
+    agent.identity.team = 'Outbound';
+
+    expect(inboundBookingEvidence(agent)).toBeNull();
+    expect(bookingVolumeText(agent)).toBe(`${(10).toLocaleString()} / ${(40).toLocaleString()}`);
   });
 
   it('rewrites a stored booking KPI that still uses handled calls', () => {

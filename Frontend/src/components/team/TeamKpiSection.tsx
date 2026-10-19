@@ -11,6 +11,7 @@ import { GRADE_THRESHOLDS } from '../../constants/grades';
 import { calculateKpiTargetProgress } from '../common/performanceKpiProgress';
 import { formatPercentPoints, formatPercentRatio, percentPointsFromRatio } from '../../utils/percentForm';
 import { formatMonthChange, missingMonthChangeText } from '../../features/team/monthChange';
+import { displayedScoreDelta, displayedScorePoint } from '../../features/team/teamKpiAggregator';
 
 const getKpiIcon = (label: string): LucideIcon => {
   const normalized = label.toLowerCase();
@@ -212,7 +213,10 @@ const TeamKpiSection = ({
   const rejectionDelta = deltaFrom(teamMetrics.rejectionRate, prevTeamMetrics?.rejectionRate);
   const errorDelta = deltaFrom(teamMetrics.errorRate, prevTeamMetrics?.errorRate);
 
-  const scoreDelta = prevAvgScore !== undefined && prevAvgScore !== 0 ? avgScore - prevAvgScore : undefined;
+  const printedAvgScore = displayedScorePoint(avgScore);
+  const scoreDelta = prevAvgScore !== undefined && prevAvgScore !== 0
+    ? displayedScoreDelta(avgScore, prevAvgScore)
+    : undefined;
   const pctABDelta = prevPctAB !== undefined && prevPctAB !== 0 ? pctAB - prevPctAB : undefined;
   const pctDEDelta = prevPctDE !== undefined && prevPctDE !== 0 ? pctDE - prevPctDE : undefined;
 
@@ -438,7 +442,7 @@ const TeamKpiSection = ({
         <KpiCard
           icon={<TrendingUp size={17} />}
           label="Avg Score"
-          value={`${avgScore.toFixed(1)}%`}
+          value={`${printedAvgScore.toFixed(1)}%`}
           note={renderTrendNote(scoreDelta)}
           accent="border-l-indigo-500"
         />

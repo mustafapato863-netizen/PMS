@@ -6,7 +6,7 @@ import { validateTeamConfig } from '../../schemas/teamConfig.schema';
 import type { TeamConfig } from '../../schemas/teamConfig.schema';
 import type { AgentRecord } from '../../types';
 import { buildTeamKpiAnalysis } from './teamKpiAnalysis';
-import { aggregateConfiguredTeamKpis, calculateAggregatedTeamPerformance, displayedTeamScore, recordsUseAppliedPin } from './teamKpiAggregator';
+import { aggregateConfiguredTeamKpis, calculateAggregatedTeamPerformance, displayedScoreDelta, displayedScorePoint, displayedTeamScore, recordsUseAppliedPin, trendPointScore } from './teamKpiAggregator';
 
 const ATTENDANCE_POOLED = (0.5 / 0.7) * 0.5 * 100;
 const PRODUCTIVITY_ACTUAL = 0.7780694444444445;
@@ -567,5 +567,40 @@ describe('displayed team score', () => {
     expect(displayedTeamScore(70, 79.93, false)).toBe(70);
     expect(displayedTeamScore(0, 79.93, false)).toBe(79.93);
     expect(recordsUseAppliedPin([{ kpi_values: [{ evaluation_pinned: false }] }])).toBe(false);
+  });
+
+  it('uses one decimal for the headline, the comparison month, and the chart step', () => {
+    expect(displayedScorePoint(91.46)).toBe(91.5);
+    expect(displayedScorePoint(90.44)).toBe(90.4);
+    expect(displayedScoreDelta(91.46, 90.44)).toBeCloseTo(1.1);
+    expect(Number((91.46 - 90.44).toFixed(1))).toBe(1);
+
+    expect(trendPointScore({
+      month: 'September',
+      activeMonth: 'September',
+      previousMonth: 'August',
+      useHeadline: true,
+      headlineScore: 91.46,
+      previousScore: 90.44,
+      computedScore: 92.27,
+    })).toBe(91.5);
+    expect(trendPointScore({
+      month: 'August',
+      activeMonth: 'September',
+      previousMonth: 'August',
+      useHeadline: true,
+      headlineScore: 91.46,
+      previousScore: 90.44,
+      computedScore: 89.1,
+    })).toBe(90.4);
+    expect(trendPointScore({
+      month: 'July',
+      activeMonth: 'September',
+      previousMonth: 'August',
+      useHeadline: true,
+      headlineScore: 91.46,
+      previousScore: 90.44,
+      computedScore: 88.14,
+    })).toBe(88.1);
   });
 });

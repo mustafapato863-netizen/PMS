@@ -19,7 +19,7 @@ import KpiBreakdownPanel from '../components/employee/KpiBreakdownPanel';
 import ActionTimeline from '../components/employee/ActionTimeline';
 import EmployeeActionModal from '../components/team/EmployeeActionModal';
 import type { TeamAgentRow, TeamWeightConfig } from '../hooks/usePerformanceData';
-import { getKPIsForAgent, getStatusFromScore, isPreApprovalsIpElectiveTeam, resolvePreApprovalsWorkstream } from '../types';
+import { bookingVolumeText, getKPIsForAgent, getStatusFromScore, isPreApprovalsIpElectiveTeam, resolvePreApprovalsWorkstream } from '../types';
 import { useSummaryRecords } from '../features/executive/useSummaryRecords';
 import type { AgentRecord, EditableCorrectiveAction } from '../types';
 import { getGradeClass } from '../constants/grades';
@@ -83,7 +83,7 @@ const getKpiActualVolumes = (label: string, agent: AgentRecord | undefined): str
     return `${attended.toLocaleString()} / ${bookings.toLocaleString()}`;
   }
   if (label.includes('Booking')) {
-    return `${bookings.toLocaleString()} / ${totalCalls.toLocaleString()}`;
+    return bookingVolumeText(agent);
   }
   if (label.includes('Abandon')) {
     const inbound = agent.calls?.inbound || raw['InboundCalls'] || raw['InboundCalls '] || totalCalls;
