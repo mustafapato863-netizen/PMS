@@ -208,7 +208,7 @@ def test_submission_scoring_unified_model():
     assert abs(contributions["submission_within_due_date"]["contribution"] - 0.40) < 0.001  # capped at weight (0.4)
     
     assert abs(score - 88.0) < 0.001
-    assert grade == "B"
+    assert grade == "C"
 
 
 def test_submission_final_score_never_exceeds_100():

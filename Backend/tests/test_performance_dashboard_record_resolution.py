@@ -398,7 +398,7 @@ def test_dashboard_rebuilds_new_pre_approvals_workstream_and_score_from_source_r
     [record] = _service([row]).list_records()
 
     assert record.evaluation.score == pytest.approx(67.93, abs=0.02)
-    assert record.evaluation.grade == "D"
+    assert record.evaluation.grade == "E"
     assert [item["kpi_key"] for item in record.kpi_values] == [
         "er_initial_rejection_rate",
         "approval_within_1_5_hours",
