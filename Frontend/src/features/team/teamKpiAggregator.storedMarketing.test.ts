@@ -29,7 +29,7 @@ const marketingConfig = {
   region: 'EGY',
   employee_id_col: 'Employee ID',
   employee_name_col: 'Employee Name',
-  grade_thresholds: { A: 95, B: 85, C: 75, D: 65 },
+  grade_thresholds: { A: 95, B: 90, C: 80, D: 70 },
   kpis: [
     { key: 'mb_cpl', label: 'CPL', weight: 0.2, direction: 'lower_better', unit: 'AED', perspective: 'Financial' },
   ],

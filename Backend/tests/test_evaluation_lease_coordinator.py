@@ -849,7 +849,7 @@ def test_outbound_coding_and_submission_keep_the_canonical_ratios(db, monkeypatc
     july_record = _CHARACTER._performance(db, july_id[0], july_id[1])
     attendance = next(value for value in july_record.kpi_values if value.kpi_key == "Attendance")
     assert july_record.score == Decimal("65.00")
-    assert july_record.grade == "D" and july_record.status == "Below"
+    assert july_record.grade == "E" and july_record.status == "Below"
     assert attendance.actual_value == Decimal("0.3250")
     assert attendance.target_value == Decimal("0.6500")
     assert attendance.achievement_ratio == Decimal("0.5000")

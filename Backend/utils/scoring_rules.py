@@ -15,7 +15,11 @@ from typing import Any
 
 from sqlalchemy import and_, case
 
-GRADE_THRESHOLDS: tuple[tuple[str, float], ...] = (("A", 95.0), ("B", 90.0), ("C", 80.0), ("D", 70.0))
+# One matrix for every team and every performance level:
+# A Excellent >= 95, B Meet Expectations >= 90, C Average >= 80,
+# D Below Average >= 70, E Unsatisfactory below 70.
+GRADE_THRESHOLD_MAP: dict[str, float] = {"A": 95.0, "B": 90.0, "C": 80.0, "D": 70.0}
+GRADE_THRESHOLDS: tuple[tuple[str, float], ...] = tuple(GRADE_THRESHOLD_MAP.items())
 
 
 def score_percent(score: float) -> float:

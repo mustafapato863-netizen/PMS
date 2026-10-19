@@ -148,9 +148,9 @@ def is_date_column(column_name: str) -> bool:
 # Grade thresholds (shared across teams)
 GRADE_THRESHOLDS = {
     'A': 95,
-    'B': 85,
-    'C': 75,
-    'D': 65,
+    'B': 90,
+    'C': 80,
+    'D': 70,
     'E': 0,
 }
 

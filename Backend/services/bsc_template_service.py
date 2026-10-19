@@ -401,7 +401,7 @@ class BSCTemplateService:
         return list(grouped.values())
 
     def _rows_to_config(self, rows: list[dict[str, Any]], *, team: str, performance_level: str, base_config: dict[str, Any]) -> dict[str, Any]:
-        thresholds = base_config.get("grade_thresholds", {"A": 90, "B": 80, "C": 70, "D": 60})
+        thresholds = base_config.get("grade_thresholds", {"A": 95, "B": 90, "C": 80, "D": 70})
         base_bsc = base_config.get("balanced_scorecard", {}) or {}
         base_perspectives = {
             item.get("key"): item

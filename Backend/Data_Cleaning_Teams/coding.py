@@ -104,9 +104,9 @@ def process_coding(file_path: str, team_config: Dict[str, Any] = None) -> pd.Dat
     # Grade thresholds
     thresholds = {
         'A': 95,
-        'B': 85,
-        'C': 75,
-        'D': 65,
+        'B': 90,
+        'C': 80,
+        'D': 70,
     }
     
     # Calculate achievements for each KPI

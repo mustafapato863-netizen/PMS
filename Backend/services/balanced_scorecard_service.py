@@ -53,9 +53,9 @@ def _status(score: float | None, thresholds: dict[str, float], state: str) -> st
         return "Not Configured"
     if score is None:
         return "No Data"
-    if score >= float(thresholds.get("A", 90)):
+    if score >= float(thresholds.get("A", 95)):
         return "Excellent"
-    if score >= float(thresholds.get("C", 70)):
+    if score >= float(thresholds.get("C", 80)):
         return "Good"
     return "Needs Attention"
 

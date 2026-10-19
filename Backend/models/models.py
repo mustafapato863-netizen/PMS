@@ -616,9 +616,9 @@ class GradeThreshold(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     team_id = Column(UUID(as_uuid=True), ForeignKey("teams.id", ondelete="CASCADE"), nullable=False)
     grade_a = Column(Numeric(5, 2), nullable=False, default=95)
-    grade_b = Column(Numeric(5, 2), nullable=False, default=85)
-    grade_c = Column(Numeric(5, 2), nullable=False, default=75)
-    grade_d = Column(Numeric(5, 2), nullable=False, default=65)
+    grade_b = Column(Numeric(5, 2), nullable=False, default=90)
+    grade_c = Column(Numeric(5, 2), nullable=False, default=80)
+    grade_d = Column(Numeric(5, 2), nullable=False, default=70)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     updated_by = Column(String(100), nullable=True)
 

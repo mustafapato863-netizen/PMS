@@ -31,7 +31,7 @@ const config: MarketingTeamConfig = {
   db_name: 'Marketing',
   region: 'EGY',
   performance_level: 'Employee',
-  grade_thresholds: { A: 95, B: 85, C: 75, D: 65 },
+  grade_thresholds: { A: 95, B: 90, C: 80, D: 70 },
   available_positions: positions,
   positions: Object.fromEntries(positions.map((position) => [
     position,
@@ -166,7 +166,8 @@ describe('MarketingDashboardContent', () => {
       const card = screen.getByRole('progressbar', { name: `${label} progress to target` }).closest('article');
       expect(card).toHaveTextContent(label);
       expect(card).toHaveTextContent(actual);
-      expect(card).toHaveTextContent('Target: 100%');
+      expect(card).toHaveTextContent('100%');
+      expect(card).not.toHaveTextContent('Target:');
       expect(card).toHaveTextContent('Weight10%');
       expect(card).toHaveTextContent(`Contribution${contribution}`);
       expect(card).not.toHaveTextContent('number');
@@ -221,7 +222,8 @@ describe('MarketingDashboardContent', () => {
     expect(screen.getByRole('heading', { name: 'Media Buyer · Employee' })).toBeInTheDocument();
     expect(screen.getByLabelText('Marketing performance level')).toBeDisabled();
     expect(screen.getAllByText('90%').length).toBeGreaterThan(0);
-    expect(screen.getByText('Target: 100%')).toBeInTheDocument();
+    expect(screen.getAllByText('100%').length).toBeGreaterThan(0);
+    expect(screen.queryByText(/^Target:/)).not.toBeInTheDocument();
     expect(screen.getAllByText('Higher is better').length).toBeGreaterThan(0);
     expect(screen.getByRole('progressbar', { name: 'Media Buyer KPI progress to target' })).toHaveAttribute('aria-valuetext', '90.0% of target');
     expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();

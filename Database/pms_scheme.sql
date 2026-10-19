@@ -100,9 +100,9 @@ CREATE TABLE grade_thresholds (
   id          UUID         PRIMARY KEY DEFAULT uuid_generate_v4(),
   team_id     UUID         NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
   grade_a     NUMERIC(5,2) NOT NULL DEFAULT 95,
-  grade_b     NUMERIC(5,2) NOT NULL DEFAULT 85,
-  grade_c     NUMERIC(5,2) NOT NULL DEFAULT 75,
-  grade_d     NUMERIC(5,2) NOT NULL DEFAULT 65,
+  grade_b     NUMERIC(5,2) NOT NULL DEFAULT 90,
+  grade_c     NUMERIC(5,2) NOT NULL DEFAULT 80,
+  grade_d     NUMERIC(5,2) NOT NULL DEFAULT 70,
   updated_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
   updated_by  VARCHAR(100),
 
@@ -468,8 +468,8 @@ BEGIN
   SELECT grade_a, grade_b, grade_c, grade_d INTO thresholds FROM grade_thresholds WHERE team_id = p_team_id;
   IF NOT FOUND THEN
     RETURN CASE
-      WHEN p_score >= 90 THEN 'A'::grade_class WHEN p_score >= 80 THEN 'B'::grade_class
-      WHEN p_score >= 70 THEN 'C'::grade_class WHEN p_score >= 60 THEN 'D'::grade_class ELSE 'E'::grade_class
+      WHEN p_score >= 95 THEN 'A'::grade_class WHEN p_score >= 90 THEN 'B'::grade_class
+      WHEN p_score >= 80 THEN 'C'::grade_class WHEN p_score >= 70 THEN 'D'::grade_class ELSE 'E'::grade_class
     END;
   END IF;
   RETURN CASE

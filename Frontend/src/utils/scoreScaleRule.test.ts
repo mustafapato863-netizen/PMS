@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeScore } from '../hooks/usePerformanceData';
+import { normalizeScore, resolveRecordGradeClass } from '../hooks/usePerformanceData';
+import type { AgentRecord } from '../types';
 import { normalizePerformanceScore } from './kpiScore';
 
 describe('score scale rule', () => {
@@ -15,5 +16,16 @@ describe('score scale rule', () => {
   it('returns a percentage-form score (Offshore-style) unchanged', () => {
     expect(normalizePerformanceScore(51.28)).toBeCloseTo(51.28);
     expect(normalizeScore(51.28)).toBeCloseTo(51.28);
+  });
+
+  it('grades a score with 95 / 90 / 80 / 70 for every team', () => {
+    const graded = (score: number, stored: string) => resolveRecordGradeClass(
+      { evaluation: { score, grade: stored } } as AgentRecord,
+    );
+    expect(graded(86, 'B')).toBe('C');
+    expect(graded(92, 'C')).toBe('B');
+    expect(graded(70, 'E')).toBe('D');
+    expect(graded(69.9, 'D')).toBe('E');
+    expect(graded(0, 'A')).toBe('A');
   });
 });

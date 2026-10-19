@@ -201,27 +201,27 @@ class TestConfigurationLoading:
         config = load_team_config("Pharmacy")
         thresholds = config['grade_thresholds']
         assert thresholds['A'] == 95
-        assert thresholds['B'] == 85
-        assert thresholds['C'] == 75
-        assert thresholds['D'] == 65
+        assert thresholds['B'] == 90
+        assert thresholds['C'] == 80
+        assert thresholds['D'] == 70
     
     def test_coding_grade_thresholds_values(self):
         """Test Coding grade threshold values are as specified."""
         config = load_team_config("Coding")
         thresholds = config['grade_thresholds']
         assert thresholds['A'] == 95
-        assert thresholds['B'] == 85
-        assert thresholds['C'] == 75
-        assert thresholds['D'] == 65
+        assert thresholds['B'] == 90
+        assert thresholds['C'] == 80
+        assert thresholds['D'] == 70
     
     def test_csr_grade_thresholds_values(self):
         """Test CSR grade threshold values are as specified."""
         config = load_team_config("CSR")
         thresholds = config['grade_thresholds']
         assert thresholds['A'] == 95
-        assert thresholds['B'] == 85
-        assert thresholds['C'] == 75
-        assert thresholds['D'] == 65
+        assert thresholds['B'] == 90
+        assert thresholds['C'] == 80
+        assert thresholds['D'] == 70
     
     # ===== Test 5: Missing Required Fields Raises ConfigurationError =====
     

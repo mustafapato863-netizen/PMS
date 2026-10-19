@@ -119,12 +119,16 @@ export function resolveHeadcountSnapshot(
 }
 
 export function resolveRecordGradeClass(record: AgentRecord, score?: number): import('../types').GradeClass {
+  // Every team and level grades the score with 95 / 90 / 80 / 70.
+  // A stored letter is only the fallback when that score is missing.
   const resolvedScore = score ?? normalizeScore(record.evaluation.score);
+  if (Number.isFinite(resolvedScore) && resolvedScore > 0) {
+    return getGradeClass(resolvedScore);
+  }
   const storedGrade = record.evaluation.grade?.trim().toUpperCase();
   if (storedGrade === 'A' || storedGrade === 'B' || storedGrade === 'C' || storedGrade === 'D' || storedGrade === 'E') {
     return storedGrade;
   }
-  // Marketing grades come from the backend; this fallback uses the same shared cut-offs as every other team.
   return getGradeClass(resolvedScore);
 }
 

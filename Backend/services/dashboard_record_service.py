@@ -568,17 +568,7 @@ class DashboardRecordService:
                             min(sum(float(value.get("contribution", 0.0)) for value in canonical_kpis), 1.0) * 100.0,
                             2,
                         )
-                        thresholds = (config or {}).get("grade_thresholds", {})
-                        if reconciled_score >= float(thresholds.get("A", 95)):
-                            reconciled_grade = "A"
-                        elif reconciled_score >= float(thresholds.get("B", 85)):
-                            reconciled_grade = "B"
-                        elif reconciled_score >= float(thresholds.get("C", 75)):
-                            reconciled_grade = "C"
-                        elif reconciled_score >= float(thresholds.get("D", 65)):
-                            reconciled_grade = "D"
-                        else:
-                            reconciled_grade = "E"
+                        reconciled_grade = letter_grade(reconciled_score)
                     elif team_name == "Sales" and repaired_kpis:
                         reconciled_score = round(
                             min(sum(float(value["contribution"]) for value in repaired_kpis), 1.0) * 100.0,
@@ -647,14 +637,7 @@ class DashboardRecordService:
                 for value in fallback_kpis
             ):
                 fallback_score = round(min(sum(float(value.get("contribution", 0.0)) for value in fallback_kpis), 1.0) * 100.0, 2)
-                thresholds = (config or {}).get("grade_thresholds", {})
-                fallback_grade = (
-                    "A" if fallback_score >= float(thresholds.get("A", 95)) else
-                    "B" if fallback_score >= float(thresholds.get("B", 85)) else
-                    "C" if fallback_score >= float(thresholds.get("C", 75)) else
-                    "D" if fallback_score >= float(thresholds.get("D", 65)) else
-                    "E"
-                )
+                fallback_grade = letter_grade(fallback_score)
 
             fallback_actual = {}
             if team_name == "Inbound":

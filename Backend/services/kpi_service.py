@@ -646,7 +646,6 @@ class KPIService:
         
         # Extract team metadata
         team_name = config.get('team')
-        grade_thresholds = config.get('grade_thresholds', {})
         kpis = config.get('kpis', [])
         missing_actual_exception = config.get('missing_actual_exception')
 
@@ -772,8 +771,7 @@ class KPIService:
         # Convert to 0-100 scale
         score = score_decimal * 100.0
         
-        # Assign grade using team-specific thresholds
-        grade = self._assign_grade_with_thresholds(score, grade_thresholds)
+        grade = letter_grade(score)
         
         logger.info(f"{team_name} final score: {score:.2f}, grade: {grade}")
         
@@ -972,7 +970,7 @@ class KPIService:
         Args:
             score: Performance score (0-100 scale)
             thresholds: Grade thresholds dict with keys: A, B, C, D
-                       Expected format: {"A": 95, "B": 85, "C": 75, "D": 65}
+                       Expected format: {"A": 95, "B": 90, "C": 80, "D": 70}
             
         Returns:
             Grade letter: A, B, C, D, or E

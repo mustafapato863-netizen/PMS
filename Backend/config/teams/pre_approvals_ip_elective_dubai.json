@@ -6,9 +6,9 @@
   "employee_name_col": "AgentName",
   "grade_thresholds": {
     "A": 95,
-    "B": 85,
-    "C": 75,
-    "D": 65
+    "B": 90,
+    "C": 80,
+    "D": 70
   },
   "kpi_direction_source_teams": [
     "Pre-Approvals IP Final Dubai"

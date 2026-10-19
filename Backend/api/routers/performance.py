@@ -46,7 +46,7 @@ def _management_base_config(team: str, level: str) -> dict:
         "region": "UAE",
         "employee_id_col": "Employee ID",
         "employee_name_col": "Employee Name",
-        "grade_thresholds": {"A": 90, "B": 80, "C": 70, "D": 60},
+        "grade_thresholds": {"A": 95, "B": 90, "C": 80, "D": 70},
         "kpis": [
             {
                 "key": "management_placeholder",

@@ -42,7 +42,7 @@ def counts(assigned, approved, rejected, policy, within_48h, submitted, errors) 
 # Counts only, no identities. Order: assigned, approved, rejected, policy rejected, approved within 48h,
 # submitted claims, error claims, expected score, expected grade.
 SIX_AUGUST_CASES = [
-    (70, 55, 6, 6, 37, 169, 2, 89.32, "B"),
+    (70, 55, 6, 6, 37, 169, 2, 89.32, "C"),
     (28, 23, 3, 3, 19, 112, 1, 97.54, "A"),
     (40, 31, 5, 5, 26, 122, 0, 97.96, "A"),
     (124, 96, 10, 10, 75, 16, 0, 96.04, "A"),
@@ -108,7 +108,7 @@ def test_typical_row_matches_hand_calculation():
     assert result.achievements["Submission"] == pytest.approx(1.0)
     assert result.weights == {"Rejection": 0.5, "InitialError": 0.2, "Submission": 0.3}
     assert result.score == 66.67
-    assert result.grade == "D"
+    assert result.grade == "E"
 
 
 def test_zero_assigned_requests_gives_zero_rate_and_full_rejection_achievement():
@@ -192,11 +192,13 @@ def test_every_achievement_is_capped_at_one_for_tiny_rates():
 def test_grade_thresholds_are_inclusive_and_fall_through_to_e():
     assert grade_for(95.0) == "A"
     assert grade_for(94.99) == "B"
-    assert grade_for(85.0) == "B"
-    assert grade_for(75.0) == "C"
-    assert grade_for(65.0) == "D"
-    assert grade_for(64.99) == "E"
-    assert DEFAULT_GRADE_THRESHOLDS == {"A": 95, "B": 85, "C": 75, "D": 65}
+    assert grade_for(90.0) == "B"
+    assert grade_for(89.99) == "C"
+    assert grade_for(80.0) == "C"
+    assert grade_for(79.99) == "D"
+    assert grade_for(70.0) == "D"
+    assert grade_for(69.99) == "E"
+    assert DEFAULT_GRADE_THRESHOLDS == {"A": 95, "B": 90, "C": 80, "D": 70}
 
 
 def test_grade_uses_supplied_team_thresholds():

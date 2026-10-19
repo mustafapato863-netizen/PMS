@@ -34,7 +34,7 @@ export const normalizeMarketingScore = (score: number): number => normalizePerfo
 
 export const getMarketingGrade = (
   record: AgentRecord,
-  thresholds: MarketingTeamConfig['grade_thresholds'] = { A: 95, B: 85, C: 75, D: 65 },
+  thresholds: MarketingTeamConfig['grade_thresholds'] = { A: 95, B: 90, C: 80, D: 70 },
 ): GradeClass => {
   const backendGrade = record.evaluation.grade?.trim().toUpperCase();
   if (GRADES.includes(backendGrade as GradeClass)) return backendGrade as GradeClass;

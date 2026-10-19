@@ -38,7 +38,7 @@ TARGET_APPROVAL_WITHIN_48H = 0.90
 WEIGHTS = {"Rejection": 0.50, "InitialError": 0.20, "Submission": 0.30}
 # Fixed alternative set used when SubmittedClaims is 0. Not a redistribution.
 WEIGHTS_WITHOUT_CLAIMS = {"Rejection": 0.60, "InitialError": 0.00, "Submission": 0.40}
-DEFAULT_GRADE_THRESHOLDS = {"A": 95, "B": 85, "C": 75, "D": 65}
+DEFAULT_GRADE_THRESHOLDS = {"A": 95, "B": 90, "C": 80, "D": 70}
 
 RAW_COUNT_COLUMNS = (
     "AssignedRequest",

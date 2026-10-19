@@ -2177,7 +2177,7 @@ class EvaluationWorkflow:
             "source_version_number": int(source.version_number),
         }
         snapshot.setdefault("lines", _freeze(snapshot_lines(source)))
-        snapshot.setdefault("grade_thresholds", {"A": 95, "B": 85, "C": 75, "D": 65})
+        snapshot.setdefault("grade_thresholds", {"A": 95, "B": 90, "C": 80, "D": 70})
         snapshot.setdefault("policy", "employee_ratio")
         snapshot.setdefault("schema", 1)
         snapshot["performance_level"] = source.performance_level

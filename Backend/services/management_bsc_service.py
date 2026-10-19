@@ -505,15 +505,12 @@ class ManagementBSCService:
                 )
                 for period in periods
             }
-            thresholds = base_config.get("grade_thresholds", {"A": 90, "B": 80, "C": 70, "D": 60})
-
             def grade_for(score: float | None) -> str:
                 if score is None:
                     return ""
-                for grade, threshold in (("A", "A"), ("B", "B"), ("C", "C"), ("D", "D")):
-                    if score >= float(thresholds.get(threshold, {"A": 90, "B": 80, "C": 70, "D": 60}[threshold])):
-                        return grade
-                return "E"
+                from utils.scoring_rules import letter_grade
+
+                return letter_grade(score)
 
             for record in records:
                 record["team"] = team_name
@@ -928,7 +925,7 @@ class ManagementBSCService:
         return {
             "team": team_name,
             "performance_level": performance_level,
-            "grade_thresholds": base_config.get("grade_thresholds", {"A": 90, "B": 80, "C": 70, "D": 60}),
+            "grade_thresholds": base_config.get("grade_thresholds", {"A": 95, "B": 90, "C": 80, "D": 70}),
             "balanced_scorecard": {
                 "enabled": True,
                 "perspectives": perspectives,

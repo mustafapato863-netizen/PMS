@@ -1297,7 +1297,7 @@ def test_outbound_july_and_august_use_the_canonical_ratios(db):
     july_record = _performance(db, july_id[0], july_id[1])
     attendance = next(value for value in july_record.kpi_values if value.kpi_key == "Attendance")
     assert july_record.score == Decimal("65.00")
-    assert july_record.grade == "D"
+    assert july_record.grade == "E"
     assert july_record.status == "Below"
     assert attendance.actual_value == Decimal("0.3250")
     assert attendance.target_value == Decimal("0.6500")

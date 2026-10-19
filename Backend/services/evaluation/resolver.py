@@ -280,7 +280,7 @@ def basis_payload(version: TeamConfigurationVersion) -> dict:
         "month_name": month_name(version.effective_from_month),
         "policy": (snapshot or {}).get("policy") or "employee_ratio",
         "lines": snapshot_lines(version),
-        "grade_thresholds": (snapshot or {}).get("grade_thresholds") or {"A": 95, "B": 85, "C": 75, "D": 65},
+        "grade_thresholds": (snapshot or {}).get("grade_thresholds") or {"A": 95, "B": 90, "C": 80, "D": 70},
     }
 
 

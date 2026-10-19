@@ -409,7 +409,7 @@ class EvaluationCatalog:
                     "importer_name": importer if employee_importer else None,
                     "source_kind": source,
                     "lines": _baseline_lines(config, level, position) if config else [],
-                    "thresholds": (config or {}).get("grade_thresholds") or {"A": 95, "B": 85, "C": 75, "D": 65},
+                    "thresholds": (config or {}).get("grade_thresholds") or {"A": 95, "B": 90, "C": 80, "D": 70},
                     "decision": decision,
                 }
             )
@@ -494,7 +494,7 @@ class EvaluationCatalog:
     def thresholds(self, scope: EvaluationScope) -> dict:
         if not hasattr(self, "_thresholds"):
             self.sync()
-        return dict(self._thresholds.get((scope.team_key, scope.performance_level, scope.position_name), {"A": 95, "B": 85, "C": 75, "D": 65}))
+        return dict(self._thresholds.get((scope.team_key, scope.performance_level, scope.position_name), {"A": 95, "B": 90, "C": 80, "D": 70}))
 
     def decision_for(self, scope: EvaluationScope, year: int | None = None, month: int | str | None = None) -> CapabilityDecision:
         """Recompute capability from files. Stored readiness and client flags are ignored.

@@ -6,9 +6,9 @@
   "employee_name_col": "AgentName",
   "grade_thresholds": {
     "A": 95,
-    "B": 85,
-    "C": 75,
-    "D": 65
+    "B": 90,
+    "C": 80,
+    "D": 70
   },
   "configuration_notes": [
     "SHJ and AJM are branches inside one IP Final scoring team; the source Team column is preserved for filtering and reporting.",

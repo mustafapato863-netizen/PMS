@@ -228,18 +228,17 @@ def overall_score(scored: list[dict]) -> float | None:
 
 
 def grade_for(score: float | None, thresholds: dict | None) -> str | None:
+    """Letter for a score. The company matrix is the only scale.
+
+    ``thresholds`` stays in the signature because snapshots still carry a copy.
+    A stored 85/75/65 band does not grade the score.
+    """
+    del thresholds
     if score is None:
         return None
-    bands = thresholds or {"A": 95, "B": 85, "C": 75, "D": 65}
-    if score >= float(bands.get("A", 95)):
-        return "A"
-    if score >= float(bands.get("B", 85)):
-        return "B"
-    if score >= float(bands.get("C", 75)):
-        return "C"
-    if score >= float(bands.get("D", 65)):
-        return "D"
-    return "E"
+    from utils.scoring_rules import letter_grade
+
+    return letter_grade(float(score))
 
 
 def conflicts_for(lines: list[dict], rows: list[dict]) -> list[dict]:

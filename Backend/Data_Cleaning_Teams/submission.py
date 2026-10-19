@@ -144,9 +144,9 @@ def process_submission(file_path: str, team_config: Dict[str, Any] = None) -> pd
     
     thresholds = {
         'A': 95,
-        'B': 85,
-        'C': 75,
-        'D': 65,
+        'B': 90,
+        'C': 80,
+        'D': 70,
     }
     
     achievement_cols = {}
