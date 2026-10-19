@@ -223,7 +223,6 @@ const TeamKpiSection = ({
   const activityDelta = deltaFrom(teamMetrics.activityRate, prevTeamMetrics?.activityRate);
 
   const isOutbound = teamId?.toLowerCase() === 'outbound';
-  const isInboundUAE = teamId?.toLowerCase() === 'inbound-uae';
 
   // Dynamic target values from dataset / dynamicKpis if available, fallback to team defaults
   const dynamicAttendKpi = teamMetrics.dynamicKpis?.find((k) => k.label.toLowerCase().includes('attend'));
@@ -262,7 +261,7 @@ const TeamKpiSection = ({
   const bookingTarget = Math.round(
     rawBookingTarget && rawBookingTarget > 0
       ? percentPointsFromRatio(rawBookingTarget)
-      : (isOutbound ? 46 : (isInboundUAE ? 60 : 45))
+      : (isOutbound ? 46 : 45)
   );
 
   const reachabilityTarget = rawReachTarget && rawReachTarget > 0

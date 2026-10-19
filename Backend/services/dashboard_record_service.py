@@ -23,6 +23,34 @@ from utils.kpi_direction import (
     flipped_contribution_fix,
     resolve_kpi_direction,
 )
+from utils.helpers import inbound_booking_rate_from_row, with_inbound_booking_counters
+
+
+def _geo_booking_map(geo) -> dict | None:
+    bookings = getattr(geo, "bookings", None)
+    if bookings is None and isinstance(geo, dict):
+        bookings = geo.get("bookings")
+    if bookings is None:
+        return None
+    if isinstance(bookings, dict):
+        return bookings
+    return {
+        "dubai": getattr(bookings, "dubai", 0),
+        "sharjah": getattr(bookings, "sharjah", 0),
+        "ajman": getattr(bookings, "ajman", 0),
+        "clinics": getattr(bookings, "clinics", 0),
+    }
+
+
+def _inbound_evidence_row(team_name: str, raw, inbound_calls=None, geo=None) -> dict:
+    """Inbound scoring reads booking counters. Fill them from the structured record when raw columns are absent."""
+    if team_name != "Inbound":
+        return dict(raw or {})
+    return with_inbound_booking_counters(
+        raw,
+        inbound_calls=inbound_calls,
+        geo_bookings=_geo_booking_map(geo),
+    )
 
 
 def _pinned_basis(item) -> dict | None:
@@ -509,9 +537,15 @@ class DashboardRecordService:
             if isinstance(payload, dict):
                 try:
                     rich_record = SchemaPerformanceRecord.model_validate(payload)
-                    repaired_kpis = [] if keep_stored_offshore_kpis else build_legacy_employee_kpi_values(
+                    evidence_raw = _inbound_evidence_row(
                         team_name,
                         rich_record.raw_data,
+                        inbound_calls=getattr(getattr(rich_record, "calls", None), "inbound", None),
+                        geo=getattr(rich_record, "geo", None),
+                    )
+                    repaired_kpis = [] if keep_stored_offshore_kpis else build_legacy_employee_kpi_values(
+                        team_name,
+                        evidence_raw,
                         weights=persisted_weights,
                         config=config,
                     )
@@ -554,6 +588,11 @@ class DashboardRecordService:
                     rich_evaluation = rich_record.evaluation.model_copy(
                         update={"score": reconciled_score, "grade": reconciled_grade}
                     )
+                    rich_actual = rich_record.actual
+                    if team_name == "Inbound":
+                        booking_rate = inbound_booking_rate_from_row(evidence_raw)
+                        if booking_rate is not None:
+                            rich_actual = rich_actual.model_copy(update={"booking_rate": booking_rate})
                     result.append(rich_record.model_copy(update={
                         "id": str(item.id),
                         "employee_id": str(employee.employee_id),
@@ -571,6 +610,7 @@ class DashboardRecordService:
                         "status": reconciled_status(item.status, item.grade, reconciled_grade),
                         "upload_id": str(item.upload_id) if getattr(item, "upload_id", None) else None,
                         "evaluation": rich_evaluation,
+                        "actual": rich_actual,
                         "kpi_values": canonical_kpis,
                     }))
                     continue
@@ -583,12 +623,19 @@ class DashboardRecordService:
             # legacy formula-based teams. Older KPIValue rows can contain an
             # achievement copied into actual_value (the source of the 58.7%
             # Initial Error Rate card), while the row counters remain correct.
-            repaired_fallback_kpis = [] if keep_stored_offshore_kpis else build_legacy_employee_kpi_values(
+            fallback_calls = payload.get("calls") if isinstance(payload, dict) else None
+            evidence_raw = _inbound_evidence_row(
                 team_name,
                 payload_raw_data,
+                inbound_calls=fallback_calls.get("inbound") if isinstance(fallback_calls, dict) else None,
+                geo=payload.get("geo") if isinstance(payload, dict) else None,
+            )
+            repaired_fallback_kpis = [] if keep_stored_offshore_kpis else build_legacy_employee_kpi_values(
+                team_name,
+                evidence_raw,
                 weights=persisted_weights,
                 config=config,
-            ) if payload_raw_data else []
+            ) if evidence_raw else []
             fallback_kpis = repaired_fallback_kpis or scoped_relational()
             fallback_kpis = _normalise_kpi_values(
                 fallback_kpis, config, config_by_key, team_name, persisted_directions, memo
@@ -609,6 +656,12 @@ class DashboardRecordService:
                     "E"
                 )
 
+            fallback_actual = {}
+            if team_name == "Inbound":
+                booking_rate = inbound_booking_rate_from_row(evidence_raw)
+                if booking_rate is not None:
+                    fallback_actual["booking_rate"] = booking_rate
+
             result.append(SchemaPerformanceRecord(
                 id=str(item.id),
                 employee_id=str(employee.employee_id),
@@ -622,6 +675,7 @@ class DashboardRecordService:
                 position=item.position_name or employee.position_name,
                 status=reconciled_status(item.status, item.grade, fallback_grade),
                 evaluation={"score": fallback_score, "grade": fallback_grade},
+                actual=fallback_actual,
                 raw_data=payload_raw_data,
                 kpi_values=fallback_kpis,
             ))

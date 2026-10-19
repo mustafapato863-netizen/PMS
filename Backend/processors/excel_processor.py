@@ -6,7 +6,6 @@ from typing import Dict, Any, List, Optional, Tuple
 from utils.helpers import convert_aht_to_minutes, convert_percentage
 from Data_Cleaning_Teams.inbound import process_inbound
 from Data_Cleaning_Teams.outbound import process_outbound
-from Data_Cleaning_Teams.inbound_UAE import process_inbound_uae
 from Data_Cleaning_Teams.preapprovals_offshore import process_preapprovals_offshore
 from Data_Cleaning_Teams.preapprovals_op_dubai import process_preapprovals_op_dubai
 from Data_Cleaning_Teams.preapprovals_ip_final_dubai import process_preapprovals_ip_final_dubai
@@ -94,9 +93,6 @@ class ExcelProcessor:
         if sheet_name is None:
             return pd.DataFrame()
         return self._process_team_sheet(excel_file, sheet_name, process_outbound)
-
-    def process_sheet_inbound_uae(self, excel_file) -> pd.DataFrame:
-        return self._process_team_sheet(excel_file, "Inbound UAE", process_inbound_uae)
 
     def process_sheet_preapprovals(self, excel_file) -> pd.DataFrame:
         # Offshore always runs its own importer: the June 2026 method, the row

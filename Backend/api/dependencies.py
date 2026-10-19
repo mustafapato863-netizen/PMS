@@ -32,6 +32,7 @@ from utils.report_scope import (
     user_can_access_team as scope_can_access_team,
     user_can_access_team_level as scope_can_access_team_level,
 )
+from utils.helpers import aht_minutes_from_row, inbound_booking_rate_from_row, with_inbound_booking_counters
 
 # Process-local cache: one full-payload digest per (id, normalized year).
 # 4096 is a finite bound, not a production optimum; it keeps the 1000-row
@@ -280,7 +281,22 @@ def serialize_performance_record(r) -> Dict[str, Any]:
             offshore_actuals = actuals_from_row(raw_data)
         except OffshoreDataError:
             offshore_actuals = None
-    actual_booking = r.actual.booking_rate or safe_float(raw_data.get("A.Booking%", 0.0))
+    actual_booking = None
+    if str(getattr(r, "team", "")).strip() == "Inbound":
+        geo = getattr(r, "geo", None)
+        bookings = getattr(geo, "bookings", None)
+        actual_booking = inbound_booking_rate_from_row(with_inbound_booking_counters(
+            raw_data,
+            inbound_calls=getattr(getattr(r, "calls", None), "inbound", None),
+            geo_bookings=None if bookings is None else {
+                "dubai": getattr(bookings, "dubai", 0),
+                "sharjah": getattr(bookings, "sharjah", 0),
+                "ajman": getattr(bookings, "ajman", 0),
+                "clinics": getattr(bookings, "clinics", 0),
+            },
+        ))
+    if actual_booking is None:
+        actual_booking = r.actual.booking_rate or safe_float(raw_data.get("A.Booking%", 0.0))
     actual_attend = r.actual.attend_rate or safe_float(raw_data.get("A.Attend%", 0.0))
     actual_abandon = r.actual.abandon_rate or safe_float(raw_data.get("A.AbandonRate%", 0.0))
     actual_reachability = r.actual.reachability_rate or safe_float(raw_data.get("A.Reachability%", 0.0))
@@ -319,10 +335,8 @@ def serialize_performance_record(r) -> Dict[str, Any]:
 
     aht_raw = r.calls.aht_raw
     if aht_raw == "00:00:00" or not aht_raw:
-        aht_mins = raw_data.get("AHT_Minutes") or safe_float(raw_data.get("A.AHT", 0.0)) or safe_float(raw_data.get("AHT", 0.0))
+        aht_mins = aht_minutes_from_row(raw_data)
         if aht_mins > 0:
-            if aht_mins < 1.0 and not raw_data.get("AHT_Minutes"):
-                aht_mins = aht_mins * 24.0 * 60.0
             from utils.helpers import format_minutes_to_hhmmss
             aht_raw = format_minutes_to_hhmmss(aht_mins)
 

@@ -6,7 +6,6 @@ import numpy as np
 # Import team-specific processing functions
 from Data_Cleaning_Teams.inbound import process_inbound
 from Data_Cleaning_Teams.outbound import process_outbound
-from Data_Cleaning_Teams.inbound_UAE import process_inbound_uae
 from Data_Cleaning_Teams.preapprovals_offshore import process_preapprovals_offshore
 from Data_Cleaning_Teams.sales import process_sales
 
@@ -21,7 +20,6 @@ cropped_sheets = {}
 # ============================================
 cropped_sheets["Inbound"] = process_inbound(file_path)
 cropped_sheets["Outbound"] = process_outbound(file_path)
-cropped_sheets["Inbound UAE"] = process_inbound_uae(file_path)
 cropped_sheets["Pre-Approvals IP Offshore"] = process_preapprovals_offshore(file_path)
 cropped_sheets["Sales"] = process_sales(file_path)
 

@@ -2,6 +2,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from api.dependencies import clear_serialization_cache, serialize_performance_record
 from models.schemas import EvaluationData, PerformanceRecord
 from services.dashboard_record_service import DashboardRecordService
 from services.legacy_kpi_evidence import build_legacy_employee_kpi_values
@@ -198,6 +199,86 @@ def test_dashboard_repairs_legacy_call_center_kpi_evidence_from_the_original_row
     assert by_key["Other"]["label"] == "Utilization"
     assert by_key["Other"]["target_value"] == 0.85
     assert by_key["Attendance"]["weight_applied"] == 0.70
+
+
+def test_dashboard_rebuilds_stale_inbound_booking_and_aht_from_source_columns():
+    rich_record = PerformanceRecord(
+        id="legacy-source-row",
+        employee_id="IN-2",
+        employee_name="Inbound Agent",
+        team="Inbound",
+        month="September",
+        year=2026,
+        raw_data={
+            "A.Attend%": 0.67,
+            "T.Attend%": 0.75,
+            "A.Booking%": 1354 / 2223,
+            "T.Booking%": 0.65,
+            "Dubai_Booking": 618,
+            "Sharjah_Booking": 136,
+            "Ajman_Booking": 533,
+            "Clinics_Booking": 67,
+            "InboundCalls": 2045,
+            "TotalHandledCalls": 2223,
+            "A.QualityScore": 0.98,
+            "T.QualityTarget": 0.95,
+            "AHT_Minutes": 0,
+            "A.AHT": "0:02:45",
+            "A.UTZ%": 0.79,
+            "T.UTZ%": 0.85,
+        },
+        evaluation=EvaluationData(score=82.6, grade="C"),
+    )
+    row = _sql_record(month="September", payload=rich_record.model_dump(mode="json"))
+    row.kpi_values = [
+        SimpleNamespace(
+            kpi_key=key,
+            actual_value=0,
+            target_value=0,
+            achievement_ratio=0,
+            weight_applied=weight,
+            contribution=0,
+        )
+        for key, weight in [
+            ("Attendance", 0.70),
+            ("Booking", 0.10),
+            ("Quality", 0.05),
+            ("AHT", 0.05),
+            ("Other", 0.10),
+        ]
+    ]
+
+    [record] = _service([row]).list_records()
+    by_key = {item["kpi_key"]: item for item in record.kpi_values}
+
+    assert by_key["Booking"]["actual_value"] == pytest.approx(1354 / 2045)
+    assert by_key["AHT"]["actual_value"] == pytest.approx(2.75)
+    assert record.actual.booking_rate == pytest.approx(1354 / 2045)
+
+
+def test_serializer_recovers_aht_display_from_raw_time_when_saved_minutes_are_zero():
+    clear_serialization_cache()
+    record = PerformanceRecord(
+        id="legacy-aht-row",
+        employee_id="IN-3",
+        employee_name="Inbound Agent",
+        team="Inbound",
+        month="September",
+        year=2026,
+        raw_data={
+            "AHT_Minutes": 0,
+            "A.AHT": "0:02:45",
+            "InboundCalls": 100,
+            "Dubai_Booking": 50,
+            "TotalHandledCalls": 200,
+        },
+        evaluation=EvaluationData(score=0, grade="E"),
+    )
+
+    serialized = serialize_performance_record(record)
+
+    assert serialized["calls"]["aht_raw"] == "00:02:45"
+    assert serialized["actual"]["booking_rate"] == pytest.approx(0.5)
 
 
 def test_dashboard_repairs_malformed_offshore_payload_from_source_counters():

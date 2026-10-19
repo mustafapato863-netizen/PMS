@@ -18,11 +18,10 @@ Team onboarding is config-first. Add code only when the Excel shape or KPI logic
 
 ## Current Baseline
 
-As of July 2026, the system supports thirteen config-driven teams:
+As of July 2026, the system supports twelve config-driven teams:
 
 - Inbound
 - Outbound
-- Inbound UAE
 - Pre-Approvals IP Offshore
 - Sales
 - Pharmacy

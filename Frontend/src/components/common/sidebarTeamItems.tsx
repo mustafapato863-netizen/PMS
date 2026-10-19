@@ -4,7 +4,6 @@ import {
   BadgeCheck,
   Code,
   Headphones,
-  HeartPulse,
   Pill,
   RefreshCw,
   Send,
@@ -33,7 +32,6 @@ export const getTeamIcon = (teamName: string) => {
   if (norm.includes('rcm') || norm.includes('revenue cycle')) return <BadgeDollarSign size={17} />;
   if (norm.includes('marketing')) return <Megaphone size={17} />;
   if (norm.includes('finance') || norm.includes('financial')) return <DollarSign size={17} />;
-  if (norm.includes('inbound uae')) return <HeartPulse size={17} />;
   if (norm.includes('call center')) return <PhoneCall size={17} />;
   if (norm.includes('inbound')) return <UserCheck size={17} />;
   if (norm.includes('outbound')) return <AlertOctagon size={17} />;

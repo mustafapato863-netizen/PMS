@@ -246,7 +246,9 @@ def _summary(records: list, location: str) -> dict[str, Any]:
             total_aht_seconds += _number(raw_aht[0]) * 3600 + _number(raw_aht[1]) * 60 + _number(raw_aht[2])
 
     total_agents = len(current)
-    booking_rate = bookings / handled if handled > 0 else 0.0
+    inbound_only = bool(current) and all(str(getattr(record, "team", "")).strip() == "Inbound" for record in current)
+    booking_denominator = inbound if inbound_only else handled
+    booking_rate = bookings / booking_denominator if booking_denominator > 0 else 0.0
     attend_rate = attended / bookings if bookings > 0 else 0.0
     abandon_rate = abandoned / handled if handled > 0 else 0.0
     return {

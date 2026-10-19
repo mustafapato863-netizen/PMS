@@ -8,7 +8,9 @@ from sqlalchemy.pool import StaticPool
 
 from config.database import Base
 from models.models import Employee, PerformanceRecord, Team
-from services.performance_dashboard_read_service import PerformanceDashboardReadService
+from models.schemas import CallsData, EvaluationData, GeoBreakdown, GeoData
+from models.schemas import PerformanceRecord as SummaryRecord
+from services.performance_dashboard_read_service import PerformanceDashboardReadService, _summary
 
 
 def _session():
@@ -146,6 +148,33 @@ def test_summary_is_period_bounded_and_sql_scoped():
         assert all(item["teamName"] != "Outbound" for item in data["team_breakdown"])
     finally:
         db.close()
+
+
+def test_inbound_summary_booking_rate_uses_inbound_calls():
+    def row(name, team, bookings, inbound, handled):
+        return SummaryRecord(
+            id=name,
+            employee_id=name,
+            employee_name=name,
+            team=team,
+            month="September",
+            year=2026,
+            evaluation=EvaluationData(score=80, grade="C"),
+            calls=CallsData(inbound=inbound, total_handled=handled),
+            geo=GeoData(bookings=GeoBreakdown(dubai=bookings)),
+        )
+
+    inbound = _summary([
+        row("a", "Inbound", 40, 100, 150),
+        row("b", "Inbound", 20, 50, 80),
+    ], "all")
+    assert inbound["rates"]["booking_rate"] == pytest.approx(60 / 150)
+
+    mixed = _summary([
+        row("a", "Inbound", 40, 100, 150),
+        row("c", "Outbound", 10, 0, 20),
+    ], "all")
+    assert mixed["rates"]["booking_rate"] == round(50 / 170, 6)
 
 
 def test_function_viewer_http_scope_tampering_and_revocation(monkeypatch):

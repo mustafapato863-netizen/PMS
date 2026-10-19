@@ -1,7 +1,107 @@
 import datetime
 import math
+from collections.abc import Mapping
+from typing import Any
+
 import numpy as np
 import pandas as pd
+
+
+def _numeric_or_none(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        if pd.isna(value):
+            return None
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) else None
+
+
+def inbound_booking_count_from_row(row: Mapping[str, Any]) -> float | None:
+    booking_columns = (
+        ("Dubai_Booking", "Dubai _Booking"),
+        ("Sharjah_Booking", "Sharjah_Booking "),
+        ("Ajman_Booking", "Ajman_Booking "),
+        ("Clinics_Booking", "Clinics _Booking", "clinics_Booking", "clinics.Booking"),
+    )
+    bookings = 0.0
+    has_booking_counters = False
+    for aliases in booking_columns:
+        for key in aliases:
+            booking_count = _numeric_or_none(row.get(key))
+            if booking_count is not None:
+                bookings += booking_count
+                has_booking_counters = True
+                break
+
+    return max(bookings, 0.0) if has_booking_counters else None
+
+
+def inbound_booking_rate_from_row(row: Mapping[str, Any]) -> float | None:
+    """Rebuild Inbound booking conversion from booking counters and inbound calls."""
+    inbound_calls = _numeric_or_none(row.get("InboundCalls"))
+    if inbound_calls is None:
+        inbound_calls = _numeric_or_none(row.get("InboundCalls "))
+    bookings = inbound_booking_count_from_row(row)
+    if inbound_calls is None or inbound_calls <= 0 or bookings is None:
+        return None
+    return bookings / inbound_calls
+
+
+def with_inbound_booking_counters(
+    row: Mapping[str, Any] | None,
+    inbound_calls: Any = None,
+    geo_bookings: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Copy structured call and geo counters onto a row when the raw columns are missing.
+
+    Historical payloads can keep bookings and inbound calls on the record
+    while ``raw_data`` only has the old ``A.Booking%`` (bookings / handled calls).
+    """
+    source = dict(row or {})
+    if (
+        _numeric_or_none(source.get("InboundCalls")) is None
+        and _numeric_or_none(source.get("InboundCalls ")) is None
+    ):
+        calls = _numeric_or_none(inbound_calls)
+        if calls is not None and calls > 0:
+            source["InboundCalls"] = calls
+    if inbound_booking_count_from_row(source) is None and geo_bookings:
+        mapped = (
+            ("Dubai_Booking", "dubai"),
+            ("Sharjah_Booking", "sharjah"),
+            ("Ajman_Booking", "ajman"),
+            ("Clinics_Booking", "clinics"),
+        )
+        values = [(_numeric_or_none(geo_bookings.get(key)) or 0.0) for _, key in mapped]
+        if any(value > 0 for value in values):
+            for (column, _), value in zip(mapped, values):
+                source[column] = value
+    return source
+
+
+def aht_minutes_from_row(row: Mapping[str, Any]) -> float:
+    """Read canonical AHT minutes, falling back to the original time column."""
+    minutes = _numeric_or_none(row.get("AHT_Minutes"))
+    if minutes is not None and minutes > 0:
+        return minutes
+
+    for key in ("AHT", "A.AHT", "A.AHT.1"):
+        raw_aht = row.get(key)
+        if raw_aht is None:
+            continue
+        try:
+            if pd.isna(raw_aht):
+                continue
+        except (TypeError, ValueError):
+            continue
+        minutes = convert_aht_to_minutes(raw_aht)
+        if minutes > 0:
+            return minutes
+    return 0.0
+
 
 def convert_aht_to_minutes(aht_value) -> float:
     """Convert AHT from HH:MM:SS or excel time/float to minutes (float)."""
@@ -127,4 +227,3 @@ def add_computed_columns(df: pd.DataFrame) -> pd.DataFrame:
         df['SuggestedAction'] = np.select(conditions_action, choices_action, default="Monitor")
         
     return df
-

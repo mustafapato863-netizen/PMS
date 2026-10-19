@@ -97,17 +97,6 @@ class AnalysisService:
                 actual_val = safe_float(row.get("A.Reachability%"))
                 target_val = targets.get("Reachability", 0.95)
 
-        elif team == "Inbound UAE":
-            if root_kpi == "Attend":
-                actual_val = safe_float(row.get("A.Attend%"))
-                target_val = targets.get("Attend", 0.75)
-            elif root_kpi == "Booking":
-                actual_val = safe_float(row.get("A.Booking%"))
-                target_val = targets.get("Booking", 0.60)
-            elif root_kpi == "Other":
-                actual_val = safe_float(row.get("A.AbandonRate%"))
-                target_val = targets.get("Abandon", 0.01)
-
         elif team == "Pre-Approvals IP Offshore":
             if root_kpi == "Rejection":
                 actual_val = safe_float(row.get("IPInitialRejection%"))

@@ -47,7 +47,6 @@ const EXPECTED_TITLE: Record<string, string> = {
   'CSR': 'CSR',
   'Coding': 'Coding',
   'Inbound': 'Inbound',
-  'Inbound UAE': 'Inbound UAE',
   'Marketing': 'Marketing',
   'Outbound': 'Outbound',
   'Pharmacy': 'Pharmacy',

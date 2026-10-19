@@ -129,7 +129,6 @@ Initial business-rule scope is team + level + position/person + reporting month.
 | Source definition | Required fixture/coverage |
 |---|---|
 | Inbound | Workbook target/precomputed attendance paths; its configured management levels |
-| Inbound UAE | Separate source identity; branch-attributed call-center evidence |
 | Outbound | Workbook targets, weights and precomputed achievement behavior |
 | Sales | Employee KPIs and configured managerial/corporate levels |
 | CSR | Its own function and scoped source records; no accidental Call Center reassignment |

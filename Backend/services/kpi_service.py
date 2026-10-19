@@ -12,6 +12,11 @@ from config.loader import (
     ConfigurationError,
 )
 from utils.performance_levels import normalize_performance_level
+from utils.helpers import (
+    aht_minutes_from_row,
+    inbound_booking_count_from_row,
+    inbound_booking_rate_from_row,
+)
 from services.scoring.engine import (
     achievement as engine_achievement,
     contribution as engine_contribution,
@@ -45,13 +50,6 @@ DEFAULT_WEIGHTS = {
         "Quality": 0.10,
         "AHT": 0.00,
         "Other": 0.10  # Reachability
-    },
-    "Inbound UAE": {
-        "Attend": 0.70,
-        "Booking": 0.20,
-        "Quality": 0.00,
-        "AHT": 0.00,
-        "Other": 0.10  # Abandon
     },
     "Pre-Approvals IP Offshore": {
         "Rejection": 0.50,
@@ -107,11 +105,6 @@ DEFAULT_TARGETS = {
         "Booking": 0.46,
         "Quality": 0.95,
         "Reachability": 0.75
-    },
-    "Inbound UAE": {
-        "Attend": 0.75,
-        "Booking": 0.60,
-        "Abandon": 0.01
     },
     "Pre-Approvals IP Offshore": {
         "Rejection": 0.03,  # 3% target initial rejection rate (lower is better)
@@ -198,9 +191,9 @@ class KPIService:
         achievements = {}
         final_weights = {}
         # Import helper functions
-        from utils.helpers import convert_aht_to_minutes, convert_percentage
+        from utils.helpers import convert_percentage
 
-        if team not in ["Inbound", "Outbound", "Inbound UAE", "Pre-Approvals IP Offshore", "Sales"]:
+        if team not in ["Inbound", "Outbound", "Pre-Approvals IP Offshore", "Sales"]:
             try:
                 score, grade, kpi_values_list = self.calculate_performance_multi_team(team, row, performance_level)
                 achievements = {kv['kpi_key']: kv['achievement_ratio'] for kv in kpi_values_list}
@@ -218,14 +211,6 @@ class KPIService:
 
         if team == "Inbound":
             # 1. Raw Inbound Volumes
-            total_handled = safe_float(row.get("TotalHandledCalls"))
-            
-            dubai_booking = safe_float(row.get("Dubai_Booking"))
-            sharjah_booking = safe_float(row.get("Sharjah_Booking"))
-            ajman_booking = safe_float(row.get("Ajman_Booking"))
-            clinics_booking = safe_float(row.get("Clinics_Booking"))
-            total_bookings = dubai_booking + sharjah_booking + ajman_booking + clinics_booking
-
             dubai_attend = safe_float(row.get("Dubai_Attend"))
             sharjah_attend = safe_float(row.get("Sharjah_Attend"))
             ajman_attend = safe_float(row.get("Ajman_Attend"))
@@ -234,9 +219,10 @@ class KPIService:
 
             inbound_calls = safe_float(row.get("InboundCalls") or row.get("InboundCalls "))
             abandoned_calls = safe_float(row.get("AbandonedCalls"))
+            total_bookings = inbound_booking_count_from_row(row) or 0.0
 
             # 2. Actual Rate Calculations
-            actual_booking_cr = total_bookings / inbound_calls if inbound_calls > 0 else 0.0
+            actual_booking_cr = inbound_booking_rate_from_row(row) or 0.0
             actual_attend_cr = total_attends / total_bookings if total_bookings > 0 else 0.0
             actual_abandon_rate = abandoned_calls / inbound_calls if inbound_calls > 0 else 0.0
             
@@ -254,12 +240,7 @@ class KPIService:
             t_abandon = targets.get("Abandon", 0.01)
 
             # Get Actual AHT in seconds
-            aht_val = row.get("AHT_Minutes")
-            if aht_val is None or pd.isna(aht_val):
-                raw_aht = row.get("AHT") or row.get("A.AHT") or row.get("A.AHT.1")
-                aht_minutes = convert_aht_to_minutes(raw_aht)
-            else:
-                aht_minutes = safe_float(aht_val)
+            aht_minutes = aht_minutes_from_row(row)
             actual_aht_seconds = aht_minutes * 60.0
 
             # 3. Achievement Calculations (Capped at 1.0)
@@ -429,58 +410,6 @@ class KPIService:
             row["AttendC.RAch%"] = attend_ach
             row["QualityAch%"] = quality_ach
             row["Reachability%Ach%"] = reachability_ach
-
-        elif team == "Inbound UAE":
-            # 1. Raw UAE Inbound Volumes
-            total_handled = safe_float(row.get("TotalHandledCalls"))
-            inbound_calls = safe_float(row.get("InboundCalls") or row.get("InboundCalls "))
-            abandoned_calls = safe_float(row.get("AbandonedCalls"))
-            
-            dubai_booking = safe_float(row.get("Dubai_Booking") or row.get("Dubai _Booking"))
-            sharjah_booking = safe_float(row.get("Sharjah_Booking") or row.get("Sharjah_Booking "))
-            ajman_booking = safe_float(row.get("Ajman_Booking") or row.get("Ajman_Booking "))
-            clinics_booking = safe_float(row.get("Clinics_Booking") or row.get("Clinics _Booking"))
-            total_bookings = dubai_booking + sharjah_booking + ajman_booking + clinics_booking
-
-            dubai_attend = safe_float(row.get("Dubai_Attend") or row.get("Dubai _Attend"))
-            sharjah_attend = safe_float(row.get("Sharjah_Attend") or safe_float(row.get("Sharjah_Attend ")))
-            ajman_attend = safe_float(row.get("Ajman_Attend") or safe_float(row.get("Ajman_Attend ")))
-            clinics_attend = safe_float(row.get("Clinics_Attend") or safe_float(row.get("Clinics_Attend ")))
-            total_attends = dubai_attend + sharjah_attend + ajman_attend + clinics_attend
-
-            actual_booking_cr = total_bookings / total_handled if total_handled > 0 else 0.0
-            actual_attend_cr = total_attends / total_bookings if total_bookings > 0 else 0.0
-            actual_abandon_rate = abandoned_calls / inbound_calls if inbound_calls > 0 else 0.0
-
-            t_booking = targets.get("Booking", 0.60)
-            t_attend = targets.get("Attend", 0.75)
-            t_abandon = targets.get("Abandon", 0.01)
-
-            booking_ach = actual_booking_cr / t_booking if t_booking > 0 else 0.0
-            attend_ach = actual_attend_cr / t_attend if t_attend > 0 else 0.0
-            
-            if actual_abandon_rate <= t_abandon:
-                abandon_ach = 1.0
-            else:
-                abandon_ach = t_abandon / actual_abandon_rate if actual_abandon_rate > 0 else 1.0
-
-            achievements = {
-                "Attend": attend_ach,
-                "Booking": booking_ach,
-                "Other": abandon_ach
-            }
-            final_weights = {
-                "Attend": weights.get("Attend", 0.70),
-                "Booking": weights.get("Booking", 0.20),
-                "Other": weights.get("Other", 0.10)
-            }
-
-            row["A.Booking%"] = actual_booking_cr
-            row["A.Attend%"] = actual_attend_cr
-            row["A.AbandonRate%"] = actual_abandon_rate
-            row["BookingC.RAch%"] = booking_ach
-            row["AttendC.RAch%"] = attend_ach
-            row["AbandonRateAch%"] = abandon_ach
 
         elif team == "Pre-Approvals IP Offshore":
             actual_rejection = convert_percentage(row.get("IPInitialRejection%", 0.0))
@@ -656,8 +585,6 @@ class KPIService:
             row["PerformanceScore%"] = score
         elif team in ["Outbound", "Pre-Approvals IP Offshore"]:
             row["PerformanceScor%"] = score
-        elif team == "Inbound UAE":
-            row["PerformanceScore%"] = score
         elif team == "Sales":
             row["PerformanceScore%"] = score
             row["PerformanceScore"] = score

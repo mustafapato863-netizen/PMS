@@ -6,12 +6,12 @@ from contextvars import ContextVar
 from typing import Any, Mapping
 
 from utils.kpi_direction import kpi_direction
+from utils.helpers import aht_minutes_from_row, inbound_booking_rate_from_row
 
 
 LEGACY_EMPLOYEE_TEAMS = {
     "Inbound",
     "Outbound",
-    "Inbound UAE",
     "Pre-Approvals IP Offshore",
     "Sales",
 }
@@ -302,7 +302,6 @@ def build_legacy_employee_kpi_values(
     evidence_keys = {
         "Inbound": ("A.Attend%", "A.Booking%", "A.QualityScore", "AHT_Minutes", "A.UTZ%", "A.AbandonRate%"),
         "Outbound": ("A.Attend%", "A.Booking%", "A.QualityScore", "A.Reachability%"),
-        "Inbound UAE": ("A.Attend%", "A.Booking%", "A.AbandonRate%"),
         "Pre-Approvals IP Offshore": ("IPInitialRejection%", "Error%", "NumberApprovalwithin48hrs"),
         "Sales": ("A.OPCensus", "A.OPRevenue", "A.IPCensus", "A.IPRevenue", "OPCensusAch%"),
     }
@@ -326,11 +325,14 @@ def build_legacy_employee_kpi_values(
 
     if team == "Inbound":
         has_utz = _first(row, "A.UTZ%", "UTZ%") is not None
+        booking_actual = inbound_booking_rate_from_row(row)
+        if booking_actual is None:
+            booking_actual = _first(row, "A.Booking%")
         specs = [
             ("Attendance", "Attendance Rate", "higher_better", _first(row, "A.Attend%"), _first(row, "Attend%Ach%"), 0.75),
-            ("Booking", "Booking Rate", "higher_better", _first(row, "A.Booking%"), _first(row, "Booking%Ach%"), 0.45),
+            ("Booking", "Booking Rate", "higher_better", booking_actual, _first(row, "Booking%Ach%"), 0.45),
             ("Quality", "Quality Score", "higher_better", _first(row, "A.QualityScore"), _first(row, "QualityTargetAch%"), 0.95),
-            ("AHT", "AHT (Handle Time)", "lower_better", _first(row, "AHT_Minutes"), _first(row, "AHTAch%"), 2.5),
+            ("AHT", "AHT (Handle Time)", "lower_better", aht_minutes_from_row(row), _first(row, "AHTAch%"), 2.5),
             (
                 "Other",
                 "Utilization" if has_utz else "Abandon Rate",
@@ -346,12 +348,6 @@ def build_legacy_employee_kpi_values(
             ("Booking", "Booking Rate", "higher_better", _first(row, "A.Booking%"), _first(row, "BookingC.RAch%", "Booking%Ach%"), 0.46),
             ("Quality", "Quality Score", "higher_better", _first(row, "A.QualityScore"), _first(row, "QualityAch%", "QualityTargetAch%"), 0.95),
             ("Other", "Reachability", "higher_better", _first(row, "A.Reachability%"), _first(row, "Reachability%Ach%"), 0.75),
-        ]
-    elif team == "Inbound UAE":
-        specs = [
-            ("Attendance", "Attendance Rate", "higher_better", _first(row, "A.Attend%"), _first(row, "AttendC.RAch%", "Attend%Ach%"), 0.75),
-            ("Booking", "Booking Rate", "higher_better", _first(row, "A.Booking%"), _first(row, "BookingC.RAch%", "Booking%Ach%"), 0.60),
-            ("Other", "Abandon Rate", "lower_better", _first(row, "A.AbandonRate%"), _first(row, "AbandonRateAch%", "AbandonRate%Ach%"), 0.01),
         ]
     elif team == "Sales":
         activity_actual, activity_target = _sales_activity_totals(row)

@@ -171,6 +171,34 @@ export function resolveDisplayScore(
     return Math.min(Math.round(score * 100) / 100, 100);
   }
 
+  // Egypt Inbound Booking CR changed the booking achievement. A stored sheet
+  // score still uses bookings / handled calls, so the displayed score is the
+  // weighted sum of the rebuilt KPI achievements.
+  if ((agent.identity.team || '').trim().toLowerCase() === 'inbound') {
+    const kpis = getKPIsForAgent(agent);
+    let weightTotal = 0;
+    const score = kpis.reduce((sum, kpi) => {
+      const weight = normalizeWeight(kpi.weight ?? getWeightForLabel(
+        teamWeights,
+        kpi.label,
+        agent.identity.team,
+        agent.raw_data,
+        agent.identity.month,
+      ));
+      if (weight <= 0) return sum;
+      weightTotal += weight;
+      const achievement = kpi.achievement !== undefined && Number.isFinite(kpi.achievement)
+        ? kpi.achievement
+        : kpi.isLowerBetter
+          ? (kpi.actual <= 0 ? 100 : (kpi.target > 0 ? (kpi.target / kpi.actual) * 100 : 0))
+          : (kpi.target > 0 ? (kpi.actual / kpi.target) * 100 : 0);
+      return sum + Math.min(Math.max(achievement, 0), 100) * weight;
+    }, 0);
+    if (weightTotal > 0) {
+      return Math.min(Math.round(score * 100) / 100, 100);
+    }
+  }
+
   if (agent.evaluation?.score != null && Number.isFinite(agent.evaluation.score)) {
     return normalizePerformanceScore(agent.evaluation.score);
   }

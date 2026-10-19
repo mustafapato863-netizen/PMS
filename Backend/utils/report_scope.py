@@ -124,7 +124,7 @@ SELF_SCOPED_ROLES = {"Agent", "Executive", "Employee"}
 # "Functions" are the parent domains that ``_team_keys`` already expands into
 # their source teams (the same values the Insights ``team`` filter accepts as
 # rollups). A team that is not part of any parent domain (Marketing, Sales,
-# CSR, Pharmacy, Inbound UAE, ...) is its own function, mirroring the
+# CSR, Pharmacy, ...) is its own function, mirroring the
 # ``_team_keys`` fallback of an exact team match. Order is broadest first:
 # UAE Pre-Approvals teams belong to RCM *and* to the narrower Pre-Approvals
 # function, exactly as ``_RCM_KEYS`` and ``_PRE_APPROVALS_UAE_KEYS`` overlap.

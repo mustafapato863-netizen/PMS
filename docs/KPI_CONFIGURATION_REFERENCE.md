@@ -23,7 +23,6 @@ This document explains every configured team, performance level, position, KPI w
 | Coding | Employee/default | All positions |
 | CSR | Employee/default | All positions |
 | Inbound | Employee/default, Managerial, Corporate | Employee/default is legacy operational scoring; Managerial/Corporate are team scorecards |
-| Inbound UAE | Employee/default | All positions |
 | Marketing | Employee | Media Buyer, Graphic Designer, Social Media Specialist, Account Manager, Web Developer, Content Writer |
 | Outbound | Employee/default | All positions |
 | Pharmacy | Employee/default | All positions |
@@ -159,17 +158,7 @@ Aggregate views (Insights team analysis, KPI overview, the Insights snapshot and
 
 Managerial and Corporate enable all four Balanced Scorecard perspectives: Financial, Customer, Internal Process, and Learning & Growth. Their strategy map is `Learning & Growth → Internal Process → Customer → Financial`.
 
-### 3.4 Inbound UAE — [inbound_uae.json](../Backend/config/teams/inbound_uae.json)
-
-Employee/default configuration; all positions.
-
-| KPI key | Label | Weight | Direction / unit | Actual and target calculation |
-|---|---|---:|---|---|
-| `Attendance` | Attendance Rate | 0.70 | H / % | `A.Attend% / A.Booking%` |
-| `Booking` | Booking Rate | 0.20 | H / % | `A.Booking% / calls.total_handled` |
-| `Other` | Abandon Rate | 0.10 | L / % | `calls.abandoned / calls.total_handled` |
-
-### 3.5 Marketing — [marketing.json](../Backend/config/teams/marketing.json)
+### 3.4 Marketing — [marketing.json](../Backend/config/teams/marketing.json)
 
 Employee level. KPI sets are position-specific. All rows use `Actual Value` and `Target Value` as the source columns. Unless noted as `sum`, the configured rollup is `weighted_average` by `Target Value`.
 
@@ -246,7 +235,7 @@ Web Developer `wd_page_speed` is labelled **Page load time** (a duration, lower 
 
 Why: Marketing uses volume sums for additive outputs such as leads and revenue. Rate, cost, quality, and timeliness KPIs use target-volume-weighted averages so one small campaign does not have the same influence as a large campaign.
 
-### 3.6 Outbound — [outbound.json](../Backend/config/teams/outbound.json)
+### 3.5 Outbound — [outbound.json](../Backend/config/teams/outbound.json)
 
 Employee/default configuration; all positions.
 
@@ -257,7 +246,7 @@ Employee/default configuration; all positions.
 | `Quality` | Quality Score | 0.10 | H / % | `average` |
 | `Other` | Reachability | 0.10 | H / % | `average` |
 
-### 3.7 Pharmacy — [pharmacy.json](../Backend/config/teams/pharmacy.json)
+### 3.6 Pharmacy — [pharmacy.json](../Backend/config/teams/pharmacy.json)
 
 Employee/default configuration; all positions.
 
@@ -271,7 +260,7 @@ Employee/default configuration; all positions.
 
 Why: waiting time and leakage represent delay or loss; compliance, transaction value, and prescription contribution represent positive outcomes.
 
-### 3.8 Pre-Approvals IP Elective Dubai — [pre_approvals_ip_elective_dubai.json](../Backend/config/teams/pre_approvals_ip_elective_dubai.json)
+### 3.7 Pre-Approvals IP Elective Dubai — [pre_approvals_ip_elective_dubai.json](../Backend/config/teams/pre_approvals_ip_elective_dubai.json)
 
 Employee level with two position/workstream KPI sets.
 
@@ -291,7 +280,7 @@ Records carrying IP Final Dubai keys (legacy): before the upload fix, an agent o
 
 Missing/unsupported pairs fail ingestion so the system does not guess the workstream. Rows with Status or Performance Grade `Leave`, `New Staff`, or `-` are excluded before scoring. The source ER header says 48 hours, but the canonical KPI is **1.5 hours** and uses `ApprovalWithin1.5HR`.
 
-### 3.9 Pre-Approvals IP Final Dubai — [pre_approvals_ip_final_dubai.json](../Backend/config/teams/pre_approvals_ip_final_dubai.json)
+### 3.8 Pre-Approvals IP Final Dubai — [pre_approvals_ip_final_dubai.json](../Backend/config/teams/pre_approvals_ip_final_dubai.json)
 
 Employee level with three workstream KPI sets. All six configured KPI definitions use the baseline-80 formula.
 
@@ -306,7 +295,7 @@ Employee level with three workstream KPI sets. All six configured KPI definition
 
 The source has no Position column. The cleaner reconciles the source Performance Score against the documented weight sets to identify the applied workstream, then recalculates the score. Rows without discharge use the IP Approval 60/40 set; rows without approval use IP Discharge at 100% weight.
 
-### 3.10 Pre-Approvals IP Final SHJAJM — [pre_approvals_ip_final_shj_ajm.json](../Backend/config/teams/pre_approvals_ip_final_shj_ajm.json)
+### 3.9 Pre-Approvals IP Final SHJAJM — [pre_approvals_ip_final_shj_ajm.json](../Backend/config/teams/pre_approvals_ip_final_shj_ajm.json)
 
 Employee level, IP Final position. SHJ and AJM are branches inside the same scoring team.
 
@@ -317,7 +306,7 @@ Employee level, IP Final position. SHJ and AJM are branches inside the same scor
 
 Both KPIs use the baseline-80 formula, floor below-baseline achievement at zero, and cap achievement/final score at 100%.
 
-### 3.11 Pre-Approvals IP Offshore — [pre_approvals_offshore.json](../Backend/config/teams/pre_approvals_offshore.json)
+### 3.10 Pre-Approvals IP Offshore — [pre_approvals_offshore.json](../Backend/config/teams/pre_approvals_offshore.json)
 
 Employee/default configuration; all positions.
 
@@ -329,7 +318,7 @@ Employee/default configuration; all positions.
 
 The implementation prefers authoritative counters when both numerator and denominator are available; displayed percentage fields are fallback evidence for legacy workbooks.
 
-### 3.12 Pre-Approvals OP Dubai — [pre_approvals_op_dubai.json](../Backend/config/teams/pre_approvals_op_dubai.json)
+### 3.11 Pre-Approvals OP Dubai — [pre_approvals_op_dubai.json](../Backend/config/teams/pre_approvals_op_dubai.json)
 
 Employee level with three position/workstream KPI sets.
 
@@ -343,7 +332,7 @@ Employee level with three position/workstream KPI sets.
 
 The workstream is derived from the populated operational volume columns. Final Rejection Rate is intentionally not configured until Final Rejected Requests and its target are supplied.
 
-### 3.13 Pre-Approvals OP Final SHJAJM — [pre_approvals_op_final_shj_ajm.json](../Backend/config/teams/pre_approvals_op_final_shj_ajm.json)
+### 3.12 Pre-Approvals OP Final SHJAJM — [pre_approvals_op_final_shj_ajm.json](../Backend/config/teams/pre_approvals_op_final_shj_ajm.json)
 
 Employee level, OP Final position. SHJ and AJM are branches inside the same scoring team.
 
@@ -354,7 +343,7 @@ Employee level, OP Final position. SHJ and AJM are branches inside the same scor
 
 Targets and directions are read from each source row. If Submission Within TAT is unavailable, the exception rule uses the Initial Rejection achievement as the final score.
 
-### 3.14 Re-Submission — [re_submission.json](../Backend/config/teams/re_submission.json)
+### 3.13 Re-Submission — [re_submission.json](../Backend/config/teams/re_submission.json)
 
 Employee/default configuration; all positions.
 
@@ -366,7 +355,7 @@ Employee/default configuration; all positions.
 
 The Re-Submission `tat` value is a **within-TAT completion rate**, not a duration; therefore higher is better. It is labelled **TAT compliance %** to distinguish it from Coding `TAT` (Turnaround Time, hours, lower is better). The key `tat`/`TAT` exists in both teams with opposite directions, so it is always resolved by team, never by key alone.
 
-### 3.15 Sales — [sales.json](../Backend/config/teams/sales.json)
+### 3.14 Sales — [sales.json](../Backend/config/teams/sales.json)
 
 #### Employee/default operational KPIs
 
@@ -398,7 +387,7 @@ The Re-Submission `tat` value is a **within-TAT completion rate**, not a duratio
 
 Managerial and Corporate enable the same four Balanced Scorecard perspectives and the strategy map `Learning & Growth → Internal Process → Customer → Financial`.
 
-### 3.16 Submission — [submission.json](../Backend/config/teams/submission.json)
+### 3.15 Submission — [submission.json](../Backend/config/teams/submission.json)
 
 Employee/default configuration; all positions.
 
@@ -437,7 +426,7 @@ Every reader resolves `higher_better` / `lower_better` through [Backend/utils/kp
 1. **Record config** (`direction_source = "config"`): the KPI definition of the record's own resolved team/level/position config (plus the documented Inbound `Other` = Utilization legacy variant).
 2. **Team config** (`team_config`): the same key/label anywhere in the team's file config; merged/logical teams resolve through their source teams. A team config may list `kpi_direction_source_teams` for KPI rows legitimately inherited from another team; their directions only fill identities the team does not define. Ambiguous matches inside a team are ignored.
 3. **Persisted** (`persisted`): a valid direction stored on the KPI row (written from the record's config at upload).
-4. **Global** (`global_config`): a single unambiguous key/label match across all teams. Keys that carry different directions in different teams — `TAT` (Coding lower vs Re-Submission higher) and `Other` (Inbound / Inbound UAE abandon rate lower vs Outbound reachability higher) — are excluded, so they only resolve by team.
+4. **Global** (`global_config`): a single unambiguous key/label match across all teams. Keys that carry different directions in different teams — `TAT` (Coding lower vs Re-Submission higher) and `Other` (Inbound abandon rate lower vs Outbound reachability higher) — are excluded, so they only resolve by team.
 5. **Default** (`default`): `higher_better`, logged once as a warning and flagged with `direction_source = "default"` (Insights and reporting evidence exclude it from ranking).
 
 A KPI that was saved under the opposite direction (Marketing `cw_error_free` before it became `higher_better`) has its contribution re-scored at read time in `DashboardRecordService` and reporting evidence, so record scores and grades shown on pages are direction-correct. SQL aggregates that read the stored `performance_records.score` column still need `Backend/scripts/fix_cw_error_free_direction.py --apply` to rewrite stored values. The read-time correction also recomputes `status` from the corrected grade with the same rule as imports (A = Exceeds, B/C = Meets, else Below; a custom stored status is kept), and the script rewrites the stored status. The Inbound Utilization records above need no fix.

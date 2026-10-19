@@ -1,6 +1,6 @@
 import type { KPI, TeamConfig } from '../../schemas/teamConfig.schema';
 import type { AgentRecord, KPIConfig, LocationKey } from '../../types';
-import { getKPIsForAgent } from '../../types';
+import { getKPIsForAgent, inboundCallCount } from '../../types';
 import { getWeightForLabel } from '../../utils/kpiScore';
 
 export interface AggregatedTeamKpi {
@@ -81,6 +81,7 @@ const sourceValue = (
 ): number | undefined => {
   if (!source) return undefined;
   if (source === '$calls.total_handled') return Number(agent.calls?.total_handled) || 0;
+  if (source === '$calls.inbound') return inboundCallCount(agent);
   if (source === '$calls.abandoned') return Number(agent.calls?.abandoned) || 0;
   if (source === '$geo.bookings') return geoSourceValue(agent, 'bookings', location);
   if (source === '$geo.attended') return geoSourceValue(agent, 'attended', location);
@@ -205,7 +206,9 @@ export function aggregateConfiguredTeamKpis(
       // Counters remain the preferred path below; this only covers rows where
       // one of the ratio counters is missing. An applied pin keeps its own
       // target and weight; the workbook column is the legacy target only.
-      const configuredActual = definition?.actual_col
+      // A.Booking% is the old handled-call rate. The rebuilt KPI actual is bookings / inbound calls.
+      const inboundBooking = normalize(config?.team) === 'inbound' && normalize(definition?.key) === 'booking';
+      const configuredActual = definition?.actual_col && !inboundBooking
         ? sourceValue(agent, definition.actual_col, location)
         : undefined;
       const configuredTarget = definition?.target_col
@@ -258,7 +261,12 @@ export function aggregateConfiguredTeamKpis(
 
       if (aggregation.method === 'ratio') {
         const numerator = sourceValue(agent, aggregation.numerator_col, location);
-        const denominator = sourceValue(agent, aggregation.denominator_col, location);
+        // Inbound Booking CR is bookings / inbound calls. A stored config that
+        // still points at total handled calls must not bring the old total back.
+        const denominatorSource = normalize(config?.team) === 'inbound' && normalize(definition?.key) === 'booking'
+          ? '$calls.inbound'
+          : aggregation.denominator_col;
+        const denominator = sourceValue(agent, denominatorSource, location);
         if (numerator !== undefined && denominator !== undefined) {
           bucket.hasRatioCounters = true;
           bucket.numerator += numerator;

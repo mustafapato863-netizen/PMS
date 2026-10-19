@@ -10,7 +10,7 @@ import { OperationalViewSkeleton } from '../components/common/SkeletonLoader';
 import { TrendingUp, Target, Activity, Phone, Shield, Lightbulb, Edit2, Check, X, Award, AlertCircle, AlertTriangle, MessageSquare, Code, Headphones, Pill, Users, Send } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { TeamAgentRow, TeamWeightConfig } from '../hooks/usePerformanceData';
-import { TEAM_NAME_MAP, TEAM_DB_NAME_MAP, resolveTeamRouteId, MERGED_OP_FINAL_TEAM, MERGED_IP_FINAL_TEAM, PRE_APPROVALS_UAE_TEAM, PRE_APPROVALS_UAE_SOURCE_TEAMS, CALL_CENTER_TEAM, RCM_TEAM, callCenterChannelForTeam, isCallCenterChannelTeam, isPreApprovalsWorkflowTeam, isRcmDomainTeam, isRcmGroupTeam, isMergedBranchTeam, isMergedOpFinalTeam, sameCanonicalTeam } from '../types';
+import { TEAM_NAME_MAP, TEAM_DB_NAME_MAP, resolveTeamRouteId, MERGED_OP_FINAL_TEAM, MERGED_IP_FINAL_TEAM, PRE_APPROVALS_UAE_TEAM, PRE_APPROVALS_UAE_SOURCE_TEAMS, CALL_CENTER_TEAM, RCM_TEAM, callCenterChannelForTeam, isCallCenterChannelTeam, isPreApprovalsWorkflowTeam, isRcmDomainTeam, isRcmGroupTeam, isMergedBranchTeam, isMergedOpFinalTeam, sameCanonicalTeam, inboundCallCount } from '../types';
 import type { AgentRecord, GeoBreakdown, LocationKey, PreApprovalsWorkflowFilter, CallCenterChannelFilter, RcmDomainFilter, RcmGroupFilter } from '../types';
 import { useUserRole } from '../context/RoleContext';
 import { useAuth } from '../context/auth';
@@ -115,6 +115,10 @@ const configuredKpiPercent = (
   const actual = configuredKpiActual(kpis, label);
   return actual === undefined ? undefined : actual * 100;
 };
+
+/** Egypt Inbound Booking CR is total bookings / inbound calls, including the team total. */
+const inboundBookingPercent = (bookings: number, inboundCalls: number) =>
+  inboundCalls > 0 ? (bookings / inboundCalls) * 100 : 0;
 
 interface TeamDashboardViewProps {
   teamIdOverride?: string;
@@ -288,10 +292,12 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
     return !allowed.includes(normTeam);
   }, [currentUser, role, teamName, teamId, functionScope, isMergedTeam, isPreApprovalsParent, isCallCenterParent, isRcmParent, isMergedOpFinal, mergedTeamName]);
 
-  const isCallCenterView = teamId?.toLowerCase() === 'inbound' || teamId?.toLowerCase() === 'inbound-uae' || teamId?.toLowerCase() === 'outbound'
+  const isCallCenterView = teamId?.toLowerCase() === 'inbound' || teamId?.toLowerCase() === 'outbound'
     || (isCallCenterParent && callCenterChannel !== 'all');
   const isCallCenterAggregate = isCallCenterParent && callCenterChannel === 'all';
-  const isInbound = teamId?.toLowerCase() === 'inbound' || teamId?.toLowerCase() === 'inbound-uae'
+  const isInbound = teamId?.toLowerCase() === 'inbound'
+    || (isCallCenterParent && callCenterChannel === 'inbound');
+  const isEgyptInbound = teamId?.toLowerCase() === 'inbound'
     || (isCallCenterParent && callCenterChannel === 'inbound');
   const scoredTeamId = isCallCenterParent
     ? callCenterChannel === 'outbound' ? 'outbound' : 'inbound'
@@ -713,6 +719,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
     let totalBookings = 0;
     let totalAttended = 0;
     let totalCallsHandled = 0;
+    let totalInboundCalls = 0;
     let totalAbandoned = 0;
     let totalAHTSeconds = 0;
     let totalReachability = 0;
@@ -769,6 +776,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
 
       const calls = rawAgent.calls || { total_handled: 0, inbound: 0, abandoned: 0, aht_raw: '00:00:00' };
       totalCallsHandled += calls.total_handled;
+      totalInboundCalls += inboundCallCount(rawAgent);
       totalAbandoned += calls.abandoned;
 
       totalAHTSeconds += parseAHTtoSeconds(calls.aht_raw || '00:00:00');
@@ -894,8 +902,10 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
       { location, preferConfiguredWeights: isMergedTeam },
     )?.kpis ?? aggregateConfiguredTeamKpis(currentRecords, teamConfig, { location, preferConfiguredWeights: isMergedTeam });
     const dynamicKpis = [...configuredKpis.values()];
-    const bookingCR = configuredKpiPercent(configuredKpis, 'Booking Rate')
-      ?? (totalCallsHandled > 0 ? (totalBookings / totalCallsHandled) * 100 : 0);
+    const bookingCR = isEgyptInbound
+      ? inboundBookingPercent(totalBookings, totalInboundCalls)
+      : configuredKpiPercent(configuredKpis, 'Booking Rate')
+        ?? (totalCallsHandled > 0 ? (totalBookings / totalCallsHandled) * 100 : 0);
     const attendCR = configuredKpiPercent(configuredKpis, 'Attendance Rate')
       ?? (totalBookings > 0 ? (totalAttended / totalBookings) * 100 : 0);
 
@@ -934,11 +944,12 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
     const totalRevenueRate = salesTotalRevenueTarget > 0 ? (salesTotalRevenueActual / salesTotalRevenueTarget) * 100 : (agentsWithTotalRevenue > 0 ? (totalTotalRevenue / agentsWithTotalRevenue) * 100 : 0);
 
     // Funnel data
+    const bookingCalls = isEgyptInbound ? totalInboundCalls : totalCallsHandled;
     const funnelData = {
-      calls: totalCallsHandled,
+      calls: bookingCalls,
       bookings: totalBookings,
       attended: totalAttended,
-      callToBookingRate: totalCallsHandled > 0 ? totalBookings / totalCallsHandled : 0,
+      callToBookingRate: bookingCalls > 0 ? totalBookings / bookingCalls : 0,
       bookingToAttendRate: totalBookings > 0 ? totalAttended / totalBookings : 0,
     };
 
@@ -988,7 +999,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
       salesActivityTarget,
       dynamicKpis,
     };
-  }, [rows, location, teamId, teamConfig, isMergedTeam]);
+  }, [rows, location, teamId, teamConfig, isMergedTeam, isEgyptInbound]);
 
   // Compute call center metrics for the previous month (for MoM delta calculation)
   const prevTeamMetrics = useMemo(() => {
@@ -1006,6 +1017,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
     let totalBookings = 0;
     let totalAttended = 0;
     let totalCallsHandled = 0;
+    let totalInboundCalls = 0;
     let totalAbandoned = 0;
     let totalAHTSeconds = 0;
     let totalReachability = 0;
@@ -1058,6 +1070,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
 
       const calls = agent.calls || { total_handled: 0, inbound: 0, abandoned: 0, aht_raw: '00:00:00' };
       totalCallsHandled += calls.total_handled;
+      totalInboundCalls += inboundCallCount(agent);
       totalAbandoned += calls.abandoned;
 
       totalAHTSeconds += parseAHTtoSeconds(calls.aht_raw || '00:00:00');
@@ -1172,8 +1185,10 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
     const configuredKpis = calculateAggregatedTeamPerformance(prevAgents, teamConfig, { location, preferConfiguredWeights: isMergedTeam })?.kpis
       ?? aggregateConfiguredTeamKpis(prevAgents, teamConfig, { location, preferConfiguredWeights: isMergedTeam });
     const dynamicKpis = [...configuredKpis.values()];
-    const bookingCR = configuredKpiPercent(configuredKpis, 'Booking Rate')
-      ?? (totalCallsHandled > 0 ? (totalBookings / totalCallsHandled) * 100 : 0);
+    const bookingCR = isEgyptInbound
+      ? inboundBookingPercent(totalBookings, totalInboundCalls)
+      : configuredKpiPercent(configuredKpis, 'Booking Rate')
+        ?? (totalCallsHandled > 0 ? (totalBookings / totalCallsHandled) * 100 : 0);
     const attendCR = configuredKpiPercent(configuredKpis, 'Attendance Rate')
       ?? (totalBookings > 0 ? (totalAttended / totalBookings) * 100 : 0);
     const configuredAhtMinutes = configuredKpiActual(configuredKpis, 'AHT (Handle Time)');
@@ -1231,7 +1246,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
       submissionContribution: preApprovalsIpMetrics?.submissionContribution,
       dynamicKpis,
     };
-  }, [prevPeriodKey, previousPeriodAgents, teamName, location, teamId, teamConfig, isMergedTeam, isCallCenterParent, callCenterChannel]);
+  }, [prevPeriodKey, previousPeriodAgents, teamName, location, teamId, teamConfig, isMergedTeam, isCallCenterParent, callCenterChannel, isEgyptInbound]);
 
   // Filter and compute Top 3 / Bottom 3 performers on the fly
   const rosterData = useMemo(() => {
@@ -1382,8 +1397,6 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
         gradesDesc = 'mixed with structural blockers in lead quality';
       } else if (scoredTeamId === 'inbound') {
         gradesDesc = 'mixed with structural blockers in queue handling';
-      } else if (scoredTeamId === 'inbound-uae') {
-        gradesDesc = 'mixed with structural blockers in SLA compliance';
       } else if (teamId === 'pre-approvals') {
         gradesDesc = 'mixed with structural blockers in approval pipelines';
       } else if (teamId === 'sales') {
@@ -1492,51 +1505,6 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
             icon: Activity,
             title: `Call Abandon Rate: ${abR.toFixed(1)}%`,
             desc: `Inbound threshold is 1.0%. Coaching is recommended for ${worstAgentName} (AHT: ${worstAgent.ahtMinutes.toFixed(1)} min) to reduce queue hold times.`,
-            badgeText: meetsA ? 'STABLE' : 'HIGH ABANDON',
-            status: meetsA ? 'success' : 'danger'
-          });
-        } else {
-          bullets.push({
-            icon: Activity,
-            title: `Call Abandon Rate: ${abR.toFixed(1)}%`,
-            desc: `Inbound threshold is 1.0%. Abandon rate is within target bounds.`,
-            badgeText: 'TARGET MET',
-            status: 'success'
-          });
-        }
-      }
-    } else if (scoredTeamId === 'inbound-uae') {
-      if (hasBooking) {
-        const bTarget = 60;
-        const bCR = teamMetrics.bookingCR;
-        const meetsB = bCR >= bTarget;
-        bullets.push({
-          icon: Target,
-          title: `Booking Conversion: ${bCR.toFixed(1)}%`,
-          desc: `Target is ${bTarget}%. Performance is currently running ${meetsB ? 'above' : 'below'} standard.`,
-          badgeText: meetsB ? 'TARGET MET' : bCR < bTarget * 0.7 ? 'CRITICAL' : 'BELOW TARGET',
-          status: meetsB ? 'success' : bCR < bTarget * 0.7 ? 'danger' : 'warning'
-        });
-      }
-
-      if (hasUtz) {
-        const utzR = teamMetrics.utzRate;
-        const meetsU = utzR >= 85;
-        bullets.push({
-          icon: Activity,
-          title: `Utilization Rate: ${utzR.toFixed(1)}%`,
-          desc: `Target is 85%. Current rate is running ${meetsU ? 'above' : 'below'} standard.`,
-          badgeText: meetsU ? 'TARGET MET' : 'BELOW TARGET',
-          status: meetsU ? 'success' : 'warning'
-        });
-      } else if (hasAbandon) {
-        const abR = teamMetrics.abandonRate;
-        const meetsA = abR <= 1.0;
-        if (worstAgent) {
-          bullets.push({
-            icon: Activity,
-            title: `Call Abandon Rate: ${abR.toFixed(1)}%`,
-            desc: `Inbound threshold is 1.0%. Coaching is recommended for ${worstAgentName} (Booking CR: ${(worstAgent.bookingRate * 100).toFixed(1)}%) to improve service levels.`,
             badgeText: meetsA ? 'STABLE' : 'HIGH ABANDON',
             status: meetsA ? 'success' : 'danger'
           });
@@ -2060,8 +2028,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
                   {getTeamIcon()}
                   {scoredTeamId === 'outbound' ? 'Call Center – Outbound' :
                     scoredTeamId === 'inbound' ? 'Call Center – Inbound' :
-                      scoredTeamId === 'inbound-uae' ? 'Call Center – Inbound' :
-                        displayName} – Performance Summary
+                      displayName} – Performance Summary
                 </h3>
               </div>
 
@@ -2145,8 +2112,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
                   <Lightbulb size={18} />
                   {scoredTeamId === 'outbound' ? 'Call Center – Outbound' :
                     scoredTeamId === 'inbound' ? 'Call Center – Inbound' :
-                      scoredTeamId === 'inbound-uae' ? 'Call Center – Inbound' :
-                        displayName} – Development & Actions
+                      displayName} – Development & Actions
                 </h3>
                 {canAccessBroadAppPages(role) && !isEditingAction && (
                   <button

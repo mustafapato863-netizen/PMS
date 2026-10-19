@@ -207,13 +207,14 @@ def _prod_sql_row(fixture):
 
 
 @pytest.mark.parametrize("fixture", PROD_UTILIZATION_ROWS, ids=[row["label"] for row in PROD_UTILIZATION_ROWS])
-def test_prod_like_genuine_utilization_rows_stay_utilization_with_the_stored_score(fixture):
+def test_prod_like_genuine_utilization_rows_stay_utilization_with_rebuilt_score(fixture):
     utz = fixture["raw_data"]["A.UTZ%"]
     assert 0.68 <= utz <= 0.94
 
     [record] = _resolve([_prod_sql_row(fixture)])
     other = next(value for value in record.kpi_values if value["kpi_key"] == "Other")
     saved = next(value for value in fixture["payload_kpi_values"] if value["kpi_key"] == "Other")
+    booking = next(value for value in record.kpi_values if value["kpi_key"] == "Booking")
 
     assert other["label"] == "Utilization"
     assert other["direction"] == "higher_better"
@@ -221,9 +222,23 @@ def test_prod_like_genuine_utilization_rows_stay_utilization_with_the_stored_sco
     assert not other.get("direction_corrected")  # never flipped / rescored
     assert other["actual_value"] == pytest.approx(utz, abs=1e-4)
     assert other["contribution"] == pytest.approx(saved["contribution"], abs=1e-3)
-    # The dashboard shows the stored score and grade: not a mismatch.
-    assert record.evaluation.score == pytest.approx(fixture["stored_score"], abs=0.05)
-    assert record.evaluation.grade == fixture["stored_grade"]
+    raw = fixture["raw_data"]
+    inbound_calls = raw.get("InboundCalls")
+    booking_counts = sum(
+        raw.get(key, 0) or 0
+        for key in ("Dubai_Booking", "Sharjah_Booking", "Ajman_Booking", "Clinics_Booking")
+    )
+    if inbound_calls:
+        assert booking["actual_value"] == pytest.approx(booking_counts / inbound_calls)
+
+    expected_score = round(min(sum(value["contribution"] for value in record.kpi_values), 1.0) * 100, 2)
+    assert record.evaluation.score == pytest.approx(expected_score)
+    thresholds = load_team_config("Inbound")["grade_thresholds"]
+    expected_grade = next(
+        (grade for grade in ("A", "B", "C", "D") if expected_score >= thresholds[grade]),
+        "E",
+    )
+    assert record.evaluation.grade == expected_grade
     assert record.status == "Meets"
 
 

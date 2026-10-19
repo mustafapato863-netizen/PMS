@@ -73,6 +73,52 @@ def test_inbound_booking_conversion_uses_inbound_calls_not_total_handled():
     )
 
 
+def test_inbound_scoring_uses_raw_aht_when_normalized_minutes_are_zero():
+    row = {
+        "Date": datetime.datetime(2026, 5, 1),
+        "InboundCalls": 100,
+        "Dubai_Booking": 45,
+        "Dubai_Attend": 30,
+        "A.QualityScore": 0.95,
+        "A.UTZ%": 0.85,
+        "AHT_Minutes": 0,
+        "A.AHT": "0:02:45",
+    }
+
+    _score, _grade, achievements, _weights = _kpi_service().calculate_performance("Inbound", row)
+
+    assert row["AHT_Minutes"] == pytest.approx(2.75)
+    assert achievements["AHT"] == pytest.approx(150 / (2.75 * 60))
+
+
+def test_inbound_booking_evidence_uses_structured_calls_when_raw_inbound_is_missing():
+    from utils.helpers import with_inbound_booking_counters
+
+    raw = {
+        "A.Attend%": 0.8,
+        "A.Booking%": 40 / 150,
+        "A.QualityScore": 0.95,
+        "A.AbandonRate%": 0.01,
+        "AHT_Minutes": 2.5,
+        "Dubai_Booking": 40,
+        "TotalHandledCalls": 150,
+    }
+    source = with_inbound_booking_counters(raw, inbound_calls=100)
+    evidence = {
+        item["kpi_key"]: item
+        for item in build_legacy_employee_kpi_values(
+            "Inbound",
+            source,
+            weights={"Attend": 0.70, "Booking": 0.10, "Quality": 0.05, "AHT": 0.05, "Other": 0.10},
+            config={"kpis": []},
+        )
+    }
+
+    assert evidence["Booking"]["actual_value"] == pytest.approx(40 / 100)
+    assert evidence["Booking"]["achievement_ratio"] == pytest.approx(min((40 / 100) / 0.45, 1), rel=1e-3)
+    assert evidence["Booking"]["contribution"] == pytest.approx(evidence["Booking"]["achievement_ratio"] * 0.10)
+
+
 def test_inbound_kpi_evidence_uses_the_calculated_targets_and_dynamic_utz_label():
     row = {
         "Date": datetime.datetime(2026, 5, 1),

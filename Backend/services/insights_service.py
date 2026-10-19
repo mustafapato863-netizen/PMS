@@ -1206,7 +1206,7 @@ class InsightsService:
                 if key:
                     kpis[key] = str(_value(kpi, "label", key))
             team = str(_value(record, "team", ""))
-            if team in {"Inbound", "Outbound", "Inbound UAE"}:
+            if team in {"Inbound", "Outbound"}:
                 kpis["no_show_rate"] = "No Show Rate"
             if team == "Outbound":
                 kpis["aht"] = "AHT (Handle Time)"
@@ -1431,7 +1431,7 @@ class InsightsService:
         for target, records in ((current_groups, current), (previous_groups, previous)):
             for record in records:
                 team = str(_value(record, "team", ""))
-                if team not in {"Inbound", "Outbound", "Inbound UAE"}:
+                if team not in {"Inbound", "Outbound"}:
                     continue
                 target[(
                     team,

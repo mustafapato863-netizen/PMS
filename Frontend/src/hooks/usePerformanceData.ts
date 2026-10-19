@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { AgentRecord, LocationKey, MonthKey, PerformanceLevelFilter, GeoBreakdown, EmployeeCRMRecord, EmployeeStatus, PlanningCategory, Trend, PreApprovalsWorkflowFilter, CallCenterChannelFilter, RcmDomainFilter, RcmGroupFilter } from '../types';
-import { canonicalTeamName, getKPIsForAgent, PRE_APPROVALS_UAE_TEAM, CALL_CENTER_TEAM, RCM_TEAM, isMergedBranchTeam, isPreApprovalsUaeTeam, isPreApprovalsWorkflowTeam, isCallCenterTeam, isCallCenterChannelTeam, isRcmTeam, isRcmDomainTeam, isRcmGroupTeam, sameCanonicalTeam } from '../types';
+import { applyInboundBookingDisplay, canonicalTeamName, displayBookingRate, getKPIsForAgent, inboundCallCount, PRE_APPROVALS_UAE_TEAM, CALL_CENTER_TEAM, RCM_TEAM, isMergedBranchTeam, isPreApprovalsUaeTeam, isPreApprovalsWorkflowTeam, isCallCenterTeam, isCallCenterChannelTeam, isRcmTeam, isRcmDomainTeam, isRcmGroupTeam, sameCanonicalTeam } from '../types';
 import { getGradeClass } from '../constants/grades';
 import { apiFetch } from '../lib/apiClient';
 import { performanceSessionKey } from '../lib/performanceSessionKey';
@@ -234,7 +234,7 @@ export function mapScopedPerformanceRecord(item: ScopedRecordItem): AgentRecord 
     : 'Employee';
   const score = numberValue(evaluation.score ?? item.score);
 
-  return {
+  const mapped: AgentRecord = {
     raw_data: objectValue(item.raw_data) as AgentRecord['raw_data'],
     branch_key: stringValue(item.branch_key, '') || null,
     region: stringValue(item.region ?? identity.region, '') || undefined,
@@ -303,6 +303,7 @@ export function mapScopedPerformanceRecord(item: ScopedRecordItem): AgentRecord 
       trend_status: evaluation.trend_status as AgentRecord['evaluation']['trend_status'],
     },
   };
+  return applyInboundBookingDisplay(mapped);
 }
 
 async function getScopedCatalog(): Promise<ScopedPerformanceCatalog> {
@@ -443,7 +444,7 @@ async function fetchPerformanceData(force = false) {
       return;
     }
     if (result && result.success && Array.isArray(result.data)) {
-      cachedData = result.data;
+      cachedData = result.data.map((record) => applyInboundBookingDisplay(record));
       cachedDataSession = session;
       lastFetchTime = Date.now();
       lastDataSource = 'api';
@@ -733,7 +734,7 @@ export function usePerformanceData(
     uniqueMonths.sort((a, b) => (MONTH_ORDER[a] || 0) - (MONTH_ORDER[b] || 0));
 
     const matchesRegion = (r: AgentRecord) => {
-      const rRegion = r.region || (sameTeam(r.identity.team, 'Inbound UAE') ? 'UAE' : 'EGY');
+      const rRegion = r.region || 'EGY';
       return rRegion.toUpperCase() === region.toUpperCase();
     };
 
@@ -810,10 +811,10 @@ export function usePerformanceData(
         totalInbound += a.calls.inbound;
         totalAbandoned += a.calls.abandoned;
         totalHandled += a.calls.total_handled;
-        sumBooking += a.actual.booking_rate;
+        sumBooking += displayBookingRate(a);
         sumAttend += a.actual.attend_rate;
         sumAbandon += a.actual.abandon_rate;
-        const sc = normalizeScore(a.evaluation.score);
+        const sc = resolveDisplayScore(a, undefined);
         sumScore += sc;
       }
       const count = monthAgents.length;
@@ -865,13 +866,13 @@ export function usePerformanceData(
     let gInbound = 0, gOutbound = 0, gHandled = 0, gAbandoned = 0, gBookings = 0, gAttended = 0;
     let gScore = 0, gAHT = 0;
     for (const a of agents) {
-      gInbound += a.calls.inbound;
+      gInbound += inboundCallCount(a);
       gOutbound += a.calls.outbound;
       gHandled += a.calls.total_handled;
       gAbandoned += a.calls.abandoned;
       gBookings += getGeoValue(a.geo.bookings, location);
       gAttended += getGeoValue(a.geo.attended, location);
-      gScore += a.evaluation.score;
+      gScore += resolveDisplayScore(a, undefined);
       gAHT += parseAHTtoSeconds(a.calls.aht_raw);
     }
     const grandTotals = {
@@ -879,8 +880,9 @@ export function usePerformanceData(
       abandoned: gAbandoned, totalBookings: gBookings, totalAttended: gAttended,
     };
 
-    const overallBookingRate =
-      grandTotals.totalHandled > 0 ? grandTotals.totalBookings / grandTotals.totalHandled : 0;
+    const inboundOnly = agents.length > 0 && agents.every((agent) => agent.identity.team === 'Inbound');
+    const bookingCalls = inboundOnly ? grandTotals.inbound : grandTotals.totalHandled;
+    const overallBookingRate = bookingCalls > 0 ? grandTotals.totalBookings / bookingCalls : 0;
     const overallAttendRate =
       grandTotals.totalBookings > 0 ? grandTotals.totalAttended / grandTotals.totalBookings : 0;
     const overallAbandonRate =
@@ -891,7 +893,7 @@ export function usePerformanceData(
       noShowRate: 1 - overallAttendRate,
       unconvertedRate: 1 - overallBookingRate,
       lostVisits: grandTotals.totalBookings - grandTotals.totalAttended,
-      lostCalls: grandTotals.totalHandled - grandTotals.totalBookings,
+      lostCalls: bookingCalls - grandTotals.totalBookings,
     };
 
     // Step 9: Strategic score
@@ -899,7 +901,7 @@ export function usePerformanceData(
 
     // Step 10: Conversion funnel data
     const funnelData: FunnelData = {
-      calls: grandTotals.totalHandled,
+      calls: bookingCalls,
       bookings: grandTotals.totalBookings,
       attended: grandTotals.totalAttended,
       callToBookingRate: overallBookingRate,
@@ -948,7 +950,7 @@ export function usePerformanceData(
     // Step 13: Outlier detection
     const outliers = {
       highBookingLowAttend: agentsWithLocationData.filter(
-        (a) => a.actual.booking_rate >= 0.5 && a.actual.attend_rate < 0.5
+        (a) => displayBookingRate(a) >= 0.5 && a.actual.attend_rate < 0.5
       ),
       highAHT: agentsWithLocationData.filter(
         (a) => parseAHTtoSeconds(a.calls.aht_raw) > 150
@@ -999,14 +1001,8 @@ export function usePerformanceData(
         const prevAHT = prevAgents.length > 0 ? prevAgents.reduce((s, a) => s + parseAHTtoSeconds(a.calls.aht_raw), 0) / prevAgents.length : 0;
         const ahtDiff = currAHT - prevAHT;
 
-        const currScore = currAgents.length > 0 ? currAgents.reduce((s, a) => {
-          const sc = normalizeScore(a.evaluation.score);
-          return s + sc;
-        }, 0) / currAgents.length : 0;
-        const prevScore = prevAgents.length > 0 ? prevAgents.reduce((s, a) => {
-          const sc = normalizeScore(a.evaluation.score);
-          return s + sc;
-        }, 0) / prevAgents.length : 0;
+        const currScore = currAgents.length > 0 ? currAgents.reduce((s, a) => s + resolveDisplayScore(a, undefined), 0) / currAgents.length : 0;
+        const prevScore = prevAgents.length > 0 ? prevAgents.reduce((s, a) => s + resolveDisplayScore(a, undefined), 0) / prevAgents.length : 0;
         const scoreDiff = currScore - prevScore;
 
         trends = {
@@ -1057,8 +1053,7 @@ export function useCRMData(month: MonthKey, location: LocationKey, performanceLe
 
   const data = useMemo(() => {
     return agents.map((agent, i) => {
-      let score = agent.evaluation.score;
-      score = normalizeScore(score);
+      const score = resolveDisplayScore(agent, undefined);
 
       let status: EmployeeStatus = 'Average';
       let trend: Trend = 'Stable';
@@ -1232,7 +1227,9 @@ export function useTeamData(
 
     const rows: TeamAgentRow[] = currentFiltered.map((agent, i) => {
       const rowWeights = weightsList?.find((w) => sameTeam(w.team, agent.identity.team))?.weights;
-      const score = resolveDisplayScore(agent, rowWeights);
+      const displayAgent = applyInboundBookingDisplay(agent);
+      const bookingRate = displayBookingRate(displayAgent);
+      const score = resolveDisplayScore(displayAgent, rowWeights);
 
       const gradeClass = resolveRecordGradeClass(agent, score);
 
@@ -1267,9 +1264,9 @@ export function useTeamData(
         correctiveAction: agent.evaluation.corrective_action || '',
         suggestedAction: agent.evaluation.suggested_action || '',
         ahtMinutes: ahtMins,
-        bookingRate: agent.actual.booking_rate,
-        attendRate: agent.actual.attend_rate,
-        raw: agent,
+        bookingRate,
+        attendRate: displayAgent.actual.attend_rate,
+        raw: displayAgent,
       };
     });
 

@@ -122,7 +122,6 @@ class CleanerFactory:
         cleaner_modules = {
             'inbound': {'class': 'InboundCleaner', 'function': 'process_inbound'},
             'outbound': {'class': 'OutboundCleaner', 'function': 'process_outbound'},
-            'inbound_uae': {'class': 'InboundUAECleaner', 'function': 'process_inbound_uae'},
             'preapprovals_ip_offshore': {'module': 'preapprovals_offshore', 'class': None, 'function': 'process_preapprovals_offshore'},
             'preapprovals_op_dubai': {'class': None, 'function': 'process_preapprovals_op_dubai'},
             'preapprovals_ip_final_dubai': {'class': None, 'function': 'process_preapprovals_ip_final_dubai'},

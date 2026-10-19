@@ -3,7 +3,6 @@ import { normalizePerformanceScore } from './kpiScore';
 const TEAM_ALIASES = {
   inbound: 'Inbound',
   outbound: 'Outbound',
-  'inbounduae': 'Inbound UAE',
   'preapprovalsipoffshore': 'Pre-Approvals IP Offshore',
   sales: 'Sales',
   coding: 'Coding',

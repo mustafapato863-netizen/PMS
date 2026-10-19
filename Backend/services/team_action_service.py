@@ -25,7 +25,6 @@ class TeamActionService:
         "pre-approvals-uae": "Pre-Approvals",
         "inbound": "Inbound",
         "outbound": "Outbound",
-        "inbound-uae": "Inbound UAE",
         "pre-approvals": "Pre-Approvals IP Offshore",
         "sales": "Sales",
         "coding": "Coding",

@@ -20,7 +20,6 @@ from services.team_action_service import TeamActionService
 TEAM_ROWS = [
     ("inbound", "Inbound", "Inbound"),
     ("outbound", "Outbound", "Outbound"),
-    ("inbound_uae", "Inbound UAE", "Inbound UAE"),
     ("pre_approvals_offshore", "Pre-Approvals IP Offshore", "Pre-Approvals IP Offshore"),
     ("coding", "Coding", "Coding"),
     ("csr", "CSR", "CSR"),
@@ -47,7 +46,6 @@ CANONICAL_ROUTE_IDS = {
     "call-center": "Call Center",
     "inbound": "Inbound",
     "outbound": "Outbound",
-    "inbound-uae": "Inbound UAE",
     "pre-approvals": "Pre-Approvals IP Offshore",
     "sales": "Sales",
     "coding": "Coding",

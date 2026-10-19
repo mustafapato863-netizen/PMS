@@ -157,7 +157,6 @@ _DUPLICATE_SUFFIX = re.compile(r"^(?P<base>.+)\.\d+$")
 # listed: its template above is the only confirmed header list for that sheet.
 _READ_MODULES = {
     "Inbound": "Data_Cleaning_Teams.inbound",
-    "Inbound UAE": "Data_Cleaning_Teams.inbound_UAE",
     "Sales": "Data_Cleaning_Teams.sales",
     "Coding": "Data_Cleaning_Teams.coding",
     "CSR": "Data_Cleaning_Teams.csr",

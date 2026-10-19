@@ -341,7 +341,7 @@ export function computeScoreTrend(
 
 export interface TeamSummary {
   teamId: string;    // URL-safe: "inbound", "outbound", etc.
-  teamName: string;  // Display: "Inbound", "Outbound", "Inbound UAE", "Pre-Approvals"
+  teamName: string;  // Display: "Inbound", "Outbound", "Pre-Approvals"
   agentCount: number;
   avgScore: number;
   classA: number;
@@ -356,7 +356,6 @@ export const TEAM_ID_MAP: Record<string, string> = {
   [CALL_CENTER_TEAM]: CALL_CENTER_TEAM_ID,
   'Inbound': 'inbound',
   'Outbound': 'outbound',
-  'Inbound UAE': 'inbound-uae',
   'Pre-Approvals IP Offshore': 'pre-approvals',
   'Sales': 'sales',
   'Coding': 'coding',
@@ -380,7 +379,6 @@ export const TEAM_NAME_MAP: Record<string, string> = {
   [CALL_CENTER_TEAM_ID]: CALL_CENTER_TEAM,
   'inbound': 'Inbound',
   'outbound': 'Outbound',
-  'inbound-uae': 'Inbound UAE',
   'pre-approvals': 'Pre-Approvals IP Offshore',
   'sales': 'Sales',
   'coding': 'Coding',
@@ -404,7 +402,6 @@ export const TEAM_DB_NAME_MAP: Record<string, string> = {
   [CALL_CENTER_TEAM_ID]: CALL_CENTER_TEAM,
   'inbound': 'Inbound',
   'outbound': 'Outbound',
-  'inbound-uae': 'Inbound UAE',
   'pre-approvals': 'Pre-Approvals IP Offshore',
   'sales': 'Sales',
   'coding': 'Coding',
@@ -900,6 +897,132 @@ function getAhtTarget(raw_data: RawData | undefined, fallback: number): number {
   return fallback;
 }
 
+function positiveCount(value: unknown): number {
+  if (value === undefined || value === null || value === '') return 0;
+  const parsed = typeof value === 'number' ? value : Number(String(value).replace(/,/g, '').replace(/%$/, ''));
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
+/** Inbound calls for Booking CR. The handled-call total includes other call types. */
+export function inboundCallCount(agent: Pick<AgentRecord, 'calls' | 'raw_data'>): number {
+  const fromCalls = positiveCount(agent.calls?.inbound);
+  if (fromCalls > 0) return fromCalls;
+  const raw = agent.raw_data ?? {};
+  return positiveCount(raw.InboundCalls ?? raw['InboundCalls ']);
+}
+
+const BOOKING_COLUMN_GROUPS = [
+  ['Dubai_Booking', 'Dubai _Booking'],
+  ['Sharjah_Booking', 'Sharjah_Booking '],
+  ['Ajman_Booking', 'Ajman_Booking '],
+  ['Clinics_Booking', 'Clinics _Booking', 'clinics_Booking', 'clinics.Booking'],
+] as const;
+
+function finiteNumber(value: unknown): number | null {
+  if (value === undefined || value === null || value === '') return null;
+  const parsed = typeof value === 'number' ? value : Number(String(value).replace(/,/g, '').replace(/%$/, ''));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function rawBookingCount(raw: RawData | undefined): number | null {
+  if (!raw) return null;
+  let bookings = 0;
+  let found = false;
+  for (const aliases of BOOKING_COLUMN_GROUPS) {
+    for (const key of aliases) {
+      const parsed = finiteNumber(raw[key]);
+      if (parsed !== null) {
+        bookings += parsed;
+        found = true;
+        break;
+      }
+    }
+  }
+  return found ? Math.max(bookings, 0) : null;
+}
+
+function geoBookingCount(agent: AgentRecord): number | null {
+  const geo = agent.geo?.bookings;
+  if (!geo) return null;
+  return Math.max(
+    0,
+    (Number(geo.dubai) || 0)
+      + (Number(geo.sharjah) || 0)
+      + (Number(geo.ajman) || 0)
+      + (Number(geo.clinics) || 0),
+  );
+}
+
+/**
+ * Egypt Inbound Booking CR is that agent's bookings divided by that agent's inbound calls.
+ * A positive geo total wins. Raw booking columns cover rows whose geo block is empty or zero.
+ * Returns null when the counters are missing, so a stored rate can stay.
+ */
+export function inboundBookingRateFromAgent(agent: AgentRecord): number | null {
+  if ((agent.identity.team || '').trim().toLowerCase() !== 'inbound') return null;
+  const calls = inboundCallCount(agent);
+  if (calls <= 0) return null;
+  const fromGeo = geoBookingCount(agent);
+  const fromRaw = rawBookingCount(agent.raw_data);
+  const bookings = fromGeo != null && fromGeo > 0 ? fromGeo : fromRaw;
+  if (bookings == null) return null;
+  return bookings / calls;
+}
+
+/** Booking CR shown for an agent. Egypt Inbound replaces a stored handled-call rate. */
+export function displayBookingRate(agent: AgentRecord): number {
+  const rebuilt = inboundBookingRateFromAgent(agent);
+  if (rebuilt != null) return rebuilt;
+  const stored = Number(agent.actual?.booking_rate);
+  return Number.isFinite(stored) ? stored : 0;
+}
+
+/**
+ * Stored Inbound KPI rows can still hold bookings / handled calls.
+ * Replace that booking actual, its capped achievement, and its contribution
+ * before any agent card reads `kpi_values` directly.
+ */
+export function applyInboundBookingDisplay(agent: AgentRecord): AgentRecord {
+  const rate = inboundBookingRateFromAgent(agent);
+  if (rate == null) return agent;
+  const kpiValues = agent.kpi_values?.map((kpi) => {
+    const identity = `${kpi.kpi_key || ''} ${kpi.label || ''}`.toLowerCase();
+    if (!identity.includes('booking')) return kpi;
+    const target = Number(kpi.target_value);
+    const achievementRatio = target > 0 ? Math.min(rate / target, 1) : kpi.achievement_ratio;
+    const weight = Number(kpi.weight_applied);
+    const normalizedWeight = Number.isFinite(weight) ? (weight > 1 ? weight / 100 : weight) : 0;
+    return {
+      ...kpi,
+      actual_value: rate,
+      achievement_ratio: achievementRatio,
+      contribution: Math.min(Math.max(achievementRatio, 0), 1) * Math.max(normalizedWeight, 0),
+    };
+  });
+  const actualChanged = rate !== agent.actual?.booking_rate;
+  const kpisChanged = !!kpiValues && kpiValues.some((kpi, index) => kpi !== agent.kpi_values?.[index]);
+  if (!actualChanged && !kpisChanged) return agent;
+  return {
+    ...agent,
+    actual: actualChanged ? { ...agent.actual, booking_rate: rate } : agent.actual,
+    kpi_values: kpisChanged ? kpiValues : agent.kpi_values,
+  };
+}
+
+function withInboundBookingRate(agent: AgentRecord, kpi: KPIConfig): KPIConfig {
+  const identity = `${kpi.key || ''} ${kpi.label || ''}`.toLowerCase();
+  if (!identity.includes('booking')) return kpi;
+  const rate = inboundBookingRateFromAgent(agent);
+  if (rate === null) return kpi;
+  const target = Number(kpi.target);
+  const achievement = target > 0 ? Math.min((rate / target) * 100, 100) : kpi.achievement;
+  const weight = kpi.weight;
+  const contribution = weight !== undefined && achievement !== undefined
+    ? (Math.min(achievement, 100) / 100) * weight * 100
+    : kpi.contribution;
+  return { ...kpi, actual: rate, achievement, contribution };
+}
+
 export function getKPIsForAgent(agent: AgentRecord): KPIConfig[] {
   const team = agent.identity.team || 'Inbound';
   const actual = agent.actual || {};
@@ -920,7 +1043,7 @@ export function getKPIsForAgent(agent: AgentRecord): KPIConfig[] {
   }
 
   if (agent.kpi_values?.length) {
-    return agent.kpi_values.map((kpi) => ({
+    return agent.kpi_values.map((kpi) => withInboundBookingRate(agent, {
       key: kpi.kpi_key,
       label: kpi.label || kpi.kpi_key,
       actual: kpi.actual_value,
@@ -1057,18 +1180,6 @@ export function getKPIsForAgent(agent: AgentRecord): KPIConfig[] {
     ];
   }
 
-  if (team === 'Inbound UAE') {
-    const targetAttend = getTargetValue(raw_data, ['T.Attend', 'T.Attend%', 'T.Attendance', 'T.Attendance%'], 0.75);
-    const targetBooking = getTargetValue(raw_data, ['T.Booking', 'T.Booking%'], 0.60);
-    const targetAbandon = getTargetValue(raw_data, ['T.Abandon', 'T.AbandonRate', 'T.Abandon%', 'T.AbandonRate%'], 0.01);
-
-    return [
-      { label: 'Attendance Rate', actual: actual.attend_rate, target: targetAttend, unit: '%', color: '#3B82F6' },
-      { label: 'Booking Rate', actual: actual.booking_rate, target: targetBooking, unit: '%', color: '#10B981' },
-      { label: 'Abandon Rate', actual: actual.abandon_rate, target: targetAbandon, unit: '%', isLowerBetter: true, color: '#EF4444' },
-    ];
-  }
-
   if (team === 'Pre-Approvals IP Offshore') {
     const targetRejection = getTargetValue(raw_data, ['T.IPInitialRejection%', 'T.Rejection', 'T.RejectionRate', 'T.Rejection%', 'T.InitialRejection%'], 0.03);
     const targetError = getTargetValue(raw_data, ['T.InitialError', 'T.InitialErrorRate', 'T.InitialError%', 'T.Error%', 'Error%'], 0.03);
@@ -1137,9 +1248,10 @@ export function getKPIsForAgent(agent: AgentRecord): KPIConfig[] {
   const targetAht = getAhtTarget(raw_data, 2.5);
   const targetQuality = getTargetValue(raw_data, ['T.QualityTarget', 'T.Quality', 'T.Quality%', 'T.QualityScore'], 0.95);
 
+  const rebuiltBooking = inboundBookingRateFromAgent(agent);
   const kpis: KPIConfig[] = [
     { label: 'Attendance Rate', actual: actual.attend_rate, target: targetAttend, unit: '%', color: '#3B82F6' },
-    { label: 'Booking Rate', actual: actual.booking_rate, target: targetBooking, unit: '%', color: '#10B981' },
+    { label: 'Booking Rate', actual: rebuiltBooking ?? actual.booking_rate, target: targetBooking, unit: '%', color: '#10B981' },
     { label: 'AHT (Handle Time)', actual: ahtMinutes, target: targetAht, unit: 'min', isLowerBetter: true, color: ahtMinutes <= targetAht ? '#10B981' : '#EF4444' },
     { label: 'Quality Score', actual: qualityRate, target: targetQuality, unit: '%', color: '#8B5CF6' },
   ];

@@ -30,7 +30,7 @@ other team was given a formula):
 - CSR ``Queries`` is inverse in ``process_csr`` and ``higher_better`` in
   ``csr.json``, so the two sources are not one ratio contract.
 - Pharmacy reads a precomputed achievement for part of the workbook.
-- Outbound, Inbound, Inbound UAE, Re-Submission, Sales, Offshore, OP, and
+- Outbound, Inbound, Re-Submission, Sales, Offshore, OP, and
   IP Elective were not admitted. Several depend on workbook achievement
   columns. Outbound August productivity is a later slice.
 - Marketing has no CleanerFactory ratio importer in this gate.

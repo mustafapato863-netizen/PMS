@@ -82,7 +82,6 @@ def test_unresolved_direction_defaults_flagged_and_logged(caplog):
         ("Re-Submission", {"kpi_key": "tat"}, "higher_better"),
         ("Re-Submission", {"kpi_key": "tat", "label": "TAT"}, "higher_better"),
         ("Inbound", {"kpi_key": "Other", "label": "Abandon Rate"}, "lower_better"),
-        ("Inbound UAE", {"kpi_key": "Other"}, "lower_better"),
         ("Outbound", {"kpi_key": "Other"}, "higher_better"),
     ],
 )
@@ -346,7 +345,7 @@ def test_insights_report_keeps_managerial_db_direction():
 
 def test_uae_executive_summary_resolves_stale_directions():
     record = uae_normalize_record({
-        "team": "Inbound UAE", "employee_id": "4", "year": 2026, "month": "July",
+        "team": "Inbound", "employee_id": "4", "year": 2026, "month": "July",
         "evaluation": {"score": 80},
         "kpi_values": [{"kpi_key": "Other", "label": "Abandon Rate", "direction": "higher_better", "actual_value": 0.1, "target_value": 0.05}],
     })

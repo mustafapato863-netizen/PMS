@@ -78,7 +78,7 @@
       "color": "#10B981",
       "actual_col": "A.Booking%",
       "target_col": "T.Booking%",
-      "aggregation": {"method": "ratio", "numerator_col": "$geo.bookings", "denominator_col": "$calls.total_handled"},
+      "aggregation": {"method": "ratio", "numerator_col": "$geo.bookings", "denominator_col": "$calls.inbound"},
       "achievement_col": "Booking%Ach%"
     },
     {

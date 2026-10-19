@@ -1335,7 +1335,7 @@ class DatabaseSeeder:
         sheet_names = set(excel_file.sheet_names)
         inbound_df = self.excel_processor.process_sheet_inbound(excel_file) if "Inbound" in sheet_names else pd.DataFrame()
         outbound_df = self.excel_processor.process_sheet_outbound(excel_file) if resolve_outbound_sheet_name(sheet_names) else pd.DataFrame()
-        inbound_uae_df = self.excel_processor.process_sheet_inbound_uae(excel_file) if "Inbound UAE" in sheet_names else pd.DataFrame()
+
         preapprovals_df = self.excel_processor.process_sheet_preapprovals(excel_file) if "Pre-Approvals IP Offshore" in sheet_names else pd.DataFrame()
         preapprovals_op_dubai_df = self.excel_processor.process_sheet_preapprovals_op_dubai(excel_file) if "Pre-Approvals OP Dubai" in sheet_names else pd.DataFrame()
         preapprovals_ip_final_dubai_df = self.excel_processor.process_sheet_preapprovals_ip_final_dubai(excel_file) if "Pre-Approvals IP Final Dubai" in sheet_names else pd.DataFrame()
@@ -1370,8 +1370,7 @@ class DatabaseSeeder:
             sheet_mappings.append(("Inbound", inbound_df, "EmployeeID", "EnglishName"))
         if not outbound_df.empty:
             sheet_mappings.append(("Outbound", outbound_df, "SGHCode", "EnglishName"))
-        if not inbound_uae_df.empty:
-            sheet_mappings.append(("Inbound UAE", inbound_uae_df, "HRID", "AgentName"))
+
         if not preapprovals_df.empty:
             sheet_mappings.append(("Pre-Approvals IP Offshore", preapprovals_df, "HRID", "AgentName"))
         if not preapprovals_op_dubai_df.empty:
@@ -1486,7 +1485,7 @@ class DatabaseSeeder:
                     is_new = row.get("Is_New", False)
                     region_val = str(row.get("Region", "EGY")).strip().upper()
                     if not region_val or region_val == "NAN":
-                        region_val = "UAE" if team_name in ["Inbound UAE", "Sales", "Coding", "CSR", "Pharmacy", "Submission", "Re-Submission", "Pre-Approvals OP Dubai", "Pre-Approvals IP Final Dubai", "Pre-Approvals IP Elective Dubai", "Pre-Approvals OP Final SHJAJM", "Pre-Approvals IP Final SHJAJM"] else "EGY"
+                        region_val = "UAE" if team_name in ["Sales", "Coding", "CSR", "Pharmacy", "Submission", "Re-Submission", "Pre-Approvals OP Dubai", "Pre-Approvals IP Final Dubai", "Pre-Approvals IP Elective Dubai", "Pre-Approvals OP Final SHJAJM", "Pre-Approvals IP Final SHJAJM"] else "EGY"
 
                     employee = Employee(
                         id=emp_id,
@@ -1605,7 +1604,7 @@ class DatabaseSeeder:
                         quality_ach=achievements.get("Quality") or achievements.get("quality_errors_rate") or 0.0,
                         aht_ach=achievements.get("AHT", 0.0),
                         reachability_ach=achievements.get("Other", 0.0) if team_name == "Outbound" else 0.0,
-                        abandon_ach=achievements.get("Other", 0.0) if team_name in ["Inbound", "Inbound UAE"] else 0.0,
+                        abandon_ach=achievements.get("Other", 0.0) if team_name == "Inbound" else 0.0,
                         rejection_ach=achievements.get("Rejection") or achievements.get("initial_rejection_rate") or achievements.get("rejection_rate_after_resubmission") or 0.0,
                         initial_error_ach=achievements.get("InitialError", 0.0),
                         submission_ach=achievements.get("Submission") or achievements.get("submission_within_due_date") or achievements.get("tat") or 0.0,

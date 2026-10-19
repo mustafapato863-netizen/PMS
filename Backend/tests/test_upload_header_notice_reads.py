@@ -48,7 +48,6 @@ def _unmapped(sheet: str, headers: list[str]) -> list[str]:
 # Names each team's importer reads by name (the same sets the importers declare).
 READ_NAMES = {
     "Inbound": ["Dubai_Booking", "Sharjah_Booking", "Ajman_Booking", "Clinics_Booking", "Dubai_Attend", "Sharjah_Attend", "Ajman_Attend", "Clinics_Attend", "UTZ%Ach%", "AHT"],
-    "Inbound UAE": ["Dubai_Booking", "Sharjah_Booking", "Ajman_Booking", "Clinics_Booking", "Dubai_Attend", "Sharjah_Attend", "Ajman_Attend", "Clinics_Attend", "AHT"],
     "Sales": ["A.OPCensus", "T.OPCensus", "A.OPRevenue", "T.OPRevenue", "A.IPCensus", "T.IPCensus", "A.IPRevenue", "T.IPRevenue", "OPCensusAch%", "OPRevenueAch%", "IPCensusAch%", "IPRevenueAch%", "A.Visits", "T.Visits", "A.CBDTour", "T.CBDTour", "A.ClinicActivity", "T.ClinicActivity", "A.CorporateActivity", "T.CorporateActivity"],
     "Pharmacy": ["Prescription Ach%", "NoofPrescriptionAch%", "Noof Prescription Ach%"],
     "Submission": ["RejectedClaimsAmount3MonthPrevious", "RAClaimsAmount(3MonthPrevious)"],
@@ -114,12 +113,12 @@ def test_whitespace_and_case_variants_of_read_names_are_not_listed():
 
 def test_positional_run_after_an_anchor_is_read_and_the_next_column_is_not():
     headers = ["Dubai_Booking", "Trend Two", "Trend Three", "Trend Four", "Trend Five"]
-    assert _unmapped("Inbound UAE", headers) == ["Trend Five"]
+    assert _unmapped("Inbound", headers) == ["Trend Five"]
 
 
 def test_positional_run_stops_at_the_grade_column():
     headers = ["Dubai_Attend", "Trend Two", "Performance Grade", "Trend After Grade"]
-    assert _unmapped("Inbound UAE", headers) == ["Trend After Grade"]
+    assert _unmapped("Inbound", headers) == ["Trend After Grade"]
 
 
 def test_sales_activity_pattern_reads_activity_columns_and_not_their_ach_spellings():
