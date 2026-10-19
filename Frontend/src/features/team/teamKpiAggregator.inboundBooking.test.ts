@@ -32,7 +32,7 @@ function inboundAgent(name: string, bookings: number, inbound: number, handled: 
       attended: { dubai: 0, sharjah: 0, ajman: 0, clinics: 0 },
     },
     actual: { booking_rate: staleRate, attend_rate: 0, abandon_rate: 0 },
-    achievement: { booking_ach: staleRate / 0.45 },
+    achievement: { booking_ach: staleRate / 0.45, attend_ach: 0 },
     evaluation: { score: 80, grade: 'C' },
     raw_data: { 'A.Booking%': String(staleRate), 'T.Booking%': '0.45' },
     kpi_values: [
@@ -88,7 +88,7 @@ describe('Inbound Booking CR', () => {
         weight_applied: 0.7,
         contribution: 0.7,
       },
-      ...agent.kpi_values,
+      ...(agent.kpi_values ?? []),
     ];
 
     const booking = getKPIsForAgent(agent).find((kpi) => kpi.label === 'Booking Rate');
