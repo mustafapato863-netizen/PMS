@@ -98,4 +98,30 @@ describe('TeamKpiTable direction semantics', () => {
     expect(responseCells[5]).toHaveTextContent('↑ +3%');
     expect(responseCells[5]).toHaveAttribute('data-tone', 'good');
   });
+
+  it('filters KPIs by achievement status and search query, with reset capability', () => {
+    render(<TeamKpiTable rows={rows} effective={null} previous={null} score={null} showTeams />);
+    expect(screen.getAllByTestId('kpi-row')).toHaveLength(2);
+
+    // Filter to Below 90%
+    fireEvent.click(screen.getByRole('button', { name: /Below 90% \(1\)/i }));
+    expect(screen.getAllByTestId('kpi-row')).toHaveLength(1);
+    expect(screen.getByText('Rejection Rate')).toBeInTheDocument();
+    expect(screen.queryByText('Response Rate')).not.toBeInTheDocument();
+
+    // Filter to On track >=90%
+    fireEvent.click(screen.getByRole('button', { name: /On track ≥90% \(1\)/i }));
+    expect(screen.getAllByTestId('kpi-row')).toHaveLength(1);
+    expect(screen.getByText('Response Rate')).toBeInTheDocument();
+
+    // Search for non-existent KPI and reset
+    const searchInput = screen.getByRole('searchbox', { name: 'Search KPIs' });
+    fireEvent.change(searchInput, { target: { value: 'NonExistentKpi' } });
+    expect(screen.queryAllByTestId('kpi-row')).toHaveLength(0);
+    expect(screen.getByText('No KPIs match the active filter or search query.')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reset KPI filters' }));
+    expect(screen.getAllByTestId('kpi-row')).toHaveLength(2);
+  });
 });
+

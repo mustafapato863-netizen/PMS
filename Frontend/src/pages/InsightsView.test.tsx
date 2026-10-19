@@ -1173,5 +1173,27 @@ describe('InsightsView', () => {
       expect(currentSearch().get('function')).toBe('Call Center');
       expect(currentSearch().get('team')).toBe('Inbound');
     });
+
+    it('filters KPI diagnosis rows by status pills and search query', async () => {
+      const user = userEvent.setup();
+      renderInsights();
+      const diagnosis = section('KPI diagnosis');
+
+      // Filter by On target status
+      await user.click(within(diagnosis).getByRole('button', { name: 'Filter by On target status' }));
+      expect(within(within(diagnosis).getByRole('table')).getAllByRole('row').slice(1)).toHaveLength(1);
+      expect(within(diagnosis).getByRole('button', { name: 'Booking rate' })).toBeInTheDocument();
+
+      // Reset to All statuses
+      await user.click(within(diagnosis).getByRole('button', { name: 'Filter by All statuses' }));
+      expect(within(within(diagnosis).getByRole('table')).getAllByRole('row').slice(1)).toHaveLength(3);
+
+      // Search by KPI name
+      const searchBox = within(diagnosis).getByRole('searchbox', { name: 'Search diagnosed KPIs' });
+      await user.type(searchBox, 'No Show');
+      expect(within(within(diagnosis).getByRole('table')).getAllByRole('row').slice(1)).toHaveLength(1);
+      expect(within(diagnosis).getByRole('button', { name: 'No Show Rate' })).toBeInTheDocument();
+    });
   });
 });
+

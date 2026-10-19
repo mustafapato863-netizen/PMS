@@ -6,8 +6,10 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  Compass,
   HelpCircle,
   Layers,
+  Sparkles,
   Target,
   TrendingDown,
   TrendingUp,
@@ -32,8 +34,8 @@ export interface InsightsSummaryStripProps {
 /**
  * High-Level Performance & Breakdown Summary for the Insights Workspace.
  *
- * Provides executive KPI cards (Team Score, Target Gap, Analyzed KPIs),
- * a visual KPI health distribution bar (On Track, At Risk, Critical),
+ * Provides executive KPI cards (Team Score, Target Gap, Analyzed KPIs + Recovery Potential),
+ * a visual KPI health distribution bar (On Track, At Risk, Critical) with Decision Focus,
  * and an interactive Quick Help popover in the header explaining metrics,
  * thresholds, and recommended actions.
  */
@@ -95,6 +97,19 @@ export default function InsightsSummaryStrip({
   const onTrackPct = totalScored > 0 ? (onTrackCount / totalScored) * 100 : 0;
   const atRiskPct = totalScored > 0 ? (atRiskCount / totalScored) * 100 : 0;
   const criticalPct = totalScored > 0 ? (criticalCount / totalScored) * 100 : 0;
+
+  // Score Recovery Potential from negative KPI effects
+  const rowNegativeEffectSum = scored.reduce(
+    (sum, row) => sum + (row.effect_points !== null && row.effect_points < 0 ? Math.abs(row.effect_points) : 0),
+    0
+  );
+  const rawRecoverable =
+    rowNegativeEffectSum > 0
+      ? rowNegativeEffectSum
+      : summary?.weighted_negative_impact && summary.weighted_negative_impact > 0
+        ? summary.weighted_negative_impact
+        : 0;
+  const recoverablePoints = Math.round(rawRecoverable * 10) / 10;
 
   const [activeAlertIndex, setActiveAlertIndex] = useState(0);
   const totalAlerts = criticalInsights.length;
@@ -169,7 +184,7 @@ export default function InsightsSummaryStrip({
                     canonical weighted roll-up of authorized KPI actuals against their targets for the
                     selected period and scope.
                   </p>
-                  <div className="mt-1.5 flex flex-col gap-1 pl-1 text-[11px]">
+                  <div className="mt-1.5 flex flex-col gap-1 pl-1 text-xs">
                     <div className="flex items-center gap-1.5">
                       <span className="size-2 rounded-full bg-emerald-500" />
                       <span><strong>On Track (≥100%)</strong>: Meeting or beating benchmark</span>
@@ -201,7 +216,7 @@ export default function InsightsSummaryStrip({
                   <strong className="block font-bold text-[var(--insights-heading)]">
                     3. What action should you take?
                   </strong>
-                  <ul className="mt-1 list-disc pl-4 text-[11px] space-y-0.5">
+                  <ul className="mt-1 list-disc pl-4 text-xs space-y-0.5">
                     <li>Inspect Critical and At-Risk rows in the <em>KPI diagnosis</em> table below.</li>
                     <li>Check <em>People to review</em> to see specific team members below target.</li>
                     <li>Create corrective follow-up actions directly from the <em>Actions</em> section.</li>
@@ -234,7 +249,7 @@ export default function InsightsSummaryStrip({
             </span>
             {grade && gradePalette && (
               <span
-                className="inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-bold"
+                className="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-bold"
                 style={{
                   backgroundColor: gradePalette.background,
                   color: gradePalette.text,
@@ -280,7 +295,7 @@ export default function InsightsSummaryStrip({
               <Target size={14} className="text-indigo-500" aria-hidden="true" />
               <span>Target Benchmark</span>
             </span>
-            <span className="text-[11px] font-medium text-[var(--text-muted)]">
+            <span className="text-xs font-medium text-[var(--text-muted)]">
               Goal: {target.toFixed(1)}%
             </span>
           </div>
@@ -310,16 +325,28 @@ export default function InsightsSummaryStrip({
 
         {/* Card 3: Analyzed KPIs & Scope Health */}
         <div className="flex flex-col justify-between rounded-xl border border-[var(--insights-card-border)] bg-[var(--bg-raised)] p-4 shadow-sm sm:col-span-2 lg:col-span-1">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-2">
             <span className="flex items-center gap-1.5 text-xs font-semibold text-[var(--text-muted)]">
               <Layers size={14} className="text-teal-500" aria-hidden="true" />
               <span>Analyzed KPIs</span>
             </span>
-            {summary?.coverage_percent !== null && summary?.coverage_percent !== undefined && (
-              <span className="text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
-                {summary.coverage_percent}% coverage
-              </span>
-            )}
+            <div className="flex items-center gap-1.5">
+              {recoverablePoints > 0 && (
+                <span
+                  data-testid="recovery-potential-badge"
+                  title="Estimated score points recoverable if below-target employees reach benchmark"
+                  className="inline-flex items-center gap-1 rounded-full bg-indigo-500/10 px-2 py-0.5 text-xs font-semibold text-indigo-600 dark:text-indigo-300"
+                >
+                  <Sparkles size={11} aria-hidden="true" />
+                  +{recoverablePoints.toFixed(1)} pts recoverable
+                </span>
+              )}
+              {summary?.coverage_percent !== null && summary?.coverage_percent !== undefined && (
+                <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                  {summary.coverage_percent}% coverage
+                </span>
+              )}
+            </div>
           </div>
           <div className="my-2 flex items-baseline gap-2">
             <strong className="text-[28px] font-bold tabular-nums text-[var(--insights-heading)]">
@@ -333,7 +360,7 @@ export default function InsightsSummaryStrip({
         </div>
       </div>
 
-      {/* ── Breakdown Summary: KPI Health Distribution Bar ── */}
+      {/* ── Breakdown Summary: KPI Health Distribution Bar & Decision Focus ── */}
       <div className="flex flex-col gap-2.5 rounded-xl border border-[var(--insights-card-border)] bg-[var(--bg-raised)] p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <span className="text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)]">
@@ -392,6 +419,42 @@ export default function InsightsSummaryStrip({
             <div className="w-full bg-[var(--text-muted)] opacity-20" />
           )}
         </div>
+
+        {/* Decision Focus Callout */}
+        {(story?.recommended_focus || story?.primary_driver) && (
+          <div
+            data-testid="recommended-focus-callout"
+            className="mt-1 flex flex-wrap items-center justify-between gap-2 border-t border-[var(--insights-card-border)] pt-2.5 text-xs text-[var(--text-secondary)]"
+          >
+            {story?.recommended_focus && (
+              <span className="flex items-center gap-1.5">
+                <Compass size={13} className="shrink-0 text-[var(--insights-accent)]" aria-hidden="true" />
+                <span>
+                  <strong className="font-semibold text-[var(--insights-heading)]">Recommended focus:</strong>{' '}
+                  {story.recommended_focus}
+                </span>
+              </span>
+            )}
+            {story?.primary_driver && (
+              <span className="inline-flex items-center gap-1 rounded-md bg-[var(--insights-chip-bg)] px-2 py-0.5 text-xs font-medium text-[var(--text-secondary)]">
+                <span>Primary driver:</span>
+                <strong className="font-semibold text-[var(--insights-heading)]">{story.primary_driver}</strong>
+                {story.primary_driver_impact !== null && story.primary_driver_impact !== undefined && (
+                  <span
+                    className={
+                      story.primary_driver_impact < 0
+                        ? 'font-semibold text-rose-600 dark:text-rose-400'
+                        : 'font-semibold text-emerald-600 dark:text-emerald-400'
+                    }
+                  >
+                    ({story.primary_driver_impact > 0 ? '+' : ''}
+                    {story.primary_driver_impact.toFixed(1)} pts)
+                  </span>
+                )}
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* ── Critical Alerts Action Strip with Multi-Alert Browse ── */}
@@ -424,7 +487,7 @@ export default function InsightsSummaryStrip({
                 >
                   <ChevronLeft size={13} aria-hidden="true" />
                 </button>
-                <span className="tabular-nums px-1 text-[11px]">
+                <span className="tabular-nums px-1 text-xs">
                   {safeAlertIndex + 1} of {totalAlerts}
                 </span>
                 <button
@@ -459,3 +522,4 @@ export default function InsightsSummaryStrip({
     </section>
   );
 }
+

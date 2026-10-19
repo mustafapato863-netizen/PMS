@@ -1,5 +1,21 @@
-import { Activity, BarChart3, Calendar, ChartNoAxesColumnIncreasing, Layers, Target, TrendingDown, TrendingUp, Upload, Users, type LucideIcon } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import {
+  Activity,
+  AlertTriangle,
+  BarChart3,
+  Calendar,
+  ChartNoAxesColumnIncreasing,
+  CheckCircle2,
+  HelpCircle,
+  Layers,
+  Target,
+  TrendingDown,
+  TrendingUp,
+  Upload,
+  Users,
+  X,
+  type LucideIcon,
+} from 'lucide-react';
 import { getGradeTone } from '../../../constants/grades';
 import type { ExecutiveSummary } from '../../../features/executive/types';
 import { arrow, fmtDate, fmtScore, fmtSigned, scoreTone, toneColor } from '../../../features/executive/format';
@@ -28,10 +44,39 @@ const EYEBROW: Record<ExecutiveSummary['scope']['view'], { label: string; icon: 
   function: { label: 'Function performance', icon: Layers },
 };
 
-
-
 export default function ExecutiveHero({ summary }: { summary: ExecutiveSummary }) {
   const { hero, period, trend, scope, data_status: status, meta } = summary;
+  const [isHelpOpen, setIsHelpOpen] = useState(false);
+  const helpRef = useRef<HTMLDivElement>(null);
+  const helpBtnRef = useRef<HTMLButtonElement>(null);
+  const helpDialogId = useId();
+
+  useEffect(() => {
+    if (!isHelpOpen) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsHelpOpen(false);
+        helpBtnRef.current?.focus();
+      }
+    };
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        helpRef.current &&
+        !helpRef.current.contains(event.target as Node) &&
+        helpBtnRef.current &&
+        !helpBtnRef.current.contains(event.target as Node)
+      ) {
+        setIsHelpOpen(false);
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isHelpOpen]);
+
   const tone = getGradeTone(hero.score);
   const eyebrow = EYEBROW[scope.view];
   const EyebrowIcon = eyebrow.icon;
@@ -46,17 +91,124 @@ export default function ExecutiveHero({ summary }: { summary: ExecutiveSummary }
   const statCount = (isFunction ? 3 : 4) + (comparison?.score != null ? 1 : 0);
   const chartTitle = scope.view === 'corporate' ? 'Company score — last 6 months' : scope.view === 'managerial' ? 'Team score — last 6 months' : `${hero.label} score — last 6 months`;
 
+  const scoredTeams = summary.teams.filter((t) => t.score !== null);
+  const atRiskTeamsCount = scoredTeams.filter((t) => (t.score ?? 0) < 90).length;
+  const healthyTeamsCount = scoredTeams.filter((t) => (t.score ?? 0) >= 90).length;
+
   return (
     <section aria-labelledby="exec-hero-title" className="grid gap-[24px] rounded-[22px] border border-[var(--insights-summary-border)] bg-[var(--insights-summary-bg)] p-[18px] shadow-[var(--insights-summary-shadow)] sm:p-[26px] xl:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
       <div className="flex min-w-0 flex-col gap-[20px]">
-        <div className="flex flex-wrap items-center gap-[8px]">
-          <span aria-hidden="true" className="flex size-[40px] items-center justify-center rounded-[12px] bg-[var(--insights-accent-tag)]">
-            <EyebrowIcon className="size-[23px] text-[var(--insights-accent)]" strokeWidth={1.8} />
-          </span>
-          <span className="text-xs font-semibold text-[var(--text-muted)]">{scope.view === 'function' ? `${hero.label} function` : eyebrow.label}</span>
-          <GradePill score={hero.score} className="!px-[12px] !py-[5px] !text-[12px]" />
-          {scope.view === 'function' && summary.highlights.most_improved?.name === hero.label && <StatusPill tone="success" icon={TrendingUp}>Most improved</StatusPill>}
+        <div className="flex flex-wrap items-center justify-between gap-[8px]">
+          <div className="flex flex-wrap items-center gap-[8px]">
+            <span aria-hidden="true" className="flex size-[40px] items-center justify-center rounded-[12px] bg-[var(--insights-accent-tag)]">
+              <EyebrowIcon className="size-[23px] text-[var(--insights-accent)]" strokeWidth={1.8} />
+            </span>
+            <span className="text-xs font-semibold text-[var(--text-muted)]">{scope.view === 'function' ? `${hero.label} function` : eyebrow.label}</span>
+            <GradePill score={hero.score} className="!px-[12px] !py-[5px] !text-[12px]" />
+            {hero.score !== null && (
+              hero.score >= 90 ? (
+                <StatusPill tone="success" icon={CheckCircle2}>Healthy benchmark</StatusPill>
+              ) : hero.score >= 80 ? (
+                <StatusPill tone="warning" icon={AlertTriangle}>Needs attention</StatusPill>
+              ) : (
+                <StatusPill tone="danger" icon={AlertTriangle}>Below threshold</StatusPill>
+              )
+            )}
+            {scope.view === 'function' && summary.highlights.most_improved?.name === hero.label && <StatusPill tone="success" icon={TrendingUp}>Most improved</StatusPill>}
+          </div>
+
+          {/* Quick Help & Executive Decision Guide */}
+          <div className="relative">
+            <button
+              ref={helpBtnRef}
+              type="button"
+              onClick={() => setIsHelpOpen((prev) => !prev)}
+              aria-expanded={isHelpOpen}
+              aria-controls={isHelpOpen ? helpDialogId : undefined}
+              aria-haspopup="dialog"
+              aria-label="Quick help and executive guide"
+              className="inline-flex items-center gap-[6px] rounded-[10px] border border-[var(--exec-card-border)] bg-[var(--bg-surface)] px-[10px] py-[6px] text-xs font-semibold text-[var(--text-secondary)] transition hover:border-[var(--insights-accent-border)] hover:text-[var(--insights-heading)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--insights-accent)]"
+            >
+              <HelpCircle className="size-[14px] text-[var(--insights-accent)]" aria-hidden="true" />
+              <span>Quick Help</span>
+            </button>
+
+            {isHelpOpen && (
+              <div
+                ref={helpRef}
+                id={helpDialogId}
+                role="dialog"
+                aria-modal="true"
+                aria-label="Quick help and executive guide"
+                className="absolute right-0 top-full z-40 mt-[8px] w-[340px] rounded-[14px] border border-[var(--exec-card-border)] bg-[var(--bg-surface)] p-[16px] text-left shadow-xl sm:w-[390px]"
+              >
+                <div className="flex items-center justify-between border-b border-[var(--exec-card-border)] pb-[10px]">
+                  <span className="flex items-center gap-[6px] text-[14px] font-bold text-[var(--insights-heading)]">
+                    <HelpCircle className="size-[16px] text-[var(--insights-accent)]" aria-hidden="true" />
+                    Executive Summary Guide
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setIsHelpOpen(false)}
+                    aria-label="Close executive guide"
+                    className="rounded-[6px] p-[4px] text-[var(--text-muted)] hover:bg-[var(--exec-chip-bg)] hover:text-[var(--text-primary)]"
+                  >
+                    <X className="size-[15px]" aria-hidden="true" />
+                  </button>
+                </div>
+
+                <div className="mt-[12px] flex flex-col gap-[12px] text-xs leading-relaxed text-[var(--text-secondary)]">
+                  <div>
+                    <strong className="block font-bold text-[var(--insights-heading)]">
+                      1. What is happening?
+                    </strong>
+                    <p className="mt-[4px]">
+                      Scores represent the headcount-weighted rollup of employee KPI achievements (capped at 100%).
+                    </p>
+                    <div className="mt-[6px] grid grid-cols-2 gap-[4px] rounded-[8px] bg-[var(--exec-tile-bg)] p-[8px] text-xs">
+                      <span><strong>Grade A:</strong> 95% – 100%</span>
+                      <span><strong>Grade B:</strong> 90% – 94.9%</span>
+                      <span><strong>Grade C:</strong> 80% – 89.9%</span>
+                      <span><strong>Grade D:</strong> 70% – 79.9%</span>
+                      <span className="col-span-2"><strong>Grade E:</strong> Below 70% (Critical intervention)</span>
+                    </div>
+                  </div>
+
+                  <div>
+                    <strong className="block font-bold text-[var(--insights-heading)]">
+                      2. Why does it matter?
+                    </strong>
+                    <p className="mt-[4px]">
+                      <strong>Gap</strong> measures distance from the 100% target benchmark, while period-over-period change highlights momentum. Teams or employees scoring under <strong>90%</strong> (Grades C, D, E) are flagged for review.
+                    </p>
+                  </div>
+
+                  <div>
+                    <strong className="block font-bold text-[var(--insights-heading)]">
+                      3. What action should you take?
+                    </strong>
+                    <ul className="mt-[4px] list-disc space-y-[3px] pl-[16px] text-xs">
+                      <li>Inspect <em>What moved the score</em> to isolate negative KPI drivers.</li>
+                      <li>Drill into <em>Teams at risk</em> and <em>Employees below target (&lt;90%)</em>.</li>
+                      <li>Verify that lagging KPIs and employees have active <em>Corrective actions</em>.</li>
+                    </ul>
+                  </div>
+                </div>
+
+                <div className="mt-[12px] border-t border-[var(--exec-card-border)] pt-[10px] text-right">
+                  <button
+                    type="button"
+                    onClick={() => setIsHelpOpen(false)}
+                    className="rounded-[8px] bg-[var(--insights-accent)] px-[12px] py-[6px] text-xs font-semibold text-white transition hover:opacity-90"
+                  >
+                    Got it
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
+
         <h2 id="exec-hero-title" className="text-[clamp(22px,2vw,28px)] font-bold leading-[1.22] tracking-[-0.035em] text-[var(--insights-heading)]">{heroHeadline(summary)}</h2>
         {narrative && <p className="text-[14px] leading-[1.7] text-[var(--text-secondary)]">{narrative}</p>}
         <div className={`grid grid-cols-2 gap-[10px] ${statCount === 3 || statCount === 5 ? 'sm:grid-cols-3' : 'sm:grid-cols-4'}`}>
@@ -88,6 +240,16 @@ export default function ExecutiveHero({ summary }: { summary: ExecutiveSummary }
           {scope.view === 'corporate'
             ? <Chip icon={Layers}>{hero.functions_count} functions · {hero.teams_count} teams</Chip>
             : scope.view === 'function' ? <Chip icon={Layers}>{hero.teams_count} teams</Chip> : null}
+          {scope.view !== 'managerial' && scoredTeams.length > 0 && (
+            <Chip icon={CheckCircle2}>
+              {healthyTeamsCount} of {scoredTeams.length} teams ≥90%
+            </Chip>
+          )}
+          {scope.view !== 'managerial' && atRiskTeamsCount > 0 && (
+            <Chip icon={AlertTriangle}>
+              {atRiskTeamsCount} {atRiskTeamsCount === 1 ? 'team' : 'teams'} at risk (&lt;90%)
+            </Chip>
+          )}
           {upload
             ? <Chip icon={Upload}>Data uploaded {fmtDate(upload.uploaded_at)}</Chip>
             : <Chip icon={Calendar}>{coveredPeriodLabel(period.effective, period.range)} data</Chip>}
@@ -97,3 +259,4 @@ export default function ExecutiveHero({ summary }: { summary: ExecutiveSummary }
     </section>
   );
 }
+

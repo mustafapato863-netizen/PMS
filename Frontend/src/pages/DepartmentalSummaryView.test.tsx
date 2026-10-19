@@ -330,4 +330,23 @@ describe('fallback and empty states', () => {
     expect(options[0]).toEqual({ value: '2026-07', label: 'July 2026 (no data)' });
     expect(options[1]).toEqual({ value: '2026-06', label: 'June 2026' });
   });
+
+  it('opens and closes the Executive Summary Quick Help guide popover in ExecutiveHero', () => {
+    renderAt();
+    const helpBtn = screen.getByRole('button', { name: 'Quick help and executive guide' });
+    expect(helpBtn).toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: 'Quick help and executive guide' })).not.toBeInTheDocument();
+
+    fireEvent.click(helpBtn);
+    const dialog = screen.getByRole('dialog', { name: 'Quick help and executive guide' });
+    expect(dialog).toBeInTheDocument();
+    expect(dialog).toHaveTextContent('Executive Summary Guide');
+    expect(dialog).toHaveTextContent('1. What is happening?');
+    expect(dialog).toHaveTextContent('2. Why does it matter?');
+    expect(dialog).toHaveTextContent('3. What action should you take?');
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('dialog', { name: 'Quick help and executive guide' })).not.toBeInTheDocument();
+  });
 });
+

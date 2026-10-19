@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { Activity } from 'lucide-react';
-import type { InsightKpiDiagnosisRow } from '../../../features/insights/types';
+import { Activity, Search, X } from 'lucide-react';
+import type { InsightKpiDiagnosisRow, InsightKpiStatus } from '../../../features/insights/types';
 import { SectionCard, SectionHeader } from './InsightsOverviewPrimitives';
 import { KPI_STATUS_LABEL, STATUS_CLASS, formatEffect, formatKpiValue, formatTarget } from './kpiDiagnosisFormat';
 
@@ -47,11 +47,31 @@ export default function KpiDiagnosisTable({
   onSelect: (key: string | null) => void;
 }) {
   const [team, setTeam] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<InsightKpiStatus | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
   const [showAll, setShowAll] = useState(false);
+
   const teams = [...new Set(rows.flatMap((row) => row.teams))].sort((a, b) => a.localeCompare(b));
   const multiTeam = teams.length > 1;
-  const filtered = team === null ? rows : rows.filter((row) => row.teams.includes(team));
+
+  const teamScoped = team === null ? rows : rows.filter((row) => row.teams.includes(team));
+  const criticalCount = teamScoped.filter((row) => row.status === 'critical').length;
+  const atRiskCount = teamScoped.filter((row) => row.status === 'at_risk').length;
+  const onTrackCount = teamScoped.filter((row) => row.status === 'on_track').length;
+
+  const trimmedQuery = searchQuery.trim().toLowerCase();
+  const filtered = teamScoped.filter((row) => {
+    if (statusFilter !== null && row.status !== statusFilter) return false;
+    if (trimmedQuery) {
+      const matchesLabel = row.label.toLowerCase().includes(trimmedQuery);
+      const matchesTeam = row.teams.some((t) => t.toLowerCase().includes(trimmedQuery));
+      if (!matchesLabel && !matchesTeam) return false;
+    }
+    return true;
+  });
+
   const visible = multiTeam && !showAll ? filtered.slice(0, TOP_ROWS) : filtered;
+  const hasExtraFilter = statusFilter !== null || trimmedQuery.length > 0;
 
   return (
     <SectionCard labelledBy="kpi-diagnosis-title" className="gap-[16px] py-[20px]">
@@ -66,26 +86,105 @@ export default function KpiDiagnosisTable({
         <p className="py-[24px] text-center text-[13px] text-[var(--text-muted)]">No scored KPIs in this scope.</p>
       ) : (
         <>
-          {multiTeam && (
-            <div role="group" aria-label="Filter KPIs by team" className="flex flex-wrap gap-[8px]">
-              <button type="button" aria-pressed={team === null} onClick={() => setTeam(null)} className={chipClass(team === null)}>
-                All teams
-              </button>
-              {teams.map((name) => (
-                <button
-                  key={name}
-                  type="button"
-                  aria-pressed={team === name}
-                  onClick={() => setTeam(team === name ? null : name)}
-                  className={chipClass(team === name)}
-                >
-                  {name}
+          <div className="flex flex-col gap-[10px]">
+            {multiTeam && (
+              <div role="group" aria-label="Filter KPIs by team" className="flex flex-wrap gap-[8px]">
+                <button type="button" aria-pressed={team === null} onClick={() => setTeam(null)} className={chipClass(team === null)}>
+                  All teams
                 </button>
-              ))}
+                {teams.map((name) => (
+                  <button
+                    key={name}
+                    type="button"
+                    aria-pressed={team === name}
+                    onClick={() => setTeam(team === name ? null : name)}
+                    className={chipClass(team === name)}
+                  >
+                    {name}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <div className="flex flex-wrap items-center justify-between gap-[10px]">
+              <div role="group" aria-label="Filter KPIs by status" className="flex flex-wrap items-center gap-[6px]">
+                <button
+                  type="button"
+                  aria-pressed={statusFilter === null}
+                  aria-label="Filter by All statuses"
+                  onClick={() => setStatusFilter(null)}
+                  className={chipClass(statusFilter === null)}
+                >
+                  All statuses ({teamScoped.length})
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={statusFilter === 'critical'}
+                  aria-label="Filter by Critical status"
+                  onClick={() => setStatusFilter(statusFilter === 'critical' ? null : 'critical')}
+                  className={chipClass(statusFilter === 'critical')}
+                >
+                  Critical ({criticalCount})
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={statusFilter === 'at_risk'}
+                  aria-label="Filter by At risk status"
+                  onClick={() => setStatusFilter(statusFilter === 'at_risk' ? null : 'at_risk')}
+                  className={chipClass(statusFilter === 'at_risk')}
+                >
+                  At risk ({atRiskCount})
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={statusFilter === 'on_track'}
+                  aria-label="Filter by On target status"
+                  onClick={() => setStatusFilter(statusFilter === 'on_track' ? null : 'on_track')}
+                  className={chipClass(statusFilter === 'on_track')}
+                >
+                  On target ({onTrackCount})
+                </button>
+              </div>
+
+              <div className="relative min-w-[200px] flex-1 sm:max-w-[260px]">
+                <Search aria-hidden="true" className="pointer-events-none absolute left-[10px] top-1/2 size-[14px] -translate-y-1/2 text-[var(--text-muted)]" />
+                <input
+                  type="search"
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  aria-label="Search diagnosed KPIs"
+                  placeholder="Search KPI or team..."
+                  className="w-full rounded-lg border border-[var(--insights-row-border)] bg-[var(--bg-surface)] py-[5px] pl-[30px] pr-[28px] text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    aria-label="Clear KPI diagnosis search"
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-[8px] top-1/2 -translate-y-1/2 rounded p-[2px] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                  >
+                    <X aria-hidden="true" className="size-[13px]" />
+                  </button>
+                )}
+              </div>
             </div>
-          )}
+          </div>
+
           {filtered.length === 0 ? (
-            <p className="py-[24px] text-center text-[13px] text-[var(--text-muted)]">No scored KPIs for {team}.</p>
+            hasExtraFilter ? (
+              <div className="flex flex-wrap items-center justify-center gap-[10px] py-[20px] text-center text-[13px] text-[var(--text-muted)]">
+                <span>No scored KPIs match the active filter.</span>
+                <button
+                  type="button"
+                  onClick={() => { setStatusFilter(null); setSearchQuery(''); }}
+                  className="font-semibold text-blue-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                >
+                  Reset diagnosis filters
+                </button>
+              </div>
+            ) : (
+              <p className="py-[24px] text-center text-[13px] text-[var(--text-muted)]">No scored KPIs for {team}.</p>
+            )
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full min-w-[760px] text-left text-[13px]">
@@ -182,3 +281,4 @@ export default function KpiDiagnosisTable({
     </SectionCard>
   );
 }
+

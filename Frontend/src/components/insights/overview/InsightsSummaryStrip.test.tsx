@@ -290,4 +290,28 @@ describe('InsightsSummaryStrip (High-Level Performance & Breakdown Summary)', ()
     expect(section).toHaveTextContent('No previous month');
     expect(section).toHaveTextContent('0 of 0 KPIs below target');
   });
+
+  it('displays score recovery potential badge and recommended decision focus callout', () => {
+    render(
+      <InsightsSummaryStrip
+        story={mockStory}
+        rows={mockRows}
+        criticalInsights={[]}
+        onOpenInsight={vi.fn()}
+      />
+    );
+
+    // attendance (-0.4) + aht (-1.8) = 2.2 pts recoverable
+    const recoveryBadge = screen.getByTestId('recovery-potential-badge');
+    expect(recoveryBadge).toBeInTheDocument();
+    expect(recoveryBadge).toHaveTextContent('+2.2 pts recoverable');
+
+    const focusCallout = screen.getByTestId('recommended-focus-callout');
+    expect(focusCallout).toBeInTheDocument();
+    expect(focusCallout).toHaveTextContent('Recommended focus:');
+    expect(focusCallout).toHaveTextContent('Focus on Outbound reachability');
+    expect(focusCallout).toHaveTextContent('Booking Rate');
+    expect(focusCallout).toHaveTextContent('(+1.5 pts)');
+  });
 });
+
