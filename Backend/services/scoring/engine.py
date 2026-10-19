@@ -330,11 +330,11 @@ def contribution(
         weight: Allocated weight for this KPI (0-1 scale)
 
     Returns:
-        Contribution (achievement * weight) or None if achievement is None.
+        Contribution capped at the KPI's weight, or None if achievement is None.
     """
     if achievement_val is None or _is_none_or_nan(achievement_val):
         return None
-    return float(achievement_val) * float(weight)
+    return min(float(achievement_val), 1.0) * float(weight)
 
 
 def score(
@@ -397,9 +397,9 @@ def score(
             measured_count += 1
             measured_weight += w
             if c is not None and not _is_none_or_nan(c):
-                earned += float(c)
+                earned += min(float(c), w)
             elif ach is not None and not _is_none_or_nan(ach):
-                earned += float(ach) * w
+                earned += contribution(float(ach), w) or 0.0
 
     coverage = (measured_weight / configured_weight) if configured_weight > 0 else None
 

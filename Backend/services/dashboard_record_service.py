@@ -98,10 +98,10 @@ def _pinned_schema_record(item, employee, team_name: str, basis: dict, item_kpi_
 
 
 def _operational_outbound_evidence(team: str | None, values: list) -> bool:
-    """Ordinary Outbound evidence caps the final total, not each KPI.
+    """Ordinary Outbound evidence may retain raw overachievement for diagnostics.
 
-    The legacy builder marks that evidence with ``cap_achievement`` false.
-    A positive Productivity weight is the reference contract and stays capped.
+    The legacy builder marks that evidence with ``cap_achievement`` false. Its
+    weighted contribution is still capped at the configured KPI weight.
     """
     if team != "Outbound":
         return False
@@ -185,10 +185,9 @@ def _normalise_kpi_values(
     """Return KPI evidence on one consistent achievement/contribution scale.
 
     Older rows can contain an achievement ratio above 1 and a contribution above
-    the configured KPI weight. Teams other than operational Outbound cap every
-    KPI, including rows written by an older ``uncapped`` configuration, so cards,
-    analysis, exports, and score calculations cannot disagree. Operational
-    Outbound keeps an over-target ratio and caps the final total.
+    the configured KPI weight. Weighted contributions are capped for every team,
+    including operational Outbound. Raw achievement ratios may remain above 1 in
+    Outbound diagnostics.
 
     Direction is resolved through ``utils.kpi_direction`` (record config ->
     team config -> persisted -> unambiguous global match -> flagged default)
@@ -243,10 +242,7 @@ def _normalise_kpi_values(
         if contribution > 1.0 and not operational_outbound:
             contribution /= 100.0
         contribution = max(contribution, 0.0)
-        if operational_outbound:
-            contribution = ratio * weight
-        else:
-            contribution = min(contribution, max(weight, 0.0))
+        contribution = min(contribution, max(weight, 0.0))
         if definition is not None and definition.get("score_formula", "target_ratio") == "target_ratio":
             corrected = flipped_contribution_fix(
                 value.get("actual_value"),
@@ -259,6 +255,7 @@ def _normalise_kpi_values(
             if corrected is not None:
                 contribution = corrected
                 value["direction_corrected"] = True
+        contribution = min(contribution, max(weight, 0.0))
 
         value["achievement_ratio"] = ratio
         value["weight_applied"] = weight
@@ -650,4 +647,3 @@ class DashboardRecordService:
     def list_analysis_records(self):
         """Return the same canonical persisted records used by dashboards."""
         return self.list_records()
-

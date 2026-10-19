@@ -219,9 +219,6 @@ class BalancedScorecardService:
                 top_key = _value(top_value, "kpi_key") if top_value else None
                 top_kpi = next((kpi for kpi in perspective["kpis"] if kpi["kpi_key"] == top_key), None)
                 person["perspectives"][perspective["key"]] = {
-                    # Keep this employee-facing display uncapped for
-                    # compatibility; the historical formula exposed raw
-                    # persisted contributions even when they exceeded weight.
                     "score": contributor_score,
                     "weighted_contribution": contributor_result.earned if measured else None,
                     "measured_weight": contributor_result.measured_weight if measured else None,

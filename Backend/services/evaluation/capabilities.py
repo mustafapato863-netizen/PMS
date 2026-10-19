@@ -269,15 +269,15 @@ def _operational_decision(team_name: str, kpis: list[dict], importer_registered:
     if kind == "Outbound":
         reason = (
             "Outbound Employee uses the operational upload contract for this exact month. "
-            "Four achievement columns are scored and the final total is capped. "
-            "A row date does not select the reference workbook, a per-KPI cap, or Productivity. "
+            "Four achievement columns are scored, each contribution is capped at its weight, and the final total is capped. "
+            "A row date does not select the reference workbook or Productivity. "
             "Weight-only edits stay blocked, and a client flag cannot grant them."
         )
     else:
         reason = (
             "Inbound Employee uses the operational upload contract for this exact month. "
             "UTZ is scored when the row supplies it, including zero, and Abandon is scored when UTZ is missing. "
-            "AHT stays in minutes and lower-is-better. The final total is capped. "
+            "AHT stays in minutes and lower-is-better; each contribution and the final total are capped. "
             "Weight-only edits stay blocked, and a client flag cannot grant them."
         )
     return CapabilityDecision(edit_mode="full", reason=reason, weight_only_allowed=False)

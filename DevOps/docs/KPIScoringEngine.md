@@ -9,13 +9,13 @@ This document provides a detailed specification of the calculations, capping rul
 To align performance metrics across multiple teams, the scoring engine separates actual employee performance (Achievement) from the points added to their final performance rating (Contribution).
 
 ### KPI Achievement
-A percentage representing the raw ratio of an employee's actual performance relative to their configured target.
+A percentage representing the ratio of an employee's actual performance relative to their configured target.
 - **Direct KPIs:** Higher actuals are better (e.g. Attendance, Booking conversion).
 - **Inverse KPIs:** Lower actuals are better (e.g. AHT, Rejection rate, Error rate).
-- **Capped:** KPI Achievement is normalized and capped at 100% before it is stored, returned by the API, or displayed.
+- The raw achievement may remain above 100% in management and legacy diagnostic data.
 
 ### Effective Achievement
-The achievement score capped at `100%` before applying weight configurations:
+The achievement used to calculate a KPI's weighted contribution, capped at `100%`:
 $$\text{Effective Achievement} = \min(\text{KPI Achievement}, 100\%)$$
 
 ### KPI Weight
@@ -25,6 +25,7 @@ The maximum percentage share of the final score allocated to a given KPI (config
 The actual score points contributed to the Final Performance Score:
 $$\text{KPI Contribution} = \text{Effective Achievement} \times \text{KPI Weight}$$
 - A KPI Contribution can never exceed its configured weight share.
+- For example, a KPI with a `10%` weight and `120%` achievement contributes `10%`, not `12%`.
 
 ### Final Performance Score
 The sum of all individual KPI contributions:

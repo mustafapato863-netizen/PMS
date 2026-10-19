@@ -563,9 +563,9 @@ def _assert_operational_version_lines(version: TeamConfigurationVersion, team_na
                 f"{key} row selection does not match the operational upload contract.",
                 "row_selection",
             )
-        if line.get("cap_each") is True or line.get("capping") not in (None, "") or line.get("cap_achievement") is False:
+        if line.get("capping") not in (None, "") or line.get("cap_achievement") is False:
             _refuse_capability(
-                "Approved recomputation is refused for this monthly configuration. The operational contract caps the final total.",
+                "Approved recomputation is refused for this monthly configuration. The audited 100% KPI cap is turned off.",
                 "cap",
             )
         total += weight

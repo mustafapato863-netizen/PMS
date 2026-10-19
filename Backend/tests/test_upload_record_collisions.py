@@ -198,6 +198,7 @@ def test_score_from_ratio_scale_rows_is_capped_at_100_not_stored_unscaled():
     rows = [_KV(.6, .6), _KV(.4, .4), _KV(.5, .5), _KV(.3, .3), _KV(.12, .2)]
     assert DatabaseSeeder._score_from_kpi_rows(rows) == 100.0
     assert DatabaseSeeder._score_from_kpi_rows([_KV(.54, .6), _KV(.36, .4)]) == pytest.approx(90.0)
+    assert DatabaseSeeder._score_from_kpi_rows([_KV(.12, .1), _KV(.72, .9)]) == pytest.approx(82.0)
 
 
 def test_score_from_percent_scale_rows_stays_percent():

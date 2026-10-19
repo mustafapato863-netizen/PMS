@@ -78,20 +78,20 @@ _IN_ABANDON_ACH = 0.01 / (2.0 / 100.0)
 
 def _outbound_parts(weights: dict[str, float]) -> list[float]:
     return [
-        _ATTEND_ACH * weights["Attend"],
-        _BOOKING_ACH * weights["Booking"],
-        _QUALITY_ACH * weights["Quality"],
-        _OTHER_ACH * weights["Other"],
+        min(_ATTEND_ACH, 1.0) * weights["Attend"],
+        min(_BOOKING_ACH, 1.0) * weights["Booking"],
+        min(_QUALITY_ACH, 1.0) * weights["Quality"],
+        min(_OTHER_ACH, 1.0) * weights["Other"],
     ]
 
 
 def _inbound_parts(weights: dict[str, float], other_achievement: float, aht_achievement: float) -> list[float]:
     return [
-        _IN_ATTEND_ACH * weights["Attend"],
-        _IN_BOOKING_ACH * weights["Booking"],
-        _IN_QUALITY_ACH * weights["Quality"],
-        aht_achievement * weights["AHT"],
-        other_achievement * weights["Other"],
+        min(_IN_ATTEND_ACH, 1.0) * weights["Attend"],
+        min(_IN_BOOKING_ACH, 1.0) * weights["Booking"],
+        min(_IN_QUALITY_ACH, 1.0) * weights["Quality"],
+        min(aht_achievement, 1.0) * weights["AHT"],
+        min(other_achievement, 1.0) * weights["Other"],
     ]
 
 
@@ -340,15 +340,7 @@ def test_outbound_upload_keeps_one_contract_across_months(monkeypatch):
     monkeypatch.setattr("services.outbound_period_basis.canonical_outbound_basis", _reference_selected)
     service = _kpi_service()
     ordinary = _total(_outbound_parts(OUTBOUND_WEIGHTS))
-    capped_booking = _total([
-        _ATTEND_ACH * 0.70,
-        min(_BOOKING_ACH, 1.0) * 0.10,
-        _QUALITY_ACH * 0.10,
-        _OTHER_ACH * 0.10,
-    ])
-    assert ordinary == pytest.approx(65.0, abs=0.001)
-    assert capped_booking == pytest.approx(55.0, abs=0.001)
-    assert ordinary != capped_booking
+    assert ordinary == pytest.approx(55.0, abs=0.001)
 
     scores = {}
     for month in (3, 5, 7, 8, 9):
@@ -458,13 +450,7 @@ def test_operational_pin_keeps_a_present_productivity_actual_at_zero_weight():
     assert unknown.value.data["kpi_key"] == "Mystery"
 
 
-def test_operational_commit_keeps_over_target_booking_on_the_final_total():
-    """Stored evidence and the sync rescore keep 65 for an over-target Booking row.
-
-    The per-KPI cap would store achievement 1 and contribution 0.10, then the
-    rescore would total 55. After the operational pin the contribution is 0.20
-    against weight 0.10; treating that as the percent scale would store 0.65.
-    """
+def test_operational_commit_caps_over_target_booking_at_its_weight():
     from services.dashboard_record_service import _normalise_kpi_values
     from services.legacy_kpi_evidence import build_legacy_employee_kpi_values
     from services.operational_upload_contract import operational_lines
@@ -475,7 +461,7 @@ def test_operational_commit_keeps_over_target_booking_on_the_final_total():
     score, _grade_name, achievements, weights = service.calculate_performance("Outbound", row)
     expected = _total(_outbound_parts(OUTBOUND_WEIGHTS))
     assert score == pytest.approx(expected, abs=0.001)
-    assert expected == pytest.approx(65.0, abs=0.001)
+    assert expected == pytest.approx(55.0, abs=0.001)
 
     evidence = build_legacy_employee_kpi_values(
         "Outbound",
@@ -485,7 +471,7 @@ def test_operational_commit_keeps_over_target_booking_on_the_final_total():
         config={"kpis": []},
     )
     by_key = {item["kpi_key"]: item for item in evidence}
-    booking_contribution = _BOOKING_ACH * OUTBOUND_WEIGHTS["Booking"]
+    booking_contribution = min(_BOOKING_ACH, 1.0) * OUTBOUND_WEIGHTS["Booking"]
     assert by_key["Booking"]["achievement_ratio"] == pytest.approx(_BOOKING_ACH)
     assert by_key["Booking"]["achievement_ratio"] > 1
     assert by_key["Booking"]["contribution"] == pytest.approx(booking_contribution)
@@ -538,7 +524,7 @@ def test_operational_commit_keeps_over_target_booking_on_the_final_total():
     )
     pin_by_key = {item["kpi_key"]: item for item in pinned["rows"]}
     assert pin_by_key["Booking"]["contribution"] == pytest.approx(booking_contribution)
-    assert pin_by_key["Booking"]["contribution"] > pin_by_key["Booking"]["weight"]
+    assert pin_by_key["Booking"]["contribution"] == pytest.approx(pin_by_key["Booking"]["weight"])
     assert pinned["score"] == pytest.approx(expected, abs=0.001)
     pinned_rows = [
         SimpleNamespace(
@@ -570,11 +556,11 @@ def test_inbound_upload_selects_utilization_abandon_and_aht_minutes():
     june = _total(_inbound_parts(JUNE_INBOUND_WEIGHTS, _IN_UTZ_ACH, _IN_AHT_ACH))
     capped_aht = _total(_inbound_parts(INBOUND_WEIGHTS, _IN_UTZ_ACH, min(_IN_AHT_ACH, 1.0)))
     assert _IN_AHT_ACH == pytest.approx(1.25)
-    assert supplied == pytest.approx(66.25, abs=0.001)
-    assert zero_utz == pytest.approx(56.25, abs=0.001)
-    assert missing_utz == pytest.approx(61.25, abs=0.001)
+    assert supplied == pytest.approx(65.0, abs=0.001)
+    assert zero_utz == pytest.approx(55.0, abs=0.001)
+    assert missing_utz == pytest.approx(60.0, abs=0.001)
     assert zero_aht == pytest.approx(60.0, abs=0.001)
-    assert supplied != capped_aht
+    assert supplied == capped_aht
 
     score, _grade_name, achievements, weights = service.calculate_performance(
         "Inbound", _inbound_sheet(date(2026, 8, 1), utz=0.85),
@@ -628,7 +614,7 @@ def test_new_drafts_follow_the_operational_contract_and_leave_coding_alone(db):
         assert weights["Attendance"] == pytest.approx(0.70)
         assert weights["Quality"] == pytest.approx(quality)
         assert weights["Other"] == pytest.approx(other)
-        assert all(line.get("cap_each") is False for line in draft["lines"])
+        assert all(line.get("cap_each") is True for line in draft["lines"])
         assert "Productivity" not in weights
 
     june = world.workflow.open_draft(world.actor, outbound["id"], 2026, 6)
@@ -782,18 +768,18 @@ def test_admin_target_and_weight_edits_match_from_preview_through_rollback(db):
     fixed_attendance = 0.40
     target_score = _total([
         (_ATTEND_ACTUAL / fixed_attendance) * 0.70,
-        _BOOKING_ACH * 0.10,
+        min(_BOOKING_ACH, 1.0) * 0.10,
         _QUALITY_ACH * 0.10,
         _OTHER_ACH * 0.10,
     ])
     weight_score = _total([
-        _ATTEND_ACH * 0.40,
-        _BOOKING_ACH * 0.20,
-        _QUALITY_ACH * 0.20,
-        _OTHER_ACH * 0.20,
+        min(_ATTEND_ACH, 1.0) * 0.40,
+        min(_BOOKING_ACH, 1.0) * 0.20,
+        min(_QUALITY_ACH, 1.0) * 0.20,
+        min(_OTHER_ACH, 1.0) * 0.20,
     ])
-    assert target_score == pytest.approx(100.0, abs=0.001)
-    assert weight_score == pytest.approx(80.0, abs=0.001)
+    assert target_score == pytest.approx(90.0, abs=0.001)
+    assert weight_score == pytest.approx(60.0, abs=0.001)
 
     may_edited = world.workflow.edit_draft(
         world.actor, may_draft["id"], _edit_target(may_draft["lines"], "Attendance", fixed_attendance),
@@ -1246,11 +1232,11 @@ def test_operational_gate_rejects_identity_direction_cap_and_nonfinite_weights()
         require_approved_capability(_gate_version(5, lowered), team_name="Outbound", config=config, year=2026, month=5)
     assert _reason(direction) == "direction"
 
-    capped = _cloned(base)
-    capped[0]["cap_each"] = True
-    with pytest.raises(EvaluationError) as cap:
-        require_approved_capability(_gate_version(5, capped), team_name="Outbound", config=config, year=2026, month=5)
-    assert _reason(cap) == "cap"
+    legacy_cap_flag = _cloned(base)
+    legacy_cap_flag[0]["cap_each"] = False
+    require_approved_capability(
+        _gate_version(5, legacy_cap_flag), team_name="Outbound", config=config, year=2026, month=5,
+    )
     with pytest.raises(EvaluationError) as snapshot_cap:
         require_approved_capability(
             _gate_version(5, _cloned(base), cap="per_kpi"), team_name="Outbound", config=config, year=2026, month=5,

@@ -104,16 +104,14 @@ def test_scorecard_measurement_follows_persisted_contribution_presence():
     assert data["scorecard"]["state"] == "partial_data"
 
 
-def test_contributor_score_preserves_legacy_uncapped_display():
+def test_contributor_score_caps_each_kpi_at_its_weight():
     over_contributed = record("1", "A", 2025, 0.75, 0.3)
     data = BalancedScorecardService.build(
         [over_contributed], config(), "Test Team", "Managerial", "May", 2025,
     )
 
-    # Contributor cards historically displayed contribution / weight without
-    # capping, even though the BSC aggregate caps its persisted contribution.
     financial = data["contributors"][0]["perspectives"]["Financial"]
-    assert financial["score"] == pytest.approx(150.0)
+    assert financial["score"] == pytest.approx(100.0)
 
 
 def test_zero_weight_contribution_keeps_measured_state():

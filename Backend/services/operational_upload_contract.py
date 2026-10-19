@@ -103,7 +103,7 @@ def operational_lines(team: str, year, month) -> list[dict] | None:
             "target": None,
             "target_mode": "workbook",
             "unit": kpi.get("unit") or "%",
-            "cap_each": False,
+            "cap_each": True,
         }
         if kind == "Inbound" and key == "Other":
             line["row_selection"] = "utz_or_abandon"
@@ -172,11 +172,12 @@ def other_direction_for_row(raw: Mapping[str, Any] | None, line: Mapping[str, An
 
 
 def operational_achievement(actual: float, target: float, direction: str, *, kpi_key: str) -> float:
-    """Same ratios as ``KPIService`` for these teams. Individual KPIs are not capped.
+    """Same raw ratios as ``KPIService`` for these teams; weighted shares are capped.
 
     AHT at zero minutes is an achievement of zero, matching the upload service.
     Abandon (lower-is-better, not AHT) stays at 1 when the actual beats the target,
-    which is the upload service's inverse branch. Higher-is-better ratios may exceed 1.
+    which is the upload service's inverse branch.     Higher-is-better ratios may exceed 1, but they cannot earn more than their
+    configured weight in ``score_operational_lines``.
     """
     if target <= 0:
         return 0.0
@@ -313,7 +314,9 @@ def score_operational_lines(lines: list[dict], rows: list[dict]) -> list[dict]:
             state = "invalid_target"
         else:
             achievement = operational_achievement(actual, target, direction, kpi_key=key)
-            share = achievement * weight
+            from services.scoring.engine import contribution
+
+            share = contribution(achievement, weight)
             state = "measured"
             _require_json_finite(achievement, f"Achievement for {key}")
             _require_json_finite(share, f"Contribution for {key}")
@@ -386,7 +389,7 @@ def _monitoring_productivity(row: dict) -> dict:
 
 
 def final_total_score(scored: list[dict]) -> float | None:
-    """Cap the weighted total, not each KPI. Same rounding as upload scoring."""
+    """Sum per-KPI capped shares and cap the total. Same rounding as upload scoring."""
     if not scored:
         return None
     total = 0.0

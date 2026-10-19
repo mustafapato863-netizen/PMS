@@ -454,8 +454,8 @@ def build_legacy_employee_kpi_values(
             target = _target(actual, achievement, direction, fallback_target)
 
         # Recalculate achievement ratio dynamically from actual and target.
-        # Operational Outbound caps the final total, not each KPI. A positive
-        # Productivity weight is the reference contract and keeps the per-KPI cap.
+        # Preserve raw overachievement for Outbound diagnostics when its
+        # productivity KPI is not weighted, but cap each weighted contribution.
         cap_each = not (team == "Outbound" and _weight(weights, "Productivity") <= 0)
         if target > 0 and actual >= 0:
             if direction == "lower_better":
@@ -476,7 +476,7 @@ def build_legacy_employee_kpi_values(
             "target_value": target,
             "achievement_ratio": achievement,
             "weight_applied": weight,
-            "contribution": (min(achievement, 1.0) if cap_each else achievement) * weight,
+            "contribution": min(achievement, 1.0) * weight,
             "cap_achievement": cap_each,
         })
     if team == "Outbound":

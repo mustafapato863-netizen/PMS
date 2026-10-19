@@ -752,7 +752,7 @@ class DatabaseSeeder:
 
     @staticmethod
     def _final_total_cap(record, kv_list) -> bool:
-        """Operational Outbound caps the final total. Reference Productivity stays per KPI."""
+        """Operational Outbound caps its total; individual KPI shares are capped too."""
         if str(getattr(record, "team", "") or "") != "Outbound":
             return False
         for kv in kv_list:
@@ -767,17 +767,13 @@ class DatabaseSeeder:
         """0-100 record score from KPI contributions.
 
         Contributions arrive on the ratio scale (``achievement x weight``) or on
-        the percent scale (``achievement(0-100) x weight``). A capped ratio
-        contribution is at most its weight. Operational Outbound can exceed that
-        weight on one KPI; the total is still capped at 1 before it is stored
-        as 0-100. Percent-scale rows have a contribution above 1. The scale is
-        decided per record, not from the total: a total above 1.0 on the ratio
-        scale used to be stored unscaled (1.51-2.72 for the merged IP Elective
-        records).
+        the percent scale (``achievement(0-100) x weight``). Each contribution is
+        capped at its weight on either scale. The scale is decided per record,
+        not from the total: a total above 1.0 on the ratio scale used to be stored
+        unscaled (1.51-2.72 for the merged IP Elective records).
         """
-        contributions = [float(getattr(kv, "contribution", 0) or 0) for kv in kv_list]
         weights = [float(getattr(kv, "weight_applied", 0) or 0) for kv in kv_list]
-        total = sum(contributions)
+        contributions = [float(getattr(kv, "contribution", 0) or 0) for kv in kv_list]
         weights_are_ratios = all(weight <= 1.0 for weight in weights)
         within_weight = all(
             contribution <= weight * 1.0001 + 1e-9
@@ -785,6 +781,12 @@ class DatabaseSeeder:
         )
         modest_ratio = weights_are_ratios and all(contribution <= 1.0 for contribution in contributions)
         ratio_scale = (final_total_cap and weights_are_ratios) or modest_ratio or (within_weight and weights_are_ratios)
+        contribution_cap_scale = 1.0 if ratio_scale or not weights_are_ratios else 100.0
+        contributions = [
+            min(contribution, weight * contribution_cap_scale)
+            for contribution, weight in zip(contributions, weights)
+        ]
+        total = sum(contributions)
         score = min(total, 1.0) * 100.0 if ratio_scale else min(total, 100.0)
         return round(max(score, 0.0), 2)
 

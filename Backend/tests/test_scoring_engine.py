@@ -253,7 +253,17 @@ class TestPureFunctions:
     def test_contribution(self):
         assert contribution(0.8, 0.5) == 0.4
         assert contribution(1.0, 0.3) == 0.3
+        assert contribution(1.2, 0.1) == 0.1
         assert contribution(None, 0.5) is None
+
+    def test_score_caps_overachievement_at_each_kpis_weight(self):
+        res = score([
+            KPIResult(achievement=1.2, weight=0.1, contribution=0.12),
+            KPIResult(achievement=0.8, weight=0.9, contribution=0.72),
+        ])
+
+        assert res.score == pytest.approx(82.0)
+        assert res.earned == pytest.approx(0.82)
 
     def test_score_all_measured(self):
         kpis = [

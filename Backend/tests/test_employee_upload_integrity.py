@@ -113,6 +113,27 @@ def test_sales_kpi_evidence_preserves_volume_targets_and_contributions():
     assert evidence["Activity"]["contribution"] == pytest.approx(0.1)
 
 
+def test_outbound_overachievement_contribution_is_capped_at_weight():
+    evidence = build_legacy_employee_kpi_values(
+        "Outbound",
+        {
+            "A.Attend%": 0.8,
+            "T.Attend%": 0.5,
+            "A.Booking%": 0.4,
+            "T.Booking%": 0.5,
+            "A.QualityScore": 0.9,
+            "A.Reachability%": 0.7,
+        },
+        achievements={"Attend": 1.6},
+        weights={"Attendance": 0.1, "Booking": 0.3, "Quality": 0.3, "Other": 0.3},
+        config={"kpis": []},
+    )
+    attendance = next(item for item in evidence if item["kpi_key"] == "Attendance")
+
+    assert attendance["achievement_ratio"] == pytest.approx(1.6)
+    assert attendance["contribution"] == pytest.approx(0.1)
+
+
 def test_outbound_june_missing_quality_uses_reachability_weight():
     row = {
         "Date": datetime.datetime(2026, 6, 1),

@@ -142,7 +142,7 @@ def test_employee_override_beats_position_config():
 
     revenue = next(row for row in data["kpi_table"] if row["kpi_key"] == "revenue_achievement")
     assert result["config_rows"] == 2
-    assert revenue["score"] == 200.0
+    assert revenue["score"] == 100.0
     assert data["team"]["top_position"] == "Sales Manager"
     assert data["selection"]["config_scope_summary"]["employee_overrides"] == 1
     session.close()
@@ -190,7 +190,7 @@ def test_partial_employee_override_keeps_other_position_kpis():
     kpis = {row["kpi_key"]: row for row in data["kpi_table"]}
     assert result["config_rows"] == 3
     assert set(kpis) == {"revenue_achievement", "coaching_completion"}
-    assert kpis["revenue_achievement"]["score"] == 200.0
+    assert kpis["revenue_achievement"]["score"] == 100.0
     assert kpis["coaching_completion"]["score"] == 90.0
     assert data["scorecard"]["coverage"] == 1.0
     session.close()
@@ -261,7 +261,7 @@ def test_historical_month_uses_exact_period_config():
     may_score = next(row for row in may_data["kpi_table"] if row["kpi_key"] == "revenue_achievement")["score"]
     june_score = next(row for row in june_data["kpi_table"] if row["kpi_key"] == "revenue_achievement")["score"]
     assert may_score == 100.0
-    assert june_score == 200.0
+    assert june_score == 100.0
     assert may_data["selection"]["effective_month"] == "May"
     assert june_data["selection"]["effective_month"] == "June"
     session.close()
