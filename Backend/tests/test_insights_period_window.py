@@ -25,7 +25,7 @@ from services.insights_service import PERIOD_WINDOW_SECTIONS, InsightsService
 from services.planning_service import PlanningService
 
 PAGE_SECTIONS = (
-    "options", "comparison", "executive_story", "priority_insights", "people_contribution_analysis",
+    "summary", "options", "comparison", "executive_story", "priority_insights", "people_contribution_analysis",
     "kpi_trend", "kpi_diagnosis", "tracking_indicators",
 )
 MONTHS = ("January", "February", "March", "April", "May", "June", "July", "August", "September", "October",

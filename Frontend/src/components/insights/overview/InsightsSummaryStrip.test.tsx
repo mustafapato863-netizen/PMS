@@ -230,6 +230,46 @@ describe('InsightsSummaryStrip (High-Level Performance & Breakdown Summary)', ()
     expect(onOpen).toHaveBeenCalledWith(mockCriticalInsight);
   });
 
+  it('cycles through multiple critical alerts using next and previous buttons', async () => {
+    const user = userEvent.setup();
+    const onOpen = vi.fn();
+    const secondCritical: InsightItem = {
+      ...mockCriticalInsight,
+      id: 'crit-2',
+      title: 'Inbound Rejection Rate spiked',
+    };
+
+    render(
+      <InsightsSummaryStrip
+        story={mockStory}
+        rows={mockRows}
+        criticalInsights={[mockCriticalInsight, secondCritical]}
+        onOpenInsight={onOpen}
+      />
+    );
+
+    // Initial alert (1 of 2)
+    expect(screen.getByText(/2 critical alerts: AHT exceeded upper limit/i)).toBeInTheDocument();
+    expect(screen.getByText('1 of 2')).toBeInTheDocument();
+
+    // Click Next
+    const nextBtn = screen.getByRole('button', { name: 'Next alert' });
+    await user.click(nextBtn);
+    expect(screen.getByText(/2 critical alerts: Inbound Rejection Rate spiked/i)).toBeInTheDocument();
+    expect(screen.getByText('2 of 2')).toBeInTheDocument();
+
+    // Click View Details on second alert
+    const viewDetailsBtn = screen.getByRole('button', { name: 'View Details' });
+    await user.click(viewDetailsBtn);
+    expect(onOpen).toHaveBeenCalledWith(secondCritical);
+
+    // Click Prev
+    const prevBtn = screen.getByRole('button', { name: 'Previous alert' });
+    await user.click(prevBtn);
+    expect(screen.getByText(/2 critical alerts: AHT exceeded upper limit/i)).toBeInTheDocument();
+    expect(screen.getByText('1 of 2')).toBeInTheDocument();
+  });
+
   it('handles empty previous month and null scores gracefully', () => {
     render(
       <InsightsSummaryStrip

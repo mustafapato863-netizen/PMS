@@ -4,6 +4,8 @@ import {
   AlertTriangle,
   ArrowRight,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   HelpCircle,
   Layers,
   Target,
@@ -94,7 +96,10 @@ export default function InsightsSummaryStrip({
   const atRiskPct = totalScored > 0 ? (atRiskCount / totalScored) * 100 : 0;
   const criticalPct = totalScored > 0 ? (criticalCount / totalScored) * 100 : 0;
 
-  const first = criticalInsights[0];
+  const [activeAlertIndex, setActiveAlertIndex] = useState(0);
+  const totalAlerts = criticalInsights.length;
+  const safeAlertIndex = totalAlerts > 0 ? Math.min(activeAlertIndex, totalAlerts - 1) : 0;
+  const currentAlert = criticalInsights[safeAlertIndex] ?? criticalInsights[0];
 
   return (
     <section
@@ -389,27 +394,61 @@ export default function InsightsSummaryStrip({
         </div>
       </div>
 
-      {/* ── Critical Alerts Action Strip ── */}
-      {criticalInsights.length > 0 && first && (
+      {/* ── Critical Alerts Action Strip with Multi-Alert Browse ── */}
+      {totalAlerts > 0 && currentAlert && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-rose-500/25 bg-rose-500/10 px-4 py-3">
-          <button
-            type="button"
-            onClick={() => onOpenInsight(first)}
-            className="inline-flex items-center gap-2 text-left text-[13px] font-semibold text-rose-700 transition hover:underline dark:text-rose-300"
-          >
+          <div className="flex min-w-0 flex-1 items-center gap-2">
             <AlertTriangle size={15} className="shrink-0 text-rose-600 dark:text-rose-400" aria-hidden="true" />
-            <span>
-              {criticalInsights.length} critical {criticalInsights.length === 1 ? 'alert' : 'alerts'}: {first.title}
-            </span>
-          </button>
-          <button
-            type="button"
-            onClick={() => onOpenInsight(first)}
-            className="inline-flex items-center gap-1 rounded-lg border border-rose-500/30 bg-rose-500/15 px-3 py-1 text-xs font-bold text-rose-700 transition hover:bg-rose-500/25 dark:text-rose-200"
-          >
-            <span>View Details</span>
-            <ArrowRight size={13} aria-hidden="true" />
-          </button>
+            <button
+              type="button"
+              onClick={() => onOpenInsight(currentAlert)}
+              className="truncate text-left text-[13px] font-semibold text-rose-700 transition hover:underline dark:text-rose-300"
+            >
+              <span>
+                {totalAlerts} critical {totalAlerts === 1 ? 'alert' : 'alerts'}: {currentAlert.title}
+              </span>
+            </button>
+          </div>
+
+          <div className="flex shrink-0 items-center gap-2">
+            {totalAlerts > 1 && (
+              <div className="flex items-center gap-1 text-xs font-semibold text-rose-700 dark:text-rose-300">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setActiveAlertIndex((prev) => (prev > 0 ? prev - 1 : totalAlerts - 1));
+                  }}
+                  aria-label="Previous alert"
+                  className="inline-flex h-6 w-6 items-center justify-center rounded border border-rose-500/30 bg-rose-500/10 transition hover:bg-rose-500/20"
+                >
+                  <ChevronLeft size={13} aria-hidden="true" />
+                </button>
+                <span className="tabular-nums px-1 text-[11px]">
+                  {safeAlertIndex + 1} of {totalAlerts}
+                </span>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setActiveAlertIndex((prev) => (prev < totalAlerts - 1 ? prev + 1 : 0));
+                  }}
+                  aria-label="Next alert"
+                  className="inline-flex h-6 w-6 items-center justify-center rounded border border-rose-500/30 bg-rose-500/10 transition hover:bg-rose-500/20"
+                >
+                  <ChevronRight size={13} aria-hidden="true" />
+                </button>
+              </div>
+            )}
+            <button
+              type="button"
+              onClick={() => onOpenInsight(currentAlert)}
+              className="inline-flex items-center gap-1 rounded-lg border border-rose-500/30 bg-rose-500/15 px-3 py-1 text-xs font-bold text-rose-700 transition hover:bg-rose-500/25 dark:text-rose-200"
+            >
+              <span>View Details</span>
+              <ArrowRight size={13} aria-hidden="true" />
+            </button>
+          </div>
         </div>
       )}
 

@@ -30,8 +30,7 @@ import { useActionStore } from '../hooks/useActionStore';
 import { useUserRole } from '../context/RoleContext';
 import { canonicalTeamName, type PerformanceLevelFilter, type LocationKey } from '../types';
 import CustomDropdown from '../components/common/CustomDropdown';
-import { API_BASE } from '../config';
-import { waitForProcessingJob } from '../hooks/api/useProcessingJobs';
+import { useInsightsExport } from '../hooks/api/useInsightsExport';
 import { SUMMARY_BRANCHES } from '../features/executive/compose';
 
 function FilterSelect({ label, value, onChange, options, allLabel }: {
@@ -144,8 +143,6 @@ export default function InsightsView() {
   };
   const [drawerInsight, setDrawerInsight] = useState<InsightItem | null>(null);
   const [shareNotice, setShareNotice] = useState<string | null>(null);
-  const [exportState, setExportState] = useState<'idle' | 'exporting' | 'error'>('idle');
-  const [exportError, setExportError] = useState<string | null>(null);
   const [modalEmployee, setModalEmployee] = useState<TeamAgentRow | null>(null);
   // The page renders only these fields; the backend computes nothing else for this request.
   const query = useInsightsWorkspace(filters, { sections: INSIGHTS_PAGE_SECTIONS });
@@ -237,6 +234,12 @@ export default function InsightsView() {
   }, [workspace]);
 
   const effectivePeriod = filters.periodKey || workspace?.comparison.current?.key || '';
+  const { exportState, exportError, handleExport } = useInsightsExport({
+    filters,
+    workspace,
+    effectivePeriod,
+    fetchWithRole,
+  });
   const update = (key: keyof InsightFilters, value: string) => {
     setUserFilters((current) => ({ ...current, [key]: value || undefined }));
   };
@@ -338,73 +341,6 @@ export default function InsightsView() {
       setShareNotice('Share cancelled');
     }
     window.setTimeout(() => setShareNotice(null), 2200);
-  };
-  const handleExport = async () => {
-    const period = workspace.options.periods.find((item) => item.key === effectivePeriod);
-    if (!period) {
-      setExportState('error');
-      setExportError('The selected Insights period is unavailable for export.');
-      return;
-    }
-    setExportState('exporting');
-    setExportError(null);
-    try {
-      const response = await fetchWithRole(`${API_BASE}/api/reports/generate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          report_type: 'insights',
-          report_name: `Insights - ${period.month} ${period.year}`,
-          start_month: period.month,
-          start_year: period.year,
-          region: filters.region || null,
-          branch: filters.branch || null,
-          team: apiTeamParam(filters) || null,
-          position: filters.position || null,
-          performance_level: filters.performanceLevel || null,
-          employee_id: filters.employeeId || null,
-          kpi: filters.kpi || null,
-          severity: filters.severity || null,
-          insight_type: filters.insightType || null,
-          included_sections: ['summary', 'team_breakdown', 'kpi_breakdown', 'details'],
-          output_format: 'pptx',
-        }),
-      });
-      if (!response.ok) {
-        const body = await response.json().catch(() => null);
-        throw new Error(body?.detail || 'PowerPoint export failed.');
-      }
-      const responseBody = await response.json();
-      let generatedReport = responseBody.data as { download_url?: string; file_name?: string; job_id?: string };
-      if (generatedReport?.job_id) {
-        const job = await waitForProcessingJob(generatedReport.job_id);
-        if (job.status !== 'succeeded' || !job.result) {
-          throw new Error(job.error?.message || 'PowerPoint generation failed.');
-        }
-        generatedReport = job.result as typeof generatedReport;
-      }
-      if (!generatedReport?.download_url) {
-        throw new Error('The generated PowerPoint download is unavailable.');
-      }
-      const downloadUrl = generatedReport.download_url.startsWith('http')
-        ? generatedReport.download_url
-        : `${API_BASE}${generatedReport.download_url}`;
-      const fileResponse = await fetchWithRole(downloadUrl);
-      if (!fileResponse.ok) throw new Error('The generated PowerPoint could not be downloaded.');
-      const blob = await fileResponse.blob();
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement('a');
-      anchor.href = url;
-      anchor.download = generatedReport.file_name || `insights-${period.year}-${period.month}.pptx`;
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      URL.revokeObjectURL(url);
-      setExportState('idle');
-    } catch (error) {
-      setExportState('error');
-      setExportError(error instanceof Error ? error.message : 'PowerPoint export failed.');
-    }
   };
 
   const openEmployee = (employeeId: string, level: string) => {

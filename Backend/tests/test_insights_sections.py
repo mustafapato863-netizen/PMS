@@ -14,6 +14,7 @@ from services.planning_service import PlanningService
 
 # The fields the Insights page renders. The frontend requests the same list (features/insights, INSIGHTS_PAGE_SECTIONS).
 PAGE_SECTIONS = (
+    "summary",
     "options",
     "comparison",
     "executive_story",

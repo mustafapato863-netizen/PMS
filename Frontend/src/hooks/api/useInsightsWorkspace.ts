@@ -17,8 +17,15 @@ export type InsightSection =
 
 /** The fields the Insights page renders. Keep in step with what InsightsView and its components read. */
 export const INSIGHTS_PAGE_SECTIONS: readonly InsightSection[] = [
-  'options', 'comparison', 'executive_story', 'priority_insights', 'people_contribution_analysis',
-  'kpi_trend', 'kpi_diagnosis', 'tracking_indicators',
+  'summary',
+  'options',
+  'comparison',
+  'executive_story',
+  'priority_insights',
+  'people_contribution_analysis',
+  'kpi_trend',
+  'kpi_diagnosis',
+  'tracking_indicators',
 ];
 
 export function insightsWorkspaceUrl(
