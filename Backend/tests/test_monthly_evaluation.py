@@ -474,7 +474,10 @@ def test_catalog_covers_live_scopes_without_guessing_history(db):
     from services.evaluation.resolver import approved_version, assert_schema, schema_ready
 
     configs = load_all_team_configs()
-    assert len(configs) >= 16
+    config_names = {config.get("team") for config in configs}
+    assert "Inbound" in config_names
+    assert "Inbound UAE" not in config_names
+    assert len(configs) >= 15
     csr_file = next(config for config in configs if config.get("team") == "CSR")
     coding_file = next(config for config in configs if config.get("team") == "Coding")
     marketing_file = next(config for config in configs if config.get("team") == "Marketing")

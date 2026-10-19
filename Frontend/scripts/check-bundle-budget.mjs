@@ -21,7 +21,8 @@ const budgets = [
   // dashboard still uses out of the entry bundle into this route: the entry bundle shrank by 85 kB and the
   // total JavaScript by 42 kB. The route budget follows the move; the entry budget keeps the gain.
   { name: 'team dashboard route', pattern: /^TeamDashboardView-.*\.js$/, rawKb: 235, gzipKb: 64 },
-  { name: 'entry bundle', pattern: /^index-.*\.js$/, rawKb: 440, gzipKb: 130 },
+  // Agent booking display (2026-10-19) added about 0.3 kB gzip to this chunk.
+  { name: 'entry bundle', pattern: /^index-.*\.js$/, rawKb: 440, gzipKb: 131 },
 ];
 
 const files = await readdir(assetsDir);
