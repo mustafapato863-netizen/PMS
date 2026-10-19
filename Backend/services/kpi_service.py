@@ -236,7 +236,7 @@ class KPIService:
             abandoned_calls = safe_float(row.get("AbandonedCalls"))
 
             # 2. Actual Rate Calculations
-            actual_booking_cr = total_bookings / total_handled if total_handled > 0 else 0.0
+            actual_booking_cr = total_bookings / inbound_calls if inbound_calls > 0 else 0.0
             actual_attend_cr = total_attends / total_bookings if total_bookings > 0 else 0.0
             actual_abandon_rate = abandoned_calls / inbound_calls if inbound_calls > 0 else 0.0
             

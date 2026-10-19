@@ -128,7 +128,7 @@ Why: Rejection is a defect outcome, while handled queries and attended contacts 
 | KPI key | Label | Weight | Direction / unit | Actual and target calculation |
 |---|---|---:|---|---|
 | `Attendance` | Attendance Rate | 0.70 | H / % | `A.Attend% / A.Booking%`; target is the configured attendance target |
-| `Booking` | Booking Rate | 0.10 | H / % | `A.Booking% / calls.total_handled`; target is the configured booking target |
+| `Booking` | Booking Rate | 0.10 | H / % | `A.Booking% / calls.inbound_calls`; target is the configured booking target |
 | `Quality` | Quality Score | 0.05 | H / % | `average` |
 | `AHT` | AHT (Handle Time) | 0.05 | L / min | `weighted_average`, weighted by `$calls.total_handled` in the configured aggregation |
 | `Other` | Abandon Rate | 0.10 | L / % | `calls.abandoned / calls.total_handled` |

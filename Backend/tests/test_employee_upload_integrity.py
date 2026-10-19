@@ -51,6 +51,28 @@ def test_inbound_june_missing_quality_does_not_poison_reweighted_score():
     assert weights["Other"] == 0.15
 
 
+def test_inbound_booking_conversion_uses_inbound_calls_not_total_handled():
+    row = {
+        "Date": datetime.datetime(2026, 5, 1),
+        "TotalHandledCalls": 100,
+        "InboundCalls": 150,
+        "Dubai_Booking": 45,
+        "Dubai_Attend": 30,
+        "A.QualityScore": 0.95,
+        "A.UTZ%": 0.85,
+        "AHT_Minutes": 2.5,
+    }
+
+    score, _grade, achievements, _weights = _kpi_service().calculate_performance("Inbound", row)
+
+    assert row["A.Booking%"] == pytest.approx(45 / 150)
+    assert achievements["Booking"] == pytest.approx((45 / 150) / 0.45)
+    assert score == round(
+        100 * (((30 / 45) / 0.75) * 0.70 + ((45 / 150) / 0.45) * 0.10 + 0.05 + 0.05 + 0.10),
+        2,
+    )
+
+
 def test_inbound_kpi_evidence_uses_the_calculated_targets_and_dynamic_utz_label():
     row = {
         "Date": datetime.datetime(2026, 5, 1),
