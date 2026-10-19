@@ -511,6 +511,7 @@ export default function InsightsView() {
         story={workspace.executive_story}
         rows={diagnosisRows}
         criticalInsights={criticalInsights}
+        summary={workspace.summary}
         onOpenInsight={(insight) => setDrawerInsight(insight)}
       />
 

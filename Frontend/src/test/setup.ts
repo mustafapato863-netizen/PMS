@@ -16,4 +16,11 @@ Object.defineProperty(window, 'matchMedia', {
   }),
 });
 
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  try {
+    sessionStorage.clear();
+  } catch {
+    // Ignore in environments without sessionStorage
+  }
+});

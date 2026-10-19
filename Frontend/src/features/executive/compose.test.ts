@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   composeExecutiveSummary,
+  findTeamConfig,
   gradeDistribution,
   isAtRisk,
   kpiRows,
@@ -11,6 +12,8 @@ import {
   type ComposeInput,
   type ExecRecord,
 } from './compose';
+import type { TeamConfig } from '../../schemas/teamConfig.schema';
+import type { AgentRecord } from '../../types';
 import { executiveFunctionForTeam, functionFromSlug, functionSlug } from './functions';
 import { FIXTURE_TEAM_FUNCTIONS, fixtureActions, fixtureAgentRecords, fixtureDrivers } from './executive.fixture';
 
@@ -356,5 +359,118 @@ describe('scope', () => {
     const egy = compose({ filters: { region: 'EGY' } });
     expect(egy.regions.map((region) => region.region)).toEqual(['EGY']);
     expect(egy.teams.every((team) => team.regions.includes('EGY'))).toBe(true);
+  });
+});
+
+describe('canonical team score roll-up vs employee average', () => {
+  const mockConfig: TeamConfig = {
+    team: 'Support',
+    db_name: 'Support',
+    region: 'EGY',
+    employee_id_col: 'Employee ID',
+    employee_name_col: 'Name',
+    grade_thresholds: { A: 95, B: 85, C: 75, D: 65 },
+    kpis: [
+      {
+        key: 'Resolution',
+        label: 'Resolution Rate',
+        weight: 1,
+        direction: 'higher_better',
+        unit: '%',
+        color: '#3B82F6',
+        actual_col: 'Resolved',
+        target_col: 'Total',
+        score_target: 1,
+        score_formula: 'target_ratio',
+        cap_achievement: true,
+        aggregation: {
+          method: 'ratio',
+          numerator_col: 'Resolved',
+          denominator_col: 'Total',
+        },
+      },
+    ],
+  };
+
+  it('finds team config by exact, lowercase, or canonical name', () => {
+    expect(findTeamConfig([mockConfig], 'Support')).toBe(mockConfig);
+    expect(findTeamConfig([mockConfig], 'support')).toBe(mockConfig);
+    expect(findTeamConfig([mockConfig], 'NonExistent')).toBeNull();
+    expect(findTeamConfig(undefined, 'Support')).toBeNull();
+
+    const map = new Map([['Support', mockConfig]]);
+    expect(findTeamConfig(map, 'Support')).toBe(mockConfig);
+  });
+
+  it('computes canonical pooled team score and trend when teamConfig is supplied', () => {
+    // Agent 1: 10 resolved / 20 total = 50% score
+    // Agent 2: 80 resolved / 80 total = 100% score
+    // Individual scores average: (50 + 100) / 2 = 75.0%
+    // Canonical pooled score: (10 + 80) / (20 + 80) = 90 / 100 = 90.0%
+    const agent1 = {
+      identity: { employee_id: 'a1', name: 'Agent 1', team: 'Support', month: 'June' },
+      year: 2026,
+      performance_level: 'Employee',
+      raw_data: { Resolved: '10', Total: '20' },
+      evaluation: { score: 0.5, grade: 'C' },
+      kpi_values: [
+        {
+          kpi_key: 'Resolution',
+          label: 'Resolution Rate',
+          actual_value: 0.5,
+          target_value: 1,
+          unit: '%',
+          direction: 'higher_better',
+          weight_applied: 1,
+          achievement_ratio: 0.5,
+          contribution: 0.5,
+        },
+      ],
+    } as unknown as AgentRecord;
+    const agent2 = {
+      identity: { employee_id: 'a2', name: 'Agent 2', team: 'Support', month: 'June' },
+      year: 2026,
+      performance_level: 'Employee',
+      raw_data: { Resolved: '80', Total: '80' },
+      evaluation: { score: 1.0, grade: 'A' },
+      kpi_values: [
+        {
+          kpi_key: 'Resolution',
+          label: 'Resolution Rate',
+          actual_value: 1.0,
+          target_value: 1,
+          unit: '%',
+          direction: 'higher_better',
+          weight_applied: 1,
+          achievement_ratio: 1.0,
+          contribution: 1.0,
+        },
+      ],
+    } as unknown as AgentRecord;
+    const testRecords = toExecRecords([agent1, agent2]);
+
+    // Without team config: falls back to arithmetic mean of individual scores (75%)
+    const unconfigured = compose({
+      view: 'corporate',
+      records: testRecords,
+      comparisonRecords: testRecords,
+      requestedPeriodKey: '2026-06',
+    });
+    const unconfiguredTeam = unconfigured.teams.find((t) => t.team === 'Support');
+    expect(unconfiguredTeam?.score).toBe(75);
+
+    // With team config: canonical pooled team score is 90%
+    const configured = compose({
+      view: 'corporate',
+      records: testRecords,
+      comparisonRecords: testRecords,
+      teamConfigs: [mockConfig],
+      requestedPeriodKey: '2026-06',
+    });
+    const configuredTeam = configured.teams.find((t) => t.team === 'Support');
+    expect(configuredTeam?.score).toBe(90);
+    // 6-month trend point for effective month also uses canonical score (90%)
+    const effectivePoint = configuredTeam?.trend.find((p) => p.period.key === '2026-06');
+    expect(effectivePoint?.score).toBe(90);
   });
 });

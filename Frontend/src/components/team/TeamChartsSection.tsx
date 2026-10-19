@@ -64,7 +64,7 @@ const TeamChartsSection = ({ pieData, trendData }: TeamChartsSectionProps) => {
             <XAxis dataKey="month" tick={{ fontSize: 12, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
             <YAxis tick={{ fontSize: 12, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} domain={[0, 100]} />
             <RechartsTooltip 
-              formatter={(v) => [`${Number(v ?? 0).toFixed(1)}%`, 'Avg Score']}
+              formatter={(v) => [`${Number(v ?? 0).toFixed(1)}%`, 'Score']}
               contentStyle={{ backgroundColor: 'var(--bg-surface)', borderColor: 'var(--border-medium)', borderRadius: '0.75rem', color: 'var(--text-primary)' }}
             />
             <Line

@@ -24,7 +24,8 @@ export default function TeamKpiTable(props: TeamKpiTableProps) {
   return <PaginatedKpiTable key={contextKey} {...props} />;
 }
 
-function PaginatedKpiTable({ rows, effective, previous, range = null, score, reportHref, title = 'Team KPIs — worst first', subtitle, showTeams = false, headerAction = null, emptyMessage = MONTH_EMPTY, scoreLabel = 'Team score' }: TeamKpiTableProps) {
+function PaginatedKpiTable({ rows: sourceRows, effective, previous, range = null, score, reportHref, title = 'Team KPIs — worst first', subtitle, showTeams = false, headerAction = null, emptyMessage = MONTH_EMPTY, scoreLabel = 'Team score' }: TeamKpiTableProps) {
+  const rows = sourceRows.filter((row) => row.actual !== null || row.achievement_percent !== null);
   const titleId = useId();
   const [page, setPage] = useState(0);
   const pageCount = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));

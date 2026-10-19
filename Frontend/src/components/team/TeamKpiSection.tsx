@@ -362,7 +362,31 @@ const TeamKpiSection = ({
   const qualityVaries = metricVaries(qualityKpi);
   const showQualityCard = isCallCenterView
     && !!qualityKpi
-    && (qualityVaries || (qualityKpi.target > 0 && normalizedQualityWeight > 0));
+    && !qualityVaries
+    && qualityKpi.target > 0
+    && normalizedQualityWeight > 0;
+  const showAttendCard = !metricVaries(dynamicAttendKpi);
+  const showBookingCard = !metricVaries(dynamicBookingKpi);
+  const showAhtCard = !metricVaries(dynamicAhtKpi);
+  const showUtilizationCard = Boolean(isInbound && teamMetrics.hasUtz && !metricVaries(dynamicUtzKpi));
+  const showAbandonCard = Boolean(isInbound && !teamMetrics.hasUtz && !metricVaries(dynamicAbandonKpi));
+  const showReachCard = Boolean(!isInbound && !metricVaries(dynamicReachKpi));
+  const fixedCallCenterCardCount = [
+    showAttendCard,
+    showBookingCard,
+    showAhtCard,
+    showUtilizationCard || showAbandonCard || showReachCard,
+    showQualityCard,
+  ].filter(Boolean).length;
+  const callCenterGridClass = fixedCallCenterCardCount >= 5
+    ? 'xl:grid-cols-5'
+    : fixedCallCenterCardCount === 3
+      ? 'xl:grid-cols-3'
+      : fixedCallCenterCardCount === 2
+        ? 'xl:grid-cols-2'
+        : fixedCallCenterCardCount <= 1
+          ? 'xl:grid-cols-1'
+          : 'xl:grid-cols-4';
   const fixedCallCenterFamilies = new Set([
     'attendance',
     'booking',
@@ -373,11 +397,14 @@ const TeamKpiSection = ({
   const additionalScoredCallCenterKpis = isCallCenterView
     ? (teamMetrics.dynamicKpis || []).filter((kpi) => {
       if (fixedCallCenterFamilies.has(kpiFamily(kpi.label))) return false;
-      if (metricVaries(kpi)) return true;
+      if (metricVaries(kpi)) return false;
       const weight = kpi.weight ?? getWeight(kpi.label);
       return weight !== undefined && weight !== null && weight > 0;
     })
     : [];
+  const calculatedDynamicKpis = (teamMetrics.dynamicKpis || []).filter((kpi) => (
+    kpi.basisVaries !== true && Number.isFinite(kpi.target)
+  ));
   const qualityDelta = qualityKpi && previousQualityKpi
     ? dynamicChange(qualityKpi, previousQualityKpi.actual)
     : undefined;
@@ -398,20 +425,6 @@ const TeamKpiSection = ({
     trendGood: boolean | undefined,
     unit = '%',
   ) => {
-    if (metricVaries(kpi)) {
-      return {
-        targetValue: 'Varies',
-        badgeText: 'Basis varies',
-        badgeType: 'neutral' as const,
-        detailLabel: 'Applied basis varies',
-        trendDelta: delta,
-        ...monthTrend(delta, unit),
-        isTrendGood: undefined,
-        progressPercent: null as number | null,
-        contribution: null as number | null,
-        weight: null as number | null,
-      };
-    }
     const lower = appliedLowerBetter(kpi, fallbackLower);
     const statesDirection = detailLabel === 'Lower is better' || detailLabel === 'Higher is better';
     return {
@@ -441,7 +454,7 @@ const TeamKpiSection = ({
         />
         <KpiCard
           icon={<TrendingUp size={17} />}
-          label="Avg Score"
+          label={teamId === 'all' ? 'Avg Score' : 'Team Score'}
           value={`${printedAvgScore.toFixed(1)}%`}
           note={renderTrendNote(scoreDelta)}
           accent="border-l-indigo-500"
@@ -488,10 +501,10 @@ const TeamKpiSection = ({
       </div>
 
       {/* Secondary KPI Row */}
-      {isCallCenterView && (
-        <div className={`grid grid-cols-1 gap-4 sm:grid-cols-2 ${showQualityCard ? 'xl:grid-cols-5' : 'xl:grid-cols-4'} mt-2`}>
+      {isCallCenterView && fixedCallCenterCardCount > 0 && (
+        <div className={`grid grid-cols-1 gap-4 sm:grid-cols-2 ${callCenterGridClass} mt-2`}>
           {/* Patient Attendance */}
-          <PerformanceKpiCard
+          {showAttendCard && <PerformanceKpiCard
             icon={UserCheck}
             iconBgColor="bg-indigo-600"
             label="Patient Attendance Rate"
@@ -508,10 +521,10 @@ const TeamKpiSection = ({
               isAttendOnTarget,
               isAttendGood,
             )}
-          />
+          />}
 
           {/* Booking Conversion */}
-          <PerformanceKpiCard
+          {showBookingCard && <PerformanceKpiCard
             icon={Calendar}
             iconBgColor="bg-blue-600"
             label="Booking Conversion"
@@ -528,10 +541,10 @@ const TeamKpiSection = ({
               isBookingOnTarget,
               isBookingGood,
             )}
-          />
+          />}
 
           {/* Avg Handle Time */}
-          <PerformanceKpiCard
+          {showAhtCard && <PerformanceKpiCard
             icon={Clock}
             iconBgColor="bg-amber-600"
             label="Avg. Handle Time"
@@ -550,11 +563,10 @@ const TeamKpiSection = ({
               isAhtGood,
               's',
             )}
-          />
+          />}
 
           {/* Inbound Abandon vs Outbound Reachability vs Utilization */}
-          {isInbound ? (
-            teamMetrics.hasUtz ? (
+          {showUtilizationCard ? (
               <PerformanceKpiCard
                 icon={Activity}
                 iconBgColor="bg-violet-600"
@@ -573,7 +585,7 @@ const TeamKpiSection = ({
                   isUtzGood,
                 )}
               />
-            ) : (
+          ) : showAbandonCard ? (
               <PerformanceKpiCard
                 icon={AlertCircle}
                 iconBgColor="bg-red-600"
@@ -592,8 +604,7 @@ const TeamKpiSection = ({
                   isAbandonGood,
                 )}
               />
-            )
-          ) : (
+          ) : showReachCard ? (
             <PerformanceKpiCard
               icon={PhoneCall}
               iconBgColor="bg-emerald-600"
@@ -612,7 +623,7 @@ const TeamKpiSection = ({
                 isReachabilityGood,
               )}
             />
-          )}
+          ) : null}
 
           {showQualityCard && qualityKpi && (
             <PerformanceKpiCard
@@ -643,8 +654,7 @@ const TeamKpiSection = ({
           {additionalScoredCallCenterKpis.map((kpi) => {
             const previous = prevTeamMetrics?.dynamicKpis?.find((candidate) => candidate.label === kpi.label);
             const delta = previous ? dynamicChange(kpi, previous.actual) : undefined;
-            const varied = metricVaries(kpi);
-            const onTarget = !varied && (kpi.isLowerBetter ? kpi.actual <= kpi.target : kpi.actual >= kpi.target);
+            const onTarget = kpi.isLowerBetter ? kpi.actual <= kpi.target : kpi.actual >= kpi.target;
             const Icon = getKpiIcon(kpi.label);
             return (
               <PerformanceKpiCard
@@ -653,22 +663,22 @@ const TeamKpiSection = ({
                 iconBgColor={getKpiBgColor(kpi.label)}
                 label={kpi.label}
                 value={formatKpiValue(kpi.actual, kpi.unit)}
-                targetValue={varied ? 'Varies' : `${kpi.isLowerBetter ? '≤ ' : ''}${formatKpiValue(kpi.target, kpi.unit)}`}
-                detailLabel={varied ? 'Applied basis varies' : (kpi.isLowerBetter ? 'Lower is better' : 'Higher is better')}
-                badgeText={varied ? 'Basis varies' : (onTarget ? 'On Target' : 'Below Target')}
-                badgeType={varied ? 'neutral' : (onTarget ? 'success' : 'danger')}
+                targetValue={`${kpi.isLowerBetter ? '≤ ' : ''}${formatKpiValue(kpi.target, kpi.unit)}`}
+                detailLabel={kpi.isLowerBetter ? 'Lower is better' : 'Higher is better'}
+                badgeText={onTarget ? 'On Target' : 'Below Target'}
+                badgeType={onTarget ? 'success' : 'danger'}
                 trendDelta={delta}
                 {...monthTrend(delta, kpi.unit)}
                 isTrendGood={delta === undefined ? undefined : (kpi.isLowerBetter ? delta <= 0 : delta >= 0)}
                 trendUnit={kpi.unit === '%' ? '%' : ''}
-                progressPercent={varied ? null : calculateKpiTargetProgress(kpi.actual, kpi.target, kpi.isLowerBetter)}
-                contribution={varied ? null : (kpi.contribution ?? calcContribution(
+                progressPercent={calculateKpiTargetProgress(kpi.actual, kpi.target, kpi.isLowerBetter)}
+                contribution={kpi.contribution ?? calcContribution(
                   kpi.label,
                   kpi.unit === '%' ? percentPointsFromRatio(kpi.actual) : kpi.actual,
                   kpi.unit === '%' ? percentPointsFromRatio(kpi.target) : kpi.target,
                   kpi.isLowerBetter,
-                ))}
-                weight={varied ? null : (kpi.weight ?? getWeight(kpi.label))}
+                )}
+                weight={kpi.weight ?? getWeight(kpi.label)}
               />
             );
           })}
@@ -814,25 +824,23 @@ const TeamKpiSection = ({
       )}
 
       {/* Dynamic KPIs for Coding, CSR, Pharmacy, etc. */}
-      {!isCallCenterView && teamId !== 'pre-approvals' && teamId !== 'sales' && teamMetrics.dynamicKpis && teamMetrics.dynamicKpis.length > 0 && (
+      {!isCallCenterView && teamId !== 'pre-approvals' && teamId !== 'sales' && calculatedDynamicKpis.length > 0 && (
         <div className={`mt-2 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 ${
-          teamMetrics.dynamicKpis.length === 1
+          calculatedDynamicKpis.length === 1
             ? 'xl:grid-cols-1'
-            : teamMetrics.dynamicKpis.length === 2
+            : calculatedDynamicKpis.length === 2
               ? 'xl:grid-cols-2'
-              : teamMetrics.dynamicKpis.length === 3
+              : calculatedDynamicKpis.length === 3
                 ? 'xl:grid-cols-3'
-                : teamMetrics.dynamicKpis.length === 4
+                : calculatedDynamicKpis.length === 4
                   ? 'xl:grid-cols-4'
                   : 'xl:grid-cols-5'
         }`}>
-          {teamMetrics.dynamicKpis.map((kpi) => {
-            // Find corresponding prev KPI for trend
+          {calculatedDynamicKpis.map((kpi) => {
             const prevKpi = prevTeamMetrics?.dynamicKpis?.find((pk) => pk.label === kpi.label);
             const trendDelta = prevKpi ? dynamicChange(kpi, prevKpi.actual) : undefined;
 
             const isPrescription = kpi.label.toLowerCase().includes('prescription');
-            const varied = kpi.basisVaries === true;
             // Percent KPIs stay ratios from here to formatting: one conversion, no rescaling.
             const rawActual = kpi.actual;
             const targetVal = isPrescription && (!kpi.target || kpi.target === 0) ? 1 : kpi.target;
@@ -842,25 +850,23 @@ const TeamKpiSection = ({
             const detailLabelStr = kpi.isLowerBetter ? 'Lower is better' : 'Higher is better';
 
             const isOnTarget = isPrescription ? displayActual >= 85 : (kpi.isLowerBetter ? rawActual <= targetVal : rawActual >= targetVal);
-            const isTrendGood = kpi.isLowerBetter 
+            const isTrendGood = kpi.isLowerBetter
               ? (trendDelta !== undefined ? trendDelta <= 0 : undefined)
               : (trendDelta !== undefined ? trendDelta >= 0 : undefined);
 
             const Icon = getKpiIcon(kpi.label);
             const bgColor = getKpiBgColor(kpi.label);
 
-            const weightVal = varied ? null : (kpi.weight ?? getWeight(kpi.label) ?? 0.20);
-            const progress = varied ? null : (isPrescription ? displayActual : calculateKpiTargetProgress(rawActual, targetVal, kpi.isLowerBetter));
-            const contribution = varied
-              ? null
-              : isPrescription
-                ? (displayActual * (weightVal ?? 0))
-                : (kpi.contribution ?? calcContribution(
-                  kpi.label,
-                  actualPoints,
-                  kpi.unit === '%' ? percentPointsFromRatio(targetVal) : targetVal,
-                  kpi.isLowerBetter,
-                ));
+            const weightVal = kpi.weight ?? getWeight(kpi.label) ?? 0.20;
+            const progress = isPrescription ? displayActual : calculateKpiTargetProgress(rawActual, targetVal, kpi.isLowerBetter);
+            const contribution = isPrescription
+              ? (displayActual * (weightVal ?? 0))
+              : (kpi.contribution ?? calcContribution(
+                kpi.label,
+                actualPoints,
+                kpi.unit === '%' ? percentPointsFromRatio(targetVal) : targetVal,
+                kpi.isLowerBetter,
+              ));
 
             return (
               <PerformanceKpiCard
@@ -869,10 +875,10 @@ const TeamKpiSection = ({
                 iconBgColor={bgColor}
                 label={kpi.label}
                 value={isPrescription ? formatPercentPoints(displayActual) : formatKpiValue(displayActual, kpi.unit)}
-                targetValue={varied ? 'Varies' : `${kpi.isLowerBetter ? '≤ ' : ''}${formatKpiValue(targetVal, kpi.unit)}`}
-                detailLabel={varied ? 'Applied basis varies' : detailLabelStr}
-                badgeText={varied ? 'Basis varies' : (isOnTarget ? 'On Target' : 'Below Target')}
-                badgeType={varied ? 'neutral' : (isOnTarget ? 'success' : 'danger')}
+                targetValue={`${kpi.isLowerBetter ? '≤ ' : ''}${formatKpiValue(targetVal, kpi.unit)}`}
+                detailLabel={detailLabelStr}
+                badgeText={isOnTarget ? 'On Target' : 'Below Target'}
+                badgeType={isOnTarget ? 'success' : 'danger'}
                 trendDelta={trendDelta}
                 {...monthTrend(trendDelta, kpi.unit)}
                 isTrendGood={isTrendGood}

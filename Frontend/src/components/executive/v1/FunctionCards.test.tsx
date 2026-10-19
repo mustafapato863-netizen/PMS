@@ -90,4 +90,16 @@ describe('FunctionCards trend chart', () => {
     expect(new Set(fills).size).toBe(2);
     expect(within(screen.getByRole('article', { name: 'Marketing function' })).getByText('Grade B')).toBeInTheDocument();
   });
+
+  it('carries over active filters (period, region, branch, level) to the function link', () => {
+    render(
+      <MemoryRouter initialEntries={['/executive?period=2026-09&region=EGY&branch=dubai&level=Employee']}>
+        <FunctionCards cards={[card]} previous={null} linkable />
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole('link', { name: 'View RCM function' })).toHaveAttribute(
+      'href',
+      '/function-summary/rcm?period=2026-09&region=EGY&branch=dubai&level=Employee',
+    );
+  });
 });

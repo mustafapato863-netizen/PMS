@@ -432,7 +432,7 @@ export const buildTeamKpiAnalysis = (
       severity,
       volumeData,
     };
-  }).sort((left, right) => {
+  }).filter((row) => row.basisVaries !== true && Number.isFinite(row.target)).sort((left, right) => {
     const priority: Record<TeamKpiAnalysis['severity'], number> = { critical: 0, attention: 1, configuration_requires_review: 2, on_target: 3 };
     const ls = left.severity as TeamKpiAnalysis['severity'];
     const rs = right.severity as TeamKpiAnalysis['severity'];

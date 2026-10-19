@@ -1580,16 +1580,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
       }
     } else if (teamMetrics.dynamicKpis && teamMetrics.dynamicKpis.length > 0) {
       teamMetrics.dynamicKpis.forEach((kpi) => {
-        if (kpi.basisVaries) {
-          bullets.push({
-            icon: AlertTriangle,
-            title: `${kpi.label}: applied basis varies`,
-            desc: 'This KPI uses more than one applied target, weight, or direction. Those cohorts stay separate and are not averaged into one target.',
-            badgeText: 'BASIS VARIES',
-            status: 'info',
-          });
-          return;
-        }
+        if (kpi.basisVaries || !Number.isFinite(kpi.target)) return;
         const isOnTarget = kpi.isLowerBetter ? kpi.actual <= kpi.target : kpi.actual >= kpi.target;
         const diffPct = kpi.target !== 0 ? Math.abs((kpi.actual - kpi.target) / kpi.target) * 100 : 0;
         

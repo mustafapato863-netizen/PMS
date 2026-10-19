@@ -218,6 +218,21 @@ describe('Function Summary page', () => {
     expect(screen.queryByTestId('executive-function')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Upload/ })).not.toBeInTheDocument();
   });
+
+  it('restores cached executive filters when entering function summary without query params', () => {
+    state.role = 'Admin';
+    sessionStorage.setItem('pms_executive_filter_cache', JSON.stringify({
+      period: '2026-09',
+      region: 'EGY',
+      level: 'Employee',
+    }));
+    renderAt('/function-summary/rcm');
+    expect(state.lastArgs?.filters).toMatchObject({
+      periodKey: '2026-09',
+      region: 'EGY',
+      performanceLevel: 'Employee',
+    });
+  });
 });
 
 describe('Function view compose', () => {

@@ -1,5 +1,5 @@
 import { ArrowRight, TrendingDown, TrendingUp } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { FUNCTION_STYLE } from './execModel';
 import type { ExecutiveFunction, ExecutiveFunctionCard, ExecutivePeriod, ExecutiveRangeBlock } from '../../../features/executive/types';
 import { coveredPeriodLabel, vsLabel } from '../../../features/executive/periodLabels';
@@ -18,6 +18,28 @@ export function FunctionIcon({ fn, size = 32 }: { fn: ExecutiveFunction; size?: 
     <span aria-hidden="true" className="flex shrink-0 items-center justify-center rounded-[8px]" style={{ background: style.bg, width: size, height: size }}>
       <Icon style={{ color: style.color, width: size * 0.52, height: size * 0.52 }} strokeWidth={1.75} />
     </span>
+  );
+}
+
+function FunctionLink({ cardFunction, style }: { cardFunction: ExecutiveFunction; style: (typeof FUNCTION_STYLE)[ExecutiveFunction] }) {
+  const [searchParams] = useSearchParams();
+  const next = new URLSearchParams();
+  for (const key of ['period', 'from', 'to', 'region', 'branch', 'level']) {
+    const val = searchParams.get(key);
+    if (val && val !== 'All' && val !== 'all') next.set(key, val);
+  }
+  const query = next.toString();
+  const functionHref = `/function-summary/${functionSlug(cardFunction)}${query ? `?${query}` : ''}`;
+
+  return (
+    <Link
+      to={functionHref}
+      aria-label={`View ${cardFunction} function`}
+      className="inline-flex min-h-[44px] items-center justify-center gap-[8px] rounded-[10px] border px-[12px] py-[8px] text-[13px] font-bold transition-[filter] hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--insights-accent-ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-surface)] motion-reduce:transition-none"
+      style={{ background: style.bg, color: style.color, borderColor: `color-mix(in srgb, ${style.color} 25%, transparent)` }}
+    >
+      View function <ArrowRight aria-hidden="true" className="size-[16px]" />
+    </Link>
   );
 }
 
@@ -61,7 +83,7 @@ function FunctionCard({ card, previous, range, linkable }: { card: ExecutiveFunc
       <FunctionTrendChart color={trendColor} title={`${card.function} score`} points={card.trend} />
       <div className="mt-auto flex flex-col gap-[10px] border-t border-[var(--insights-row-border)] pt-[10px]">
         <p className="min-w-0 text-xs leading-[1.6] text-[var(--text-secondary)]">{card.teams.join(' · ')}</p>
-        {linkable && <Link to={`/function-summary/${functionSlug(card.function)}`} aria-label={`View ${card.function} function`} className="inline-flex min-h-[44px] items-center justify-center gap-[8px] rounded-[10px] border px-[12px] py-[8px] text-[13px] font-bold transition-[filter] hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--insights-accent-ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-surface)] motion-reduce:transition-none" style={{ background: style.bg, color: style.color, borderColor: `color-mix(in srgb, ${style.color} 25%, transparent)` }}>View function <ArrowRight aria-hidden="true" className="size-[16px]" /></Link>}
+        {linkable && <FunctionLink cardFunction={card.function} style={style} />}
       </div>
       <span className="sr-only">{tone.label}</span>
     </article>

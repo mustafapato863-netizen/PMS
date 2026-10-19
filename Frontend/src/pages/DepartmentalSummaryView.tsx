@@ -6,11 +6,12 @@
  * (Executive + Viewer read-only), Manager → Managerial (team-scoped, filters
  * locked), Function Viewer → /function-summary.
  */
-import { useCallback, useMemo, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, type ReactNode } from 'react';
 import { Navigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/auth';
 import { directorScope } from '../lib/directorScope';
 import { useUserRole } from '../context/RoleContext';
+import { clearCachedExecutiveFilters, readCachedExecutiveFilters, saveCachedExecutiveFilters } from '../features/executive/filterCache';
 import InsightsHeader, { type FilterOption } from '../components/insights/overview/InsightsHeader';
 import { ExecutiveViewSkeleton } from '../components/common/SkeletonLoader';
 import ExecutiveDashboard from '../components/executive/v1/ExecutiveDashboard';
@@ -114,15 +115,61 @@ function DepartmentalSummaryPage({ view }: { view: Exclude<ExecutiveViewKind, 'f
     document.querySelector<HTMLElement>('[aria-label="Departmental period"]')?.focus();
   }, []);
 
-  const clearFilters = useCallback(() => update({
-    region: undefined,
-    branch: undefined,
-    teamFunction: undefined,
-    team: undefined,
-    subTeam: undefined,
-    position: undefined,
-    performanceLevel: undefined,
-  }), [update]);
+  useEffect(() => {
+    const cached = readCachedExecutiveFilters();
+    if (!cached) return;
+    const next = new URLSearchParams(searchParams);
+    let changed = false;
+    if (!searchParams.get('period') && !searchParams.get('from') && !searchParams.get('to')) {
+      if (cached.from && cached.to) {
+        next.set('from', cached.from);
+        next.set('to', cached.to);
+        changed = true;
+      } else if (cached.period) {
+        next.set('period', cached.period);
+        changed = true;
+      }
+    }
+    if (!searchParams.get('region') && cached.region && !assigned.regionLocked) {
+      next.set('region', cached.region);
+      changed = true;
+    }
+    if (!searchParams.get('branch') && cached.branch && !assigned.branchLocked) {
+      next.set('branch', cached.branch);
+      changed = true;
+    }
+    if (!searchParams.get('level') && cached.level) {
+      next.set('level', cached.level);
+      changed = true;
+    }
+    if (changed) {
+      setSearchParams(next, { replace: true });
+    }
+  }, []);
+
+  useEffect(() => {
+    saveCachedExecutiveFilters({
+      period: searchParams.get('period') || undefined,
+      from: searchParams.get('from') || undefined,
+      to: searchParams.get('to') || undefined,
+      region: searchParams.get('region') || undefined,
+      branch: searchParams.get('branch') || undefined,
+      level: searchParams.get('level') || undefined,
+    });
+  }, [searchParams]);
+
+  const clearFilters = useCallback(() => {
+    clearCachedExecutiveFilters();
+    update({
+      region: undefined,
+      branch: undefined,
+      teamFunction: undefined,
+      team: undefined,
+      subTeam: undefined,
+      position: undefined,
+      performanceLevel: undefined,
+    });
+  }, [update]);
 
   const scope = summary?.scope;
   const managerial = view === 'managerial';

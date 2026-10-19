@@ -351,7 +351,7 @@ const variedKpi = (label: string, actual = 0.4) => ({
 });
 
 describe('TeamKpiSection applied call-center basis', () => {
-  it('keeps every fixed family and a null-weight extra KPI neutral when the basis varies', () => {
+  it('hides fixed families and extra KPIs when the applied basis is not calculated', () => {
     render(
       <ThemeProvider>
         <TeamKpiSection
@@ -389,31 +389,14 @@ describe('TeamKpiSection applied call-center basis', () => {
       'Quality Score',
       'Productivity',
     ]) {
-      const card = screen.getByText(label).closest('article');
-      expect(card).toHaveTextContent('Varies');
-      expect(card).toHaveTextContent('Basis varies');
-      expect(card).toHaveTextContent('Applied basis varies');
-      expect(card).toHaveTextContent('Contribution—');
-      expect(card).toHaveTextContent('Weight—');
-      expect(card).not.toHaveTextContent('55%');
-      expect(card).not.toHaveTextContent('46%');
-      expect(card).not.toHaveTextContent('75%');
-      expect(card).not.toHaveTextContent('2:30');
-      expect(card).not.toHaveTextContent('Weight70%');
-      expect(card).not.toHaveTextContent('Weight10%');
+      expect(screen.queryByText(label)).not.toBeInTheDocument();
     }
-    expect(screen.getByText('Patient Attendance Rate').closest('article')?.parentElement).toHaveClass('xl:grid-cols-5');
-    expect(screen.getByRole('progressbar', { name: 'Patient Attendance Rate progress to target' })).toHaveAttribute(
-      'aria-valuetext',
-      'Target progress unavailable',
-    );
-    expect(screen.getByRole('progressbar', { name: 'Productivity progress to target' })).toHaveAttribute(
-      'aria-valuetext',
-      'Target progress unavailable',
-    );
+    expect(screen.queryByText('Basis varies')).not.toBeInTheDocument();
+    expect(screen.queryByText('55%')).not.toBeInTheDocument();
+    expect(screen.queryByText('2:30')).not.toBeInTheDocument();
   });
 
-  it('keeps inbound utilization and abandon neutral instead of the 85 and 1 fallbacks', () => {
+  it('hides inbound utilization and abandon when their basis is not calculated', () => {
     const { unmount } = render(
       <ThemeProvider>
         <TeamKpiSection
@@ -432,11 +415,9 @@ describe('TeamKpiSection applied call-center basis', () => {
         />
       </ThemeProvider>,
     );
-    const utilization = screen.getByText('Utilization').closest('article');
-    expect(utilization).toHaveTextContent('Varies');
-    expect(utilization).toHaveTextContent('Basis varies');
-    expect(utilization).not.toHaveTextContent('85%');
-    expect(utilization).toHaveTextContent('Weight—');
+    expect(screen.queryByText('Utilization')).not.toBeInTheDocument();
+    expect(screen.queryByText('85%')).not.toBeInTheDocument();
+    expect(screen.queryByText('Basis varies')).not.toBeInTheDocument();
     unmount();
 
     render(
@@ -457,11 +438,10 @@ describe('TeamKpiSection applied call-center basis', () => {
         />
       </ThemeProvider>,
     );
-    const abandon = screen.getByText('Call Abandon Rate').closest('article');
-    expect(abandon).toHaveTextContent('Varies');
-    expect(abandon).toHaveTextContent('Basis varies');
-    expect(abandon).not.toHaveTextContent('1%');
-    expect(abandon).toHaveTextContent('Weight—');
+    expect(screen.queryByText('Call Abandon Rate')).not.toBeInTheDocument();
+    expect(screen.queryByText('Abandon Rate')).not.toBeInTheDocument();
+    expect(screen.queryByText('1%')).not.toBeInTheDocument();
+    expect(screen.queryByText('Basis varies')).not.toBeInTheDocument();
   });
 
   it('follows an applied lower-better attendance pin and a higher-better handle-time pin', () => {

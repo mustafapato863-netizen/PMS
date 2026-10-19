@@ -10,8 +10,9 @@
  */
 import { normalizePercentageKpiForDisplay } from '../../components/common/performanceKpiProgress';
 import { GRADE_CLASSES, getGradeClassOrNull, type GradeClass } from '../../constants/grades';
-import { canonicalTeamName } from '../../types';
-import type { AgentRecord } from '../../types';
+import { canonicalTeamName, isMergedBranchTeam, type AgentRecord } from '../../types';
+import type { TeamConfig } from '../../schemas/teamConfig.schema';
+import { calculateAggregatedTeamPerformance, displayedTeamScore, recordsUseAppliedPin } from '../team/teamKpiAggregator';
 import { normalizePerformanceScore } from '../../utils/kpiScore';
 import { kpiCountsInScore } from '../../utils/kpiCountsInScore';
 import { compareScoringBasis, type BasisRecord } from '../evaluation/scoringBasisComparison';
@@ -69,6 +70,7 @@ export interface ExecRecord {
   months?: number;
   /** Range mode only: KPI keys whose target changed within the range for this person. */
   targetVaries?: string[];
+  rawAgent?: AgentRecord;
 }
 
 export function periodOf(year: number, month: string): ExecutivePeriod {
@@ -139,6 +141,7 @@ export function toExecRecords(agents: AgentRecord[], fallbackYear = new Date().g
       score: normalizePerformanceScore(raw),
       // Departmental lists show only KPIs that count in the score (stored weight above 0).
       kpis: (agent.kpi_values || []).filter((kpi) => kpiCountsInScore(kpi.weight_applied)),
+      rawAgent: agent,
     }];
   });
 }
@@ -470,6 +473,30 @@ function people(current: ExecRecord[], previous: ExecRecord[]): ExecutivePeople 
   };
 }
 
+function teamNamesMatch(a: string | null | undefined, b: string | null | undefined): boolean {
+  if (!a || !b) return false;
+  const normA = a.trim().toLowerCase().replace(/[^a-z0-9]+/g, '');
+  const normB = b.trim().toLowerCase().replace(/[^a-z0-9]+/g, '');
+  if (normA === normB) return true;
+  return canonicalTeamName(a).toLowerCase() === canonicalTeamName(b).toLowerCase();
+}
+
+export function findTeamConfig(
+  teamConfigs: Map<string, TeamConfig> | Record<string, TeamConfig> | TeamConfig[] | undefined,
+  teamName: string,
+): TeamConfig | null {
+  if (!teamConfigs || !teamName) return null;
+  const list: TeamConfig[] = teamConfigs instanceof Map
+    ? [...teamConfigs.values()]
+    : Array.isArray(teamConfigs)
+      ? teamConfigs
+      : Object.values(teamConfigs);
+
+  return list.find((cfg) =>
+    teamNamesMatch(cfg.team, teamName) || teamNamesMatch(cfg.db_name, teamName)
+  ) ?? null;
+}
+
 function teamsOf(
   scoped: ExecRecord[],
   effective: ExecutivePeriod,
@@ -478,6 +505,7 @@ function teamsOf(
   byRole = false,
   monthly: ExecRecord[] | null = null,
   rangeMonths: ExecutivePeriod[] | null = null,
+  teamConfigs?: Map<string, TeamConfig> | Record<string, TeamConfig> | TeamConfig[],
 ): ExecutiveTeam[] {
   const groupName = (record: ExecRecord) => byRole ? record.position || record.team : record.team;
   const monthlyRecords = monthly ?? scoped;
@@ -487,9 +515,60 @@ function teamsOf(
     // The trend and the basis note read the team's monthly records; the aggregates read `records`.
     const monthlyTeam = monthlyRecords.filter((record) => groupName(record) === team);
     const current = inPeriod(records, effective);
-    const score = scoreOf(current);
-    const previousScore = scoreOf(inPeriod(records, previous));
-    const trend = trendOf(monthlyTeam, effective);
+    const teamConfig = byRole ? null : findTeamConfig(teamConfigs, team);
+    const useCanonical = Boolean(teamConfig && !rangeMonths && !isMergedBranchTeam(team));
+
+    let score = scoreOf(current);
+    let previousScore = scoreOf(inPeriod(records, previous));
+    let trend = trendOf(monthlyTeam, effective);
+
+    if (useCanonical && teamConfig) {
+      const currentAgents = current.map((record) => record.rawAgent).filter((a): a is AgentRecord => Boolean(a));
+      if (currentAgents.length > 0) {
+        const canonical = calculateAggregatedTeamPerformance(currentAgents, teamConfig)?.score ?? null;
+        if (canonical !== null) {
+          score = round1(displayedTeamScore(canonical, score ?? 0, recordsUseAppliedPin(currentAgents)));
+        }
+      }
+
+      const previousRecords = inPeriod(records, previous);
+      const previousAgents = previousRecords.map((record) => record.rawAgent).filter((a): a is AgentRecord => Boolean(a));
+      if (previousAgents.length > 0) {
+        const canonicalPrev = calculateAggregatedTeamPerformance(previousAgents, teamConfig)?.score ?? null;
+        if (canonicalPrev !== null) {
+          previousScore = round1(displayedTeamScore(canonicalPrev, previousScore ?? 0, recordsUseAppliedPin(previousAgents)));
+        }
+      }
+
+      const periods = trailingPeriods(effective);
+      trend = periods.map((period) => {
+        const periodRecords = inPeriod(monthlyTeam, period);
+        const periodAgents = periodRecords.map((r) => r.rawAgent).filter((a): a is AgentRecord => Boolean(a));
+        const avgPeriod = scoreOf(periodRecords);
+        let computedScore: number | null = null;
+        if (periodAgents.length > 0) {
+          const canonical = calculateAggregatedTeamPerformance(periodAgents, teamConfig)?.score ?? null;
+          computedScore = canonical !== null
+            ? round1(displayedTeamScore(canonical, avgPeriod ?? 0, recordsUseAppliedPin(periodAgents)))
+            : avgPeriod;
+        }
+
+        const finalScore = period.key === effective.key
+          ? score
+          : previous && period.key === previous.key
+            ? previousScore
+            : computedScore;
+
+        return {
+          period,
+          score: finalScore,
+          employees: employeesOf(periodRecords),
+          has_data: periodRecords.length > 0,
+          basis_context: null,
+        };
+      });
+    }
+
     const worstKpi = kpiRows(current, inPeriod(records, previous))[0];
     return {
       team,
@@ -839,6 +918,7 @@ export interface ComposeInput {
   pendingActions?: FollowUpAction[] | null;
   /** Records outside the viewer's scope for aggregate comparisons (never available client-side for Manager / Function Viewer). */
   comparisonRecords?: ExecRecord[] | null;
+  teamConfigs?: Map<string, TeamConfig> | Record<string, TeamConfig> | TeamConfig[];
   today: Date;
 }
 
@@ -903,10 +983,29 @@ export function composeExecutiveSummary(input: ComposeInput): ExecutiveSummary {
 
   const current = inPeriod(scoped, effective);
   const before = inPeriod(scoped, previous);
-  const score = scoreOf(current);
-  const previousScore = scoreOf(before);
+  let score = scoreOf(current);
+  let previousScore = scoreOf(before);
+  if (view === 'managerial' && input.team && !rangeMonths) {
+    const mgrConfig = findTeamConfig(input.teamConfigs, input.team);
+    if (mgrConfig && !isMergedBranchTeam(input.team)) {
+      const currentAgents = current.map((r) => r.rawAgent).filter((a): a is AgentRecord => Boolean(a));
+      const beforeAgents = before.map((r) => r.rawAgent).filter((a): a is AgentRecord => Boolean(a));
+      if (currentAgents.length > 0) {
+        const canonical = calculateAggregatedTeamPerformance(currentAgents, mgrConfig)?.score ?? null;
+        if (canonical !== null) {
+          score = round1(displayedTeamScore(canonical, score ?? 0, recordsUseAppliedPin(currentAgents)));
+        }
+      }
+      if (beforeAgents.length > 0) {
+        const canonicalPrev = calculateAggregatedTeamPerformance(beforeAgents, mgrConfig)?.score ?? null;
+        if (canonicalPrev !== null) {
+          previousScore = round1(displayedTeamScore(canonicalPrev, previousScore ?? 0, recordsUseAppliedPin(beforeAgents)));
+        }
+      }
+    }
+  }
 
-  const teams = effective ? teamsOf(scoped, effective, previous, teamFunctions, view === 'function' && input.functionName === 'Marketing', monthly, rangeMonths) : [];
+  const teams = effective ? teamsOf(scoped, effective, previous, teamFunctions, view === 'function' && input.functionName === 'Marketing', monthly, rangeMonths, input.teamConfigs) : [];
   const functions = effective ? functionCards(scoped, effective, previous, teamFunctions, monthly, rangeMonths) : [];
   // The company or function comparison is per month; a range does not compare with it.
   const comparison = input.comparisonRecords && effective && !range
@@ -947,6 +1046,28 @@ export function composeExecutiveSummary(input: ComposeInput): ExecutiveSummary {
       ...(rangeMonths ? { in_range: rangeMonths.some((month) => month.key === point.period.key) } : {}),
     }))
     : [];
+
+  if (view === 'managerial' && input.team && !rangeMonths) {
+    const mgrConfig = findTeamConfig(input.teamConfigs, input.team);
+    if (mgrConfig && !isMergedBranchTeam(input.team)) {
+      trend.forEach((point) => {
+        if (point.period.key === effective?.key) {
+          point.score = score;
+        } else if (previous && point.period.key === previous.key) {
+          point.score = previousScore;
+        } else if (point.score !== null) {
+          const mRecords = inPeriod(monthly, point.period);
+          const mAgents = mRecords.map((r) => r.rawAgent).filter((a): a is AgentRecord => Boolean(a));
+          if (mAgents.length > 0) {
+            const canonical = calculateAggregatedTeamPerformance(mAgents, mgrConfig)?.score ?? null;
+            if (canonical !== null) {
+              point.score = round1(displayedTeamScore(canonical, point.score ?? 0, recordsUseAppliedPin(mAgents)));
+            }
+          }
+        }
+      });
+    }
+  }
 
   const rawSplit = input.deriveScopedDrivers ? scopedRecordDrivers(current, before, teamFunctions) : input.drivers
     ? mapDrivers(input.drivers.drivers, input.drivers.items, teamFunctions, view === 'function' ? Number.POSITIVE_INFINITY : 3)

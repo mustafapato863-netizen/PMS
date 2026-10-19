@@ -14,6 +14,7 @@ import { useQuery } from '@tanstack/react-query';
 import { apiFetch } from '../../lib/apiClient';
 import { performanceSessionKey } from '../../lib/performanceSessionKey';
 import { usePerformanceData } from '../../hooks/usePerformanceData';
+import { useAllTeamConfigs } from '../../hooks/useTeamConfig';
 import { useInsightsWorkspace } from '../../hooks/api/useInsightsWorkspace';
 import { fetchFollowUp, mapBackendAction } from '../../hooks/useActionStore';
 import { canAccessBroadAppPages, canSeeSummaryActionAnalytics } from '../../lib/access';
@@ -138,6 +139,7 @@ export function useExecutiveSummary({
   const performance = usePerformanceData('All', 'all', 'All', 'All', legacyEnabled);
   const records = useMemo(() => (enabled ? toExecRecords(summaryRecords.data ?? (legacyEnabled ? performance.agents as never : [])) : []), [enabled, legacyEnabled, performance.agents, summaryRecords.data]);
   const recordsLoading = enabled && (summaryRecords.isLoading || (legacyEnabled && performance.loading));
+  const { data: teamConfigsList } = useAllTeamConfigs();
 
   // Manager: every assigned team (from /auth/me; the records are already scoped to them) is in scope.
   // The team filter narrows to one of them; an unassigned team in the URL is ignored.
@@ -179,7 +181,8 @@ export function useExecutiveSummary({
     accessibleFunctions,
     comparisonRecords: canAccessBroadAppPages(role) ? records : null,
     today: today ?? new Date(),
-  }), [accessibleFunctions, filters, functionName, managerTeam, managerTeamOptions, rangeInput, records, role, today, view]);
+    teamConfigs: teamConfigsList,
+  }), [accessibleFunctions, filters, functionName, managerTeam, managerTeamOptions, rangeInput, records, role, today, view, teamConfigsList]);
 
   const preliminary = useMemo(() => (enabled && !recordsLoading ? composeExecutiveSummary(baseInput) : null), [baseInput, enabled, recordsLoading]);
   const effectiveKey = preliminary?.period.effective?.key;

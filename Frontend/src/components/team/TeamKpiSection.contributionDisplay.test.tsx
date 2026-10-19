@@ -229,7 +229,7 @@ describe('TeamKpiSection canonical contribution display', () => {
     expect(productivityCard).toHaveTextContent('Weight20%');
   });
 
-  it('keeps a varied applied basis blank instead of a zero contribution', () => {
+  it('omits a KPI card when the applied basis is not calculated', () => {
     const { dynamicKpis } = renderTeam([
       pinnedAgent({
         id: 'anonymous-basis-a',
@@ -251,12 +251,8 @@ describe('TeamKpiSection canonical contribution display', () => {
     expect(attendance?.contribution).toBeNull();
     expect(attendance?.weight).toBeNull();
 
-    const card = screen.getByText('Patient Attendance Rate').closest('article');
-    expect(card).toHaveTextContent('Varies');
-    expect(card).not.toHaveTextContent('Target:');
-    expect(card).toHaveTextContent('Basis varies');
-    expect(card).toHaveTextContent('Contribution—');
-    expect(card).toHaveTextContent('Weight—');
-    expect(card).not.toHaveTextContent('Contribution0.0%');
+    expect(screen.queryByText('Patient Attendance Rate')).not.toBeInTheDocument();
+    expect(screen.queryByText('Basis varies')).not.toBeInTheDocument();
+    expect(screen.queryByText('Contribution0.0%')).not.toBeInTheDocument();
   });
 });
