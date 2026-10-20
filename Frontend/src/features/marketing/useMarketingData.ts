@@ -23,13 +23,13 @@ function sessionCacheKey(): string {
   }
 }
 
-export const useMarketingData = () => {
+export const useMarketingData = (dbName = 'Marketing', label = dbName) => {
   const catalogQuery = usePerformanceCatalog(scopedPerformanceApiEnabled);
   const configQuery = useQuery({
-    queryKey: ['marketing-config'],
+    queryKey: ['marketing-config', dbName],
     queryFn: async () => {
       const response = await apiFetch<{ success: boolean; data: MarketingTeamConfig }>(
-        '/api/config/teams/Marketing?performance_level=Employee',
+        `/api/config/teams/${encodeURIComponent(dbName)}?performance_level=Employee`,
       );
       return response.data;
     },
@@ -37,7 +37,7 @@ export const useMarketingData = () => {
   });
 
   const recordsQuery = useQuery({
-    queryKey: ['marketing-performance', sessionCacheKey(), scopedPerformanceApiEnabled, catalogQuery.data?.periods],
+    queryKey: ['marketing-performance', dbName, sessionCacheKey(), scopedPerformanceApiEnabled, catalogQuery.data?.periods],
     queryFn: async () => {
       if (scopedPerformanceApiEnabled) {
         const records: AgentRecord[] = [];
@@ -47,7 +47,7 @@ export const useMarketingData = () => {
           do {
             const params = new URLSearchParams({
               period: period.key,
-              team: 'Marketing',
+              team: dbName,
               performance_level: 'Employee',
               detail: 'full',
               page_size: '100',
@@ -59,7 +59,7 @@ export const useMarketingData = () => {
               message?: string;
             }>(`/api/performance/records?${params.toString()}`);
             if (!response.success || !response.data) {
-              throw new Error(response.message || 'Marketing performance request failed');
+              throw new Error(response.message || `${label} performance request failed`);
             }
             records.push(...(response.data.items || []).map(mapScopedPerformanceRecord));
             cursor = response.data.has_more && response.data.next_cursor
@@ -67,17 +67,18 @@ export const useMarketingData = () => {
               : undefined;
             pageCount += 1;
             if (pageCount >= 1000 && cursor) {
-              throw new Error('Marketing performance pagination exceeded the safety limit');
+              throw new Error(`${label} performance pagination exceeded the safety limit`);
             }
           } while (cursor);
         }
         return records;
       }
+      const params = new URLSearchParams({ team: dbName, performance_level: 'Employee' });
       const response = await apiFetch<{ success: boolean; data: AgentRecord[] }>(
-        '/api/performance?team=Marketing&performance_level=Employee',
+        `/api/performance?${params.toString()}`,
       );
       if (!response.success || !Array.isArray(response.data)) {
-        throw new Error('Marketing performance request failed');
+        throw new Error(`${label} performance request failed`);
       }
       return response.data;
     },

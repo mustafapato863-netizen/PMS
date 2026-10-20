@@ -1,4 +1,4 @@
-import { ArrowLeft, Download, Megaphone } from 'lucide-react';
+import { ArrowLeft, Briefcase, Download, Megaphone } from 'lucide-react';
 import Breadcrumb from '../common/Breadcrumb';
 import CustomDropdown from '../common/CustomDropdown';
 import ResponsiveFilters from '../common/ResponsiveFilters';
@@ -21,6 +21,7 @@ interface MarketingFiltersHeaderProps {
   onPeriodChange: (periodKey: string) => void;
   onBack: () => void;
   onExport: () => void;
+  teamLabel?: string;
 }
 
 const MarketingFiltersHeader = ({
@@ -35,7 +36,10 @@ const MarketingFiltersHeader = ({
   onPeriodChange,
   onBack,
   onExport,
+  teamLabel = 'Marketing',
 }: MarketingFiltersHeaderProps) => {
+  const HeaderIcon = teamLabel === 'Marketing' ? Megaphone : Briefcase;
+  const overviewTitle = `${teamLabel} Overview`;
   const yearPeriods = periods.filter((period) => period.year === filters.year);
   const selectedPeriod = periods.find(
     (period) => period.year === filters.year && period.month === filters.month,
@@ -51,7 +55,7 @@ const MarketingFiltersHeader = ({
         })),
       ]}
       onChange={(val) => onPeriodChange(String(val))}
-      ariaLabel="Marketing month"
+      ariaLabel={`${teamLabel} month`}
       size="md"
     />
   );
@@ -70,27 +74,27 @@ const MarketingFiltersHeader = ({
               type="button"
               onClick={onBack}
               className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-[var(--border-medium)] text-[var(--text-secondary)] transition hover:bg-[var(--bg-sunken)] hover:text-[var(--text-primary)]"
-              aria-label="Back to Marketing Overview"
+              aria-label={`Back to ${overviewTitle}`}
             >
               <ArrowLeft size={20} />
             </button>
           ) : (
             <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400">
-              <Megaphone size={22} />
+              <HeaderIcon size={22} />
             </div>
           )}
           <div className="marketing-header-copy">
             <h2 className="heading-2 font-extrabold text-[var(--text-primary)] mb-0">
-              {isPositionView ? `${positionName} · Employee` : 'Marketing Overview'}
+              {isPositionView ? `${positionName} · Employee` : overviewTitle}
             </h2>
             <Breadcrumb
               items={[
                 { label: 'Executive Dashboard', href: '/executive' },
                 ...(isPositionView ? [
-                  { label: 'Marketing Overview', href: teamPath('Marketing') },
+                  { label: overviewTitle, href: teamPath(teamLabel) },
                   { label: positionName || 'Position Detail' },
                 ] : [
-                  { label: 'Marketing Overview' },
+                  { label: overviewTitle },
                 ]),
               ]}
             />
@@ -104,7 +108,7 @@ const MarketingFiltersHeader = ({
               value="Employee"
               options={['Employee']}
               onChange={() => {}}
-              ariaLabel="Marketing performance level"
+              ariaLabel={`${teamLabel} performance level`}
               disabled
               size="md"
             />
@@ -119,7 +123,7 @@ const MarketingFiltersHeader = ({
               label: r === 'All' ? 'All Regions' : r,
             }))}
             onChange={(val) => onChange('region', val as MarketingRegion)}
-            ariaLabel="Marketing region"
+            ariaLabel={`${teamLabel} region`}
             size="md"
           />
 
@@ -133,7 +137,7 @@ const MarketingFiltersHeader = ({
                 ...positions.map((p) => ({ value: p, label: p })),
               ]}
               onChange={(val) => onChange('position', val ? String(val) : undefined)}
-              ariaLabel="Marketing position"
+              ariaLabel={`${teamLabel} position`}
               size="md"
             />
           )}

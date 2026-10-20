@@ -15,6 +15,7 @@ import type {
   MarketingRegion,
   MarketingTeamConfig,
 } from '../features/marketing/types';
+import { positionOverviewIdentity } from '../features/marketing/positionOverviewTeams';
 import { useMarketingData } from '../features/marketing/useMarketingData';
 import { useActionStore } from '../hooks/useActionStore';
 import type { TeamAgentRow } from '../hooks/usePerformanceData';
@@ -35,6 +36,8 @@ interface MarketingDashboardContentProps {
   getActionsForEmployee?: (employeeId: string) => PMSAction[];
   onAddAction?: (row: TeamAgentRow) => void;
   onEmployeeChanged?: () => void;
+  teamLabel?: string;
+  teamDbName?: string;
 }
 
 export const MarketingDashboardContent = ({
@@ -46,12 +49,16 @@ export const MarketingDashboardContent = ({
   getActionsForEmployee = () => [],
   onAddAction = () => undefined,
   onEmployeeChanged,
+  teamLabel = 'Marketing',
+  teamDbName = teamLabel,
 }: MarketingDashboardContentProps) => {
   const [searchParams, setSearchParams] = useSearchParams();
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
   const periods = useMemo(() => getMarketingPeriods(records), [records]);
-  const positions = config.available_positions?.length ? config.available_positions : Object.keys(config.positions);
+  const positions = config.available_positions?.length
+    ? config.available_positions
+    : Object.keys(config.positions ?? {});
   const latestPeriod = periods[periods.length - 1];
   const requestedYear = Number(searchParams.get('year'));
   const validYears = new Set(periods.map((period) => period.year));
@@ -150,7 +157,7 @@ export const MarketingDashboardContent = ({
     try {
       await onExport(effectiveFilters);
     } catch (error) {
-      setExportError(error instanceof Error ? error.message : 'Marketing export failed.');
+      setExportError(error instanceof Error ? error.message : `${teamLabel} export failed.`);
     } finally {
       setExporting(false);
     }
@@ -175,6 +182,7 @@ export const MarketingDashboardContent = ({
         onPeriodChange={updatePeriod}
         onBack={closePosition}
         onExport={handleExport}
+        teamLabel={teamLabel}
       />
       {exportError && (
         <div role="alert" className="rounded-xl border border-rose-500/20 bg-rose-500/8 px-4 py-3 text-sm font-semibold text-rose-700 dark:text-rose-300">
@@ -184,7 +192,7 @@ export const MarketingDashboardContent = ({
 
       {!records.length && (
         <div className="rounded-2xl border border-blue-500/20 bg-blue-500/8 px-5 py-4 text-sm font-semibold text-blue-800 dark:text-blue-200">
-          Marketing is configured and ready. Position dashboards will populate after the first Employee performance upload.
+          {teamLabel} is configured and ready. Position dashboards will populate after the first Employee performance upload.
         </div>
       )}
 
@@ -197,6 +205,8 @@ export const MarketingDashboardContent = ({
           getActionsForEmployee={getActionsForEmployee}
           onAddAction={onAddAction}
           onEmployeeChanged={onEmployeeChanged}
+          teamLabel={teamLabel}
+          teamDbName={teamDbName}
         />
       ) : (
         <MarketingOverview
@@ -204,22 +214,24 @@ export const MarketingDashboardContent = ({
           config={config}
           selectedPosition={filters.position}
           onOpenPosition={openPosition}
+          teamLabel={teamLabel}
         />
       )}
     </motion.div>
   );
 };
 
-const MarketingDashboardView = () => {
+const MarketingDashboardView = ({ teamId = 'marketing' }: { teamId?: string }) => {
+  const identity = positionOverviewIdentity(teamId);
   const { role, fetchWithRole } = useUserRole();
-  const { config, records, loading, error, refetch } = useMarketingData();
+  const { config, records, loading, error, refetch } = useMarketingData(identity.dbName, identity.label);
   const { getActionsForEmployee } = useActionStore();
   const [modalEmployee, setModalEmployee] = useState<TeamAgentRow | null>(null);
   const canExport = role === 'Admin' || role === 'General Manager' || role === 'Manager';
 
   const exportMarketing = async (filters: MarketingFilters) => {
     const params = new URLSearchParams({
-      team: 'Marketing',
+      team: identity.dbName,
       performance_level: 'Employee',
       year: String(filters.year),
       month: filters.month,
@@ -228,13 +240,14 @@ const MarketingDashboardView = () => {
     if (filters.position) params.set('position', filters.position);
     if (filters.region !== 'All') params.set('region', filters.region);
     const response = await fetchWithRole(`${API_BASE}/api/performance/export?${params}`);
-    if (!response.ok) throw new Error('Marketing export failed');
+    if (!response.ok) throw new Error(`${identity.label} export failed`);
     const blob = await response.blob();
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
     const positionPart = filters.position ? `_${filters.position.replace(/\s+/g, '_')}` : '';
+    const fileTeam = identity.label.replace(/[^\w]+/g, '_').replace(/^_|_$/g, '');
     anchor.href = url;
-    anchor.download = `Marketing${positionPart}_${filters.year}_${filters.month}.xlsx`;
+    anchor.download = `${fileTeam}${positionPart}_${filters.year}_${filters.month}.xlsx`;
     anchor.click();
     URL.revokeObjectURL(url);
   };
@@ -256,8 +269,8 @@ const MarketingDashboardView = () => {
       <div className="mx-auto flex min-h-[55vh] max-w-xl items-center justify-center">
         <div className="glass-panel w-full rounded-3xl p-8 text-center shadow-xl">
           <AlertCircle size={34} className="mx-auto text-rose-500" />
-          <h2 className="mt-4 text-xl font-extrabold text-[var(--text-primary)]">Unable to load Marketing performance.</h2>
-          <p className="mt-2 text-sm font-semibold text-[var(--text-muted)]">{error instanceof Error ? error.message : 'Marketing configuration is unavailable.'}</p>
+          <h2 className="mt-4 text-xl font-extrabold text-[var(--text-primary)]">Unable to load {identity.label} performance.</h2>
+          <p className="mt-2 text-sm font-semibold text-[var(--text-muted)]">{error instanceof Error ? error.message : `${identity.label} configuration is unavailable.`}</p>
           <button type="button" onClick={() => void refetch()} className="mx-auto mt-5 flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white">
             <RefreshCw size={15} /> Retry
           </button>
@@ -277,6 +290,8 @@ const MarketingDashboardView = () => {
         getActionsForEmployee={getActionsForEmployee}
         onAddAction={setModalEmployee}
         onEmployeeChanged={refetch}
+        teamLabel={identity.label}
+        teamDbName={identity.dbName}
       />
       {modalEmployee && (
         <EmployeeActionModal

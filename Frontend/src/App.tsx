@@ -23,7 +23,7 @@ import { useDesktopNavigation } from './hooks/useDesktopNavigation';
 const DepartmentalSummaryView = lazy(() => import('./pages/DepartmentalSummaryView'));
 const FunctionSummaryView = lazy(() => import('./pages/FunctionSummaryView'));
 const MarketingTeamRoute = lazy(() => import('./pages/MarketingTeamRoute'));
-const TeamDashboardView = lazy(() => import('./pages/TeamDashboardView'));
+const PositionDepartmentRoute = lazy(() => import('./pages/PositionDepartmentRoute'));
 const EmployeeProfileView = lazy(() => import('./pages/EmployeeProfileView'));
 const SettingsView = lazy(() => import('./pages/SettingsView'));
 const AccountView = lazy(() => import('./pages/AccountView'));
@@ -85,7 +85,7 @@ function AnimatedRoutes() {
 
         {/* Page 2: Team Dashboard — /team/:teamId */}
         <Route path="/team/marketing" element={<Suspense fallback={<RouteLoadingFallback />}><MarketingTeamRoute /></Suspense>} />
-        <Route path="/team/:teamId" element={<Suspense fallback={<RouteLoadingFallback />}><TeamDashboardView /></Suspense>} />
+        <Route path="/team/:teamId" element={<Suspense fallback={<RouteLoadingFallback />}><PositionDepartmentRoute /></Suspense>} />
 
         {/* /operational redirects to /team/all */}
         <Route path="/operational" element={<Navigate to="/team/all" replace />} />

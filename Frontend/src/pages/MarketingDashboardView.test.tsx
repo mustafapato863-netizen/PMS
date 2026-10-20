@@ -99,11 +99,17 @@ const renderDashboard = ({
   initial = '/team/marketing?year=2026&month=June&region=All',
   records = defaultRecords,
   role = 'Viewer',
+  teamLabel = 'Marketing',
+  teamDbName = teamLabel,
+  dashboardConfig = config,
 }: {
   canExport?: boolean;
   initial?: string;
   records?: AgentRecord[];
   role?: string;
+  teamLabel?: string;
+  teamDbName?: string;
+  dashboardConfig?: MarketingTeamConfig;
 } = {}) => {
   const onExport = vi.fn().mockResolvedValue(undefined);
   const onAddAction = vi.fn();
@@ -112,17 +118,19 @@ const renderDashboard = ({
       <MemoryRouter initialEntries={[initial]}>
         <Routes>
           <Route
-            path="/team/marketing"
+            path="/team/:teamId"
             element={(
               <>
                 <MarketingDashboardContent
-                  config={config}
+                  config={dashboardConfig}
                   records={records}
                   canExport={canExport}
                   onExport={onExport}
                   role={role}
                   getActionsForEmployee={() => []}
                   onAddAction={onAddAction}
+                  teamLabel={teamLabel}
+                  teamDbName={teamDbName}
                 />
                 <LocationProbe />
               </>
@@ -173,6 +181,125 @@ describe('MarketingDashboardContent', () => {
       expect(card).not.toHaveTextContent('number');
       expect(card).not.toHaveTextContent('mkt_social_media_specialist_');
     }
+  });
+
+  it('opens Finance on the latest month, so one current employee is not mixed with earlier roles', () => {
+    const accountant = marketingRecord('General Accountant', 'September');
+    accountant.identity = {
+      ...accountant.identity,
+      name: 'Ahmed Mohamed Sayed Ahmed',
+      employee_id: 'SGHD70233',
+      team: 'Finance',
+    };
+    accountant.evaluation = { score: 97.1, grade: 'A' };
+    accountant.kpi_values = [
+      ['Journal Entry Accuracy Rate', 0.35, 0.321],
+      ['Bank Reconciliation Completion Rate', 0.3, 0.3],
+      ['Month-End Close Deadline Compliance', 0.35, 0.35],
+    ].map(([label, weight, contribution]) => ({
+      kpi_key: String(label),
+      label: String(label),
+      unit: '%',
+      direction: 'higher_better' as const,
+      actual_value: 0.9,
+      target_value: 1,
+      achievement_ratio: 0.9,
+      weight_applied: Number(weight),
+      contribution: Number(contribution),
+    }));
+    const earlier = marketingRecord('FP&A Manager', 'May');
+    earlier.identity = {
+      ...earlier.identity,
+      name: 'Khawar Bilal',
+      employee_id: 'SGHD60013',
+      team: 'Finance',
+    };
+    earlier.kpi_values = [{
+      kpi_key: 'Collection Rate',
+      label: 'Collection Rate',
+      unit: 'number',
+      direction: 'higher_better',
+      actual_value: 51992564,
+      target_value: 1,
+      achievement_ratio: 0.79,
+      weight_applied: 0.15,
+      contribution: 0.12,
+    }];
+    const financeConfig: MarketingTeamConfig = {
+      team: 'Finance',
+      db_name: 'Finance',
+      region: 'All',
+      performance_level: 'Employee',
+      grade_thresholds: { A: 95, B: 90, C: 80, D: 70 },
+      available_positions: ['General Accountant', 'FP&A Manager'],
+      positions: {
+        'General Accountant': {
+          kpis: accountant.kpi_values.map((kpi, index) => ({
+            key: kpi.kpi_key,
+            label: kpi.label,
+            perspective: 'Financial',
+            weight: kpi.weight_applied ?? 0,
+            direction: 'higher_better' as const,
+            unit: '%',
+            color: '#2563EB',
+            display_order: index + 1,
+          })),
+        },
+        'FP&A Manager': {
+          kpis: [{
+            key: 'Collection Rate',
+            label: 'Collection Rate',
+            perspective: 'Financial',
+            weight: 0.15,
+            direction: 'higher_better',
+            unit: 'number',
+            color: '#0D9488',
+            display_order: 1,
+          }],
+        },
+      },
+    };
+
+    renderDashboard({
+      initial: '/team/finance?performance_level=Employee',
+      records: [earlier, accountant],
+      teamLabel: 'Finance',
+      teamDbName: 'Finance',
+      dashboardConfig: financeConfig,
+    });
+
+    expect(screen.getByRole('heading', { name: 'Finance Overview' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Finance month')).toHaveValue('2026-09');
+    expect(screen.getByText('Active Employees').parentElement).toHaveTextContent('1');
+    expect(screen.queryByText('Khawar Bilal')).not.toBeInTheDocument();
+    expect(screen.queryByText('Collection Rate')).not.toBeInTheDocument();
+
+    const accountantCard = screen.getByRole('heading', { name: 'General Accountant' }).closest('article');
+    expect(accountantCard).not.toBeNull();
+    expect(within(accountantCard as HTMLElement).getByText('3')).toBeInTheDocument();
+    const earlierCard = screen.getByRole('heading', { name: 'FP&A Manager' }).closest('article');
+    expect(within(earlierCard as HTMLElement).getByText('No Results')).toBeInTheDocument();
+
+    fireEvent.click(within(accountantCard as HTMLElement).getByRole('button', { name: /Open Position/i }));
+    expect(screen.getByRole('link', { name: 'Ahmed Mohamed Sayed Ahmed' })).toBeInTheDocument();
+    for (const label of [
+      'Journal Entry Accuracy Rate',
+      'Bank Reconciliation Completion Rate',
+      'Month-End Close Deadline Compliance',
+    ]) {
+      expect(screen.getByRole('progressbar', { name: `${label} progress to target` })).toBeInTheDocument();
+    }
+    expect(screen.queryByText('Collection Rate')).not.toBeInTheDocument();
+    expect(screen.queryByText('Khawar Bilal')).not.toBeInTheDocument();
+  });
+
+  it('names the position overview after the selected department', () => {
+    renderDashboard({ teamLabel: 'IT', teamDbName: 'IT' });
+    expect(screen.getByRole('heading', { name: 'IT Overview' })).toBeInTheDocument();
+    expect(screen.getByText('IT Average')).toBeInTheDocument();
+    expect(screen.getByText('IT Grade Distribution')).toBeInTheDocument();
+    expect(screen.getByText('IT Score Trend')).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Marketing Overview' })).not.toBeInTheDocument();
   });
 
   it('shows all configured positions and distinguishes missing uploads', () => {

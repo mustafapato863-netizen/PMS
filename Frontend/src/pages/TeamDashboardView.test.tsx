@@ -19,6 +19,12 @@ vi.mock('../hooks/useActionStore', () => ({
   useActionStore: () => ({ getActionsForEmployee: () => [], getAllActions: () => [] }),
 }));
 vi.mock('../lib/apiClient', () => ({ apiFetch: vi.fn(() => Promise.resolve({ success: false })) }));
+vi.mock('./MarketingDashboardView', () => ({
+  default: ({ teamId }: { teamId?: string }) => <h2>Position overview {teamId}</h2>,
+}));
+vi.mock('../components/team/BalancedScorecardWorkspace', () => ({
+  default: ({ displayName }: { displayName: string }) => <h2>{displayName}</h2>,
+}));
 vi.mock('../hooks/usePerformanceData', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../hooks/usePerformanceData')>()),
   // No agents for any team: the page renders its header and the empty state, which is all these tests read.
@@ -87,9 +93,21 @@ describe('team page resolution', () => {
   });
 
   it.each(KNOWN_NAMES)('opens the same team for teamPath(%s), titled with its display name', (name) => {
-    renderTeamPage(teamPath(name));
-    expect(screen.getByRole('heading', { level: 2, name: EXPECTED_TITLE[name] })).toBeInTheDocument();
+    const path = teamPath(name);
+    renderTeamPage(path);
+    const teamId = path.split('/').pop() ?? '';
+    const positionOverview = ['finance', 'human-resources', 'it', 'administration'].includes(teamId);
+    expect(screen.getByRole('heading', {
+      level: 2,
+      name: positionOverview ? `Position overview ${teamId}` : EXPECTED_TITLE[name],
+    })).toBeInTheDocument();
     expect(screen.queryByText('Team not found')).not.toBeInTheDocument();
+  });
+
+  it('keeps corporate finance on the team dashboard', async () => {
+    renderTeamPage('/team/finance?performance_level=Corporate');
+    expect(screen.queryByRole('heading', { name: 'Position overview finance' })).not.toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 2, name: 'Finance' })).toBeInTheDocument();
   });
 
   it.each(['/team/pre-approvals', '/team/pre-approvals-ip-offshore', '/team/PRE-APPROVALS-IP-OFFSHORE'])(

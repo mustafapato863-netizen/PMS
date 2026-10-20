@@ -55,6 +55,26 @@ describe('Marketing KPIs the config does not list', () => {
     expect(definitions.map((definition) => definition.key)).toEqual(['mb_cpl', 'mkt_media_buyer_reporting']);
   });
 
+  it('folds a stored KPI onto the matching config label when the upload key differs', () => {
+    const uploaded = {
+      ...reporting,
+      kpi_key: 'pos_it_technical_support_cpl',
+      label: 'CPL',
+      actual_value: 0.5,
+      target_value: 1,
+      weight_applied: 0.2,
+    };
+    const records = [record('SYN001', [uploaded])];
+    const definitions = definitionsWithStoredKpis([configuredCpl], records);
+
+    expect(definitions.map((definition) => definition.key)).toEqual(['mb_cpl']);
+    expect(definitions[0].aliases).toEqual(['pos_it_technical_support_cpl']);
+    const aggregates = aggregateMarketingKpis(records, [], definitions, {});
+    expect(aggregates).toHaveLength(1);
+    expect(aggregates[0].averageActual).toBe(0.5);
+    expect(aggregates[0].label).toBe('CPL');
+  });
+
   it('renders an unknown KPI in the position breakdown with its stored label and unit', () => {
     const records = [record('SYN001', [reporting])];
     const aggregates = aggregateMarketingKpis(records, [], definitionsWithStoredKpis([configuredCpl], records), {});

@@ -40,6 +40,7 @@ interface MarketingOverviewProps {
   config: MarketingTeamConfig;
   selectedPosition?: string;
   onOpenPosition: (position: string) => void;
+  teamLabel?: string;
 }
 
 const panelClass = 'rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] p-5 shadow-sm';
@@ -88,6 +89,7 @@ const MarketingOverview = ({
   config,
   selectedPosition,
   onOpenPosition,
+  teamLabel = 'Marketing',
 }: MarketingOverviewProps) => {
   const visiblePositions = analytics.positionSummaries.filter(
     (summary) => !selectedPosition || summary.position === selectedPosition,
@@ -119,10 +121,13 @@ const MarketingOverview = ({
   const insights = buildMarketingInsights(
     { ...analytics, positionSummaries: visiblePositions },
     config.grade_thresholds,
+    teamLabel,
   );
   const headlineInsight = insights[0];
   const HeadlineIcon = insightTone[headlineInsight.tone].icon;
-  const scopedPositionCount = selectedPosition ? 1 : config.available_positions.length;
+  const scopedPositionCount = selectedPosition
+    ? 1
+    : (config.available_positions?.length || Object.keys(config.positions ?? {}).length);
 
   return (
     <div className="space-y-5">
@@ -152,7 +157,7 @@ const MarketingOverview = ({
           variant="flat"
         />
         <KpiCard
-          label="Marketing Average"
+          label={`${teamLabel} Average`}
           value={`${analytics.averageScore.toFixed(1)}%`}
           icon={<ChartNoAxesCombined size={18} />}
           trendDelta={analytics.scoreDelta ?? undefined}
@@ -261,7 +266,7 @@ const MarketingOverview = ({
         </section>
 
         <section className={`${panelClass} xl:col-span-3`} aria-labelledby="grade-distribution-title">
-          <PanelTitle id="grade-distribution-title">Marketing Grade Distribution</PanelTitle>
+          <PanelTitle id="grade-distribution-title">{teamLabel} Grade Distribution</PanelTitle>
           {analytics.currentRecords.length ? (
             <div className="grid items-center gap-2 sm:grid-cols-[1fr_auto] xl:grid-cols-1">
               <div className="relative h-[153px]">
@@ -328,7 +333,7 @@ const MarketingOverview = ({
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
         <section className={`${panelClass} xl:col-span-7`} aria-labelledby="marketing-trend-title">
-          <PanelTitle id="marketing-trend-title">Marketing Score Trend</PanelTitle>
+          <PanelTitle id="marketing-trend-title">{teamLabel} Score Trend</PanelTitle>
           {analytics.trend.some((point) => point.employeeCount > 0) ? (
             <ResponsiveContainer width="100%" height={250}>
               <LineChart data={analytics.trend} margin={{ top: 20, right: 15, left: -15 }}>

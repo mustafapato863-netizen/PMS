@@ -24,6 +24,8 @@ export interface MarketingKpiConfig {
   color: string;
   display_order: number;
   aggregation?: MarketingKpiAggregation;
+  /** Stored kpi_key values that belong to this config entry when the upload key differs. */
+  aliases?: string[];
 }
 
 export interface MarketingPositionConfig {

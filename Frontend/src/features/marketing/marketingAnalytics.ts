@@ -261,12 +261,21 @@ const gradeDistribution = (
   return result;
 };
 
-const resolveKpiValue = (record: AgentRecord, key: string) => (
-  record.kpi_values?.find((value) => value.kpi_key === key)
+const normalizeKpiLabel = (label: string | undefined) => (
+  String(label ?? '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
 );
 
-const storedWeight = (records: AgentRecord[], key: string) => {
-  const values = records.map(record => resolveKpiValue(record, key));
+const matchKeys = (definition: MarketingKpiConfig | string) => (
+  typeof definition === 'string' ? [definition] : [definition.key, ...(definition.aliases ?? [])]
+);
+
+const resolveKpiValue = (record: AgentRecord, definition: MarketingKpiConfig | string) => {
+  const keys = new Set(matchKeys(definition));
+  return record.kpi_values?.find((value) => keys.has(value.kpi_key));
+};
+
+const storedWeight = (records: AgentRecord[], definition: MarketingKpiConfig | string) => {
+  const values = records.map(record => resolveKpiValue(record, definition));
   if (!values.some(Boolean) || values.some(value => value && finiteValue(value.weight_applied) === null)) return null;
   // A KPI absent from a member of the selected cohort contributes zero weight.
   const weights = values.map(value => value ? finiteValue(value.weight_applied) ?? 0 : 0);
@@ -285,28 +294,41 @@ export const definitionsWithStoredKpis = (
   records: AgentRecord[],
 ): MarketingKpiConfig[] => {
   const configured = new Map(definitions.map(definition => [definition.key, definition]));
+  const configuredByLabel = new Map<string, MarketingKpiConfig>();
+  definitions.forEach((definition) => {
+    const label = normalizeKpiLabel(definition.label);
+    if (label && !configuredByLabel.has(label)) configuredByLabel.set(label, definition);
+  });
   const stored = new Map<string, MarketingKpiConfig>();
   let displayOrder = definitions.reduce((highest, definition) => Math.max(highest, definition.display_order), 0);
   records.forEach((record) => {
     (record.kpi_values || []).forEach((value) => {
-      if (stored.has(value.kpi_key)) return;
-      const base = configured.get(value.kpi_key);
+      const base = configured.get(value.kpi_key) ?? configuredByLabel.get(normalizeKpiLabel(value.label));
+      const key = base?.key ?? value.kpi_key;
+      const existing = stored.get(key);
+      if (existing) {
+        if (value.kpi_key !== key && !(existing.aliases ?? []).includes(value.kpi_key)) {
+          stored.set(key, { ...existing, aliases: [...(existing.aliases ?? []), value.kpi_key] });
+        }
+        return;
+      }
       if (!base) displayOrder += 1;
-      stored.set(value.kpi_key, {
-        key: value.kpi_key,
-        label: value.label || base?.label || value.kpi_key,
+      stored.set(key, {
+        key,
+        label: value.label || base?.label || key,
         perspective: value.perspective || base?.perspective || '',
         weight: value.weight_applied,
         direction: value.direction,
-        unit: value.unit,
+        unit: value.unit || base?.unit || '',
         color: value.color || base?.color || '#64748B',
         display_order: base?.display_order ?? displayOrder,
         aggregation: base?.aggregation ?? { method: 'weighted_average', weight_col: 'Target Value' },
+        ...(value.kpi_key !== key ? { aliases: [value.kpi_key] } : {}),
       });
     });
   });
   for (const [key, definition] of stored) {
-    const sourceWeight = storedWeight(records, key);
+    const sourceWeight = storedWeight(records, definition);
     if (sourceWeight) stored.set(key, { ...definition, ...sourceWeight });
   }
   return [
@@ -346,7 +368,7 @@ const buildBaselineCandidates = (
   .map((period) => {
     const values = records
       .filter((record) => record.year === period.year && record.identity.month === period.month)
-      .map((record) => resolveKpiValue(record, definition.key))
+      .map((record) => resolveKpiValue(record, definition))
       .filter((value): value is MarketingKpiValue => Boolean(value));
     const actual = aggregateKpiMetric(values, definition).actual;
     return actual === null ? null : { actual, period };
@@ -363,10 +385,10 @@ export const aggregateMarketingKpis = (
   .sort((left, right) => left.display_order - right.display_order)
   .map((definition) => {
     const values = records
-      .map((record) => resolveKpiValue(record, definition.key))
+      .map((record) => resolveKpiValue(record, definition))
       .filter((value): value is MarketingKpiValue => Boolean(value));
     const previousValues = previousRecords
-      .map((record) => resolveKpiValue(record, definition.key))
+      .map((record) => resolveKpiValue(record, definition))
       .filter((value): value is MarketingKpiValue => Boolean(value));
     const currentMetric = aggregateKpiMetric(values, definition);
     const previousMetric = aggregateKpiMetric(previousValues, definition);
@@ -377,7 +399,7 @@ export const aggregateMarketingKpis = (
     const averageAchievement = achievementPercent(currentMetric, definition);
     const previousAchievement = achievementPercent(previousMetric, definition);
     const currentRatio = achievementRatio(currentMetric.actual, currentMetric.target, definition.direction);
-    const sourceWeight = storedWeight(records, definition.key);
+    const sourceWeight = storedWeight(records, definition);
     const weight = sourceWeight?.weight ?? (
       !values.length && records.some(record => record.kpi_values?.length) ? 0 : definition.weight
     );
@@ -392,7 +414,7 @@ export const aggregateMarketingKpis = (
         : Math.min(Math.max(currentRatio, 0), 1) * weight * 100;
     const employeeValues = new Map<string, MarketingKpiValue[]>();
     records.forEach((record) => {
-      const value = resolveKpiValue(record, definition.key);
+      const value = resolveKpiValue(record, definition);
       const employeeId = recordId(record);
       if (!value || !employeeId) return;
       const employeeKpiValues = employeeValues.get(employeeId) || [];
@@ -706,6 +728,7 @@ export const buildMarketingAnalytics = (
 export const buildMarketingInsights = (
   analytics: MarketingAnalytics,
   thresholds: MarketingTeamConfig['grade_thresholds'],
+  teamLabel = 'Marketing',
 ): MarketingInsight[] => {
   const activePositions = analytics.positionSummaries.filter(
     (position) => position.dataStatus === 'Active' && position.averageScore !== null,
@@ -750,7 +773,7 @@ export const buildMarketingInsights = (
       id: 'leading-position',
       tone: 'positive',
       title: `${leader.position} leads with a ${leader.averageScore?.toFixed(1)}% average.`,
-      detail: 'Maintain momentum and share effective practices across the selected Marketing scope.',
+      detail: `Maintain momentum and share effective practices across the selected ${teamLabel} scope.`,
       position: leader.position,
     });
   }
@@ -760,8 +783,8 @@ export const buildMarketingInsights = (
       id: 'no-results',
       tone: 'neutral',
       title: analytics.currentRecords.length
-        ? 'Marketing performance is stable for the selected period.'
-        : 'No Marketing results match the selected filters.',
+        ? `${teamLabel} performance is stable for the selected period.`
+        : `No ${teamLabel} results match the selected filters.`,
       detail: analytics.currentRecords.length
         ? 'No material decline or below-target position is currently detected.'
         : 'Adjust Month, Region, or Position to review another performance scope.',

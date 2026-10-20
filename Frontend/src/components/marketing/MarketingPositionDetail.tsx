@@ -93,6 +93,8 @@ interface MarketingPositionDetailProps {
   getActionsForEmployee?: (employeeId: string) => PMSAction[];
   onAddAction?: (row: TeamAgentRow) => void;
   onEmployeeChanged?: () => void;
+  teamLabel?: string;
+  teamDbName?: string;
 }
 
 const MarketingPositionDetail = ({
@@ -103,6 +105,8 @@ const MarketingPositionDetail = ({
   getActionsForEmployee = () => [],
   onAddAction = () => undefined,
   onEmployeeChanged,
+  teamLabel = 'Marketing',
+  teamDbName = teamLabel,
 }: MarketingPositionDetailProps) => {
   const [rosterView, setRosterView] = useState<'top_bottom' | 'all'>('all');
   const [employeeView, setEmployeeView] = useState<'all' | 'attention'>('all');
@@ -196,7 +200,7 @@ const MarketingPositionDetail = ({
       const row: TeamAgentRow = {
         id: employee.id,
         name: employee.name,
-        team: 'Marketing',
+        team: teamDbName,
         month: employee.record.identity.month,
         performanceLevel: 'Employee',
         score: employee.score,
@@ -219,7 +223,7 @@ const MarketingPositionDetail = ({
       };
       return [employee.id, row];
     })),
-    [analytics.employeeRows],
+    [analytics.employeeRows, teamDbName],
   );
 
   return (
@@ -270,7 +274,7 @@ const MarketingPositionDetail = ({
               </p>
             </div>
           </div>
-          <RosterViewTiles value={rosterView} label="Marketing roster view" onChange={(view) => {
+          <RosterViewTiles value={rosterView} label={`${teamLabel} roster view`} onChange={(view) => {
             setRosterView(view);
             setEmployeePage(1);
           }} />
