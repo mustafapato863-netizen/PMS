@@ -29,7 +29,7 @@ class ExcelProcessor:
     def clean_sheet(df: pd.DataFrame, sheet_name: str, crop_col: str = "Performance Grade") -> pd.DataFrame:
         """Crop columns and convert data types for consistency."""
         df = df.copy()
-        from cleaned import preserve_productivity_columns
+        from cleaned import drop_ignored_outbound_columns, preserve_productivity_columns
         from services.upload_header_notices import attach_header_notices
 
         source_headers = list(df.columns)
@@ -38,7 +38,9 @@ class ExcelProcessor:
         if crop_col in df.columns:
             df = preserve_productivity_columns(df, crop_col)
             df.attrs["column_warnings"] = header_notices
-            
+
+        df = drop_ignored_outbound_columns(df, sheet_name)
+
         # Standardize column names by removing spaces
         df.columns = df.columns.str.replace(r'\s+', '', regex=True)
 

@@ -30,7 +30,8 @@ export function getKpiWeightKeys(label: string): string[] {
   if (normalized.includes('prescription contribution') || normalized.includes('prescription')) return ['Prescription'];
   if (normalized.includes('tender compliance')) return ['TenderCompliance'];
   if (normalized.includes('leakage')) return ['Leakage'];
-  if (normalized.includes('reachability') || normalized.includes('abandon') || normalized.includes('utz') || normalized.includes('utilization')) return ['Other'];
+  if (normalized.includes('utz') || normalized.includes('utilization')) return ['Utilization', 'UTZ', 'Other'];
+  if (normalized.includes('reachability') || normalized.includes('abandon')) return ['Other'];
   if (normalized.includes('rejection')) return ['Rejection'];
   if (normalized.includes('initial error')) return ['InitialError'];
   if (normalized.includes('submission')) return ['Submission', 'submission_within_due_date'];
@@ -76,6 +77,23 @@ export function getWeightForLabel(
 
   if (normTeam === 'outbound') {
     const normalized = label.toLowerCase();
+    const preAugMonths = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul'];
+    const isPreAugMonth = !!normMonth && preAugMonths.some((m) => normMonth.startsWith(m));
+    const rawUtz = rawData?.['A.Utilization%'] ?? rawData?.['A.Utilization'];
+    const parsedUtz = rawUtz !== undefined && rawUtz !== null && String(rawUtz).trim() !== ''
+      ? Number(String(rawUtz).replace(/,/g, '').replace(/%$/, '').trim())
+      : Number.NaN;
+    const hasUtz = !isPreAugMonth && Number.isFinite(parsedUtz);
+    if (hasUtz) {
+      if (normalized.includes('attendance') || normalized === 'attend') {
+        const baseAttend = teamWeights?.Attendance ?? teamWeights?.Attend ?? 0.70;
+        const normBase = baseAttend > 1 ? baseAttend / 100 : baseAttend;
+        return teamWeights?.Utilization !== undefined ? normBase : Math.max(0, Number((normBase - 0.10).toFixed(4)));
+      }
+      if (normalized.includes('utilization') || normalized.includes('utz')) {
+        return teamWeights?.Utilization ?? 0.10;
+      }
+    }
     if (normMonth === 'june') {
       if (normalized.includes('quality')) return 0.00;
       if (normalized.includes('reachability') || normalized.includes('other')) return 0.20;

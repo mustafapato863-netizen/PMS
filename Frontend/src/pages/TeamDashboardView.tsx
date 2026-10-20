@@ -513,19 +513,19 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
   const handlePreApprovalsWorkflowChange = useCallback((workflow: PreApprovalsWorkflowFilter) => {
     setPreApprovalsWorkflow(workflow);
     setPage(1);
-  }, [setPreApprovalsWorkflow]);
+  }, [setPreApprovalsWorkflow, setPage]);
   const handleCallCenterChannelChange = useCallback((channel: CallCenterChannelFilter) => {
     setCallCenterChannel(channel);
     setPage(1);
-  }, [setCallCenterChannel]);
+  }, [setCallCenterChannel, setPage]);
   const handleRcmDomainChange = useCallback((domain: RcmDomainFilter) => {
     setRcmDomain(domain);
     setPage(1);
-  }, [setRcmDomain]);
+  }, [setRcmDomain, setPage]);
   const handleRcmGroupChange = useCallback((group: RcmGroupFilter) => {
     setRcmGroup(group, { clearDomain: true });
     setPage(1);
-  }, [setRcmGroup]);
+  }, [setRcmGroup, setPage]);
 
   const matchesPresentationScope = useCallback((agent: AgentRecord) => {
     if (isRcmParent && rcmGroup !== 'all' && !isRcmGroupTeam(agent.identity.team, rcmGroup, agent.region ?? agent.identity.region)) return false;

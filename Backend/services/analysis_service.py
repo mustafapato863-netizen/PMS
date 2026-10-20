@@ -96,6 +96,9 @@ class AnalysisService:
             elif root_kpi == "Other":
                 actual_val = safe_float(row.get("A.Reachability%"))
                 target_val = targets.get("Reachability", 0.95)
+            elif root_kpi in ("Utilization", "UTZ"):
+                actual_val = safe_float(row.get("A.Utilization%"))
+                target_val = safe_float(row.get("T.Utilization%"), targets.get("Utilization", 0.80))
 
         elif team == "Pre-Approvals IP Offshore":
             if root_kpi == "Rejection":
@@ -208,7 +211,7 @@ class AnalysisService:
             return "Quality Calibration"
         elif "aht" in kpi_lower:
             return "Call Handling Coaching"
-        elif "utz" in kpi_lower:
+        elif "utz" in kpi_lower or "utilization" in kpi_lower:
             return "Workflow Optimization"
         elif "abandon" in kpi_lower:
             return "Queue Management Review"

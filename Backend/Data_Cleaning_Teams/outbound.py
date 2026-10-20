@@ -40,8 +40,10 @@ def process_outbound(file_path):
         df['Total_Attend_Trend'] = 0
     
     # --- 3. Performance Calculation (Using Cleaned Ach% Columns) ---
-    # Static Weights
-    W_ATTEND = 0.70   # 70%
+    # Base Weights (Attendance = 70% when Utilization is absent; 60% + 10% Utilization when present)
+    W_ATTEND_BASE = 0.70   # 70%
+    W_ATTEND_WITH_UTZ = 0.60  # 60%
+    W_UTILIZATION = 0.10  # 10%
     W_BOOKING = 0.10  # 10%
     # Dynamic June 2026 Weights Override (Quality = 0%, Reachability = 20%)
     is_june_26 = (df['Date'].dt.month == 6) & (df['Date'].dt.year == 2026) if 'Date' in df.columns else False
@@ -52,6 +54,36 @@ def process_outbound(file_path):
     if isinstance(is_june_26, pd.Series):
         w_quality[is_june_26] = 0.00
         w_reachability[is_june_26] = 0.20
+
+    # Detect per-row Utilization starting from August 2026 onwards (10% weight, decreasing Attendance by 10%)
+    is_from_aug_26 = (
+        ((df['Date'].dt.year > 2026) | ((df['Date'].dt.year == 2026) & (df['Date'].dt.month >= 8)))
+        if 'Date' in df.columns
+        else pd.Series(False, index=df.index)
+    )
+    utz_ach_raw = pd.Series(np.nan, index=df.index, dtype=float)
+    if 'Utilization%Ach' in df.columns:
+        utz_ach_raw = pd.to_numeric(df['Utilization%Ach'], errors='coerce')
+    elif 'Utilization%Ach%' in df.columns:
+        utz_ach_raw = pd.to_numeric(df['Utilization%Ach%'], errors='coerce')
+    elif 'A.Utilization%' in df.columns:
+        a_utz = pd.to_numeric(df['A.Utilization%'], errors='coerce')
+        t_utz = (
+            pd.to_numeric(df['T.Utilization%'], errors='coerce').fillna(0.80)
+            if 'T.Utilization%' in df.columns
+            else 0.80
+        )
+        utz_ach_raw = np.where(t_utz > 0, a_utz / t_utz, 0.0)
+        utz_ach_raw = pd.Series(utz_ach_raw, index=df.index, dtype=float)
+
+    has_utz = utz_ach_raw.notna()
+    if 'A.Utilization%' in df.columns:
+        has_utz = has_utz | pd.to_numeric(df['A.Utilization%'], errors='coerce').notna()
+    has_utz = is_from_aug_26 & has_utz
+
+    w_attend = pd.Series(np.where(has_utz, W_ATTEND_WITH_UTZ, W_ATTEND_BASE), index=df.index)
+    w_utilization = pd.Series(np.where(has_utz, W_UTILIZATION, 0.00), index=df.index)
+    utilization_score = utz_ach_raw.clip(lower=0.0, upper=1.0).fillna(0.0)
     
     # Fetch clean column names and immediately fill NaNs with 0 to secure calculation
     attend_cr = df['AttendC.RAch%'].fillna(0) if 'AttendC.RAch%' in df.columns else 0
@@ -61,7 +93,8 @@ def process_outbound(file_path):
     
     # Apply Final Weights Formula
     df['Performance'] = (
-        (attend_cr * W_ATTEND) +
+        (attend_cr * w_attend) +
+        (utilization_score * w_utilization) +
         (booking_cr * W_BOOKING) +
         (quality_score * w_quality) +
         (reachability_score * w_reachability)

@@ -90,6 +90,14 @@ KNOWN_PERCENT_COLUMNS = (
     "BookingC.RAch%",
     "QualityAch%",
     "Reachability%Ach%",
+    "A.Utilization%",
+    "A.Utilization %",
+    "T.Utilization%",
+    "T.Utilization %",
+    "Utilization% Ach",
+    "Utilization%Ach",
+    "Utilization% Ach%",
+    "Utilization % Ach%",
     *PRODUCTIVITY_ACTUAL_ALIASES,
     *PRODUCTIVITY_TARGET_ALIASES,
 )
@@ -377,6 +385,30 @@ def period_from_value(value: Any) -> tuple[int, int] | None:
     if pd.isna(parsed):
         return None
     return int(parsed.year), int(parsed.month)
+
+
+def outbound_utilization_active(row: Mapping[str, Any] | None) -> bool:
+    """True only when the Outbound row period is August 2026 or later (or undated synthetic row)."""
+    if not isinstance(row, Mapping):
+        return False
+    period = period_from_value(row.get("Date") if "Date" in row else row.get("date"))
+    if period is not None:
+        return period >= (2026, 8)
+    raw_month = row.get("Month") if "Month" in row else row.get("month")
+    if raw_month is not None and str(raw_month).strip():
+        try:
+            m_num = month_number(raw_month)
+        except Exception:
+            m_num = None
+        if m_num is not None:
+            raw_year = row.get("Year") if "Year" in row else row.get("year")
+            try:
+                y_num = int(raw_year) if raw_year is not None and str(raw_year).strip() else 2026
+            except (TypeError, ValueError):
+                y_num = 2026
+            return (y_num, m_num) >= (2026, 8)
+    return True
+
 
 
 def explicit_number(row: Mapping[str, Any] | None, *keys: str) -> float | None:

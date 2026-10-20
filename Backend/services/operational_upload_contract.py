@@ -245,6 +245,26 @@ def score_operational_lines(lines: list[dict], rows: list[dict]) -> list[dict]:
             if monitoring_allowed and key == "Productivity":
                 monitoring.append(row)
                 continue
+            if monitoring_allowed and key == "Utilization":
+                if not _missing_actual(row.get("actual")):
+                    attend_line = dict(by_key.get("Attendance") or {})
+                    attend_weight = float(attend_line.get("weight") or 0)
+                    utz_weight = 0.10
+                    if attend_weight >= utz_weight:
+                        attend_line["weight"] = round(attend_weight - utz_weight, 4)
+                        by_key["Attendance"] = attend_line
+                    by_key["Utilization"] = {
+                        "kpi_key": "Utilization",
+                        "label": "Utilization",
+                        "weight": utz_weight,
+                        "direction": "higher_better",
+                        "target": 0.80,
+                        "target_mode": "workbook",
+                        "unit": "%",
+                        "cap_each": True,
+                    }
+                    provided[key] = row
+                continue
             raise EvaluationError(
                 f"{key} is not in the approved contract. Unknown rows are not treated as diagnostics.",
                 code="unknown_kpi",

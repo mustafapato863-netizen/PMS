@@ -27,6 +27,12 @@ export default defineConfig({
       output: {
         manualChunks(id: string) {
           const normalizedId = id.replaceAll('\\', '/');
+          if (
+            normalizedId.includes('/node_modules/recharts/') ||
+            normalizedId.includes('/node_modules/victory-vendor/') ||
+            normalizedId.includes('/node_modules/d3-')
+          )
+            return 'charts';
           if (normalizedId.includes('/node_modules/framer-motion/'))
             return 'animation';
           if (normalizedId.includes('/node_modules/socket.io'))

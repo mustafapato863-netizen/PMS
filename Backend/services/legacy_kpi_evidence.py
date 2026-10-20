@@ -45,6 +45,7 @@ _WEIGHT_ALIASES = {
     "Quality": ("Quality",),
     "AHT": ("AHT",),
     "Other": ("Other",),
+    "Utilization": ("Utilization", "UTZ"),
     "Productivity": ("Productivity",),
     "Rejection": ("Rejection",),
     "InitialError": ("InitialError",),
@@ -301,7 +302,7 @@ def build_legacy_employee_kpi_values(
     productivity_only = False
     evidence_keys = {
         "Inbound": ("A.Attend%", "A.Booking%", "A.QualityScore", "AHT_Minutes", "A.UTZ%", "A.AbandonRate%"),
-        "Outbound": ("A.Attend%", "A.Booking%", "A.QualityScore", "A.Reachability%"),
+        "Outbound": ("A.Attend%", "A.Booking%", "A.QualityScore", "A.Reachability%", "A.Utilization%"),
         "Pre-Approvals IP Offshore": ("IPInitialRejection%", "Error%", "NumberApprovalwithin48hrs"),
         "Sales": ("A.OPCensus", "A.OPRevenue", "A.IPCensus", "A.IPRevenue", "OPCensusAch%"),
     }
@@ -343,12 +344,37 @@ def build_legacy_employee_kpi_values(
             ),
         ]
     elif team == "Outbound":
+        from services.outbound_period_basis import outbound_utilization_active
+
+        has_utz = (
+            outbound_utilization_active(row)
+            and _first(row, "A.Utilization%", "A.Utilization") is not None
+        )
+        if has_utz and "utilization" not in {str(k).casefold() for k in weights}:
+            weights = dict(weights)
+            base_attend = _weight(weights, "Attendance")
+            if base_attend > 0:
+                weights["Attendance"] = round(max(base_attend - 0.10, 0.0), 4)
+                if "Attend" in weights:
+                    weights["Attend"] = weights["Attendance"]
+                weights["Utilization"] = 0.10
         specs = [] if productivity_only else [
             ("Attendance", "Attendance Rate", "higher_better", _first(row, "A.Attend%"), _first(row, "AttendC.RAch%", "Attend%Ach%"), 0.55),
             ("Booking", "Booking Rate", "higher_better", _first(row, "A.Booking%"), _first(row, "BookingC.RAch%", "Booking%Ach%"), 0.46),
             ("Quality", "Quality Score", "higher_better", _first(row, "A.QualityScore"), _first(row, "QualityAch%", "QualityTargetAch%"), 0.95),
             ("Other", "Reachability", "higher_better", _first(row, "A.Reachability%"), _first(row, "Reachability%Ach%"), 0.75),
         ]
+        if not productivity_only and has_utz:
+            specs.append(
+                (
+                    "Utilization",
+                    "Utilization",
+                    "higher_better",
+                    _first(row, "A.Utilization%", "A.Utilization"),
+                    _first(row, "Utilization%Ach", "Utilization%Ach%"),
+                    0.80,
+                )
+            )
     elif team == "Sales":
         activity_actual, activity_target = _sales_activity_totals(row)
         specs = [
@@ -391,6 +417,7 @@ def build_legacy_employee_kpi_values(
         "Quality": "Quality",
         "AHT": "AHT",
         "Other": "Other",
+        "Utilization": "Utilization",
         "Rejection": "Rejection",
         "InitialError": "InitialError",
         "Submission": "Submission",
@@ -425,6 +452,8 @@ def build_legacy_employee_kpi_values(
             target_keys = ["T.Quality%", "T.Quality", *target_keys]
         elif team == "Outbound" and key == "Other":
             target_keys = ["T.Reachability%", "T.Reachability", *target_keys]
+        elif team == "Outbound" and key == "Utilization":
+            target_keys = ["T.Utilization%", "T.Utilization", *target_keys]
         elif key == "Submission":
             # The Offshore workbook names the submission target by its
             # approval-within-48-hours measure, not by the KPI label.
@@ -444,7 +473,7 @@ def build_legacy_employee_kpi_values(
                 # ``3%``/``3`` depending on the Excel parser used. Keep KPI
                 # targets on the canonical 0-1 ratio scale.
                 target = explicit_target / 100.0 if key in {
-                    "Attendance", "Booking", "Quality", "Other", "Rejection", "InitialError", "Submission"
+                    "Attendance", "Booking", "Quality", "Other", "Utilization", "Rejection", "InitialError", "Submission"
                 } and explicit_target > 1.0 else explicit_target
         else:
             target = _target(actual, achievement, direction, fallback_target)

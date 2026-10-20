@@ -252,6 +252,8 @@ def resolve_kpi_direction(
     variant = LEGACY_VARIANT_DIRECTIONS.get((variant_key, variant_label))
     if variant:
         return variant, "config"
+    if variant_key == "utilization":
+        return "higher_better", "config"
     configured = normalize_direction((definition or {}).get("direction"))
     if configured:
         return configured, "config"

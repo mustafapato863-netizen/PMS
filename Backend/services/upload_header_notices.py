@@ -81,7 +81,7 @@ ORDINARY_OUTBOUND_HEADERS = (
 QUALITY_TARGET_COLUMN = "T.Quality%"
 QUALITY_TARGET_ALIAS = "T.Quality Target"
 
-# Columns the outbound processor already keeps and does not score.
+# Columns the outbound processor already keeps or ignores on the template.
 OUTBOUND_ESTABLISHED_COLUMNS = (
     "Status",
     "Available Time",
@@ -89,6 +89,16 @@ OUTBOUND_ESTABLISHED_COLUMNS = (
     "EmployeeName",
     "SGHCode",
     "EnglishName",
+    "Utliztion %",
+    "Utilization %",
+    "A.Utilization%",
+    "T.Utilization%",
+    "Utilization% Ach",
+    "Utilization% Ach%",
+    "Score Range",
+    "Classification",
+    "Grade",
+    "Distribution",
 )
 
 SHARED_METADATA_COLUMNS = (

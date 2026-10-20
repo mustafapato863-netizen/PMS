@@ -559,3 +559,129 @@ def _approved(team_id, month: int, lines: list[dict]) -> TeamConfigurationVersio
         position_name="",
         published_at=datetime.now(timezone.utc),
     )
+
+
+def test_outbound_utilization_kpi_reduces_attendance_weight_and_ignores_utliztion_column(tmp_path, db, monkeypatch):
+    """Outbound rows with A.Utilization% apply 10% Utilization + 60% Attendance from Aug 2026; 'Utliztion %' is ignored."""
+    _bind(db, monkeypatch)
+    headers = [
+        "SGHCode", "EnglishName", "Role", "Status", "Date",
+        "Num Of Leads", "Trails", "Reached", "Utliztion %",
+        "A.Reachability%", "T.Reachability%", "Reachability% Ach%",
+        "Dubai_Booking", "Sharjah_Booking", "Ajman_Booking", "Clinics_Booking",
+        "A.Booking%", "T.Booking%", "Booking C.R Ach%",
+        "Dubai_Attend", "Sharjah_Attend", "Ajman_Attend", "Clinics_Attend",
+        "A.Attend%", "T.Attend%", "Attend C.R Ach%",
+        "AHT", "A.Quality Score", "T.Quality%", "Quality Ach%",
+        "A.Utilization%", "T.Utilization%", "Utilization% Ach",
+        "Performance Score", "Performance Grade",
+        "Score Range", "Classification", "Grade", "Distribution",
+    ]
+    rows = [
+        {
+            "SGHCode": "101",
+            "EnglishName": "Legacy Four KPI Agent",
+            "Role": "Emp",
+            "Status": "Active",
+            "Date": datetime(2026, 5, 1),
+            "Num Of Leads": 100,
+            "Trails": 200,
+            "Reached": 80,
+            "Utliztion %": None,
+            "A.Reachability%": 0.80,
+            "T.Reachability%": 0.75,
+            "Reachability% Ach%": 1.0,
+            "Dubai_Booking": 40, "Sharjah_Booking": 0, "Ajman_Booking": 0, "Clinics_Booking": 0,
+            "A.Booking%": 0.50,
+            "T.Booking%": 0.46,
+            "Booking C.R Ach%": 1.0,
+            "Dubai_Attend": 22, "Sharjah_Attend": 0, "Ajman_Attend": 0, "Clinics_Attend": 0,
+            "A.Attend%": 0.55,
+            "T.Attend%": 0.55,
+            "Attend C.R Ach%": 1.0,
+            "AHT": "00:02:00",
+            "A.Quality Score": 0.95,
+            "T.Quality%": 0.95,
+            "Quality Ach%": 1.0,
+            "A.Utilization%": 0.75,
+            "T.Utilization%": 0.80,
+            "Utilization% Ach": 0.9375,
+            "Performance Score": 1.0,
+            "Performance Grade": "A",
+            "Score Range": "95% - 100%",
+            "Classification": "Exceeds",
+            "Grade": "A",
+            "Distribution": 1,
+        },
+        {
+            "SGHCode": "102",
+            "EnglishName": "Utilization Five KPI Agent",
+            "Role": "Emp",
+            "Status": "Active",
+            "Date": datetime(2026, 8, 1),
+            "Num Of Leads": 267,
+            "Trails": 527,
+            "Reached": 236,
+            "Utliztion %": None,
+            "A.Reachability%": AUGUST["Other"],
+            "T.Reachability%": TARGETS["Other"],
+            "Reachability% Ach%": AUGUST["Other"] / TARGETS["Other"],
+            "Dubai_Booking": 98, "Sharjah_Booking": 14, "Ajman_Booking": 27, "Clinics_Booking": 3,
+            "A.Booking%": AUGUST["Booking"],
+            "T.Booking%": TARGETS["Booking"],
+            "Booking C.R Ach%": 1.0,
+            "Dubai_Attend": 48, "Sharjah_Attend": 5, "Ajman_Attend": 15, "Clinics_Attend": 0,
+            "A.Attend%": AUGUST["Attendance"],
+            "T.Attend%": TARGETS["Attendance"],
+            "Attend C.R Ach%": AUGUST["Attendance"] / TARGETS["Attendance"],
+            "AHT": "00:01:41",
+            "A.Quality Score": AUGUST["Quality"],
+            "T.Quality%": TARGETS["Quality"],
+            "Quality Ach%": 1.0,
+            "A.Utilization%": AUGUST["Productivity"],
+            "T.Utilization%": TARGETS["Productivity"],
+            "Utilization% Ach": AUGUST["Productivity"] / TARGETS["Productivity"],
+            "Performance Score": 0.7982,
+            "Performance Grade": "C",
+            "Score Range": None,
+            "Classification": None,
+            "Grade": None,
+            "Distribution": None,
+        },
+    ]
+    workbook = tmp_path / "outbound_utilization.xlsx"
+    with pd.ExcelWriter(workbook, engine="openpyxl") as writer:
+        pd.DataFrame(rows, columns=headers).to_excel(writer, sheet_name="Outbound", index=False)
+
+    processor = ExcelProcessor()
+    excel = processor.load_excel(str(workbook))
+    cleaned = processor.process_sheet_outbound(excel)
+
+    assert cleaned.attrs.get("column_warnings") == []
+    assert "Utliztion%" not in cleaned.columns
+    assert "A.Utilization%" in cleaned.columns
+
+    seeder = _seeder()
+    report = seeder.process_uploaded_file("outbound_utilization.xlsx", workbook.read_bytes(), dry_run=False)
+    assert report.get("header_notices", []) == []
+    assert report["records_imported"] == 2
+
+    stored_by_emp = {
+        rec.record_payload["employee_id"]: rec
+        for rec in db.query(PerformanceRecord).all()
+    }
+    may_kpis = _by_key(stored_by_emp["101"].kpi_values)
+    aug_kpis = _by_key(stored_by_emp["102"].kpi_values)
+
+    assert "Utilization" not in may_kpis
+    assert float(may_kpis["Attendance"].weight_applied) == pytest.approx(0.70)
+    assert float(stored_by_emp["101"].score) == pytest.approx(100.0)
+
+    assert "Utilization" in aug_kpis
+    assert float(aug_kpis["Attendance"].weight_applied) == pytest.approx(0.60)
+    assert float(aug_kpis["Utilization"].weight_applied) == pytest.approx(0.10)
+    assert float(aug_kpis["Utilization"].actual_value) == pytest.approx(AUGUST["Productivity"], abs=5e-5)
+    assert float(aug_kpis["Utilization"].target_value) == pytest.approx(0.80)
+    assert float(stored_by_emp["102"].score) == pytest.approx(79.82)
+    assert stored_by_emp["102"].record_payload["actual"]["utz_rate"] == pytest.approx(AUGUST["Productivity"])
+

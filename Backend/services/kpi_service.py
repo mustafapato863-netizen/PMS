@@ -104,7 +104,8 @@ DEFAULT_TARGETS = {
         "Attend": 0.55,
         "Booking": 0.46,
         "Quality": 0.95,
-        "Reachability": 0.75
+        "Reachability": 0.75,
+        "Utilization": 0.80
     },
     "Pre-Approvals IP Offshore": {
         "Rejection": 0.03,  # 3% target initial rejection rate (lower is better)
@@ -319,6 +320,7 @@ class KPIService:
             from services.outbound_period_basis import (
                 PRODUCTIVITY_TARGET_ALIASES,
                 explicit_number,
+                outbound_utilization_active,
                 period_from_value,
                 productivity_actual,
             )
@@ -334,6 +336,7 @@ class KPIService:
 
             period = period_from_value(row.get("Date"))
             june = is_june_2026(*(period or (None, None)))
+            utz_period_active = outbound_utilization_active(row)
 
             reached = safe_float(row.get("Reached"))
             num_leads = safe_float(row.get("NumOfLeads") or row.get("NumOfLeads "))
@@ -351,6 +354,7 @@ class KPIService:
             explicit_booking = _sheet_ratio("A.Booking%")
             explicit_attend = _sheet_ratio("A.Attend%")
             explicit_reach = _sheet_ratio("A.Reachability%")
+            explicit_utilization = _sheet_ratio("A.Utilization%", "A.Utilization") if utz_period_active else None
             actual_booking_cr = explicit_booking if explicit_booking is not None else (total_bookings / reached if reached > 0 else 0.0)
             actual_attend_cr = explicit_attend if explicit_attend is not None else (total_attends / total_bookings if total_bookings > 0 else 0.0)
             actual_reachability = explicit_reach if explicit_reach is not None else (reached / num_leads if num_leads > 0 else 0.0)
@@ -383,12 +387,32 @@ class KPIService:
                 "Quality": quality_ach,
                 "Other": reachability_ach,
             }
+            base_attend_weight = float(weights.get("Attend", 0.70))
             final_weights = {
-                "Attend": float(weights.get("Attend", 0.70)),
+                "Attend": base_attend_weight,
                 "Booking": float(weights.get("Booking", 0.10)),
                 "Quality": 0.0 if june else float(weights.get("Quality", 0.10)),
                 "Other": 0.20 if june else float(weights.get("Other", 0.10)),
             }
+            if explicit_utilization is not None:
+                t_utilization = _target(("T.Utilization%", "T.Utilization"), "Utilization", 0.80)
+                utilization_ach = _achievement(explicit_utilization, t_utilization)
+                w_utilization = float(weights.get("Utilization", 0.10))
+                attend_with_utz = (
+                    float(weights["Attend"])
+                    if "Utilization" in weights and "Attend" in weights
+                    else round(max(base_attend_weight - w_utilization, 0.0), 4)
+                )
+                final_weights["Attend"] = attend_with_utz
+                final_weights["Utilization"] = w_utilization
+                achievements["Utilization"] = utilization_ach
+                row["A.Utilization%"] = explicit_utilization
+                row["T.Utilization%"] = t_utilization
+                row["Utilization%Ach"] = utilization_ach
+                row["Utilization%Ach%"] = utilization_ach
+            elif "A.Utilization%" in row:
+                row["A.Utilization%"] = np.nan
+
             productivity = productivity_actual(row)
             if productivity is not None:
                 row["A.Productivity%"] = productivity

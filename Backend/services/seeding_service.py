@@ -1553,7 +1553,11 @@ class DatabaseSeeder:
                         initial_error_rate=safe_float(row.get("Error%", 0.0)),
                         submission_rate=safe_float(row.get("A.TAT48Hours") or row.get("NumberApprovalwithin48hrs") or row.get("A.TAT") or 0.0),
                         quality_rate=safe_float(row.get("A.QualityScore") or row.get("A.QualityErrorsRate") or 0.0),
-                        utz_rate=safe_float(row.get("A.UTZ%", 0.0))
+                        utz_rate=safe_float(
+                            row.get("A.UTZ%")
+                            if row.get("A.UTZ%") is not None and not pd.isna(row.get("A.UTZ%"))
+                            else row.get("A.Utilization%", 0.0)
+                        )
                     )
 
                     row_dict = row.to_dict()
