@@ -6,7 +6,7 @@ import { validateTeamConfig } from '../../schemas/teamConfig.schema';
 import type { TeamConfig } from '../../schemas/teamConfig.schema';
 import type { AgentRecord } from '../../types';
 import { buildTeamKpiAnalysis } from './teamKpiAnalysis';
-import { aggregateConfiguredTeamKpis, calculateAggregatedTeamPerformance, displayedScoreDelta, displayedScorePoint, displayedTeamScore, headlineTeamScore, recordsUseAppliedPin, scoreMonthKey, trendPointScore } from './teamKpiAggregator';
+import { aggregateConfiguredTeamKpis, averagePrintedChannelScores, calculateAggregatedTeamPerformance, displayedScoreDelta, displayedScorePoint, displayedTeamScore, headlineTeamScore, recordsUseAppliedPin, scoreMonthKey, trendPointScore } from './teamKpiAggregator';
 
 const ATTENDANCE_POOLED = (0.5 / 0.7) * 0.5 * 100;
 const PRODUCTIVITY_ACTUAL = 0.7780694444444445;
@@ -615,6 +615,18 @@ describe('displayed team score', () => {
       computedScore: 91.46,
     })).toBe(92.6);
     expect(displayedScoreDelta(92.64, 91.4)).toBeCloseTo(1.2);
+  });
+
+  it('averages the printed channel team scores by headcount', () => {
+    expect(averagePrintedChannelScores([
+      { score: 92.64, count: 35 },
+      { score: 87.74, count: 7 },
+    ])).toBe(91.8);
+    expect(averagePrintedChannelScores([
+      { score: null, count: 0 },
+      { score: 87.7, count: 7 },
+    ])).toBe(87.7);
+    expect(averagePrintedChannelScores([{ score: null, count: 4 }])).toBeNull();
   });
 
   it('uses the pooled contribution total for a single team and the employee average for merged branches', () => {

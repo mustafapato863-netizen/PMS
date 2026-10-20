@@ -41,4 +41,24 @@ describe('CallCenterChannelSummary', () => {
 
     expect(onChannelSelect).toHaveBeenCalledWith('inbound');
   });
+
+  it('prints each channel team score and the headcount-weighted department average', () => {
+    render(
+      <CallCenterChannelSummary
+        rows={[rowFor('Inbound', 80), rowFor('Inbound', 100), rowFor('Outbound', 70)]}
+        onChannelSelect={vi.fn()}
+        channelScores={{ inbound: 92.64, outbound: 87.74 }}
+      />,
+    );
+
+    const inbound = screen.getByRole('button', { name: 'Open Inbound channel' });
+    const outbound = screen.getByRole('button', { name: 'Open Outbound channel' });
+    expect(inbound).toHaveTextContent('92.6%');
+    expect(inbound).toHaveTextContent('Team score');
+    expect(inbound).not.toHaveTextContent('90.0%');
+    expect(outbound).toHaveTextContent('87.7%');
+    expect(outbound).not.toHaveTextContent('70.0%');
+    expect(screen.getByText('91.0%')).toBeInTheDocument();
+    expect(screen.getByText(/Average of the Inbound and Outbound team scores/)).toBeInTheDocument();
+  });
 });

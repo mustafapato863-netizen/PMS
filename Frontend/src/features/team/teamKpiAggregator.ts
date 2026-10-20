@@ -557,6 +557,43 @@ export function headlineTeamScore(input: {
 }
 
 /**
+ * One channel's board score. Call Center overview cards use this so Inbound
+ * and Outbound print the same headline as the team score inside that channel.
+ */
+export function channelBoardScore(input: {
+  agents: AgentRecord[];
+  config: TeamConfig | undefined;
+  employeeAverage: number;
+  location?: LocationKey;
+  preferConfiguredWeights?: boolean;
+}): number | null {
+  if (input.agents.length === 0) return null;
+  const pooledScore = calculateAggregatedTeamPerformance(input.agents, input.config, {
+    location: input.location,
+    preferConfiguredWeights: input.preferConfiguredWeights,
+  })?.score ?? null;
+  return headlineTeamScore({
+    scope: 'pooled',
+    employeeAverage: input.employeeAverage,
+    pooledScore,
+    appliedPin: recordsUseAppliedPin(input.agents),
+  });
+}
+
+/** Headcount-weighted average of the one-decimal scores printed on the channel cards. */
+export function averagePrintedChannelScores(
+  channels: Array<{ score: number | null; count: number }>,
+): number | null {
+  const scored = channels.filter((channel): channel is { score: number; count: number } => (
+    channel.score !== null && Number.isFinite(channel.score) && channel.count > 0
+  ));
+  const headcount = scored.reduce((sum, channel) => sum + channel.count, 0);
+  if (headcount === 0) return null;
+  const weighted = scored.reduce((sum, channel) => sum + displayedScorePoint(channel.score) * channel.count, 0) / headcount;
+  return displayedScorePoint(weighted);
+}
+
+/**
  * The open month and the comparison month on the chart are the printed headline.
  * Other months keep their own computed score, at the same one-decimal rounding.
  */

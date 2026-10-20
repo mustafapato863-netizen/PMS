@@ -8,6 +8,7 @@ import {
   Users,
 } from 'lucide-react';
 import type { TeamKpiAnalysis } from '../../features/team/teamKpiAnalysis';
+import { averagePrintedChannelScores, displayedScorePoint } from '../../features/team/teamKpiAggregator';
 import type { TeamAgentRow } from '../../hooks/usePerformanceData';
 import { CALL_CENTER_CHANNEL_LABELS, callCenterChannelForTeam, type CallCenterChannelFilter } from '../../types';
 import { GRADE_PALETTE, getGradeClassOrNull } from '../../constants/grades';
@@ -23,6 +24,11 @@ interface CallCenterChannelSummaryProps {
   rows: TeamAgentRow[];
   onChannelSelect: (channel: Exclude<CallCenterChannelFilter, 'all'>) => void;
   channelKpiAnalysis?: ChannelKpiAnalysis[];
+  /**
+   * Team score for each channel, from the same headline as that channel's board.
+   * Absent only for a summary that has not loaded channel configs yet.
+   */
+  channelScores?: Partial<Record<CallCenterChannel, number | null>>;
 }
 
 const CHANNELS: CallCenterChannel[] = ['inbound', 'outbound'];
@@ -73,15 +79,18 @@ const formatKpiValue = (value: number, unit: TeamKpiAnalysis['unit']) => {
   return value.toFixed(1);
 };
 
-const CallCenterChannelSummary = ({ rows, onChannelSelect, channelKpiAnalysis = [] }: CallCenterChannelSummaryProps) => {
+const CallCenterChannelSummary = ({ rows, onChannelSelect, channelKpiAnalysis = [], channelScores }: CallCenterChannelSummaryProps) => {
+  const usesChannelBoardScores = channelScores !== undefined;
   const snapshots: ChannelSnapshot[] = CHANNELS.map((channel) => {
     const channelRows = rows.filter((row) => callCenterChannelForTeam(row.raw.identity.team) === channel);
+    const employeeAverage = channelRows.length > 0
+      ? channelRows.reduce((sum, row) => sum + row.score, 0) / channelRows.length
+      : null;
+    const boardScore = channelScores?.[channel];
     return {
       channel,
       count: channelRows.length,
-      score: channelRows.length > 0
-        ? channelRows.reduce((sum, row) => sum + row.score, 0) / channelRows.length
-        : null,
+      score: usesChannelBoardScores ? (boardScore ?? null) : employeeAverage,
     };
   });
 
@@ -95,9 +104,12 @@ const CallCenterChannelSummary = ({ rows, onChannelSelect, channelKpiAnalysis = 
   const scoreSpread = leadChannel && focusChannel ? leadChannel.score - focusChannel.score : null;
   const totalEmployees = snapshots.reduce((sum, snapshot) => sum + snapshot.count, 0);
   const channelsAreClose = scoreSpread !== null && scoreSpread < 1;
-  const overallScore = rows.length > 0
+  const employeeAverage = rows.length > 0
     ? rows.reduce((sum, row) => sum + row.score, 0) / rows.length
     : null;
+  const overallScore = usesChannelBoardScores
+    ? averagePrintedChannelScores(snapshots)
+    : employeeAverage;
   const impactingEmployees = overallScore === null
     ? []
     : rows
@@ -129,7 +141,7 @@ const CallCenterChannelSummary = ({ rows, onChannelSelect, channelKpiAnalysis = 
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <p className="text-xs font-extrabold uppercase tracking-[0.1em] text-blue-600 dark:text-blue-300">Decision overview</p>
-              <span className="rounded-full border border-[var(--border-light)] bg-[var(--bg-sunken)] px-2 py-0.5 text-xs font-extrabold uppercase tracking-wide text-[var(--text-muted)]">No pooled KPI score</span>
+              <span className="rounded-full border border-[var(--border-light)] bg-[var(--bg-sunken)] px-2 py-0.5 text-xs font-extrabold uppercase tracking-wide text-[var(--text-muted)]">{usesChannelBoardScores ? 'Average of team scores' : 'No pooled KPI score'}</span>
             </div>
             <h3 id="call-center-overview" className="mt-1 heading-3">Call Center Overview</h3>
             <p className="mt-1 max-w-3xl text-xs font-medium leading-5 text-[var(--text-secondary)]">
@@ -150,8 +162,12 @@ const CallCenterChannelSummary = ({ rows, onChannelSelect, channelKpiAnalysis = 
             <p className="text-xs font-extrabold uppercase tracking-[0.08em] text-blue-700 dark:text-blue-300">Department performance</p>
             <span className={`rounded-full border px-2 py-1 text-xs font-extrabold uppercase tracking-wide ${overallSignal.tone}`}>{overallSignal.label}</span>
           </div>
-          <p className="mt-3 text-3xl font-extrabold tracking-tight text-[var(--text-primary)]">{overallScore === null ? '—' : `${overallScore.toFixed(1)}%`}</p>
-          <p className="mt-1 text-xs font-medium leading-4 text-[var(--text-secondary)]">Overall employee score: average across {totalEmployees} active employees; channel KPI definitions stay separate.</p>
+          <p className="mt-3 text-3xl font-extrabold tracking-tight text-[var(--text-primary)]">{overallScore === null ? '—' : `${displayedScorePoint(overallScore).toFixed(1)}%`}</p>
+          <p className="mt-1 text-xs font-medium leading-4 text-[var(--text-secondary)]">
+            {usesChannelBoardScores
+              ? 'Average of the Inbound and Outbound team scores, weighted by headcount. Each channel keeps its own KPI definitions.'
+              : `Overall employee score: average across ${totalEmployees} active employees; channel KPI definitions stay separate.`}
+          </p>
         </article>
 
         <article className={`rounded-2xl border p-4 ${primaryDrag ? 'border-amber-500/25 bg-amber-500/[0.06]' : 'border-emerald-500/20 bg-emerald-500/[0.05]'}`}>
@@ -180,7 +196,7 @@ const CallCenterChannelSummary = ({ rows, onChannelSelect, channelKpiAnalysis = 
               <Activity size={16} className="text-indigo-500" />
               <h4 className="text-sm font-extrabold text-[var(--text-primary)]">Channel comparison</h4>
             </div>
-            <span className="text-xs font-bold uppercase tracking-[0.08em] text-[var(--text-muted)]">Average score</span>
+            <span className="text-xs font-bold uppercase tracking-[0.08em] text-[var(--text-muted)]">{usesChannelBoardScores ? 'Team score' : 'Average score'}</span>
           </div>
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             {snapshots.map((snapshot) => {
@@ -211,8 +227,8 @@ const CallCenterChannelSummary = ({ rows, onChannelSelect, channelKpiAnalysis = 
                   </div>
                   <div className="mt-4 flex items-end justify-between gap-3">
                     <div>
-                      <p className="text-2xl font-extrabold tracking-tight text-[var(--text-primary)]">{snapshot.score === null ? 'No data' : `${snapshot.score.toFixed(1)}%`}</p>
-                      <p className="mt-1 text-xs font-medium text-[var(--text-secondary)]">Average employee score</p>
+                      <p className="text-2xl font-extrabold tracking-tight text-[var(--text-primary)]">{snapshot.score === null ? 'No data' : `${displayedScorePoint(snapshot.score).toFixed(1)}%`}</p>
+                      <p className="mt-1 text-xs font-medium text-[var(--text-secondary)]">{usesChannelBoardScores ? 'Team score' : 'Average employee score'}</p>
                     </div>
                     <span className="flex h-8 w-8 items-center justify-center rounded-full border border-[var(--border-light)] text-[var(--text-muted)] transition-colors duration-200 group-hover:border-current group-hover:text-[var(--text-primary)]" aria-hidden="true">
                       <ArrowRight size={15} />

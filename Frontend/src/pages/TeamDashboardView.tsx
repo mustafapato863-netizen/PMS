@@ -43,7 +43,7 @@ import { useTeamConfig } from '../hooks/useTeamConfig';
 import { GRADE_PALETTE, GRADE_THRESHOLDS } from '../constants/grades';
 import { buildTeamKpiAnalysis } from '../features/team/teamKpiAnalysis';
 import { aggregatePreApprovalsIpMetrics } from '../features/team/preApprovalsIpMetrics';
-import { aggregateConfiguredTeamKpis, calculateAggregatedTeamPerformance, displayedTeamScore, headlineTeamScore, recordsUseAppliedPin, scoreMonthKey, trendPointScore } from '../features/team/teamKpiAggregator';
+import { aggregateConfiguredTeamKpis, calculateAggregatedTeamPerformance, channelBoardScore, displayedTeamScore, headlineTeamScore, recordsUseAppliedPin, scoreMonthKey, trendPointScore } from '../features/team/teamKpiAggregator';
 import type { TeamConfig } from '../schemas/teamConfig.schema';
 import { formatMonthChange, missingMonthChangeText } from '../features/team/monthChange';
 import { reportingMonthName, shortMonthLabel } from '../hooks/api/scopedPeriod';
@@ -806,6 +806,26 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
       recordsUseAppliedPin(previousTeamAgents),
     );
   }, [headlineScope, prevPeriodKey, getCanonicalTeamScore, prevAvgScore, previousTeamAgents]);
+
+  // Channel cards use the same pooled headline as the team score inside that channel.
+  // The department figure is the headcount-weighted average of those two scores.
+  const callCenterChannelScores = useMemo(() => {
+    if (!isCallCenterAggregate) return undefined;
+    const scoreFor = (channel: 'inbound' | 'outbound') => {
+      const channelRows = presentationRows.filter((row) => callCenterChannelForTeam(row.raw.identity.team) === channel);
+      if (channelRows.length === 0) return null;
+      const agents = agentsForHeadline(channelRows.map((row) => row.raw));
+      const employeeAverage = channelRows.reduce((sum, row) => sum + row.score, 0) / channelRows.length;
+      return channelBoardScore({
+        agents,
+        config: channel === 'inbound' ? inboundTeamConfig : outboundTeamConfig,
+        employeeAverage,
+        location,
+        preferConfiguredWeights: isMergedTeam,
+      });
+    };
+    return { inbound: scoreFor('inbound'), outbound: scoreFor('outbound') };
+  }, [isCallCenterAggregate, presentationRows, agentsForHeadline, inboundTeamConfig, outboundTeamConfig, location, isMergedTeam]);
 
   // Compute metrics dynamically for the current month
   const metrics = useMemo(() => {
@@ -2079,6 +2099,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
               rows={presentationRows}
               onChannelSelect={handleCallCenterChannelChange}
               channelKpiAnalysis={callCenterChannelKpiAnalysis}
+              channelScores={callCenterChannelScores}
             />
             <DepartmentPositionKpis view={callCenterPositionView} teamId="call-center" teamName={CALL_CENTER_TEAM} month={month} />
           </>
