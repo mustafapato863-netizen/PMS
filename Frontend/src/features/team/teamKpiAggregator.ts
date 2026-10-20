@@ -123,6 +123,47 @@ const keepsUnconfiguredPositionKpi = (config: TeamConfig | undefined) => {
   return Boolean(positions && Object.keys(positions).length > 0) && config.kpis.length === 0;
 };
 
+const PRE_AUG_MONTH_PREFIXES = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul'];
+
+const isOutboundFromAugust2026 = (agent: AgentRecord): boolean => {
+  const year = agent.year;
+  if (typeof year === 'number' && Number.isFinite(year)) {
+    if (year < 2026) return false;
+    if (year > 2026) return true;
+  }
+  const month = (agent.identity?.month || '').trim().toLowerCase();
+  if (month && PRE_AUG_MONTH_PREFIXES.some((prefix) => month.startsWith(prefix))) {
+    return false;
+  }
+  return true;
+};
+
+const hasOutboundUtilization = (agent: AgentRecord): boolean => {
+  if (normalize(agent.identity.team) !== 'outbound') return false;
+  if (!isOutboundFromAugust2026(agent)) return false;
+  if ((agent.kpi_values ?? []).some((kpi) => normalize(kpi.kpi_key || kpi.label) === 'utilization')) {
+    return true;
+  }
+  const rawVal = agent.raw_data?.['A.Utilization%'] ?? agent.raw_data?.['A.Utilization'];
+  if (rawVal === undefined || rawVal === null || String(rawVal).trim() === '') return false;
+  const parsed = Number(String(rawVal).replace(/,/g, '').replace(/%$/, '').trim());
+  return Number.isFinite(parsed);
+};
+
+const OUTBOUND_UTILIZATION_DEFINITION: KPI = {
+  key: 'Utilization',
+  label: 'Utilization',
+  weight: 0.10,
+  direction: 'higher_better',
+  unit: '%',
+  color: '#6366F1',
+  actual_col: 'A.Utilization%',
+  target_col: 'T.Utilization%',
+  score_formula: 'target_ratio',
+  cap_achievement: true,
+  aggregation: { method: 'average' },
+};
+
 const employeeDefinitions = (config: TeamConfig | undefined, agent: AgentRecord): KPI[] => {
   if (!config) return [];
   const positions = positionDefinitions(config);
@@ -131,7 +172,21 @@ const employeeDefinitions = (config: TeamConfig | undefined, agent: AgentRecord)
     const matched = Object.entries(positions).find(([name]) => normalize(name) === normalize(position));
     if (matched) return matched[1].kpis;
   }
-  if (config.kpis.length > 0) return config.kpis;
+  if (config.kpis.length > 0) {
+    if (normalize(config.team) === 'outbound' && hasOutboundUtilization(agent)) {
+      const hasExplicitUtz = config.kpis.some((kpi) => normalize(kpi.key) === 'utilization');
+      if (hasExplicitUtz) return config.kpis;
+      return [
+        ...config.kpis.map((kpi) =>
+          normalize(kpi.key) === 'attendance'
+            ? { ...kpi, weight: Math.max(0, Number((kpi.weight - 0.10).toFixed(4))) }
+            : kpi,
+        ),
+        OUTBOUND_UTILIZATION_DEFINITION,
+      ];
+    }
+    return config.kpis;
+  }
   if (!positions) return [];
   return Object.values(positions).flatMap((definition) => definition.kpis);
 };
@@ -376,7 +431,9 @@ const positionGroup = (config: TeamConfig, agent: AgentRecord): string => {
 const basisGroupKey = (config: TeamConfig, agent: AgentRecord): string => {
   const position = positionGroup(config, agent);
   const pinned = (agent.kpi_values ?? []).filter((kpi) => kpi.evaluation_pinned === true);
-  if (pinned.length === 0) return `${position}::legacy`;
+  if (pinned.length === 0) {
+    return hasOutboundUtilization(agent) ? `${position}::legacy-utz` : `${position}::legacy`;
+  }
   const signature = pinned
     .map((kpi) => [
       normalize(kpi.kpi_key || kpi.label),
