@@ -453,11 +453,14 @@ def build_legacy_employee_kpi_values(
         elif team == "Outbound" and key == "Other":
             target_keys = ["T.Reachability%", "T.Reachability", *target_keys]
         elif team == "Inbound" and key == "Other":
-            target_keys = (
-                ["T.UTZ%", "T.UTZ", "T.Utilization%", "T.Utilization", *target_keys]
-                if has_utz
-                else ["T.AbandonRate%", "T.Abandon%", "T.Abandon", *target_keys]
-            )
+            # A positive UTZ%Ach% already fixes the scored target
+            # (actual / achievement; 0.85 on the 2026-10-06 rows). T.UTZ%
+            # on those rows is 0.80 and must not replace it.
+            utz_achievement = _first(row, "UTZ%Ach%") if has_utz else None
+            if has_utz and not (utz_achievement is not None and utz_achievement > 0):
+                target_keys = ["T.UTZ%", "T.UTZ", "T.Utilization%", "T.Utilization", *target_keys]
+            elif not has_utz:
+                target_keys = ["T.AbandonRate%", "T.Abandon%", "T.Abandon", *target_keys]
         elif team == "Outbound" and key == "Utilization":
             target_keys = ["T.Utilization%", "T.Utilization", *target_keys]
         elif key == "Submission":

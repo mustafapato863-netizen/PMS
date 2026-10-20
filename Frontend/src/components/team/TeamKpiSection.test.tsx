@@ -478,7 +478,8 @@ describe('TeamKpiSection applied call-center basis', () => {
     const attendance = screen.getByText('Patient Attendance Rate').closest('article');
     expect(attendance).toHaveTextContent('70%');
     expect(attendance).toHaveTextContent('On Target');
-    expect(attendance).toHaveTextContent('116.7% of target');
+    // Progress is 116.7%; the card label is capped at 100% of target.
+    expect(attendance).toHaveTextContent('100.0% of target');
     expect(attendance).not.toHaveTextContent('Below Target');
 
     const handleTime = screen.getByText('Avg. Handle Time').closest('article');

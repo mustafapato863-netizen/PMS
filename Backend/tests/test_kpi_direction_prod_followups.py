@@ -221,6 +221,7 @@ def test_prod_like_genuine_utilization_rows_stay_utilization_with_rebuilt_score(
     assert other["direction_source"] == "config"
     assert not other.get("direction_corrected")  # never flipped / rescored
     assert other["actual_value"] == pytest.approx(utz, abs=1e-4)
+    assert other["target_value"] == pytest.approx(saved["target_value"], abs=1e-4)
     assert other["contribution"] == pytest.approx(saved["contribution"], abs=1e-3)
     raw = fixture["raw_data"]
     inbound_calls = raw.get("InboundCalls")
