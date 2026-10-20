@@ -1,0 +1,187 @@
+{
+  "team": "Offshore Admin & Management",
+  "db_name": "Offshore Admin & Management",
+  "region": "EGY",
+  "employee_id_col": "Employee ID",
+  "employee_name_col": "Employee Name",
+  "grade_thresholds": {
+    "A": 95,
+    "B": 90,
+    "C": 80,
+    "D": 70
+  },
+  "performance_levels": {
+    "Employee": {
+      "positions": {
+        "Offshore PMO": {
+          "kpis": [
+            {
+              "key": "offshore_pmo_schedule_variance",
+              "label": "Schedule Variance",
+              "perspective": "Internal Process",
+              "weight": 0.3,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#2563EB",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 1
+            },
+            {
+              "key": "offshore_pmo_resource_utilization",
+              "label": "Resource Utilization",
+              "perspective": "Internal Process",
+              "weight": 0.15,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#0D9488",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 2
+            },
+            {
+              "key": "offshore_pmo_portfolio_completion_rate",
+              "label": "Portfolio Completion Rate",
+              "perspective": "Internal Process",
+              "weight": 0.2,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#D97706",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 3
+            },
+            {
+              "key": "offshore_pmo_timeliness_of_status_reports",
+              "label": "Timeliness of Status Reports",
+              "perspective": "Internal Process",
+              "weight": 0.25,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#7C3AED",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 4
+            },
+            {
+              "key": "offshore_pmo_stakeholder_satisfaction",
+              "label": "Stakeholder Satisfaction",
+              "perspective": "Internal Process",
+              "weight": 0.1,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#DC2626",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 5
+            }
+          ]
+        },
+        "Admin Supervisor": {
+          "kpis": [
+            {
+              "key": "admin_supervisor_administrative_tasks_com_7f327e",
+              "label": "Administrative Tasks Completion Rate",
+              "perspective": "Internal Process",
+              "weight": 0.3,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#2563EB",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 1
+            },
+            {
+              "key": "admin_supervisor_team_attendance",
+              "label": "Team Attendance",
+              "perspective": "Internal Process",
+              "weight": 0.1,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#0D9488",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 2
+            },
+            {
+              "key": "admin_supervisor_facilities_office_readin_c8128f",
+              "label": "Facilities & Office Readiness Score",
+              "perspective": "Internal Process",
+              "weight": 0.25,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#D97706",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 3
+            },
+            {
+              "key": "admin_supervisor_issue_resolution_time",
+              "label": "Issue Resolution Time",
+              "perspective": "Internal Process",
+              "weight": 0.2,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#7C3AED",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 4
+            },
+            {
+              "key": "admin_supervisor_resource_utilization",
+              "label": "Resource utilization",
+              "perspective": "Internal Process",
+              "weight": 0.15,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#DC2626",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 5
+            }
+          ]
+        }
+      }
+    }
+  }
+}

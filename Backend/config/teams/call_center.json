@@ -1,0 +1,343 @@
+{
+  "team": "Call Center",
+  "db_name": "Call Center",
+  "region": "EGY",
+  "employee_id_col": "Employee ID",
+  "employee_name_col": "Employee Name",
+  "grade_thresholds": {
+    "A": 95,
+    "B": 90,
+    "C": 80,
+    "D": 70
+  },
+  "performance_levels": {
+    "Employee": {
+      "positions": {
+        "Call Center trainer": {
+          "kpis": [
+            {
+              "key": "call_center_trai_certification_pass_rate_patch",
+              "label": "Certification Pass Rate (Patch)",
+              "perspective": "Customer",
+              "weight": 0.4,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#2563EB",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 1
+            },
+            {
+              "key": "call_center_trai_quality_of_training",
+              "label": "Quality of Training",
+              "perspective": "Customer",
+              "weight": 0.3,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#0D9488",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 2
+            },
+            {
+              "key": "call_center_trai_refreshment_rate",
+              "label": "Refreshment Rate%",
+              "perspective": "Customer",
+              "weight": 0.2,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#D97706",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 3
+            },
+            {
+              "key": "call_center_trai_knowledge_update",
+              "label": "Knowledge update",
+              "perspective": "Customer",
+              "weight": 0.1,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#7C3AED",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 4
+            }
+          ]
+        },
+        "Quality Assurance": {
+          "kpis": [
+            {
+              "key": "quality_assuranc_evaluation_coverage",
+              "label": "Evaluation Coverage",
+              "perspective": "Customer",
+              "weight": 0.4,
+              "direction": "higher_better",
+              "unit": "Number",
+              "color": "#2563EB",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 1
+            },
+            {
+              "key": "quality_assuranc_quality_sessions_efficie_ac163e",
+              "label": "Quality sessions efficiency / success rate",
+              "perspective": "Customer",
+              "weight": 0.6,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#0D9488",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 2
+            }
+          ]
+        },
+        "Workforce analyst": {
+          "kpis": [
+            {
+              "key": "workforce_analys_forecast_accuracy_calls",
+              "label": "Forecast Accuracy (Calls)",
+              "perspective": "Customer",
+              "weight": 0.35,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#2563EB",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 1
+            },
+            {
+              "key": "workforce_analys_abandon_rate",
+              "label": "Abandon Rate%",
+              "perspective": "Customer",
+              "weight": 0.3,
+              "direction": "lower_better",
+              "unit": "%",
+              "color": "#0D9488",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 2
+            },
+            {
+              "key": "workforce_analys_reporting_timeliness",
+              "label": "Reporting Timeliness",
+              "perspective": "Customer",
+              "weight": 0.35,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#D97706",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 3
+            }
+          ]
+        },
+        "Inbound Team Leader": {
+          "kpis": [
+            {
+              "key": "inbound_team_lea_booking_cr",
+              "label": "Booking CR%",
+              "perspective": "Customer",
+              "weight": 0.2,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#2563EB",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 1
+            },
+            {
+              "key": "inbound_team_lea_attended_cr",
+              "label": "Attended CR%",
+              "perspective": "Customer",
+              "weight": 0.5,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#0D9488",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 2
+            },
+            {
+              "key": "inbound_team_lea_aht",
+              "label": "AHT",
+              "perspective": "Customer",
+              "weight": 0.1,
+              "direction": "lower_better",
+              "unit": "%",
+              "color": "#D97706",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 3
+            },
+            {
+              "key": "inbound_team_lea_utz",
+              "label": "UTZ%",
+              "perspective": "Customer",
+              "weight": 0.15,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#7C3AED",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 4
+            },
+            {
+              "key": "inbound_team_lea_quality_score",
+              "label": "Quality Score",
+              "perspective": "Customer",
+              "weight": 0.05,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#DC2626",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 5
+            }
+          ]
+        },
+        "Outbound Team Leader": {
+          "kpis": [
+            {
+              "key": "outbound_team_le_booking_cr",
+              "label": "Booking CR%",
+              "perspective": "Customer",
+              "weight": 0.1,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#2563EB",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 1
+            },
+            {
+              "key": "outbound_team_le_attended_cr",
+              "label": "Attended CR%",
+              "perspective": "Customer",
+              "weight": 0.6,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#0D9488",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 2
+            },
+            {
+              "key": "outbound_team_le_reachability",
+              "label": "Reachability %",
+              "perspective": "Customer",
+              "weight": 0.1,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#D97706",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 3
+            },
+            {
+              "key": "outbound_team_le_utz",
+              "label": "UTZ%",
+              "perspective": "Customer",
+              "weight": 0.15,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#7C3AED",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 4
+            },
+            {
+              "key": "outbound_team_le_quality_score",
+              "label": "Quality Score",
+              "perspective": "Customer",
+              "weight": 0.05,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#DC2626",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 5
+            }
+          ]
+        }
+      }
+    }
+  }
+}

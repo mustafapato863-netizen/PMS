@@ -298,7 +298,7 @@ def _relational_kpi(value, config_by_key: dict[str, dict], stored_metadata: dict
     definition = {**config_by_key.get(value.kpi_key, {}), **(stored_metadata or {})}
     achievement_ratio = float(value.achievement_ratio)
     contribution = float(value.contribution)
-    return {
+    row = {
         "kpi_key": value.kpi_key,
         "label": definition.get("label", value.kpi_key),
         "perspective": definition.get("perspective"),
@@ -312,6 +312,33 @@ def _relational_kpi(value, config_by_key: dict[str, dict], stored_metadata: dict
         "weight_applied": float(value.weight_applied),
         "contribution": contribution / 100.0 if contribution > 1.0 else contribution,
     }
+    if definition.get("evaluation_pinned") is True:
+        row["evaluation_pinned"] = True
+    return row
+
+
+# Departments whose employee rows carry a position's own KPI labels. Marketing
+# was the first; the same payload metadata applies to every position department.
+_POSITION_DEPARTMENTS = frozenset({
+    "marketing",
+    "finance",
+    "human resources",
+    "it",
+    "offshore admin & management",
+    "call center",
+    "rcm",
+    "pharmacy",
+})
+
+
+def _use_payload_kpi_metadata(team_name: str, performance_level: str, payload) -> bool:
+    """Pinned rows, and every employee row of a position department, keep their labels."""
+    if str(performance_level) == "Employee" and str(team_name).casefold() in _POSITION_DEPARTMENTS:
+        return True
+    values = payload.get("kpi_values") if isinstance(payload, dict) else None
+    if not isinstance(values, list):
+        return False
+    return any(isinstance(value, dict) and value.get("evaluation_pinned") is True for value in values)
 
 
 def _payload_kpi_metadata(payload) -> dict[str, dict]:
@@ -326,10 +353,16 @@ def _payload_kpi_metadata(payload) -> dict[str, dict]:
         key = value.get("kpi_key")
         if not isinstance(key, str) or not key or key in result:
             continue
-        result[key] = {
+        metadata = {
             field: value[field] for field in ("label", "unit", "perspective", "color")
             if isinstance(value.get(field), str) and value[field].strip()
         }
+        if value.get("evaluation_pinned") is True:
+            metadata["evaluation_pinned"] = True
+        direction = value.get("direction")
+        if isinstance(direction, str) and direction.strip():
+            metadata["direction"] = direction.strip()
+        result[key] = metadata
     return result
 
 
@@ -485,8 +518,8 @@ class DashboardRecordService:
             payload = getattr(item, "record_payload", None)
             # Marketing's uploaded employee-month rows own their display definitions,
             # including KPIs not in the static catalog. Do not replace SQL numbers.
-            stored_metadata = _payload_kpi_metadata(payload) if (
-                team_name == "Marketing" and str(item.performance_level) == "Employee"
+            stored_metadata = _payload_kpi_metadata(payload) if _use_payload_kpi_metadata(
+                team_name, str(item.performance_level), payload
             ) else {}
 
             def relational_kpis() -> list[dict]:

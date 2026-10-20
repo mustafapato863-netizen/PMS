@@ -463,12 +463,20 @@ async def test_management_upload_response_lists_direction_warnings(monkeypatch):
     from api.routers.performance import upload_balanced_scorecard_template
 
     monkeypatch.setattr(
-        "api.routers.performance.ManagementBSCService",
+        "services.management_template_import.ManagementBSCService",
         lambda db: SimpleNamespace(import_template_rows=lambda **kwargs: {"teams": ["Sales"], "periods": ["May 2025"]}),
+    )
+    monkeypatch.setattr(
+        "services.management_template_import.PositionDepartmentImportService",
+        lambda db: SimpleNamespace(import_parsed_rows=lambda rows, commit=True: {"records": 0, "teams": []}),
     )
     file = UploadFile(filename="management.xlsx", file=io.BytesIO(_management_workbook("  ")))
 
-    response = await upload_balanced_scorecard_template(db=SimpleNamespace(rollback=lambda: None), file=file, _user={"username": "tester"})
+    response = await upload_balanced_scorecard_template(
+        db=SimpleNamespace(rollback=lambda: None, commit=lambda: None),
+        file=file,
+        _user={"username": "tester"},
+    )
 
     assert response.success is True
     assert [w["code"] for w in response.data["warnings"]] == ["BLANK_DIRECTION"]

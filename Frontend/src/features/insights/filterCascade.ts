@@ -17,7 +17,10 @@ import {
  * current option scope has none of its teams. The backend (PR #14) may list
  * standalone teams such as Sales, CSR and Pharmacy as independent functions.
  */
-export const INSIGHT_FUNCTIONS = ['Call Center', 'RCM', 'Marketing', 'Sales', 'CSR', 'Pharmacy'] as const;
+export const INSIGHT_FUNCTIONS = [
+  'Call Center', 'RCM', 'Marketing', 'Sales', 'CSR', 'Pharmacy',
+  'Finance', 'Human Resources', 'IT', 'Administration',
+] as const;
 
 /** `options.team_functions` from PR #14: source team name → every function it rolls up into. */
 export type TeamFunctionMap = Record<string, string[]>;
@@ -61,6 +64,8 @@ function helperBelongs(team: string, teamFunction: string): boolean {
         return isRcmTeam(name);
       case 'pre-approvals':
         return isPreApprovalsUaeTeam(name);
+      case 'administration':
+        return identity(name) === 'administration' || identity(name) === 'offshore admin & management';
       default:
         return identity(name) === identity(teamFunction);
     }

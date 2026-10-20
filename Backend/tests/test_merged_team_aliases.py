@@ -57,8 +57,8 @@ def test_team_level_scope_expands_pre_approvals_parent_aliases():
     assert filter_records_by_team_levels(records, scope) == records
 
 
-def test_call_center_parent_repository_alias_reads_only_egypt_channels():
-    assert _team_filter_values("Call Center") == ("inbound", "outbound")
+def test_call_center_parent_repository_alias_reads_egypt_channels_and_the_parent_team():
+    assert _team_filter_values("Call Center") == ("inbound", "outbound", "call center")
 
 
 def test_call_center_parent_scope_does_not_include_inbound_uae():

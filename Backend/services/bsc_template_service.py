@@ -302,6 +302,7 @@ class BSCTemplateService:
             return []
 
         headers = [str(value).strip() for value in rows[0]]
+        perspectives = self._config_perspective_index(workbook)
         required = {
             "Employee ID", "Team", "Employee Name", "Position", "Performance Level", "Period",
             "Perspective", "KPI", "Direction", "Weight", "Target Value", "Target Unit", "Actual Value",
@@ -320,6 +321,7 @@ class BSCTemplateService:
                 continue
             month, year = _parse_period(item.get("Period"))
             level = normalize_performance_level(item.get("Performance Level"), allow_all=False)
+            perspective = self._perspective_for_row(item, perspectives)
             parsed = {
                 "employee_id": str(item.get("Employee ID", "")).strip(),
                 "team": str(item.get("Team", "")).strip(),
@@ -328,7 +330,7 @@ class BSCTemplateService:
                 "performance_level": level,
                 "month": month,
                 "year": year,
-                "perspective": str(item.get("Perspective", "")).strip(),
+                "perspective": perspective,
                 "kpi_label": str(item.get("KPI", "")).strip(),
                 "direction": _direction_value(item.get("Direction")),
                 "weight": _weight_to_fraction(item.get("Weight")),
@@ -366,6 +368,54 @@ class BSCTemplateService:
         if issues:
             raise ValueError(issues[0])
         return parsed_rows
+
+    @staticmethod
+    def _config_perspective_index(workbook) -> dict[tuple[str, str, str, str], str]:
+        """KPI Config is the perspective source when KPI's Data leaves the cell blank."""
+        if "KPI Config" not in workbook.sheetnames:
+            return {}
+        sheet = workbook["KPI Config"]
+        rows = [list(row) for row in sheet.iter_rows(values_only=True)]
+        if not rows:
+            return {}
+        headers = [str(value).strip() if value is not None else "" for value in rows[0]]
+        index = {name: position for position, name in enumerate(headers)}
+        needed = ("Team", "Position", "Performance Level", "Perspective", "KPI")
+        if any(name not in index for name in needed):
+            return {}
+        found: dict[tuple[str, str, str, str], str] = {}
+        for raw in rows[1:]:
+            if not raw:
+                continue
+            perspective = str(raw[index["Perspective"]] or "").strip()
+            if perspective not in _PERSPECTIVE_ORDER:
+                continue
+            team = str(raw[index["Team"]] or "").strip().casefold()
+            position = str(raw[index["Position"]] or "").strip().casefold()
+            level = str(raw[index["Performance Level"]] or "").strip().casefold()
+            kpi = str(raw[index["KPI"]] or "").strip().casefold()
+            found.setdefault((team, position, level, kpi), perspective)
+            found.setdefault((team, position, "", kpi), perspective)
+            found.setdefault((team, "", "", kpi), perspective)
+        return found
+
+    @staticmethod
+    def _perspective_for_row(item: dict[str, Any], perspectives: dict[tuple[str, str, str, str], str]) -> str:
+        perspective = str(item.get("Perspective") or "").strip()
+        if perspective in _PERSPECTIVE_ORDER:
+            return perspective
+        if perspective:
+            return perspective
+        team = str(item.get("Team") or "").strip().casefold()
+        position = str(item.get("Position") or "").strip().casefold()
+        level = str(item.get("Performance Level") or "").strip().casefold()
+        kpi = str(item.get("KPI") or "").strip().casefold()
+        return (
+            perspectives.get((team, position, level, kpi))
+            or perspectives.get((team, position, "", kpi))
+            or perspectives.get((team, "", "", kpi))
+            or "Internal Process"
+        )
 
     def _rows_to_records(self, rows: list[dict[str, Any]], *, team: str, performance_level: str) -> list[dict[str, Any]]:
         grouped: dict[tuple[str, str, int], dict[str, Any]] = {}

@@ -1,0 +1,319 @@
+{
+  "team": "Human Resources",
+  "db_name": "Human Resources",
+  "region": "EGY",
+  "employee_id_col": "Employee ID",
+  "employee_name_col": "Employee Name",
+  "grade_thresholds": {
+    "A": 95,
+    "B": 90,
+    "C": 80,
+    "D": 70
+  },
+  "performance_levels": {
+    "Employee": {
+      "positions": {
+        "HR Specialist": {
+          "kpis": [
+            {
+              "key": "hr_specialist_first_day_onboarding_readin_34ac3f",
+              "label": "First Day Onboarding Readiness Rate",
+              "perspective": "Learning & Growth",
+              "weight": 0.15,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#2563EB",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 1
+            },
+            {
+              "key": "hr_specialist_personnel_file_accuracy_com_a97d95",
+              "label": "Personnel File Accuracy & Completeness Rate",
+              "perspective": "Learning & Growth",
+              "weight": 0.15,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#0D9488",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 2
+            },
+            {
+              "key": "hr_specialist_employee_insurance_registra_ebce28",
+              "label": "Employee Insurance & Registration Completion Rate",
+              "perspective": "Learning & Growth",
+              "weight": 0.1,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#D97706",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 3
+            },
+            {
+              "key": "hr_specialist_payroll_attendance_input_ac_67f048",
+              "label": "Payroll & Attendance Input Accuracy Rate",
+              "perspective": "Learning & Growth",
+              "weight": 0.25,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#7C3AED",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 4
+            },
+            {
+              "key": "hr_specialist_employee_data_hr_records_ac_ce88d3",
+              "label": "Employee Data & HR Records Accuracy Rate",
+              "perspective": "Learning & Growth",
+              "weight": 0.1,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#DC2626",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 5
+            },
+            {
+              "key": "hr_specialist_hr_service_employee_request_ff4109",
+              "label": "HR Service & Employee Request Completion Rate",
+              "perspective": "Learning & Growth",
+              "weight": 0.1,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#0891B2",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 6
+            },
+            {
+              "key": "hr_specialist_offboarding_final_settlemen_84e639",
+              "label": "Offboarding & Final Settlement Processing Accuracy Rate",
+              "perspective": "Learning & Growth",
+              "weight": 0.15,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#16A34A",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 7
+            }
+          ]
+        },
+        "Assessment Center Lead": {
+          "kpis": [
+            {
+              "key": "assessment_cente_assessment_quality_score",
+              "label": "Assessment Quality Score",
+              "perspective": "Learning & Growth",
+              "weight": 0.1,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#2563EB",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 1
+            },
+            {
+              "key": "assessment_cente_assessment_recommendatio_2a29ab",
+              "label": "Assessment Recommendation Success Rate",
+              "perspective": "Learning & Growth",
+              "weight": 0.15,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#0D9488",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 2
+            },
+            {
+              "key": "assessment_cente_assessment_completion_rate",
+              "label": "Assessment Completion Rate",
+              "perspective": "Learning & Growth",
+              "weight": 0.3,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#D97706",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 3
+            },
+            {
+              "key": "assessment_cente_completion_rate_for_dev_plan",
+              "label": "Completion rate for Dev plan",
+              "perspective": "Learning & Growth",
+              "weight": 0.25,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#7C3AED",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 4
+            },
+            {
+              "key": "assessment_cente_assessment_report_delivery_time",
+              "label": "Assessment Report Delivery Time",
+              "perspective": "Learning & Growth",
+              "weight": 0.2,
+              "direction": "lower_better",
+              "unit": "%",
+              "color": "#DC2626",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 5
+            }
+          ]
+        },
+        "HR Operation Supervisor": {
+          "kpis": [
+            {
+              "key": "hr_operation_sup_payroll_staff_cost_accur_e7cc26",
+              "label": "Payroll & Staff Cost Accuracy and Timeliness Rate",
+              "perspective": "Learning & Growth",
+              "weight": 0.2,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#2563EB",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 1
+            },
+            {
+              "key": "hr_operation_sup_hr_operations_team_compl_60ef65",
+              "label": "HR Operations & Team Compliance Rate",
+              "perspective": "Learning & Growth",
+              "weight": 0.17,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#0D9488",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 2
+            },
+            {
+              "key": "hr_operation_sup_hr_policies_procedures_s_55f3ea",
+              "label": "HR Policies, Procedures, SLA & Process Improvement Delivery Rate",
+              "perspective": "Learning & Growth",
+              "weight": 0.22,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#D97706",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 3
+            },
+            {
+              "key": "hr_operation_sup_onboarding_hr_orientatio_06cfc2",
+              "label": "Onboarding & HR Orientation Completion Rate",
+              "perspective": "Learning & Growth",
+              "weight": 0.12,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#7C3AED",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 4
+            },
+            {
+              "key": "hr_operation_sup_employee_engagement_hr_i_250251",
+              "label": "Employee Engagement & HR Initiatives Delivery Rate",
+              "perspective": "Learning & Growth",
+              "weight": 0.15,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#DC2626",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 5
+            },
+            {
+              "key": "hr_operation_sup_hr_reporting_management_3369ec",
+              "label": "HR Reporting & Management Support Accuracy Rate",
+              "perspective": "Learning & Growth",
+              "weight": 0.14,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#0891B2",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 6
+            }
+          ]
+        }
+      }
+    }
+  }
+}

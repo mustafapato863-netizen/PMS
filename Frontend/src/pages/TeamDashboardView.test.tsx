@@ -43,8 +43,13 @@ function renderTeamPage(path: string) {
 
 /** Title the team page shows for each known name: the canonical team's display name (merged view for OP/IP Final sources). */
 const EXPECTED_TITLE: Record<string, string> = {
+  'Administration': 'Administration',
   'Call Center': 'Call Center',
   'CSR': 'CSR',
+  'Finance': 'Finance',
+  'Human Resources': 'Human Resources',
+  'IT': 'IT',
+  'Offshore Admin & Management': 'Administration',
   'Coding': 'Coding',
   'Inbound': 'Inbound',
   'Marketing': 'Marketing',

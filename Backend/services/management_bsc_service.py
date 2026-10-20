@@ -122,6 +122,24 @@ class ManagementBSCService:
     def __init__(self, db: Session):
         self.db = db
 
+    def delete_non_corporate_rows(self) -> dict[str, int]:
+        """Remove Employee and Managerial rows from both management-KPI stores.
+
+        The balanced scorecard keeps Corporate rows only. A template re-sync
+        calls this so an older Managerial import cannot remain on the scorecard.
+        """
+        config_rows = (
+            self.db.query(ManagementKPIConfig)
+            .filter(ManagementKPIConfig.performance_level != "Corporate")
+            .delete(synchronize_session=False)
+        )
+        snapshot_rows = (
+            self.db.query(ManagementKPISnapshot)
+            .filter(ManagementKPISnapshot.performance_level != "Corporate")
+            .delete(synchronize_session=False)
+        )
+        return {"config_rows_deleted": int(config_rows or 0), "snapshot_rows_deleted": int(snapshot_rows or 0)}
+
     def import_template_rows(
         self,
         *,
@@ -129,8 +147,14 @@ class ManagementBSCService:
         updated_by: str | None = None,
         default_team_name: str | None = None,
         source_filename: str | None = None,
+        purge_non_corporate: bool = False,
+        commit: bool = True,
     ) -> dict[str, Any]:
         try:
+            purged = self.delete_non_corporate_rows() if purge_non_corporate else {
+                "config_rows_deleted": 0,
+                "snapshot_rows_deleted": 0,
+            }
             upload_batch_id = uuid.uuid4()
             grouped_rows: dict[str, list[dict[str, Any]]] = defaultdict(list)
             for row in rows:
@@ -175,7 +199,10 @@ class ManagementBSCService:
                 total_config_rows += len(payload["config_rows"])
                 total_snapshot_rows += len(payload["snapshots"])
 
-            self.db.commit()
+            if commit:
+                self.db.commit()
+            else:
+                self.db.flush()
 
             return {
                 "upload_batch_id": str(upload_batch_id),
@@ -186,6 +213,7 @@ class ManagementBSCService:
                 "periods": sorted(touched_period_labels),
                 "levels": sorted(touched_levels),
                 "data_source": "database_config",
+                **purged,
             }
         except Exception as exc:
             self.db.rollback()

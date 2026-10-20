@@ -22,6 +22,7 @@ import {
   Timer,
   ClipboardCheck,
   PhoneCall,
+  Monitor,
 } from 'lucide-react';
 import { teamPath } from '../../types';
 
@@ -47,6 +48,9 @@ export const getTeamIcon = (teamName: string) => {
   if (norm.includes('coding')) return <Code size={17} />;
   if (norm.includes('csr')) return <Headphones size={17} />;
   if (norm.includes('pharmacy')) return <Pill size={17} />;
+  if (norm === 'it') return <Monitor size={17} />;
+  if (norm === 'administration' || norm.includes('offshore admin')) return <Building2 size={17} />;
+  if (norm === 'human resources') return <Users size={17} />;
   if (norm.includes('nursing') || norm.includes('nurse')) return <Syringe size={17} />;
   if (norm.includes('re-submission')) return <RefreshCw size={17} />;
   if (norm.includes('submission')) return <Send size={17} />;

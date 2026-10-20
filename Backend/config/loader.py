@@ -346,10 +346,15 @@ def resolve_team_config(
     elif level != "Employee":
         raise ConfigurationError(f"No {level} KPI configuration for team {config.get('team', 'unknown')}")
     positions = resolved.get("positions", {})
+    # A department can define positions and still score everyone else with the
+    # root operational KPIs (Pharmacy). Marketing has no root KPIs, so an
+    # unknown or missing position keeps the empty KPI list and the raise.
+    root_kpis = list(config.get("kpis") or [])
     if positions:
         resolved["available_positions"] = list(positions)
         if position_name is None:
-            resolved["kpis"] = []
+            if not root_kpis:
+                resolved["kpis"] = []
         else:
             normalized_position = str(position_name).strip().casefold()
             matched_name = next(
@@ -357,12 +362,15 @@ def resolve_team_config(
                 None,
             )
             if matched_name is None:
-                raise ConfigurationError(
-                    f"No {level} KPI configuration for position {position_name!r} "
-                    f"in team {config.get('team', 'unknown')}"
-                )
-            resolved.update(deepcopy(positions[matched_name]))
-            resolved["position_name"] = matched_name
+                if not root_kpis:
+                    raise ConfigurationError(
+                        f"No {level} KPI configuration for position {position_name!r} "
+                        f"in team {config.get('team', 'unknown')}"
+                    )
+                resolved["position_name"] = str(position_name).strip()
+            else:
+                resolved.update(deepcopy(positions[matched_name]))
+                resolved["position_name"] = matched_name
     elif position_name is not None:
         resolved["position_name"] = str(position_name).strip()
     resolved["performance_level"] = level
@@ -402,6 +410,10 @@ def iter_employee_kpi_configs(
         for position_name, position_config in level_config.get("positions", {}).items():
             for display_order, kpi in enumerate(position_config.get("kpis", [])):
                 yield str(position_name), display_order, kpi
+        # Positions without a level KPI list still keep the operational root KPIs.
+        if level_config.get("positions") and not level_config.get("kpis"):
+            for display_order, kpi in enumerate(config.get("kpis", [])):
+                yield "", display_order, kpi
         return
 
     for display_order, kpi in enumerate(config.get("kpis", [])):

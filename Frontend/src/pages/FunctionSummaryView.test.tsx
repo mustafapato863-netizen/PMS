@@ -139,12 +139,15 @@ describe('Function Summary routing and scope', () => {
     state.summary = build({ role: 'Admin', functionName: 'Marketing' });
     renderAt('/function-summary/marketing');
     expect(screen.getByTestId('location')).toHaveTextContent('/function-summary/marketing');
-    expect(screen.getAllByRole('radio').map((radio) => radio.textContent)).toEqual(['Call Center', 'RCM', 'Marketing', 'Sales', 'CSR', 'Pharmacy']);
+    expect(screen.getAllByRole('radio').map((radio) => radio.textContent)).toEqual([
+      'Call Center', 'RCM', 'Marketing', 'Sales', 'CSR', 'Pharmacy',
+      'Finance', 'Human Resources', 'IT', 'Administration',
+    ]);
     expect(screen.queryByText('Read-only')).not.toBeInTheDocument();
   });
 
   it('shows a clear message when none of the assigned functions is known', () => {
-    state.user = { ...state.user, accessible_functions: ['Finance'] };
+    state.user = { ...state.user, accessible_functions: ['Treasury Desk'] };
     renderAt('/function-summary');
     expect(screen.getByRole('alert')).toHaveTextContent('No functions are assigned to your account yet');
   });

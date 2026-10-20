@@ -23,7 +23,10 @@ PRE_APPROVALS_UAE_SOURCES = (
     "pre-approvals ip elective dubai",
 )
 CALL_CENTER_TEAM = "call center"
-CALL_CENTER_SOURCES = ("inbound", "outbound")
+# The parent view is Inbound + Outbound plus people stored on the Call Center
+# team itself (trainers, analysts, and team leaders). Channel pages still
+# select Inbound or Outbound alone.
+CALL_CENTER_SOURCES = ("inbound", "outbound", "call center")
 
 def _team_filter_values(team: str) -> tuple[str, ...]:
     normalized = str(team).strip().casefold()

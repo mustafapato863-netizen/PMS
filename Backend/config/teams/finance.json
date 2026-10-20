@@ -1,0 +1,783 @@
+{
+  "team": "Finance",
+  "db_name": "Finance",
+  "region": "All",
+  "employee_id_col": "Employee ID",
+  "employee_name_col": "Employee Name",
+  "grade_thresholds": {
+    "A": 95,
+    "B": 90,
+    "C": 80,
+    "D": 70
+  },
+  "performance_levels": {
+    "Employee": {
+      "positions": {
+        "General Accountant": {
+          "kpis": [
+            {
+              "key": "general_accounta_journal_entry_accuracy_rate",
+              "label": "Journal Entry Accuracy Rate",
+              "perspective": "Financial",
+              "weight": 0.35,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#2563EB",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 1
+            },
+            {
+              "key": "general_accounta_bank_reconciliation_comp_86f623",
+              "label": "Bank Reconciliation Completion Rate",
+              "perspective": "Financial",
+              "weight": 0.3,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#0D9488",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 2
+            },
+            {
+              "key": "general_accounta_month_end_close_deadline_707704",
+              "label": "Month-End Close Deadline Compliance",
+              "perspective": "Financial",
+              "weight": 0.35,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#D97706",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 3
+            }
+          ]
+        },
+        "FP&A Manager": {
+          "kpis": [
+            {
+              "key": "fp_a_manager_budget_accuracy_overall_variance",
+              "label": "Budget Accuracy (Overall Variance %)",
+              "perspective": "Financial",
+              "weight": 0.15,
+              "direction": "lower_better",
+              "unit": "%",
+              "color": "#2563EB",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 1
+            },
+            {
+              "key": "fp_a_manager_forecast_accuracy_rolling_forecast",
+              "label": "Forecast Accuracy % (Rolling Forecast)",
+              "perspective": "Financial",
+              "weight": 0.15,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#0D9488",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 2
+            },
+            {
+              "key": "fp_a_manager_financial_reporting_quality_ba1485",
+              "label": "Financial Reporting Quality & Timeliness %",
+              "perspective": "Internal Process",
+              "weight": 0.25,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#D97706",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 3
+            },
+            {
+              "key": "fp_a_manager_board_management_pack_timeliness",
+              "label": "Board & Management Pack Timeliness %",
+              "perspective": "Internal Process",
+              "weight": 0.15,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#7C3AED",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 4
+            },
+            {
+              "key": "fp_a_manager_variance_analysis_quality",
+              "label": "Variance Analysis Quality %",
+              "perspective": "Internal Process",
+              "weight": 0.15,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#DC2626",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 5
+            },
+            {
+              "key": "fp_a_manager_fp_a_process_digitalization_bdbc12",
+              "label": "FP&A Process Digitalization & Automation %",
+              "perspective": "Learning & Growth",
+              "weight": 0.15,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#0891B2",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 6
+            }
+          ]
+        },
+        "Finance Controller": {
+          "kpis": [
+            {
+              "key": "finance_controll_cost_to_income_ratio",
+              "label": "Cost-to-Income Ratio %",
+              "perspective": "Financial",
+              "weight": 0.15,
+              "direction": "lower_better",
+              "unit": "%",
+              "color": "#2563EB",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 1
+            },
+            {
+              "key": "finance_controll_ebitda_margin",
+              "label": "EBITDA Margin %",
+              "perspective": "Financial",
+              "weight": 0.1,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#0D9488",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 2
+            },
+            {
+              "key": "finance_controll_revenue_growth_rate",
+              "label": "Revenue Growth Rate %",
+              "perspective": "Financial",
+              "weight": 0.1,
+              "direction": "higher_better",
+              "unit": "AED",
+              "color": "#D97706",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 3
+            },
+            {
+              "key": "finance_controll_financial_reporting_quality",
+              "label": "Financial Reporting Quality %",
+              "perspective": "Internal Process",
+              "weight": 0.15,
+              "direction": "higher_better",
+              "unit": "AED",
+              "color": "#7C3AED",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 4
+            },
+            {
+              "key": "finance_controll_month_end_closing_timeliness",
+              "label": "Month-End Closing Timeliness %",
+              "perspective": "Internal Process",
+              "weight": 0.1,
+              "direction": "lower_better",
+              "unit": "Days",
+              "color": "#DC2626",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 5
+            },
+            {
+              "key": "finance_controll_balance_sheet_integrity_59f9e6",
+              "label": "Balance Sheet Integrity & Reconciliation %",
+              "perspective": "Internal Process",
+              "weight": 0.1,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#0891B2",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 6
+            },
+            {
+              "key": "finance_controll_inventory_count_reconcil_0d60f5",
+              "label": "Inventory Count & Reconciliation Compliance %",
+              "perspective": "Internal Process",
+              "weight": 0.1,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#16A34A",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 7
+            },
+            {
+              "key": "finance_controll_audit_findings_resolution_rate",
+              "label": "Audit Findings Resolution Rate %",
+              "perspective": "Internal Process",
+              "weight": 0.1,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#9333EA",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 8
+            },
+            {
+              "key": "finance_controll_statutory_financial_compliance",
+              "label": "Statutory & Financial Compliance %",
+              "perspective": "Internal Process",
+              "weight": 0.05,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#EA580C",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 9
+            },
+            {
+              "key": "finance_controll_finance_process_digitali_76a40a",
+              "label": "Finance Process Digitalization & Automation %",
+              "perspective": "Learning & Growth",
+              "weight": 0.05,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#0284C7",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 10
+            }
+          ]
+        },
+        "Head of Accounts Payable": {
+          "kpis": [
+            {
+              "key": "head_of_accounts_aging_report_timeliness",
+              "label": "Aging Report Timeliness %",
+              "perspective": "Financial",
+              "weight": 0.2,
+              "direction": "lower_better",
+              "unit": "Days",
+              "color": "#2563EB",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 1
+            },
+            {
+              "key": "head_of_accounts_month_end_invoice_proces_7990d3",
+              "label": "Month-End Invoice Processing Timeliness %",
+              "perspective": "Internal Process",
+              "weight": 0.25,
+              "direction": "higher_better",
+              "unit": "Invoices",
+              "color": "#0D9488",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 2
+            },
+            {
+              "key": "head_of_accounts_supply_chain_reconciliat_0dc4ca",
+              "label": "Supply Chain Reconciliation (Pending Invoices) %",
+              "perspective": "Internal Process",
+              "weight": 0.15,
+              "direction": "higher_better",
+              "unit": "Reconciliations",
+              "color": "#D97706",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 3
+            },
+            {
+              "key": "head_of_accounts_quarterly_balance_confirmation",
+              "label": "Quarterly Balance Confirmation %",
+              "perspective": "Internal Process",
+              "weight": 0.15,
+              "direction": "higher_better",
+              "unit": "Confirmations",
+              "color": "#7C3AED",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 4
+            },
+            {
+              "key": "head_of_accounts_ap_audit_compliance_resolution",
+              "label": "AP Audit & Compliance Resolution %",
+              "perspective": "Internal Process",
+              "weight": 0.15,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#DC2626",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 5
+            },
+            {
+              "key": "head_of_accounts_finance_process_digitali_4b98ba",
+              "label": "Finance Process Digitalization & Automation %",
+              "perspective": "Learning & Growth",
+              "weight": 0.0001,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#0891B2",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 6
+            },
+            {
+              "key": "head_of_accounts_invoices_processed_per_staff",
+              "label": "Invoices Processed per Staff",
+              "perspective": "Learning & Growth",
+              "weight": 0.1,
+              "direction": "higher_better",
+              "unit": "Invoices / Staff",
+              "color": "#16A34A",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 7
+            }
+          ]
+        },
+        "Head of Accounts Receivable": {
+          "kpis": [
+            {
+              "key": "head_of_accounts_collection_rate",
+              "label": "Collection Rate %",
+              "perspective": "Financial",
+              "weight": 0.15,
+              "direction": "higher_better",
+              "unit": "AED",
+              "color": "#2563EB",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 1
+            },
+            {
+              "key": "head_of_accounts_aging_report_timeliness_2",
+              "label": "Aging Report Timeliness %",
+              "perspective": "Internal Process",
+              "weight": 0.15,
+              "direction": "lower_better",
+              "unit": "Days",
+              "color": "#0D9488",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 2
+            },
+            {
+              "key": "head_of_accounts_unsettled_invoice_closur_cb4519",
+              "label": "Unsettled Invoice Closure Rate (by 5th Working Day) %",
+              "perspective": "Internal Process",
+              "weight": 0.25,
+              "direction": "higher_better",
+              "unit": "Invoices",
+              "color": "#D97706",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 3
+            },
+            {
+              "key": "head_of_accounts_insurance_claim_processi_4c9659",
+              "label": "Insurance Claim Processing Rate (DHA Portal Submission Efficiency) %",
+              "perspective": "Internal Process",
+              "weight": 0.1,
+              "direction": "higher_better",
+              "unit": "AED",
+              "color": "#7C3AED",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 4
+            },
+            {
+              "key": "head_of_accounts_insurance_outstanding_re_d8d9d5",
+              "label": "Insurance Outstanding Resolution % (Unremitted → Remitted)",
+              "perspective": "Internal Process",
+              "weight": 0.1,
+              "direction": "higher_better",
+              "unit": "AED",
+              "color": "#DC2626",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 5
+            },
+            {
+              "key": "head_of_accounts_finance_process_digitali_4b_2",
+              "label": "Finance Process Digitalization & Automation %",
+              "perspective": "Learning & Growth",
+              "weight": 0.0001,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#0891B2",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 6
+            },
+            {
+              "key": "head_of_accounts_rcm_reconciliation_compliance",
+              "label": "RCM Reconciliation Compliance %",
+              "perspective": "Internal Process",
+              "weight": 0.25,
+              "direction": "higher_better",
+              "unit": "AED",
+              "color": "#16A34A",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 7
+            }
+          ]
+        },
+        "Head of Taxation": {
+          "kpis": [
+            {
+              "key": "head_of_taxation_tax_collection_achievement",
+              "label": "Tax Collection Achievement %",
+              "perspective": "Financial",
+              "weight": 0.1,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#2563EB",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 1
+            },
+            {
+              "key": "head_of_taxation_tax_reporting_timeliness",
+              "label": "Tax Reporting Timeliness %",
+              "perspective": "Internal Process",
+              "weight": 0.2,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#0D9488",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 2
+            },
+            {
+              "key": "head_of_taxation_tax_compliance_score",
+              "label": "Tax Compliance Score %",
+              "perspective": "Internal Process",
+              "weight": 0.3,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#D97706",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 3
+            },
+            {
+              "key": "head_of_taxation_tax_five_year_plan_compl_db9b1d",
+              "label": "Tax Five-Year Plan Compliance & Progression %",
+              "perspective": "Internal Process",
+              "weight": 0.1,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#7C3AED",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 4
+            },
+            {
+              "key": "head_of_taxation_finance_process_digitali_6c801c",
+              "label": "Finance Process Digitalization & Automation %",
+              "perspective": "Learning & Growth",
+              "weight": 0.0001,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#DC2626",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 5
+            },
+            {
+              "key": "head_of_taxation_e_invoicing_implementati_af540f",
+              "label": "E-Invoicing Implementation Progress %",
+              "perspective": "Learning & Growth",
+              "weight": 0.3,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#0891B2",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 6
+            }
+          ]
+        },
+        "Head of Treasury": {
+          "kpis": [
+            {
+              "key": "head_of_treasury_cash_flow_forecast_accuracy",
+              "label": "Cash Flow Forecast Accuracy %",
+              "perspective": "Financial",
+              "weight": 0.35,
+              "direction": "higher_better",
+              "unit": "AED",
+              "color": "#2563EB",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 1
+            },
+            {
+              "key": "head_of_treasury_liquidity_gap_coverage_t_cf6c84",
+              "label": "Liquidity Gap Coverage to Target",
+              "perspective": "Internal Process",
+              "weight": 0.15,
+              "direction": "higher_better",
+              "unit": "AED",
+              "color": "#0D9488",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 2
+            },
+            {
+              "key": "head_of_treasury_finance_charges_rate",
+              "label": "Finance Charges Rate %",
+              "perspective": "Financial",
+              "weight": 0.2,
+              "direction": "lower_better",
+              "unit": "%",
+              "color": "#D97706",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 3
+            },
+            {
+              "key": "head_of_treasury_bank_facility_utilization_rate",
+              "label": "Bank Facility Utilization Rate %",
+              "perspective": "Financial",
+              "weight": 0.15,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#7C3AED",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 4
+            },
+            {
+              "key": "head_of_treasury_debt_covenant_compliance_ratio",
+              "label": "Debt Covenant Compliance Ratio %",
+              "perspective": "Internal Process",
+              "weight": 0.05,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#DC2626",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 5
+            },
+            {
+              "key": "head_of_treasury_finance_process_digitali_61f596",
+              "label": "Finance Process Digitalization & Automation %",
+              "perspective": "Learning & Growth",
+              "weight": 0.0001,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#0891B2",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 6
+            },
+            {
+              "key": "head_of_treasury_bank_balance_confirmatio_f77ea1",
+              "label": "Bank Balance Confirmation Timeliness %",
+              "perspective": "Internal Process",
+              "weight": 0.1,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#16A34A",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 7
+            }
+          ]
+        }
+      }
+    }
+  }
+}

@@ -113,18 +113,26 @@ const sourceValue = (
   return Number.isFinite(value) ? value : undefined;
 };
 
-const isMarketingConfig = (config: TeamConfig | undefined) => config?.team.trim().toLowerCase() === 'marketing';
+const positionDefinitions = (config: TeamConfig | undefined) => config?.performance_levels?.Employee?.positions;
+
+/** Marketing keeps a stored KPI the file does not name. Other position departments do that only when they have no shared root KPI list. */
+const keepsUnconfiguredPositionKpi = (config: TeamConfig | undefined) => {
+  if (!config) return false;
+  if (config.team.trim().toLowerCase() === 'marketing') return true;
+  const positions = positionDefinitions(config);
+  return Boolean(positions && Object.keys(positions).length > 0) && config.kpis.length === 0;
+};
 
 const employeeDefinitions = (config: TeamConfig | undefined, agent: AgentRecord): KPI[] => {
   if (!config) return [];
-  if (config.kpis.length > 0) return config.kpis;
-  const positions = config.performance_levels?.Employee?.positions;
-  if (!positions) return [];
+  const positions = positionDefinitions(config);
   const position = agent.position || agent.identity.position;
-  if (position) {
+  if (positions && position) {
     const matched = Object.entries(positions).find(([name]) => normalize(name) === normalize(position));
     if (matched) return matched[1].kpis;
   }
+  if (config.kpis.length > 0) return config.kpis;
+  if (!positions) return [];
   return Object.values(positions).flatMap((definition) => definition.kpis);
 };
 
@@ -165,10 +173,10 @@ export function aggregateConfiguredTeamKpis(
       const key = normalize(kpi.label);
       const pinned = kpi.evaluationPinned === true;
       const definition = findDefinition(definitions, kpi);
-      // Marketing sheets define their own KPIs, so a stored Marketing KPI the config does not know keeps
-      // its stored row (label, unit, weight, direction). Other teams still skip unconfigured KPIs.
-      const storedMarketingKpi = !definition && isMarketingConfig(config);
-      if (definitions.length > 0 && !definition && !pinned && !storedMarketingKpi) return;
+      // Marketing keeps a stored KPI the file does not name. A position department does that only when
+      // it has no shared root KPI list. Other teams skip unconfigured rows unless the row is pinned.
+      const storedPositionKpi = !definition && keepsUnconfiguredPositionKpi(config);
+      if (definitions.length > 0 && !definition && !pinned && !storedPositionKpi) return;
       const aggregation = definition && normalize(definition.key) === 'other' && isUtilizationKpi(kpi)
         ? { method: 'average' as const }
         : definition?.aggregation ?? { method: 'average' as const };
@@ -351,12 +359,14 @@ export interface AggregatedTeamPerformance {
 const definitionsForAgent = (config: TeamConfig, agent: AgentRecord): KPI[] => employeeDefinitions(config, agent);
 
 const positionGroup = (config: TeamConfig, agent: AgentRecord): string => {
-  if (config.kpis.length > 0) return '__root__';
-  const positions = config.performance_levels?.Employee?.positions;
-  if (!positions) return '__root__';
+  const positions = positionDefinitions(config);
   const position = normalize(agent.position ?? agent.identity.position ?? undefined);
-  const matched = Object.keys(positions).find((name) => normalize(name) === position);
-  return matched ?? `__unmatched__:${position}`;
+  if (positions && position) {
+    const matched = Object.keys(positions).find((name) => normalize(name) === position);
+    if (matched) return matched;
+  }
+  if (config.kpis.length > 0 || !positions) return '__root__';
+  return `__unmatched__:${position}`;
 };
 
 /**

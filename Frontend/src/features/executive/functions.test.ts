@@ -5,8 +5,11 @@ import { FIXTURE_TEAM_FUNCTIONS } from './executive.fixture';
 
 describe('allowedFunctionsFor', () => {
   it('gives global roles all current functions regardless of accessible_functions', () => {
-    expect(allowedFunctionsFor('Admin', ['RCM'])).toEqual(['Call Center', 'RCM', 'Marketing', 'Sales', 'CSR', 'Pharmacy']);
-    expect(allowedFunctionsFor('General Manager')).toHaveLength(6);
+    expect(allowedFunctionsFor('Admin', ['RCM'])).toEqual([
+      'Call Center', 'RCM', 'Marketing', 'Sales', 'CSR', 'Pharmacy',
+      'Finance', 'Human Resources', 'IT', 'Administration',
+    ]);
+    expect(allowedFunctionsFor('General Manager')).toHaveLength(10);
   });
 
   it('limits a Function Viewer to accessible_functions, case-insensitively, in display order', () => {
@@ -14,7 +17,8 @@ describe('allowedFunctionsFor', () => {
   });
 
   it('drops unknown names and fails closed when no function is assigned', () => {
-    expect(allowedFunctionsFor('Function Viewer', ['Finance'])).toEqual([]);
+    expect(allowedFunctionsFor('Function Viewer', ['Treasury Desk'])).toEqual([]);
+    expect(allowedFunctionsFor('Function Viewer', ['Finance'])).toEqual(['Finance']);
     expect(allowedFunctionsFor('Function Viewer', [])).toEqual([]);
     expect(allowedFunctionsFor('Function Viewer')).toEqual([]);
   });
@@ -32,7 +36,11 @@ describe('function slugs and team paths', () => {
   it('round-trips slugs and rejects unknown ones', () => {
     expect(functionSlug('Pre-Approvals')).toBe('pre-approvals');
     expect(functionFromSlug('call-center')).toBe('Call Center');
-    expect(functionFromSlug('finance')).toBeNull();
+    expect(functionFromSlug('finance')).toBe('Finance');
+    expect(functionFromSlug('human-resources')).toBe('Human Resources');
+    expect(functionFromSlug('it')).toBe('IT');
+    expect(functionFromSlug('administration')).toBe('Administration');
+    expect(functionFromSlug('treasury')).toBeNull();
   });
 
   it('uses the canonical route id for known teams and a slug only for unknown ones', () => {

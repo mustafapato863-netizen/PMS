@@ -25,6 +25,7 @@ from config.loader import ConfigurationError, load_team_config, resolve_team_con
 from services.balanced_scorecard_service import BalancedScorecardService
 from services.bsc_template_service import bsc_template_service
 from services.management_bsc_service import ManagementBSCService, ManagementBSCSchemaError
+from services.management_template_import import import_uploaded_management_template
 from services.dashboard_record_service import DashboardRecordService
 from services.insights_service import InsightsService
 from services.database_record_source import DatabaseRecordSource
@@ -217,9 +218,9 @@ async def upload_balanced_scorecard_template(
         raise
     uploaded_by = _user.get("username", "Admin") if isinstance(_user, dict) else "Admin"
     try:
-        rows, warnings = bsc_template_service.parse_upload_with_warnings(contents)
-        result = ManagementBSCService(db).import_template_rows(
-            rows=rows,
+        result = import_uploaded_management_template(
+            db,
+            contents,
             updated_by=uploaded_by,
             source_filename=file.filename,
         )
@@ -229,6 +230,8 @@ async def upload_balanced_scorecard_template(
     except ManagementBSCSchemaError as exc:
         db.rollback()
         raise HTTPException(status_code=500, detail="Failed to process the scorecard template.") from exc
+    rows = result.pop("rows")
+    warnings = result.pop("warnings")
     return StandardResponse(
         success=True,
         message="Management Overview template uploaded successfully",

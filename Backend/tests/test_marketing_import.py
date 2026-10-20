@@ -103,13 +103,16 @@ def test_marketing_config_covers_all_employee_positions_and_kpis():
         "Account Manager",
         "Web Developer",
         "Content Writer",
+        "Creative Director",
+        "Media Buyer & SEO Manager",
+        "Social Media Head",
     ]
-    assert sum(len(value["kpis"]) for value in positions.values()) == 27
+    assert sum(len(value["kpis"]) for value in positions.values()) == 45
     assert {
         "Social Media Head",
         "Media Buyer & SEO Manager",
         "Creative Director",
-    }.isdisjoint(positions)
+    } <= set(positions)
     assert all(sum(kpi["weight"] for kpi in value["kpis"]) == pytest.approx(1.0) for value in positions.values())
     account_manager_by_key = {
         kpi["key"]: kpi
@@ -144,8 +147,8 @@ def test_marketing_config_covers_all_employee_positions_and_kpis():
 def test_all_marketing_positions_and_directions_are_calculated():
     result = MarketingImportService().parse_frame(_valid_frame())
 
-    assert result.report["employees"] == 6
-    assert result.report["performance_records"] == 6
+    assert result.report["employees"] == 9
+    assert result.report["performance_records"] == 9
     assert result.report["warnings"] == []
     assert {record.position for record in result.records} == {
         "Media Buyer",
@@ -154,6 +157,9 @@ def test_all_marketing_positions_and_directions_are_calculated():
         "Account Manager",
         "Web Developer",
         "Content Writer",
+        "Creative Director",
+        "Media Buyer & SEO Manager",
+        "Social Media Head",
     }
     assert all(record.evaluation.score == 100.0 for record in result.records)
     assert {
@@ -517,7 +523,7 @@ def test_database_sync_upserts_marketing_period_and_position_config():
         assert session.query(DBPerformanceRecord).one().year == 2026
         assert session.query(DBPerformanceRecord).one().region == "EGY"
         assert session.query(KPIValue).count() == 6
-        assert session.query(TeamKPIConfig).count() == 27
+        assert session.query(TeamKPIConfig).count() == 45
 
         parsed.records[0].evaluation.score = 88.0
         parsed.records[0].evaluation.grade = "B"

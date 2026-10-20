@@ -372,6 +372,10 @@ export const TEAM_ID_MAP: Record<string, string> = {
   'Pre-Approvals OP Final SHJAJM': 'pre-approvals-op-final-shj-ajm',
   'Pre-Approvals IP Final SHJAJM': 'pre-approvals-ip-final-shj-ajm',
   'Marketing': 'marketing',
+  'Finance': 'finance',
+  'Human Resources': 'human-resources',
+  'IT': 'it',
+  'Offshore Admin & Management': 'administration',
 };
 
 export const TEAM_NAME_MAP: Record<string, string> = {
@@ -395,6 +399,10 @@ export const TEAM_NAME_MAP: Record<string, string> = {
   'pre-approvals-op-final-shj-ajm': 'Pre-Approvals OP Final SHJAJM',
   'pre-approvals-ip-final-shj-ajm': 'Pre-Approvals IP Final SHJAJM',
   'marketing': 'Marketing',
+  'finance': 'Finance',
+  'human-resources': 'Human Resources',
+  'it': 'IT',
+  'administration': 'Administration',
 };
 
 export const TEAM_DB_NAME_MAP: Record<string, string> = {
@@ -418,6 +426,10 @@ export const TEAM_DB_NAME_MAP: Record<string, string> = {
   'pre-approvals-op-final-shj-ajm': 'Pre-Approvals OP Final SHJAJM',
   'pre-approvals-ip-final-shj-ajm': 'Pre-Approvals IP Final SHJAJM',
   'marketing': 'Marketing',
+  'finance': 'Finance',
+  'human-resources': 'Human Resources',
+  'it': 'IT',
+  'administration': 'Offshore Admin & Management',
 };
 
 /** Letters and digits only: "Pre-Approvals IP Offshore", "pre-approvals-ip-offshore" and "PRE Approvals IP Offshore" share one key. */
@@ -1196,13 +1208,23 @@ export function getKPIsForAgent(agent: AgentRecord): KPIConfig[] {
     const targetBooking = getTargetValue(raw_data, ['T.Booking', 'T.Booking%'], 0.46);
     const targetQuality = getTargetValue(raw_data, ['T.QualityTarget', 'T.Quality', 'T.Quality%', 'T.QualityScore'], 0.95);
     const targetReachability = getTargetValue(raw_data, ['T.Reachability%', 'T.Reachability'], 0.75);
+    const normMonth = (agent.identity?.month || '').trim().toLowerCase();
+    const isPreAug = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul'].some((m) => normMonth.startsWith(m))
+      && (!agent.year || agent.year <= 2026);
+    const rawUtz = isPreAug ? null : finiteNumber(raw_data['A.Utilization%'] ?? raw_data['A.Utilization']);
 
-    return [
+    const outboundKpis: KPIConfig[] = [
       { label: 'Attendance Rate', actual: actual.attend_rate, target: targetAttend, unit: '%', color: '#3B82F6' },
       { label: 'Booking Rate', actual: actual.booking_rate, target: targetBooking, unit: '%', color: '#10B981' },
       { label: 'Quality Score', actual: qualityRate, target: targetQuality, unit: '%', color: '#8B5CF6' },
       { label: 'Reachability', actual: actual.reachability_rate ?? 0, target: targetReachability, unit: '%', color: '#F59E0B' },
     ];
+    if (rawUtz !== null) {
+      const actualUtz = rawUtz > 1 ? rawUtz / 100 : rawUtz;
+      const targetUtz = getTargetValue(raw_data, ['T.Utilization%', 'T.Utilization', 'T.UTZ%'], 0.80);
+      outboundKpis.push({ key: 'Utilization', label: 'Utilization', actual: actualUtz, target: targetUtz, unit: '%', color: '#6366F1' });
+    }
+    return outboundKpis;
   }
 
   if (team === 'Pre-Approvals IP Offshore') {

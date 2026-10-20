@@ -65,6 +65,16 @@ const prettyTeamLabel = (teamName: string) =>
     ? teamName.toUpperCase()
     : teamName.replace(/\b\w/g, (char) => char.toUpperCase());
 
+/** Corporate balanced scorecard only. Employee and Managerial rows stay on the department dashboard. */
+const CORPORATE_BSC_TEAM_KEYS = new Set(['crm', 'finance', 'marketing', 'nursing', 'pmo', 'pharmacy', 'rcm']);
+
+const SHARED_DEPARTMENTS: Array<{ dbName: string; label: string }> = [
+  { dbName: 'Finance', label: 'Finance' },
+  { dbName: 'Human Resources', label: 'Human Resources' },
+  { dbName: 'IT', label: 'IT' },
+  { dbName: 'Offshore Admin & Management', label: 'Administration' },
+];
+
 const Sidebar = ({ isOpen, setIsOpen, isCollapsed: collapsedPreference = false, onToggleCollapsed = () => {}, isDesktop = true }: SidebarProps) => {
   const isCollapsed = isDesktop && collapsedPreference;
   const reduceMotion = useReducedMotion();
@@ -204,13 +214,20 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed: collapsedPreference = false, 
       team: teamScope.name,
     }))
     .filter(
-      (item) => !isHiddenTeam(item.team)
+      (item) => CORPORATE_BSC_TEAM_KEYS.has(normalizeTeamName(item.team))
+        && !isHiddenTeam(item.team)
         && (!scopedTeams || scopedTeams.has(normalizeTeamName(item.team))),
     ), [managementTeams, scopedTeams]);
 
   const marketingVisible = shouldShowMarketingNavigation(availableFromData, scopedTeams);
   const rcmVisible = Boolean(performanceCatalog?.scopes?.some((scope) => isRcmTeam(scope.team)))
     && (!scopedTeams || [...scopedTeams].some((team) => isRcmTeam(team)));
+  const sharedDepartments = SHARED_DEPARTMENTS.filter((item) => {
+    const key = normalizeTeamName(item.dbName);
+    const inConfig = Object.prototype.hasOwnProperty.call(configured, key);
+    const inCatalog = [...availableFromData].some((entry) => entry.startsWith(`${key}:`));
+    return (inConfig || inCatalog) && (!scopedTeams || scopedTeams.has(key));
+  });
 
   // Team drilldowns retain their context. Returning home carries dates only:
   // page-specific team/function/level filters must not narrow the company view.
@@ -490,7 +507,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed: collapsedPreference = false, 
           );
         })}
 
-        {canSeeBroadNavigation && !scopedDirector && (marketingVisible || rcmVisible) && (
+        {canSeeBroadNavigation && !scopedDirector && (marketingVisible || rcmVisible || sharedDepartments.length > 0) && (
           <div className={`sidebar-nav-group mt-2 ${isCollapsed ? 'xl:mt-1.5' : ''}`}>
             <button
               type="button"
@@ -524,6 +541,13 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed: collapsedPreference = false, 
                         true,
                         'employee',
                       )}
+                      {sharedDepartments.map((item) => renderLink(
+                        { name: item.label, path: teamPath(item.dbName), icon: getTeamIcon(item.label) },
+                        'Employee',
+                        true,
+                        true,
+                        'employee',
+                      ))}
                     </div>
                   </motion.div>
               )}

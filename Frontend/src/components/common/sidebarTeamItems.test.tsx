@@ -10,6 +10,17 @@ it('uses a syringe icon for nursing teams', () => {
   expect(container.querySelector('svg')).toHaveClass('lucide-syringe');
 });
 
+it.each([
+  ['Finance', 'lucide-dollar-sign'],
+  ['Human Resources', 'lucide-users'],
+  ['IT', 'lucide-monitor'],
+  ['Administration', 'lucide-building-2'],
+  ['Offshore Admin & Management', 'lucide-building-2'],
+])('uses the %s department icon', (team, iconClass) => {
+  const { container } = render(getTeamIcon(team));
+  expect(container.querySelector('svg')).toHaveClass(iconClass);
+});
+
 it('links each sidebar team item to its canonical team page', () => {
   expect(TEAM_ITEMS.map((item) => [item.name, item.path])).toEqual([
     ['Call Center', '/team/call-center'],

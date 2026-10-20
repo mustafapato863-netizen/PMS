@@ -1,0 +1,483 @@
+{
+  "team": "RCM",
+  "db_name": "RCM",
+  "region": "All",
+  "employee_id_col": "Employee ID",
+  "employee_name_col": "Employee Name",
+  "grade_thresholds": {
+    "A": 95,
+    "B": 90,
+    "C": 80,
+    "D": 70
+  },
+  "performance_levels": {
+    "Employee": {
+      "positions": {
+        "Group Claims Operations Manager": {
+          "kpis": [
+            {
+              "key": "group_claims_ope_collection_rate_aed",
+              "label": "Collection Rate (AED)",
+              "perspective": "Financial",
+              "weight": 0.1,
+              "direction": "higher_better",
+              "unit": "AED",
+              "color": "#2563EB",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 1
+            },
+            {
+              "key": "group_claims_ope_reconciliation_amount_vs_7bb940",
+              "label": "Reconciliation Amount vs Target (AED)",
+              "perspective": "Financial",
+              "weight": 0.15,
+              "direction": "higher_better",
+              "unit": "AED",
+              "color": "#0D9488",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 2
+            },
+            {
+              "key": "group_claims_ope_coding_optimization_reve_d4ba3e",
+              "label": "Coding Optimization – Revenue Impact (AED)",
+              "perspective": "Financial",
+              "weight": 0.1,
+              "direction": "higher_better",
+              "unit": "AED",
+              "color": "#D97706",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 3
+            },
+            {
+              "key": "group_claims_ope_op_submission_within_tat",
+              "label": "OP Submission Within TAT %",
+              "perspective": "Internal Process",
+              "weight": 0.05,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#7C3AED",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 4
+            },
+            {
+              "key": "group_claims_ope_ip_submission_within_tat",
+              "label": "IP Submission Within TAT %",
+              "perspective": "Internal Process",
+              "weight": 0.05,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#DC2626",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 5
+            },
+            {
+              "key": "group_claims_ope_claim_completion_rate_ta_fddd35",
+              "label": "Claim Completion Rate %  TAT– Coding IP",
+              "perspective": "Internal Process",
+              "weight": 0.05,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#0891B2",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 6
+            },
+            {
+              "key": "group_claims_ope_claim_completion_rate_coding_op",
+              "label": "Claim Completion Rate % – Coding OP",
+              "perspective": "Internal Process",
+              "weight": 0.05,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#16A34A",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 7
+            },
+            {
+              "key": "group_claims_ope_initial_rejection_rate",
+              "label": "Initial Rejection Rate %",
+              "perspective": "Internal Process",
+              "weight": 0.25,
+              "direction": "lower_better",
+              "unit": "%",
+              "color": "#9333EA",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 8
+            },
+            {
+              "key": "group_claims_ope_final_rejection_rate_res_7f4ee3",
+              "label": "Final Rejection Rate (Resubmission) %",
+              "perspective": "Internal Process",
+              "weight": 0.2,
+              "direction": "lower_better",
+              "unit": "%",
+              "color": "#EA580C",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 9
+            }
+          ]
+        },
+        "Group Clinical Revenue Manager": {
+          "kpis": [
+            {
+              "key": "group_clinical_r_initial_rejection_rate",
+              "label": "Initial Rejection Rate %",
+              "perspective": "Internal Process",
+              "weight": 0.1,
+              "direction": "lower_better",
+              "unit": "%",
+              "color": "#2563EB",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 1
+            },
+            {
+              "key": "group_clinical_r_preauthorization_denial_rate_op",
+              "label": "Preauthorization Denial Rate % (OP)",
+              "perspective": "Internal Process",
+              "weight": 0.25,
+              "direction": "lower_better",
+              "unit": "%",
+              "color": "#0D9488",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 2
+            },
+            {
+              "key": "group_clinical_r_preauthorization_denial_rate_ip",
+              "label": "Preauthorization Denial Rate % (IP)",
+              "perspective": "Internal Process",
+              "weight": 0.2,
+              "direction": "lower_better",
+              "unit": "%",
+              "color": "#D97706",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 3
+            },
+            {
+              "key": "group_clinical_r_case_management_referral_195491",
+              "label": "Case Management Referral Value (AED)",
+              "perspective": "Financial",
+              "weight": 0.15,
+              "direction": "higher_better",
+              "unit": "AED",
+              "color": "#7C3AED",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 4
+            },
+            {
+              "key": "group_clinical_r_2nd_opinion_referral_value_aed",
+              "label": "2nd Opinion Referral Value (AED)",
+              "perspective": "Financial",
+              "weight": 0.2,
+              "direction": "higher_better",
+              "unit": "AED",
+              "color": "#DC2626",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 5
+            },
+            {
+              "key": "group_clinical_r_preapproval_tat_op_withi_b59af7",
+              "label": "Preapproval TAT OP Within 60 Min (Count)",
+              "perspective": "Internal Process",
+              "weight": 0.05,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#0891B2",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 6
+            },
+            {
+              "key": "group_clinical_r_preapproval_tat_ip_withi_aef024",
+              "label": "Preapproval TAT IP Within 48 Hrs (Count)",
+              "perspective": "Internal Process",
+              "weight": 0.05,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#16A34A",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 7
+            },
+            {
+              "key": "group_clinical_r_recovery_audit_closure_2_c2ffa6",
+              "label": "Recovery Audit Closure — 2025 retained %",
+              "perspective": "Financial",
+              "weight": 0.0001,
+              "direction": "higher_better",
+              "unit": "AED",
+              "color": "#9333EA",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 8
+            },
+            {
+              "key": "group_clinical_r_drg_vs_ffs_rate",
+              "label": "DRG Vs FFS Rate%",
+              "perspective": "Internal Process",
+              "weight": 0.0001,
+              "direction": "higher_better",
+              "unit": "AED",
+              "color": "#EA580C",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 9
+            }
+          ]
+        },
+        "Pre-Authorization Supervisor": {
+          "kpis": [
+            {
+              "key": "pre_authorizatio_ip_initial_rejection",
+              "label": "IP Initial Rejection %",
+              "perspective": "Customer",
+              "weight": 0.5,
+              "direction": "lower_better",
+              "unit": "%",
+              "color": "#2563EB",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 1
+            },
+            {
+              "key": "pre_authorizatio_ip_initial_rejection_all",
+              "label": "IP Initial Rejection %(All)",
+              "perspective": "Customer",
+              "weight": 0.0,
+              "direction": "lower_better",
+              "unit": "%",
+              "color": "#0D9488",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 2
+            },
+            {
+              "key": "pre_authorizatio_error",
+              "label": "Error %",
+              "perspective": "Customer",
+              "weight": 0.2,
+              "direction": "lower_better",
+              "unit": "%",
+              "color": "#D97706",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 3
+            },
+            {
+              "key": "pre_authorizatio_of_approval_within_48_hrs",
+              "label": "% of Approval within 48 hrs",
+              "perspective": "Customer",
+              "weight": 0.3,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#7C3AED",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 4
+            }
+          ]
+        },
+        "RCM Manager SHJ, AJM": {
+          "kpis": [
+            {
+              "key": "rcm_manager_shj__initial_rejection_rate",
+              "label": "Initial Rejection Rate %",
+              "perspective": "Internal Process",
+              "weight": 0.2,
+              "direction": "lower_better",
+              "unit": "%",
+              "color": "#2563EB",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 1
+            },
+            {
+              "key": "rcm_manager_shj__preauthorization_denial_rate_op",
+              "label": "Preauthorization Denial Rate % (OP)",
+              "perspective": "Internal Process",
+              "weight": 0.25,
+              "direction": "lower_better",
+              "unit": "%",
+              "color": "#0D9488",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 2
+            },
+            {
+              "key": "rcm_manager_shj__preauthorization_denial_rate_ip",
+              "label": "Preauthorization Denial Rate % (IP)",
+              "perspective": "Internal Process",
+              "weight": 0.2,
+              "direction": "lower_better",
+              "unit": "%",
+              "color": "#D97706",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 3
+            },
+            {
+              "key": "rcm_manager_shj__claim_completion_rate_ta_f37972",
+              "label": "Claim Completion Rate %  TAT– Coding IP",
+              "perspective": "Internal Process",
+              "weight": 0.15,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#7C3AED",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 4
+            },
+            {
+              "key": "rcm_manager_shj__preapproval_tat_op_withi_4dac32",
+              "label": "Preapproval TAT OP Within 60 Min (Count)",
+              "perspective": "Internal Process",
+              "weight": 0.1,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#DC2626",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 5
+            },
+            {
+              "key": "rcm_manager_shj__preapproval_tat_ip_withi_e4a37a",
+              "label": "Preapproval TAT IP Within 48 Hrs (Count)",
+              "perspective": "Internal Process",
+              "weight": 0.1,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#0891B2",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": {
+                "method": "weighted_average",
+                "weight_col": "Target Value"
+              },
+              "display_order": 6
+            }
+          ]
+        }
+      }
+    }
+  }
+}

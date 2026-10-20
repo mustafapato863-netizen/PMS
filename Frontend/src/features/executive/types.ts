@@ -13,7 +13,7 @@ import type { BasisComparisonContext } from '../evaluation/scoringBasisCompariso
 import type { InsightPeriod, InsightTrendStatus, InsightTargetStatus } from '../insights/types';
 
 export type ExecutiveView = 'corporate' | 'managerial' | 'function';
-export type ExecutiveFunction = 'Call Center' | 'RCM' | 'Pre-Approvals' | 'Marketing' | 'Sales' | 'CSR' | 'Pharmacy';
+export type ExecutiveFunction = 'Call Center' | 'RCM' | 'Pre-Approvals' | 'Marketing' | 'Sales' | 'CSR' | 'Pharmacy' | 'Finance' | 'Human Resources' | 'IT' | 'Administration';
 
 export type ExecutivePeriod = InsightPeriod;
 

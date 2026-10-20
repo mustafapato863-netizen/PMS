@@ -593,3 +593,59 @@ describe('responsive dock and navigation drawer', () => {
     expect(within(dialog).queryByRole('link', { name: 'Administration' })).not.toBeInTheDocument();
   });
 });
+
+describe('position department sidebar', () => {
+  beforeEach(() => {
+    authState.user = ADMIN_USER;
+    catalogState.scopes = [
+      { team: 'Finance', region: 'All', performance_level: 'Employee', position: 'General Accountant' },
+      { team: 'Human Resources', region: 'EGY', performance_level: 'Employee', position: 'HR Specialist' },
+      { team: 'IT', region: 'EGY', performance_level: 'Employee', position: 'IT Technical Support' },
+      { team: 'Offshore Admin & Management', region: 'EGY', performance_level: 'Employee', position: 'Offshore PMO' },
+    ];
+    mockedApiFetch.mockImplementation(async (path) => {
+      if (path === '/api/config/teams') {
+        return {
+          success: true,
+          data: [
+            { team: 'Finance', performance_levels: { Employee: {} } },
+            { team: 'Human Resources', performance_levels: { Employee: {} } },
+            { team: 'IT', performance_levels: { Employee: {} } },
+            { team: 'Offshore Admin & Management', performance_levels: { Employee: {} } },
+          ],
+        } as never;
+      }
+      if (path === '/api/team-management/management-kpi-config/teams') {
+        return {
+          success: true,
+          data: ['CRM', 'Finance', 'Marketing', 'Nursing', 'PMO', 'Pharmacy', 'RCM', 'Inbound'],
+          scopes: ['CRM', 'Finance', 'Marketing', 'Nursing', 'PMO', 'Pharmacy', 'RCM', 'Inbound'].map((name) => ({
+            id: name,
+            name,
+            team_level: 'management' as const,
+          })),
+        } as never;
+      }
+      return { success: true, data: [] } as never;
+    });
+  });
+
+  it('shows the four department dashboards and only the corporate scorecard teams', async () => {
+    renderSidebar('/?performance_level=Corporate');
+
+    expect(await screen.findByRole('link', { name: 'Human Resources' })).toHaveAttribute('href', '/team/human-resources?performance_level=Employee');
+    expect(screen.getByRole('link', { name: 'IT' })).toHaveAttribute('href', '/team/it?performance_level=Employee');
+    const administration = screen.getAllByRole('link', { name: 'Administration' });
+    expect(administration.find((link) => link.getAttribute('href')?.startsWith('/team/administration')))
+      .toHaveAttribute('href', '/team/administration?performance_level=Employee');
+    expect(administration.find((link) => link.getAttribute('href') === '/settings')).toHaveAttribute('href', '/settings');
+
+    await screen.findByRole('link', { name: 'CRM' });
+    for (const name of ['CRM', 'Marketing', 'Nursing', 'PMO', 'Pharmacy', 'RCM']) {
+      expect(screen.getAllByRole('link', { name }).some((link) => link.getAttribute('href')?.includes('performance_level=Corporate'))).toBe(true);
+    }
+    expect(screen.getAllByRole('link', { name: 'Finance' }).some((link) => link.getAttribute('href')?.includes('performance_level=Corporate'))).toBe(true);
+    expect(screen.getAllByRole('link', { name: 'Finance' }).some((link) => link.getAttribute('href')?.startsWith('/team/finance'))).toBe(true);
+    expect(screen.queryByRole('link', { name: 'Inbound' })).not.toBeInTheDocument();
+  });
+});

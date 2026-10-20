@@ -38,6 +38,7 @@ import { useRcmDomainParam } from '../hooks/useRcmDomainParam';
 import { useRcmGroupParam } from '../hooks/useRcmGroupParam';
 import { resolveDisplayScore } from '../utils/kpiScore';
 import { matchesTeamConfig, normalizeTeamName } from '../hooks/api/useKpiWeights';
+import { isCorporateBalancedScorecard } from '../features/team/balancedScorecardNavigation';
 import { useTeamConfig } from '../hooks/useTeamConfig';
 import { GRADE_PALETTE, GRADE_THRESHOLDS } from '../constants/grades';
 import { buildTeamKpiAnalysis } from '../features/team/teamKpiAnalysis';
@@ -238,7 +239,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
     setRegionSelection({ teamName, value });
   }, [teamName, setRegionSelection]);
   const bscConfig = teamConfig?.performance_levels?.[performanceLevel === 'All' ? 'Managerial' : performanceLevel];
-  const isBscContext = !!teamName && (performanceLevel === 'Managerial' || performanceLevel === 'Corporate');
+  const isBscContext = isCorporateBalancedScorecard(teamName, performanceLevel);
   // Management templates are DB-backed and may not exist in the static team
   // config (Marketing is the first such team). An explicitly configured,
   // disabled BSC remains disabled; a missing level config falls through to
