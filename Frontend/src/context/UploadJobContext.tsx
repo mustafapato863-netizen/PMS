@@ -105,25 +105,27 @@ function UploadProgressNote({
 
 export function UploadJobProvider({ children }: { children: ReactNode }) {
   const { currentUser } = useAuth();
-  const [activeJobId, setActiveJobId] = useState<string | null>(null);
-  const { data: job, isError } = useProcessingJob(activeJobId || undefined);
+  const [trackedJobId, setTrackedJobId] = useState<string | null>(null);
+  const { data: job, isError } = useProcessingJob(trackedJobId || undefined);
 
   const trackJob = useCallback((jobId: string) => {
-    setActiveJobId(jobId);
+    setTrackedJobId(jobId);
   }, []);
 
-  const dismissJob = useCallback(() => setActiveJobId(null), []);
+  const dismissJob = useCallback(() => setTrackedJobId(null), []);
 
   useEffect(() => {
     if (job?.status === 'succeeded') refreshPerformanceData();
   }, [job?.job_id, job?.status]);
 
+  const isTerminal = Boolean(job?.status && terminalStatuses.has(job.status));
+  const activeJobId = trackedJobId && !isTerminal ? trackedJobId : null;
   const contextValue = useMemo(() => ({ activeJobId, trackJob }), [activeJobId, trackJob]);
 
   return (
     <UploadJobContext.Provider value={contextValue}>
       {children}
-      {currentUser && activeJobId && <UploadProgressNote job={job} isError={isError} onDismiss={dismissJob} />}
+      {currentUser && trackedJobId && <UploadProgressNote job={job} isError={isError} onDismiss={dismissJob} />}
     </UploadJobContext.Provider>
   );
 }

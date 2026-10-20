@@ -285,6 +285,15 @@ const storedWeight = (records: AgentRecord[], definition: MarketingKpiConfig | s
   };
 };
 
+const INVALID_STORED_UNIT = /^(none|null|undefined|nan)$/i;
+
+/** Drop legacy `"None"` units so the catalog unit, then percent, can fill in. */
+export const storedUnit = (unit: string | null | undefined): string => {
+  const trimmed = String(unit ?? '').trim();
+  if (!trimmed || INVALID_STORED_UNIT.test(trimmed)) return '';
+  return trimmed;
+};
+
 /**
  * Stored employee-period definitions override catalog defaults, including known KPIs
  * whose weights changed. The catalog still supplies ordering/aggregation and legacy fallbacks.
@@ -319,7 +328,7 @@ export const definitionsWithStoredKpis = (
         perspective: value.perspective || base?.perspective || '',
         weight: value.weight_applied,
         direction: value.direction,
-        unit: value.unit || base?.unit || '',
+        unit: storedUnit(value.unit) || base?.unit || '%',
         color: value.color || base?.color || '#64748B',
         display_order: base?.display_order ?? displayOrder,
         aggregation: base?.aggregation ?? { method: 'weighted_average', weight_col: 'Target Value' },

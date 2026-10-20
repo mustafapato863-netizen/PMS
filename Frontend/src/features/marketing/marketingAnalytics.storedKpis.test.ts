@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AgentRecord } from '../../types';
-import { aggregateMarketingKpis, definitionsWithStoredKpis } from './marketingAnalytics';
+import { aggregateMarketingKpis, definitionsWithStoredKpis, storedUnit } from './marketingAnalytics';
 import type { MarketingKpiConfig } from './types';
 
 // Synthetic records. "Reporting" stands in for a KPI the sheet added that the config does not list.
@@ -82,5 +82,23 @@ describe('Marketing KPIs the config does not list', () => {
     const entry = aggregates.find((aggregate) => aggregate.key === 'mkt_media_buyer_reporting');
     expect(entry).toMatchObject({ label: 'Reporting', unit: '%' });
     expect(entry!.averageActual).toBe(1);
+  });
+
+  it('ignores a stored None unit and falls back to the configured unit, then percent', () => {
+    expect(storedUnit('None')).toBe('');
+    expect(storedUnit(' null ')).toBe('');
+    expect(storedUnit('%')).toBe('%');
+
+    const unknown = definitionsWithStoredKpis(
+      [configuredCpl],
+      [record('SYN001', [{ ...reporting, unit: 'None' }])],
+    );
+    expect(unknown.find((definition) => definition.key === 'mkt_media_buyer_reporting')?.unit).toBe('%');
+
+    const folded = definitionsWithStoredKpis(
+      [configuredCpl],
+      [record('SYN001', [{ ...reporting, kpi_key: 'uploaded_cpl', label: 'CPL', unit: 'None' }])],
+    );
+    expect(folded[0].unit).toBe('AED');
   });
 });

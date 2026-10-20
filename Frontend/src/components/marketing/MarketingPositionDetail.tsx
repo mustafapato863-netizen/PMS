@@ -26,11 +26,11 @@ import {
   buildKpiAnalysis,
   buildKpiRecommendation,
   formatMarketingGap,
+  formatMarketingKpiValue,
   rankKpisByNegativeImpact,
 } from '../../features/marketing/marketingPositionAnalysis';
 import type { KpiAnalysisTone } from '../../features/marketing/marketingPositionAnalysis';
 import { getMarketingKpiIcon } from '../../features/marketing/marketingKpiIcons';
-import { formatMarketingValue } from '../../features/marketing/marketingNumberFormat';
 import { GRADE_PALETTE } from '../../constants/grades';
 import SummaryKpiCard from '../common/KpiCard';
 import MoMIndicator from '../common/MoMIndicator';
@@ -63,15 +63,15 @@ const PositionKpiCard = ({ kpi }: { kpi: MarketingKpiAggregate }) => {
   const tone = KPI_TONES[targetState.status];
   const analysis = buildKpiAnalysis(kpi);
   const kpiIcon = getMarketingKpiIcon(kpi);
-  const actual = formatMarketingValue(kpi.averageActual, kpi.unit);
-  const target = formatMarketingValue(kpi.averageTarget, kpi.unit);
+  const actual = formatMarketingKpiValue(kpi.averageActual, kpi.unit, kpi.averageTarget);
+  const target = formatMarketingKpiValue(kpi.averageTarget, kpi.unit, kpi.averageTarget);
   return (
     <PerformanceKpiCard
       icon={kpiIcon}
       iconAccentColor={kpi.color}
       label={kpi.label}
-      value={actual.display}
-      targetValue={target.display}
+      value={actual}
+      targetValue={target}
       detailLabel={kpi.direction === 'lower_better' ? 'Lower is better' : 'Higher is better'}
       badgeText={tone.label}
       badgeType={tone.badgeType}
@@ -585,7 +585,7 @@ const KpiAnalysisRow = ({
       ? TrendingDown
       : Gauge;
   const StatusIcon = analysis.tone === 'positive' ? CheckCircle2 : AlertTriangle;
-  const baselineValue = formatMarketingValue(kpi.baselineActual, kpi.unit).display;
+  const baselineValue = formatMarketingKpiValue(kpi.baselineActual, kpi.unit, kpi.averageTarget);
   const baselineGap = analysis.baseline.gap === null
     ? null
     : formatMarketingGap(analysis.baseline.gap, kpi.unit);

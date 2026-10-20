@@ -1986,12 +1986,24 @@ class EvaluationWorkflow:
         except (ConfigurationError, ValueError):
             return None
 
-    def _upload_rows(self, record: PerformanceRecord, team: Team, fresh: list[KPIValue]) -> list[dict]:
+    def _upload_rows(
+        self,
+        record: PerformanceRecord,
+        team: Team,
+        fresh: list[KPIValue],
+        version: TeamConfigurationVersion | None = None,
+    ) -> list[dict]:
         """Full-precision pin inputs. Rounded KPI columns are the last fallback."""
         payload = _payload_dict(record)
         raw = payload.get("raw_data") if isinstance(payload.get("raw_data"), dict) else None
         listed = _listed_kpis(payload)
         config = self._upload_config(team, record)
+        snapshot = dict(version.config_snapshot or {}) if version is not None else {}
+        operational = snapshot.get("contract") == "operational_upload"
+        lines_by_key = {
+            str(line.get("kpi_key")): line
+            for line in snapshot_lines(version)
+        } if version is not None else {}
         rows = []
         for value in fresh:
             key = str(value.kpi_key)
@@ -1999,17 +2011,24 @@ class EvaluationWorkflow:
             actual = None
             workbook = None
             found = False
-            if key == PRODUCTIVITY_KEY:
-                actual_found, raw_actual, target_found, raw_target = _productivity_from_raw(record, raw)
-            else:
-                actual_found, raw_actual, target_found, raw_target = _config_source(
-                    config, key, normalise_actual_cells(config, raw),
-                )
-            if actual_found or target_found:
-                origin = "workbook_raw"
-                actual = raw_actual
-                workbook = raw_target
-                found = True
+            if operational:
+                actual = _source_number(value.actual_value)
+                workbook = _source_number(value.target_value)
+                if actual is not None or workbook is not None:
+                    origin = "stored_actual"
+                    found = True
+            if not found:
+                if key == PRODUCTIVITY_KEY:
+                    actual_found, raw_actual, target_found, raw_target = _productivity_from_raw(record, raw)
+                else:
+                    actual_found, raw_actual, target_found, raw_target = _config_source(
+                        config, key, normalise_actual_cells(config, raw),
+                    )
+                if actual_found or target_found:
+                    origin = "workbook_raw"
+                    actual = raw_actual
+                    workbook = raw_target
+                    found = True
             if not found:
                 item = listed.get(key)
                 if item is not None:
@@ -2021,15 +2040,19 @@ class EvaluationWorkflow:
             if not found:
                 actual = _source_number(value.actual_value)
                 workbook = _source_number(value.target_value)
-            rows.append(
-                {
-                    "kpi_key": key,
-                    "actual": actual,
-                    "workbook_target": workbook,
-                    "precomputed_achievement": value.achievement_ratio,
-                    "origin": origin,
-                }
-            )
+            body = {
+                "kpi_key": key,
+                "actual": actual,
+                "workbook_target": workbook,
+                "precomputed_achievement": value.achievement_ratio,
+                "origin": origin,
+            }
+            line = lines_by_key.get(key)
+            if line is not None and str(line.get("row_selection") or "") == "utz_or_abandon":
+                from services.operational_upload_contract import other_direction_for_row
+
+                body["direction"] = other_direction_for_row(raw if isinstance(raw, dict) else None, line)
+            rows.append(body)
         return rows
 
     def rescore_uploaded(
@@ -2086,7 +2109,7 @@ class EvaluationWorkflow:
         fresh = values[start:]
         if not fresh:
             return
-        rows = self._upload_rows(record, team, fresh)
+        rows = self._upload_rows(record, team, fresh, version=version)
         if not_evaluated_reason(snapshot_lines(version), actuals_by_key(rows), _row_raw(record)) is not None:
             # Not evaluated: no approved pin and no changed fields. The legacy save stands.
             return

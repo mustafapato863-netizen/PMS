@@ -1,6 +1,12 @@
 const PERCENT_UNITS = new Set(['%', 'percent', 'percentage']);
 const COUNT_UNITS = new Set(['count', 'visits']);
 const CURRENCY_UNITS = new Set(['aed', 'currency']);
+const INVALID_UNIT = /^(none|null|undefined|nan)$/i;
+
+export const cleanUnit = (unit: string | null | undefined): string => {
+  const trimmed = String(unit ?? '').trim();
+  return INVALID_UNIT.test(trimmed) ? '' : trimmed;
+};
 
 const normalizePercent = (value: number) => (Math.abs(value) <= 1 ? value * 100 : value);
 
@@ -34,11 +40,12 @@ export interface MarketingFormattedValue {
 
 export const formatMarketingValue = (
   value: number | null,
-  unit: string,
+  unit: string | null | undefined,
 ): MarketingFormattedValue => {
   if (value === null || !Number.isFinite(value)) return { display: '—', exact: 'Unavailable' };
-  const normalizedUnit = unit.trim().toLowerCase();
-  if (PERCENT_UNITS.has(normalizedUnit)) {
+  const cleaned = cleanUnit(unit);
+  const normalizedUnit = cleaned.toLowerCase();
+  if (!normalizedUnit || PERCENT_UNITS.has(normalizedUnit)) {
     const percentage = normalizePercent(value);
     return {
       display: `${trimZeros(percentage.toFixed(2))}%`,
@@ -57,16 +64,17 @@ export const formatMarketingValue = (
       exact: fullNumber(value, Number.isInteger(value) ? 0 : 2, 2),
     };
   }
-  const suffix = unit.trim();
+  const suffix = cleaned;
   return {
     display: `${compactNumber(value)}${suffix ? ` ${suffix}` : ''}`,
     exact: `${fullNumber(value, 2, 2)}${suffix ? ` ${suffix}` : ''}`,
   };
 };
 
-export const formatMarketingGapValue = (value: number, unit: string): string => {
-  if (PERCENT_UNITS.has(unit.trim().toLowerCase())) {
+export const formatMarketingGapValue = (value: number, unit: string | null | undefined): string => {
+  const cleaned = cleanUnit(unit);
+  if (!cleaned || PERCENT_UNITS.has(cleaned.toLowerCase())) {
     return `${trimZeros(normalizePercent(value).toFixed(2))}%`;
   }
-  return formatMarketingValue(value, unit).display;
+  return formatMarketingValue(value, cleaned).display;
 };

@@ -9,6 +9,7 @@ from typing import Any
 from openpyxl import load_workbook
 from openpyxl.utils.datetime import from_excel
 from config.settings import BASE_DIR
+from services.management_template_repair import normalize_rate_measurement
 from utils.performance_levels import normalize_performance_level
 
 
@@ -91,6 +92,13 @@ def _parse_period(period: Any) -> tuple[str | None, int | None]:
         except ValueError:
             continue
     return None, None
+
+
+def _clean_str(value: Any, default: str = "") -> str:
+    if value is None:
+        return default
+    text = str(value).strip()
+    return default if not text or text.lower() in {"none", "null", "nan"} else text
 
 
 def _direction_value(raw: Any) -> str:
@@ -301,7 +309,7 @@ class BSCTemplateService:
         if not rows:
             return []
 
-        headers = [str(value).strip() for value in rows[0]]
+        headers = [str(value).strip() if value is not None else "" for value in rows[0]]
         perspectives = self._config_perspective_index(workbook)
         required = {
             "Employee ID", "Team", "Employee Name", "Position", "Performance Level", "Period",
@@ -313,8 +321,9 @@ class BSCTemplateService:
 
         parsed_rows = []
         issues: list[str] = []
+        units = self._config_unit_index(workbook)
         for index, raw_row in enumerate(rows[1:], start=2):
-            if not any(str(cell).strip() for cell in raw_row):
+            if not any(_clean_str(cell) for cell in raw_row):
                 continue
             item = dict(zip(headers, raw_row))
             if _is_instruction_row(item):
@@ -322,21 +331,29 @@ class BSCTemplateService:
             month, year = _parse_period(item.get("Period"))
             level = normalize_performance_level(item.get("Performance Level"), allow_all=False)
             perspective = self._perspective_for_row(item, perspectives)
+            kpi_label = _clean_str(item.get("KPI"))
+            unit = _clean_str(item.get("Target Unit")) or self._unit_for_row(item, units) or "%"
+            direction = _direction_value(item.get("Direction"))
+            actual = _coerce_number(item.get("Actual Value"))
+            target = _coerce_number(item.get("Target Value"))
+            unit, direction, actual, target = normalize_rate_measurement(
+                kpi_label, unit, direction, actual, target,
+            )
             parsed = {
-                "employee_id": str(item.get("Employee ID", "")).strip(),
-                "team": str(item.get("Team", "")).strip(),
-                "employee_name": str(item.get("Employee Name", "")).strip(),
-                "position": str(item.get("Position", "")).strip(),
+                "employee_id": _clean_str(item.get("Employee ID")),
+                "team": _clean_str(item.get("Team")),
+                "employee_name": _clean_str(item.get("Employee Name")),
+                "position": _clean_str(item.get("Position")),
                 "performance_level": level,
                 "month": month,
                 "year": year,
                 "perspective": perspective,
-                "kpi_label": str(item.get("KPI", "")).strip(),
-                "direction": _direction_value(item.get("Direction")),
+                "kpi_label": kpi_label,
+                "direction": direction,
                 "weight": _weight_to_fraction(item.get("Weight")),
-                "target_value": _coerce_number(item.get("Target Value")),
-                "target_unit": str(item.get("Target Unit", "")).strip() or "%",
-                "actual_value": _coerce_number(item.get("Actual Value")),
+                "target_value": target,
+                "target_unit": unit or "%",
+                "actual_value": actual,
             }
             if not parsed["employee_id"] or not parsed["employee_name"] or not parsed["position"] or not parsed["kpi_label"]:
                 issues.append(f"Row {index} is missing employee or KPI identity fields")
@@ -387,29 +404,72 @@ class BSCTemplateService:
         for raw in rows[1:]:
             if not raw:
                 continue
-            perspective = str(raw[index["Perspective"]] or "").strip()
+            perspective = _clean_str(raw[index["Perspective"]])
             if perspective not in _PERSPECTIVE_ORDER:
                 continue
-            team = str(raw[index["Team"]] or "").strip().casefold()
-            position = str(raw[index["Position"]] or "").strip().casefold()
-            level = str(raw[index["Performance Level"]] or "").strip().casefold()
-            kpi = str(raw[index["KPI"]] or "").strip().casefold()
+            team = _clean_str(raw[index["Team"]]).casefold()
+            position = _clean_str(raw[index["Position"]]).casefold()
+            level = _clean_str(raw[index["Performance Level"]]).casefold()
+            kpi = _clean_str(raw[index["KPI"]]).casefold()
             found.setdefault((team, position, level, kpi), perspective)
             found.setdefault((team, position, "", kpi), perspective)
             found.setdefault((team, "", "", kpi), perspective)
         return found
 
     @staticmethod
+    def _config_unit_index(workbook) -> dict[tuple[str, str, str, str], str]:
+        """KPI Config is the unit source when KPI's Data leaves Target Unit blank."""
+        if "KPI Config" not in workbook.sheetnames:
+            return {}
+        sheet = workbook["KPI Config"]
+        rows = [list(row) for row in sheet.iter_rows(values_only=True)]
+        if not rows:
+            return {}
+        headers = [str(value).strip() if value is not None else "" for value in rows[0]]
+        index = {name: position for position, name in enumerate(headers)}
+        needed = ("Team", "Position", "Performance Level", "KPI", "Target Unit")
+        if any(name not in index for name in needed):
+            return {}
+        found: dict[tuple[str, str, str, str], str] = {}
+        for raw in rows[1:]:
+            if not raw:
+                continue
+            unit = _clean_str(raw[index["Target Unit"]])
+            if not unit:
+                continue
+            team = _clean_str(raw[index["Team"]]).casefold()
+            position = _clean_str(raw[index["Position"]]).casefold()
+            level = _clean_str(raw[index["Performance Level"]]).casefold()
+            kpi = _clean_str(raw[index["KPI"]]).casefold()
+            found.setdefault((team, position, level, kpi), unit)
+            found.setdefault((team, position, "", kpi), unit)
+            found.setdefault((team, "", "", kpi), unit)
+        return found
+
+    @staticmethod
+    def _unit_for_row(item: dict[str, Any], units: dict[tuple[str, str, str, str], str]) -> str:
+        team = _clean_str(item.get("Team")).casefold()
+        position = _clean_str(item.get("Position")).casefold()
+        level = _clean_str(item.get("Performance Level")).casefold()
+        kpi = _clean_str(item.get("KPI")).casefold()
+        return (
+            units.get((team, position, level, kpi))
+            or units.get((team, position, "", kpi))
+            or units.get((team, "", "", kpi))
+            or ""
+        )
+
+    @staticmethod
     def _perspective_for_row(item: dict[str, Any], perspectives: dict[tuple[str, str, str, str], str]) -> str:
-        perspective = str(item.get("Perspective") or "").strip()
+        perspective = _clean_str(item.get("Perspective"))
         if perspective in _PERSPECTIVE_ORDER:
             return perspective
         if perspective:
             return perspective
-        team = str(item.get("Team") or "").strip().casefold()
-        position = str(item.get("Position") or "").strip().casefold()
-        level = str(item.get("Performance Level") or "").strip().casefold()
-        kpi = str(item.get("KPI") or "").strip().casefold()
+        team = _clean_str(item.get("Team")).casefold()
+        position = _clean_str(item.get("Position")).casefold()
+        level = _clean_str(item.get("Performance Level")).casefold()
+        kpi = _clean_str(item.get("KPI")).casefold()
         return (
             perspectives.get((team, position, level, kpi))
             or perspectives.get((team, position, "", kpi))

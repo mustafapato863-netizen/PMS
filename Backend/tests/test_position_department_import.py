@@ -166,7 +166,8 @@ def test_template_upload_routes_levels_and_pins_department_records():
         collections = next(row for row in finance_kpis.values() if float(row.weight_applied) == pytest.approx(0.6))
         accuracy = next(row for row in finance_kpis.values() if float(row.weight_applied) == pytest.approx(0.4))
         assert float(collections.achievement_ratio) == pytest.approx(1.0)
-        assert float(collections.actual_value) == pytest.approx(150)
+        assert float(collections.actual_value) == pytest.approx(1.5)
+        assert float(collections.target_value) == pytest.approx(1)
         assert float(collections.contribution) == pytest.approx(0.6)
         assert float(accuracy.achievement_ratio) == pytest.approx(0.5)
         assert float(accuracy.contribution) == pytest.approx(0.2)
@@ -207,5 +208,84 @@ def test_template_upload_routes_levels_and_pins_department_records():
 
         call_center_view = DashboardRecordService(session).list_records(team="Call Center")
         assert any(row.employee_id == "SGHD90002" and row.position == "Inbound Team Leader" for row in call_center_view)
+    finally:
+        session.close()
+
+
+def _rate_workbook() -> bytes:
+    workbook = Workbook()
+    data = workbook.active
+    data.title = "KPI's Data"
+    config = workbook.create_sheet("KPI Config")
+    source = workbook.create_sheet("New Temp")
+    data.append(DATA_HEADERS)
+    source.append(DATA_HEADERS)
+    config.append(CONFIG_HEADERS)
+    september = datetime(2026, 9, 1)
+    august = datetime(2026, 8, 1)
+    stored = [
+        ["SGHD91011", "Human Resources", "Hana Specialist", "HR Specialist", "Employee", september,
+         "Internal Process", "Onboarding Rate", "Higher is Better", 1, 54, "%", 43, "%", 43 / 54],
+        ["SGHD91012", "Human Resources", "Omar Supervisor", "HR Operation Supervisor", "Employee", september,
+         "Internal Process", "File Completion", "Higher is Better", 1, 107, "%", 95, "%", 95 / 107],
+        ["SGHD91013", "Marketing", "Mona Buyer", "Media Buyer & SEO Manager", "Employee", september,
+         "Financial", "Budget Compliance", "Higher is Better", 1, 997017.05, "%", 997333.49, "%", 1],
+        ["SGHD91014", "IT", "Gamal Support", "IT Technical Support", "Managerial", august,
+         "Internal Process", "Average Ticket Resolution Time", "Lower is Better", 1, 1, "%", 0.9, "%", 0.9],
+        ["SGHD91014", "IT", "Gamal Support", "IT Technical Support", "Managerial", september,
+         "Internal Process", "Average Ticket Resolution Time", "Higher Better", 1, 48, "%", 24, "%", 1],
+    ]
+    source_months = ["Sep", "Sep", "Sep", "Aug", "Sep"]
+    for row, month_name in zip(stored, source_months):
+        data.append(row)
+        source_row = list(row)
+        source_row[5] = month_name
+        source.append(source_row)
+    payload = io.BytesIO()
+    workbook.save(payload)
+    return payload.getvalue()
+
+
+def test_position_import_stores_percent_rates_and_ticket_compliance():
+    session = _db()
+    try:
+        import_uploaded_management_template(
+            session,
+            _rate_workbook(),
+            updated_by="tester",
+            source_filename="Template_Managment.xlsx",
+        )
+        records = session.query(PerformanceRecord).all()
+        none_units = 0
+        by_label = {}
+        for record in records:
+            for kpi in record.record_payload["kpi_values"]:
+                if str(kpi.get("unit") or "").strip().casefold() == "none":
+                    none_units += 1
+                by_label[(record.record_payload["employee_id"], record.month, kpi["label"])] = kpi
+        assert none_units == 0
+        specialist = by_label[("SGHD91011", "September", "Onboarding Rate")]
+        assert float(specialist["actual_value"]) == pytest.approx(43 / 54, abs=0.0001)
+        assert float(specialist["target_value"]) == pytest.approx(1)
+        assert specialist["unit"] == "%"
+        supervisor = by_label[("SGHD91012", "September", "File Completion")]
+        assert float(supervisor["actual_value"]) == pytest.approx(95 / 107, abs=0.0001)
+        assert float(supervisor["target_value"]) == pytest.approx(1)
+        budget = by_label[("SGHD91013", "September", "Budget Compliance")]
+        assert float(budget["actual_value"]) == pytest.approx(997333.49 / 997017.05, abs=0.0001)
+        assert float(budget["target_value"]) == pytest.approx(1)
+        assert budget["unit"] == "%"
+        august = by_label[("SGHD91014", "August", "Average Ticket Resolution Time")]
+        september = by_label[("SGHD91014", "September", "Average Ticket Resolution Time")]
+        assert august["unit"] == "%"
+        assert august["direction"] == "higher_better"
+        assert float(august["actual_value"]) == pytest.approx(0.9)
+        assert float(august["target_value"]) == pytest.approx(1)
+        assert september["unit"] == "%"
+        assert september["direction"] == "higher_better"
+        assert float(september["actual_value"]) == pytest.approx(1)
+        assert float(september["target_value"]) == pytest.approx(1)
+        assert float(september["achievement_ratio"]) == pytest.approx(1)
+        assert float(august["achievement_ratio"]) == pytest.approx(0.9)
     finally:
         session.close()

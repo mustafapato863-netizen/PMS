@@ -196,6 +196,8 @@ class TeamService:
             configured_kpis = list(iter_employee_kpi_configs(config)) if config else []
             if configured_kpis:
                 for position_name, display_order, kpi in configured_kpis:
+                    if float(kpi['weight']) <= 0:
+                        continue
                     db.add(TeamKPIConfig(
                         team_id=team.id,
                         performance_level="Employee",

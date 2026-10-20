@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import PerformanceKpiCard from './PerformanceKpiCard';
 import {
   calculateKpiTargetProgress,
+  formatPercentOfTargetLabel,
   normalizePercentageKpiForDisplay,
   resolveKpiTargetStatus,
 } from './performanceKpiProgress';
@@ -39,6 +40,9 @@ describe('PerformanceKpiCard', () => {
     const belowMaximum = resolveKpiTargetStatus(3.64, 15, true);
     expect(belowMaximum.status).toBe('on_target');
     expect(belowMaximum.progressPercent).toBeCloseTo(412.09);
+    expect(formatPercentOfTargetLabel(200)).toBe('100.0% of target');
+    expect(formatPercentOfTargetLabel(95.4)).toBe('95.4% of target');
+    expect(formatPercentOfTargetLabel(belowMaximum.progressPercent ?? 0)).toBe('100.0% of target');
     expect(resolveKpiTargetStatus(18, 15, true).status).toBe('needs_attention');
     expect(resolveKpiTargetStatus(30, 15, true).status).toBe('below_target');
   });

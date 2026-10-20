@@ -32,11 +32,12 @@ vi.mock('../hooks/usePerformanceData', () => ({
 }));
 
 function UploadPage() {
-  const { trackJob } = useUploadJob();
+  const { activeJobId, trackJob } = useUploadJob();
 
   return (
     <div>
       <p>Upload settings page</p>
+      <p data-testid="active-job">{activeJobId ?? 'idle'}</p>
       <button type="button" onClick={() => trackJob('job-1')}>Start upload</button>
       <Link to="/dashboard">Go to dashboard</Link>
     </div>
@@ -128,6 +129,7 @@ describe('UploadJobProvider', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Start upload' }));
 
     expect(screen.getByRole('alert')).toHaveTextContent('Neither value was used as the quality target.');
+    expect(screen.getByTestId('active-job')).toHaveTextContent('idle');
     expect(screen.getByRole('heading', { name: 'Conflicting target columns' })).toBeInTheDocument();
     expect(screen.getByText('Outbound: T.Quality Target')).toBeInTheDocument();
   });

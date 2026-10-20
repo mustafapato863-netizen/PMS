@@ -39,6 +39,9 @@ MONTH_NUMBERS = {
 
 HIGHER = "Higher is Better"
 LOWER = "Lower is Better"
+TICKET_KPI = "average ticket resolution time"
+_MISSING_TEXT = frozenset({"", "none", "null", "nan"})
+_PERCENT_UNITS = frozenset({"%", "percent", "percentage"})
 
 
 def repair_workbook(path: str | Path) -> dict[str, Any]:
@@ -91,9 +94,16 @@ def _repair_loaded(values: Workbook, editable: Workbook) -> dict[str, Any]:
     _strip_sheet(data_edit, DATA_TEXT_COLUMNS)
     _strip_sheet(config_edit, CONFIG_TEXT_COLUMNS)
     _strip_sheet(source_edit, DATA_TEXT_COLUMNS)
+    # Read config labels before duplicate rows are deleted so the cached sheet
+    # and the formula sheet still share row numbers.
+    perspectives = _config_label_lookup(values[CONFIG_SHEET], config_edit, 5)
+    units = _config_label_lookup(values[CONFIG_SHEET], config_edit, 9)
     removed_config = _remove_duplicate_config_rows(config_edit)
 
-    rows = [_read_data_row(data_values, data_edit, number) for number in range(2, data_values.max_row + 1)]
+    rows = [
+        _read_data_row(data_values, data_edit, number, perspectives, units)
+        for number in range(2, data_values.max_row + 1)
+    ]
     rows = [row for row in rows if row["code"] or row["kpi"]]
     source_rows = [_read_source_row(source_values, number) for number in range(2, source_values.max_row + 1)]
     source_rows = [row for row in source_rows if row["code"] or row["kpi"]]
@@ -117,6 +127,7 @@ def _repair_loaded(values: Workbook, editable: Workbook) -> dict[str, Any]:
     _apply_scoped_weights(rows, config_weights)
     deleted = _drop_incomplete_subset_blocks(rows)
     _apply_directions(rows, config_edit)
+    _normalize_rate_rows(rows)
 
     for row in rows:
         cell_row = row["number"]
@@ -126,6 +137,14 @@ def _repair_loaded(values: Workbook, editable: Workbook) -> dict[str, Any]:
             data_edit.cell(cell_row, 10).value = row["weight"]
         if row["direction"]:
             data_edit.cell(cell_row, 9).value = row["direction"]
+        # Literal strings: saving the formula workbook drops XLOOKUP cached values.
+        data_edit.cell(cell_row, 7).value = row["perspective"]
+        data_edit.cell(cell_row, 12).value = row["unit"]
+        data_edit.cell(cell_row, 14).value = row["unit"]
+        if row.get("target_changed") and row["target"] is not None:
+            data_edit.cell(cell_row, 11).value = row["target"]
+        if row.get("actual_changed") and row["actual"] is not None:
+            data_edit.cell(cell_row, 13).value = row["actual"]
         _widen_score_formula(data_edit.cell(cell_row, 15))
 
     delete_numbers = sorted(deleted, reverse=True)
@@ -172,21 +191,29 @@ def _remove_duplicate_config_rows(sheet) -> int:
     return len(remove)
 
 
-def _read_data_row(values_sheet, edit_sheet, number: int) -> dict[str, Any]:
+def _read_data_row(
+    values_sheet,
+    edit_sheet,
+    number: int,
+    perspectives: dict[tuple[str, str, str, str], str],
+    units: dict[tuple[str, str, str, str], str],
+) -> dict[str, Any]:
     code = _employee_code(values_sheet.cell(number, 1).value)
     kpi = _text(values_sheet.cell(number, 8).value)
-    return {
+    row = {
         "number": number,
         "code": code,
         "team": _text(values_sheet.cell(number, 2).value),
         "position": _text(values_sheet.cell(number, 4).value),
         "level": _text(values_sheet.cell(number, 5).value),
         "period": _as_date(values_sheet.cell(number, 6).value) or _month_start(_text(values_sheet.cell(number, 6).value)),
+        "perspective": _meaningful_text(values_sheet.cell(number, 7).value),
         "kpi": kpi,
         "direction": _canonical_direction(values_sheet.cell(number, 9).value),
         "weight": _weight(values_sheet.cell(number, 10).value),
         "original_weight": _weight(values_sheet.cell(number, 10).value),
         "target": _number(values_sheet.cell(number, 11).value),
+        "unit": _meaningful_text(values_sheet.cell(number, 12).value),
         "actual": _number(values_sheet.cell(number, 13).value),
         "score": _score(values_sheet.cell(number, 15).value),
         "period_from_source": False,
@@ -194,6 +221,138 @@ def _read_data_row(values_sheet, edit_sheet, number: int) -> dict[str, Any]:
         "edit_direction_is_formula": isinstance(edit_sheet.cell(number, 9).value, str)
         and str(edit_sheet.cell(number, 9).value).startswith("="),
     }
+    if not row["perspective"]:
+        row["perspective"] = _lookup_label(row, perspectives) or "Internal Process"
+    if not row["unit"]:
+        row["unit"] = _lookup_label(row, units) or "%"
+    return row
+
+
+def normalize_rate_measurement(
+    kpi: str,
+    unit: str | None,
+    direction: str | None,
+    actual: float | None,
+    target: float | None,
+) -> tuple[str, str | None, float | None, float | None]:
+    """Put mixed percent scales on one rate, leaving the achievement ratio intact.
+
+    Average Ticket Resolution Time is resolved first. September stores hours
+    (24 against 48) whose lower-is-better score is 100% SLA, so the stored
+    rate is ``min(1, target/actual)`` rather than ``actual/target``.
+    """
+    label = _text(kpi).casefold()
+    resolved_unit = _meaningful_text(unit) or "%"
+    resolved_direction = direction
+    if label == TICKET_KPI:
+        resolved_unit = "%"
+        resolved_direction = _higher_direction_label(direction)
+        if actual is not None and target is not None and target > 1:
+            actual = 0.0 if actual == 0 else min(1.0, target / actual)
+            target = 1.0
+        return resolved_unit, resolved_direction, actual, target
+    if (
+        _is_percent_unit(resolved_unit)
+        and _is_higher_direction(resolved_direction)
+        and actual is not None
+        and target is not None
+        and target > 1
+    ):
+        actual = actual / target
+        target = 1.0
+    return resolved_unit, resolved_direction, actual, target
+
+
+def _normalize_rate_rows(rows: list[dict[str, Any]]) -> None:
+    for row in rows:
+        measurement_actual = row["source_actual"] if row.get("source_actual") is not None else row["actual"]
+        measurement_target = row["source_target"] if row.get("source_target") is not None else row["target"]
+        unit, direction, actual, target = normalize_rate_measurement(
+            row.get("kpi") or "",
+            row.get("unit") or "",
+            row.get("direction"),
+            measurement_actual,
+            measurement_target,
+        )
+        row["unit"] = unit or "%"
+        if direction:
+            row["direction"] = direction
+        row["actual"] = actual
+        row["target"] = target
+        changed = not _same_number(actual, measurement_actual) or not _same_number(target, measurement_target)
+        row["actual_changed"] = changed and actual is not None
+        row["target_changed"] = changed and target is not None
+
+
+def _config_label_lookup(values_sheet, edit_sheet, column: int) -> dict[tuple[str, str, str, str], str]:
+    found: dict[tuple[str, str, str, str], str] = {}
+    last = max(values_sheet.max_row or 1, edit_sheet.max_row or 1)
+    for number in range(2, last + 1):
+        text = _sheet_text(values_sheet, edit_sheet, number, column)
+        if not text:
+            continue
+        team = _lookup(_sheet_text(values_sheet, edit_sheet, number, 1))
+        position = _lookup(_sheet_text(values_sheet, edit_sheet, number, 2))
+        level = _lookup(_sheet_text(values_sheet, edit_sheet, number, 4))
+        kpi = _lookup(_sheet_text(values_sheet, edit_sheet, number, 6))
+        if not kpi:
+            continue
+        found.setdefault((team, position, level, kpi), text)
+        found.setdefault((team, position, "", kpi), text)
+        found.setdefault((team, "", "", kpi), text)
+    return found
+
+
+def _sheet_text(values_sheet, edit_sheet, number: int, column: int) -> str:
+    cached = _meaningful_text(values_sheet.cell(number, column).value)
+    if cached:
+        return cached
+    edited = edit_sheet.cell(number, column).value
+    if isinstance(edited, str) and edited.startswith("="):
+        return ""
+    return _meaningful_text(edited)
+
+
+def _lookup_label(row: dict[str, Any], lookup: dict[tuple[str, str, str, str], str]) -> str:
+    team = _lookup(row.get("team"))
+    position = _lookup(row.get("position"))
+    level = _lookup(row.get("level"))
+    kpi = _lookup(row.get("kpi"))
+    return (
+        lookup.get((team, position, level, kpi))
+        or lookup.get((team, position, "", kpi))
+        or lookup.get((team, "", "", kpi))
+        or ""
+    )
+
+
+def _higher_direction_label(direction: str | None) -> str:
+    text = _text(direction)
+    if "_" in text:
+        return "higher_better"
+    return HIGHER
+
+
+def _is_higher_direction(direction: str | None) -> bool:
+    return "higher" in _text(direction).casefold()
+
+
+def _is_percent_unit(unit: str | None) -> bool:
+    return _text(unit).casefold() in _PERCENT_UNITS
+
+
+def _meaningful_text(value: Any) -> str:
+    text = _text(value)
+    if text.casefold() in _MISSING_TEXT:
+        return ""
+    return text
+
+
+def _same_number(left: float | None, right: float | None) -> bool:
+    if left is None or right is None:
+        return left is right
+    scale = max(1.0, abs(left), abs(right))
+    return abs(left - right) <= 1e-9 * scale
 
 
 def _read_source_row(sheet, number: int) -> dict[str, Any]:

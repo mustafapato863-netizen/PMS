@@ -864,10 +864,13 @@ class DatabaseSeeder:
         db.flush()
 
         for position_name, display_order, kpi in iter_employee_kpi_configs(config):
+            weight = safe_decimal(kpi["weight"])
+            if weight <= Decimal("0"):
+                continue
             values = {
                 "kpi_label": kpi["label"],
                 "perspective": kpi.get("perspective"),
-                "weight": safe_decimal(kpi["weight"]),
+                "weight": weight,
                 "direction": kpi["direction"],
                 "unit": kpi["unit"],
                 "color": kpi["color"],

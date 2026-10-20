@@ -444,14 +444,20 @@ def build_legacy_employee_kpi_values(
                 "T.InitialRejection",
                 *target_keys,
             ]
-        elif team == "Outbound" and key == "Attendance":
+        elif team in {"Inbound", "Outbound"} and key == "Attendance":
             target_keys = ["T.Attend%", "T.Attend", *target_keys]
-        elif team == "Outbound" and key == "Booking":
+        elif team in {"Inbound", "Outbound"} and key == "Booking":
             target_keys = ["T.Booking%", "T.Booking", *target_keys]
-        elif team == "Outbound" and key == "Quality":
-            target_keys = ["T.Quality%", "T.Quality", *target_keys]
+        elif team in {"Inbound", "Outbound"} and key == "Quality":
+            target_keys = ["T.Quality%", "T.QualityTarget", "T.Quality Target", "T.Quality", *target_keys]
         elif team == "Outbound" and key == "Other":
             target_keys = ["T.Reachability%", "T.Reachability", *target_keys]
+        elif team == "Inbound" and key == "Other":
+            target_keys = (
+                ["T.UTZ%", "T.UTZ", "T.Utilization%", "T.Utilization", *target_keys]
+                if has_utz
+                else ["T.AbandonRate%", "T.Abandon%", "T.Abandon", *target_keys]
+            )
         elif team == "Outbound" and key == "Utilization":
             target_keys = ["T.Utilization%", "T.Utilization", *target_keys]
         elif key == "Submission":

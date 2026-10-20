@@ -1,3 +1,4 @@
+import { normalizePercentageKpiForDisplay } from '../../components/common/performanceKpiProgress';
 import type { MarketingKpiAggregate } from './types';
 import { formatMarketingGapValue, formatMarketingValue } from './marketingNumberFormat';
 
@@ -30,13 +31,40 @@ export interface MarketingKpiAnalysis {
   };
 }
 
-export const formatMarketingKpiValue = (value: number | null, unit: string): string => {
-  return formatMarketingValue(value, unit).display;
+const finiteTarget = (target: number | null | undefined): number => (
+  typeof target === 'number' && Number.isFinite(target) ? target : Number.NaN
+);
+
+/**
+ * A percent KPI whose target is in (0, 1] is a ratio, even when the actual
+ * is above 1. 1.0003 against 1 is 100.03%, and 1.5 against 1 is 150%.
+ * Percent points at or below 1 stay on the formatter's own ratio rule:
+ * passing the scaled 1 for a stored 0.01 would print 100% instead of 1%.
+ */
+export const formatMarketingKpiValue = (
+  value: number | null,
+  unit: string | null | undefined,
+  target?: number | null,
+): string => {
+  if (value === null || !Number.isFinite(value)) {
+    return formatMarketingValue(value, unit).display;
+  }
+  const scaled = normalizePercentageKpiForDisplay(value, finiteTarget(target), unit ?? undefined);
+  const shown = Math.abs(scaled) > 1 ? scaled : value;
+  return formatMarketingValue(shown, unit).display;
 };
 
 export const formatMarketingGap = (value: number, unit: string): string => {
   return formatMarketingGapValue(value, unit);
 };
+
+const formatOnTarget = (value: number | null, kpi: MarketingKpiAggregate) => (
+  formatMarketingKpiValue(value, kpi.unit, kpi.averageTarget)
+);
+
+const formatOnPreviousTarget = (value: number | null, kpi: MarketingKpiAggregate) => (
+  formatMarketingKpiValue(value, kpi.unit, kpi.previousTarget ?? kpi.averageTarget)
+);
 
 export const getKpiNegativeImpact = (kpi: MarketingKpiAggregate): number => {
   if (kpi.averageContribution === null) return 0;
@@ -72,7 +100,7 @@ const describeMovement = (kpi: MarketingKpiAggregate): MarketingKpiAnalysis['mov
       positive: null,
       verb: 'No comparison',
       fromValue: null,
-      toValue: formatMarketingKpiValue(current, kpi.unit),
+      toValue: formatOnTarget(current, kpi),
       detail: kpi.previousPeriodLabel
         ? `No ${kpi.label} result is available for ${kpi.previousPeriodLabel}.`
         : 'Previous-period comparison is unavailable.',
@@ -84,9 +112,9 @@ const describeMovement = (kpi: MarketingKpiAggregate): MarketingKpiAnalysis['mov
       kind: 'unchanged',
       positive: null,
       verb: 'Unchanged',
-      fromValue: formatMarketingKpiValue(previous, kpi.unit),
-      toValue: formatMarketingKpiValue(current, kpi.unit),
-      detail: `${kpi.label} was unchanged at ${formatMarketingKpiValue(current, kpi.unit)}${kpi.previousPeriodLabel ? ` compared with ${kpi.previousPeriodLabel}` : ' compared with the previous period'}.`,
+      fromValue: formatOnPreviousTarget(previous, kpi),
+      toValue: formatOnTarget(current, kpi),
+      detail: `${kpi.label} was unchanged at ${formatOnTarget(current, kpi)}${kpi.previousPeriodLabel ? ` compared with ${kpi.previousPeriodLabel}` : ' compared with the previous period'}.`,
     };
   }
   const increased = difference > 0;
@@ -95,9 +123,9 @@ const describeMovement = (kpi: MarketingKpiAggregate): MarketingKpiAnalysis['mov
     kind: increased ? 'increase' : 'decrease',
     positive,
     verb: positive ? 'Improved' : 'Worsened',
-    fromValue: formatMarketingKpiValue(previous, kpi.unit),
-    toValue: formatMarketingKpiValue(current, kpi.unit),
-    detail: `${kpi.label} ${positive ? 'improved' : 'worsened'} from ${formatMarketingKpiValue(previous, kpi.unit)} to ${formatMarketingKpiValue(current, kpi.unit)}${kpi.previousPeriodLabel ? ` versus ${kpi.previousPeriodLabel}` : ' versus the previous period'}.`,
+    fromValue: formatOnPreviousTarget(previous, kpi),
+    toValue: formatOnTarget(current, kpi),
+    detail: `${kpi.label} ${positive ? 'improved' : 'worsened'} from ${formatOnPreviousTarget(previous, kpi)} to ${formatOnTarget(current, kpi)}${kpi.previousPeriodLabel ? ` versus ${kpi.previousPeriodLabel}` : ' versus the previous period'}.`,
   };
 };
 
@@ -119,7 +147,7 @@ const describeBaseline = (kpi: MarketingKpiAggregate): MarketingKpiAnalysis['bas
       available: true,
       isNew: true,
       gap: improvement,
-      detail: `${kpi.currentPeriodLabel || 'Current period'} set a new baseline at ${formatMarketingKpiValue(current, kpi.unit)}, improving by ${formatMarketingGap(improvement, kpi.unit)} from the previous best ${formatMarketingKpiValue(kpi.previousBaselineActual, kpi.unit)} (${kpi.previousBaselinePeriodLabel}).`,
+      detail: `${kpi.currentPeriodLabel || 'Current period'} set a new baseline at ${formatOnTarget(current, kpi)}, improving by ${formatMarketingGap(improvement, kpi.unit)} from the previous best ${formatOnTarget(kpi.previousBaselineActual, kpi)} (${kpi.previousBaselinePeriodLabel}).`,
     };
   }
 
@@ -134,8 +162,8 @@ const describeBaseline = (kpi: MarketingKpiAggregate): MarketingKpiAnalysis['bas
       isNew: false,
       gap: 0,
       detail: firstAvailable
-        ? `${kpi.currentPeriodLabel || 'Current period'} established the first available baseline at ${formatMarketingKpiValue(current, kpi.unit)}.`
-        : `${kpi.currentPeriodLabel || 'Current period'} matches the best historical result of ${formatMarketingKpiValue(baseline, kpi.unit)} (${kpi.baselinePeriodLabel}).`,
+        ? `${kpi.currentPeriodLabel || 'Current period'} established the first available baseline at ${formatOnTarget(current, kpi)}.`
+        : `${kpi.currentPeriodLabel || 'Current period'} matches the best historical result of ${formatOnTarget(baseline, kpi)} (${kpi.baselinePeriodLabel}).`,
     };
   }
 
@@ -143,7 +171,7 @@ const describeBaseline = (kpi: MarketingKpiAggregate): MarketingKpiAnalysis['bas
     available: true,
     isNew: false,
     gap: Math.abs(gap),
-    detail: `${kpi.currentPeriodLabel || 'Current period'} - ${formatMarketingGap(Math.abs(gap), kpi.unit)} From Baseline. Best historical result: ${formatMarketingKpiValue(baseline, kpi.unit)} (${kpi.baselinePeriodLabel}).`,
+    detail: `${kpi.currentPeriodLabel || 'Current period'} - ${formatMarketingGap(Math.abs(gap), kpi.unit)} From Baseline. Best historical result: ${formatOnTarget(baseline, kpi)} (${kpi.baselinePeriodLabel}).`,
   };
 };
 
@@ -163,22 +191,22 @@ const describeTarget = (kpi: MarketingKpiAggregate): MarketingKpiAnalysis['targe
   if (difference === 0) {
     return {
       achieved: true,
-      detail: `${kpi.label} met the target of ${formatMarketingKpiValue(target, kpi.unit)}.`,
+      detail: `${kpi.label} met the target of ${formatOnTarget(target, kpi)}.`,
     };
   }
   if (kpi.direction === 'lower_better') {
     return {
       achieved: difference <= 0,
       detail: difference > 0
-        ? `${kpi.label} exceeded the target ceiling of ${formatMarketingKpiValue(target, kpi.unit)} by ${formatMarketingGap(difference, kpi.unit)}.`
-        : `${kpi.label} performed better than the target of ${formatMarketingKpiValue(target, kpi.unit)} by ${formatMarketingGap(Math.abs(difference), kpi.unit)}.`,
+        ? `${kpi.label} exceeded the target ceiling of ${formatOnTarget(target, kpi)} by ${formatMarketingGap(difference, kpi.unit)}.`
+        : `${kpi.label} performed better than the target of ${formatOnTarget(target, kpi)} by ${formatMarketingGap(Math.abs(difference), kpi.unit)}.`,
     };
   }
   return {
     achieved: difference >= 0,
     detail: difference > 0
-      ? `${kpi.label} exceeded the target of ${formatMarketingKpiValue(target, kpi.unit)} by ${formatMarketingGap(difference, kpi.unit)}.`
-      : `${kpi.label} remains ${formatMarketingGap(Math.abs(difference), kpi.unit)} below the target of ${formatMarketingKpiValue(target, kpi.unit)}.`,
+      ? `${kpi.label} exceeded the target of ${formatOnTarget(target, kpi)} by ${formatMarketingGap(difference, kpi.unit)}.`
+      : `${kpi.label} remains ${formatMarketingGap(Math.abs(difference), kpi.unit)} below the target of ${formatOnTarget(target, kpi)}.`,
   };
 };
 

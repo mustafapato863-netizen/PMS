@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 from openpyxl import Workbook, load_workbook
 
+from services.bsc_template_service import bsc_template_service
 from services.management_template_repair import (
     CONFIG_SHEET,
     DATA_SHEET,
@@ -157,7 +158,14 @@ def assert_criterion_one(path: Path) -> None:
     assert _achievement(august_ticket[8], august_ticket[12], august_ticket[10]) == pytest.approx(0.90)
     assert _achievement(september_ticket[8], september_ticket[12], september_ticket[10]) == pytest.approx(1.0)
     assert august_ticket[8] == HIGHER
-    assert september_ticket[8] == LOWER
+    assert september_ticket[8] == HIGHER
+    assert august_ticket[10] == pytest.approx(1)
+    assert august_ticket[12] == pytest.approx(0.9)
+    assert september_ticket[10] == pytest.approx(1)
+    assert september_ticket[12] == pytest.approx(1)
+    assert august_ticket[11] == "%"
+    assert september_ticket[11] == "%"
+    assert all(row[6] not in (None, "None") and row[11] not in (None, "None") for row in data)
 
     totals: dict[tuple, float] = defaultdict(float)
     for row in data:
@@ -227,6 +235,9 @@ def test_real_management_workbook_matches_new_temp_after_repair():
         target = value_data.cell(number, 11).value
         direction = str(data.cell(number, 9).value or "")
         if kpi == "Average Ticket Resolution Time" and period in (date(2026, 8, 1), date(2026, 9, 1)):
+            assert direction == HIGHER
+            assert str(data.cell(number, 12).value) == "%"
+            assert float(target) == pytest.approx(1)
             tickets[period] = _achievement(direction, float(actual), float(target))
         if kpi == "Schedule Variance":
             schedule.append(direction)
@@ -255,6 +266,175 @@ def test_real_management_workbook_matches_new_temp_after_repair():
         period = _period(data.cell(number, 6).value)
         month = {6: "jun", 7: "jul", 8: "aug", 9: "sep", 5: "may", 4: "apr", 3: "mar"}.get(period.month if period else 0, "")
         data_keys.append((str(code).strip().upper(), str(kpi).strip().casefold(), month))
-    assert source_keys == data_keys[-len(source_keys):]
+    bare_source = [(code, kpi) for code, kpi, _month in source_keys]
+    bare_data = [(code, kpi) for code, kpi, _month in data_keys]
+    width = len(bare_source)
+    block = next(
+        (index for index in range(0, max(0, len(bare_data) - width + 1)) if bare_data[index:index + width] == bare_source),
+        None,
+    )
+    # Repair realigns a New Temp block only when that code/KPI sequence is already
+    # a contiguous slice of KPI's Data. This workbook's New Temp also contains rows
+    # the data sheet does not, so there is no slice to realign.
+    if block is not None:
+        assert source_keys == data_keys[-len(source_keys):]
+    none_units = 0
+    for number in range(2, data.max_row + 1):
+        if data.cell(number, 1).value is None:
+            continue
+        for column in (7, 12, 14):
+            cell = data.cell(number, column).value
+            if cell is None or str(cell).strip().casefold() == "none":
+                none_units += 1
+    assert none_units == 0
     book.close()
     values.close()
+
+
+def _label_row(code, team, position, level, period, kpi, direction, weight, target, unit, actual, score, perspective="Internal Process"):
+    return [
+        code, team, "Person", position, level, period, perspective, kpi, direction,
+        weight, target, unit, actual, unit, score, None, "Ready",
+    ]
+
+
+def test_repair_materializes_units_and_normalizes_percent_rates(tmp_path: Path):
+    path = tmp_path / "units.xlsx"
+    book = Workbook()
+    data = book.active
+    data.title = DATA_SHEET
+    data.append(HEADERS)
+    config = book.create_sheet(CONFIG_SHEET)
+    config.append(CONFIG_HEADERS)
+    source = book.create_sheet(SOURCE_SHEET)
+    source.append(HEADERS)
+
+    september = datetime(2026, 9, 1)
+    august = datetime(2026, 8, 1)
+    rows = [
+        _label_row("SGHD91001", "Finance", "Cashier", "Employee", september, "Collections AED", HIGHER, 1, 500, "AED", 400, 0.8, "Financial"),
+        _label_row("SGHD91002", "Pharmacy", "Planner", "Employee", september, "Aging", HIGHER, 1, 12, "Days", 9, 0.75),
+        _label_row("SGHD91003", "Human Resources", "HR Specialist", "Employee", september, "Onboarding Rate", HIGHER, 1, 54, "%", 43, 43 / 54),
+        _label_row("SGHD91004", "Human Resources", "HR Operation Supervisor", "Employee", september, "File Completion", HIGHER, 1, 107, "%", 95, 95 / 107),
+        _label_row("SGHD91005", "Marketing", "Media Buyer & SEO Manager", "Employee", september, "Budget Compliance", HIGHER, 1, 997017.05, "%", 997333.49, 1),
+        _label_row("SGHD91006", "IT", "IT Technical Support", "Managerial", august, "Average Ticket Resolution Time", "Lower Better", 1, 1, "%", 0.9, 0.9),
+        _label_row("SGHD91006", "IT", "IT Technical Support", "Managerial", september, "Average Ticket Resolution Time", "Higher Better", 1, 48, "%", 24, 1),
+        _label_row("SGHD91007", "Call Center", "Analyst", "Employee", september, "Shrinkage", LOWER, 1, 10, "%", 4, 1),
+    ]
+    for row in rows:
+        data.append(row)
+    # Formula cache is empty until Excel opens the file. Config supplies the labels.
+    data.append(_label_row("SGHD91008", "Finance", "Accountant", "Employee", september, "Revenue", HIGHER, 1, 80, "None", 70, 70 / 80, "None"))
+    formula_row = data.max_row
+    data.cell(formula_row, 7).value = "=XLOOKUP(A2,A:A,A:A)"
+    data.cell(formula_row, 12).value = "=XLOOKUP(A2,A:A,A:A)"
+    data.cell(formula_row, 14).value = "=XLOOKUP(A2,A:A,A:A)"
+    data.append(_label_row("SGHD91009", "Administration", "Clerk", "Employee", september, "Attendance", HIGHER, 1, 1, None, 1, 1, None))
+    blank_row = data.max_row
+    data.cell(blank_row, 7).value = None
+    data.cell(blank_row, 12).value = None
+
+    config.append(["Finance", "Accountant", None, "Employee", "Financial", "Revenue", HIGHER, 1, "AED"])
+    config.append(["Human Resources", "HR Specialist", None, "Employee", "Internal Process", "Onboarding Rate", HIGHER, 1, "%"])
+    book.save(path)
+
+    repair_workbook(path)
+    values = load_workbook(path, data_only=True)
+    sheet = values[DATA_SHEET]
+    found = {}
+    none_units = 0
+    for number in range(2, sheet.max_row + 1):
+        code = sheet.cell(number, 1).value
+        if code is None:
+            continue
+        unit = sheet.cell(number, 12).value
+        perspective = sheet.cell(number, 7).value
+        if unit is None or str(unit).strip().casefold() == "none":
+            none_units += 1
+        if perspective is None or str(perspective).strip().casefold() == "none":
+            none_units += 1
+        found[str(code)] = {
+            "unit": unit,
+            "perspective": perspective,
+            "actual_unit": sheet.cell(number, 14).value,
+            "target": sheet.cell(number, 11).value,
+            "actual": sheet.cell(number, 13).value,
+            "direction": sheet.cell(number, 9).value,
+            "kpi": sheet.cell(number, 8).value,
+        }
+    values.close()
+
+    assert none_units == 0
+    assert found["SGHD91001"]["unit"] == "AED"
+    assert found["SGHD91001"]["target"] == 500
+    assert found["SGHD91001"]["actual"] == 400
+    assert found["SGHD91002"]["unit"] == "Days"
+    assert found["SGHD91002"]["target"] == 12
+    assert found["SGHD91003"]["unit"] == "%"
+    assert found["SGHD91003"]["target"] == pytest.approx(1)
+    assert found["SGHD91003"]["actual"] == pytest.approx(43 / 54)
+    assert found["SGHD91004"]["target"] == pytest.approx(1)
+    assert found["SGHD91004"]["actual"] == pytest.approx(95 / 107)
+    assert found["SGHD91005"]["target"] == pytest.approx(1)
+    assert found["SGHD91005"]["actual"] == pytest.approx(997333.49 / 997017.05)
+    assert found["SGHD91006"]["unit"] == "%"
+    assert found["SGHD91006"]["direction"] == HIGHER
+    august_ticket = found["SGHD91006"]
+    assert august_ticket["target"] == pytest.approx(1)
+    # The dict keeps the later September row for this employee.
+    assert august_ticket["actual"] == pytest.approx(1)
+    assert found["SGHD91007"]["target"] == 10
+    assert found["SGHD91007"]["actual"] == 4
+    assert found["SGHD91007"]["direction"] == LOWER
+    assert found["SGHD91008"]["unit"] == "AED"
+    assert found["SGHD91008"]["perspective"] == "Financial"
+    assert found["SGHD91008"]["actual_unit"] == "AED"
+    assert found["SGHD91008"]["target"] == 80
+    assert found["SGHD91008"]["actual"] == 70
+    assert found["SGHD91009"]["unit"] == "%"
+    assert found["SGHD91009"]["perspective"] == "Internal Process"
+
+    edited = load_workbook(path, data_only=False)
+    assert not str(edited[DATA_SHEET].cell(formula_row, 12).value).startswith("=")
+    assert not str(edited[DATA_SHEET].cell(formula_row, 7).value).startswith("=")
+    edited.close()
+
+    parsed = bsc_template_service.parse_upload(path.read_bytes())
+    counted = defaultdict(int)
+    for row in parsed:
+        counted[row["target_unit"]] += 1
+    assert counted["None"] == 0
+    assert counted["AED"] >= 1
+    assert counted["Days"] == 1
+    assert counted["%"] >= 1
+    specialist = next(row for row in parsed if row["position"] == "HR Specialist")
+    assert specialist["target_value"] == pytest.approx(1)
+    assert specialist["actual_value"] == pytest.approx(43 / 54)
+    ticket = [row for row in parsed if row["kpi_label"] == "Average Ticket Resolution Time"]
+    by_month = {row["month"]: row for row in ticket}
+    assert by_month["August"]["actual_value"] == pytest.approx(0.9)
+    assert by_month["August"]["target_value"] == pytest.approx(1)
+    assert by_month["August"]["direction"] == "higher_better"
+    assert by_month["August"]["target_unit"] == "%"
+    assert by_month["September"]["actual_value"] == pytest.approx(1)
+    assert by_month["September"]["target_value"] == pytest.approx(1)
+    assert by_month["September"]["direction"] == "higher_better"
+
+    repair_workbook(path)
+    values = load_workbook(path, data_only=True)
+    sheet = values[DATA_SHEET]
+    second = {
+        str(sheet.cell(number, 1).value): (
+            sheet.cell(number, 11).value,
+            sheet.cell(number, 13).value,
+            sheet.cell(number, 12).value,
+        )
+        for number in range(2, sheet.max_row + 1)
+        if sheet.cell(number, 1).value is not None
+    }
+    values.close()
+    assert second["SGHD91003"][0] == pytest.approx(1)
+    assert second["SGHD91003"][1] == pytest.approx(43 / 54)
+    assert second["SGHD91005"][1] == pytest.approx(997333.49 / 997017.05)
+    assert second["SGHD91001"][0] == 500
+    assert second["SGHD91002"][2] == "Days"

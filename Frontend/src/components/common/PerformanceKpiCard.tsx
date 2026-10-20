@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { Minus, TrendingDown, TrendingUp } from 'lucide-react';
+import { formatPercentOfTargetLabel } from './performanceKpiProgress';
 
 export type PerformanceKpiBadgeType = 'success' | 'warning' | 'danger' | 'neutral';
 
@@ -64,16 +65,6 @@ function formatTargetBadgeValue(val: string | number): string {
   return str;
 }
 
-function formatProgressLabel(progressPercent: number): string {
-  if (!Number.isFinite(progressPercent)) {
-    return 'Target unavailable';
-  }
-  if (progressPercent > 200) {
-    return '100.0% of target';
-  }
-  return `${progressPercent.toFixed(1)}% of target`;
-}
-
 const PerformanceKpiCard = ({
   icon: Icon,
   iconBgColor = 'bg-indigo-600',
@@ -109,7 +100,7 @@ const PerformanceKpiCard = ({
     && progressPercent !== null
     && Number.isFinite(progressPercent);
   const visualProgress = progressAvailable ? Math.min(Math.max(progressPercent, 0), 100) : 0;
-  const progressLabel = progressAvailable ? formatProgressLabel(progressPercent) : 'Target unavailable';
+  const progressLabel = progressAvailable ? formatPercentOfTargetLabel(progressPercent) : 'Target unavailable';
   const formattedTarget = targetValue !== undefined && targetValue !== null && targetValue !== ''
     ? formatTargetBadgeValue(targetValue)
     : '';

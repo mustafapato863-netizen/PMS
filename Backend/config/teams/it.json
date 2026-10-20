@@ -36,7 +36,7 @@
               "label": "Average Ticket Resolution Time",
               "perspective": "Internal Process",
               "weight": 0.3,
-              "direction": "lower_better",
+              "direction": "higher_better",
               "unit": "%",
               "color": "#0D9488",
               "actual_col": "Actual Value",

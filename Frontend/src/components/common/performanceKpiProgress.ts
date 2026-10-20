@@ -45,6 +45,13 @@ export const resolveKpiTargetStatus = (
  * For example, 1.077 against a target of 1.0 means 107.7% against 100%, not
  * 1.1% against 100%.
  */
+/** Label for percent-of-target. Scores cap at 100%, so the label does too. */
+export const formatPercentOfTargetLabel = (progressPercent: number): string => {
+  if (!Number.isFinite(progressPercent)) return 'Target unavailable';
+  const displayed = Math.min(progressPercent, 100);
+  return `${displayed.toFixed(1)}% of target`;
+};
+
 export const normalizePercentageKpiForDisplay = (
   value: number,
   target: number,

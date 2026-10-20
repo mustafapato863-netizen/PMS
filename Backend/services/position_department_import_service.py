@@ -15,6 +15,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from sqlalchemy.orm import Session
 
 from models.models import Employee, KPIValue, PerformanceRecord, Team
+from services.management_template_repair import normalize_rate_measurement
 from services.scoring.engine import EMPLOYEE_POLICY, achievement as engine_achievement
 from utils.performance_status import status_for_grade
 from utils.scoring_rules import letter_grade
@@ -57,6 +58,13 @@ def _kpi_key(position: str, label: str) -> str:
 
 def _quantize(value: float) -> Decimal:
     return Decimal(str(value)).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+
+
+def _stored_direction(direction: str | None) -> str:
+    text = (direction or "").casefold()
+    if "lower" in text:
+        return "lower_better"
+    return "higher_better"
 
 
 def _region_for(team_name: str) -> str:
@@ -249,20 +257,32 @@ class PositionDepartmentImportService:
             seen.add(key)
             actual = item.get("actual_value")
             target = item.get("target_value")
-            actual_number = 0.0 if actual is None else float(actual)
-            target_number = 0.0 if target is None else float(target)
-            result = engine_achievement(actual_number, target_number, item.get("direction"), policy=EMPLOYEE_POLICY)
+            raw_unit = item.get("target_unit")
+            raw_direction = item.get("direction")
+            unit, direction, actual_raw, target_raw = normalize_rate_measurement(
+                label,
+                "" if raw_unit is None else str(raw_unit),
+                None if raw_direction is None else str(raw_direction),
+                None if actual is None else float(actual),
+                None if target is None else float(target),
+            )
+            actual_number = 0.0 if actual_raw is None else float(actual_raw)
+            target_number = 0.0 if target_raw is None else float(target_raw)
+            direction = _stored_direction(direction)
+            result = engine_achievement(actual_number, target_number, direction, policy=EMPLOYEE_POLICY)
             achievement = 0.0 if result.value is None else float(result.value)
             weight = _quantize(float(item.get("weight") or 0))
             achievement_ratio = _quantize(achievement)
             contribution = (achievement_ratio * weight).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
-            perspective = str(item.get("perspective") or "Internal Process")
+            perspective = str(item.get("perspective") or "Internal Process").strip()
+            if perspective.casefold() in {"", "none", "null", "nan"}:
+                perspective = "Internal Process"
             rows.append({
                 "kpi_key": key,
                 "label": label,
                 "perspective": perspective,
-                "unit": str(item.get("target_unit") or "%"),
-                "direction": str(item.get("direction") or "higher_better"),
+                "unit": unit or "%",
+                "direction": direction,
                 "color": PERSPECTIVE_COLORS.get(perspective, "#3B82F6"),
                 "actual_value": _quantize(actual_number),
                 "target_value": _quantize(target_number),
