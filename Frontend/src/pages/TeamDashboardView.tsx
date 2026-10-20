@@ -44,6 +44,7 @@ import { GRADE_PALETTE, GRADE_THRESHOLDS } from '../constants/grades';
 import { buildTeamKpiAnalysis } from '../features/team/teamKpiAnalysis';
 import { aggregatePreApprovalsIpMetrics } from '../features/team/preApprovalsIpMetrics';
 import { aggregateConfiguredTeamKpis, calculateAggregatedTeamPerformance, displayedTeamScore, headlineTeamScore, recordsUseAppliedPin, scoreMonthKey, trendPointScore } from '../features/team/teamKpiAggregator';
+import type { TeamConfig } from '../schemas/teamConfig.schema';
 import { formatMonthChange, missingMonthChangeText } from '../features/team/monthChange';
 import { reportingMonthName, shortMonthLabel } from '../hooks/api/scopedPeriod';
 import { resolveAvailableTeamPeriods } from '../features/team/teamPeriods';
@@ -101,6 +102,90 @@ const getGeoValue = (geo: GeoBreakdown | undefined, loc: LocationKey) => {
 
 const sameTeam = (left: string | null | undefined, right: string | null | undefined) =>
   sameCanonicalTeam(left, right);
+
+const departmentIdentity = (value: string | null | undefined) =>
+  String(value ?? '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '');
+
+/** Parent department rows stay on the comprehensive view. Channel and domain rows do not match. */
+const isExactDepartmentTeam = (value: string | null | undefined, department: string) =>
+  departmentIdentity(value) === departmentIdentity(department);
+
+const EMPTY_POSITION_METRICS = {
+  attendCR: 0,
+  bookingCR: 0,
+  avgAHT: '0:00',
+  avgAHTSec: 0,
+  abandonRate: 0,
+  reachabilityRate: 0,
+  totalBookings: 0,
+  totalAttended: 0,
+  totalCallsHandled: 0,
+  totalAbandoned: 0,
+  utzRate: 0,
+  hasUtz: false,
+};
+
+function positionDepartmentView(
+  positionRows: TeamAgentRow[],
+  config: TeamConfig | undefined,
+  location: LocationKey,
+) {
+  const aggregate = calculateAggregatedTeamPerformance(
+    positionRows.map((row) => row.raw),
+    config,
+    { location },
+  );
+  const classCounts = { A: 0, B: 0, C: 0, D: 0, E: 0 };
+  positionRows.forEach((row) => {
+    if (row.gradeClass in classCounts) classCounts[row.gradeClass] += 1;
+  });
+  const total = positionRows.length;
+  return {
+    totalAgents: total,
+    avgScore: aggregate?.score ?? 0,
+    pctAB: total > 0 ? ((classCounts.A + classCounts.B) / total) * 100 : 0,
+    pctDE: total > 0 ? ((classCounts.D + classCounts.E) / total) * 100 : 0,
+    classCounts,
+    teamMetrics: {
+      ...EMPTY_POSITION_METRICS,
+      dynamicKpis: aggregate ? [...aggregate.kpis.values()] : [],
+    },
+  };
+}
+
+function DepartmentPositionKpis({
+  view,
+  teamId,
+  teamName,
+  month,
+}: {
+  view: ReturnType<typeof positionDepartmentView>;
+  teamId: string;
+  teamName: string;
+  month: string;
+}) {
+  if (view.totalAgents === 0) return null;
+  return (
+    <section aria-label={`${teamName} positions`}>
+      <TeamKpiSection
+        totalAgents={view.totalAgents}
+        avgScore={view.avgScore}
+        pctAB={view.pctAB}
+        pctDE={view.pctDE}
+        classCounts={view.classCounts}
+        isCallCenterView={false}
+        isInbound={false}
+        teamMetrics={view.teamMetrics}
+        prevTeamMetrics={null}
+        avgAHTSec={0}
+        teamId={teamId}
+        headcountNote="Position headcount"
+        month={month}
+        teamName={teamName}
+      />
+    </section>
+  );
+}
 
 const scoreForDisplay = (row: TeamAgentRow) => row.displayWeightedScore ?? row.score;
 
@@ -296,6 +381,9 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
   const isCallCenterView = teamId?.toLowerCase() === 'inbound' || teamId?.toLowerCase() === 'outbound'
     || (isCallCenterParent && callCenterChannel !== 'all');
   const isCallCenterAggregate = isCallCenterParent && callCenterChannel === 'all';
+  // Position configs stay off the operational channel and domain queries.
+  const { data: callCenterPositionConfig } = useTeamConfig(isCallCenterAggregate ? CALL_CENTER_TEAM : '');
+  const { data: rcmPositionConfig } = useTeamConfig(isRcmParent && rcmDomain === 'all' ? RCM_TEAM : '');
   const isInbound = teamId?.toLowerCase() === 'inbound'
     || (isCallCenterParent && callCenterChannel === 'inbound');
   const isEgyptInbound = teamId?.toLowerCase() === 'inbound'
@@ -449,6 +537,32 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
     return true;
   }, [isRcmParent, rcmGroup, rcmDomain, isPreApprovalsParent, preApprovalsWorkflow, isCallCenterParent, callCenterChannel]);
 
+  const presentationRows = useMemo(
+    () => (rows || []).filter((row) => matchesPresentationScope(row.raw)),
+    [rows, matchesPresentationScope],
+  );
+  const callCenterPositionRows = useMemo(
+    () => (isCallCenterAggregate
+      ? presentationRows.filter((row) => isExactDepartmentTeam(row.raw.identity.team ?? row.team, CALL_CENTER_TEAM))
+      : []),
+    [isCallCenterAggregate, presentationRows],
+  );
+  const rcmPositionRows = useMemo(
+    () => (isRcmParent && rcmDomain === 'all'
+      ? presentationRows.filter((row) => isExactDepartmentTeam(row.raw.identity.team ?? row.team, RCM_TEAM))
+      : []),
+    [isRcmParent, rcmDomain, presentationRows],
+  );
+  const rosterSource = isCallCenterAggregate ? callCenterPositionRows : presentationRows;
+  const callCenterPositionView = useMemo(
+    () => positionDepartmentView(callCenterPositionRows, callCenterPositionConfig, location),
+    [callCenterPositionRows, callCenterPositionConfig, location],
+  );
+  const rcmPositionView = useMemo(
+    () => positionDepartmentView(rcmPositionRows, rcmPositionConfig, location),
+    [rcmPositionRows, rcmPositionConfig, location],
+  );
+
   const activeMonth = month === 'All'
     ? (dashboardMonths[dashboardMonths.length - 1] || 'January')
     : month;
@@ -491,7 +605,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
         || (isCallCenterParent && callCenterChannel === 'all')
         || (isRcmParent && (rcmDomain === 'all' || (rcmDomain === 'pre_approvals' && preApprovalsWorkflow === 'all' && rcmGroup !== 'offshore_egy')))) return [];
       return buildTeamKpiAnalysis(
-        (rows || []).map((row) => row.raw).filter((record) => record.identity.month === activeMonthName),
+        presentationRows.map((row) => row.raw).filter((record) => record.identity.month === activeMonthName),
         previousTeamAgents,
         {
           includeNoShow: isCallCenterView,
@@ -503,7 +617,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
         },
       );
     },
-    [rows, previousTeamAgents, historicalTeamAgents, activeMonthName, isCallCenterView, scoredTeamId, location, activeTeamWeights, teamConfig, isPreApprovalsParent, preApprovalsWorkflow, isCallCenterParent, callCenterChannel, isRcmParent, rcmDomain, rcmGroup],
+    [presentationRows, previousTeamAgents, historicalTeamAgents, activeMonthName, isCallCenterView, scoredTeamId, location, activeTeamWeights, teamConfig, isPreApprovalsParent, preApprovalsWorkflow, isCallCenterParent, callCenterChannel, isRcmParent, rcmDomain, rcmGroup],
   );
   const callCenterChannelKpiAnalysis = useMemo(
     () => {
@@ -511,7 +625,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
 
       return (['inbound', 'outbound'] as const).map((channel) => {
         const channelTeam = channel === 'inbound' ? 'Inbound' : 'Outbound';
-        const currentRecords = (rows || [])
+        const currentRecords = presentationRows
           .map((row) => row.raw)
           .filter((record) => record.identity.month === activeMonthName && callCenterChannelForTeam(record.identity.team) === channel);
         const previousRecords = previousTeamAgents.filter((agent) => callCenterChannelForTeam(agent.identity.team) === channel);
@@ -537,7 +651,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
         };
       });
     },
-    [activeMonthName, historicalTeamAgents, inboundTeamConfig, isCallCenterAggregate, location, outboundTeamConfig, previousTeamAgents, rows, weightsList],
+    [activeMonthName, historicalTeamAgents, inboundTeamConfig, isCallCenterAggregate, location, outboundTeamConfig, previousTeamAgents, presentationRows, weightsList],
   );
 
   const insightYear = useMemo(() => {
@@ -576,9 +690,9 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
   );
   const allActions = getAllActions();
   const teamActionsThisMonth = useMemo(() => {
-    const agentIds = new Set((rows || []).map(r => r.id));
+    const agentIds = new Set(presentationRows.map((row) => row.id));
     return allActions.filter(act => agentIds.has(act.employee_id) && act.month === activeMonth);
-  }, [allActions, rows, activeMonth]);
+  }, [allActions, presentationRows, activeMonth]);
 
   const [teamAction, setTeamAction] = useState<string>('');
   const [isEditingAction, setIsEditingAction] = useState<boolean>(false);
@@ -675,14 +789,14 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
   }, [activeMonthName]);
   // Memoized current month aggregate performance score
   const calculatedAvgScore = useMemo(() => {
-    const teamAgents = agentsForHeadline((rows || []).map((row) => row.raw));
+    const teamAgents = agentsForHeadline(presentationRows.map((row) => row.raw));
     return headlineTeamScore({
       scope: headlineScope,
       employeeAverage: hookAvgScore,
       pooledScore: getCanonicalTeamScore(teamAgents),
       appliedPin: recordsUseAppliedPin(teamAgents),
     });
-  }, [headlineScope, agentsForHeadline, getCanonicalTeamScore, hookAvgScore, rows]);
+  }, [headlineScope, agentsForHeadline, getCanonicalTeamScore, hookAvgScore, presentationRows]);
 
   const calculatedPrevAvgScore = useMemo(() => {
     if (headlineScope !== 'pooled' || !prevPeriodKey) return prevAvgScore;
@@ -724,7 +838,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
 
   // Compute call center metrics for the current month
   const teamMetrics = useMemo(() => {
-    const filteredAgents = rows || [];
+    const filteredAgents = presentationRows;
 
     let totalBookings = 0;
     let totalAttended = 0;
@@ -1009,7 +1123,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
       salesActivityTarget,
       dynamicKpis,
     };
-  }, [rows, location, teamId, teamConfig, isMergedTeam, isEgyptInbound]);
+  }, [presentationRows, location, teamId, teamConfig, isMergedTeam, isEgyptInbound]);
 
   // Compute call center metrics for the previous month (for MoM delta calculation)
   const prevTeamMetrics = useMemo(() => {
@@ -1260,7 +1374,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
 
   // Filter and compute Top 3 / Bottom 3 performers on the fly
   const rosterData = useMemo(() => {
-    const teamAgents = rows || [];
+    const teamAgents = rosterSource;
     const takeUniqueEmployees = (agents: TeamAgentRow[], limit: number) => {
       const selected: TeamAgentRow[] = [];
       const seenEmployeeIds = new Set<string>();
@@ -1294,11 +1408,11 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
       allMeetStandards,
       teamAgents,
     };
-  }, [rows]);
+  }, [rosterSource]);
 
   // Filter + sort for the full list view
   const filtered = useMemo(() => {
-    const data = [...(rows || [])];
+    const data = [...rosterSource];
     if (search) {
       const query = search.toLowerCase();
       return data.filter((r) => r.name.toLowerCase().includes(query));
@@ -1311,7 +1425,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
       return sortDir === 'asc' ? cmp : -cmp;
     });
     return data;
-  }, [rows, search, sortCol, sortDir]);
+  }, [rosterSource, search, sortCol, sortDir]);
 
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
   const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
@@ -1387,7 +1501,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
       status: 'success' | 'warning' | 'danger' | 'info';
     }> = [];
 
-    if (!rows || rows.length === 0) {
+    if (presentationRows.length === 0) {
       bullets.push({
         icon: AlertCircle,
         title: 'No Performance Data',
@@ -1399,7 +1513,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
     }
 
     const avg = calculatedAvgScore;
-    const pinnedHeadline = recordsUseAppliedPin((rows || []).map((row) => row.raw));
+    const pinnedHeadline = recordsUseAppliedPin(presentationRows.map((row) => row.raw));
 
     // 1. Grade Distribution description (Always present if rows exist)
     let gradesDesc = 'mixed with standard performance distribution';
@@ -1445,17 +1559,17 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
     });
 
     // Worst performing agent details
-    const sortedRows = [...(rows || [])].sort((a, b) => (a.displayWeightedScore ?? a.score) - (b.displayWeightedScore ?? b.score));
+    const sortedRows = [...presentationRows].sort((a, b) => (a.displayWeightedScore ?? a.score) - (b.displayWeightedScore ?? b.score));
     const worstAgent = sortedRows.length > 0 && (sortedRows[0].displayWeightedScore ?? sortedRows[0].score) < 80 ? sortedRows[0] : null;
     const worstAgentName = worstAgent ? worstAgent.name.split(' ')[0] : '';
 
     // Check availability of each KPI in the filtered month's records (non-zero check)
-    const hasBooking = (rows || []).some(r => r.raw.actual?.booking_rate !== undefined && r.raw.actual?.booking_rate > 0);
-    const hasReachability = (rows || []).some(r => r.raw.actual?.reachability_rate !== undefined && r.raw.actual?.reachability_rate > 0);
-    const hasAbandon = (rows || []).some(r => r.raw.actual?.abandon_rate !== undefined && r.raw.actual?.abandon_rate > 0);
-    const hasUtz = (rows || []).some(r => r.raw.actual?.utz_rate !== undefined && r.raw.actual?.utz_rate > 0);
-    const hasSubmission = (rows || []).some(r => r.raw.actual?.submission_rate !== undefined && r.raw.actual?.submission_rate > 0);
-    const hasRejectionOrError = (rows || []).some(r =>
+    const hasBooking = presentationRows.some(r => r.raw.actual?.booking_rate !== undefined && r.raw.actual?.booking_rate > 0);
+    const hasReachability = presentationRows.some(r => r.raw.actual?.reachability_rate !== undefined && r.raw.actual?.reachability_rate > 0);
+    const hasAbandon = presentationRows.some(r => r.raw.actual?.abandon_rate !== undefined && r.raw.actual?.abandon_rate > 0);
+    const hasUtz = presentationRows.some(r => r.raw.actual?.utz_rate !== undefined && r.raw.actual?.utz_rate > 0);
+    const hasSubmission = presentationRows.some(r => r.raw.actual?.submission_rate !== undefined && r.raw.actual?.submission_rate > 0);
+    const hasRejectionOrError = presentationRows.some(r =>
       (r.raw.actual?.rejection_rate !== undefined && r.raw.actual?.rejection_rate > 0) ||
       (r.raw.actual?.initial_error_rate !== undefined && r.raw.actual?.initial_error_rate > 0)
     );
@@ -1623,7 +1737,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
     }
 
     return bullets;
-  }, [teamId, scoredTeamId, hookAvgScore, calculatedAvgScore, rows, teamMetrics]);
+  }, [teamId, scoredTeamId, hookAvgScore, calculatedAvgScore, presentationRows, teamMetrics]);
 
   if (loading) {
     return <OperationalViewSkeleton />;
@@ -1946,19 +2060,28 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
       {/* KPI Cards section */}
       {teamId !== 'all' && (
         isRcmParent && rcmGroup === 'all' && rcmDomain === 'all' ? (
-          <RcmGroupSummary rows={rows} onGroupSelect={handleRcmGroupChange} />
+          <>
+            <RcmGroupSummary rows={presentationRows} onGroupSelect={handleRcmGroupChange} />
+            <DepartmentPositionKpis view={rcmPositionView} teamId="rcm" teamName={RCM_TEAM} month={month} />
+          </>
         ) : isRcmParent && rcmDomain === 'all' ? (
-          <RcmDomainSummary rows={rows} onDomainSelect={handleRcmDomainChange} />
+          <>
+            <RcmDomainSummary rows={presentationRows} onDomainSelect={handleRcmDomainChange} />
+            <DepartmentPositionKpis view={rcmPositionView} teamId="rcm" teamName={RCM_TEAM} month={month} />
+          </>
         ) : isRcmParent && rcmDomain === 'pre_approvals' && preApprovalsWorkflow === 'all' && rcmGroup !== 'offshore_egy' ? (
-          <PreApprovalsWorkflowSummary rows={rows} onWorkflowSelect={handlePreApprovalsWorkflowChange} />
+          <PreApprovalsWorkflowSummary rows={presentationRows} onWorkflowSelect={handlePreApprovalsWorkflowChange} />
         ) : isPreApprovalsParent && preApprovalsWorkflow === 'all' ? (
-          <PreApprovalsWorkflowSummary rows={rows} onWorkflowSelect={handlePreApprovalsWorkflowChange} />
+          <PreApprovalsWorkflowSummary rows={presentationRows} onWorkflowSelect={handlePreApprovalsWorkflowChange} />
         ) : isCallCenterParent && callCenterChannel === 'all' ? (
-          <CallCenterChannelSummary
-            rows={rows}
-            onChannelSelect={handleCallCenterChannelChange}
-            channelKpiAnalysis={callCenterChannelKpiAnalysis}
-          />
+          <>
+            <CallCenterChannelSummary
+              rows={presentationRows}
+              onChannelSelect={handleCallCenterChannelChange}
+              channelKpiAnalysis={callCenterChannelKpiAnalysis}
+            />
+            <DepartmentPositionKpis view={callCenterPositionView} teamId="call-center" teamName={CALL_CENTER_TEAM} month={month} />
+          </>
         ) : (
           <TeamKpiSection
             totalAgents={metrics.totalAgents}
@@ -1999,7 +2122,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
       </Suspense>
 
       {/* Main Table / Roster Panel */}
-      {!isCallCenterAggregate && <TeamRosterSection
+      {(!isCallCenterAggregate || callCenterPositionRows.length > 0) && <TeamRosterSection
         showTopBottomToggle={teamId !== 'all'}
         showTeamColumn={teamId === 'all' || isPreApprovalsParent || isCallCenterParent || isRcmParent || isMergedTeam}
         rosterView={rosterView}
