@@ -21,6 +21,7 @@ from utils.performance_status import reconciled_status
 from utils.kpi_direction import (
     find_kpi_definition,
     flipped_contribution_fix,
+    kpi_variant,
     resolve_kpi_direction,
 )
 from utils.helpers import inbound_booking_rate_from_row, with_inbound_booking_counters
@@ -89,11 +90,12 @@ def _pinned_schema_record(item, employee, team_name: str, basis: dict, item_kpi_
     for value in (item.kpi_values if item_kpi_values is None else item_kpi_values):
         line = lines.get(str(value.kpi_key), {})
         stored = stored_kpis.get(str(value.kpi_key), {})
+        variant = bool(kpi_variant(stored))
         kpi_values.append(
             {
                 "kpi_key": value.kpi_key,
-                "label": line.get("label") or stored.get("label") or value.kpi_key,
-                "direction": line.get("direction") if line.get("direction") is not None else stored.get("direction"),
+                "label": (stored.get("label") if variant else None) or line.get("label") or stored.get("label") or value.kpi_key,
+                "direction": (stored.get("direction") if variant else None) or (line.get("direction") if line.get("direction") is not None else stored.get("direction")),
                 "evaluation_pinned": True,
                 "perspective": stored.get("perspective"),
                 "color": stored.get("color"),

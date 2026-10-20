@@ -44,8 +44,8 @@ from utils.performance_status import status_for_grade  # noqa: E402
 
 KPI_KEY = "cw_error_free"
 TEAM_NAME = "Marketing"
-OLD_DIRECTION = "lower_better"
-NEW_DIRECTION = "higher_better"
+OLD_DIRECTION = "higher_better"
+NEW_DIRECTION = "lower_better"
 # KPIValue.contribution is Numeric(7, 4).
 TOLERANCE = Decimal("0.0005")
 

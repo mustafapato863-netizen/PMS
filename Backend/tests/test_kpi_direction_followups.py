@@ -59,7 +59,7 @@ def test_persisted_direction_is_used_before_the_global_match():
 
 
 def test_single_unambiguous_global_match():
-    assert kd.resolve_kpi_direction("Unknown Team", {"kpi_key": "cw_error_free"}) == ("higher_better", "global_config")
+    assert kd.resolve_kpi_direction("Unknown Team", {"kpi_key": "cw_error_free"}) == ("lower_better", "global_config")
     assert kd.resolve_kpi_direction(None, {"label": "Page load time"}) == ("lower_better", "global_config")
 
 
@@ -113,7 +113,7 @@ def test_inbound_utilization_legacy_variant_is_higher_better():
 def test_config_labels_and_directions():
     marketing = load_team_config("Marketing")["performance_levels"]["Employee"]["positions"]
     by_key = {k["key"]: k for position in marketing.values() for k in position["kpis"]}
-    assert by_key["cw_error_free"]["direction"] == "higher_better"
+    assert by_key["cw_error_free"]["direction"] == "lower_better"
     assert by_key["wd_page_speed"]["label"] == "Page load time"
     assert by_key["wd_page_speed"]["direction"] == "lower_better"
     resub = {k["key"]: k for k in load_team_config("Re-Submission")["kpis"]}
@@ -134,11 +134,11 @@ def test_flipped_contribution_fix_requires_evidence_and_is_idempotent():
 
 # ------------------------------------------- old wrongly-saved Marketing records
 
-def _old_lower_better_marketing_config() -> dict:
+def _old_higher_better_marketing_config() -> dict:
     config = copy.deepcopy(load_team_config("Marketing"))
     for kpi in config["performance_levels"]["Employee"]["positions"]["Content Writer"]["kpis"]:
         if kpi["key"] == "cw_error_free":
-            kpi["direction"] = "lower_better"
+            kpi["direction"] = "higher_better"
     return config
 
 
@@ -167,18 +167,18 @@ def db_session():
         session.close()
 
 
-def _seed_old_record(session, error_free_actual: float = 80.0):
-    """Import a Content Writer row exactly as the old lower_better config did."""
-    parsed = MarketingImportService(config=_old_lower_better_marketing_config()).parse_frame(
-        _content_writer_frame(error_free_actual, "Lower Better")
+def _seed_old_record(session, error_free_actual: float = 125.0):
+    """Import a Content Writer row as the old higher_better override did (unpinned)."""
+    parsed = MarketingImportService(config=_old_higher_better_marketing_config()).parse_frame(
+        _content_writer_frame(error_free_actual, "Higher Better")
     )
     DatabaseSeeder()._sync_to_database(parsed.records, parsed.employees, db_session=session)
     session.flush()
     return parsed.records[0]
 
 
-def _fresh_score(error_free_actual: float = 80.0) -> float:
-    parsed = MarketingImportService().parse_frame(_content_writer_frame(error_free_actual, "Higher Better"))
+def _fresh_score(error_free_actual: float = 125.0) -> float:
+    parsed = MarketingImportService().parse_frame(_content_writer_frame(error_free_actual, "Lower Better"))
     return parsed.records[0].evaluation.score
 
 
@@ -198,7 +198,7 @@ def test_dashboard_records_correct_old_saved_scores_at_read_time(db_session):
     assert len(records) == 1
     record = records[0]
     value = next(v for v in record.kpi_values if v["kpi_key"] == "cw_error_free")
-    assert value["direction"] == "higher_better"
+    assert value["direction"] == "lower_better"
     assert value["direction_source"] == "config"
     assert value["direction_corrected"] is True
     assert value["achievement_ratio"] == pytest.approx(0.8)
@@ -221,7 +221,7 @@ def test_dashboard_read_time_correction_recomputes_status_with_score_and_grade(d
     assert record.evaluation.grade == "B"
     assert record.status == "Meets"
     # Same rule as a record imported with the fixed config.
-    fresh = MarketingImportService().parse_frame(_content_writer_frame(80.0, "Higher Better")).records[0]
+    fresh = MarketingImportService().parse_frame(_content_writer_frame(125.0, "Lower Better")).records[0]
     assert (record.evaluation.score, record.evaluation.grade) == (fresh.evaluation.score, fresh.evaluation.grade)
     assert record.status == (fresh.status or "Meets")
 
@@ -238,7 +238,7 @@ def test_dashboard_read_time_correction_keeps_a_custom_status(db_session):
 
 
 def test_dashboard_does_not_touch_correctly_saved_records(db_session):
-    parsed = MarketingImportService().parse_frame(_content_writer_frame(80.0, "Higher Better"))
+    parsed = MarketingImportService().parse_frame(_content_writer_frame(125.0, "Lower Better"))
     DatabaseSeeder()._sync_to_database(parsed.records, parsed.employees, db_session=db_session)
     db_session.flush()
 
@@ -284,8 +284,8 @@ def _old_cw_record_dict() -> dict:
         "month": "July",
         "score": 100.0,
         "kpi_values": [
-            {"kpi_key": "cw_error_free", "label": "Error-free content ratio", "direction": "lower_better",
-             "unit": "%", "actual_value": 80.0, "target_value": 100.0, "achievement_ratio": 1.0,
+            {"kpi_key": "cw_error_free", "label": "Error-free content ratio", "direction": "higher_better",
+             "unit": "%", "actual_value": 125.0, "target_value": 100.0, "achievement_ratio": 1.0,
              "weight_applied": 0.3, "contribution": 0.3},
         ],
     }
@@ -295,7 +295,7 @@ def test_reporting_evidence_corrects_old_saved_rows():
     rows, issues = ReportingEvidenceService()._normalized_record_kpis(_old_cw_record_dict())
 
     row = rows[0]
-    assert row["direction"] == "higher_better"
+    assert row["direction"] == "lower_better"
     assert row["achievement"] == pytest.approx(80.0)
     assert row["weighted_contribution"] == pytest.approx(24.0)
     assert row["lost_points"] == pytest.approx(6.0)
@@ -374,12 +374,12 @@ def test_data_fix_script_dry_run_apply_and_idempotent(db_session):
     if not mirrors:
         mirrors = [TeamKPIConfig(
             team_id=db_session.query(Team).one().id, performance_level="Employee", position_name="Content Writer",
-            kpi_key="cw_error_free", kpi_label="Error-free content ratio", weight=0.3, direction="lower_better",
+            kpi_key="cw_error_free", kpi_label="Error-free content ratio", weight=0.3, direction="higher_better",
             unit="%", color="#000000", actual_col="Actual Value", target_col="Target Value", display_order=3,
         )]
         db_session.add_all(mirrors)
     for mirror in mirrors:
-        mirror.direction = "lower_better"  # the stale DB mirror of the old config
+        mirror.direction = "higher_better"  # the stale DB mirror of the old config
     db_session.flush()
 
     dry = run(db_session, apply=False)
@@ -388,7 +388,7 @@ def test_data_fix_script_dry_run_apply_and_idempotent(db_session):
     assert dry["changes"][0]["score"] == [pytest.approx(100.0), pytest.approx(94.0)]
     assert dry["team_kpi_config_to_fix"] == len(mirrors) >= 1
     assert float(db_session.query(DBPerformanceRecord).one().score) == pytest.approx(100.0)  # nothing written
-    assert all(m.direction == "lower_better" for m in db_session.query(TeamKPIConfig).filter(TeamKPIConfig.kpi_key == "cw_error_free"))
+    assert all(m.direction == "higher_better" for m in db_session.query(TeamKPIConfig).filter(TeamKPIConfig.kpi_key == "cw_error_free"))
 
     applied = run(db_session, apply=True)
     assert applied["records_to_fix"] == 1
@@ -400,8 +400,8 @@ def test_data_fix_script_dry_run_apply_and_idempotent(db_session):
     assert float(value.contribution) == pytest.approx(0.24)
     assert float(value.achievement_ratio) == pytest.approx(0.8)
     payload_value = next(v for v in stored.record_payload["kpi_values"] if v["kpi_key"] == "cw_error_free")
-    assert payload_value["direction"] == "higher_better"
-    assert all(row.direction == "higher_better" for row in db_session.query(TeamKPIConfig).filter(TeamKPIConfig.kpi_key == "cw_error_free"))
+    assert payload_value["direction"] == "lower_better"
+    assert all(row.direction == "lower_better" for row in db_session.query(TeamKPIConfig).filter(TeamKPIConfig.kpi_key == "cw_error_free"))
 
     again = run(db_session, apply=True)
     assert again["records_to_fix"] == 0

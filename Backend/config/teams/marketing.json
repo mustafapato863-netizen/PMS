@@ -521,7 +521,7 @@
               "label": "Error-free content ratio",
               "perspective": "Internal Process",
               "weight": 0.3,
-              "direction": "higher_better",
+              "direction": "lower_better",
               "unit": "%",
               "color": "#D97706",
               "actual_col": "Actual Value",

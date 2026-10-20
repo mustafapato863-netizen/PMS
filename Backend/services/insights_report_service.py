@@ -256,7 +256,10 @@ def _definition_for(raw: dict[str, Any], definitions: list[dict[str, Any]]) -> d
     # ``raw`` was resolved per record/team in ``_normalize_record``; that
     # direction wins over a cross-team definition list.
     raw_direction = normalize_direction(raw.get("direction"))
-    team_resolved = raw.get("direction_source") in {"config", "team_config"} and raw_direction
+    team_resolved = (
+        raw.get("direction_source") in {"config", "team_config", "pinned"}
+        or raw.get("evaluation_pinned") is True
+    ) and raw_direction
     if match:
         merged = {
             "key": key,
@@ -294,9 +297,13 @@ def _resolved_kpi_rows(team: str, level: Any, raw_kpis: Iterable[Any]) -> list[d
             continue
         row = dict(value)
         persisted = normalize_direction(row.get("direction"))
-        if persisted and (authoritative_level or row.get("direction_source") == "config"):
+        if persisted and (
+            authoritative_level
+            or row.get("direction_source") in {"config", "pinned"}
+            or row.get("evaluation_pinned") is True
+        ):
             row["direction"] = persisted
-            row["direction_source"] = "config"
+            row["direction_source"] = "pinned" if row.get("evaluation_pinned") is True else (row.get("direction_source") or "config")
         else:
             apply_kpi_direction(row, team)
         rows.append(row)

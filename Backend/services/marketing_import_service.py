@@ -405,21 +405,32 @@ class MarketingImportService:
 
             direction_text = _normalized_text(row.get("Direction"))
             uploaded_direction = _direction(direction_text)
-            if configured is not None:
-                # The configured direction wins for a configured KPI. A row that disagrees is a warning.
-                direction = configured["direction"]
-                if uploaded_direction != direction:
+            direction_pinned = False
+            if uploaded_direction:
+                # Direction comes from the row. A difference from the config is a warning, not an error.
+                direction = uploaded_direction
+                if configured is not None and uploaded_direction != configured["direction"]:
+                    direction_pinned = True
                     warnings.append(self._issue(
                         row_number,
                         "Direction",
                         "DIRECTION_MISMATCH",
                         f"Direction {direction_text or 'blank'} differs from the configured "
-                        f"{direction.replace('_', ' ')} for {kpi_label}, employee {employee_id} in {period_label}; "
-                        "the configured direction is used",
+                        f"{configured['direction'].replace('_', ' ')} for {kpi_label}, employee {employee_id} in {period_label}; "
+                        "the row's value is used",
                         employee_id=employee_id,
                     ))
-            elif uploaded_direction:
-                direction = uploaded_direction
+            elif configured is not None:
+                direction = configured["direction"]
+                warnings.append(self._issue(
+                    row_number,
+                    "Direction",
+                    "DIRECTION_MISMATCH",
+                    f"Direction {direction_text or 'blank'} differs from the configured "
+                    f"{direction.replace('_', ' ')} for {kpi_label}, employee {employee_id} in {period_label}; "
+                    "the configured direction is used",
+                    employee_id=employee_id,
+                ))
             else:
                 direction = ""
                 self._error(
@@ -507,6 +518,7 @@ class MarketingImportService:
                     # A configured KPI keeps its configured label, so stored history reads the same.
                     "kpi_label": configured["label"] if configured else kpi_label,
                     "direction": direction,
+                    "direction_pinned": direction_pinned,
                     "perspective": perspective,
                     "unit": unit,
                     "weight": weight,
@@ -618,20 +630,21 @@ class MarketingImportService:
                 if uploaded_weighted is not None and abs(uploaded_weighted - contribution) > DERIVED_TOLERANCE:
                     self._warning(warnings, item["row"], "Weighted Score %", uploaded_weighted, contribution)
 
-                kpi_values.append(
-                    {
-                        "kpi_key": item["kpi_key"],
-                        "label": item["kpi_label"],
-                        "perspective": item["perspective"],
-                        "direction": item["direction"],
-                        "unit": item["unit"],
-                        "actual_value": float(actual),
-                        "target_value": float(target),
-                        "achievement_ratio": float(effective.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)),
-                        "weight_applied": float(weight),
-                        "contribution": float(contribution.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)),
-                    }
-                )
+                kpi_entry = {
+                    "kpi_key": item["kpi_key"],
+                    "label": item["kpi_label"],
+                    "perspective": item["perspective"],
+                    "direction": item["direction"],
+                    "unit": item["unit"],
+                    "actual_value": float(actual),
+                    "target_value": float(target),
+                    "achievement_ratio": float(effective.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)),
+                    "weight_applied": float(weight),
+                    "contribution": float(contribution.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)),
+                }
+                if item.get("direction_pinned"):
+                    kpi_entry["evaluation_pinned"] = True
+                kpi_values.append(kpi_entry)
 
             engine_score_points = engine_score(engine_inputs).score or 0.0
             score = Decimal(str(engine_score_points)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)

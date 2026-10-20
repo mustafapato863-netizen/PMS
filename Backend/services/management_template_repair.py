@@ -480,6 +480,10 @@ def _forced_direction(team: str, position: str, kpi: str) -> str | None:
     label = kpi.casefold()
     if label == "schedule variance" and "offshore admin" in team.casefold():
         return HIGHER
+    if label == "timeliness of status reports" and "offshore admin" in team.casefold():
+        return HIGHER
+    if label == "payroll & staff cost accuracy and timeliness rate":
+        return HIGHER
     if label == "team shrinkage" and "team leader" in position.casefold():
         return LOWER
     return None

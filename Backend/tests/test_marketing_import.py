@@ -138,7 +138,7 @@ def test_marketing_config_covers_all_employee_positions_and_kpis():
         kpi["key"]: kpi["direction"]
         for kpi in positions["Content Writer"]["kpis"]
     }
-    assert content_writer_directions["cw_error_free"] == "higher_better"
+    assert content_writer_directions["cw_error_free"] == "lower_better"
     web_developer_by_key = {kpi["key"]: kpi for kpi in positions["Web Developer"]["kpis"]}
     assert web_developer_by_key["wd_page_speed"]["label"] == "Page load time"
     assert web_developer_by_key["wd_page_speed"]["direction"] == "lower_better"
@@ -232,8 +232,7 @@ def test_real_marketing_workbook_imports_and_rejects_only_the_bad_employee_month
     assert rejected[0]["rows"] == [133, 134, 135, 136, 137]
     assert {reason["code"] for reason in rejected[0]["reasons"]} == {"WEIGHT_SUM", "MISSING_KPI"}
     assert warning_codes.count("EMPLOYEE_MONTH_REJECTED") == len(rejected)
-    # The error-free content rule is configured higher-better; sheet rows that say Lower Better only warn.
-    assert warning_codes.count("DIRECTION_MISMATCH") == 3
+    assert warning_codes.count("DIRECTION_MISMATCH") == 0
     # A rejected employee-month is never stored.
     rejected_key = (rejected[0]["employee_id"], rejected[0]["year"], rejected[0]["month"])
     assert all((record.employee_id, record.year, record.month) != rejected_key for record in result.records)
@@ -389,28 +388,33 @@ def _content_writer_frame(error_free_actual: float, error_free_direction: str) -
     return frame
 
 
-@pytest.mark.parametrize("uploaded_direction", ["Higher Better", "Lower Better"])
-def test_cw_error_free_is_scored_higher_better(uploaded_direction):
-    # 80% error-free content against a 100% target is 0.8 achievement when
-    # higher is better (the old lower_better rule gave 1.0 = full credit).
+@pytest.mark.parametrize(
+    ("uploaded_direction", "expected_direction", "expected_ratio", "expected_score"),
+    [
+        ("Lower Better", "lower_better", 1.0, 100.0),
+        ("Higher Better", "higher_better", 0.8, 94.0),
+    ],
+)
+def test_cw_error_free_is_scored_from_source_direction(
+    uploaded_direction, expected_direction, expected_ratio, expected_score
+):
     frame = _content_writer_frame(80.0, uploaded_direction)
 
     result = MarketingImportService().parse_frame(frame)
 
     assert len(result.records) == 1
     value = next(v for v in result.records[0].kpi_values if v["kpi_key"] == "cw_error_free")
-    assert value["direction"] == "higher_better"
-    assert value["achievement_ratio"] == pytest.approx(0.8)
-    assert value["contribution"] == pytest.approx(0.8 * 0.30)
-    # cw_organic_traffic 0.40 + cw_delivery_timeliness 0.30 (both 120/100 capped) + 0.24
-    assert result.records[0].evaluation.score == pytest.approx(94.0)
+    assert value["direction"] == expected_direction
+    assert value["achievement_ratio"] == pytest.approx(expected_ratio)
+    assert value["contribution"] == pytest.approx(expected_ratio * 0.30)
+    assert result.records[0].evaluation.score == pytest.approx(expected_score)
 
 
-def test_cw_error_free_rewards_more_error_free_content():
-    low = MarketingImportService().parse_frame(_content_writer_frame(60.0, "Higher Better"))
-    high = MarketingImportService().parse_frame(_content_writer_frame(95.0, "Higher Better"))
+def test_cw_error_free_rewards_lower_error_ratio():
+    low_error = MarketingImportService().parse_frame(_content_writer_frame(50.0, "Lower Better"))
+    high_error = MarketingImportService().parse_frame(_content_writer_frame(125.0, "Lower Better"))
 
-    assert high.records[0].evaluation.score > low.records[0].evaluation.score
+    assert low_error.records[0].evaluation.score > high_error.records[0].evaluation.score
 
 
 def test_web_developer_old_page_load_speed_label_remains_upload_compatible():
