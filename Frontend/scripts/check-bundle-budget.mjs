@@ -22,7 +22,8 @@ const budgets = [
   // total JavaScript by 42 kB. The route budget follows the move; the entry budget keeps the gain.
   { name: 'team dashboard route', pattern: /^TeamDashboardView-.*\.js$/, rawKb: 235, gzipKb: 64 },
   // Agent booking display (2026-10-19) added about 0.3 kB gzip to this chunk.
-  { name: 'entry bundle', pattern: /^index-.*\.js$/, rawKb: 440, gzipKb: 131 },
+  // Shared-department position routes (2026-10-20) added about 0.2 kB gzip.
+  { name: 'entry bundle', pattern: /^index-.*\.js$/, rawKb: 440, gzipKb: 132 },
 ];
 
 const files = await readdir(assetsDir);

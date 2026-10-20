@@ -19,9 +19,6 @@ vi.mock('../hooks/useActionStore', () => ({
   useActionStore: () => ({ getActionsForEmployee: () => [], getAllActions: () => [] }),
 }));
 vi.mock('../lib/apiClient', () => ({ apiFetch: vi.fn(() => Promise.resolve({ success: false })) }));
-vi.mock('./MarketingDashboardView', () => ({
-  default: ({ teamId }: { teamId?: string }) => <h2>Position overview {teamId}</h2>,
-}));
 vi.mock('../components/team/BalancedScorecardWorkspace', () => ({
   default: ({ displayName }: { displayName: string }) => <h2>{displayName}</h2>,
 }));
@@ -95,12 +92,7 @@ describe('team page resolution', () => {
   it.each(KNOWN_NAMES)('opens the same team for teamPath(%s), titled with its display name', (name) => {
     const path = teamPath(name);
     renderTeamPage(path);
-    const teamId = path.split('/').pop() ?? '';
-    const positionOverview = ['finance', 'human-resources', 'it', 'administration'].includes(teamId);
-    expect(screen.getByRole('heading', {
-      level: 2,
-      name: positionOverview ? `Position overview ${teamId}` : EXPECTED_TITLE[name],
-    })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: EXPECTED_TITLE[name] })).toBeInTheDocument();
     expect(screen.queryByText('Team not found')).not.toBeInTheDocument();
   });
 

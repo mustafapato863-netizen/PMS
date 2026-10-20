@@ -36,8 +36,6 @@ import { usePreApprovalsWorkflowParam } from '../hooks/usePreApprovalsWorkflowPa
 import { useCallCenterChannelParam } from '../hooks/useCallCenterChannelParam';
 import { useRcmDomainParam } from '../hooks/useRcmDomainParam';
 import { useRcmGroupParam } from '../hooks/useRcmGroupParam';
-import { isPositionOverviewTeam } from '../features/marketing/positionOverviewTeams';
-import MarketingDashboardView from './MarketingDashboardView';
 import { resolveDisplayScore } from '../utils/kpiScore';
 import { matchesTeamConfig, normalizeTeamName } from '../hooks/api/useKpiWeights';
 import { isCorporateBalancedScorecard } from '../features/team/balancedScorecardNavigation';
@@ -1740,17 +1738,6 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
 
     return bullets;
   }, [teamId, scoredTeamId, hookAvgScore, calculatedAvgScore, presentationRows, teamMetrics]);
-
-  // Employee Finance, HR, IT, and Administration are position overviews.
-  // The flat team scorecard mixes every position's KPIs into one grid.
-  if (
-    canonicalTeamId
-    && isPositionOverviewTeam(canonicalTeamId)
-    && performanceLevel !== 'Managerial'
-    && performanceLevel !== 'Corporate'
-  ) {
-    return <MarketingDashboardView teamId={canonicalTeamId} />;
-  }
 
   if (loading) {
     return <OperationalViewSkeleton />;
