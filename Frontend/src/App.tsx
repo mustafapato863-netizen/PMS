@@ -36,6 +36,7 @@ const InsightsView = lazy(() => import('./pages/InsightsView'));
 const PlanningView = lazy(() => import('./pages/PlanningView'));
 const CorrectiveActionsView = lazy(() => import('./pages/CorrectiveActionsView'));
 const MaintenanceView = lazy(() => import('./pages/MaintenanceView'));
+const MonthlyPresentationView = lazy(() => import('./pages/MonthlyPresentationView'));
 const NotFound = lazy(() => import('./pages/NotFound'));
 
 const RouteLoadingFallback = () => <PageLoadingSkeleton variant="dashboard" label="Loading page" />;
@@ -159,6 +160,16 @@ function AnimatedRoutes() {
           element={
             <RouteGuard allowedRoles={ROUTE_ROLES.correctiveActions}>
               <Suspense fallback={<RouteLoadingFallback />}><CorrectiveActionsView /></Suspense>
+            </RouteGuard>
+          }
+        />
+
+        {/* Monthly Presentation: one page, region switch, strict month lock (?region=egy|uae&month=YYYY-MM). */}
+        <Route
+          path="/monthly-presentation"
+          element={
+            <RouteGuard allowedRoles={ROUTE_ROLES.monthlyPresentation}>
+              <Suspense fallback={<RouteLoadingFallback />}><MonthlyPresentationView /></Suspense>
             </RouteGuard>
           }
         />
