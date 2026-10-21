@@ -21,6 +21,8 @@ export interface AggregatedTeamKpi {
   evaluationPinned?: boolean;
   /** Pinned target, weight, direction, unit, or KPI identity does not agree, so they are not averaged. */
   basisVaries?: boolean;
+  /** Every source row is display-only. The card keeps target and actual and contributes nothing. */
+  viewOnly?: boolean;
 }
 
 interface Bucket extends Omit<AggregatedTeamKpi, 'actual' | 'target' | 'weight' | 'contribution'> {
@@ -48,6 +50,7 @@ interface Bucket extends Omit<AggregatedTeamKpi, 'actual' | 'target' | 'weight' 
   pinnedKey?: string;
   pinnedUnitAgrees: boolean;
   pinnedKeyAgrees: boolean;
+  viewOnlyCount: number;
 }
 
 const nearlyEqual = (left: number | null | undefined, right: number | null | undefined): boolean => {
@@ -262,6 +265,7 @@ export function aggregateConfiguredTeamKpis(
         pinnedAgrees: true,
         pinnedUnitAgrees: true,
         pinnedKeyAgrees: true,
+        viewOnlyCount: 0,
       };
 
       // Ratio KPIs should not fall back to a stale persisted actual when the
@@ -308,6 +312,7 @@ export function aggregateConfiguredTeamKpis(
           : kpi.target;
       }
       bucket.count += 1;
+      if (kpi.viewOnly) bucket.viewOnlyCount += 1;
       const effectiveWeight = pinned
         ? kpi.weight
         : options.preferConfiguredWeights
@@ -399,6 +404,7 @@ export function aggregateConfiguredTeamKpis(
       capAchievement: bucket.capAchievement,
       evaluationPinned: uniformPin || (mixedBasis && bucket.legacyCount === 0),
       basisVaries: mixedBasis,
+      viewOnly: bucket.count > 0 && bucket.viewOnlyCount === bucket.count,
     }];
   }));
 }
@@ -735,6 +741,7 @@ export function calculateAggregatedTeamPerformance(
           isLowerBetter: undefined,
           evaluationPinned: true,
           basisVaries: true,
+          viewOnly: existing.viewOnly === true && kpi.viewOnly === true,
           representedRecords,
         });
         return;
@@ -748,6 +755,7 @@ export function calculateAggregatedTeamPerformance(
           contribution: (((existing.contribution ?? 0) * existing.representedRecords) + ((contribution ?? 0) * groupAgents.length)) / representedRecords,
           evaluationPinned: existing.evaluationPinned === true && uniformPin,
           basisVaries: false,
+          viewOnly: existing.viewOnly === true && kpi.viewOnly === true,
           representedRecords,
         });
         return;
@@ -793,6 +801,7 @@ export function calculateAggregatedTeamPerformance(
         capAchievement: kpi.capAchievement,
         evaluationPinned: kpi.evaluationPinned,
         basisVaries: kpi.basisVaries,
+        viewOnly: kpi.viewOnly === true,
       }];
     })),
   };

@@ -26,6 +26,8 @@ interface PerformanceKpiCardProps {
   contribution?: number | null;
   weight?: number | null;
   weightLabel?: string;
+  /** Display-only KPI. The card keeps its value and target and shows no weight. */
+  viewOnly?: boolean;
   targetValue?: string | number | null;
 }
 
@@ -83,13 +85,15 @@ const PerformanceKpiCard = ({
   contribution,
   weight,
   weightLabel = 'Weight',
+  viewOnly = false,
   targetValue,
 }: PerformanceKpiCardProps) => {
   useEffect(() => {
+    if (viewOnly) return;
     if ((weight === undefined || weight === null) && import.meta.env.DEV) {
       console.warn(`[Missing Weight] KPI "${label}" is missing a weight config.`);
     }
-  }, [label, weight]);
+  }, [label, viewOnly, weight]);
 
   const hasTrend = trendDelta !== undefined && trendDelta !== null && Number.isFinite(trendDelta);
   const stableTrend = hasTrend && trendDelta === 0;
@@ -108,12 +112,12 @@ const PerformanceKpiCard = ({
     ? (weight > 1 ? weight / 100 : weight)
     : null;
   // Callers already pass score points. A value at or below 1 is still points, not a fraction.
-  const contributionPercent = contribution !== undefined && contribution !== null
-    ? Math.min(
+  const contributionPercent = viewOnly || contribution === undefined || contribution === null
+    ? null
+    : Math.min(
       Math.max(contribution, 0),
       normalizedWeight !== null ? Math.max(normalizedWeight, 0) * 100 : 100,
-    )
-    : null;
+    );
   return (
     <article className="glass-card group relative flex flex-col justify-between overflow-hidden rounded-2xl p-4 shadow-sm transition-all hover:scale-[1.01]">
       <div
@@ -206,10 +210,16 @@ const PerformanceKpiCard = ({
           </strong>
         </span>
         <span>
-          {weightLabel}
-          <strong className="ml-1 font-bold text-[var(--text-primary)]">
-            {weight !== undefined && weight !== null ? `${(weight * 100).toFixed(0)}%` : '—'}
-          </strong>
+          {viewOnly ? (
+            <strong className="font-bold text-[var(--text-primary)]">View</strong>
+          ) : (
+            <>
+              {weightLabel}
+              <strong className="ml-1 font-bold text-[var(--text-primary)]">
+                {weight !== undefined && weight !== null ? `${(weight * 100).toFixed(0)}%` : '—'}
+              </strong>
+            </>
+          )}
         </span>
       </div>
     </article>

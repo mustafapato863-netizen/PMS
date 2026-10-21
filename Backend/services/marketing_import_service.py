@@ -155,11 +155,42 @@ def _status(grade: str) -> str:
 
 
 class MarketingImportService:
-    def __init__(self, config: dict[str, Any] | None = None):
-        self.config = config or load_team_config("Marketing")
+    def __init__(
+        self,
+        config: dict[str, Any] | None = None,
+        *,
+        sheet_name: str = SHEET_NAME,
+        enforced_team: str | None = "Marketing",
+        allowed_levels: frozenset[str] | None = None,
+        team_configs: dict[str, dict[str, Any]] | None = None,
+        preserve_sheet_position: bool = False,
+        position_aliases: dict[str, str] | None = None,
+    ):
+        self.sheet_name = sheet_name
+        self.enforced_team = enforced_team
+        self.allowed_levels = allowed_levels if allowed_levels is not None else frozenset({"Employee"})
+        self.team_configs = team_configs
+        self.preserve_sheet_position = preserve_sheet_position
+        self.position_aliases = {
+            _lookup_key(source): target for source, target in (position_aliases or {}).items()
+        }
+        if config is not None:
+            self.config = config
+        elif team_configs:
+            self.config = next(iter(team_configs.values()))
+        else:
+            self.config = load_team_config("Marketing")
 
-    @staticmethod
+    def _config_for_team(self, team: str) -> dict[str, Any] | None:
+        if self.team_configs is not None:
+            return self.team_configs.get(_lookup_key(team))
+        return self.config
+
+    def _position_lookup_name(self, position: str) -> str:
+        return self.position_aliases.get(_lookup_key(position), position)
+
     def _error(
+        self,
         errors: list[dict[str, Any]],
         row: int | None,
         column: str | None,
@@ -168,7 +199,7 @@ class MarketingImportService:
     ) -> None:
         errors.append(
             {
-                "sheet": SHEET_NAME,
+                "sheet": self.sheet_name,
                 "row": row,
                 "column": column,
                 "code": code,
@@ -176,12 +207,11 @@ class MarketingImportService:
             }
         )
 
-    @staticmethod
-    def _issue(row: int | None, column: str | None, code: str, message: str, **details: Any) -> dict[str, Any]:
-        return {"sheet": SHEET_NAME, "row": row, "column": column, "code": code, "message": message, **details}
+    def _issue(self, row: int | None, column: str | None, code: str, message: str, **details: Any) -> dict[str, Any]:
+        return {"sheet": self.sheet_name, "row": row, "column": column, "code": code, "message": message, **details}
 
-    @staticmethod
     def _warning(
+        self,
         warnings: list[dict[str, Any]],
         row: int,
         column: str,
@@ -190,7 +220,7 @@ class MarketingImportService:
     ) -> None:
         warnings.append(
             {
-                "sheet": SHEET_NAME,
+                "sheet": self.sheet_name,
                 "row": row,
                 "column": column,
                 "code": "DERIVED_VALUE_MISMATCH",
@@ -201,9 +231,9 @@ class MarketingImportService:
         )
 
     def parse_excel(self, excel_file: pd.ExcelFile) -> MarketingImportResult | None:
-        if SHEET_NAME not in excel_file.sheet_names:
+        if self.sheet_name not in excel_file.sheet_names:
             return None
-        frame = pd.read_excel(excel_file, sheet_name=SHEET_NAME)
+        frame = pd.read_excel(excel_file, sheet_name=self.sheet_name)
         return self.parse_frame(frame)
 
     def _effective_level(self, row: pd.Series) -> str:
@@ -272,7 +302,7 @@ class MarketingImportService:
         })
         details = "; ".join(f"row {reason['row']} {reason['column']}: {reason['message']}" for reason in reasons)
         warnings.append({
-            "sheet": SHEET_NAME,
+            "sheet": self.sheet_name,
             "row": row_numbers[0],
             "column": "Employee",
             "code": "EMPLOYEE_MONTH_REJECTED",
@@ -289,7 +319,7 @@ class MarketingImportService:
         rejected: list[dict[str, Any]] = []
         missing_columns = [column for column in REQUIRED_COLUMNS if column not in frame.columns]
         base_report = {
-            "sheet": SHEET_NAME,
+            "sheet": self.sheet_name,
             "total_rows": total_rows,
             "employee_rows": 0,
             "excluded_non_employee_rows": 0,
@@ -326,7 +356,7 @@ class MarketingImportService:
                 self._error(row_errors, row_number, "Performance Level", "INVALID_LEVEL", str(exc))
                 issues_by_key.setdefault(("row", row_number), []).extend(row_errors)
                 continue
-            if level != "Employee":
+            if level not in self.allowed_levels:
                 excluded_rows += 1
                 continue
             employee_rows += 1
@@ -349,8 +379,22 @@ class MarketingImportService:
                 if not value:
                     self._error(row_errors, row_number, column, "REQUIRED_VALUE", f"{column} is required")
 
-            if team.casefold() != "marketing":
-                self._error(row_errors, row_number, "Team", "INVALID_TEAM", "Employee rows must belong to Marketing")
+            team_config = self._config_for_team(team)
+            if self.enforced_team is not None and team.casefold() != self.enforced_team.casefold():
+                team_message = (
+                    "Employee rows must belong to Marketing"
+                    if self.enforced_team.casefold() == "marketing"
+                    else f"Rows must belong to {self.enforced_team}"
+                )
+                self._error(row_errors, row_number, "Team", "INVALID_TEAM", team_message)
+            elif self.team_configs is not None and team_config is None:
+                self._error(
+                    row_errors,
+                    row_number,
+                    "Team",
+                    "UNKNOWN_TEAM",
+                    f"Team {team or 'blank'} is not configured on {self.sheet_name}",
+                )
             if region is None:
                 self._error(
                     row_errors,
@@ -376,7 +420,11 @@ class MarketingImportService:
             )
 
             try:
-                position_config = resolve_position_config(self.config, "Employee", position)
+                position_config = resolve_position_config(
+                    team_config or self.config,
+                    level,
+                    self._position_lookup_name(position),
+                )
             except ConfigurationError as exc:
                 position_config = None
                 self._error(row_errors, row_number, "Position", "UNKNOWN_POSITION", str(exc))
@@ -445,11 +493,16 @@ class MarketingImportService:
             if not unit:
                 self._error(row_errors, row_number, "Target Unit", "REQUIRED_VALUE", "Target Unit is required")
 
-            try:
-                weight = _decimal(row.get("Weight"))
-            except (InvalidOperation, ValueError):
-                weight = None
-                self._error(row_errors, row_number, "Weight", "INVALID_NUMBER", "Weight must be numeric")
+            weight_text = _normalized_text(row.get("Weight"))
+            view_only = weight_text.casefold() == "view"
+            if view_only:
+                weight = Decimal("0")
+            else:
+                try:
+                    weight = _decimal(row.get("Weight"))
+                except (InvalidOperation, ValueError):
+                    weight = None
+                    self._error(row_errors, row_number, "Weight", "INVALID_NUMBER", "Weight must be numeric")
             if weight is not None and weight < 0:
                 self._error(row_errors, row_number, "Weight", "NEGATIVE_VALUE", "Weight cannot be negative")
 
@@ -462,7 +515,7 @@ class MarketingImportService:
             ):
                 warnings.append(
                     {
-                        "sheet": SHEET_NAME,
+                        "sheet": self.sheet_name,
                         "row": row_number,
                         "column": "Target Value/Actual Value",
                         "code": "INCOMPLETE_KPI_ROW",
@@ -509,7 +562,11 @@ class MarketingImportService:
                     "key": key,
                     "employee_id": employee_id,
                     "employee_name": employee_name,
-                    "position": position_config["position_name"],
+                    "position": position if self.preserve_sheet_position else position_config["position_name"],
+                    "level": level,
+                    "team_name": (team_config or self.config).get("team") or team,
+                    "grade_thresholds": (team_config or self.config).get("grade_thresholds"),
+                    "team_config": team_config or self.config,
                     "region": region,
                     "date": period_date,
                     "year": period_date.year,
@@ -522,6 +579,8 @@ class MarketingImportService:
                     "perspective": perspective,
                     "unit": unit,
                     "weight": weight,
+                    "view_only": view_only,
+                    "color": configured.get("color") if configured and self.sheet_name != SHEET_NAME else None,
                     "actual": actual,
                     "target": target,
                     "uploaded_achievement": _derived_ratio(row.get("Achievement %")),
@@ -580,7 +639,7 @@ class MarketingImportService:
                         continue
                     row_by_key[item["kpi_key"]] = item
 
-                total_weight = sum((item["weight"] for item in rows), Decimal("0"))
+                total_weight = sum((item["weight"] for item in rows if not item["view_only"]), Decimal("0"))
                 # A row that failed validation is missing from `rows`, so the weights would be short for a
                 # reason already reported. Weight and KPI-set checks run only when every row of the month was read.
                 rows_complete = not issues_by_key.get(key)
@@ -596,7 +655,11 @@ class MarketingImportService:
                         missing = [label for kpi_key, label in peers.items() if kpi_key not in row_by_key]
                         source = f"other {first['position']} rows in {month} {year}"
                         if not missing:
-                            position_config = resolve_position_config(self.config, "Employee", first["position"])
+                            position_config = resolve_position_config(
+                                first["team_config"],
+                                first["level"],
+                                self._position_lookup_name(first["position"]),
+                            )
                             missing = self._missing_kpi_labels(position_config, set(row_by_key))
                             source = "configured, not in this month's rows"
                         if missing:
@@ -644,6 +707,10 @@ class MarketingImportService:
                 }
                 if item.get("direction_pinned"):
                     kpi_entry["evaluation_pinned"] = True
+                if item.get("view_only"):
+                    kpi_entry["view_only"] = True
+                if item.get("color"):
+                    kpi_entry["color"] = item["color"]
                 kpi_values.append(kpi_entry)
 
             engine_score_points = engine_score(engine_inputs).score or 0.0
@@ -654,7 +721,7 @@ class MarketingImportService:
                 if abs(uploaded_points - score) > SCORE_TOLERANCE_POINTS:
                     warnings.append(
                         {
-                            "sheet": SHEET_NAME,
+                            "sheet": self.sheet_name,
                             "row": first["row"],
                             "column": "Performance Score",
                             "code": "DERIVED_VALUE_MISMATCH",
@@ -672,15 +739,15 @@ class MarketingImportService:
 
             grade = calculate_grade(
                 float(score),
-                self.config.get("grade_thresholds"),
+                first.get("grade_thresholds"),
             )
             employee = Employee(
                 id=employee_id,
                 name=first["employee_name"],
-                team="Marketing",
+                team=first["team_name"],
                 status="Active",
                 region=first["region"],
-                performance_level="Employee",
+                performance_level=first["level"],
                 position=first["position"],
             )
             employees_by_id[employee_id] = employee
@@ -689,11 +756,11 @@ class MarketingImportService:
                     id=f"{employee_id}_{year}_{month}",
                     employee_id=employee_id,
                     employee_name=first["employee_name"],
-                    team="Marketing",
+                    team=first["team_name"],
                     month=month,
                     year=year,
                     region=first["region"],
-                    performance_level="Employee",
+                    performance_level=first["level"],
                     position=first["position"],
                     status=_status(grade),
                     evaluation=EvaluationData(score=float(score), grade=grade),
@@ -729,13 +796,70 @@ class MarketingImportService:
             "periods": [{"year": year, "month": month} for year, month in periods],
         }
         if employee_rows == 0:
+            empty_message = (
+                "Marketing sheet contains no Employee rows"
+                if self.sheet_name == SHEET_NAME
+                else f"{self.sheet_name} sheet contains no importable rows"
+            )
             warnings.append(
                 {
-                    "sheet": SHEET_NAME,
+                    "sheet": self.sheet_name,
                     "row": None,
                     "column": "Performance Level",
                     "code": "NO_EMPLOYEE_ROWS",
-                    "message": "Marketing sheet contains no Employee rows",
+                    "message": empty_message,
                 }
             )
         return MarketingImportResult(list(employees_by_id.values()), records, report)
+
+
+RCM_OFFSHORE_SHEET = "RCM Offshore"
+LEGACY_OFFSHORE_SHEET = "Pre-Approvals IP Offshore"
+
+
+def legacy_offshore_sheet_enabled(sheet_names) -> bool:
+    """Older workbooks still use the horizontal offshore sheet.
+
+    A workbook that already contains ``RCM Offshore`` is imported from that
+    sheet only, so the same people are not written twice.
+    """
+    names = {str(name) for name in sheet_names}
+    return LEGACY_OFFSHORE_SHEET in names and RCM_OFFSHORE_SHEET not in names
+
+
+def load_rcm_offshore_team_configs() -> dict[str, dict[str, Any]]:
+    """Team configs marked ``rcm_group = offshore_egy``. One block per Egypt team."""
+    import json
+    from pathlib import Path
+
+    config_dir = Path(__file__).resolve().parent.parent / "config" / "teams"
+    loaded: dict[str, dict[str, Any]] = {}
+    for path in sorted(config_dir.glob("*.json")):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if str(data.get("rcm_group", "")).casefold() != "offshore_egy":
+            continue
+        team_name = str(data.get("team") or "").strip()
+        if not team_name:
+            continue
+        config = load_team_config(team_name)
+        loaded[_lookup_key(config["team"])] = config
+    return loaded
+
+
+class RcmOffshoreImportService(MarketingImportService):
+    """Vertical 18-column importer for Egypt RCM teams on the RCM Offshore sheet."""
+
+    def __init__(self):
+        super().__init__(
+            sheet_name=RCM_OFFSHORE_SHEET,
+            enforced_team=None,
+            allowed_levels=frozenset({"Employee", "Managerial"}),
+            team_configs=load_rcm_offshore_team_configs(),
+            preserve_sheet_position=True,
+            position_aliases={
+                "Pre-Authorization Senior Specialist": "Pre-Authorization Specialist",
+            },
+        )

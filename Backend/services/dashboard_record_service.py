@@ -316,6 +316,8 @@ def _relational_kpi(value, config_by_key: dict[str, dict], stored_metadata: dict
     }
     if definition.get("evaluation_pinned") is True:
         row["evaluation_pinned"] = True
+    if definition.get("view_only") is True or definition.get("view_only") == 1:
+        row["view_only"] = True
     return row
 
 
@@ -335,6 +337,8 @@ _POSITION_DEPARTMENTS = frozenset({
 
 def _use_payload_kpi_metadata(team_name: str, performance_level: str, payload) -> bool:
     """Pinned rows, and every employee row of a position department, keep their labels."""
+    if str(team_name).casefold() == "pre-approvals ip":
+        return True
     if str(performance_level) == "Employee" and str(team_name).casefold() in _POSITION_DEPARTMENTS:
         return True
     values = payload.get("kpi_values") if isinstance(payload, dict) else None
@@ -361,6 +365,8 @@ def _payload_kpi_metadata(payload) -> dict[str, dict]:
         }
         if value.get("evaluation_pinned") is True:
             metadata["evaluation_pinned"] = True
+        if value.get("view_only") is True or value.get("view_only") == 1:
+            metadata["view_only"] = True
         direction = value.get("direction")
         if isinstance(direction, str) and direction.strip():
             metadata["direction"] = direction.strip()

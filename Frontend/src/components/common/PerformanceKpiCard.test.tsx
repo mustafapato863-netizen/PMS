@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import { Activity } from 'lucide-react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import PerformanceKpiCard from './PerformanceKpiCard';
 import {
   calculateKpiTargetProgress,
@@ -203,5 +203,26 @@ describe('PerformanceKpiCard', () => {
     expect(card).toHaveTextContent(`Contribution${expected}`);
     expect(card).toHaveTextContent('Weight50%');
     for (const text of forbidden) expect(card).not.toHaveTextContent(`Contribution${text}`);
+  });
+
+  it('shows a view-only KPI without a weight', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    render(
+      <PerformanceKpiCard
+        icon={Activity}
+        label="IP Initial Rejection %(All)"
+        value="3.2%"
+        contribution={0}
+        weight={0}
+        viewOnly
+      />,
+    );
+
+    const card = screen.getByText('IP Initial Rejection %(All)').closest('article');
+    expect(card).toHaveTextContent('View');
+    expect(card).not.toHaveTextContent('Weight');
+    expect(card).toHaveTextContent('Contribution—');
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
   });
 });

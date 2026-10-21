@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { AgentRecord, LocationKey, MonthKey, PerformanceLevelFilter, GeoBreakdown, EmployeeCRMRecord, EmployeeStatus, PlanningCategory, Trend, PreApprovalsWorkflowFilter, CallCenterChannelFilter, RcmDomainFilter, RcmGroupFilter } from '../types';
-import { applyInboundBookingDisplay, canonicalTeamName, displayBookingRate, getKPIsForAgent, inboundCallCount, PRE_APPROVALS_UAE_TEAM, CALL_CENTER_TEAM, RCM_TEAM, isMergedBranchTeam, isPreApprovalsUaeTeam, isPreApprovalsWorkflowTeam, isCallCenterTeam, isCallCenterChannelTeam, isRcmTeam, isRcmDomainTeam, isRcmGroupTeam, sameCanonicalTeam } from '../types';
+import { applyInboundBookingDisplay, canonicalTeamName, displayBookingRate, getKPIsForAgent, inboundCallCount, PRE_APPROVALS_UAE_TEAM, CALL_CENTER_TEAM, RCM_TEAM, isMergedBranchTeam, isPreApprovalsUaeTeam, isPreApprovalsWorkflowTeam, isCallCenterTeam, isCallCenterChannelTeam, isRcmTeam, isRcmDomainTeam, isRcmGroupTeam, sameEgyptRcmTeam, sameCanonicalTeam } from '../types';
 import { getGradeClass } from '../constants/grades';
 import { apiFetch } from '../lib/apiClient';
 import { performanceSessionKey } from '../lib/performanceSessionKey';
@@ -1164,6 +1164,7 @@ export function useTeamData(
   callCenterChannel: CallCenterChannelFilter = 'all',
   rcmDomain: RcmDomainFilter = 'all',
   rcmGroup: RcmGroupFilter = 'all',
+  egyptTeam = '',
   legacyEnabled = true,
 ) {
   const sourceMonth = scopedPerformanceApiEnabled ? month : 'All';
@@ -1198,6 +1199,9 @@ export function useTeamData(
       }
       if (teamName && isRcmTeam(teamName) && rcmGroup !== 'all') {
         scoped = scoped.filter((agent) => isRcmGroupTeam(agent.identity.team, rcmGroup, agent.region ?? agent.identity.region));
+      }
+      if (teamName && isRcmTeam(teamName) && egyptTeam) {
+        scoped = scoped.filter((agent) => sameEgyptRcmTeam(agent.identity.team, egyptTeam));
       }
 
       const branchFilter = selectedLocations && selectedLocations.length > 0
@@ -1335,5 +1339,5 @@ export function useTeamData(
       prevPctDE,
       prevTotalAgents,
     };
-  }, [allAgents, periodAgents, teamName, month, location, loading, dataSource, errorMessage, weightsList, selectedLocations, preApprovalsWorkflow, callCenterChannel, rcmDomain, rcmGroup]);
+  }, [allAgents, periodAgents, teamName, month, location, loading, dataSource, errorMessage, weightsList, selectedLocations, preApprovalsWorkflow, callCenterChannel, rcmDomain, rcmGroup, egyptTeam]);
 }

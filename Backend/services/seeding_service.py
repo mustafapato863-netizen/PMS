@@ -49,7 +49,12 @@ from models.models import (
 from data_cleaning.standard_mappings import calculate_achievement, calculate_grade
 from utils.performance_levels import normalize_performance_level
 from utils.branch_scope import explicit_branch_key
-from services.marketing_import_service import MarketingImportResult, MarketingImportService
+from services.marketing_import_service import (
+    MarketingImportResult,
+    MarketingImportService,
+    RcmOffshoreImportService,
+    legacy_offshore_sheet_enabled,
+)
 from utils.performance_status import status_for_grade
 from services.upload_record_collisions import (
     colliding_employee_ids,
@@ -123,6 +128,9 @@ def json_safe(value):
         return [json_safe(item) for item in value]
     if isinstance(value, (float, np.floating)):
         return None if not math.isfinite(float(value)) else float(value)
+    # bool is an int subclass. A view-only flag must stay JSON true, not 1.
+    if isinstance(value, (bool, np.bool_)):
+        return bool(value)
     if isinstance(value, (int, np.integer)):
         return int(value)
     if isinstance(value, (datetime.datetime, datetime.date, datetime.time)):
@@ -157,6 +165,7 @@ class DatabaseSeeder:
         self.kpi_service = KPIService()
         self.analysis_service = AnalysisService()
         self.marketing_import_service = MarketingImportService()
+        self.rcm_offshore_import_service = RcmOffshoreImportService()
 
     @staticmethod
     def _should_exclude_raw_row(row: pd.Series) -> bool:
@@ -229,6 +238,7 @@ class DatabaseSeeder:
         """
         excel_file = self.excel_processor.load_excel(contents)
         marketing_result = self.marketing_import_service.parse_excel(excel_file)
+        rcm_offshore_result = self.rcm_offshore_import_service.parse_excel(excel_file)
         owns_session = db_session is None
         db = db_session if db_session is not None else SessionLocal()
 
@@ -237,6 +247,7 @@ class DatabaseSeeder:
                 result = self._process_and_save_excel(
                     excel_file,
                     marketing_result=marketing_result,
+                    rcm_offshore_result=rcm_offshore_result,
                     dry_run=True,
                     db_session=db,
                 )
@@ -286,10 +297,14 @@ class DatabaseSeeder:
             if marketing_result:
                 for record in marketing_result.records:
                     record.upload_id = upload_id
+            if rcm_offshore_result:
+                for record in rcm_offshore_result.records:
+                    record.upload_id = upload_id
             result = self._process_and_save_excel(
                 excel_file,
                 upload_id=upload_id,
                 marketing_result=marketing_result,
+                rcm_offshore_result=rcm_offshore_result,
                 db_session=db,
             )
             batch.record_count = int(result.get("records_imported", 0))
@@ -1328,6 +1343,7 @@ class DatabaseSeeder:
         excel_file,
         upload_id: Optional[str] = None,
         marketing_result: MarketingImportResult | None = None,
+        rcm_offshore_result: MarketingImportResult | None = None,
         dry_run: bool = False,
         db_session=None,
     ):
@@ -1339,7 +1355,11 @@ class DatabaseSeeder:
         inbound_df = self.excel_processor.process_sheet_inbound(excel_file) if "Inbound" in sheet_names else pd.DataFrame()
         outbound_df = self.excel_processor.process_sheet_outbound(excel_file) if resolve_outbound_sheet_name(sheet_names) else pd.DataFrame()
 
-        preapprovals_df = self.excel_processor.process_sheet_preapprovals(excel_file) if "Pre-Approvals IP Offshore" in sheet_names else pd.DataFrame()
+        preapprovals_df = (
+            self.excel_processor.process_sheet_preapprovals(excel_file)
+            if legacy_offshore_sheet_enabled(sheet_names)
+            else pd.DataFrame()
+        )
         preapprovals_op_dubai_df = self.excel_processor.process_sheet_preapprovals_op_dubai(excel_file) if "Pre-Approvals OP Dubai" in sheet_names else pd.DataFrame()
         preapprovals_ip_final_dubai_df = self.excel_processor.process_sheet_preapprovals_ip_final_dubai(excel_file) if "Pre-Approvals IP Final Dubai" in sheet_names else pd.DataFrame()
         preapprovals_ip_elective_dubai_df = self.excel_processor.process_sheet_preapprovals_ip_elective_dubai(excel_file) if "Pre-Approvals IP Elective Dubai" in sheet_names else pd.DataFrame()
@@ -1359,6 +1379,7 @@ class DatabaseSeeder:
         persisted_teams = set()
         failed_teams = []
         marketing_report = marketing_result.report if marketing_result else None
+        rcm_offshore_report = rcm_offshore_result.report if rcm_offshore_result else None
 
         if marketing_result is not None:
             detected_teams.append("Marketing")
@@ -1367,6 +1388,16 @@ class DatabaseSeeder:
             all_new_records.extend(marketing_result.records)
             if marketing_result.records:
                 persisted_teams.add("Marketing")
+
+        if rcm_offshore_result is not None:
+            all_new_employees.extend(rcm_offshore_result.employees)
+            all_new_records.extend(rcm_offshore_result.records)
+            for record in rcm_offshore_result.records:
+                if record.team not in detected_teams:
+                    detected_teams.append(record.team)
+                if record.team not in attempted_teams:
+                    attempted_teams.append(record.team)
+                persisted_teams.add(record.team)
 
         sheet_mappings = []
         if not inbound_df.empty:
@@ -1716,6 +1747,10 @@ class DatabaseSeeder:
         imported_teams = list(dict.fromkeys([team_name for team_name, _, _, _ in sheet_mappings]))
         if marketing_result is not None:
             imported_teams.append("Marketing")
+        if rcm_offshore_result is not None:
+            for record in rcm_offshore_result.records:
+                if record.team not in imported_teams:
+                    imported_teams.append(record.team)
         try:
             scored_rows = self._pin_uploaded_records(db_session, all_new_records)
         except Exception as exc:
@@ -1749,6 +1784,7 @@ class DatabaseSeeder:
                 "persisted_teams": sorted(persisted_teams),
                 "failed_teams": failed_teams,
                 "marketing": marketing_report,
+                "rcm_offshore": rcm_offshore_report,
                 "warnings": upload_warnings,
                 "column_warnings": column_warnings,
                 "scored_rows": scored_rows,
@@ -1786,6 +1822,7 @@ class DatabaseSeeder:
             "persisted_teams": sorted(persisted_teams),
             "failed_teams": failed_teams,
             "marketing": marketing_report,
+            "rcm_offshore": rcm_offshore_report,
             "warnings": upload_warnings,
             "column_warnings": column_warnings,
             "scored_rows": scored_rows,

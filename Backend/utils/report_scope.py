@@ -87,6 +87,7 @@ _RCM_KEYS = {
     "re-submission",
     "pre-approvals",
     "pre-approvals ip offshore",
+    "pre-approvals ip",
     "pre-approvals op final",
     "pre-approvals op dubai",
     "pre-approvals op final shjajm",

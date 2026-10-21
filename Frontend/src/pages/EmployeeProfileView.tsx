@@ -969,7 +969,10 @@ const EmployeeProfileView = () => {
                     if (kpi.unit === 'currency' || kpi.unit === 'number') return v.toLocaleString(undefined, { maximumFractionDigits: 1 });
                     return v > 1 ? `${v.toFixed(1)}%` : `${(v * 100).toFixed(1)}%`;
                   };
-                  const weight = kpi.weight ?? getWeightForLabel(teamWeights, kpi.label, (profileAgent || employee.raw).identity.team, (profileAgent || employee.raw).raw_data, (profileAgent || employee.raw).identity.month);
+                  const viewOnly = kpi.viewOnly === true;
+                  const weight = viewOnly
+                    ? undefined
+                    : kpi.weight ?? getWeightForLabel(teamWeights, kpi.label, (profileAgent || employee.raw).identity.team, (profileAgent || employee.raw).raw_data, (profileAgent || employee.raw).identity.month);
                   const actualVol = getKpiActualVolumes(kpi.label, profileAgent || employee.raw);
 
                   let compBadge = null;
@@ -1021,7 +1024,9 @@ const EmployeeProfileView = () => {
                     <div key={kpi.label} className="flex items-center justify-between py-1 border-b border-[var(--border-light)] last:border-none">
                       <div className="flex flex-col">
                         <span className="text-[var(--text-secondary)] font-semibold">{kpi.label}</span>
-                        {weight !== undefined && weight !== null && (
+                        {viewOnly ? (
+                          <span className="text-xs text-[var(--text-faint)] font-medium">View</span>
+                        ) : weight !== undefined && weight !== null && (
                           <span className="text-xs text-[var(--text-faint)] font-medium">
                             Weight: {(weight * 100).toFixed(0)}%
                           </span>

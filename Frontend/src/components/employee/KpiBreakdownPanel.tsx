@@ -25,6 +25,7 @@ interface KpiBarProps {
   volumeUnit?: string;
   weight?: number;
   contribution?: number;
+  viewOnly?: boolean;
   targetRequiresReview?: boolean;
 }
 
@@ -63,7 +64,7 @@ const calculateAchievementPercent = (
   return (numActual / numTarget) * 100;
 };
 
-const KpiBar = ({ label, actual, target, unit, isLowerBetter = false, color, achievement: achievementProp, actualVolume, targetVolume, volumeUnit, weight, contribution: contributionProp, targetRequiresReview = false }: KpiBarProps) => {
+const KpiBar = ({ label, actual, target, unit, isLowerBetter = false, color, achievement: achievementProp, actualVolume, targetVolume, volumeUnit, weight, contribution: contributionProp, viewOnly = false, targetRequiresReview = false }: KpiBarProps) => {
   const achievement = calculateAchievementPercent(actual, target, isLowerBetter, achievementProp);
   const pct = getProgressFill(achievement);
   // Use DB-stored contribution when available (already multiplied by 100 in types.ts), else calculate
@@ -135,7 +136,9 @@ const KpiBar = ({ label, actual, target, unit, isLowerBetter = false, color, ach
           Contribution
           <span className="ml-1 font-extrabold text-[var(--text-primary)]">{contribution !== undefined ? `${contribution.toFixed(1)}%` : '-'}</span>
         </div>
-        {weight !== undefined && (
+        {viewOnly ? (
+          <div className="text-[var(--text-secondary)] font-semibold">View</div>
+        ) : weight !== undefined && (
           <div className="text-[var(--text-secondary)] font-semibold">
             Weight
             <span className="ml-1 font-extrabold text-[var(--text-primary)]">{(weight * 100).toFixed(0)}%</span>
@@ -160,6 +163,7 @@ const KpiBreakdownPanel = ({ score: propScore, agent, teamWeights }: KpiBreakdow
     new Set(
       kpis
         .filter((kpi) => {
+          if (kpi.viewOnly) return false;
           const weight = kpi.weight ?? getWeightForLabel(teamWeights, kpi.label, agent.identity.team, agent.raw_data, agent.identity.month);
           if (weight === 0) return false;
           if (kpi.target === 0) return true;
@@ -222,7 +226,10 @@ const KpiBreakdownPanel = ({ score: propScore, agent, teamWeights }: KpiBreakdow
 
       <div className="border-t border-[var(--border-light)] pt-4 space-y-4">
         {kpis.map((kpi) => {
-          const w = kpi.weight ?? getWeightForLabel(teamWeights, kpi.label, agent.identity.team, agent.raw_data, agent.identity.month);
+          const viewOnly = kpi.viewOnly === true;
+          const w = viewOnly
+            ? undefined
+            : (kpi.weight ?? getWeightForLabel(teamWeights, kpi.label, agent.identity.team, agent.raw_data, agent.identity.month));
           return (
             <KpiBar
               key={kpi.label}
@@ -237,7 +244,8 @@ const KpiBreakdownPanel = ({ score: propScore, agent, teamWeights }: KpiBreakdow
               targetVolume={kpi.targetVolume}
               volumeUnit={kpi.volumeUnit}
               weight={w}
-              contribution={kpi.contribution}
+              contribution={viewOnly ? undefined : kpi.contribution}
+              viewOnly={viewOnly}
               targetRequiresReview={kpi.target === 0}
             />
           );

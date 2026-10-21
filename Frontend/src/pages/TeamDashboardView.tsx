@@ -10,7 +10,7 @@ import { OperationalViewSkeleton } from '../components/common/SkeletonLoader';
 import { TrendingUp, Target, Activity, Phone, Shield, Lightbulb, Edit2, Check, X, Award, AlertCircle, AlertTriangle, MessageSquare, Code, Headphones, Pill, Users, Send } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { TeamAgentRow, TeamWeightConfig } from '../hooks/usePerformanceData';
-import { TEAM_NAME_MAP, TEAM_DB_NAME_MAP, resolveTeamRouteId, MERGED_OP_FINAL_TEAM, MERGED_IP_FINAL_TEAM, PRE_APPROVALS_UAE_TEAM, PRE_APPROVALS_UAE_SOURCE_TEAMS, CALL_CENTER_TEAM, RCM_TEAM, callCenterChannelForTeam, isCallCenterChannelTeam, isPreApprovalsWorkflowTeam, isRcmDomainTeam, isRcmGroupTeam, isMergedBranchTeam, isMergedOpFinalTeam, sameCanonicalTeam, inboundCallCount } from '../types';
+import { TEAM_NAME_MAP, TEAM_DB_NAME_MAP, resolveTeamRouteId, MERGED_OP_FINAL_TEAM, MERGED_IP_FINAL_TEAM, PRE_APPROVALS_UAE_TEAM, PRE_APPROVALS_UAE_SOURCE_TEAMS, CALL_CENTER_TEAM, RCM_TEAM, callCenterChannelForTeam, isCallCenterChannelTeam, isPreApprovalsWorkflowTeam, isRcmDomainTeam, isRcmGroupTeam, egyptRcmTeamLabel, sameEgyptRcmTeam, isMergedBranchTeam, isMergedOpFinalTeam, sameCanonicalTeam, inboundCallCount } from '../types';
 import type { AgentRecord, GeoBreakdown, LocationKey, PreApprovalsWorkflowFilter, CallCenterChannelFilter, RcmDomainFilter, RcmGroupFilter } from '../types';
 import { useUserRole } from '../context/RoleContext';
 import { useAuth } from '../context/auth';
@@ -27,6 +27,7 @@ import PreApprovalsWorkflowSummary from '../components/team/PreApprovalsWorkflow
 import CallCenterChannelSummary from '../components/team/CallCenterChannelSummary';
 import RcmDomainSummary from '../components/team/RcmDomainSummary';
 import RcmGroupSummary from '../components/team/RcmGroupSummary';
+import RcmEgyptTeamSummary from '../components/team/RcmEgyptTeamSummary';
 import TeamRosterSection from '../components/team/TeamRosterSection';
 import TeamPerformanceAnalysis from '../components/team/TeamPerformanceAnalysis';
 import { TeamPerformanceIntelligence } from '../components/team/TeamPerformanceIntelligence';
@@ -36,6 +37,7 @@ import { usePreApprovalsWorkflowParam } from '../hooks/usePreApprovalsWorkflowPa
 import { useCallCenterChannelParam } from '../hooks/useCallCenterChannelParam';
 import { useRcmDomainParam } from '../hooks/useRcmDomainParam';
 import { useRcmGroupParam } from '../hooks/useRcmGroupParam';
+import { useRcmEgyptTeamParam } from '../hooks/useRcmEgyptTeamParam';
 import { resolveDisplayScore } from '../utils/kpiScore';
 import { matchesTeamConfig, normalizeTeamName } from '../hooks/api/useKpiWeights';
 import { isCorporateBalancedScorecard } from '../features/team/balancedScorecardNavigation';
@@ -268,6 +270,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
   const { channel: callCenterChannel, setChannel: setCallCenterChannel } = useCallCenterChannelParam('all');
   const { domain: rcmDomain, setDomain: setRcmDomain } = useRcmDomainParam('all');
   const { group: rcmGroup, setGroup: setRcmGroup } = useRcmGroupParam('all');
+  const { egyTeam, setEgyTeam } = useRcmEgyptTeamParam();
 
   // Executive Summary > Function > Team or parent view > Sub-team (see teamBreadcrumbs).
   const breadcrumbs = teamBreadcrumbs({
@@ -296,7 +299,9 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
           ? 'Outbound'
           : ''
     : isRcmParent
-      ? rcmDomain === 'pre_approvals'
+      ? rcmGroup === 'offshore_egy' && egyTeam
+        ? egyTeam
+        : rcmDomain === 'pre_approvals'
         ? rcmGroup === 'offshore_egy'
           ? 'Pre-Approvals IP Offshore'
           : preApprovalsWorkflow === 'op_final'
@@ -357,6 +362,8 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
         'Submission',
         'Re-Submission',
         'Pre-Approvals',
+        'Pre-Approvals IP',
+        'Pre-Approvals IP Offshore',
         ...PRE_APPROVALS_UAE_SOURCE_TEAMS,
         'Pre-Approvals IP Elective',
       ];
@@ -422,6 +429,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
     isCallCenterParent ? callCenterChannel : 'all',
     isRcmParent ? rcmDomain : 'all',
     isRcmParent ? rcmGroup : 'all',
+    isRcmParent && rcmGroup === 'offshore_egy' ? egyTeam : '',
   );
 
   const { uniqueMonths, agents: allAgentsRaw } = usePerformanceData('All', location, region, performanceLevel, true, teamName ?? undefined);
@@ -431,6 +439,16 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
       : allAgentsRaw,
     [allAgentsRaw, branchSelections, isMergedTeam, isCallCenterParent],
   );
+  const egyptTeamOptions = useMemo(() => {
+    const labels = new Set<string>();
+    allAgents.forEach((agent) => {
+      if (!isRcmGroupTeam(agent.identity.team, 'offshore_egy', agent.region ?? agent.identity.region)) return;
+      const label = egyptRcmTeamLabel(agent.identity.team);
+      if (!label || label.toLowerCase() === 'rcm') return;
+      labels.add(label);
+    });
+    return [...labels].sort((left, right) => left.localeCompare(right));
+  }, [allAgents]);
 
   const availableTeamPeriods = useMemo(
     () => resolveAvailableTeamPeriods(allAgents, teamName),
@@ -526,16 +544,21 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
     setRcmGroup(group, { clearDomain: true });
     setPage(1);
   }, [setRcmGroup, setPage]);
+  const handleEgyTeamChange = useCallback((team: string) => {
+    setEgyTeam(team);
+    setPage(1);
+  }, [setEgyTeam, setPage]);
 
   const matchesPresentationScope = useCallback((agent: AgentRecord) => {
     if (isRcmParent && rcmGroup !== 'all' && !isRcmGroupTeam(agent.identity.team, rcmGroup, agent.region ?? agent.identity.region)) return false;
+    if (isRcmParent && rcmGroup === 'offshore_egy' && egyTeam && !sameEgyptRcmTeam(agent.identity.team, egyTeam)) return false;
     if (isRcmParent && rcmDomain !== 'all' && !isRcmDomainTeam(agent.identity.team, rcmDomain)) return false;
     if ((isPreApprovalsParent || (isRcmParent && rcmDomain === 'pre_approvals'))
       && preApprovalsWorkflow !== 'all'
       && !isPreApprovalsWorkflowTeam(agent.identity.team, preApprovalsWorkflow)) return false;
     if (isCallCenterParent && callCenterChannel !== 'all' && !isCallCenterChannelTeam(agent.identity.team, callCenterChannel)) return false;
     return true;
-  }, [isRcmParent, rcmGroup, rcmDomain, isPreApprovalsParent, preApprovalsWorkflow, isCallCenterParent, callCenterChannel]);
+  }, [isRcmParent, rcmGroup, egyTeam, rcmDomain, isPreApprovalsParent, preApprovalsWorkflow, isCallCenterParent, callCenterChannel]);
 
   const presentationRows = useMemo(
     () => (rows || []).filter((row) => matchesPresentationScope(row.raw)),
@@ -586,7 +609,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
   );
   const weightsTeamName = (isCallCenterParent && callCenterChannel !== 'all')
     || (isPreApprovalsParent && preApprovalsWorkflow !== 'all')
-    || (isRcmParent && rcmDomain !== 'all' && workflowConfigTeam)
+    || (isRcmParent && workflowConfigTeam && (rcmDomain !== 'all' || (rcmGroup === 'offshore_egy' && Boolean(egyTeam))))
     ? workflowConfigTeam
     : teamName || '';
   const activeTeamWeights = useMemo(
@@ -603,7 +626,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
     () => {
       if ((isPreApprovalsParent && preApprovalsWorkflow === 'all')
         || (isCallCenterParent && callCenterChannel === 'all')
-        || (isRcmParent && (rcmDomain === 'all' || (rcmDomain === 'pre_approvals' && preApprovalsWorkflow === 'all' && rcmGroup !== 'offshore_egy')))) return [];
+        || (isRcmParent && !egyTeam && (rcmDomain === 'all' || (rcmDomain === 'pre_approvals' && preApprovalsWorkflow === 'all' && rcmGroup !== 'offshore_egy')))) return [];
       return buildTeamKpiAnalysis(
         presentationRows.map((row) => row.raw).filter((record) => record.identity.month === activeMonthName),
         previousTeamAgents,
@@ -617,7 +640,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
         },
       );
     },
-    [presentationRows, previousTeamAgents, historicalTeamAgents, activeMonthName, isCallCenterView, scoredTeamId, location, activeTeamWeights, teamConfig, isPreApprovalsParent, preApprovalsWorkflow, isCallCenterParent, callCenterChannel, isRcmParent, rcmDomain, rcmGroup],
+    [presentationRows, previousTeamAgents, historicalTeamAgents, activeMonthName, isCallCenterView, scoredTeamId, location, activeTeamWeights, teamConfig, isPreApprovalsParent, preApprovalsWorkflow, isCallCenterParent, callCenterChannel, isRcmParent, rcmDomain, rcmGroup, egyTeam],
   );
   const callCenterChannelKpiAnalysis = useMemo(
     () => {
@@ -1893,12 +1916,16 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
           showCallCenterChannelFilter={isCallCenterParent}
           callCenterChannel={callCenterChannel}
           setCallCenterChannel={handleCallCenterChannelChange}
-          showRcmDomainFilter={isRcmParent}
+          showRcmDomainFilter={isRcmParent && rcmGroup !== 'offshore_egy'}
           rcmDomain={rcmDomain}
           setRcmDomain={handleRcmDomainChange}
           showRcmGroupFilter={isRcmParent}
           rcmGroup={rcmGroup}
           setRcmGroup={handleRcmGroupChange}
+          showRcmEgyptTeamFilter={isRcmParent && rcmGroup === 'offshore_egy'}
+          rcmEgyptTeam={egyTeam || 'all'}
+          setRcmEgyptTeam={handleEgyTeamChange}
+          rcmEgyptTeamOptions={egyptTeamOptions}
           onBack={() => navigate('/executive')}
           showRegionFilter={teamId === 'all'}
           performanceLevel={performanceLevel}
@@ -2040,12 +2067,16 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
         showCallCenterChannelFilter={isCallCenterParent}
         callCenterChannel={callCenterChannel}
         setCallCenterChannel={handleCallCenterChannelChange}
-        showRcmDomainFilter={isRcmParent}
+        showRcmDomainFilter={isRcmParent && rcmGroup !== 'offshore_egy'}
         rcmDomain={rcmDomain}
         setRcmDomain={handleRcmDomainChange}
         showRcmGroupFilter={isRcmParent}
         rcmGroup={rcmGroup}
         setRcmGroup={handleRcmGroupChange}
+        showRcmEgyptTeamFilter={isRcmParent && rcmGroup === 'offshore_egy'}
+        rcmEgyptTeam={egyTeam || 'all'}
+        setRcmEgyptTeam={handleEgyTeamChange}
+        rcmEgyptTeamOptions={egyptTeamOptions}
         onBack={() => navigate('/executive')}
         showRegionFilter={teamId === 'all'}
         performanceLevel={performanceLevel}
@@ -2084,7 +2115,9 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
             <RcmGroupSummary rows={presentationRows} onGroupSelect={handleRcmGroupChange} />
             <DepartmentPositionKpis view={rcmPositionView} teamId="rcm" teamName={RCM_TEAM} month={month} />
           </>
-        ) : isRcmParent && rcmDomain === 'all' ? (
+        ) : isRcmParent && rcmGroup === 'offshore_egy' && !egyTeam ? (
+          <RcmEgyptTeamSummary rows={presentationRows} onTeamSelect={handleEgyTeamChange} />
+        ) : isRcmParent && rcmDomain === 'all' && rcmGroup !== 'offshore_egy' ? (
           <>
             <RcmDomainSummary rows={presentationRows} onDomainSelect={handleRcmDomainChange} />
             <DepartmentPositionKpis view={rcmPositionView} teamId="rcm" teamName={RCM_TEAM} month={month} />

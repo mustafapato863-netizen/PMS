@@ -16,6 +16,7 @@ export function useRcmGroupParam(defaultValue: RcmGroupFilter = 'all') {
     if (next === 'all') nextParams.delete('group');
     else nextParams.set('group', next);
     if (options?.clearDomain) nextParams.delete('domain');
+    nextParams.delete('egy_team');
     setSearchParams(nextParams);
   }, [searchParams, setSearchParams]);
 

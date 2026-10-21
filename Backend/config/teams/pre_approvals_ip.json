@@ -1,0 +1,127 @@
+{
+  "team": "Pre-Approvals IP",
+  "db_name": "Pre-Approvals IP",
+  "region": "EGY",
+  "employee_id_col": "Employee ID",
+  "employee_name_col": "Employee Name",
+  "rcm_group": "offshore_egy",
+  "rcm_domain": "pre_approvals",
+  "grade_thresholds": {
+    "A": 95,
+    "B": 90,
+    "C": 80,
+    "D": 70
+  },
+  "performance_levels": {
+    "Employee": {
+      "positions": {
+        "Pre-Authorization Specialist": {
+          "kpis": [
+            {
+              "key": "pa_initial_rejection",
+              "label": "IP Initial Rejection %",
+              "perspective": "Internal Process",
+              "weight": 0.3,
+              "direction": "lower_better",
+              "unit": "%",
+              "color": "#DC2626",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": { "method": "average" },
+              "display_order": 1
+            },
+            {
+              "key": "pa_error_rate",
+              "label": "Error %",
+              "perspective": "Internal Process",
+              "weight": 0.3,
+              "direction": "lower_better",
+              "unit": "%",
+              "color": "#D97706",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": { "method": "average" },
+              "display_order": 2
+            },
+            {
+              "key": "pa_approval_48h",
+              "label": "% Approval within 48 hrs",
+              "aliases": ["% of Approval within 48 hrs"],
+              "perspective": "Customer",
+              "weight": 0.4,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#0D9488",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": { "method": "average" },
+              "display_order": 3
+            }
+          ]
+        }
+      }
+    },
+    "Managerial": {
+      "positions": {
+        "Pre-Authorization Supervisor": {
+          "kpis": [
+            {
+              "key": "pa_initial_rejection",
+              "label": "IP Initial Rejection %",
+              "perspective": "Internal Process",
+              "weight": 0.5,
+              "direction": "lower_better",
+              "unit": "%",
+              "color": "#DC2626",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": { "method": "average" },
+              "display_order": 1
+            },
+            {
+              "key": "pa_initial_rejection_all",
+              "label": "IP Initial Rejection %(All)",
+              "perspective": "Internal Process",
+              "weight": 0,
+              "direction": "lower_better",
+              "unit": "%",
+              "color": "#7C3AED",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": { "method": "average" },
+              "display_order": 2,
+              "view_only": true
+            },
+            {
+              "key": "pa_error_rate",
+              "label": "Error %",
+              "perspective": "Internal Process",
+              "weight": 0.2,
+              "direction": "lower_better",
+              "unit": "%",
+              "color": "#D97706",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": { "method": "average" },
+              "display_order": 3
+            },
+            {
+              "key": "pa_approval_48h",
+              "label": "% Approval within 48 hrs",
+              "aliases": ["% of Approval within 48 hrs"],
+              "perspective": "Customer",
+              "weight": 0.3,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#0D9488",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": { "method": "average" },
+              "display_order": 4
+            }
+          ]
+        }
+      }
+    }
+  }
+}

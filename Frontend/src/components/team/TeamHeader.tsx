@@ -34,6 +34,10 @@ interface TeamHeaderProps {
   showRcmGroupFilter?: boolean;
   rcmGroup?: RcmGroupFilter;
   setRcmGroup?: (group: RcmGroupFilter) => void;
+  showRcmEgyptTeamFilter?: boolean;
+  rcmEgyptTeam?: string;
+  setRcmEgyptTeam?: (team: string) => void;
+  rcmEgyptTeamOptions?: string[];
   performanceLevel: PerformanceLevel;
   setPerformanceLevel: (level: PerformanceLevel) => void;
   disabledPerformanceLevel?: boolean;
@@ -68,6 +72,10 @@ const TeamHeader = ({
   showRcmGroupFilter = false,
   rcmGroup = 'all',
   setRcmGroup,
+  showRcmEgyptTeamFilter = false,
+  rcmEgyptTeam = 'all',
+  setRcmEgyptTeam,
+  rcmEgyptTeamOptions = [],
   performanceLevel,
   setPerformanceLevel,
   disabledPerformanceLevel,
@@ -115,6 +123,7 @@ const TeamHeader = ({
     showCallCenterChannelFilter && callCenterChannel !== 'all',
     showRcmDomainFilter && rcmDomain !== 'all',
     showRcmGroupFilter && rcmGroup !== 'all',
+    showRcmEgyptTeamFilter && rcmEgyptTeam !== 'all',
     showRegionFilter && region !== 'All',
     multiBranchFilter ? selectedBranches.length > 0 : location !== 'all',
     month !== 'All',
@@ -174,6 +183,19 @@ const TeamHeader = ({
             options={Object.entries(RCM_GROUP_LABELS).map(([value, label]) => ({ value, label }))}
             onChange={(value) => setRcmGroup(value as RcmGroupFilter)}
             ariaLabel="RCM operating group"
+            size="md"
+          />
+        )}
+
+        {showRcmEgyptTeamFilter && setRcmEgyptTeam && (
+          <CustomDropdown
+            value={rcmEgyptTeam || 'all'}
+            options={[
+              { value: 'all', label: 'All Egypt Teams' },
+              ...rcmEgyptTeamOptions.map((team) => ({ value: team, label: team })),
+            ]}
+            onChange={(value) => setRcmEgyptTeam(value === 'all' ? '' : value)}
+            ariaLabel="Egypt RCM team"
             size="md"
           />
         )}

@@ -25,6 +25,8 @@ export interface AgentRecord {
     weight_applied: number;
     contribution: number;
     cap_achievement?: boolean;
+    /** Sheet weight was "view": show the KPI and keep it out of the score. */
+    view_only?: boolean | number;
     /** True when this row is the applied monthly evaluation basis, not the file template. */
     evaluation_pinned?: boolean;
   }>;
@@ -200,6 +202,7 @@ export const RCM_GROUP_LABELS: Record<RcmGroupFilter, string> = {
 const RCM_DOMAIN_TEAMS: Record<Exclude<RcmDomainFilter, 'all'>, readonly string[]> = {
   pre_approvals: [
     'Pre-Approvals',
+    'Pre-Approvals IP',
     'Pre-Approvals IP Offshore',
     ...PRE_APPROVALS_UAE_SOURCE_TEAMS,
     'Pre-Approvals OP Final',
@@ -216,7 +219,25 @@ export function rcmGroupForTeam(value: string | null | undefined, region?: strin
   const normalizedRegion = String(region ?? '').trim().toLowerCase();
   if (normalizedRegion.includes('egy') || normalizedRegion.includes('offshore')) return 'offshore_egy';
   if (normalizedRegion.includes('uae') || normalizedRegion.includes('united arab')) return 'uae';
-  return normalizeTeamIdentity(value) === normalizeTeamIdentity('Pre-Approvals IP Offshore') ? 'offshore_egy' : 'uae';
+  const normalized = normalizeTeamIdentity(value);
+  const offshore = normalized === normalizeTeamIdentity('Pre-Approvals IP Offshore')
+    || normalized === normalizeTeamIdentity('Pre-Approvals IP');
+  return offshore ? 'offshore_egy' : 'uae';
+}
+
+/** Legacy horizontal rows and the new vertical sheet share one Egypt team card. */
+export function egyptRcmTeamLabel(value: string | null | undefined): string {
+  const normalized = normalizeTeamIdentity(value);
+  if (normalized === normalizeTeamIdentity('Pre-Approvals IP')
+    || normalized === normalizeTeamIdentity('Pre-Approvals IP Offshore')) {
+    return 'Pre-Approvals IP';
+  }
+  return String(value ?? '').trim();
+}
+
+export function sameEgyptRcmTeam(value: string | null | undefined, selected: string | null | undefined): boolean {
+  if (!String(selected ?? '').trim()) return false;
+  return egyptRcmTeamLabel(value).toLowerCase() === egyptRcmTeamLabel(selected).toLowerCase();
 }
 
 export function isRcmGroupTeam(value: string | null | undefined, group: RcmGroupFilter, region?: string | null): boolean {
@@ -612,6 +633,8 @@ export interface KPIConfig {
   contribution?: number;
   /** Applied monthly evaluation row. File-template weights must not replace it. */
   evaluationPinned?: boolean;
+  /** Visible KPI that does not carry a weight or a score contribution. */
+  viewOnly?: boolean;
   actualVolume?: number;
   targetVolume?: number;
   volumeUnit?: string;
@@ -1090,6 +1113,7 @@ export function getKPIsForAgent(agent: AgentRecord): KPIConfig[] {
       color: kpi.color || '#3B82F6',
       achievement: Math.min(Math.max(kpi.achievement_ratio, 0), 1) * 100,
       weight: kpi.weight_applied,
+      viewOnly: kpi.view_only === true || kpi.view_only === 1,
       contribution: Math.min(
         Math.max(kpi.contribution, 0),
         Math.max(kpi.weight_applied, 0),

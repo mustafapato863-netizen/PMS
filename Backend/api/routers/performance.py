@@ -816,9 +816,18 @@ def export_report(
             "re_submission": {"Re-Submission"},
             "coding": {"Coding"},
         }
+        offshore_egy_teams = {"Pre-Approvals IP Offshore"}
+        from services.marketing_import_service import load_rcm_offshore_team_configs
+        for offshore_config in load_rcm_offshore_team_configs().values():
+            offshore_name = str(offshore_config.get("team") or "").strip()
+            if not offshore_name:
+                continue
+            offshore_domain = str(offshore_config.get("rcm_domain") or "pre_approvals").casefold()
+            rcm_domain_teams.setdefault(offshore_domain, set()).add(offshore_name)
+            offshore_egy_teams.add(offshore_name)
         rcm_group_teams = {
-            "offshore_egy": {"Pre-Approvals IP Offshore"},
-            "uae": set().union(*rcm_domain_teams.values()) - {"Pre-Approvals IP Offshore"},
+            "offshore_egy": offshore_egy_teams,
+            "uae": set().union(*rcm_domain_teams.values()) - offshore_egy_teams,
         }
         rcm_filter_teams = None
         if team.casefold() == "rcm":
@@ -829,7 +838,7 @@ def export_report(
                 if not any(user_can_access_team(scope, source_team) for source_team in rcm_filter_teams):
                     raise HTTPException(status_code=403, detail="Access denied for this RCM domain")
             else:
-                rcm_filter_teams = set().union(*rcm_domain_teams.values())
+                rcm_filter_teams = set().union(*rcm_domain_teams.values(), *rcm_group_teams.values())
             if group and group.casefold() != "all":
                 group_teams = rcm_group_teams.get(group.casefold())
                 if group_teams is None:

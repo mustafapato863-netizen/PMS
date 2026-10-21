@@ -77,6 +77,7 @@ interface DynamicKpi {
   contribution?: number | null;
   achievement?: number;
   basisVaries?: boolean;
+  viewOnly?: boolean;
 }
 
 interface TeamKpiSectionProps {
@@ -857,9 +858,12 @@ const TeamKpiSection = ({
             const Icon = getKpiIcon(kpi.label);
             const bgColor = getKpiBgColor(kpi.label);
 
-            const weightVal = kpi.weight ?? getWeight(kpi.label) ?? 0.20;
+            const viewOnly = kpi.viewOnly === true;
+            const weightVal = viewOnly ? undefined : (kpi.weight ?? getWeight(kpi.label) ?? 0.20);
             const progress = isPrescription ? displayActual : calculateKpiTargetProgress(rawActual, targetVal, kpi.isLowerBetter);
-            const contribution = isPrescription
+            const contribution = viewOnly
+              ? undefined
+              : isPrescription
               ? (displayActual * (weightVal ?? 0))
               : (kpi.contribution ?? calcContribution(
                 kpi.label,
@@ -886,6 +890,7 @@ const TeamKpiSection = ({
                 progressPercent={progress}
                 contribution={contribution}
                 weight={weightVal}
+                viewOnly={viewOnly}
               />
             );
           })}
