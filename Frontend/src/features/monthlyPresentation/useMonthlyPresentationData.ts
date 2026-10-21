@@ -25,33 +25,65 @@ export const TEAM_SECTIONS: readonly InsightSection[] = ['kpi_diagnosis', 'team_
 
 /** Upper bound for one deck request, response body included. A slide never waits longer than this. */
 export const DECK_REQUEST_DEADLINE_MS = 15_000;
-/** Most deck requests in flight at once (per tab). Team workspace calls and Retry clicks queue behind this. */
-export const DECK_MAX_CONCURRENT = 2;
-/** Deck data is a locked past month: never refetch it on its own. */
+/**
+ * Requests in flight per lane (per tab). Insights calls (region, overview, per-team) share one lane; follow-up
+ * and owners have their own, so a slow Insights call can never hold up slides 8-10. At most 3 overall.
+ */
+export const DECK_LANES = { insights: 2, actions: 1 } as const;
+export type DeckLane = keyof typeof DECK_LANES;
+/** Kept for callers/tests: the Insights lane cap. */
+export const DECK_MAX_CONCURRENT = DECK_LANES.insights;
+/** If an aborted request somehow never settles, its slot is reclaimed after this grace period. */
+export const DECK_SLOT_GRACE_MS = 5_000;
+
+/**
+ * Deck data is a locked past month: never refetch it on its own. One retry, but never after a timeout
+ * (a timeout already used the whole 15 s budget), so an error shows after about 15 s at most.
+ */
 export const DECK_QUERY_OPTIONS = {
-  retry: 1, retryDelay: 2_000, staleTime: 30 * 60_000, gcTime: 30 * 60_000,
+  retry: (failureCount: number, error: unknown) => failureCount < 1 && !(error instanceof DeckTimeoutError) && !isAbort(error),
+  retryDelay: 1_000, staleTime: 30 * 60_000, gcTime: 30 * 60_000,
   refetchOnWindowFocus: false, refetchOnReconnect: false, refetchOnMount: false, refetchInterval: false,
 } as const;
+function isAbort(error: unknown) {
+  return Boolean(error) && typeof error === 'object' && ['AbortError', 'TimeoutError'].includes(String((error as { name?: unknown }).name));
+}
 
-let active = 0;
-const waiting: Array<() => void> = [];
-/** Small FIFO semaphore; a queued request that is cancelled leaves the queue without running. */
-export function limitDeckRequest<T>(signal: AbortSignal | undefined, run: () => Promise<T>): Promise<T> {
+const lanes: Record<DeckLane, { active: number; waiting: Array<() => void> }> = {
+  insights: { active: 0, waiting: [] }, actions: { active: 0, waiting: [] },
+};
+/**
+ * FIFO semaphore per lane. A slot is freed only when the request itself settles (the abort now reaches the
+ * body read, so an aborted request settles promptly), or DECK_SLOT_GRACE_MS after its signal aborted.
+ * A queued request whose signal aborts leaves the queue without running.
+ */
+export function limitDeckRequest<T>(signal: AbortSignal | undefined, run: () => Promise<T>, lane: DeckLane = 'insights'): Promise<T> {
+  const L = lanes[lane];
   return new Promise<T>((resolve, reject) => {
     const start = () => {
-      signal?.removeEventListener('abort', onAbort);
-      active += 1;
-      run().then(resolve, reject).finally(() => { active -= 1; waiting.shift()?.(); });
+      signal?.removeEventListener('abort', onQueuedAbort);
+      L.active += 1;
+      let freed = false; let grace: ReturnType<typeof setTimeout> | undefined;
+      const free = () => {
+        if (freed) return; freed = true; clearTimeout(grace);
+        signal?.removeEventListener('abort', onRunningAbort);
+        L.active -= 1; L.waiting.shift()?.();
+      };
+      const onRunningAbort = () => { grace = setTimeout(free, DECK_SLOT_GRACE_MS); };
+      if (signal?.aborted) onRunningAbort(); else signal?.addEventListener('abort', onRunningAbort, { once: true });
+      let p: Promise<T>;
+      try { p = run(); } catch (e) { p = Promise.reject(e); }
+      p.then(resolve, reject).finally(free);
     };
-    const onAbort = () => { const i = waiting.indexOf(start); if (i >= 0) waiting.splice(i, 1); reject(signal?.reason ?? new DOMException('Aborted', 'AbortError')); };
-    if (signal?.aborted) { onAbort(); return; }
-    if (active < DECK_MAX_CONCURRENT) start();
-    else { waiting.push(start); signal?.addEventListener('abort', onAbort, { once: true }); }
+    const onQueuedAbort = () => { const i = L.waiting.indexOf(start); if (i >= 0) L.waiting.splice(i, 1); reject(signal?.reason ?? new DOMException('Aborted', 'AbortError')); };
+    if (signal?.aborted) { onQueuedAbort(); return; }
+    if (L.active < DECK_LANES[lane]) start();
+    else { L.waiting.push(start); signal?.addEventListener('abort', onQueuedAbort, { once: true }); }
   });
 }
 /** Test hooks. */
-export function resetDeckLimiter() { active = 0; waiting.length = 0; }
-export function deckRequestsInFlight() { return { active, queued: waiting.length }; }
+export function resetDeckLimiter() { for (const L of Object.values(lanes)) { L.active = 0; L.waiting.length = 0; } }
+export function deckRequestsInFlight(lane: DeckLane = 'insights') { return { active: lanes[lane].active, queued: lanes[lane].waiting.length }; }
 
 export class DeckTimeoutError extends Error {
   constructor(ms: number) { super(`The request did not finish within ${Math.round(ms / 1000)} s`); this.name = 'DeckTimeoutError'; }
@@ -147,13 +179,17 @@ export function useMonthlyPresentationData(code: RegionCode | null, period: Lock
   const urls = code && period ? deckRequestUrls(code, period) : null;
   const filters = { periodKey: period?.key, region: code ?? undefined };
 
-  const fetchWs = (url: string, signal: AbortSignal | undefined) => limitDeckRequest(signal, () => withDeadline(signal, DECK_REQUEST_DEADLINE_MS,
+  // The 15 s deadline covers queueing + headers + body; its abort reaches the body read (abortBody) and the
+  // limiter slot frees when the request actually settles.
+  const fetchWs = (url: string, signal: AbortSignal | undefined) => withDeadline(signal, DECK_REQUEST_DEADLINE_MS,
     async (s) => {
-      const data = readEnvelope(await apiFetch<Envelope<InsightsWorkspace>>(url, { signal: s }), url);
+      const res = await limitDeckRequest(s, () => apiFetch<Envelope<InsightsWorkspace>>(url, { signal: s }, { abortBody: true }), 'insights');
+      const data = readEnvelope(res, url);
       if (!isObject(data)) throw new Error('Unexpected insights workspace response shape');
       return data;
-    }));
-  const get = <T,>(url: string, signal: AbortSignal | undefined) => limitDeckRequest(signal, () => withDeadline(signal, DECK_REQUEST_DEADLINE_MS, async (s) => readEnvelope<T>(await apiFetch<Envelope<T>>(url, { signal: s }), url)));
+    });
+  const get = <T,>(url: string, signal: AbortSignal | undefined) => withDeadline(signal, DECK_REQUEST_DEADLINE_MS,
+    async (s) => readEnvelope<T>(await limitDeckRequest(s, () => apiFetch<Envelope<T>>(url, { signal: s }, { abortBody: true }), 'actions'), url));
 
   const workspace = useQuery({
     queryKey: [...base, 'workspace', DECK_WORKSPACE_SECTIONS.join(',')],

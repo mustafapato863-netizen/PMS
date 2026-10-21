@@ -3,7 +3,7 @@ import { render, screen, fireEvent, waitFor, within } from '@testing-library/rea
 import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import MonthlyPresentationView from './MonthlyPresentationView';
-import { DECK_MAX_CONCURRENT, DECK_QUERY_OPTIONS, DECK_REQUEST_DEADLINE_MS, DECK_WORKSPACE_SECTIONS, DeckTimeoutError, deckRequestsInFlight, limitDeckRequest, resetDeckLimiter, readEnvelope, withDeadline } from './useMonthlyPresentationData';
+import { DECK_LANES, DECK_MAX_CONCURRENT, DECK_QUERY_OPTIONS, DECK_SLOT_GRACE_MS, DECK_REQUEST_DEADLINE_MS, DECK_WORKSPACE_SECTIONS, DeckTimeoutError, deckRequestsInFlight, limitDeckRequest, resetDeckLimiter, readEnvelope, withDeadline } from './useMonthlyPresentationData';
 
 const mocks = vi.hoisted(() => ({ apiFetch: vi.fn() }));
 vi.mock('../../lib/apiClient', () => ({ apiFetch: mocks.apiFetch }));
@@ -55,6 +55,8 @@ describe('Monthly Presentation loading (root cause: unsectioned region workspace
     expect(DECK_WORKSPACE_SECTIONS).not.toContain('kpi_overview'); // kpi_overview forces the backend's full-record path
     const p = new URLSearchParams(main.split('?')[1]);
     expect(p.get('month')).toBe('September'); expect(p.get('year')).toBe('2026'); expect(p.get('region')).toBe('EGY');
+    // Every deck call opts in to body-level abort and carries a signal.
+    mocks.apiFetch.mock.calls.forEach(([, init, behaviour]) => { expect(behaviour).toEqual({ abortBody: true }); expect(init.signal).toBeInstanceOf(AbortSignal); });
   });
 
   it('renders the slides whose data arrived while the region workspace is still pending (no global gate)', async () => {
@@ -121,6 +123,15 @@ describe('Monthly Presentation loading (root cause: unsectioned region workspace
     expect(calls).toBe(3); // three clicks while in flight dedupe to one request
   }, 15000);
 
+  it('a hung Insights lane does not hold up follow-up and owners (slides 8-10)', async () => {
+    const base = route;
+    route = (url) => url.startsWith('/api/insights/workspace') ? never() : base(url);
+    renderDeck();
+    expect(await within(await waitFor(() => slide(8))).findByText('Call back customers', {}, { timeout: 1000 })).toBeTruthy();
+    expect(deckRequestsInFlight('insights')).toEqual({ active: DECK_LANES.insights, queued: expect.any(Number) });
+    expect(seen.some((u) => u === '/api/corrective-actions/owners')).toBe(true);
+  });
+
   it('team workspace calls never exceed the concurrency limit', async () => {
     let peak = 0; let live = 0;
     mocks.apiFetch.mockImplementation(async (url: string) => {
@@ -131,7 +142,7 @@ describe('Monthly Presentation loading (root cause: unsectioned region workspace
     renderDeck();
     await screen.findByText(/Egypt at 86.4%/);
     await waitFor(() => expect(deckRequestsInFlight()).toEqual({ active: 0, queued: 0 }));
-    expect(peak).toBeLessThanOrEqual(DECK_MAX_CONCURRENT);
+    expect(peak).toBeLessThanOrEqual(DECK_LANES.insights + DECK_LANES.actions);
   });
 
   it('empty slides say why and offer Retry', async () => {
@@ -165,15 +176,45 @@ describe('print', () => {
   });
 });
 
+describe('limiter slots', () => {
+  it('frees a slot only when the request settles, not when the deadline fires', async () => {
+    vi.useFakeTimers();
+    resetDeckLimiter();
+    let settle: () => void = () => {};
+    const p = withDeadline(undefined, 1000, (s) => limitDeckRequest(s, () => new Promise<void>((r) => { settle = r; }), 'actions'));
+    const caught = p.catch((e: unknown) => e);
+    await vi.advanceTimersByTimeAsync(1001);
+    expect(await caught).toBeInstanceOf(DeckTimeoutError);
+    expect(deckRequestsInFlight('actions').active).toBe(1); // still open on the wire
+    settle(); await vi.advanceTimersByTimeAsync(0);
+    expect(deckRequestsInFlight('actions').active).toBe(0);
+  });
+  it('reclaims the slot after the grace period if an aborted request never settles', async () => {
+    vi.useFakeTimers();
+    resetDeckLimiter();
+    const c = new AbortController();
+    limitDeckRequest(c.signal, () => new Promise(() => {}), 'actions').catch(() => {});
+    c.abort();
+    await vi.advanceTimersByTimeAsync(DECK_SLOT_GRACE_MS - 1);
+    expect(deckRequestsInFlight('actions').active).toBe(1);
+    await vi.advanceTimersByTimeAsync(2);
+    expect(deckRequestsInFlight('actions').active).toBe(0);
+  });
+});
+
 describe('withDeadline / readEnvelope / limits', () => {
   it('uses a 15 s deadline and no automatic refetching', () => {
     expect(DECK_REQUEST_DEADLINE_MS).toBe(15_000);
-    expect(DECK_QUERY_OPTIONS).toMatchObject({ retry: 1, refetchOnWindowFocus: false, refetchOnReconnect: false, refetchOnMount: false, refetchInterval: false });
+    expect(DECK_QUERY_OPTIONS.retry(0, new Error('500'))).toBe(true);
+    expect(DECK_QUERY_OPTIONS.retry(1, new Error('500'))).toBe(false);
+    expect(DECK_QUERY_OPTIONS.retry(0, new DeckTimeoutError(15_000))).toBe(false); // no retry after a timeout
+    expect(DECK_QUERY_OPTIONS.retry(0, new DOMException('t', 'TimeoutError'))).toBe(false);
+    expect(DECK_QUERY_OPTIONS).toMatchObject({ refetchOnWindowFocus: false, refetchOnReconnect: false, refetchOnMount: false, refetchInterval: false });
   });
   it('a queued request that is cancelled never runs', async () => {
     resetDeckLimiter();
     const gates: Array<() => void> = [];
-    const hold = () => limitDeckRequest(undefined, () => new Promise<void>((r) => gates.push(r)));
+    const hold = () => limitDeckRequest(undefined, () => new Promise<void>((r) => gates.push(r)), 'insights');
     const held = Array.from({ length: DECK_MAX_CONCURRENT }, hold);
     const c = new AbortController(); const run = vi.fn(async () => 1);
     const queued = limitDeckRequest(c.signal, run);

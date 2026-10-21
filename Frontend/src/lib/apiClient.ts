@@ -110,7 +110,11 @@ function isAbortError(error: unknown): boolean {
   return name === 'AbortError' || name === 'TimeoutError';
 }
 
-async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit): Promise<Response> {
+/**
+ * Starts a request with the API timeout and the caller's signal linked to it. `release` unlinks both; until
+ * then an abort (timeout or caller) also cancels the response BODY read, not only the wait for headers.
+ */
+async function openWithTimeout(input: RequestInfo | URL, init: RequestInit): Promise<{ response: Response; release: () => void }> {
   const controller = new AbortController();
   const timeoutMs = typeof FormData !== 'undefined' && init.body instanceof FormData
     ? API_UPLOAD_TIMEOUT_MS
@@ -119,6 +123,10 @@ async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit): Pr
     controller.abort(new DOMException('Request timed out', 'TimeoutError'));
   }, timeoutMs);
   const onAbort = () => controller.abort(init.signal?.reason);
+  const release = () => {
+    globalThis.clearTimeout(timeoutId);
+    init.signal?.removeEventListener('abort', onAbort);
+  };
 
   if (init.signal?.aborted) {
     onAbort();
@@ -127,11 +135,17 @@ async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit): Pr
   }
 
   try {
-    return await fetch(input, { ...init, signal: controller.signal });
-  } finally {
-    globalThis.clearTimeout(timeoutId);
-    init.signal?.removeEventListener('abort', onAbort);
+    return { response: await fetch(input, { ...init, signal: controller.signal }), release };
+  } catch (error) {
+    release();
+    throw error;
   }
+}
+
+async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit): Promise<Response> {
+  const { response, release } = await openWithTimeout(input, init);
+  release(); // Default behaviour: the timeout and caller signal cover the headers only.
+  return response;
 }
 
 async function requestRefreshAccessToken(): Promise<boolean> {
@@ -257,9 +271,37 @@ function buildRequestHeaders(
 }
 
 // Central fetch wrapper — adds JWT automatically
+export interface ApiFetchBehaviour {
+  /**
+   * Keep the timeout and the caller's abort signal linked until the response body has been read, so a slow or
+   * stalled body is cancelled too (the connection closes). Opt-in; other callers keep the headers-only link.
+   */
+  abortBody?: boolean;
+}
+
 export async function apiFetch<T>(
   endpoint: string,
-  options: RequestInit = {}
+  options: RequestInit = {},
+  behaviour: ApiFetchBehaviour = {},
+): Promise<T> {
+  if (!behaviour.abortBody) return apiFetchInner<T>(endpoint, options, fetchWithTimeout);
+  const releases: Array<() => void> = [];
+  const open = async (input: RequestInfo | URL, init: RequestInit) => {
+    const { response, release } = await openWithTimeout(input, init);
+    releases.push(release);
+    return response;
+  };
+  try {
+    return await apiFetchInner<T>(endpoint, options, open);
+  } finally {
+    releases.forEach((release) => release());
+  }
+}
+
+async function apiFetchInner<T>(
+  endpoint: string,
+  options: RequestInit,
+  request: (input: RequestInfo | URL, init: RequestInit) => Promise<Response>,
 ): Promise<T> {
   if (IS_DEMO) {
     const demoData = await handleDemoRequest<T>(endpoint);
@@ -287,7 +329,7 @@ export async function apiFetch<T>(
   requestToken = getAccessToken();
   const headers = buildRequestHeaders(cleanEndpoint, options, requestToken);
 
-  const res = await fetchWithTimeout(`${API_BASE}${cleanEndpoint}`, {
+  const res = await request(`${API_BASE}${cleanEndpoint}`, {
     ...options,
     headers,
     credentials: 'include',
@@ -315,7 +357,7 @@ export async function apiFetch<T>(
     // several times at once.
     if (await refreshAccessToken()) {
       const retryHeaders = buildRequestHeaders(cleanEndpoint, options, getAccessToken());
-      const retry = await fetchWithTimeout(`${API_BASE}${cleanEndpoint}`, {
+      const retry = await request(`${API_BASE}${cleanEndpoint}`, {
         ...options,
         headers: retryHeaders,
         credentials: 'include',
