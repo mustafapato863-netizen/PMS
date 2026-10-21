@@ -102,3 +102,12 @@ describe('access helpers (current roles and legacy transition)', () => {
     expect(hasAllTeamsScope('Manager', { is_general_manager: true })).toBe(true);
   });
 });
+
+describe('canAccessMonthlyPresentation', () => {
+  it('matches the route allow-list exactly', async () => {
+    const { canAccessMonthlyPresentation, ROUTE_ROLES } = await import('./access');
+    expect([...ROUTE_ROLES.monthlyPresentation]).toEqual(['Admin', 'General Manager', 'Performance Team', 'Executive', 'Regional Manager']);
+    for (const role of ROUTE_ROLES.monthlyPresentation) expect(canAccessMonthlyPresentation(role)).toBe(true);
+    for (const role of ['Manager', 'Viewer', 'Employee', 'Agent', 'Branch Director', 'Function Director', 'Function Viewer', null]) expect(canAccessMonthlyPresentation(role)).toBe(false);
+  });
+});
