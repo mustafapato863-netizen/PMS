@@ -7,7 +7,7 @@ import { useUserRole } from '../../context/RoleContext';
 import {
   REGION_FUNCTIONS, REGION_LABEL, SLIDE_COUNT, accessibleRegions, buildDeckSearch, gradeMix, isMonthAvailable, lastCompleteMonth,
   nameMasker, opensOn, parseDeckParams, pdfFileName, periodFromKey, periodRegionActions, openHighCount, regionCode, regionSlug,
-  shiftMonth, teamReadiness, kpiBadge, isCriticalKpi, filterRegionRows, type DeckStatus, type RegionCode, type RegionSlug,
+  shiftMonth, teamReadiness, kpiBadge, isCriticalKpi, filterRegionRows, regionOwners, type DeckStatus, type RegionCode, type RegionSlug,
 } from './model';
 import { MP_QUERY_ROOT, useMonthlyPresentationData } from './useMonthlyPresentationData';
 import { buildSlides } from './buildSlides';
@@ -86,14 +86,8 @@ export default function MonthlyPresentationView({ today = new Date() }: { today?
       code, period, status, ws, teams, actions,
       previousLabel: prev ? `${prev.short} ${prev.year}` : (ws?.comparison?.previous?.month ?? null),
       gradeMix: recs ? gradeMix(recs, partial) : null, gradeMixExcluded: partial,
-      owners: q.owners.data ?? [], mask: mask ? nameMasker() : (n) => String(n ?? '').trim() || '—',
+      owners: regionOwners(q.owners.data ?? [], actions), mask: mask ? nameMasker() : (n) => String(n ?? '').trim() || '—',
       masked: mask,
-      knownNames: [
-        ...(q.owners.data ?? []).map((o) => o.name),
-        ...actions.flatMap((a) => [a.owner ?? '', ...(a.people ?? [])]),
-        ...(ws?.people_contribution_analysis?.rows ?? []).map((r) => r.employee_name),
-        ...(ws?.options?.employees ?? []).map((e) => e.name),
-      ].filter(Boolean),
     };
   }, [code, period, q.workspace.data, q.followUp.data, q.teamDiagnosis, q.records.data, q.owners.data, mask, status]);
 

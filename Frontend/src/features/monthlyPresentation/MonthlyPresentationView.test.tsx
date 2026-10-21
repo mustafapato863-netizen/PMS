@@ -88,20 +88,74 @@ describe('MonthlyPresentationView', () => {
     expect(within(dialog).getByText(/PMS_Monthly_UAE_2026-09.pdf/)).toBeTruthy();
   });
 
-  it('mask=1 rewrites names inside action text and owner notes on slide 8', async () => {
+  it('mask=1 never prints action text or owner notes on slide 8; owner column uses aliases', async () => {
     mocks.apiFetch.mockImplementation(async (url: string) => {
       if (url.startsWith('/api/insights/workspace')) return { success: true, data: ws('EGY') };
       if (url.startsWith('/api/corrective-actions/follow-up')) return { success: true, data: { summary: {}, actions: [
-        { id: 'a1', manager_action: 'Coaching: 1:1s by hana mostafa for Omar Khaled', team: 'Coding EGY', month: 'September', year: 2026, status: 'Open', priority: 'Low', due_date: '2026-10-10', owner: { name: 'Hana Mostafa' }, employee_name: 'Omar Khaled', completion_note: 'Karim Fathy expects Omar Khaled back on target' },
+        { id: 'a1', manager_action: 'Coaching: 1:1s by hana mostafa with Zainab Secretname', team: 'Coding EGY', month: 'September', year: 2026, status: 'Open', priority: 'Low', due_date: '2026-10-10', owner: { id: 'o1', name: 'Hana Mostafa' }, completion_note: 'Zainab Secretname to review' },
       ] } };
-      if (url.startsWith('/api/corrective-actions/owners')) return { success: true, data: [{ id: 'o', name: 'Karim Fathy' }] };
+      if (url.startsWith('/api/corrective-actions/owners')) return { success: true, data: [{ id: 'o1', name: 'Hana Mostafa' }] };
       return { success: true, data: [] };
     });
     renderAt('/monthly-presentation?region=egy&month=2026-09&mask=1');
     const slide = await screen.findByRole('region', { name: /Slide 8 of 11/ });
-    await within(slide).findByText(/1:1s by/);
-    expect(slide.textContent).not.toMatch(/hana|mostafa|karim|fathy|omar|khaled/i);
-    expect(slide.textContent).toMatch(/1:1s by Person [A-Z] for Person [A-Z]/);
+    await waitFor(() => expect(within(slide).getAllByText('Details hidden in masked export')).toHaveLength(2));
+    expect(slide.textContent).not.toMatch(/hana|mostafa|zainab|secretname|1:1s|review/i);
+    expect(slide.textContent).toMatch(/Person A/);
+    const s10 = screen.getByRole('region', { name: /Slide 10 of 11/ });
+    expect(s10.textContent).not.toMatch(/Hana|Mostafa/);
+  });
+
+  it('without masking, slide 8 shows action text and the owner note verbatim', async () => {
+    mocks.apiFetch.mockImplementation(async (url: string) => {
+      if (url.startsWith('/api/insights/workspace')) return { success: true, data: ws('EGY') };
+      if (url.startsWith('/api/corrective-actions/follow-up')) return { success: true, data: { summary: {}, actions: [
+        { id: 'a1', manager_action: 'Coaching: Backlog sprint', team: 'Coding EGY', month: 'September', year: 2026, status: 'Open', priority: 'Low', due_date: '2026-10-10', owner: { id: 'o1', name: 'Hana Mostafa' }, completion_note: 'TAT under 5d' },
+      ] } };
+      return { success: true, data: [] };
+    });
+    renderAt('/monthly-presentation?region=egy&month=2026-09');
+    const slide = await screen.findByRole('region', { name: /Slide 8 of 11/ });
+    await within(slide).findByText('Backlog sprint');
+    expect(within(slide).getByText('TAT under 5d')).toBeTruthy();
+    expect(within(slide).queryByText('Details hidden in masked export')).toBeNull();
+  });
+
+  it.each([['egy', 'EGY', 'Hana Mostafa', 'Layla Haddad'], ['uae', 'UAE', 'Layla Haddad', 'Hana Mostafa']])('slide 10 owners on %s show only that region', async (slug, code, own, other) => {
+    mocks.apiFetch.mockImplementation(async (url: string) => {
+      if (url.startsWith('/api/insights/workspace')) return { success: true, data: ws(code) };
+      if (url.startsWith('/api/corrective-actions/follow-up')) return { success: true, data: { summary: {}, actions: [
+        { id: 'e', manager_action: 'Monitor: e', team: 'Resubmission', region: 'EGY', month: 'September', year: 2026, status: 'Open', owner: { id: 'o1', name: 'Hana Mostafa' } },
+        { id: 'u', manager_action: 'Monitor: u', team: 'Pre-Approvals OP Dubai', region: 'UAE', month: 'September', year: 2026, status: 'Open', owner: { id: 'o2', name: 'Layla Haddad' } },
+      ] } };
+      if (url.startsWith('/api/corrective-actions/owners')) return { success: true, data: [{ id: 'o1', name: 'Hana Mostafa' }, { id: 'o2', name: 'Layla Haddad' }] };
+      return { success: true, data: [] };
+    });
+    renderAt(`/monthly-presentation?region=${slug}&month=2026-09`);
+    const s10 = await screen.findByRole('region', { name: /Slide 10 of 11/ });
+    await waitFor(() => expect(s10.textContent).toContain(own));
+    expect(s10.textContent).not.toContain(other);
+  });
+
+  it('every deck request carries the locked period (and region where relevant)', async () => {
+    renderAt('/monthly-presentation?region=uae&month=2026-08');
+    await screen.findByText(/UAE at 91.2%/);
+    await waitFor(() => expect(seen.some((u) => u.startsWith('/api/corrective-actions/owners'))).toBe(true));
+    const q = (prefix: string) => {
+      const url = seen.find((u) => u.startsWith(prefix));
+      expect(url, prefix).toBeTruthy();
+      return new URLSearchParams(url!.split('?')[1]);
+    };
+    const fu = q('/api/corrective-actions/follow-up');
+    expect([fu.get('month'), fu.get('year')]).toEqual(['August', '2026']);
+    const sr = q('/api/performance/summary-records');
+    expect([sr.get('month'), sr.get('year'), sr.get('region')]).toEqual(['August', '2026', 'UAE']);
+    const ow = q('/api/corrective-actions/owners');
+    expect([ow.get('month'), ow.get('year')]).toEqual(['August', '2026']);
+    seen.filter((u) => u.startsWith('/api/insights/workspace')).forEach((u) => {
+      const p = new URLSearchParams(u.split('?')[1]);
+      expect([p.get('month'), p.get('year'), p.get('region')]).toEqual(['August', '2026', 'UAE']);
+    });
   });
 
   it('Reopen as Draft is not rendered (no reopen endpoint)', async () => {

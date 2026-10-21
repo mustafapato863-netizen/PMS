@@ -14,9 +14,24 @@ interface Envelope<T> { success: boolean; data: T; message?: string }
 
 type RawAction = {
   id?: string; manager_action?: string; team?: string | null; region?: string | null; month?: string | null; year?: number | null;
-  status?: string | null; priority?: string | null; due_date?: string | null; owner?: { name?: string } | null;
+  status?: string | null; priority?: string | null; due_date?: string | null; owner?: { id?: string; name?: string } | null;
   linked_kpi_key?: string | null; completion_note?: string | null; employee_name?: string | null; created_by_name?: string | null;
 };
+/**
+ * Query strings for the deck requests. Every request carries the locked period (spec §3).
+ * Backend reality (checked in Backend/api/routers): follow-up honours `month` only (year ignored);
+ * summary-records honours only `employee_id`; owners takes no params. Ignored params are harmless,
+ * and the client keeps filtering by region, month and year.
+ */
+export function deckRequestUrls(code: RegionCode, period: LockedPeriod) {
+  const p = (extra: Record<string, string> = {}) => new URLSearchParams({ month: period.monthName, year: String(period.year), ...extra }).toString();
+  return {
+    followUp: `/api/corrective-actions/follow-up?${p()}`,
+    summaryRecords: `/api/performance/summary-records?${p({ region: code })}`,
+    owners: `/api/corrective-actions/owners?${p()}`,
+  };
+}
+
 type RawRecord = { team?: string | null; region?: string | null; month?: string | null; year?: number | null; employee_id?: string; employee_name?: string; identity?: Record<string, unknown>; evaluation?: { score?: number | null } | null; score?: number | null };
 
 export function mapAction(item: RawAction, index: number): DeckAction {
@@ -27,7 +42,7 @@ export function mapAction(item: RawAction, index: number): DeckAction {
     team: item.team ?? null, region: item.region ?? null, month: item.month ?? null, year: item.year ?? null,
     status: item.status ?? null, priority: item.priority ?? null, due_date: item.due_date ?? null,
     owner: item.owner?.name ?? null, linked_kpi_key: item.linked_kpi_key ?? null, completion_note: item.completion_note ?? null,
-    people: [item.employee_name, item.created_by_name].filter((n): n is string => Boolean(n && n.trim())),
+    owner_id: item.owner?.id ?? null,
   };
 }
 
@@ -47,6 +62,7 @@ export function mapRecord(r: RawRecord): ScoreRow {
 export function useMonthlyPresentationData(code: RegionCode | null, period: LockedPeriod | null, enabled: boolean) {
   const on = Boolean(enabled && code && period);
   const base = [MP_QUERY_ROOT, code, period?.key] as const;
+  const urls = code && period ? deckRequestUrls(code, period) : null;
   const filters = { periodKey: period?.key, region: code ?? undefined };
 
   const workspace = useQuery({
@@ -73,7 +89,7 @@ export function useMonthlyPresentationData(code: RegionCode | null, period: Lock
     retry: false,
     queryFn: async ({ signal }) => {
       const res = await apiFetch<Envelope<{ summary: Record<string, number>; actions: RawAction[] }>>(
-        `/api/corrective-actions/follow-up?month=${encodeURIComponent(period!.monthName)}`, { signal });
+        urls!.followUp, { signal });
       return (res?.data?.actions ?? []).map(mapAction);
     },
   });
@@ -82,14 +98,14 @@ export function useMonthlyPresentationData(code: RegionCode | null, period: Lock
     queryKey: [...base, 'owners'],
     enabled: on,
     retry: false,
-    queryFn: async ({ signal }) => (await apiFetch<Envelope<Array<{ id: string; name: string; role?: string }>>>('/api/corrective-actions/owners', { signal }))?.data ?? [],
+    queryFn: async ({ signal }) => (await apiFetch<Envelope<Array<{ id: string; name: string; role?: string }>>>(urls!.owners, { signal }))?.data ?? [],
   });
 
   const records = useQuery({
     queryKey: [...base, 'summary-records'],
     enabled: on,
     retry: false,
-    queryFn: async ({ signal }) => ((await apiFetch<Envelope<RawRecord[]>>('/api/performance/summary-records', { signal }))?.data ?? []).map(mapRecord),
+    queryFn: async ({ signal }) => ((await apiFetch<Envelope<RawRecord[]>>(urls!.summaryRecords, { signal }))?.data ?? []).map(mapRecord),
   });
 
   return {

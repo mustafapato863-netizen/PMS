@@ -178,8 +178,8 @@ export interface DeckAction {
   id: string; title: string; team: string | null; region?: string | null; month?: string | null; year?: number | null;
   status: string | null; priority: string | null; due_date: string | null; owner: string | null;
   linked_kpi_key: string | null; completion_note: string | null;
-  /** Other people named on the action (employee, creator); used only for masking. */
-  people?: string[];
+  /** Owner user id from follow-up (owner.id), used to scope the owners list to the region. */
+  owner_id?: string | null;
 }
 const CLOSED = new Set(['completed', 'cancelled']);
 export const isOpenAction = (a: Pick<DeckAction, 'status'>) => a.status === 'Open' || a.status === 'In Progress';
@@ -247,25 +247,21 @@ export function nameMasker() {
   };
 }
 
+/** Masked export never prints action text or owner notes (free text can name anyone). */
+export const MASKED_DETAILS_LABEL = 'Details hidden in masked export';
+
 /**
- * Masked text: replaces every known person name with its alias (whole words, case-insensitive,
- * longest name first). Returns null when there is no name list, so the caller hides the text.
+ * Owners for the selected region. /api/corrective-actions/owners carries no team or region, so an owner
+ * belongs to the region the same way actions do: they own at least one action of this region and period.
  */
-export function maskNamesInText(text: string | null | undefined, names: Array<string | null | undefined>, mask: (name: string) => string): string | null {
-  const value = String(text ?? '');
-  const known = [...new Map(names.map((n) => String(n ?? '').trim()).filter((n) => n.length >= 2).map((n) => [n.toLowerCase(), n] as const)).values()]
-    .sort((a, b) => b.length - a.length);
-  if (!known.length) return null;
-  const escape = (n: string) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
-  const byLower = new Map(known.map((n) => [n.toLowerCase().replace(/\s+/g, ' '), n]));
-  const pattern = new RegExp(`(?<![\\p{L}\\p{N}])(?:${known.map(escape).join('|')})(?![\\p{L}\\p{N}])`, 'giu');
-  return value.replace(pattern, (match) => mask(byLower.get(match.toLowerCase().replace(/\s+/g, ' ')) ?? match));
+export function regionOwners<T extends { id: string; name: string }>(owners: T[], regionActions: Array<Pick<DeckAction, 'owner' | 'owner_id'>>): T[] {
+  const ids = new Set(regionActions.map((a) => a.owner_id).filter(Boolean) as string[]);
+  const names = new Set(regionActions.map((a) => fold(a.owner)).filter(Boolean));
+  return owners.filter((o) => ids.has(o.id) || names.has(fold(o.name)));
 }
 
 /* ── Draft / Final ── */
 export type DeckStatus = 'Draft' | 'Final';
-/** Reopening a Final deck as Draft is Admin-only. */
-export const canReopenDraft = (role: string | null | undefined) => role === 'Admin';
 
 /* ── Grade mix (employees, Partial teams excluded) ── */
 export function gradeMix(scores: Array<{ team?: string | null; score: number | null }>, excludedTeams: string[]): Record<GradeClass, number> {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  accessibleRegions, actionMix, buildDeckSearch, canReopenDraft, displayActionState, expectedImpact, filterRegionRows, gradeMix,
-  isCriticalKpi, isMonthAvailable, maskNamesInText, isOverdueForPeriod, kpiBadge, isMiss, kpiMovementTone, lastCompleteMonth, nameMasker,
+  accessibleRegions, actionMix, buildDeckSearch, displayActionState, expectedImpact, filterRegionRows, gradeMix,
+  isCriticalKpi, isMonthAvailable, isOverdueForPeriod, regionOwners, kpiBadge, isMiss, kpiMovementTone, lastCompleteMonth, nameMasker,
   outlookLine, parseDeckParams, pdfFileName, periodFromKey, periodRegionActions, regionMoM, regionTeams, teamReadiness,
   type DeckAction,
 } from './model';
@@ -161,37 +161,27 @@ describe('URL params', () => {
   it('PDF file name is per region and period', () => expect(pdfFileName('EGY', '2026-09')).toBe('PMS_Monthly_EGY_2026-09.pdf'));
 });
 
-describe('mask names and Draft/Final', () => {
+describe('mask names', () => {
   it('masks consistently as Person A, B, ...', () => {
     const m = nameMasker();
     expect([m('Hana'), m('Karim'), m('Hana'), m('')]).toEqual(['Person A', 'Person B', 'Person A', '—']);
   });
-  it('reopening as Draft is Admin-only', () => {
-    expect(canReopenDraft('Admin')).toBe(true);
-    expect(canReopenDraft('General Manager')).toBe(false);
-    expect(canReopenDraft('Regional Manager')).toBe(false);
-  });
 });
 
-describe('masking names inside free text', () => {
-  it('replaces every known name, whole words, case-insensitive, longest first', () => {
-    const m = nameMasker();
-    const names = ['Hana', 'Hana Mostafa', 'Karim Fathy', 'Ali'];
-    const out = maskNamesInText('hana mostafa and KARIM FATHY will coach Hana; Alina and Ali stay', names, m);
-    expect(out).toBe('Person A and Person B will coach Person C; Alina and Person D stay');
-    expect(out).not.toMatch(/hana|karim|fathy|mostafa/i);
-    expect(m('Hana Mostafa')).toBe('Person A');
+describe('owners scoped to the region', () => {
+  const owners = [{ id: 'o1', name: 'Hana Mostafa' }, { id: 'o2', name: 'Layla Haddad' }, { id: 'o3', name: 'Nobody Assigned' }];
+  const all = [
+    act({ id: 'e', team: 'Resubmission', region: 'EGY', owner: 'Hana Mostafa', owner_id: 'o1' }),
+    act({ id: 'u', team: 'Pre-Approvals OP Dubai', region: 'UAE', owner: 'layla haddad', owner_id: null }),
+  ];
+  const p = periodFromKey('2026-09')!;
+  it('EGY never shows UAE owners', () => {
+    expect(regionOwners(owners, periodRegionActions(all, 'EGY', p)).map((o) => o.name)).toEqual(['Hana Mostafa']);
   });
-  it('keeps aliases consistent with the people column', () => {
-    const m = nameMasker();
-    expect(m('Mona Adel')).toBe('Person A');
-    expect(maskNamesInText('Escalate to Mona  Adel.', ['Mona Adel'], m)).toBe('Escalate to Person A.');
+  it('UAE never shows EGY owners (name match, case-insensitive)', () => {
+    expect(regionOwners(owners, periodRegionActions(all, 'UAE', p)).map((o) => o.name)).toEqual(['Layla Haddad']);
   });
-  it('treats regex characters in names literally', () => {
-    expect(maskNamesInText('Ask J. (Lead) now', ['J. (Lead)'], nameMasker())).toBe('Ask Person A now');
-  });
-  it('returns null (hide) when there is no name list', () => {
-    expect(maskNamesInText('Hana will fix it', [], nameMasker())).toBeNull();
-    expect(maskNamesInText('Hana will fix it', ['', null], nameMasker())).toBeNull();
+  it('owners without an action in the region are not shown', () => {
+    expect(regionOwners(owners, [])).toEqual([]);
   });
 });

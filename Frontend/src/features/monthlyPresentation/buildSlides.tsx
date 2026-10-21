@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { GRADE_PALETTE, getGradeClassOrNull, type GradeClass } from '../../constants/grades';
 import {
   REGION_FUNCTIONS, REGION_LABEL, SLIDE_COUNT, actionMix, displayActionState, expectedImpact, isCriticalKpi, kpiBadge,
-  kpiMovementTone, maskNamesInText, movementArrow, outlookLine, regionMoM, type Readiness, type Tone,
+  kpiMovementTone, MASKED_DETAILS_LABEL, movementArrow, outlookLine, regionMoM, type Readiness, type Tone,
 } from './model';
 import type { DeckData } from './deckTypes';
 import { Bar, GradeBadge, Movement, NoDataBadge, ReadyBadge, SlideEmpty, SlideFrame, StatusBadge } from './SlideParts';
@@ -155,12 +155,10 @@ export function buildSlides(data: DeckData, insightsHref: string, opts: { append
       <table className="mp-table"><thead><tr><th>Action</th><th>Owner</th><th>Status</th><th>Due</th><th>Linked KPI</th><th>Expected impact (owner note)</th></tr></thead>
         <tbody>{rows.map((a) => {
           const st = displayActionState(a, period.endDate); const rawNote = expectedImpact(a);
-          const title = data.masked ? maskNamesInText(a.title, data.knownNames, data.mask) : a.title;
-          const note = rawNote && data.masked ? maskNamesInText(rawNote, data.knownNames, data.mask) : rawNote;
-          const hidden = data.masked && rawNote !== null && note === null;
-          return (<tr key={a.id}><td><b>{title ?? 'Action text hidden (names masked)'}</b>{a.priority === 'High' && <span className="mp-chip">High</span>}</td><td>{data.mask(a.owner)}</td>
+          const hidden = <NoDataBadge label={MASKED_DETAILS_LABEL} />;
+          return (<tr key={a.id}><td>{data.masked ? hidden : <b>{a.title}</b>}{a.priority === 'High' && <span className="mp-chip">High</span>}</td><td>{data.mask(a.owner)}</td>
             <td><span className={`mp-badge mp-act-${st.replace(' ', '-').toLowerCase()}`}>{st}</span></td><td>{fmtDue(a.due_date)}</td><td>{a.linked_kpi_key ?? '—'}</td>
-            <td>{hidden ? <NoDataBadge label="Note hidden (names masked)" /> : note ? <q>{note}</q> : <NoDataBadge label="No note" />}</td></tr>);
+            <td>{data.masked ? hidden : rawNote ? <q>{rawNote}</q> : <NoDataBadge label="No note" />}</td></tr>);
         })}</tbody></table>
       <p className="mp-muted mp-small">Showing {rows.length} of {data.actions.length}. Overdue is measured against {period.endDate} (end of the locked month), not today.</p>
     </>
