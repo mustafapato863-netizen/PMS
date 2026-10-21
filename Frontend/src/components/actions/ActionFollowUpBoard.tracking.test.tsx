@@ -48,11 +48,14 @@ describe('ActionFollowUpBoard inline edits', () => {
     renderBoard(onStatusChange);
 
     // The board renders each action twice (table and card layouts); both forms share the same handler.
-    fireEvent.change(screen.getAllByLabelText('Set due date for Review call handling')[0], { target: { value: '2026-10-20' } });
+    const due = new Date();
+    due.setDate(due.getDate() + 7);
+    const dueDate = due.toISOString().slice(0, 10);
+    fireEvent.change(screen.getAllByLabelText('Set due date for Review call handling')[0], { target: { value: dueDate } });
     await user.click(screen.getAllByRole('button', { name: 'Save' })[0]);
 
     expect(onStatusChange).toHaveBeenCalledTimes(1);
-    expect(onStatusChange).toHaveBeenCalledWith('a1', { status: 'Open', due_date: '2026-10-20' });
+    expect(onStatusChange).toHaveBeenCalledWith('a1', { status: 'Open', due_date: dueDate });
     const update = onStatusChange.mock.calls[0][1] as Record<string, unknown>;
     expect(update).not.toHaveProperty('owner_user_id');
   });

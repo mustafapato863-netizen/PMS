@@ -98,6 +98,7 @@ function agentRow(options: {
   position?: string;
   score: number;
   kpiLabel?: string;
+  region?: string;
 }): TeamAgentRow {
   const raw: AgentRecord = {
     identity: {
@@ -108,7 +109,7 @@ function agentRow(options: {
       position: options.position ?? null,
     },
     position: options.position ?? null,
-    region: 'EGY',
+    region: options.region ?? 'EGY',
     year: 2026,
     performance_level: 'Employee',
     calls: { inbound: 0, outbound: 0, total_handled: 0, abandoned: 0, aht_raw: '00:00:00' },
@@ -271,7 +272,7 @@ describe('comprehensive department position rows', () => {
     expect(screen.queryByText('Denial Overturn Rate')).not.toBeInTheDocument();
   });
 
-  it('renders a pinned RCM position row beside the domain summary when a group is selected', () => {
+  it('renders a pinned RCM position row beside the UAE domain summary', () => {
     hookState.configs.RCM = positionConfig('RCM', 'Group Claims Operations Manager', 'Denial Overturn Rate');
     hookState.rows = [
       agentRow({
@@ -281,10 +282,11 @@ describe('comprehensive department position rows', () => {
         position: 'Group Claims Operations Manager',
         score: 92,
         kpiLabel: 'Denial Overturn Rate',
+        region: 'All',
       }),
     ];
 
-    renderTeam('/team/rcm?group=offshore_egy');
+    renderTeam('/team/rcm?group=uae');
 
     expect(screen.getByRole('heading', { name: 'RCM Domain Summary' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'RCM Position Lead' })).toBeInTheDocument();
