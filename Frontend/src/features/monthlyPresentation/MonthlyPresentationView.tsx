@@ -5,9 +5,9 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../../context/auth';
 import { useUserRole } from '../../context/RoleContext';
 import {
-  REGION_FUNCTIONS, REGION_LABEL, SLIDE_COUNT, accessibleRegions, buildDeckSearch, gradeMix, isMonthAvailable, lastCompleteMonth,
+  REGION_FUNCTIONS, REGION_LABEL, SLIDE_COUNT, accessibleRegions, buildDeckSearch, isMonthAvailable, lastCompleteMonth,
   nameMasker, opensOn, parseDeckParams, pdfFileName, periodFromKey, periodRegionActions, openHighCount, regionCode, regionSlug,
-  shiftMonth, teamReadiness, kpiBadge, isCriticalKpi, filterRegionRows, regionOwners, type DeckStatus, type RegionCode, type RegionSlug,
+  shiftMonth, teamReadiness, kpiBadge, isCriticalKpi, regionOwners, type DeckStatus, type RegionCode, type RegionSlug,
 } from './model';
 import { MP_QUERY_ROOT, useMonthlyPresentationData } from './useMonthlyPresentationData';
 import { buildSlides } from './buildSlides';
@@ -80,24 +80,21 @@ export default function MonthlyPresentationView({ today = new Date() }: { today?
       return { team, fn: fnOf(team), status: query.isError ? 'no_data' : r.status, detail, score: summary?.current_score ?? null, scoreChange: summary?.score_change ?? null, worstKpi: worst };
     });
     const partial = teams.filter((t) => t.status === 'partial').map((t) => t.team);
-    const recs = q.records.data
-      ? filterRegionRows(code, q.records.data).filter((r) => r.month.toLowerCase() === period.monthName.toLowerCase() && (r.year == null || r.year === period.year))
-      : null;
     const prev = ws?.comparison?.previous ? periodFromKey(ws.comparison.previous.key) ?? null : null;
     return {
       code, period, status, ws, teams, actions,
       previousLabel: prev ? `${prev.short} ${prev.year}` : (ws?.comparison?.previous?.month ?? null),
-      gradeMix: recs ? gradeMix(recs, partial) : null, gradeMixExcluded: partial,
+      gradeMix: null, gradeMixExcluded: partial,
       owners: regionOwners(q.owners.data ?? [], actions), mask: mask ? nameMasker() : (n) => String(n ?? '').trim() || '—',
       masked: mask,
     };
-  }, [code, period, q.workspace.data, q.overview.data, q.followUp.data, q.teamDiagnosis, q.records.data, q.owners.data, mask, status]);
+  }, [code, period, q.workspace.data, q.overview.data, q.followUp.data, q.teamDiagnosis, q.owners.data, mask, status]);
 
   const insightsHref = code && period ? `/insights?region=${code}&month=${period.short}&year=${period.year}` : '/insights';
   const noMonthData = q.workspace.data && (q.workspace.data.summary?.analyzed_kpis ?? 0) === 0;
   // Per-slide gates: each slide waits only for its own requests and fails on its own (no deck-wide spinner).
   const slideState = useCallback((n: number): SlideState => {
-    type Q = { isPending: boolean; isError: boolean; error: unknown; refetch: () => unknown };
+    type Q = { isPending: boolean; isError: boolean; error: unknown; refetch: (o?: { cancelRefetch?: boolean }) => unknown };
     const team = q.teamDiagnosis.map((t) => t.query as Q);
     const deps: Record<number, Array<[string, Q]>> = {
       1: [['Insights workspace', q.workspace]],
@@ -117,20 +114,19 @@ export default function MonthlyPresentationView({ today = new Date() }: { today?
     if (failed.length) return {
       status: 'error',
       message: failed.map(([label, x]) => `${label}: ${x.error instanceof Error ? x.error.message : 'request failed'}`).join(' · '),
-      retry: () => failed.forEach(([, x]) => { void x.refetch(); }),
+      retry: () => failed.forEach(([, x]) => { void x.refetch({ cancelRefetch: false }); }),
     };
     if (list.some(([, x]) => x.isPending)) return { status: 'loading' };
     return { status: 'ready' };
   }, [q.workspace, q.overview, q.followUp, q.owners, q.teamDiagnosis]);
   const retrySlide = useCallback((n: number) => {
-    const map: Record<number, Array<{ refetch: () => unknown }>> = {
+    const map: Record<number, Array<{ refetch: (o?: { cancelRefetch?: boolean }) => unknown }>> = {
       4: [q.workspace], 7: [q.workspace], 8: [q.followUp],
     };
-    (map[n] ?? []).forEach((x) => { void x.refetch(); });
+    (map[n] ?? []).forEach((x) => { void x.refetch({ cancelRefetch: false }); });
   }, [q.workspace, q.followUp]);
-  const gradeMixState: SlideState = q.records.isError
-    ? { status: 'error', message: q.records.error instanceof Error ? q.records.error.message : 'request failed', retry: () => { void q.records.refetch(); } }
-    : q.records.isPending ? { status: 'loading' } : { status: 'ready' };
+  // summary-records is not fetched (unscoped on the backend), so the grade mix is reported as not available.
+  const gradeMixState: SlideState = { status: 'error', message: 'Not available: the API has no region/month-scoped employee score list yet.' };
   const slides = deck && !noMonthData ? buildSlides(deck, insightsHref, { appendix: params.print ? appendix : true, state: slideState, retry: retrySlide, gradeMixState }) : [];
   const deckReady = slides.length > 0 && q.workspace.isSuccess;
 
@@ -144,7 +140,7 @@ export default function MonthlyPresentationView({ today = new Date() }: { today?
   }, [params.print, code, period]);
   const printedRef = useRef(false);
   useEffect(() => {
-    if (params.print && deckReady && !q.followUp.isPending && !q.overview.isPending && !q.records.isPending && !printedRef.current && search.get('autoprint') === '1') {
+    if (params.print && deckReady && !q.followUp.isPending && !q.overview.isPending && !printedRef.current && search.get('autoprint') === '1') {
       printedRef.current = true;
       window.setTimeout(() => window.print(), 400);
     }
@@ -167,7 +163,7 @@ export default function MonthlyPresentationView({ today = new Date() }: { today?
   );
   else if (noMonthData) content = (
     <Empty title={`No ${period.label} data for ${REGION_LABEL[code]} yet`} body="No scored records for the locked period. Ready cannot be computed, so every team shows No data.">
-      <button type="button" className="mp-btn" onClick={() => { void q.workspace.refetch(); }}>Retry</button>
+      <button type="button" className="mp-btn" onClick={() => { void q.workspace.refetch({ cancelRefetch: false }); }}>Retry</button>
       <button type="button" className="mp-btn" onClick={() => setMonth(shiftMonth(period.key, -1))}>Switch period to {periodFromKey(shiftMonth(period.key, -1))!.label}</button>
       <div className="mp-row mp-gap"><NoDataBadge /> {REGION_FUNCTIONS[code].flatMap((f) => f.teams).join(' · ')}</div>
     </Empty>

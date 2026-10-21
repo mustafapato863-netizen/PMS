@@ -104,7 +104,7 @@ export function buildSlides(data: DeckData, insightsHref: string, opts: { append
           </div>
           <div className="mp-card"><div className="mp-label">Employee grade mix · {mixTotal} people</div>
             {gm.status === 'loading' ? <p className="mp-muted" role="status" data-testid="grade-mix-loading">Loading summary records…</p>
-              : gm.status === 'error' ? <p className="mp-slide-error" role="alert" data-testid="grade-mix-error">Grade mix could not be loaded. {gm.message} {gm.retry && <button type="button" className="mp-btn" onClick={gm.retry}>Retry</button>}</p>
+              : gm.status === 'error' ? <p className="mp-muted" data-testid="grade-mix-unavailable"><NoDataBadge label="Not available" /> {gm.message} {gm.retry && <button type="button" className="mp-btn" onClick={gm.retry}>Retry</button>}</p>
               : data.gradeMix && mixTotal ? <Bar parts={(['A', 'B', 'C', 'D', 'E'] as GradeClass[]).map((k) => [k, data.gradeMix![k], GRADE_PALETTE[k].solid])} /> : <NoDataBadge />}
             <p className="mp-muted mp-small">Counts employees; excludes Partial teams{data.gradeMixExcluded.length ? ` (${data.gradeMixExcluded.join(', ')})` : ''}. Ready rule v1.</p>
           </div>

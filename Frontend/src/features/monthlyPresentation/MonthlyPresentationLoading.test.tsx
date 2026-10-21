@@ -3,7 +3,7 @@ import { render, screen, fireEvent, waitFor, within } from '@testing-library/rea
 import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import MonthlyPresentationView from './MonthlyPresentationView';
-import { DECK_WORKSPACE_SECTIONS, DeckTimeoutError, readEnvelope, withDeadline } from './useMonthlyPresentationData';
+import { DECK_MAX_CONCURRENT, DECK_QUERY_OPTIONS, DECK_REQUEST_DEADLINE_MS, DECK_WORKSPACE_SECTIONS, DeckTimeoutError, deckRequestsInFlight, limitDeckRequest, resetDeckLimiter, readEnvelope, withDeadline } from './useMonthlyPresentationData';
 
 const mocks = vi.hoisted(() => ({ apiFetch: vi.fn() }));
 vi.mock('../../lib/apiClient', () => ({ apiFetch: mocks.apiFetch }));
@@ -24,6 +24,7 @@ let seen: string[];
 const isRegionWs = (u: string) => u.startsWith('/api/insights/workspace') && !u.includes('team=');
 
 beforeEach(() => {
+  resetDeckLimiter();
   seen = [];
   route = (url) => {
     if (url.startsWith('/api/insights/workspace')) return { success: true, data: url.includes('kpi_overview') ? { kpi_overview: { total_kpis: 2, on_track: 2, at_risk: 0, critical: 0 } } : ws };
@@ -80,7 +81,7 @@ describe('Monthly Presentation loading (root cause: unsectioned region workspace
       return { success: true, data: [] };
     };
     renderDeck();
-    const err = await screen.findByTestId('slide-error-1');
+    const err = await screen.findByTestId('slide-error-1', {}, { timeout: 5000 });
     expect(err.textContent).toContain('Server error 500');
     expect(await within(slide(8)).findByText('Call back customers')).toBeTruthy();
     fail = false;
@@ -93,20 +94,44 @@ describe('Monthly Presentation loading (root cause: unsectioned region workspace
     const base = route;
     route = (url) => url.startsWith('/api/corrective-actions/follow-up') ? { success: false, message: 'Failed to fetch action follow-up.' } : base(url);
     renderDeck();
-    const err = await screen.findByTestId('slide-error-8');
+    const err = await screen.findByTestId('slide-error-8', {}, { timeout: 5000 });
     expect(err.textContent).toContain('Failed to fetch action follow-up.');
     expect(screen.getByTestId('slide-error-9')).toBeTruthy();
     expect(screen.queryByText(/No corrective actions recorded/)).toBeNull();
   });
 
-  it('a bad summary-records shape fails only the grade mix card, with Retry', async () => {
-    const base = route;
-    route = (url) => url.startsWith('/api/performance/summary-records') ? { success: true, data: { unexpected: true } } : base(url);
+  it('grade mix is reported as not available and summary-records is never requested', async () => {
     renderDeck();
-    const err = await screen.findByTestId('grade-mix-error');
-    expect(err.textContent).toContain('Unexpected summary records response shape');
-    expect(within(slide(3)).getByText(/Egypt at 86.4%/)).toBeTruthy();
-    expect(within(err).getByRole('button', { name: 'Retry' })).toBeTruthy();
+    await screen.findByText(/Egypt at 86.4%/);
+    expect(within(slide(3)).getByTestId('grade-mix-unavailable').textContent).toMatch(/Not available/);
+    expect(seen.some((u) => u.includes('summary-records'))).toBe(false);
+  });
+
+  it('a failing request is retried at most once, and Retry while fetching does not start a second request', async () => {
+    let calls = 0;
+    const base = route;
+    route = (url) => { if (url.startsWith('/api/corrective-actions/follow-up')) { calls += 1; throw new Error('boom'); } return base(url); };
+    renderDeck();
+    const err = await screen.findByTestId('slide-error-8', {}, { timeout: 5000 });
+    expect(calls).toBe(2); // first try + one retry
+    const btn = within(err).getByRole('button', { name: 'Retry' });
+    fireEvent.click(btn); fireEvent.click(btn); fireEvent.click(btn);
+    await waitFor(() => expect(calls).toBeGreaterThanOrEqual(3));
+    await new Promise((r) => setTimeout(r, 100));
+    expect(calls).toBe(3); // three clicks while in flight dedupe to one request
+  }, 15000);
+
+  it('team workspace calls never exceed the concurrency limit', async () => {
+    let peak = 0; let live = 0;
+    mocks.apiFetch.mockImplementation(async (url: string) => {
+      live += 1; peak = Math.max(peak, live);
+      await new Promise((r) => setTimeout(r, 5));
+      live -= 1; seen.push(url); return route(url);
+    });
+    renderDeck();
+    await screen.findByText(/Egypt at 86.4%/);
+    await waitFor(() => expect(deckRequestsInFlight()).toEqual({ active: 0, queued: 0 }));
+    expect(peak).toBeLessThanOrEqual(DECK_MAX_CONCURRENT);
   });
 
   it('empty slides say why and offer Retry', async () => {
@@ -140,7 +165,23 @@ describe('print', () => {
   });
 });
 
-describe('withDeadline / readEnvelope', () => {
+describe('withDeadline / readEnvelope / limits', () => {
+  it('uses a 15 s deadline and no automatic refetching', () => {
+    expect(DECK_REQUEST_DEADLINE_MS).toBe(15_000);
+    expect(DECK_QUERY_OPTIONS).toMatchObject({ retry: 1, refetchOnWindowFocus: false, refetchOnReconnect: false, refetchOnMount: false, refetchInterval: false });
+  });
+  it('a queued request that is cancelled never runs', async () => {
+    resetDeckLimiter();
+    const gates: Array<() => void> = [];
+    const hold = () => limitDeckRequest(undefined, () => new Promise<void>((r) => gates.push(r)));
+    const held = Array.from({ length: DECK_MAX_CONCURRENT }, hold);
+    const c = new AbortController(); const run = vi.fn(async () => 1);
+    const queued = limitDeckRequest(c.signal, run);
+    c.abort();
+    await expect(queued).rejects.toBeTruthy();
+    gates.forEach((g) => g()); await Promise.all(held);
+    expect(run).not.toHaveBeenCalled();
+  });
   it('rejects a request that never settles at the deadline and aborts its signal', async () => {
     vi.useFakeTimers();
     let inner: AbortSignal | undefined;

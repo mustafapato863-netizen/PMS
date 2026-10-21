@@ -1,6 +1,6 @@
 /**
- * Composes existing endpoints only: /api/insights/workspace, /api/performance/summary-records,
- * /api/corrective-actions/follow-up and /api/corrective-actions/owners. No new API fields.
+ * Composes existing endpoints only: /api/insights/workspace, /api/corrective-actions/follow-up and
+ * /api/corrective-actions/owners (summary-records is not called, see deckRequestUrls). No new API fields.
  * Every query key carries region + locked month; region switches drop the cache (see view).
  */
 import { useQueries, useQuery } from '@tanstack/react-query';
@@ -24,7 +24,34 @@ export const DECK_OVERVIEW_SECTIONS: readonly InsightSection[] = ['kpi_overview'
 export const TEAM_SECTIONS: readonly InsightSection[] = ['kpi_diagnosis', 'team_summaries'];
 
 /** Upper bound for one deck request, response body included. A slide never waits longer than this. */
-export const DECK_REQUEST_DEADLINE_MS = 45_000;
+export const DECK_REQUEST_DEADLINE_MS = 15_000;
+/** Most deck requests in flight at once (per tab). Team workspace calls and Retry clicks queue behind this. */
+export const DECK_MAX_CONCURRENT = 2;
+/** Deck data is a locked past month: never refetch it on its own. */
+export const DECK_QUERY_OPTIONS = {
+  retry: 1, retryDelay: 2_000, staleTime: 30 * 60_000, gcTime: 30 * 60_000,
+  refetchOnWindowFocus: false, refetchOnReconnect: false, refetchOnMount: false, refetchInterval: false,
+} as const;
+
+let active = 0;
+const waiting: Array<() => void> = [];
+/** Small FIFO semaphore; a queued request that is cancelled leaves the queue without running. */
+export function limitDeckRequest<T>(signal: AbortSignal | undefined, run: () => Promise<T>): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const start = () => {
+      signal?.removeEventListener('abort', onAbort);
+      active += 1;
+      run().then(resolve, reject).finally(() => { active -= 1; waiting.shift()?.(); });
+    };
+    const onAbort = () => { const i = waiting.indexOf(start); if (i >= 0) waiting.splice(i, 1); reject(signal?.reason ?? new DOMException('Aborted', 'AbortError')); };
+    if (signal?.aborted) { onAbort(); return; }
+    if (active < DECK_MAX_CONCURRENT) start();
+    else { waiting.push(start); signal?.addEventListener('abort', onAbort, { once: true }); }
+  });
+}
+/** Test hooks. */
+export function resetDeckLimiter() { active = 0; waiting.length = 0; }
+export function deckRequestsInFlight() { return { active, queued: waiting.length }; }
 
 export class DeckTimeoutError extends Error {
   constructor(ms: number) { super(`The request did not finish within ${Math.round(ms / 1000)} s`); this.name = 'DeckTimeoutError'; }
@@ -37,13 +64,16 @@ export class DeckTimeoutError extends Error {
  */
 export function withDeadline<T>(signal: AbortSignal | undefined, ms: number, run: (signal: AbortSignal) => Promise<T>): Promise<T> {
   const controller = new AbortController();
-  const onAbort = () => controller.abort(signal?.reason);
-  if (signal?.aborted) controller.abort(signal.reason); else signal?.addEventListener('abort', onAbort, { once: true });
+  let rejectCancel: (e: unknown) => void = () => {};
+  const cancelled = new Promise<never>((_, reject) => { rejectCancel = reject; });
+  const onAbort = () => { controller.abort(signal?.reason); rejectCancel(signal?.reason ?? new DOMException('Aborted', 'AbortError')); };
+  if (signal?.aborted) onAbort(); else signal?.addEventListener('abort', onAbort, { once: true });
   let timer: ReturnType<typeof setTimeout> | undefined;
   const deadline = new Promise<never>((_, reject) => {
     timer = setTimeout(() => { const err = new DeckTimeoutError(ms); controller.abort(err); reject(err); }, ms);
   });
-  return Promise.race([run(controller.signal), deadline]).finally(() => {
+  cancelled.catch(() => {}); deadline.catch(() => {});
+  return Promise.race([run(controller.signal), deadline, cancelled]).finally(() => {
     clearTimeout(timer);
     signal?.removeEventListener('abort', onAbort);
   });
@@ -56,17 +86,15 @@ type RawAction = {
   linked_kpi_key?: string | null; completion_note?: string | null; employee_name?: string | null; created_by_name?: string | null;
 };
 /**
- * Query strings for the deck requests. Every request carries the locked period (spec §3).
- * Backend reality (checked in Backend/api/routers): follow-up honours `month` only (year ignored);
- * summary-records honours only `employee_id`; owners takes no params. Ignored params are harmless,
- * and the client keeps filtering by region, month and year.
+ * Query strings for the deck requests, carrying only params the backend honours (Backend/api/routers):
+ * follow-up reads `month` (no year/region), owners takes none. Region and year are filtered on the client.
+ * /api/performance/summary-records is deliberately NOT called: it reads only `employee_id` and otherwise
+ * returns every authorized scored record (unbounded).
  */
-export function deckRequestUrls(code: RegionCode, period: LockedPeriod) {
-  const p = (extra: Record<string, string> = {}) => new URLSearchParams({ month: period.monthName, year: String(period.year), ...extra }).toString();
+export function deckRequestUrls(_code: RegionCode, period: LockedPeriod) {
   return {
-    followUp: `/api/corrective-actions/follow-up?${p()}`,
-    summaryRecords: `/api/performance/summary-records?${p({ region: code })}`,
-    owners: `/api/corrective-actions/owners?${p()}`,
+    followUp: `/api/corrective-actions/follow-up?${new URLSearchParams({ month: period.monthName })}`,
+    owners: '/api/corrective-actions/owners',
   };
 }
 
@@ -119,25 +147,25 @@ export function useMonthlyPresentationData(code: RegionCode | null, period: Lock
   const urls = code && period ? deckRequestUrls(code, period) : null;
   const filters = { periodKey: period?.key, region: code ?? undefined };
 
-  const fetchWs = (url: string, signal: AbortSignal | undefined) => withDeadline(signal, DECK_REQUEST_DEADLINE_MS,
+  const fetchWs = (url: string, signal: AbortSignal | undefined) => limitDeckRequest(signal, () => withDeadline(signal, DECK_REQUEST_DEADLINE_MS,
     async (s) => {
       const data = readEnvelope(await apiFetch<Envelope<InsightsWorkspace>>(url, { signal: s }), url);
       if (!isObject(data)) throw new Error('Unexpected insights workspace response shape');
       return data;
-    });
-  const get = <T,>(url: string, signal: AbortSignal | undefined) => withDeadline(signal, DECK_REQUEST_DEADLINE_MS, async (s) => readEnvelope<T>(await apiFetch<Envelope<T>>(url, { signal: s }), url));
+    }));
+  const get = <T,>(url: string, signal: AbortSignal | undefined) => limitDeckRequest(signal, () => withDeadline(signal, DECK_REQUEST_DEADLINE_MS, async (s) => readEnvelope<T>(await apiFetch<Envelope<T>>(url, { signal: s }), url)));
 
   const workspace = useQuery({
     queryKey: [...base, 'workspace', DECK_WORKSPACE_SECTIONS.join(',')],
     enabled: on,
-    retry: false,
+    ...DECK_QUERY_OPTIONS,
     queryFn: ({ signal }) => fetchWs(insightsWorkspaceUrl(filters, 'full', DECK_WORKSPACE_SECTIONS), signal),
   });
 
   const overview = useQuery({
     queryKey: [...base, 'workspace', 'kpi_overview'],
     enabled: on,
-    retry: false,
+    ...DECK_QUERY_OPTIONS,
     queryFn: ({ signal }) => fetchWs(insightsWorkspaceUrl(filters, 'full', DECK_OVERVIEW_SECTIONS), signal),
   });
 
@@ -146,7 +174,7 @@ export function useMonthlyPresentationData(code: RegionCode | null, period: Lock
     queries: teams.map((team) => ({
       queryKey: [...base, 'team', team],
       enabled: on,
-      retry: false,
+      ...DECK_QUERY_OPTIONS,
       queryFn: ({ signal }: { signal: AbortSignal }) => fetchWs(insightsWorkspaceUrl({ ...filters, team }, 'full', TEAM_SECTIONS), signal),
     })),
   });
@@ -154,7 +182,7 @@ export function useMonthlyPresentationData(code: RegionCode | null, period: Lock
   const followUp = useQuery({
     queryKey: [...base, 'follow-up'],
     enabled: on,
-    retry: false,
+    ...DECK_QUERY_OPTIONS,
     queryFn: async ({ signal }) => {
       const data = await get<{ summary?: Record<string, number>; actions?: RawAction[] }>(urls!.followUp, signal);
       if (!data || typeof data !== 'object' || !Array.isArray(data.actions)) throw new Error('Unexpected follow-up response shape');
@@ -163,21 +191,15 @@ export function useMonthlyPresentationData(code: RegionCode | null, period: Lock
   });
 
   const owners = useQuery({
-    queryKey: [...base, 'owners'],
+    queryKey: [MP_QUERY_ROOT, code, 'owners'],
     enabled: on,
-    retry: false,
+    ...DECK_QUERY_OPTIONS,
     queryFn: async ({ signal }) => asArray<{ id: string; name: string; role?: string }>(await get<unknown>(urls!.owners, signal), 'owners')
       .filter((o) => typeof o?.id === 'string' && typeof o?.name === 'string'),
   });
 
-  const records = useQuery({
-    queryKey: [...base, 'summary-records'],
-    enabled: on,
-    retry: false,
-    queryFn: async ({ signal }) => asArray<RawRecord>(await get<unknown>(urls!.summaryRecords, signal), 'summary records').filter(isObject).map(mapRecord),
-  });
 
   return {
-    workspace, overview, teamDiagnosis: teams.map((team, i) => ({ team, query: teamDiagnosis[i] })), followUp, owners, records,
+    workspace, overview, teamDiagnosis: teams.map((team, i) => ({ team, query: teamDiagnosis[i] })), followUp, owners,
   };
 }
