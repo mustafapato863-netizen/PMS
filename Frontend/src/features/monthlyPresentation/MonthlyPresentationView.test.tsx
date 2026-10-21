@@ -3,6 +3,7 @@ import { render, screen, fireEvent, waitFor, within } from '@testing-library/rea
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import MonthlyPresentationView, { PresentMode } from './MonthlyPresentationView';
+import { resetDeckLimiter } from './useMonthlyPresentationData';
 
 const mocks = vi.hoisted(() => ({ apiFetch: vi.fn(), user: { role: 'Admin', accessible_regions: [] as string[] } }));
 vi.mock('../../lib/apiClient', () => ({ apiFetch: mocks.apiFetch }));
@@ -18,6 +19,7 @@ const ws = (region: string) => ({
 });
 let seen: string[] = [];
 beforeEach(() => {
+  resetDeckLimiter();
   seen = [];
   mocks.user = { role: 'Admin', accessible_regions: [] };
   mocks.apiFetch.mockImplementation(async (url: string) => {
@@ -137,7 +139,7 @@ describe('MonthlyPresentationView', () => {
     expect(s10.textContent).not.toContain(other);
   });
 
-  it('every deck request carries the locked period (and region where relevant)', async () => {
+  it('deck requests carry only the params the API honours, and never call summary-records', async () => {
     renderAt('/monthly-presentation?region=uae&month=2026-08');
     await screen.findByText(/UAE at 91.2%/);
     await waitFor(() => expect(seen.some((u) => u.startsWith('/api/corrective-actions/owners'))).toBe(true));
@@ -147,11 +149,11 @@ describe('MonthlyPresentationView', () => {
       return new URLSearchParams(url!.split('?')[1]);
     };
     const fu = q('/api/corrective-actions/follow-up');
-    expect([fu.get('month'), fu.get('year')]).toEqual(['August', '2026']);
-    const sr = q('/api/performance/summary-records');
-    expect([sr.get('month'), sr.get('year'), sr.get('region')]).toEqual(['August', '2026', 'UAE']);
-    const ow = q('/api/corrective-actions/owners');
-    expect([ow.get('month'), ow.get('year')]).toEqual(['August', '2026']);
+    expect([...fu.keys()]).toEqual(['month']);
+    expect(fu.get('month')).toBe('August');
+    expect(seen.filter((u) => u.startsWith('/api/corrective-actions/owners'))).toEqual(['/api/corrective-actions/owners']);
+    expect(seen.filter((u) => u.startsWith('/api/corrective-actions/follow-up'))).toHaveLength(1);
+    expect(seen.some((u) => u.startsWith('/api/performance/summary-records'))).toBe(false);
     seen.filter((u) => u.startsWith('/api/insights/workspace')).forEach((u) => {
       const p = new URLSearchParams(u.split('?')[1]);
       expect([p.get('month'), p.get('year'), p.get('region')]).toEqual(['August', '2026', 'UAE']);

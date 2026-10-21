@@ -12,3 +12,6 @@ export interface DeckData {
   masked: boolean;
 }
 
+
+/** Per-slide data state: a slide renders as soon as its own requests are in, and fails on its own. */
+export type SlideState = { status: 'ready' } | { status: 'loading' } | { status: 'error'; message: string; retry?: () => void };

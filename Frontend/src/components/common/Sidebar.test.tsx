@@ -197,7 +197,7 @@ describe('Sidebar General Manager navigation (stored role string)', () => {
     mockTeamConfigFetch();
   });
 
-  it.each(['Admin', 'General Manager', 'Performance Team', 'Executive', 'Regional Manager'] as const)('shows Monthly Presentation next to Executive Summary for %s', (role) => {
+  it.each(['Admin', 'Performance Team'] as const)('shows Monthly Presentation next to Executive Summary for %s', (role) => {
     authState.user = { id: 'u-mp', name: 'Mona Pato', username: 'mp', role, accessible_teams: [] };
     renderSidebar();
     const link = screen.getByRole('link', { name: 'Monthly Presentation' });
@@ -206,7 +206,7 @@ describe('Sidebar General Manager navigation (stored role string)', () => {
     expect(names.indexOf('Monthly Presentation')).toBe(names.indexOf('Executive Summary') + 1);
   });
 
-  it.each(['Manager', 'Viewer', 'Branch Director', 'Function Director', 'Function Viewer'] as const)('hides Monthly Presentation for %s', (role) => {
+  it.each(['General Manager', 'Executive', 'Regional Manager', 'Manager', 'Viewer', 'Branch Director', 'Function Director', 'Function Viewer'] as const)('hides Monthly Presentation for %s', (role) => {
     authState.user = { id: 'u-mp', name: 'Mona Pato', username: 'mp', role, accessible_teams: [] };
     renderSidebar();
     expect(screen.queryByRole('link', { name: 'Monthly Presentation' })).not.toBeInTheDocument();
