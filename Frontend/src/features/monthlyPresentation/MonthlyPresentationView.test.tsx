@@ -110,10 +110,14 @@ describe('MonthlyPresentationView', () => {
     expect(screen.queryByRole('button', { name: /Reopen as Draft/ })).toBeNull();
   });
 
-  it('Mark Final is disabled: no endpoint persists Final', async () => {
+  it('v1 hides the Draft/Final control and any Draft/Final status text; the month lock stays', async () => {
     renderAt('/monthly-presentation?region=egy&month=2026-09');
     await screen.findByText(/Egypt at 86.4%/);
-    expect((screen.getByRole('button', { name: /Mark Final/ }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByRole('button', { name: /Mark Final|Reopen as Draft/ })).toBeNull();
+    expect(document.body.textContent).not.toMatch(/\bDraft\b|\bFinal\b|Frozen/);
+    fireEvent.click(screen.getByRole('button', { name: /Export PDF/ }));
+    expect(screen.getByRole('dialog', { name: 'Export PDF' }).textContent).not.toMatch(/Draft|Final/);
+    expect(screen.getAllByTestId('period-lock')).toHaveLength(11);
   });
 });
 

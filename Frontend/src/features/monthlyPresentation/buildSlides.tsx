@@ -178,7 +178,7 @@ export function buildSlides(data: DeckData, insightsHref: string, opts: { append
 
   slides.push(F(10, 'Decisions', 'Decisions and asks', (
     <>
-      <div className="mp-row mp-gap"><span className="mp-label">Author</span> Regional Head · {region} (name not available from the API) <span className={`mp-pill ${data.status === 'Final' ? 'mp-pill-frozen' : 'mp-pill-draft'}`}>{data.status}</span></div>
+      <div className="mp-row mp-gap"><span className="mp-label">Author</span> Regional Head · {region} (name not available from the API)</div>
       <SlideEmpty title="No decisions recorded" body="The repo has no decisions/asks entity yet; the regional head adds asks in the meeting. No numeric forecasts." />
       <div className="mp-card"><div className="mp-label">Owners available for asks</div><p>{data.owners.length ? data.owners.slice(0, 12).map((o) => data.mask(o.name)).join(' · ') : 'Not available'}</p></div>
     </>

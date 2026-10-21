@@ -43,7 +43,7 @@ export default function MonthlyPresentationView({ today = new Date() }: { today?
   const available = Boolean(period && isMonthAvailable(period.key, today));
   const q = useMonthlyPresentationData(code, period, canSee && available);
 
-  // Draft/Final: there is no endpoint to persist Final, so the deck stays Draft (see PR notes).
+  // v1 (CoS): no Final/freeze. The Draft/Final model stays, but no control, badge or status text is shown.
   const status: DeckStatus = 'Draft';
 
   const switchRegion = useCallback((slug: RegionSlug) => {
@@ -149,7 +149,7 @@ export default function MonthlyPresentationView({ today = new Date() }: { today?
   const page = (
     <div className={`mp-root ${params.print ? 'mp-print' : ''} ${bands ? 'mp-bands' : ''}`} data-region={code ?? ''}>
       {!params.print && code && period && (
-        <Toolbar code={code} period={period.key} allowed={allowed} today={today} status={status}
+        <Toolbar code={code} period={period.key} allowed={allowed} today={today}
           onRegion={switchRegion} onMonth={setMonth} canPresent={slides.length > 0}
           onPresent={() => setMode({ present: true })}
           onExport={(o) => setMode({ print: true }, { mask: o.mask ? '1' : '0', bands: o.bands ? '1' : '0', appendix: o.appendix ? '1' : '0', footer: o.footer ? '1' : '0', autoprint: '1' })}
@@ -161,7 +161,7 @@ export default function MonthlyPresentationView({ today = new Date() }: { today?
       )}
       <div className="mp-slides">{content}</div>
       {params.print && code && period && footer && (
-        <div className="mp-print-footer">{REGION_LABEL[code]} · Period locked · {period.label} · {status}{mask ? ' · Names masked' : ''} · {`${window.location.origin}/monthly-presentation?region=${regionSlug(code)}&month=${period.key}`}</div>
+        <div className="mp-print-footer">{REGION_LABEL[code]} · Period locked · {period.label}{mask ? ' · Names masked' : ''} · {`${window.location.origin}/monthly-presentation?region=${regionSlug(code)}&month=${period.key}`}</div>
       )}
     </div>
   );
@@ -172,8 +172,8 @@ function Empty({ title, body, children }: { title: string; body?: string; childr
   return <div className="mp-empty" role="status"><div className="mp-hatch mp-hatch-icon" aria-hidden /><strong>{title}</strong>{body && <p>{body}</p>}{children}</div>;
 }
 
-function Toolbar({ code, period, allowed, today, status, onRegion, onMonth, onPresent, onExport, canPresent }: {
-  code: RegionCode; period: string; allowed: RegionCode[]; today: Date; status: DeckStatus;
+function Toolbar({ code, period, allowed, today, onRegion, onMonth, onPresent, onExport, canPresent }: {
+  code: RegionCode; period: string; allowed: RegionCode[]; today: Date;
   onRegion: (s: RegionSlug) => void; onMonth: (k: string) => void; onPresent: () => void; onExport: (o: ExportOptions) => void; canPresent: boolean;
 }) {
   const [exportOpen, setExportOpen] = useState(false);
@@ -198,13 +198,10 @@ function Toolbar({ code, period, allowed, today, status, onRegion, onMonth, onPr
         </select>
         <span className="mp-muted mp-small">Last complete · {periodFromKey(next)!.short} opens {opensOn(next)}</span>
       </label>
-      <div className="mp-deck-status"><span className="mp-label">Deck</span> <b>{status}</b>
-        <button type="button" className="mp-linkbtn" disabled aria-disabled title="Persisting Final needs a backend endpoint that does not exist yet. Reopen as Draft would be Admin-only.">· Mark Final</button>
-      </div>
       <div className="mp-tb-actions">
         <div className="mp-pop-wrap">
           <button type="button" className="mp-btn mp-btn-ghost" aria-haspopup="dialog" aria-expanded={exportOpen} disabled={!canPresent} onClick={() => setExportOpen((v) => !v)}>Export PDF ▾</button>
-          {exportOpen && <ExportDialog code={code} period={period} status={status} onCancel={() => setExportOpen(false)} onExport={(o) => { setExportOpen(false); onExport(o); }} />}
+          {exportOpen && <ExportDialog code={code} period={period} onCancel={() => setExportOpen(false)} onExport={(o) => { setExportOpen(false); onExport(o); }} />}
         </div>
         <button type="button" className="mp-btn" onClick={onPresent} disabled={!canPresent}>Present ▸</button>
       </div>
@@ -213,7 +210,7 @@ function Toolbar({ code, period, allowed, today, status, onRegion, onMonth, onPr
 }
 
 export interface ExportOptions { mask: boolean; bands: boolean; appendix: boolean; footer: boolean }
-export function ExportDialog({ code, period, status, onCancel, onExport }: { code: RegionCode; period: string; status: DeckStatus; onCancel: () => void; onExport: (o: ExportOptions) => void }) {
+export function ExportDialog({ code, period, onCancel, onExport }: { code: RegionCode; period: string; onCancel: () => void; onExport: (o: ExportOptions) => void }) {
   const [o, setO] = useState<ExportOptions>({ mask: true, bands: true, appendix: false, footer: true });
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => { ref.current?.querySelector('input')?.focus(); }, []);
@@ -223,7 +220,7 @@ export function ExportDialog({ code, period, status, onCancel, onExport }: { cod
   return (
     <div ref={ref} className="mp-pop" role="dialog" aria-modal="false" aria-label="Export PDF" onKeyDown={(e) => { if (e.key === 'Escape') onCancel(); }}>
       <h3>Export PDF</h3>
-      <p className="mp-muted">{REGION_LABEL[code]} · {periodFromKey(period)!.label} · {status}</p>
+      <p className="mp-muted">{REGION_LABEL[code]} · {periodFromKey(period)!.label}</p>
       {opt('mask', 'Mask names (Person A, B, …)')}
       {opt('bands', 'Section breaks as thin bands')}
       {opt('appendix', 'Include appendix (slide 11)')}
