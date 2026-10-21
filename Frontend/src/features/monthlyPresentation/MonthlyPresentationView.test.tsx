@@ -88,6 +88,28 @@ describe('MonthlyPresentationView', () => {
     expect(within(dialog).getByText(/PMS_Monthly_UAE_2026-09.pdf/)).toBeTruthy();
   });
 
+  it('mask=1 rewrites names inside action text and owner notes on slide 8', async () => {
+    mocks.apiFetch.mockImplementation(async (url: string) => {
+      if (url.startsWith('/api/insights/workspace')) return { success: true, data: ws('EGY') };
+      if (url.startsWith('/api/corrective-actions/follow-up')) return { success: true, data: { summary: {}, actions: [
+        { id: 'a1', manager_action: 'Coaching: 1:1s by hana mostafa for Omar Khaled', team: 'Coding EGY', month: 'September', year: 2026, status: 'Open', priority: 'Low', due_date: '2026-10-10', owner: { name: 'Hana Mostafa' }, employee_name: 'Omar Khaled', completion_note: 'Karim Fathy expects Omar Khaled back on target' },
+      ] } };
+      if (url.startsWith('/api/corrective-actions/owners')) return { success: true, data: [{ id: 'o', name: 'Karim Fathy' }] };
+      return { success: true, data: [] };
+    });
+    renderAt('/monthly-presentation?region=egy&month=2026-09&mask=1');
+    const slide = await screen.findByRole('region', { name: /Slide 8 of 11/ });
+    await within(slide).findByText(/1:1s by/);
+    expect(slide.textContent).not.toMatch(/hana|mostafa|karim|fathy|omar|khaled/i);
+    expect(slide.textContent).toMatch(/1:1s by Person [A-Z] for Person [A-Z]/);
+  });
+
+  it('Reopen as Draft is not rendered (no reopen endpoint)', async () => {
+    renderAt('/monthly-presentation?region=egy&month=2026-09');
+    await screen.findByText(/Egypt at 86.4%/);
+    expect(screen.queryByRole('button', { name: /Reopen as Draft/ })).toBeNull();
+  });
+
   it('Mark Final is disabled: no endpoint persists Final', async () => {
     renderAt('/monthly-presentation?region=egy&month=2026-09');
     await screen.findByText(/Egypt at 86.4%/);

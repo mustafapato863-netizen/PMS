@@ -7,7 +7,7 @@ import { useUserRole } from '../../context/RoleContext';
 import {
   REGION_FUNCTIONS, REGION_LABEL, SLIDE_COUNT, accessibleRegions, buildDeckSearch, gradeMix, isMonthAvailable, lastCompleteMonth,
   nameMasker, opensOn, parseDeckParams, pdfFileName, periodFromKey, periodRegionActions, openHighCount, regionCode, regionSlug,
-  shiftMonth, teamReadiness, kpiBadge, isCriticalKpi, canReopenDraft, filterRegionRows, type DeckStatus, type RegionCode, type RegionSlug,
+  shiftMonth, teamReadiness, kpiBadge, isCriticalKpi, filterRegionRows, type DeckStatus, type RegionCode, type RegionSlug,
 } from './model';
 import { MP_QUERY_ROOT, useMonthlyPresentationData } from './useMonthlyPresentationData';
 import { buildSlides } from './buildSlides';
@@ -87,6 +87,13 @@ export default function MonthlyPresentationView({ today = new Date() }: { today?
       previousLabel: prev ? `${prev.short} ${prev.year}` : (ws?.comparison?.previous?.month ?? null),
       gradeMix: recs ? gradeMix(recs, partial) : null, gradeMixExcluded: partial,
       owners: q.owners.data ?? [], mask: mask ? nameMasker() : (n) => String(n ?? '').trim() || '—',
+      masked: mask,
+      knownNames: [
+        ...(q.owners.data ?? []).map((o) => o.name),
+        ...actions.flatMap((a) => [a.owner ?? '', ...(a.people ?? [])]),
+        ...(ws?.people_contribution_analysis?.rows ?? []).map((r) => r.employee_name),
+        ...(ws?.options?.employees ?? []).map((e) => e.name),
+      ].filter(Boolean),
     };
   }, [code, period, q.workspace.data, q.followUp.data, q.teamDiagnosis, q.records.data, q.owners.data, mask, status]);
 
@@ -142,7 +149,7 @@ export default function MonthlyPresentationView({ today = new Date() }: { today?
   const page = (
     <div className={`mp-root ${params.print ? 'mp-print' : ''} ${bands ? 'mp-bands' : ''}`} data-region={code ?? ''}>
       {!params.print && code && period && (
-        <Toolbar code={code} period={period.key} allowed={allowed} today={today} status={status} role={role}
+        <Toolbar code={code} period={period.key} allowed={allowed} today={today} status={status}
           onRegion={switchRegion} onMonth={setMonth} canPresent={slides.length > 0}
           onPresent={() => setMode({ present: true })}
           onExport={(o) => setMode({ print: true }, { mask: o.mask ? '1' : '0', bands: o.bands ? '1' : '0', appendix: o.appendix ? '1' : '0', footer: o.footer ? '1' : '0', autoprint: '1' })}
@@ -165,8 +172,8 @@ function Empty({ title, body, children }: { title: string; body?: string; childr
   return <div className="mp-empty" role="status"><div className="mp-hatch mp-hatch-icon" aria-hidden /><strong>{title}</strong>{body && <p>{body}</p>}{children}</div>;
 }
 
-function Toolbar({ code, period, allowed, today, status, role, onRegion, onMonth, onPresent, onExport, canPresent }: {
-  code: RegionCode; period: string; allowed: RegionCode[]; today: Date; status: DeckStatus; role: string | null | undefined;
+function Toolbar({ code, period, allowed, today, status, onRegion, onMonth, onPresent, onExport, canPresent }: {
+  code: RegionCode; period: string; allowed: RegionCode[]; today: Date; status: DeckStatus;
   onRegion: (s: RegionSlug) => void; onMonth: (k: string) => void; onPresent: () => void; onExport: (o: ExportOptions) => void; canPresent: boolean;
 }) {
   const [exportOpen, setExportOpen] = useState(false);
@@ -193,7 +200,6 @@ function Toolbar({ code, period, allowed, today, status, role, onRegion, onMonth
       </label>
       <div className="mp-deck-status"><span className="mp-label">Deck</span> <b>{status}</b>
         <button type="button" className="mp-linkbtn" disabled aria-disabled title="Persisting Final needs a backend endpoint that does not exist yet. Reopen as Draft would be Admin-only.">· Mark Final</button>
-        {status === 'Final' && canReopenDraft(role) && <button type="button" className="mp-linkbtn">Reopen as Draft</button>}
       </div>
       <div className="mp-tb-actions">
         <div className="mp-pop-wrap">

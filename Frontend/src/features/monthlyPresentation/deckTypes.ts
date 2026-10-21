@@ -8,5 +8,7 @@ export interface DeckData {
   ws: InsightsWorkspace | undefined; teams: TeamReady[]; actions: DeckAction[];
   gradeMix: Record<GradeClass, number> | null; gradeMixExcluded: string[];
   owners: Array<{ id: string; name: string; role?: string }>; mask: (name: string | null | undefined) => string;
+  /** Masking on: free text is rewritten with aliases from knownNames (or hidden when the list is empty). */
+  masked: boolean; knownNames: string[];
 }
 

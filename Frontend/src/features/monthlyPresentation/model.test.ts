@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   accessibleRegions, actionMix, buildDeckSearch, canReopenDraft, displayActionState, expectedImpact, filterRegionRows, gradeMix,
-  isCriticalKpi, isMonthAvailable, isOverdueForPeriod, kpiBadge, isMiss, kpiMovementTone, lastCompleteMonth, nameMasker,
+  isCriticalKpi, isMonthAvailable, maskNamesInText, isOverdueForPeriod, kpiBadge, isMiss, kpiMovementTone, lastCompleteMonth, nameMasker,
   outlookLine, parseDeckParams, pdfFileName, periodFromKey, periodRegionActions, regionMoM, regionTeams, teamReadiness,
   type DeckAction,
 } from './model';
@@ -170,5 +170,28 @@ describe('mask names and Draft/Final', () => {
     expect(canReopenDraft('Admin')).toBe(true);
     expect(canReopenDraft('General Manager')).toBe(false);
     expect(canReopenDraft('Regional Manager')).toBe(false);
+  });
+});
+
+describe('masking names inside free text', () => {
+  it('replaces every known name, whole words, case-insensitive, longest first', () => {
+    const m = nameMasker();
+    const names = ['Hana', 'Hana Mostafa', 'Karim Fathy', 'Ali'];
+    const out = maskNamesInText('hana mostafa and KARIM FATHY will coach Hana; Alina and Ali stay', names, m);
+    expect(out).toBe('Person A and Person B will coach Person C; Alina and Person D stay');
+    expect(out).not.toMatch(/hana|karim|fathy|mostafa/i);
+    expect(m('Hana Mostafa')).toBe('Person A');
+  });
+  it('keeps aliases consistent with the people column', () => {
+    const m = nameMasker();
+    expect(m('Mona Adel')).toBe('Person A');
+    expect(maskNamesInText('Escalate to Mona  Adel.', ['Mona Adel'], m)).toBe('Escalate to Person A.');
+  });
+  it('treats regex characters in names literally', () => {
+    expect(maskNamesInText('Ask J. (Lead) now', ['J. (Lead)'], nameMasker())).toBe('Ask Person A now');
+  });
+  it('returns null (hide) when there is no name list', () => {
+    expect(maskNamesInText('Hana will fix it', [], nameMasker())).toBeNull();
+    expect(maskNamesInText('Hana will fix it', ['', null], nameMasker())).toBeNull();
   });
 });

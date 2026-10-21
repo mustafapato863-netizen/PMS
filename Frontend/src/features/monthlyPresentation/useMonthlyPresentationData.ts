@@ -15,7 +15,7 @@ interface Envelope<T> { success: boolean; data: T; message?: string }
 type RawAction = {
   id?: string; manager_action?: string; team?: string | null; region?: string | null; month?: string | null; year?: number | null;
   status?: string | null; priority?: string | null; due_date?: string | null; owner?: { name?: string } | null;
-  linked_kpi_key?: string | null; completion_note?: string | null; employee_name?: string | null;
+  linked_kpi_key?: string | null; completion_note?: string | null; employee_name?: string | null; created_by_name?: string | null;
 };
 type RawRecord = { team?: string | null; region?: string | null; month?: string | null; year?: number | null; employee_id?: string; employee_name?: string; identity?: Record<string, unknown>; evaluation?: { score?: number | null } | null; score?: number | null };
 
@@ -27,6 +27,7 @@ export function mapAction(item: RawAction, index: number): DeckAction {
     team: item.team ?? null, region: item.region ?? null, month: item.month ?? null, year: item.year ?? null,
     status: item.status ?? null, priority: item.priority ?? null, due_date: item.due_date ?? null,
     owner: item.owner?.name ?? null, linked_kpi_key: item.linked_kpi_key ?? null, completion_note: item.completion_note ?? null,
+    people: [item.employee_name, item.created_by_name].filter((n): n is string => Boolean(n && n.trim())),
   };
 }
 
@@ -78,7 +79,7 @@ export function useMonthlyPresentationData(code: RegionCode | null, period: Lock
   });
 
   const owners = useQuery({
-    queryKey: [MP_QUERY_ROOT, 'owners'],
+    queryKey: [...base, 'owners'],
     enabled: on,
     retry: false,
     queryFn: async ({ signal }) => (await apiFetch<Envelope<Array<{ id: string; name: string; role?: string }>>>('/api/corrective-actions/owners', { signal }))?.data ?? [],
