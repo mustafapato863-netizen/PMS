@@ -191,28 +191,28 @@ export function mapRecord(r: RawRecord): ScoreRow {
   };
 }
 
+// The 15 s deadline covers queueing + headers + body; its abort reaches the body read (abortBody) and the
+// limiter slot frees when the request actually settles. Module-level so the clock is read only in queryFns.
+function fetchWs(url: string, signal: AbortSignal | undefined) {
+  const at = Date.now() + DECK_REQUEST_DEADLINE_MS;
+  return withDeadline(signal, DECK_REQUEST_DEADLINE_MS, async (s) => {
+    const res = await limitDeckRequest(s, () => apiFetch<Envelope<InsightsWorkspace>>(url, { signal: s }, { abortBody: true }), 'insights', at);
+    const data = readEnvelope(res, url);
+    if (!isObject(data)) throw new Error('Unexpected insights workspace response shape');
+    return data;
+  });
+}
+function get<T>(url: string, signal: AbortSignal | undefined) {
+  const at = Date.now() + DECK_REQUEST_DEADLINE_MS;
+  return withDeadline(signal, DECK_REQUEST_DEADLINE_MS,
+    async (s) => readEnvelope<T>(await limitDeckRequest(s, () => apiFetch<Envelope<T>>(url, { signal: s }, { abortBody: true }), 'actions', at), url));
+}
+
 export function useMonthlyPresentationData(code: RegionCode | null, period: LockedPeriod | null, enabled: boolean) {
   const on = Boolean(enabled && code && period);
   const base = [MP_QUERY_ROOT, code, period?.key] as const;
   const urls = code && period ? deckRequestUrls(code, period) : null;
   const filters = { periodKey: period?.key, region: code ?? undefined };
-
-  // The 15 s deadline covers queueing + headers + body; its abort reaches the body read (abortBody) and the
-  // limiter slot frees when the request actually settles.
-  const fetchWs = (url: string, signal: AbortSignal | undefined) => {
-    const at = Date.now() + DECK_REQUEST_DEADLINE_MS;
-    return withDeadline(signal, DECK_REQUEST_DEADLINE_MS, async (s) => {
-      const res = await limitDeckRequest(s, () => apiFetch<Envelope<InsightsWorkspace>>(url, { signal: s }, { abortBody: true }), 'insights', at);
-      const data = readEnvelope(res, url);
-      if (!isObject(data)) throw new Error('Unexpected insights workspace response shape');
-      return data;
-    });
-  };
-  const get = <T,>(url: string, signal: AbortSignal | undefined) => {
-    const at = Date.now() + DECK_REQUEST_DEADLINE_MS;
-    return withDeadline(signal, DECK_REQUEST_DEADLINE_MS,
-      async (s) => readEnvelope<T>(await limitDeckRequest(s, () => apiFetch<Envelope<T>>(url, { signal: s }, { abortBody: true }), 'actions', at), url));
-  };
 
   const workspace = useQuery({
     queryKey: [...base, 'workspace', DECK_WORKSPACE_SECTIONS.join(',')],
