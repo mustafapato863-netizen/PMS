@@ -73,6 +73,55 @@ const preApprovalsAgent = {
   ],
 } as AgentRecord;
 
+const supervisorAgent = {
+  ...marketingAgent,
+  identity: {
+    ...marketingAgent.identity,
+    name: 'Hossam Mohamed',
+    employee_id: 'SGHD70094',
+    team: 'Pre-Approvals IP',
+    month: 'September',
+    position: 'Pre-Authorization Supervisor',
+  },
+  performance_level: 'Managerial',
+  evaluation: { score: 88.61, grade: 'C' },
+  kpi_values: [
+    {
+      kpi_key: 'pa_initial_rejection',
+      label: 'IP Initial Rejection %',
+      unit: '%',
+      direction: 'lower_better',
+      actual_value: 0.002624672,
+      target_value: 0.01,
+      achievement_ratio: 1,
+      weight_applied: 0.5,
+      contribution: 0.5,
+    },
+    {
+      kpi_key: 'pa_error_rate',
+      label: 'Error %',
+      unit: '%',
+      direction: 'lower_better',
+      actual_value: 0.016260163,
+      target_value: 0.01,
+      achievement_ratio: 0.615,
+      weight_applied: 0.2,
+      contribution: 0.123,
+    },
+    {
+      kpi_key: 'pa_approval_48h',
+      label: '% Approval within 48 hrs',
+      unit: '%',
+      direction: 'higher_better',
+      actual_value: 0.789308176,
+      target_value: 0.9,
+      achievement_ratio: 0.877,
+      weight_applied: 0.3,
+      contribution: 0.2631,
+    },
+  ],
+} as AgentRecord;
+
 describe('KpiBreakdownPanel', () => {
   it('normalizes stored KPI ratios for profile display', () => {
     const [cpl] = getKPIsForAgent(marketingAgent);
@@ -99,12 +148,23 @@ describe('KpiBreakdownPanel', () => {
     expect(within(installsCard as HTMLElement).getByText('0.0%')).toBeInTheDocument();
   });
 
+  it('prints the supervisor overall at the same one decimal as his KPI score', () => {
+    render(<KpiBreakdownPanel score={88.61} agent={supervisorAgent} teamWeights={{}} />);
+
+    expect(screen.getAllByText('88.6%')).toHaveLength(2);
+    expect(screen.queryByText('89%')).not.toBeInTheDocument();
+    expect(screen.getByText('50.0%')).toBeInTheDocument();
+    expect(screen.getByText('12.3%')).toBeInTheDocument();
+    expect(screen.getByText('26.3%')).toBeInTheDocument();
+  });
+
   it('shows only the selected workstream KPIs and recalculates the final score', () => {
     render(<KpiBreakdownPanel score={1.6} agent={preApprovalsAgent} teamWeights={{}} />);
 
     expect(screen.getByText('ER / IP Approval')).toBeInTheDocument();
     expect(screen.getByText('Performance Score')).toBeInTheDocument();
-    expect(screen.getByText('67.9%')).toBeInTheDocument();
+    expect(screen.getAllByText('67.9%')).toHaveLength(2);
+    expect(screen.queryByText('68%')).not.toBeInTheDocument();
     expect(screen.getByText('ER Initial Rejection %')).toBeInTheDocument();
     expect(screen.getByText('Approval Within 1.5 Hours %')).toBeInTheDocument();
     expect(screen.queryByText('combined_acceptance_rate')).not.toBeInTheDocument();

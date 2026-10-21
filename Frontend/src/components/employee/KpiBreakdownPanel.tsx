@@ -209,8 +209,8 @@ const KpiBreakdownPanel = ({ score: propScore, agent, teamWeights }: KpiBreakdow
             />
           </svg>
           <div className="absolute inset-0 flex items-center justify-center">
-            <span className="text-sm font-extrabold text-[var(--text-primary)]">
-              {displayScore.toFixed(0)}%
+            <span className="text-xs font-extrabold text-[var(--text-primary)]">
+              {displayScore.toFixed(1)}%
             </span>
           </div>
         </div>
