@@ -1,6 +1,6 @@
 import { ArrowUpRight, ClipboardCheck } from 'lucide-react';
 import type { TeamAgentRow } from '../../hooks/usePerformanceData';
-import { egyptRcmTeamLabel, isRcmGroupTeam } from '../../types';
+import { egyptRcmTeamLabel, egyptRcmTeamValue, isRcmGroupTeam } from '../../types';
 
 interface RcmEgyptTeamSummaryProps {
   rows: TeamAgentRow[];
@@ -34,11 +34,11 @@ const RcmEgyptTeamSummary = ({ rows, onTeamSelect }: RcmEgyptTeamSummaryProps) =
   const grouped = new Map<string, TeamAgentRow[]>();
   rows.forEach((row) => {
     if (!isRcmGroupTeam(row.raw.identity.team, 'offshore_egy', row.raw.region ?? row.raw.identity.region)) return;
-    const label = egyptRcmTeamLabel(row.raw.identity.team || row.team);
-    if (!label || label.toLowerCase() === 'rcm') return;
-    grouped.set(label, [...(grouped.get(label) ?? []), row]);
+    const stored = egyptRcmTeamValue(row.raw.identity.team || row.team);
+    if (!stored || stored.toLowerCase() === 'rcm') return;
+    grouped.set(stored, [...(grouped.get(stored) ?? []), row]);
   });
-  const teams = [...grouped.entries()].sort(([left], [right]) => left.localeCompare(right));
+  const teams = [...grouped.entries()].sort(([left], [right]) => egyptRcmTeamLabel(left).localeCompare(egyptRcmTeamLabel(right)));
 
   return (
     <section className="glass-panel rounded-xl p-4 shadow-sm sm:p-6" aria-labelledby="rcm-egypt-team-summary">
@@ -53,14 +53,15 @@ const RcmEgyptTeamSummary = ({ rows, onTeamSelect }: RcmEgyptTeamSummaryProps) =
       </div>
       {teams.length > 0 ? (
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-          {teams.map(([label, teamRows], index) => {
+          {teams.map(([stored, teamRows], index) => {
+            const label = egyptRcmTeamLabel(stored);
             const average = teamRows.reduce((sum, row) => sum + row.score, 0) / teamRows.length;
             const tone = TONES[index % TONES.length];
             return (
               <button
-                key={label}
+                key={stored}
                 type="button"
-                onClick={() => onTeamSelect(label)}
+                onClick={() => onTeamSelect(stored)}
                 aria-label={`Open ${label} team`}
                 className={`group relative overflow-hidden rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] p-4 text-left transition-all duration-200 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${tone.glow}`}
               >

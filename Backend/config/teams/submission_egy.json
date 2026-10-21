@@ -1,0 +1,52 @@
+{
+  "team": "Submission EGY",
+  "db_name": "Submission EGY",
+  "region": "EGY",
+  "employee_id_col": "Employee ID",
+  "employee_name_col": "Employee Name",
+  "sheet_team": "Submission",
+  "rcm_group": "offshore_egy",
+  "rcm_domain": "submission",
+  "grade_thresholds": {
+    "A": 95,
+    "B": 90,
+    "C": 80,
+    "D": 70
+  },
+  "performance_levels": {
+    "Employee": {
+      "positions": {
+        "Claim & Audit Specialist": {
+          "kpis": [
+            {
+              "key": "egy_submission_initial_rejection",
+              "label": "Initial Rejection %",
+              "perspective": "Internal Process",
+              "weight": 0.6,
+              "direction": "lower_better",
+              "unit": "%",
+              "color": "#DC2626",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": { "method": "average" },
+              "display_order": 1
+            },
+            {
+              "key": "egy_submission_due_date",
+              "label": "% of Submission Within Due date",
+              "perspective": "Customer",
+              "weight": 0.4,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#0D9488",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": { "method": "average" },
+              "display_order": 2
+            }
+          ]
+        }
+      }
+    }
+  }
+}

@@ -83,8 +83,11 @@ _CALL_CENTER_KEYS = {"call center", "inbound", "outbound"}
 _RCM_KEYS = {
     "rcm",
     "coding",
+    "coding egy",
     "submission",
+    "submission egy",
     "re-submission",
+    "resubmission",
     "pre-approvals",
     "pre-approvals ip offshore",
     "pre-approvals ip",

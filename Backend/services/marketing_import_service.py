@@ -828,7 +828,11 @@ def legacy_offshore_sheet_enabled(sheet_names) -> bool:
 
 
 def load_rcm_offshore_team_configs() -> dict[str, dict[str, Any]]:
-    """Team configs marked ``rcm_group = offshore_egy``. One block per Egypt team."""
+    """Team configs marked ``rcm_group = offshore_egy``. One block per Egypt team.
+
+    ``sheet_team`` is the Team cell on RCM Offshore when that cell reuses a UAE
+    domain name. The stored team stays the config's own name.
+    """
     import json
     from pathlib import Path
 
@@ -846,6 +850,9 @@ def load_rcm_offshore_team_configs() -> dict[str, dict[str, Any]]:
             continue
         config = load_team_config(team_name)
         loaded[_lookup_key(config["team"])] = config
+        sheet_team = str(data.get("sheet_team") or "").strip()
+        if sheet_team:
+            loaded[_lookup_key(sheet_team)] = config
     return loaded
 
 

@@ -209,9 +209,9 @@ const RCM_DOMAIN_TEAMS: Record<Exclude<RcmDomainFilter, 'all'>, readonly string[
     'Pre-Approvals IP Final',
     'Pre-Approvals IP Elective',
   ],
-  submission: ['Submission'],
+  submission: ['Submission', 'Submission EGY'],
   re_submission: ['Re-Submission'],
-  coding: ['Coding'],
+  coding: ['Coding', 'Coding EGY'],
 };
 
 export function rcmGroupForTeam(value: string | null | undefined, region?: string | null): Exclude<RcmGroupFilter, 'all'> | null {
@@ -221,12 +221,14 @@ export function rcmGroupForTeam(value: string | null | undefined, region?: strin
   if (normalizedRegion.includes('uae') || normalizedRegion.includes('united arab')) return 'uae';
   const normalized = normalizeTeamIdentity(value);
   const offshore = normalized === normalizeTeamIdentity('Pre-Approvals IP Offshore')
-    || normalized === normalizeTeamIdentity('Pre-Approvals IP');
+    || normalized === normalizeTeamIdentity('Pre-Approvals IP')
+    || normalized === normalizeTeamIdentity('Coding EGY')
+    || normalized === normalizeTeamIdentity('Submission EGY');
   return offshore ? 'offshore_egy' : 'uae';
 }
 
-/** Legacy horizontal rows and the new vertical sheet share one Egypt team card. */
-export function egyptRcmTeamLabel(value: string | null | undefined): string {
+/** Stored team selected by an Egypt card. Legacy offshore rows share Pre-Approvals IP. */
+export function egyptRcmTeamValue(value: string | null | undefined): string {
   const normalized = normalizeTeamIdentity(value);
   if (normalized === normalizeTeamIdentity('Pre-Approvals IP')
     || normalized === normalizeTeamIdentity('Pre-Approvals IP Offshore')) {
@@ -235,9 +237,18 @@ export function egyptRcmTeamLabel(value: string | null | undefined): string {
   return String(value ?? '').trim();
 }
 
+/** Sheet name shown on the Egypt card. Stored names stay unique beside the UAE domains. */
+export function egyptRcmTeamLabel(value: string | null | undefined): string {
+  const stored = egyptRcmTeamValue(value);
+  const normalized = normalizeTeamIdentity(stored);
+  if (normalized === normalizeTeamIdentity('Coding EGY')) return 'Coding';
+  if (normalized === normalizeTeamIdentity('Submission EGY')) return 'Submission';
+  return stored;
+}
+
 export function sameEgyptRcmTeam(value: string | null | undefined, selected: string | null | undefined): boolean {
   if (!String(selected ?? '').trim()) return false;
-  return egyptRcmTeamLabel(value).toLowerCase() === egyptRcmTeamLabel(selected).toLowerCase();
+  return egyptRcmTeamValue(value).toLowerCase() === egyptRcmTeamValue(selected).toLowerCase();
 }
 
 export function isRcmGroupTeam(value: string | null | undefined, group: RcmGroupFilter, region?: string | null): boolean {

@@ -2,10 +2,12 @@
 
 import pandas as pd
 
+from config.loader import load_team_config
 from services.marketing_import_service import (
     MarketingImportService,
     RcmOffshoreImportService,
     legacy_offshore_sheet_enabled,
+    load_rcm_offshore_team_configs,
 )
 from services.seeding_service import json_safe
 
@@ -189,6 +191,60 @@ def test_json_safe_keeps_a_view_only_flag_as_json_true():
     saved = json_safe({"view_only": True, "weight_applied": 0})
     assert saved["view_only"] is True
     assert saved["weight_applied"] == 0
+
+
+def _month(team: str, position: str, employee_id: str, rows: list[tuple[str, float, str, str, float, float]]):
+    parsed_rows = []
+    for label, weight, perspective, direction, target, actual in rows:
+        parsed_rows.append(_row(**{
+            "Employee ID": employee_id,
+            "Employee Name": employee_id,
+            "Team": team,
+            "Position": position,
+            "KPI": label,
+            "Weight": weight,
+            "Perspective": perspective,
+            "Direction": direction,
+            "Target Value": target,
+            "Actual Value": actual,
+        }))
+    return parsed_rows
+
+
+def test_new_egypt_sheet_teams_keep_their_kpis_without_replacing_uae_domains():
+    configs = load_rcm_offshore_team_configs()
+    assert configs["coding"]["team"] == "Coding EGY"
+    assert configs["submission"]["team"] == "Submission EGY"
+    assert configs["resubmission"]["team"] == "Resubmission"
+    assert load_team_config("Coding")["region"] == "UAE"
+    assert load_team_config("Submission")["region"] == "UAE"
+    assert "rcm_group" not in load_team_config("Coding")
+
+    parsed = RcmOffshoreImportService().parse_frame(pd.DataFrame(
+        _month("Coding", "RCM -SHJ- OP CODING", "SGHD70221", [
+            ("Quality Errors Rate", 0.5, "Internal Process", "Lower Better", 0.05, 0.136),
+            ("Rejection Rate", 0, "Internal Process", "Lower Better", 0.06, 0),
+            ("TAT", 0.5, "Customer", "Higher Better", 0.9, 0.424),
+        ])
+        + _month("Submission", "Claim & Audit Specialist", "SGHD70133", [
+            ("Initial Rejection %", 0.6, "Internal Process", "Lower Better", 0.02, 0.038),
+            ("% of Submission Within Due date", 0.4, "Customer", "Higher Better", 0.9, 0.999),
+        ])
+        + _month("Resubmission", "Resubmission Analyst", "SGHD70104", [
+            ("Quality Errors Rate", 0.5, "Internal Process", "Lower Better", 0.05, 0.07),
+            ("Rejection Rate After Re-Submission", 0, "Customer", "Lower Better", 0.6, 0),
+            ("TAT", 0.5, "Customer", "Higher Better", 1, 0.84),
+        ])
+    ))
+    by_id = {record.employee_id: record for record in parsed.records}
+    assert by_id["SGHD70221"].team == "Coding EGY"
+    assert by_id["SGHD70133"].team == "Submission EGY"
+    assert by_id["SGHD70104"].team == "Resubmission"
+    coding_labels = {item["label"] for item in by_id["SGHD70221"].kpi_values}
+    assert coding_labels == {"Quality Errors Rate", "Rejection Rate", "TAT"}
+    rejection = next(item for item in by_id["SGHD70221"].kpi_values if item["label"] == "Rejection Rate")
+    assert rejection["weight_applied"] == 0
+    assert parsed.report["rejected_employee_months"] == []
 
 
 def test_legacy_offshore_sheet_is_skipped_when_rcm_offshore_is_present():

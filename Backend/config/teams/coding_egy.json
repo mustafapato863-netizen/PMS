@@ -1,0 +1,65 @@
+{
+  "team": "Coding EGY",
+  "db_name": "Coding EGY",
+  "region": "EGY",
+  "employee_id_col": "Employee ID",
+  "employee_name_col": "Employee Name",
+  "sheet_team": "Coding",
+  "rcm_group": "offshore_egy",
+  "rcm_domain": "coding",
+  "grade_thresholds": {
+    "A": 95,
+    "B": 90,
+    "C": 80,
+    "D": 70
+  },
+  "performance_levels": {
+    "Employee": {
+      "positions": {
+        "RCM -SHJ- OP CODING": {
+          "kpis": [
+            {
+              "key": "egy_coding_quality_errors",
+              "label": "Quality Errors Rate",
+              "perspective": "Internal Process",
+              "weight": 0.5,
+              "direction": "lower_better",
+              "unit": "%",
+              "color": "#DC2626",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": { "method": "average" },
+              "display_order": 1
+            },
+            {
+              "key": "egy_coding_rejection",
+              "label": "Rejection Rate",
+              "perspective": "Internal Process",
+              "weight": 0,
+              "direction": "lower_better",
+              "unit": "%",
+              "color": "#D97706",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": { "method": "average" },
+              "display_order": 2
+            },
+            {
+              "key": "egy_coding_tat",
+              "label": "TAT",
+              "perspective": "Customer",
+              "weight": 0.5,
+              "direction": "higher_better",
+              "unit": "%",
+              "color": "#0D9488",
+              "actual_col": "Actual Value",
+              "target_col": "Target Value",
+              "aggregation": { "method": "average" },
+              "display_order": 3
+            }
+          ]
+        }
+      }
+    }
+  }
+}

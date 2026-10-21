@@ -6,7 +6,7 @@ import ResponsiveFilters from '../common/ResponsiveFilters';
 import Breadcrumb from '../common/Breadcrumb';
 import type { BreadcrumbItem } from '../common/Breadcrumb';
 import type { LocationKey, PerformanceLevelFilter as PerformanceLevel, PreApprovalsWorkflowFilter, CallCenterChannelFilter, RcmDomainFilter, RcmGroupFilter } from '../../types';
-import { PRE_APPROVALS_WORKFLOW_LABELS, CALL_CENTER_CHANNEL_LABELS, RCM_DOMAIN_LABELS, RCM_GROUP_LABELS } from '../../types';
+import { PRE_APPROVALS_WORKFLOW_LABELS, CALL_CENTER_CHANNEL_LABELS, RCM_DOMAIN_LABELS, RCM_GROUP_LABELS, egyptRcmTeamLabel } from '../../types';
 
 interface TeamHeaderProps {
   displayName: string;
@@ -192,7 +192,7 @@ const TeamHeader = ({
             value={rcmEgyptTeam || 'all'}
             options={[
               { value: 'all', label: 'All Egypt Teams' },
-              ...rcmEgyptTeamOptions.map((team) => ({ value: team, label: team })),
+              ...rcmEgyptTeamOptions.map((team) => ({ value: team, label: egyptRcmTeamLabel(team) })),
             ]}
             onChange={(value) => setRcmEgyptTeam(value === 'all' ? '' : value)}
             ariaLabel="Egypt RCM team"
