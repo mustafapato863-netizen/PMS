@@ -3,7 +3,7 @@ import { render, screen, fireEvent, waitFor, within } from '@testing-library/rea
 import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import MonthlyPresentationView from './MonthlyPresentationView';
-import { DECK_LANES, DECK_MAX_CONCURRENT, DECK_QUERY_OPTIONS, DECK_SLOT_GRACE_MS, DECK_REQUEST_DEADLINE_MS, DECK_WORKSPACE_SECTIONS, DeckTimeoutError, deckRequestsInFlight, limitDeckRequest, resetDeckLimiter, readEnvelope, withDeadline } from './useMonthlyPresentationData';
+import { DECK_LANES, DECK_MAX_CONCURRENT, DECK_QUERY_OPTIONS, DECK_SLOT_FALLBACK_MS, DECK_MIN_START_MS, DECK_REQUEST_DEADLINE_MS, DECK_WORKSPACE_SECTIONS, DeckTimeoutError, deckRequestsInFlight, limitDeckRequest, resetDeckLimiter, readEnvelope, withDeadline } from './useMonthlyPresentationData';
 
 const mocks = vi.hoisted(() => ({ apiFetch: vi.fn() }));
 vi.mock('../../lib/apiClient', () => ({ apiFetch: mocks.apiFetch }));
@@ -189,16 +189,30 @@ describe('limiter slots', () => {
     settle(); await vi.advanceTimersByTimeAsync(0);
     expect(deckRequestsInFlight('actions').active).toBe(0);
   });
-  it('reclaims the slot after the grace period if an aborted request never settles', async () => {
+  it('keeps the slot busy after an abort until the request settles (fallback only after DECK_SLOT_FALLBACK_MS)', async () => {
     vi.useFakeTimers();
     resetDeckLimiter();
     const c = new AbortController();
     limitDeckRequest(c.signal, () => new Promise(() => {}), 'actions').catch(() => {});
     c.abort();
-    await vi.advanceTimersByTimeAsync(DECK_SLOT_GRACE_MS - 1);
+    await vi.advanceTimersByTimeAsync(DECK_SLOT_FALLBACK_MS - 1);
     expect(deckRequestsInFlight('actions').active).toBe(1);
     await vi.advanceTimersByTimeAsync(2);
     expect(deckRequestsInFlight('actions').active).toBe(0);
+  });
+
+  it('a request whose deadline expired while queued fails locally and is never run', async () => {
+    vi.useFakeTimers();
+    resetDeckLimiter();
+    let release: () => void = () => {};
+    limitDeckRequest(undefined, () => new Promise<void>((r) => { release = r; }), 'actions');
+    const run = vi.fn(async () => 1);
+    const queued = limitDeckRequest(undefined, run, 'actions', Date.now() + DECK_MIN_START_MS + 500).catch((e: unknown) => e);
+    await vi.advanceTimersByTimeAsync(600); // now < DECK_MIN_START_MS left
+    release(); await vi.advanceTimersByTimeAsync(0);
+    expect(await queued).toBeInstanceOf(DeckTimeoutError);
+    expect(run).not.toHaveBeenCalled();
+    expect(deckRequestsInFlight('actions')).toEqual({ active: 0, queued: 0 });
   });
 });
 

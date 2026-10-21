@@ -33,8 +33,18 @@ export const DECK_LANES = { insights: 2, actions: 1 } as const;
 export type DeckLane = keyof typeof DECK_LANES;
 /** Kept for callers/tests: the Insights lane cap. */
 export const DECK_MAX_CONCURRENT = DECK_LANES.insights;
-/** If an aborted request somehow never settles, its slot is reclaimed after this grace period. */
-export const DECK_SLOT_GRACE_MS = 5_000;
+/**
+ * A queued request is never sent with less than this left of its deadline; it fails locally instead
+ * (no fetch), so the queue cannot release a burst of requests that are aborted milliseconds later.
+ */
+export const DECK_MIN_START_MS = 2_000;
+/**
+ * Deadlock fallback only. A slot is held until the aborted request has actually settled; with abortBody the
+ * fetch and its body read reject as soon as the abort lands, so this should never fire. If a broken fetch
+ * implementation never settles, the slot is reclaimed after this long, by which point the browser has long
+ * dropped the connection. It is 4x the request deadline, so it cannot overlap a live request's lifetime.
+ */
+export const DECK_SLOT_FALLBACK_MS = 60_000;
 
 /**
  * Deck data is a locked past month: never refetch it on its own. One retry, but never after a timeout
@@ -54,23 +64,31 @@ const lanes: Record<DeckLane, { active: number; waiting: Array<() => void> }> = 
 };
 /**
  * FIFO semaphore per lane. A slot is freed only when the request itself settles (the abort now reaches the
- * body read, so an aborted request settles promptly), or DECK_SLOT_GRACE_MS after its signal aborted.
+ * body read, so an aborted request settles promptly); DECK_SLOT_FALLBACK_MS is a deadlock guard only.
  * A queued request whose signal aborts leaves the queue without running.
  */
-export function limitDeckRequest<T>(signal: AbortSignal | undefined, run: () => Promise<T>, lane: DeckLane = 'insights'): Promise<T> {
+export function limitDeckRequest<T>(
+  signal: AbortSignal | undefined, run: () => Promise<T>, lane: DeckLane = 'insights', deadlineAt?: number,
+): Promise<T> {
   const L = lanes[lane];
   return new Promise<T>((resolve, reject) => {
+    const next = () => L.waiting.shift()?.();
     const start = () => {
       signal?.removeEventListener('abort', onQueuedAbort);
+      // Expired or cancelled while queued: fail locally, keep the slot for the next one, never call fetch.
+      if (signal?.aborted) { reject(signal.reason ?? new DOMException('Aborted', 'AbortError')); next(); return; }
+      if (deadlineAt != null && deadlineAt - Date.now() < DECK_MIN_START_MS) {
+        reject(new DeckTimeoutError(DECK_REQUEST_DEADLINE_MS)); next(); return;
+      }
       L.active += 1;
-      let freed = false; let grace: ReturnType<typeof setTimeout> | undefined;
+      let freed = false; let fallback: ReturnType<typeof setTimeout> | undefined;
       const free = () => {
-        if (freed) return; freed = true; clearTimeout(grace);
+        if (freed) return; freed = true; clearTimeout(fallback);
         signal?.removeEventListener('abort', onRunningAbort);
-        L.active -= 1; L.waiting.shift()?.();
+        L.active -= 1; next();
       };
-      const onRunningAbort = () => { grace = setTimeout(free, DECK_SLOT_GRACE_MS); };
-      if (signal?.aborted) onRunningAbort(); else signal?.addEventListener('abort', onRunningAbort, { once: true });
+      const onRunningAbort = () => { fallback = setTimeout(free, DECK_SLOT_FALLBACK_MS); };
+      signal?.addEventListener('abort', onRunningAbort, { once: true });
       let p: Promise<T>;
       try { p = run(); } catch (e) { p = Promise.reject(e); }
       p.then(resolve, reject).finally(free);
@@ -181,15 +199,20 @@ export function useMonthlyPresentationData(code: RegionCode | null, period: Lock
 
   // The 15 s deadline covers queueing + headers + body; its abort reaches the body read (abortBody) and the
   // limiter slot frees when the request actually settles.
-  const fetchWs = (url: string, signal: AbortSignal | undefined) => withDeadline(signal, DECK_REQUEST_DEADLINE_MS,
-    async (s) => {
-      const res = await limitDeckRequest(s, () => apiFetch<Envelope<InsightsWorkspace>>(url, { signal: s }, { abortBody: true }), 'insights');
+  const fetchWs = (url: string, signal: AbortSignal | undefined) => {
+    const at = Date.now() + DECK_REQUEST_DEADLINE_MS;
+    return withDeadline(signal, DECK_REQUEST_DEADLINE_MS, async (s) => {
+      const res = await limitDeckRequest(s, () => apiFetch<Envelope<InsightsWorkspace>>(url, { signal: s }, { abortBody: true }), 'insights', at);
       const data = readEnvelope(res, url);
       if (!isObject(data)) throw new Error('Unexpected insights workspace response shape');
       return data;
     });
-  const get = <T,>(url: string, signal: AbortSignal | undefined) => withDeadline(signal, DECK_REQUEST_DEADLINE_MS,
-    async (s) => readEnvelope<T>(await limitDeckRequest(s, () => apiFetch<Envelope<T>>(url, { signal: s }, { abortBody: true }), 'actions'), url));
+  };
+  const get = <T,>(url: string, signal: AbortSignal | undefined) => {
+    const at = Date.now() + DECK_REQUEST_DEADLINE_MS;
+    return withDeadline(signal, DECK_REQUEST_DEADLINE_MS,
+      async (s) => readEnvelope<T>(await limitDeckRequest(s, () => apiFetch<Envelope<T>>(url, { signal: s }, { abortBody: true }), 'actions', at), url));
+  };
 
   const workspace = useQuery({
     queryKey: [...base, 'workspace', DECK_WORKSPACE_SECTIONS.join(',')],
