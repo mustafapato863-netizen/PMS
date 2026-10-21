@@ -4,7 +4,7 @@ import {
   REGION_FUNCTIONS, REGION_LABEL, SLIDE_COUNT, actionMix, displayActionState, expectedImpact, isCriticalKpi, kpiBadge,
   kpiMovementTone, MASKED_DETAILS_LABEL, movementArrow, outlookLine, regionMoM, type Readiness, type Tone,
 } from './model';
-import type { DeckData } from './deckTypes';
+import type { DeckData, SlideState } from './deckTypes';
 import { Bar, GradeBadge, Movement, NoDataBadge, ReadyBadge, SlideEmpty, SlideFrame, StatusBadge } from './SlideParts';
 
 const fmtPct = (v: number | null | undefined, d = 1) => (v == null || !Number.isFinite(v) ? '—' : `${v.toFixed(d)}%`);
@@ -13,12 +13,27 @@ const fmtPts = (v: number) => `${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(v).
 const fmtDue = (iso: string | null) => (iso ? new Date(`${iso.slice(0, 10)}T00:00:00`).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : '—');
 const toneClass = (t: Tone) => `mp-tone-${t}`;
 
-export function buildSlides(data: DeckData, insightsHref: string, opts: { appendix: boolean }): ReactNode[] {
+export function buildSlides(data: DeckData, insightsHref: string, opts: { appendix: boolean; state?: (n: number) => SlideState; retry?: (n: number) => void; gradeMixState?: SlideState }): ReactNode[] {
   const { ws, code, period } = data;
   const region = REGION_LABEL[code];
-  const F = (n: number, kicker: string, title: ReactNode, body: ReactNode, sub?: ReactNode) => (
-    <SlideFrame key={n} n={n} kicker={kicker} title={title} sub={sub} data={data} insightsHref={insightsHref}>{body}</SlideFrame>
-  );
+  const F = (n: number, kicker: string, title: ReactNode, body: ReactNode, sub?: ReactNode) => {
+    const st = opts.state?.(n) ?? { status: 'ready' as const };
+    if (st.status === 'loading') return (
+      <SlideFrame key={n} n={n} kicker={kicker} title={kicker} data={data} insightsHref={insightsHref}>
+        <div className="mp-slide-state" role="status" data-testid={`slide-loading-${n}`}>Loading {kicker.toLowerCase()} for {region} · {period.label}…</div>
+      </SlideFrame>
+    );
+    if (st.status === 'error') return (
+      <SlideFrame key={n} n={n} kicker={kicker} title={kicker} data={data} insightsHref={insightsHref}>
+        <div className="mp-slide-state mp-slide-error" role="alert" data-testid={`slide-error-${n}`}>
+          <p><b>This slide could not be loaded.</b> {st.message}</p>
+          <p className="mp-muted mp-small">Nothing is shown rather than partial numbers. Other slides are unaffected.</p>
+          {st.retry && <button type="button" className="mp-btn" onClick={st.retry}>Retry</button>}
+        </div>
+      </SlideFrame>
+    );
+    return <SlideFrame key={n} n={n} kicker={kicker} title={title} sub={sub} data={data} insightsHref={insightsHref}>{body}</SlideFrame>;
+  };
   const s = ws?.summary;
   const story = ws?.executive_story ?? null;
   const mom = regionMoM(story, Boolean(ws?.comparison?.is_adjacent));
@@ -28,6 +43,8 @@ export function buildSlides(data: DeckData, insightsHref: string, opts: { append
   const drivers = [...(ws?.performance_drivers ?? [])].sort((a, b) => a.impact_points - b.impact_points).slice(0, 6);
   const people = (ws?.people_contribution_analysis?.rows ?? []).slice(0, 8);
   const slides: ReactNode[] = [];
+  const R = (n: number) => opts.retry ? <button type="button" className="mp-btn" onClick={() => opts.retry!(n)}>Retry</button> : null;
+  const gm = opts.gradeMixState ?? { status: 'ready' as const };
 
   slides.push(F(1, 'Title & scope', `${region} · Monthly performance · ${period.label}`, (
     <div className="mp-grid2">
@@ -86,7 +103,9 @@ export function buildSlides(data: DeckData, insightsHref: string, opts: { append
             {ov ? <Bar parts={[['On track', ov.on_track, '#0E8749'], ['At risk', ov.at_risk, '#A66800'], ['Critical', ov.critical, '#D92D20'], ['No data', ovNoData, 'hatch']]} /> : <NoDataBadge />}
           </div>
           <div className="mp-card"><div className="mp-label">Employee grade mix · {mixTotal} people</div>
-            {data.gradeMix && mixTotal ? <Bar parts={(['A', 'B', 'C', 'D', 'E'] as GradeClass[]).map((k) => [k, data.gradeMix![k], GRADE_PALETTE[k].solid])} /> : <NoDataBadge />}
+            {gm.status === 'loading' ? <p className="mp-muted" role="status" data-testid="grade-mix-loading">Loading summary records…</p>
+              : gm.status === 'error' ? <p className="mp-slide-error" role="alert" data-testid="grade-mix-error">Grade mix could not be loaded. {gm.message} {gm.retry && <button type="button" className="mp-btn" onClick={gm.retry}>Retry</button>}</p>
+              : data.gradeMix && mixTotal ? <Bar parts={(['A', 'B', 'C', 'D', 'E'] as GradeClass[]).map((k) => [k, data.gradeMix![k], GRADE_PALETTE[k].solid])} /> : <NoDataBadge />}
             <p className="mp-muted mp-small">Counts employees; excludes Partial teams{data.gradeMixExcluded.length ? ` (${data.gradeMixExcluded.join(', ')})` : ''}. Ready rule v1.</p>
           </div>
           <div className="mp-card mp-card-soft"><div className="mp-label">Headline</div><p className="mp-lead">{story?.headline || 'Headline not available.'}</p></div>
@@ -109,7 +128,7 @@ export function buildSlides(data: DeckData, insightsHref: string, opts: { append
             <td><Movement delta={delta} direction={k.direction ?? drv?.kpi_direction} suffix="" />{!k.direction && !drv?.kpi_direction && <span className="mp-chip">direction not set</span>}</td></tr>
         );
       })}</tbody></table>
-  ) : <SlideEmpty title="No scored KPIs for this period" />, 'Arrow shows raw movement; color follows the KPI direction. Unknown direction stays grey.'));
+  ) : <SlideEmpty title="No scored KPIs for this period" body={`The insights workspace returned no KPI diagnosis for ${region} · ${period.label}.`}>{R(4)}</SlideEmpty>, 'Arrow shows raw movement; color follows the KPI direction. Unknown direction stays grey.'));
 
   slides.push(
     <section key={5} id="s05" className="mp-slide mp-break" aria-label={`Slide 5 of ${SLIDE_COUNT}: Section break`} data-slide={5}>
@@ -147,7 +166,7 @@ export function buildSlides(data: DeckData, insightsHref: string, opts: { append
           <td>{fmtNum(p.current_value)} vs {fmtNum(p.target_value)}</td><td>{fmtNum(p.weighted_impact, 2)}</td>
           <td>{p.classification === 'data_issue' ? <NoDataBadge /> : <span className={`mp-badge mp-badge-${p.classification === 'positive' ? 'on_track' : 'critical'}`}>{p.classification}</span>}</td></tr>
       ))}</tbody></table>
-  ) : <SlideEmpty title="No people analysis for this period" />));
+  ) : <SlideEmpty title="No people analysis for this period" body={`No people contribution analysis was returned for ${region} · ${period.label}.`}>{R(7)}</SlideEmpty>));
 
   const rows = [...data.actions].slice(0, 8);
   slides.push(F(8, 'Corrective actions', `${mix.open + mix.in_progress} actions in flight; ${mix.overdue} overdue for ${period.short}`, rows.length ? (
@@ -162,7 +181,7 @@ export function buildSlides(data: DeckData, insightsHref: string, opts: { append
         })}</tbody></table>
       <p className="mp-muted mp-small">Showing {rows.length} of {data.actions.length}. Overdue is measured against {period.endDate} (end of the locked month), not today.</p>
     </>
-  ) : <SlideEmpty title={`No corrective actions recorded for ${region} · ${period.label}`}><a className="mp-btn" href="/corrective-actions">Open Corrective Actions</a></SlideEmpty>,
+  ) : <SlideEmpty title={`No corrective actions recorded for ${region} · ${period.label}`}>{R(8)}<a className="mp-btn" href="/corrective-actions">Open Corrective Actions</a></SlideEmpty>,
   'Region-scoped follow-up. Expected impact is the owner\'s free-text note, quoted as written; it is not scored or summed.'));
 
   slides.push(F(9, 'Outlook', 'Outlook from the actions in flight', (

@@ -124,7 +124,8 @@ export const ROUTE_ROLES = {
   functionSummary: ['Admin', 'General Manager', 'Performance Team', ROLE_FUNCTION_VIEWER, ROLE_FUNCTION_DIRECTOR, ROLE_BRANCH_DIRECTOR, ROLE_REGIONAL_MANAGER],
   /** Saved-report library + preview (read). Legacy and new scoped roles are API-filtered. */
   /** Monthly Presentation deck: Corporate roles plus the Regional Manager (own region only, via accessible_regions). */
-  monthlyPresentation: ['Admin', 'General Manager', 'Performance Team', 'Executive', ROLE_REGIONAL_MANAGER],
+  // Same audience as the Insights deep-dive owners: Admin and Performance Team only (GM, Executive, Regional Manager removed).
+  monthlyPresentation: ['Admin', 'Performance Team'],
   reports: ['Admin', 'General Manager', 'Manager', 'Executive', 'Viewer', ROLE_FUNCTION_VIEWER, 'Performance Team'],
 } as const satisfies Record<string, readonly AppRole[]>;
 

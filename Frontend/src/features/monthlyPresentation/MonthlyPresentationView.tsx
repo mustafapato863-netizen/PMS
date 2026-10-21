@@ -12,7 +12,7 @@ import {
 import { MP_QUERY_ROOT, useMonthlyPresentationData } from './useMonthlyPresentationData';
 import { buildSlides } from './buildSlides';
 import { NoDataBadge } from './SlideParts';
-import type { DeckData, TeamReady } from './deckTypes';
+import type { DeckData, SlideState, TeamReady } from './deckTypes';
 import './monthlyPresentation.css';
 
 export default function MonthlyPresentationView({ today = new Date() }: { today?: Date }) {
@@ -62,7 +62,9 @@ export default function MonthlyPresentationView({ today = new Date() }: { today?
 
   const deck: DeckData | null = useMemo(() => {
     if (!code || !period) return null;
-    const ws = q.workspace.data;
+    const ws = q.workspace.data
+      ? { ...q.workspace.data, kpi_overview: q.overview.data?.kpi_overview ?? q.workspace.data.kpi_overview }
+      : undefined;
     const actions = periodRegionActions(q.followUp.data ?? [], code, period);
     const fnOf = (team: string) => REGION_FUNCTIONS[code].find((f) => f.teams.includes(team))?.name ?? '';
     const teams: TeamReady[] = q.teamDiagnosis.map(({ team, query }) => {
@@ -89,11 +91,48 @@ export default function MonthlyPresentationView({ today = new Date() }: { today?
       owners: regionOwners(q.owners.data ?? [], actions), mask: mask ? nameMasker() : (n) => String(n ?? '').trim() || '—',
       masked: mask,
     };
-  }, [code, period, q.workspace.data, q.followUp.data, q.teamDiagnosis, q.records.data, q.owners.data, mask, status]);
+  }, [code, period, q.workspace.data, q.overview.data, q.followUp.data, q.teamDiagnosis, q.records.data, q.owners.data, mask, status]);
 
   const insightsHref = code && period ? `/insights?region=${code}&month=${period.short}&year=${period.year}` : '/insights';
   const noMonthData = q.workspace.data && (q.workspace.data.summary?.analyzed_kpis ?? 0) === 0;
-  const slides = deck && q.workspace.data && !noMonthData ? buildSlides(deck, insightsHref, { appendix: params.print ? appendix : true }) : [];
+  // Per-slide gates: each slide waits only for its own requests and fails on its own (no deck-wide spinner).
+  const slideState = useCallback((n: number): SlideState => {
+    type Q = { isPending: boolean; isError: boolean; error: unknown; refetch: () => unknown };
+    const team = q.teamDiagnosis.map((t) => t.query as Q);
+    const deps: Record<number, Array<[string, Q]>> = {
+      1: [['Insights workspace', q.workspace]],
+      2: [['Follow-up actions', q.followUp], ...team.map((t, i) => [`${q.teamDiagnosis[i].team} KPIs`, t] as [string, Q])],
+      3: [['Insights workspace', q.workspace], ['KPI overview', q.overview], ...team.map((t, i) => [`${q.teamDiagnosis[i].team} KPIs`, t] as [string, Q])],
+      4: [['Insights workspace', q.workspace]],
+      6: [['Insights workspace', q.workspace]],
+      7: [['Insights workspace', q.workspace]],
+      8: [['Follow-up actions', q.followUp]],
+      9: [['Follow-up actions', q.followUp]],
+      10: [['Follow-up actions', q.followUp], ['Owners', q.owners]],
+    };
+    const list = deps[n] ?? [];
+    // Team KPI queries degrade per team (shown as No data); only the region-level ones fail a slide.
+    const blocking = list.filter(([label]) => !label.endsWith(' KPIs'));
+    const failed = blocking.filter(([, x]) => x.isError);
+    if (failed.length) return {
+      status: 'error',
+      message: failed.map(([label, x]) => `${label}: ${x.error instanceof Error ? x.error.message : 'request failed'}`).join(' · '),
+      retry: () => failed.forEach(([, x]) => { void x.refetch(); }),
+    };
+    if (list.some(([, x]) => x.isPending)) return { status: 'loading' };
+    return { status: 'ready' };
+  }, [q.workspace, q.overview, q.followUp, q.owners, q.teamDiagnosis]);
+  const retrySlide = useCallback((n: number) => {
+    const map: Record<number, Array<{ refetch: () => unknown }>> = {
+      4: [q.workspace], 7: [q.workspace], 8: [q.followUp],
+    };
+    (map[n] ?? []).forEach((x) => { void x.refetch(); });
+  }, [q.workspace, q.followUp]);
+  const gradeMixState: SlideState = q.records.isError
+    ? { status: 'error', message: q.records.error instanceof Error ? q.records.error.message : 'request failed', retry: () => { void q.records.refetch(); } }
+    : q.records.isPending ? { status: 'loading' } : { status: 'ready' };
+  const slides = deck && !noMonthData ? buildSlides(deck, insightsHref, { appendix: params.print ? appendix : true, state: slideState, retry: retrySlide, gradeMixState }) : [];
+  const deckReady = slides.length > 0 && q.workspace.isSuccess;
 
   // Print: title = PDF file name, then open the print dialog once data is in.
   useEffect(() => {
@@ -105,7 +144,7 @@ export default function MonthlyPresentationView({ today = new Date() }: { today?
   }, [params.print, code, period]);
   const printedRef = useRef(false);
   useEffect(() => {
-    if (params.print && slides.length && !printedRef.current && search.get('autoprint') === '1') {
+    if (params.print && deckReady && !q.followUp.isPending && !q.overview.isPending && !q.records.isPending && !printedRef.current && search.get('autoprint') === '1') {
       printedRef.current = true;
       window.setTimeout(() => window.print(), 400);
     }
@@ -126,10 +165,9 @@ export default function MonthlyPresentationView({ today = new Date() }: { today?
       <button type="button" className="mp-btn" onClick={() => setMonth(defaultMonth)}>Open {periodFromKey(defaultMonth)!.label}</button>
     </Empty>
   );
-  else if (q.workspace.isLoading) content = <div className="mp-empty" role="status">Loading {REGION_LABEL[code]} · {period.label}…</div>;
-  else if (q.workspace.isError) content = <Empty title="The deck could not be loaded" body="Insights workspace request failed. Nothing is shown rather than partial numbers." />;
   else if (noMonthData) content = (
     <Empty title={`No ${period.label} data for ${REGION_LABEL[code]} yet`} body="No scored records for the locked period. Ready cannot be computed, so every team shows No data.">
+      <button type="button" className="mp-btn" onClick={() => { void q.workspace.refetch(); }}>Retry</button>
       <button type="button" className="mp-btn" onClick={() => setMonth(shiftMonth(period.key, -1))}>Switch period to {periodFromKey(shiftMonth(period.key, -1))!.label}</button>
       <div className="mp-row mp-gap"><NoDataBadge /> {REGION_FUNCTIONS[code].flatMap((f) => f.teams).join(' · ')}</div>
     </Empty>
@@ -144,7 +182,7 @@ export default function MonthlyPresentationView({ today = new Date() }: { today?
     <div className={`mp-root ${params.print ? 'mp-print' : ''} ${bands ? 'mp-bands' : ''}`} data-region={code ?? ''}>
       {!params.print && code && period && (
         <Toolbar code={code} period={period.key} allowed={allowed} today={today}
-          onRegion={switchRegion} onMonth={setMonth} canPresent={slides.length > 0}
+          onRegion={switchRegion} onMonth={setMonth} canPresent={deckReady}
           onPresent={() => setMode({ present: true })}
           onExport={(o) => setMode({ print: true }, { mask: o.mask ? '1' : '0', bands: o.bands ? '1' : '0', appendix: o.appendix ? '1' : '0', footer: o.footer ? '1' : '0', autoprint: '1' })}
         />

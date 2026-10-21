@@ -106,8 +106,8 @@ describe('access helpers (current roles and legacy transition)', () => {
 describe('canAccessMonthlyPresentation', () => {
   it('matches the route allow-list exactly', async () => {
     const { canAccessMonthlyPresentation, ROUTE_ROLES } = await import('./access');
-    expect([...ROUTE_ROLES.monthlyPresentation]).toEqual(['Admin', 'General Manager', 'Performance Team', 'Executive', 'Regional Manager']);
+    expect([...ROUTE_ROLES.monthlyPresentation]).toEqual(['Admin', 'Performance Team']);
     for (const role of ROUTE_ROLES.monthlyPresentation) expect(canAccessMonthlyPresentation(role)).toBe(true);
-    for (const role of ['Manager', 'Viewer', 'Employee', 'Agent', 'Branch Director', 'Function Director', 'Function Viewer', null]) expect(canAccessMonthlyPresentation(role)).toBe(false);
+    for (const role of ['General Manager', 'Executive', 'Regional Manager', 'Manager', 'Viewer', 'Employee', 'Agent', 'Branch Director', 'Function Director', 'Function Viewer', null]) expect(canAccessMonthlyPresentation(role)).toBe(false);
   });
 });

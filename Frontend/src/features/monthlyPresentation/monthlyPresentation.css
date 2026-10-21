@@ -69,3 +69,6 @@
   .mp-card{break-inside:avoid}
   .mp-print-footer{display:block;position:fixed;bottom:3mm;left:10mm;right:10mm;font-size:9px;color:#64748B}
 }
+
+.mp-slide-state{display:flex;flex-direction:column;align-items:flex-start;gap:8px;border:1px dashed #94A3B8;border-radius:12px;padding:24px;background:#F8FAFC;color:var(--mp-body)}
+.mp-slide-state p{margin:0}.mp-slide-error{border-color:#D92D20;background:#FEF3F2}
