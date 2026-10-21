@@ -682,6 +682,7 @@ from utils.report_scope import (
     filter_records_by_scope,
     filter_records_by_team_levels,
     function_for_team,
+    function_team_keys,
     functions_for_team,
 )
 
@@ -755,6 +756,10 @@ def test_function_for_team_maps_source_teams_to_parent_domains():
     assert functions_for_team("pre-approvals ip final dubai") == ["RCM", "Pre-Approvals"]
     assert functions_for_team("Pre-Approvals IP Offshore") == ["RCM"]
     assert functions_for_team("Inbound UAE") == ["Inbound UAE"]
+    assert function_for_team("Offshore Admin & Management") == "Administration"
+    assert function_for_team("Administration") == "Administration"
+    assert functions_for_team("Offshore Admin & Management") == ["Administration"]
+    assert function_team_keys("Administration") == {"administration", "offshore admin & management"}
 
 
 def test_region_options_follow_selected_team_and_level():

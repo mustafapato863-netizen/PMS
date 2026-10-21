@@ -79,6 +79,16 @@ describe('insights filter cascade', () => {
     expect(teamBelongsToFunction('Pre-Approvals OP Final', 'Pre-Approvals', teamFunctions)).toBe(true);
     // Teams missing from the map fall back to the helper.
     expect(teamBelongsToFunction('Outbound', 'Call Center', teamFunctions)).toBe(true);
+    // A self-name map is the unassigned fallback, so Administration still matches.
+    expect(teamBelongsToFunction('Offshore Admin & Management', 'Administration', {
+      'Offshore Admin & Management': ['Offshore Admin & Management'],
+    })).toBe(true);
+    expect(teamBelongsToFunction('Offshore Admin & Management', 'Administration', {
+      'Offshore Admin & Management': ['Administration'],
+    })).toBe(true);
+    expect(teamBelongsToFunction('Offshore Admin & Management', 'Administration', {
+      'Offshore Admin & Management': ['Finance'],
+    })).toBe(false);
   });
 
   it('includes supported standalone functions only when returned by scoped options', () => {

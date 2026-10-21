@@ -53,7 +53,8 @@ function mappedFunctions(team: string, teamFunctions: TeamFunctionMap | undefine
  * the existing team-family helpers in `src/types.ts`, which mirror backend
  * `report_scope._team_keys` (Call Center = Call Center/Inbound/Outbound;
  * RCM = RCM, Coding, Submission, Re-Submission and every Pre-Approvals team
- * incl. IP Offshore; Pre-Approvals = UAE pre-approvals only).
+ * incl. IP Offshore; Pre-Approvals = UAE pre-approvals only;
+ * Administration = Administration and Offshore Admin & Management).
  */
 function helperBelongs(team: string, teamFunction: string): boolean {
   return sourceNames(team).some((name) => {
@@ -77,9 +78,21 @@ function helperBelongs(team: string, teamFunction: string): boolean {
  * response has it; a team may map to several functions (UAE Pre-Approvals
  * teams are `["RCM", "Pre-Approvals"]`) and is then listed under each.
  */
+/** A map entry that only repeats the stored team name is the unassigned fallback, not a parent. */
+function isSelfNameMapping(team: string, mapped: string[]): boolean {
+  const own = new Set(sourceNames(team).map((name) => identity(name)));
+  return mapped.every((name) => own.has(identity(name)));
+}
+
 export function teamBelongsToFunction(team: string, teamFunction: string, teamFunctions?: TeamFunctionMap): boolean {
   const mapped = mappedFunctions(team, teamFunctions);
-  if (mapped) return mapped.some((name) => identity(name) === identity(teamFunction));
+  if (mapped) {
+    if (mapped.some((name) => identity(name) === identity(teamFunction))) return true;
+    // Offshore Admin & Management is stored under its own name. That self-map
+    // must still roll up to Administration.
+    if (isSelfNameMapping(team, mapped)) return helperBelongs(team, teamFunction);
+    return false;
+  }
   return helperBelongs(team, teamFunction);
 }
 

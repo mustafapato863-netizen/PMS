@@ -132,6 +132,9 @@ describe('position department routes', () => {
 
   it('treats Offshore Admin & Management as the Administration function', () => {
     expect(teamBelongsToFunction('Offshore Admin & Management', 'Administration')).toBe(true);
+    expect(teamBelongsToFunction('Offshore Admin & Management', 'Administration', {
+      'Offshore Admin & Management': ['Offshore Admin & Management'],
+    })).toBe(true);
     expect(teamBelongsToFunction('Administration', 'Administration')).toBe(true);
     expect(teamBelongsToFunction('Finance', 'Finance')).toBe(true);
     expect(teamBelongsToFunction('IT', 'IT')).toBe(true);

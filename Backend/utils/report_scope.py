@@ -80,6 +80,8 @@ _PRE_APPROVALS_IP_ELECTIVE_KEYS = {
 
 _CALL_CENTER_KEYS = {"call center", "inbound", "outbound"}
 
+_ADMINISTRATION_KEYS = {"administration", "offshore admin & management"}
+
 _RCM_KEYS = {
     "rcm",
     "coding",
@@ -116,6 +118,8 @@ def _team_keys(value: str) -> set[str]:
         return _CALL_CENTER_KEYS
     if normalized == "rcm":
         return _RCM_KEYS
+    if normalized in _ADMINISTRATION_KEYS:
+        return set(_ADMINISTRATION_KEYS)
     return {normalized}
 
 
@@ -136,6 +140,7 @@ _FUNCTION_TEAM_KEYS: dict[str, set[str]] = {
     "Call Center": _CALL_CENTER_KEYS,
     "RCM": _RCM_KEYS,
     "Pre-Approvals": _PRE_APPROVALS_UAE_KEYS,
+    "Administration": _ADMINISTRATION_KEYS,
 }
 
 

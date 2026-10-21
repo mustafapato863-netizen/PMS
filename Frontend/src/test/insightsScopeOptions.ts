@@ -30,12 +30,18 @@ export function periodFromKey(key: string): InsightPeriod {
   return { year, month: MONTHS[month - 1], key };
 }
 
+function isAdministrationTeam(team: string): boolean {
+  const key = team.trim().toLowerCase();
+  return key === 'administration' || key === 'offshore admin & management';
+}
+
 /** Mirror of PR #14 `functions_for_team` (broadest first; standalone teams are their own function). */
 export function functionsForTeam(team: string): string[] {
   const parents = [
     isCallCenterTeam(team) ? 'Call Center' : null,
     isRcmTeam(team) ? 'RCM' : null,
     isPreApprovalsUaeTeam(team) ? 'Pre-Approvals' : null,
+    isAdministrationTeam(team) ? 'Administration' : null,
   ].filter(Boolean) as string[];
   return parents.length ? parents : [team];
 }
