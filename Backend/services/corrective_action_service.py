@@ -52,6 +52,19 @@ TRANSFER_VERSION = 1
 _UNSET = object()
 
 
+def month_match_values(month: str) -> list[str]:
+    """Spellings of ``month`` to compare against the raw column.
+
+    Comparing ``column IN (...)`` with precomputed values keeps the predicate
+    sargable (it can use an index on ``month``), unlike ``lower(column) = x``.
+    Months are stored as written in the workbook ("January"); the common
+    casings are covered and callers re-check with ``casefold`` in Python.
+    """
+    raw = month.strip()
+    values = {raw, raw.casefold(), raw.lower(), raw.upper(), raw.title(), raw.capitalize()}
+    return sorted(value for value in values if value)
+
+
 class CorrectiveActionNotFoundError(ValueError):
     pass
 
@@ -124,14 +137,74 @@ class CorrectiveActionService:
             .options(joinedload(PerformanceRecord.team))
             .filter(
                 PerformanceRecord.employee_id == employee_id,
-                func.lower(PerformanceRecord.month) == month.strip().casefold(),
+                PerformanceRecord.month.in_(month_match_values(month)),
                 PerformanceRecord.year == year,
             )
             .order_by(PerformanceRecord.uploaded_at.desc())
             .first()
         )
 
+    @staticmethod
+    def _record_key(employee_id: Any, month: str | None, year: Any) -> tuple | None:
+        if not employee_id or not month or year is None:
+            return None
+        return (str(employee_id), str(month).strip().casefold(), int(year))
+
+    def _prefetch_performance_records(self, actions: list[Action]) -> dict[tuple, PerformanceRecord]:
+        """Load the period record for every action in one query (no N+1).
+
+        Mirrors ``_period_performance_record``: the latest upload for the
+        employee/month/year wins, with the month compared case-insensitively.
+        """
+        keys = {
+            key
+            for action in actions
+            if (key := self._record_key(action.employee_id, action.month, action.year)) is not None
+        }
+        if not keys:
+            return {}
+        employee_ids = {action.employee_id for action in actions if action.employee_id}
+        years = {key[2] for key in keys}
+        months: set[str] = set()
+        for action in actions:
+            if action.month:
+                months.update(month_match_values(action.month))
+        rows = (
+            self.db.query(PerformanceRecord)
+            .options(joinedload(PerformanceRecord.team))
+            .filter(
+                PerformanceRecord.employee_id.in_(employee_ids),
+                PerformanceRecord.year.in_(years),
+                PerformanceRecord.month.in_(months),
+            )
+            .all()
+        )
+        best: dict[tuple, PerformanceRecord] = {}
+        for row in rows:
+            key = self._record_key(row.employee_id, row.month, row.year)
+            if key not in keys:
+                continue
+            current = best.get(key)
+            if current is None or self._uploaded_sort_value(row) > self._uploaded_sort_value(current):
+                best[key] = row
+        return best
+
+    @staticmethod
+    def _uploaded_sort_value(record: PerformanceRecord) -> float:
+        value = record.uploaded_at
+        if value is None:
+            return float("-inf")
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=dt.UTC)
+        return value.timestamp()
+
     def _performance_record_for_action(self, action: Action) -> PerformanceRecord | None:
+        cache = getattr(self, "_record_cache", None)
+        if cache is not None:
+            key = self._record_key(action.employee_id, action.month, action.year)
+            if key is None:
+                return None
+            return cache.get(key)
         return self._period_performance_record(
             employee_id=action.employee_id,
             month=action.month,
@@ -448,7 +521,31 @@ class CorrectiveActionService:
     ) -> dict[str, Any]:
         matched: list[dict[str, Any]] = []
         seen: set[uuid.UUID] = set()
-        for action in self.actions.list_active():
+        actions = self.actions.list_active_for_follow_up(
+            month_values=month_match_values(month) if month and month.strip() else None,
+        )
+        # One IN query for every period record instead of one query per action.
+        self._record_cache = self._prefetch_performance_records(
+            [action for action in actions if action.employee_id is not None and action.due_date is not None]
+        )
+        try:
+            return self._list_follow_up_from(actions, scope, matched, seen, state=state, team=team, owner=owner, month=month)
+        finally:
+            self._record_cache = None
+
+    def _list_follow_up_from(
+        self,
+        actions: list[Action],
+        scope: dict,
+        matched: list[dict[str, Any]],
+        seen: set[uuid.UUID],
+        *,
+        state: str | None,
+        team: str | None,
+        owner: str | None,
+        month: str | None,
+    ) -> dict[str, Any]:
+        for action in actions:
             serialized = self._follow_up_candidate(action, scope)
             if serialized is None or action.id in seen:
                 continue
@@ -478,7 +575,29 @@ class CorrectiveActionService:
             .order_by(User.full_name.asc(), User.username.asc())
             .all()
         )
-        owners = [user for user in users if self._caller_may_assign(user, scope)]
+        assignments_by_user: dict[Any, list[UserTeamAssignment]] | None = None
+        if not (scope.get("role") in {"Admin", "General Manager"} or scope.get("has_unrestricted_team_access")):
+            # One batched query for every candidate's team assignments instead
+            # of one query per user inside _caller_may_assign.
+            assignments_by_user = {user.id: [] for user in users}
+            user_ids = list(assignments_by_user)
+            if user_ids:
+                for assignment in (
+                    self.db.query(UserTeamAssignment)
+                    .options(joinedload(UserTeamAssignment.team))
+                    .filter(UserTeamAssignment.user_id.in_(user_ids))
+                    .all()
+                ):
+                    assignments_by_user.setdefault(assignment.user_id, []).append(assignment)
+        owners = [
+            user
+            for user in users
+            if self._caller_may_assign(
+                user,
+                scope,
+                assignments=None if assignments_by_user is None else assignments_by_user.get(user.id, []),
+            )
+        ]
         return [
             {"id": str(user.id), "name": self._person_name(user), "role": user.role}
             for user in owners
@@ -685,18 +804,27 @@ class CorrectiveActionService:
             return False
         return self._owner_covers_team(owner, scope, team_name, performance_level)
 
-    def _caller_may_assign(self, owner: User, scope: dict, team_name: str | None = None) -> bool:
+    def _caller_may_assign(
+        self,
+        owner: User,
+        scope: dict,
+        team_name: str | None = None,
+        *,
+        assignments: list[UserTeamAssignment] | None = None,
+    ) -> bool:
         if not owner.is_active:
             return False
         if scope.get("role") in {"Admin", "General Manager"} or scope.get("has_unrestricted_team_access"):
             return True
         if str(owner.id) == str(scope.get("user_id") or ""):
             return True
-        assignments = (
-            self.db.query(UserTeamAssignment)
-            .filter(UserTeamAssignment.user_id == owner.id)
-            .all()
-        )
+        if assignments is None:
+            assignments = (
+                self.db.query(UserTeamAssignment)
+                .options(joinedload(UserTeamAssignment.team))
+                .filter(UserTeamAssignment.user_id == owner.id)
+                .all()
+            )
         return any(
             assignment.team is not None
             and user_can_access_team(scope, logical_team_name(assignment.team))

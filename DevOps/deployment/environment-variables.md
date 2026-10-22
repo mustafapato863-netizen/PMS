@@ -13,8 +13,10 @@ The following properties configure the FastAPI application server, database mapp
 | `APP_ENV` | String | `development` | Runtime safety profile. Hosted production must set `production`. |
 | `PORT` | Integer | `8000` direct / `7860` container | HTTP port. The container/platform may override it. |
 | `DATABASE_URL` | Connection URL | N/A | PostgreSQL connection string (`postgresql://user:pass@host:5432/db`). |
-| `DATABASE_POOL_SIZE` | Integer | `20` development / `5` hosted | Maximum persistent database connections. |
-| `DATABASE_MAX_OVERFLOW`| Integer | `10` development / `0` hosted | Temporary database connection overflow headroom. |
+| `DATABASE_POOL_SIZE` | Integer | `20` development / `10` hosted | Persistent database connections per worker process. |
+| `DATABASE_MAX_OVERFLOW`| Integer | `10` development / `5` hosted | Temporary database connection overflow headroom. |
+| `DATABASE_POOL_TIMEOUT`| Integer | `10` | Seconds a request waits for a free pooled connection before failing fast. |
+| `DATABASE_POOL_PRE_PING`| Boolean | `true` | Test each pooled connection before use so dead connections are replaced. |
 | `DATABASE_POOL_RECYCLE`| Integer | `1800` | Bumps stale database connections after specified seconds. |
 | `PMS_AUTO_SEED` | Boolean | `false` outside development | Seeds the bundled workbook only when explicitly enabled; keep disabled in hosted production. |
 | `PMS_SEED_PERMISSIONS_ON_STARTUP` | Boolean | `false` outside development | Seeds permissions at startup. Forbidden in production; use a controlled release job. |

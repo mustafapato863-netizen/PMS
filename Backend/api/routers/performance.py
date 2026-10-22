@@ -1,7 +1,8 @@
+from starlette.concurrency import run_in_threadpool
 from fastapi import APIRouter, Depends, Query, HTTPException, Request, Response, UploadFile, File
 from fastapi.responses import StreamingResponse, FileResponse
 import io
-from typing import List
+from typing import Annotated, List
 from datetime import datetime, timezone
 
 from api.dependencies import (
@@ -218,7 +219,8 @@ async def upload_balanced_scorecard_template(
         raise
     uploaded_by = _user.get("username", "Admin") if isinstance(_user, dict) else "Admin"
     try:
-        result = import_uploaded_management_template(
+        result = await run_in_threadpool(
+            import_uploaded_management_template,
             db,
             contents,
             updated_by=uploaded_by,
@@ -292,13 +294,31 @@ def get_all_records(
         )
 
 
+SUMMARY_RECORDS_DEFAULT_LIMIT = 10_000
+SUMMARY_RECORDS_MAX_LIMIT = 50_000
+
+
 @router.get("/summary-records", response_model=StandardResponse)
 def get_summary_records(
     request: Request,
     db: Session = Depends(get_db),
     employee_id: str | None = Query(None),
+    year: Annotated[int | None, Query(ge=1900, le=9999, description="Only records of this year")] = None,
+    month: Annotated[str | None, Query(max_length=20, description="Only records of this month (case-insensitive)")] = None,
+    team: Annotated[str | None, Query(max_length=255, description="Only records of this team (case-insensitive)")] = None,
+    limit: Annotated[int, Query(
+        ge=1,
+        le=SUMMARY_RECORDS_MAX_LIMIT,
+        description="Maximum records returned; X-Total-Count / X-Result-Truncated report the full size",
+    )] = SUMMARY_RECORDS_DEFAULT_LIMIT,
+    response: Response = None,
 ):
-    """Authorized employee and management evidence for summary and 360 views."""
+    """Authorized employee and management evidence for summary and 360 views.
+
+    Every new parameter is optional; without them the response is unchanged
+    (the default limit is far above any current dataset and truncation is
+    signalled through response headers, never by changing the body shape).
+    """
     scope = require_authenticated_scope(db, request)
     source = DatabaseRecordSource(db)
     service = InsightsService(
@@ -308,15 +328,37 @@ def get_summary_records(
         record_service=DashboardRecordService(db, sql_repository_cls=SQLPerformanceRepository),
     )
     records, _ = service.authorized_records(scope)
+    month_key = month.strip().casefold() if month and month.strip() else None
+    team_key = team.strip().casefold() if team and team.strip() else None
     data = []
+    total = 0
     for record in records:
-        payload = dict(record) if isinstance(record, dict) else record.model_dump(mode="json")
-        if employee_id and str(payload.get("employee_id")) != employee_id:
+        probe = record
+        # Cheap pre-filters on the source record before serializing it.
+        if employee_id and str(_summary_field(probe, "employee_id")) != employee_id:
             continue
+        if year is not None and _summary_field(probe, "year") not in (year, str(year)):
+            continue
+        if month_key and str(_summary_field(probe, "month") or "").strip().casefold() != month_key:
+            continue
+        if team_key and str(_summary_field(probe, "team") or "").strip().casefold() != team_key:
+            continue
+        payload = dict(record) if isinstance(record, dict) else record.model_dump(mode="json")
         if (payload.get("evaluation") or {}).get("score") is None:
             continue
-        data.append(payload)
+        total += 1
+        if len(data) < limit:
+            data.append(payload)
+    if response is not None:
+        response.headers["X-Total-Count"] = str(total)
+        response.headers["X-Result-Truncated"] = "true" if total > len(data) else "false"
     return StandardResponse(success=True, message="Authorized summary evidence retrieved", data=data)
+
+
+def _summary_field(record, name: str):
+    if isinstance(record, dict):
+        return record.get(name)
+    return getattr(record, name, None)
 
 
 def _catalog_row_counted(row: dict) -> bool:

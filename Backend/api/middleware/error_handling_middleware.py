@@ -8,6 +8,7 @@ import logging
 import time
 from fastapi import Request
 from fastapi.encoders import jsonable_encoder
+from starlette.concurrency import run_in_threadpool
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -92,6 +93,12 @@ def install_api_error_handlers(application) -> None:
     )
 
 
+def _log_error_blocking(request: Request, exc: Exception, request_id: str) -> None:
+    """Persist an error row with a short-lived session, off the event loop."""
+    with SessionLocal() as db:
+        ErrorTracker.log_error(db, request, exc, request_id)
+
+
 class ErrorHandlingMiddleware(BaseHTTPMiddleware):
     """Intercepts and records exceptions, returning clean JSON responses"""
 
@@ -132,9 +139,8 @@ class ErrorHandlingMiddleware(BaseHTTPMiddleware):
 
                 if status_code >= 500 or is_critical:
                     try:
-                        with SessionLocal() as db:
-                            ErrorTracker.log_error(db, request, exc, request_id)
-                            exception_error_registered = True
+                        await run_in_threadpool(_log_error_blocking, request, exc, request_id)
+                        exception_error_registered = True
                     except Exception:
                         logger.exception("Error handling middleware failed to write to database")
 

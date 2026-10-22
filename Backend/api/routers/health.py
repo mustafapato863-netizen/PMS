@@ -14,7 +14,7 @@ router = APIRouter(prefix="/health", tags=["Health"])
 
 
 @router.get("", status_code=status.HTTP_200_OK)
-async def check_health(response: Response, db: Session = Depends(get_db)):
+def check_health(response: Response, db: Session = Depends(get_db)):
     """
     Service health check endpoint.
     Returns details on database and Redis cache health.
@@ -44,7 +44,7 @@ async def check_liveness():
 
 
 @router.get("/readiness", status_code=status.HTTP_200_OK)
-async def check_readiness(response: Response, db: Session = Depends(get_db)):
+def check_readiness(response: Response, db: Session = Depends(get_db)):
     """
     Readiness probe for full system dependencies check.
     Checks database and Redis cache connectivity.

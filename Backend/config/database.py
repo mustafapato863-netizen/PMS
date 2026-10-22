@@ -18,20 +18,47 @@ DATABASE_URL = resolve_database_url(
     logger=logging.getLogger(__name__),
 )
 
-# Keep the local development defaults generous while using conservative limits
-# for hosted PostgreSQL providers such as Supabase's pooler.
+def _int_setting(name: str, default: int, *, minimum: int = 0) -> int:
+    """Optional integer env setting; invalid or out-of-range values fall back to the default."""
+    raw = os.getenv(name)
+    if raw is None or not raw.strip():
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        logging.getLogger(__name__).warning("Ignoring invalid %s=%r; using %s", name, raw, default)
+        return default
+    return value if value >= minimum else default
+
+
+def _bool_setting(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None or not raw.strip():
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+# Pool sizing. All settings are optional; the defaults apply when unset.
+# Production previously ran 5 + 0 overflow with a 30s wait, which hung the API
+# when every connection was busy. The new defaults leave burst headroom (15
+# connections total) and fail fast (10s) instead of queueing requests for 30s.
+# Keep pool_size + max_overflow (per worker process) under the database or
+# pooler connection limit.
 is_development = APP_ENV == "development"
-pool_size = int(os.getenv("DATABASE_POOL_SIZE", "20" if is_development else "5"))
-max_overflow = int(os.getenv("DATABASE_MAX_OVERFLOW", "10" if is_development else "0"))
-pool_recycle = int(os.getenv("DATABASE_POOL_RECYCLE", "1800"))
+pool_size = _int_setting("DATABASE_POOL_SIZE", 20 if is_development else 10, minimum=1)
+max_overflow = _int_setting("DATABASE_MAX_OVERFLOW", 10 if is_development else 5)
+pool_timeout = _int_setting("DATABASE_POOL_TIMEOUT", 10, minimum=1)
+pool_recycle = _int_setting("DATABASE_POOL_RECYCLE", 1800, minimum=-1)
+pool_pre_ping = _bool_setting("DATABASE_POOL_PRE_PING", True)
 
 engine_kwargs = {
-    "pool_pre_ping": True,
+    "pool_pre_ping": pool_pre_ping,
 }
 if "sqlite" not in DATABASE_URL.lower():
     engine_kwargs.update({
         "pool_size": pool_size,
         "max_overflow": max_overflow,
+        "pool_timeout": pool_timeout,
         "pool_recycle": pool_recycle,
     })
 else:
@@ -45,6 +72,7 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
 def get_db():
+    """Request-scoped session: always closed (and its connection returned) in finally."""
     db = SessionLocal()
     try:
         yield db

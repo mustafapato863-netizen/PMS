@@ -1,4 +1,5 @@
 import json
+from starlette.concurrency import run_in_threadpool
 from datetime import datetime, timezone
 from uuid import UUID
 
@@ -22,7 +23,7 @@ router.include_router(evaluation_router, prefix="/evaluation", tags=["Evaluation
 
 
 @router.get("/system-errors", response_model=StandardResponse)
-async def list_system_errors(
+def list_system_errors(
     limit: int = Query(default=50, ge=1, le=100),
     request_id: str | None = Query(default=None, min_length=1, max_length=100),
     db: Session = Depends(get_db),
@@ -51,7 +52,7 @@ async def list_system_errors(
 
 
 @router.get("/system-errors/{error_id}", response_model=StandardResponse)
-async def get_system_error_details(
+def get_system_error_details(
     error_id: UUID,
     db: Session = Depends(get_db),
     _role: str = Depends(require_role(["Admin"])),
@@ -77,7 +78,7 @@ async def get_system_error_details(
 
 
 @router.get("/weights", response_model=StandardResponse)
-async def get_weights(db: Session = Depends(get_db)):
+def get_weights(db: Session = Depends(get_db)):
     try:
         return StandardResponse(
             success=True,
@@ -98,7 +99,7 @@ async def update_weights(
     )
 
 @router.get("/targets", response_model=StandardResponse)
-async def get_targets(db: Session = Depends(get_db)):
+def get_targets(db: Session = Depends(get_db)):
     try:
         return StandardResponse(
             success=True,
@@ -110,7 +111,7 @@ async def get_targets(db: Session = Depends(get_db)):
 
 
 @router.get("/corrective-actions/export")
-async def export_corrective_actions(
+def export_corrective_actions(
     db: Session = Depends(get_db),
     _user=Depends(require_permission("export_data")),
 ):
@@ -145,9 +146,13 @@ async def import_corrective_actions(
         raise HTTPException(status_code=422, detail="The uploaded file is not valid UTF-8 JSON") from exc
 
     try:
-        result = CorrectiveActionService(db).import_transfer_payload(payload)
-        CacheInvalidationService.flush_all()
-        clear_serialization_cache()
+        def _import_blocking():
+            imported = CorrectiveActionService(db).import_transfer_payload(payload)
+            CacheInvalidationService.flush_all()
+            clear_serialization_cache()
+            return imported
+
+        result = await run_in_threadpool(_import_blocking)
         return StandardResponse(
             success=True,
             message="Corrective actions imported successfully",

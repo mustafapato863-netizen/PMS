@@ -1,3 +1,4 @@
+from starlette.concurrency import run_in_threadpool
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Header
 from fastapi.responses import JSONResponse
 import logging
@@ -30,7 +31,7 @@ class BatchDeleteRequest(BaseModel):
     upload_ids: list[str] = Field(min_length=1, max_length=100)
 
 @router.get("/", response_model=StandardResponse)
-async def get_upload_history(
+def get_upload_history(
     db: Session = Depends(get_db),
     _user=Depends(require_permission("view_reports"))
 ):
@@ -109,10 +110,11 @@ async def upload_pms_file(
             )
 
         seeder = DatabaseSeeder()
-        result = (
-            seeder.process_uploaded_file(file.filename, contents, dry_run=True)
-            if dry_run
-            else seeder.process_uploaded_file(
+
+        def _process_blocking():
+            if dry_run:
+                return seeder.process_uploaded_file(file.filename, contents, dry_run=True)
+            processed = seeder.process_uploaded_file(
                 file.filename,
                 contents,
                 uploaded_by_user_id=(str(_user.get("user_id")) if isinstance(_user, dict) and _user.get("user_id") else None),
@@ -122,11 +124,12 @@ async def upload_pms_file(
                     else "Admin"
                 ),
             )
-        )
-
-        if not dry_run:
             CacheInvalidationService.flush_all()
             clear_serialization_cache()
+            return processed
+
+        # Workbook parsing and DB writes are blocking; keep them off the event loop.
+        result = await run_in_threadpool(_process_blocking)
 
         teams_list = result.get("teams", []) if isinstance(result, dict) else []
         if not dry_run:
@@ -206,7 +209,7 @@ async def upload_pms_file(
         ) from e
 
 @router.delete("/{upload_id}", response_model=StandardResponse)
-async def delete_upload(
+def delete_upload(
     upload_id: str,
     db: Session = Depends(get_db),
     _user=Depends(require_permission("delete_performance"))
@@ -235,7 +238,7 @@ async def delete_upload(
         ) from e
 
 @router.post("/batch-delete", response_model=StandardResponse)
-async def batch_delete_uploads(
+def batch_delete_uploads(
     request: BatchDeleteRequest,
     db: Session = Depends(get_db),
     _user=Depends(require_permission("delete_performance"))

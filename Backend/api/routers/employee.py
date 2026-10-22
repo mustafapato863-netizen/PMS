@@ -1,4 +1,5 @@
 import datetime
+from starlette.concurrency import run_in_threadpool
 from services.socket_service import SocketNotificationService
 from fastapi import APIRouter, Depends, Query, HTTPException, Request
 from typing import Any, Dict, List
@@ -497,21 +498,26 @@ async def  save_corrective_action(
             raise HTTPException(status_code=400, detail="Month and Corrective Action are required")
 
         current_user = getattr(request.state, "user", None) or {}
-        scope = get_current_user_scope(db, request)
-        CorrectiveActionService(db).ensure_employee_scope(employee_id, scope)
         created_by_name = current_user.get("name") or current_user.get("username") or current_user.get("role") or "Unknown"
         created_by_role = current_user.get("role") or role
-        action, is_update = CorrectiveActionService(db).save(
-            employee_identifier=employee_id,
-            month=month,
-            manager_action=manager_action,
-            manager_notes=manager_notes,
-            action_id=action_id,
-            year=int(payload["year"]) if payload.get("year") else None,
-            user_id=current_user.get("user_id"),
-            scope=scope,
-            **_tracking_fields(payload),
-        )
+
+        def _save_blocking():
+            scope = get_current_user_scope(db, request)
+            CorrectiveActionService(db).ensure_employee_scope(employee_id, scope)
+            return CorrectiveActionService(db).save(
+                employee_identifier=employee_id,
+                month=month,
+                manager_action=manager_action,
+                manager_notes=manager_notes,
+                action_id=action_id,
+                year=int(payload["year"]) if payload.get("year") else None,
+                user_id=current_user.get("user_id"),
+                scope=scope,
+                **_tracking_fields(payload),
+            )
+
+        # Blocking DB work runs in the threadpool; only the socket notify is async.
+        action, is_update = await run_in_threadpool(_save_blocking)
 
         await SocketNotificationService.notify_action_assigned(
             employee_name=action["employee_name"],
@@ -548,13 +554,17 @@ async def delete_corrective_action(
 ):
     try:
         current_user = getattr(request.state, "user", None) or {}
-        scope = get_current_user_scope(db, request)
-        CorrectiveActionService(db).ensure_employee_scope(employee_id, scope)
-        target_action = CorrectiveActionService(db).deactivate(
-            employee_identifier=employee_id,
-            action_id=action_id,
-            user_id=current_user.get("user_id"),
-        )
+
+        def _delete_blocking():
+            scope = get_current_user_scope(db, request)
+            CorrectiveActionService(db).ensure_employee_scope(employee_id, scope)
+            return CorrectiveActionService(db).deactivate(
+                employee_identifier=employee_id,
+                action_id=action_id,
+                user_id=current_user.get("user_id"),
+            )
+
+        target_action = await run_in_threadpool(_delete_blocking)
 
         await SocketNotificationService.notify_info(
             info_message=f"Action deleted for {target_action['employee_name']}: {target_action['manager_action']}",

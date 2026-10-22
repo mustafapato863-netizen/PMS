@@ -29,6 +29,30 @@ class ActionRepository(BaseRepository[Action]):
             .all()
         )
 
+    def list_active_for_follow_up(self, *, month_values: list[str] | None = None) -> list[Action]:
+        """Active actions with everything the follow-up view touches eager-loaded.
+
+        ``month_values`` (pre-normalized spellings) narrows the rows in SQL with
+        a plain ``month IN (...)`` predicate so an index on month stays usable.
+        """
+        from models.models import Employee, PerformancePlan
+
+        query = (
+            self.db.query(Action)
+            .options(
+                joinedload(Action.employee).joinedload(Employee.team),
+                joinedload(Action.team),
+                joinedload(Action.created_by_user),
+                joinedload(Action.owner),
+                joinedload(Action.plan).selectinload(PerformancePlan.team),
+                joinedload(Action.plan).selectinload(PerformancePlan.employee),
+            )
+            .filter(Action.is_active.is_(True))
+        )
+        if month_values:
+            query = query.filter(Action.month.in_(month_values))
+        return query.order_by(Action.created_at.desc()).all()
+
     def get_active(self, action_id: UUID) -> Action | None:
         return (
             self.db.query(Action)

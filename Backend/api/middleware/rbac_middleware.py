@@ -22,6 +22,19 @@ class AuthorizationMiddleware:
         db: Session,
         user_id: str,
         permission: str,
+        team_id: str | None = None,
+        role: str | None = None,
+    ) -> bool:
+        """Async-compatible wrapper kept for existing callers; see check_permission_sync."""
+        return AuthorizationMiddleware.check_permission_sync(
+            db, user_id, permission, team_id=team_id, role=role
+        )
+
+    @staticmethod
+    def check_permission_sync(
+        db: Session,
+        user_id: str,
+        permission: str,
         team_id: str = None,
         role: str = None,
     ) -> bool:
@@ -102,7 +115,9 @@ def require_permission(permission: str):
     """
     FastAPI dependency to require a specific permission.
     """
-    async def dependency(request: Request, db: Session = Depends(get_db)):
+    # Plain ``def`` so FastAPI runs the DB permission lookup in the threadpool
+    # instead of blocking the event loop.
+    def dependency(request: Request, db: Session = Depends(get_db)):
         if not hasattr(request.state, "user") or not request.state.user:
             raise HTTPException(status_code=401, detail="Authentication required")
 
@@ -113,7 +128,7 @@ def require_permission(permission: str):
         team_id = request.path_params.get("team_id") or request.query_params.get("team_id")
 
         # Prefer fresh DB role from AuthMiddleware (request.state.user), not Redis.
-        has_perm = await AuthorizationMiddleware.check_permission(
+        has_perm = AuthorizationMiddleware.check_permission_sync(
             db=db,
             user_id=user_id,
             permission=permission,

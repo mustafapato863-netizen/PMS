@@ -4,7 +4,6 @@ The handler used to skip a failing batch silently and answer success. Now every 
 removed batches in `data`, the ids whose delete raised in `failed_ids`, and a message with both counts.
 """
 
-import asyncio
 import json
 import logging
 
@@ -48,7 +47,8 @@ def delete_plan(monkeypatch):
 
 def _call(ids: list[str]):
     request = BatchDeleteManagementRequest(upload_ids=ids)
-    return asyncio.run(batch_delete_management_kpi_uploads(request, db=None, _user=None))
+    # Plain def since the pool fix: FastAPI runs it in the threadpool.
+    return batch_delete_management_kpi_uploads(request, db=None, _user=None)
 
 
 def test_all_removed_answers_success_with_no_failed_ids(delete_plan):

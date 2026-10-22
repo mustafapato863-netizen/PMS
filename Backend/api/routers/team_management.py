@@ -303,7 +303,7 @@ async def get_onboarding_status(team_name: str):
 
 
 @router.get("/management-kpi-config")
-async def get_management_kpi_config(
+def get_management_kpi_config(
     team: str = Query(...),
     performance_level: str | None = Query(None),
     db: Session = Depends(get_db),
@@ -323,7 +323,7 @@ async def get_management_kpi_config(
 
 
 @router.get("/management-kpi-config/teams")
-async def get_management_kpi_config_teams(
+def get_management_kpi_config_teams(
     db: Session = Depends(get_db),
     _user=Depends(require_permission("view_reports")),
 ):
@@ -342,7 +342,7 @@ async def get_management_kpi_config_teams(
 
 
 @router.get("/management-kpi-config/uploads")
-async def get_management_kpi_uploads(
+def get_management_kpi_uploads(
     db: Session = Depends(get_db),
     _user=Depends(require_permission("view_reports")),
 ):
@@ -358,7 +358,7 @@ async def get_management_kpi_uploads(
 
 
 @router.delete("/management-kpi-config/uploads/{batch_id}")
-async def delete_management_kpi_upload(
+def delete_management_kpi_upload(
     batch_id: str,
     db: Session = Depends(get_db),
     _user=Depends(require_permission("upload_data")),
@@ -384,7 +384,7 @@ def _rows_removed(result: dict) -> int:
     return sum(int(result.get(key) or 0) for key in ("config_rows_deleted", "snapshot_rows_deleted", "history_rows_deleted"))
 
 @router.post("/management-kpi-config/uploads/batch-delete")
-async def batch_delete_management_kpi_uploads(
+def batch_delete_management_kpi_uploads(
     request: BatchDeleteManagementRequest,
     db: Session = Depends(get_db),
     _user=Depends(require_permission("upload_data")),
@@ -424,7 +424,7 @@ async def batch_delete_management_kpi_uploads(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to batch delete.") from exc
 
 @router.get("/management-kpi-config/history")
-async def get_management_kpi_config_history(
+def get_management_kpi_config_history(
     team: str = Query(...),
     db: Session = Depends(get_db),
     _user=Depends(require_permission("view_reports")),

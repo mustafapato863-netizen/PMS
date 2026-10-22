@@ -7,6 +7,7 @@ checks it with a dry run first, and commits in one transaction.
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from api.middleware.rbac_middleware import require_permission
 from config import settings
@@ -75,7 +76,7 @@ async def dry_run_data_snapshot(
 ):
     """Check a snapshot without saving anything: counts, conflicts, the schema and revision checks."""
     contents = await _read_upload(file)
-    return _run_import(db, contents, policy, dry_run=True, actor_user_id=user.get("user_id"))
+    return await run_in_threadpool(_run_import, db, contents, policy, dry_run=True, actor_user_id=user.get("user_id"))
 
 
 @router.post("/import", response_model=StandardResponse)
@@ -87,4 +88,4 @@ async def import_data_snapshot(
 ):
     """Import a snapshot in one transaction. Any error rolls back everything."""
     contents = await _read_upload(file)
-    return _run_import(db, contents, policy, dry_run=False, actor_user_id=user.get("user_id"))
+    return await run_in_threadpool(_run_import, db, contents, policy, dry_run=False, actor_user_id=user.get("user_id"))
