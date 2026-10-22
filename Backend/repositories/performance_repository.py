@@ -64,6 +64,13 @@ def _uuid_key(value) -> str:
     return str(value).replace("-", "").lower()
 
 
+def _row_region():
+    """SQL twin of resolved_region: empty strings fall through like Python's ``or``."""
+    return func.coalesce(
+        func.nullif(PerformanceRecord.region, ""), func.nullif(Employee.region, ""), Team.region, Employee.region
+    )
+
+
 class PerformanceRepository(BaseRepository[PerformanceRecord]):
     """Repository for PerformanceRecord model"""
 
@@ -108,7 +115,7 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
             regions = {str(value).strip().casefold() for value in scope.get("accessible_regions", []) if str(value).strip()}
             if not regions:
                 return query.filter(false())
-            row_region = func.lower(func.coalesce(PerformanceRecord.region, Employee.region, Team.region))
+            row_region = func.lower(_row_region())
             return query.filter(row_region.in_(regions))
 
         if role == "Branch Director":
@@ -196,7 +203,7 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
             position_value = func.lower(func.coalesce(PerformanceRecord.position_name, Employee.position_name))
             query = query.filter(position_value == str(position).casefold())
         if region:
-            region_value = func.lower(func.coalesce(PerformanceRecord.region, Employee.region))
+            region_value = func.lower(_row_region())
             query = query.filter(region_value == str(region).casefold())
         if branch:
             query = query.filter(func.lower(PerformanceRecord.branch_key) == str(branch).strip().casefold())
@@ -218,7 +225,7 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
         """
         logical_team_name = func.coalesce(Team.display_name, Team.name)
         position_name = func.coalesce(PerformanceRecord.position_name, Employee.position_name)
-        region_name = func.coalesce(PerformanceRecord.region, Employee.region)
+        region_name = _row_region()
         query = (
             self.db.query(
                 Employee.employee_id,
@@ -430,7 +437,7 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
         }
         teams = {
             _uuid_key(team.id): team
-            for team in self.db.execute(select(Team.id, Team.name, Team.display_name))
+            for team in self.db.execute(select(Team.id, Team.name, Team.display_name, Team.region))
         }
         index = []
         for row in rows:
@@ -439,7 +446,8 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
                 record_key=(_uuid_key(row["id"]), int(row["year"])),
                 employee_id=str(employee.employee_id),
                 team=logical_team_name(teams[_uuid_key(row["team_id"])]),
-                region=row["region"] or employee.region,
+                # Same fallback as the resolver (resolved_region): record, employee, team.
+                region=row["region"] or employee.region or teams[_uuid_key(row["team_id"])].region or employee.region,
                 position=row["position_name"] or employee.position_name,
                 performance_level=str(row["performance_level"]),
                 branch_key=row["branch_key"],
@@ -468,9 +476,11 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
         teams: dict = {}
         for start in range(0, len(team_ids), 500):
             for team in self.db.execute(
-                select(Team.id, Team.name, Team.display_name).where(Team.id.in_(team_ids[start:start + 500]))
+                select(Team.id, Team.name, Team.display_name, Team.region).where(Team.id.in_(team_ids[start:start + 500]))
             ):
-                teams[team.id] = SimpleNamespace(id=team.id, name=team.name, display_name=team.display_name)
+                teams[team.id] = SimpleNamespace(
+                    id=team.id, name=team.name, display_name=team.display_name, region=team.region
+                )
         people = {
             key: SimpleNamespace(
                 id=employee.id,
@@ -573,7 +583,7 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
     ) -> list[dict[str, object]]:
         """Return scalar summary fields without loading KPI child rows."""
         position_name = func.coalesce(PerformanceRecord.position_name, Employee.position_name)
-        region_name = func.coalesce(PerformanceRecord.region, Employee.region)
+        region_name = _row_region()
         logical_team_name = func.coalesce(Team.display_name, Team.name)
         query = self.db.query(
             PerformanceRecord.id.label("record_id"),

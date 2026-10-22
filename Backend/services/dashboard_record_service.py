@@ -64,6 +64,21 @@ def _pinned_basis(item) -> dict | None:
     return None
 
 
+def resolved_region(item, employee):
+    """Record region, else the employee's, else the record team's (or employee team's).
+
+    Matches the DB-row scope checks (``coalesce(record, employee, team)`` in
+    PerformanceRepository._apply_scope and utils.report_scope._record_region),
+    so a Regional Manager sees the same rows on every path.
+    """
+    value = item.region or employee.region
+    if value:
+        return value
+    team = getattr(item, "team", None) or getattr(employee, "team", None)
+    team_region = getattr(team, "region", None) if team is not None else None
+    return team_region or value
+
+
 def _pinned_schema_record(item, employee, team_name: str, basis: dict, item_kpi_values=None):
     """Keep the stored payload and overlay identity, stored score, and pinned KPIs.
 
@@ -116,7 +131,7 @@ def _pinned_schema_record(item, employee, team_name: str, basis: dict, item_kpi_
         "team": team_name,
         "month": str(item.month),
         "year": int(item.year),
-        "region": item.region or employee.region,
+        "region": resolved_region(item, employee),
         "branch_key": getattr(item, "branch_key", None),
         "performance_level": str(item.performance_level),
         "position": item.position_name or employee.position_name,
@@ -633,7 +648,7 @@ class DashboardRecordService:
                         "team": team_name,
                         "month": str(item.month),
                         "year": int(item.year),
-                        "region": item.region or employee.region,
+                        "region": resolved_region(item, employee),
                         "branch_key": getattr(item, "branch_key", None),
                         "performance_level": str(item.performance_level),
                         "position": item.position_name or employee.position_name,
@@ -695,7 +710,7 @@ class DashboardRecordService:
                 team=team_name,
                 month=str(item.month),
                 year=int(item.year),
-                region=item.region or employee.region,
+                region=resolved_region(item, employee),
                 branch_key=getattr(item, "branch_key", None),
                 performance_level=str(item.performance_level),
                 position=item.position_name or employee.position_name,

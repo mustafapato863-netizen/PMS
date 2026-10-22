@@ -257,42 +257,105 @@ def test_branch_director_keeps_the_legacy_path(window_engine):
                                        SummaryFilters(), 10) is None
 
 
-def test_regional_manager_scope_matches_legacy_with_team_only_regions():
-    """Records and employees without a region: only the team carries it.
+def _region_engine():
+    """Synthetic data where Window South rows carry no record/employee region (team SHJ only),
+    and one Window North employee (WIN-002) carries an explicit employee region that differs
+    from the team's, and one WIN-001 record carries its own record region."""
+    from models.models import Employee, PerformanceRecord
 
-    Regional Manager stays on the legacy path, so the router's output equals the
-    legacy output; the light index and the resolved records also agree on which
-    rows a Regional Manager may see.
-    """
+    engine = _synthetic_engine()
+    with Session(engine) as db:
+        south = db.query(Employee).filter(Employee.employee_id.in_(["WIN-004", "WIN-005", "WIN-006"])).all()
+        for employee in south:
+            employee.region = ""
+        db.query(PerformanceRecord).filter(
+            PerformanceRecord.employee_id.in_([employee.id for employee in south])
+        ).update({PerformanceRecord.region: None}, synchronize_session=False)
+        win2 = db.query(Employee).filter(Employee.employee_id == "WIN-002").one()
+        win2.region = "AUH"  # employee region wins over the team's DXB
+        win1 = db.query(Employee).filter(Employee.employee_id == "WIN-001").one()
+        first = db.query(PerformanceRecord).filter(PerformanceRecord.employee_id == win1.id).first()
+        first.region = "RAK"  # record region wins over employee and team
+        first_id = str(first.id)
+        db.commit()
+    return engine, first_id
+
+
+def _rm(region):
+    return {**SCOPES["Regional Manager"], "accessible_regions": [region]}
+
+
+def _visible(engine, scope):
+    with Session(engine) as db:
+        pushed = summary_records_indexed(db, _record_service(db), scope, SummaryFilters(), 50_000)
+        legacy = performance._summary_records_legacy(db, _record_service(db), scope, SummaryFilters(), 50_000)
+    assert pushed is not None
+    assert pushed.data == legacy.data  # fast path == legacy path, same order
+    return pushed.data
+
+
+def test_team_only_region_is_visible_to_the_matching_regional_manager_only():
+    engine, _ = _region_engine()
+    try:
+        shj = {row["employee_id"] for row in _visible(engine, _rm("SHJ"))}
+        dxb = {row["employee_id"] for row in _visible(engine, _rm("DXB"))}
+        assert {"WIN-004", "WIN-005", "WIN-006"} <= shj  # team-only region (SHJ)
+        assert not {"WIN-004", "WIN-005", "WIN-006"} & dxb
+        for row in _visible(engine, _rm("SHJ")):
+            if row["employee_id"] in {"WIN-004", "WIN-005", "WIN-006"}:
+                assert row["region"] == "SHJ"
+    finally:
+        engine.dispose()
+
+
+def test_record_and_employee_regions_win_over_the_team_region():
+    engine, rak_record = _region_engine()
+    try:
+        dxb = _visible(engine, _rm("DXB"))
+        auh = _visible(engine, _rm("AUH"))
+        rak = _visible(engine, _rm("RAK"))
+        assert "WIN-002" not in {row["employee_id"] for row in dxb}  # team DXB, employee AUH
+        assert {row["employee_id"] for row in auh} == {"WIN-002"}
+        assert [row["id"] for row in rak] == [rak_record]
+        assert rak_record not in {row["id"] for row in dxb}
+    finally:
+        engine.dispose()
+
+
+def test_index_and_resolved_records_agree_for_regional_managers():
     import uuid as _uuid
 
-    from models.models import Employee, PerformanceRecord
     from utils.report_scope import (
         filter_records_by_scope,
         filter_records_by_team_levels,
     )
 
-    engine = _synthetic_engine()
+    engine, _ = _region_engine()
     try:
         with Session(engine) as db:
-            db.query(PerformanceRecord).update({PerformanceRecord.region: None})
-            db.query(Employee).update({Employee.region: ""})
-            db.commit()
-            for region in ("SHJ", "DXB"):
-                scope = {**SCOPES["Regional Manager"], "accessible_regions": [region]}
-                assert summary_records_indexed(db, _record_service(db), scope, SummaryFilters(), 100) is None
-                legacy = performance._summary_records_legacy(db, _record_service(db), scope, SummaryFilters(), 50_000)
-                performance.require_authenticated_scope, previous = (lambda *_, _scope=scope: _scope), performance.require_authenticated_scope
-                try:
-                    routed = performance.get_summary_records(None, db, employee_id=None).data
-                finally:
-                    performance.require_authenticated_scope = previous
-                assert routed == legacy.data
-                service = _record_service(db)
-                full_ids = [str(r.id) for r in filter_records_by_team_levels(
-                    filter_records_by_scope(service.list_analysis_records(), scope), scope)]
+            service = _record_service(db)
+            full, index = service.list_analysis_records(), service.list_record_index()
+            assert [row.region for row in index] == [record.region for record in full]
+            for region in ("SHJ", "DXB", "AUH", "RAK", "EGY"):
+                scope = _rm(region)
+                full_ids = [str(r.id) for r in filter_records_by_team_levels(filter_records_by_scope(full, scope), scope)]
                 index_ids = [str(_uuid.UUID(hex=r.record_key[0])) for r in filter_records_by_team_levels(
-                    filter_records_by_scope(service.list_record_index(), scope), scope)]
-                assert index_ids == full_ids
+                    filter_records_by_scope(index, scope), scope)]
+                assert index_ids == full_ids, region
+    finally:
+        engine.dispose()
+
+
+def test_insights_window_matches_full_path_for_team_only_regions():
+    from tests.test_insights_period_window import PAGE_SECTIONS, _compare
+
+    engine, _ = _region_engine()
+    try:
+        cases = [
+            (f"RM {region} | {label}", _rm(region), filters, PAGE_SECTIONS)
+            for region in ("SHJ", "DXB", "AUH")
+            for label, filters in (("latest", {}), ("september", {"year": 2026, "month": "September"}))
+        ]
+        _compare(engine, cases)
     finally:
         engine.dispose()
