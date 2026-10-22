@@ -1013,13 +1013,17 @@ def _populate_department_performance(slide: Any, model: dict[str, Any], section:
         (("Text 36", "Text 37", "Text 38", "Text 39", "Text 40", "Text 41"), "Shape 34", "Shape 35"),
     ]
     for index, (names, card, accent) in enumerate(kpi_card_groups):
-        kpi = kpis[index] if index < len(kpis) else None
-        _card_status(slide, card, accent, _kpi_status(kpi))
-        _write_kpi_card(slide, names, kpi)
+        if index < len(kpis):
+            kpi = kpis[index]
+            _card_status(slide, card, accent, _kpi_status(kpi))
+            _write_kpi_card(slide, names, kpi)
+        else:
+            for name in names:
+                _write(slide, name, "")
     if _shape_exists(slide, "Text 92"):
         _write(slide, "Text 92", f"Action Focus: {_action_focus(view.get('snapshot') or {})}.")
     if not rows:
-        _write(slide, "Text 42", "Team KPI overview | A- and B-grade agents excluded from detailed tables.")
+        _write(slide, "Text 42", "Department KPI Overview · All staff performing on track (Grade A / B).")
         headers = _row_groups(slide, top_min=4.15, top_max=4.35, min_columns=6)
         if headers:
             for shape in headers[0]:
@@ -1032,12 +1036,16 @@ def _populate_department_performance(slide: Any, model: dict[str, Any], section:
 
     _write(slide, "Text 42", "Employees Under Review" if section["key"] != "outbound" else "Below Average Employees")
     headers = _row_groups(slide, top_min=4.15, top_max=4.35, min_columns=6)
+    top_kpis = (view.get("kpis") or [])[:3]
     if headers:
-        kpi_labels = [(_clean(kpi.get("label"), "KPI") if kpi else "KPI") for kpi in (view.get("kpis") or [])[:3]]
-        for shape, value in zip(headers[0], ["Employee", "Score", "Grade", *(kpi_labels + ["KPI", "KPI", "KPI"])[:3]]):
+        col_headers = ["Employee", "Score", "Grade"]
+        for kpi in top_kpis:
+            col_headers.append(_clean(kpi.get("label"), "KPI"))
+        while len(col_headers) < len(headers[0]):
+            col_headers.append("")
+        for shape, value in zip(headers[0], col_headers):
             _write_shape(shape, value)
     row_groups = _row_groups(slide, top_min=4.5, top_max=6.45, min_columns=6)
-    top_kpis = (view.get("kpis") or [])[:3]
     for group, person in zip(row_groups[:5], rows[:5]):
         values = [
             _full(person.get("name")),
@@ -1047,7 +1055,8 @@ def _populate_department_performance(slide: Any, model: dict[str, Any], section:
         for kpi in top_kpis:
             person_kpi = next((item for item in _person_kpis(person) if _kpi_match(kpi, item)), None)
             values.append(_native(person_kpi.get("actual"), person_kpi.get("unit")) if person_kpi else MISSING)
-        values = (values + [MISSING] * len(group))[: len(group)]
+        while len(values) < len(group):
+            values.append("")
         for column, (shape, value) in enumerate(zip(group, values)):
             if column in {0, 2}:
                 _write_single_line(slide, shape.name, value)
@@ -1055,14 +1064,16 @@ def _populate_department_performance(slide: Any, model: dict[str, Any], section:
                 _write_shape(shape, value)
     for group in row_groups[len(rows[:5]):5]:
         for shape in group:
-            _write_shape(shape, MISSING)
+            _write_shape(shape, "")
 
 
 def _person_issue(person: dict[str, Any]) -> str:
     kpis = _person_kpis(person)
     if not kpis:
         return "No KPI evidence recorded"
-    return "; ".join(_clean(kpi.get("label"), "KPI") for kpi in kpis[:3])
+    gaps = [kpi for kpi in kpis if _kpi_loss(kpi) > 0]
+    target_kpis = gaps if gaps else kpis
+    return "; ".join(_clean(kpi.get("label"), "KPI") for kpi in target_kpis[:3])
 
 
 def _person_root_cause(snapshot: dict[str, Any], person: dict[str, Any]) -> str:
@@ -1077,8 +1088,23 @@ def _person_action(person: dict[str, Any]) -> str:
     actions = person.get("actions") or []
     if actions:
         first = actions[0]
-        return _fit_wrapped(first.get("action_display") or first.get("action_text"), 90, max_lines=3)
-    return "Management action required; owner and due date are not recorded."
+        text = first.get("action_display") or first.get("action_text")
+        if text and text.strip():
+            return _fit_wrapped(text, 90, max_lines=3)
+    kpis = _person_kpis(person)
+    primary = kpis[0] if kpis else {}
+    label = _clean(primary.get("label"), "").casefold()
+    if "attendance" in label:
+        return "Schedule review and attendance counseling plan required."
+    elif "quality" in label or "error" in label:
+        return "Targeted QA coaching session and error root-cause audit."
+    elif "tat" in label or "time" in label or "due" in label:
+        return "Process bottleneck assessment and daily queue monitoring."
+    elif "rejection" in label:
+        return "Pre-submission audit checklist and peer review calibration."
+    elif "booking" in label or "reachability" in label or "conversion" in label:
+        return "Script optimization and call handling refresher training."
+    return "Targeted performance coaching and supervisor follow-up required."
 
 
 def _populate_department_actions(slide: Any, model: dict[str, Any], section: dict[str, Any], page: int, rows: list[dict[str, Any]], part: int, total: int) -> None:
@@ -1101,7 +1127,7 @@ def _populate_department_actions(slide: Any, model: dict[str, Any], section: dic
                 _write_shape(shape, value)
     for group in row_groups[len(rows[:5]):5]:
         for shape in group:
-            _write_shape(shape, MISSING)
+            _write_shape(shape, "")
 
 
 def _populate_rcm_followup(slide: Any, model: dict[str, Any], section: dict[str, Any], page: int) -> None:
@@ -1584,6 +1610,12 @@ def _appendix_rows(snapshot: dict[str, Any]) -> list[list[str]]:
     rows = []
     people = _employee_priority(snapshot)
     for person in people:
+        grade = _clean(person.get("grade"), "").upper()
+        score = _number(person.get("score"))
+        # Strictly exclude employees with Grade A or B (or score >= 90%)
+        # The appendix is for employees requiring action or management follow-up.
+        if grade in {"A", "B"} or (score is not None and score >= 90.0):
+            continue
         primary = _person_kpis(person)[0] if _person_kpis(person) else {}
         position = _clean(person.get("position"), "")
         if not position or position.casefold() in {"unassigned", "emp", "none", "nan", ""}:
@@ -1608,7 +1640,7 @@ def _appendix_rows(snapshot: dict[str, Any]) -> list[list[str]]:
         rows.append([
             _clean(person.get("team"), "Unassigned"),
             name,
-            _full(f"{position} / {_clean(person.get('grade'), 'N/A')}"),
+            _full(f"{position} / {grade or 'N/A'}"),
             _pct(person.get("score")),
             _mom(person.get("movement")),
             _fit_wrapped(f"{_clean(primary.get('label'), 'No KPI')} | loss {_fmt_pct(_kpi_loss(primary))}", 46, max_lines=2),
@@ -1618,7 +1650,7 @@ def _appendix_rows(snapshot: dict[str, Any]) -> list[list[str]]:
 
 def _populate_appendix(slide: Any, model: dict[str, Any], page: int, rows: list[list[str]], part: int, total: int) -> None:
     suffix = f" ({part}/{total})" if total > 1 else ""
-    _set_common(slide, f"Combined Employee Appendix{suffix}", "One-page reference for employees requiring action or management follow-up", model["period"], model["branch"], page)
+    _set_common(slide, f"Combined Employee Appendix{suffix}", "Exceptions reference for employees requiring action or management follow-up (Grades C, D, E)", model["period"], model["branch"], page)
     groups = _row_groups(slide, top_min=1.46, top_max=5.9, min_columns=7)
     capacity = len(groups)
     displayed = rows[:capacity]
@@ -1627,11 +1659,16 @@ def _populate_appendix(slide: Any, model: dict[str, Any], page: int, rows: list[
             _write_shape(shape, value)
     for group in groups[len(displayed):]:
         for shape in group:
-            _write_shape(shape, MISSING)
+            _write_shape(shape, "")
 
 
 def _marketing_detail_plan(section: dict[str, Any]) -> list[tuple[str, int, Any]]:
-    people = [person for person in _employee_priority(section["snapshot"]) if _score_status(person.get("score")) in {"Requires action", "Watch"}]
+    # Only generate deep-dive detail slides for critical exceptions (Grades D, E or score < 80%)
+    people = [
+        person for person in _employee_priority(section["snapshot"])
+        if _clean(person.get("grade"), "").upper() in {"D", "E"}
+        or (_number(person.get("score")) is not None and (_number(person.get("score")) or 0.0) < 80.0)
+    ]
     if not people:
         return []
     plan: list[tuple[str, int, Any]] = []
@@ -1640,16 +1677,24 @@ def _marketing_detail_plan(section: dict[str, Any]) -> list[tuple[str, int, Any]
         key = _clean(person.get("employee_id") or person.get("name"), str(index))
         if key in consumed:
             continue
-        same_position = [candidate for candidate in people if _clean(candidate.get("position"), "").casefold() == _clean(person.get("position"), "").casefold() and _clean(candidate.get("employee_id") or candidate.get("name"), "") not in consumed]
+        same_position = [
+            candidate for candidate in people
+            if _clean(candidate.get("position"), "").casefold() == _clean(person.get("position"), "").casefold()
+            and _clean(candidate.get("employee_id") or candidate.get("name"), "") not in consumed
+        ]
         if len(same_position) >= 2:
             selected = same_position[:2]
             plan.append(("detail_group", 21, selected))
             consumed.update(_clean(candidate.get("employee_id") or candidate.get("name"), "") for candidate in selected)
+            if len(plan) >= 2:
+                break
             continue
         source_index = 19 if len(plan) % 3 == 0 else 20 if len(plan) % 3 == 1 else 22
         plan.append(("detail", source_index, person))
         consumed.add(key)
-    return plan
+        if len(plan) >= 2:
+            break
+    return plan[:2]
 
 
 def _build_plan(model: dict[str, Any]) -> list[tuple[str, int, Any]]:
@@ -1665,10 +1710,11 @@ def _build_plan(model: dict[str, Any]) -> list[tuple[str, int, Any]]:
             and (_number(p.get("score")) is None or (_number(p.get("score")) or 0.0) < 90.0)
         ]
         if actionable_people:
-            people_chunks = [actionable_people[index:index + 5] for index in range(0, len(actionable_people), 5)]
+            # Show up to 10 actionable people per department (max 2 performance slides, 2 action slides)
+            people_chunks = [actionable_people[index:index + 5] for index in range(0, min(len(actionable_people), 10), 5)]
             for part, chunk in enumerate(people_chunks, 1):
                 plan.append(("department_performance", section["performance"], (section, chunk, part, len(people_chunks))))
-            action_chunks = [actionable_people[index:index + 5] for index in range(0, len(actionable_people), 5)]
+            action_chunks = [actionable_people[index:index + 5] for index in range(0, min(len(actionable_people), 10), 5)]
             for part, chunk in enumerate(action_chunks, 1):
                 plan.append(("department_actions", section["actions"], (section, chunk, part, len(action_chunks))))
         else:
@@ -1681,30 +1727,30 @@ def _build_plan(model: dict[str, Any]) -> list[tuple[str, int, Any]]:
         plan.append(("divider", marketing["divider"], marketing))
         plan.append(("marketing_overview", marketing["performance"], marketing))
         roles = _role_rows(marketing["snapshot"])
-        role_chunks = [roles[index:index + 9] for index in range(0, len(roles), 9)] or [[]]
+        role_chunks = [roles[:9]] if roles else []
         for part, chunk in enumerate(role_chunks, 1):
             plan.append(("marketing_roles", 15, (marketing, chunk, part, len(role_chunks))))
         kpis = [dict(row) for row in marketing["snapshot"].get("kpis") or []]
-        trend_kpis = [kpi for kpi in kpis if _kpi_loss(kpi) > 0] or kpis
-        trend_kpis = trend_kpis[:16]
-        kpi_chunks = [trend_kpis[index:index + 8] for index in range(0, len(trend_kpis), 8)] or [[]]
+        loss_kpis = sorted([kpi for kpi in kpis if _kpi_loss(kpi) > 0], key=lambda k: -_kpi_loss(k))
+        trend_kpis = loss_kpis[:8] or kpis[:8]
+        kpi_chunks = [trend_kpis] if trend_kpis else []
         for part, chunk in enumerate(kpi_chunks, 1):
             plan.append(("marketing_trend", 16, (marketing, chunk, part, len(kpi_chunks))))
 
-        driver_kpis = [kpi for kpi in kpis if _kpi_loss(kpi) > 0] or kpis[:4]
-        driver_kpis = driver_kpis[:12]
-        driver_chunks = [driver_kpis[index:index + 4] for index in range(0, len(driver_kpis), 4)] or [[]]
+        driver_kpis = loss_kpis[:4] or kpis[:4]
+        driver_chunks = [driver_kpis] if driver_kpis else []
         for part, chunk in enumerate(driver_chunks, 1):
             plan.append(("marketing_map", 17, (marketing, chunk, part, len(driver_chunks))))
 
         plan.append(("marketing_priority", 18, marketing))
         plan.extend(_marketing_detail_plan(marketing))
         evidence = _evidence_rows(marketing["snapshot"])
-        evidence_chunks = [evidence[index:index + 9] for index in range(0, len(evidence), 9)] or [[]]
+        # Top material root-cause evidence rows (up to 9 rows = 1 concise slide)
+        evidence_chunks = [evidence[:9]] if evidence else []
         for part, chunk in enumerate(evidence_chunks, 1):
             plan.append(("evidence", 23, (marketing, chunk, part, len(evidence_chunks))))
         actions = _action_rows(marketing["snapshot"])
-        action_chunks = [actions[index:index + 4] for index in range(0, len(actions), 4)] or [[]]
+        action_chunks = [actions[:4]] if actions else []
         for part, chunk in enumerate(action_chunks, 1):
             plan.append(("marketing_actions", 24, (marketing, chunk, part, len(action_chunks))))
     plan.append(("management_divider", 25, None))

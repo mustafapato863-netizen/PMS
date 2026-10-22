@@ -4,6 +4,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../../context/auth';
 import { useUserRole } from '../../context/RoleContext';
+import { apiFetch } from '../../lib/apiClient';
 import {
   REGION_FUNCTIONS, REGION_LABEL, SLIDE_COUNT, accessibleRegions, buildDeckSearch, isMonthAvailable, lastCompleteMonth,
   nameMasker, opensOn, parseDeckParams, pdfFileName, periodFromKey, periodRegionActions, openHighCount, regionCode, regionSlug,
@@ -151,6 +152,45 @@ export default function MonthlyPresentationView({ today = new Date() }: { today?
     if (!params.present && params.slide && slides.length) document.getElementById(`s${String(params.slide).padStart(2, '0')}`)?.scrollIntoView();
   }, [params.present, params.slide, slides.length]);
 
+  const [downloadingPptx, setDownloadingPptx] = useState(false);
+  const handleDownloadPptx = useCallback(async () => {
+    if (!code || !period) return;
+    try {
+      setDownloadingPptx(true);
+      const res = await apiFetch<{ success: boolean; data?: { download_url?: string; file_name?: string } }>('/api/reports/generate', {
+        method: 'POST',
+        headers: {
+          'Idempotency-Key': `pptx-${code}-${period.key}-${Date.now()}`,
+        },
+        body: JSON.stringify({
+          report_name: `${REGION_LABEL[code]} Combined Performance Review`,
+          report_type: code === 'EGY' ? 'monthly_egypt' : 'monthly_uae',
+          output_format: 'pptx',
+          region: code,
+          start_year: period.year,
+          start_month: period.monthName,
+          end_year: period.year,
+          end_month: period.monthName,
+          included_sections: ['summary'],
+        }),
+      });
+      const downloadUrl = res.data?.download_url;
+      if (downloadUrl) {
+        const link = document.createElement('a');
+        link.href = downloadUrl;
+        link.download = res.data?.file_name || `${REGION_LABEL[code]}_Performance_Review_${period.key}.pptx`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }
+    } catch (err) {
+      console.error('Failed to generate presentation PPTX:', err);
+      window.alert('Failed to generate presentation PPTX. Please try again or check the Reports page.');
+    } finally {
+      setDownloadingPptx(false);
+    }
+  }, [code, period]);
+
   let content: React.ReactNode;
   if (!code || !period) content = null;
   else if (!canSee) content = (
@@ -181,6 +221,8 @@ export default function MonthlyPresentationView({ today = new Date() }: { today?
           onRegion={switchRegion} onMonth={setMonth} canPresent={deckReady}
           onPresent={() => setMode({ present: true })}
           onExport={(o) => setMode({ print: true }, { mask: o.mask ? '1' : '0', bands: o.bands ? '1' : '0', appendix: o.appendix ? '1' : '0', footer: o.footer ? '1' : '0', autoprint: '1' })}
+          onDownloadPptx={handleDownloadPptx}
+          downloadingPptx={downloadingPptx}
         />
       )}
       {params.print && (
@@ -200,9 +242,10 @@ function Empty({ title, body, children }: { title: string; body?: string; childr
   return <div className="mp-empty" role="status"><div className="mp-hatch mp-hatch-icon" aria-hidden /><strong>{title}</strong>{body && <p>{body}</p>}{children}</div>;
 }
 
-function Toolbar({ code, period, allowed, today, onRegion, onMonth, onPresent, onExport, canPresent }: {
+function Toolbar({ code, period, allowed, today, onRegion, onMonth, onPresent, onExport, onDownloadPptx, downloadingPptx, canPresent }: {
   code: RegionCode; period: string; allowed: RegionCode[]; today: Date;
-  onRegion: (s: RegionSlug) => void; onMonth: (k: string) => void; onPresent: () => void; onExport: (o: ExportOptions) => void; canPresent: boolean;
+  onRegion: (s: RegionSlug) => void; onMonth: (k: string) => void; onPresent: () => void; onExport: (o: ExportOptions) => void;
+  onDownloadPptx: () => void; downloadingPptx: boolean; canPresent: boolean;
 }) {
   const [exportOpen, setExportOpen] = useState(false);
   const last = lastCompleteMonth(today);
@@ -227,6 +270,15 @@ function Toolbar({ code, period, allowed, today, onRegion, onMonth, onPresent, o
         <span className="mp-muted mp-small">Last complete · {periodFromKey(next)!.short} opens {opensOn(next)}</span>
       </label>
       <div className="mp-tb-actions">
+        <button
+          type="button"
+          className="mp-btn mp-btn-ghost"
+          disabled={!canPresent || downloadingPptx}
+          onClick={onDownloadPptx}
+          title="Download the official executive PPTX deck"
+        >
+          {downloadingPptx ? 'Generating PPTX…' : 'Download PPTX ⤓'}
+        </button>
         <div className="mp-pop-wrap">
           <button type="button" className="mp-btn mp-btn-ghost" aria-haspopup="dialog" aria-expanded={exportOpen} disabled={!canPresent} onClick={() => setExportOpen((v) => !v)}>Export PDF ▾</button>
           {exportOpen && <ExportDialog code={code} period={period} onCancel={() => setExportOpen(false)} onExport={(o) => { setExportOpen(false); onExport(o); }} />}

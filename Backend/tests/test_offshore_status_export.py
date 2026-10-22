@@ -366,3 +366,23 @@ def test_a_and_b_grades_excluded_from_corrective_actions_and_details():
     inbound_action = next(ctx for k, _, ctx in plan if k == "department_actions" and ctx[0]["display"] == "Call Center – Inbound")
     assert [p["name"] for p in inbound_perf[1]] == ["Charlie"]
     assert [p["name"] for p in inbound_action[1]] == ["Charlie"]
+
+
+def test_appendix_excludes_a_and_b_grades():
+    from exports.offshore_status_pptx_builder import _appendix_rows
+    snapshot = {
+        "all_people": [
+            {"name": "EmpA", "score": 95.0, "grade": "A", "kpis": []},
+            {"name": "EmpB", "score": 91.0, "grade": "B", "kpis": []},
+            {"name": "EmpC", "score": 85.0, "grade": "C", "kpis": []},
+            {"name": "EmpD", "score": 75.0, "grade": "D", "kpis": []},
+            {"name": "EmpE", "score": 50.0, "grade": "E", "kpis": []},
+        ]
+    }
+    rows = _appendix_rows(snapshot)
+    names = [r[1] for r in rows]
+    assert "EmpA" not in names
+    assert "EmpB" not in names
+    assert "EmpC" in names
+    assert "EmpD" in names
+    assert "EmpE" in names
