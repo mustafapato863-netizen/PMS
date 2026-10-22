@@ -157,7 +157,7 @@ class CleanerFactory:
                         # Verify it's a BaseDataCleaner subclass
                         if issubclass(cleaner_class, BaseDataCleaner):
                             cls._cache[module_name] = cleaner_class
-                            print(f"Loaded cleaner class: {module_name} → {class_name}")
+                            print(f"Loaded cleaner class: {module_name} -> {class_name}")
                     else:
                         print(f"Warning: Class {class_name} not found in {module_name}")
                 
@@ -167,7 +167,7 @@ class CleanerFactory:
                     if hasattr(module, func_name):
                         process_func = getattr(module, func_name)
                         cls._process_functions[module_name] = process_func
-                        print(f"Loaded process function: {module_name} → {func_name}")
+                        print(f"Loaded process function: {module_name} -> {func_name}")
                     else:
                         print(f"Warning: Function {func_name} not found in {module_name}")
             

@@ -200,4 +200,32 @@ describe('EmployeesBelowTargetCard', () => {
     );
     expect(screen.getByText(/Corporate-level names open their BSC/)).toBeInTheDocument();
   });
+
+  it('falls back to employee_id when employee_name is nan or empty', async () => {
+    mockedApiFetch.mockImplementationOnce(async () => ({
+      success: true,
+      data: {
+        items: [
+          {
+            employee_id: 'SGHD70221',
+            employee_name: 'nan',
+            team: 'Coding EGY',
+            region: 'EGY',
+            performance_level: 'Employee',
+            position: 'RCM -SHJ- OP CODING',
+            score: 41.9,
+          },
+        ],
+        page_size: 8,
+        next_cursor: null,
+        has_more: false,
+        total: 1,
+      },
+    }));
+
+    renderCard(testSummary('Employee'));
+
+    expect(await screen.findByText('SGHD70221')).toBeInTheDocument();
+    expect(screen.queryByText('nan')).not.toBeInTheDocument();
+  });
 });

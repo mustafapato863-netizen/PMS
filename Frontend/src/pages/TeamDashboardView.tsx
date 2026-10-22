@@ -10,7 +10,7 @@ import { OperationalViewSkeleton } from '../components/common/SkeletonLoader';
 import { TrendingUp, Target, Activity, Phone, Shield, Lightbulb, Edit2, Check, X, Award, AlertCircle, AlertTriangle, MessageSquare, Code, Headphones, Pill, Users, Send } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { TeamAgentRow, TeamWeightConfig } from '../hooks/usePerformanceData';
-import { TEAM_NAME_MAP, TEAM_DB_NAME_MAP, resolveTeamRouteId, MERGED_OP_FINAL_TEAM, MERGED_IP_FINAL_TEAM, PRE_APPROVALS_UAE_TEAM, PRE_APPROVALS_UAE_SOURCE_TEAMS, CALL_CENTER_TEAM, RCM_TEAM, callCenterChannelForTeam, isCallCenterChannelTeam, isPreApprovalsWorkflowTeam, isRcmDomainTeam, isRcmGroupTeam, egyptRcmTeamLabel, egyptRcmTeamValue, sameEgyptRcmTeam, isMergedBranchTeam, isMergedOpFinalTeam, sameCanonicalTeam, inboundCallCount } from '../types';
+import { TEAM_NAME_MAP, TEAM_DB_NAME_MAP, resolveTeamRouteId, MERGED_OP_FINAL_TEAM, MERGED_IP_FINAL_TEAM, PRE_APPROVALS_UAE_TEAM, PRE_APPROVALS_UAE_SOURCE_TEAMS, CALL_CENTER_TEAM, RCM_TEAM, RCM_DOMAIN_LABELS, callCenterChannelForTeam, isCallCenterChannelTeam, isPreApprovalsWorkflowTeam, isRcmDomainTeam, isRcmGroupTeam, egyptRcmTeamLabel, egyptRcmTeamValue, sameEgyptRcmTeam, isMergedBranchTeam, isMergedOpFinalTeam, sameCanonicalTeam, inboundCallCount } from '../types';
 import type { AgentRecord, GeoBreakdown, LocationKey, PreApprovalsWorkflowFilter, CallCenterChannelFilter, RcmDomainFilter, RcmGroupFilter } from '../types';
 import { useUserRole } from '../context/RoleContext';
 import { useAuth } from '../context/auth';
@@ -166,7 +166,7 @@ function DepartmentPositionKpis({
   teamName: string;
   month: string;
 }) {
-  if (view.totalAgents === 0) return null;
+  if (view.totalAgents === 0 || view.avgScore === 0) return null;
   return (
     <section aria-label={`${teamName} positions`}>
       <TeamKpiSection
@@ -273,12 +273,36 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
   const { egyTeam, setEgyTeam } = useRcmEgyptTeamParam();
 
   // Executive Summary > Function > Team or parent view > Sub-team (see teamBreadcrumbs).
-  const breadcrumbs = teamBreadcrumbs({
-    team: teamName,
-    displayName,
-    canOpenFunctionSummary: canAccessFunctionSummary(role),
-    allTeamsHref: isScopedDirectorRole(role) || assigned.branchLocked || assigned.regionLocked ? '/executive' : '/team/all',
-  });
+  const breadcrumbs = useMemo(() => {
+    const base = teamBreadcrumbs({
+      team: teamName,
+      displayName,
+      canOpenFunctionSummary: canAccessFunctionSummary(role),
+      allTeamsHref: isScopedDirectorRole(role) || assigned.branchLocked || assigned.regionLocked ? '/executive' : '/team/all',
+    });
+    if (isRcmParent) {
+      if (rcmGroup === 'offshore_egy') {
+        const result = [...base];
+        if (egyTeam) {
+          result.push({ label: 'Offshore EGY', href: '/team/rcm?group=offshore_egy' });
+          result.push({ label: egyptRcmTeamLabel(egyTeam), icon: 'team' });
+        } else {
+          result.push({ label: 'Offshore EGY', icon: 'team' });
+        }
+        return result;
+      } else if (rcmGroup === 'uae') {
+        const result = [...base];
+        if (rcmDomain !== 'all') {
+          result.push({ label: 'UAE', href: '/team/rcm?group=uae' });
+          result.push({ label: RCM_DOMAIN_LABELS[rcmDomain], icon: 'team' });
+        } else {
+          result.push({ label: 'UAE', icon: 'team' });
+        }
+        return result;
+      }
+    }
+    return base;
+  }, [teamName, displayName, role, assigned, isRcmParent, rcmGroup, egyTeam, rcmDomain]);
 
   const canExport = role === 'Manager' || role === 'Admin' || role === 'General Manager';
   const [hoverTooltip, setHoverTooltip] = useState<{ text: string; x: number; y: number } | null>(null);
@@ -303,7 +327,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
         ? egyTeam
         : rcmDomain === 'pre_approvals'
         ? rcmGroup === 'offshore_egy'
-          ? 'Pre-Approvals IP Offshore'
+          ? 'Pre-Approvals IP'
           : preApprovalsWorkflow === 'op_final'
           ? MERGED_OP_FINAL_TEAM
           : preApprovalsWorkflow === 'ip_final'
@@ -312,11 +336,11 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
               ? 'Pre-Approvals IP Elective Dubai'
               : PRE_APPROVALS_UAE_TEAM
         : rcmDomain === 'submission'
-          ? 'Submission'
+          ? rcmGroup === 'offshore_egy' ? 'Submission EGY' : 'Submission'
           : rcmDomain === 're_submission'
-            ? 'Re-Submission'
+            ? rcmGroup === 'offshore_egy' ? 'Resubmission' : 'Re-Submission'
             : rcmDomain === 'coding'
-              ? 'Coding'
+              ? rcmGroup === 'offshore_egy' ? 'Coding EGY' : 'Coding'
               : ''
     : teamName || '';
   const { data: teamConfig } = useTeamConfig(workflowConfigTeam);
