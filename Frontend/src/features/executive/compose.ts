@@ -10,7 +10,7 @@
  */
 import { normalizePercentageKpiForDisplay } from '../../components/common/performanceKpiProgress';
 import { GRADE_CLASSES, getGradeClassOrNull, type GradeClass } from '../../constants/grades';
-import { canonicalTeamName, isMergedBranchTeam, type AgentRecord } from '../../types';
+import { canonicalTeamName, isHossamRecord, isMergedBranchTeam, sameEgyptRcmTeam, type AgentRecord } from '../../types';
 import type { TeamConfig } from '../../schemas/teamConfig.schema';
 import { calculateAggregatedTeamPerformance, displayedTeamScore, recordsUseAppliedPin } from '../team/teamKpiAggregator';
 import { normalizePerformanceScore } from '../../utils/kpiScore';
@@ -21,7 +21,7 @@ import { summarizeActionAnalytics } from './actionAnalytics';
 import type { InsightDriver, InsightItem, InsightTrendStatus } from '../insights/types';
 import type { TeamFunctionMap } from '../insights/filterCascade';
 import { teamBelongsToFunction } from '../insights/filterCascade';
-import { EXECUTIVE_FUNCTIONS, executiveFunctionForTeam, summaryFunctionMatches, summaryTeamMatches } from './functions';
+import { EXECUTIVE_FUNCTIONS, executiveFunctionForTeam, isPreApprovalsSubTeam, summaryFunctionMatches, summaryTeamMatches } from './functions';
 import type {
   ExecutiveActionItem,
   ExecutiveCorrectiveActions,
@@ -506,6 +506,7 @@ function teamsOf(
   monthly: ExecRecord[] | null = null,
   rangeMonths: ExecutivePeriod[] | null = null,
   teamConfigs?: Map<string, TeamConfig> | Record<string, TeamConfig> | TeamConfig[],
+  unlevelMonthly?: ExecRecord[],
 ): ExecutiveTeam[] {
   const groupName = (record: ExecRecord) => byRole ? record.position || record.team : record.team;
   const monthlyRecords = monthly ?? scoped;
@@ -521,6 +522,38 @@ function teamsOf(
     let score = scoreOf(current);
     let previousScore = scoreOf(inPeriod(records, previous));
     let trend = trendOf(monthlyTeam, effective);
+
+    const isPreApprovals = team === 'Pre-Approvals IP'
+      || team === 'Pre-Approvals IP Offshore'
+      || isPreApprovalsSubTeam(team)
+      || sameEgyptRcmTeam(team, 'Pre-Approvals IP');
+
+    if (isPreApprovals) {
+      const teamPool = unlevelMonthly ?? monthlyTeam;
+      const hossamEffective = inPeriod(teamPool, effective).find(isHossamRecord);
+      if (hossamEffective && Number.isFinite(hossamEffective.score)) {
+        score = round1(hossamEffective.score);
+      }
+      const hossamPrev = inPeriod(teamPool, previous).find(isHossamRecord);
+      if (hossamPrev && Number.isFinite(hossamPrev.score)) {
+        previousScore = round1(hossamPrev.score);
+      }
+      const periods = trailingPeriods(effective);
+      trend = periods.map((period) => {
+        const periodRecords = inPeriod(monthlyTeam, period);
+        const hossamPeriod = inPeriod(teamPool, period).find(isHossamRecord);
+        const periodScore = hossamPeriod && Number.isFinite(hossamPeriod.score)
+          ? round1(hossamPeriod.score)
+          : scoreOf(periodRecords);
+        return {
+          period,
+          score: periodScore,
+          employees: employeesOf(periodRecords),
+          has_data: periodRecords.length > 0 || Boolean(hossamPeriod),
+          basis_context: null,
+        };
+      });
+    }
 
     if (useCanonical && teamConfig) {
       const currentAgents = current.map((record) => record.rawAgent).filter((a): a is AgentRecord => Boolean(a));
@@ -945,6 +978,9 @@ export function composeExecutiveSummary(input: ComposeInput): ExecutiveSummary {
   if (view === 'function' && input.functionName) scopeFilters.teamFunction = input.functionName;
   // The monthly, scope-filtered records: the trend, the month list and the monthly basis read these.
   const monthly = applyFilters(input.records, { ...input, filters: scopeFilters }, teamFunctions);
+  const unlevelFilters = { ...scopeFilters };
+  delete unlevelFilters.performanceLevel;
+  const unlevelMonthly = applyFilters(input.records, { ...input, filters: unlevelFilters }, teamFunctions);
   // Managerial: the function of the selected team, or the one function all visible teams share.
   const managerFunction = view === 'managerial'
     ? (input.team ? executiveFunctionForTeam(input.team, teamFunctions) : sharedFunctionOf(input.teamScope ?? [], teamFunctions))
@@ -986,6 +1022,20 @@ export function composeExecutiveSummary(input: ComposeInput): ExecutiveSummary {
   let score = scoreOf(current);
   let previousScore = scoreOf(before);
   if (view === 'managerial' && input.team && !rangeMonths) {
+    const isPreApprovalsTeam = input.team === 'Pre-Approvals IP'
+      || input.team === 'Pre-Approvals IP Offshore'
+      || isPreApprovalsSubTeam(input.team)
+      || sameEgyptRcmTeam(input.team, 'Pre-Approvals IP');
+    if (isPreApprovalsTeam) {
+      const hossamCurr = inPeriod(unlevelMonthly, effective).find(isHossamRecord);
+      if (hossamCurr && Number.isFinite(hossamCurr.score)) {
+        score = round1(hossamCurr.score);
+      }
+      const hossamPrev = inPeriod(unlevelMonthly, previous).find(isHossamRecord);
+      if (hossamPrev && Number.isFinite(hossamPrev.score)) {
+        previousScore = round1(hossamPrev.score);
+      }
+    }
     const mgrConfig = findTeamConfig(input.teamConfigs, input.team);
     if (mgrConfig && !isMergedBranchTeam(input.team)) {
       const currentAgents = current.map((r) => r.rawAgent).filter((a): a is AgentRecord => Boolean(a));
@@ -1005,7 +1055,7 @@ export function composeExecutiveSummary(input: ComposeInput): ExecutiveSummary {
     }
   }
 
-  const teams = effective ? teamsOf(scoped, effective, previous, teamFunctions, view === 'function' && input.functionName === 'Marketing', monthly, rangeMonths, input.teamConfigs) : [];
+  const teams = effective ? teamsOf(scoped, effective, previous, teamFunctions, view === 'function' && input.functionName === 'Marketing', monthly, rangeMonths, input.teamConfigs, unlevelMonthly) : [];
   const functions = effective ? functionCards(scoped, effective, previous, teamFunctions, monthly, rangeMonths) : [];
   // The company or function comparison is per month; a range does not compare with it.
   const comparison = input.comparisonRecords && effective && !range

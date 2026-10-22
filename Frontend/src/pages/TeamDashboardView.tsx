@@ -10,7 +10,8 @@ import { OperationalViewSkeleton } from '../components/common/SkeletonLoader';
 import { TrendingUp, Target, Activity, Phone, Shield, Lightbulb, Edit2, Check, X, Award, AlertCircle, AlertTriangle, MessageSquare, Code, Headphones, Pill, Users, Send } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { TeamAgentRow, TeamWeightConfig } from '../hooks/usePerformanceData';
-import { TEAM_NAME_MAP, TEAM_DB_NAME_MAP, resolveTeamRouteId, MERGED_OP_FINAL_TEAM, MERGED_IP_FINAL_TEAM, PRE_APPROVALS_UAE_TEAM, PRE_APPROVALS_UAE_SOURCE_TEAMS, CALL_CENTER_TEAM, RCM_TEAM, RCM_DOMAIN_LABELS, callCenterChannelForTeam, isCallCenterChannelTeam, isPreApprovalsWorkflowTeam, isRcmDomainTeam, isRcmGroupTeam, egyptRcmTeamLabel, egyptRcmTeamValue, sameEgyptRcmTeam, isMergedBranchTeam, isMergedOpFinalTeam, sameCanonicalTeam, inboundCallCount } from '../types';
+import { TEAM_NAME_MAP, TEAM_DB_NAME_MAP, resolveTeamRouteId, MERGED_OP_FINAL_TEAM, MERGED_IP_FINAL_TEAM, PRE_APPROVALS_UAE_TEAM, PRE_APPROVALS_UAE_SOURCE_TEAMS, CALL_CENTER_TEAM, RCM_TEAM, RCM_DOMAIN_LABELS, callCenterChannelForTeam, isCallCenterChannelTeam, isPreApprovalsWorkflowTeam, isRcmDomainTeam, isRcmGroupTeam, egyptRcmTeamLabel, egyptRcmTeamValue, sameEgyptRcmTeam, isMergedBranchTeam, isMergedOpFinalTeam, sameCanonicalTeam, inboundCallCount, isHossamRecord } from '../types';
+import { isPreApprovalsSubTeam } from '../features/executive/functions';
 import type { AgentRecord, GeoBreakdown, LocationKey, PreApprovalsWorkflowFilter, CallCenterChannelFilter, RcmDomainFilter, RcmGroupFilter } from '../types';
 import { useUserRole } from '../context/RoleContext';
 import { useAuth } from '../context/auth';
@@ -456,7 +457,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
     isRcmParent && rcmGroup === 'offshore_egy' ? egyTeam : '',
   );
 
-  const { uniqueMonths, agents: allAgentsRaw } = usePerformanceData('All', location, region, performanceLevel, true, teamName ?? undefined);
+  const { uniqueMonths, agents: allAgentsRaw } = usePerformanceData('All', location, region, 'All', true, teamName ?? undefined);
   const allAgents = useMemo(
     () => isMergedTeam && !isCallCenterParent && !branchSelections.includes('all')
       ? allAgentsRaw.filter((agent) => branchSelections.some((branch) => agentMatchesLocation(agent, branch)))
@@ -834,8 +835,18 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
     const sameMonth = agents.filter((record) => scoreMonthKey(record.identity.month || '') === scoreMonthKey(activeMonthName));
     return sameMonth.length > 0 ? sameMonth : agents;
   }, [activeMonthName]);
+  const isPreApprovalsTeamName = sameEgyptRcmTeam(teamName, 'Pre-Approvals IP')
+    || isPreApprovalsSubTeam(teamName);
+
   // Memoized current month aggregate performance score
   const calculatedAvgScore = useMemo(() => {
+    if (isPreApprovalsTeamName) {
+      const hossam = allAgents.find((a) => isHossamRecord(a) && scoreMonthKey(a.identity.month || '') === scoreMonthKey(activeMonthName));
+      if (hossam) {
+        const s = Number(hossam.evaluation?.score ?? hossam.score);
+        if (Number.isFinite(s)) return s;
+      }
+    }
     const teamAgents = agentsForHeadline(presentationRows.map((row) => row.raw));
     return headlineTeamScore({
       scope: headlineScope,
@@ -843,16 +854,24 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
       pooledScore: getCanonicalTeamScore(teamAgents),
       appliedPin: recordsUseAppliedPin(teamAgents),
     });
-  }, [headlineScope, agentsForHeadline, getCanonicalTeamScore, hookAvgScore, presentationRows]);
+  }, [isPreApprovalsTeamName, allAgents, activeMonthName, headlineScope, agentsForHeadline, getCanonicalTeamScore, hookAvgScore, presentationRows]);
 
   const calculatedPrevAvgScore = useMemo(() => {
+    if (isPreApprovalsTeamName && prevPeriodKey) {
+      const prevMonthName = monthNameFromPeriodKey(prevPeriodKey);
+      const hossam = allAgents.find((a) => isHossamRecord(a) && scoreMonthKey(a.identity.month || '') === scoreMonthKey(prevMonthName ?? ''));
+      if (hossam) {
+        const s = Number(hossam.evaluation?.score ?? hossam.score);
+        if (Number.isFinite(s)) return s;
+      }
+    }
     if (headlineScope !== 'pooled' || !prevPeriodKey) return prevAvgScore;
     return displayedTeamScore(
       getCanonicalTeamScore(previousTeamAgents),
       prevAvgScore,
       recordsUseAppliedPin(previousTeamAgents),
     );
-  }, [headlineScope, prevPeriodKey, getCanonicalTeamScore, prevAvgScore, previousTeamAgents]);
+  }, [isPreApprovalsTeamName, allAgents, prevPeriodKey, headlineScope, getCanonicalTeamScore, prevAvgScore, previousTeamAgents]);
 
   // Channel cards use the same pooled headline as the team score inside that channel.
   // The department figure is the headcount-weighted average of those two scores.
@@ -2140,10 +2159,10 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
             <DepartmentPositionKpis view={rcmPositionView} teamId="rcm" teamName={RCM_TEAM} month={month} />
           </>
         ) : isRcmParent && rcmGroup === 'offshore_egy' && !egyTeam ? (
-          <RcmEgyptTeamSummary rows={presentationRows} onTeamSelect={handleEgyTeamChange} />
+          <RcmEgyptTeamSummary rows={presentationRows} onTeamSelect={handleEgyTeamChange} allAgents={allAgents} />
         ) : isRcmParent && rcmDomain === 'all' && rcmGroup !== 'offshore_egy' ? (
           <>
-            <RcmDomainSummary rows={presentationRows} onDomainSelect={handleRcmDomainChange} />
+            <RcmDomainSummary rows={presentationRows} onDomainSelect={handleRcmDomainChange} allAgents={allAgents} />
             <DepartmentPositionKpis view={rcmPositionView} teamId="rcm" teamName={RCM_TEAM} month={month} />
           </>
         ) : isRcmParent && rcmDomain === 'pre_approvals' && preApprovalsWorkflow === 'all' && rcmGroup !== 'offshore_egy' ? (

@@ -1,6 +1,6 @@
 import type { KPI, TeamConfig } from '../../schemas/teamConfig.schema';
 import type { AgentRecord, KPIConfig, LocationKey } from '../../types';
-import { getKPIsForAgent, inboundCallCount } from '../../types';
+import { getKPIsForAgent, inboundCallCount, isHossamRecord } from '../../types';
 import { getWeightForLabel } from '../../utils/kpiScore';
 
 export interface AggregatedTeamKpi {
@@ -633,6 +633,27 @@ export function calculateAggregatedTeamPerformance(
   options: TeamKpiAggregationOptions = {},
 ): AggregatedTeamPerformance | null {
   if (!config || agents.length === 0) return null;
+
+  const isPreApprovalsTeam = config.team === 'Pre-Approvals IP'
+    || config.team === 'Pre-Approvals IP Offshore'
+    || normalize(config.team) === normalize('Pre-Approvals IP Offshore')
+    || normalize(config.team) === normalize('Pre-Approvals IP');
+
+  if (isPreApprovalsTeam) {
+    const hossam = agents.find(isHossamRecord);
+    if (hossam) {
+      const rawScore = Number(hossam.evaluation?.score ?? hossam.score);
+      if (Number.isFinite(rawScore)) {
+        const hossamKpis = aggregateConfiguredTeamKpis([hossam], config, options);
+        return {
+          score: rawScore,
+          groupCount: 1,
+          basisVaries: false,
+          kpis: hossamKpis,
+        };
+      }
+    }
+  }
 
   const groups = new Map<string, AgentRecord[]>();
   agents.forEach((agent) => {

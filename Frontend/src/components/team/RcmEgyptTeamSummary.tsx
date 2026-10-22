@@ -1,10 +1,14 @@
 import { ArrowUpRight, ClipboardCheck } from 'lucide-react';
 import type { TeamAgentRow } from '../../hooks/usePerformanceData';
-import { egyptRcmTeamLabel, egyptRcmTeamValue, isRcmGroupTeam } from '../../types';
+import type { AgentRecord } from '../../types';
+import { egyptRcmTeamLabel, egyptRcmTeamValue, isHossamRecord, isRcmGroupTeam, sameEgyptRcmTeam } from '../../types';
+import { isPreApprovalsSubTeam } from '../../features/executive/functions';
 
 interface RcmEgyptTeamSummaryProps {
   rows: TeamAgentRow[];
   onTeamSelect: (team: string) => void;
+  allAgents?: AgentRecord[];
+  teamScores?: Partial<Record<string, number | null>>;
 }
 
 const TONES = [
@@ -30,7 +34,7 @@ const TONES = [
   },
 ];
 
-const RcmEgyptTeamSummary = ({ rows, onTeamSelect }: RcmEgyptTeamSummaryProps) => {
+const RcmEgyptTeamSummary = ({ rows, onTeamSelect, allAgents, teamScores }: RcmEgyptTeamSummaryProps) => {
   const grouped = new Map<string, TeamAgentRow[]>();
   rows.forEach((row) => {
     if (!isRcmGroupTeam(row.raw.identity.team, 'offshore_egy', row.raw.region ?? row.raw.identity.region)) return;
@@ -55,7 +59,28 @@ const RcmEgyptTeamSummary = ({ rows, onTeamSelect }: RcmEgyptTeamSummaryProps) =
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
           {teams.map(([stored, teamRows], index) => {
             const label = egyptRcmTeamLabel(stored);
-            const average = teamRows.reduce((sum, row) => sum + row.score, 0) / teamRows.length;
+            const isPreApprovals = stored === 'Pre-Approvals IP' || stored === 'Pre-Approvals IP Offshore' || isPreApprovalsSubTeam(stored);
+
+            let score: number | null = teamScores?.[stored] ?? null;
+            if (score === null && isPreApprovals) {
+              const hossamRow = teamRows.find(isHossamRecord);
+              if (hossamRow && Number.isFinite(hossamRow.score)) {
+                score = hossamRow.score;
+              } else if (allAgents && allAgents.length > 0) {
+                const hossamAgent = allAgents.find((a) => isHossamRecord(a) && (sameEgyptRcmTeam(a.identity.team, stored) || isPreApprovalsSubTeam(a.identity.team)));
+                if (hossamAgent) {
+                  const s = Number(hossamAgent.evaluation?.score ?? hossamAgent.score);
+                  if (Number.isFinite(s)) score = s;
+                }
+              }
+            }
+
+            if (score === null) {
+              score = teamRows.length > 0
+                ? teamRows.reduce((sum, row) => sum + row.score, 0) / teamRows.length
+                : 0;
+            }
+
             const tone = TONES[index % TONES.length];
             return (
               <button
@@ -77,8 +102,8 @@ const RcmEgyptTeamSummary = ({ rows, onTeamSelect }: RcmEgyptTeamSummaryProps) =
                 </div>
                 <div className="mt-4 flex items-end justify-between gap-3">
                   <div>
-                    <div className="text-2xl font-extrabold text-[var(--text-primary)]">{average.toFixed(1)}%</div>
-                    <p className="mt-1 text-xs font-medium text-[var(--text-secondary)]">Average employee score</p>
+                    <div className="text-2xl font-extrabold text-[var(--text-primary)]">{score.toFixed(1)}%</div>
+                    <p className="mt-1 text-xs font-medium text-[var(--text-secondary)]">Team score</p>
                   </div>
                   <span className="flex h-9 w-9 items-center justify-center rounded-full border border-[var(--border-light)] text-[var(--text-muted)] transition-all duration-200 group-hover:border-current group-hover:text-[var(--text-primary)]" aria-hidden="true">
                     <ArrowUpRight size={16} />

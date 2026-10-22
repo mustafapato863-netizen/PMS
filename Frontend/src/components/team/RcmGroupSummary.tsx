@@ -45,7 +45,7 @@ export default function RcmGroupSummary({ rows, onGroupSelect }: RcmGroupSummary
               <div className="relative mt-1 flex items-end justify-between gap-4">
                 <div>
                   <p className="text-3xl font-black text-slate-900 dark:text-white">{average.toFixed(1)}%</p>
-                  <p className="text-sm text-slate-500">Average employee score</p>
+                  <p className="text-sm text-slate-500">Team score</p>
                 </div>
                 <p className="text-sm font-bold text-slate-500">{groupRows.length} employees</p>
               </div>

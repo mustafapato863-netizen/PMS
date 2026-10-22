@@ -1,10 +1,13 @@
 import { ArrowUpRight, BadgeDollarSign, ClipboardCheck, Code, RefreshCw, Send } from 'lucide-react';
 import type { TeamAgentRow } from '../../hooks/usePerformanceData';
-import { RCM_DOMAIN_LABELS, rcmDomainForTeam, type RcmDomainFilter } from '../../types';
+import type { AgentRecord } from '../../types';
+import { isHossamRecord, RCM_DOMAIN_LABELS, rcmDomainForTeam, type RcmDomainFilter } from '../../types';
 
 interface RcmDomainSummaryProps {
   rows: TeamAgentRow[];
   onDomainSelect: (domain: Exclude<RcmDomainFilter, 'all'>) => void;
+  allAgents?: AgentRecord[];
+  domainScores?: Partial<Record<Exclude<RcmDomainFilter, 'all'>, number | null>>;
 }
 
 const DOMAINS: Array<Exclude<RcmDomainFilter, 'all'>> = ['pre_approvals', 'submission', 're_submission', 'coding'];
@@ -41,7 +44,7 @@ const DOMAIN_META: Record<Exclude<RcmDomainFilter, 'all'>, {
   },
 };
 
-const RcmDomainSummary = ({ rows, onDomainSelect }: RcmDomainSummaryProps) => {
+const RcmDomainSummary = ({ rows, onDomainSelect, allAgents, domainScores }: RcmDomainSummaryProps) => {
   const availableDomains = DOMAINS.map((domain) => ({
     domain,
     domainRows: rows.filter((row) => rcmDomainForTeam(row.raw.identity.team) === domain),
@@ -61,41 +64,58 @@ const RcmDomainSummary = ({ rows, onDomainSelect }: RcmDomainSummaryProps) => {
       {availableDomains.length > 0 ? (
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
           {availableDomains.map(({ domain, domainRows }) => {
-        const average = domainRows.length > 0
-          ? domainRows.reduce((sum, row) => sum + row.score, 0) / domainRows.length
-          : 0;
-        const Icon = DOMAIN_META[domain].icon;
-        return (
-          <button
-            key={domain}
-            type="button"
-            onClick={() => onDomainSelect(domain)}
-            aria-label={`Open ${RCM_DOMAIN_LABELS[domain]} domain`}
-            className={`group relative overflow-hidden rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] p-4 text-left transition-all duration-200 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${DOMAIN_META[domain].glow}`}
-          >
-            <span className={`pointer-events-none absolute -right-10 -top-10 h-28 w-28 rounded-full opacity-10 blur-2xl transition-opacity duration-200 group-hover:opacity-30 ${DOMAIN_META[domain].accent}`} />
-            <div className="flex items-center gap-3">
-              <span className={`flex h-10 w-10 items-center justify-center rounded-xl ${DOMAIN_META[domain].tone}`}>
-                <Icon size={19} />
-              </span>
-              <div>
-                <h4 className="text-sm font-extrabold text-[var(--text-primary)]">{RCM_DOMAIN_LABELS[domain]}</h4>
-                <p className="text-xs font-semibold text-[var(--text-muted)]">{domainRows.length} employees</p>
-              </div>
-            </div>
-            <div className="mt-4 flex items-end justify-between gap-3">
-              <div>
-                <div className="text-2xl font-extrabold text-[var(--text-primary)]">
-                  {domainRows.length > 0 ? `${average.toFixed(1)}%` : 'No data'}
+            let score: number | null = domainScores?.[domain] ?? null;
+            if (score === null && domain === 'pre_approvals') {
+              const hossamRow = domainRows.find(isHossamRecord);
+              if (hossamRow && Number.isFinite(hossamRow.score)) {
+                score = hossamRow.score;
+              } else if (allAgents && allAgents.length > 0) {
+                const hossamAgent = allAgents.find((a) => isHossamRecord(a));
+                if (hossamAgent) {
+                  const s = Number(hossamAgent.evaluation?.score ?? hossamAgent.score);
+                  if (Number.isFinite(s)) score = s;
+                }
+              }
+            }
+
+            if (score === null) {
+              score = domainRows.length > 0
+                ? domainRows.reduce((sum, row) => sum + row.score, 0) / domainRows.length
+                : 0;
+            }
+
+            const Icon = DOMAIN_META[domain].icon;
+            return (
+              <button
+                key={domain}
+                type="button"
+                onClick={() => onDomainSelect(domain)}
+                aria-label={`Open ${RCM_DOMAIN_LABELS[domain]} domain`}
+                className={`group relative overflow-hidden rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] p-4 text-left transition-all duration-200 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${DOMAIN_META[domain].glow}`}
+              >
+                <span className={`pointer-events-none absolute -right-10 -top-10 h-28 w-28 rounded-full opacity-10 blur-2xl transition-opacity duration-200 group-hover:opacity-30 ${DOMAIN_META[domain].accent}`} />
+                <div className="flex items-center gap-3">
+                  <span className={`flex h-10 w-10 items-center justify-center rounded-xl ${DOMAIN_META[domain].tone}`}>
+                    <Icon size={19} />
+                  </span>
+                  <div>
+                    <h4 className="text-sm font-extrabold text-[var(--text-primary)]">{RCM_DOMAIN_LABELS[domain]}</h4>
+                    <p className="text-xs font-semibold text-[var(--text-muted)]">{domainRows.length} employees</p>
+                  </div>
                 </div>
-                <p className="mt-1 text-xs font-medium text-[var(--text-secondary)]">Average employee score</p>
-              </div>
-              <span className="flex h-9 w-9 items-center justify-center rounded-full border border-[var(--border-light)] text-[var(--text-muted)] transition-all duration-200 group-hover:border-current group-hover:text-[var(--text-primary)]" aria-hidden="true">
-                <ArrowUpRight size={16} />
-              </span>
-            </div>
-          </button>
-          );
+                <div className="mt-4 flex items-end justify-between gap-3">
+                  <div>
+                    <div className="text-2xl font-extrabold text-[var(--text-primary)]">
+                      {score !== null ? `${score.toFixed(1)}%` : 'No data'}
+                    </div>
+                    <p className="mt-1 text-xs font-medium text-[var(--text-secondary)]">Team score</p>
+                  </div>
+                  <span className="flex h-9 w-9 items-center justify-center rounded-full border border-[var(--border-light)] text-[var(--text-muted)] transition-all duration-200 group-hover:border-current group-hover:text-[var(--text-primary)]" aria-hidden="true">
+                    <ArrowUpRight size={16} />
+                  </span>
+                </div>
+              </button>
+            );
           })}
         </div>
       ) : (

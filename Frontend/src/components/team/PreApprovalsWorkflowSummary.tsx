@@ -68,7 +68,7 @@ const PreApprovalsWorkflowSummary = ({ rows, onWorkflowSelect }: PreApprovalsWor
                 <div className="text-2xl font-extrabold text-[var(--text-primary)]">
                   {workflowRows.length > 0 ? `${average.toFixed(1)}%` : 'No data'}
                 </div>
-                <p className="mt-1 text-xs font-medium text-[var(--text-secondary)]">Average employee score</p>
+                <p className="mt-1 text-xs font-medium text-[var(--text-secondary)]">Team score</p>
               </div>
               <span className="flex h-9 w-9 items-center justify-center rounded-full border border-[var(--border-light)] text-[var(--text-muted)] transition-all duration-200 group-hover:border-current group-hover:text-[var(--text-primary)]" aria-hidden="true">
                 <ArrowUpRight size={16} />

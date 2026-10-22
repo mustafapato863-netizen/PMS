@@ -229,6 +229,42 @@ export function rcmGroupForTeam(value: string | null | undefined, region?: strin
   return offshore ? 'offshore_egy' : 'uae';
 }
 
+export const HOSSAM_EMPLOYEE_ID = 'SGHD70094';
+
+export function isHossamEmployeeId(id: string | null | undefined): boolean {
+  const norm = String(id ?? '').trim().toUpperCase();
+  return norm === 'SGHD70094' || norm === '70094';
+}
+
+export function isHossamRecord(record: {
+  employee_id?: string;
+  employeeId?: string;
+  id?: string;
+  name?: string;
+  position?: string | null;
+  performance_level?: string;
+  performanceLevel?: string;
+  identity?: { employee_id?: string; name?: string; position?: string | null };
+  raw?: { identity?: { employee_id?: string; name?: string; position?: string | null }; performance_level?: string };
+} | null | undefined): boolean {
+  if (!record) return false;
+  const empId = record.employee_id
+    || record.employeeId
+    || record.id
+    || record.identity?.employee_id
+    || record.raw?.identity?.employee_id;
+  if (isHossamEmployeeId(empId)) return true;
+  const name = record.name
+    || record.identity?.name
+    || record.raw?.identity?.name;
+  if (name && /hossam/i.test(name) && /mohamed/i.test(name)) return true;
+  const position = record.position
+    || record.identity?.position
+    || record.raw?.identity?.position;
+  if (position && /pre-authorization supervisor/i.test(position)) return true;
+  return false;
+}
+
 /** Stored team selected by an Egypt card. Legacy offshore rows share Pre-Approvals IP. */
 export function egyptRcmTeamValue(value: string | null | undefined): string {
   const normalized = normalizeTeamIdentity(value);
