@@ -449,12 +449,14 @@ class DashboardRecordService:
             ]
         return resolved
 
-    def list_record_index(self):
+    def list_record_index(self, **filters):
         """list_records()' rows in the same order, as light rows with only the values a filter or a period reads
         (see get_dashboard_record_index), or None when the repository cannot read them."""
         sql_repository = self.sql_repository_cls(self.db, PerformanceRecord)
         loader = getattr(sql_repository, "get_dashboard_record_index", None)
-        return loader() if callable(loader) else None
+        if not callable(loader):
+            return None
+        return loader(**filters) if filters else loader()
 
     def list_records_by_keys(self, keys: list[tuple]):
         """The resolved records for the given (record id, year) keys, in the order of the keys, or None when the

@@ -391,7 +391,14 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
         rows.sort(key=lambda row: position[(row["id"], row["year"])])
         return self._with_relations(rows)
 
-    def get_dashboard_record_index(self) -> list[SimpleNamespace]:
+    def get_dashboard_record_index(
+        self,
+        *,
+        year: int | None = None,
+        months: list[str] | None = None,
+        team_names: list[str] | None = None,
+        employee_code: str | None = None,
+    ) -> list[SimpleNamespace]:
         """Every row of get_dashboard_record_rows(), in the same order, with only the values a filter or a period
         reads: the key, the employee code, the team name, the region, the position and level, the year and month.
 
@@ -400,7 +407,18 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
         employee's. ``record_key`` is the record id as lowercase hex without dashes, and the year.
         """
         connection = self.db.connection()
-        compiled = self._dashboard_records_query(False).statement.compile(dialect=connection.dialect)
+        query = self._dashboard_records_query(False, year=year, employee_id=employee_code or None)
+        # Optional narrowing for callers that filter by period/team: plain
+        # IN predicates on the raw columns, so indexes stay usable.
+        if months is not None:
+            query = query.filter(PerformanceRecord.month.in_(months)) if months else query.filter(false())
+        if team_names is not None:
+            # String predicate (driver SQL skips UUID bind processing); a superset
+            # that callers narrow with the exact logical-team comparison.
+            query = query.filter(Team.name.in_(team_names)) if team_names else query.filter(false())
+        compiled = query.statement.compile(
+            dialect=connection.dialect, compile_kwargs={"render_postcompile": True}
+        )
         params = compiled.construct_params()
         arguments = tuple(params[name] for name in compiled.positiontup) if compiled.positional else params
         rows = connection.exec_driver_sql(compiled.string, arguments).mappings().all()

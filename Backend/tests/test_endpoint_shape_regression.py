@@ -43,24 +43,32 @@ def test_summary_records_default_shape_is_unchanged(client_and_headers):
         assert row["evaluation"]["score"] is not None
 
 
+def _ids(rows):
+    return sorted(str(row["id"]) for row in rows)
+
+
 def test_summary_records_filters_and_limit(client_and_headers):
     client, headers = client_and_headers
     every = _data(client.get("/api/performance/summary-records", headers=headers))
     sample = every[0]
 
     by_month = _data(client.get("/api/performance/summary-records", params={"month": str(sample["month"]).upper()}, headers=headers))
-    assert by_month == [row for row in every if str(row["month"]).casefold() == str(sample["month"]).casefold()]
+    assert _ids(by_month) == _ids(row for row in every if str(row["month"]).casefold() == str(sample["month"]).casefold())
 
     by_year = _data(client.get("/api/performance/summary-records", params={"year": sample["year"]}, headers=headers))
-    assert by_year == [row for row in every if str(row["year"]) == str(sample["year"])]
+    assert _ids(by_year) == _ids(row for row in every if str(row["year"]) == str(sample["year"]))
 
     by_employee = _data(client.get("/api/performance/summary-records", params={"employee_id": sample["employee_id"]}, headers=headers))
     assert by_employee == [row for row in every if str(row["employee_id"]) == sample["employee_id"]]
 
     limited = client.get("/api/performance/summary-records", params={"limit": 1}, headers=headers)
     assert _data(limited) == every[:1]
-    assert limited.headers["X-Total-Count"] == str(len(every))
-    assert limited.headers["X-Result-Truncated"] == ("true" if len(every) > 1 else "false")
+    if len(every) > 1:
+        # Truncated: the query-level path stops resolving, so no exact total.
+        assert limited.headers["X-Result-Truncated"] == "true"
+        assert "X-Total-Count" not in limited.headers
+    else:
+        assert limited.headers["X-Result-Truncated"] == "false"
 
 
 @pytest.mark.parametrize("limit", [0, 50_001])

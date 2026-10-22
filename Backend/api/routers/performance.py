@@ -31,6 +31,13 @@ from services.dashboard_record_service import DashboardRecordService
 from services.insights_service import InsightsService
 from services.database_record_source import DatabaseRecordSource
 from services.planning_service import PlanningService
+from services.summary_records_service import (
+    SummaryFilters,
+    SummaryResult,
+    summary_records_indexed,
+)
+from services.summary_records_service import matches as summary_matches
+from services.summary_records_service import to_payload as summary_payload
 from api.middleware.rbac_middleware import require_permission
 from services.upload_security import read_validated_excel
 from models.report_schemas import MONTHS
@@ -309,7 +316,7 @@ def get_summary_records(
     limit: Annotated[int, Query(
         ge=1,
         le=SUMMARY_RECORDS_MAX_LIMIT,
-        description="Maximum records returned; X-Total-Count / X-Result-Truncated report the full size",
+        description="Maximum records returned; X-Result-Truncated reports truncation, X-Total-Count the full size when known",
     )] = SUMMARY_RECORDS_DEFAULT_LIMIT,
     response: Response = None,
 ):
@@ -320,45 +327,42 @@ def get_summary_records(
     signalled through response headers, never by changing the body shape).
     """
     scope = require_authenticated_scope(db, request)
+    filters = SummaryFilters(employee_id=employee_id, year=year, month=month, team=team)
+    record_service = DashboardRecordService(db, sql_repository_cls=SQLPerformanceRepository)
+    result = None
+    if SUMMARY_RECORDS_QUERY_FILTERING and isinstance(db, Session):
+        # Filters and limit are applied in SQL / before resolving payloads.
+        result = summary_records_indexed(db, record_service, scope, filters, limit)
+    if result is None:
+        result = _summary_records_legacy(db, record_service, scope, filters, limit)
+    if response is not None:
+        if result.total is not None:
+            response.headers["X-Total-Count"] = str(result.total)
+        response.headers["X-Result-Truncated"] = "true" if result.truncated else "false"
+    return StandardResponse(success=True, message="Authorized summary evidence retrieved", data=result.data)
+
+
+# Kill switch for the query-level path (tests compare both paths).
+SUMMARY_RECORDS_QUERY_FILTERING = True
+
+
+def _summary_records_legacy(db, record_service, scope, filters: SummaryFilters, limit: int) -> SummaryResult:
+    """Resolve every authorized record, then filter (Branch Director / fallback)."""
     source = DatabaseRecordSource(db)
-    service = InsightsService(
-        source,
-        PlanningService(source, db=db),
-        db=db,
-        record_service=DashboardRecordService(db, sql_repository_cls=SQLPerformanceRepository),
-    )
+    service = InsightsService(source, PlanningService(source, db=db), db=db, record_service=record_service)
     records, _ = service.authorized_records(scope)
-    month_key = month.strip().casefold() if month and month.strip() else None
-    team_key = team.strip().casefold() if team and team.strip() else None
     data = []
     total = 0
     for record in records:
-        probe = record
-        # Cheap pre-filters on the source record before serializing it.
-        if employee_id and str(_summary_field(probe, "employee_id")) != employee_id:
+        if not summary_matches(record, filters):
             continue
-        if year is not None and _summary_field(probe, "year") not in (year, str(year)):
-            continue
-        if month_key and str(_summary_field(probe, "month") or "").strip().casefold() != month_key:
-            continue
-        if team_key and str(_summary_field(probe, "team") or "").strip().casefold() != team_key:
-            continue
-        payload = dict(record) if isinstance(record, dict) else record.model_dump(mode="json")
-        if (payload.get("evaluation") or {}).get("score") is None:
+        payload = summary_payload(record)
+        if payload is None:
             continue
         total += 1
         if len(data) < limit:
             data.append(payload)
-    if response is not None:
-        response.headers["X-Total-Count"] = str(total)
-        response.headers["X-Result-Truncated"] = "true" if total > len(data) else "false"
-    return StandardResponse(success=True, message="Authorized summary evidence retrieved", data=data)
-
-
-def _summary_field(record, name: str):
-    if isinstance(record, dict):
-        return record.get(name)
-    return getattr(record, name, None)
+    return SummaryResult(data=data, truncated=total > len(data), total=total)
 
 
 def _catalog_row_counted(row: dict) -> bool:
