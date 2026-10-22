@@ -170,6 +170,9 @@ def _auth_app(db, monkeypatch):
 
     app = FastAPI()
     app.add_middleware(AuthMiddleware)
+    from services.rate_limit.enforcement import RateLimitExceeded, rate_limit_exception_handler
+
+    app.add_exception_handler(RateLimitExceeded, rate_limit_exception_handler)
 
     def override_db():
         yield db

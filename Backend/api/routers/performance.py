@@ -36,7 +36,9 @@ from services.summary_records_service import (
     SummaryResult,
     summary_records_indexed,
 )
+from services.summary_records_service import SUMMARY_RECORDS_CAP
 from services.summary_records_service import apply_limit as apply_summary_limit
+from services.rate_limit.enforcement import SUMMARY_RECORDS_RULE, enforce_user_route_limit
 from services.summary_records_service import matches as summary_matches
 from services.summary_records_service import to_payload as summary_payload
 from api.middleware.rbac_middleware import require_permission
@@ -302,7 +304,7 @@ def get_all_records(
         )
 
 
-SUMMARY_RECORDS_MAX_LIMIT = 50_000
+SUMMARY_RECORDS_MAX_LIMIT = SUMMARY_RECORDS_CAP
 
 
 @router.get("/summary-records", response_model=StandardResponse)
@@ -317,7 +319,7 @@ def get_summary_records(
         ge=1,
         le=SUMMARY_RECORDS_MAX_LIMIT,
         description=(
-            "Optional maximum; when it truncates, the newest (year, month) rows are kept. "
+            "Maximum rows (default and maximum 50,000); the newest (year, month) rows are kept. "
             "X-Result-Truncated reports truncation and X-Total-Count the full size"
         ),
     )] = None,
@@ -326,10 +328,11 @@ def get_summary_records(
     """Authorized employee and management evidence for summary and 360 views.
 
     Every new parameter is optional; without them the response is unchanged
-    (no limit by default, so nothing is dropped; an explicit limit keeps the
-    newest periods and is signalled through response headers, never by
-    changing the body shape).
+    (capped at 50,000 rows by default; the newest periods are selected in SQL
+    and truncation is signalled through response headers, never by changing
+    the body shape). Rows are returned oldest period first.
     """
+    enforce_user_route_limit(request, SUMMARY_RECORDS_RULE, "GET /api/performance/summary-records")
     scope = require_authenticated_scope(db, request)
     filters = SummaryFilters(employee_id=employee_id, year=year, month=month, team=team)
     record_service = DashboardRecordService(db, sql_repository_cls=SQLPerformanceRepository)

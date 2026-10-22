@@ -182,12 +182,23 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 },
             )
         except Exception as exc:
-            # Pool timeout, lost connection, Redis/DB outage...: not the user's
-            # token. 503 + Retry-After so clients retry instead of logging out.
+            # Pool timeout / lost connection: not the user's token. 503 +
+            # Retry-After so clients retry instead of logging out.
+            request_id = getattr(request.state, "request_id", None)
             if is_db_unavailable(exc):
                 logger.warning("Authentication lookup unavailable: %s", type(exc).__name__)
-            else:
-                logger.exception("Unexpected authentication failure")
-            return unavailable_response(getattr(request.state, "request_id", None))
+                return unavailable_response(request_id)
+            # Anything else is a server bug, not a token problem and not a
+            # transient outage: 500, never 401 or a retry hint.
+            logger.exception("Unexpected authentication failure")
+            return JSONResponse(
+                status_code=500,
+                content={
+                    "success": False,
+                    "message": "An internal server error occurred.",
+                    "detail": "An internal server error occurred.",
+                    "request_id": request_id,
+                },
+            )
 
         return await call_next(request)

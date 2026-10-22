@@ -13,18 +13,23 @@ import logging
 import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
+from sqlalchemy import event
 from sqlalchemy import exc as sa_exc
 from sqlalchemy.orm import Session
 from starlette.requests import Request
 
 from api.dependencies import get_current_user_scope
 from api.middleware.error_handling_middleware import ErrorHandlingMiddleware
+from api.routers import performance
 from services.summary_records_service import (
+    SUMMARY_RECORDS_CAP,
     SummaryFilters,
     apply_limit,
+    order_key,
     period_key,
     summary_records_indexed,
 )
+from tests.test_insights_period_window import SCOPES
 from tests.test_summary_parity_capture import (
     _auth_app,
     _data,
@@ -50,6 +55,22 @@ def auth_client(monkeypatch):
 
 # --- 1. 503 vs 401 -----------------------------------------------------------
 
+@pytest.fixture(scope="module")
+def window_engine_qa():
+    from tests.test_insights_period_window import _synthetic_engine
+
+    engine = _synthetic_engine()
+    yield engine
+    engine.dispose()
+
+
+def _record_service(db):
+    from repositories.performance_repository import PerformanceRepository
+    from services.dashboard_record_service import DashboardRecordService
+
+    return DashboardRecordService(db, sql_repository_cls=PerformanceRepository)
+
+
 @pytest.mark.parametrize("error", [
     POOL_TIMEOUT,
     sa_exc.OperationalError("SELECT 1", {}, Exception("server closed the connection unexpectedly")),
@@ -67,6 +88,19 @@ def test_db_failure_during_auth_is_503_with_retry_after(auth_client, monkeypatch
         assert response.status_code == 503, path
         assert response.headers["Retry-After"] == str(RETRY_AFTER_SECONDS)
         assert response.json()["code"] == "SERVICE_UNAVAILABLE"
+
+
+@pytest.mark.parametrize("error", [RuntimeError("bug"), KeyError("x"), sa_exc.IntegrityError("SELECT", {}, Exception("x"))])
+def test_unexpected_auth_failure_is_500_not_401_or_503(auth_client, monkeypatch, error):
+    client, headers = auth_client
+
+    def broken(*_args, **_kwargs):
+        raise error
+
+    monkeypatch.setattr("api.middleware.auth_middleware._load_authenticated_user", broken)
+    response = client.get("/api/performance/summary-records", headers=headers)
+    assert response.status_code == 500
+    assert "Retry-After" not in response.headers
 
 
 @pytest.mark.parametrize("token", ["not-a-jwt", "a.b.c", ""])
@@ -163,26 +197,33 @@ def test_classifier_only_matches_availability_errors():
 
 # --- 2. summary-records truncation + CORS -------------------------------------
 
+_MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August",
+                "September", "October", "November", "December"]
+
+
 def _row(year, month, rid):
     return {"id": rid, "year": year, "month": month}
 
 
-def test_no_default_truncation():
-    rows = [_row(2020 + i % 7, "January", str(i)) for i in range(25_000)]
-    result = apply_limit(rows, None)
-    assert result.data == rows and result.truncated is False and result.total == 25_000
+def test_default_cap_is_50k_with_truncated_header(caplog):
+    assert SUMMARY_RECORDS_CAP == 50_000
+    rows = [_row(2000 + i // 12 % 30, _MONTH_NAMES[i % 12], f"{i:06d}") for i in range(50_001)]
+    with caplog.at_level(logging.WARNING, logger="services.summary_records_service"):
+        result = apply_limit(rows, None)
+    assert len(result.data) == 50_000 and result.truncated is True and result.total == 50_001
+    assert min(order_key(row) for row in rows) not in {order_key(row) for row in result.data}
+    assert any("summary-records truncated" in record.message for record in caplog.records)
+    assert apply_limit(rows[:10], None).truncated is False
 
 
-def test_explicit_limit_keeps_newest_periods_in_original_order(caplog):
+def test_explicit_limit_keeps_newest_periods_oldest_first():
     rows = [
         _row(2026, "September", "a"), _row(2025, "December", "b"), _row(2026, "October", "c"),
         _row(2026, "January", "d"), _row("2026", "oct", "e"), _row(2024, "May", "f"),
     ]
-    with caplog.at_level(logging.WARNING, logger="services.summary_records_service"):
-        result = apply_limit(rows, 3)
-    assert [row["id"] for row in result.data] == ["a", "c", "e"]  # Oct, Oct, Sep, response order
+    result = apply_limit(rows, 3)
+    assert [row["id"] for row in result.data] == ["a", "c", "e"]  # Sep, Oct, Oct (id tiebreak)
     assert result.truncated is True and result.total == 6
-    assert any("summary-records truncated" in record.message for record in caplog.records)
 
 
 def test_period_key_orders_months_numerically():
@@ -191,15 +232,90 @@ def test_period_key_orders_months_numerically():
     assert period_key(_row(None, "bogus", "x")) == (0, 0)
 
 
+def test_sql_month_case_matches_python_ordering(window_engine_qa):
+    from sqlalchemy import select
+
+    from models.models import PerformanceRecord
+    from repositories.performance_repository import month_number_sql
+    from utils.months import month_number
+
+    with Session(window_engine_qa) as db:
+        rows = db.execute(select(PerformanceRecord.month, month_number_sql())).all()
+    assert rows and all(number == month_number(month) and number > 0 for month, number in rows)
+
+
+def test_index_order_by_and_limit_are_in_the_emitted_sql(window_engine_qa):
+    statements = []
+    listener = lambda *a, **k: statements.append(a[2])
+    event.listen(window_engine_qa, "before_cursor_execute", listener)
+    try:
+        with Session(window_engine_qa) as db:
+            result = summary_records_indexed(db, _record_service(db), SCOPES["Admin"], SummaryFilters(), 3)
+    finally:
+        event.remove(window_engine_qa, "before_cursor_execute", listener)
+    index_sql = [sql.lower() for sql in statements if "order by performance_records.year desc" in sql.lower()]
+    assert index_sql, "index query must ORDER BY year DESC in SQL"
+    sql = index_sql[0]
+    assert "case lower(trim(performance_records.month" in sql and "desc, performance_records.id desc" in sql
+    assert " limit " in sql and " offset " in sql
+    assert result.truncated is True and len(result.data) == 3
+
+
+def test_fast_path_keeps_newest_and_matches_legacy(window_engine_qa):
+    with Session(window_engine_qa) as db:
+        legacy_all = performance._summary_records_legacy(db, _record_service(db), SCOPES["Admin"], SummaryFilters(), None)
+        pushed = summary_records_indexed(db, _record_service(db), SCOPES["Admin"], SummaryFilters(), 4)
+        legacy = performance._summary_records_legacy(db, _record_service(db), SCOPES["Admin"], SummaryFilters(), 4)
+    newest = sorted(legacy_all.data, key=order_key)[-4:]
+    assert pushed.data == legacy.data == newest  # oldest first, newest 4 kept
+    assert pushed.total == legacy.total == len(legacy_all.data)
+
+
+def test_default_cap_through_the_endpoint(auth_client, monkeypatch):
+    import services.summary_records_service as svc
+
+    client, headers = auth_client
+    every = _data(client.get("/api/performance/summary-records", headers=headers))
+    monkeypatch.setattr(svc, "SUMMARY_RECORDS_CAP", 2)
+    response = client.get("/api/performance/summary-records", headers=headers)
+    assert response.headers["X-Result-Truncated"] == "true"
+    assert response.headers["X-Total-Count"] == str(len(every))
+    assert _data(response) == sorted(every, key=order_key)[-2:]
+
+
 def test_endpoint_without_limit_is_complete(auth_client):
     client, headers = auth_client
     response = client.get("/api/performance/summary-records", headers=headers)
     rows = _data(response)
     assert response.headers["X-Result-Truncated"] == "false"
     assert response.headers["X-Total-Count"] == str(len(rows))
-    limited = client.get("/api/performance/summary-records", params={"limit": 2}, headers=headers)
-    newest = sorted((period_key(row) for row in rows), reverse=True)[:2]
-    assert sorted((period_key(row) for row in _data(limited)), reverse=True) == newest
+
+
+def test_summary_records_rate_limit_returns_429(auth_client, monkeypatch):
+    import time
+
+    from api.routers import performance as perf
+    from services.rate_limit import policy
+    from services.rate_limit.limiter import InProcessCounterStore, RateLimiter, RateRule
+
+    client, headers = auth_client
+    runtime = policy.RateLimitRuntime(
+        mode="enforce",
+        limiter=RateLimiter(primary=None, fallback=InProcessCounterStore(max_keys=100), clock=time.time,
+                            cool_down_seconds=1),
+        rules=policy.RuleSet.from_limits(policy.RateLimits(*(10_000,) * 7)),
+        trusted_networks=(),
+    )
+    previous = policy.set_runtime(runtime)
+    monkeypatch.setattr(perf, "SUMMARY_RECORDS_RULE", RateRule("summary_records_user", 2, 60))
+    try:
+        codes = [client.get("/api/performance/summary-records", headers=headers).status_code for _ in range(3)]
+        blocked = client.get("/api/performance/summary-records", headers=headers)
+    finally:
+        policy.set_runtime(previous)
+    assert codes == [200, 200, 429]
+    assert blocked.status_code == 429 and int(blocked.headers["Retry-After"]) >= 1
+    assert blocked.json()["code"] == "rate_limited"
 
 
 def test_cors_exposes_count_headers():
@@ -213,7 +329,24 @@ def test_cors_exposes_count_headers():
     assert {"x-total-count", "x-result-truncated", "retry-after"} <= exposed
 
 
-# --- 3. whitespace-only regions --------------------------------------------------
+# --- 3. whitespace-only regions / blank grants ------------------------------------
+
+@pytest.mark.parametrize("grants", [[""], [" "], ["\t", "  "]])
+def test_blank_region_grants_are_dropped(grants):
+    from types import SimpleNamespace
+
+    from utils.report_scope import filter_records_by_scope, user_can_access_team
+
+    blank = SimpleNamespace(region="", employee=SimpleNamespace(region=" "), team=SimpleNamespace(region=None))
+    shj = SimpleNamespace(region="SHJ", employee=None, team=None)
+    scope = {"role": "Regional Manager", "accessible_regions": grants}
+    assert filter_records_by_scope([blank, shj], scope) == []
+    assert user_can_access_team(scope, "Any Team") is False
+    mixed = {"role": "Regional Manager", "accessible_regions": [*grants, "shj "]}
+    assert filter_records_by_scope([blank, shj], mixed) == [shj]
+
+
+# --- 3b. whitespace-only regions --------------------------------------------------
 
 def test_whitespace_regions_agree_on_follow_up_and_summary_paths():
     """QA L5: record '', employee ' ', team region SHJ."""

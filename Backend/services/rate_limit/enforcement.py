@@ -19,6 +19,7 @@ from starlette.concurrency import run_in_threadpool
 from services.rate_limit.client_ip import client_address
 from services.rate_limit.limiter import RateRule, RuleDecision
 from services.rate_limit.policy import (
+    WINDOW_SECONDS,
     RateLimitRuntime,
     get_runtime,
     login_username_subject,
@@ -161,3 +162,29 @@ async def enforce_login_username_limit(request: Request, username: str) -> None:
     verdict = await evaluate(runtime, request, checks, "POST /api/auth/login")
     if verdict.blocked and runtime.mode == "enforce":
         raise RateLimitExceeded(verdict)
+
+
+# Route-level per-user rule for GET /api/performance/summary-records: a full
+# response can be tens of thousands of resolved rows, so it gets its own budget
+# on top of the global read rule. Same store, mode and 429 response as above.
+SUMMARY_RECORDS_PER_MINUTE = 30
+SUMMARY_RECORDS_RULE = RateRule("summary_records_user", SUMMARY_RECORDS_PER_MINUTE, WINDOW_SECONDS)
+
+
+def enforce_user_route_limit(request: Request, rule: RateRule, route_label: str) -> None:
+    """Synchronous per-user check for ``def`` routes (already in the threadpool).
+
+    Raises RateLimitExceeded only in enforce mode; report mode logs and continues.
+    """
+    runtime = get_runtime()
+    if runtime.mode == "off":
+        return
+    user = getattr(request.state, "user", None)
+    user_id = str(user.get("user_id") or "") if isinstance(user, dict) else ""
+    if not user_id:
+        return
+    verdict = Verdict(runtime.limiter.check([(rule, f"user:{user_id}")]))
+    if verdict.blocked:
+        log_rejection(runtime, verdict, request, route_label)
+        if runtime.mode == "enforce":
+            raise RateLimitExceeded(verdict)

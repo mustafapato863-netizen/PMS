@@ -8,6 +8,7 @@ from sqlalchemy import String, and_, case, cast, false, func, or_, select, tuple
 from models.models import PerformanceRecord, Employee, KPIValue, Team
 from utils.report_scope import FUNCTION_SCOPED_ROLES, _team_keys, selection_team_keys
 from utils.team_identity import logical_team_name
+from utils.months import MONTH_NUMBERS
 from utils.regions import REGION_WHITESPACE, first_region
 import logging
 
@@ -73,6 +74,12 @@ def _row_region():
         func.nullif(func.trim(Team.region, REGION_WHITESPACE), ""),
         "",
     )
+
+
+def month_number_sql():
+    """Chronological month number (1-12, else 0) of PerformanceRecord.month;
+    the SQL twin of utils.months.month_number."""
+    return case(MONTH_NUMBERS, value=func.lower(func.trim(PerformanceRecord.month, REGION_WHITESPACE)), else_=0)
 
 
 class PerformanceRepository(BaseRepository[PerformanceRecord]):
@@ -409,6 +416,9 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
         months: list[str] | None = None,
         team_names: list[str] | None = None,
         employee_code: str | None = None,
+        newest_first: bool = False,
+        limit: int | None = None,
+        offset: int = 0,
     ) -> list[SimpleNamespace]:
         """Every row of get_dashboard_record_rows(), in the same order, with only the values a filter or a period
         reads: the key, the employee code, the team name, the region, the position and level, the year and month.
@@ -427,12 +437,22 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
             # String predicate (driver SQL skips UUID bind processing); a superset
             # that callers narrow with the exact logical-team comparison.
             query = query.filter(Team.name.in_(team_names)) if team_names else query.filter(false())
+        if newest_first:
+            # Newest period first, chronological months, stable id tiebreak;
+            # matches summary_records_service.order_key.
+            query = query.order_by(
+                PerformanceRecord.year.desc(), month_number_sql().desc(), PerformanceRecord.id.desc()
+            )
+        if limit is not None:
+            query = query.limit(limit).offset(offset)
         compiled = query.statement.compile(
             dialect=connection.dialect, compile_kwargs={"render_postcompile": True}
         )
         params = compiled.construct_params()
         arguments = tuple(params[name] for name in compiled.positiontup) if compiled.positional else params
         rows = connection.exec_driver_sql(compiled.string, arguments).mappings().all()
+        if not rows:
+            return []
         employees = {
             _uuid_key(employee.id): employee
             for employee in self.db.execute(
