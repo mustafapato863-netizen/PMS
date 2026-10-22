@@ -262,3 +262,107 @@ def test_monthly_egypt_pptx_uses_offshore_source_route():
         assert "UAE PMS KPIs Dashboard" not in uae_text
     finally:
         session.close()
+
+
+def test_cover_page_displays_overall_score_mom_and_baseline():
+    payload = _presentation_payload()
+    presentation = Presentation(io.BytesIO(build_offshore_status_pptx("July 2026", payload)))
+    cover = presentation.slides[0]
+    cover_texts = {s.name: s.text for s in cover.shapes if hasattr(s, "text")}
+    assert "Overall:" in cover_texts.get("Text 5", "")
+    assert "MoM:" in cover_texts.get("Text 5", "")
+    assert "Baseline:" in cover_texts.get("Text 5", "")
+    assert cover_texts.get("Text 8") == "Overall Branch Performance"
+    assert "Score:" in cover_texts.get("Text 11", "")
+    assert "MoM:" in cover_texts.get("Text 13", "")
+    assert "Baseline:" in cover_texts.get("Text 15", "")
+
+
+def test_overview_card1_displays_overall_branch_performance():
+    payload = _presentation_payload()
+    presentation = Presentation(io.BytesIO(build_offshore_status_pptx("July 2026", payload)))
+    overview = presentation.slides[1]
+    overview_texts = {s.name: s.text for s in overview.shapes if hasattr(s, "text")}
+    assert overview_texts.get("Text 10") == "Overall Branch"
+    assert overview_texts.get("Text 12") == "Monthly performance"
+    assert "Baseline:" in overview_texts.get("Text 13", "")
+    assert "MoM:" in overview_texts.get("Text 14", "")
+    assert "Target: 100.0%" in overview_texts.get("Text 15", "")
+
+
+def test_rcm_egypt_teams_grouped_together_exceptions_first():
+    from exports.offshore_status_pptx_builder import _ordered_sections
+    raw = {
+        "records": [
+            {"team": "Inbound", "score": 90},
+            {"team": "Coding EGY", "score": 50},
+            {"team": "Submission EGY", "score": 70},
+            {"team": "Outbound", "score": 85},
+            {"team": "Resubmission", "score": 75},
+            {"team": "Pre-Approvals IP", "score": 80},
+            {"team": "IT", "score": 84},
+        ],
+        "filters": {},
+    }
+    sections = _ordered_sections(raw, "July 2026")
+    section_keys = [s["key"] for s in sections]
+    rcm_indices = [i for i, k in enumerate(section_keys) if k == "rcm"]
+    # All RCM sections must appear consecutively at the front
+    assert rcm_indices == list(range(len(rcm_indices)))
+    rcm_displays = [sections[i]["display"] for i in rcm_indices]
+    assert "Coding EGY" in rcm_displays[0]
+
+
+def test_a_and_b_grades_excluded_from_corrective_actions_and_details():
+    from exports.offshore_status_pptx_builder import _build_plan
+    section_hr = {
+        "key": "operations",
+        "label": "Human Resources",
+        "display": "Human Resources",
+        "divider": 3,
+        "performance": 4,
+        "actions": 5,
+        "followup": None,
+        "snapshot": {
+            "all_people": [
+                {"name": "Alice", "score": 96.0, "grade": "A", "kpis": []},
+                {"name": "Bob", "score": 92.0, "grade": "B", "kpis": []},
+            ],
+            "kpis": [],
+        },
+        "view": {"name": "Human Resources", "score": 94.0, "status": "On track"},
+    }
+    section_inbound = {
+        "key": "inbound",
+        "label": "Call Center – Inbound",
+        "display": "Call Center – Inbound",
+        "divider": 3,
+        "performance": 4,
+        "actions": 5,
+        "followup": None,
+        "snapshot": {
+            "all_people": [
+                {"name": "Charlie", "score": 85.0, "grade": "C", "kpis": []},
+                {"name": "Dave", "score": 95.0, "grade": "A", "kpis": []},
+            ],
+            "kpis": [],
+        },
+        "view": {"name": "Call Center – Inbound", "score": 90.0, "status": "On track"},
+    }
+    model = {
+        "snapshot": {"overall_score": 92.0, "baseline_score": 90.0, "movement": 2.0},
+        "sections": [section_hr, section_inbound],
+    }
+    plan = _build_plan(model)
+    plan_kinds = [(k, ctx[0]["display"] if isinstance(ctx, tuple) and isinstance(ctx[0], dict) else (ctx.get("display") if isinstance(ctx, dict) else "")) for k, _, ctx in plan]
+
+    # HR has only A and B grades: must have performance overview, but NO corrective actions slide
+    hr_kinds = [k for k, disp in plan_kinds if disp == "Human Resources"]
+    assert "department_performance" in hr_kinds
+    assert "department_actions" not in hr_kinds
+
+    # Inbound has one C grade and one A grade: Charlie must be in performance and actions chunks, Dave must be excluded
+    inbound_perf = next(ctx for k, _, ctx in plan if k == "department_performance" and ctx[0]["display"] == "Call Center – Inbound")
+    inbound_action = next(ctx for k, _, ctx in plan if k == "department_actions" and ctx[0]["display"] == "Call Center – Inbound")
+    assert [p["name"] for p in inbound_perf[1]] == ["Charlie"]
+    assert [p["name"] for p in inbound_action[1]] == ["Charlie"]

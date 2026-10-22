@@ -84,9 +84,13 @@ async function loadRoster(filterKey: string, signal: AbortSignal): Promise<Below
 }
 
 function toExecutivePerson(record: BelowTargetRecord): ExecutivePerson {
+  const rawName = (record.employee_name || '').trim();
+  const name = (!rawName || rawName.toLowerCase() === 'nan' || rawName.toLowerCase() === 'none' || rawName.toLowerCase() === 'null')
+    ? (record.employee_id || 'Unnamed Employee')
+    : rawName;
   return {
     employee_id: record.employee_id,
-    name: record.employee_name,
+    name,
     position: record.position,
     team: record.team,
     region: record.region,

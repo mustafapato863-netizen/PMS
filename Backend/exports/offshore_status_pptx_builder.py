@@ -467,14 +467,40 @@ def _team_kind(value: Any) -> str:
         return "inbound"
     if "outbound" in text:
         return "outbound"
-    if "rcm" in text or "revenue cycle" in text or "approval" in text:
+    if any(k in text for k in ("rcm", "revenue cycle", "approval", "coding", "submission", "resubmission")):
         return "rcm"
+    if any(k in text for k in ("call center", "contact center")):
+        return "callcenter"
+    if any(k in text for k in ("it", "tech", "hr", "human resources", "admin", "management", "operation")):
+        return "operations"
     return "other"
 
 
+def _pillar_rank(kind: str) -> int:
+    ranks = {
+        "rcm": 0,          # RCM Egypt first (Exceptions First)
+        "marketing": 1,    # Marketing
+        "outbound": 2,     # Call Center Outbound
+        "inbound": 3,      # Call Center Inbound
+        "callcenter": 4,   # Call Center General / QA
+        "operations": 5,   # Operations & Support (IT, HR, Admin)
+        "other": 6,
+    }
+    return ranks.get(kind, 99)
+
 def _belongs_to_team(record: dict[str, Any], team: str) -> bool:
     actual = _clean(record.get("team"), "")
-    return actual.casefold() == team.casefold() or _team_kind(actual) == _team_kind(team) and _team_kind(team) != "other"
+    actual_cf = actual.casefold()
+    team_cf = team.casefold()
+    if actual_cf == team_cf:
+        return True
+    if "inbound" in team_cf and "inbound" in actual_cf:
+        return True
+    if "outbound" in team_cf and "outbound" in actual_cf:
+        return True
+    if ("approval" in team_cf or "rcm" in team_cf) and ("approval" in actual_cf or "pre-approval" in actual_cf):
+        return True
+    return False
 
 
 def _team_snapshot(raw: dict[str, Any], team: str, period_label: str) -> dict[str, Any]:
@@ -692,47 +718,79 @@ def _ordered_sections(raw: dict[str, Any], period_label: str) -> list[dict[str, 
         if name.casefold() not in {item.casefold() for item in current_names}:
             current_names.append(name)
     used: set[str] = set()
-    sections = []
     filters = raw.get("filters") or {}
-    # A narrowed Reports-page scope should not leave unrelated empty
-    # department dividers in the deck.  Region-only exports retain the full
-    # approved branch rhythm; team/employee/position/level/KPI filters are
-    # intentionally presented as the selected slice.
     narrowed_scope = any(
         filters.get(key)
         for key in ("team", "position", "employee_id", "performance_level", "grade", "status", "kpi")
     )
-    for spec in SECTION_SPECS:
-        actual = next((name for name in current_names if name.casefold() not in used and _team_kind(name) == spec["key"]), None)
-        if actual:
-            used.add(actual.casefold())
-            snapshot = _team_snapshot(raw, actual, period_label)
-            # Keep the approved reference vocabulary in the visual layer;
-            # the underlying records remain identified by their live team.
-            display = spec["label"]
-        elif not narrowed_scope:
-            snapshot = _empty_snapshot(period_label, raw)
-            display = spec["label"]
-        else:
-            continue
-        sections.append({**spec, "display": display, "snapshot": snapshot, "view": _team_view(display, snapshot)})
+
+    section_candidates = []
     for actual in current_names:
-        if actual.casefold() in used:
-            continue
         snapshot = _team_snapshot(raw, actual, period_label)
-        sections.append({
-            "key": f"other-{len(sections)}",
+        kind = _team_kind(actual)
+        rank = _pillar_rank(kind)
+        display = actual
+        if kind == "inbound" and "call center" not in actual.casefold():
+            display = f"Call Center – {actual}"
+        elif kind == "outbound" and "call center" not in actual.casefold():
+            display = f"Call Center – {actual}"
+        elif kind == "rcm" and "rcm" not in actual.casefold() and "approval" in actual.casefold():
+            display = f"RCM – {actual}"
+
+        followup = None
+        if kind == "marketing":
+            divider, performance, actions = 13, 14, 15
+        elif kind == "rcm":
+            divider, performance, actions = 9, 10, 11
+            if "approval" in actual.casefold():
+                followup = 12
+        elif kind == "outbound":
+            divider, performance, actions = 6, 7, 8
+        elif kind == "inbound":
+            divider, performance, actions = 3, 4, 5
+        else:
+            divider, performance, actions = 3, 4, 5
+
+        view = _team_view(display, snapshot)
+        score = _number(view.get("score")) or 0.0
+        section_candidates.append({
+            "key": kind,
             "label": actual,
-            "display": actual,
-            "divider": 3,
-            "performance": 4,
-            "actions": 5,
-            "followup": None,
+            "display": display,
+            "divider": divider,
+            "performance": performance,
+            "actions": actions,
+            "followup": followup,
             "snapshot": snapshot,
-            "view": _team_view(actual, snapshot),
-            "extra": True,
+            "view": view,
+            "rank": rank,
+            "score": score,
         })
-    return sections
+
+    # If region-wide branch review (not narrowed scope), retain the approved reference
+    # branch rhythm by including empty placeholders for missing core departments.
+    if not narrowed_scope:
+        for spec in SECTION_SPECS:
+            if not any(s["key"] == spec["key"] for s in section_candidates):
+                empty_snap = _empty_snapshot(period_label, raw)
+                section_candidates.append({
+                    "key": spec["key"],
+                    "label": spec["label"],
+                    "display": spec["label"],
+                    "divider": spec["divider"],
+                    "performance": spec["performance"],
+                    "actions": spec["actions"],
+                    "followup": spec.get("followup"),
+                    "snapshot": empty_snap,
+                    "view": _team_view(spec["label"], empty_snap),
+                    "rank": _pillar_rank(spec["key"]),
+                    "score": 0.0,
+                })
+
+    # Sort: pillar rank first (RCM Egypt -> Call Center -> Operations),
+    # and within each pillar: lowest score first (Exceptions First)
+    section_candidates.sort(key=lambda s: (s["rank"], s["score"], s["display"].casefold()))
+    return section_candidates
 
 
 def _priority_views(sections: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -741,12 +799,11 @@ def _priority_views(sections: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def _overview_views(sections: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    preferred = {"inbound": 0, "marketing": 1, "outbound": 2, "rcm": 3}
+    preferred = {"rcm": 0, "marketing": 1, "outbound": 2, "inbound": 3}
     return sorted(
         [section["view"] for section in sections],
-        key=lambda row: (preferred.get(_team_kind(row.get("name")), 99), _clean(row.get("name")).casefold()),
+        key=lambda row: (preferred.get(_team_kind(row.get("name")), 99), _number(row.get("score")) or 0.0, _clean(row.get("name")).casefold()),
     )
-
 
 def _card_status(
     slide: Any,
@@ -793,47 +850,69 @@ def _populate_cover(slide: Any, model: dict[str, Any], page: int) -> None:
     snapshot = model["snapshot"]
     period = model["period"]
     branch = model["branch"]
-    sections = [section["display"] for section in model["sections"] if not section.get("extra")]
-    actions = sum(len(_action_rows(section["snapshot"])) for section in model["sections"])
+    score = snapshot.get("overall_score")
+    movement = snapshot.get("movement")
+    baseline = snapshot.get("baseline_score")
+    target = snapshot.get("target_score") or 100.0
+
     _write(slide, "Text 3", "Offshore Departments")
     _write(slide, "Text 4", "Combined Performance Review")
-    _write(slide, "Text 5", _fit(f"{period}  |  {branch}", 70))
-    _write(slide, "Text 6", "  •  ".join(sections))
-    _write(slide, "Text 8", "Narrative Flow")
-    _write(slide, "Text 9", "Monthly performance summary, KPI cards with baseline and MoM change, then employee evidence and corrective action control.")
-    _write(slide, "Text 11", f"{len(sections)} Departments")
-    _write(slide, "Text 13", "Exceptions First")
-    _write(slide, "Text 15", f"{actions} Action Focus")
-    _write(slide, "Text 16", "CONFIDENTIAL \u2013 INTERNAL USE ONLY")
+    _write(
+        slide,
+        "Text 5",
+        _fit(f"{period}  |  {branch}  |  Overall: {_pct(score)}  (MoM: {_mom(movement)}, Baseline: {_pct(baseline)})", 85),
+    )
+    _write(slide, "Text 6", "RCM Egypt  •  Marketing  •  Call Center  •  Operations & Support")
+    _write(slide, "Text 8", "Overall Branch Performance")
+    takeaway = (
+        f"Executive summary: overall score is {_pct(score)} against target {_pct(target)}, "
+        f"reflecting a {_mom(movement)} MoM change from baseline {_pct(baseline)}. "
+        f"Scope covers {len(model['sections'])} operational teams across RCM Egypt, Marketing, Call Center, and Operations."
+    )
+    _write(slide, "Text 9", _fit_wrapped(takeaway, 140, max_lines=4))
+    _write(slide, "Text 11", f"Score: {_pct(score)}")
+    _write(slide, "Text 13", f"MoM: {_mom(movement)}")
+    _write(slide, "Text 15", f"Baseline: {_pct(baseline)}")
+    _write(slide, "Text 16", "CONFIDENTIAL – INTERNAL USE ONLY")
 
 
 def _populate_overview(slide: Any, model: dict[str, Any], page: int) -> None:
     views = _overview_views(model["sections"])
-    _set_common(slide, "Combined Monthly Performance Overview", "Selected-branch view across all department teams", model["period"], model["branch"], page)
+    _set_common(
+        slide,
+        "Combined Monthly Performance Overview",
+        "Overall branch health across RCM Egypt, Marketing, Call Center, and Operations",
+        model["period"],
+        model["branch"],
+        page,
+    )
     card_specs = [
         (("Text 10", "Text 11", "Text 12", "Text 13", "Text 14", "Text 15", "Text 17"), "Shape 8", "Shape 9"),
         (("Text 20", "Text 21", "Text 22", "Text 23", "Text 24", "Text 25", "Text 27"), "Shape 18", "Shape 19"),
         (("Text 30", "Text 31", "Text 32", "Text 33", "Text 34", "Text 35", "Text 37"), "Shape 28", "Shape 29"),
         (("Text 40", "Text 41", "Text 42", "Text 43", "Text 44", "Text 45", "Text 47"), "Shape 38", "Shape 39"),
     ]
+
+    overall_view = {
+        "name": "Overall Branch",
+        "score": model["snapshot"].get("overall_score"),
+        "baseline": model["snapshot"].get("baseline_score"),
+        "movement": model["snapshot"].get("movement"),
+        "target": model["snapshot"].get("target_score") or 100.0,
+        "status": _score_status(model["snapshot"].get("overall_score")),
+        "snapshot": model["snapshot"],
+    }
+    top_cards = [overall_view] + views[:3]
     for index, (names, card, accent) in enumerate(card_specs):
-        view = views[index] if index < len(views) else _team_view(MISSING, _empty_snapshot(model["period"], model["raw"]))
+        view = top_cards[index] if index < len(top_cards) else _team_view(MISSING, _empty_snapshot(model["period"], model["raw"]))
         _card_status(slide, card, accent, view.get("status"))
         _write_score_card(slide, names, view, title=_fit(view.get("name"), 25))
-        # The overview source uses filled status pills; keep the inherited
-        # white pill typography instead of applying the semantic color to the
-        # text itself (which would disappear on an amber/red pill).
         _write(slide, names[-1], _status_label(view.get("status")), color=WHITE)
+
     score = model["snapshot"].get("overall_score")
     movement = model["snapshot"].get("movement")
     driver = (model["snapshot"].get("driver") or {})
     affected = len([person for person in model["snapshot"].get("all_people") or [] if _score_status(person.get("score")) == "Requires action"])
-    top = max(model["snapshot"].get("all_people") or [], key=lambda person: _number(person.get("score")) or -1, default={})
-    decline = min(
-        [person for person in model["snapshot"].get("all_people") or [] if _number(person.get("movement")) is not None],
-        key=lambda person: _number(person.get("movement")) or 0,
-        default={},
-    )
     takeaway = f"Executive takeaway: overall performance is {_pct(score)} with {_mom(movement)} MoM; {_clean(driver.get('label'), 'the leading KPI driver')} and {affected} employee(s) require the primary management focus."
     _write(slide, "Text 49", _fit(takeaway, 170))
     _write(slide, "Text 50", "Department-Level Action View")
@@ -844,9 +923,6 @@ def _populate_overview(slide: Any, model: dict[str, Any], page: int) -> None:
             values = [MISSING] * 6
         else:
             kpis = view.get("kpis") or []
-            # The source cell is intentionally compact.  Show the highest
-            # weighted-loss KPI here and keep the full KPI list in the
-            # department detail / appendix slides.
             gap_text = _kpi_text(kpis[0]) if kpis else "No measured KPI gap"
             values = [
                 _full(view.get("name")),
@@ -861,7 +937,6 @@ def _populate_overview(slide: Any, model: dict[str, Any], page: int) -> None:
                 _write_single_line(slide, shape.name, value)
             else:
                 _write_shape(shape, value)
-
 
 def _populate_priority(slide: Any, model: dict[str, Any], page: int) -> None:
     _set_common(slide, "Combined Priority Map", "Action order across departments based on risk and weighted performance gaps", model["period"], model["branch"], page)
@@ -943,6 +1018,18 @@ def _populate_department_performance(slide: Any, model: dict[str, Any], section:
         _write_kpi_card(slide, names, kpi)
     if _shape_exists(slide, "Text 92"):
         _write(slide, "Text 92", f"Action Focus: {_action_focus(view.get('snapshot') or {})}.")
+    if not rows:
+        _write(slide, "Text 42", "Team KPI overview | A- and B-grade agents excluded from detailed tables.")
+        headers = _row_groups(slide, top_min=4.15, top_max=4.35, min_columns=6)
+        if headers:
+            for shape in headers[0]:
+                _write_shape(shape, "")
+        row_groups = _row_groups(slide, top_min=4.5, top_max=6.45, min_columns=6)
+        for group in row_groups:
+            for shape in group:
+                _write_shape(shape, "")
+        return
+
     _write(slide, "Text 42", "Employees Under Review" if section["key"] != "outbound" else "Below Average Employees")
     headers = _row_groups(slide, top_min=4.15, top_max=4.35, min_columns=6)
     if headers:
@@ -1498,17 +1585,36 @@ def _appendix_rows(snapshot: dict[str, Any]) -> list[list[str]]:
     people = _employee_priority(snapshot)
     for person in people:
         primary = _person_kpis(person)[0] if _person_kpis(person) else {}
+        position = _clean(person.get("position"), "")
+        if not position or position.casefold() in {"unassigned", "emp", "none", "nan", ""}:
+            team = _clean(person.get("team"), "").casefold()
+            if "inbound" in team:
+                position = "Inbound Agent"
+            elif "outbound" in team:
+                position = "Outbound Agent"
+            elif "coding" in team:
+                position = "Medical Coder"
+            elif "submission" in team:
+                position = "Submission Specialist"
+            elif "resubmission" in team:
+                position = "Resubmission Analyst"
+            elif "approval" in team or "rcm" in team:
+                position = "Pre-Authorization Specialist"
+            else:
+                position = "Staff"
+        name = _full(person.get("name"))
+        if not name or name.casefold() in {"nan", "none", ""}:
+            name = _clean(person.get("employee_id"), "Staff")
         rows.append([
             _clean(person.get("team"), "Unassigned"),
-            _full(person.get("name")),
-            _full(f"{_clean(person.get('position'), 'Unassigned')} / {_clean(person.get('grade'), 'N/A')}"),
+            name,
+            _full(f"{position} / {_clean(person.get('grade'), 'N/A')}"),
             _pct(person.get("score")),
             _mom(person.get("movement")),
             _fit_wrapped(f"{_clean(primary.get('label'), 'No KPI')} | loss {_fmt_pct(_kpi_loss(primary))}", 46, max_lines=2),
             _full(person.get("action_status")),
         ])
     return rows
-
 
 def _populate_appendix(slide: Any, model: dict[str, Any], page: int, rows: list[list[str]], part: int, total: int) -> None:
     suffix = f" ({part}/{total})" if total > 1 else ""
@@ -1552,16 +1658,22 @@ def _build_plan(model: dict[str, Any]) -> list[tuple[str, int, Any]]:
         if section.get("key") == "marketing":
             continue
         plan.append(("divider", section["divider"], section))
-        people = _employee_priority(section["snapshot"])
-        people_chunks = [people[index:index + 5] for index in range(0, len(people), 5)] or [[]]
-        for part, chunk in enumerate(people_chunks, 1):
-            plan.append(("department_performance", section["performance"], (section, chunk, part, len(people_chunks))))
-        # The department corrective-action frames are employee evidence
-        # tables in the approved source deck.  Use current people here; each
-        # person carries their own KPI evidence and recorded/proposed action.
-        action_chunks = [people[index:index + 5] for index in range(0, len(people), 5)] or [[]]
-        for part, chunk in enumerate(action_chunks, 1):
-            plan.append(("department_actions", section["actions"], (section, chunk, part, len(action_chunks))))
+        all_people = _employee_priority(section["snapshot"])
+        actionable_people = [
+            p for p in all_people
+            if _clean(p.get("grade"), "").upper() not in {"A", "B"}
+            and (_number(p.get("score")) is None or (_number(p.get("score")) or 0.0) < 90.0)
+        ]
+        if actionable_people:
+            people_chunks = [actionable_people[index:index + 5] for index in range(0, len(actionable_people), 5)]
+            for part, chunk in enumerate(people_chunks, 1):
+                plan.append(("department_performance", section["performance"], (section, chunk, part, len(people_chunks))))
+            action_chunks = [actionable_people[index:index + 5] for index in range(0, len(actionable_people), 5)]
+            for part, chunk in enumerate(action_chunks, 1):
+                plan.append(("department_actions", section["actions"], (section, chunk, part, len(action_chunks))))
+        else:
+            plan.append(("department_performance", section["performance"], (section, [], 1, 1)))
+
         if section.get("followup") is not None:
             plan.append(("rcm_followup", section["followup"], section))
     marketing = next((section for section in model["sections"] if section.get("key") == "marketing"), None)
@@ -1573,12 +1685,18 @@ def _build_plan(model: dict[str, Any]) -> list[tuple[str, int, Any]]:
         for part, chunk in enumerate(role_chunks, 1):
             plan.append(("marketing_roles", 15, (marketing, chunk, part, len(role_chunks))))
         kpis = [dict(row) for row in marketing["snapshot"].get("kpis") or []]
-        kpi_chunks = [kpis[index:index + 8] for index in range(0, len(kpis), 8)] or [[]]
+        trend_kpis = [kpi for kpi in kpis if _kpi_loss(kpi) > 0] or kpis
+        trend_kpis = trend_kpis[:16]
+        kpi_chunks = [trend_kpis[index:index + 8] for index in range(0, len(trend_kpis), 8)] or [[]]
         for part, chunk in enumerate(kpi_chunks, 1):
             plan.append(("marketing_trend", 16, (marketing, chunk, part, len(kpi_chunks))))
-        driver_chunks = [kpis[index:index + 4] for index in range(0, len(kpis), 4)] or [[]]
+
+        driver_kpis = [kpi for kpi in kpis if _kpi_loss(kpi) > 0] or kpis[:4]
+        driver_kpis = driver_kpis[:12]
+        driver_chunks = [driver_kpis[index:index + 4] for index in range(0, len(driver_kpis), 4)] or [[]]
         for part, chunk in enumerate(driver_chunks, 1):
             plan.append(("marketing_map", 17, (marketing, chunk, part, len(driver_chunks))))
+
         plan.append(("marketing_priority", 18, marketing))
         plan.extend(_marketing_detail_plan(marketing))
         evidence = _evidence_rows(marketing["snapshot"])

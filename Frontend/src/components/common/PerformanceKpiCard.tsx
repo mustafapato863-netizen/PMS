@@ -89,7 +89,7 @@ const PerformanceKpiCard = ({
   targetValue,
 }: PerformanceKpiCardProps) => {
   useEffect(() => {
-    if (viewOnly) return;
+    if (viewOnly || weight === 0) return;
     if ((weight === undefined || weight === null) && import.meta.env.DEV) {
       console.warn(`[Missing Weight] KPI "${label}" is missing a weight config.`);
     }
@@ -112,7 +112,8 @@ const PerformanceKpiCard = ({
     ? (weight > 1 ? weight / 100 : weight)
     : null;
   // Callers already pass score points. A value at or below 1 is still points, not a fraction.
-  const contributionPercent = viewOnly || contribution === undefined || contribution === null
+  const isViewOnly = viewOnly;
+  const contributionPercent = isViewOnly || contribution === undefined || contribution === null
     ? null
     : Math.min(
       Math.max(contribution, 0),
@@ -210,7 +211,7 @@ const PerformanceKpiCard = ({
           </strong>
         </span>
         <span>
-          {viewOnly ? (
+          {isViewOnly ? (
             <strong className="font-bold text-[var(--text-primary)]">View</strong>
           ) : (
             <>

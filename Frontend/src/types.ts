@@ -210,7 +210,7 @@ const RCM_DOMAIN_TEAMS: Record<Exclude<RcmDomainFilter, 'all'>, readonly string[
     'Pre-Approvals IP Elective',
   ],
   submission: ['Submission', 'Submission EGY'],
-  re_submission: ['Re-Submission'],
+  re_submission: ['Re-Submission', 'Resubmission', 'Re-Submission EGY'],
   coding: ['Coding', 'Coding EGY'],
 };
 
@@ -223,7 +223,9 @@ export function rcmGroupForTeam(value: string | null | undefined, region?: strin
   const offshore = normalized === normalizeTeamIdentity('Pre-Approvals IP Offshore')
     || normalized === normalizeTeamIdentity('Pre-Approvals IP')
     || normalized === normalizeTeamIdentity('Coding EGY')
-    || normalized === normalizeTeamIdentity('Submission EGY');
+    || normalized === normalizeTeamIdentity('Submission EGY')
+    || normalized === normalizeTeamIdentity('Resubmission')
+    || normalized === normalizeTeamIdentity('Re-Submission EGY');
   return offshore ? 'offshore_egy' : 'uae';
 }
 
@@ -243,6 +245,7 @@ export function egyptRcmTeamLabel(value: string | null | undefined): string {
   const normalized = normalizeTeamIdentity(stored);
   if (normalized === normalizeTeamIdentity('Coding EGY')) return 'Coding';
   if (normalized === normalizeTeamIdentity('Submission EGY')) return 'Submission';
+  if (normalized === normalizeTeamIdentity('Resubmission') || normalized === normalizeTeamIdentity('Re-Submission EGY')) return 'Re-Submission';
   return stored;
 }
 

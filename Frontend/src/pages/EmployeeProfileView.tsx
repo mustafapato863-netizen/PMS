@@ -969,7 +969,7 @@ const EmployeeProfileView = () => {
                     if (kpi.unit === 'currency' || kpi.unit === 'number') return v.toLocaleString(undefined, { maximumFractionDigits: 1 });
                     return v > 1 ? `${v.toFixed(1)}%` : `${(v * 100).toFixed(1)}%`;
                   };
-                  const viewOnly = kpi.viewOnly === true;
+                  const viewOnly = kpi.viewOnly === true || (kpi as any).view_only === true || (kpi.weight === 0 && (kpi.contribution === 0 || kpi.contribution === null || kpi.contribution === undefined));
                   const weight = viewOnly
                     ? undefined
                     : kpi.weight ?? getWeightForLabel(teamWeights, kpi.label, (profileAgent || employee.raw).identity.team, (profileAgent || employee.raw).raw_data, (profileAgent || employee.raw).identity.month);

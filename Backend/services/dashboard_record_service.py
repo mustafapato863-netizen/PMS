@@ -54,6 +54,16 @@ def _inbound_evidence_row(team_name: str, raw, inbound_calls=None, geo=None) -> 
     )
 
 
+def _clean_display_name(employee, payload_name: str | None = None) -> str:
+    emp_name = str(getattr(employee, "name", "") or "").strip()
+    if emp_name and emp_name.lower() not in {"nan", "none", "null", ""}:
+        return emp_name
+    cand_name = str(payload_name or "").strip()
+    if cand_name and cand_name.lower() not in {"nan", "none", "null", ""}:
+        return cand_name
+    return str(getattr(employee, "employee_id", "") or "Unnamed Employee")
+
+
 def _pinned_basis(item) -> dict | None:
     payload = getattr(item, "record_payload", None)
     if not isinstance(payload, dict):
@@ -77,7 +87,7 @@ def _pinned_schema_record(item, employee, team_name: str, basis: dict, item_kpi_
         record = SchemaPerformanceRecord(
             id=str(item.id),
             employee_id=str(employee.employee_id),
-            employee_name=str(employee.name),
+            employee_name=_clean_display_name(employee, payload.get("employee_name")),
             team=team_name,
             month=str(item.month),
             year=int(item.year),
@@ -91,28 +101,29 @@ def _pinned_schema_record(item, employee, team_name: str, basis: dict, item_kpi_
         line = lines.get(str(value.kpi_key), {})
         stored = stored_kpis.get(str(value.kpi_key), {})
         variant = bool(kpi_variant(stored))
-        kpi_values.append(
-            {
-                "kpi_key": value.kpi_key,
-                "label": (stored.get("label") if variant else None) or line.get("label") or stored.get("label") or value.kpi_key,
-                "direction": (stored.get("direction") if variant else None) or (line.get("direction") if line.get("direction") is not None else stored.get("direction")),
-                "evaluation_pinned": True,
-                "perspective": stored.get("perspective"),
-                "color": stored.get("color"),
-                "actual_value": float(value.actual_value),
-                "target_value": float(value.target_value),
-                "achievement_ratio": float(value.achievement_ratio),
-                "weight_applied": float(value.weight_applied),
-                "contribution": float(value.contribution),
-                "unit": line.get("unit") or stored.get("unit") or "%",
-            }
-        )
+        row_entry = {
+            "kpi_key": value.kpi_key,
+            "label": (stored.get("label") if variant else None) or line.get("label") or stored.get("label") or value.kpi_key,
+            "direction": (stored.get("direction") if variant else None) or (line.get("direction") if line.get("direction") is not None else stored.get("direction")),
+            "evaluation_pinned": True,
+            "perspective": stored.get("perspective"),
+            "color": stored.get("color"),
+            "actual_value": float(value.actual_value),
+            "target_value": float(value.target_value),
+            "achievement_ratio": float(value.achievement_ratio),
+            "weight_applied": float(value.weight_applied),
+            "contribution": float(value.contribution),
+            "unit": line.get("unit") or stored.get("unit") or "%",
+        }
+        if stored.get("view_only") or line.get("view_only"):
+            row_entry["view_only"] = True
+        kpi_values.append(row_entry)
     payload_upload = payload.get("upload_id")
     sql_upload = getattr(item, "upload_id", None)
     return record.model_copy(update={
         "id": str(item.id),
         "employee_id": str(employee.employee_id),
-        "employee_name": str(employee.name),
+        "employee_name": _clean_display_name(employee, payload.get("employee_name")),
         "team": team_name,
         "month": str(item.month),
         "year": int(item.year),
@@ -332,6 +343,10 @@ _POSITION_DEPARTMENTS = frozenset({
     "call center",
     "rcm",
     "pharmacy",
+    "pre-approvals ip",
+    "submission egy",
+    "coding egy",
+    "resubmission",
 })
 
 
@@ -627,7 +642,7 @@ class DashboardRecordService:
                     result.append(rich_record.model_copy(update={
                         "id": str(item.id),
                         "employee_id": str(employee.employee_id),
-                        "employee_name": str(employee.name),
+                        "employee_name": _clean_display_name(employee, rich_record.employee_name or payload_raw_data.get("employee_name")),
                         "team": team_name,
                         "month": str(item.month),
                         "year": int(item.year),
@@ -689,7 +704,7 @@ class DashboardRecordService:
             result.append(SchemaPerformanceRecord(
                 id=str(item.id),
                 employee_id=str(employee.employee_id),
-                employee_name=str(employee.name),
+                employee_name=_clean_display_name(employee, payload_raw_data.get("employee_name")),
                 team=team_name,
                 month=str(item.month),
                 year=int(item.year),

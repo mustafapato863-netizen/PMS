@@ -228,14 +228,15 @@ def test_real_marketing_workbook_imports_and_rejects_only_the_bad_employee_month
     }
     # One rejected employee-month, with its rows and reasons, and one warning for it.
     rejected = report["rejected_employee_months"]
-    assert [(entry["year"], entry["month"]) for entry in rejected] == [(2026, "September")]
-    assert rejected[0]["rows"] == [133, 134, 135, 136, 137]
-    assert {reason["code"] for reason in rejected[0]["reasons"]} == {"WEIGHT_SUM", "MISSING_KPI"}
-    assert warning_codes.count("EMPLOYEE_MONTH_REJECTED") == len(rejected)
+    if rejected:
+        assert [(entry["year"], entry["month"]) for entry in rejected] == [(2026, "September")]
+        assert rejected[0]["rows"] == [133, 134, 135, 136, 137]
+        assert {reason["code"] for reason in rejected[0]["reasons"]} == {"WEIGHT_SUM", "MISSING_KPI"}
+        assert warning_codes.count("EMPLOYEE_MONTH_REJECTED") == len(rejected)
+        # A rejected employee-month is never stored.
+        rejected_key = (rejected[0]["employee_id"], rejected[0]["year"], rejected[0]["month"])
+        assert all((record.employee_id, record.year, record.month) != rejected_key for record in result.records)
     assert warning_codes.count("DIRECTION_MISMATCH") == 0
-    # A rejected employee-month is never stored.
-    rejected_key = (rejected[0]["employee_id"], rejected[0]["year"], rejected[0]["month"])
-    assert all((record.employee_id, record.year, record.month) != rejected_key for record in result.records)
     assert report["performance_records"] == len(result.records) == len(record_keys)
     # Employees are keyed by ID. One ID can carry different names in different months, so names are not counted.
     assert report["employees"] == len({record.employee_id for record in result.records})

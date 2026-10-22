@@ -81,3 +81,21 @@ def test_malformed_optional_metadata_does_not_break_relational_fallback():
     assert actual["label"] == key
     assert actual["unit"] == "number"
     assert actual["actual_value"] == pytest.approx(.9)
+
+def test_nan_employee_name_recovers_from_payload():
+    source = source_record()
+    source.employee_name = "Mohamed Galal Ali Abbas"
+    item = sql_record(source)
+    item.employee.name = "nan"
+    result = DashboardRecordService(None).resolve_records([item])[0]
+    assert result.employee_name == "Mohamed Galal Ali Abbas"
+
+
+def test_nan_employee_name_falls_back_to_employee_id():
+    source = source_record()
+    source.employee_name = "nan"
+    item = sql_record(source)
+    item.employee.name = "nan"
+    result = DashboardRecordService(None).resolve_records([item])[0]
+    assert result.employee_name == str(item.employee.employee_id)
+

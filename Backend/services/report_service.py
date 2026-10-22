@@ -1460,11 +1460,53 @@ class ReportService:
                     "cause": getattr(root_cause, "cause", None),
                     "description": getattr(root_cause, "description", None),
                 }
+            team_name = self._record_team_name(record)
+            emp_name = "Aggregate team data" if aggregate_only else (getattr(record, "employee_name", None) or "")
+            if not aggregate_only and (not emp_name or str(emp_name).strip().casefold() in {"nan", "none", ""}):
+                raw_data = getattr(record, "raw_data", None) or {}
+                meta = getattr(record, "meta", None) or {}
+                rec_payload = getattr(record, "record_payload", None) or {}
+                emp_name = (
+                    raw_data.get("EnglishName")
+                    or raw_data.get("EmployeeName")
+                    or meta.get("employee_name")
+                    or rec_payload.get("employee_name")
+                    or (str(record.employee_id) if getattr(record, "employee_id", None) else "Staff")
+                )
+
+            pos_val = (
+                getattr(record, "position_name", None)
+                or getattr(record, "position", None)
+                or ((getattr(record, "raw_data", None) or {}).get("Position"))
+                or ((getattr(record, "raw_data", None) or {}).get("Role"))
+                or (getattr(record.employee, "position", None) if getattr(record, "employee", None) else None)
+            )
+            if not pos_val or str(pos_val).strip().casefold() in {"emp", "none", "nan", ""}:
+                team_cf = (team_name or "").casefold()
+                if "inbound" in team_cf:
+                    pos_val = "Inbound Agent"
+                elif "outbound" in team_cf:
+                    pos_val = "Outbound Agent"
+                elif "coding" in team_cf:
+                    pos_val = "Medical Coder"
+                elif "submission" in team_cf:
+                    pos_val = "Submission Specialist"
+                elif "resubmission" in team_cf:
+                    pos_val = "Resubmission Analyst"
+                elif "approval" in team_cf or "rcm" in team_cf:
+                    pos_val = "Pre-Authorization Specialist"
+                elif "marketing" in team_cf:
+                    pos_val = "Marketing Specialist"
+                else:
+                    pos_val = "Staff"
+            else:
+                pos_val = str(pos_val).strip()
+
             return {
                 "employee_id": "" if aggregate_only else str(record.employee_id),
-                "employee_name": "Aggregate team data" if aggregate_only else record.employee_name,
-                "team": self._record_team_name(record),
-                "position": record.position or "Marketing",
+                "employee_name": emp_name,
+                "team": team_name,
+                "position": pos_val,
                 "region": record.region or "",
                 "year": record.year,
                 "month": record.month,

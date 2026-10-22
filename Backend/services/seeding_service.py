@@ -1020,11 +1020,13 @@ class DatabaseSeeder:
                     continue
 
                 db_employee = existing_emp_map.get(str(employee.id))
+                raw_emp_name = str(employee.name or "").strip()
+                clean_name = raw_emp_name if raw_emp_name.lower() not in ("nan", "none", "null", "") else str(employee.id)
                 if not db_employee:
                     db_employee = DBEmployee(
                         id=uuid.uuid4(),
                         employee_id=str(employee.id),
-                        name=employee.name,
+                        name=clean_name,
                         team_id=team.id,
                         region=(employee.region or team.region or "UAE"),
                         performance_level=employee.performance_level,
@@ -1034,7 +1036,10 @@ class DatabaseSeeder:
                     db.add(db_employee)
                     existing_emp_map[str(employee.id)] = db_employee
                 else:
-                    db_employee.name = employee.name
+                    if raw_emp_name and raw_emp_name.lower() not in ("nan", "none", "null"):
+                        db_employee.name = raw_emp_name
+                    elif not db_employee.name or str(db_employee.name).strip().lower() in ("nan", "none", "null"):
+                        db_employee.name = str(employee.id)
                     db_employee.team_id = team.id
                     db_employee.region = (employee.region or team.region or "UAE")
                     db_employee.performance_level = employee.performance_level
@@ -1501,8 +1506,11 @@ class DatabaseSeeder:
                     if emp_id.endswith(".0"):
                         emp_id = emp_id[:-2]
                     
-                    if not name or name.lower() == "total" or not emp_id or emp_id.lower() == "nan":
+                    if not emp_id or emp_id.lower() in ("nan", "none", "null") or name.lower() == "total":
                         continue
+
+                    if not name or name.lower() in ("nan", "none", "null"):
+                        name = emp_id
 
                     performance_level = row["performance_level"]
                     position_value = row.get("Position")
