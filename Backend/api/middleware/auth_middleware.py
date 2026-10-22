@@ -12,6 +12,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
 from services.auth_service import AuthenticationService
+from utils.db_errors import is_db_unavailable, unavailable_response
 from config.database import SessionLocal, get_db
 from models.models import User
 from config import settings
@@ -156,8 +157,10 @@ class AuthMiddleware(BaseHTTPMiddleware):
             user_id_str = payload.get("user_id")
             try:
                 user_id = uuid.UUID(str(user_id_str))
-            except (ValueError, TypeError):
-                user_id = user_id_str
+            except (ValueError, TypeError) as exc:
+                # A token without a valid user id is a token problem (401),
+                # never let it reach the DB and surface as a 503.
+                raise ValueError("Invalid token subject") from exc
 
             auth_result = await run_in_threadpool(
                 _load_authenticated_user, request, payload, user_id, path
@@ -165,7 +168,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
             if isinstance(auth_result, JSONResponse):
                 return auth_result
             request.state.user = auth_result
-        except Exception:
+        except ValueError:
+            # Real token/session problems only: bad signature, expired, revoked,
+            # disabled user, unknown session.
             logger.warning("Authentication token validation failed")
             return JSONResponse(
                 status_code=401,
@@ -176,5 +181,13 @@ class AuthMiddleware(BaseHTTPMiddleware):
                     "request_id": getattr(request.state, "request_id", None),
                 },
             )
+        except Exception as exc:
+            # Pool timeout, lost connection, Redis/DB outage...: not the user's
+            # token. 503 + Retry-After so clients retry instead of logging out.
+            if is_db_unavailable(exc):
+                logger.warning("Authentication lookup unavailable: %s", type(exc).__name__)
+            else:
+                logger.exception("Unexpected authentication failure")
+            return unavailable_response(getattr(request.state, "request_id", None))
 
         return await call_next(request)

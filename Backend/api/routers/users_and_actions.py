@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from api.dependencies import require_role
 from api.dependencies import get_current_user_scope
 from config.database import get_db, release_read_transaction
+from utils.db_errors import DatabaseUnavailableError, is_db_unavailable
 from config import settings
 from config.socket_config import online_user_ids
 from api.middleware.rbac_middleware import require_permission
@@ -856,7 +857,9 @@ def get_all_corrective_actions(
         )
     except HTTPException:
         raise
-    except Exception:
+    except Exception as exc:
+        if is_db_unavailable(exc):
+            raise DatabaseUnavailableError() from exc
         logger.exception("Failed to fetch corrective actions")
         return StandardResponse(success=False, message="Failed to fetch corrective actions.")
 
@@ -899,7 +902,11 @@ def get_action_follow_up(
         return StandardResponse(success=True, message="Retrieved action follow-up successfully", data=data)
     except (CorrectiveActionAccessError, CorrectiveActionValidationError) as exc:
         raise _action_error(exc) from exc
-    except Exception:
+    except HTTPException:
+        raise
+    except Exception as exc:
+        if is_db_unavailable(exc):
+            raise DatabaseUnavailableError() from exc
         return StandardResponse(success=False, message="Failed to fetch action follow-up.")
 
 
@@ -913,7 +920,11 @@ def get_action_owners(
         owners = CorrectiveActionService(db).list_owners(get_current_user_scope(db, request))
         release_read_transaction(db)
         return StandardResponse(success=True, message="Retrieved assignable action owners", data=owners)
-    except Exception:
+    except HTTPException:
+        raise
+    except Exception as exc:
+        if is_db_unavailable(exc):
+            raise DatabaseUnavailableError() from exc
         return StandardResponse(success=False, message="Failed to fetch action owners.")
 
 

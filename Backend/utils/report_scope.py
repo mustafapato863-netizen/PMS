@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from utils.branch_scope import explicit_branch_key
+from utils.regions import first_region
 
 
 def _record_value(record, field: str, default=""):
@@ -26,15 +27,11 @@ def _record_team_name(record) -> str:
 
 
 def _record_region(record) -> str:
-    for value in (
+    return first_region(
         _record_value(record, "region", None),
         _related_value(record, "employee", "region"),
         _related_value(record, "team", "region"),
-    ):
-        normalized = str(value or "").strip().casefold()
-        if normalized:
-            return normalized
-    return ""
+    ).casefold()
 
 
 _MERGED_TEAM_KEYS = {

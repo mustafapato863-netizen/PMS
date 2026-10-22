@@ -8,6 +8,7 @@ from sqlalchemy import String, and_, case, cast, false, func, or_, select, tuple
 from models.models import PerformanceRecord, Employee, KPIValue, Team
 from utils.report_scope import FUNCTION_SCOPED_ROLES, _team_keys, selection_team_keys
 from utils.team_identity import logical_team_name
+from utils.regions import REGION_WHITESPACE, first_region
 import logging
 
 logger = logging.getLogger(__name__)
@@ -65,9 +66,12 @@ def _uuid_key(value) -> str:
 
 
 def _row_region():
-    """SQL twin of resolved_region: empty strings fall through like Python's ``or``."""
+    """SQL twin of utils.regions.first_region: trimmed, blank counts as missing."""
     return func.coalesce(
-        func.nullif(PerformanceRecord.region, ""), func.nullif(Employee.region, ""), Team.region, Employee.region
+        func.nullif(func.trim(PerformanceRecord.region, REGION_WHITESPACE), ""),
+        func.nullif(func.trim(Employee.region, REGION_WHITESPACE), ""),
+        func.nullif(func.trim(Team.region, REGION_WHITESPACE), ""),
+        "",
     )
 
 
@@ -447,7 +451,7 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
                 employee_id=str(employee.employee_id),
                 team=logical_team_name(teams[_uuid_key(row["team_id"])]),
                 # Same fallback as the resolver (resolved_region): record, employee, team.
-                region=row["region"] or employee.region or teams[_uuid_key(row["team_id"])].region or employee.region,
+                region=first_region(row["region"], employee.region, teams[_uuid_key(row["team_id"])].region),
                 position=row["position_name"] or employee.position_name,
                 performance_level=str(row["performance_level"]),
                 branch_key=row["branch_key"],

@@ -33,6 +33,7 @@ from utils.report_scope import (
     user_can_access_team_level as scope_can_access_team_level,
 )
 from utils.helpers import aht_minutes_from_row, inbound_booking_rate_from_row, with_inbound_booking_counters
+from utils.db_errors import DatabaseUnavailableError, is_db_unavailable
 
 # Process-local cache: one full-payload digest per (id, normalized year).
 # 4096 is a finite bound, not a production optimum; it keeps the 1000-row
@@ -435,6 +436,7 @@ def serialize_performance_record(r) -> Dict[str, Any]:
     _write_serialized(cache_key, result, r)
     return result
 
+
 def require_role(allowed_roles: List[str]):
     def dependency(
         request: Request,
@@ -467,6 +469,17 @@ def get_current_user_payload(request: Request) -> dict:
 
 
 def get_current_user_scope(db, request: Request) -> dict:
+    try:
+        return _get_current_user_scope(db, request)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        if is_db_unavailable(exc):
+            raise DatabaseUnavailableError() from exc
+        raise
+
+
+def _get_current_user_scope(db, request: Request) -> dict:
     payload = get_current_user_payload(request)
     user_id = payload.get("user_id")
     if not user_id:

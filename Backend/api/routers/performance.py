@@ -36,6 +36,7 @@ from services.summary_records_service import (
     SummaryResult,
     summary_records_indexed,
 )
+from services.summary_records_service import apply_limit as apply_summary_limit
 from services.summary_records_service import matches as summary_matches
 from services.summary_records_service import to_payload as summary_payload
 from api.middleware.rbac_middleware import require_permission
@@ -301,7 +302,6 @@ def get_all_records(
         )
 
 
-SUMMARY_RECORDS_DEFAULT_LIMIT = 10_000
 SUMMARY_RECORDS_MAX_LIMIT = 50_000
 
 
@@ -313,18 +313,22 @@ def get_summary_records(
     year: Annotated[int | None, Query(ge=1900, le=9999, description="Only records of this year")] = None,
     month: Annotated[str | None, Query(max_length=20, description="Only records of this month (case-insensitive)")] = None,
     team: Annotated[str | None, Query(max_length=255, description="Only records of this team (case-insensitive)")] = None,
-    limit: Annotated[int, Query(
+    limit: Annotated[int | None, Query(
         ge=1,
         le=SUMMARY_RECORDS_MAX_LIMIT,
-        description="Maximum records returned; X-Result-Truncated reports truncation, X-Total-Count the full size when known",
-    )] = SUMMARY_RECORDS_DEFAULT_LIMIT,
+        description=(
+            "Optional maximum; when it truncates, the newest (year, month) rows are kept. "
+            "X-Result-Truncated reports truncation and X-Total-Count the full size"
+        ),
+    )] = None,
     response: Response = None,
 ):
     """Authorized employee and management evidence for summary and 360 views.
 
     Every new parameter is optional; without them the response is unchanged
-    (the default limit is far above any current dataset and truncation is
-    signalled through response headers, never by changing the body shape).
+    (no limit by default, so nothing is dropped; an explicit limit keeps the
+    newest periods and is signalled through response headers, never by
+    changing the body shape).
     """
     scope = require_authenticated_scope(db, request)
     filters = SummaryFilters(employee_id=employee_id, year=year, month=month, team=team)
@@ -347,23 +351,19 @@ def get_summary_records(
 SUMMARY_RECORDS_QUERY_FILTERING = True
 
 
-def _summary_records_legacy(db, record_service, scope, filters: SummaryFilters, limit: int) -> SummaryResult:
+def _summary_records_legacy(db, record_service, scope, filters: SummaryFilters, limit: int | None) -> SummaryResult:
     """Resolve every authorized record, then filter (Branch Director / fallback)."""
     source = DatabaseRecordSource(db)
     service = InsightsService(source, PlanningService(source, db=db), db=db, record_service=record_service)
     records, _ = service.authorized_records(scope)
     data = []
-    total = 0
     for record in records:
         if not summary_matches(record, filters):
             continue
         payload = summary_payload(record)
-        if payload is None:
-            continue
-        total += 1
-        if len(data) < limit:
+        if payload is not None:
             data.append(payload)
-    return SummaryResult(data=data, truncated=total > len(data), total=total)
+    return apply_summary_limit(data, limit)
 
 
 def _catalog_row_counted(row: dict) -> bool:

@@ -25,6 +25,7 @@ from services.dashboard_record_service import DashboardRecordService
 from services.summary_records_service import (
     LEGACY_PATH_ROLES,
     SummaryFilters,
+    apply_limit,
     summary_records_indexed,
 )
 from services.user_presence_service import UserPresenceService
@@ -217,10 +218,12 @@ def test_query_level_summary_matches_legacy(window_engine, scope_name, filters):
 
 def test_query_level_limit_and_truncation(window_engine):
     with Session(window_engine) as db:
-        legacy = performance._summary_records_legacy(db, _record_service(db), SCOPES["Admin"], SummaryFilters(), 50_000)
+        legacy = performance._summary_records_legacy(db, _record_service(db), SCOPES["Admin"], SummaryFilters(), None)
         pushed = summary_records_indexed(db, _record_service(db), SCOPES["Admin"], SummaryFilters(), 3)
-    assert pushed.data == legacy.data[:3]
-    assert pushed.truncated is True and pushed.total is None
+        default = summary_records_indexed(db, _record_service(db), SCOPES["Admin"], SummaryFilters())
+    assert default.data == legacy.data and default.truncated is False and default.total == len(legacy.data)
+    assert pushed.data == apply_limit(legacy.data, 3).data
+    assert pushed.truncated is True and pushed.total == len(legacy.data)
 
 
 def test_filters_reach_sql_and_only_matching_records_are_resolved(window_engine, monkeypatch):

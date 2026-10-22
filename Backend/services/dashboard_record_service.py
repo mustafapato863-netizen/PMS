@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from models.models import PerformanceRecord
 from repositories.performance_repository import PerformanceRepository as SQLPerformanceRepository
 from utils.team_identity import logical_team_name
+from utils.regions import first_region
 from config.loader import (
     GLOBAL_KPI_ACHIEVEMENT_CAP,
     ConfigurationError,
@@ -69,14 +70,12 @@ def resolved_region(item, employee):
 
     Matches the DB-row scope checks (``coalesce(record, employee, team)`` in
     PerformanceRepository._apply_scope and utils.report_scope._record_region),
-    so a Regional Manager sees the same rows on every path.
+    so a Regional Manager sees the same rows on every path. Whitespace-only
+    values count as missing (utils.regions.first_region).
     """
-    value = item.region or employee.region
-    if value:
-        return value
     team = getattr(item, "team", None) or getattr(employee, "team", None)
     team_region = getattr(team, "region", None) if team is not None else None
-    return team_region or value
+    return first_region(item.region, employee.region, team_region)
 
 
 def _pinned_schema_record(item, employee, team_name: str, basis: dict, item_kpi_values=None):

@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session
 from config import settings
 from config.database import get_db
+from utils.db_errors import DatabaseUnavailableError, is_db_unavailable, retry_after_headers
 from api.middleware.rbac_middleware import require_permission
 from models.schemas import (
     JWTToken,
@@ -170,7 +171,9 @@ async def login(payload: LoginPayload, request: Request, response: Response, db:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=str(e)
         )
-    except Exception:
+    except Exception as exc:
+        if is_db_unavailable(exc):
+            raise DatabaseUnavailableError() from exc
         logger.exception("Login error")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -351,6 +354,8 @@ def me(request: Request, db: Session = Depends(get_db)):
     except HTTPException:
         raise
     except Exception as e:
+        if is_db_unavailable(e):
+            raise DatabaseUnavailableError() from e
         logger.error(f"Me lookup error: {e}")
         return StandardResponse(success=False, message="Failed to fetch current user.")
 
@@ -368,6 +373,7 @@ def presence_heartbeat(request: Request, db: Session = Depends(get_db)):
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Presence could not be updated.",
+            headers=retry_after_headers(),
         ) from exc
     if seen_at is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authenticated user is unavailable")
