@@ -12,7 +12,8 @@ from sqlalchemy.orm import Session
 
 from api.dependencies import require_role
 from api.dependencies import get_current_user_scope
-from config.database import get_db
+from config.database import get_db, release_read_transaction
+from utils.db_errors import DatabaseUnavailableError, is_db_unavailable
 from config import settings
 from config.socket_config import online_user_ids
 from api.middleware.rbac_middleware import require_permission
@@ -414,7 +415,7 @@ def _payload_value(payload, key: str):
 
 
 @users_router.get("/", response_model=StandardResponse)
-async def get_users(
+def get_users(
     db: Session = Depends(get_db),
     _user=Depends(require_permission("manage_users"))
 ):
@@ -429,7 +430,7 @@ async def get_users(
         return StandardResponse(success=False, message="Failed to fetch users.")
 
 @users_router.post("/", response_model=StandardResponse)
-async def create_user(
+def create_user(
     payload: UserRecord,
     db: Session = Depends(get_db),
     _user=Depends(require_permission("manage_users"))
@@ -512,7 +513,7 @@ async def create_user(
         return StandardResponse(success=False, message="Failed to create user.")
 
 @users_router.put("/{user_id}", response_model=StandardResponse)
-async def update_user_route(
+def update_user_route(
     user_id: str,
     payload: UserUpdateRecord,
     request: Request,
@@ -694,7 +695,7 @@ async def update_user_route(
         return StandardResponse(success=False, message="Failed to update user.")
 
 @users_router.post("/{user_id}/toggle-active", response_model=StandardResponse)
-async def toggle_user_active_route(
+def toggle_user_active_route(
     user_id: str,
     is_active: bool,
     request: Request,
@@ -740,7 +741,7 @@ async def toggle_user_active_route(
         return StandardResponse(success=False, message="Failed to update user status.")
 
 @users_router.delete("/{user_id}", response_model=StandardResponse)
-async def delete_user_route(
+def delete_user_route(
     user_id: str,
     request: Request,
     db: Session = Depends(get_db),
@@ -810,7 +811,7 @@ async def delete_user_route(
         return StandardResponse(success=False, message="Failed to delete user.")
 
 @users_router.post("/login", response_model=StandardResponse)
-async def login_user(payload: LoginPayload):
+def login_user(payload: LoginPayload):
     try:
         # Legacy route kept for compatibility, but DB is the source of truth.
         # Users created through the admin panel are now stored in PostgreSQL.
@@ -841,13 +842,14 @@ async def login_user(payload: LoginPayload):
 actions_router = APIRouter()
 
 @actions_router.get("/", response_model=StandardResponse)
-async def get_all_corrective_actions(
+def get_all_corrective_actions(
     request: Request,
     db: Session = Depends(get_db),
     role: str = Depends(require_role(["Admin", "General Manager", "Manager", "Executive", "Performance Team", "Regional Manager", "Branch Director", "Function Director"]))
 ):
     try:
         actions = CorrectiveActionService(db).list_scoped(get_current_user_scope(db, request))
+        release_read_transaction(db)
         return StandardResponse(
             success=True,
             message="Retrieved all corrective actions successfully",
@@ -855,7 +857,9 @@ async def get_all_corrective_actions(
         )
     except HTTPException:
         raise
-    except Exception:
+    except Exception as exc:
+        if is_db_unavailable(exc):
+            raise DatabaseUnavailableError() from exc
         logger.exception("Failed to fetch corrective actions")
         return StandardResponse(success=False, message="Failed to fetch corrective actions.")
 
@@ -877,7 +881,7 @@ def _action_error(exc: Exception) -> HTTPException:
 
 
 @actions_router.get("/follow-up", response_model=StandardResponse)
-async def get_action_follow_up(
+def get_action_follow_up(
     request: Request,
     state: str | None = Query(default=None),
     team: str | None = Query(default=None),
@@ -894,28 +898,38 @@ async def get_action_follow_up(
             owner=owner,
             month=month,
         )
+        release_read_transaction(db)
         return StandardResponse(success=True, message="Retrieved action follow-up successfully", data=data)
     except (CorrectiveActionAccessError, CorrectiveActionValidationError) as exc:
         raise _action_error(exc) from exc
-    except Exception:
+    except HTTPException:
+        raise
+    except Exception as exc:
+        if is_db_unavailable(exc):
+            raise DatabaseUnavailableError() from exc
         return StandardResponse(success=False, message="Failed to fetch action follow-up.")
 
 
 @actions_router.get("/owners", response_model=StandardResponse)
-async def get_action_owners(
+def get_action_owners(
     request: Request,
     db: Session = Depends(get_db),
     role: str = Depends(require_role(["Admin", "General Manager", "Manager", "Executive", "Performance Team", "Regional Manager", "Branch Director", "Function Director"])),
 ):
     try:
         owners = CorrectiveActionService(db).list_owners(get_current_user_scope(db, request))
+        release_read_transaction(db)
         return StandardResponse(success=True, message="Retrieved assignable action owners", data=owners)
-    except Exception:
+    except HTTPException:
+        raise
+    except Exception as exc:
+        if is_db_unavailable(exc):
+            raise DatabaseUnavailableError() from exc
         return StandardResponse(success=False, message="Failed to fetch action owners.")
 
 
 @actions_router.patch("/{action_id}/status", response_model=StandardResponse)
-async def update_corrective_action_status(
+def update_corrective_action_status(
     action_id: str,
     payload: ActionStatusUpdate,
     request: Request,
@@ -945,7 +959,7 @@ async def update_corrective_action_status(
 
 
 @users_router.get("/notifications", response_model=StandardResponse)
-async def get_user_notifications(
+def get_user_notifications(
     request: Request,
     db: Session = Depends(get_db)
 ):
@@ -1003,7 +1017,7 @@ async def get_user_notifications(
 
 
 @users_router.put("/notifications/{recipient_id}/read", response_model=StandardResponse)
-async def mark_notification_read(
+def mark_notification_read(
     recipient_id: str,
     request: Request,
     db: Session = Depends(get_db)
@@ -1048,7 +1062,7 @@ async def mark_notification_read(
 
 
 @users_router.post("/notifications/read-all", response_model=StandardResponse)
-async def mark_all_notifications_read(
+def mark_all_notifications_read(
     request: Request,
     db: Session = Depends(get_db)
 ):
@@ -1082,7 +1096,7 @@ async def mark_all_notifications_read(
 
 
 @users_router.delete("/notifications/clear", response_model=StandardResponse)
-async def clear_all_notifications(
+def clear_all_notifications(
     request: Request,
     db: Session = Depends(get_db)
 ):
@@ -1106,7 +1120,7 @@ async def clear_all_notifications(
 
 
 @users_router.delete("/notifications/{recipient_id}", response_model=StandardResponse)
-async def delete_notification(
+def delete_notification(
     recipient_id: str,
     request: Request,
     db: Session = Depends(get_db)

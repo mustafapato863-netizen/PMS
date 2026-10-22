@@ -8,6 +8,8 @@ from sqlalchemy import String, and_, case, cast, false, func, or_, select, tuple
 from models.models import PerformanceRecord, Employee, KPIValue, Team
 from utils.report_scope import FUNCTION_SCOPED_ROLES, _team_keys, selection_team_keys
 from utils.team_identity import logical_team_name
+from utils.months import MONTH_NUMBERS
+from utils.regions import REGION_WHITESPACE, first_region
 import logging
 
 logger = logging.getLogger(__name__)
@@ -64,6 +66,22 @@ def _uuid_key(value) -> str:
     return str(value).replace("-", "").lower()
 
 
+def _row_region():
+    """SQL twin of utils.regions.first_region: trimmed, blank counts as missing."""
+    return func.coalesce(
+        func.nullif(func.trim(PerformanceRecord.region, REGION_WHITESPACE), ""),
+        func.nullif(func.trim(Employee.region, REGION_WHITESPACE), ""),
+        func.nullif(func.trim(Team.region, REGION_WHITESPACE), ""),
+        "",
+    )
+
+
+def month_number_sql():
+    """Chronological month number (1-12, else 0) of PerformanceRecord.month;
+    the SQL twin of utils.months.month_number."""
+    return case(MONTH_NUMBERS, value=func.lower(func.trim(PerformanceRecord.month, REGION_WHITESPACE)), else_=0)
+
+
 class PerformanceRepository(BaseRepository[PerformanceRecord]):
     """Repository for PerformanceRecord model"""
 
@@ -108,7 +126,7 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
             regions = {str(value).strip().casefold() for value in scope.get("accessible_regions", []) if str(value).strip()}
             if not regions:
                 return query.filter(false())
-            row_region = func.lower(func.coalesce(PerformanceRecord.region, Employee.region, Team.region))
+            row_region = func.lower(_row_region())
             return query.filter(row_region.in_(regions))
 
         if role == "Branch Director":
@@ -196,7 +214,7 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
             position_value = func.lower(func.coalesce(PerformanceRecord.position_name, Employee.position_name))
             query = query.filter(position_value == str(position).casefold())
         if region:
-            region_value = func.lower(func.coalesce(PerformanceRecord.region, Employee.region))
+            region_value = func.lower(_row_region())
             query = query.filter(region_value == str(region).casefold())
         if branch:
             query = query.filter(func.lower(PerformanceRecord.branch_key) == str(branch).strip().casefold())
@@ -218,7 +236,7 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
         """
         logical_team_name = func.coalesce(Team.display_name, Team.name)
         position_name = func.coalesce(PerformanceRecord.position_name, Employee.position_name)
-        region_name = func.coalesce(PerformanceRecord.region, Employee.region)
+        region_name = _row_region()
         query = (
             self.db.query(
                 Employee.employee_id,
@@ -391,7 +409,17 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
         rows.sort(key=lambda row: position[(row["id"], row["year"])])
         return self._with_relations(rows)
 
-    def get_dashboard_record_index(self) -> list[SimpleNamespace]:
+    def get_dashboard_record_index(
+        self,
+        *,
+        year: int | None = None,
+        months: list[str] | None = None,
+        team_names: list[str] | None = None,
+        employee_code: str | None = None,
+        newest_first: bool = False,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> list[SimpleNamespace]:
         """Every row of get_dashboard_record_rows(), in the same order, with only the values a filter or a period
         reads: the key, the employee code, the team name, the region, the position and level, the year and month.
 
@@ -400,10 +428,31 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
         employee's. ``record_key`` is the record id as lowercase hex without dashes, and the year.
         """
         connection = self.db.connection()
-        compiled = self._dashboard_records_query(False).statement.compile(dialect=connection.dialect)
+        query = self._dashboard_records_query(False, year=year, employee_id=employee_code or None)
+        # Optional narrowing for callers that filter by period/team: plain
+        # IN predicates on the raw columns, so indexes stay usable.
+        if months is not None:
+            query = query.filter(PerformanceRecord.month.in_(months)) if months else query.filter(false())
+        if team_names is not None:
+            # String predicate (driver SQL skips UUID bind processing); a superset
+            # that callers narrow with the exact logical-team comparison.
+            query = query.filter(Team.name.in_(team_names)) if team_names else query.filter(false())
+        if newest_first:
+            # Newest period first, chronological months, stable id tiebreak;
+            # matches summary_records_service.order_key.
+            query = query.order_by(
+                PerformanceRecord.year.desc(), month_number_sql().desc(), PerformanceRecord.id.desc()
+            )
+        if limit is not None:
+            query = query.limit(limit).offset(offset)
+        compiled = query.statement.compile(
+            dialect=connection.dialect, compile_kwargs={"render_postcompile": True}
+        )
         params = compiled.construct_params()
         arguments = tuple(params[name] for name in compiled.positiontup) if compiled.positional else params
         rows = connection.exec_driver_sql(compiled.string, arguments).mappings().all()
+        if not rows:
+            return []
         employees = {
             _uuid_key(employee.id): employee
             for employee in self.db.execute(
@@ -412,7 +461,7 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
         }
         teams = {
             _uuid_key(team.id): team
-            for team in self.db.execute(select(Team.id, Team.name, Team.display_name))
+            for team in self.db.execute(select(Team.id, Team.name, Team.display_name, Team.region))
         }
         index = []
         for row in rows:
@@ -421,7 +470,8 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
                 record_key=(_uuid_key(row["id"]), int(row["year"])),
                 employee_id=str(employee.employee_id),
                 team=logical_team_name(teams[_uuid_key(row["team_id"])]),
-                region=row["region"] or employee.region,
+                # Same fallback as the resolver (resolved_region): record, employee, team.
+                region=first_region(row["region"], employee.region, teams[_uuid_key(row["team_id"])].region),
                 position=row["position_name"] or employee.position_name,
                 performance_level=str(row["performance_level"]),
                 branch_key=row["branch_key"],
@@ -450,9 +500,11 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
         teams: dict = {}
         for start in range(0, len(team_ids), 500):
             for team in self.db.execute(
-                select(Team.id, Team.name, Team.display_name).where(Team.id.in_(team_ids[start:start + 500]))
+                select(Team.id, Team.name, Team.display_name, Team.region).where(Team.id.in_(team_ids[start:start + 500]))
             ):
-                teams[team.id] = SimpleNamespace(id=team.id, name=team.name, display_name=team.display_name)
+                teams[team.id] = SimpleNamespace(
+                    id=team.id, name=team.name, display_name=team.display_name, region=team.region
+                )
         people = {
             key: SimpleNamespace(
                 id=employee.id,
@@ -555,7 +607,7 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
     ) -> list[dict[str, object]]:
         """Return scalar summary fields without loading KPI child rows."""
         position_name = func.coalesce(PerformanceRecord.position_name, Employee.position_name)
-        region_name = func.coalesce(PerformanceRecord.region, Employee.region)
+        region_name = _row_region()
         logical_team_name = func.coalesce(Team.display_name, Team.name)
         query = self.db.query(
             PerformanceRecord.id.label("record_id"),

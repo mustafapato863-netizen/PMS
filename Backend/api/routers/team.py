@@ -12,7 +12,7 @@ router = APIRouter()
 
 
 @router.get("/", response_model=StandardResponse)
-async def get_team_action(
+def get_team_action(
     request: Request,
     team_id: str = Query(...),
     month: str = Query(...),
@@ -43,7 +43,7 @@ async def get_team_action(
 
 
 @router.post("/", response_model=StandardResponse)
-async def save_team_action(
+def save_team_action(
     payload: dict,
     request: Request,
     db: Session = Depends(get_db),

@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from models.models import PerformanceRecord
 from repositories.performance_repository import PerformanceRepository as SQLPerformanceRepository
 from utils.team_identity import logical_team_name
+from utils.regions import first_region
 from config.loader import (
     GLOBAL_KPI_ACHIEVEMENT_CAP,
     ConfigurationError,
@@ -74,6 +75,19 @@ def _pinned_basis(item) -> dict | None:
     return None
 
 
+def resolved_region(item, employee):
+    """Record region, else the employee's, else the record team's (or employee team's).
+
+    Matches the DB-row scope checks (``coalesce(record, employee, team)`` in
+    PerformanceRepository._apply_scope and utils.report_scope._record_region),
+    so a Regional Manager sees the same rows on every path. Whitespace-only
+    values count as missing (utils.regions.first_region).
+    """
+    team = getattr(item, "team", None) or getattr(employee, "team", None)
+    team_region = getattr(team, "region", None) if team is not None else None
+    return first_region(item.region, employee.region, team_region)
+
+
 def _pinned_schema_record(item, employee, team_name: str, basis: dict, item_kpi_values=None):
     """Keep the stored payload and overlay identity, stored score, and pinned KPIs.
 
@@ -127,7 +141,7 @@ def _pinned_schema_record(item, employee, team_name: str, basis: dict, item_kpi_
         "team": team_name,
         "month": str(item.month),
         "year": int(item.year),
-        "region": item.region or employee.region,
+        "region": resolved_region(item, employee),
         "branch_key": getattr(item, "branch_key", None),
         "performance_level": str(item.performance_level),
         "position": item.position_name or employee.position_name,
@@ -464,12 +478,14 @@ class DashboardRecordService:
             ]
         return resolved
 
-    def list_record_index(self):
+    def list_record_index(self, **filters):
         """list_records()' rows in the same order, as light rows with only the values a filter or a period reads
         (see get_dashboard_record_index), or None when the repository cannot read them."""
         sql_repository = self.sql_repository_cls(self.db, PerformanceRecord)
         loader = getattr(sql_repository, "get_dashboard_record_index", None)
-        return loader() if callable(loader) else None
+        if not callable(loader):
+            return None
+        return loader(**filters) if filters else loader()
 
     def list_records_by_keys(self, keys: list[tuple]):
         """The resolved records for the given (record id, year) keys, in the order of the keys, or None when the
@@ -646,7 +662,7 @@ class DashboardRecordService:
                         "team": team_name,
                         "month": str(item.month),
                         "year": int(item.year),
-                        "region": item.region or employee.region,
+                        "region": resolved_region(item, employee),
                         "branch_key": getattr(item, "branch_key", None),
                         "performance_level": str(item.performance_level),
                         "position": item.position_name or employee.position_name,
@@ -708,7 +724,7 @@ class DashboardRecordService:
                 team=team_name,
                 month=str(item.month),
                 year=int(item.year),
-                region=item.region or employee.region,
+                region=resolved_region(item, employee),
                 branch_key=getattr(item, "branch_key", None),
                 performance_level=str(item.performance_level),
                 position=item.position_name or employee.position_name,

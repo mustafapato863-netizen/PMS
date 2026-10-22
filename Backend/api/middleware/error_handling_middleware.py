@@ -8,6 +8,7 @@ import logging
 import time
 from fastapi import Request
 from fastapi.encoders import jsonable_encoder
+from starlette.concurrency import run_in_threadpool
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -16,6 +17,7 @@ from fastapi.exceptions import (
     RequestValidationError,
 )
 from config.database import SessionLocal
+from utils.db_errors import is_db_unavailable, unavailable_response
 from services.error_tracker import ErrorTracker
 from config.logging_config import request_id_ctx
 
@@ -92,6 +94,12 @@ def install_api_error_handlers(application) -> None:
     )
 
 
+def _log_error_blocking(request: Request, exc: Exception, request_id: str) -> None:
+    """Persist an error row with a short-lived session, off the event loop."""
+    with SessionLocal() as db:
+        ErrorTracker.log_error(db, request, exc, request_id)
+
+
 class ErrorHandlingMiddleware(BaseHTTPMiddleware):
     """Intercepts and records exceptions, returning clean JSON responses"""
 
@@ -123,6 +131,8 @@ class ErrorHandlingMiddleware(BaseHTTPMiddleware):
                 if isinstance(exc, (FastAPIHTTPException, StarletteHTTPException)):
                     status_code = exc.status_code
                     is_critical = status_code >= 500
+                elif is_db_unavailable(exc):
+                    status_code = 503
                 elif isinstance(exc, ValueError):
                     status_code = 400
                     is_critical = False
@@ -132,9 +142,8 @@ class ErrorHandlingMiddleware(BaseHTTPMiddleware):
 
                 if status_code >= 500 or is_critical:
                     try:
-                        with SessionLocal() as db:
-                            ErrorTracker.log_error(db, request, exc, request_id)
-                            exception_error_registered = True
+                        await run_in_threadpool(_log_error_blocking, request, exc, request_id)
+                        exception_error_registered = True
                     except Exception:
                         logger.exception("Error handling middleware failed to write to database")
 
@@ -150,15 +159,19 @@ class ErrorHandlingMiddleware(BaseHTTPMiddleware):
                     error_message = str(exc)
                     error_detail = error_message
 
-                response = JSONResponse(
-                    status_code=status_code,
-                    content={
-                        "success": False,
-                        "message": error_message,
-                        "detail": error_detail,
-                        "request_id": request_id,
-                    },
-                )
+                if status_code == 503 and is_db_unavailable(exc):
+                    response = unavailable_response(request_id)
+                else:
+                    response = JSONResponse(
+                        status_code=status_code,
+                        headers=getattr(exc, "headers", None) or None,
+                        content={
+                            "success": False,
+                            "message": error_message,
+                            "detail": error_detail,
+                            "request_id": request_id,
+                        },
+                    )
 
             if (
                 response.status_code >= 500

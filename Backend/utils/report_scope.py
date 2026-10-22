@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from utils.branch_scope import explicit_branch_key
+from utils.regions import first_region
 
 
 def _record_value(record, field: str, default=""):
@@ -26,15 +27,11 @@ def _record_team_name(record) -> str:
 
 
 def _record_region(record) -> str:
-    for value in (
+    return first_region(
         _record_value(record, "region", None),
         _related_value(record, "employee", "region"),
         _related_value(record, "team", "region"),
-    ):
-        normalized = str(value or "").strip().casefold()
-        if normalized:
-            return normalized
-    return ""
+    ).casefold()
 
 
 _MERGED_TEAM_KEYS = {
@@ -197,7 +194,7 @@ def user_can_access_team(scope: dict, team_name: str) -> bool:
         return True
     if role == "Regional Manager":
         # Opening a team is allowed; its records still intersect the region grant.
-        return bool(scope.get("accessible_regions"))
+        return any(str(value).strip() for value in scope.get("accessible_regions", []))
     if role == "Branch Director":
         # Team-only checks are followed by branch filtering on the records.
         return bool(scope.get("accessible_branches"))
@@ -264,7 +261,11 @@ def filter_records_by_scope(records, scope: dict):
                 scoped_records.append(record)
         return scoped_records
     if role == "Regional Manager":
-        allowed_regions = {str(value).strip().casefold() for value in scope.get("accessible_regions", [])}
+        allowed_regions = {
+            str(value).strip().casefold()
+            for value in scope.get("accessible_regions", [])
+            if str(value).strip()
+        }
         return [
             record for record in records
             if _record_region(record) in allowed_regions

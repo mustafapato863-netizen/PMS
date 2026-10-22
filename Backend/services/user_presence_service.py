@@ -1,5 +1,8 @@
 import logging
+import threading
+import uuid
 from datetime import datetime, timedelta, timezone
+from typing import ClassVar
 
 from config.database import SessionLocal
 from models.models import User
@@ -30,6 +33,38 @@ class UserPresenceService:
         last_seen = cls._as_utc(last_seen_at)
         return last_seen >= current_time - PRESENCE_ONLINE_WINDOW
 
+    # Per-process memo of the last persisted heartbeat per user. A heartbeat
+    # inside the write interval is answered from here without touching the
+    # database at all (no pool checkout), which removes ~1 DB round trip per
+    # open tab every 30s.
+    _recent_writes: ClassVar[dict[str, datetime]] = {}
+    _recent_lock = threading.Lock()
+    _RECENT_MAX = 10_000
+
+    @classmethod
+    def _remember(cls, user_id: str, written_at: datetime) -> None:
+        with cls._recent_lock:
+            if len(cls._recent_writes) >= cls._RECENT_MAX:
+                cutoff = written_at - PRESENCE_HEARTBEAT_WRITE_INTERVAL
+                for key in [k for k, v in cls._recent_writes.items() if v < cutoff]:
+                    cls._recent_writes.pop(key, None)
+                if len(cls._recent_writes) >= cls._RECENT_MAX:
+                    cls._recent_writes.clear()
+            cls._recent_writes[user_id] = written_at
+
+    @classmethod
+    def _recent(cls, user_id: str) -> datetime | None:
+        with cls._recent_lock:
+            return cls._recent_writes.get(user_id)
+
+    @classmethod
+    def forget(cls, user_id: str | None = None) -> None:
+        with cls._recent_lock:
+            if user_id is None:
+                cls._recent_writes.clear()
+            else:
+                cls._recent_writes.pop(str(user_id), None)
+
     @classmethod
     def record_heartbeat(
         cls,
@@ -37,19 +72,44 @@ class UserPresenceService:
         user_id: str,
         seen_at: datetime | None = None,
     ) -> datetime | None:
-        """Refresh an authenticated user's presence without writing on every ping."""
-        timestamp = cls._as_utc(seen_at or datetime.now(timezone.utc))
-        try:
-            user = UserRepository(db, User).get_by_id(user_id)
-            if not user or not user.is_active:
-                return None
+        """Refresh an authenticated user's presence without writing on every ping.
 
-            last_seen = cls._as_utc(user.last_seen_at) if user.last_seen_at else None
+        One short DB unit: a light column read and, at most once per write
+        interval, a single UPDATE. Every path ends the transaction (commit or
+        rollback), so the pooled connection goes back to the pool before the
+        response is sent instead of sitting "idle in transaction" until the
+        request's dependency teardown.
+        """
+        key = str(user_id)
+        timestamp = cls._as_utc(seen_at or datetime.now(timezone.utc))
+        cached = cls._recent(key)
+        if cached is not None and timedelta(0) <= timestamp - cached < PRESENCE_HEARTBEAT_WRITE_INTERVAL:
+            return cached
+        try:
+            try:
+                parsed_id = uuid.UUID(key)
+            except ValueError:
+                return None
+            row = (
+                db.query(User.is_active, User.last_seen_at)
+                .filter(User.id == parsed_id, User.is_active.is_(True))
+                .first()
+            )
+            if row is None:
+                db.rollback()
+                cls.forget(key)
+                return None
+            last_seen = cls._as_utc(row.last_seen_at) if row.last_seen_at else None
             if last_seen and timestamp - last_seen < PRESENCE_HEARTBEAT_WRITE_INTERVAL:
+                db.rollback()  # end the read transaction; releases the connection
+                cls._remember(key, last_seen)
                 return last_seen
 
-            user.last_seen_at = timestamp
+            db.query(User).filter(User.id == parsed_id).update(
+                {User.last_seen_at: timestamp}, synchronize_session=False
+            )
             db.commit()
+            cls._remember(key, timestamp)
             return timestamp
         except Exception:
             db.rollback()

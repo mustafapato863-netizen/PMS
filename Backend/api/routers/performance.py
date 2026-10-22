@@ -1,7 +1,8 @@
+from starlette.concurrency import run_in_threadpool
 from fastapi import APIRouter, Depends, Query, HTTPException, Request, Response, UploadFile, File
 from fastapi.responses import StreamingResponse, FileResponse
 import io
-from typing import List
+from typing import Annotated, List
 from datetime import datetime, timezone
 
 from api.dependencies import (
@@ -14,7 +15,7 @@ from api.dependencies import (
     require_authenticated_scope,
 )
 from utils.report_scope import filter_records_by_team_levels
-from config.database import get_db
+from config.database import get_db, release_read_transaction
 from sqlalchemy.orm import Session
 from models.schemas import StandardResponse
 from models.performance_read_schemas import PerformanceCatalogData, PerformanceRecordPage, PerformanceSummaryData
@@ -30,6 +31,16 @@ from services.dashboard_record_service import DashboardRecordService
 from services.insights_service import InsightsService
 from services.database_record_source import DatabaseRecordSource
 from services.planning_service import PlanningService
+from services.summary_records_service import (
+    SummaryFilters,
+    SummaryResult,
+    summary_records_indexed,
+)
+from services.summary_records_service import SUMMARY_RECORDS_CAP
+from services.summary_records_service import apply_limit as apply_summary_limit
+from services.rate_limit.enforcement import SUMMARY_RECORDS_RULE, enforce_user_route_limit
+from services.summary_records_service import matches as summary_matches
+from services.summary_records_service import to_payload as summary_payload
 from api.middleware.rbac_middleware import require_permission
 from services.upload_security import read_validated_excel
 from models.report_schemas import MONTHS
@@ -218,7 +229,8 @@ async def upload_balanced_scorecard_template(
         raise
     uploaded_by = _user.get("username", "Admin") if isinstance(_user, dict) else "Admin"
     try:
-        result = import_uploaded_management_template(
+        result = await run_in_threadpool(
+            import_uploaded_management_template,
             db,
             contents,
             updated_by=uploaded_by,
@@ -292,31 +304,69 @@ def get_all_records(
         )
 
 
+SUMMARY_RECORDS_MAX_LIMIT = SUMMARY_RECORDS_CAP
+
+
 @router.get("/summary-records", response_model=StandardResponse)
 def get_summary_records(
     request: Request,
     db: Session = Depends(get_db),
     employee_id: str | None = Query(None),
+    year: Annotated[int | None, Query(ge=1900, le=9999, description="Only records of this year")] = None,
+    month: Annotated[str | None, Query(max_length=20, description="Only records of this month (case-insensitive)")] = None,
+    team: Annotated[str | None, Query(max_length=255, description="Only records of this team (case-insensitive)")] = None,
+    limit: Annotated[int | None, Query(
+        ge=1,
+        le=SUMMARY_RECORDS_MAX_LIMIT,
+        description=(
+            "Maximum rows (default and maximum 50,000); the newest (year, month) rows are kept. "
+            "X-Result-Truncated reports truncation and X-Total-Count the full size"
+        ),
+    )] = None,
+    response: Response = None,
 ):
-    """Authorized employee and management evidence for summary and 360 views."""
+    """Authorized employee and management evidence for summary and 360 views.
+
+    Every new parameter is optional; without them the response is unchanged
+    (capped at 50,000 rows by default; the newest periods are selected in SQL
+    and truncation is signalled through response headers, never by changing
+    the body shape). Rows are returned oldest period first.
+    """
+    enforce_user_route_limit(request, SUMMARY_RECORDS_RULE, "GET /api/performance/summary-records")
     scope = require_authenticated_scope(db, request)
+    filters = SummaryFilters(employee_id=employee_id, year=year, month=month, team=team)
+    record_service = DashboardRecordService(db, sql_repository_cls=SQLPerformanceRepository)
+    result = None
+    if SUMMARY_RECORDS_QUERY_FILTERING and isinstance(db, Session):
+        # Filters and limit are applied in SQL / before resolving payloads.
+        result = summary_records_indexed(db, record_service, scope, filters, limit)
+    if result is None:
+        result = _summary_records_legacy(db, record_service, scope, filters, limit)
+    release_read_transaction(db)
+    if response is not None:
+        if result.total is not None:
+            response.headers["X-Total-Count"] = str(result.total)
+        response.headers["X-Result-Truncated"] = "true" if result.truncated else "false"
+    return StandardResponse(success=True, message="Authorized summary evidence retrieved", data=result.data)
+
+
+# Kill switch for the query-level path (tests compare both paths).
+SUMMARY_RECORDS_QUERY_FILTERING = True
+
+
+def _summary_records_legacy(db, record_service, scope, filters: SummaryFilters, limit: int | None) -> SummaryResult:
+    """Resolve every authorized record, then filter (Branch Director / fallback)."""
     source = DatabaseRecordSource(db)
-    service = InsightsService(
-        source,
-        PlanningService(source, db=db),
-        db=db,
-        record_service=DashboardRecordService(db, sql_repository_cls=SQLPerformanceRepository),
-    )
+    service = InsightsService(source, PlanningService(source, db=db), db=db, record_service=record_service)
     records, _ = service.authorized_records(scope)
     data = []
     for record in records:
-        payload = dict(record) if isinstance(record, dict) else record.model_dump(mode="json")
-        if employee_id and str(payload.get("employee_id")) != employee_id:
+        if not summary_matches(record, filters):
             continue
-        if (payload.get("evaluation") or {}).get("score") is None:
-            continue
-        data.append(payload)
-    return StandardResponse(success=True, message="Authorized summary evidence retrieved", data=data)
+        payload = summary_payload(record)
+        if payload is not None:
+            data.append(payload)
+    return apply_summary_limit(data, limit)
 
 
 def _catalog_row_counted(row: dict) -> bool:

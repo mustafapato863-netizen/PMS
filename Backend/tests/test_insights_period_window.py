@@ -195,6 +195,33 @@ def test_the_window_resolves_only_its_months_and_the_planning_history():
         engine.dispose()
 
 
+def test_kpi_overview_resolves_only_its_six_explicit_periods():
+    engine = _synthetic_engine()
+    try:
+        with Session(engine) as db:
+            source = DatabaseRecordSource(db)
+            service = InsightsService(source, PlanningService(source, db=db), db=db)
+            september = {"year": 2026, "month": "September"}
+            windowed = service._windowed_records(SCOPES["Admin"], september, frozenset({"kpi_overview", "options"}))
+            assert windowed is not None
+            resolved = {(record.year, MONTHS.index(record.month) + 1) for record in windowed.records}
+            assert set(windowed.explicit_periods[-6:]) <= resolved
+            every = {(record.year, MONTHS.index(record.month) + 1) for record in source_records(db)}
+            assert resolved < every  # fewer periods than the old "load every record" path
+            cases = [
+                (f"kpi_overview | {label}", SCOPES["Admin"], filters, ["kpi_overview"])
+                for label, filters in (("latest", {}), ("september", september), ("january", {"year": 2026, "month": "January"}),
+                                       ("team", {"team": "Window North"}))
+            ]
+        assert _compare(engine, cases) == len(cases)
+    finally:
+        engine.dispose()
+
+
+def source_records(db):
+    return db.query(PerformanceRecord).all()
+
+
 def test_other_requests_resolve_every_record():
     engine = _synthetic_engine()
     try:
@@ -204,7 +231,6 @@ def test_other_requests_resolve_every_record():
             september = {"year": 2026, "month": "September"}
             assert service._windowed_records(SCOPES["Admin"], september, None) is None
             assert service._windowed_records(SCOPES["Admin"], september, frozenset({"overall_trend"})) is None
-            assert service._windowed_records(SCOPES["Admin"], september, frozenset({"kpi_overview", "options"})) is None
             assert service._windowed_records(SCOPES["Admin"], {**september, "status": "Below"}, frozenset(PAGE_SECTIONS)) is None
             branch = _scope("Branch Director", accessible_branches=["DXB"])
             assert service._windowed_records(branch, september, frozenset(PAGE_SECTIONS)) is None

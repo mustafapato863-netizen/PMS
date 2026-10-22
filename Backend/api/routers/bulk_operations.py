@@ -22,7 +22,7 @@ router = APIRouter(prefix="/bulk", tags=["Bulk Operations"])
 
 
 @router.post("/performance/records", response_model=StandardResponse, status_code=status.HTTP_201_CREATED)
-async def bulk_insert_performance_records(
+def bulk_insert_performance_records(
     payload: Annotated[List[Dict[str, Any]], Field(min_length=1, max_length=5000)],
     request: Request,
     db: Session = Depends(get_db),
@@ -67,7 +67,7 @@ async def bulk_insert_performance_records(
 
 
 @router.patch("/teams/{team_id}/kpi-config", response_model=StandardResponse)
-async def bulk_update_kpi_weights(
+def bulk_update_kpi_weights(
     team_id: str,
     payload: Annotated[List[Dict[str, Any]], Field(min_length=1, max_length=500)],
     request: Request,
@@ -112,7 +112,7 @@ async def bulk_update_kpi_weights(
 
 
 @router.delete("/employees", response_model=StandardResponse)
-async def bulk_delete_employees(
+def bulk_delete_employees(
     payload: Dict[str, List[str]],
     request: Request,
     db: Session = Depends(get_db),

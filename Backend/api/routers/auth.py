@@ -3,6 +3,7 @@ Provides login and logout endpoints.
 """
 
 import logging
+from starlette.concurrency import run_in_threadpool
 from datetime import datetime, timezone
 from urllib.parse import urlsplit
 
@@ -10,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session
 from config import settings
 from config.database import get_db
+from utils.db_errors import DatabaseUnavailableError, is_db_unavailable, retry_after_headers
 from api.middleware.rbac_middleware import require_permission
 from models.schemas import (
     JWTToken,
@@ -130,7 +132,10 @@ async def login(payload: LoginPayload, request: Request, response: Response, db:
     await enforce_login_username_limit(request, payload.username)
     try:
         user_agent, client_host = _request_metadata(request)
-        tokens = AuthenticationService.authenticate_user_with_session(
+        # Blocking DB/password-hash work runs in the threadpool so the event
+        # loop stays free while this async handler awaits the rate limiter.
+        tokens = await run_in_threadpool(
+            AuthenticationService.authenticate_user_with_session,
             db,
             payload.username,
             payload.password,
@@ -166,7 +171,9 @@ async def login(payload: LoginPayload, request: Request, response: Response, db:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=str(e)
         )
-    except Exception:
+    except Exception as exc:
+        if is_db_unavailable(exc):
+            raise DatabaseUnavailableError() from exc
         logger.exception("Login error")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -175,7 +182,7 @@ async def login(payload: LoginPayload, request: Request, response: Response, db:
 
 
 @router.post("/refresh", response_model=StandardResponse)
-async def refresh(request: Request, response: Response, db: Session = Depends(get_db)):
+def refresh(request: Request, response: Response, db: Session = Depends(get_db)):
     _require_trusted_cookie_request(request)
     refresh_token = request.cookies.get(settings.AUTH_REFRESH_COOKIE_NAME)
     user_agent, client_host = _request_metadata(request)
@@ -211,7 +218,7 @@ async def refresh(request: Request, response: Response, db: Session = Depends(ge
 
 
 @router.post("/logout", response_model=StandardResponse)
-async def logout(request: Request, response: Response, db: Session = Depends(get_db)):
+def logout(request: Request, response: Response, db: Session = Depends(get_db)):
     """
     Log out the current user and invalidate the session cache.
     """
@@ -248,7 +255,7 @@ async def logout(request: Request, response: Response, db: Session = Depends(get
 
 
 @router.get("/me", response_model=StandardResponse)
-async def me(request: Request, db: Session = Depends(get_db)):
+def me(request: Request, db: Session = Depends(get_db)):
     try:
         payload = _current_user_payload(request)
         user_id = payload.get("user_id")
@@ -347,12 +354,14 @@ async def me(request: Request, db: Session = Depends(get_db)):
     except HTTPException:
         raise
     except Exception as e:
+        if is_db_unavailable(e):
+            raise DatabaseUnavailableError() from e
         logger.error(f"Me lookup error: {e}")
         return StandardResponse(success=False, message="Failed to fetch current user.")
 
 
 @router.post("/presence/heartbeat", response_model=StandardResponse)
-async def presence_heartbeat(request: Request, db: Session = Depends(get_db)):
+def presence_heartbeat(request: Request, db: Session = Depends(get_db)):
     """Record authenticated activity for presence across serverless instances."""
     user_id = _current_user_payload(request).get("user_id")
     if not user_id:
@@ -364,6 +373,7 @@ async def presence_heartbeat(request: Request, db: Session = Depends(get_db)):
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Presence could not be updated.",
+            headers=retry_after_headers(),
         ) from exc
     if seen_at is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authenticated user is unavailable")
@@ -376,7 +386,7 @@ async def presence_heartbeat(request: Request, db: Session = Depends(get_db)):
 
 
 @router.put("/profile", response_model=StandardResponse)
-async def update_profile(
+def update_profile(
     payload: ProfileUpdatePayload,
     request: Request,
     db: Session = Depends(get_db),
@@ -406,7 +416,7 @@ async def update_profile(
 
 
 @router.post("/profile/password", response_model=StandardResponse)
-async def change_password(
+def change_password(
     payload: PasswordChangePayload,
     request: Request,
     response: Response,
@@ -437,7 +447,7 @@ async def change_password(
 
 # --- Administrative endpoint to unlock a user account ---
 @router.post("/unlock/{user_id}", response_model=StandardResponse)
-async def unlock_user(
+def unlock_user(
     user_id: str,
     db: Session = Depends(get_db),
     _user=Depends(require_permission("manage_users")),

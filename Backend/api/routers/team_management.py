@@ -4,6 +4,7 @@ API endpoints for managing teams (CRUD operations).
 """
 
 import logging
+from starlette.concurrency import run_in_threadpool
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import JSONResponse
 from typing import List
@@ -31,7 +32,7 @@ router = APIRouter(prefix="/team-management", tags=["Team Management"])
 
 
 @router.get("/teams", response_model=TeamListResponse)
-async def list_teams():
+def list_teams():
     """
     List all teams.
     
@@ -51,7 +52,7 @@ async def list_teams():
 
 
 @router.get("/teams/{team_name}", response_model=TeamResponse)
-async def get_team(team_name: str):
+def get_team(team_name: str):
     """
     Get team by name.
     
@@ -75,7 +76,7 @@ async def get_team(team_name: str):
 
 
 @router.post("/teams", response_model=TeamResponse, status_code=status.HTTP_201_CREATED)
-async def create_team(
+def create_team(
     request: TeamCreateRequest,
     _user=Depends(require_permission("create_team"))
 ):
@@ -103,7 +104,7 @@ async def create_team(
 
 
 @router.put("/teams/{team_name}", response_model=TeamResponse)
-async def update_team(
+def update_team(
     team_name: str,
     request: TeamUpdateRequest,
     _user=Depends(require_permission("edit_team_config"))
@@ -133,7 +134,7 @@ async def update_team(
 
 
 @router.delete("/teams/{team_name}", status_code=status.HTTP_200_OK)
-async def delete_team(
+def delete_team(
     team_name: str,
     _user=Depends(require_permission("delete_team"))
 ):
@@ -164,7 +165,7 @@ async def delete_team(
 
 
 @router.post("/teams/{team_name}/validate", response_model=TeamValidationResponse)
-async def validate_team(team_name: str):
+def validate_team(team_name: str):
     """
     Validate team configuration.
     
@@ -199,7 +200,7 @@ async def validate_team(team_name: str):
 
 
 @router.get("/statistics")
-async def get_statistics():
+def get_statistics():
     """
     Get team statistics.
     
@@ -241,7 +242,7 @@ async def start_onboarding(
         HTTPException: If team not found or onboarding fails
     """
     # Verify team exists
-    team = TeamService.get_team(team_name)
+    team = await run_in_threadpool(TeamService.get_team, team_name)
     if not team:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -279,7 +280,7 @@ async def get_onboarding_status(team_name: str):
         HTTPException: If team not found
     """
     # Verify team exists
-    team = TeamService.get_team(team_name)
+    team = await run_in_threadpool(TeamService.get_team, team_name)
     if not team:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -303,7 +304,7 @@ async def get_onboarding_status(team_name: str):
 
 
 @router.get("/management-kpi-config")
-async def get_management_kpi_config(
+def get_management_kpi_config(
     team: str = Query(...),
     performance_level: str | None = Query(None),
     db: Session = Depends(get_db),
@@ -323,7 +324,7 @@ async def get_management_kpi_config(
 
 
 @router.get("/management-kpi-config/teams")
-async def get_management_kpi_config_teams(
+def get_management_kpi_config_teams(
     db: Session = Depends(get_db),
     _user=Depends(require_permission("view_reports")),
 ):
@@ -342,7 +343,7 @@ async def get_management_kpi_config_teams(
 
 
 @router.get("/management-kpi-config/uploads")
-async def get_management_kpi_uploads(
+def get_management_kpi_uploads(
     db: Session = Depends(get_db),
     _user=Depends(require_permission("view_reports")),
 ):
@@ -358,7 +359,7 @@ async def get_management_kpi_uploads(
 
 
 @router.delete("/management-kpi-config/uploads/{batch_id}")
-async def delete_management_kpi_upload(
+def delete_management_kpi_upload(
     batch_id: str,
     db: Session = Depends(get_db),
     _user=Depends(require_permission("upload_data")),
@@ -384,7 +385,7 @@ def _rows_removed(result: dict) -> int:
     return sum(int(result.get(key) or 0) for key in ("config_rows_deleted", "snapshot_rows_deleted", "history_rows_deleted"))
 
 @router.post("/management-kpi-config/uploads/batch-delete")
-async def batch_delete_management_kpi_uploads(
+def batch_delete_management_kpi_uploads(
     request: BatchDeleteManagementRequest,
     db: Session = Depends(get_db),
     _user=Depends(require_permission("upload_data")),
@@ -424,7 +425,7 @@ async def batch_delete_management_kpi_uploads(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to batch delete.") from exc
 
 @router.get("/management-kpi-config/history")
-async def get_management_kpi_config_history(
+def get_management_kpi_config_history(
     team: str = Query(...),
     db: Session = Depends(get_db),
     _user=Depends(require_permission("view_reports")),

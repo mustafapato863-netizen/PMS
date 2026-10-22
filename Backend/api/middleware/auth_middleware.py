@@ -7,10 +7,12 @@ import os
 from contextlib import contextmanager
 
 from fastapi import Request
+from starlette.concurrency import run_in_threadpool
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
 from services.auth_service import AuthenticationService
+from utils.db_errors import is_db_unavailable, unavailable_response
 from config.database import SessionLocal, get_db
 from models.models import User
 from config import settings
@@ -46,6 +48,52 @@ def _authentication_session(request: Request):
         close = getattr(dependency, "close", None)
         if close:
             close()
+
+def _load_authenticated_user(request: Request, payload: dict, user_id, path: str):
+    """Blocking session/user lookup for AuthMiddleware.
+
+    Runs in the threadpool so the event loop is never blocked by DB I/O, and
+    the session is always closed before the response continues downstream.
+    Returns the ``request.state.user`` dict or a JSONResponse to short-circuit.
+    """
+    with _authentication_session(request) as db:
+        if payload.get("sid"):
+            import uuid
+            from models.models import RefreshSession
+            try:
+                session_id = uuid.UUID(str(payload["sid"]))
+            except (ValueError, TypeError):
+                raise ValueError("Invalid authentication session")
+            session = db.query(RefreshSession).filter(RefreshSession.id == session_id).first()
+            if not session or session.revoked_at is not None:
+                raise ValueError("Authentication session has been revoked")
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user or not user.is_active:
+            raise ValueError("User account is disabled")
+        # A restricted token must never become an unrestricted token
+        # simply because another request completed the password change.
+        if payload.get("must_change_password") and not user.must_change_password:
+            raise ValueError("Sign in again after changing your password")
+        if user.must_change_password and (request.method, path.rstrip("/")) not in {
+            ("GET", "/api/auth/me"),
+            ("POST", "/api/auth/profile/password"),
+            ("POST", "/api/auth/logout"),
+        }:
+            return JSONResponse(status_code=403, content={
+                "success": False,
+                "code": "PASSWORD_CHANGE_REQUIRED",
+                "message": "Change your temporary password before accessing the system.",
+                "detail": "Change your temporary password before accessing the system.",
+            })
+        return {
+            "user_id": str(user.id),
+            "username": user.username,
+            "role": user.role,
+            "employee_id": getattr(user, "employee_id", None),
+            "session_id": payload.get("sid"),
+            "must_change_password": user.must_change_password,
+        }
+
 
 class AuthMiddleware(BaseHTTPMiddleware):
     """Enforces JWT Authentication on protected routes"""
@@ -109,47 +157,20 @@ class AuthMiddleware(BaseHTTPMiddleware):
             user_id_str = payload.get("user_id")
             try:
                 user_id = uuid.UUID(str(user_id_str))
-            except (ValueError, TypeError):
-                user_id = user_id_str
+            except (ValueError, TypeError) as exc:
+                # A token without a valid user id is a token problem (401),
+                # never let it reach the DB and surface as a 503.
+                raise ValueError("Invalid token subject") from exc
 
-            with _authentication_session(request) as db:
-                if payload.get("sid"):
-                    import uuid
-                    from models.models import RefreshSession
-                    try:
-                        session_id = uuid.UUID(str(payload["sid"]))
-                    except (ValueError, TypeError):
-                        raise ValueError("Invalid authentication session")
-                    session = db.query(RefreshSession).filter(RefreshSession.id == session_id).first()
-                    if not session or session.revoked_at is not None:
-                        raise ValueError("Authentication session has been revoked")
-                user = db.query(User).filter(User.id == user_id).first()
-                if not user or not user.is_active:
-                    raise ValueError("User account is disabled")
-                # A restricted token must never become an unrestricted token
-                # simply because another request completed the password change.
-                if payload.get("must_change_password") and not user.must_change_password:
-                    raise ValueError("Sign in again after changing your password")
-                if user.must_change_password and (request.method, path.rstrip("/")) not in {
-                    ("GET", "/api/auth/me"),
-                    ("POST", "/api/auth/profile/password"),
-                    ("POST", "/api/auth/logout"),
-                }:
-                    return JSONResponse(status_code=403, content={
-                        "success": False,
-                        "code": "PASSWORD_CHANGE_REQUIRED",
-                        "message": "Change your temporary password before accessing the system.",
-                        "detail": "Change your temporary password before accessing the system.",
-                    })
-                request.state.user = {
-                    "user_id": str(user.id),
-                    "username": user.username,
-                    "role": user.role,
-                    "employee_id": getattr(user, "employee_id", None),
-                    "session_id": payload.get("sid"),
-                    "must_change_password": user.must_change_password,
-                }
-        except Exception:
+            auth_result = await run_in_threadpool(
+                _load_authenticated_user, request, payload, user_id, path
+            )
+            if isinstance(auth_result, JSONResponse):
+                return auth_result
+            request.state.user = auth_result
+        except ValueError:
+            # Real token/session problems only: bad signature, expired, revoked,
+            # disabled user, unknown session.
             logger.warning("Authentication token validation failed")
             return JSONResponse(
                 status_code=401,
@@ -158,6 +179,25 @@ class AuthMiddleware(BaseHTTPMiddleware):
                     "message": "Invalid token",
                     "detail": "Invalid token",
                     "request_id": getattr(request.state, "request_id", None),
+                },
+            )
+        except Exception as exc:
+            # Pool timeout / lost connection: not the user's token. 503 +
+            # Retry-After so clients retry instead of logging out.
+            request_id = getattr(request.state, "request_id", None)
+            if is_db_unavailable(exc):
+                logger.warning("Authentication lookup unavailable: %s", type(exc).__name__)
+                return unavailable_response(request_id)
+            # Anything else is a server bug, not a token problem and not a
+            # transient outage: 500, never 401 or a retry hint.
+            logger.exception("Unexpected authentication failure")
+            return JSONResponse(
+                status_code=500,
+                content={
+                    "success": False,
+                    "message": "An internal server error occurred.",
+                    "detail": "An internal server error occurred.",
+                    "request_id": request_id,
                 },
             )
 

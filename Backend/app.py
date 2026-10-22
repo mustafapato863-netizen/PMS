@@ -124,7 +124,15 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["X-Request-ID", "Server-Timing", "X-Response-Time-Ms", *RATE_LIMIT_HEADERS],
+    expose_headers=[
+        "X-Request-ID",
+        "Server-Timing",
+        "X-Response-Time-Ms",
+        "X-Total-Count",
+        "X-Result-Truncated",
+        "Retry-After",
+        *RATE_LIMIT_HEADERS,
+    ],
 )
 
 
