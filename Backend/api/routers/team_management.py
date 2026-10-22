@@ -4,6 +4,7 @@ API endpoints for managing teams (CRUD operations).
 """
 
 import logging
+from starlette.concurrency import run_in_threadpool
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import JSONResponse
 from typing import List
@@ -31,7 +32,7 @@ router = APIRouter(prefix="/team-management", tags=["Team Management"])
 
 
 @router.get("/teams", response_model=TeamListResponse)
-async def list_teams():
+def list_teams():
     """
     List all teams.
     
@@ -51,7 +52,7 @@ async def list_teams():
 
 
 @router.get("/teams/{team_name}", response_model=TeamResponse)
-async def get_team(team_name: str):
+def get_team(team_name: str):
     """
     Get team by name.
     
@@ -75,7 +76,7 @@ async def get_team(team_name: str):
 
 
 @router.post("/teams", response_model=TeamResponse, status_code=status.HTTP_201_CREATED)
-async def create_team(
+def create_team(
     request: TeamCreateRequest,
     _user=Depends(require_permission("create_team"))
 ):
@@ -103,7 +104,7 @@ async def create_team(
 
 
 @router.put("/teams/{team_name}", response_model=TeamResponse)
-async def update_team(
+def update_team(
     team_name: str,
     request: TeamUpdateRequest,
     _user=Depends(require_permission("edit_team_config"))
@@ -133,7 +134,7 @@ async def update_team(
 
 
 @router.delete("/teams/{team_name}", status_code=status.HTTP_200_OK)
-async def delete_team(
+def delete_team(
     team_name: str,
     _user=Depends(require_permission("delete_team"))
 ):
@@ -164,7 +165,7 @@ async def delete_team(
 
 
 @router.post("/teams/{team_name}/validate", response_model=TeamValidationResponse)
-async def validate_team(team_name: str):
+def validate_team(team_name: str):
     """
     Validate team configuration.
     
@@ -199,7 +200,7 @@ async def validate_team(team_name: str):
 
 
 @router.get("/statistics")
-async def get_statistics():
+def get_statistics():
     """
     Get team statistics.
     
@@ -241,7 +242,7 @@ async def start_onboarding(
         HTTPException: If team not found or onboarding fails
     """
     # Verify team exists
-    team = TeamService.get_team(team_name)
+    team = await run_in_threadpool(TeamService.get_team, team_name)
     if not team:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -279,7 +280,7 @@ async def get_onboarding_status(team_name: str):
         HTTPException: If team not found
     """
     # Verify team exists
-    team = TeamService.get_team(team_name)
+    team = await run_in_threadpool(TeamService.get_team, team_name)
     if not team:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

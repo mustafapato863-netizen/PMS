@@ -22,7 +22,11 @@ from config.database import Base, get_db
 from models.models import User
 from repositories.performance_repository import PerformanceRepository
 from services.dashboard_record_service import DashboardRecordService
-from services.summary_records_service import SummaryFilters, summary_records_indexed
+from services.summary_records_service import (
+    LEGACY_PATH_ROLES,
+    SummaryFilters,
+    summary_records_indexed,
+)
 from services.user_presence_service import UserPresenceService
 from tests.test_insights_period_window import SCOPES, _synthetic_engine
 
@@ -198,6 +202,9 @@ def test_query_level_summary_matches_legacy(window_engine, scope_name, filters):
     with Session(window_engine) as db:
         legacy = performance._summary_records_legacy(db, _record_service(db), scope, filters, 50_000)
         pushed = summary_records_indexed(db, _record_service(db), scope, filters, 50_000)
+    if scope["role"] in LEGACY_PATH_ROLES:
+        assert pushed is None  # kept on the legacy path; the router falls back
+        return
     assert pushed is not None
     key = lambda row: str(row["id"])
     if filters.year is None and filters.month is None and filters.team is None:
@@ -248,3 +255,44 @@ def test_branch_director_keeps_the_legacy_path(window_engine):
     with Session(window_engine) as db:
         assert summary_records_indexed(db, _record_service(db), _scope("Branch Director", accessible_branches=["DXB"]),
                                        SummaryFilters(), 10) is None
+
+
+def test_regional_manager_scope_matches_legacy_with_team_only_regions():
+    """Records and employees without a region: only the team carries it.
+
+    Regional Manager stays on the legacy path, so the router's output equals the
+    legacy output; the light index and the resolved records also agree on which
+    rows a Regional Manager may see.
+    """
+    import uuid as _uuid
+
+    from models.models import Employee, PerformanceRecord
+    from utils.report_scope import (
+        filter_records_by_scope,
+        filter_records_by_team_levels,
+    )
+
+    engine = _synthetic_engine()
+    try:
+        with Session(engine) as db:
+            db.query(PerformanceRecord).update({PerformanceRecord.region: None})
+            db.query(Employee).update({Employee.region: ""})
+            db.commit()
+            for region in ("SHJ", "DXB"):
+                scope = {**SCOPES["Regional Manager"], "accessible_regions": [region]}
+                assert summary_records_indexed(db, _record_service(db), scope, SummaryFilters(), 100) is None
+                legacy = performance._summary_records_legacy(db, _record_service(db), scope, SummaryFilters(), 50_000)
+                performance.require_authenticated_scope, previous = (lambda *_, _scope=scope: _scope), performance.require_authenticated_scope
+                try:
+                    routed = performance.get_summary_records(None, db, employee_id=None).data
+                finally:
+                    performance.require_authenticated_scope = previous
+                assert routed == legacy.data
+                service = _record_service(db)
+                full_ids = [str(r.id) for r in filter_records_by_team_levels(
+                    filter_records_by_scope(service.list_analysis_records(), scope), scope)]
+                index_ids = [str(_uuid.UUID(hex=r.record_key[0])) for r in filter_records_by_team_levels(
+                    filter_records_by_scope(service.list_record_index(), scope), scope)]
+                assert index_ids == full_ids
+    finally:
+        engine.dispose()

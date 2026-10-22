@@ -25,3 +25,15 @@ def test_bool_setting(monkeypatch, raw, expected):
 def test_engine_pre_pings():
     assert database.engine_kwargs["pool_pre_ping"] is True
     assert database.pool_timeout >= 1
+
+
+def test_idle_in_transaction_timeout_connect_args():
+    assert database.postgres_connect_args("postgresql://u:p@h/db", 60000) == {
+        "options": "-c idle_in_transaction_session_timeout=60000"
+    }
+    assert database.postgres_connect_args("postgresql+psycopg://u:p@h/db", 1500)["options"].endswith("=1500")
+    assert database.postgres_connect_args("postgresql://u:p@h/db", 0) == {}
+    assert database.postgres_connect_args("sqlite:///x.db", 60000) == {}
+    assert database.postgres_connect_args("postgresql+asyncpg://u:p@h/db", 60000) == {}
+    # An explicit options= in the URL wins; never override it.
+    assert database.postgres_connect_args("postgresql://u:p@h/db?options=-c%20x%3D1", 60000) == {}

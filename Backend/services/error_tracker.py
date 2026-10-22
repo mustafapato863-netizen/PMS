@@ -115,17 +115,29 @@ class ErrorTracker:
                 stack_trace=stack_trace
             )
             db.add(error_log)
-            db.commit()
+            # Load server defaults inside the write transaction, then detach so
+            # nothing after the commit lazily re-opens a transaction (the old
+            # refresh-after-commit left the connection idle in transaction
+            # while the Slack alert below ran for up to 5s).
+            db.flush()
             db.refresh(error_log)
-
-            # Check threshold and alert if exceeded
-            ErrorTracker.evaluate_error_rate()
-
-            return error_log
+            db.expunge(error_log)
+            db.commit()
         except Exception as e:
+            try:
+                db.rollback()
+            except Exception:
+                logger.debug("Rollback after failed error-log write also failed", exc_info=True)
             logger.error(f"Failed to record error log in database: {e}")
             # Do not raise to prevent breaking the application's fallback response
             return None
+
+        # Threshold check / Slack alert run with no transaction open.
+        try:
+            ErrorTracker.evaluate_error_rate()
+        except Exception:
+            logger.exception("Error-rate evaluation failed")
+        return error_log
 
     @staticmethod
     def get_metrics_in_window() -> tuple[int, int]:

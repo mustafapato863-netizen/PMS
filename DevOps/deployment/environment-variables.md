@@ -17,6 +17,7 @@ The following properties configure the FastAPI application server, database mapp
 | `DATABASE_MAX_OVERFLOW`| Integer | `10` development / `5` hosted | Temporary database connection overflow headroom. |
 | `DATABASE_POOL_TIMEOUT`| Integer | `10` | Seconds a request waits for a free pooled connection before failing fast. |
 | `DATABASE_POOL_PRE_PING`| Boolean | `true` | Test each pooled connection before use so dead connections are replaced. |
+| `DATABASE_IDLE_IN_TRANSACTION_TIMEOUT_MS`| Integer | `60000` | PostgreSQL only: server terminates a session left idle inside a transaction after this many ms (`0` disables; skipped when the URL sets `options=`). |
 | `DATABASE_POOL_RECYCLE`| Integer | `1800` | Bumps stale database connections after specified seconds. |
 | `PMS_AUTO_SEED` | Boolean | `false` outside development | Seeds the bundled workbook only when explicitly enabled; keep disabled in hosted production. |
 | `PMS_SEED_PERMISSIONS_ON_STARTUP` | Boolean | `false` outside development | Seeds permissions at startup. Forbidden in production; use a controlled release job. |

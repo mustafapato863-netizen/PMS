@@ -14,8 +14,8 @@ connections. This path:
 3. resolves only the matching keys, in index order, in chunks, and stops once
    ``limit`` rows are collected.
 
-The Branch Director scope reads the source row, so it (and any repository
-without the index) falls back to the legacy path by returning ``None``.
+Branch Director and Regional Manager scopes (and any repository without the
+index) fall back to the legacy path by returning ``None``.
 """
 from __future__ import annotations
 
@@ -31,6 +31,11 @@ from utils.report_scope import filter_records_by_scope, filter_records_by_team_l
 from utils.team_identity import logical_team_name
 
 RESOLVE_CHUNK = 500
+# Branch Director reads the source row's branch marker. Regional Manager stays
+# on the legacy path too: its region test has a team-region fallback in
+# utils.report_scope._record_region, and keeping it on the resolved records
+# guarantees the authorization scope is byte-for-byte the legacy one.
+LEGACY_PATH_ROLES = frozenset({"Branch Director", "Regional Manager"})
 
 
 @dataclass
@@ -92,7 +97,7 @@ def summary_records_indexed(
     filters: SummaryFilters,
     limit: int,
 ) -> SummaryResult | None:
-    if scope.get("role") == "Branch Director":
+    if scope.get("role") in LEGACY_PATH_ROLES:
         return None
     index_loader = getattr(record_service, "list_record_index", None)
     keys_loader = getattr(record_service, "list_records_by_keys", None)

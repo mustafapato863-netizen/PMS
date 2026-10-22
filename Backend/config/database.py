@@ -50,6 +50,20 @@ max_overflow = _int_setting("DATABASE_MAX_OVERFLOW", 10 if is_development else 5
 pool_timeout = _int_setting("DATABASE_POOL_TIMEOUT", 10, minimum=1)
 pool_recycle = _int_setting("DATABASE_POOL_RECYCLE", 1800, minimum=-1)
 pool_pre_ping = _bool_setting("DATABASE_POOL_PRE_PING", True)
+# Server-side safety net (PostgreSQL only): a session left idle inside an open
+# transaction is terminated by the server after this many milliseconds, so a
+# leaked transaction can never pin a pool connection (or row locks) forever.
+# 0 disables it. Requests never sit idle-in-transaction this long legitimately.
+idle_in_transaction_timeout_ms = _int_setting("DATABASE_IDLE_IN_TRANSACTION_TIMEOUT_MS", 60_000)
+
+
+def postgres_connect_args(url: str, timeout_ms: int) -> dict:
+    """connect_args for libpq-based drivers (psycopg2 / psycopg 3)."""
+    lowered = url.lower()
+    if timeout_ms <= 0 or not lowered.startswith("postgres") or "asyncpg" in lowered or "options=" in lowered:
+        return {}
+    return {"options": f"-c idle_in_transaction_session_timeout={int(timeout_ms)}"}
+
 
 engine_kwargs = {
     "pool_pre_ping": pool_pre_ping,
@@ -61,6 +75,9 @@ if "sqlite" not in DATABASE_URL.lower():
         "pool_timeout": pool_timeout,
         "pool_recycle": pool_recycle,
     })
+    pg_connect_args = postgres_connect_args(DATABASE_URL, idle_in_transaction_timeout_ms)
+    if pg_connect_args:
+        engine_kwargs["connect_args"] = pg_connect_args
 else:
     engine_kwargs.update({
         "connect_args": {"check_same_thread": False}
@@ -78,3 +95,18 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+def release_read_transaction(db) -> None:
+    """End a read-only request's transaction before the response is serialized.
+
+    ``Depends(get_db)`` tears down only after the response has been sent, so a
+    handler that only read would otherwise keep its pooled connection "idle in
+    transaction" for the whole serialization and network send. Read endpoints
+    call this right before returning; any later lazy load simply starts a new,
+    short transaction that get_db closes.
+    """
+    in_transaction = getattr(db, "in_transaction", None)
+    if callable(in_transaction) and in_transaction():
+        db.rollback()
+

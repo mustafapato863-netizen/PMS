@@ -15,7 +15,7 @@ from api.dependencies import (
     require_authenticated_scope,
 )
 from utils.report_scope import filter_records_by_team_levels
-from config.database import get_db
+from config.database import get_db, release_read_transaction
 from sqlalchemy.orm import Session
 from models.schemas import StandardResponse
 from models.performance_read_schemas import PerformanceCatalogData, PerformanceRecordPage, PerformanceSummaryData
@@ -335,6 +335,7 @@ def get_summary_records(
         result = summary_records_indexed(db, record_service, scope, filters, limit)
     if result is None:
         result = _summary_records_legacy(db, record_service, scope, filters, limit)
+    release_read_transaction(db)
     if response is not None:
         if result.total is not None:
             response.headers["X-Total-Count"] = str(result.total)

@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session
 
 from api.dependencies import require_authenticated_scope, require_role
-from config.database import get_db
+from config.database import get_db, release_read_transaction
 from models.insight_schemas import InsightFilterOptions, InsightKpiOverview, InsightsWorkspace, InsightsWorkspaceResponse
 from services.database_record_source import DatabaseRecordSource
 from services.insights_service import InsightAccessError, InsightValidationError, InsightsService
@@ -100,6 +100,7 @@ def get_insights_workspace(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     except InsightValidationError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    release_read_transaction(db)
     if view == "priority":
         workspace = _priority_workspace(workspace)
     return InsightsWorkspaceResponse(success=True, message="Authorized insights generated", data=workspace)

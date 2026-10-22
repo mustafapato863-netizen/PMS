@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from api.dependencies import require_role
 from api.dependencies import get_current_user_scope
-from config.database import get_db
+from config.database import get_db, release_read_transaction
 from config import settings
 from config.socket_config import online_user_ids
 from api.middleware.rbac_middleware import require_permission
@@ -848,6 +848,7 @@ def get_all_corrective_actions(
 ):
     try:
         actions = CorrectiveActionService(db).list_scoped(get_current_user_scope(db, request))
+        release_read_transaction(db)
         return StandardResponse(
             success=True,
             message="Retrieved all corrective actions successfully",
@@ -894,6 +895,7 @@ def get_action_follow_up(
             owner=owner,
             month=month,
         )
+        release_read_transaction(db)
         return StandardResponse(success=True, message="Retrieved action follow-up successfully", data=data)
     except (CorrectiveActionAccessError, CorrectiveActionValidationError) as exc:
         raise _action_error(exc) from exc
@@ -909,6 +911,7 @@ def get_action_owners(
 ):
     try:
         owners = CorrectiveActionService(db).list_owners(get_current_user_scope(db, request))
+        release_read_transaction(db)
         return StandardResponse(success=True, message="Retrieved assignable action owners", data=owners)
     except Exception:
         return StandardResponse(success=False, message="Failed to fetch action owners.")
