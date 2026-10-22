@@ -1036,7 +1036,7 @@ class DatabaseSeeder:
                     db.add(db_employee)
                     existing_emp_map[str(employee.id)] = db_employee
                 else:
-                    if raw_emp_name and raw_emp_name.lower() not in ("nan", "none", "null"):
+                    if raw_emp_name and raw_emp_name.lower() not in ("nan", "none", "null") and raw_emp_name.lower() != str(employee.id).lower():
                         db_employee.name = raw_emp_name
                     elif not db_employee.name or str(db_employee.name).strip().lower() in ("nan", "none", "null"):
                         db_employee.name = str(employee.id)
@@ -1357,6 +1357,20 @@ class DatabaseSeeder:
         # One read of the latest actions per upload, not one query per imported row.
         latest_actions = DatabaseActionHistory(db_session).latest_by_employee_and_period() if db_session is not None else {}
         sheet_names = set(excel_file.sheet_names)
+        manpower_name_map: dict[str, str] = {}
+        if "Manpower" in sheet_names:
+            try:
+                mp_df = excel_file.parse("Manpower")
+                code_col = next((c for c in mp_df.columns if str(c).strip().upper() == "CODE"), None)
+                name_col_mp = next((c for c in mp_df.columns if "ENGLISH NAME" in str(c).strip().upper() or "NAME" in str(c).strip().upper()), None)
+                if code_col and name_col_mp:
+                    for _, r in mp_df[[code_col, name_col_mp]].dropna().iterrows():
+                        c_val = str(r[code_col]).strip().upper()
+                        n_val = str(r[name_col_mp]).strip()
+                        if c_val and n_val and n_val.lower() not in ("nan", "none", "null"):
+                            manpower_name_map[c_val] = n_val
+            except Exception as exc:
+                logger.warning(f"Failed to parse Manpower sheet: {exc}")
         inbound_df = self.excel_processor.process_sheet_inbound(excel_file) if "Inbound" in sheet_names else pd.DataFrame()
         outbound_df = self.excel_processor.process_sheet_outbound(excel_file) if resolve_outbound_sheet_name(sheet_names) else pd.DataFrame()
 
@@ -1509,8 +1523,8 @@ class DatabaseSeeder:
                     if not emp_id or emp_id.lower() in ("nan", "none", "null") or name.lower() == "total":
                         continue
 
-                    if not name or name.lower() in ("nan", "none", "null"):
-                        name = emp_id
+                    if not name or name.lower() in ("nan", "none", "null") or name.lower() == emp_id.lower():
+                        name = manpower_name_map.get(emp_id.upper()) or emp_id
 
                     performance_level = row["performance_level"]
                     position_value = row.get("Position")

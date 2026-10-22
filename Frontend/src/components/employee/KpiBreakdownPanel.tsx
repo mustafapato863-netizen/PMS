@@ -226,7 +226,7 @@ const KpiBreakdownPanel = ({ score: propScore, agent, teamWeights }: KpiBreakdow
 
       <div className="border-t border-[var(--border-light)] pt-4 space-y-4">
         {kpis.map((kpi) => {
-          const viewOnly = kpi.viewOnly === true || (kpi as any).view_only === true || (kpi.weight === 0 && (kpi.contribution === 0 || kpi.contribution === null || kpi.contribution === undefined));
+          const viewOnly = kpi.viewOnly === true || (kpi as { view_only?: boolean; viewOnly?: boolean }).view_only === true || (kpi.weight === 0 && (kpi.contribution === 0 || kpi.contribution === null || kpi.contribution === undefined));
           const w = viewOnly
             ? undefined
             : (kpi.weight ?? getWeightForLabel(teamWeights, kpi.label, agent.identity.team, agent.raw_data, agent.identity.month));
