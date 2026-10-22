@@ -386,6 +386,7 @@ class PerformanceRecord(Base):
         CheckConstraint(f"performance_level IN ('{PerformanceLevel.EMPLOYEE.value}', '{PerformanceLevel.MANAGERIAL.value}', '{PerformanceLevel.CORPORATE.value}')", name='ck_performance_record_level'),
         Index('idx_perf_record_filters', 'team_id', 'performance_level', 'month', 'year'),
         Index('idx_perf_record_branch_scope', 'branch_key', 'year', 'month'),
+        Index('idx_perf_records_emp_period', 'employee_id', 'year', 'month'),
     )
 
 
@@ -838,6 +839,7 @@ class Action(Base):
 
     __table_args__ = (
         Index("idx_action_branch_scope", "branch_key", "team_id", "year", "month"),
+        Index("idx_action_active_month", "is_active", "month"),
     )
 
 
