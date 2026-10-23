@@ -1,5 +1,6 @@
 import type { GradeClass } from '../../constants/grades';
 import type { InsightsWorkspace, InsightKpiDiagnosisRow } from '../insights/types';
+import type { ExecutiveSummary } from '../executive/types';
 import type { DeckAction, DeckStatus, LockedPeriod, Readiness, RegionCode } from './model';
 
 export interface TeamReady { team: string; fn: string; status: Readiness; detail: string; score: number | null; scoreChange: number | null; worstKpi: InsightKpiDiagnosisRow | null }
@@ -10,6 +11,7 @@ export interface DeckData {
   owners: Array<{ id: string; name: string; role?: string }>; mask: (name: string | null | undefined) => string;
   /** Masking on: structured names use aliases; action text and owner notes are never printed. */
   masked: boolean;
+  summary?: ExecutiveSummary | null;
 }
 
 

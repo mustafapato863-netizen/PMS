@@ -51,6 +51,14 @@ export const SUMMARY_BRANCHES = [
   { value: 'ajman', label: 'Ajman' },
   { value: 'clinics', label: 'Clinics' },
 ];
+export function normalizeRegion(r: string | null | undefined): string | null {
+  if (!r) return null;
+  const s = String(r).trim().toUpperCase();
+  if (s === 'EGYPT' || s === 'OFFSHORE EGYPT' || s === 'EGY') return 'EGY';
+  if (s === 'UAE' || s === 'UAE REGION') return 'UAE';
+  return s;
+}
+
 const TARGET = 100;
 const REGION_LABELS: Record<string, string> = { EGY: 'Offshore Egypt', UAE: 'UAE Region' };
 
@@ -958,7 +966,7 @@ export interface ComposeInput {
 function applyFilters(records: ExecRecord[], input: ComposeInput, teamFunctions?: TeamFunctionMap) {
   const { region, branch, teamFunction, team, position, performanceLevel } = input.filters;
   return records.filter((record) => (
-    (!region || record.region === region)
+    (!normalizeRegion(region) || normalizeRegion(record.region) === normalizeRegion(region))
     && (!branch || record.branches?.includes(branch))
     && (!position || record.position === position)
     && (!performanceLevel || record.level === performanceLevel)

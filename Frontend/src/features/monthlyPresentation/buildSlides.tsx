@@ -41,7 +41,16 @@ export function buildSlides(data: DeckData, insightsHref: string, opts: { append
   const mix = actionMix(data.actions, period.endDate);
   const diag = ws?.kpi_diagnosis ?? [];
   const drivers = [...(ws?.performance_drivers ?? [])].sort((a, b) => a.impact_points - b.impact_points).slice(0, 6);
-  const people = (ws?.people_contribution_analysis?.rows ?? []).filter((p) => p.classification !== 'positive').slice(0, 8);
+
+  // STRICT RULE: Exclude Grade A and Grade B employees from underperforming/affected people
+  const people = (ws?.people_contribution_analysis?.rows ?? [])
+    .filter((p) => p.classification !== 'positive')
+    .filter((p) => {
+      const g = getGradeClassOrNull(p.current_value);
+      return g !== 'A' && g !== 'B';
+    })
+    .slice(0, 8);
+
   const slides: ReactNode[] = [];
   const R = (n: number) => opts.retry ? <button type="button" className="mp-btn" onClick={() => opts.retry!(n)}>Retry</button> : null;
   const gm = opts.gradeMixState ?? { status: 'ready' as const };
@@ -168,7 +177,19 @@ export function buildSlides(data: DeckData, insightsHref: string, opts: { append
       ))}</tbody></table>
   ) : <SlideEmpty title="No people analysis for this period" body={`No people contribution analysis was returned for ${region} · ${period.label}.`}>{R(7)}</SlideEmpty>));
 
-  const rows = [...data.actions].filter((a) => a.status !== 'Completed').slice(0, 8);
+  // STRICT RULE: Exclude Grade A and Grade B performers from corrective actions!
+  const rows = [...data.actions]
+    .filter((a) => a.status !== 'Completed')
+    .filter((a) => {
+      const g = (a as { grade?: string }).grade;
+      const score = (a as { score?: number }).score;
+      if (g === 'A' || g === 'B' || (score != null && score >= 90)) {
+        return false;
+      }
+      return true;
+    })
+    .slice(0, 8);
+
   slides.push(F(8, 'Corrective actions', `${mix.open + mix.in_progress} actions in flight; ${mix.overdue} overdue for ${period.short}`, rows.length ? (
     <>
       <table className="mp-table"><thead><tr><th>Action</th><th>Owner</th><th>Status</th><th>Due</th><th>Linked KPI</th><th>Expected impact (owner note)</th></tr></thead>
@@ -179,7 +200,7 @@ export function buildSlides(data: DeckData, insightsHref: string, opts: { append
             <td><span className={`mp-badge mp-act-${st.replace(' ', '-').toLowerCase()}`}>{st}</span></td><td>{fmtDue(a.due_date)}</td><td>{a.linked_kpi_key ?? '—'}</td>
             <td>{data.masked ? hidden : rawNote ? <q>{rawNote}</q> : <NoDataBadge label="No note" />}</td></tr>);
         })}</tbody></table>
-      <p className="mp-muted mp-small">Showing {rows.length} of {data.actions.length}. Overdue is measured against {period.endDate} (end of the locked month), not today.</p>
+      <p className="mp-muted mp-small">Showing {rows.length} of {data.actions.length}. Overdue is measured against {period.endDate} (end of the locked month), not today. Grade A and Grade B performers are excluded.</p>
     </>
   ) : <SlideEmpty title={`No corrective actions recorded for ${region} · ${period.label}`}>{R(8)}<a className="mp-btn" href="/corrective-actions">Open Corrective Actions</a></SlideEmpty>,
   'Region-scoped follow-up. Expected impact is the owner\'s free-text note, quoted as written; it is not scored or summed.'));
@@ -213,4 +234,3 @@ export function buildSlides(data: DeckData, insightsHref: string, opts: { append
   )));
   return slides;
 }
-

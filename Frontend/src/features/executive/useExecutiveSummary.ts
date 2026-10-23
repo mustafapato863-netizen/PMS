@@ -21,7 +21,7 @@ import { canAccessBroadAppPages, canSeeSummaryActionAnalytics } from '../../lib/
 import { canonicalTeamName, type PMSAction } from '../../types';
 import { teamBelongsToFunction, type TeamFunctionMap } from '../insights/filterCascade';
 import type { InsightFilters } from '../insights/types';
-import { composeExecutiveSummary, monthsBetween, periodFromKey, previousRangeOf, SUMMARY_BRANCHES, SUMMARY_LEVELS, toExecRecords, type ExecRecord, type FollowUpAction } from './compose';
+import { composeExecutiveSummary, monthsBetween, normalizeRegion, periodFromKey, previousRangeOf, SUMMARY_BRANCHES, SUMMARY_LEVELS, toExecRecords, type ExecRecord, type FollowUpAction } from './compose';
 import { useSummaryRecords } from './useSummaryRecords';
 import { EXECUTIVE_FUNCTIONS, summaryFunctionMatches, summaryTeamMatches } from './functions';
 import type { ExecutiveFunction, ExecutiveSummary, ExecutiveView } from './types';
@@ -243,7 +243,7 @@ export function useExecutiveSummary({
     if (filters.teamFunction && team && !teamBelongsToFunction(team, filters.teamFunction, teamFunctions)) return false;
     if (filters.region || filters.branch || filters.performanceLevel || filters.position) {
       const matches = records.filter((record) => action.employee_id ? record.employeeId === action.employee_id : record.team === team);
-      if (!matches.some((record) => (!filters.region || record.region === filters.region)
+      if (!matches.some((record) => (!normalizeRegion(filters.region) || normalizeRegion(record.region) === normalizeRegion(filters.region))
         && (!filters.branch || record.branches?.includes(filters.branch))
         && (!filters.performanceLevel || record.level === filters.performanceLevel)
         && (!filters.position || record.position === filters.position))) return false;
