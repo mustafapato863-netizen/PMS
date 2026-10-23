@@ -13,6 +13,7 @@ import {
 import { MP_QUERY_ROOT, useMonthlyPresentationData } from './useMonthlyPresentationData';
 import { buildSlides } from './buildSlides';
 import { NoDataBadge } from './SlideParts';
+import { CorrectiveActionsPanel } from './CorrectiveActionsPanel';
 import type { DeckData, SlideState, TeamReady } from './deckTypes';
 import './monthlyPresentation.css';
 
@@ -208,7 +209,16 @@ export default function MonthlyPresentationView({ today = new Date() }: { today?
       <div className="mp-row mp-gap"><NoDataBadge /> {REGION_FUNCTIONS[code].flatMap((f) => f.teams).join(' · ')}</div>
     </Empty>
   );
-  else content = slides;
+  else if (params.print || !deck) content = slides;
+  else {
+    // Web page only: the corrective action plans sit directly under team performance (slide 6).
+    const kpiLabels = Object.fromEntries((deck.ws?.kpi_diagnosis ?? []).map((k) => [k.key, k.label]));
+    const panel = (
+      <CorrectiveActionsPanel key="ca-panel" code={deck.code} period={deck.period} actions={deck.actions} teams={deck.teams}
+        kpiLabels={kpiLabels} mask={deck.mask} masked={deck.masked} state={slideState(8)} />
+    );
+    content = [...slides.slice(0, 6), panel, ...slides.slice(6)];
+  }
 
   if (params.present && slides.length && deck) {
     return createPortal(<div className="mp-portal"><PresentMode slides={slides} start={params.slide ?? 1} onExit={() => setMode({ present: false })} label={`${REGION_LABEL[deck.code]} · ${deck.period.label}`} /></div>, document.body);

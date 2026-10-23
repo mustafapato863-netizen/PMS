@@ -134,6 +134,8 @@ type RawAction = {
   id?: string; manager_action?: string; team?: string | null; region?: string | null; month?: string | null; year?: number | null;
   status?: string | null; priority?: string | null; due_date?: string | null; owner?: { id?: string; name?: string } | null;
   linked_kpi_key?: string | null; completion_note?: string | null; employee_name?: string | null; created_by_name?: string | null;
+  employee_id?: string | null; suggested_action?: string | null; root_cause?: string | null; score?: number | null; grade?: string | null;
+  plan?: { id?: string; name?: string } | null;
 };
 /**
  * Query strings for the deck requests, carrying only params the backend honours (Backend/api/routers):
@@ -175,6 +177,13 @@ export function mapAction(item: RawAction, index: number): DeckAction {
     status: item.status ?? null, priority: item.priority ?? null, due_date: item.due_date ?? null,
     owner: item.owner?.name ?? null, linked_kpi_key: item.linked_kpi_key ?? null, completion_note: item.completion_note ?? null,
     owner_id: item.owner?.id ?? null,
+    employee_id: item.employee_id ?? null,
+    employee_name: item.employee_name ?? null,
+    action_type: item.suggested_action?.trim() || (text.includes(': ') ? text.slice(0, text.indexOf(': ')).trim() : null) || null,
+    root_cause: item.root_cause && item.root_cause.trim() && item.root_cause.trim() !== 'None' ? item.root_cause.trim() : null,
+    score: typeof item.score === 'number' && Number.isFinite(item.score) ? item.score : null,
+    grade: item.grade ?? null,
+    plan_name: item.plan?.name ?? null,
   };
 }
 

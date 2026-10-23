@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { GRADE_PALETTE, getGradeClassOrNull, type GradeClass } from '../../constants/grades';
 import {
-  REGION_FUNCTIONS, REGION_LABEL, SLIDE_COUNT, actionMix, displayActionState, expectedImpact, isCriticalKpi, kpiBadge,
+  REGION_FUNCTIONS, REGION_LABEL, SLIDE_COUNT, actionMix, displayActionState, expectedImpact, isCriticalKpi, isHighPerformerAction, kpiBadge,
   kpiMovementTone, MASKED_DETAILS_LABEL, movementArrow, outlookLine, regionMoM, type Readiness, type Tone,
 } from './model';
 import type { DeckData, SlideState } from './deckTypes';
@@ -180,23 +180,16 @@ export function buildSlides(data: DeckData, insightsHref: string, opts: { append
   // STRICT RULE: Exclude Grade A and Grade B performers from corrective actions!
   const rows = [...data.actions]
     .filter((a) => a.status !== 'Completed')
-    .filter((a) => {
-      const g = (a as { grade?: string }).grade;
-      const score = (a as { score?: number }).score;
-      if (g === 'A' || g === 'B' || (score != null && score >= 90)) {
-        return false;
-      }
-      return true;
-    })
+    .filter((a) => !isHighPerformerAction(a))
     .slice(0, 8);
 
   slides.push(F(8, 'Corrective actions', `${mix.open + mix.in_progress} actions in flight; ${mix.overdue} overdue for ${period.short}`, rows.length ? (
     <>
-      <table className="mp-table"><thead><tr><th>Action</th><th>Owner</th><th>Status</th><th>Due</th><th>Linked KPI</th><th>Expected impact (owner note)</th></tr></thead>
+      <table className="mp-table"><thead><tr><th>Action</th><th>Person</th><th>Owner</th><th>Status</th><th>Due</th><th>Linked KPI</th><th>Expected impact (owner note)</th></tr></thead>
         <tbody>{rows.map((a) => {
           const st = displayActionState(a, period.endDate); const rawNote = expectedImpact(a);
           const hidden = <NoDataBadge label={MASKED_DETAILS_LABEL} />;
-          return (<tr key={a.id}><td>{data.masked ? hidden : <b>{a.title}</b>}{a.priority === 'High' && <span className="mp-chip">High</span>}</td><td>{data.mask(a.owner)}</td>
+          return (<tr key={a.id}><td>{data.masked ? hidden : <b>{a.title}</b>}{a.priority === 'High' && <span className="mp-chip">High</span>}</td><td>{a.employee_name ? data.mask(a.employee_name) : <span className="mp-muted">Team plan</span>}</td><td>{data.mask(a.owner)}</td>
             <td><span className={`mp-badge mp-act-${st.replace(' ', '-').toLowerCase()}`}>{st}</span></td><td>{fmtDue(a.due_date)}</td><td>{a.linked_kpi_key ?? '—'}</td>
             <td>{data.masked ? hidden : rawNote ? <q>{rawNote}</q> : <NoDataBadge label="No note" />}</td></tr>);
         })}</tbody></table>

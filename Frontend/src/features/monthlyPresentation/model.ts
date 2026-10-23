@@ -180,8 +180,25 @@ export interface DeckAction {
   linked_kpi_key: string | null; completion_note: string | null;
   /** Owner user id from follow-up (owner.id), used to scope the owners list to the region. */
   owner_id?: string | null;
+  /** Person the action is about (follow-up employee_id / employee_name). Null for team-level plan actions. */
+  employee_id?: string | null;
+  employee_name?: string | null;
+  /** Action type (follow-up suggested_action, e.g. Training, Coaching, Monitor). */
+  action_type?: string | null;
+  /** Manager's root-cause note; the API sends "None" when empty, which maps to null. */
+  root_cause?: string | null;
+  /** Employee score/grade snapshot for the action's period. */
+  score?: number | null;
+  grade?: string | null;
+  plan_name?: string | null;
 }
 const CLOSED = new Set(['completed', 'cancelled']);
+/** Grade A/B (or score ≥ 90) performers are never listed as corrective-action cases. */
+export function isHighPerformerAction(a: Pick<DeckAction, 'grade' | 'score'>): boolean {
+  const g = String(a.grade ?? '').trim().toUpperCase();
+  if (g === 'A' || g === 'B') return true;
+  return a.score != null && Number.isFinite(a.score) && a.score >= 90;
+}
 export const isOpenAction = (a: Pick<DeckAction, 'status'>) => a.status === 'Open' || a.status === 'In Progress';
 
 /** Decision 4: overdue = due before the end of the selected month and not Completed/Cancelled. Never "today". */
