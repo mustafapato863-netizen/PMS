@@ -109,7 +109,11 @@ class PositionDepartmentImportService:
         existing = get_scoped_team(self.db, team_name, "employee", include_inactive=True)
         if existing:
             existing.is_active = True
-            if not existing.region:
+            # An explicit department region wins over a team created with the UAE default.
+            mapped = REGION_BY_TEAM.get(team_name.casefold())
+            if mapped:
+                existing.region = mapped
+            elif not existing.region:
                 existing.region = _region_for(team_name)
             return existing
         team = Team(

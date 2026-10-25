@@ -106,6 +106,17 @@ const getBezierPath = (
 const clamp = (value: number, min: number, max: number) =>
   Math.min(Math.max(value, min), max);
 
+/**
+ * Percent score charts top out at 100 unless a score or the target is higher.
+ * A value above 100 rounds up to the next 5 so the line is not on the frame.
+ */
+export function percentageScoreAxisMax(highest: number): number {
+  if (!Number.isFinite(highest) || highest <= 100) return 100;
+  const step = 5;
+  const rounded = Math.ceil(highest / step) * step;
+  return rounded > highest ? rounded : rounded + step;
+}
+
 export function LineChart({
   history,
   targetValue,
@@ -220,9 +231,7 @@ export function LineChart({
   const dynamicPadding = Math.max(6, (rawMax - rawMin) * 0.14);
 
   const minValue = Math.max(0, Math.floor(rawMin - dynamicPadding));
-  const maxValue = Math.ceil(
-    Math.max(rawMax + dynamicPadding, minValue + 10),
-  );
+  const maxValue = Math.max(percentageScoreAxisMax(rawMax), minValue + 1);
 
   const range = Math.max(1, maxValue - minValue);
   const innerWidth = CHART_WIDTH - PAD_LEFT - PAD_RIGHT;

@@ -83,6 +83,44 @@ def test_summary_records_limit_is_bounded(client_and_headers, limit):
     assert client.get("/api/performance/summary-records", params={"limit": limit}, headers=headers).status_code == 422
 
 
+def test_summary_records_region_keeps_only_that_region(client_and_headers):
+    client, headers = client_and_headers
+    every = _data(client.get("/api/performance/summary-records", headers=headers))
+
+    def region_of(row):
+        return str(row.get("region") or "").strip().casefold()
+
+    uae = _data(client.get("/api/performance/summary-records", params={"region": "uae"}, headers=headers))
+    egy = _data(client.get("/api/performance/summary-records", params={"region": "EGY", "year": 2026, "month": "July"}, headers=headers))
+    assert uae and all(region_of(row) == "uae" for row in uae)
+    assert _ids(uae) == _ids(row for row in every if region_of(row) == "uae")
+    assert egy and all(region_of(row) == "egy" for row in egy)
+    assert set(_ids(uae)).isdisjoint(_ids(egy))
+    # Omitting region is unchanged.
+    assert _ids(_data(client.get("/api/performance/summary-records", headers=headers))) == _ids(every)
+
+
+def test_follow_up_region_keeps_only_that_region(client_and_headers):
+    client, headers = client_and_headers
+    records = _data(client.get("/api/performance/summary-records", headers=headers))
+    people = {}
+    for row in records:
+        people.setdefault(str(row.get("employee_id")), str(row.get("region") or "").strip().casefold())
+    every = _data(client.get("/api/corrective-actions/follow-up", headers=headers))["actions"]
+    uae = _data(client.get("/api/corrective-actions/follow-up", params={"region": "UAE"}, headers=headers))["actions"]
+    egy = _data(client.get("/api/corrective-actions/follow-up", params={"region": "egy"}, headers=headers))["actions"]
+
+    def people_of(actions):
+        return {str(item.get("employee_id")) for item in actions if item.get("employee_id")}
+
+    if uae:
+        assert people_of(uae) <= {code for code, region in people.items() if region == "uae"}
+    if egy:
+        assert people_of(egy) <= {code for code, region in people.items() if region == "egy"}
+    assert people_of(uae).isdisjoint(people_of(egy))
+    assert _ids(every) == _ids(_data(client.get("/api/corrective-actions/follow-up", headers=headers))["actions"])
+
+
 def test_follow_up_and_owners_shapes(client_and_headers):
     client, headers = client_and_headers
     follow_up = _data(client.get("/api/corrective-actions/follow-up", headers=headers))

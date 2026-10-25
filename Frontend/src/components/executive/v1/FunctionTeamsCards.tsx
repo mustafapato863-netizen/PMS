@@ -36,7 +36,13 @@ function leaderboardPath(team: ExecutiveTeam, params: URLSearchParams) {
 }
 
 /** Function Summary (Figma 48:3): teams ranked by score. */
-export function TeamLeaderboardCard({ teams, fn, effective, previous }: { teams: ExecutiveTeam[]; fn: string; effective: ExecutivePeriod | null; previous: ExecutivePeriod | null }) {
+export function TeamLeaderboardCard({ teams, fn, effective, previous, onSelectTeam }: {
+  teams: ExecutiveTeam[];
+  fn: string;
+  effective: ExecutivePeriod | null;
+  previous: ExecutivePeriod | null;
+  onSelectTeam?: (team: string) => void;
+}) {
   const rows = [...teams].sort((l, r) => (r.score ?? -1) - (l.score ?? -1));
   const [params] = useSearchParams();
   const roleMode = fn === 'Marketing';
@@ -60,7 +66,11 @@ export function TeamLeaderboardCard({ teams, fn, effective, previous }: { teams:
             <div role="row" key={team.team} className="flex items-center gap-[10px] border-b border-[var(--insights-row-border)] px-[12px] py-[10px] last:border-b-0" data-testid="leaderboard-row">
               <span role="cell" className="flex w-[24px]"><span className="flex size-[22px] items-center justify-center rounded-full bg-[var(--exec-chip-bg)] text-xs font-bold text-[var(--exec-chip-text)]">{index + 1}</span></span>
               <span role="cell" className="flex min-w-0 flex-1 flex-col gap-[2px]">
-                <Link to={leaderboardPath(team, params)} className="text-[13px] font-semibold leading-[1.3] text-[var(--insights-heading)] hover:underline">{team.team}</Link>
+                {onSelectTeam ? (
+                  <button type="button" className="text-left text-[13px] font-semibold leading-[1.3] text-[var(--insights-heading)] hover:underline" onClick={() => onSelectTeam(team.team)}>{team.team}</button>
+                ) : (
+                  <Link to={leaderboardPath(team, params)} className="text-[13px] font-semibold leading-[1.3] text-[var(--insights-heading)] hover:underline">{team.team}</Link>
+                )}
                 <span className="truncate text-xs text-[var(--text-muted)]">{[team.regions.join(' + '), `${team.employees} people`].filter(Boolean).join(' · ')}</span>
               </span>
               <span role="cell" className="w-[56px] text-right"><ScoreText score={team.score} className="text-[13px]">{fmtScore(team.score)}</ScoreText></span>
@@ -72,7 +82,7 @@ export function TeamLeaderboardCard({ teams, fn, effective, previous }: { teams:
           ))}
         </div>
       ) : <SoftEmpty>No teams with data in this function.</SoftEmpty>}
-      <Footnote>{roleMode ? 'Click a role to open its own dashboard, KPIs and people.' : 'Click a team to open its Team Dashboard (read-only for Function Viewers).'}</Footnote>
+      <Footnote>{onSelectTeam ? 'Click a team to review it on this page.' : roleMode ? 'Click a role to open its own dashboard, KPIs and people.' : 'Click a team to open its Team Dashboard (read-only for Function Viewers).'}</Footnote>
     </ExecCard>
   );
 }

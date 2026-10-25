@@ -1,6 +1,8 @@
 import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { Menu } from 'lucide-react';
+import { Dock, DockIcon, DockItem, DockLabel } from '../ui/dock';
+import '../ui/dock.css';
 
 export interface NavigationDockItem {
   label: string;
@@ -17,35 +19,55 @@ interface NavigationDockProps {
   hidden?: boolean;
 }
 
-/** Touch-first adaptation of the dock reference: no pointer tracking or springs. */
+/** Apple-style magnifying dock navigation for tablet and mobile viewports. */
 export default function NavigationDock({ items, onOpenMenu, hidden = false }: NavigationDockProps) {
   return (
-    <nav className="navigation-dock" aria-label="Quick navigation" hidden={hidden} inert={hidden}>
+    <Dock
+      ariaLabel="Quick navigation"
+      hidden={hidden}
+      inert={hidden}
+      magnification={68}
+      baseWidth={44}
+      distance={130}
+      panelHeight={58}
+      className="navigation-dock"
+    >
       {items.map((item) => (
-        <Link
+        <DockItem
           key={item.destination}
-          to={item.destination}
-          aria-label={`Go to ${item.label}`}
-          aria-current={item.active ? 'page' : undefined}
-          title={item.title || item.label}
-          className={`navigation-dock-item ${item.active ? 'is-active' : ''} ${item.tabletOnly ? 'navigation-dock-tablet-only' : ''}`}
+          isActive={item.active}
+          className={item.tabletOnly ? 'navigation-dock-tablet-only' : undefined}
         >
-          <span className="navigation-dock-icon" aria-hidden="true">{item.icon}</span>
-          <span className="navigation-dock-label">{item.label}</span>
-        </Link>
+          <DockLabel>{item.label}</DockLabel>
+          <Link
+            to={item.destination}
+            aria-label={`Go to ${item.label}`}
+            aria-current={item.active ? 'page' : undefined}
+            title={item.title || item.label}
+            className={`navigation-dock-item ${item.active ? 'is-active' : ''} ${
+              item.tabletOnly ? 'navigation-dock-tablet-only' : ''
+            }`}
+          >
+            <DockIcon className="navigation-dock-icon">{item.icon}</DockIcon>
+          </Link>
+        </DockItem>
       ))}
-      <button
-        type="button"
-        className="navigation-dock-item navigation-dock-menu"
-        aria-label="Open full navigation"
-        aria-haspopup="dialog"
-        aria-controls="responsive-navigation"
-        aria-expanded={hidden}
-        onClick={onOpenMenu}
-      >
-        <span className="navigation-dock-icon" aria-hidden="true"><Menu size={20} /></span>
-        <span>Menu</span>
-      </button>
-    </nav>
+      <DockItem className="navigation-dock-menu-slot">
+        <DockLabel>Menu</DockLabel>
+        <button
+          type="button"
+          className="navigation-dock-item navigation-dock-menu"
+          aria-label="Open full navigation"
+          aria-haspopup="dialog"
+          aria-controls="responsive-navigation"
+          aria-expanded={hidden}
+          onClick={onOpenMenu}
+        >
+          <DockIcon className="navigation-dock-icon">
+            <Menu size={20} />
+          </DockIcon>
+        </button>
+      </DockItem>
+    </Dock>
   );
 }

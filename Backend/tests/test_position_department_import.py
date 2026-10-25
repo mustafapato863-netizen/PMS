@@ -24,6 +24,7 @@ from models.models import (
 )
 from services.dashboard_record_service import DashboardRecordService
 from services.management_template_import import import_uploaded_management_template
+from services.position_department_import_service import PositionDepartmentImportService
 from utils.team_identity import create_management_team_identity
 
 DATA_HEADERS = [
@@ -210,6 +211,24 @@ def test_template_upload_routes_levels_and_pins_department_records():
         assert any(row.employee_id == "SGHD90002" and row.position == "Inbound Team Leader" for row in call_center_view)
     finally:
         session.close()
+
+
+def test_existing_call_center_team_is_corrected_to_egypt():
+    session = _db()
+    session.add(Team(
+        name="Call Center",
+        db_name="call_center",
+        display_name="Call Center",
+        region="UAE",
+        team_level="employee",
+        is_active=True,
+    ))
+    session.commit()
+
+    team = PositionDepartmentImportService(session)._employee_team("Call Center")
+
+    assert team.region == "EGY"
+    session.close()
 
 
 def _rate_workbook() -> bytes:

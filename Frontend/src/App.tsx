@@ -164,9 +164,17 @@ function AnimatedRoutes() {
           }
         />
 
-        {/* Monthly Presentation: one page, region switch, strict month lock (?region=egy|uae&month=YYYY-MM). */}
+        {/* Monthly Performance Review: one region, one month (?region=egy|uae&month=YYYY-MM). */}
         <Route
           path="/monthly-presentation"
+          element={
+            <RouteGuard allowedRoles={ROUTE_ROLES.monthlyPresentation}>
+              <Suspense fallback={<RouteLoadingFallback />}><MonthlyPresentationView /></Suspense>
+            </RouteGuard>
+          }
+        />
+        <Route
+          path="/monthly-view"
           element={
             <RouteGuard allowedRoles={ROUTE_ROLES.monthlyPresentation}>
               <Suspense fallback={<RouteLoadingFallback />}><MonthlyPresentationView /></Suspense>

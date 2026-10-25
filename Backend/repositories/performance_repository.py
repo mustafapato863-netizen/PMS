@@ -416,6 +416,7 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
         months: list[str] | None = None,
         team_names: list[str] | None = None,
         employee_code: str | None = None,
+        region: str | None = None,
         newest_first: bool = False,
         limit: int | None = None,
         offset: int = 0,
@@ -428,7 +429,9 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
         employee's. ``record_key`` is the record id as lowercase hex without dashes, and the year.
         """
         connection = self.db.connection()
-        query = self._dashboard_records_query(False, year=year, employee_id=employee_code or None)
+        query = self._dashboard_records_query(
+            False, year=year, employee_id=employee_code or None, region=region or None,
+        )
         # Optional narrowing for callers that filter by period/team: plain
         # IN predicates on the raw columns, so indexes stay usable.
         if months is not None:

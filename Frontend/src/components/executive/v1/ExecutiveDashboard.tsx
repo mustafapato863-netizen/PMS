@@ -31,9 +31,21 @@ export interface ExecutiveDashboardPermissions {
   canCreateActions: boolean;
 }
 
-export default function ExecutiveDashboard({ summary, permissions, functionBreakdownSlot = null }: { summary: ExecutiveSummary; permissions: ExecutiveDashboardPermissions; functionBreakdownSlot?: ReactNode }) {
+export default function ExecutiveDashboard({
+  summary,
+  permissions,
+  functionBreakdownSlot = null,
+  hideRegionSplit = false,
+}: {
+  summary: ExecutiveSummary;
+  permissions: ExecutiveDashboardPermissions;
+  functionBreakdownSlot?: ReactNode;
+  hideRegionSplit?: boolean;
+}) {
   const { period, scope } = summary;
   const previous = period.previous;
+  // Region split only makes sense when comparing multiple regions (never when scoped/filtered to a single country/region)
+  const showRegionSplit = !hideRegionSplit && summary.regions.length > 1 && !scope.region;
   // Range mode: the cards name the range ("Jun – Sep 2026") instead of the last month. Month mode is unchanged.
   const range = period.range ?? null;
   const rangeLabel = range ? coveredPeriodLabel(period.effective, range) : null;
@@ -93,10 +105,14 @@ export default function ExecutiveDashboard({ summary, permissions, functionBreak
         />
         <EmployeesBelowTargetCard summary={summary} />
         {functionBreakdownSlot}
-        <div className="grid gap-[16px] xl:grid-cols-[minmax(0,1fr)_minmax(0,400px)]">
+        {showRegionSplit ? (
+          <div className="grid gap-[16px] xl:grid-cols-[minmax(0,1fr)_minmax(0,400px)]">
+            <DriversCard summary={summary} viewAllHref={permissions.canOpenInsights ? `/insights?function=${encodeURIComponent(fn)}${period.effective ? `&period=${period.effective.key}` : ''}` : null} title={`What moved ${fn}${vs}`} />
+            <RegionSplitCard regions={summary.regions} previous={previous} />
+          </div>
+        ) : (
           <DriversCard summary={summary} viewAllHref={permissions.canOpenInsights ? `/insights?function=${encodeURIComponent(fn)}${period.effective ? `&period=${period.effective.key}` : ''}` : null} title={`What moved ${fn}${vs}`} />
-          <RegionSplitCard regions={summary.regions} previous={previous} />
-        </div>
+        )}
         <LevelBreakdownCard levels={summary.levels} title="Level split" subtitle={`${fn} score by performance level`} />
         {permissions.canSeeActions && <CorrectiveActionInsightsCard data={summary.corrective_actions} effective={period.effective} scopeLabel={fn} />}
       </div>
@@ -113,11 +129,14 @@ export default function ExecutiveDashboard({ summary, permissions, functionBreak
       {summary.functions.length > 0 && (
         <FunctionCards cards={summary.functions} previous={previous} range={range} linkable={permissions.canOpenFunctions} />
       )}
-      <EmployeesBelowTargetCard summary={summary} />
-      <div className="grid gap-[16px] xl:grid-cols-[minmax(0,1fr)_minmax(0,400px)]">
+      {showRegionSplit ? (
+        <div className="grid gap-[16px] xl:grid-cols-[minmax(0,1fr)_minmax(0,400px)]">
+          <DriversCard summary={summary} viewAllHref={insightsHref} />
+          <RegionSplitCard regions={summary.regions} previous={previous} range={range} />
+        </div>
+      ) : (
         <DriversCard summary={summary} viewAllHref={insightsHref} />
-        <RegionSplitCard regions={summary.regions} previous={previous} range={range} />
-      </div>
+      )}
       <div className="grid gap-[16px] xl:grid-cols-[minmax(0,1fr)_minmax(0,400px)]">
         <TeamsAtRiskCard key={JSON.stringify([scope, period.effective?.key, range?.start.key])} teams={summary.teams} rangeLabel={rangeLabel} />
         <GradeDistributionCard distribution={summary.grade_distribution} previous={previous} range={range} />

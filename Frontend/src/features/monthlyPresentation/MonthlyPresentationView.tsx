@@ -1,177 +1,334 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
-import { useLocation, useNavigate } from 'react-router-dom';
-import { useQueryClient } from '@tanstack/react-query';
+import { useCallback, useMemo, useState } from 'react';
+import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { FileBarChart } from 'lucide-react';
 import { useAuth } from '../../context/auth';
 import { useUserRole } from '../../context/RoleContext';
+import { directorScope } from '../../lib/directorScope';
+import { composeExecutiveSummary, normalizeRegion, toExecRecords } from '../executive/compose';
+import { useSummaryRecords } from '../executive/useSummaryRecords';
+import { useActionStore } from '../../hooks/useActionStore';
 import { apiFetch } from '../../lib/apiClient';
 import {
-  REGION_FUNCTIONS, REGION_LABEL, SLIDE_COUNT, accessibleRegions, buildDeckSearch, isMonthAvailable, lastCompleteMonth,
-  nameMasker, opensOn, parseDeckParams, pdfFileName, periodFromKey, periodRegionActions, openHighCount, regionCode, regionSlug,
-  shiftMonth, teamReadiness, kpiBadge, isCriticalKpi, regionOwners, type DeckStatus, type RegionCode, type RegionSlug,
-} from './model';
-import { MP_QUERY_ROOT, useMonthlyPresentationData } from './useMonthlyPresentationData';
-import { buildSlides } from './buildSlides';
-import { NoDataBadge } from './SlideParts';
-import { CorrectiveActionsPanel } from './CorrectiveActionsPanel';
-import type { DeckData, SlideState, TeamReady } from './deckTypes';
-import './monthlyPresentation.css';
+  adaptSummaryToMonthlyOverview,
+  type FunctionOverviewItem,
+  type MonthlyOverviewData,
+} from './monthlyOverviewData';
+import {
+  buildFunctionDeepDiveFromRecords,
+  normalizeFunctionSlug,
+  slugifyIdentifier,
+  type CallCenterDeepDiveData,
+} from './callCenterDeepDiveData';
+import {
+  buildTeamDeepDiveFromRecords,
+  type IndividualActionPlanCard,
+  type TeamDeepDiveData,
+} from './teamDeepDiveData';
+import { buildRoleDetail, isRoleBasedFunction, resolveRoleCards, type RoleActionDraft } from './roleDetailData';
+import {
+  FunctionsOverviewSection,
+  GradeDistributionSection,
+  MonthlyOverviewHeader,
+  OverallCompanyPerformanceCard,
+  ScoreDriversSection,
+  SixMonthTrendCard,
+  TeamsAtRiskSection,
+} from './components/MonthlyOverviewSections';
+import CallCenterDeepDiveView from './components/CallCenterDeepDiveView';
+import FunctionDeepDiveView from './components/FunctionDeepDiveView';
+import { PresentationControlBar } from './components/PresentationControlBar';
+import { PresentationSectionFrame } from './components/SectionRail';
+import RoleDetailView from './components/RoleDetailView';
+import TeamDeepDiveView from './components/TeamDeepDiveView';
+import { isMonthAvailable, periodFromKey } from './model';
+import { presentationMonthOptions, stepPresentation } from './presentationControls';
 
-export default function MonthlyPresentationView({ today = new Date() }: { today?: Date }) {
+export type MonthlyRegionFilter = 'EGY' | 'UAE';
+
+export interface MonthlyPresentationViewProps {
+  /** Optional API-adapted or custom data override */
+  data?: MonthlyOverviewData;
+  /** Optional Call Center Deep Dive data override */
+  callCenterDeepDiveData?: CallCenterDeepDiveData;
+  /** Optional Team Deep Dive data override */
+  teamDeepDiveData?: TeamDeepDiveData;
+  /** Optional handler invoked when a Function card is clicked */
+  onSelectFunction?: (fn: FunctionOverviewItem) => void;
+  today?: Date;
+}
+
+function EgyptFlag({ className = 'size-4 shrink-0 rounded-xs' }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 640 480" className={className} aria-hidden="true">
+      <g fillRule="evenodd" strokeWidth="1pt">
+        <path fill="#e4312b" d="M0 0h640v160H0z" />
+        <path fill="#ffffff" d="M0 160h640v160H0z" />
+        <path fill="#000000" d="M0 320h640v160H0z" />
+        <path fill="#c09300" d="M295 195h50v90h-50z" />
+      </g>
+    </svg>
+  );
+}
+
+function UaeFlag({ className = 'size-4 shrink-0 rounded-xs' }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 640 480" className={className} aria-hidden="true">
+      <g fillRule="evenodd">
+        <path fill="#00732f" d="M0 0h640v160H0z" />
+        <path fill="#ffffff" d="M0 160h640v160H0z" />
+        <path fill="#000000" d="M0 320h640v160H0z" />
+        <path fill="#e4312b" d="M0 0h175v480H0z" />
+      </g>
+    </svg>
+  );
+}
+
+export default function MonthlyPresentationView({
+  data,
+  callCenterDeepDiveData,
+  teamDeepDiveData,
+  onSelectFunction,
+  today,
+}: MonthlyPresentationViewProps) {
+  const { role } = useUserRole();
+  const { currentUser } = useAuth();
+  const assigned = directorScope(role, currentUser);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const params = useParams<{ functionSlug?: string; teamSlug?: string }>();
   const location = useLocation();
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
-  const { currentUser } = useAuth();
-  const { role } = useUserRole();
-  const params = parseDeckParams(location.search, location.hash);
-  const allowed = useMemo(() => accessibleRegions({ role, accessible_regions: currentUser?.accessible_regions }), [role, currentUser?.accessible_regions]);
-  const defaultMonth = lastCompleteMonth(today);
-  const search = new URLSearchParams(location.search);
-  const mask = search.get('mask') === '1';
-  const appendix = search.get('appendix') !== '0';
-  const footer = search.get('footer') !== '0';
-  const bands = search.get('bands') !== '0';
 
-  // Month lock: region + month always live in the URL (written on first load).
-  useEffect(() => {
-    if (params.region && params.month) return;
-    const region = params.region ?? (allowed[0] ? regionSlug(allowed[0]) : 'egy');
-    navigate({ search: buildDeckSearch(location.search, { region, month: params.month ?? defaultMonth }), hash: location.hash }, { replace: true });
-  }, [params.region, params.month, allowed, defaultMonth, location.search, location.hash, navigate]);
+  // Connect to real performance summary records & corrective actions store
+  const summaryRecordsQuery = useSummaryRecords(true);
+  const execRecords = useMemo(
+    () => toExecRecords(summaryRecordsQuery.data ?? []),
+    [summaryRecordsQuery.data],
+  );
+  const { getAllActions, saveAction } = useActionStore();
+  const storedActions = getAllActions();
 
-  const code: RegionCode | null = params.region ? regionCode(params.region) : null;
-  const period = periodFromKey(params.month);
-  const canSee = Boolean(code && allowed.includes(code));
-  const available = Boolean(period && isMonthAvailable(period.key, today));
-  const q = useMonthlyPresentationData(code, period, canSee && available);
+  const rawRegion = searchParams.get('region');
+  const normalizedUrlRegion = normalizeRegion(rawRegion);
+  const periodParam = searchParams.get('period') || searchParams.get('month') || undefined;
 
-  // v1 (CoS): no Final/freeze. The Draft/Final model stays, but no control, badge or status text is shown.
-  const status: DeckStatus = 'Draft';
-
-  const switchRegion = useCallback((slug: RegionSlug) => {
-    if (slug === params.region) return;
-    queryClient.removeQueries({ queryKey: [MP_QUERY_ROOT] }); // regions are never mixed: drop every cached slide.
-    navigate({ search: buildDeckSearch(location.search, { region: slug }) });
-  }, [params.region, queryClient, navigate, location.search]);
-  const setMonth = useCallback((key: string) => {
-    navigate({ search: buildDeckSearch(location.search, { month: key }) });
-  }, [navigate, location.search]);
-  const setMode = useCallback((next: { present?: boolean; print?: boolean }, extra?: Record<string, string>) => {
-    let s = buildDeckSearch(location.search, next);
-    if (extra) { const p = new URLSearchParams(s); Object.entries(extra).forEach(([k, v]) => p.set(k, v)); s = `?${p}`; }
-    navigate({ search: s, hash: location.hash });
-  }, [navigate, location.search, location.hash]);
-
-  const deck: DeckData | null = useMemo(() => {
-    if (!code || !period) return null;
-    const ws = q.workspace.data
-      ? { ...q.workspace.data, kpi_overview: q.overview.data?.kpi_overview ?? q.workspace.data.kpi_overview }
-      : undefined;
-    const actions = periodRegionActions(q.followUp.data ?? [], code, period);
-    const fnOf = (team: string) => REGION_FUNCTIONS[code].find((f) => f.teams.includes(team))?.name ?? '';
-    const teams: TeamReady[] = q.teamDiagnosis.map(({ team, query }) => {
-      const diag = query.data?.kpi_diagnosis ?? [];
-      const high = openHighCount(actions, team);
-      const r = teamReadiness(diag.map((k) => ({ key: k.key, label: k.label, weight: k.weight, actual: k.actual, achievement_percent: k.achievement_percent })), high);
-      const summary = (ws?.team_summaries ?? []).find((t) => t.team === team) ?? query.data?.team_summaries?.find((t) => t.team === team);
-      const crit = diag.filter(isCriticalKpi);
-      const worst = [...diag].filter((k) => k.achievement_percent != null).sort((a, b) => a.achievement_percent! - b.achievement_percent!)[0] ?? null;
-      const green = crit.filter((k) => kpiBadge(k.achievement_percent, k.actual) === 'on_track').length;
-      const detail = query.isError ? 'KPI data could not be loaded' : !crit.length ? 'No critical KPI scored for the period'
-        : r.status === 'no_data' ? `A critical KPI has no value for ${period.short}` : `Critical KPIs ${green}/${crit.length} green · ${high} open High action${high === 1 ? '' : 's'}`;
-      return { team, fn: fnOf(team), status: query.isError ? 'no_data' : r.status, detail, score: summary?.current_score ?? null, scoreChange: summary?.score_change ?? null, worstKpi: worst };
-    });
-    const partial = teams.filter((t) => t.status === 'partial').map((t) => t.team);
-    const prev = ws?.comparison?.previous ? periodFromKey(ws.comparison.previous.key) ?? null : null;
-    return {
-      code, period, status, ws, teams, actions,
-      previousLabel: prev ? `${prev.short} ${prev.year}` : (ws?.comparison?.previous?.month ?? null),
-      gradeMix: null, gradeMixExcluded: partial,
-      owners: regionOwners(q.owners.data ?? [], actions), mask: mask ? nameMasker() : (n) => String(n ?? '').trim() || '—',
-      masked: mask,
-    };
-  }, [code, period, q.workspace.data, q.overview.data, q.followUp.data, q.teamDiagnosis, q.owners.data, mask, status]);
-
-  const insightsHref = code && period ? `/insights?region=${code}&month=${period.short}&year=${period.year}` : '/insights';
-  const noMonthData = q.workspace.data && (q.workspace.data.summary?.analyzed_kpis ?? 0) === 0;
-  // Per-slide gates: each slide waits only for its own requests and fails on its own (no deck-wide spinner).
-  const slideState = useCallback((n: number): SlideState => {
-    type Q = { isPending: boolean; isError: boolean; error: unknown; refetch: (o?: { cancelRefetch?: boolean }) => unknown };
-    const team = q.teamDiagnosis.map((t) => t.query as Q);
-    const deps: Record<number, Array<[string, Q]>> = {
-      1: [['Insights workspace', q.workspace]],
-      2: [['Follow-up actions', q.followUp], ...team.map((t, i) => [`${q.teamDiagnosis[i].team} KPIs`, t] as [string, Q])],
-      3: [['Insights workspace', q.workspace], ['KPI overview', q.overview], ...team.map((t, i) => [`${q.teamDiagnosis[i].team} KPIs`, t] as [string, Q])],
-      4: [['Insights workspace', q.workspace]],
-      6: [['Insights workspace', q.workspace]],
-      7: [['Insights workspace', q.workspace]],
-      8: [['Follow-up actions', q.followUp]],
-      9: [['Follow-up actions', q.followUp]],
-      10: [['Follow-up actions', q.followUp], ['Owners', q.owners]],
-    };
-    const list = deps[n] ?? [];
-    // Team KPI queries degrade per team (shown as No data); only the region-level ones fail a slide.
-    const blocking = list.filter(([label]) => !label.endsWith(' KPIs'));
-    const failed = blocking.filter(([, x]) => x.isError);
-    if (failed.length) return {
-      status: 'error',
-      message: failed.map(([label, x]) => `${label}: ${x.error instanceof Error ? x.error.message : 'request failed'}`).join(' · '),
-      retry: () => failed.forEach(([, x]) => { void x.refetch({ cancelRefetch: false }); }),
-    };
-    if (list.some(([, x]) => x.isPending)) return { status: 'loading' };
-    return { status: 'ready' };
-  }, [q.workspace, q.overview, q.followUp, q.owners, q.teamDiagnosis]);
-  const retrySlide = useCallback((n: number) => {
-    const map: Record<number, Array<{ refetch: (o?: { cancelRefetch?: boolean }) => unknown }>> = {
-      4: [q.workspace], 7: [q.workspace], 8: [q.followUp],
-    };
-    (map[n] ?? []).forEach((x) => { void x.refetch({ cancelRefetch: false }); });
-  }, [q.workspace, q.followUp]);
-  // summary-records is not fetched (unscoped on the backend), so the grade mix is reported as not available.
-  const gradeMixState: SlideState = { status: 'error', message: 'Not available: the API has no region/month-scoped employee score list yet.' };
-  const slides = deck && !noMonthData ? buildSlides(deck, insightsHref, { appendix: params.print ? appendix : true, state: slideState, retry: retrySlide, gradeMixState }) : [];
-  const deckReady = slides.length > 0 && q.workspace.isSuccess;
-
-  // Print: title = PDF file name, then open the print dialog once data is in.
-  useEffect(() => {
-    if (!params.print || !code || !period) return;
-    const previous = document.title;
-    document.title = pdfFileName(code, period.key).replace(/\.pdf$/, '');
-    document.documentElement.classList.add('mp-printing');
-    return () => { document.title = previous; document.documentElement.classList.remove('mp-printing'); };
-  }, [params.print, code, period]);
-  const printedRef = useRef(false);
-  useEffect(() => {
-    if (params.print && deckReady && !q.followUp.isPending && !q.overview.isPending && !printedRef.current && search.get('autoprint') === '1') {
-      printedRef.current = true;
-      window.setTimeout(() => window.print(), 400);
+  const activeRegion: MonthlyRegionFilter = useMemo(() => {
+    if (assigned.regionLocked && assigned.region) {
+      return (normalizeRegion(assigned.region) as MonthlyRegionFilter) || 'EGY';
     }
-  });
+    if (normalizedUrlRegion === 'UAE' || normalizedUrlRegion === 'EGY') return normalizedUrlRegion;
+    if (data?.regionCode === 'UAE' || data?.regionCode === 'EGY') return data.regionCode;
+    const accessible = currentUser?.accessible_regions || [];
+    if (accessible.length === 1 && normalizeRegion(accessible[0]) === 'UAE') {
+      return 'UAE';
+    }
+    return 'EGY';
+  }, [
+    assigned.regionLocked,
+    assigned.region,
+    data?.regionCode,
+    normalizedUrlRegion,
+    currentUser?.accessible_regions,
+  ]);
 
-  // Anchor deep link (#s01..#s11) on the normal page.
-  useEffect(() => {
-    if (!params.present && params.slide && slides.length) document.getElementById(`s${String(params.slide).padStart(2, '0')}`)?.scrollIntoView();
-  }, [params.present, params.slide, slides.length]);
+  const handleRegionChange = useCallback(
+    (nextRegion: MonthlyRegionFilter) => {
+      const next = new URLSearchParams(searchParams);
+      next.set('region', nextRegion.toLowerCase());
+      setSearchParams(next, { replace: true });
+    },
+    [searchParams, setSearchParams],
+  );
+
+  const clock = useMemo(() => today ?? new Date(), [today]);
+  const parsedUrlPeriod = periodFromKey(periodParam);
+  const requestedPeriodKey = parsedUrlPeriod && isMonthAvailable(parsedUrlPeriod.key, clock)
+    ? parsedUrlPeriod.key
+    : undefined;
+
+  const overviewData: MonthlyOverviewData = useMemo(() => {
+    if (data && data.regionCode === activeRegion) return data;
+    const summary = composeExecutiveSummary({
+      view: 'corporate',
+      role,
+      records: execRecords,
+      filters: { region: activeRegion },
+      today: clock,
+      requestedPeriodKey,
+    });
+    return adaptSummaryToMonthlyOverview(summary, activeRegion);
+  }, [activeRegion, clock, data, execRecords, requestedPeriodKey, role]);
+
+  const rawDeepDive = (searchParams.get('deepDive') || params.functionSlug || '').trim();
+  const functionSlug = rawDeepDive ? normalizeFunctionSlug(rawDeepDive) : '';
+  const rawTeamParam = (searchParams.get('team') || params.teamSlug || '').trim();
+  const activeTeamSlug = rawTeamParam ? slugifyIdentifier(rawTeamParam) : '';
+  const rawRoleParam = (searchParams.get('role') || '').trim();
+  const activeRoleSlug = rawRoleParam ? slugifyIdentifier(rawRoleParam) : '';
+
+  const handleFunctionClick = useCallback(
+    (fn: FunctionOverviewItem) => {
+      onSelectFunction?.(fn);
+      const next = new URLSearchParams(searchParams);
+      next.set('deepDive', fn.slug);
+      next.delete('team');
+      next.delete('role');
+      setSearchParams(next);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    },
+    [onSelectFunction, searchParams, setSearchParams],
+  );
+
+  const handleBackToOverview = useCallback(() => {
+    const next = new URLSearchParams(searchParams);
+    next.delete('deepDive');
+    next.delete('team');
+    next.delete('role');
+    if (params.functionSlug) {
+      const basePath = location.pathname.startsWith('/monthly-view')
+        ? '/monthly-view'
+        : '/monthly-presentation';
+      const query = next.toString();
+      navigate(`${basePath}${query ? `?${query}` : ''}`);
+    } else {
+      setSearchParams(next);
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [location.pathname, navigate, params.functionSlug, searchParams, setSearchParams]);
+
+  const handleSelectAgentTeam = useCallback(
+    (teamSlug: string, functionName?: string) => {
+      const next = new URLSearchParams(searchParams);
+      const targetFunction = functionName
+        ? normalizeFunctionSlug(functionName)
+        : functionSlug || 'call-center';
+      next.set('deepDive', targetFunction);
+      next.set('team', slugifyIdentifier(teamSlug));
+      next.delete('role');
+      setSearchParams(next);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    },
+    [functionSlug, searchParams, setSearchParams],
+  );
+
+  const handleSelectRole = useCallback(
+    (roleSlug: string) => {
+      if (!functionSlug) return;
+      const next = new URLSearchParams(searchParams);
+      next.set('deepDive', functionSlug);
+      next.set('role', roleSlug);
+      next.delete('team');
+      setSearchParams(next);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    },
+    [functionSlug, searchParams, setSearchParams],
+  );
+
+  const handleBackToFunction = useCallback(() => {
+    const next = new URLSearchParams(searchParams);
+    if (functionSlug) next.set('deepDive', functionSlug);
+    next.delete('team');
+    next.delete('role');
+    setSearchParams(next);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [functionSlug, searchParams, setSearchParams]);
+
+  const resolvedFunctionData: CallCenterDeepDiveData | null = useMemo(() => {
+    if (!functionSlug) return null;
+    if (functionSlug === 'call-center' && callCenterDeepDiveData) return callCenterDeepDiveData;
+    return buildFunctionDeepDiveFromRecords(
+      functionSlug,
+      execRecords,
+      storedActions,
+      activeRegion,
+      periodParam,
+    );
+  }, [activeRegion, callCenterDeepDiveData, execRecords, functionSlug, periodParam, storedActions]);
+
+  const roleCards = useMemo(() => {
+    if (!resolvedFunctionData || !isRoleBasedFunction(resolvedFunctionData.functionSlug)) return [];
+    return resolveRoleCards(resolvedFunctionData, execRecords);
+  }, [execRecords, resolvedFunctionData]);
+
+  const resolvedTeamData: TeamDeepDiveData | null = useMemo(() => {
+    if (!activeTeamSlug || activeRoleSlug) return null;
+    if (teamDeepDiveData && teamDeepDiveData.teamSlug === activeTeamSlug) {
+      return teamDeepDiveData;
+    }
+    return buildTeamDeepDiveFromRecords(
+      activeTeamSlug,
+      execRecords,
+      storedActions,
+      activeRegion,
+      periodParam,
+    );
+  }, [activeRegion, activeRoleSlug, activeTeamSlug, execRecords, periodParam, storedActions, teamDeepDiveData]);
+
+  const resolvedRoleData = useMemo(() => {
+    if (!activeRoleSlug || !resolvedFunctionData) return null;
+    return buildRoleDetail(resolvedFunctionData, activeRoleSlug, storedActions, execRecords);
+  }, [activeRoleSlug, execRecords, resolvedFunctionData, storedActions]);
+
+  const handleSaveRoleAction = useCallback(
+    async (draft: RoleActionDraft) => {
+      await saveAction({
+        employee_id: draft.employeeId,
+        employee_name: draft.personName,
+        team: draft.team,
+        month: draft.month,
+        action_type: 'Coaching',
+        action_text: draft.description,
+        root_cause_note: `Owner: ${draft.owner}. Status: ${draft.status}. Expected impact: ${draft.expectedImpact || 'Not specified'}.`,
+        due_date: draft.dueDate || null,
+        linked_kpi_key: draft.linkedKpiKey,
+      });
+    },
+    [saveAction],
+  );
+
+  const handleSaveIndividualAction = useCallback(
+    async (card: IndividualActionPlanCard) => {
+      if (!resolvedTeamData) return;
+      const monthName = resolvedTeamData.monthLabel.split(' ')[0] || 'September';
+      await saveAction({
+        employee_id: card.employeeId,
+        employee_name: card.agentName,
+        team: resolvedTeamData.canonicalTeam,
+        month: monthName,
+        action_type: 'Coaching',
+        action_text: card.actionText,
+        root_cause_note: card.mainIssue,
+        linked_kpi_key: card.linkedKpiKey,
+      });
+    },
+    [resolvedTeamData, saveAction],
+  );
 
   const [downloadingPptx, setDownloadingPptx] = useState(false);
+  const [presentationMode, setPresentationMode] = useState(false);
   const handleDownloadPptx = useCallback(async () => {
-    if (!code || !period) return;
+    const exportRegion = overviewData.regionCode;
+    const [yearStr] = overviewData.periodKey.split('-');
+    const year = Number(yearStr) || 2026;
+    const monthName = overviewData.monthLabel.split(' ')[0] || 'September';
     try {
       setDownloadingPptx(true);
-      const res = await apiFetch<{ success: boolean; data?: { download_url?: string; file_name?: string } }>('/api/reports/generate', {
+      const res = await apiFetch<{
+        success: boolean;
+        data?: { download_url?: string; file_name?: string };
+      }>('/api/reports/generate', {
         method: 'POST',
         headers: {
-          'Idempotency-Key': `pptx-${code}-${period.key}-${Date.now()}`,
+          'Idempotency-Key': `pptx-${exportRegion}-${overviewData.periodKey}-${Date.now()}`,
         },
         body: JSON.stringify({
-          report_name: `${REGION_LABEL[code]} Combined Performance Review`,
-          report_type: code === 'EGY' ? 'monthly_egypt' : 'monthly_uae',
+          report_name: `${overviewData.regionName} Monthly Performance Review`,
+          report_type: exportRegion === 'EGY' ? 'monthly_egypt' : 'monthly_uae',
           output_format: 'pptx',
-          region: code,
-          start_year: period.year,
-          start_month: period.monthName,
-          end_year: period.year,
-          end_month: period.monthName,
+          region: exportRegion,
+          start_year: year,
+          start_month: monthName,
+          end_year: year,
+          end_month: monthName,
           included_sections: ['summary'],
         }),
       });
@@ -179,175 +336,286 @@ export default function MonthlyPresentationView({ today = new Date() }: { today?
       if (downloadUrl) {
         const link = document.createElement('a');
         link.href = downloadUrl;
-        link.download = res.data?.file_name || `${REGION_LABEL[code]}_Performance_Review_${period.key}.pptx`;
+        link.download =
+          res.data?.file_name ||
+          `Monthly_Presentation_${exportRegion}_${overviewData.periodKey}.pptx`;
         document.body.appendChild(link);
         link.click();
-        document.body.removeChild(link);
+        link.remove();
       }
     } catch (err) {
-      console.error('Failed to generate presentation PPTX:', err);
-      window.alert('Failed to generate presentation PPTX. Please try again or check the Reports page.');
+      console.error('Failed to export Monthly PPTX:', err);
+      window.alert('Monthly report PPTX could not be generated.');
     } finally {
       setDownloadingPptx(false);
     }
-  }, [code, period]);
+  }, [overviewData]);
 
-  let content: React.ReactNode;
-  if (!code || !period) content = null;
-  else if (!canSee) content = (
-    <Empty title={`You don't have access to ${REGION_LABEL[code]}`} body={allowed.length ? `Your account can open ${allowed.map((r) => REGION_LABEL[r]).join(' and ')} only. Ask a PMS Admin for access to another region.` : 'Your account has no region assigned. Ask a PMS Admin for access.'} />
-  );
-  else if (!available) content = (
-    <Empty title={`${period.label} is not yet available`} body={`Monthly data is complete on the 5th of the following month. ${period.label} opens on ${opensOn(period.key)}. The last complete month is ${periodFromKey(defaultMonth)!.label}.`}>
-      <button type="button" className="mp-btn" onClick={() => setMonth(defaultMonth)}>Open {periodFromKey(defaultMonth)!.label}</button>
-    </Empty>
-  );
-  else if (noMonthData) content = (
-    <Empty title={`No ${period.label} data for ${REGION_LABEL[code]} yet`} body="No scored records for the locked period. Ready cannot be computed, so every team shows No data.">
-      <button type="button" className="mp-btn" onClick={() => { void q.workspace.refetch({ cancelRefetch: false }); }}>Retry</button>
-      <button type="button" className="mp-btn" onClick={() => setMonth(shiftMonth(period.key, -1))}>Switch period to {periodFromKey(shiftMonth(period.key, -1))!.label}</button>
-      <div className="mp-row mp-gap"><NoDataBadge /> {REGION_FUNCTIONS[code].flatMap((f) => f.teams).join(' · ')}</div>
-    </Empty>
-  );
-  else if (params.print || !deck) content = slides;
-  else {
-    // Web page only: the corrective action plans sit directly under team performance (slide 6).
-    const kpiLabels = Object.fromEntries((deck.ws?.kpi_diagnosis ?? []).map((k) => [k.key, k.label]));
-    const panel = (
-      <CorrectiveActionsPanel key="ca-panel" code={deck.code} period={deck.period} actions={deck.actions} teams={deck.teams}
-        kpiLabels={kpiLabels} mask={deck.mask} masked={deck.masked} state={slideState(8)} />
-    );
-    content = [...slides.slice(0, 6), panel, ...slides.slice(6)];
-  }
-
-  if (params.present && slides.length && deck) {
-    return createPortal(<div className="mp-portal"><PresentMode slides={slides} start={params.slide ?? 1} onExit={() => setMode({ present: false })} label={`${REGION_LABEL[deck.code]} · ${deck.period.label}`} /></div>, document.body);
-  }
-
-  const page = (
-    <div className={`mp-root ${params.print ? 'mp-print' : ''} ${bands ? 'mp-bands' : ''}`} data-region={code ?? ''}>
-      {!params.print && code && period && (
-        <Toolbar code={code} period={period.key} allowed={allowed} today={today}
-          onRegion={switchRegion} onMonth={setMonth} canPresent={deckReady}
-          onPresent={() => setMode({ present: true })}
-          onExport={(o) => setMode({ print: true }, { mask: o.mask ? '1' : '0', bands: o.bands ? '1' : '0', appendix: o.appendix ? '1' : '0', footer: o.footer ? '1' : '0', autoprint: '1' })}
-          onDownloadPptx={handleDownloadPptx}
-          downloadingPptx={downloadingPptx}
-        />
-      )}
-      {params.print && (
-        <div className="mp-print-bar mp-noprint"><button type="button" className="mp-btn" onClick={() => window.print()}>Print / Save PDF</button>
-          <button type="button" className="mp-btn mp-btn-ghost" onClick={() => setMode({ print: false })}>Back to deck</button></div>
-      )}
-      <div className="mp-slides">{content}</div>
-      {params.print && code && period && footer && (
-        <div className="mp-print-footer">{REGION_LABEL[code]} · Period locked · {period.label}{mask ? ' · Names masked' : ''} · {`${window.location.origin}/monthly-presentation?region=${regionSlug(code)}&month=${period.key}`}</div>
-      )}
-    </div>
-  );
-  return params.print ? createPortal(<div className="mp-portal mp-portal-print">{page}</div>, document.body) : page;
-}
-
-function Empty({ title, body, children }: { title: string; body?: string; children?: React.ReactNode }) {
-  return <div className="mp-empty" role="status"><div className="mp-hatch mp-hatch-icon" aria-hidden /><strong>{title}</strong>{body && <p>{body}</p>}{children}</div>;
-}
-
-function Toolbar({ code, period, allowed, today, onRegion, onMonth, onPresent, onExport, onDownloadPptx, downloadingPptx, canPresent }: {
-  code: RegionCode; period: string; allowed: RegionCode[]; today: Date;
-  onRegion: (s: RegionSlug) => void; onMonth: (k: string) => void; onPresent: () => void; onExport: (o: ExportOptions) => void;
-  onDownloadPptx: () => void; downloadingPptx: boolean; canPresent: boolean;
-}) {
-  const [exportOpen, setExportOpen] = useState(false);
-  const last = lastCompleteMonth(today);
-  const next = shiftMonth(last, 1);
-  const months = Array.from({ length: 12 }, (_, i) => shiftMonth(last, -i));
-  if (!months.includes(period) && period <= last) months.push(period);
-  return (
-    <div className="mp-toolbar" role="toolbar" aria-label="Monthly presentation controls">
-      <div><div className="mp-tb-title">SGH Hub · Monthly Presentation</div><div className="mp-tb-url">/monthly-presentation?region={regionSlug(code)}&month={period}</div></div>
-      {allowed.length > 1 ? (
-        <div className="mp-seg" role="radiogroup" aria-label="Region">
-          {(['EGY', 'UAE'] as RegionCode[]).map((r) => (
-            <button key={r} type="button" role="radio" aria-checked={r === code} className={r === code ? 'is-on' : ''} onClick={() => onRegion(regionSlug(r))}>{REGION_LABEL[r]}</button>
-          ))}
-        </div>
-      ) : <span className="mp-pill" data-testid="region-pill">{REGION_LABEL[allowed[0] ?? code]}</span>}
-      <label className="mp-period"><span className="mp-label">Period · locked</span>
-        <select aria-label="Locked period" value={period} onChange={(e) => onMonth(e.target.value)}>
-          <option value={next} disabled>{periodFromKey(next)!.label} · opens {opensOn(next)} (not yet available)</option>
-          {months.map((k) => <option key={k} value={k}>{periodFromKey(k)!.label}{k === last ? ' · last complete' : ''}</option>)}
-        </select>
-        <span className="mp-muted mp-small">Last complete · {periodFromKey(next)!.short} opens {opensOn(next)}</span>
-      </label>
-      <div className="mp-tb-actions">
-        <button
-          type="button"
-          className="mp-btn mp-btn-ghost"
-          disabled={!canPresent || downloadingPptx}
-          onClick={onDownloadPptx}
-          title="Download the official executive PPTX deck"
+  const headerToolbar = (
+    <>
+      {!assigned.regionLocked && (
+        <div
+          role="tablist"
+          aria-label="Region filter"
+          className="inline-flex h-9 items-center rounded-xl border border-slate-200 bg-slate-100 p-0.5 shadow-2xs"
         >
-          {downloadingPptx ? 'Generating PPTX…' : 'Download PPTX ⤓'}
-        </button>
-        <div className="mp-pop-wrap">
-          <button type="button" className="mp-btn mp-btn-ghost" aria-haspopup="dialog" aria-expanded={exportOpen} disabled={!canPresent} onClick={() => setExportOpen((v) => !v)}>Export PDF ▾</button>
-          {exportOpen && <ExportDialog code={code} period={period} onCancel={() => setExportOpen(false)} onExport={(o) => { setExportOpen(false); onExport(o); }} />}
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeRegion === 'EGY'}
+            data-testid="region-egy"
+            onClick={() => handleRegionChange('EGY')}
+            className={`compact-control inline-flex h-8 !min-h-0 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold transition-all ${
+              activeRegion === 'EGY'
+                ? 'bg-white font-bold text-blue-600 shadow-xs'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <EgyptFlag className="size-3.5" />
+            <span>Egypt (EGY)</span>
+          </button>
+
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeRegion === 'UAE'}
+            data-testid="region-uae"
+            onClick={() => handleRegionChange('UAE')}
+            className={`compact-control inline-flex h-8 !min-h-0 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold transition-all ${
+              activeRegion === 'UAE'
+                ? 'bg-white font-bold text-blue-600 shadow-xs'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <UaeFlag className="size-3.5" />
+            <span>UAE</span>
+          </button>
         </div>
-        <button type="button" className="mp-btn" onClick={onPresent} disabled={!canPresent}>Present ▸</button>
+      )}
+
+      <button
+        type="button"
+        disabled={downloadingPptx}
+        onClick={handleDownloadPptx}
+        className="compact-control inline-flex h-9 !min-h-0 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 shadow-2xs transition-all hover:border-slate-300 hover:bg-slate-50 disabled:opacity-50"
+        title="Download Monthly Executive PPTX"
+      >
+        <FileBarChart size={15} className="text-blue-600" />
+        <span>{downloadingPptx ? 'Exporting…' : 'Export PPTX'}</span>
+      </button>
+
+    </>
+  );
+
+  const displayedPeriodKey = requestedPeriodKey ?? overviewData.periodKey;
+  const monthOptions = useMemo(
+    () => presentationMonthOptions(
+      execRecords.map((record) => ({ region: record.region, periodKey: record.period.key })),
+      activeRegion,
+      clock,
+      displayedPeriodKey,
+    ),
+    [activeRegion, clock, displayedPeriodKey, execRecords],
+  );
+  const selectedPeriodKey = monthOptions.some((option) => option.key === displayedPeriodKey)
+    ? displayedPeriodKey
+    : (monthOptions[0]?.key ?? overviewData.periodKey);
+  const insideDetail = Boolean(activeTeamSlug || activeRoleSlug);
+  const functionSlugs = overviewData.functions.map((fn) => fn.slug);
+  const previousDisabled = !functionSlug && !insideDetail;
+  const nextDisabled = !insideDetail && (
+    functionSlugs.length === 0 || functionSlug === functionSlugs[functionSlugs.length - 1]
+  );
+
+  const handlePeriodChange = useCallback((key: string) => {
+    const next = new URLSearchParams(searchParams);
+    if (!searchParams.has('period') && searchParams.has('month')) next.set('month', key);
+    else next.set('period', key);
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
+
+  const handleStep = useCallback((direction: 'next' | 'previous') => {
+    if (direction === 'previous' && previousDisabled) return;
+    if (direction === 'next' && nextDisabled) return;
+    const result = stepPresentation({
+      slugs: functionSlugs,
+      currentSlug: functionSlug,
+      direction,
+      insideDetail,
+    });
+    const next = new URLSearchParams(searchParams);
+    if (result.slug) next.set('deepDive', result.slug);
+    else next.delete('deepDive');
+    if (result.clearDetail || result.slug === null) {
+      next.delete('team');
+      next.delete('role');
+    }
+    if (!result.slug && params.functionSlug) {
+      const basePath = location.pathname.startsWith('/monthly-view')
+        ? '/monthly-view'
+        : '/monthly-presentation';
+      const query = next.toString();
+      navigate(`${basePath}${query ? `?${query}` : ''}`);
+    } else {
+      setSearchParams(next);
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [
+    functionSlug,
+    functionSlugs,
+    insideDetail,
+    location.pathname,
+    navigate,
+    nextDisabled,
+    params.functionSlug,
+    previousDisabled,
+    searchParams,
+    setSearchParams,
+  ]);
+
+  const renderActiveView = () => {
+    if (activeRoleSlug && resolvedRoleData) {
+      return (
+        <RoleDetailView
+          key={resolvedRoleData.roleSlug}
+          data={resolvedRoleData}
+          onNavigateToOverview={handleBackToOverview}
+          onNavigateToFunction={handleBackToFunction}
+          onSaveAction={handleSaveRoleAction}
+          toolbar={headerToolbar}
+          presentationMode={presentationMode}
+        />
+      );
+    }
+
+    if (activeTeamSlug && resolvedTeamData) {
+      return (
+        <TeamDeepDiveView
+          data={resolvedTeamData}
+          onNavigateToOverview={handleBackToOverview}
+          onNavigateToCallCenter={handleBackToFunction}
+          onSwitchTeam={handleSelectAgentTeam}
+          onSaveIndividualAction={handleSaveIndividualAction}
+          toolbar={headerToolbar}
+          presentationMode={presentationMode}
+        />
+      );
+    }
+
+    if (functionSlug && resolvedFunctionData) {
+      if (isRoleBasedFunction(resolvedFunctionData.functionSlug)) {
+        return (
+          <FunctionDeepDiveView
+            data={resolvedFunctionData}
+            roles={roleCards}
+            onBackToOverview={handleBackToOverview}
+            onSelectRole={handleSelectRole}
+            toolbar={headerToolbar}
+            presentationMode={presentationMode}
+          />
+        );
+      }
+      return (
+        <CallCenterDeepDiveView
+          data={resolvedFunctionData}
+          onBackToOverview={handleBackToOverview}
+          onSelectAgentTeam={handleSelectAgentTeam}
+          onSelectRole={handleSelectRole}
+          toolbar={headerToolbar}
+        />
+      );
+    }
+
+    // Level 1: Monthly Overview
+    return (
+      <div
+        data-testid="monthly-overview-page"
+        className="mx-auto max-w-7xl space-y-6 px-4 py-6 sm:px-6 lg:px-8"
+      >
+        {/* 1. Header */}
+        <MonthlyOverviewHeader
+          title={overviewData.title}
+          flowName={overviewData.FlowName}
+          regionName={overviewData.regionName}
+          monthLabel={overviewData.monthLabel}
+          regionCode={overviewData.regionCode}
+          pageIndicatorLabel={overviewData.pageIndicator.label}
+          toolbar={headerToolbar}
+        />
+
+        {/* 2. Overall Company Performance & 3. 6-Month Score Trend */}
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+          <div className="lg:col-span-7">
+            <OverallCompanyPerformanceCard
+              overall={overviewData.overall}
+              previousMonthLabel={overviewData.previousMonthLabel}
+            />
+          </div>
+          <div className="lg:col-span-5">
+            <SixMonthTrendCard trend={overviewData.trend} />
+          </div>
+        </div>
+
+        {/* 4. Grade Distribution */}
+        <GradeDistributionSection
+          totalEmployees={overviewData.gradeDistribution.totalEmployees}
+          rows={overviewData.gradeDistribution.rows}
+          takeaway={overviewData.gradeDistribution.takeaway}
+          previousMonthLabel={overviewData.previousMonthLabel}
+        />
+
+        {/* 5. What Moved the Score vs August */}
+        <ScoreDriversSection
+          previousMonthLabel={overviewData.previousMonthLabel}
+          negativeDrivers={overviewData.drivers.negative}
+          positiveDrivers={overviewData.drivers.positive}
+        />
+
+        {/* 6. Functions Overview */}
+        <FunctionsOverviewSection
+          functions={overviewData.functions}
+          previousMonthLabel={overviewData.previousMonthLabel}
+          onSelectFunction={handleFunctionClick}
+        />
+
+        {/* 7. Teams at Risk (Summary) */}
+        <TeamsAtRiskSection
+          teams={overviewData.teamsAtRisk}
+          onSelectTeam={(row) => {
+            const match = overviewData.functions.find((fn) => fn.functionName === row.functionName);
+            handleSelectAgentTeam(slugifyIdentifier(row.team), match?.slug || row.functionName);
+          }}
+        />
       </div>
-    </div>
-  );
-}
-
-export interface ExportOptions { mask: boolean; bands: boolean; appendix: boolean; footer: boolean }
-export function ExportDialog({ code, period, onCancel, onExport }: { code: RegionCode; period: string; onCancel: () => void; onExport: (o: ExportOptions) => void }) {
-  const [o, setO] = useState<ExportOptions>({ mask: true, bands: true, appendix: false, footer: true });
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => { ref.current?.querySelector('input')?.focus(); }, []);
-  const opt = (k: keyof ExportOptions, label: string) => (
-    <label className="mp-check"><input type="checkbox" checked={o[k]} onChange={(e) => setO({ ...o, [k]: e.target.checked })} /> {label}</label>
-  );
-  return (
-    <div ref={ref} className="mp-pop" role="dialog" aria-modal="false" aria-label="Export PDF" onKeyDown={(e) => { if (e.key === 'Escape') onCancel(); }}>
-      <h3>Export PDF</h3>
-      <p className="mp-muted">{REGION_LABEL[code]} · {periodFromKey(period)!.label}</p>
-      {opt('mask', 'Mask names (Person A, B, …)')}
-      {opt('bands', 'Section breaks as thin bands')}
-      {opt('appendix', 'Include appendix (slide 11)')}
-      {opt('footer', 'Footer: freshness + period lock')}
-      <p className="mp-muted mp-small">A4 landscape · one PDF for the selected region only · {pdfFileName(code, period)}</p>
-      <div className="mp-row mp-end"><button type="button" className="mp-btn mp-btn-ghost" onClick={onCancel}>Cancel</button><button type="button" className="mp-btn" onClick={() => onExport(o)}>Export PDF</button></div>
-    </div>
-  );
-}
-
-export function PresentMode({ slides, start, onExit, label }: { slides: React.ReactNode[]; start: number; onExit: () => void; label: string }) {
-  const [i, setI] = useState(Math.min(Math.max(start, 1), slides.length) - 1);
-  const [hint, setHint] = useState(true);
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => { ref.current?.focus(); }, []);
-  const [activity, setActivity] = useState(0);
-  useEffect(() => { const t = window.setTimeout(() => setHint(false), 3000); return () => window.clearTimeout(t); }, [i, activity]);
-  const wake = () => { setHint(true); setActivity((n) => n + 1); };
-  useEffect(() => { window.history.replaceState(window.history.state, '', `${window.location.pathname}${window.location.search}#s${String(i + 1).padStart(2, '0')}`); }, [i]);
-  const onKey = (e: React.KeyboardEvent) => {
-    const last = slides.length - 1;
-    const map: Record<string, () => number> = {
-      ArrowRight: () => Math.min(i + 1, last), ArrowDown: () => Math.min(i + 1, last), PageDown: () => Math.min(i + 1, last), ' ': () => Math.min(i + 1, last),
-      ArrowLeft: () => Math.max(i - 1, 0), ArrowUp: () => Math.max(i - 1, 0), PageUp: () => Math.max(i - 1, 0), Home: () => 0, End: () => last,
-    };
-    if (e.key === 'Escape') { e.preventDefault(); onExit(); return; }
-    if (map[e.key]) { e.preventDefault(); setI(map[e.key]()); wake(); }
+    );
   };
+
+  const sectionViewKey = [
+    activeRegion,
+    selectedPeriodKey,
+    functionSlug,
+    activeTeamSlug,
+    activeRoleSlug,
+    presentationMode ? 'present' : 'edit',
+  ].join('|');
+
   return (
-    <div ref={ref} className="mp-present" tabIndex={0} role="region" aria-roledescription="presentation" aria-label={`Presentation · ${label}`} onKeyDown={onKey} onMouseMove={wake}>
-      <div className="mp-present-stage" aria-live="polite">{slides[i]}</div>
-      <div className={`mp-present-hint ${hint ? 'is-on' : ''}`}>
-        <span>{String(i + 1).padStart(2, '0')} / {SLIDE_COUNT}</span>
-        <div className="mp-progress" role="progressbar" aria-valuemin={1} aria-valuemax={slides.length} aria-valuenow={i + 1}><span style={{ width: `${((i + 1) / slides.length) * 100}%` }} /></div>
-        <span className="mp-keys"><kbd>← →</kbd> prev / next <kbd>PgUp PgDn</kbd> prev / next <kbd>Space</kbd> next <kbd>Home End</kbd> first / last <kbd>Esc</kbd> exit</span>
-        <button type="button" className="mp-linkbtn" onClick={onExit}>Exit</button>
-      </div>
-    </div>
+    <>
+      <PresentationSectionFrame viewKey={sectionViewKey}>
+        <div className="pb-28">{renderActiveView()}</div>
+      </PresentationSectionFrame>
+      <PresentationControlBar
+        region={activeRegion}
+        periodKey={selectedPeriodKey}
+        monthOptions={monthOptions}
+        onPeriodChange={handlePeriodChange}
+        presentationMode={presentationMode}
+        onPresentationModeChange={setPresentationMode}
+        onPrevious={() => handleStep('previous')}
+        onNext={() => handleStep('next')}
+        previousDisabled={previousDisabled}
+        nextDisabled={nextDisabled}
+      />
+    </>
   );
 }

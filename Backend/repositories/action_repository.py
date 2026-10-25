@@ -1,8 +1,10 @@
 from uuid import UUID
 
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 from repositories.base_repository import BaseRepository
-from models.models import Action
+from models.models import Action, Employee, Team
+from utils.regions import REGION_WHITESPACE
 import logging
 
 logger = logging.getLogger(__name__)
@@ -29,13 +31,20 @@ class ActionRepository(BaseRepository[Action]):
             .all()
         )
 
-    def list_active_for_follow_up(self, *, month_values: list[str] | None = None) -> list[Action]:
+    def list_active_for_follow_up(
+        self,
+        *,
+        month_values: list[str] | None = None,
+        region: str | None = None,
+    ) -> list[Action]:
         """Active actions with everything the follow-up view touches eager-loaded.
 
         ``month_values`` (pre-normalized spellings) narrows the rows in SQL with
         a plain ``month IN (...)`` predicate so an index on month stays usable.
+        ``region`` keeps the employee region, or the team region when the
+        employee has none, with the same trim-and-blank rule as performance rows.
         """
-        from models.models import Employee, PerformancePlan
+        from models.models import PerformancePlan
 
         query = (
             self.db.query(Action)
@@ -51,6 +60,21 @@ class ActionRepository(BaseRepository[Action]):
         )
         if month_values:
             query = query.filter(Action.month.in_(month_values))
+        region_key = str(region or "").strip().casefold()
+        if region_key:
+            employee_region = (
+                select(func.lower(func.nullif(func.trim(Employee.region, REGION_WHITESPACE), "")))
+                .where(Employee.id == Action.employee_id)
+                .correlate(Action)
+                .scalar_subquery()
+            )
+            team_region = (
+                select(func.lower(func.nullif(func.trim(Team.region, REGION_WHITESPACE), "")))
+                .where(Team.id == Action.team_id)
+                .correlate(Action)
+                .scalar_subquery()
+            )
+            query = query.filter(func.coalesce(employee_region, team_region) == region_key)
         return query.order_by(Action.created_at.desc()).all()
 
     def get_active(self, action_id: UUID) -> Action | None:

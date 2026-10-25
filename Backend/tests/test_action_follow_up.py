@@ -511,6 +511,35 @@ def test_follow_up_orders_tracked_actions_and_summarizes_before_the_state_filter
     assert august["summary"]["open"] == 0
 
 
+def test_follow_up_region_returns_only_that_region(db):
+    egypt = _team(db, "Inbound")
+    uae = Team(id=uuid.uuid4(), name="Coding", db_name="coding", region="UAE", team_level="employee", is_active=True)
+    db.add(uae)
+    db.commit()
+    egy_employee = _employee(db, egypt, "EG-1")
+    uae_employee = Employee(
+        id=uuid.uuid4(), employee_id="UA-1", name="UAE Employee", team=uae, region="UAE", performance_level="Employee",
+    )
+    blank_employee = Employee(
+        id=uuid.uuid4(), employee_id="UA-2", name="Team Region Employee", team=uae, region="  ", performance_level="Employee",
+    )
+    db.add_all([uae_employee, blank_employee])
+    db.commit()
+    _action(db, employee_id=egy_employee.id, team_id=egypt.id, due_date=TODAY, action_text="Egypt item")
+    _action(db, employee_id=uae_employee.id, team_id=uae.id, due_date=TODAY, action_text="UAE item")
+    _action(db, employee_id=blank_employee.id, team_id=uae.id, due_date=TODAY, action_text="Team region item")
+    admin = _user(db, "region-admin", "Admin")
+    scope = _scope(admin, "Inbound")
+
+    uae_only = _service(db).list_follow_up(scope, region="uae")
+    egy_only = _service(db).list_follow_up(scope, region="EGY")
+    both = _service(db).list_follow_up(scope, region="  ")
+
+    assert sorted(item["manager_action"].split(": ", 1)[1] for item in uae_only["actions"]) == ["Team region item", "UAE item"]
+    assert [item["manager_action"].split(": ", 1)[1] for item in egy_only["actions"]] == ["Egypt item"]
+    assert {item["manager_action"].split(": ", 1)[1] for item in both["actions"]} == {"Egypt item", "UAE item", "Team region item"}
+
+
 def test_legacy_collection_route_keeps_every_previous_key(db):
     team = _team(db, "Inbound")
     employee = _employee(db, team)

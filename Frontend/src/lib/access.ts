@@ -123,13 +123,12 @@ export const ROUTE_ROLES = {
   correctiveActions: ['Admin', 'Executive', 'General Manager', 'Manager', 'Performance Team'],
   functionSummary: ['Admin', 'General Manager', 'Performance Team', ROLE_FUNCTION_VIEWER, ROLE_FUNCTION_DIRECTOR, ROLE_BRANCH_DIRECTOR, ROLE_REGIONAL_MANAGER],
   /** Saved-report library + preview (read). Legacy and new scoped roles are API-filtered. */
-  /** Monthly Presentation deck: Corporate roles plus the Regional Manager (own region only, via accessible_regions). */
-  // Same audience as the Insights deep-dive owners: Admin and Performance Team only (GM, Executive, Regional Manager removed).
+  /** Monthly Review: Admin and Performance Team only. Region scope still comes from accessible_regions. */
   monthlyPresentation: ['Admin', 'Performance Team'],
   reports: ['Admin', 'General Manager', 'Manager', 'Executive', 'Viewer', ROLE_FUNCTION_VIEWER, 'Performance Team'],
 } as const satisfies Record<string, readonly AppRole[]>;
 
-/** Monthly Presentation: the same allow-list as its route guard (sidebar link and route cannot drift). */
+/** Monthly Review: the same allow-list as its route guard (sidebar link and route cannot drift). */
 export const canAccessMonthlyPresentation = (role: RoleInput): boolean =>
   canAccessRoute({ role, allowedRoles: ROUTE_ROLES.monthlyPresentation });
 

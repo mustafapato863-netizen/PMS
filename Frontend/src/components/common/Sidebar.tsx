@@ -321,7 +321,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed: collapsedPreference = false, 
   const generalItems: Array<{ name: string; path: string; icon: React.ReactNode; resetQuery?: boolean; drawerOnly?: boolean }> = canSeeBroadNavigation
     ? [
         { name: 'Executive Summary', path: '/executive', icon: <Gauge size={18} /> },
-        ...(canAccessMonthlyPresentation(role) ? [{ name: 'Monthly Presentation', path: '/monthly-presentation', icon: <Presentation size={18} />, resetQuery: true, drawerOnly: true }] : []),
+        ...(canAccessMonthlyPresentation(role) ? [{ name: 'Monthly Review', path: '/monthly-presentation', icon: <Presentation size={18} />, resetQuery: true, drawerOnly: true }] : []),
         ...(!scopedDirector ? teamsItem : []),
         ...(canSeeReportsNav(role) ? [{ name: 'Reports', path: '/reports', icon: <FileBarChart size={18} /> }] : []),
         // Plain /insights: Insights keeps its own filters in the URL
@@ -342,17 +342,17 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed: collapsedPreference = false, 
       { label: 'Functions', destination: '/function-summary', icon: <Layers size={20} />, active: pathname.startsWith('/function-summary') },
       ...(canSeeReportsNav(role) ? [{ label: 'Reports', destination: linkFor('/reports'), icon: <FileBarChart size={20} />, active: pathname.startsWith('/reports') }] : []),
     ]
-    // Monthly Presentation is a desktop deck: listed in the sidebar/drawer, not in the compact dock.
+    // Monthly Review is a desktop report: listed in the sidebar/drawer, not in the compact dock.
     : generalItems.filter((item) => !item.drawerOnly).map((item) => {
       const tabletOnly = primaryDockCount >= 3;
       primaryDockCount += 1;
       return {
-      label: item.path === '/executive' ? 'Summary' : item.path.startsWith('/team') ? 'Teams' : item.name === 'My Profile' ? 'My profile' : item.path === '/corrective-actions' ? 'Actions' : item.name,
+      label: item.path === '/executive' ? 'Summary' : (item.path === '/monthly-presentation' || item.path === '/monthly-view') ? 'Monthly' : item.path.startsWith('/team') ? 'Teams' : item.name === 'My Profile' ? 'My profile' : item.path === '/corrective-actions' ? 'Actions' : item.name,
       title: item.name,
       tabletOnly,
       destination: item.resetQuery ? item.path : linkFor(item.path),
       icon: item.icon,
-      active: pathname === item.path || (item.path === '/team/all' && pathname.startsWith('/team/')),
+      active: pathname === item.path || (item.path === '/monthly-presentation' && (pathname === '/monthly-presentation' || pathname === '/monthly-view')) || (item.path === '/team/all' && pathname.startsWith('/team/')),
       };
     });
   if (scopedDirector) {
@@ -617,7 +617,9 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed: collapsedPreference = false, 
       </div>
     </aside>
     </div>
-    {!isDesktop && <NavigationDock items={dockItems} hidden={isOpen} onOpenMenu={() => setIsOpen(true)} />}
+    {!isDesktop && pathname !== '/monthly-presentation' && pathname !== '/monthly-view' && (
+      <NavigationDock items={dockItems} hidden={isOpen} onOpenMenu={() => setIsOpen(true)} />
+    )}
     </>
   );
 };

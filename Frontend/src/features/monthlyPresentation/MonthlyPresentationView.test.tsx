@@ -1,196 +1,932 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { render, screen, fireEvent, within, waitFor } from '@testing-library/react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import MonthlyPresentationView, { PresentMode } from './MonthlyPresentationView';
-import { resetDeckLimiter } from './useMonthlyPresentationData';
+import { describe, expect, it, vi, beforeEach } from 'vitest';
+import MonthlyPresentationView from './MonthlyPresentationView';
+import { OFFSHORE_EGYPT_SEP_2026_DATA } from './monthlyOverviewData';
+import { recommendedActionForKpi, teamActionDueLabel } from './teamDeepDiveData';
+import { readKpiTrend } from './components/SelectableKpiCard';
+import {
+  showActionSection,
+  showPresentationControl,
+  showStoredPlaceholder,
+} from './presentationMode';
 
-const mocks = vi.hoisted(() => ({ apiFetch: vi.fn(), user: { role: 'Admin', accessible_regions: [] as string[] } }));
-vi.mock('../../lib/apiClient', () => ({ apiFetch: mocks.apiFetch }));
-vi.mock('../../context/auth', () => ({ useAuth: () => ({ currentUser: mocks.user }) }));
-vi.mock('../../context/RoleContext', () => ({ useUserRole: () => ({ role: mocks.user.role }) }));
+vi.mock('../../context/auth', () => ({
+  useAuth: () => ({
+    currentUser: {
+      email: 'exec@company.com',
+      accessible_regions: ['EGY', 'UAE'],
+      assigned_region: null,
+    },
+  }),
+}));
 
-const ws = (region: string) => ({
-  summary: { analyzed_kpis: 2, expected_kpis: 2, coverage_percent: 100 },
-  kpi_diagnosis: [{ key: 'k', label: `${region} KPI`, unit: null, direction: 'higher_better', weight: 0.5, actual: 100, target: 100, achievement_percent: 100, status: 'on_track', effect_points: 0, people_below_target: 0, six_months: [], most_below_team: null, other_cohorts: [], teams: [] }],
-  team_summaries: [], performance_drivers: [], options: { teams: [] }, people_contribution_analysis: null,
-  executive_story: { headline: `${region} headline`, current_score: region === 'EGY' ? 86.4 : 91.2, target_score: 90, gap_points: -3, score_change: 1, basis_context: { like_for_like: true } },
-  comparison: { current: null, previous: null, is_adjacent: false, note: null },
+vi.mock('../../context/RoleContext', () => ({
+  useUserRole: () => ({
+    role: 'CEO',
+  }),
+}));
+
+vi.mock('../executive/useSummaryRecords', () => ({
+  useSummaryRecords: () => ({
+    data: [],
+    isLoading: false,
+    isError: false,
+  }),
+}));
+
+const mockSaveAction = vi.fn().mockResolvedValue({
+  success: true,
+  synced: true,
+  message: 'Saved',
 });
-let seen: string[] = [];
-beforeEach(() => {
-  resetDeckLimiter();
-  seen = [];
-  mocks.user = { role: 'Admin', accessible_regions: [] };
-  mocks.apiFetch.mockImplementation(async (url: string) => {
-    seen.push(url);
-    if (url.startsWith('/api/insights/workspace')) return { success: true, data: ws(new URLSearchParams(url.split('?')[1]).get('region')!) };
-    if (url.startsWith('/api/corrective-actions/follow-up')) return { success: true, data: { summary: {}, actions: [] } };
-    return { success: true, data: [] };
-  });
-});
 
-function Loc() { const l = useLocation(); return <div data-testid="loc">{l.search}</div>; }
-const renderAt = (url: string) => render(
-  <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-    <MemoryRouter initialEntries={[url]}><MonthlyPresentationView today={new Date(2026, 9, 21)} /><Loc /></MemoryRouter>
-  </QueryClientProvider>,
-);
+vi.mock('../../hooks/useActionStore', () => ({
+  useActionStore: () => ({
+    actions: [],
+    saveAction: mockSaveAction,
+    getAllActions: () => [],
+  }),
+}));
 
-describe('MonthlyPresentationView', () => {
-  it('writes the last complete month and default region into the URL', async () => {
-    renderAt('/monthly-presentation');
-    await waitFor(() => expect(screen.getByTestId('loc').textContent).toBe('?region=egy&month=2026-09'));
+function LocationProbe() {
+  const location = useLocation();
+  return <div data-testid="location-probe">{location.pathname}{location.search}</div>;
+}
+
+describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Deep Dive', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    window.scrollTo = vi.fn();
+    localStorage.clear();
   });
 
-  it('shows the locked period in every slide header and only calls the API with that period/region', async () => {
-    renderAt('/monthly-presentation?region=egy&month=2026-09');
-    await screen.findByText(/Egypt at 86.4%/);
-    expect(screen.getAllByTestId('period-lock')).toHaveLength(11);
-    screen.getAllByTestId('period-lock').forEach((el) => expect(el.textContent).toBe('Period locked · September 2026'));
-    seen.filter((u) => u.startsWith('/api/insights/workspace')).forEach((u) => {
-      expect(u).toContain('region=EGY'); expect(u).toContain('month=September'); expect(u).toContain('year=2026');
+  it('renders Header with title, Offshore Egypt · September 2026 subtitle, region badge, and Page 1 of 6', () => {
+    render(
+      <MemoryRouter initialEntries={['/monthly-presentation']}>
+        <MonthlyPresentationView />
+      </MemoryRouter>,
+    );
+
+    expect(
+      screen.getByRole('heading', { name: 'Monthly Presentation' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Monthly Overview')).toBeInTheDocument();
+    expect(screen.getByText('Offshore Egypt · September 2026')).toBeInTheDocument();
+    expect(screen.getByTestId('header-region-badge')).toHaveTextContent('Offshore Egypt');
+    expect(screen.getByTestId('header-page-indicator')).toHaveTextContent('Page 1 of 6');
+
+    const rail = screen.getByRole('navigation', { name: 'Page sections' });
+    const scoreDot = within(rail).getByRole('button', { name: 'Score' });
+    expect(scoreDot).toHaveAttribute('aria-current', 'true');
+    expect(scoreDot).toHaveClass('cursor-pointer');
+    expect(scoreDot.querySelector('[data-section-tip="Score"]')).toHaveTextContent('Score');
+    const functions = document.getElementById('presentation-section-functions');
+    const scroll = vi.fn();
+    if (functions) functions.scrollIntoView = scroll;
+    fireEvent.click(within(rail).getByRole('button', { name: 'Functions' }));
+    expect(within(rail).getByRole('button', { name: 'Functions' })).toHaveAttribute('aria-current', 'true');
+    expect(scroll).toHaveBeenCalled();
+  });
+
+  it('renders Overall Company Performance with 86.6%, Grade C, 13.4% below target, +0.5% vs August, Current/Target/Gap, and evaluation note', () => {
+    render(
+      <MemoryRouter initialEntries={['/monthly-presentation']}>
+        <MonthlyPresentationView />
+      </MemoryRouter>,
+    );
+
+    const overallSection = screen.getByRole('region', {
+      name: 'Overall Company Performance',
     });
-    expect(seen.some((u) => u.includes('region=UAE'))).toBe(false);
+
+    expect(within(overallSection).getByTestId('overall-score-value')).toHaveTextContent(
+      '86.6%',
+    );
+    expect(within(overallSection).getByText('Grade C')).toBeInTheDocument();
+    expect(
+      within(overallSection).getByTestId('overall-target-statement'),
+    ).toHaveTextContent('13.4% below target');
+    expect(
+      within(overallSection).getByTestId('overall-movement-badge'),
+    ).toHaveTextContent('+0.5% vs August');
   });
 
-  it('switching region reloads every request for the new region only', async () => {
-    renderAt('/monthly-presentation?region=egy&month=2026-09');
-    await screen.findByText(/Egypt at 86.4%/);
-    seen = [];
-    fireEvent.click(screen.getByRole('radio', { name: 'UAE' }));
-    await screen.findByText(/UAE at 91.2%/);
-    expect(screen.queryByText(/EGY headline/)).toBeNull();
-    const ws = seen.filter((u) => u.startsWith('/api/insights/workspace'));
-    expect(ws.length).toBeGreaterThan(0);
-    ws.forEach((u) => expect(u).toContain('region=UAE'));
+  it('renders all 7 Functions Overview cards and navigates on RCM click', () => {
+    const onSelectFunction = vi.fn();
+    render(
+      <MemoryRouter initialEntries={['/monthly-presentation']}>
+        <MonthlyPresentationView onSelectFunction={onSelectFunction} />
+        <LocationProbe />
+      </MemoryRouter>,
+    );
+
+    for (const slug of [
+      'rcm',
+      'marketing',
+      'it',
+      'call-center',
+      'human-resources',
+      'administration',
+      'finance',
+    ]) {
+      expect(screen.getByTestId(`function-card-${slug}`)).toBeInTheDocument();
+    }
+
+    fireEvent.click(screen.getByTestId('function-card-rcm'));
+    expect(onSelectFunction).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('location-probe').textContent).toContain('deepDive=rcm');
+    expect(screen.getByTestId('location-probe').textContent).not.toContain('function-summary');
+    expect(screen.getByRole('heading', { name: 'RCM Deep Dive' })).toBeInTheDocument();
   });
 
-  it('single-region users see a fixed pill and get an access message for the other region', async () => {
-    mocks.user = { role: 'Regional Manager', accessible_regions: ['UAE'] };
-    renderAt('/monthly-presentation?region=egy&month=2026-09');
-    expect(await screen.findByText("You don't have access to Egypt")).toBeTruthy();
-    expect(screen.queryByRole('radiogroup')).toBeNull();
-    expect(screen.getByTestId('region-pill').textContent).toBe('UAE');
-    expect(seen.some((u) => u.startsWith('/api/insights'))).toBe(false);
+  it('opens Call Center Deep Dive with real employees, support positions, and expandable 6-Month KPI trends', () => {
+    render(
+      <MemoryRouter initialEntries={['/monthly-presentation']}>
+        <MonthlyPresentationView />
+        <LocationProbe />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByTestId('function-card-call-center'));
+
+    expect(screen.getByTestId('call-center-deep-dive-page')).toBeInTheDocument();
+    const deepDiveRail = screen.getByRole('navigation', { name: 'Page sections' });
+    expect(within(deepDiveRail).getByRole('button', { name: 'Support' })).toBeInTheDocument();
+    expect(within(deepDiveRail).queryByRole('button', { name: 'Grades' })).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: 'Call Center Deep Dive' }),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId('deep-dive-function-score')).toHaveTextContent('90.8%');
+
+    // Layer 1: Inbound & Outbound Agent Team Cards
+    const inboundCard = screen.getByTestId('agent-team-card-inbound-agents');
+    expect(within(inboundCard).getByText('Inbound Agents')).toBeInTheDocument();
+    expect(within(inboundCard).getByText('91.5%')).toBeInTheDocument();
+    expect(within(inboundCard).getByText('35 agents')).toBeInTheDocument();
+
+    const outboundCard = screen.getByTestId('agent-team-card-outbound-agents');
+    expect(within(outboundCard).getByText('Outbound Agents')).toBeInTheDocument();
+    expect(within(outboundCard).getByText('87.0%')).toBeInTheDocument();
+    expect(within(outboundCard).getByText('7 agents')).toBeInTheDocument();
+
+    // Layer 2: Support Positions with real holders
+    expect(screen.getByTestId('impact-badge-pos-trainer')).toHaveTextContent(
+      'Strong Impact',
+    );
+    expect(screen.getByText('Hagar Ahmed Amin Diab')).toBeInTheDocument();
+    expect(screen.getByText('Fahmy Sabry El-Saadany')).toBeInTheDocument();
+
+    // Key Agent KPIs + 6-Month Actual vs Target Trend toggle
+    expect(screen.queryByTestId('kpi-trend-panel-kpi-aht')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('toggle-kpi-trend-kpi-aht'));
+    const trendPanel = screen.getByTestId('kpi-trend-panel-kpi-aht');
+    expect(trendPanel).toBeInTheDocument();
+    expect(within(trendPanel).getByText(/Target vs Execution:/i)).toBeInTheDocument();
+
+    // Real Agents Needing Attention
+    expect(screen.getByText('Rawan Mohamed Salah Elnajjar')).toBeInTheDocument();
+    expect(screen.getByText('Maryam Elsayed Mahmoud Eid')).toBeInTheDocument();
   });
 
-  it('a month that is not yet available shows the empty state and fetches nothing', async () => {
-    renderAt('/monthly-presentation?region=egy&month=2026-10');
-    expect(await screen.findByText('October 2026 is not yet available')).toBeTruthy();
-    expect(seen.length).toBe(0);
+  it('navigates from Call Center Deep Dive to Inbound Team Deep Dive and renders all 6 required sections with full-word grades', () => {
+    render(
+      <MemoryRouter initialEntries={['/monthly-presentation?deepDive=call-center']}>
+        <MonthlyPresentationView />
+        <LocationProbe />
+      </MemoryRouter>,
+    );
+
+    // Click Inbound Agents card on Call Center Deep Dive
+    fireEvent.click(screen.getByTestId('agent-team-card-inbound-agents'));
+
+    // Verify URL & Team Deep Dive Page
+    expect(screen.getByTestId('location-probe').textContent).toContain('team=inbound');
+    expect(screen.getByTestId('team-deep-dive-page')).toBeInTheDocument();
+
+    // 1. Header with breadcrumb & full-word grade
+    const breadcrumb = screen.getByTestId('team-deep-dive-breadcrumb');
+    expect(within(breadcrumb).getByText('Overview')).toBeInTheDocument();
+    expect(within(breadcrumb).getByText('Call Center')).toBeInTheDocument();
+    expect(within(breadcrumb).getByText('Inbound Agents')).toBeInTheDocument();
+    expect(screen.getByTestId('team-deep-dive-score')).toHaveTextContent('91.5%');
+    expect(screen.getByText('Meet Expectations')).toBeInTheDocument();
+
+    // 2. Key Team KPIs — headcount "met" chip is gone; arrow color follows KPI direction
+    const ahtCard = screen.getByTestId('team-kpi-card-AHT');
+    const bookingCard = screen.getByTestId('team-kpi-card-Booking');
+    const attendanceCard = screen.getByTestId('team-kpi-card-Attendance');
+    const qualityCard = screen.getByTestId('team-kpi-card-Quality');
+    for (const card of [ahtCard, bookingCard, attendanceCard, qualityCard]) {
+      expect(card.textContent).not.toMatch(/\d+\/\d+\s*met/);
+    }
+    // AHT is lower-better, so an increase is red even though the glyph points up.
+    expect(within(ahtCard).getByText('+0.28 min vs August')).toHaveClass('text-rose-700');
+    expect(within(bookingCard).getByText('+3.8% vs August')).toHaveClass('text-emerald-700');
+    // Attendance is still off target, but the month moved the right way.
+    expect(within(attendanceCard).getByText('+0.8% vs August')).toHaveClass('text-emerald-700');
+
+    // 3. KPI Trend Explorer (switch tabs & check diagnosis)
+    expect(screen.getByTestId('kpi-trend-explorer')).toBeInTheDocument();
+    expect(screen.getByTestId('trend-explorer-diagnosis')).toHaveTextContent(
+      /Execution is the primary issue, not the 2.50 min target/i,
+    );
+    fireEvent.click(screen.getByTestId('trend-kpi-switcher-Booking'));
+    expect(screen.getByTestId('trend-explorer-diagnosis')).toHaveTextContent(
+      /Booking Rate target was raised from 46.0% to 65.0% in June/i,
+    );
+
+    // 4. Agents — Average and Below (real employees, full-word grades)
+    const table = screen.getByTestId('agents-average-below-table');
+    expect(within(table).getByText('Maryam Elsayed Mahmoud Eid')).toBeInTheDocument();
+    expect(within(table).getByText('Abdulrahman Said Sayed Helal')).toBeInTheDocument();
+    expect(within(table).getAllByText('Average').length).toBeGreaterThan(0);
+
+    // 5. Individual Action Plan cards (editable)
+    const maryamCard = screen.getByTestId(
+      'individual-action-card-Maryam Elsayed Mahmoud Eid',
+    );
+    expect(maryamCard).toBeInTheDocument();
+    expect(within(maryamCard).getByText('Average')).toBeInTheDocument();
+
+    // 6. Team-Level Action Plan cards
+    expect(
+      screen.getByRole('heading', { name: 'Team-Level Action Plan' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Deploy live AHT pacing alerts/i),
+    ).toBeInTheDocument();
+
+    // Switch to Outbound Agents via team switcher
+    fireEvent.click(screen.getByTestId('switch-team-outbound'));
+    expect(screen.getByTestId('team-deep-dive-score')).toHaveTextContent('87.0%');
+    expect(
+      within(screen.getByTestId('agents-average-below-table')).getByText(
+        'Rawan Mohamed Salah Elnajjar',
+      ),
+    ).toBeInTheDocument();
+
+    // Navigate back to Call Center Deep Dive via breadcrumb
+    fireEvent.click(screen.getByTestId('breadcrumb-call-center'));
+    expect(
+      screen.getByRole('heading', { name: 'Call Center Deep Dive' }),
+    ).toBeInTheDocument();
   });
 
-  it('export dialog offers Mask names and the per-region file name', async () => {
-    renderAt('/monthly-presentation?region=uae&month=2026-09');
-    await screen.findByText(/UAE at 91.2%/);
-    fireEvent.click(screen.getByRole('button', { name: /Export PDF/ }));
-    const dialog = screen.getByRole('dialog', { name: 'Export PDF' });
-    expect(within(dialog).getByLabelText(/Mask names/)).toBeTruthy();
-    expect(within(dialog).getByText(/PMS_Monthly_UAE_2026-09.pdf/)).toBeTruthy();
+  it('opens RCM, Marketing, IT, Call Center, and Human Resources inside the presentation', () => {
+    render(
+      <MemoryRouter initialEntries={['/monthly-presentation']}>
+        <MonthlyPresentationView />
+        <LocationProbe />
+      </MemoryRouter>,
+    );
+
+    const cases = [
+      ['rcm', 'RCM Deep Dive'],
+      ['marketing', 'Marketing Deep Dive'],
+      ['it', 'IT Deep Dive'],
+      ['call-center', 'Call Center Deep Dive'],
+      ['human-resources', 'Human Resources Deep Dive'],
+    ] as const;
+
+    for (const [slug, heading] of cases) {
+      fireEvent.click(screen.getByTestId(`function-card-${slug}`));
+      expect(screen.getByRole('heading', { name: heading })).toBeInTheDocument();
+      expect(screen.getByTestId('location-probe').textContent).toContain(`deepDive=${slug}`);
+      expect(screen.getByTestId('location-probe').textContent).not.toContain('function-summary');
+      fireEvent.click(screen.getByTestId('back-to-monthly-overview'));
+      expect(screen.getByTestId('monthly-overview-page')).toBeInTheDocument();
+    }
   });
 
-  it('mask=1 never prints action text or owner notes on slide 8; owner column uses aliases', async () => {
-    mocks.apiFetch.mockImplementation(async (url: string) => {
-      if (url.startsWith('/api/insights/workspace')) return { success: true, data: ws('EGY') };
-      if (url.startsWith('/api/corrective-actions/follow-up')) return { success: true, data: { summary: {}, actions: [
-        { id: 'a1', manager_action: 'Coaching: 1:1s by hana mostafa with Zainab Secretname', team: 'Coding EGY', month: 'September', year: 2026, status: 'Open', priority: 'Low', due_date: '2026-10-10', owner: { id: 'o1', name: 'Hana Mostafa' }, completion_note: 'Zainab Secretname to review' },
-      ] } };
-      if (url.startsWith('/api/corrective-actions/owners')) return { success: true, data: [{ id: 'o1', name: 'Hana Mostafa' }] };
-      return { success: true, data: [] };
+  it('opens a support position role detail with the 6-month chart, accountability, and a new action', async () => {
+    render(
+      <MemoryRouter initialEntries={['/monthly-presentation?deepDive=call-center']}>
+        <MonthlyPresentationView />
+        <LocationProbe />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByTestId('support-position-card-pos-trainer'));
+
+    expect(screen.getByTestId('location-probe').textContent).toContain('role=trainer');
+    expect(screen.getByTestId('role-detail-page')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Trainer' })).toBeInTheDocument();
+    expect(screen.getByText('Hagar Ahmed Amin Diab')).toBeInTheDocument();
+    expect(screen.getAllByText('Excellent').length).toBeGreaterThan(0);
+    expect(screen.getByTestId('role-impact-badge')).toHaveTextContent('Strong');
+
+    const chart = screen.getByTestId('role-kpi-chart');
+    expect(chart.querySelector('[data-series="actual"]')).toBeTruthy();
+    expect(chart.querySelector('[data-series="target"]')?.getAttribute('stroke-dasharray')).toBe('6 4');
+    expect(screen.getByTestId('role-accountability')).toHaveTextContent(/accountable/i);
+
+    fireEvent.change(screen.getByLabelText('Description'), {
+      target: { value: 'Coach the four inbound agents below 50% booking.' },
     });
-    renderAt('/monthly-presentation?region=egy&month=2026-09&mask=1');
-    const slide = await screen.findByRole('region', { name: /Slide 8 of 11/ });
-    await waitFor(() => expect(within(slide).getAllByText('Details hidden in masked export')).toHaveLength(2));
-    expect(slide.textContent).not.toMatch(/hana|mostafa|zainab|secretname|1:1s|review/i);
-    expect(slide.textContent).toMatch(/Person A/);
-    const s10 = screen.getByRole('region', { name: /Slide 10 of 11/ });
-    expect(s10.textContent).not.toMatch(/Hana|Mostafa/);
+    fireEvent.change(screen.getByLabelText('Owner'), { target: { value: 'Call Center Trainer' } });
+    fireEvent.change(screen.getByLabelText('Due date'), { target: { value: '2026-10-20' } });
+    fireEvent.change(screen.getByLabelText('Status'), { target: { value: 'Open' } });
+    fireEvent.change(screen.getByLabelText('Expected impact'), { target: { value: '+0.7% booking' } });
+    fireEvent.click(screen.getByTestId('save-role-action'));
+
+    await waitFor(() => expect(mockSaveAction).toHaveBeenCalledTimes(1));
+    expect(mockSaveAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        employee_name: 'Hagar Ahmed Amin Diab',
+        team: 'Trainer',
+        action_text: 'Coach the four inbound agents below 50% booking.',
+        due_date: '2026-10-20',
+      }),
+    );
   });
 
-  it('without masking, slide 8 shows action text and the owner note verbatim', async () => {
-    mocks.apiFetch.mockImplementation(async (url: string) => {
-      if (url.startsWith('/api/insights/workspace')) return { success: true, data: ws('EGY') };
-      if (url.startsWith('/api/corrective-actions/follow-up')) return { success: true, data: { summary: {}, actions: [
-        { id: 'a1', manager_action: 'Coaching: Backlog sprint', team: 'Coding EGY', month: 'September', year: 2026, status: 'Open', priority: 'Low', due_date: '2026-10-10', owner: { id: 'o1', name: 'Hana Mostafa' }, completion_note: 'TAT under 5d' },
-      ] } };
-      return { success: true, data: [] };
+  it('aggregates roles into single cards on the Function Deep Dive and shows individual people only inside Role Detail', () => {
+    render(
+      <MemoryRouter initialEntries={['/monthly-presentation']}>
+        <MonthlyPresentationView />
+        <LocationProbe />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByTestId('function-card-marketing'));
+    expect(screen.getByTestId('deep-dive-function-score')).toHaveTextContent('79.6%');
+
+    // Dragging vs Carrying role hierarchy (grouped by role: 6 dragging roles in single-row carousel of 4, 3 carrying roles in Marketing)
+    const draggingSection = screen.getByTestId('roles-dragging');
+    expect(draggingSection).toHaveTextContent('6 roles below 90%');
+    expect(draggingSection).toHaveTextContent('Web Developer');
+    expect(draggingSection).toHaveTextContent('Social Media Specialist');
+    expect(draggingSection).toHaveTextContent('Media Buyer');
+    expect(draggingSection).toHaveTextContent('Primary drag:');
+    expect(screen.getByTestId('dragging-roles-carousel')).toHaveTextContent('1–4 of 6');
+
+    // Slide single-row carousel to reveal Graphic Designer (6th dragging role)
+    fireEvent.click(screen.getByTestId('dragging-roles-next'));
+    fireEvent.click(screen.getByTestId('dragging-roles-next'));
+    expect(screen.getByTestId('dragging-roles-carousel')).toHaveTextContent('3–6 of 6');
+
+    // Graphic Designer is a single aggregated card (87.8% combined score across 3 people)
+    const graphicDesignerCard = screen.getByTestId('role-card-graphic-designer');
+    expect(graphicDesignerCard).toHaveTextContent('Graphic Designer');
+    expect(graphicDesignerCard).toHaveTextContent('87.8%');
+    expect(graphicDesignerCard).toHaveTextContent('3 people');
+
+    const carryingSection = screen.getByTestId('roles-carrying');
+    expect(carryingSection).toHaveTextContent('3 at or above 90%');
+    expect(carryingSection).toHaveTextContent('Creative Director');
+    expect(carryingSection).toHaveTextContent('Content Writer');
+    expect(carryingSection).toHaveTextContent('Account Manager');
+    expect(screen.getAllByText('Below Average').length).toBeGreaterThan(0);
+
+    // Individual employee names MUST NOT appear on the Function Deep Dive page
+    expect(screen.queryByText(/Abdelrahman Yousry/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Elsayed Mohamed/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Asser Mohamed/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Mohamed Abdelmegid Diab/i)).not.toBeInTheDocument();
+
+    // Key Function KPIs rendered as structured cards with expandable 6-Mo Trend
+    const responseTimeKpiCard = screen.getByTestId('function-kpi-card-mkt-kpi-response-time');
+    expect(within(responseTimeKpiCard).getByText('Social Media Response Time')).toBeInTheDocument();
+    expect(within(responseTimeKpiCard).getByText('208.00 min')).toBeInTheDocument();
+    expect(within(responseTimeKpiCard).getByText('31.00 min')).toBeInTheDocument();
+    expect(within(responseTimeKpiCard).getByText('+42.00 min vs August (Slower)')).toHaveClass(
+      'text-rose-700',
+    );
+    const editsKpiCard = screen.getByTestId('function-kpi-card-mkt-kpi-edits');
+    expect(within(editsKpiCard).getByText('-1.2% vs August (Improving)')).toHaveClass(
+      'text-emerald-700',
+    );
+    fireEvent.click(screen.getByTestId('toggle-kpi-trend-mkt-kpi-response-time'));
+    expect(screen.getByTestId('kpi-trend-panel-mkt-kpi-response-time')).toBeInTheDocument();
+
+    // Priority Actions rendered as structured prototype cards with overall expected impact
+    expect(screen.getByText('+10.2% expected lift')).toBeInTheDocument();
+    expect(screen.getByText('79.6% → 89.8%')).toBeInTheDocument();
+    const firstActionCard = screen.getByTestId('position-action-mkt-act-1');
+    expect(within(firstActionCard).getByText(/Owner: Social Media Head/i)).toBeInTheDocument();
+    expect(within(firstActionCard).getByText(/\+3.6% expected lift/i)).toBeInTheDocument();
+    expect(
+      within(firstActionCard).getByText(/Social Media Response Time \(208 min → ≤ 35 min\)/i),
+    ).toBeInTheDocument();
+
+    // Drill into Graphic Designer Role Detail — individual employees appear in the People in this Role table
+    fireEvent.click(graphicDesignerCard);
+    expect(screen.getByTestId('location-probe').textContent).toContain('deepDive=marketing');
+    expect(screen.getByTestId('location-probe').textContent).toContain('role=graphic-designer');
+    expect(screen.getByTestId('role-detail-page')).toBeInTheDocument();
+    expect(screen.getByTestId('role-detail-score')).toHaveTextContent('87.8%');
+    const membersTable = screen.getByTestId('role-members-table');
+    // Only Average or below (score < 90) shown by default
+    expect(within(membersTable).getByText('Abdulwahab')).toBeInTheDocument();
+    expect(within(membersTable).getByText('Asser Mohamed')).toBeInTheDocument();
+    expect(within(membersTable).queryByText('Elsayed Mohamed')).not.toBeInTheDocument();
+
+    // Toggle "View All (3)" to reveal all people in the role
+    fireEvent.click(screen.getByTestId('toggle-show-all-members'));
+    expect(within(membersTable).getByText('Elsayed Mohamed')).toBeInTheDocument();
+
+    // Verify 360-Profile interactive 6-month trend component is rendered
+    expect(screen.getByTestId('profile-360-trend-container')).toBeInTheDocument();
+    // Verify Individual Action Plan section with Main Issue is rendered for employees
+    const indActionSection = screen.getByTestId('role-individual-action-plan-section');
+    expect(indActionSection).toBeInTheDocument();
+    expect(within(indActionSection).getAllByText(/Main Issue:/i).length).toBeGreaterThan(0);
+    // Verify KPI cards show Contribution, Weight, % of target, and Biggest Gap Driver
+    expect(screen.getByTestId('biggest-gap-summary-pill')).toHaveTextContent(/Biggest Gap Driver:/i);
+    expect(screen.getAllByText(/Contribution/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Weight/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/% of target/i).length).toBeGreaterThan(0);
+
+    // Verify top-to-bottom section order matches Call Center Team Deep Dive:
+    // 1. Header -> 2. KPI Cards -> 3. 6-Month Trend -> 4. Employees Table -> 5. Actions/Decisions
+    const kpiSection = screen.getByTestId('role-kpis');
+    const trendSection = screen.getByTestId('profile-360-trend-container');
+    const membersSection = screen.getByTestId('role-members-section');
+    const actionsSection = screen.getByTestId('role-actions-section');
+    expect(
+      kpiSection.compareDocumentPosition(trendSection) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      trendSection.compareDocumentPosition(membersSection) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      membersSection.compareDocumentPosition(indActionSection) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      indActionSection.compareDocumentPosition(actionsSection) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+
+    // Navigate back to Marketing and verify single-row KPI carousel controls (<= 4 cards visible at once)
+    fireEvent.click(screen.getByTestId('breadcrumb-function'));
+    fireEvent.click(screen.getByTestId('role-card-media-buyer'));
+    expect(screen.getByTestId('kpi-carousel-controls')).toBeInTheDocument();
+    const visibleButtons = screen
+      .getByTestId('role-kpis')
+      .querySelectorAll('button[data-testid^="role-kpi-"]');
+    expect(visibleButtons.length).toBeGreaterThan(0);
+    expect(visibleButtons.length).toBeLessThanOrEqual(4);
+
+    // Navigate back to Marketing and drill into Web Developer Role Detail (single-person role)
+    fireEvent.click(screen.getByTestId('breadcrumb-function'));
+    fireEvent.click(screen.getByTestId('role-card-web-developer'));
+    expect(screen.getByTestId('location-probe').textContent).toContain('role=web-developer');
+    expect(screen.getByTestId('role-detail-score')).toHaveTextContent('52.5%');
+    expect(screen.getAllByText('Abdelrahman Yousry Abdelaziz Hamdy').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Unsatisfactory').length).toBeGreaterThan(0);
+    const chart = screen.getByTestId('role-kpi-chart');
+    expect(chart.querySelector('[data-series="actual"]')).toBeTruthy();
+    expect(chart.querySelector('[data-series="target"]')?.getAttribute('stroke-dasharray')).toBe('6 4');
+    expect(chart.querySelector('[data-series="target"]')?.getAttribute('stroke')).toBe('#d97706');
+    expect(screen.getByTestId('role-kpi-structural-diagnosis')).toBeInTheDocument();
+    expect(screen.getByTestId('role-accountability')).toBeInTheDocument();
+    expect(screen.getAllByText(/Affects KPI:/i).length).toBeGreaterThan(0);
+  });
+
+  it('opens any measured team, including Coding EGY, and a teams-at-risk row', () => {
+    render(
+      <MemoryRouter initialEntries={['/monthly-presentation']}>
+        <MonthlyPresentationView />
+        <LocationProbe />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByTestId('team-at-risk-coding-egy'));
+    expect(screen.getByTestId('location-probe').textContent).toContain('deepDive=rcm');
+    expect(screen.getByTestId('location-probe').textContent).toContain('team=coding-egy');
+    expect(screen.getByTestId('team-deep-dive-page')).toBeInTheDocument();
+    expect(screen.getByTestId('team-deep-dive-score')).toHaveTextContent('53.6%');
+    const breadcrumb = screen.getByTestId('team-deep-dive-breadcrumb');
+    expect(within(breadcrumb).getByText('RCM')).toBeInTheDocument();
+    expect(within(breadcrumb).getByText('Coding EGY')).toBeInTheDocument();
+    expect(screen.getAllByText('Unsatisfactory').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Mohamed Galal Ali Abbas').length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByTestId('switch-team-submission-egy'));
+    expect(screen.getByTestId('team-deep-dive-score')).toHaveTextContent('71.6%');
+    expect(screen.getAllByText('Salma Nagy Ali Hendy').length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByTestId('breadcrumb-function'));
+    fireEvent.click(screen.getByTestId('agent-team-card-pre-approvals-ip'));
+    expect(screen.getByTestId('team-deep-dive-score')).toHaveTextContent('82.8%');
+    expect(screen.getAllByText('Average').length).toBeGreaterThan(0);
+  });
+
+  it('opens the same function deep dive and role detail for every role-based function', () => {
+    render(
+      <MemoryRouter initialEntries={['/monthly-presentation']}>
+        <MonthlyPresentationView />
+        <LocationProbe />
+      </MemoryRouter>,
+    );
+
+    for (const slug of ['marketing', 'it', 'human-resources', 'administration', 'finance']) {
+      fireEvent.click(screen.getByTestId(`function-card-${slug}`));
+      const page = screen.getByTestId('function-deep-dive-page');
+      expect(page).toBeInTheDocument();
+      expect(screen.getByTestId('deep-dive-function-score')).toBeInTheDocument();
+      expect(screen.getByTestId('diagnostic-narrative')).toBeInTheDocument();
+      expect(screen.getByTestId('roles-dragging')).toBeInTheDocument();
+      expect(screen.getByTestId('roles-carrying')).toBeInTheDocument();
+      expect(screen.queryByTestId('call-center-deep-dive-page')).not.toBeInTheDocument();
+
+      const roleCard = page.querySelector('[data-testid^="role-card-"]');
+      expect(roleCard).toBeTruthy();
+      fireEvent.click(roleCard as HTMLElement);
+
+      expect(screen.getByTestId('role-detail-page')).toBeInTheDocument();
+      expect(screen.getByTestId('location-probe').textContent).toContain(`deepDive=${slug}`);
+      expect(screen.getByTestId('location-probe').textContent).toContain('role=');
+      const chart = screen.getByTestId('role-kpi-chart');
+      expect(chart.querySelector('[data-series="actual"]')).toBeTruthy();
+      expect(chart.querySelector('[data-series="actual-area"]')).toBeTruthy();
+      expect(chart.querySelector('[data-series="target"]')?.getAttribute('stroke-dasharray')).toBe('6 4');
+
+      fireEvent.click(screen.getByTestId('breadcrumb-function'));
+      expect(screen.getByTestId('function-deep-dive-page')).toBeInTheDocument();
+      fireEvent.click(screen.getByTestId('back-to-monthly-overview'));
+      expect(screen.getByTestId('monthly-overview-page')).toBeInTheDocument();
+    }
+  });
+
+  it('specializes a shared KPI recommendation from each agent issue and prints a stored due date unchanged', () => {
+    const slower = recommendedActionForKpi(
+      'AHT',
+      'AHT (Handle Time)',
+      'Inbound',
+      '4.25 min',
+      '2.50 min',
+      'AHT at 4.25 min (vs 2.50 min target) & Booking Rate at 40.4%',
+    );
+    const slowerStill = recommendedActionForKpi(
+      'AHT',
+      'AHT (Handle Time)',
+      'Inbound',
+      '5.03 min',
+      '2.50 min',
+      'AHT at 5.03 min (vs 2.50 min target) & Booking Rate at 47.8%',
+    );
+    expect(slower.actionText).not.toBe(slowerStill.actionText);
+    expect(slower.actionText).toContain('Booking Rate at 40.4%');
+    expect(slowerStill.actionText).toContain('Booking Rate at 47.8%');
+    expect(slower.actionText).not.toContain('47.8%');
+    expect(teamActionDueLabel(undefined)).toBe('No due date');
+    expect(teamActionDueLabel('   ')).toBe('No due date');
+    expect(teamActionDueLabel('2026-11-02')).toBe('2026-11-02');
+  });
+
+  it('colors a KPI move by whether that direction helps the metric', () => {
+    expect(readKpiTrend('▲ +9.0% vs August', 'higher')).toMatchObject({
+      direction: 'up',
+      favorable: true,
+      text: '+9.0% vs August',
     });
-    renderAt('/monthly-presentation?region=egy&month=2026-09');
-    const slide = await screen.findByRole('region', { name: /Slide 8 of 11/ });
-    await within(slide).findByText('Backlog sprint');
-    expect(within(slide).getByText('TAT under 5d')).toBeTruthy();
-    expect(within(slide).queryByText('Details hidden in masked export')).toBeNull();
-  });
-
-  it.each([['egy', 'EGY', 'Hana Mostafa', 'Layla Haddad'], ['uae', 'UAE', 'Layla Haddad', 'Hana Mostafa']])('slide 10 owners on %s show only that region', async (slug, code, own, other) => {
-    mocks.apiFetch.mockImplementation(async (url: string) => {
-      if (url.startsWith('/api/insights/workspace')) return { success: true, data: ws(code) };
-      if (url.startsWith('/api/corrective-actions/follow-up')) return { success: true, data: { summary: {}, actions: [
-        { id: 'e', manager_action: 'Monitor: e', team: 'Resubmission', region: 'EGY', month: 'September', year: 2026, status: 'Open', owner: { id: 'o1', name: 'Hana Mostafa' } },
-        { id: 'u', manager_action: 'Monitor: u', team: 'Pre-Approvals OP Dubai', region: 'UAE', month: 'September', year: 2026, status: 'Open', owner: { id: 'o2', name: 'Layla Haddad' } },
-      ] } };
-      if (url.startsWith('/api/corrective-actions/owners')) return { success: true, data: [{ id: 'o1', name: 'Hana Mostafa' }, { id: 'o2', name: 'Layla Haddad' }] };
-      return { success: true, data: [] };
+    expect(readKpiTrend('▼ -0.1% vs August', 'higher')).toMatchObject({
+      direction: 'down',
+      favorable: false,
+      text: '-0.1% vs August',
     });
-    renderAt(`/monthly-presentation?region=${slug}&month=2026-09`);
-    const s10 = await screen.findByRole('region', { name: /Slide 10 of 11/ });
-    await waitFor(() => expect(s10.textContent).toContain(own));
-    expect(s10.textContent).not.toContain(other);
+    expect(readKpiTrend('▲ +0.28 min vs August', 'lower')).toMatchObject({
+      direction: 'up',
+      favorable: false,
+    });
+    expect(readKpiTrend('▼ -1.2% vs August (Improving)', 'lower')).toMatchObject({
+      direction: 'down',
+      favorable: true,
+      text: '-1.2% vs August (Improving)',
+    });
+    expect(readKpiTrend('● 100.0% vs August (Target Met)', 'higher')).toMatchObject({
+      direction: 'flat',
+      favorable: null,
+      text: '100.0% vs August (Target Met)',
+    });
+    expect(readKpiTrend('—', 'higher')).toMatchObject({
+      direction: 'flat',
+      favorable: null,
+      text: '—',
+    });
   });
 
-  it('deck requests carry only the params the API honours, and never call summary-records', async () => {
-    renderAt('/monthly-presentation?region=uae&month=2026-08');
-    await screen.findByText(/UAE at 91.2%/);
-    await waitFor(() => expect(seen.some((u) => u.startsWith('/api/corrective-actions/owners'))).toBe(true));
-    const q = (prefix: string) => {
-      const url = seen.find((u) => u.startsWith(prefix));
-      expect(url, prefix).toBeTruthy();
-      return new URLSearchParams(url!.split('?')[1]);
+  it('keeps deep-dive cards scannable, clickable, and bound to the overview trend', () => {
+    render(
+      <MemoryRouter initialEntries={['/monthly-presentation']}>
+        <MonthlyPresentationView />
+        <LocationProbe />
+      </MemoryRouter>,
+    );
+
+    const trendCard = screen.getByTestId('six-month-score-trend');
+    const chart = within(trendCard).getByRole('img', { name: /trend/i });
+    expect(chart.querySelector('path')).toBeTruthy();
+    expect(chart.querySelector('line')).toBeTruthy();
+    expect(chart.textContent).toMatch(/Target\s+100/);
+    expect(chart.textContent).toMatch(/100%/);
+    expect(chart.textContent).not.toMatch(/10[1-9]%/);
+    for (const point of OFFSHORE_EGYPT_SEP_2026_DATA.trend) {
+      expect(chart.textContent).toContain(point.month);
+      const marker = chart.querySelector(`[aria-label*="${point.month}"]`);
+      const label = marker?.getAttribute('aria-label') ?? '';
+      const score = point.score.toFixed(1);
+      expect(label.includes(score) || label.includes(score.replace('.', ','))).toBe(true);
+    }
+    const lastTrend = OFFSHORE_EGYPT_SEP_2026_DATA.trend.at(-1);
+    expect(trendCard.textContent).toContain(`${OFFSHORE_EGYPT_SEP_2026_DATA.trend[0].month} ${OFFSHORE_EGYPT_SEP_2026_DATA.trend[0].score.toFixed(1)}%`);
+    expect(trendCard.textContent).toContain(`${lastTrend?.month} ${lastTrend?.score.toFixed(1)}%`);
+
+    const expectDrillLink = (label: string) => {
+      const links = screen.getAllByText(label);
+      expect(links.length).toBeGreaterThan(0);
+      for (const link of links) {
+        expect(link.className).toContain('text-blue-700');
+        expect(link.className).toContain('group-hover:text-blue-950');
+        expect(link.className).toContain('group-hover:underline');
+        expect(link.querySelector('svg')?.getAttribute('class') ?? '').toContain(
+          'group-hover:translate-x-1',
+        );
+      }
     };
-    const fu = q('/api/corrective-actions/follow-up');
-    expect([...fu.keys()]).toEqual(['month']);
-    expect(fu.get('month')).toBe('August');
-    expect(seen.filter((u) => u.startsWith('/api/corrective-actions/owners'))).toEqual(['/api/corrective-actions/owners']);
-    expect(seen.filter((u) => u.startsWith('/api/corrective-actions/follow-up'))).toHaveLength(1);
-    expect(seen.some((u) => u.startsWith('/api/performance/summary-records'))).toBe(false);
-    seen.filter((u) => u.startsWith('/api/insights/workspace')).forEach((u) => {
-      const p = new URLSearchParams(u.split('?')[1]);
-      expect([p.get('month'), p.get('year'), p.get('region')]).toEqual(['August', '2026', 'UAE']);
+
+    fireEvent.click(screen.getByTestId('function-card-call-center'));
+    expectDrillLink('Open Team');
+    expectDrillLink('Open role detail');
+    const inbound = screen.getByTestId('agent-team-card-inbound-agents');
+    expect(within(inbound).getByText('91.5%')).toBeInTheDocument();
+    expect(within(inbound).getByText('Meet Expectations')).toBeInTheDocument();
+    expect(within(inbound).getByText('Gap')).toBeInTheDocument();
+    expect(within(inbound).getByText(/Diagnosis:/)).toBeInTheDocument();
+    const trainer = screen.getByTestId('support-position-card-pos-trainer');
+    const trainerDiagnosis = within(trainer).getByTestId('support-diagnosis-pos-trainer');
+    expect(trainerDiagnosis.className).toContain('line-clamp-2');
+    expect(trainerDiagnosis.getAttribute('title')).toBe(trainerDiagnosis.textContent);
+    expect(within(trainer).getByText('Booking Rate')).toBeInTheDocument();
+    expect(within(trainer).getByText('Quality Score')).toBeInTheDocument();
+    for (const diagnosis of screen.getAllByTestId(/^action-diagnosis-/)) {
+      expect(diagnosis.className).toContain('line-clamp-2');
+      expect(diagnosis.getAttribute('title')).toBe(diagnosis.textContent);
+      expect(diagnosis.closest('[data-testid^="position-action-"]')?.textContent).toMatch(/Target:/);
+    }
+
+    fireEvent.click(screen.getByTestId('back-to-monthly-overview'));
+    fireEvent.click(screen.getByTestId('function-card-rcm'));
+    expectDrillLink('Open Team');
+    expectDrillLink('Open role detail');
+    const rcmSupport = screen.getByTestId('support-position-card-rcm-pos-senior-pa');
+    const rcmDiagnosis = within(rcmSupport).getByTestId('support-diagnosis-rcm-pos-senior-pa');
+    expect(rcmDiagnosis.className).toContain('line-clamp-2');
+    expect(within(rcmSupport).getByText('IP Initial Rejection %')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('back-to-monthly-overview'));
+    fireEvent.click(screen.getByTestId('function-card-marketing'));
+    expectDrillLink('View role');
+    const marketing = screen.getByTestId('function-deep-dive-page');
+    expect(within(marketing).getByTestId('deep-dive-function-score')).toHaveTextContent('79.6%');
+    expect(within(marketing).getAllByText('Below Average').length).toBeGreaterThan(0);
+    expect(within(marketing).getAllByText(/Gap/).length).toBeGreaterThan(0);
+    expect(within(marketing).getAllByText(/Primary drag:/).length).toBeGreaterThan(0);
+    const marketingAction = screen.getByTestId('action-diagnosis-mkt-act-1');
+    expect(marketingAction.className).toContain('line-clamp-2');
+    expect(marketingAction.closest('article')?.textContent).toMatch(/Social Media Response Time/);
+
+    fireEvent.click(screen.getByTestId('back-to-monthly-overview'));
+    fireEvent.click(screen.getByTestId('function-card-call-center'));
+    fireEvent.click(screen.getByTestId('agent-team-card-inbound-agents'));
+    expect(screen.getByTestId('trend-explorer-diagnosis')).toHaveTextContent(
+      'Execution is the primary issue, not the 2.50 min target',
+    );
+    fireEvent.click(screen.getByTestId('trend-kpi-switcher-Booking'));
+    expect(screen.getByTestId('trend-explorer-diagnosis')).toHaveTextContent(
+      'Booking Rate target was raised from 46.0% to 65.0% in June',
+    );
+    expect(screen.getByText(/Deploy live AHT pacing alerts/i)).toBeInTheDocument();
+
+    const maryam = screen.getByTestId('individual-action-card-Maryam Elsayed Mahmoud Eid');
+    const abdulrahman = screen.getByTestId('individual-action-card-Abdulrahman Said Sayed Helal');
+    const issueOf = (card: HTMLElement) =>
+      (within(card).getByText(/Main Issue:/i).parentElement?.textContent ?? '')
+        .replace(/Main Issue:\s*/i, '')
+        .trim();
+    const maryamIssue = issueOf(maryam);
+    const abdulrahmanIssue = issueOf(abdulrahman);
+    const maryamAction = within(maryam).getByTestId(
+      'individual-action-text-Maryam Elsayed Mahmoud Eid',
+    ).textContent ?? '';
+    const abdulrahmanAction = within(abdulrahman).getByTestId(
+      'individual-action-text-Abdulrahman Said Sayed Helal',
+    ).textContent ?? '';
+    expect(maryamIssue).not.toBe(abdulrahmanIssue);
+    expect(maryamAction).toContain(maryamIssue);
+    expect(abdulrahmanAction).toContain(abdulrahmanIssue);
+    expect(maryamAction).not.toBe(abdulrahmanAction);
+
+    const teamActions = screen.getAllByTestId(/^team-action-card-/);
+    expect(teamActions.length).toBeGreaterThan(0);
+    for (const card of teamActions) {
+      expect(within(card).getByTestId(/^team-action-status-/).textContent?.trim()).toMatch(
+        /^(Open|In Progress|Planned|Completed)$/,
+      );
+      const owner = within(card).getByTestId(/^team-action-owner-/);
+      expect(owner.textContent?.trim().length).toBeGreaterThan(0);
+      const due = within(card).getByTestId(/^team-action-due-/).textContent?.trim() ?? '';
+      expect(/^\d{4}-\d{2}-\d{2}/.test(due) || due === 'No due date').toBe(true);
+    }
+  });
+
+  it('keeps Presentation Mode on across the review and hides action editing while it is on', () => {
+    expect(showPresentationControl(false)).toBe(true);
+    expect(showPresentationControl(true)).toBe(false);
+    expect(showStoredPlaceholder('No due date', false)).toBe(true);
+    expect(showStoredPlaceholder('No due date', true)).toBe(false);
+    expect(showStoredPlaceholder('2026-10-18', true)).toBe(true);
+    expect(showActionSection(0, false)).toBe(true);
+    expect(showActionSection(0, true)).toBe(false);
+    expect(showActionSection(2, true)).toBe(true);
+
+    render(
+      <MemoryRouter initialEntries={['/monthly-presentation']}>
+        <MonthlyPresentationView />
+        <LocationProbe />
+      </MemoryRouter>,
+    );
+
+    const modeSwitch = () => screen.getByRole('switch', { name: 'Presentation Mode' });
+    expect(modeSwitch()).toHaveAttribute('aria-checked', 'false');
+    expect(screen.queryByText(/^Presenting$/i)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('function-card-call-center'));
+    expect(screen.getByTestId('call-center-deep-dive-page')).toBeInTheDocument();
+    expect(modeSwitch()).toHaveAttribute('aria-checked', 'false');
+
+    fireEvent.click(screen.getByTestId('agent-team-card-inbound-agents'));
+    expect(screen.getByTestId('team-deep-dive-page')).toBeInTheDocument();
+    expect(screen.getByTestId('add-team-action-btn')).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Edit' }).length).toBeGreaterThan(0);
+    expect(
+      screen.getAllByTestId(/^team-action-due-/).some((node) => node.textContent?.trim() === 'No due date'),
+    ).toBe(true);
+    expect(screen.getByText(/Deploy live AHT pacing alerts/i)).toBeInTheDocument();
+    expect(screen.getByTestId('team-deep-dive-score')).toHaveTextContent('91.5%');
+
+    fireEvent.click(screen.getByTestId('back-to-call-center-deep-dive'));
+    fireEvent.click(screen.getByTestId('back-to-monthly-overview'));
+    fireEvent.click(screen.getByTestId('function-card-marketing'));
+    expect(screen.getByTestId('function-deep-dive-page')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('dragging-roles-next'));
+    fireEvent.click(screen.getByTestId('dragging-roles-next'));
+    fireEvent.click(screen.getByTestId('role-card-graphic-designer'));
+    expect(screen.getByTestId('role-detail-page')).toBeInTheDocument();
+    expect(screen.getByText('Add Corrective Action')).toBeInTheDocument();
+    expect(screen.getByTestId('role-action-form')).toBeInTheDocument();
+    const savedRoleAction = screen.getAllByTestId(/^role-action-/)[0]?.textContent ?? '';
+    expect(savedRoleAction.trim().length).toBeGreaterThan(0);
+
+    fireEvent.click(modeSwitch());
+    expect(modeSwitch()).toHaveAttribute('aria-checked', 'true');
+    expect(screen.queryByText(/^Presenting$/i)).not.toBeInTheDocument();
+    expect(screen.queryByTestId('role-action-form')).not.toBeInTheDocument();
+    expect(screen.queryByText('Add Corrective Action')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument();
+    expect(screen.getAllByTestId(/^role-action-/)[0]?.textContent).toBe(savedRoleAction);
+
+    const expectPresenting = () => {
+      expect(modeSwitch()).toHaveAttribute('aria-checked', 'true');
+      expect(screen.queryByText(/^Presenting$/i)).not.toBeInTheDocument();
+    };
+
+    fireEvent.click(screen.getByTestId('breadcrumb-function'));
+    expect(screen.getByTestId('function-deep-dive-page')).toBeInTheDocument();
+    expectPresenting();
+    expect(screen.getByTestId('deep-dive-function-score')).toHaveTextContent('79.6%');
+
+    fireEvent.click(screen.getByTestId('back-to-monthly-overview'));
+    fireEvent.click(screen.getByTestId('function-card-call-center'));
+    expect(screen.getByTestId('call-center-deep-dive-page')).toBeInTheDocument();
+    expectPresenting();
+
+    fireEvent.click(screen.getByTestId('agent-team-card-inbound-agents'));
+    expect(screen.getByTestId('team-deep-dive-page')).toBeInTheDocument();
+    expectPresenting();
+    expect(screen.queryByTestId('add-team-action-btn')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument();
+    expect(screen.queryByText('No due date')).not.toBeInTheDocument();
+    expect(screen.queryByText(/customize & save/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/Deploy live AHT pacing alerts/i)).toBeInTheDocument();
+    expect(screen.getAllByTestId(/^team-action-status-/).length).toBeGreaterThan(0);
+    expect(
+      screen.getAllByTestId(/^team-action-owner-/).every((node) => (node.textContent?.trim().length ?? 0) > 0),
+    ).toBe(true);
+    expect(screen.getByTestId('team-deep-dive-score')).toHaveTextContent('91.5%');
+
+    fireEvent.click(screen.getByTestId('back-to-call-center-deep-dive'));
+    fireEvent.click(screen.getByTestId('back-to-monthly-overview'));
+    fireEvent.click(screen.getByTestId('function-card-marketing'));
+    expectPresenting();
+    fireEvent.click(screen.getByTestId('dragging-roles-next'));
+    fireEvent.click(screen.getByTestId('dragging-roles-next'));
+    fireEvent.click(screen.getByTestId('role-card-graphic-designer'));
+    expect(screen.getByTestId('role-detail-page')).toBeInTheDocument();
+    expectPresenting();
+    expect(screen.queryByTestId('role-action-form')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument();
+    expect(screen.queryByText('No corrective actions recorded for this role yet.')).not.toBeInTheDocument();
+    expect(screen.getAllByTestId(/^role-action-/)[0]?.textContent).toBe(savedRoleAction);
+
+    fireEvent.click(modeSwitch());
+    expect(modeSwitch()).toHaveAttribute('aria-checked', 'false');
+    expect(screen.queryByText(/^Presenting$/i)).not.toBeInTheDocument();
+    expect(screen.getByText('Add Corrective Action')).toBeInTheDocument();
+    expect(screen.getByTestId('role-action-form')).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Edit' }).length).toBeGreaterThan(0);
+
+    fireEvent.click(within(screen.getByTestId('role-detail-breadcrumb')).getByRole('button', { name: 'Overview' }));
+    expect(screen.getByTestId('monthly-overview-page')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Monthly Presentation' })).toBeInTheDocument();
+    expect(screen.getByTestId('overall-score-value')).toHaveTextContent('86.6%');
+    expect(modeSwitch()).toHaveAttribute('aria-checked', 'false');
+  });
+
+  it('uses the UAE overview and does not reuse Egypt people when the region switches', () => {
+    render(
+      <MemoryRouter initialEntries={['/monthly-presentation']}>
+        <MonthlyPresentationView />
+        <LocationProbe />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByTestId('region-uae'));
+    expect(screen.getByTestId('location-probe')).toHaveTextContent('region=uae');
+    expect(screen.getByTestId('header-region-badge')).toHaveTextContent('UAE Region');
+    expect(screen.getByTestId('overall-score-value')).toHaveTextContent('91.8%');
+    expect(screen.getByTestId('function-card-csr')).toBeInTheDocument();
+    expect(screen.queryByTestId('function-card-call-center')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Maryam Elsayed/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Coding EGY/i)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('function-card-csr'));
+    expect(screen.getByTestId('function-deep-dive-page')).toBeInTheDocument();
+    expect(screen.getByText('No measured rows for this region in the locked month.')).toBeInTheDocument();
+    expect(screen.queryByText(/Nourshan/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Maryam Elsayed/i)).not.toBeInTheDocument();
+  });
+
+  it('steps from the control bar and saves agenda and notes for the region and month', () => {
+    const { unmount } = render(
+      <MemoryRouter initialEntries={['/monthly-presentation']}>
+        <MonthlyPresentationView />
+        <LocationProbe />
+      </MemoryRouter>,
+    );
+
+    const bar = screen.getByTestId('presentation-control-bar');
+    expect(bar).toBeInTheDocument();
+    expect(within(bar).getByTestId('presentation-month')).toHaveTextContent(/^Sep$/);
+    expect(within(bar).queryByText('Presentation Mode')).not.toBeInTheDocument();
+    fireEvent.click(within(bar).getByTestId('presentation-month'));
+    expect(screen.getByRole('option', { name: 'September 2026' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('option', { name: 'September 2026' })).toHaveTextContent('Sep');
+    expect(screen.getAllByRole('switch', { name: 'Presentation Mode' })).toHaveLength(1);
+    expect(within(bar).getByRole('switch', { name: 'Presentation Mode' })).toBeInTheDocument();
+    expect(screen.getByTestId('presentation-prev')).toBeDisabled();
+    expect(screen.getByTestId('presentation-next')).toBeEnabled();
+
+    fireEvent.click(screen.getByTestId('presentation-next'));
+    expect(screen.getByTestId('location-probe').textContent).toContain('deepDive=rcm');
+    expect(screen.getByRole('heading', { name: 'RCM Deep Dive' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('presentation-prev'));
+    expect(screen.getByTestId('location-probe').textContent).not.toContain('deepDive');
+    expect(screen.getByTestId('monthly-overview-page')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('presentation-agenda'));
+    fireEvent.change(screen.getByTestId('presentation-agenda-text'), {
+      target: { value: 'Open with RCM.' },
     });
-  });
+    fireEvent.click(screen.getByTestId('presentation-agenda-save'));
+    expect(localStorage.getItem('pms-monthly-pad:EGY:2026-09:agenda')).toBe('Open with RCM.');
 
-  it('Reopen as Draft is not rendered (no reopen endpoint)', async () => {
-    renderAt('/monthly-presentation?region=egy&month=2026-09');
-    await screen.findByText(/Egypt at 86.4%/);
-    expect(screen.queryByRole('button', { name: /Reopen as Draft/ })).toBeNull();
-  });
+    fireEvent.change(screen.getByTestId('presentation-agenda-text'), {
+      target: { value: 'Unsaved visit note' },
+    });
+    fireEvent.click(screen.getByTestId('presentation-agenda-pad-close'));
+    expect(localStorage.getItem('pms-monthly-pad:EGY:2026-09:agenda')).toBe('Open with RCM.');
+    fireEvent.click(screen.getByTestId('presentation-agenda'));
+    expect(screen.getByTestId('presentation-agenda-text')).toHaveValue('Unsaved visit note');
 
-  it('v1 hides the Draft/Final control and any Draft/Final status text; the month lock stays', async () => {
-    renderAt('/monthly-presentation?region=egy&month=2026-09');
-    await screen.findByText(/Egypt at 86.4%/);
-    expect(screen.queryByRole('button', { name: /Mark Final|Reopen as Draft/ })).toBeNull();
-    expect(document.body.textContent).not.toMatch(/\bDraft\b|\bFinal\b|Frozen/);
-    fireEvent.click(screen.getByRole('button', { name: /Export PDF/ }));
-    expect(screen.getByRole('dialog', { name: 'Export PDF' }).textContent).not.toMatch(/Draft|Final/);
-    expect(screen.getAllByTestId('period-lock')).toHaveLength(11);
-  });
-});
+    fireEvent.click(screen.getByTestId('presentation-notes'));
+    const notes = screen.getByTestId('presentation-notes-text');
+    notes.innerHTML = 'Follow up owners';
+    fireEvent.input(notes);
+    fireEvent.click(screen.getByTestId('presentation-notes-save'));
+    expect(localStorage.getItem('pms-monthly-pad:EGY:2026-09:notes')).toContain('Follow up owners');
 
-describe('PresentMode keyboard', () => {
-  it('navigates with arrows, PageUp/PageDown, Home/End and exits on Esc', () => {
-    const onExit = vi.fn();
-    const slides = Array.from({ length: 11 }, (_, i) => <div key={i}>slide {i + 1}</div>);
-    render(<PresentMode slides={slides} start={3} onExit={onExit} label="x" />);
-    const stage = screen.getByRole('region', { name: /Presentation/ });
-    expect(document.activeElement).toBe(stage);
-    expect(screen.getByText('slide 3')).toBeTruthy();
-    fireEvent.keyDown(stage, { key: 'ArrowRight' }); expect(screen.getByText('slide 4')).toBeTruthy();
-    fireEvent.keyDown(stage, { key: 'PageUp' }); expect(screen.getByText('slide 3')).toBeTruthy();
-    fireEvent.keyDown(stage, { key: 'End' }); expect(screen.getByText('slide 11')).toBeTruthy();
-    fireEvent.keyDown(stage, { key: 'PageDown' }); expect(screen.getByText('slide 11')).toBeTruthy();
-    fireEvent.keyDown(stage, { key: 'Home' }); expect(screen.getByText('slide 1')).toBeTruthy();
-    fireEvent.keyDown(stage, { key: 'ArrowLeft' }); expect(screen.getByText('slide 1')).toBeTruthy();
-    fireEvent.keyDown(stage, { key: 'Escape' }); expect(onExit).toHaveBeenCalled();
+    unmount();
+    render(
+      <MemoryRouter initialEntries={['/monthly-presentation']}>
+        <MonthlyPresentationView />
+      </MemoryRouter>,
+    );
+    fireEvent.click(screen.getByTestId('presentation-agenda'));
+    expect(screen.getByTestId('presentation-agenda-text')).toHaveValue('Open with RCM.');
+    fireEvent.click(screen.getByTestId('presentation-notes'));
+    expect(screen.getByTestId('presentation-notes-text').textContent).toContain('Follow up owners');
   });
 });

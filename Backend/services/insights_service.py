@@ -89,11 +89,11 @@ WORKSPACE_SECTIONS: tuple[str, ...] = (
 
 
 # The sections that read only the current month C, the month before it and the six months ending at C, besides
-# the values a period window takes from the light record index. The overall trend also reads the month before the
-# six (for its basis) and the KPI overview reads every period, so a request for either loads every record.
-# The KPI overview reads the last six explicit periods (not the six months ending at C); _windowed_records adds
-# exactly those periods to the window, so it no longer forces every record to be resolved.
-PERIOD_WINDOW_SECTIONS: frozenset[str] = frozenset(WORKSPACE_SECTIONS) - {"overall_trend"}
+# the values a period window takes from the light record index. The KPI overview reads the last six explicit
+# periods (not the six months ending at C); _windowed_records adds exactly those periods to the window.
+# overall_trend's basis note for the oldest point reads the month before those six, and that one month is added
+# to the same window, so the trend no longer forces every record to be resolved.
+PERIOD_WINDOW_SECTIONS: frozenset[str] = frozenset(WORKSPACE_SECTIONS)
 
 
 def normalize_workspace_sections(sections: Iterable[str] | str | None) -> frozenset[str] | None:
@@ -1072,6 +1072,10 @@ class InsightsService:
             return None
 
         window = set(self._six_month_window(current_period))
+        if "overall_trend" in sections:
+            # Basis for the oldest of the six points reads the calendar month before the window.
+            year, month = min(window)
+            window.add((year - 1, 12) if month == 1 else (year, month - 1))
         if "kpi_overview" in sections:
             # _kpi_overview reads the last six explicit periods of the filtered records.
             window.update(sorted({_period(row) for row in light_records if _period(row)})[-6:])

@@ -43,7 +43,14 @@ function FunctionLink({ cardFunction, style }: { cardFunction: ExecutiveFunction
   );
 }
 
-function FunctionCard({ card, previous, range, linkable }: { card: ExecutiveFunctionCard; previous: ExecutivePeriod | null; range: ExecutiveRangeBlock | null; linkable: boolean }) {
+function FunctionCard({ card, previous, range, linkable, onSelectFunction, onSelectTeam }: {
+  card: ExecutiveFunctionCard;
+  previous: ExecutivePeriod | null;
+  range: ExecutiveRangeBlock | null;
+  linkable: boolean;
+  onSelectFunction?: (fn: ExecutiveFunction) => void;
+  onSelectTeam?: (team: string, fn: ExecutiveFunction) => void;
+}) {
   const tone = getGradeTone(card.score);
   const style = FUNCTION_STYLE[card.function];
   const changeTone = scoreTone(card.change);
@@ -54,7 +61,11 @@ function FunctionCard({ card, previous, range, linkable }: { card: ExecutiveFunc
       <div className="flex items-center gap-[10px]">
         <FunctionIcon fn={card.function} size={40} />
         <div className="min-w-0">
-          <h3 className="text-[17px] font-bold leading-[1.3] tracking-[-0.025em] text-[var(--insights-heading)]">{card.function}</h3>
+          {onSelectFunction ? (
+            <button type="button" className="text-left text-[17px] font-bold leading-[1.3] tracking-[-0.025em] text-[var(--insights-heading)] hover:underline" aria-label={`Open ${card.function}`} onClick={() => onSelectFunction(card.function)}>{card.function}</button>
+          ) : (
+            <h3 className="text-[17px] font-bold leading-[1.3] tracking-[-0.025em] text-[var(--insights-heading)]">{card.function}</h3>
+          )}
           <p className="mt-[2px] text-xs leading-[1.5] text-[var(--text-muted)]">
             {card.teams.length} {card.teams.length === 1 ? 'team' : 'teams'} · {card.employees} people{card.regions.length ? ` · ${card.regions.join(' + ')}` : ''}
           </p>
@@ -82,15 +93,29 @@ function FunctionCard({ card, previous, range, linkable }: { card: ExecutiveFunc
       </div>
       <FunctionTrendChart color={trendColor} title={`${card.function} score`} points={card.trend} />
       <div className="mt-auto flex flex-col gap-[10px] border-t border-[var(--insights-row-border)] pt-[10px]">
-        <p className="min-w-0 text-xs leading-[1.6] text-[var(--text-secondary)]">{card.teams.join(' · ')}</p>
-        {linkable && <FunctionLink cardFunction={card.function} style={style} />}
+        {onSelectTeam ? (
+          <div className="flex flex-wrap gap-[6px]">
+            {card.teams.map((team) => (
+              <button key={team} type="button" className="rounded-full border border-[var(--exec-card-border)] bg-[var(--exec-tile-bg)] px-[8px] py-[3px] text-xs font-semibold text-[var(--insights-heading)] hover:underline" onClick={() => onSelectTeam(team, card.function)}>{team}</button>
+            ))}
+          </div>
+        ) : <p className="min-w-0 text-xs leading-[1.6] text-[var(--text-secondary)]">{card.teams.join(' · ')}</p>}
+        {linkable && !onSelectFunction && <FunctionLink cardFunction={card.function} style={style} />}
       </div>
       <span className="sr-only">{tone.label}</span>
     </article>
   );
 }
 
-export default function FunctionCards({ cards, previous, range = null, linkable }: { cards: ExecutiveFunctionCard[]; previous: ExecutivePeriod | null; range?: ExecutiveRangeBlock | null; linkable: boolean }) {
+export default function FunctionCards({ cards, previous, range = null, linkable, onSelectFunction, onSelectTeam }: {
+  cards: ExecutiveFunctionCard[];
+  previous: ExecutivePeriod | null;
+  range?: ExecutiveRangeBlock | null;
+  linkable: boolean;
+  /** Stay on the current page: open this function instead of Function Summary. */
+  onSelectFunction?: (fn: ExecutiveFunction) => void;
+  onSelectTeam?: (team: string, fn: ExecutiveFunction) => void;
+}) {
   return (
     <section aria-labelledby="exec-functions-title" className="flex flex-col gap-[12px]">
       <div className="flex flex-wrap items-center justify-between gap-[8px]">
@@ -99,11 +124,11 @@ export default function FunctionCards({ cards, previous, range = null, linkable 
           <span className="rounded-full bg-[var(--exec-chip-bg)] px-[8px] py-[2px] text-xs font-semibold text-[var(--exec-chip-text)]">{cards.length} functions</span>
           {range && <span className="text-[12px] text-[var(--text-muted)]">{coveredPeriodLabel(null, range)}</span>}
         </div>
-        {linkable && <span className="text-[12px] text-[var(--text-muted)]">Click a function to open its Function Summary →</span>}
+        {onSelectFunction ? <span className="text-[12px] text-[var(--text-muted)]">Choose a function or a team to review it here</span> : linkable ? <span className="text-[12px] text-[var(--text-muted)]">Click a function to open its Function Summary →</span> : null}
       </div>
       <BasisComparisonNote messages={cards.map((card) => card.basis_context?.message)} />
       <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,260px),1fr))] gap-[12px]">
-        {cards.map((card) => <FunctionCard key={card.function} card={card} previous={previous} range={range} linkable={linkable} />)}
+        {cards.map((card) => <FunctionCard key={card.function} card={card} previous={previous} range={range} linkable={linkable} onSelectFunction={onSelectFunction} onSelectTeam={onSelectTeam} />)}
       </div>
     </section>
   );

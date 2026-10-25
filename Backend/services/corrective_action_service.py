@@ -30,6 +30,7 @@ from utils.report_scope import (
     user_can_access_team,
     user_can_access_team_level,
 )
+from utils.regions import first_region
 from utils.team_identity import logical_team_name
 
 
@@ -518,18 +519,23 @@ class CorrectiveActionService:
         team: str | None = None,
         owner: str | None = None,
         month: str | None = None,
+        region: str | None = None,
     ) -> dict[str, Any]:
         matched: list[dict[str, Any]] = []
         seen: set[uuid.UUID] = set()
+        region_key = region.strip() if region and region.strip() else None
         actions = self.actions.list_active_for_follow_up(
             month_values=month_match_values(month) if month and month.strip() else None,
+            region=region_key,
         )
         # One IN query for every period record instead of one query per action.
         self._record_cache = self._prefetch_performance_records(
             [action for action in actions if action.employee_id is not None and action.due_date is not None]
         )
         try:
-            return self._list_follow_up_from(actions, scope, matched, seen, state=state, team=team, owner=owner, month=month)
+            return self._list_follow_up_from(
+                actions, scope, matched, seen, state=state, team=team, owner=owner, month=month, region=region_key,
+            )
         finally:
             self._record_cache = None
 
@@ -544,8 +550,12 @@ class CorrectiveActionService:
         team: str | None,
         owner: str | None,
         month: str | None,
+        region: str | None = None,
     ) -> dict[str, Any]:
+        region_key = region.strip().casefold() if region and region.strip() else None
         for action in actions:
+            if region_key and self._action_region(action).casefold() != region_key:
+                continue
             serialized = self._follow_up_candidate(action, scope)
             if serialized is None or action.id in seen:
                 continue
@@ -602,6 +612,13 @@ class CorrectiveActionService:
             {"id": str(user.id), "name": self._person_name(user), "role": user.role}
             for user in owners
         ]
+
+    @staticmethod
+    def _action_region(action: Action) -> str:
+        """Employee region, then the action's team. Blank values count as missing."""
+        employee_region = action.employee.region if action.employee is not None else None
+        team_region = action.team.region if action.team is not None else None
+        return first_region(employee_region, team_region)
 
     def _follow_up_candidate(self, action: Action, scope: dict) -> dict[str, Any] | None:
         if scope.get("role") == "Branch Director" and action.branch_key not in scope.get("accessible_branches", []):

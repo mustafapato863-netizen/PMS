@@ -54,6 +54,7 @@ class SummaryFilters:
     year: int | None = None
     month: str | None = None
     team: str | None = None
+    region: str | None = None
 
     @property
     def month_key(self) -> str | None:
@@ -62,6 +63,10 @@ class SummaryFilters:
     @property
     def team_key(self) -> str | None:
         return self.team.strip().casefold() if self.team and self.team.strip() else None
+
+    @property
+    def region_key(self) -> str | None:
+        return self.region.strip().casefold() if self.region and self.region.strip() else None
 
 
 @dataclass
@@ -85,7 +90,9 @@ def matches(record: Any, filters: SummaryFilters) -> bool:
         return False
     if filters.month_key and str(_field(record, "month") or "").strip().casefold() != filters.month_key:
         return False
-    return not (filters.team_key and str(_field(record, "team") or "").strip().casefold() != filters.team_key)
+    if filters.team_key and str(_field(record, "team") or "").strip().casefold() != filters.team_key:
+        return False
+    return not (filters.region_key and str(_field(record, "region") or "").strip().casefold() != filters.region_key)
 
 
 def to_payload(record: Any) -> dict | None:
@@ -123,6 +130,9 @@ def summary_records_indexed(
         sql_filters["team_names"] = sorted({
             team.name for team in db.query(Team).all() if logical_team_name(team).strip().casefold() == filters.team_key
         })
+    if filters.region_key:
+        # Same predicate as the dashboard list: record, then employee, then team.
+        sql_filters["region"] = filters.region.strip()
     # employee_id predates this path and the frontend relies on its row order,
     # which is the unfiltered query's natural order; it is applied to the light
     # index rows (still before any payload is resolved) instead of in SQL, where

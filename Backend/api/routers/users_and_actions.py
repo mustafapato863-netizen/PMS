@@ -887,6 +887,7 @@ def get_action_follow_up(
     team: str | None = Query(default=None),
     owner: str | None = Query(default=None),
     month: str | None = Query(default=None),
+    region: str | None = Query(default=None, max_length=40),
     db: Session = Depends(get_db),
     role: str = Depends(require_role(["Admin", "General Manager", "Manager", "Executive", "Performance Team", "Regional Manager", "Branch Director", "Function Director"])),
 ):
@@ -897,6 +898,7 @@ def get_action_follow_up(
             team=team,
             owner=owner,
             month=month,
+            region=region,
         )
         release_read_transaction(db)
         return StandardResponse(success=True, message="Retrieved action follow-up successfully", data=data)

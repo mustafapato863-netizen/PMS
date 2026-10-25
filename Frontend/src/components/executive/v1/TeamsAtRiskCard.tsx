@@ -11,7 +11,7 @@ import BasisComparisonNote from '../../../features/evaluation/BasisComparisonNot
 const TEAM_BRANCHES = new Set(['dubai', 'sharjah', 'ajman', 'clinics']);
 const TEAM_LEVELS = new Set(['All', 'Employee', 'Managerial', 'Corporate']);
 
-export default function TeamsAtRiskCard({ teams, rangeLabel = null }: { teams: ExecutiveTeam[]; rangeLabel?: string | null }) {
+export default function TeamsAtRiskCard({ teams, rangeLabel = null, onSelectTeam }: { teams: ExecutiveTeam[]; rangeLabel?: string | null; onSelectTeam?: (team: string) => void }) {
   const [showAllTeams, setShowAllTeams] = useState(false);
   const [searchParams] = useSearchParams();
   const rows = (showAllTeams ? [...teams] : teams.filter((team) => team.score !== null && team.score < 90)).sort((left, right) => {
@@ -55,7 +55,11 @@ export default function TeamsAtRiskCard({ teams, rangeLabel = null }: { teams: E
           {rows.map((team) => (
             <div role="row" key={team.team} className="flex items-center gap-[10px] border-b border-[var(--insights-row-border)] px-[12px] py-[10px] last:border-b-0" data-testid="risk-row">
               <div role="cell" className="flex min-w-0 flex-1 flex-col gap-[2px]">
-                <Link to={teamHref(team.team)} title={`View ${team.team} team details`} className="text-[13px] font-semibold leading-[1.3] text-[var(--insights-heading)] hover:underline">{team.team}</Link>
+                {onSelectTeam ? (
+                  <button type="button" title={`Review ${team.team} on this page`} className="text-left text-[13px] font-semibold leading-[1.3] text-[var(--insights-heading)] hover:underline" onClick={() => onSelectTeam(team.team)}>{team.team}</button>
+                ) : (
+                  <Link to={teamHref(team.team)} title={`View ${team.team} team details`} className="text-[13px] font-semibold leading-[1.3] text-[var(--insights-heading)] hover:underline">{team.team}</Link>
+                )}
                 <span className="truncate text-xs text-[var(--text-muted)]">{[team.function, team.regions.join(' + ')].filter(Boolean).join(' · ')}</span>
               </div>
               <span role="cell" className="w-[56px] text-right"><ScoreText score={team.score} className="text-[13px]">{fmtScore(team.score)}</ScoreText></span>

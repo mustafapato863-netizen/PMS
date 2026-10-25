@@ -315,6 +315,7 @@ def get_summary_records(
     year: Annotated[int | None, Query(ge=1900, le=9999, description="Only records of this year")] = None,
     month: Annotated[str | None, Query(max_length=20, description="Only records of this month (case-insensitive)")] = None,
     team: Annotated[str | None, Query(max_length=255, description="Only records of this team (case-insensitive)")] = None,
+    region: Annotated[str | None, Query(max_length=40, description="Only records of this region (case-insensitive; record, then employee, then team)")] = None,
     limit: Annotated[int | None, Query(
         ge=1,
         le=SUMMARY_RECORDS_MAX_LIMIT,
@@ -334,7 +335,7 @@ def get_summary_records(
     """
     enforce_user_route_limit(request, SUMMARY_RECORDS_RULE, "GET /api/performance/summary-records")
     scope = require_authenticated_scope(db, request)
-    filters = SummaryFilters(employee_id=employee_id, year=year, month=month, team=team)
+    filters = SummaryFilters(employee_id=employee_id, year=year, month=month, team=team, region=region)
     record_service = DashboardRecordService(db, sql_repository_cls=SQLPerformanceRepository)
     result = None
     if SUMMARY_RECORDS_QUERY_FILTERING and isinstance(db, Session):
