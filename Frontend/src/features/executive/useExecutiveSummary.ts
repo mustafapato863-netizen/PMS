@@ -9,7 +9,7 @@
  * soften. No request is made to `/api/executive/summary`: that endpoint does
  * not exist.
  */
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiFetch } from '../../lib/apiClient';
 import { performanceSessionKey } from '../../lib/performanceSessionKey';
@@ -134,6 +134,21 @@ export function buildExecutiveOptions(records: ExecRecord[], filters: ExecutiveF
 export function useExecutiveSummary({
   view, role, filters, managerTeams, functionName = null, accessibleFunctions, queuedActions = null, range = null, enabled = true, today,
 }: UseExecutiveSummaryArgs): ExecutiveSummaryResult {
+  // A new filters object with the same values must not recompose.
+  const periodKey = filters.periodKey;
+  const region = filters.region;
+  const branch = filters.branch;
+  const teamFunction = filters.teamFunction;
+  const team = filters.team;
+  const position = filters.position;
+  const performanceLevel = filters.performanceLevel;
+  const filterFields = useMemo<ExecutiveFilterState>(() => ({
+    periodKey, region, branch, teamFunction, team, position, performanceLevel,
+  }), [periodKey, region, branch, teamFunction, team, position, performanceLevel]);
+  // The default clock is taken once per visit. An injected `today` still wins.
+  const visitClock = useRef(new Date());
+  const resolvedToday = today ?? visitClock.current;
+
   const summaryRecords = useSummaryRecords(enabled);
   const legacyEnabled = enabled && summaryRecords.isError;
   const performance = usePerformanceData('All', 'all', 'All', 'All', legacyEnabled);
@@ -150,10 +165,10 @@ export function useExecutiveSummary({
   }, [managerTeams, records, view]);
   const managerTeam = useMemo(() => {
     if (view !== 'managerial') return null;
-    const requested = filters.team ? canonicalTeamName(filters.team) : '';
+    const requested = team ? canonicalTeamName(team) : '';
     if (requested && (!managerTeamOptions.length || managerTeamOptions.includes(requested))) return requested;
     return managerTeamOptions.length === 1 ? managerTeamOptions[0] : null;
-  }, [filters.team, managerTeamOptions, view]);
+  }, [team, managerTeamOptions, view]);
 
   // Range mode: the months averaged, and the range of the same length before them.
   const rangeFromKey = range?.from ?? '';
@@ -170,32 +185,32 @@ export function useExecutiveSummary({
     view,
     role,
     records,
-    filters: view === 'managerial' ? { branch: filters.branch, performanceLevel: filters.performanceLevel } : {
-      region: filters.region, branch: filters.branch, position: filters.position, teamFunction: view === 'function' ? undefined : filters.teamFunction, team: filters.team, performanceLevel: filters.performanceLevel,
+    filters: view === 'managerial' ? { branch, performanceLevel } : {
+      region, branch, position, teamFunction: view === 'function' ? undefined : teamFunction, team, performanceLevel,
     },
-    requestedPeriodKey: rangeInput ? null : (filters.periodKey ?? null),
+    requestedPeriodKey: rangeInput ? null : (periodKey ?? null),
     range: rangeInput,
     team: managerTeam,
     teamScope: view === 'managerial' ? managerTeamOptions : null,
     functionName,
     accessibleFunctions,
     comparisonRecords: canAccessBroadAppPages(role) ? records : null,
-    today: today ?? new Date(),
+    today: resolvedToday,
     teamConfigs: teamConfigsList,
-  }), [accessibleFunctions, filters, functionName, managerTeam, managerTeamOptions, rangeInput, records, role, today, view, teamConfigsList]);
+  }), [accessibleFunctions, branch, functionName, managerTeam, managerTeamOptions, performanceLevel, periodKey, position, rangeInput, records, region, resolvedToday, role, team, teamConfigsList, teamFunction, view]);
 
   const preliminary = useMemo(() => (enabled && !recordsLoading ? composeExecutiveSummary(baseInput) : null), [baseInput, enabled, recordsLoading]);
   const effectiveKey = preliminary?.period.effective?.key;
 
   const insightFilters: InsightFilters = useMemo(() => {
-    if (view === 'managerial') return { periodKey: effectiveKey, team: managerTeam ?? undefined, performanceLevel: filters.performanceLevel };
-    if (view === 'function') return { periodKey: effectiveKey, region: filters.region, teamFunction: functionName ?? undefined, team: filters.team, performanceLevel: filters.performanceLevel };
-    return { periodKey: effectiveKey, region: filters.region, teamFunction: filters.teamFunction, team: filters.team, performanceLevel: filters.performanceLevel };
-  }, [effectiveKey, filters, functionName, managerTeam, view]);
+    if (view === 'managerial') return { periodKey: effectiveKey, team: managerTeam ?? undefined, performanceLevel };
+    if (view === 'function') return { periodKey: effectiveKey, region, teamFunction: functionName ?? undefined, team, performanceLevel };
+    return { periodKey: effectiveKey, region, teamFunction, team, performanceLevel };
+  }, [effectiveKey, functionName, managerTeam, performanceLevel, region, team, teamFunction, view]);
   // The Insights endpoint does not support branch or Marketing role scope yet.
   // Never display a wider cached driver result as if it matches either selection.
   // Range mode hides the Insights drivers: they are defined for one month, not for an average over several.
-  const driversEnabled = enabled && !rangeInput && Boolean(effectiveKey) && DRIVER_ROLES.has(role) && !filters.branch && !filters.position;
+  const driversEnabled = enabled && !rangeInput && Boolean(effectiveKey) && DRIVER_ROLES.has(role) && !branch && !position;
   const workspace = useInsightsWorkspace(insightFilters, { enabled: driversEnabled });
 
   const actionsEnabled = enabled && canSeeSummaryActionAnalytics(role);
@@ -234,22 +249,22 @@ export function useExecutiveSummary({
 
   // One scope rule for every action list: the follow-up rows and the Pending Sync queue.
   const scopeAction = useCallback((action: FollowUpAction) => {
-    const team = canonicalTeamName(action.team);
-    if (view === 'managerial' && !managerTeamOptions.some((allowed) => summaryTeamMatches(team, allowed))) return false;
-    if (view === 'managerial' && managerTeam && !summaryTeamMatches(team, managerTeam)) return false;
+    const actionTeam = canonicalTeamName(action.team);
+    if (view === 'managerial' && !managerTeamOptions.some((allowed) => summaryTeamMatches(actionTeam, allowed))) return false;
+    if (view === 'managerial' && managerTeam && !summaryTeamMatches(actionTeam, managerTeam)) return false;
     // Managerial scope is the team filter above (the URL team is validated there), so the raw URL team does not apply again.
-    if (view !== 'managerial' && filters.team && !summaryTeamMatches(team, filters.team)) return false;
-    if (view === 'function' && functionName && !summaryFunctionMatches(team, functionName, teamFunctions)) return false;
-    if (filters.teamFunction && team && !teamBelongsToFunction(team, filters.teamFunction, teamFunctions)) return false;
-    if (filters.region || filters.branch || filters.performanceLevel || filters.position) {
-      const matches = records.filter((record) => action.employee_id ? record.employeeId === action.employee_id : record.team === team);
-      if (!matches.some((record) => (!normalizeRegion(filters.region) || normalizeRegion(record.region) === normalizeRegion(filters.region))
-        && (!filters.branch || record.branches?.includes(filters.branch))
-        && (!filters.performanceLevel || record.level === filters.performanceLevel)
-        && (!filters.position || record.position === filters.position))) return false;
+    if (view !== 'managerial' && team && !summaryTeamMatches(actionTeam, team)) return false;
+    if (view === 'function' && functionName && !summaryFunctionMatches(actionTeam, functionName, teamFunctions)) return false;
+    if (teamFunction && actionTeam && !teamBelongsToFunction(actionTeam, teamFunction, teamFunctions)) return false;
+    if (region || branch || performanceLevel || position) {
+      const matches = records.filter((record) => action.employee_id ? record.employeeId === action.employee_id : record.team === actionTeam);
+      if (!matches.some((record) => (!normalizeRegion(region) || normalizeRegion(record.region) === normalizeRegion(region))
+        && (!branch || record.branches?.includes(branch))
+        && (!performanceLevel || record.level === performanceLevel)
+        && (!position || record.position === position))) return false;
     }
     return true;
-  }, [filters, functionName, managerTeam, managerTeamOptions, records, teamFunctions, view]);
+  }, [branch, functionName, managerTeam, managerTeamOptions, performanceLevel, position, records, region, team, teamFunction, teamFunctions, view]);
 
   // Pending Sync: unsynced actions on this device, in the same page scope. Counted only; never added to the totals.
   const pendingActions = useMemo(() => (actionsEnabled && queuedActions
@@ -261,14 +276,14 @@ export function useExecutiveSummary({
     return composeExecutiveSummary({
       ...baseInput,
       teamFunctions,
-      deriveScopedDrivers: DRIVER_ROLES.has(role) && Boolean(filters.branch || filters.position),
+      deriveScopedDrivers: DRIVER_ROLES.has(role) && Boolean(branch || position),
       drivers: driversEnabled && workspace.data ? { drivers: workspace.data.performance_drivers ?? [], items: [...(workspace.data.team_analyses ?? []), ...(workspace.data.priority_insights ?? []), ...(workspace.data.opportunities ?? [])] } : null,
       actions: followUp.data ? followUp.data.actions.map(toFollowUp).filter(scopeAction) : null,
       pendingActions,
     });
-  }, [baseInput, driversEnabled, followUp.data, pendingActions, preliminary, role, scopeAction, teamFunctions, workspace.data, filters.branch, filters.position]);
+  }, [baseInput, branch, driversEnabled, followUp.data, pendingActions, position, preliminary, role, scopeAction, teamFunctions, workspace.data]);
 
-  const options = useMemo(() => buildExecutiveOptions(records, filters, view, teamFunctions, functionName), [filters, functionName, records, teamFunctions, view]);
+  const options = useMemo(() => buildExecutiveOptions(records, filterFields, view, teamFunctions, functionName), [filterFields, functionName, records, teamFunctions, view]);
 
   const waitingSecondary = (driversEnabled && workspace.isLoading) || (actionsEnabled && followUp.isLoading);
   return {

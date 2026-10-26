@@ -8,6 +8,7 @@ import {
   type ExecRecord,
 } from '../executive/compose';
 import { executiveFunctionForTeam } from '../executive/functions';
+import { preApprovalsLeaderTeamTotal } from '../team/teamKpiAggregator';
 import type { ExecutivePeriod } from '../executive/types';
 import { gradeForScore, UAE_SEP_2026_DATA, type GradeLetter } from './monthlyOverviewData';
 
@@ -2520,8 +2521,9 @@ export function buildFunctionDeepDiveFromRecords(
       const tAll = fnRecords.filter((r) => r.team === teamName);
       const tCurr = inPeriod(tAll, effective);
       const tPrev = inPeriod(tAll, previous);
-      const tScore = round1(mean(tCurr.map((r) => r.score)) ?? fnScore);
-      const tPrevMean = mean(tPrev.map((r) => r.score));
+      const leaderTotal = preApprovalsLeaderTeamTotal(tCurr);
+      const tScore = leaderTotal ?? round1(mean(tCurr.map((r) => r.score)) ?? fnScore);
+      const tPrevMean = preApprovalsLeaderTeamTotal(tPrev) ?? mean(tPrev.map((r) => r.score));
       const tChange = tPrevMean !== null ? round1(tScore - round1(tPrevMean)) : 0;
       const tGrade = gradeForScore(tScore);
       const tHc = new Set(tCurr.map((r) => r.employeeId)).size;
@@ -2555,7 +2557,9 @@ export function buildFunctionDeepDiveFromRecords(
           : 'Pulling Average Down';
 
       const diagnosis =
-        fallbackTeam?.diagnosis ||
+        leaderTotal !== null
+          ? `${teamName} is ${tScore.toFixed(1)}% on the leader scorecard across ${tHc} measured people.`
+          : fallbackTeam?.diagnosis ||
         (weakestKpi && strongestKpi
           ? `${teamName} averaged ${tScore.toFixed(1)}% across ${tHc} ${tHc === 1 ? 'specialist' : 'specialists'}. ${strongestKpi.kpi_label} reached ${formatKpiValue(strongestKpi.actual, strongestKpi.unit)} (target ${formatKpiValue(strongestKpi.target, strongestKpi.unit)}), while ${weakestKpi.kpi_label} (${formatKpiValue(weakestKpi.actual, weakestKpi.unit)} vs ${formatKpiValue(weakestKpi.target, weakestKpi.unit)}) is the main gap.`
           : `${teamName} averaged ${tScore.toFixed(1)}% across ${tHc} measured ${tHc === 1 ? 'member' : 'members'}.`);

@@ -523,6 +523,24 @@ export function displayedTeamScore(
   return employeeAverage;
 }
 
+/**
+ * Pre-Approvals leader scorecard is the team total.
+ * A team with no such scorecard returns null so the caller keeps the average of the people.
+ * 88.61 displays as 88.6.
+ */
+export function preApprovalsLeaderTeamTotal(
+  records: ReadonlyArray<{
+    score?: number | null;
+    evaluation?: { score?: number | null } | null;
+  } & Parameters<typeof isHossamRecord>[0]>,
+): number | null {
+  const leader = records.find((record) => isHossamRecord(record));
+  if (!leader) return null;
+  const raw = Number(leader.evaluation?.score ?? leader.score);
+  if (!Number.isFinite(raw)) return null;
+  return Math.round(raw * 10) / 10;
+}
+
 /** One decimal, the same rounding the score card and the trend chart print. */
 export function displayedScorePoint(score: number): number {
   if (!Number.isFinite(score)) return 0;

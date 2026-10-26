@@ -6,6 +6,7 @@ import {
   type ExecRecord,
 } from '../executive/compose';
 import { executiveFunctionForTeam } from '../executive/functions';
+import { preApprovalsLeaderTeamTotal } from '../team/teamKpiAggregator';
 import type { ExecutivePeriod } from '../executive/types';
 import { gradeForScore, type GradeLetter } from './monthlyOverviewData';
 import {
@@ -1087,8 +1088,10 @@ function buildGenericTeamDeepDive(
   const before = previous ? teamRecords.filter((record) => record.period.key === previous.key) : [];
   if (!current.length && located) return teamFromBaseline(located, region);
 
-  const score = round1(mean(current.map((record) => record.score)) ?? located?.data.agentTeams[located.teamIndex].score ?? 0);
-  const prevScore = mean(before.map((record) => record.score));
+  const leaderNow = preApprovalsLeaderTeamTotal(current);
+  const leaderPrev = preApprovalsLeaderTeamTotal(before);
+  const score = leaderNow ?? round1(mean(current.map((record) => record.score)) ?? located?.data.agentTeams[located.teamIndex].score ?? 0);
+  const prevScore = leaderPrev ?? mean(before.map((record) => record.score));
   const changeVsPrev = prevScore !== null ? round1(score - round1(prevScore)) : located?.data.agentTeams[located.teamIndex].changeVsPrev ?? 0;
   const grade = gradeForScore(score);
   const headcount = new Set(current.map((record) => record.employeeId)).size;
@@ -1129,6 +1132,11 @@ function buildGenericTeamDeepDive(
             : null,
       };
     });
+    let agentsMeetingTarget = 0;
+    current.forEach((agent) => {
+      const agentRow = kpiRows([agent], []).find((item) => item.kpi_key === row.kpi_key);
+      if (agentRow?.target_status === 'met') agentsMeetingTarget += 1;
+    });
     return {
       kpiKey: row.kpi_key,
       label: row.kpi_label,
@@ -1142,7 +1150,7 @@ function buildGenericTeamDeepDive(
       achievementPct: row.achievement_percent ?? 0,
       movementFormatted: row.raw_change !== null ? formatKpiValue(row.raw_change, unit) : '—',
       movementTone: row.target_status === 'met' ? 'positive' : 'warning',
-      agentsMeetingTarget: 0,
+      agentsMeetingTarget,
       totalAgents: headcount,
       verdictBadge: row.target_status === 'met' ? 'Target Met' : 'Execution Issue',
       explorerDiagnosis: `${row.kpi_label} is ${formatKpiValue(row.actual, unit)} against ${formatKpiValue(row.target, unit)}.`,
@@ -1152,7 +1160,8 @@ function buildGenericTeamDeepDive(
   const low = current.filter((record) => record.score < 90).sort((a, b) => a.score - b.score);
   const agentsAverageOrBelow: AgentAverageOrBelowRow[] = low.map((agent) => {
     const g = gradeForScore(agent.score);
-    const weakest = kpiRows([agent], [])[0];
+    const agentKpiRows = kpiRows([agent], []);
+    const weakest = agentKpiRows[0];
     return {
       employeeId: agent.employeeId,
       agentName: agent.name,
@@ -1161,14 +1170,17 @@ function buildGenericTeamDeepDive(
       changeVsPrev: null,
       grade: g,
       gradeFullLabel: fullGradeLabel(g),
-      kpiCells: kpis.map((kpi) => ({
-        kpiKey: kpi.kpiKey,
-        label: kpi.shortLabel,
-        actualFormatted: '—',
-        targetFormatted: kpi.targetFormatted,
-        achievementPct: 0,
-        metTarget: false,
-      })),
+      kpiCells: kpis.map((kpi) => {
+        const match = agentKpiRows.find((item) => item.kpi_key === kpi.kpiKey);
+        return {
+          kpiKey: kpi.kpiKey,
+          label: kpi.shortLabel,
+          actualFormatted: match ? formatKpiValue(match.actual, match.unit ?? kpi.unit) : '—',
+          targetFormatted: kpi.targetFormatted,
+          achievementPct: match?.achievement_percent ?? 0,
+          metTarget: match?.target_status === 'met',
+        };
+      }),
       mainIssue: weakest
         ? `${weakest.kpi_label} at ${formatKpiValue(weakest.actual, weakest.unit)}`
         : 'Score below 90%',
@@ -1205,8 +1217,10 @@ function buildGenericTeamDeepDive(
       headcount,
       averageOrBelowCount: agentsAverageOrBelow.length,
       diagnosis:
-        located?.data.agentTeams[located.teamIndex].diagnosis ??
-        `${canonicalTeam} averaged ${score.toFixed(1)}% across ${headcount} people.`,
+        leaderNow !== null
+          ? `${canonicalTeam} is ${score.toFixed(1)}% on the leader scorecard, across ${headcount} measured people.`
+          : located?.data.agentTeams[located.teamIndex].diagnosis ??
+            `${canonicalTeam} averaged ${score.toFixed(1)}% across ${headcount} people.`,
     },
     kpis,
     agentsAverageOrBelow,

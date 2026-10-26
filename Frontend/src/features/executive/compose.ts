@@ -10,9 +10,9 @@
  */
 import { normalizePercentageKpiForDisplay } from '../../components/common/performanceKpiProgress';
 import { GRADE_CLASSES, getGradeClassOrNull, type GradeClass } from '../../constants/grades';
-import { canonicalTeamName, isHossamRecord, isMergedBranchTeam, sameEgyptRcmTeam, type AgentRecord } from '../../types';
+import { canonicalTeamName, isMergedBranchTeam, sameEgyptRcmTeam, type AgentRecord } from '../../types';
 import type { TeamConfig } from '../../schemas/teamConfig.schema';
-import { calculateAggregatedTeamPerformance, displayedTeamScore, recordsUseAppliedPin } from '../team/teamKpiAggregator';
+import { calculateAggregatedTeamPerformance, displayedTeamScore, preApprovalsLeaderTeamTotal, recordsUseAppliedPin } from '../team/teamKpiAggregator';
 import { normalizePerformanceScore } from '../../utils/kpiScore';
 import { kpiCountsInScore } from '../../utils/kpiCountsInScore';
 import { compareScoringBasis, type BasisRecord } from '../evaluation/scoringBasisComparison';
@@ -536,34 +536,35 @@ function teamsOf(
       || isPreApprovalsSubTeam(team)
       || sameEgyptRcmTeam(team, 'Pre-Approvals IP');
 
+    // The leader scorecard belongs only to the team on that record. Sibling pre-approvals
+    // teams stay on their own average even when they share the unlevel month.
+    const teamPool = (unlevelMonthly ?? monthlyRecords).filter((record) => groupName(record) === team);
+    const leaderTotal = (period: ExecutivePeriod | null) => (
+      isPreApprovals && period ? preApprovalsLeaderTeamTotal(inPeriod(teamPool, period)) : null
+    );
+    const leaderNow = leaderTotal(effective);
+    const leaderPrev = leaderTotal(previous);
+    // The leader scorecard is the team total even when a later employee-only roll-up would average the specialists.
+    if (leaderNow !== null) score = leaderNow;
+    if (leaderPrev !== null) previousScore = leaderPrev;
+
     if (isPreApprovals) {
-      const teamPool = unlevelMonthly ?? monthlyTeam;
-      const hossamEffective = inPeriod(teamPool, effective).find(isHossamRecord);
-      if (hossamEffective && Number.isFinite(hossamEffective.score)) {
-        score = round1(hossamEffective.score);
-      }
-      const hossamPrev = inPeriod(teamPool, previous).find(isHossamRecord);
-      if (hossamPrev && Number.isFinite(hossamPrev.score)) {
-        previousScore = round1(hossamPrev.score);
-      }
       const periods = trailingPeriods(effective);
       trend = periods.map((period) => {
         const periodRecords = inPeriod(monthlyTeam, period);
-        const hossamPeriod = inPeriod(teamPool, period).find(isHossamRecord);
-        const periodScore = hossamPeriod && Number.isFinite(hossamPeriod.score)
-          ? round1(hossamPeriod.score)
-          : scoreOf(periodRecords);
+        const periodLeader = leaderTotal(period);
+        const periodScore = periodLeader !== null ? periodLeader : scoreOf(periodRecords);
         return {
           period,
           score: periodScore,
           employees: employeesOf(periodRecords),
-          has_data: periodRecords.length > 0 || Boolean(hossamPeriod),
+          has_data: periodRecords.length > 0 || periodLeader !== null,
           basis_context: null,
         };
       });
     }
 
-    if (useCanonical && teamConfig) {
+    if (useCanonical && teamConfig && leaderNow === null) {
       const currentAgents = current.map((record) => record.rawAgent).filter((a): a is AgentRecord => Boolean(a));
       if (currentAgents.length > 0) {
         const canonical = calculateAggregatedTeamPerformance(currentAgents, teamConfig)?.score ?? null;
@@ -571,7 +572,9 @@ function teamsOf(
           score = round1(displayedTeamScore(canonical, score ?? 0, recordsUseAppliedPin(currentAgents)));
         }
       }
+    }
 
+    if (useCanonical && teamConfig && leaderPrev === null) {
       const previousRecords = inPeriod(records, previous);
       const previousAgents = previousRecords.map((record) => record.rawAgent).filter((a): a is AgentRecord => Boolean(a));
       if (previousAgents.length > 0) {
@@ -580,14 +583,17 @@ function teamsOf(
           previousScore = round1(displayedTeamScore(canonicalPrev, previousScore ?? 0, recordsUseAppliedPin(previousAgents)));
         }
       }
+    }
 
+    if (useCanonical && teamConfig) {
       const periods = trailingPeriods(effective);
       trend = periods.map((period) => {
         const periodRecords = inPeriod(monthlyTeam, period);
+        const periodLeader = leaderTotal(period);
         const periodAgents = periodRecords.map((r) => r.rawAgent).filter((a): a is AgentRecord => Boolean(a));
         const avgPeriod = scoreOf(periodRecords);
-        let computedScore: number | null = null;
-        if (periodAgents.length > 0) {
+        let computedScore: number | null = periodLeader;
+        if (computedScore === null && periodAgents.length > 0) {
           const canonical = calculateAggregatedTeamPerformance(periodAgents, teamConfig)?.score ?? null;
           computedScore = canonical !== null
             ? round1(displayedTeamScore(canonical, avgPeriod ?? 0, recordsUseAppliedPin(periodAgents)))
@@ -1034,27 +1040,26 @@ export function composeExecutiveSummary(input: ComposeInput): ExecutiveSummary {
       || input.team === 'Pre-Approvals IP Offshore'
       || isPreApprovalsSubTeam(input.team)
       || sameEgyptRcmTeam(input.team, 'Pre-Approvals IP');
-    if (isPreApprovalsTeam) {
-      const hossamCurr = inPeriod(unlevelMonthly, effective).find(isHossamRecord);
-      if (hossamCurr && Number.isFinite(hossamCurr.score)) {
-        score = round1(hossamCurr.score);
-      }
-      const hossamPrev = inPeriod(unlevelMonthly, previous).find(isHossamRecord);
-      if (hossamPrev && Number.isFinite(hossamPrev.score)) {
-        previousScore = round1(hossamPrev.score);
-      }
-    }
+    const leaderOnThisTeam = (period: ExecutivePeriod | null) => (
+      period
+        ? preApprovalsLeaderTeamTotal(inPeriod(unlevelMonthly, period).filter((record) => record.team === input.team))
+        : null
+    );
+    const leaderNow = isPreApprovalsTeam ? leaderOnThisTeam(effective) : null;
+    const leaderPrev = isPreApprovalsTeam ? leaderOnThisTeam(previous) : null;
+    if (leaderNow !== null) score = leaderNow;
+    if (leaderPrev !== null) previousScore = leaderPrev;
     const mgrConfig = findTeamConfig(input.teamConfigs, input.team);
     if (mgrConfig && !isMergedBranchTeam(input.team)) {
       const currentAgents = current.map((r) => r.rawAgent).filter((a): a is AgentRecord => Boolean(a));
       const beforeAgents = before.map((r) => r.rawAgent).filter((a): a is AgentRecord => Boolean(a));
-      if (currentAgents.length > 0) {
+      if (leaderNow === null && currentAgents.length > 0) {
         const canonical = calculateAggregatedTeamPerformance(currentAgents, mgrConfig)?.score ?? null;
         if (canonical !== null) {
           score = round1(displayedTeamScore(canonical, score ?? 0, recordsUseAppliedPin(currentAgents)));
         }
       }
-      if (beforeAgents.length > 0) {
+      if (leaderPrev === null && beforeAgents.length > 0) {
         const canonicalPrev = calculateAggregatedTeamPerformance(beforeAgents, mgrConfig)?.score ?? null;
         if (canonicalPrev !== null) {
           previousScore = round1(displayedTeamScore(canonicalPrev, previousScore ?? 0, recordsUseAppliedPin(beforeAgents)));
@@ -1107,6 +1112,10 @@ export function composeExecutiveSummary(input: ComposeInput): ExecutiveSummary {
 
   if (view === 'managerial' && input.team && !rangeMonths) {
     const mgrConfig = findTeamConfig(input.teamConfigs, input.team);
+    const isPreApprovalsTeam = input.team === 'Pre-Approvals IP'
+      || input.team === 'Pre-Approvals IP Offshore'
+      || isPreApprovalsSubTeam(input.team)
+      || sameEgyptRcmTeam(input.team, 'Pre-Approvals IP');
     if (mgrConfig && !isMergedBranchTeam(input.team)) {
       trend.forEach((point) => {
         if (point.period.key === effective?.key) {
@@ -1114,12 +1123,19 @@ export function composeExecutiveSummary(input: ComposeInput): ExecutiveSummary {
         } else if (previous && point.period.key === previous.key) {
           point.score = previousScore;
         } else if (point.score !== null) {
-          const mRecords = inPeriod(monthly, point.period);
-          const mAgents = mRecords.map((r) => r.rawAgent).filter((a): a is AgentRecord => Boolean(a));
-          if (mAgents.length > 0) {
-            const canonical = calculateAggregatedTeamPerformance(mAgents, mgrConfig)?.score ?? null;
-            if (canonical !== null) {
-              point.score = round1(displayedTeamScore(canonical, point.score ?? 0, recordsUseAppliedPin(mAgents)));
+          const periodLeader = isPreApprovalsTeam
+            ? preApprovalsLeaderTeamTotal(inPeriod(unlevelMonthly, point.period).filter((record) => record.team === input.team))
+            : null;
+          if (periodLeader !== null) {
+            point.score = periodLeader;
+          } else {
+            const mRecords = inPeriod(monthly, point.period);
+            const mAgents = mRecords.map((r) => r.rawAgent).filter((a): a is AgentRecord => Boolean(a));
+            if (mAgents.length > 0) {
+              const canonical = calculateAggregatedTeamPerformance(mAgents, mgrConfig)?.score ?? null;
+              if (canonical !== null) {
+                point.score = round1(displayedTeamScore(canonical, point.score ?? 0, recordsUseAppliedPin(mAgents)));
+              }
             }
           }
         }

@@ -13,8 +13,18 @@ const mocks = vi.hoisted(() => ({
   workspaceEnabled: [] as boolean[],
   followUp: vi.fn(),
   agents: [] as unknown[],
+  /** Disabled legacy reads must keep one agents array, matching usePerformanceData. */
+  emptyAgents: [] as unknown[],
   /** This device's action queue, passed to the hook as `queuedActions`. */
   queued: [] as PMSAction[],
+  composeCalls: 0,
+  workspaceData: null as {
+    performance_drivers: unknown[];
+    team_analyses: unknown[];
+    priority_insights: unknown[];
+    opportunities: unknown[];
+    options: { team_functions: typeof FIXTURE_TEAM_FUNCTIONS };
+  } | null,
 }));
 
 vi.mock('../../lib/apiClient', async (importOriginal) => ({
@@ -23,20 +33,29 @@ vi.mock('../../lib/apiClient', async (importOriginal) => ({
 vi.mock('../../hooks/usePerformanceData', () => ({
   mapScopedPerformanceRecord: (record: unknown) => record,
   usePerformanceData: (_m: string, _l: string, _r: string, _p: string, enabled: boolean) => ({
-    agents: enabled ? mocks.agents : [], loading: false, dataSource: 'api', errorMessage: null,
+    agents: enabled ? mocks.agents : mocks.emptyAgents, loading: false, dataSource: 'api', errorMessage: null,
   }),
 }));
 vi.mock('../../hooks/api/useInsightsWorkspace', () => ({
   useInsightsWorkspace: (filters: unknown, options: { enabled?: boolean }) => {
     mocks.workspaceFilters.push(filters);
     mocks.workspaceEnabled.push(Boolean(options.enabled));
-    const { drivers, items } = fixtureDrivers();
     return {
-      data: options.enabled ? { performance_drivers: drivers, team_analyses: items, priority_insights: [], opportunities: [], options: { team_functions: FIXTURE_TEAM_FUNCTIONS } } : undefined,
+      data: options.enabled ? mocks.workspaceData ?? undefined : undefined,
       isLoading: false,
     };
   },
 }));
+vi.mock('./compose', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./compose')>();
+  return {
+    ...actual,
+    composeExecutiveSummary: (input: Parameters<typeof actual.composeExecutiveSummary>[0]) => {
+      mocks.composeCalls += 1;
+      return actual.composeExecutiveSummary(input);
+    },
+  };
+});
 vi.mock('../../hooks/useActionStore', () => ({ fetchFollowUp: mocks.followUp, mapBackendAction: (record: unknown) => record }));
 
 const TODAY = new Date(2026, 6, 6);
@@ -49,6 +68,15 @@ beforeEach(() => {
   mocks.followUp.mockReset();
   mocks.workspaceFilters = [];
   mocks.workspaceEnabled = [];
+  mocks.composeCalls = 0;
+  const { drivers, items } = fixtureDrivers();
+  mocks.workspaceData = {
+    performance_drivers: drivers,
+    team_analyses: items,
+    priority_insights: [],
+    opportunities: [],
+    options: { team_functions: FIXTURE_TEAM_FUNCTIONS },
+  };
   mocks.agents = fixtureAgentRecords();
   mocks.queued = [];
   mocks.followUp.mockResolvedValue({
@@ -194,6 +222,37 @@ describe('useExecutiveSummary', () => {
       expect(result.current.managerTeamOptions).toEqual(TWO_TEAMS);
       expect(result.current.summary?.teams.map((team) => team.team).sort()).toEqual(TWO_TEAMS);
     });
+  });
+
+  it('does not compose again when a new filters object has the same values', async () => {
+    mocks.apiFetch.mockImplementation((url: string) => url.startsWith('/api/performance/summary-records')
+      ? Promise.resolve({ success: true, data: mocks.agents })
+      : Promise.reject(new Error('Not Found')));
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const stableWrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    );
+    const filters = { periodKey: '2026-06', region: 'EGY' };
+    const { result, rerender } = renderHook(
+      ({ next }: { next: ExecutiveFilterState }) => useExecutiveSummary({ view: 'corporate', role: 'Admin', filters: next, today: TODAY }),
+      { initialProps: { next: filters }, wrapper: stableWrapper },
+    );
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.source).toBe('composed');
+    const settled = mocks.composeCalls;
+    expect(settled).toBeGreaterThan(0);
+
+    rerender({ next: { periodKey: '2026-06', region: 'EGY' } });
+    expect(mocks.composeCalls).toBe(settled);
+
+    const drivers = mocks.workspaceData?.performance_drivers ?? [];
+    mocks.workspaceData = { ...mocks.workspaceData!, performance_drivers: [...drivers] };
+    rerender({ next: { periodKey: '2026-06', region: 'EGY' } });
+    expect(mocks.composeCalls).toBe(settled + 1);
+
+    rerender({ next: { periodKey: '2026-06', region: 'EGY', team: 'Inbound' } });
+    expect(mocks.composeCalls).toBeGreaterThan(settled + 1);
+    client.clear();
   });
 
   it('does not ask Insights or follow-up for roles without access (Viewer)', async () => {
