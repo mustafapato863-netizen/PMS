@@ -287,7 +287,9 @@ describe('InsightsSummaryStrip (High-Level Performance & Breakdown Summary)', ()
 
     const section = screen.getByRole('region', { name: 'Summary' });
     expect(section).toHaveTextContent('N/A');
+    expect(section).toHaveTextContent('No measured rows for this scope.');
     expect(section).toHaveTextContent('No previous month');
+    expect(section).not.toHaveTextContent('Recommended focus');
     expect(section).toHaveTextContent('0 of 0 KPIs below target');
   });
 

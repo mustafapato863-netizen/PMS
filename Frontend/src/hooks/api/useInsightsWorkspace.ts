@@ -26,6 +26,11 @@ export const INSIGHTS_PAGE_SECTIONS: readonly InsightSection[] = [
   'kpi_trend',
   'kpi_diagnosis',
   'tracking_indicators',
+  'team_summaries',
+  'role_summaries',
+  'performance_drivers',
+  'risks',
+  'opportunities',
 ];
 
 export function insightsWorkspaceUrl(

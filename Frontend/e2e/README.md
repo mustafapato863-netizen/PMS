@@ -1,3 +1,7 @@
+# Local end-to-end checks
+
+`npm run test:e2e` runs `e2e/parts.spec.ts` in Playwright against the frontend and API that are already listening. It does not start Vite or the API. Set `PMS_E2E_USERNAME` and `PMS_E2E_PASSWORD` in the terminal. The spec signs in once, then opens each product part on a fresh page and checks that part's on-screen result. A logged-out visit to Monthly Review must show the login form. The run only reads; it does not change accounts, scores, actions, or settings.
+
 # Local performance and regression checks
 
 `npm run test:e2e:performance` runs real Chromium against the existing local frontend and backend. Install Python Playwright and its Chromium browser first if they are not already available. Set `PMS_E2E_USERNAME` and `PMS_E2E_PASSWORD` in your terminal environment; do not put credentials in this repository.

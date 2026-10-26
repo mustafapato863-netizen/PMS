@@ -34,11 +34,11 @@ export function ReadOnlyBadge() {
 }
 
 const CHECKLIST = [
-  ['Company score vs target', 'Gap, grade, vs last month and a 6-month trend'],
-  ['Function scorecards', 'Call Center, RCM, Pre-Approvals, Marketing — click through to Function Summary'],
-  ['Region split', 'EGY vs UAE score, grade, gap and headcount'],
-  ['Direction-aware drivers', 'Top 3 negative and positive KPI movements (↑/↓ better)'],
-  ['Teams at risk + grade mix', 'Grade C/D/E or falling 2 months; A–E distribution with movement'],
+  ['Company score vs target', 'People average, grade, distance from 100, and a 6-month trend'],
+  ['Functions', 'Every function once, with its score, gap, and six-month trend'],
+  ['Region split', 'People average and each region’s share of the gap'],
+  ['Direction-aware drivers', 'Red is weight × gap. Green is the change since last month'],
+  ['Teams at risk + grade mix', 'Score under 90%, ranked by share of the gap, with the missed KPI'],
   ['Corrective actions', 'Open, overdue and due-this-week with the most urgent items'],
 ];
 

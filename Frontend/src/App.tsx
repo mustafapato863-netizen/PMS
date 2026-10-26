@@ -262,15 +262,7 @@ function AppContent() {
 
   return (
     <div className="flex min-h-screen font-sans selection:bg-blue-500/30 selection:text-blue-900 relative" style={{ backgroundColor: 'var(--bg-base)', color: 'var(--text-primary)' }}>
-      {/* Ambient Animated Background Blobs */}
-      <div
-        className="fixed inset-0 pointer-events-none z-0 hidden overflow-hidden sm:block"
-        style={{ contain: 'strict', clipPath: 'inset(0)' }}
-      >
-        <div className="absolute top-[10%] left-[20%] w-[500px] h-[500px] rounded-full bg-blue-500/3 blur-[140px] animate-blob" />
-        <div className="absolute bottom-[15%] right-[10%] w-[600px] h-[600px] rounded-full bg-indigo-500/3 blur-[140px] animate-blob animation-delay-2000" />
-        <div className="absolute top-[50%] left-[45%] w-[450px] h-[450px] rounded-full bg-emerald-500/3 blur-[120px] animate-blob animation-delay-4000" />
-      </div>
+      <div className="app-ambient" aria-hidden="true" />
 
       {!isReportBuilder && (
         <Sidebar

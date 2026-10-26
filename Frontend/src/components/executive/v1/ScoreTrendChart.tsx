@@ -194,7 +194,6 @@ export default function ScoreTrendChart({ points, comparisonLabel, title }: {
                   role="img"
                   tabIndex={index === tabStop ? 0 : -1}
                   aria-label={shortMonth(point.period) + ': score ' + fmtScore(point.score) + ', target ' + fmtScore(point.target)
-                    + (point.comparison_score !== null ? ', ' + (comparisonLabel || 'comparison') + ' ' + fmtScore(point.comparison_score) : '')
                     + (point.measured_records !== undefined ? ', ' + point.measured_records + ' measured records' : '')}
                   data-testid={'executive-trend-point-' + point.period.key}
                   className="group outline-none"
@@ -274,12 +273,6 @@ export default function ScoreTrendChart({ points, comparisonLabel, title }: {
                 <span className="inline-flex items-center gap-[7px] font-medium text-[var(--text-secondary)]"><span className="size-[8px] rounded-full" style={{ background: lineColor }} />Score</span>
                 <strong className="font-semibold tabular-nums text-[var(--insights-heading)]">{fmtScore(activeScore)}</strong>
               </div>
-              {activePoint.comparison_score !== null && (
-                <div className="mt-[3px] flex items-center justify-between gap-3 text-[12px]">
-                  <span className="inline-flex items-center gap-[7px] font-medium text-[var(--text-secondary)]"><span className="size-[8px] rounded-full bg-[var(--exec-comparison-line)]" />{comparisonLabel || 'Comparison'}</span>
-                  <strong className="font-semibold tabular-nums text-[var(--insights-heading)]">{fmtScore(activePoint.comparison_score)}</strong>
-                </div>
-              )}
               <div className="mt-[3px] flex items-center justify-between gap-3 text-[12px]">
                 <span className="inline-flex items-center gap-[7px] font-medium text-[var(--text-secondary)]">
                   <svg width="10" height="4" viewBox="0 0 10 4"><path d="M0 2H4M6 2H10" stroke="var(--text-muted)" strokeWidth={2} /></svg>
@@ -296,9 +289,6 @@ export default function ScoreTrendChart({ points, comparisonLabel, title }: {
                 <p className="mt-[3px] text-xs font-semibold" style={{ color: movement > 0 ? 'var(--insights-positive)' : movement < 0 ? 'var(--insights-negative)' : 'var(--text-muted)' }}>
                   {formatMovement(movement) + ' vs ' + shortMonth(points[activeIndex - 1].period)}
                 </p>
-              )}
-              {activePoint.basis_context?.message && (
-                <p className="mt-[5px] whitespace-normal break-words text-xs leading-4 text-[var(--text-secondary)]">{activePoint.basis_context.message}</p>
               )}
             </div>
           )}

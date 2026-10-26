@@ -23,7 +23,7 @@ import { formatPeriod } from '../../../features/executive/compose';
 import { comparisonName, coveredPeriodLabel } from '../../../features/executive/periodLabels';
 import { Chip, GradePill, StatusPill } from './ExecPrimitives';
 import ScoreTrendChart from './ScoreTrendChart';
-import { heroHeadline, heroNarrative } from './execModel';
+import { heroHeadline, heroNarrative, heroStatusLabel } from './execModel';
 
 function Stat({ label, value, valueColor, sub, subColor, icon: Icon }: { label: string; value: ReactNode; valueColor: string; sub: ReactNode; subColor?: string; icon: LucideIcon }) {
   return (
@@ -44,7 +44,7 @@ const EYEBROW: Record<ExecutiveSummary['scope']['view'], { label: string; icon: 
   function: { label: 'Function performance', icon: Layers },
 };
 
-export default function ExecutiveHero({ summary }: { summary: ExecutiveSummary }) {
+export default function ExecutiveHero({ summary, includeDecision = true }: { summary: ExecutiveSummary; includeDecision?: boolean }) {
   const { hero, period, trend, scope, data_status: status, meta } = summary;
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const helpRef = useRef<HTMLDivElement>(null);
@@ -80,7 +80,9 @@ export default function ExecutiveHero({ summary }: { summary: ExecutiveSummary }
   const tone = getGradeTone(hero.score);
   const eyebrow = EYEBROW[scope.view];
   const EyebrowIcon = eyebrow.icon;
-  const narrative = heroNarrative(summary);
+  const narrative = heroNarrative(summary, { includeDecision });
+  const statusLabel = hero.score === null ? null : heroStatusLabel(hero.score, hero.gap);
+  const statusTone = statusLabel === 'On target' ? 'success' : statusLabel === 'Below threshold' ? 'danger' : 'warning';
   const changeTone = scoreTone(hero.change);
   const previousLabel = period.range
     ? (period.previous ? `vs ${comparisonName(period.previous, period.range)}` : 'vs no earlier range')
@@ -105,14 +107,8 @@ export default function ExecutiveHero({ summary }: { summary: ExecutiveSummary }
             </span>
             <span className="text-xs font-semibold text-[var(--text-muted)]">{scope.view === 'function' ? `${hero.label} function` : eyebrow.label}</span>
             <GradePill score={hero.score} className="!px-[12px] !py-[5px] !text-[12px]" />
-            {hero.score !== null && (
-              hero.score >= 90 ? (
-                <StatusPill tone="success" icon={CheckCircle2}>Healthy benchmark</StatusPill>
-              ) : hero.score >= 80 ? (
-                <StatusPill tone="warning" icon={AlertTriangle}>Needs attention</StatusPill>
-              ) : (
-                <StatusPill tone="danger" icon={AlertTriangle}>Below threshold</StatusPill>
-              )
+            {statusLabel && (
+              <StatusPill tone={statusTone} icon={statusTone === 'success' ? CheckCircle2 : AlertTriangle}>{statusLabel}</StatusPill>
             )}
             {scope.view === 'function' && summary.highlights.most_improved?.name === hero.label && <StatusPill tone="success" icon={TrendingUp}>Most improved</StatusPill>}
           </div>
@@ -163,7 +159,7 @@ export default function ExecutiveHero({ summary }: { summary: ExecutiveSummary }
                       1. What is happening?
                     </strong>
                     <p className="mt-[4px]">
-                      Scores represent the headcount-weighted rollup of employee KPI achievements (capped at 100%).
+                      The company number is the average of employee scores. Each person counts once. Each person's score is their weighted KPIs, capped at 100%. A leader scorecard is labeled when a team row uses one.
                     </p>
                     <div className="mt-[6px] grid grid-cols-2 gap-[4px] rounded-[8px] bg-[var(--exec-tile-bg)] p-[8px] text-xs">
                       <span><strong>Grade A:</strong> 95% – 100%</span>
@@ -179,7 +175,7 @@ export default function ExecutiveHero({ summary }: { summary: ExecutiveSummary }
                       2. Why does it matter?
                     </strong>
                     <p className="mt-[4px]">
-                      <strong>Gap</strong> measures distance from the 100% target benchmark, while period-over-period change highlights momentum. Teams or employees scoring under <strong>90%</strong> (Grades C, D, E) are flagged for review.
+                      <strong>Gap</strong> on the headline is the score minus 100. A score of 90% or more is still short of that target when the gap is negative. Each function card shows that score, its gap, the change since last month, and the six-month trend. Regions and teams are ranked by their share of the gap: missing points times people. A team under <strong>90%</strong> is listed, with the KPI that missed.
                     </p>
                   </div>
 
@@ -188,9 +184,9 @@ export default function ExecutiveHero({ summary }: { summary: ExecutiveSummary }
                       3. What action should you take?
                     </strong>
                     <ul className="mt-[4px] list-disc space-y-[3px] pl-[16px] text-xs">
-                      <li>Inspect <em>What moved the score</em> to isolate negative KPI drivers.</li>
-                      <li>Drill into <em>Teams at risk</em> and <em>Employees below target (&lt;90%)</em>.</li>
-                      <li>Verify that lagging KPIs and employees have active <em>Corrective actions</em>.</li>
+                      <li>Open a function card to see its summary. Start with the lowest score.</li>
+                      <li>Red drivers are weight × gap to target. Green drivers are the change since last month.</li>
+                      <li>Use <em>Teams at risk</em> for the teams that carry the gap, then confirm a corrective action.</li>
                     </ul>
                   </div>
                 </div>
@@ -212,7 +208,7 @@ export default function ExecutiveHero({ summary }: { summary: ExecutiveSummary }
         <h2 id="exec-hero-title" className="text-[clamp(22px,2vw,28px)] font-bold leading-[1.22] tracking-[-0.035em] text-[var(--insights-heading)]">{heroHeadline(summary)}</h2>
         {narrative && <p className="text-[14px] leading-[1.7] text-[var(--text-secondary)]">{narrative}</p>}
         <div className={`grid grid-cols-2 gap-[10px] ${statCount === 3 || statCount === 5 ? 'sm:grid-cols-3' : 'sm:grid-cols-4'}`}>
-          <Stat icon={ChartNoAxesColumnIncreasing} label={isFunction ? 'Function score' : 'Current'} value={fmtScore(hero.score)} valueColor={tone.text} sub={tone.grade ? `${tone.grade} · ${tone.label}` : 'No grade'} subColor={tone.text} />
+          <Stat icon={ChartNoAxesColumnIncreasing} label={hero.score_basis === 'leader_scorecard' ? 'Leader scorecard' : hero.score_basis === 'team_scorecard' ? 'Team score' : 'People average'} value={fmtScore(hero.score)} valueColor={tone.text} sub={tone.grade ? `${tone.grade} · ${tone.label}` : 'No grade'} subColor={tone.text} />
           {/* Function view (Figma 48:3): no separate Target tile; the gap names the target. */}
           {!isFunction && (
             <Stat icon={Target} label="Target" value={fmtScore(hero.target, 1)} valueColor="var(--insights-accent-text)" sub={scope.view === 'corporate' ? 'Company-wide' : 'Score target'} />

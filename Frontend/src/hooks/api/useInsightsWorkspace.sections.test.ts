@@ -26,16 +26,21 @@ describe('insights workspace sections', () => {
     expect(insightsWorkspaceQueryKey(filters, 'full', ['options'])).not.toEqual(page);
   });
 
-  it('asks for the nine fields the Insights page renders', () => {
+  it('asks for the fields the Insights page renders', () => {
     expect([...INSIGHTS_PAGE_SECTIONS].sort()).toEqual([
       'comparison',
       'executive_story',
       'kpi_diagnosis',
       'kpi_trend',
+      'opportunities',
       'options',
       'people_contribution_analysis',
+      'performance_drivers',
       'priority_insights',
+      'risks',
+      'role_summaries',
       'summary',
+      'team_summaries',
       'tracking_indicators',
     ]);
   });

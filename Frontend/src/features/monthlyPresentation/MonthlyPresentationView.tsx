@@ -1,4 +1,5 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import './macCursor.css';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { FileBarChart } from 'lucide-react';
 import { useAuth } from '../../context/auth';
@@ -93,6 +94,13 @@ export default function MonthlyPresentationView({
   onSelectFunction,
   today,
 }: MonthlyPresentationViewProps) {
+  useEffect(() => {
+    document.body.classList.add('mp-mac-cursor');
+    return () => {
+      document.body.classList.remove('mp-mac-cursor');
+    };
+  }, []);
+
   const { role } = useUserRole();
   const { currentUser } = useAuth();
   const assigned = directorScope(role, currentUser);

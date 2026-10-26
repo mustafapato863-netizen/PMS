@@ -46,7 +46,7 @@ describe('TeamsAtRiskCard', () => {
       team('Unscored team', null, []),
     ]} /></MemoryRouter>);
 
-    expect(screen.getByText('Grade C/D/E teams in the selected scope')).toBeInTheDocument();
+    expect(screen.getByText('Score under 90%, ranked by share of the gap')).toBeInTheDocument();
     expect(screen.getAllByTestId('risk-row')).toHaveLength(3);
     expect(screen.getByText('Grade C team')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Grade C team' })).toHaveAttribute('href', '/team/grade-c-team');

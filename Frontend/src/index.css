@@ -99,7 +99,7 @@ select {
   color: var(--text-primary);
   font-weight: 600;
   outline: none;
-  transition: all 0.2s ease;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
   cursor: pointer;
 }
 
@@ -621,7 +621,7 @@ select option {
   font-weight: 600;
   border-radius: 0.75rem;
   padding: 0.5625rem 1.125rem;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: filter 0.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1), transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   box-shadow: var(--sgh-glow-button);
   display: inline-flex;
   align-items: center;
@@ -649,7 +649,7 @@ select option {
   border: 1px solid rgba(255, 255, 255, 0.8);
   border-radius: 1.25rem;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.06);
-  transition: all 0.25s ease;
+  transition: background-color 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease, transform 0.25s ease;
 }
 
 .dark .sgh-glass-card {
@@ -1886,7 +1886,7 @@ body {
   -webkit-backdrop-filter: blur(16px);
   border: 1px solid var(--glass-border);
   border-radius: 0.75rem;
-  transition: all 0.3s ease;
+  transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
   box-shadow: var(--glass-shadow);
 }
 
@@ -2097,7 +2097,7 @@ body {
   background: var(--glass-bg);
   backdrop-filter: blur(12px);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: border-color 0.2s ease, background-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
   color: var(--text-secondary);
 }
 .theme-toggle:hover {
@@ -2644,6 +2644,32 @@ body {
 .animation-delay-2000 { animation-delay: 2s; }
 .animation-delay-4000 { animation-delay: 4s; }
 
+/* Static wash for the signed-in shell. A blurred, moving layer was repainting the whole window. */
+.app-ambient { display: none; }
+@media (min-width: 640px) {
+  .app-ambient {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    contain: strict;
+    background:
+      radial-gradient(42rem 42rem at 22% 16%, rgba(59, 130, 246, 0.07), transparent 68%),
+      radial-gradient(48rem 48rem at 90% 84%, rgba(99, 102, 241, 0.06), transparent 70%),
+      radial-gradient(36rem 36rem at 48% 48%, rgba(16, 185, 129, 0.05), transparent 70%);
+  }
+  .dark .app-ambient {
+    background:
+      radial-gradient(42rem 42rem at 22% 16%, rgba(59, 130, 246, 0.10), transparent 68%),
+      radial-gradient(48rem 48rem at 90% 84%, rgba(99, 102, 241, 0.08), transparent 70%),
+      radial-gradient(36rem 36rem at 48% 48%, rgba(16, 185, 129, 0.06), transparent 70%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-blob { animation: none; }
+}
+
 /* ────────────────────────────────────────────────────────────── */
 /*  SHIMMER LOADING ANIMATION                                      */
 /* ────────────────────────────────────────────────────────────── */
@@ -3140,9 +3166,8 @@ body {
   aspect-ratio: 1;
   border-radius: 50%;
   pointer-events: none;
-  filter: blur(72px);
+  filter: blur(40px);
   opacity: .42;
-  animation: login-orb-float 14s ease-in-out infinite alternate;
 }
 
 .login-orb--cyan { top: 22%; left: 18%; background: rgba(0, 163, 224, .32); }

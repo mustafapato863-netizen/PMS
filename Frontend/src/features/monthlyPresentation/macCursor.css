@@ -1,0 +1,19 @@
+/* The arrow stays put. These three only appear while dragging or on a disabled control. */
+body.mp-mac-cursor,
+body.mp-mac-cursor * {
+  cursor: url('./cursors/arrow.png') 2 1, default !important;
+}
+
+body.mp-mac-cursor .cursor-grab {
+  cursor: url('./cursors/grab.png') 12 12, grab !important;
+}
+
+body.mp-mac-cursor .cursor-grab:active,
+body.mp-mac-cursor .cursor-grabbing {
+  cursor: url('./cursors/grabbing.png') 12 12, grabbing !important;
+}
+
+body.mp-mac-cursor :is(:disabled, [aria-disabled='true']),
+body.mp-mac-cursor .cursor-not-allowed {
+  cursor: url('./cursors/not-allowed.png') 11 11, not-allowed !important;
+}

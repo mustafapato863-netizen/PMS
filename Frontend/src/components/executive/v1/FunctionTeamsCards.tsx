@@ -90,10 +90,11 @@ export function TeamLeaderboardCard({ teams, fn, effective, previous, onSelectTe
 /** Function Summary: Grade C/D/E, falling 2 months, or furthest below the function average. */
 export function TeamsNeedingAttentionCard({ teams, fn }: { teams: ExecutiveTeam[]; fn: string }) {
   const [params] = useSearchParams();
-  const rows = teams.filter((team) => team.flags.length).sort((l, r) => (l.score ?? 0) - (r.score ?? 0)).slice(0, 3);
+  const weight = (team: ExecutiveTeam) => team.gap_share_percent ?? (team.score === null ? -1 : Math.max(100 - team.score, 0) * Math.max(team.employees, 0));
+  const rows = teams.filter((team) => team.flags.length).sort((left, right) => weight(right) - weight(left) || (left.score ?? 0) - (right.score ?? 0)).slice(0, 3);
   return (
     <ExecCard aria-labelledby="fs-attention-title">
-      <ExecCardHeader titleId="fs-attention-title" icon={AlertTriangle} iconBg="var(--pms-grade-d-badge-bg)" iconColor="var(--pms-grade-d-text)" title={fn === 'Marketing' ? 'Roles needing attention' : 'Teams needing attention'} subtitle="Grade C/D/E, falling 2 months, or furthest below function average" />
+      <ExecCardHeader titleId="fs-attention-title" icon={AlertTriangle} iconBg="var(--pms-grade-d-badge-bg)" iconColor="var(--pms-grade-d-text)" title={fn === 'Marketing' ? 'Roles needing attention' : 'Teams needing attention'} subtitle="Ranked by share of the gap · Grade C/D/E, falling 2 months, or below the function average" />
       {rows.length ? (
         <ul className="flex flex-col gap-[10px]">
           {rows.map((team) => {

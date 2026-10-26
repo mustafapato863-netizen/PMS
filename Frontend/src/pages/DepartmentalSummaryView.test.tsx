@@ -124,7 +124,7 @@ describe('DepartmentalSummaryView role routing', () => {
     const scopeNotes = screen.getAllByRole('note').filter((note) => note.textContent?.startsWith('Scoped to your team.'));
     expect(scopeNotes).toHaveLength(1);
     expect(scopeNotes[0]).toHaveTextContent('Scoped to your team');
-    expect(scopeNotes[0]).toHaveTextContent('function-average comparison appears once the backend summary endpoint is live');
+    expect(scopeNotes[0]).toHaveTextContent('This page shows your team only. Other teams are not named.');
     expect(screen.getByRole('heading', { name: 'Team KPIs — worst first' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Corrective actions' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Functions' })).not.toBeInTheDocument();
@@ -234,15 +234,31 @@ describe('DepartmentalSummaryView role routing', () => {
 });
 
 describe('Corporate sections', () => {
-  it('renders hero, function cards, drivers, regions, teams at risk, grades and actions', () => {
+  it('renders the company summary of every function without an Insights hand-off', () => {
     renderAt();
     expect(screen.getByRole('heading', { name: /^June 2026 company performance is \d+\.\d% below target\.$/ })).toBeInTheDocument();
-    expect(screen.getAllByRole('article').map((card) => card.getAttribute('aria-label'))).toEqual([
-      'Call Center function', 'RCM function', 'Marketing function', 'CSR function',
-    ]);
+    expect(screen.getAllByRole('article').map((card) => card.getAttribute('aria-label'))).toEqual(
+      (state.summary?.functions ?? []).map((card) => `${card.function} function`),
+    );
+    expect(screen.getAllByRole('heading', { name: 'Call Center' })).toHaveLength(1);
+    expect(screen.queryByTestId('exec-start-here')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Start with .+/)).not.toBeInTheDocument();
+    expect(screen.getAllByText('People average').length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/% of the gap/).length).toBeGreaterThan(0);
+    expect(screen.queryByText('Start here')).not.toBeInTheDocument();
+    expect(screen.getAllByTestId('function-trend-chart').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Healthy benchmark')).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'View RCM function' })).toHaveAttribute('href', '/function-summary/rcm');
+    expect(screen.queryByRole('link', { name: 'Review RCM summary' })).not.toBeInTheDocument();
+    const callCenter = screen.getByRole('article', { name: 'Call Center function' });
+    expect(callCenter).toHaveTextContent('Inbound');
+    expect(callCenter).toHaveTextContent('Outbound');
+    expect(within(callCenter).getByText('Gap')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'What moved the score vs May' })).toBeInTheDocument();
     expect(screen.getAllByTestId('region-box')).toHaveLength(2);
+    expect(screen.queryByRole('link', { name: 'Open Insights' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'View all drivers' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Function scorecards, regions, and KPI drivers are in Insights.')).not.toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Teams at risk' })).toBeInTheDocument();
     expect(screen.getAllByTestId('risk-row')).toHaveLength(state.summary?.teams.filter((team) => team.score !== null && team.score < 90).length ?? 0);
     fireEvent.click(screen.getByRole('button', { name: 'Show all teams' }));
@@ -255,18 +271,36 @@ describe('Corporate sections', () => {
     expect(screen.queryByRole('link', { name: 'Open Corrective Actions' })).not.toBeInTheDocument();
   });
 
+  it('keeps the full board for a role that cannot open Insights', () => {
+    state.role = 'Branch Director';
+    state.user = { id: 'director', role: 'Branch Director', accessible_branches: ['dubai'] };
+    renderAt();
+    expect(screen.getAllByRole('article').map((card) => card.getAttribute('aria-label'))).toEqual(
+      (state.summary?.functions ?? []).map((card) => `${card.function} function`),
+    );
+    expect(screen.getByRole('link', { name: 'View RCM function' })).toHaveAttribute('href', '/function-summary/rcm');
+    expect(screen.queryByRole('link', { name: 'Review RCM summary' })).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'What moved the score vs May' })).toBeInTheDocument();
+    expect(screen.getAllByTestId('region-box')).toHaveLength(2);
+    expect(screen.queryByRole('link', { name: 'Open Insights' })).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Teams at risk' })).toBeInTheDocument();
+  });
+
   it('labels the driver metric neutrally until weighted_gap_points arrives', () => {
+    state.role = 'Executive';
     renderAt();
     expect(screen.getByText(/change in the KPI's weighted contribution to the score vs May/)).toBeInTheDocument();
   });
 
   it('switches the driver footnote to weight × gap when the backend sends it', () => {
+    state.role = 'Executive';
     state.summary = build({ drivers: fixtureDrivers({ weightedGap: true }) });
     renderAt();
-    expect(screen.getByText('Impact = KPI weight × gap to target (%).')).toBeInTheDocument();
+    expect(screen.getByText('Red is KPI weight × gap to target (%). Green is the change in weighted contribution vs May (%).')).toBeInTheDocument();
   });
 
   it('renders direction-aware driver rows: a rising lower-is-better KPI is red, a falling one is green', () => {
+    state.role = 'Executive';
     renderAt();
     const negatives = screen.getAllByTestId('driver-negative');
     const rejection = negatives.find((row) => row.textContent?.includes('Initial Rejection %'))!;
@@ -281,17 +315,23 @@ describe('Corporate sections', () => {
     state.role = 'Executive';
     renderAt();
     expect(screen.queryByRole('link', { name: /View .* function/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Review RCM summary' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Open Insights' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'View all drivers' })).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'What moved the score vs May' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Corrective actions' })).toBeInTheDocument();
   });
 
-  it('hides corrective actions for Viewer (no follow-up access)', () => {
+  it('hides corrective actions for Viewer and keeps the full board', () => {
     state.role = 'Viewer';
     renderAt();
     expect(screen.queryByRole('heading', { name: 'Corrective actions' })).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'What moved the score vs May' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Open Insights' })).not.toBeInTheDocument();
   });
 
   it('softens drivers when the workspace is unavailable instead of inventing numbers', () => {
+    state.role = 'Executive';
     state.summary = build({ drivers: null });
     renderAt();
     expect(screen.getByText("Driver analysis isn't available for this view yet.")).toBeInTheDocument();

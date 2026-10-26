@@ -23,6 +23,11 @@ PAGE_SECTIONS = (
     "kpi_trend",
     "kpi_diagnosis",
     "tracking_indicators",
+    "team_summaries",
+    "role_summaries",
+    "performance_drivers",
+    "risks",
+    "opportunities",
 )
 
 

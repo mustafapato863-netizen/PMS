@@ -962,6 +962,65 @@ describe('InsightsView', () => {
       linked_kpi_key: 'cpl', is_overdue: false, ...overrides,
     });
 
+    it('walks company, function, team, and role from live rows', async () => {
+      const user = userEvent.setup();
+      renderInsights();
+      const walk = screen.getByRole('navigation', { name: 'Insights walk' });
+      expect(within(walk).getByText('Company')).toBeInTheDocument();
+      expect(within(walk).getByText('Start with Marketing. Marketing is the lowest team at 69.9%.')).toBeInTheDocument();
+      expect(within(walk).getByText(/Largest drag/)).toBeInTheDocument();
+      expect(within(walk).getAllByText('People average').length).toBeGreaterThan(0);
+      await user.click(within(walk).getByRole('button', { name: /Marketing/ }));
+      expect(currentSearch().get('function')).toBe('Marketing');
+      await user.click(within(walk).getByRole('button', { name: /Marketing/ }));
+      expect(currentSearch().get('team')).toBe('Marketing');
+      expect(within(walk).getByRole('button', { name: /2 of 5 scored below 70/ })).toBeInTheDocument();
+      await user.click(within(walk).getByRole('button', { name: /Media Buyer/ }));
+      expect(currentSearch().get('position')).toBe('Media Buyer');
+      expect(within(walk).getByText(/2 of 5 scored below 70\. The people are listed below\./)).toBeInTheDocument();
+      expect(within(walk).queryByText('No measured rows at this step.')).not.toBeInTheDocument();
+      await user.click(within(walk).getByRole('button', { name: 'Company' }));
+      expect(currentSearch().get('function')).toBeNull();
+      expect(currentSearch().get('team')).toBeNull();
+      expect(currentSearch().get('position')).toBeNull();
+    });
+
+    it('says a step has no measured rows when the live lists are empty', () => {
+      workspaceMock.overrides = {
+        executive_story: {
+          headline: '',
+          scope_label: 'Finance',
+          current_score: null,
+          target_score: 100,
+          gap_points: null,
+          score_change: null,
+          primary_scope: null,
+          primary_scope_contribution_percent: null,
+          primary_driver: null,
+          primary_driver_impact: null,
+          recommended_focus: 'Do not show this.',
+          confidence: 'low',
+          evidence: [],
+        },
+        team_summaries: [],
+        role_summaries: [],
+        performance_drivers: [],
+        risks: [],
+        opportunities: [],
+        options: {
+          periods: [], regions: [], teams: [], functions: [], performance_levels: [],
+          positions: [], employees: [], kpis: [], severities: [], insight_types: [], statuses: [],
+        },
+      };
+      renderInsights('/insights?function=Finance');
+      const walk = screen.getByRole('navigation', { name: 'Insights walk' });
+      expect(within(walk).getByText('No measured rows for this scope.')).toBeInTheDocument();
+      expect(within(walk).getByText('No measured rows at this step.')).toBeInTheDocument();
+      expect(screen.getByRole('region', { name: 'Summary' })).toHaveTextContent('No measured rows for this scope.');
+      expect(screen.getByRole('region', { name: 'Summary' })).not.toHaveTextContent('Do not show this.');
+      expect(screen.queryByRole('heading', { name: 'Live evidence' })).not.toBeInTheDocument();
+    });
+
     it('orders the sections: KPI diagnosis, People to review, Actions, and drops the removed sections', () => {
       renderInsights();
       const headings = screen.getAllByRole('heading', { level: 2 }).map((heading) => heading.textContent);

@@ -24,7 +24,7 @@ import BasisComparisonNote from '../../../features/evaluation/BasisComparisonNot
 export interface ExecutiveDashboardPermissions {
   /** Function cards link to /function-summary/:slug. */
   canOpenFunctions: boolean;
-  /** "View all drivers" → Insights. */
+  /** A single function may link to Insights. The company summary of every function does not. */
   canOpenInsights: boolean;
   /** Corrective actions section is shown (follow-up endpoint roles). */
   canSeeActions: boolean;
@@ -66,8 +66,8 @@ export default function ExecutiveDashboard({
       <div className="flex flex-col gap-[16px]" data-testid="executive-managerial">
         <ScopeBanner>
           Scoped to your {team ? 'team' : 'teams'}. {comparisonKnown && fn
-            ? `Comparisons use the ${fn} function average — other teams are never named.`
-            : 'The function-average comparison appears once the backend summary endpoint is live — other teams are never named.'} {team ? 'Region, function and team filters are fixed by your role.' : 'Region and function are fixed by your role; the team filter lists your assigned teams.'}
+            ? `Comparisons use the ${fn} function average. Other teams are not named.`
+            : 'This page shows your team only. Other teams are not named.'} {team ? 'Region, function and team filters are fixed by your role.' : 'Region and function are fixed by your role; the team filter lists your assigned teams.'}
         </ScopeBanner>
         {notices}
         <ExecutiveHero summary={summary} />
@@ -119,23 +119,20 @@ export default function ExecutiveDashboard({
     );
   }
 
-  const insightsHref = permissions.canOpenInsights
-    ? `/insights${period.effective ? `?period=${period.effective.key}` : ''}`
-    : null;
   return (
     <div className="flex flex-col gap-[16px]" data-testid="executive-corporate">
       {notices}
-      <ExecutiveHero summary={summary} />
+      <ExecutiveHero summary={summary} includeDecision={false} />
       {summary.functions.length > 0 && (
-        <FunctionCards cards={summary.functions} previous={previous} range={range} linkable={permissions.canOpenFunctions} />
+        <FunctionCards cards={summary.functions} previous={previous} range={range} linkable={permissions.canOpenFunctions} classic />
       )}
       {showRegionSplit ? (
         <div className="grid gap-[16px] xl:grid-cols-[minmax(0,1fr)_minmax(0,400px)]">
-          <DriversCard summary={summary} viewAllHref={insightsHref} />
+          <DriversCard summary={summary} viewAllHref={null} />
           <RegionSplitCard regions={summary.regions} previous={previous} range={range} />
         </div>
       ) : (
-        <DriversCard summary={summary} viewAllHref={insightsHref} />
+        <DriversCard summary={summary} viewAllHref={null} />
       )}
       <div className="grid gap-[16px] xl:grid-cols-[minmax(0,1fr)_minmax(0,400px)]">
         <TeamsAtRiskCard key={JSON.stringify([scope, period.effective?.key, range?.start.key])} teams={summary.teams} rangeLabel={rangeLabel} />

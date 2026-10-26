@@ -10,7 +10,7 @@
  */
 import { normalizePercentageKpiForDisplay } from '../../components/common/performanceKpiProgress';
 import { GRADE_CLASSES, getGradeClassOrNull, type GradeClass } from '../../constants/grades';
-import { canonicalTeamName, isMergedBranchTeam, sameEgyptRcmTeam, type AgentRecord } from '../../types';
+import { CALL_CENTER_TEAM, RCM_TEAM, canonicalTeamName, isMergedBranchTeam, sameEgyptRcmTeam, type AgentRecord } from '../../types';
 import type { TeamConfig } from '../../schemas/teamConfig.schema';
 import { calculateAggregatedTeamPerformance, displayedTeamScore, preApprovalsLeaderTeamTotal, recordsUseAppliedPin } from '../team/teamKpiAggregator';
 import { normalizePerformanceScore } from '../../utils/kpiScore';
@@ -28,6 +28,7 @@ import type {
   ExecutiveDriver,
   ExecutiveFunction,
   ExecutiveFunctionCard,
+  ExecutiveFunctionCohort,
   ExecutiveGradeDistribution,
   ExecutiveKpiRow,
   ExecutiveLevel,
@@ -161,6 +162,43 @@ const diff = (current: number | null, previous: number | null) => (current === n
 
 function scoreOf(records: ExecRecord[]): number | null {
   return r1(mean(records.map((record) => record.score)));
+}
+
+/** Missing points times people. This is the rank key for the company gap. */
+function gapWeight(score: number | null, employees: number): number {
+  if (score === null) return 0;
+  return Math.max(TARGET - score, 0) * Math.max(employees, 0);
+}
+
+function stampGapShares<T extends { score: number | null; employees: number; gap_share_percent?: number | null }>(rows: T[]): void {
+  const total = rows.reduce((sum, row) => sum + gapWeight(row.score, row.employees), 0);
+  rows.forEach((row) => {
+    const weight = gapWeight(row.score, row.employees);
+    row.gap_share_percent = total > 0 ? round1((weight / total) * 100) : null;
+  });
+}
+
+function byGapShare(left: { gap_share_percent?: number | null; score: number | null; team?: string; function?: string }, right: { gap_share_percent?: number | null; score: number | null; team?: string; function?: string }): number {
+  const leftShare = left.gap_share_percent ?? -1;
+  const rightShare = right.gap_share_percent ?? -1;
+  if (leftShare !== rightShare) return rightShare - leftShare;
+  if (left.score === null) return 1;
+  if (right.score === null) return -1;
+  if (left.score !== right.score) return left.score - right.score;
+  return (left.team ?? left.function ?? '').localeCompare(right.team ?? right.function ?? '');
+}
+
+function lowestTeamOf(teams: ExecutiveTeam[], name: string): ExecutiveFunctionCard['lowest_team'] {
+  const lowest = teams
+    .filter((team) => team.function === name && team.score !== null)
+    .sort((left, right) => (left.score ?? 0) - (right.score ?? 0) || left.team.localeCompare(right.team))[0];
+  if (!lowest || lowest.score === null) return null;
+  return {
+    team: lowest.team,
+    score: lowest.score,
+    kpi: lowest.flag_detail?.text ?? null,
+    score_basis: lowest.score_basis ?? 'people_average',
+  };
 }
 
 function employeesOf(records: ExecRecord[]): number {
@@ -529,6 +567,7 @@ function teamsOf(
 
     let score = scoreOf(current);
     let previousScore = scoreOf(inPeriod(records, previous));
+    let scoreBasis: ExecutiveTeam['score_basis'] = 'people_average';
     let trend = trendOf(monthlyTeam, effective);
 
     const isPreApprovals = team === 'Pre-Approvals IP'
@@ -545,7 +584,10 @@ function teamsOf(
     const leaderNow = leaderTotal(effective);
     const leaderPrev = leaderTotal(previous);
     // The leader scorecard is the team total even when a later employee-only roll-up would average the specialists.
-    if (leaderNow !== null) score = leaderNow;
+    if (leaderNow !== null) {
+      score = leaderNow;
+      scoreBasis = 'leader_scorecard';
+    }
     if (leaderPrev !== null) previousScore = leaderPrev;
 
     if (isPreApprovals) {
@@ -570,6 +612,7 @@ function teamsOf(
         const canonical = calculateAggregatedTeamPerformance(currentAgents, teamConfig)?.score ?? null;
         if (canonical !== null) {
           score = round1(displayedTeamScore(canonical, score ?? 0, recordsUseAppliedPin(currentAgents)));
+          scoreBasis = 'team_scorecard';
         }
       }
     }
@@ -632,6 +675,8 @@ function teamsOf(
       trend,
       vs_function_avg: null as number | null,
       rank_in_function: null as number | null,
+      gap_share_percent: null as number | null,
+      score_basis: scoreBasis,
       flags: [] as ExecutiveTeamFlag[],
       basis_context: basisForScope(monthlyTeam, effective, rangeMonths),
       flag_detail: worstKpi && worstKpi.achievement_percent !== null && worstKpi.achievement_percent < 100 ? {
@@ -666,11 +711,44 @@ function teamsOf(
     if (team.grade === 'E') team.flags.unshift('grade_e');
     if (fallingMonths(team.trend) >= 2) team.flags.push('falling_2_months');
   });
-  return base.sort((l, r) => (l.score ?? 0) - (r.score ?? 0));
+  stampGapShares(base);
+  return base.sort(byGapShare);
 }
 
 export function isAtRisk(team: ExecutiveTeam) {
   return team.flags.some((flag) => flag === 'grade_c' || flag === 'grade_d' || flag === 'grade_e' || flag === 'falling_2_months');
+}
+
+const sameTeamName = (left: string, right: string) => canonicalTeamName(left).trim().toLowerCase() === canonicalTeamName(right).trim().toLowerCase();
+
+/** Supportive positions sit on the parent team. Operational teams are the employees. */
+function supportiveTeam(team: string, fn: ExecutiveFunction): boolean {
+  if (fn === 'Call Center') return sameTeamName(team, CALL_CENTER_TEAM);
+  if (fn === 'RCM') return sameTeamName(team, RCM_TEAM);
+  return false;
+}
+
+function cohortOf(current: ExecRecord[], previous: ExecRecord[]): ExecutiveFunctionCohort {
+  const score = scoreOf(current);
+  return {
+    employees: employeesOf(current),
+    score,
+    gap: score === null ? null : round1(score - TARGET),
+    grade: getGradeClassOrNull(score),
+    change: diff(score, scoreOf(previous)),
+    teams: [...new Set(current.map((record) => canonicalTeamName(record.team)))].sort(),
+  };
+}
+
+function functionCohorts(name: ExecutiveFunction, current: ExecRecord[], previous: ExecRecord[]): ExecutiveFunctionCard['cohorts'] {
+  if (name !== 'Call Center' && name !== 'RCM') return null;
+  const supportNow = current.filter((record) => supportiveTeam(record.team, name));
+  const employeesNow = current.filter((record) => !supportiveTeam(record.team, name));
+  if (!employeesOf(supportNow) || !employeesOf(employeesNow)) return null;
+  return {
+    employees: cohortOf(employeesNow, previous.filter((record) => !supportiveTeam(record.team, name))),
+    support: cohortOf(supportNow, previous.filter((record) => supportiveTeam(record.team, name))),
+  };
 }
 
 function functionCards(scoped: ExecRecord[], effective: ExecutivePeriod, previous: ExecutivePeriod | null, teamFunctions?: TeamFunctionMap, monthly: ExecRecord[] | null = null, rangeMonths: ExecutivePeriod[] | null = null): ExecutiveFunctionCard[] {
@@ -679,8 +757,9 @@ function functionCards(scoped: ExecRecord[], effective: ExecutivePeriod, previou
     const records = scoped.filter((record) => executiveFunctionForTeam(record.team, teamFunctions) === name);
     const current = inPeriod(records, effective);
     if (!current.length) return [];
+    const previousRows = inPeriod(records, previous);
     const score = scoreOf(current);
-    const previousScore = scoreOf(inPeriod(records, previous));
+    const previousScore = scoreOf(previousRows);
     const monthlyFunction = monthlyRecords.filter((record) => executiveFunctionForTeam(record.team, teamFunctions) === name);
     const trend = trendOf(monthlyFunction, effective);
     return [{
@@ -697,6 +776,7 @@ function functionCards(scoped: ExecRecord[], effective: ExecutivePeriod, previou
       trend,
       is_most_improved: false,
       basis_context: basisForScope(monthlyFunction, effective, rangeMonths),
+      cohorts: functionCohorts(name, current, previousRows),
     }];
   });
   const improved = cards.filter((card) => (card.change ?? 0) > 0).sort((l, r) => (r.change ?? 0) - (l.change ?? 0))[0];
@@ -731,7 +811,7 @@ function regions(current: ExecRecord[], previous: ExecRecord[]): ExecutiveRegion
   });
   const totalWeight = raw.reduce((sum, item) => sum + item.weight, 0);
   return raw.map(({ weight, ...item }) => ({ ...item, gap_share_percent: totalWeight ? round1((weight / totalWeight) * 100) : null }))
-    .sort((l, r) => (l.region === 'EGY' ? -1 : r.region === 'EGY' ? 1 : l.region.localeCompare(r.region)));
+    .sort(byGapShare);
 }
 
 /* ── Drivers (from the Insights workspace) ── */
@@ -1035,6 +1115,7 @@ export function composeExecutiveSummary(input: ComposeInput): ExecutiveSummary {
   const before = inPeriod(scoped, previous);
   let score = scoreOf(current);
   let previousScore = scoreOf(before);
+  let scoreBasis: ExecutiveSummary['hero']['score_basis'] = 'people_average';
   if (view === 'managerial' && input.team && !rangeMonths) {
     const isPreApprovalsTeam = input.team === 'Pre-Approvals IP'
       || input.team === 'Pre-Approvals IP Offshore'
@@ -1047,7 +1128,10 @@ export function composeExecutiveSummary(input: ComposeInput): ExecutiveSummary {
     );
     const leaderNow = isPreApprovalsTeam ? leaderOnThisTeam(effective) : null;
     const leaderPrev = isPreApprovalsTeam ? leaderOnThisTeam(previous) : null;
-    if (leaderNow !== null) score = leaderNow;
+    if (leaderNow !== null) {
+      score = leaderNow;
+      scoreBasis = 'leader_scorecard';
+    }
     if (leaderPrev !== null) previousScore = leaderPrev;
     const mgrConfig = findTeamConfig(input.teamConfigs, input.team);
     if (mgrConfig && !isMergedBranchTeam(input.team)) {
@@ -1057,6 +1141,7 @@ export function composeExecutiveSummary(input: ComposeInput): ExecutiveSummary {
         const canonical = calculateAggregatedTeamPerformance(currentAgents, mgrConfig)?.score ?? null;
         if (canonical !== null) {
           score = round1(displayedTeamScore(canonical, score ?? 0, recordsUseAppliedPin(currentAgents)));
+          scoreBasis = 'team_scorecard';
         }
       }
       if (leaderPrev === null && beforeAgents.length > 0) {
@@ -1177,10 +1262,17 @@ export function composeExecutiveSummary(input: ComposeInput): ExecutiveSummary {
   }
   const mostImproved = functions.find((card) => card.is_most_improved) ?? null;
   const lowestTeam = view === 'function' ? teams.find((team) => team.flags.includes('lowest_in_function')) ?? null : null;
-  const worstFunction = [...functions].sort((l, r) => (
-    (Math.max(TARGET - (r.score ?? TARGET), 0) * r.employees) - (Math.max(TARGET - (l.score ?? TARGET), 0) * l.employees)
-  ))[0] ?? null;
-  const drag = driverSplit?.negative.find((driver) => !worstFunction || driver.function === worstFunction.function) ?? driverSplit?.negative[0] ?? null;
+  stampGapShares(functions);
+  functions.forEach((card) => {
+    card.score_basis = 'people_average';
+    card.lowest_team = lowestTeamOf(teams, card.function);
+  });
+  functions.sort(byGapShare);
+  const worstFunction = functions.find((card) => card.score !== null) ?? null;
+  const matchedDriver = worstFunction
+    ? driverSplit?.negative.find((driver) => driver.function === worstFunction.function) ?? null
+    : null;
+  const drag = matchedDriver;
 
   const label = view === 'managerial' ? (input.team ?? 'Your teams') : view === 'function' ? (input.functionName ?? 'Function') : 'Company';
   return {
@@ -1215,12 +1307,21 @@ export function composeExecutiveSummary(input: ComposeInput): ExecutiveSummary {
       gap: score === null ? null : round1(score - TARGET),
       target: TARGET,
       grade: getGradeClassOrNull(score),
+      score_basis: scoreBasis,
       employees: employeesOf(current),
       teams_count: new Set(current.map((record) => record.team)).size,
       functions_count: functions.length,
       story: {
         headline: null,
-        biggest_drag: worstFunction ? { function: worstFunction.function, team: drag?.team ?? null, kpi_key: drag?.kpi_key ?? null, kpi_label: drag?.kpi_label ?? null } : null,
+        biggest_drag: worstFunction ? {
+          function: worstFunction.function,
+          team: drag?.team ?? worstFunction.lowest_team?.team ?? null,
+          kpi_key: drag?.kpi_key ?? null,
+          kpi_label: drag?.kpi_label ?? null,
+          share_percent: worstFunction.gap_share_percent ?? null,
+          score: worstFunction.score,
+          cause: drag ? null : worstFunction.lowest_team?.kpi ?? null,
+        } : null,
         most_improved: mostImproved && mostImproved.change !== null ? { function: mostImproved.function, change: mostImproved.change } : null,
       },
       comparison: comparisonBlock,

@@ -47,15 +47,48 @@ export function heroHeadline(summary: ExecutiveSummary): string {
   return `${subject} ${position}.`;
 }
 
-export function heroNarrative(summary: ExecutiveSummary): string | null {
+export function formatShare(value: number): string {
+  const rounded = Math.round(value * 10) / 10;
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+}
+
+/** The one corporate sentence that names where to start. Kept out of the hero when the start band owns it. */
+export function heroDecision(summary: ExecutiveSummary): string | null {
+  const drag = summary.hero.story?.biggest_drag;
+  if (!drag?.function || summary.scope.view !== 'corporate') return null;
+  const bits = [`Start with ${drag.function}.`];
+  if (drag.share_percent != null && drag.share_percent > 0 && drag.score != null) {
+    bits.push(`It accounts for ${formatShare(drag.share_percent)}% of the gap at ${drag.score.toFixed(1)}%.`);
+  } else if (drag.score != null) {
+    bits.push(`It is at ${drag.score.toFixed(1)}%.`);
+  }
+  if (drag.kpi_label) {
+    bits.push(`The KPI in this function is ${drag.kpi_label}${drag.team ? ` in ${drag.team}` : ''}.`);
+  } else if (drag.cause) {
+    bits.push(drag.team ? `${drag.cause} · ${drag.team}.` : `${drag.cause}.`);
+  }
+  return bits.join(' ');
+}
+
+/** A score at or above 90 is still short of the target of 100 when the gap is negative. */
+export function heroStatusLabel(score: number, gap: number | null): 'On target' | 'Short of target' | 'Needs attention' | 'Below threshold' {
+  const shortOfTarget = gap !== null && gap < -0.05;
+  if (!shortOfTarget && score >= 90) return 'On target';
+  if (score >= 90) return 'Short of target';
+  if (score >= 80) return 'Needs attention';
+  return 'Below threshold';
+}
+
+export function heroNarrative(summary: ExecutiveSummary, options?: { includeDecision?: boolean }): string | null {
   const story = summary.hero.story;
   const parts: string[] = [];
   const drag = story?.biggest_drag;
-  if (drag?.function && summary.scope.view === 'corporate') {
-    parts.push(drag.kpi_label
-      ? `${drag.function} is the biggest drag — start with ${drag.kpi_label}${drag.team ? ` in ${drag.team}` : ''}.`
-      : `${drag.function} is the biggest drag.`);
-  } else if (drag?.kpi_label) {
+  const corporate = summary.scope.view === 'corporate';
+  const showDecision = options?.includeDecision !== false;
+  if (showDecision && corporate && drag?.function) {
+    const decision = heroDecision(summary);
+    if (decision) parts.push(decision);
+  } else if (drag?.kpi_label && !(corporate && !showDecision)) {
     parts.push(`Biggest drag: ${drag.kpi_label}${drag.team && summary.scope.view !== 'managerial' ? ` in ${drag.team}` : ''}.`);
   }
   const comparison = summary.hero.comparison;
@@ -75,7 +108,12 @@ export function heroNarrative(summary: ExecutiveSummary): string | null {
         : `${leader.team} is at ${(leader.score ?? 0).toFixed(1)}%.`);
     }
   }
-  if (story?.most_improved && story.most_improved.change > 0 && summary.scope.view === 'corporate') {
+  if (
+    story?.most_improved
+    && story.most_improved.change > 0
+    && summary.scope.view === 'corporate'
+    && story.most_improved.function !== drag?.function
+  ) {
     parts.push(`${story.most_improved.function} is the most improved function (${fmtSigned(story.most_improved.change)}).`);
   }
   return parts.length ? parts.join(' ') : null;

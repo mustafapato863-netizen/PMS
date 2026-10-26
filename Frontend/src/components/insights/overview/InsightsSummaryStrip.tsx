@@ -264,6 +264,9 @@ export default function InsightsSummaryStrip({
             <strong className="text-[28px] font-bold tabular-nums text-[var(--insights-heading)]">
               {score === null ? 'N/A' : `${score.toFixed(1)}%`}
             </strong>
+            {score === null && (
+              <p className="text-sm font-semibold text-[var(--text-secondary)]">No measured rows for this scope.</p>
+            )}
           </div>
           <div>
             {change === null ? (
@@ -421,7 +424,7 @@ export default function InsightsSummaryStrip({
         </div>
 
         {/* Decision Focus Callout */}
-        {(story?.recommended_focus || story?.primary_driver) && (
+        {score !== null && (story?.recommended_focus || story?.primary_driver) && (
           <div
             data-testid="recommended-focus-callout"
             className="mt-1 flex flex-wrap items-center justify-between gap-2 border-t border-[var(--insights-card-border)] pt-2.5 text-xs text-[var(--text-secondary)]"

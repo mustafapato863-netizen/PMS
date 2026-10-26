@@ -68,6 +68,8 @@ export interface ExecutiveTrendPoint {
   in_range?: boolean;
 }
 
+export type ExecutiveScoreBasis = 'people_average' | 'leader_scorecard' | 'team_scorecard';
+
 export interface ExecutiveHero {
   label: string;
   score: number | null;
@@ -76,15 +78,37 @@ export interface ExecutiveHero {
   gap: number | null;
   target: number;
   grade: GradeClass | null;
+  /** What the headline number is. Corporate and function views are a people average. */
+  score_basis?: ExecutiveScoreBasis;
   employees: number;
   teams_count: number;
   functions_count: number;
   story: {
     headline: string | null;
-    biggest_drag: { function: string | null; team: string | null; kpi_key: string | null; kpi_label: string | null } | null;
+    biggest_drag: {
+      function: string | null;
+      team: string | null;
+      kpi_key: string | null;
+      kpi_label: string | null;
+      /** This function's share of the scope gap. The KPI belongs to this function. */
+      share_percent?: number | null;
+      score?: number | null;
+      /** Lowest team's own KPI text, used only when no driver in this function was returned. */
+      cause?: string | null;
+    } | null;
     most_improved: { function: string; change: number } | null;
   } | null;
   comparison: { label: string; score: number | null; difference: number | null } | null;
+}
+
+/** People average for one side of a function that measures both groups. */
+export interface ExecutiveFunctionCohort {
+  employees: number;
+  score: number | null;
+  gap: number | null;
+  grade: GradeClass | null;
+  change: number | null;
+  teams: string[];
 }
 
 export interface ExecutiveFunctionCard {
@@ -97,10 +121,26 @@ export interface ExecutiveFunctionCard {
   employees: number;
   teams: string[];
   regions: string[];
+  /**
+   * Call Center and RCM only, and only when both sides have people.
+   * Employees are the operational teams. Supportive positions are the team
+   * named the same as the function. The function score stays the people average of both.
+   */
+  cohorts?: { employees: ExecutiveFunctionCohort; support: ExecutiveFunctionCohort } | null;
   /** Consecutive month-over-month falls ending at the effective period; null = unknown. */
   falling_months: number | null;
   trend: Array<{ period: ExecutivePeriod; score: number | null }>;
   is_most_improved: boolean;
+  /** Share of this scope's gap: max(100 − score, 0) × people. */
+  gap_share_percent?: number | null;
+  /** The function number is the average of its people, including where a team row uses a leader scorecard. */
+  score_basis?: ExecutiveScoreBasis;
+  lowest_team?: {
+    team: string;
+    score: number;
+    kpi: string | null;
+    score_basis?: ExecutiveScoreBasis;
+  } | null;
   basis_context?: BasisComparisonContext | null;
 }
 
@@ -168,6 +208,9 @@ export interface ExecutiveTeam {
   trend: Array<{ period: ExecutivePeriod; score: number | null }>;
   vs_function_avg: number | null;
   rank_in_function: number | null;
+  /** Share of this scope's gap: max(100 − score, 0) × people. */
+  gap_share_percent?: number | null;
+  score_basis?: ExecutiveScoreBasis;
   flags: ExecutiveTeamFlag[];
   flag_detail: {
     kpi_key: string | null;

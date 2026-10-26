@@ -10,6 +10,7 @@ import TrackingIndicatorsCard from '../components/insights/TrackingIndicatorsCar
 import PeopleContributionAnalysis from '../components/insights/PeopleContributionAnalysis';
 import InsightHeader from '../components/insights/overview/InsightsHeader';
 import InsightsSummaryStrip from '../components/insights/overview/InsightsSummaryStrip';
+import InsightsWalk from '../components/insights/overview/InsightsWalk';
 import KpiDiagnosisTable from '../components/insights/overview/KpiDiagnosisTable';
 import InsightsActionsSection, { type PersonBelowTarget } from '../components/insights/overview/InsightsActionsSection';
 import { PeopleToReviewSection } from '../components/insights/overview/OverviewSections';
@@ -360,6 +361,42 @@ export default function InsightsView() {
       kpi: undefined,
     }));
   };
+  const openCompany = () => {
+    setUserFilters((current) => ({
+      ...current,
+      teamFunction: undefined,
+      team: undefined,
+      position: undefined,
+      employeeId: undefined,
+      kpi: undefined,
+    }));
+  };
+  const openFunctionCrumb = () => {
+    setUserFilters((current) => ({
+      ...current,
+      team: undefined,
+      position: undefined,
+      employeeId: undefined,
+      kpi: undefined,
+    }));
+  };
+  const openTeamCrumb = () => {
+    setUserFilters((current) => ({
+      ...current,
+      position: undefined,
+      employeeId: undefined,
+      kpi: undefined,
+    }));
+  };
+  const openRole = (name: string, team: string | null) => {
+    setUserFilters((current) => ({
+      ...current,
+      team: current.team || team || undefined,
+      position: name || undefined,
+      employeeId: undefined,
+      kpi: undefined,
+    }));
+  };
   const leadingPeopleKpi = workspace.people_contribution_analysis?.kpi_key;
   const functionOptions = functionOptionsFor(workspace.options).map((value) => ({ value, label: value }));
   const teamOptions = teamOptionsFor(workspace.options.teams, filters.teamFunction, workspace.options.team_functions).map((value) => ({ value, label: value }));
@@ -442,6 +479,21 @@ export default function InsightsView() {
         </div>
         {activeFilterEntries.length > 0 && <div className="flex flex-wrap items-center gap-2"><span className="mr-1 text-xs font-black uppercase tracking-[0.14em] text-[var(--text-faint)]">{analysisDepth}</span>{activeFilterEntries.map((entry) => <button key={entry.key} type="button" onClick={() => clearFilter(entry.key)} className="inline-flex items-center gap-1.5 rounded-full border border-[var(--insights-accent-border)] bg-[var(--insights-accent-soft)] px-2.5 py-1 text-xs font-bold text-[var(--insights-accent-text)] hover:border-[var(--insights-accent)]">{entry.label}: {entry.value}<X size={12} /></button>)}<button type="button" onClick={clearAnalysis} className="ml-auto text-xs font-bold text-[var(--text-muted)] hover:text-rose-600">Reset analysis</button></div>}
       </div>
+
+      <InsightsWalk
+        filters={filters}
+        options={workspace.options}
+        teamSummaries={workspace.team_summaries ?? []}
+        roleSummaries={workspace.role_summaries ?? []}
+        drivers={workspace.performance_drivers ?? []}
+        score={workspace.executive_story?.current_score ?? null}
+        onCompany={openCompany}
+        onFunction={selectFunction}
+        onTeam={selectTeam}
+        onRole={openRole}
+        onFunctionCrumb={openFunctionCrumb}
+        onTeamCrumb={openTeamCrumb}
+      />
 
       <InsightsSummaryStrip
         story={workspace.executive_story}

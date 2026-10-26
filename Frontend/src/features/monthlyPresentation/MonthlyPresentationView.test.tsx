@@ -80,6 +80,7 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
     const scoreDot = within(rail).getByRole('button', { name: 'Score' });
     expect(scoreDot).toHaveAttribute('aria-current', 'true');
     expect(scoreDot).toHaveClass('cursor-pointer');
+    expect(document.body).toHaveClass('mp-mac-cursor');
     expect(scoreDot.querySelector('[data-section-tip="Score"]')).toHaveTextContent('Score');
     const functions = document.getElementById('presentation-section-functions');
     const scroll = vi.fn();
@@ -940,11 +941,24 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
     expect(screen.getByTestId('presentation-agenda-text')).toHaveValue('Unsaved visit note');
 
     fireEvent.click(screen.getByTestId('presentation-notes'));
+    expect(screen.getByTestId('presentation-notes-strikeThrough')).toBeInTheDocument();
+    expect(screen.getByTestId('presentation-notes-bullets')).toBeInTheDocument();
+    expect(screen.getByTestId('presentation-notes-numbers')).toBeInTheDocument();
+    expect(screen.getByTestId('presentation-notes-clear')).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Text color' }).querySelectorAll('button')).toHaveLength(6);
+    expect(screen.getByRole('group', { name: 'Highlight' }).querySelectorAll('button')).toHaveLength(5);
+    fireEvent.click(screen.getByTestId('presentation-notes-paper-blue'));
+    expect(screen.getByTestId('presentation-notes-pad')).toHaveStyle({ backgroundColor: '#e0f2fe' });
     const notes = screen.getByTestId('presentation-notes-text');
-    notes.innerHTML = 'Follow up owners';
+    notes.innerHTML = '<span style="color: #1d4ed8; position: absolute">Follow up owners</span><script>bad</script>';
     fireEvent.input(notes);
     fireEvent.click(screen.getByTestId('presentation-notes-save'));
-    expect(localStorage.getItem('pms-monthly-pad:EGY:2026-09:notes')).toContain('Follow up owners');
+    const storedNotes = localStorage.getItem('pms-monthly-pad:EGY:2026-09:notes') ?? '';
+    expect(storedNotes).toContain('Follow up owners');
+    expect(storedNotes).toContain('color: #1d4ed8');
+    expect(storedNotes).not.toContain('position');
+    expect(storedNotes).not.toContain('script');
+    expect(localStorage.getItem('pms-monthly-pad:EGY:2026-09:notes-paper')).toBe('blue');
 
     unmount();
     render(
@@ -956,6 +970,8 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
     expect(screen.getByTestId('presentation-agenda-text')).toHaveValue('Open with RCM.');
     fireEvent.click(screen.getByTestId('presentation-notes'));
     expect(screen.getByTestId('presentation-notes-text').textContent).toContain('Follow up owners');
+    expect(screen.getByTestId('presentation-notes-pad')).toHaveStyle({ backgroundColor: '#e0f2fe' });
+    expect(screen.getByTestId('presentation-notes-paper-blue')).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('opens data compliance from the presentation menu and flips back after an edit', () => {

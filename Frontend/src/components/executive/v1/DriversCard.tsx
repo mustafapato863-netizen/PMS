@@ -9,7 +9,14 @@ import { DirectionTag, ExecCard, ExecCardHeader, Footnote, SoftEmpty } from './E
 type Metric = ExecutiveSummary['meta']['driver_metric'];
 
 
-function DriverRow({ driver, side, metric, max }: { driver: ExecutiveDriver; side: 'negative' | 'positive'; metric: Metric; max: number }) {
+function leadWithFunction(drivers: ExecutiveDriver[], focus: string | null): ExecutiveDriver[] {
+  if (!focus) return drivers;
+  const index = drivers.findIndex((driver) => driver.function === focus);
+  if (index <= 0) return drivers;
+  return [drivers[index], ...drivers.slice(0, index), ...drivers.slice(index + 1)];
+}
+
+function DriverRow({ driver, side, metric, max, note }: { driver: ExecutiveDriver; side: 'negative' | 'positive'; metric: Metric; max: number; note?: string | null }) {
   const impact = driverImpact(driver, side, metric);
   const movement = kpiMovementTone(driver);
   const changeDelta = kpiChangeDelta(driver);
@@ -20,6 +27,7 @@ function DriverRow({ driver, side, metric, max }: { driver: ExecutiveDriver; sid
     <li className="flex flex-col gap-[6px]" data-testid={`driver-${side}`}>
       <div className="flex items-start gap-[10px]">
         <div className="flex min-w-0 flex-1 flex-col gap-[3px]">
+          {note && <span className="text-[11px] font-semibold text-[var(--insights-negative)]">{note}</span>}
           <span className="truncate text-[13px] font-semibold text-[var(--insights-heading)]">{driver.kpi_label}</span>
           {sub && <span className="truncate text-xs text-[var(--text-muted)]">{sub}</span>}
           <div className="flex flex-wrap items-center gap-[6px]">
@@ -43,9 +51,10 @@ function DriverRow({ driver, side, metric, max }: { driver: ExecutiveDriver; sid
   );
 }
 
-function Panel({ side, drivers, metric }: { side: 'negative' | 'positive'; drivers: ExecutiveDriver[]; metric: Metric }) {
+function Panel({ side, drivers, metric, caption, focus }: { side: 'negative' | 'positive'; drivers: ExecutiveDriver[]; metric: Metric; caption: string; focus: string | null }) {
   const negative = side === 'negative';
-  const max = Math.max(0, ...drivers.map((driver) => Math.abs(driverImpactOrZero(driver, side, metric))));
+  const ordered = negative ? leadWithFunction(drivers, focus) : drivers;
+  const max = Math.max(0, ...ordered.map((driver) => Math.abs(driverImpactOrZero(driver, side, metric))));
   const Icon = negative ? TrendingDown : TrendingUp;
   return (
     <div
@@ -59,9 +68,19 @@ function Panel({ side, drivers, metric }: { side: 'negative' | 'positive'; drive
         <Icon aria-hidden="true" className="size-[14px]" strokeWidth={2} />
         {negative ? 'Top negative drivers' : 'Top positive drivers'}
       </h3>
-      {drivers.length ? (
+      <p className="-mt-[6px] text-[11px] leading-[1.4] text-[var(--text-muted)]">{caption}</p>
+      {ordered.length ? (
         <ul className="flex flex-col gap-[14px]">
-          {drivers.map((driver) => <DriverRow key={`${driver.kpi_label}-${driver.team}`} driver={driver} side={side} metric={metric} max={max} />)}
+          {ordered.map((driver, index) => (
+            <DriverRow
+              key={`${driver.kpi_label}-${driver.team}`}
+              driver={driver}
+              side={side}
+              metric={metric}
+              max={max}
+              note={negative && index === 0 && focus && driver.function === focus ? 'Explains the headline' : null}
+            />
+          ))}
         </ul>
       ) : (
         <p className="text-[12px] text-[var(--text-muted)]">{negative ? 'No KPI pulled the score down.' : 'No KPI closed its gap this month.'}</p>
@@ -80,6 +99,7 @@ export default function DriversCard({ summary, viewAllHref, title }: { summary: 
   const range = period.range ?? null;
   const unavailable = meta.unavailable.includes('drivers');
   const metric = meta.driver_metric;
+  const focus = summary.scope.view === 'corporate' ? summary.hero.story?.biggest_drag?.function ?? null : null;
   const defaultTitle = range ? `What moved the score ${vsLabel(period.previous, range, '')}` : `What moved the score vs ${previous.slice(0, 3)}`;
   const subtitle = range
     ? `Direction-aware: colour shows good/bad, arrow shows the KPI's actual movement · ${coveredPeriodLabel(period.effective, range)}`
@@ -96,17 +116,17 @@ export default function DriversCard({ summary, viewAllHref, title }: { summary: 
         action={viewAllHref ? <Link to={viewAllHref} className="inline-flex shrink-0 items-center rounded-[8px] border border-[var(--insights-accent-border)] bg-[var(--insights-accent-soft)] px-[10px] py-[6px] text-[12px] font-semibold text-[var(--insights-accent-text)]">View all drivers</Link> : null}
       />
       {unavailable ? (
-        <SoftEmpty>{range ? 'Driver analysis is not defined for a range yet; switch to a single month to see it.' : 'Driver analysis isn\'t available for this view yet.'}</SoftEmpty>
+        <SoftEmpty>{range ? 'KPI drivers are not defined for a range. The function order above still shows who carries the gap. Switch to a single month for the KPI list.' : 'Driver analysis isn\'t available for this view yet.'}</SoftEmpty>
       ) : (
         <div className="grid gap-[12px] md:grid-cols-2">
-          <Panel side="negative" drivers={drivers.negative} metric={metric} />
-          <Panel side="positive" drivers={drivers.positive} metric={metric} />
+          <Panel side="negative" drivers={drivers.negative} metric={metric} focus={focus} caption={metric === 'weighted_gap' ? 'KPI weight × gap to target' : 'Change in weighted contribution'} />
+          <Panel side="positive" drivers={drivers.positive} metric={metric} focus={null} caption={`Change in weighted contribution vs ${range ? (comparisonName(period.previous, range) ?? 'the previous range') : previous}`} />
         </div>
       )}
       {!unavailable && (
         <Footnote>
           {metric === 'weighted_gap'
-            ? 'Impact = KPI weight × gap to target (%).'
+            ? `Red is KPI weight × gap to target (%). Green is the change in weighted contribution vs ${range ? (comparisonName(period.previous, range) ?? 'the previous range') : previous} (%).`
             : `Impact = change in the KPI's weighted contribution to the score vs ${range ? (comparisonName(period.previous, range) ?? 'the previous range') : previous} (%). Ranking switches to weight × gap once the backend sends it.`}
         </Footnote>
       )}

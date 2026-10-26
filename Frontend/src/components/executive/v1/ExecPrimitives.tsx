@@ -56,6 +56,16 @@ export function SoftButton({ onClick, children, icon: Icon, disabled, title }: {
   );
 }
 
+export function ScoreBar({ score, color }: { score: number | null; color: string }) {
+  if (score === null) return null;
+  const width = Math.max(0, Math.min(100, score));
+  return (
+    <div aria-hidden="true" className="h-[8px] w-full overflow-hidden rounded-full bg-[var(--insights-track)]">
+      <div className="h-full rounded-full" style={{ width: `${width}%`, background: color }} />
+    </div>
+  );
+}
+
 export function GradePill({ score, className = '' }: { score: number | null | undefined; className?: string }) {
   const grade = getGradeClassOrNull(score ?? null);
   const tone = getGradeTone(score ?? null);

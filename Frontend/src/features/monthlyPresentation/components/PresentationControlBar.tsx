@@ -15,10 +15,14 @@ import {
   Check,
   ClipboardCheck,
   ChevronDown,
+  Eraser,
   Italic,
+  List,
+  ListOrdered,
   Plus,
   NotebookPen,
   StickyNote,
+  Strikethrough,
   Underline,
   X,
 } from 'lucide-react';
@@ -133,6 +137,78 @@ function writePad(region: string, periodKey: string, kind: 'agenda' | 'notes', v
 }
 
 const BLOCKED_NOTE_TAGS = new Set(['script', 'iframe', 'object', 'embed', 'link', 'meta', 'style', 'form']);
+const SAFE_NOTE_COLOR = /^(#[0-9a-f]{3}|#[0-9a-f]{6}|rgb\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*\)|transparent)$/i;
+
+const NOTE_PAPERS = [
+  { id: 'yellow', label: 'Yellow sheet', surface: '#fff6cc', border: '#fcd34d' },
+  { id: 'pink', label: 'Pink sheet', surface: '#ffe4e6', border: '#fda4af' },
+  { id: 'green', label: 'Green sheet', surface: '#ecfccb', border: '#bef264' },
+  { id: 'blue', label: 'Blue sheet', surface: '#e0f2fe', border: '#7dd3fc' },
+  { id: 'lilac', label: 'Lilac sheet', surface: '#f3e8ff', border: '#d8b4fe' },
+  { id: 'white', label: 'White sheet', surface: '#ffffff', border: '#e2e8f0' },
+] as const;
+
+const NOTE_INKS = [
+  { id: 'slate', label: 'Slate text', value: '#1e293b' },
+  { id: 'red', label: 'Red text', value: '#dc2626' },
+  { id: 'orange', label: 'Orange text', value: '#ea580c' },
+  { id: 'green', label: 'Green text', value: '#15803d' },
+  { id: 'blue', label: 'Blue text', value: '#1d4ed8' },
+  { id: 'purple', label: 'Purple text', value: '#7e22ce' },
+] as const;
+
+const NOTE_MARKS = [
+  { id: 'none', label: 'No highlight', value: 'transparent' },
+  { id: 'yellow', label: 'Yellow highlight', value: '#fef08a' },
+  { id: 'pink', label: 'Pink highlight', value: '#fecdd3' },
+  { id: 'green', label: 'Green highlight', value: '#bbf7d0' },
+  { id: 'blue', label: 'Blue highlight', value: '#bfdbfe' },
+] as const;
+
+type NotePaperId = (typeof NOTE_PAPERS)[number]['id'];
+
+function notePaper(id: string | null | undefined) {
+  return NOTE_PAPERS.find((paper) => paper.id === id) ?? NOTE_PAPERS[0];
+}
+
+function notePaperKey(region: string, periodKey: string): string {
+  return `pms-monthly-pad:${region}:${periodKey}:notes-paper`;
+}
+
+function readNotePaper(region: string, periodKey: string): NotePaperId {
+  try {
+    return notePaper(localStorage.getItem(notePaperKey(region, periodKey))).id;
+  } catch {
+    return 'yellow';
+  }
+}
+
+function writeNotePaper(region: string, periodKey: string, id: NotePaperId) {
+  try {
+    localStorage.setItem(notePaperKey(region, periodKey), id);
+  } catch {
+    // The visit draft stays in memory when storage is blocked.
+  }
+}
+
+function safeNoteColor(value: string): string | null {
+  const color = value.trim();
+  return SAFE_NOTE_COLOR.test(color) ? color : null;
+}
+
+function sanitizeNoteStyle(value: string): string {
+  const kept: string[] = [];
+  for (const part of value.split(';')) {
+    const splitAt = part.indexOf(':');
+    if (splitAt < 0) continue;
+    const prop = part.slice(0, splitAt).trim().toLowerCase();
+    const color = safeNoteColor(part.slice(splitAt + 1));
+    if ((prop === 'color' || prop === 'background-color') && color) {
+      kept.push(`${prop}: ${color}`);
+    }
+  }
+  return kept.join('; ');
+}
 
 /** Notes HTML is re-inserted with innerHTML. Drop tags and handlers that would run. */
 function sanitizeNotesHtml(html: string): string {
@@ -151,6 +227,18 @@ function sanitizeNotesHtml(html: string): string {
       }
       if ((name === 'href' || name === 'src' || name === 'xlink:href') && /^\s*javascript:/i.test(attr.value)) {
         node.removeAttribute(attr.name);
+        continue;
+      }
+      if (name === 'style') {
+        const style = sanitizeNoteStyle(attr.value);
+        if (style) node.setAttribute('style', style);
+        else node.removeAttribute(attr.name);
+        continue;
+      }
+      if (name === 'color') {
+        const color = safeNoteColor(attr.value);
+        if (color) node.setAttribute('color', color);
+        else node.removeAttribute(attr.name);
       }
     }
   }
@@ -313,24 +401,30 @@ function usePadDrafts(region: string, periodKey: string) {
   const [pad, setPad] = useState(() => {
     const initialAgenda = readPad(region, periodKey, 'agenda');
     const initialNotes = readPad(region, periodKey, 'notes');
+    const initialPaper = readNotePaper(region, periodKey);
     return {
       key: padKey,
       agenda: initialAgenda,
       savedAgenda: initialAgenda,
       notes: initialNotes,
       savedNotes: initialNotes,
+      paper: initialPaper,
+      savedPaper: initialPaper,
     };
   });
 
   if (pad.key !== padKey) {
     const nextAgenda = readPad(region, periodKey, 'agenda');
     const nextNotes = readPad(region, periodKey, 'notes');
+    const nextPaper = readNotePaper(region, periodKey);
     setPad({
       key: padKey,
       agenda: nextAgenda,
       savedAgenda: nextAgenda,
       notes: nextNotes,
       savedNotes: nextNotes,
+      paper: nextPaper,
+      savedPaper: nextPaper,
     });
   }
 
@@ -339,12 +433,17 @@ function usePadDrafts(region: string, periodKey: string) {
     savedAgenda: pad.savedAgenda,
     notes: pad.notes,
     savedNotes: pad.savedNotes,
+    paper: pad.paper,
+    savedPaper: pad.savedPaper,
     setAgenda: (agenda: string) => setPad((current) => ({ ...current, agenda })),
     markAgendaSaved: (agenda: string) =>
       setPad((current) => ({ ...current, agenda, savedAgenda: agenda })),
     setNotes: (notes: string) => setPad((current) => ({ ...current, notes })),
     markNotesSaved: (notes: string) =>
       setPad((current) => ({ ...current, notes, savedNotes: notes })),
+    setPaper: (paper: NotePaperId) => setPad((current) => ({ ...current, paper })),
+    markPaperSaved: (paper: NotePaperId) =>
+      setPad((current) => ({ ...current, paper, savedPaper: paper })),
   };
 }
 
@@ -355,6 +454,8 @@ function DraggablePad({
   headerActions,
   testId,
   shellClassName,
+  surfaceColor,
+  borderColor,
   onClose,
   children,
 }: {
@@ -364,6 +465,8 @@ function DraggablePad({
   headerActions?: ReactNode;
   testId: string;
   shellClassName: string;
+  surfaceColor?: string;
+  borderColor?: string;
   onClose: () => void;
   children: ReactNode;
 }) {
@@ -391,7 +494,11 @@ function DraggablePad({
       aria-label={title}
       data-testid={testId}
       className={`fixed bottom-24 left-1/2 z-50 flex flex-col overflow-hidden rounded-2xl shadow-[0_24px_60px_-15px_rgba(15,23,42,0.22)] backdrop-blur-xl ${shellClassName}`}
-      style={{ transform: `translate(calc(-50% + ${offset.x}px), ${offset.y}px)` }}
+      style={{
+        transform: `translate(calc(-50% + ${offset.x}px), ${offset.y}px)`,
+        backgroundColor: surfaceColor,
+        borderColor,
+      }}
     >
       <header
         className="flex cursor-grab touch-none items-center justify-between gap-2 border-b border-[var(--border-light)] bg-[var(--bg-surface)] px-4 py-3 active:cursor-grabbing"
@@ -443,15 +550,20 @@ export interface AgendaTimelineFunction {
 function NotesEditor({
   padKey,
   html,
+  paper,
   onChange,
+  onPaperChange,
 }: {
   padKey: string;
   html: string;
+  paper: NotePaperId;
   onChange: (html: string) => void;
+  onPaperChange: (paper: NotePaperId) => void;
 }) {
   const editorRef = useRef<HTMLDivElement>(null);
   const htmlRef = useRef(html);
   htmlRef.current = html;
+  const sheet = notePaper(paper);
 
   useEffect(() => {
     const editor = editorRef.current;
@@ -459,22 +571,31 @@ function NotesEditor({
     editor.innerHTML = sanitizeNotesHtml(htmlRef.current);
   }, [padKey]);
 
-  const apply = (command: 'bold' | 'italic' | 'underline') => {
-    try {
-      document.execCommand(command);
-    } catch {
-      // Some environments reject execCommand; the selection stays as it was.
-    }
+  const publish = () => {
     onChange(sanitizeNotesHtml(editorRef.current?.innerHTML ?? ''));
   };
 
+  const runCommand = (command: string, value?: string) => {
+    editorRef.current?.focus();
+    try {
+      document.execCommand('styleWithCSS', false, 'true');
+      document.execCommand(command, false, value);
+    } catch {
+      // Some environments reject execCommand; the selection stays as it was.
+    }
+    publish();
+  };
+
+  const toolClass = 'compact-control inline-flex size-7 !min-h-0 items-center justify-center rounded-md text-slate-700 hover:bg-black/5';
+
   return (
     <>
-      <div className="flex items-center gap-1 border-b border-amber-200/80 px-2 py-1.5">
+      <div className="flex flex-wrap items-center gap-1 border-b px-2 py-1.5" style={{ borderColor: sheet.border }}>
         {([
           ['bold', 'Bold', Bold],
           ['italic', 'Italic', Italic],
           ['underline', 'Underline', Underline],
+          ['strikeThrough', 'Strikethrough', Strikethrough],
         ] as const).map(([command, label, Icon]) => (
           <button
             key={command}
@@ -482,12 +603,98 @@ function NotesEditor({
             aria-label={label}
             data-testid={`presentation-notes-${command}`}
             onMouseDown={(event) => event.preventDefault()}
-            onClick={() => apply(command)}
-            className="compact-control inline-flex size-7 !min-h-0 items-center justify-center rounded-md text-slate-700 hover:bg-amber-100"
+            onClick={() => runCommand(command)}
+            className={toolClass}
           >
             <Icon size={14} aria-hidden="true" />
           </button>
         ))}
+        <span className="mx-0.5 h-4 w-px bg-black/10" aria-hidden="true" />
+        <button
+          type="button"
+          aria-label="Bullet list"
+          data-testid="presentation-notes-bullets"
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => runCommand('insertUnorderedList')}
+          className={toolClass}
+        >
+          <List size={14} aria-hidden="true" />
+        </button>
+        <button
+          type="button"
+          aria-label="Numbered list"
+          data-testid="presentation-notes-numbers"
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => runCommand('insertOrderedList')}
+          className={toolClass}
+        >
+          <ListOrdered size={14} aria-hidden="true" />
+        </button>
+        <button
+          type="button"
+          aria-label="Clear formatting"
+          data-testid="presentation-notes-clear"
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => runCommand('removeFormat')}
+          className={toolClass}
+        >
+          <Eraser size={14} aria-hidden="true" />
+        </button>
+        <span className="mx-0.5 h-4 w-px bg-black/10" aria-hidden="true" />
+        <div className="flex items-center gap-1" role="group" aria-label="Text color">
+          {NOTE_INKS.map((ink) => (
+            <button
+              key={ink.id}
+              type="button"
+              aria-label={ink.label}
+              title={ink.label}
+              data-testid={`presentation-notes-ink-${ink.id}`}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => runCommand('foreColor', ink.value)}
+              className="compact-control size-4 !min-h-0 rounded-full border border-black/15"
+              style={{ backgroundColor: ink.value }}
+            />
+          ))}
+        </div>
+        <span className="mx-0.5 h-4 w-px bg-black/10" aria-hidden="true" />
+        <div className="flex items-center gap-1" role="group" aria-label="Highlight">
+          {NOTE_MARKS.map((mark) => (
+            <button
+              key={mark.id}
+              type="button"
+              aria-label={mark.label}
+              title={mark.label}
+              data-testid={`presentation-notes-mark-${mark.id}`}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => runCommand('hiliteColor', mark.value)}
+              className="compact-control size-4 !min-h-0 rounded-full border border-black/15"
+              style={{
+                backgroundColor: mark.value === 'transparent' ? '#ffffff' : mark.value,
+                backgroundImage: mark.value === 'transparent'
+                  ? 'linear-gradient(135deg, transparent 46%, #94a3b8 46%, #94a3b8 54%, transparent 54%)'
+                  : undefined,
+              }}
+            />
+          ))}
+        </div>
+      </div>
+      <div className="flex items-center gap-1.5 border-b px-2 py-1.5" style={{ borderColor: sheet.border }}>
+        <span className="text-[10px] font-semibold tracking-wide text-slate-500 uppercase">Sheet</span>
+        <div className="flex items-center gap-1" role="group" aria-label="Sheet color">
+          {NOTE_PAPERS.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              aria-label={item.label}
+              title={item.label}
+              aria-pressed={item.id === sheet.id}
+              data-testid={`presentation-notes-paper-${item.id}`}
+              onClick={() => onPaperChange(item.id)}
+              className={`compact-control size-4 !min-h-0 rounded-full border ${item.id === sheet.id ? 'ring-2 ring-slate-700 ring-offset-1' : 'border-black/15'}`}
+              style={{ backgroundColor: item.surface, borderColor: item.border }}
+            />
+          ))}
+        </div>
       </div>
       <div
         ref={editorRef}
@@ -551,10 +758,13 @@ export function PresentationControlBar({
   const {
     agenda,
     notes,
+    paper,
     setAgenda,
     markAgendaSaved,
     setNotes,
     markNotesSaved,
+    setPaper,
+    markPaperSaved,
   } = usePadDrafts(region, periodKey);
   const [agendaOpen, setAgendaOpen] = useState(false);
   const [notesOpen, setNotesOpen] = useState(false);
@@ -839,10 +1049,18 @@ export function PresentationControlBar({
           title="Notes"
           icon={<StickyNote size={15} className="text-amber-600" aria-hidden="true" />}
           testId="presentation-notes-pad"
-          shellClassName="w-[min(92vw,26rem)] border border-amber-200 bg-[#fff6cc]"
+          shellClassName="w-[min(92vw,28rem)] border"
+          surfaceColor={notePaper(paper).surface}
+          borderColor={notePaper(paper).border}
           onClose={() => setNotesOpen(false)}
         >
-          <NotesEditor padKey={padKey} html={notes} onChange={setNotes} />
+          <NotesEditor
+            padKey={padKey}
+            html={notes}
+            paper={paper}
+            onChange={setNotes}
+            onPaperChange={setPaper}
+          />
           <div className="flex justify-end px-3 py-2">
             <button
               type="button"
@@ -850,7 +1068,9 @@ export function PresentationControlBar({
               onClick={() => {
                 const sanitized = sanitizeNotesHtml(notes);
                 writePad(region, periodKey, 'notes', sanitized);
+                writeNotePaper(region, periodKey, paper);
                 markNotesSaved(sanitized);
+                markPaperSaved(paper);
               }}
               className="compact-control inline-flex h-8 !min-h-0 items-center rounded-lg bg-blue-600 px-3 text-xs font-semibold text-white hover:bg-blue-700"
             >

@@ -26,7 +26,8 @@ from services.planning_service import PlanningService
 
 PAGE_SECTIONS = (
     "summary", "options", "comparison", "executive_story", "priority_insights", "people_contribution_analysis",
-    "kpi_trend", "kpi_diagnosis", "tracking_indicators",
+    "kpi_trend", "kpi_diagnosis", "tracking_indicators", "team_summaries", "role_summaries",
+    "performance_drivers", "risks", "opportunities",
 )
 MONTHS = ("January", "February", "March", "April", "May", "June", "July", "August", "September", "October",
           "November", "December")

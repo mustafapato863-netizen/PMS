@@ -43,20 +43,25 @@ describe('ScoreTrendChart', () => {
   });
 
   it('shows a point tooltip and moves between measured months with the keyboard', () => {
-    render(<ScoreTrendChart points={points} title="Performance" comparisonLabel="Company average" />);
+    const compared = points.map((item) => item.period.key === '2026-06' ? { ...item, comparison_score: 76.2 } : item);
+    render(<ScoreTrendChart points={compared} title="Performance" comparisonLabel="Company average" />);
 
     const june = screen.getByTestId('executive-trend-point-2026-06');
     fireEvent.focus(june);
-    expect(screen.getByTestId('executive-trend-tooltip')).toHaveTextContent('Jun 2026');
-    expect(screen.getByTestId('executive-trend-tooltip')).toHaveTextContent('87.0%');
-    expect(screen.getByTestId('executive-trend-tooltip')).toHaveTextContent('+2.0%');
-    expect(screen.getByTestId('executive-trend-tooltip')).not.toHaveTextContent(/\b(?:pp|pts)\b/);
+    const tooltip = screen.getByTestId('executive-trend-tooltip');
+    expect(tooltip).toHaveTextContent('Jun 2026');
+    expect(tooltip).toHaveTextContent('87.0%');
+    expect(tooltip).toHaveTextContent('Target');
+    expect(tooltip).toHaveTextContent('+2.0%');
+    expect(tooltip).not.toHaveTextContent('Company average');
+    expect(tooltip).not.toHaveTextContent('76.2%');
+    expect(tooltip).not.toHaveTextContent(/\b(?:pp|pts)\b/);
 
     fireEvent.keyDown(june, { key: 'ArrowLeft' });
     expect(screen.getByTestId('executive-trend-tooltip')).toHaveTextContent('May 2026');
   });
 
-  it('shows one settings note and repeats it on the active month tooltip', () => {
+  it('shows one settings note under the chart and keeps it out of the tooltip', () => {
     const noted = points.map((item, index) => index === points.length - 1 ? {
       ...item,
       basis_context: {
@@ -72,11 +77,13 @@ describe('ScoreTrendChart', () => {
 
     expect(screen.getAllByTestId('basis-comparison-note')).toHaveLength(1);
     fireEvent.focus(screen.getByTestId('executive-trend-point-2026-06'));
-    expect(screen.getByTestId('executive-trend-tooltip')).toHaveTextContent('Scores can be affected by evaluation settings.');
-    expect(screen.getByTestId('executive-trend-tooltip')).toHaveTextContent('Comparable raw performance is unchanged.');
+    const tooltip = screen.getByTestId('executive-trend-tooltip');
+    expect(tooltip).toHaveTextContent('87.0%');
+    expect(tooltip).not.toHaveTextContent('Scores can be affected by evaluation settings.');
+    expect(tooltip).not.toHaveTextContent('Comparable raw performance is unchanged.');
   });
 
-  it('keeps the current comparison note and leaves older notes on the focused month', () => {
+  it('leaves older comparison notes off the focused month tooltip', () => {
     const unavailable = 'Evaluation settings comparison is unavailable for the exact previous month.';
     const changed = 'Scores can be affected by evaluation settings. Comparable raw performance changed.';
     const withHistory = points.map((item) => {
@@ -89,12 +96,13 @@ describe('ScoreTrendChart', () => {
     expect(screen.queryByTestId('basis-comparison-note')).not.toBeInTheDocument();
     fireEvent.focus(screen.getByTestId('executive-trend-point-2026-04'));
     const older = screen.getByTestId('executive-trend-tooltip');
-    expect(older).toHaveTextContent(changed);
+    expect(older).toHaveTextContent('81.0%');
+    expect(older).not.toHaveTextContent(changed);
     expect(older).not.toHaveTextContent(unavailable);
-    expect(older.querySelector('[data-testid="basis-comparison-note"]')).toBeNull();
 
     fireEvent.focus(screen.getByTestId('executive-trend-point-2026-05'));
-    expect(screen.getByTestId('executive-trend-tooltip')).toHaveTextContent(unavailable);
+    expect(screen.getByTestId('executive-trend-tooltip')).toHaveTextContent('85.0%');
+    expect(screen.getByTestId('executive-trend-tooltip')).not.toHaveTextContent(unavailable);
     expect(screen.queryByTestId('basis-comparison-note')).not.toBeInTheDocument();
   });
 

@@ -14,6 +14,7 @@ import {
 } from './compose';
 import type { TeamConfig } from '../../schemas/teamConfig.schema';
 import type { AgentRecord } from '../../types';
+import { heroDecision, heroNarrative, heroStatusLabel } from '../../components/executive/v1/execModel';
 import { executiveFunctionForTeam, functionFromSlug, functionSlug } from './functions';
 import { FIXTURE_TEAM_FUNCTIONS, fixtureActions, fixtureAgentRecords, fixtureDrivers } from './executive.fixture';
 
@@ -131,7 +132,10 @@ describe('executive function membership (disjoint, Executive cards only)', () =>
 
   it('builds disjoint function cards including standalone CSR', () => {
     const summary = compose();
-    expect(summary.functions.map((card) => card.function)).toEqual(['Call Center', 'RCM', 'Marketing', 'CSR']);
+    expect(summary.functions.map((card) => card.function)).toEqual(
+      [...summary.functions].sort((left, right) => (right.gap_share_percent ?? -1) - (left.gap_share_percent ?? -1)).map((card) => card.function),
+    );
+    expect(new Set(summary.functions.map((card) => card.function))).toEqual(new Set(['Call Center', 'RCM', 'Marketing', 'CSR']));
     const rcm = summary.functions.find((card) => card.function === 'RCM')!;
     expect(rcm.teams).toContain('Pre-Approvals IP Offshore');
     expect(rcm.teams).toContain('Pre-Approvals IP Final');
@@ -142,6 +146,99 @@ describe('executive function membership (disjoint, Executive cards only)', () =>
     expect(summary.teams.map((team) => team.team)).toContain('CSR');
     const cardHeadcount = summary.functions.reduce((sum, card) => sum + card.employees, 0);
     expect(summary.hero.employees).toBe(cardHeadcount);
+  });
+
+  it('splits Call Center and RCM into employees and supportive positions only when both sides are measured', () => {
+    const summary = compose();
+    const callCenter = summary.functions.find((card) => card.function === 'Call Center')!;
+    expect(callCenter.cohorts).toMatchObject({
+      employees: { employees: 20, teams: ['Inbound', 'Outbound'] },
+      support: { employees: 6, teams: ['Call Center'] },
+    });
+    expect(callCenter.employees).toBe(26);
+    expect(callCenter.cohorts?.employees.score).not.toBe(callCenter.cohorts?.support.score);
+    expect(callCenter.score).not.toBe(callCenter.cohorts?.employees.score);
+    expect(callCenter.score).not.toBe(callCenter.cohorts?.support.score);
+    expect(summary.functions.find((card) => card.function === 'RCM')?.cohorts).toBeNull();
+    expect(summary.functions.find((card) => card.function === 'Marketing')?.cohorts).toBeNull();
+
+    const split = compose({
+      records: [
+        record(90, { team: 'Coding', employeeId: 'coder' }),
+        record(60, { team: 'RCM', employeeId: 'support', position: 'Trainer' }),
+        record(80, { team: 'Inbound', employeeId: 'agent' }),
+        record(70, { team: 'Marketing', employeeId: 'marketer' }),
+        record(95, { team: 'Content', employeeId: 'content' }),
+      ],
+      comparisonRecords: null,
+      drivers: null,
+      actions: null,
+    });
+    const rcm = split.functions.find((card) => card.function === 'RCM')!;
+    expect(rcm.score).toBe(75);
+    expect(rcm.cohorts).toMatchObject({
+      employees: { employees: 1, score: 90, teams: ['Coding'] },
+      support: { employees: 1, score: 60, teams: ['RCM'] },
+    });
+    expect(split.functions.find((card) => card.function === 'Call Center')?.cohorts).toBeNull();
+    expect(split.functions.find((card) => card.function === 'Marketing')?.cohorts).toBeNull();
+  });
+});
+
+describe('hero status', () => {
+  it('keeps a score under the target of 100 from reading as a healthy benchmark', () => {
+    expect(heroStatusLabel(92, -8)).toBe('Short of target');
+    expect(heroStatusLabel(100, 0)).toBe('On target');
+    expect(heroStatusLabel(101, 1)).toBe('On target');
+    expect(heroStatusLabel(85, -15)).toBe('Needs attention');
+    expect(heroStatusLabel(60, -40)).toBe('Below threshold');
+  });
+});
+
+describe('gap share ranking', () => {
+  it('ranks the function that carries the gap first and keeps the KPI inside that function', () => {
+    const evidence = [
+      ...Array.from({ length: 10 }, (_, index) => record(40, { team: 'Coding', employeeId: `rcm-${index}` })),
+      record(99, { team: 'CSR', employeeId: 'csr-1' }),
+    ];
+    const summary = compose({
+      records: evidence,
+      drivers: fixtureDrivers({ weightedGap: true }),
+      comparisonRecords: null,
+      actions: null,
+    });
+    expect(summary.functions.map((card) => card.function)).toEqual(['RCM', 'CSR']);
+    expect(summary.functions[0]).toMatchObject({ score_basis: 'people_average', score: 40 });
+    expect(summary.functions[0].gap_share_percent ?? 0).toBeGreaterThan(90);
+    expect(summary.functions[0].lowest_team).toMatchObject({ team: 'Coding', score: 40 });
+    expect(summary.hero.story?.biggest_drag).toMatchObject({
+      function: 'RCM',
+      kpi_label: 'Initial Rejection %',
+      team: 'Pre-Approvals IP Final',
+    });
+    expect(summary.hero.story?.biggest_drag?.kpi_label).not.toBe('Rejection');
+    expect(heroNarrative(summary)).toBe(
+      `Start with RCM. It accounts for ${summary.functions[0].gap_share_percent}% of the gap at 40.0%. The KPI in this function is Initial Rejection % in Pre-Approvals IP Final.`,
+    );
+    expect(heroDecision(summary)).toBe(heroNarrative(summary));
+    expect(heroNarrative(summary, { includeDecision: false })).toBeNull();
+  });
+
+  it('does not borrow a KPI from another function when the hole has no driver', () => {
+    const evidence = Array.from({ length: 8 }, (_, index) => record(40, { team: 'Marketing', employeeId: `mkt-${index}` }));
+    const summary = compose({
+      records: evidence,
+      drivers: fixtureDrivers({ weightedGap: true }),
+      comparisonRecords: null,
+      actions: null,
+    });
+    expect(summary.hero.story?.biggest_drag).toMatchObject({
+      function: 'Marketing',
+      kpi_label: null,
+      team: 'Marketing',
+    });
+    expect(summary.teams[0]).toMatchObject({ team: 'Marketing', score_basis: 'people_average' });
+    expect(summary.teams[0].gap_share_percent).toBe(100);
   });
 });
 

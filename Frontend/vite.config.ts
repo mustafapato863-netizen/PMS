@@ -1,6 +1,7 @@
 import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import { SECURITY_HEADERS } from './src/lib/securityHeaders'
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -12,6 +13,10 @@ export default defineConfig({
     host: '0.0.0.0',
     port: 5173,
     strictPort: true,
+    headers: SECURITY_HEADERS,
+  },
+  preview: {
+    headers: SECURITY_HEADERS,
   },
   test: {
     environment: 'jsdom',
