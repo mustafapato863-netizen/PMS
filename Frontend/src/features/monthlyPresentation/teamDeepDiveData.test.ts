@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ExecRecord } from '../executive/compose';
+import { RCM_DEEP_DIVE_SEP_2026 } from './callCenterDeepDiveData';
+import { buildRoleDetail } from './roleDetailData';
 import { buildTeamDeepDiveFromRecords } from './teamDeepDiveData';
 
 const september = { year: 2026, month: 'September', key: '2026-09' };
@@ -64,5 +66,144 @@ describe('generic team deep dive agent KPIs', () => {
     const approval = dive.kpis.find((item) => item.kpiKey === 'approval');
     expect(error?.agentsMeetingTarget).toBe(2);
     expect(approval?.agentsMeetingTarget).toBe(0);
+  });
+
+  it('uses the leader scorecard for Key Team KPIs when that scorecard is the team total', () => {
+    const august = { year: 2026, month: 'August', key: '2026-08' };
+    const july = { year: 2026, month: 'July', key: '2026-07' };
+    const hossam = person('SGHD70094', 'Hossam Mohamed Abdelsameea Tolba Ahmed', 88.61, [
+      kpi('error', 'Error %', 1, 5, 'lower_better', 0.9),
+      kpi('approval', '% Approval within 48 hrs', 95, 90, 'higher_better', 1),
+      kpi('rejection', 'IP Initial Rejection %', 1.2, 2, 'lower_better', 0.8),
+      { ...kpi('rejection_all', 'IP Initial Rejection %(All)', 9.9, 2, 'lower_better', 0.1), weight_applied: 0 },
+    ]);
+    hossam.position = 'Pre-Authorization Supervisor';
+    hossam.level = 'Managerial';
+    const ali = person('ali', 'Ali Mohamed', 74.8, [
+      kpi('error', 'Error %', 4, 5, 'lower_better', 0.4),
+      kpi('approval', '% Approval within 48 hrs', 70, 90, 'higher_better', 0.78),
+      kpi('rejection', 'IP Initial Rejection %', 4, 2, 'lower_better', 0.4),
+    ]);
+    const hadeer = person('hadeer', 'Hadeer Gamal', 80, [
+      kpi('error', 'Error %', 7, 5, 'lower_better', 0.2),
+      kpi('approval', '% Approval within 48 hrs', 60, 90, 'higher_better', 0.66),
+      kpi('rejection', 'IP Initial Rejection %', 6.8, 2, 'lower_better', 0.2),
+    ]);
+    const hossamAugust = {
+      ...hossam,
+      period: august,
+      score: 86,
+      kpis: [
+        kpi('error', 'Error %', 2.4, 5, 'lower_better', 0.7),
+        kpi('approval', '% Approval within 48 hrs', 91, 90, 'higher_better', 1),
+        kpi('rejection', 'IP Initial Rejection %', 1.8, 2, 'lower_better', 0.7),
+      ],
+    };
+    const aliAugust = {
+      ...ali,
+      period: august,
+      kpis: [kpi('error', 'Error %', 8, 5, 'lower_better', 0.2)],
+    };
+    const aliJuly = {
+      ...ali,
+      period: july,
+      kpis: [kpi('error', 'Error %', 3, 5, 'lower_better', 0.5)],
+    };
+    const hadeerJuly = {
+      ...hadeer,
+      period: july,
+      kpis: [kpi('error', 'Error %', 5, 5, 'lower_better', 0.5)],
+    };
+    const dubaiLow = person('dubai-low', 'Dubai Low', 70, [
+      kpi('error', 'Error %', 2, 5, 'lower_better', 0.8),
+    ]);
+    dubaiLow.team = 'Pre-Approvals OP Dubai';
+    const dubaiHigh = person('dubai-high', 'Dubai High', 90, [
+      kpi('error', 'Error %', 6, 5, 'lower_better', 0.4),
+    ]);
+    dubaiHigh.team = 'Pre-Approvals OP Dubai';
+
+    const records = [hossam, ali, hadeer, hossamAugust, aliAugust, aliJuly, hadeerJuly, dubaiLow, dubaiHigh];
+    const dive = buildTeamDeepDiveFromRecords('pre-approvals-ip', records, [], 'EGY', '2026-09');
+    const card = (key: string) => dive.kpis.find((item) => item.kpiKey === key);
+
+    expect(dive.summary.score).toBe(88.6);
+    expect(dive.kpis.map((item) => item.kpiKey).sort()).toEqual(['approval', 'error', 'rejection']);
+    expect(card('error')?.actualFormatted).toBe('1.0%');
+    expect(card('error')?.targetFormatted).toBe('5.0%');
+    expect(card('error')?.achievementPct).toBe(90);
+    expect(card('error')?.movementFormatted).toBe('-1.4%');
+    expect(card('approval')?.actualFormatted).toBe('95.0%');
+    expect(card('approval')?.achievementPct).toBe(100);
+    expect(card('rejection')?.actualFormatted).toBe('1.2%');
+    expect(card('rejection')?.achievementPct).toBe(80);
+    expect(card('error')?.agentsMeetingTarget).toBe(2);
+    expect(card('error')?.totalAgents).toBe(3);
+    expect(card('error')?.trend6Mo.find((point) => point.periodKey === '2026-09')?.actualFormatted).toBe('1.0%');
+    expect(card('error')?.trend6Mo.find((point) => point.periodKey === '2026-08')?.actualFormatted).toBe('2.4%');
+    expect(card('error')?.trend6Mo.find((point) => point.periodKey === '2026-07')?.actualFormatted).toBe('4.0%');
+
+    const aliRow = dive.agentsAverageOrBelow.find((agent) => agent.employeeId === 'ali');
+    const hadeerRow = dive.agentsAverageOrBelow.find((agent) => agent.employeeId === 'hadeer');
+    expect(aliRow?.kpiCells.find((cell) => cell.kpiKey === 'error')?.actualFormatted).toBe('4.0%');
+    expect(aliRow?.kpiCells.find((cell) => cell.kpiKey === 'error')?.metTarget).toBe(true);
+    expect(hadeerRow?.kpiCells.find((cell) => cell.kpiKey === 'error')?.actualFormatted).toBe('7.0%');
+    expect(hadeerRow?.kpiCells.find((cell) => cell.kpiKey === 'error')?.metTarget).toBe(false);
+    expect(hadeerRow?.kpiCells.find((cell) => cell.kpiKey === 'approval')?.actualFormatted).toBe('60.0%');
+
+    const dubai = buildTeamDeepDiveFromRecords('pre-approvals-op-dubai', records, [], 'EGY', '2026-09');
+    expect(dubai.summary.score).toBe(80);
+    expect(dubai.kpis.find((item) => item.kpiKey === 'error')?.actualFormatted).toBe('4.0%');
+  });
+
+  it('shows Submission EGY actuals on Salma when her KPI keys differ from the column key', () => {
+    const salma = person('Salma Nagy Ali Hendy', 'Salma Nagy Ali Hendy', 71.6, [
+      kpi('egy_submission_initial_rejection', 'Initial Rejection %', 3.8, 2, 'lower_better', 0.526),
+      kpi('egy_submission_due_date', '% of Submission Within Due date', 99.9, 90, 'higher_better', 1),
+    ]);
+    salma.team = 'Submission EGY';
+    salma.position = 'Claim & Audit Specialist';
+    const colleague = person('SGHD80001', 'Colleague Missing Due Date', 80, [
+      kpi('submission_initial_rejection', 'Initial Rejection %', 8, 2, 'lower_better', 0.25),
+      kpi('egy_coding_quality_errors', 'Coding Errors %', 11.3, 5, 'lower_better', 0.442),
+    ]);
+    colleague.team = 'Submission EGY';
+    colleague.position = 'Claim & Audit Specialist';
+
+    const records = [salma, colleague];
+    const dive = buildTeamDeepDiveFromRecords('submission-egy', records, [], 'EGY', '2026-09');
+    const salmaRow = dive.agentsAverageOrBelow.find((agent) => agent.agentName === 'Salma Nagy Ali Hendy');
+    const colleagueRow = dive.agentsAverageOrBelow.find((agent) => agent.employeeId === 'SGHD80001');
+    const labeled = (row: { kpiCells: { label: string; actualFormatted: string }[] } | undefined, label: string) =>
+      row?.kpiCells.filter((cell) => cell.label.trim().toLowerCase() === label.toLowerCase()) ?? [];
+
+    expect(salmaRow?.score).toBe(71.6);
+    expect(labeled(salmaRow, 'Initial Rejection %').map((cell) => cell.actualFormatted)).toEqual(['3.8%', '3.8%']);
+    expect(labeled(salmaRow, '% of Submission Within Due date').map((cell) => cell.actualFormatted)).toEqual(['99.9%']);
+    expect(labeled(salmaRow, 'Coding Errors %').map((cell) => cell.actualFormatted)).toEqual(['—']);
+    expect(labeled(colleagueRow, '% of Submission Within Due date').map((cell) => cell.actualFormatted)).toEqual(['—']);
+    expect(labeled(colleagueRow, 'Initial Rejection %').every((cell) => cell.actualFormatted === '8.0%')).toBe(true);
+    expect(labeled(colleagueRow, 'Coding Errors %').map((cell) => cell.actualFormatted)).toEqual(['11.3%']);
+
+    const role = buildRoleDetail(RCM_DEEP_DIVE_SEP_2026, 'claim-and-audit-specialist', [], records);
+    const salmaMember = role.members.find((member) => member.personName === 'Salma Nagy Ali Hendy');
+    const colleagueMember = role.members.find((member) => member.employeeId === 'SGHD80001');
+    expect(salmaMember?.score).toBe(71.6);
+    expect(labeled(salmaMember, 'Initial Rejection %').map((cell) => cell.actualFormatted)).toEqual(['3.8%', '3.8%']);
+    expect(labeled(salmaMember, '% of Submission Within Due date').map((cell) => cell.actualFormatted)).toEqual(['99.9%']);
+    expect(labeled(salmaMember, 'Coding Errors %').map((cell) => cell.actualFormatted)).toEqual(['—']);
+    expect(labeled(colleagueMember, '% of Submission Within Due date').map((cell) => cell.actualFormatted)).toEqual(['—']);
+  });
+
+  it('uses the September Submission EGY baseline measurements instead of dashes', () => {
+    const dive = buildTeamDeepDiveFromRecords('submission-egy', [], [], 'EGY', '2026-09');
+    const salma = dive.agentsAverageOrBelow.find((agent) => agent.agentName === 'Salma Nagy Ali Hendy');
+    expect(salma?.score).toBe(71.6);
+    const rejection = salma?.kpiCells.find((cell) => /initial rejection/i.test(cell.label));
+    expect(rejection?.actualFormatted).toBe('3.8%');
+    const dueDate = salma?.kpiCells.find((cell) => /submission/i.test(cell.label) && /due/i.test(cell.label));
+    if (dueDate) expect(dueDate.actualFormatted).toBe('99.9%');
+    const unrelated = salma?.kpiCells.find((cell) => /coding errors/i.test(cell.label));
+    expect(unrelated?.actualFormatted).toBe('—');
   });
 });

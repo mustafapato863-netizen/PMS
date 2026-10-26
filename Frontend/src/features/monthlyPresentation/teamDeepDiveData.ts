@@ -1,4 +1,4 @@
-import type { PMSAction } from '../../types';
+import { isHossamRecord, type PMSAction } from '../../types';
 import {
   kpiRows,
   periodFromKey,
@@ -146,6 +146,61 @@ const mean = (vals: number[]) =>
 function hasMeasuredValue(value: string): boolean {
   const trimmed = value.trim();
   return trimmed.length > 0 && trimmed !== '—' && trimmed !== '-';
+}
+
+function normalizeKpiLabel(value: string | null | undefined): string {
+  return String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9%]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function sameMeasuredKpi(left: string | null | undefined, right: string | null | undefined): boolean {
+  const a = normalizeKpiLabel(left);
+  const b = normalizeKpiLabel(right);
+  return a.length > 0 && a === b;
+}
+
+function personalKpiForColumn<T extends { kpi_key: string; kpi_label: string }>(
+  rows: readonly T[],
+  column: { kpiKey: string; label: string; shortLabel?: string },
+): T | undefined {
+  return (
+    rows.find((row) => row.kpi_key === column.kpiKey) ??
+    rows.find(
+      (row) =>
+        normalizeKpiLabel(row.kpi_label) === normalizeKpiLabel(column.label) ||
+        normalizeKpiLabel(row.kpi_label) === normalizeKpiLabel(column.shortLabel),
+    )
+  );
+}
+
+function statedMeasurements(text: string): Array<{ label: string; actual: number }> {
+  const found: Array<{ label: string; actual: number }> = [];
+  const pattern = /([^,;&]+?)\s+(?:exceeded target at|rose to|at)\s+(\d+(?:\.\d+)?)%/gi;
+  for (const match of text.matchAll(pattern)) {
+    const label = match[1].replace(/^(?:but|and|while)\s+/i, '').trim();
+    const actual = Number(match[2]);
+    if (!label || !Number.isFinite(actual)) continue;
+    found.push({ label, actual });
+  }
+  return found;
+}
+
+function statedActualForColumn(
+  column: { label: string; shortLabel: string },
+  texts: string[],
+): number | null {
+  for (const text of texts) {
+    for (const item of statedMeasurements(text)) {
+      if (sameMeasuredKpi(column.shortLabel, item.label) || sameMeasuredKpi(column.label, item.label)) {
+        return item.actual;
+      }
+    }
+  }
+  return null;
 }
 
 /** Keep a shared KPI recommendation, then cite this agent's own issue so lookalike cards are not interchangeable. */
@@ -958,14 +1013,28 @@ function teamFromBaseline(
     changeVsPrev: null,
     grade: agent.grade,
     gradeFullLabel: agent.gradeLabel,
-    kpiCells: kpis.map((kpi) => ({
-      kpiKey: kpi.kpiKey,
-      label: kpi.shortLabel,
-      actualFormatted: '—',
-      targetFormatted: kpi.targetFormatted,
-      achievementPct: 0,
-      metTarget: false,
-    })),
+    kpiCells: kpis.map((kpi) => {
+      const texts = people.length === 1 ? [agent.reason, team.diagnosis] : [agent.reason];
+      const actual = statedActualForColumn(kpi, texts);
+      const metTarget =
+        actual !== null && kpi.target !== null
+          ? kpi.betterDirection === 'lower'
+            ? actual <= kpi.target + 1e-6
+            : actual >= kpi.target - 1e-6
+          : false;
+      const achievementPct =
+        actual !== null && kpi.target !== null && kpi.target > 0 && actual > 0
+          ? round1(kpi.betterDirection === 'lower' ? (kpi.target / actual) * 100 : (actual / kpi.target) * 100)
+          : 0;
+      return {
+        kpiKey: kpi.kpiKey,
+        label: kpi.shortLabel,
+        actualFormatted: actual === null ? '—' : formatKpiValue(actual, kpi.unit),
+        targetFormatted: kpi.targetFormatted,
+        achievementPct,
+        metTarget,
+      };
+    }),
     mainIssue: agent.reason,
     weakestKpiKey: agent.weakestKpiKey,
     weakestKpiLabel: agent.reason.split(' at ')[0] || kpis[0]?.label || 'KPI',
@@ -1033,6 +1102,13 @@ function recordsForSlug(allRecords: ExecRecord[], teamSlug: string, canonicalTea
       slugifyIdentifier(record.team) === teamSlug ||
       record.team.toLowerCase() === canonicalTeam.toLowerCase(),
   );
+}
+
+/** A leader scorecard month uses that scorecard. A month without one keeps everyone on the team. */
+function recordsForTeamKpis(records: ExecRecord[]): ExecRecord[] {
+  if (preApprovalsLeaderTeamTotal(records) === null) return records;
+  const leaders = records.filter((record) => isHossamRecord(record));
+  return leaders.length > 0 ? leaders : records;
 }
 
 function buildGenericTeamDeepDive(
@@ -1105,16 +1181,14 @@ function buildGenericTeamDeepDive(
   const siblingTeams: TeamSibling[] =
     located?.data.agentTeams.map((team) => ({ slug: team.teamSlug, label: team.teamName })) ||
     siblingNames.map((name) => ({ slug: slugifyIdentifier(name), label: name }));
-  const currentKpis = kpiRows(current, before).slice(0, 4);
+  const currentKpis = kpiRows(recordsForTeamKpis(current), recordsForTeamKpis(before)).slice(0, 4);
   const sixPeriods = trailingPeriods(effective, 6);
   const kpis: TeamKpiItem[] = currentKpis.map((row) => {
     const unit = row.unit ?? '%';
     const lowerBetter = String(row.kpi_direction ?? '').toLowerCase().startsWith('lower');
     const trend6Mo: KpiMonthlyPoint[] = sixPeriods.map((period) => {
-      const match = kpiRows(
-        teamRecords.filter((record) => record.period.key === period.key),
-        [],
-      ).find((item) => item.kpi_key === row.kpi_key);
+      const monthRecords = teamRecords.filter((record) => record.period.key === period.key);
+      const match = kpiRows(recordsForTeamKpis(monthRecords), []).find((item) => item.kpi_key === row.kpi_key);
       const actual = match?.actual ?? null;
       const target = match?.target ?? null;
       return {
@@ -1171,7 +1245,7 @@ function buildGenericTeamDeepDive(
       grade: g,
       gradeFullLabel: fullGradeLabel(g),
       kpiCells: kpis.map((kpi) => {
-        const match = agentKpiRows.find((item) => item.kpi_key === kpi.kpiKey);
+        const match = personalKpiForColumn(agentKpiRows, kpi);
         return {
           kpiKey: kpi.kpiKey,
           label: kpi.shortLabel,
@@ -1443,7 +1517,7 @@ export function buildTeamDeepDiveFromRecords(
           const g = gradeForScore(agent.score);
 
           const kpiCells: AgentKpiCellValue[] = kpiColumns.map((col) => {
-            const match = agentKpiRows.find((k) => k.kpi_key === col.kpiKey);
+            const match = personalKpiForColumn(agentKpiRows, col);
             return {
               kpiKey: col.kpiKey,
               label: col.shortLabel,

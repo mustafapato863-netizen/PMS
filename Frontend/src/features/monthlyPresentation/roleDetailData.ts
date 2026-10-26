@@ -1286,11 +1286,15 @@ export function buildRoleDetail(
     const memberKpiRows = memberRecord ? kpiRows([memberRecord], []) : [];
 
     const kpiCells: RoleMemberKpiCell[] = tableKpis.map((kpi, idx) => {
+      const columnLabel = kpi.shortName.trim().toLowerCase();
+      const columnName = kpi.name.trim().toLowerCase();
       const matchedRow = memberKpiRows.find(
         (r) =>
           r.kpi_key === kpi.kpiKey ||
-          r.kpi_label.toLowerCase() === kpi.name.toLowerCase() ||
-          slugifyIdentifier(r.kpi_label) === slugifyIdentifier(kpi.shortName),
+          r.kpi_label.trim().toLowerCase() === columnName ||
+          r.kpi_label.trim().toLowerCase() === columnLabel ||
+          slugifyIdentifier(r.kpi_label) === slugifyIdentifier(kpi.shortName) ||
+          slugifyIdentifier(r.kpi_label) === slugifyIdentifier(kpi.name),
       );
       if (matchedRow) {
         const ach = matchedRow.achievement_percent ?? kpi.achievementPct;
@@ -1301,6 +1305,17 @@ export function buildRoleDetail(
           targetFormatted: kpi.targetDisplay,
           achievementPct: ach,
           metTarget: ach >= 99.9,
+        };
+      }
+
+      if (memberRecord) {
+        return {
+          kpiKey: kpi.kpiKey,
+          label: kpi.shortName,
+          actualFormatted: '—',
+          targetFormatted: kpi.targetDisplay,
+          achievementPct: 0,
+          metTarget: false,
         };
       }
 
@@ -1368,7 +1383,7 @@ export function buildRoleDetail(
         (a.employee_name || '').toLowerCase() === member.personName.toLowerCase(),
     );
     const parsed = noteFields(storedForMember?.root_cause_note);
-    const missedCells = (member.kpiCells ?? []).filter((c) => !c.metTarget);
+    const missedCells = (member.kpiCells ?? []).filter((c) => !c.metTarget && c.actualFormatted !== '—');
     const mainIssue =
       member.signal ||
       (missedCells.length > 0
