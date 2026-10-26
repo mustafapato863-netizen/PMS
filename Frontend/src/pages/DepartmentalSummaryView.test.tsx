@@ -238,7 +238,7 @@ describe('Corporate sections', () => {
     renderAt();
     expect(screen.getByRole('heading', { name: /^June 2026 company performance is \d+\.\d% below target\.$/ })).toBeInTheDocument();
     expect(screen.getAllByRole('article').map((card) => card.getAttribute('aria-label'))).toEqual(
-      (state.summary?.functions ?? []).map((card) => `${card.function} function`),
+      [...(state.summary?.functions ?? [])].sort((a, b) => (a.score ?? 999) - (b.score ?? 999)).map((card) => `${card.function} function`),
     );
     expect(screen.getAllByRole('heading', { name: 'Call Center' })).toHaveLength(1);
     expect(screen.queryByTestId('exec-start-here')).not.toBeInTheDocument();
@@ -276,7 +276,7 @@ describe('Corporate sections', () => {
     state.user = { id: 'director', role: 'Branch Director', accessible_branches: ['dubai'] };
     renderAt();
     expect(screen.getAllByRole('article').map((card) => card.getAttribute('aria-label'))).toEqual(
-      (state.summary?.functions ?? []).map((card) => `${card.function} function`),
+      [...(state.summary?.functions ?? [])].sort((a, b) => (a.score ?? 999) - (b.score ?? 999)).map((card) => `${card.function} function`),
     );
     expect(screen.getByRole('link', { name: 'View RCM function' })).toHaveAttribute('href', '/function-summary/rcm');
     expect(screen.queryByRole('link', { name: 'Review RCM summary' })).not.toBeInTheDocument();

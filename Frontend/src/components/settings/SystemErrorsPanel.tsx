@@ -1,7 +1,18 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
 import { formatDistanceToNow } from 'date-fns';
-import { Activity, AlertCircle, Clock3, Loader2, RefreshCw, Search, ShieldCheck, X } from 'lucide-react';
+import {
+  Activity,
+  AlertCircle,
+  Check,
+  Clock3,
+  Copy,
+  Loader2,
+  RefreshCw,
+  Search,
+  ShieldCheck,
+  X,
+} from 'lucide-react';
 import { API_BASE } from '../../config';
 import { useUserRole } from '../../context/RoleContext';
 import { AdminTableShell } from './shell/AdminTableShell';
@@ -57,8 +68,10 @@ function formatDate(value: string | null) {
 
 async function readError(response: Response, fallback: string) {
   const result = await response.json().catch(() => ({}));
-  return typeof result?.detail === 'string' ? result.detail
-    : typeof result?.message === 'string' ? result.message
+  return typeof result?.detail === 'string'
+    ? result.detail
+    : typeof result?.message === 'string'
+      ? result.message
       : fallback;
 }
 
@@ -71,15 +84,19 @@ export function SystemErrorsPanel() {
   const [loading, setLoading] = useState(true);
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [copiedTrace, setCopiedTrace] = useState(false);
 
-  const fetchErrors = useCallback(async (filter = ''): Promise<SystemError[]> => {
-    const query = new URLSearchParams({ limit: '50' });
-    if (filter.trim()) query.set('request_id', filter.trim());
-    const response = await fetchWithRole(`${API_BASE}/api/settings/system-errors?${query}`);
-    if (!response.ok) throw new Error(await readError(response, 'Could not load system errors.'));
-    const result = await response.json() as ApiResult<SystemError[]>;
-    return result.data || [];
-  }, [fetchWithRole]);
+  const fetchErrors = useCallback(
+    async (filter = ''): Promise<SystemError[]> => {
+      const query = new URLSearchParams({ limit: '50' });
+      if (filter.trim()) query.set('request_id', filter.trim());
+      const response = await fetchWithRole(`${API_BASE}/api/settings/system-errors?${query}`);
+      if (!response.ok) throw new Error(await readError(response, 'Could not load system errors.'));
+      const result = (await response.json()) as ApiResult<SystemError[]>;
+      return result.data || [];
+    },
+    [fetchWithRole],
+  );
 
   useEffect(() => {
     let active = true;
@@ -99,31 +116,37 @@ export function SystemErrorsPanel() {
     };
 
     void loadInitialErrors();
-    return () => { active = false; };
+    return () => {
+      active = false;
+    };
   }, [fetchErrors]);
 
-  const loadErrors = useCallback(async (filter = '') => {
-    setLoading(true);
-    setErrorMessage(null);
-    setSelectedError(null);
-    try {
-      setErrors(await fetchErrors(filter));
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Could not load system errors.');
-      setErrors([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [fetchErrors]);
+  const loadErrors = useCallback(
+    async (filter = '') => {
+      setLoading(true);
+      setErrorMessage(null);
+      setSelectedError(null);
+      try {
+        setErrors(await fetchErrors(filter));
+      } catch (error) {
+        setErrorMessage(error instanceof Error ? error.message : 'Could not load system errors.');
+        setErrors([]);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [fetchErrors],
+  );
 
   const openDetails = async (item: SystemError) => {
     setSelectedError(item);
     setLoadingDetails(true);
     setErrorMessage(null);
+    setCopiedTrace(false);
     try {
       const response = await fetchWithRole(`${API_BASE}/api/settings/system-errors/${item.id}`);
       if (!response.ok) throw new Error(await readError(response, 'Could not load error details.'));
-      const result = await response.json() as ApiResult<SystemError>;
+      const result = (await response.json()) as ApiResult<SystemError>;
       setSelectedError(result.data || item);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Could not load error details.');
@@ -139,30 +162,79 @@ export function SystemErrorsPanel() {
     void loadErrors(filter);
   };
 
+  const errorMetrics = useMemo(() => {
+    const classCounts = new Map<string, number>();
+    const endpoints = new Set<string>();
+    for (const err of errors) {
+      if (err.error_class) classCounts.set(err.error_class, (classCounts.get(err.error_class) ?? 0) + 1);
+      if (err.endpoint) endpoints.add(err.endpoint);
+    }
+    let topClass = 'None';
+    let topCount = 0;
+    for (const [cls, count] of classCounts.entries()) {
+      if (count > topCount) {
+        topClass = cls;
+        topCount = count;
+      }
+    }
+    return {
+      totalLoaded: errors.length,
+      uniqueEndpoints: endpoints.size,
+      topClass,
+      topCount,
+    };
+  }, [errors]);
+
+  const handleCopyDiagnostic = () => {
+    if (!selectedError) return;
+    const text = JSON.stringify(selectedError, null, 2);
+    void navigator.clipboard?.writeText(text);
+    setCopiedTrace(true);
+    window.setTimeout(() => setCopiedTrace(false), 2000);
+  };
+
   const { rows: sortedErrors, sort, toggle } = useTableSort(errors, SYSTEM_ERROR_SORT_COLUMNS);
-  const pagination = usePagination(sortedErrors, ERRORS_PER_PAGE, `${requestIdFilter}|${sort?.key ?? ''}|${sort?.direction ?? ''}`);
+  const pagination = usePagination(
+    sortedErrors,
+    ERRORS_PER_PAGE,
+    `${requestIdFilter}|${sort?.key ?? ''}|${sort?.direction ?? ''}`,
+  );
 
   const renderErrorRow = (item: SystemError) => {
     const selected = selectedError?.id === item.id;
     return (
       <tr key={item.id} className={`${BODY_ROW_CLASS} ${selected ? 'bg-blue-500/[0.06]' : ''}`}>
         <td className={BODY_CELL_CLASS}>
-          <time dateTime={item.occurred_at ?? undefined} title={formatDate(item.occurred_at)} className="inline-flex items-center gap-1.5 whitespace-nowrap">
+          <time
+            dateTime={item.occurred_at ?? undefined}
+            title={formatDate(item.occurred_at)}
+            className="inline-flex items-center gap-1.5 whitespace-nowrap"
+          >
             <Clock3 size={12} aria-hidden="true" />
             {relativeTime(item.occurred_at)}
           </time>
         </td>
-        <td className={`${BODY_CELL_CLASS} font-extrabold text-[var(--text-primary)]`}>{item.error_class}</td>
+        <td className={`${BODY_CELL_CLASS} font-extrabold text-[var(--text-primary)]`}>
+          {item.error_class}
+        </td>
         <td className={BODY_CELL_CLASS}>
-          <span className="rounded-md bg-[var(--bg-sunken)] px-1.5 py-0.5 font-mono text-xs font-bold text-[var(--text-secondary)]">{item.method}</span>
+          <span className="rounded-md bg-[var(--bg-sunken)] px-1.5 py-0.5 font-mono text-xs font-bold text-[var(--text-secondary)]">
+            {item.method}
+          </span>
         </td>
         <td className={`${BODY_CELL_CLASS} max-w-[200px]`}>
-          <span className="block truncate font-mono text-xs" title={item.endpoint}>{item.endpoint}</span>
+          <span className="block truncate font-mono text-xs" title={item.endpoint}>
+            {item.endpoint}
+          </span>
         </td>
         <td className={BODY_CELL_CLASS}>
-          {item.request_id
-            ? <span className="block max-w-[120px] truncate font-mono text-xs" title={item.request_id}>{item.request_id}</span>
-            : <span className="text-[var(--text-muted)]">—</span>}
+          {item.request_id ? (
+            <span className="block max-w-[120px] truncate font-mono text-xs" title={item.request_id}>
+              {item.request_id}
+            </span>
+          ) : (
+            <span className="text-[var(--text-muted)]">—</span>
+          )}
         </td>
         <td className={`${BODY_CELL_CLASS} text-right`}>
           <button
@@ -185,7 +257,8 @@ export function SystemErrorsPanel() {
         <div>
           <h2 className="text-xl font-black text-[var(--text-primary)]">System errors</h2>
           <p className="mt-1 max-w-2xl text-xs leading-relaxed text-[var(--text-muted)]">
-            Review recent server failures and search by the reference shown when a save fails. Full diagnostic traces are available only to Admins.
+            Review recent server failures and search by the reference shown when a save fails. Full diagnostic
+            traces are available only to Admins.
           </p>
         </div>
         <button
@@ -199,11 +272,44 @@ export function SystemErrorsPanel() {
         </button>
       </header>
 
+      {/* Diagnostic Telemetry Summary Strip */}
+      {!loading && errors.length > 0 && (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3" aria-label="Diagnostic summary">
+          <div className="rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] px-4 py-3 shadow-2xs">
+            <span className="block text-[11px] font-semibold tracking-wider text-[var(--text-muted)] uppercase">
+              Captured Events
+            </span>
+            <span className="mt-1 block text-lg font-black tabular-nums text-[var(--text-primary)]">
+              {errorMetrics.totalLoaded}
+            </span>
+          </div>
+          <div className="rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] px-4 py-3 shadow-2xs">
+            <span className="block text-[11px] font-semibold tracking-wider text-[var(--text-muted)] uppercase">
+              Primary Exception
+            </span>
+            <span className="mt-1 block truncate text-sm font-black text-rose-600 dark:text-rose-400">
+              {errorMetrics.topClass} ({errorMetrics.topCount})
+            </span>
+          </div>
+          <div className="rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] px-4 py-3 shadow-2xs">
+            <span className="block text-[11px] font-semibold tracking-wider text-[var(--text-muted)] uppercase">
+              Affected Routes
+            </span>
+            <span className="mt-1 block text-lg font-black tabular-nums text-[var(--text-primary)]">
+              {errorMetrics.uniqueEndpoints}
+            </span>
+          </div>
+        </div>
+      )}
+
       <section className="glass-panel space-y-4 rounded-3xl p-4 shadow-sm sm:p-5">
         <form onSubmit={applyFilter} className="flex flex-col gap-2 sm:flex-row">
           <label className="relative min-w-0 flex-1">
             <span className="sr-only">Filter by request reference</span>
-            <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
+            <Search
+              size={16}
+              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]"
+            />
             <input
               value={requestIdInput}
               onChange={(event) => setRequestIdInput(event.target.value)}
@@ -211,7 +317,10 @@ export function SystemErrorsPanel() {
               className="min-h-10 w-full rounded-xl border border-[var(--border-light)] bg-[var(--bg-surface)] pl-9 pr-3 text-xs text-[var(--text-primary)] outline-none transition placeholder:text-[var(--text-muted)] focus:border-blue-500/50 focus:ring-2 focus:ring-blue-500/10"
             />
           </label>
-          <button type="submit" className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-xs font-extrabold text-white transition hover:bg-blue-700">
+          <button
+            type="submit"
+            className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-xs font-extrabold text-white transition hover:bg-blue-700"
+          >
             <Search size={14} /> Search
           </button>
           {requestIdFilter && (
@@ -230,7 +339,10 @@ export function SystemErrorsPanel() {
         </form>
 
         {errorMessage && (
-          <div role="alert" className="flex items-start gap-2.5 rounded-xl border border-rose-300 bg-rose-50 px-3.5 py-3 text-xs text-rose-800 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-200">
+          <div
+            role="alert"
+            className="flex items-start gap-2.5 rounded-xl border border-rose-300 bg-rose-50 px-3.5 py-3 text-xs text-rose-800 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-200"
+          >
             <AlertCircle size={16} className="mt-0.5 shrink-0" />
             <span>{errorMessage}</span>
           </div>
@@ -239,15 +351,22 @@ export function SystemErrorsPanel() {
         <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_minmax(320px,0.85fr)]">
           <div className="min-w-0 space-y-2" aria-busy={loading}>
             {loading ? (
-              <div role="status" className="flex min-h-36 items-center justify-center gap-2 text-xs font-semibold text-[var(--text-muted)]">
+              <div
+                role="status"
+                className="flex min-h-36 items-center justify-center gap-2 text-xs font-semibold text-[var(--text-muted)]"
+              >
                 <Loader2 size={17} className="animate-spin" /> Loading server errors…
               </div>
             ) : errors.length === 0 ? (
               <div className="flex min-h-36 flex-col items-center justify-center rounded-2xl border border-dashed border-[var(--border-light)] px-5 text-center">
                 <ShieldCheck size={22} className="text-emerald-500" />
-                <p className="mt-2 text-sm font-bold text-[var(--text-primary)]">{requestIdFilter ? 'No error found for this reference' : 'No recent server errors'}</p>
+                <p className="mt-2 text-sm font-bold text-[var(--text-primary)]">
+                  {requestIdFilter ? 'No error found for this reference' : 'No recent server errors'}
+                </p>
                 <p className="mt-1 max-w-sm text-xs leading-relaxed text-[var(--text-muted)]">
-                  {requestIdFilter ? 'Check the reference and try again.' : 'New server failures will appear here with a reference you can search.'}
+                  {requestIdFilter
+                    ? 'Check the reference and try again.'
+                    : 'New server failures will appear here with a reference you can search.'}
                 </p>
               </div>
             ) : (
@@ -255,16 +374,46 @@ export function SystemErrorsPanel() {
                 tableLabel="Recent server errors"
                 maxHeightClass="max-h-[560px]"
                 minWidthClass="min-w-[720px]"
-                footer={<TablePagination page={pagination.page} pageCount={pagination.pageCount} from={pagination.from} to={pagination.to} total={pagination.total} onPageChange={pagination.goTo} label="Server error pages" />}
+                footer={
+                  <TablePagination
+                    page={pagination.page}
+                    pageCount={pagination.pageCount}
+                    from={pagination.from}
+                    to={pagination.to}
+                    total={pagination.total}
+                    onPageChange={pagination.goTo}
+                    label="Server error pages"
+                  />
+                }
               >
                 <thead>
                   <tr>
-                    <SortableHeaderCell label="Time" direction={directionFor(sort, 'time')} onSort={() => toggle('time')} />
-                    <SortableHeaderCell label="Error class" direction={directionFor(sort, 'errorClass')} onSort={() => toggle('errorClass')} />
-                    <SortableHeaderCell label="Method" direction={directionFor(sort, 'method')} onSort={() => toggle('method')} />
-                    <SortableHeaderCell label="Endpoint" direction={directionFor(sort, 'endpoint')} onSort={() => toggle('endpoint')} />
-                    <th scope="col" className={HEAD_CELL_CLASS}>Reference</th>
-                    <th scope="col" className={`${HEAD_CELL_CLASS} text-right`}>Details</th>
+                    <SortableHeaderCell
+                      label="Time"
+                      direction={directionFor(sort, 'time')}
+                      onSort={() => toggle('time')}
+                    />
+                    <SortableHeaderCell
+                      label="Error class"
+                      direction={directionFor(sort, 'errorClass')}
+                      onSort={() => toggle('errorClass')}
+                    />
+                    <SortableHeaderCell
+                      label="Method"
+                      direction={directionFor(sort, 'method')}
+                      onSort={() => toggle('method')}
+                    />
+                    <SortableHeaderCell
+                      label="Endpoint"
+                      direction={directionFor(sort, 'endpoint')}
+                      onSort={() => toggle('endpoint')}
+                    />
+                    <th scope="col" className={HEAD_CELL_CLASS}>
+                      Reference
+                    </th>
+                    <th scope="col" className={`${HEAD_CELL_CLASS} text-right`}>
+                      Details
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[var(--border-light)]">
@@ -274,15 +423,32 @@ export function SystemErrorsPanel() {
             )}
           </div>
 
-          <aside className="min-h-48 rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] p-4" aria-label="Error details">
+          <aside
+            className="min-h-48 rounded-2xl border border-[var(--border-light)] bg-[var(--bg-surface)] p-4"
+            aria-label="Error details"
+          >
             {selectedError ? (
               <div className="space-y-3">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <p className="text-xs font-black uppercase tracking-wider text-rose-600 dark:text-rose-300">Admin diagnostics</p>
-                    <h3 className="mt-1 break-all text-sm font-black text-[var(--text-primary)]">{selectedError.error_class}</h3>
+                    <p className="text-xs font-black uppercase tracking-wider text-rose-600 dark:text-rose-300">
+                      Admin diagnostics
+                    </p>
+                    <h3 className="mt-1 break-all text-sm font-black text-[var(--text-primary)]">
+                      {selectedError.error_class}
+                    </h3>
                   </div>
-                  {loadingDetails && <Loader2 size={16} className="animate-spin text-blue-500" />}
+                  <div className="flex items-center gap-2">
+                    {loadingDetails && <Loader2 size={16} className="animate-spin text-blue-500" />}
+                    <button
+                      type="button"
+                      onClick={handleCopyDiagnostic}
+                      className="inline-flex items-center gap-1 rounded-lg border border-[var(--border-light)] bg-[var(--bg-sunken)] px-2.5 py-1 text-[11px] font-semibold text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
+                    >
+                      {copiedTrace ? <Check size={12} className="text-emerald-500" /> : <Copy size={12} />}
+                      {copiedTrace ? 'Copied' : 'Copy JSON'}
+                    </button>
+                  </div>
                 </div>
                 {selectedError.request_id && (
                   <p className="break-all rounded-lg bg-[var(--bg-sunken)] px-2.5 py-2 font-mono text-xs text-[var(--text-secondary)]">
@@ -291,8 +457,12 @@ export function SystemErrorsPanel() {
                 )}
                 {selectedError.error_message && (
                   <div>
-                    <p className="mb-1 text-xs font-extrabold uppercase tracking-wider text-[var(--text-muted)]">Message</p>
-                    <p className="break-words rounded-xl border border-[var(--border-light)] bg-[var(--bg-sunken)] p-3 text-xs leading-relaxed text-[var(--text-primary)]">{selectedError.error_message}</p>
+                    <p className="mb-1 text-xs font-extrabold uppercase tracking-wider text-[var(--text-muted)]">
+                      Message
+                    </p>
+                    <p className="break-words rounded-xl border border-[var(--border-light)] bg-[var(--bg-sunken)] p-3 text-xs leading-relaxed text-[var(--text-primary)]">
+                      {selectedError.error_message}
+                    </p>
                   </div>
                 )}
                 {selectedError.stack_trace && (
@@ -300,15 +470,21 @@ export function SystemErrorsPanel() {
                     <summary className="flex min-h-9 cursor-pointer list-none items-center gap-2 text-xs font-bold text-blue-600 hover:text-blue-700 dark:text-blue-400">
                       <Activity size={14} /> Technical trace
                     </summary>
-                    <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-xl bg-slate-950 p-3 text-xs leading-relaxed text-slate-100">{selectedError.stack_trace}</pre>
+                    <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-xl bg-slate-950 p-3 text-xs leading-relaxed text-slate-100">
+                      {selectedError.stack_trace}
+                    </pre>
                   </details>
                 )}
               </div>
             ) : (
               <div className="flex h-full min-h-40 flex-col items-center justify-center text-center">
                 <Activity size={22} className="text-blue-500/70" />
-                <p className="mt-2 text-xs font-bold text-[var(--text-primary)]">Select an error to inspect it</p>
-                <p className="mt-1 max-w-xs text-xs leading-relaxed text-[var(--text-muted)]">The technical trace is loaded on demand and visible only in this Admin workspace.</p>
+                <p className="mt-2 text-xs font-bold text-[var(--text-primary)]">
+                  Select an error to inspect it
+                </p>
+                <p className="mt-1 max-w-xs text-xs leading-relaxed text-[var(--text-muted)]">
+                  The technical trace is loaded on demand and visible only in this Admin workspace.
+                </p>
               </div>
             )}
           </aside>
