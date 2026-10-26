@@ -1,5 +1,6 @@
-import { Component, type ErrorInfo, type ReactNode } from 'react';
-import MaintenanceView from '../../pages/MaintenanceView';
+import { Component, lazy, Suspense, type ErrorInfo, type ReactNode } from 'react';
+
+const MaintenanceView = lazy(() => import('../../pages/MaintenanceView'));
 
 type Props = {
   children: ReactNode;
@@ -42,6 +43,7 @@ export class AppErrorBoundary extends Component<Props, State> {
   render() {
     if (this.state.hasError) {
       return (
+        <Suspense fallback={null}>
         <MaintenanceView
           mode="error"
           error={this.state.error}
@@ -51,6 +53,7 @@ export class AppErrorBoundary extends Component<Props, State> {
             window.location.href = '/executive';
           }}
         />
+        </Suspense>
       );
     }
 

@@ -31,14 +31,14 @@ describe('AppErrorBoundary', () => {
     expect(screen.getByText('Application content healthy')).toBeInTheDocument();
   });
 
-  it('safely catches child errors and renders the enterprise MaintenanceView in error mode', () => {
+  it('safely catches child errors and renders the enterprise MaintenanceView in error mode', async () => {
     render(
       <AppErrorBoundary>
         <ProblemChild shouldThrow={true} />
       </AppErrorBoundary>
     );
 
-    expect(screen.getByText('Application Protected & Recovered')).toBeInTheDocument();
+    expect(await screen.findByText('Application Protected & Recovered')).toBeInTheDocument();
     expect(screen.getByText('Protected Safe Mode')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /try again \/ reconnect/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /return home/i })).toBeInTheDocument();
