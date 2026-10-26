@@ -36,7 +36,10 @@ import {
 } from './components/MonthlyOverviewSections';
 import CallCenterDeepDiveView from './components/CallCenterDeepDiveView';
 import FunctionDeepDiveView from './components/FunctionDeepDiveView';
-import { PresentationControlBar } from './components/PresentationControlBar';
+import {
+  PresentationControlBar,
+  type AgendaTimelineFunction,
+} from './components/PresentationControlBar';
 import { PresentationSectionFrame } from './components/SectionRail';
 import RoleDetailView from './components/RoleDetailView';
 import TeamDeepDiveView from './components/TeamDeepDiveView';
@@ -590,6 +593,81 @@ export default function MonthlyPresentationView({
     );
   };
 
+  const agendaTimeline = useMemo<AgendaTimelineFunction[]>(() => {
+    const sorted = [...overviewData.functions].sort((a, b) => a.score - b.score);
+    return sorted.map((fn) => {
+      const fnDeepDive =
+        fn.slug === 'call-center' && callCenterDeepDiveData
+          ? callCenterDeepDiveData
+          : buildFunctionDeepDiveFromRecords(
+              fn.slug,
+              execRecords,
+              storedActions,
+              activeRegion,
+              periodParam,
+            );
+
+      if (isRoleBasedFunction(fn.slug)) {
+        const cards = resolveRoleCards(fnDeepDive, execRecords).sort(
+          (a, b) => a.score - b.score,
+        );
+        const withIssues = cards.filter((c) => c.score < 90);
+        const displayCards = withIssues.length > 0 ? withIssues : cards.slice(0, 3);
+        return {
+          slug: fn.slug,
+          functionName: fn.functionName,
+          score: fn.score,
+          subKindLabel: 'Roles',
+          subItems: displayCards.map((c) => ({
+            slug: c.roleSlug,
+            name: c.roleTitle,
+            score: c.score,
+            kind: 'role' as const,
+            hasIssue: c.score < 90,
+          })),
+          allUnits: cards.map((c) => ({
+            slug: c.roleSlug,
+            name: c.roleTitle,
+            score: c.score,
+            kind: 'role' as const,
+            hasIssue: c.score < 90,
+          })),
+        };
+      }
+
+      const teams = [...(fnDeepDive.agentTeams ?? [])].sort((a, b) => a.score - b.score);
+      const withIssues = teams.filter((t) => t.score < 90 || t.roleTone === 'warning');
+      const displayTeams = withIssues.length > 0 ? withIssues : teams;
+      return {
+        slug: fn.slug,
+        functionName: fn.functionName,
+        score: fn.score,
+        subKindLabel: 'Teams',
+        subItems: displayTeams.map((t) => ({
+          slug: t.teamSlug,
+          name: t.teamName,
+          score: t.score,
+          kind: 'team' as const,
+          hasIssue: t.score < 90 || t.roleTone === 'warning',
+        })),
+        allUnits: teams.map((t) => ({
+          slug: t.teamSlug,
+          name: t.teamName,
+          score: t.score,
+          kind: 'team' as const,
+          hasIssue: t.score < 90 || t.roleTone === 'warning',
+        })),
+      };
+    });
+  }, [
+    activeRegion,
+    callCenterDeepDiveData,
+    execRecords,
+    overviewData.functions,
+    periodParam,
+    storedActions,
+  ]);
+
   const sectionViewKey = [
     activeRegion,
     selectedPeriodKey,
@@ -615,6 +693,32 @@ export default function MonthlyPresentationView({
         onNext={() => handleStep('next')}
         previousDisabled={previousDisabled}
         nextDisabled={nextDisabled}
+        functions={overviewData.functions}
+        timelineItems={agendaTimeline}
+        drivers={overviewData.drivers}
+        overallScore={overviewData.overall.score}
+        activeFunctionSlug={functionSlug}
+        activeTeamSlug={activeTeamSlug}
+        activeRoleSlug={activeRoleSlug}
+        onSelectOverview={handleBackToOverview}
+        onSelectFunctionSlug={(slug) => {
+          const match = overviewData.functions.find((fn) => fn.slug === slug);
+          if (match) {
+            handleFunctionClick(match);
+          }
+        }}
+        onSelectSubItem={(fnSlug, sub) => {
+          if (sub.kind === 'team') {
+            handleSelectAgentTeam(sub.slug, fnSlug);
+          } else {
+            const next = new URLSearchParams(searchParams);
+            next.set('deepDive', fnSlug);
+            next.set('role', sub.slug);
+            next.delete('team');
+            setSearchParams(next);
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }
+        }}
       />
     </>
   );

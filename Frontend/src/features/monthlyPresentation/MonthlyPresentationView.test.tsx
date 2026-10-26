@@ -885,14 +885,42 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
     expect(screen.getByRole('option', { name: 'September 2026' })).toHaveTextContent('Sep');
     expect(screen.getAllByRole('switch', { name: 'Presentation Mode' })).toHaveLength(1);
     expect(within(bar).getByRole('switch', { name: 'Presentation Mode' })).toBeInTheDocument();
-    expect(screen.getByTestId('presentation-prev')).toBeDisabled();
-    expect(screen.getByTestId('presentation-next')).toBeEnabled();
+    expect(screen.queryByRole('button', { name: 'Previous' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Next' })).not.toBeInTheDocument();
+    const barOrder = [
+      'presentation-month',
+      'presentation-mode-switch',
+      'presentation-menu-toggle',
+      'presentation-agenda',
+      'presentation-notes',
+      'presentation-compliance',
+    ].map((id) => within(bar).getByTestId(id));
+    for (let i = 1; i < barOrder.length; i += 1) {
+      expect(barOrder[i - 1].compareDocumentPosition(barOrder[i]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    }
 
-    fireEvent.click(screen.getByTestId('presentation-next'));
+    const menuToggle = screen.getByTestId('presentation-menu-toggle');
+    expect(menuToggle).toHaveAttribute('aria-expanded', 'true');
+    expect(menuToggle.querySelector('svg')).not.toHaveClass('rotate-45');
+    fireEvent.click(menuToggle);
+    expect(menuToggle).toHaveAttribute('aria-expanded', 'false');
+    expect(bar).toHaveAttribute('data-collapsed', 'true');
+    expect(bar.className).toContain('bg-transparent');
+    expect(bar.className).toContain('border-0');
+    expect(bar.className).toContain('pointer-events-none');
+    expect(menuToggle.querySelector('svg')).toHaveClass('rotate-45');
+    expect(within(bar).getByTestId('presentation-month')).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(menuToggle);
+    expect(menuToggle).toHaveAttribute('aria-expanded', 'true');
+    expect(bar).toHaveAttribute('data-collapsed', 'false');
+    expect(bar.className).toContain('bg-white/95');
+    expect(bar.className).not.toContain('pointer-events-none');
+
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
     expect(screen.getByTestId('location-probe').textContent).toContain('deepDive=rcm');
     expect(screen.getByRole('heading', { name: 'RCM Deep Dive' })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByTestId('presentation-prev'));
+    fireEvent.keyDown(window, { key: 'ArrowLeft' });
     expect(screen.getByTestId('location-probe').textContent).not.toContain('deepDive');
     expect(screen.getByTestId('monthly-overview-page')).toBeInTheDocument();
 
@@ -928,5 +956,41 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
     expect(screen.getByTestId('presentation-agenda-text')).toHaveValue('Open with RCM.');
     fireEvent.click(screen.getByTestId('presentation-notes'));
     expect(screen.getByTestId('presentation-notes-text').textContent).toContain('Follow up owners');
+  });
+
+  it('opens data compliance from the presentation menu and flips back after an edit', () => {
+    render(
+      <MemoryRouter initialEntries={['/monthly-presentation']}>
+        <MonthlyPresentationView />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByTestId('presentation-compliance'));
+    expect(screen.getByRole('dialog', { name: 'Data Compliance' })).toBeInTheDocument();
+    const chart = screen.getByTestId('presentation-compliance-chart');
+    expect(within(chart).getByText('Department Completion')).toBeInTheDocument();
+    expect(within(chart).getByText('Call Center')).toBeInTheDocument();
+    expect(within(chart).getByText('RCM')).toBeInTheDocument();
+    expect(within(chart).queryByText('CSR')).not.toBeInTheDocument();
+    expect(within(chart).queryByText('Quality')).not.toBeInTheDocument();
+
+    fireEvent.click(chart);
+    fireEvent.change(screen.getByTestId('compliance-done-rcm'), { target: { value: '19' } });
+    fireEvent.change(screen.getByTestId('compliance-total-rcm'), { target: { value: '20' } });
+    fireEvent.click(screen.getByText('Department'));
+
+    const updated = screen.getByTestId('presentation-compliance-chart');
+    expect(within(updated).getByText('19/20')).toBeInTheDocument();
+    expect(within(updated).getByText('95%')).toBeInTheDocument();
+    expect(updated.querySelector('[data-grade="A"]')).toHaveStyle({ background: 'var(--pms-grade-a-gauge)' });
+    expect(localStorage.getItem('pms-monthly-pad:EGY:2026-09:compliance')).toContain('"rcm"');
+
+    fireEvent.click(screen.getByTestId('region-uae'));
+    const uaeChart = screen.getByTestId('presentation-compliance-chart');
+    expect(within(uaeChart).getByText('CSR')).toBeInTheDocument();
+    expect(within(uaeChart).getByText('Pharmacy')).toBeInTheDocument();
+    expect(within(uaeChart).queryByText('Call Center')).not.toBeInTheDocument();
+    expect(within(uaeChart).queryByText('19/20')).not.toBeInTheDocument();
+    expect(localStorage.getItem('pms-monthly-pad:EGY:2026-09:compliance')).toContain('"rcm"');
   });
 });
