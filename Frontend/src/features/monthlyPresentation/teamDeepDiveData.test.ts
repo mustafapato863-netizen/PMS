@@ -174,8 +174,8 @@ describe('generic team deep dive agent KPIs', () => {
     const dive = buildTeamDeepDiveFromRecords('submission-egy', records, [], 'EGY', '2026-09');
     const salmaRow = dive.agentsAverageOrBelow.find((agent) => agent.agentName === 'Salma Nagy Ali Hendy');
     const colleagueRow = dive.agentsAverageOrBelow.find((agent) => agent.employeeId === 'SGHD80001');
-    const labeled = (row: { kpiCells: { label: string; actualFormatted: string }[] } | undefined, label: string) =>
-      row?.kpiCells.filter((cell) => cell.label.trim().toLowerCase() === label.toLowerCase()) ?? [];
+    const labeled = (row: { kpiCells?: { label: string; actualFormatted: string }[] } | undefined, label: string) =>
+      row?.kpiCells?.filter((cell) => cell.label.trim().toLowerCase() === label.toLowerCase()) ?? [];
 
     expect(salmaRow?.score).toBe(71.6);
     expect(labeled(salmaRow, 'Initial Rejection %').map((cell) => cell.actualFormatted)).toEqual(['3.8%', '3.8%']);

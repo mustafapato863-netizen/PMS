@@ -232,7 +232,7 @@ describe('useExecutiveSummary', () => {
     const stableWrapper = ({ children }: { children: ReactNode }) => (
       <QueryClientProvider client={client}>{children}</QueryClientProvider>
     );
-    const filters = { periodKey: '2026-06', region: 'EGY' };
+    const filters: ExecutiveFilterState = { periodKey: '2026-06', region: 'EGY' };
     const { result, rerender } = renderHook(
       ({ next }: { next: ExecutiveFilterState }) => useExecutiveSummary({ view: 'corporate', role: 'Admin', filters: next, today: TODAY }),
       { initialProps: { next: filters }, wrapper: stableWrapper },

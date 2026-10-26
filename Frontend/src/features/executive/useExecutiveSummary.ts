@@ -9,7 +9,7 @@
  * soften. No request is made to `/api/executive/summary`: that endpoint does
  * not exist.
  */
-import { useCallback, useMemo, useRef } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiFetch } from '../../lib/apiClient';
 import { performanceSessionKey } from '../../lib/performanceSessionKey';
@@ -146,8 +146,8 @@ export function useExecutiveSummary({
     periodKey, region, branch, teamFunction, team, position, performanceLevel,
   }), [periodKey, region, branch, teamFunction, team, position, performanceLevel]);
   // The default clock is taken once per visit. An injected `today` still wins.
-  const visitClock = useRef(new Date());
-  const resolvedToday = today ?? visitClock.current;
+  const [visitClock] = useState(() => new Date());
+  const resolvedToday = today ?? visitClock;
 
   const summaryRecords = useSummaryRecords(enabled);
   const legacyEnabled = enabled && summaryRecords.isError;

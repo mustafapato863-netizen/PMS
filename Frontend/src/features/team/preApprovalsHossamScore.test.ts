@@ -160,7 +160,7 @@ describe('Pre-Approvals team scoring with Hossam supervisor scorecard', () => {
       position: agent.identity.position ?? null,
       level: agent.performance_level || 'Employee',
       period: september,
-      score: Number(agent.evaluation?.score ?? agent.score),
+      score: Number(agent.evaluation?.score ?? (agent as unknown as { score?: number }).score),
       kpis: [],
       rawAgent: agent,
     });
@@ -213,7 +213,7 @@ describe('Pre-Approvals team scoring with Hossam supervisor scorecard', () => {
     expect(opDubai?.score).toBe(80);
     expect(offshore?.score).toBe(70);
     expect(summary.hero.score).not.toBe(88.6);
-    const employeePeople = summary.people.below_90;
+    const employeePeople = summary.people?.below_90 ?? [];
     expect(employeePeople.map((person) => [person.name, person.score])).toEqual(
       expect.arrayContaining([
         ['Specialist 1', 80],
@@ -256,7 +256,7 @@ describe('Pre-Approvals team scoring with Hossam supervisor scorecard', () => {
       teamConfigs: [PRE_APPROVALS_CONFIG],
     });
     expect(managerialIp.hero.score).toBe(88.6);
-    const openPeople = openSlice.people.below_90;
+    const openPeople = openSlice.people?.below_90 ?? [];
     expect(openPeople.find((person) => person.employee_id === 'SGHD70094')?.score).toBe(88.6);
     expect(openPeople.find((person) => person.name === 'Specialist 1')?.score).toBe(80);
   });
