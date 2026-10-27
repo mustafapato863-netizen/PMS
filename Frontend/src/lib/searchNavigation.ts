@@ -6,7 +6,6 @@ import {
   canAccessPlanning,
   canSeeReportsNav,
   canAccessSettingsContent,
-  canAccessTeamManagement,
   isScopedDirectorRole,
 } from './access';
 
@@ -174,17 +173,6 @@ const baseNavigation = ({
     });
   }
 
-  if (canAccessTeamManagement(role)) {
-    items.push({
-      id: 'nav-team-management',
-      group: 'navigation',
-      label: 'Team Management',
-      subtitle: 'Manage team setup and onboarding',
-      icon: 'briefcase',
-      path: '/team-management',
-    });
-  }
-
   if (canAccessSettingsContent(role)) {
     items.push({
       id: 'nav-user-management',
@@ -237,17 +225,6 @@ const baseActions = ({
       subtitle: 'Managerial scorecard workspace',
       icon: 'chart',
       path: `${firstTeamPath}?performance_level=Managerial`,
-    });
-  }
-
-  if (canAccessTeamManagement(role)) {
-    items.push({
-      id: 'action-manage-team',
-      group: 'actions',
-      label: 'Create or Manage Team',
-      subtitle: 'Team management workspace',
-      icon: 'shield',
-      path: '/team-management',
     });
   }
 

@@ -1,6 +1,6 @@
 import type { SettingsSection } from '../types';
 
-/** Every page the shell renders. Each one has a URL slug, including the Access section `teams`. */
+/** Every page the shell renders. Each one has a URL slug. */
 export type SettingsRoutePage = 'overview' | SettingsSection;
 
 export type SettingsPage = SettingsRoutePage;
@@ -11,7 +11,6 @@ const PAGE_SLUGS: Record<SettingsRoutePage, string> = {
   corrective_actions: 'corrective-actions',
   kpis: 'evaluation',
   users: 'users',
-  teams: 'teams',
   system_errors: 'system-errors',
 };
 

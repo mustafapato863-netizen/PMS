@@ -499,14 +499,9 @@
   box-shadow: 0 20px 55px rgba(15, 23, 42, 0.10) !important;
 }
 
-/* Settings and team management */
-.rf-page--settings .glass-panel,
-.rf-page--team-management .glass-panel {
+/* Settings */
+.rf-page--settings .glass-panel {
   box-shadow: var(--rf-panel-shadow);
-}
-
-.rf-page--team-management .rf-toolbar {
-  padding: 0.72rem 0.81rem;
 }
 
 .rf-modal-backdrop {

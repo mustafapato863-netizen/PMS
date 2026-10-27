@@ -14,7 +14,6 @@ import { SystemErrorsPanel } from '../components/settings/SystemErrorsPanel';
 import { AdminOverview } from '../components/settings/shell/AdminOverview';
 import { AdminPageHeader } from '../components/settings/shell/AdminPageHeader';
 import { pageForLegacyTab, pageForSlug, settingsPathFor } from '../components/settings/shell/settingsNavigation';
-import TeamManagementView from './TeamManagementView';
 
 const SettingsView = () => {
   const { role } = useUserRole();
@@ -57,7 +56,6 @@ const SettingsView = () => {
         {page === 'corrective_actions' && <CorrectiveActionDataPanel />}
         {page === 'kpis' && <EvaluationSettingsPanel />}
         {page === 'users' && <UserManagementPanel />}
-        {page === 'teams' && <div className="glass-panel rounded-3xl p-5 shadow-sm"><TeamManagementView /></div>}
         {page === 'system_errors' && <SystemErrorsPanel />}
       </SettingsLayout>
     </motion.main>

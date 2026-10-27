@@ -27,7 +27,6 @@ const PositionDepartmentRoute = lazy(() => import('./pages/PositionDepartmentRou
 const EmployeeProfileView = lazy(() => import('./pages/EmployeeProfileView'));
 const SettingsView = lazy(() => import('./pages/SettingsView'));
 const AccountView = lazy(() => import('./pages/AccountView'));
-const TeamManagementView = lazy(() => import('./pages/TeamManagementView'));
 const LoginView = lazy(() => import('./pages/LoginView'));
 const ReportsView = lazy(() => import('./pages/ReportsView'));
 const ReportBuilderView = lazy(() => import('./pages/ReportBuilderView'));
@@ -94,15 +93,8 @@ function AnimatedRoutes() {
         {/* Page 3: Employee Profile */}
         <Route path="/employee/:employeeId" element={<Suspense fallback={<RouteLoadingFallback />}><EmployeeProfileView /></Suspense>} />
 
-        {/* Team Management: Admin and General Manager. */}
-        <Route
-          path="/team-management"
-          element={
-          <RouteGuard allowedRoles={['Admin', 'General Manager', 'Performance Team']}>
-              <Suspense fallback={<RouteLoadingFallback />}><TeamManagementView /></Suspense>
-            </RouteGuard>
-          }
-        />
+        {/* The team catalog page is gone. Old bookmarks open the live team workspace. */}
+        <Route path="/team-management" element={<Navigate to="/team/all" replace />} />
 
         {/* Settings: unguarded; SettingsView soft-locks every non-Admin role, General Manager included. */}
         <Route path="/account" element={<Suspense fallback={<RouteLoadingFallback />}><AccountView /></Suspense>} />

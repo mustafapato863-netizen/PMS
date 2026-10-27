@@ -65,7 +65,6 @@ describe('SettingsLayout rail mode', () => {
       'Corrective action backup',
       'Evaluation settings',
       'Users',
-      'Teams',
       'System errors',
     ]);
     for (const heading of ['Data', 'Evaluation', 'Access', 'System']) {
@@ -74,11 +73,11 @@ describe('SettingsLayout rail mode', () => {
   });
 
   it('keeps aria-current on the active item and the navigation name', () => {
-    renderLayout('teams');
+    renderLayout('users');
     const nav = screen.getByRole('navigation', { name: 'Settings sections' });
 
-    expect(within(nav).getByRole('link', { name: 'Teams' })).toHaveAttribute('aria-current', 'page');
-    expect(within(nav).getByRole('link', { name: 'Users' })).not.toHaveAttribute('aria-current');
+    expect(within(nav).getByRole('link', { name: 'Users' })).toHaveAttribute('aria-current', 'page');
+    expect(within(nav).getByRole('link', { name: 'Overview' })).not.toHaveAttribute('aria-current');
   });
 
   it('scrolls the active item into view when the list lays out as a row', () => {

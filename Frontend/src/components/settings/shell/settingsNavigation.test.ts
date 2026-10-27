@@ -14,7 +14,7 @@ describe('settings slugs', () => {
   it('gives no page for a missing or unknown slug', () => {
     expect(pageForSlug(undefined)).toBeNull();
     expect(pageForSlug('')).toBeNull();
-    expect(pageForSlug('teams')).toBe('teams');
+    expect(pageForSlug('teams')).toBeNull();
     expect(pageForSlug('constructor')).toBeNull();
   });
 

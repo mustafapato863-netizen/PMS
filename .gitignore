@@ -51,3 +51,4 @@ DevOps/*.tmp
 /_review_*/
 .claude/
 /.vercel/
+**/.vitest/

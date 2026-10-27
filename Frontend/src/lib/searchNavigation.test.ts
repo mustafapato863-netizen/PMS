@@ -22,12 +22,12 @@ const SETTINGS_SHORTCUTS = ['/settings?tab=upload', '/settings?tab=users'];
 const BROAD_PATHS = ['/reports', '/insights', '/planning'];
 
 describe('buildLocalSearchResults access (General Manager role string)', () => {
-  it('lets a General Manager search product pages and Team Management, but not Settings shortcuts', () => {
+  it('lets a General Manager search product pages, but not Settings shortcuts', () => {
     const paths = pathsFor(user('General Manager', true));
-    for (const path of [...BROAD_PATHS, '/corrective-actions', '/team-management', '/executive', '/team/all']) {
+    for (const path of [...BROAD_PATHS, '/corrective-actions', '/executive', '/team/all']) {
       expect(paths).toContain(path);
     }
-    for (const path of SETTINGS_SHORTCUTS) expect(paths).not.toContain(path);
+    for (const path of ['/team-management', ...SETTINGS_SHORTCUTS]) expect(paths).not.toContain(path);
   });
 
   it('does not treat a Manager with has_unrestricted_team_access as a General Manager', () => {
@@ -46,11 +46,12 @@ describe('buildLocalSearchResults access (General Manager role string)', () => {
     expect(executive.filter((item) => item.path === '/executive')).toHaveLength(1);
   });
 
-  it('keeps Settings, user and team management search items for Admin', () => {
+  it('keeps Settings and user-management search items for Admin', () => {
     const paths = pathsFor(user('Admin', true));
-    for (const path of [...BROAD_PATHS, '/corrective-actions', '/team-management', ...SETTINGS_SHORTCUTS]) {
+    for (const path of [...BROAD_PATHS, '/corrective-actions', ...SETTINGS_SHORTCUTS]) {
       expect(paths).toContain(path);
     }
+    expect(paths).not.toContain('/team-management');
   });
 
   it('offers Executive Corrective Actions but not Admin/GM-only pages', () => {
@@ -61,10 +62,11 @@ describe('buildLocalSearchResults access (General Manager role string)', () => {
 
   it('keeps upload and user-management actions Admin-only', () => {
     const ids = (role: User['role']) => buildLocalSearchResults({ role, currentUser: user(role), firstTeamPath: null, query: '' }).map((item) => item.id);
-    expect(ids('Admin')).toEqual(expect.arrayContaining(['action-upload-workbook', 'nav-user-management', 'action-manage-team']));
+    expect(ids('Admin')).toEqual(expect.arrayContaining(['action-upload-workbook', 'nav-user-management']));
+    expect(ids('Admin')).not.toContain('action-manage-team');
     expect(ids('General Manager')).not.toContain('action-upload-workbook');
     expect(ids('General Manager')).not.toContain('nav-user-management');
-    expect(ids('General Manager')).toContain('action-manage-team');
+    expect(ids('General Manager')).not.toContain('action-manage-team');
   });
 
   it('labels the teams workspace "All Teams" for General Managers and "Assigned Teams" for Managers', () => {

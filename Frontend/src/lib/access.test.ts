@@ -7,7 +7,6 @@ import {
   canAccessRoute,
   canAccessSettings,
   canAccessSettingsContent,
-  canAccessTeamManagement,
   getRoleDisplayLabel,
   hasAllTeamsScope,
   isAdminRole,
@@ -61,14 +60,6 @@ describe('access helpers (current roles and legacy transition)', () => {
     expect(canAccessSettingsContent('General Manager')).toBe(false);
     expect(canAccessSettings('General Manager')).toBe(false);
     expect(canAccessSettings('Manager')).toBe(false);
-  });
-
-  it('allows Team Management for Admin and General Manager', () => {
-    expect(canAccessTeamManagement('Admin')).toBe(true);
-    expect(canAccessTeamManagement('General Manager')).toBe(true);
-    expect(canAccessTeamManagement('Performance Team')).toBe(true);
-    expect(canAccessTeamManagement('Manager')).toBe(false);
-    expect(canAccessTeamManagement('Executive')).toBe(false);
   });
 
   it('checks routes with a plain role allow-list', () => {

@@ -13,7 +13,6 @@ import type { User } from '../types';
  * Matrix (see docs/GENERAL_MANAGER_ROLE_DESIGN.md §4):
  * - General Manager ≈ Admin for product pages (Reports list/preview/builder, Insights,
  *   Planning, Corrective Actions).
- * - Standalone Team Management (`/team-management`): Admin and General Manager.
  * - Personal account settings (`/account`) are available to every authenticated role.
  * - Administration (`/settings`) is linked for Admin only; direct requests from other
  *   roles still show the "Administrator access required" panel, never admin content.
@@ -164,10 +163,6 @@ export const canAccessSettingsContent = (role: RoleInput): boolean => isAdminRol
 
 /** Alias of {@link canAccessSettingsContent}, kept for existing call sites. */
 export const canAccessSettings = canAccessSettingsContent;
-
-/** Standalone Team Management page: Admin or General Manager. */
-export const canAccessTeamManagement = (role: RoleInput): boolean =>
-  isAdminRole(role) || isGeneralManagerRole(role) || isPerformanceTeamRole(role);
 
 /** Route-level check used by `RouteGuard`: a plain role allow-list. */
 export const canAccessRoute = ({

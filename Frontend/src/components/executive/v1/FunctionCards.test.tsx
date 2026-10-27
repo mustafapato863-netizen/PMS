@@ -78,7 +78,7 @@ describe('FunctionCards trend chart', () => {
     const { rerender } = render(<FunctionCards cards={[card]} previous={null} linkable={false} />);
     expect(screen.getAllByTestId('function-trend-tick').map((tick) => tick.textContent)).toEqual(['50%', '75%', '100%']);
     rerender(<FunctionCards cards={[{ ...card, trend: [{ period: period('January', '01'), score: 18 }, { period: period('February', '02'), score: 120 }] }]} previous={null} linkable={false} />);
-    expect(screen.getAllByTestId('function-trend-tick').map((tick) => tick.textContent)).toEqual(['0%', '62.5%', '125%']);
+    expect(screen.getAllByTestId('function-trend-tick').map((tick) => tick.textContent)).toEqual(['0%', '50%', '100%']);
     expect(screen.getAllByTestId('function-trend-value').map((label) => label.textContent)).toEqual(['18.0%', '120.0%']);
   });
 

@@ -27,7 +27,6 @@ vi.mock('../components/settings/EvaluationSettingsPanel', () => ({
 }));
 vi.mock('../components/settings/UserManagementPanel', () => ({ UserManagementPanel: () => <p>User management panel</p> }));
 vi.mock('../components/settings/SystemErrorsPanel', () => ({ SystemErrorsPanel: () => <p>System errors panel</p> }));
-vi.mock('./TeamManagementView', () => ({ default: () => <p>Team management panel</p> }));
 
 function Address() {
   const { pathname, search } = useLocation();
@@ -136,11 +135,12 @@ describe('SettingsView routing', () => {
     expect(screen.getByRole('heading', { name: 'Areas' })).toBeInTheDocument();
   });
 
-  it('renders the teams section at /settings/teams for Admin', async () => {
+  it('opens the overview for the removed teams catalog and keeps the query string', async () => {
     roleState.role = 'Admin';
-    renderAt('/settings/teams');
-    expect(await screen.findByText('Team management panel')).toBeInTheDocument();
-    expect(screen.getByTestId('address').textContent).toBe('/settings/teams');
+    renderAt('/settings/teams?year=2026&month=8');
+    await waitFor(() => expect(screen.getByTestId('address').textContent).toBe('/settings/overview?year=2026&month=8'));
+    expect(screen.getByRole('heading', { name: 'Areas' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Teams' })).not.toBeInTheDocument();
   });
 
   it('shows the Administration page header above the panels', async () => {
