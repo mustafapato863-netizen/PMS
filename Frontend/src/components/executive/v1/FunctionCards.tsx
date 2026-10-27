@@ -25,13 +25,13 @@ import { GradePill, ScoreBar, ScoreText, StatLabel, StatusPill, ToneText } from 
 import FunctionTrendChart from './FunctionTrendChart';
 import BasisComparisonNote from '../../../features/evaluation/BasisComparisonNote';
 
-export function FunctionIcon({ fn, size = 30 }: { fn: ExecutiveFunction; size?: number }) {
+export function FunctionIcon({ fn, size = 28 }: { fn: ExecutiveFunction; size?: number }) {
   const style = FUNCTION_STYLE[fn];
   const Icon = style.icon;
   return (
     <span
       aria-hidden="true"
-      className="flex shrink-0 items-center justify-center rounded-[9px] shadow-2xs"
+      className="flex shrink-0 items-center justify-center rounded-[8px] shadow-2xs"
       style={{
         background: style.bg,
         width: size,
@@ -64,11 +64,11 @@ function FunctionLink({
     <Link
       to={functionHref}
       aria-label={`View ${cardFunction} function`}
-      className="group/btn inline-flex min-h-[34px] w-full items-center justify-center gap-[6px] rounded-[9px] border px-[10px] py-[6px] text-[12px] font-bold transition-all duration-200 hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--insights-accent-ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-surface)] motion-reduce:transition-none"
+      className="group/btn inline-flex min-h-[34px] w-full items-center justify-center gap-[6px] rounded-[9px] border px-[10px] py-[5px] text-[12px] font-bold transition-all duration-200 hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--insights-accent-ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-surface)] motion-reduce:transition-none"
       style={{
         background: style.bg,
         color: style.color,
-        borderColor: `color-mix(in srgb, ${style.color} 28%, transparent)`,
+        borderColor: `color-mix(in srgb, ${style.color} 26%, transparent)`,
       }}
     >
       View function
@@ -136,7 +136,6 @@ function FunctionCard({
   linkable,
   markStart,
   featured,
-  showBasis,
   showCohorts,
   classic,
   onSelectFunction,
@@ -148,7 +147,6 @@ function FunctionCard({
   linkable: boolean;
   markStart: boolean;
   featured: boolean;
-  showBasis: boolean;
   showCohorts: boolean;
   /** Company page: icon, score, gap, trend, and the tinted View function button. */
   classic: boolean;
@@ -162,48 +160,47 @@ function FunctionCard({
   const comparison = vsLabel(previous, range, 'vs last');
   const showTeamButtons = Boolean(onSelectTeam);
   const showTeamDump = !showTeamButtons && !featured && !(showCohorts && card.cohorts);
-  const hasStatusPills =
-    card.is_most_improved ||
-    (card.falling_months !== null && card.falling_months >= 2) ||
-    (classic && card.lowest_team && card.lowest_team.score < 85);
 
   return (
     <article
       aria-label={`${card.function} function`}
-      className="group/fcard relative flex h-full min-w-0 flex-col gap-[7px] overflow-hidden rounded-[14px] border border-[var(--exec-card-border)] bg-[var(--bg-surface)] p-[12px] shadow-[var(--exec-card-shadow)] transition-all duration-200 hover:border-[var(--border-medium)]"
+      className="group/fcard relative flex h-full min-w-0 flex-col gap-[8px] overflow-hidden rounded-[14px] border border-[var(--exec-card-border)] bg-[var(--bg-surface)] p-[12px] shadow-[var(--exec-card-shadow)] transition-all duration-200 hover:border-[var(--border-medium)]"
     >
       {/* Top Grade Accent Strip */}
       <span
         aria-hidden="true"
-        className="pointer-events-none absolute inset-x-0 top-0 h-[2.5px]"
+        className="pointer-events-none absolute inset-x-0 top-0 h-[3px]"
         style={{ background: tone.gauge }}
       />
 
-      {/* Card Header */}
-      <div className="flex items-start justify-between gap-[8px]">
-        <div className="flex min-w-0 items-center gap-[8px]">
-          <FunctionIcon fn={card.function} size={30} />
-          <div className="min-w-0">
+      {/* Zone 1: Card Header + Top-Right Grade Pill (Full-width subtitle never truncates) */}
+      <div className="flex flex-col gap-[3px]">
+        <div className="flex items-center justify-between gap-[6px]">
+          <div className="flex min-w-0 items-center gap-[7px]">
+            <FunctionIcon fn={card.function} size={28} />
             {onSelectFunction ? (
               <button
                 type="button"
-                className="truncate text-left text-[15px] font-bold leading-[1.25] tracking-[-0.02em] text-[var(--insights-heading)] hover:underline"
+                className="truncate text-left text-[14.5px] font-bold leading-[1.2] tracking-[-0.02em] text-[var(--insights-heading)] hover:underline"
                 aria-label={`Open ${card.function}`}
                 onClick={() => onSelectFunction(card.function)}
               >
                 {card.function}
               </button>
             ) : (
-              <h3 className="truncate text-[15px] font-bold leading-[1.25] tracking-[-0.02em] text-[var(--insights-heading)]">
+              <h3 className="truncate text-[14.5px] font-bold leading-[1.2] tracking-[-0.02em] text-[var(--insights-heading)]">
                 {card.function}
               </h3>
             )}
-            <p className="mt-[1px] truncate text-[11px] leading-[1.3] text-[var(--text-muted)]">
-              {card.teams.length} {card.teams.length === 1 ? 'team' : 'teams'} · {card.employees} people
-              {card.regions.length ? ` · ${card.regions.join(' + ')}` : ''}
-            </p>
           </div>
+          <GradePill score={card.score} className="!px-[7px] !py-[1.5px] !text-[10.5px]" />
         </div>
+
+        <p className="truncate text-[11px] leading-[1.3] text-[var(--text-muted)]">
+          {card.teams.length} {card.teams.length === 1 ? 'team' : 'teams'} · {card.employees}{' '}
+          {card.employees === 1 ? 'person' : 'people'}
+          {card.regions.length ? ` · ${card.regions.join(' + ')}` : ''}
+        </p>
       </div>
 
       {markStart && card.score !== null && (
@@ -212,34 +209,51 @@ function FunctionCard({
         </span>
       )}
 
-      {/* Primary Score + Grade + Progress Bar */}
-      <div className="space-y-1.5">
-        <div className="flex flex-wrap items-center justify-between gap-[6px]">
-          <div className="flex flex-wrap items-end gap-[6px]">
+      {/* Zone 2: Unified Score + Non-Wrapping Gap / Delta + Score Bar */}
+      <div className="space-y-1.5 rounded-[10px] border border-[var(--exec-card-border)] bg-[var(--exec-tile-bg)]/45 px-2.5 py-2">
+        <div className="flex items-center justify-between gap-1.5">
+          <div className="flex flex-col">
             <ScoreText
               score={card.score}
-              className="text-[24px] font-bold leading-none tracking-[-0.04em] tabular-nums"
+              className="text-[22px] font-bold leading-none tracking-[-0.04em] tabular-nums"
             >
               {fmtScore(card.score)}
             </ScoreText>
-            <GradePill score={card.score} className="!px-[8px] !py-[2px] !text-[11px]" />
             {card.score !== null && !classic && (
-              <span className="pb-[2px] text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">
+              <span className="mt-0.5 text-[9.5px] font-semibold uppercase tracking-[0.06em] text-[var(--text-muted)]">
                 People average
               </span>
             )}
           </div>
+
+          <div className="flex items-center gap-2">
+            <div className="flex flex-col items-end">
+              <StatLabel>{classic ? 'Gap' : 'vs 100'}</StatLabel>
+              <ToneText
+                tone={scoreTone(card.gap)}
+                className="whitespace-nowrap text-[11.5px] font-bold tabular-nums"
+              >
+                {arrow(card.gap)} {fmtSigned(card.gap)}
+              </ToneText>
+            </div>
+            <div className="h-5 w-px bg-[var(--exec-card-border)]" aria-hidden="true" />
+            <div className="flex flex-col items-end">
+              <StatLabel>{comparison}</StatLabel>
+              <ToneText
+                tone={changeTone}
+                className="whitespace-nowrap text-[11.5px] font-semibold tabular-nums"
+              >
+                {arrow(card.change)} {fmtSigned(card.change)}
+              </ToneText>
+            </div>
+          </div>
         </div>
+
         <ScoreBar score={card.score} color={tone.gauge} />
       </div>
 
-      {!classic && card.gap_share_percent != null && card.gap_share_percent > 0 && (
-        <p className="text-[12px] font-semibold text-[var(--insights-heading)]">
-          {formatShare(card.gap_share_percent)}% of the gap
-        </p>
-      )}
       {!classic && card.lowest_team && (
-        <p className="text-[11px] leading-[1.4] text-[var(--text-secondary)]">
+        <p className="truncate text-[11px] leading-[1.4] text-[var(--text-secondary)]">
           Lowest team · {card.lowest_team.team} at {card.lowest_team.score.toFixed(1)}%
           {card.lowest_team.score_basis === 'leader_scorecard' ? ' · Leader scorecard' : ''}
           {card.lowest_team.kpi ? ` · ${card.lowest_team.kpi}` : ''}
@@ -248,52 +262,43 @@ function FunctionCard({
 
       {showCohorts && card.cohorts && <FunctionCohorts cohorts={card.cohorts} />}
 
-      {/* Ultra-Compact Single-Line Gap & Period Delta Strip */}
-      <div className="flex items-center justify-between gap-2 rounded-[8px] border border-[var(--exec-card-border)] bg-[var(--exec-tile-bg)]/50 px-2.5 py-1">
-        <div className="flex items-baseline gap-1.5">
-          <StatLabel>{classic ? 'Gap' : 'vs 100'}</StatLabel>
-          <ToneText tone={scoreTone(card.gap)} className="text-[13px] font-bold tabular-nums">
-            {arrow(card.gap)} {fmtSigned(card.gap)}
-          </ToneText>
-        </div>
-        <div className="flex items-baseline gap-1.5 border-l border-[var(--exec-card-border)] pl-2">
-          <StatLabel>{comparison}</StatLabel>
-          <ToneText tone={changeTone} className="text-[12px] font-semibold tabular-nums">
-            {arrow(card.change)} {fmtSigned(card.change)}
-          </ToneText>
-        </div>
-      </div>
-
-      {/* Momentum & Lowest Team Status Pills */}
-      {hasStatusPills && (
-        <div className="flex flex-wrap items-center gap-[5px]">
-          {card.is_most_improved && (
+      {/* Zone 3: Fixed-Height Momentum & Trajectory Header (keeps all charts aligned) */}
+      <div className="flex h-[20px] items-center justify-between gap-1.5 overflow-hidden">
+        <div className="flex shrink-0 items-center">
+          {card.is_most_improved ? (
             <StatusPill tone="success" icon={TrendingUp}>
               Most improved
             </StatusPill>
-          )}
-          {card.falling_months !== null && card.falling_months >= 2 && (
+          ) : card.falling_months !== null && card.falling_months >= 2 ? (
             <StatusPill tone="danger" icon={TrendingDown}>
               Falling {card.falling_months} mo
             </StatusPill>
-          )}
-          {classic && card.lowest_team && card.lowest_team.score < 85 && (
-            <span
-              aria-hidden="true"
-              className="inline-flex items-center gap-1 truncate rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-300"
-            >
-              Focus: {card.lowest_team.team} ({card.lowest_team.score.toFixed(0)}%)
-            </span>
+          ) : (
+            <span className="text-[10.5px] font-semibold text-[var(--text-muted)]">6-mo trend</span>
           )}
         </div>
-      )}
 
-      {/* Compact 6-Month Sparkline Chart */}
+        {!classic && card.gap_share_percent != null && card.gap_share_percent > 0 ? (
+          <span className="shrink-0 text-[10.5px] font-semibold text-[var(--insights-heading)]">
+            {formatShare(card.gap_share_percent)}% of the gap
+          </span>
+        ) : classic && card.lowest_team && card.lowest_team.score < 85 ? (
+          <span
+            aria-hidden="true"
+            className="truncate text-[10px] font-semibold text-amber-700 dark:text-amber-300"
+            title={`Lowest team: ${card.lowest_team.team} (${card.lowest_team.score.toFixed(1)}%)`}
+          >
+            Low: {card.lowest_team.team} ({card.lowest_team.score.toFixed(0)}%)
+          </span>
+        ) : null}
+      </div>
+
+      {/* Zone 4: Fixed-Height 6-Month Sparkline Chart */}
       <FunctionTrendChart color={trendColor} title={`${card.function} score`} points={card.trend} />
 
-      {/* Bottom-Aligned Footer: Teams + Compact Basis Note + View Function CTA */}
-      {showTeamButtons || showTeamDump || (linkable && !onSelectFunction) || showBasis ? (
-        <div className="mt-auto flex flex-col gap-[6px] border-t border-[var(--insights-row-border)] pt-[7px]">
+      {/* Zone 5: Uniform Bottom-Aligned Footer */}
+      {showTeamButtons || showTeamDump || (linkable && !onSelectFunction) ? (
+        <div className="mt-auto flex flex-col gap-[7px] border-t border-[var(--insights-row-border)] pt-[8px]">
           {showTeamButtons && onSelectTeam ? (
             <div className="flex flex-wrap gap-[5px]">
               {card.teams.map((team) => (
@@ -309,32 +314,12 @@ function FunctionCard({
             </div>
           ) : showTeamDump ? (
             <p
-              className="truncate min-w-0 text-[11px] leading-[1.35] text-[var(--text-secondary)]"
+              className="truncate min-w-0 text-[11px] font-medium leading-[1.35] text-[var(--text-secondary)]"
               title={card.teams.join(' · ')}
             >
               {card.teams.join(' · ')}
             </p>
           ) : null}
-
-          {showBasis && card.basis_context?.message && (
-            <details className="group/basis rounded-md border border-[var(--exec-card-border)] bg-[var(--exec-tile-bg)]/50 px-2 py-1">
-              <summary className="flex cursor-pointer list-none items-center justify-between gap-1 text-[10.5px] font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)]">
-                <span className="inline-flex items-center gap-1 truncate">
-                  <Info size={11} className="shrink-0 text-[var(--insights-accent)]" aria-hidden="true" />
-                  <span className="truncate">Basis note</span>
-                </span>
-                <span className="text-[10px] font-semibold text-[var(--insights-accent)] group-open/basis:hidden">
-                  Show
-                </span>
-                <span className="hidden text-[10px] font-semibold text-[var(--insights-accent)] group-open/basis:inline">
-                  Hide
-                </span>
-              </summary>
-              <div className="mt-1 border-t border-[var(--exec-card-border)] pt-1">
-                <BasisComparisonNote messages={[card.basis_context?.message]} />
-              </div>
-            </details>
-          )}
 
           {linkable && !onSelectFunction && (
             <FunctionLink cardFunction={card.function} style={style} />
@@ -381,7 +366,6 @@ export default function FunctionCards({
 }) {
   const [sortMode, setSortMode] = useState<FunctionSortMode>('lowest');
   const [filterMode, setFilterMode] = useState<FunctionFilterMode>('all');
-  // Default to compact single-row layout so all 6 functions sit in 1 row on desktop
   const [expandedGrid, setExpandedGrid] = useState(false);
 
   const noted = cards.filter((card) => card.basis_context?.message);
@@ -419,7 +403,7 @@ export default function FunctionCards({
     <section aria-labelledby="exec-functions-title" className="flex flex-col gap-[10px]">
       <div className="flex flex-wrap items-center justify-between gap-[8px]">
         <div className="flex flex-wrap items-center gap-[8px]">
-          <h2 id="exec-functions-title" className="text-[16px] font-bold text-[var(--insights-heading)]">
+          <h2 id="exec-functions-title" className="text-[17px] font-bold text-[var(--insights-heading)]">
             Functions
           </h2>
           <span className="rounded-full bg-[var(--exec-chip-bg)] px-[8px] py-[2px] text-xs font-semibold text-[var(--exec-chip-text)]">
@@ -436,7 +420,7 @@ export default function FunctionCards({
                 <button
                   type="button"
                   onClick={() => setFilterMode('all')}
-                  className={`rounded-lg px-2 py-0.5 text-[11px] font-semibold transition-colors ${
+                  className={`rounded-lg px-2.5 py-0.5 text-[11px] font-semibold transition-colors ${
                     filterMode === 'all'
                       ? 'bg-[var(--exec-tile-bg)] text-[var(--insights-heading)]'
                       : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'
@@ -448,7 +432,7 @@ export default function FunctionCards({
                   <button
                     type="button"
                     onClick={() => setFilterMode('attention')}
-                    className={`rounded-lg px-2 py-0.5 text-[11px] font-semibold transition-colors ${
+                    className={`rounded-lg px-2.5 py-0.5 text-[11px] font-semibold transition-colors ${
                       filterMode === 'attention'
                         ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400'
                         : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'
@@ -461,7 +445,7 @@ export default function FunctionCards({
                   <button
                     type="button"
                     onClick={() => setFilterMode('healthy')}
-                    className={`rounded-lg px-2 py-0.5 text-[11px] font-semibold transition-colors ${
+                    className={`rounded-lg px-2.5 py-0.5 text-[11px] font-semibold transition-colors ${
                       filterMode === 'healthy'
                         ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
                         : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'
@@ -480,7 +464,7 @@ export default function FunctionCards({
                     key={mode}
                     type="button"
                     onClick={() => setSortMode(mode)}
-                    className={`rounded-lg px-1.5 py-0.5 text-[11px] font-semibold transition-colors ${
+                    className={`rounded-lg px-2 py-0.5 text-[11px] font-semibold transition-colors ${
                       sortMode === mode
                         ? 'bg-[var(--exec-tile-bg)] text-[var(--insights-heading)]'
                         : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'
@@ -501,11 +485,11 @@ export default function FunctionCards({
               <button
                 type="button"
                 onClick={() => setExpandedGrid((prev) => !prev)}
-                title={expandedGrid ? 'Switch to compact single-row view' : 'Expand to 3-column grid'}
-                className="inline-flex min-h-6 items-center gap-1 rounded-xl border border-[var(--exec-card-border)] bg-[var(--bg-surface)] px-2 py-0.5 text-[11px] font-semibold text-[var(--text-secondary)] transition-colors hover:bg-[var(--exec-tile-bg)] hover:text-[var(--insights-heading)]"
+                title={expandedGrid ? 'Switch to single-row view' : 'Expand to 3-column grid'}
+                className="inline-flex min-h-6 items-center gap-1 rounded-xl border border-[var(--exec-card-border)] bg-[var(--bg-surface)] px-2.5 py-0.5 text-[11px] font-semibold text-[var(--text-secondary)] transition-colors hover:bg-[var(--exec-tile-bg)] hover:text-[var(--insights-heading)]"
               >
                 {expandedGrid ? <Rows3 size={11} aria-hidden="true" /> : <LayoutGrid size={11} aria-hidden="true" />}
-                <span>{expandedGrid ? '1-Row Compact' : '3-Col Grid'}</span>
+                <span>{expandedGrid ? 'Single Row' : '3-Col Grid'}</span>
               </button>
             </div>
           )}
@@ -529,8 +513,8 @@ export default function FunctionCards({
       <div
         className={
           expandedGrid
-            ? 'grid grid-cols-1 gap-[12px] md:grid-cols-2 xl:grid-cols-3'
-            : 'grid grid-cols-[repeat(auto-fit,minmax(min(100%,205px),1fr))] gap-[10px]'
+            ? 'grid grid-cols-1 gap-[14px] md:grid-cols-2 xl:grid-cols-3'
+            : 'grid grid-cols-[repeat(auto-fit,minmax(min(100%,195px),1fr))] gap-[10px]'
         }
       >
         {displayedCards.map((card, index) => (
@@ -542,7 +526,6 @@ export default function FunctionCards({
             linkable={linkable}
             markStart={!classic && !featured && index === 0}
             featured={featured}
-            showBasis={!sharedBasis && Boolean(card.basis_context?.message)}
             showCohorts={showCohorts}
             classic={classic}
             onSelectFunction={onSelectFunction}
@@ -550,6 +533,26 @@ export default function FunctionCards({
           />
         ))}
       </div>
+
+      {!sharedBasis && noted.length > 0 && (
+        <details className="group/basis-footer rounded-[10px] border border-[var(--exec-card-border)] bg-[var(--bg-surface)] px-3 py-1.5">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-[11px] font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)]">
+            <span className="inline-flex items-center gap-1.5">
+              <Info size={12} className="shrink-0 text-[var(--insights-accent)]" aria-hidden="true" />
+              <span>Scoring basis & comparison notes ({noted.length} functions)</span>
+            </span>
+            <span className="text-[11px] font-semibold text-[var(--insights-accent)] group-open/basis-footer:hidden">
+              Show details
+            </span>
+            <span className="hidden text-[11px] font-semibold text-[var(--insights-accent)] group-open/basis-footer:inline">
+              Hide details
+            </span>
+          </summary>
+          <div className="mt-1.5 border-t border-[var(--exec-card-border)] pt-1.5">
+            <BasisComparisonNote messages={noted.map((card) => card.basis_context?.message)} />
+          </div>
+        </details>
+      )}
     </section>
   );
 }

@@ -2291,14 +2291,11 @@ export function buildCallCenterDeepDiveFromRecords(
 
     const unit = row.unit ?? fallbackCard.unit;
     const lowerBetter = String(row.kpi_direction ?? '').toLowerCase().startsWith('lower');
-    const trend6Mo: KpiMonthlyPoint[] = sixPeriods.map((p, idx) => {
+    const trend6Mo: KpiMonthlyPoint[] = sixPeriods.map((p) => {
       const mRows = kpiRows(inPeriod(scopeRecords, p), []);
       const match = mRows.find((k) => k.kpi_key === targetKey);
-      const fbPoint =
-        fallbackCard.trend6Mo.find((pt) => pt.periodKey === p.key) ??
-        fallbackCard.trend6Mo[idx];
-      const actual = match?.actual ?? fbPoint?.actual ?? row.actual;
-      const target = match?.target ?? fbPoint?.target ?? row.target;
+      const actual = match?.actual ?? null;
+      const target = match?.target ?? (actual !== null ? row.target : null);
       const metTarget =
         actual !== null && target !== null
           ? lowerBetter
@@ -2318,6 +2315,7 @@ export function buildCallCenterDeepDiveFromRecords(
 
     const rawDelta = row.raw_change;
     const improved = (row.change_value ?? 0) > 0;
+    const evaluatedMonths = trend6Mo.filter((pt) => pt.metTarget !== null).length || 6;
     const metInMonths = trend6Mo.filter((pt) => pt.metTarget === true).length;
     const uniqueTargets = [
       ...new Set(trend6Mo.map((pt) => pt.target).filter((t): t is number => t !== null)),
@@ -2325,10 +2323,10 @@ export function buildCallCenterDeepDiveFromRecords(
     const targetShifted = uniqueTargets.length > 1;
 
     const targetRealismDiagnosis = targetShifted
-      ? `Target shifted from ${formatKpiValue(uniqueTargets[0], unit)} to ${formatKpiValue(uniqueTargets[uniqueTargets.length - 1], unit)} during the 6-month window; actuals met target in ${metInMonths} of 6 months.`
-      : metInMonths >= 3
-      ? `Target (${formatKpiValue(row.target, unit)}) is realistic — achieved in ${metInMonths} of the last 6 months.`
-      : `Actuals missed the ${formatKpiValue(row.target, unit)} target in ${6 - metInMonths} of 6 months; top-quartile agents achieve target, pointing to bottom-quartile execution variance.`;
+      ? `Target shifted from ${formatKpiValue(uniqueTargets[0], unit)} to ${formatKpiValue(uniqueTargets[uniqueTargets.length - 1], unit)} during the 6-month window; actuals met target in ${metInMonths} of ${evaluatedMonths} months.`
+      : metInMonths >= Math.ceil(evaluatedMonths / 2)
+      ? `Target (${formatKpiValue(row.target, unit)}) is realistic — achieved in ${metInMonths} of ${evaluatedMonths} measured months.`
+      : `Actuals missed the ${formatKpiValue(row.target, unit)} target in ${evaluatedMonths - metInMonths} of ${evaluatedMonths} measured months; top-quartile agents achieve target, pointing to bottom-quartile execution variance.`;
 
     return {
       ...fallbackCard,
@@ -2618,17 +2616,15 @@ export function buildFunctionDeepDiveFromRecords(
           const lowerBetter = String(row.kpi_direction ?? '')
             .toLowerCase()
             .startsWith('lower');
-          const trend6Mo: KpiMonthlyPoint[] = sixPeriods.map((p, idx) => {
+          const trend6Mo: KpiMonthlyPoint[] = sixPeriods.map((p) => {
             const pRows = kpiRows(inPeriod(fnRecords, p), []);
             const match = pRows.find(
               (k) =>
                 k.kpi_key === row.kpi_key ||
                 k.kpi_label.toLowerCase() === row.kpi_label.toLowerCase(),
             );
-            const fbPoint =
-              fbKpi.trend6Mo.find((pt) => pt.periodKey === p.key) ?? fbKpi.trend6Mo[idx];
-            const actual = match?.actual ?? fbPoint?.actual ?? row.actual;
-            const target = match?.target ?? fbPoint?.target ?? row.target;
+            const actual = match?.actual ?? null;
+            const target = match?.target ?? (actual !== null ? row.target : null);
             const metTarget =
               actual !== null && target !== null
                 ? lowerBetter

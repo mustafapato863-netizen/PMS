@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ExecRecord } from '../executive/compose';
-import { RCM_DEEP_DIVE_SEP_2026 } from './callCenterDeepDiveData';
+import { HUMAN_RESOURCES_DEEP_DIVE_SEP_2026, RCM_DEEP_DIVE_SEP_2026 } from './callCenterDeepDiveData';
 import { buildRoleDetail } from './roleDetailData';
 import { buildTeamDeepDiveFromRecords } from './teamDeepDiveData';
 
@@ -205,5 +205,41 @@ describe('generic team deep dive agent KPIs', () => {
     if (dueDate) expect(dueDate.actualFormatted).toBe('99.9%');
     const unrelated = salma?.kpiCells.find((cell) => /coding errors/i.test(cell.label));
     expect(unrelated?.actualFormatted).toBe('—');
+  });
+
+  it('does not backfill fake KPI trend values for months before a person started', () => {
+    const august = { year: 2026, month: 'August', key: '2026-08' };
+    const diaaAug: ExecRecord = {
+      ...person('diaa', 'Mohamed Diaa Eldin Youssef', 100, [
+        kpi('assess_quality', 'Assessment Quality Score', 100, 100, 'higher_better', 1),
+      ]),
+      team: 'Human Resources',
+      position: 'Assessment Center Lead',
+      period: august,
+    };
+    const diaaSep: ExecRecord = {
+      ...diaaAug,
+      period: september,
+    };
+
+    const role = buildRoleDetail(
+      HUMAN_RESOURCES_DEEP_DIVE_SEP_2026,
+      'assessment-center-lead',
+      [],
+      [diaaAug, diaaSep],
+    );
+    const qualityKpi = role.kpis.find((item) => item.kpiKey === 'assess_quality');
+    expect(qualityKpi).toBeDefined();
+    expect(qualityKpi?.trend6Mo.map((pt) => pt.actual)).toEqual([
+      null,
+      null,
+      null,
+      null,
+      100,
+      100,
+    ]);
+    expect(qualityKpi?.trend6Mo.slice(0, 4).every((pt) => pt.actualFormatted === '—')).toBe(true);
+    expect(qualityKpi?.trend6Mo.slice(0, 4).every((pt) => pt.metTarget === null)).toBe(true);
+    expect(qualityKpi?.structuralDiagnosis).toContain('2 of 2 measured months');
   });
 });

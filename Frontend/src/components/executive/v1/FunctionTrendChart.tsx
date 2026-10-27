@@ -20,7 +20,7 @@ export default function FunctionTrendChart({
     return (
       <div
         data-testid="function-trend-empty"
-        className="flex min-h-[96px] items-center justify-center rounded-[10px] border border-dashed border-[var(--exec-card-border)] bg-[var(--exec-tile-bg)]/35 p-[10px] text-center text-[11px] text-[var(--text-muted)]"
+        className="flex h-[104px] items-center justify-center rounded-[10px] border border-dashed border-[var(--exec-card-border)] bg-[var(--exec-tile-bg)]/35 px-3 text-center text-[11px] text-[var(--text-muted)]"
       >
         No measured score in the last six months.
       </div>
@@ -30,11 +30,10 @@ export default function FunctionTrendChart({
   const minimum = Math.max(0, Math.min(50, Math.floor(Math.min(...values) / 25) * 25));
   const maximum = Math.max(100, Math.ceil(Math.max(...values) / 25) * 25);
   const ticks = [minimum, (minimum + maximum) / 2, maximum];
-  const plot = { left: 28, right: 300, top: 24, bottom: 102 };
-  const axisFontSize = 10;
-  const badgeFontSize = 9.5;
+  const plot = { left: 32, right: 304, top: 24, bottom: 94 };
+  const axisFontSize = 9.5;
   const x = (index: number) =>
-    points.length > 1 ? 46 + index * (238 / (points.length - 1)) : 165;
+    points.length > 1 ? 50 + index * (236 / (points.length - 1)) : 168;
   const y = (value: number) =>
     plot.bottom -
     ((Math.max(minimum, Math.min(value, maximum)) - minimum) / (maximum - minimum)) *
@@ -52,19 +51,19 @@ export default function FunctionTrendChart({
       .join(', ');
 
   return (
-    <div className="rounded-[10px] border border-[var(--exec-card-border)] bg-[var(--exec-tile-bg)]/30 px-1.5 py-1">
+    <div className="rounded-[10px] border border-[var(--exec-card-border)] bg-[var(--exec-tile-bg)]/30 px-2 py-1.5">
       <svg
         role="img"
         aria-label={description}
         focusable="false"
-        viewBox="0 0 310 122"
-        className="mx-auto block h-auto max-h-[96px] w-full max-w-[270px]"
+        viewBox="0 0 316 114"
+        className="mx-auto block h-[92px] w-full"
         pointerEvents="none"
         data-testid="function-trend-chart"
       >
         <defs>
           <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={color} stopOpacity={0.2} />
+            <stop offset="0%" stopColor={color} stopOpacity={0.18} />
             <stop offset="100%" stopColor={color} stopOpacity={0.01} />
           </linearGradient>
         </defs>
@@ -76,10 +75,10 @@ export default function FunctionTrendChart({
               y1={y(tick)}
               y2={y(tick)}
               stroke="var(--exec-card-border)"
-              strokeDasharray="3 4"
+              strokeDasharray="2 3"
             />
             <text
-              x={plot.left - 4}
+              x={plot.left - 5}
               y={y(tick)}
               dominantBaseline="middle"
               textAnchor="end"
@@ -97,8 +96,8 @@ export default function FunctionTrendChart({
           y1={y(100)}
           y2={y(100)}
           stroke="var(--text-muted)"
-          strokeOpacity={0.5}
-          strokeDasharray="4 4"
+          strokeOpacity={0.4}
+          strokeDasharray="3 3"
         />
         {segments.map(
           (segment, index) =>
@@ -131,9 +130,9 @@ export default function FunctionTrendChart({
             point.score !== null &&
             prevScore !== null &&
             Number.isFinite(prevScore) &&
-            Math.abs(point.score - prevScore) < 5 &&
+            Math.abs(point.score - prevScore) < 6 &&
             index % 2 === 1;
-          const badgeYOffset = isCrowded ? -24 : -17;
+          const labelYOffset = isCrowded ? -15 : -9;
 
           return (
             <g key={point.period.key}>
@@ -143,38 +142,41 @@ export default function FunctionTrendChart({
                     <circle
                       cx={x(index)}
                       cy={y(point.score)}
-                      r={5.5}
+                      r={6}
                       fill={color}
-                      fillOpacity={0.16}
+                      fillOpacity={0.15}
                     />
                   )}
                   <circle
                     cx={x(index)}
                     cy={y(point.score)}
-                    r={isLast ? 3.5 : 2.8}
+                    r={isLast ? 3.5 : 2.5}
                     fill={isLast ? color : 'var(--bg-surface)'}
                     stroke={color}
-                    strokeWidth={2}
+                    strokeWidth={1.85}
                     data-testid="function-trend-point"
                   />
                   <g data-testid="function-trend-value">
-                    <rect
-                      x={x(index) - 16.5}
-                      y={y(point.score) + badgeYOffset}
-                      width={33}
-                      height={13.5}
-                      rx={4}
-                      fill="var(--bg-surface)"
-                      stroke={color}
-                      strokeOpacity={isLast ? 0.45 : 0.18}
-                    />
+                    {isLast && (
+                      <rect
+                        x={x(index) - 18}
+                        y={y(point.score) - 21}
+                        width={36}
+                        height={14}
+                        rx={4}
+                        fill="var(--bg-surface)"
+                        stroke={color}
+                        strokeOpacity={0.45}
+                      />
+                    )}
                     <text
                       x={x(index)}
-                      y={y(point.score) + badgeYOffset + 9.5}
+                      y={isLast ? y(point.score) - 11.5 : y(point.score) + labelYOffset}
                       textAnchor="middle"
-                      fontSize={badgeFontSize}
-                      fontWeight={isLast ? 800 : 700}
-                      fill={color}
+                      fontSize={isLast ? 9.5 : 8.5}
+                      fontWeight={isLast ? 800 : 600}
+                      fill={isLast ? color : 'var(--text-secondary)'}
+                      fillOpacity={isLast ? 1 : 0.8}
                     >
                       {fmtScore(point.score)}
                     </text>
@@ -183,7 +185,7 @@ export default function FunctionTrendChart({
               )}
               <text
                 x={x(index)}
-                y={117}
+                y={109}
                 textAnchor="middle"
                 fontSize={axisFontSize}
                 fontWeight={isLast ? 700 : 500}

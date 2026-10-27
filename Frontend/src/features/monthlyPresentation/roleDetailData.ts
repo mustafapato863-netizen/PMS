@@ -614,16 +614,20 @@ function buildStructuralDiagnosis(
   fallback?: string,
 ): string {
   if (fallback && fallback.trim()) return fallback.trim();
-  const evaluated = trend6Mo.filter((pt) => pt.metTarget !== null);
+  const evaluated = trend6Mo.filter((pt) => pt.actual !== null && pt.metTarget !== null);
   const missedCount = evaluated.filter((pt) => pt.metTarget === false).length;
   const totalCount = evaluated.length || trend6Mo.length;
+  const windowLabel =
+    evaluated.length > 0 && evaluated.length < trend6Mo.length
+      ? `measured ${totalCount === 1 ? 'month' : 'months'}`
+      : 'trailing months';
   if (gapLabel === 'On target' || missedCount === 0) {
-    return `No structural gap — ${name} met or exceeded target across ${totalCount - missedCount} of ${totalCount} trailing months.`;
+    return `No structural gap — ${name} met or exceeded target across ${totalCount - missedCount} of ${totalCount} ${windowLabel}.`;
   }
   if (missedCount >= 4) {
-    return `Structural gap — ${name} missed target in ${missedCount} of ${totalCount} trailing months (${gapLabel}), indicating a persistent workflow or capacity bottleneck rather than a one-month dip.`;
+    return `Structural gap — ${name} missed target in ${missedCount} of ${totalCount} ${windowLabel} (${gapLabel}), indicating a persistent workflow or capacity bottleneck rather than a one-month dip.`;
   }
-  return `Execution variance — ${name} missed target in ${missedCount} of ${totalCount} trailing months (${gapLabel}); target remains achievable with focused weekly execution.`;
+  return `Execution variance — ${name} missed target in ${missedCount} of ${totalCount} ${windowLabel} (${gapLabel}); target remains achievable with focused weekly execution.`;
 }
 
 function computeKpiMetrics(
@@ -938,22 +942,9 @@ function seriesFromHistory(history: ExecRecord[], anchorPeriodKey: string): Role
       rawSlots[lastIdx].target = row.target;
     }
 
-    // Backfill any missing earlier months smoothly from the earliest known point so the 6-month chart has no holes
-    const firstKnownIdx = rawSlots.findIndex((s) => s.actual !== null);
-    const baseActual =
-      (firstKnownIdx >= 0 ? rawSlots[firstKnownIdx].actual : row.actual) ?? 0;
-    const baseTarget =
-      (firstKnownIdx >= 0 ? rawSlots[firstKnownIdx].target : row.target) ?? baseActual;
-
-    const trend6Mo: KpiMonthlyPoint[] = rawSlots.map((slot, idx) => {
-      let actual = slot.actual;
-      let target = slot.target ?? baseTarget;
-      if (actual === null) {
-        // Gentle deterministic step toward baseActual so the 6-month line is continuous
-        const stepsAway = Math.max(1, (firstKnownIdx >= 0 ? firstKnownIdx : 5) - idx);
-        const factor = betterDirection === 'lower' ? 1 - stepsAway * 0.03 : 1 - stepsAway * 0.025;
-        actual = round1(Math.max(0, baseActual * factor));
-      }
+    const trend6Mo: KpiMonthlyPoint[] = rawSlots.map((slot) => {
+      const actual = slot.actual;
+      const target = actual !== null ? (slot.target ?? row.target) : slot.target;
       const metTarget =
         actual == null || target == null
           ? null

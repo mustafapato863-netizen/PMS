@@ -187,9 +187,11 @@ export function ProfileKpiSixMonthTrend({
   }
   const peakPoint = peakIndex >= 0 ? points[peakIndex] : null;
 
-  const evaluatedPoints = points.filter((pt) => pt.metTarget !== null);
+  const evaluatedPoints = points.filter((pt) => pt.actual !== null && pt.metTarget !== null);
   const metCount = evaluatedPoints.filter((pt) => pt.metTarget === true).length;
   const totalEvaluated = evaluatedPoints.length || points.length;
+  const isPartialWindow =
+    evaluatedPoints.length > 0 && evaluatedPoints.length < points.length;
 
   // Chart geometry
   const width = 920;
@@ -235,6 +237,8 @@ export function ProfileKpiSixMonthTrend({
 
   const hoveredItem =
     hoveredIdx !== null ? actualCoords.find((c) => c.idx === hoveredIdx) ?? null : null;
+  const hoveredPoint = hoveredIdx !== null ? points[hoveredIdx] ?? null : null;
+  const hoveredX = hoveredIdx !== null ? xAt(hoveredIdx) : null;
 
   return (
     <div className="space-y-5" data-testid="profile-360-trend-container">
@@ -334,8 +338,15 @@ export function ProfileKpiSixMonthTrend({
           <div className="text-[10px] font-bold tracking-wider text-slate-400 uppercase">
             6-Month Avg
           </div>
-          <div className="mt-0.5 text-base font-bold text-slate-800 tabular-nums">
-            {avgActual !== null ? formatKpiAxisValue(avgActual, selected.unit) : selected.actualDisplay}
+          <div className="mt-0.5 flex items-baseline gap-1.5 text-base font-bold text-slate-800 tabular-nums">
+            <span>
+              {avgActual !== null ? formatKpiAxisValue(avgActual, selected.unit) : selected.actualDisplay}
+            </span>
+            {isPartialWindow && (
+              <span className="text-[11px] font-semibold text-slate-400">
+                ({numericActuals.length} mo)
+              </span>
+            )}
           </div>
         </div>
 
@@ -352,8 +363,15 @@ export function ProfileKpiSixMonthTrend({
           <div className="text-[10px] font-bold tracking-wider text-slate-400 uppercase">
             Months at Target
           </div>
-          <div className="mt-0.5 text-base font-bold text-slate-800 tabular-nums">
-            {metCount} / {totalEvaluated}
+          <div className="mt-0.5 flex items-baseline gap-1.5 text-base font-bold text-slate-800 tabular-nums">
+            <span>
+              {metCount} / {totalEvaluated}
+            </span>
+            {isPartialWindow && (
+              <span className="text-[11px] font-semibold text-slate-400">
+                measured
+              </span>
+            )}
           </div>
         </div>
       </div>
@@ -454,7 +472,7 @@ export function ProfileKpiSixMonthTrend({
           )}
 
           {/* Target: Dashed Amber/Orange Line */}
-          {targetCoords.length > 1 && (
+          {targetCoords.length > 1 ? (
             <polyline
               data-series="target"
               fill="none"
@@ -463,10 +481,21 @@ export function ProfileKpiSixMonthTrend({
               strokeDasharray="6 4"
               points={targetPolyline}
             />
-          )}
+          ) : targetCoords.length === 1 ? (
+            <line
+              data-series="target"
+              x1={pad.l}
+              x2={width - pad.r}
+              y1={targetCoords[0].y}
+              y2={targetCoords[0].y}
+              stroke="#d97706"
+              strokeWidth="2"
+              strokeDasharray="6 4"
+            />
+          ) : null}
 
           {/* Actual: Smooth Solid Blue Curve */}
-          {actualCoords.length > 1 && (
+          {actualCoords.length >= 1 && (
             <path
               data-series="actual"
               fill="none"
@@ -477,6 +506,26 @@ export function ProfileKpiSixMonthTrend({
               d={smoothActual}
             />
           )}
+
+          {/* Unmeasured Month Markers ("No data") */}
+          {points.map((pt, idx) => {
+            if (pt.actual !== null) return null;
+            const x = xAt(idx);
+            return (
+              <text
+                key={`no-data-${pt.periodKey}`}
+                data-testid={`no-data-marker-${pt.periodKey}`}
+                x={x}
+                y={baseline - 8}
+                textAnchor="middle"
+                fill="#cbd5e1"
+                fontSize="10"
+                fontWeight="600"
+              >
+                No data
+              </text>
+            );
+          })}
 
           {/* Data Points + Peak Month Trophy + Value Callouts */}
           {actualCoords.map((item) => {
@@ -532,7 +581,7 @@ export function ProfileKpiSixMonthTrend({
               x={xAt(idx)}
               y={height - 10}
               textAnchor="middle"
-              fill={hoveredIdx === idx ? '#1e40af' : '#475569'}
+              fill={hoveredIdx === idx ? '#1e40af' : pt.actual === null ? '#94a3b8' : '#475569'}
               fontSize="11.5"
               fontWeight={hoveredIdx === idx ? '700' : '600'}
             >
@@ -561,11 +610,11 @@ export function ProfileKpiSixMonthTrend({
         </svg>
 
         {/* 360-Profile Floating Glass Tooltip on Hover */}
-        {hoveredItem && (
+        {hoveredPoint && hoveredX !== null && (
           <div
             data-testid="role-kpi-trend-tooltip"
             style={{
-              left: `${Math.min(82, Math.max(18, (hoveredItem.x / width) * 100))}%`,
+              left: `${Math.min(82, Math.max(18, (hoveredX / width) * 100))}%`,
               top: '16px',
               transform: 'translateX(-50%)',
             }}
@@ -573,36 +622,50 @@ export function ProfileKpiSixMonthTrend({
           >
             <div className="mb-1.5 flex items-center justify-between border-b border-slate-100 pb-1.5">
               <span className="font-extrabold tracking-wider text-slate-500 uppercase">
-                {hoveredItem.point.month} ({hoveredItem.point.periodKey})
+                {hoveredPoint.month} ({hoveredPoint.periodKey})
               </span>
               <span
                 className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                  hoveredItem.point.metTarget === false
+                  hoveredItem === null
+                    ? 'bg-slate-100 text-slate-600'
+                    : hoveredPoint.metTarget === false
                     ? 'bg-rose-50 text-rose-700'
                     : 'bg-emerald-50 text-emerald-700'
                 }`}
               >
-                {hoveredItem.point.metTarget === false ? 'Missed' : 'Met Target'}
+                {hoveredItem === null
+                  ? 'No Data'
+                  : hoveredPoint.metTarget === false
+                  ? 'Missed'
+                  : 'Met Target'}
               </span>
             </div>
-            <div className="flex items-center justify-between py-0.5">
-              <span className="flex items-center gap-1.5 font-semibold text-slate-600">
-                <span className="size-2 rounded-full bg-blue-600" />
-                Actual:
-              </span>
-              <span className="font-mono font-bold text-slate-900">
-                {hoveredItem.point.actualFormatted}
-              </span>
-            </div>
-            <div className="flex items-center justify-between py-0.5">
-              <span className="flex items-center gap-1.5 font-semibold text-slate-600">
-                <span className="size-2 rounded-full bg-amber-500" />
-                Target:
-              </span>
-              <span className="font-mono font-bold text-slate-700">
-                {hoveredItem.point.targetFormatted}
-              </span>
-            </div>
+            {hoveredItem ? (
+              <>
+                <div className="flex items-center justify-between py-0.5">
+                  <span className="flex items-center gap-1.5 font-semibold text-slate-600">
+                    <span className="size-2 rounded-full bg-blue-600" />
+                    Actual:
+                  </span>
+                  <span className="font-mono font-bold text-slate-900">
+                    {hoveredPoint.actualFormatted}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between py-0.5">
+                  <span className="flex items-center gap-1.5 font-semibold text-slate-600">
+                    <span className="size-2 rounded-full bg-amber-500" />
+                    Target:
+                  </span>
+                  <span className="font-mono font-bold text-slate-700">
+                    {hoveredPoint.targetFormatted}
+                  </span>
+                </div>
+              </>
+            ) : (
+              <div className="py-1 text-slate-500">
+                No KPI data recorded in this month.
+              </div>
+            )}
           </div>
         )}
       </div>
