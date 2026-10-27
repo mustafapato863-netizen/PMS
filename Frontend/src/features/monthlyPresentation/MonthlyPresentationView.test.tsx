@@ -342,6 +342,43 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
     );
   });
 
+  it('opens Team Leader role detail showing separated individual members with actual performance', async () => {
+    render(
+      <MemoryRouter initialEntries={['/monthly-presentation?deepDive=call-center&role=team-leader']}>
+        <MonthlyPresentationView />
+        <LocationProbe />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByTestId('role-detail-page')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Team Leader' })).toBeInTheDocument();
+    expect(screen.getByText(/2 people in this role/i)).toBeInTheDocument();
+    expect(screen.getByText(/1 Average or below/i)).toBeInTheDocument();
+    expect(screen.getByTestId('role-detail-score')).toHaveTextContent('89.8%');
+
+    // Focus Cohort initially shows only Amr Badawy (score < 90%)
+    const cohortBadge = screen.getByText(/1 of 2 people require action/i);
+    expect(cohortBadge).toBeInTheDocument();
+
+    const membersTable = screen.getByTestId('role-members-table');
+    expect(within(membersTable).getByText(/Amr Badawy/i)).toBeInTheDocument();
+    expect(within(membersTable).getByText('86.3%')).toBeInTheDocument();
+    expect(within(membersTable).queryByText(/Adham Sameh/i)).not.toBeInTheDocument();
+
+    // Toggle "View All (2)" to reveal Adham Sameh
+    const toggleBtn = screen.getByTestId('toggle-show-all-members');
+    expect(toggleBtn).toHaveTextContent('View All (2)');
+    fireEvent.click(toggleBtn);
+
+    expect(within(membersTable).getByText(/Amr Badawy/i)).toBeInTheDocument();
+    expect(within(membersTable).getByText(/Adham Sameh/i)).toBeInTheDocument();
+    expect(within(membersTable).getByText('93.4%')).toBeInTheDocument();
+
+    // 1-on-1 Individual Action Plan displays individual coaching
+    const indActionSection = screen.getByTestId('role-individual-action-plan-section');
+    expect(within(indActionSection).getByRole('heading', { name: /Amr Badawy/i })).toBeInTheDocument();
+  });
+
   it('aggregates roles into single cards on the Function Deep Dive and shows individual people only inside Role Detail', () => {
     render(
       <MemoryRouter initialEntries={['/monthly-presentation']}>

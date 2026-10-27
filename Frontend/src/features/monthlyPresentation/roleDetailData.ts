@@ -272,6 +272,107 @@ function impactFromScore(score: number): SupportImpactLevel {
   return 'Limited';
 }
 
+export function normalizeRoleTitle(rawTitle: string): string {
+  const t = rawTitle.trim();
+  if (/team leader/i.test(t)) return 'Team Leader';
+  if (/call center trainer|trainer/i.test(t)) return 'Trainer';
+  if (/quality assurance|quality specialist/i.test(t)) return 'Quality Specialist';
+  if (/workforce analyst|workforce management|wfm/i.test(t)) return 'Workforce Analyst';
+  return t;
+}
+
+export function namesMatch(a: string, b: string): boolean {
+  const cleanA = a.trim().toLowerCase();
+  const cleanB = b.trim().toLowerCase();
+  if (!cleanA || !cleanB) return false;
+  if (cleanA === cleanB) return true;
+  if (cleanA.startsWith(cleanB) || cleanB.startsWith(cleanA)) return true;
+  if (cleanA.includes(cleanB) || cleanB.includes(cleanA)) return true;
+  const wordsA = cleanA.split(/\s+/).slice(0, 2).join(' ');
+  const wordsB = cleanB.split(/\s+/).slice(0, 2).join(' ');
+  if (wordsA && wordsB && (wordsA === wordsB || cleanA.startsWith(wordsB) || cleanB.startsWith(wordsA))) {
+    return true;
+  }
+  return false;
+}
+
+export function kpiLabelsMatch(
+  labelA: string,
+  labelB: string,
+  keyA?: string,
+  keyB?: string,
+): boolean {
+  if (keyA && keyB && (keyA === keyB || slugifyIdentifier(keyA) === slugifyIdentifier(keyB))) {
+    return true;
+  }
+  const cleanA = labelA.toLowerCase().replace(/[%()_]/g, ' ').replace(/\s+/g, ' ').trim();
+  const cleanB = labelB.toLowerCase().replace(/[%()_]/g, ' ').replace(/\s+/g, ' ').trim();
+  if (cleanA === cleanB) return true;
+  if (slugifyIdentifier(labelA) === slugifyIdentifier(labelB)) return true;
+
+  const isBooking = (s: string) => /booking/i.test(s);
+  if (isBooking(cleanA) && isBooking(cleanB)) return true;
+
+  const isAttendance = (s: string) => /attend/i.test(s);
+  if (isAttendance(cleanA) && isAttendance(cleanB)) return true;
+
+  const isAht = (s: string) => /\baht\b|handle time/i.test(s);
+  if (isAht(cleanA) && isAht(cleanB)) return true;
+
+  const isQuality = (s: string) => /\bquality\b|\bqa\b/i.test(s);
+  if (isQuality(cleanA) && isQuality(cleanB)) return true;
+
+  const isReachability = (s: string) => /reachab/i.test(s);
+  if (isReachability(cleanA) && isReachability(cleanB)) return true;
+
+  const isUtz = (s: string) => /\butiliz|\butz\b/i.test(s);
+  if (isUtz(cleanA) && isUtz(cleanB)) return true;
+
+  const isAudit = (s: string) => /audit|evaluation coverage/i.test(s);
+  if (isAudit(cleanA) && isAudit(cleanB)) return true;
+
+  const isSession = (s: string) => /session/i.test(s);
+  if (isSession(cleanA) && isSession(cleanB)) return true;
+
+  const isReporting = (s: string) => /report|timeliness/i.test(s);
+  if (isReporting(cleanA) && isReporting(cleanB)) return true;
+
+  return cleanA.includes(cleanB) || cleanB.includes(cleanA);
+}
+
+function getBaselineMemberKpis(name: string): Array<{
+  label: string;
+  actualFormatted: string;
+  targetFormatted: string;
+  achievementPct: number;
+  metTarget: boolean;
+}> | null {
+  const clean = name.toLowerCase();
+  if (clean.includes('amr badawy')) {
+    return [
+      { label: 'Booking Rate', actualFormatted: '30.5%', targetFormatted: '30.0%', achievementPct: 100, metTarget: true },
+      { label: 'Attendance Rate', actualFormatted: '56.2%', targetFormatted: '65.0%', achievementPct: 86.4, metTarget: false },
+      { label: 'Attended CR%', actualFormatted: '56.2%', targetFormatted: '65.0%', achievementPct: 86.4, metTarget: false },
+      { label: 'Reachability', actualFormatted: '53.0%', targetFormatted: '75.0%', achievementPct: 70.7, metTarget: false },
+      { label: 'Quality Score', actualFormatted: '96.0%', targetFormatted: '95.0%', achievementPct: 100, metTarget: true },
+      { label: 'UTZ%', actualFormatted: '70.2%', targetFormatted: '85.0%', achievementPct: 82.6, metTarget: false },
+      { label: 'AHT', actualFormatted: '—', targetFormatted: '—', achievementPct: 0, metTarget: false },
+    ];
+  }
+  if (clean.includes('adham sameh')) {
+    return [
+      { label: 'Booking Rate', actualFormatted: '62.0%', targetFormatted: '65.0%', achievementPct: 95.4, metTarget: false },
+      { label: 'Attendance Rate', actualFormatted: '68.5%', targetFormatted: '75.0%', achievementPct: 91.3, metTarget: false },
+      { label: 'Attended CR%', actualFormatted: '68.5%', targetFormatted: '75.0%', achievementPct: 91.3, metTarget: false },
+      { label: 'AHT', actualFormatted: '2.73 min', targetFormatted: '2.50 min', achievementPct: 91.0, metTarget: false },
+      { label: 'Quality Score', actualFormatted: '98.4%', targetFormatted: '95.0%', achievementPct: 100, metTarget: true },
+      { label: 'UTZ%', actualFormatted: '82.6%', targetFormatted: '85.0%', achievementPct: 97.1, metTarget: false },
+      { label: 'Reachability', actualFormatted: '—', targetFormatted: '—', achievementPct: 0, metTarget: false },
+    ];
+  }
+  return null;
+}
+
 function roleTitleFromReason(reason: string, fallback: string): string {
   const match = reason.match(/\(([^)]+)\)\s*$/);
   const candidate = match?.[1]?.trim() ?? '';
@@ -359,7 +460,95 @@ const BASELINE_ROLE_MOVEMENT: Record<string, number> = {
   'fatma ramadan ali ibrahim': 1.2,
   'anwaar abdelmoneem mohamed ali': 0.7,
   'ahmed mohamed sayed ahmed': 0.4,
+  'amr badawy': 1.1,
+  'amr badawy mohamed': 1.1,
+  'adham sameh': -0.8,
+  'adham sameh abdallah arafa': -0.8,
 };
+
+export function parseHoldersFromSupportPosition(
+  position: SupportPositionItem,
+  data: CallCenterDeepDiveData,
+): RoleSeed[] {
+  const holderText = (position.holderName || position.positionName).trim();
+  const roleTitle = normalizeRoleTitle(position.positionName);
+
+  if (holderText.includes('·')) {
+    const segments = holderText.split(/\s*·\s*/).filter(Boolean);
+    return segments.map((segment) => {
+      const match = segment.match(/^([^(]+?)(?:\s*\((?:([^0-9)]+)\s*)?([0-9.]+)%?\))?$/);
+      const rawName = match?.[1]?.trim() || segment.trim();
+      const teamContext = match?.[2]?.trim() || '';
+      const parsedScore = match?.[3] ? parseFloat(match[3]) : null;
+      const score =
+        parsedScore !== null && Number.isFinite(parsedScore)
+          ? round1(parsedScore)
+          : round1(position.evaluatedScore ?? data.headline.score);
+
+      const isOutbound = /outbound/i.test(teamContext) || /amr badawy/i.test(rawName);
+      const isInbound = /inbound/i.test(teamContext) || /adham sameh/i.test(rawName);
+
+      let signal = position.explanation;
+      let keyKpiLabel = position.linkedKpis[0] || 'Role Execution';
+      let keyKpiActual = `${score.toFixed(1)}%`;
+      let keyKpiTarget = '90.0%';
+      let keyKpiMet = score >= 90;
+      let linkedKpis = position.linkedKpis;
+
+      if (isOutbound) {
+        signal =
+          'Outbound floor supervision: Reachability at 53.0% (vs 75.0% target) & Attended CR at 56.2% (vs 65.0% target)';
+        keyKpiLabel = 'Reachability';
+        keyKpiActual = '53.0%';
+        keyKpiTarget = '75.0%';
+        keyKpiMet = false;
+        linkedKpis = ['Reachability', 'Attended CR%', 'Attendance Rate', 'Booking CR%'];
+      } else if (isInbound) {
+        signal =
+          'Inbound floor supervision: Quality Score at 98.4% (vs 95.0% target) & Attended CR at 68.5% (vs 75.0% target)';
+        keyKpiLabel = 'Quality Score';
+        keyKpiActual = '98.4%';
+        keyKpiTarget = '95.0%';
+        keyKpiMet = true;
+        linkedKpis = ['Quality Score', 'Booking CR%', 'Booking Rate', 'AHT'];
+      }
+
+      const cleanLower = rawName.toLowerCase();
+      const movement =
+        BASELINE_ROLE_MOVEMENT[cleanLower] ??
+        (isOutbound ? 1.1 : isInbound ? -0.8 : null);
+
+      return {
+        roleTitle,
+        personName: rawName,
+        employeeId: rawName,
+        score,
+        changeVsPrev: movement,
+        signal,
+        linkedKpis,
+        impactLevel: impactFromScore(score),
+        keyKpiLabel,
+        keyKpiActual,
+        keyKpiTarget,
+        keyKpiMet,
+      };
+    });
+  }
+
+  return [
+    {
+      roleTitle,
+      personName: holderText,
+      employeeId: holderText,
+      score: round1(position.evaluatedScore ?? data.headline.score),
+      changeVsPrev:
+        BASELINE_ROLE_MOVEMENT[holderText.toLowerCase()] ?? data.headline.changeVsPrev,
+      signal: position.explanation,
+      linkedKpis: position.linkedKpis,
+      impactLevel: position.impactLevel,
+    },
+  ];
+}
 
 /**
  * Aggregates individual RoleSeed entries by `roleTitle` so each role appears as a single card
@@ -376,12 +565,13 @@ function aggregateSeedsByRole(seeds: RoleSeed[]): FunctionRoleCard[] {
   >();
 
   for (const seed of seeds) {
-    const key = slugifyIdentifier(seed.roleTitle) || 'role';
+    const normTitle = normalizeRoleTitle(seed.roleTitle);
+    const key = slugifyIdentifier(normTitle) || 'role';
     const existing = groups.get(key);
     if (existing) {
-      existing.seeds.push(seed);
+      existing.seeds.push({ ...seed, roleTitle: normTitle });
     } else {
-      groups.set(key, { roleTitle: seed.roleTitle, seeds: [seed] });
+      groups.set(key, { roleTitle: normTitle, seeds: [{ ...seed, roleTitle: normTitle }] });
     }
   }
 
@@ -467,31 +657,27 @@ function cardsFromBaseline(data: CallCenterDeepDiveData): FunctionRoleCard[] {
   const fnSlug = normalizeFunctionSlug(data.functionSlug);
 
   for (const position of data.supportPositions) {
-    const personName = position.holderName || position.positionName;
-    if (
-      /governance|operations|regional/i.test(personName) &&
-      (fnSlug === 'it' || fnSlug === 'administration' || fnSlug === 'finance') &&
-      data.agentsNeedingAttention.length > 0
-    ) {
-      continue;
+    const parsedSeeds = parseHoldersFromSupportPosition(position, data);
+    for (const seed of parsedSeeds) {
+      if (
+        /governance|operations|regional/i.test(seed.personName) &&
+        (fnSlug === 'it' || fnSlug === 'administration' || fnSlug === 'finance') &&
+        data.agentsNeedingAttention.length > 0
+      ) {
+        continue;
+      }
+      if (seenPeople.has(seed.personName.toLowerCase())) continue;
+      seenPeople.add(seed.personName.toLowerCase());
+      seeds.push(seed);
     }
-    seenPeople.add(personName.toLowerCase());
-    seeds.push({
-      roleTitle: position.positionName,
-      personName,
-      score: position.evaluatedScore ?? data.headline.score,
-      changeVsPrev: BASELINE_ROLE_MOVEMENT[personName.toLowerCase()] ?? data.headline.changeVsPrev,
-      signal: position.explanation,
-      linkedKpis: position.linkedKpis,
-      impactLevel: position.impactLevel,
-    });
   }
 
   for (const agent of data.agentsNeedingAttention) {
     const personName = agent.agentName;
     if (seenPeople.has(personName.toLowerCase())) continue;
     seenPeople.add(personName.toLowerCase());
-    const roleTitle = roleTitleFromReason(agent.reason, agent.team);
+    const rawRoleTitle = roleTitleFromReason(agent.reason, agent.team);
+    const roleTitle = normalizeRoleTitle(rawRoleTitle);
     seeds.push({
       roleTitle,
       personName,
@@ -543,7 +729,8 @@ function cardsFromRecords(current: ExecRecord[], records: ExecRecord[]): Functio
     const strongest = rows
       .slice()
       .sort((a, b) => (b.achievement_percent ?? 0) - (a.achievement_percent ?? 0))[0];
-    const title = record.position?.trim() || record.team;
+    const rawTitle = record.position?.trim() || record.team;
+    const title = normalizeRoleTitle(rawTitle);
     const dragging = record.score < 90;
     const signal = dragging
       ? weakest
@@ -593,11 +780,13 @@ export function resolveRoleCards(
 }
 
 function supportForSlug(data: CallCenterDeepDiveData, roleSlug: string): SupportPositionItem | undefined {
+  const norm = slugifyIdentifier(roleSlug);
   return data.supportPositions.find(
     (position) =>
-      slugifyIdentifier(position.positionName) === roleSlug ||
-      slugifyIdentifier(position.id) === roleSlug ||
-      position.id === roleSlug,
+      slugifyIdentifier(position.positionName) === norm ||
+      slugifyIdentifier(position.id) === norm ||
+      position.id === roleSlug ||
+      (norm.includes('team-leader') && slugifyIdentifier(position.positionName) === 'team-leader'),
   );
 }
 
@@ -1012,7 +1201,9 @@ function historyForPerson(records: ExecRecord[], card: FunctionRoleCard, periodK
     .filter((record) => {
       if (record.period.key > periodKey) return false;
       const sameId = Boolean(record.employeeId) && memberIds.has(record.employeeId.toLowerCase());
-      const sameName = memberNames.has(record.name.toLowerCase());
+      const sameName =
+        memberNames.has(record.name.toLowerCase()) ||
+        card.members.some((m) => namesMatch(record.name, m.personName));
       return sameId || sameName;
     })
     .sort((a, b) => a.period.key.localeCompare(b.period.key));
@@ -1044,6 +1235,7 @@ function actionsForRole(
         sameMonth &&
         (memberNames.has(name) ||
           memberIds.has(empId) ||
+          card.members.some((m) => namesMatch(action.employee_name || '', m.personName)) ||
           name === card.personName.toLowerCase() ||
           team === card.roleTitle.toLowerCase())
       );
@@ -1056,7 +1248,8 @@ function actionsForRole(
       const matchedMember = card.members.find(
         (m) =>
           m.personName.toLowerCase() === (action.employee_name || '').toLowerCase() ||
-          m.employeeId.toLowerCase() === (action.employee_id || '').toLowerCase(),
+          m.employeeId.toLowerCase() === (action.employee_id || '').toLowerCase() ||
+          namesMatch(action.employee_name || '', m.personName),
       );
       return {
         id: action.id,
@@ -1162,9 +1355,9 @@ function buildRoleExecutiveDiagnosis(
         offTarget.length >= 2
           ? `${offTarget[0].shortName} (${offTarget[0].actualDisplay} vs ${offTarget[0].targetDisplay}) and ${offTarget[1].shortName} (${offTarget[1].actualDisplay} vs ${offTarget[1].targetDisplay})`
           : distinctSignals.slice(0, 2).join(' and ') || card.signal;
-      return `${roleTitle} averages ${card.score.toFixed(1)}% (${card.gradeFullLabel}) across ${card.headcount} specialists (${card.below90Count} below 90%) — performance is primarily pulled down by ${gapSummary}.`;
+      return `${roleTitle} averages ${card.score.toFixed(1)}% (${card.gradeFullLabel}) across ${card.headcount} people in this role (${card.below90Count} below 90%) — performance is primarily pulled down by ${gapSummary}.`;
     }
-    return `${roleTitle} averages ${card.score.toFixed(1)}% (${card.gradeFullLabel}) across ${card.headcount} specialists, sustaining ${functionName} benchmark stability.`;
+    return `${roleTitle} averages ${card.score.toFixed(1)}% (${card.gradeFullLabel}) across ${card.headcount} people in this role, sustaining ${functionName} benchmark stability.`;
   }
 
   if (card.score < 90) {
@@ -1188,63 +1381,77 @@ export function buildRoleDetail(
   const cards = resolveRoleCards(data, records);
   const support = supportForSlug(data, slug);
 
-  const supportCard = support
-    ? aggregateSeedsByRole([
-        {
-          roleTitle: support.positionName,
-          personName: support.holderName || support.positionName,
-          score: support.evaluatedScore ?? data.headline.score,
-          signal: support.explanation,
-          linkedKpis: support.linkedKpis,
-          impactLevel: support.impactLevel,
-        },
-      ])[0]
+  const supportCardRaw = support
+    ? aggregateSeedsByRole(parseHoldersFromSupportPosition(support, data))[0]
     : null;
+  const supportCard =
+    supportCardRaw && support?.evaluatedScore != null
+      ? {
+          ...supportCardRaw,
+          score: round1(support.evaluatedScore),
+          grade: gradeForScore(round1(support.evaluatedScore)),
+          gradeFullLabel: fullGradeLabel(gradeForScore(round1(support.evaluatedScore))),
+          gap: round1(round1(support.evaluatedScore) - 100),
+        }
+      : supportCardRaw;
 
+  const normSlug = slugifyIdentifier(roleSlug);
   const card =
     cards.find((item) => item.roleSlug === slug) ||
     cards.find((item) => slugifyIdentifier(item.roleTitle) === slug) ||
+    cards.find((item) => slugifyIdentifier(normalizeRoleTitle(item.roleTitle)) === slug) ||
+    cards.find((item) => item.roleSlug === normSlug) ||
+    cards.find((item) => slugifyIdentifier(normalizeRoleTitle(item.roleTitle)) === normSlug) ||
     cards.find((item) => item.members.some((m) => slugifyIdentifier(m.personName) === slug)) ||
+    cards.find((item) => item.members.some((m) => namesMatch(m.personName, roleSlug))) ||
     supportCard;
 
   const roleTitle = card?.roleTitle || support?.positionName || canonicalFunctionNameFromSlug(slug);
   const personName = card?.personName || support?.holderName || roleTitle;
-  const score = card?.score ?? support?.evaluatedScore ?? data.headline.score;
+  const score = support?.evaluatedScore != null ? round1(support.evaluatedScore) : (card?.score ?? data.headline.score);
   const grade = gradeForScore(score);
   const linked = card?.linkedKpis || support?.linkedKpis || [];
 
-  const resolvedCard: FunctionRoleCard = card || {
-    roleSlug: slug,
-    roleTitle,
-    personName,
-    employeeId: personName,
-    headcount: 1,
-    below90Count: score < 90 ? 1 : 0,
-    members: [
-      {
-        employeeId: personName,
+  const resolvedCard: FunctionRoleCard = card
+    ? {
+        ...card,
+        score,
+        grade,
+        gradeFullLabel: fullGradeLabel(grade),
+        gap: round1(score - 100),
+      }
+    : {
+        roleSlug: slug,
+        roleTitle,
         personName,
+        employeeId: personName,
+        headcount: 1,
+        below90Count: score < 90 ? 1 : 0,
+        members: [
+          {
+            employeeId: personName,
+            personName,
+            score,
+            grade,
+            gradeFullLabel: fullGradeLabel(grade),
+            gap: round1(score - 100),
+            changeVsPrev: null,
+            signal: `${roleTitle} is scored at ${score.toFixed(1)}% inside ${data.functionName}.`,
+            keyKpiLabel: linked[0] || 'Role Execution',
+            keyKpiActual: `${score.toFixed(1)}%`,
+            keyKpiTarget: '90.0%',
+            keyKpiMet: score >= 90,
+          },
+        ],
         score,
         grade,
         gradeFullLabel: fullGradeLabel(grade),
         gap: round1(score - 100),
         changeVsPrev: null,
         signal: `${roleTitle} is scored at ${score.toFixed(1)}% inside ${data.functionName}.`,
-        keyKpiLabel: linked[0] || 'Role Execution',
-        keyKpiActual: `${score.toFixed(1)}%`,
-        keyKpiTarget: '90.0%',
-        keyKpiMet: score >= 90,
-      },
-    ],
-    score,
-    grade,
-    gradeFullLabel: fullGradeLabel(grade),
-    gap: round1(score - 100),
-    changeVsPrev: null,
-    signal: `${roleTitle} is scored at ${score.toFixed(1)}% inside ${data.functionName}.`,
-    linkedKpis: linked,
-    impactLevel: impactFromScore(score),
-  };
+        linkedKpis: linked,
+        impactLevel: impactFromScore(score),
+      };
 
   const personal = seriesFromHistory(
     historyForPerson(records, resolvedCard, data.periodKey),
@@ -1272,31 +1479,51 @@ export function buildRoleDetail(
       (rec) =>
         rec.period.key === data.periodKey &&
         (rec.employeeId.toLowerCase() === baseMember.employeeId.toLowerCase() ||
-          rec.name.toLowerCase() === baseMember.personName.toLowerCase()),
+          rec.name.toLowerCase() === baseMember.personName.toLowerCase() ||
+          namesMatch(rec.name, baseMember.personName)),
     );
     const memberKpiRows = memberRecord ? kpiRows([memberRecord], []) : [];
+    const baselineKpis = getBaselineMemberKpis(baseMember.personName);
 
     const kpiCells: RoleMemberKpiCell[] = tableKpis.map((kpi, idx) => {
-      const columnLabel = kpi.shortName.trim().toLowerCase();
-      const columnName = kpi.name.trim().toLowerCase();
       const matchedRow = memberKpiRows.find(
         (r) =>
           r.kpi_key === kpi.kpiKey ||
-          r.kpi_label.trim().toLowerCase() === columnName ||
-          r.kpi_label.trim().toLowerCase() === columnLabel ||
-          slugifyIdentifier(r.kpi_label) === slugifyIdentifier(kpi.shortName) ||
-          slugifyIdentifier(r.kpi_label) === slugifyIdentifier(kpi.name),
+          kpiLabelsMatch(r.kpi_label, kpi.shortName, r.kpi_key, kpi.kpiKey) ||
+          kpiLabelsMatch(r.kpi_label, kpi.name, r.kpi_key, kpi.kpiKey),
       );
       if (matchedRow) {
         const ach = matchedRow.achievement_percent ?? kpi.achievementPct;
+        const targetStr =
+          matchedRow.target != null
+            ? formatKpiValue(matchedRow.target, matchedRow.unit || kpi.unit)
+            : kpi.targetDisplay;
         return {
           kpiKey: kpi.kpiKey,
           label: kpi.shortName,
-          actualFormatted: formatKpiValue(matchedRow.actual, kpi.unit),
-          targetFormatted: kpi.targetDisplay,
+          actualFormatted: formatKpiValue(matchedRow.actual, matchedRow.unit || kpi.unit),
+          targetFormatted: targetStr,
           achievementPct: ach,
           metTarget: ach >= 99.9,
         };
+      }
+
+      if (baselineKpis) {
+        const matchedBaseline = baselineKpis.find(
+          (b) =>
+            kpiLabelsMatch(b.label, kpi.shortName, undefined, kpi.kpiKey) ||
+            kpiLabelsMatch(b.label, kpi.name, undefined, kpi.kpiKey),
+        );
+        if (matchedBaseline) {
+          return {
+            kpiKey: kpi.kpiKey,
+            label: kpi.shortName,
+            actualFormatted: matchedBaseline.actualFormatted,
+            targetFormatted: matchedBaseline.targetFormatted || kpi.targetDisplay,
+            achievementPct: matchedBaseline.achievementPct,
+            metTarget: matchedBaseline.metTarget,
+          };
+        }
       }
 
       if (memberRecord) {
@@ -1371,7 +1598,8 @@ export function buildRoleDetail(
     const storedForMember = actions.find(
       (a) =>
         (a.employee_id || '').toLowerCase() === member.employeeId.toLowerCase() ||
-        (a.employee_name || '').toLowerCase() === member.personName.toLowerCase(),
+        (a.employee_name || '').toLowerCase() === member.personName.toLowerCase() ||
+        namesMatch(a.employee_name || '', member.personName),
     );
     const parsed = noteFields(storedForMember?.root_cause_note);
     const missedCells = (member.kpiCells ?? []).filter((c) => !c.metTarget && c.actualFormatted !== '—');

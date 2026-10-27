@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ExecRecord } from '../executive/compose';
-import { HUMAN_RESOURCES_DEEP_DIVE_SEP_2026, RCM_DEEP_DIVE_SEP_2026 } from './callCenterDeepDiveData';
+import { CALL_CENTER_DEEP_DIVE_SEP_2026, HUMAN_RESOURCES_DEEP_DIVE_SEP_2026, RCM_DEEP_DIVE_SEP_2026 } from './callCenterDeepDiveData';
 import { buildRoleDetail } from './roleDetailData';
 import { buildTeamDeepDiveFromRecords } from './teamDeepDiveData';
 
@@ -241,5 +241,81 @@ describe('generic team deep dive agent KPIs', () => {
     expect(qualityKpi?.trend6Mo.slice(0, 4).every((pt) => pt.actualFormatted === '—')).toBe(true);
     expect(qualityKpi?.trend6Mo.slice(0, 4).every((pt) => pt.metTarget === null)).toBe(true);
     expect(qualityKpi?.structuralDiagnosis).toContain('2 of 2 measured months');
+  });
+
+  it('separates multi-holder support roles (Team Leader) into individual members with actual performance', () => {
+    const role = buildRoleDetail(CALL_CENTER_DEEP_DIVE_SEP_2026, 'team-leader', [], []);
+    expect(role.roleTitle).toBe('Team Leader');
+    expect(role.headcount).toBe(2);
+    expect(role.below90Count).toBe(1);
+    expect(role.score).toBe(89.8);
+    expect(role.grade).toBe('C');
+    expect(role.gradeFullLabel).toBe('Average');
+
+    // Both individuals exist separately
+    expect(role.members).toHaveLength(2);
+
+    const amr = role.members.find((m) => /amr badawy/i.test(m.personName));
+    expect(amr).toBeDefined();
+    expect(amr?.score).toBe(86.3);
+    expect(amr?.grade).toBe('C');
+    expect(amr?.gradeFullLabel).toBe('Average');
+    expect(amr?.keyKpiLabel).toBe('Reachability');
+    expect(amr?.keyKpiActual).toBe('53.0%');
+    expect(amr?.kpiCells?.find((c) => /booking/i.test(c.label))?.actualFormatted).toBe('30.5%');
+    expect(amr?.kpiCells?.find((c) => /quality/i.test(c.label))?.actualFormatted).toBe('96.0%');
+
+    const adham = role.members.find((m) => /adham sameh/i.test(m.personName));
+    expect(adham).toBeDefined();
+    expect(adham?.score).toBe(93.4);
+    expect(adham?.grade).toBe('B');
+    expect(adham?.gradeFullLabel).toBe('Meet Expectations');
+    expect(adham?.kpiCells?.find((c) => /booking/i.test(c.label))?.actualFormatted).toBe('62.0%');
+    expect(adham?.kpiCells?.find((c) => /aht/i.test(c.label))?.actualFormatted).toBe('2.73 min');
+    expect(adham?.kpiCells?.find((c) => /quality/i.test(c.label))?.actualFormatted).toBe('98.4%');
+    expect(adham?.kpiCells?.find((c) => /quality/i.test(c.label))?.metTarget).toBe(true);
+
+    // Individual action plan focuses on the member requiring action (Amr Badawy Mohamed)
+    const amrAction = role.individualActionPlans.find((p) => /amr badawy/i.test(p.personName));
+    expect(amrAction).toBeDefined();
+    expect(amrAction?.score).toBe(86.3);
+    expect(amrAction?.gradeFullLabel).toBe('Average');
+  });
+
+  it('combines Inbound Team Leader and Outbound Team Leader records into the single Team Leader role detail', () => {
+    const amrRecord: ExecRecord = {
+      ...person('amr-1', 'Amr Badawy Mohamed', 86.29, [
+        kpi('pos_outbound_team_leader_booking_cr', 'Booking CR%', 30.5, 30.0, 'higher_better', 1.0),
+        kpi('pos_outbound_team_leader_attended_cr', 'Attended CR%', 56.2, 65.0, 'higher_better', 0.86),
+        kpi('pos_outbound_team_leader_reachability', 'Reachability %', 53.0, 75.0, 'higher_better', 0.71),
+        kpi('pos_outbound_team_leader_quality_score', 'Quality Score', 96.0, 95.0, 'higher_better', 1.0),
+      ]),
+      team: 'Call Center',
+      position: 'Outbound Team Leader',
+    };
+
+    const adhamRecord: ExecRecord = {
+      ...person('adham-1', 'Adham Sameh Abdallah Arafa', 93.39, [
+        kpi('pos_inbound_team_leader_booking_cr', 'Booking CR%', 62.0, 65.0, 'higher_better', 0.95),
+        kpi('pos_inbound_team_leader_attended_cr', 'Attended CR%', 68.5, 75.0, 'higher_better', 0.91),
+        kpi('pos_inbound_team_leader_aht', 'AHT', 2.73, 2.5, 'lower_better', 0.91),
+        kpi('pos_inbound_team_leader_quality_score', 'Quality Score', 98.4, 95.0, 'higher_better', 1.0),
+      ]),
+      team: 'Call Center',
+      position: 'Inbound Team Leader',
+    };
+
+    const role = buildRoleDetail(CALL_CENTER_DEEP_DIVE_SEP_2026, 'team-leader', [], [amrRecord, adhamRecord]);
+    expect(role.roleTitle).toBe('Team Leader');
+    expect(role.headcount).toBe(2);
+    expect(role.below90Count).toBe(1);
+
+    const amrMember = role.members.find((m) => m.employeeId === 'amr-1');
+    expect(amrMember).toBeDefined();
+    expect(amrMember?.score).toBe(86.3);
+
+    const adhamMember = role.members.find((m) => m.employeeId === 'adham-1');
+    expect(adhamMember).toBeDefined();
+    expect(adhamMember?.score).toBe(93.4);
   });
 });
