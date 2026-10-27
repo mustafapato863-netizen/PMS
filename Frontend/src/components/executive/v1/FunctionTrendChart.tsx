@@ -28,7 +28,7 @@ export default function FunctionTrendChart({
   }
 
   const minimum = Math.max(0, Math.min(50, Math.floor(Math.min(...values) / 25) * 25));
-  const maximum = Math.max(100, Math.ceil(Math.max(...values) / 25) * 25);
+  const maximum = 100;
   const ticks = [minimum, (minimum + maximum) / 2, maximum];
   const plot = { left: 32, right: 304, top: 24, bottom: 94 };
   const axisFontSize = 9.5;

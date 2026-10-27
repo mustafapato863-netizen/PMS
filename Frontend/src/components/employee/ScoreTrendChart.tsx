@@ -196,23 +196,42 @@ export function ProfileKpiSixMonthTrend({
   // Chart geometry
   const width = 920;
   const height = 244;
-  const pad = { l: 82, r: 34, t: 30, b: 38 };
+  const pad = { l: 82, r: 34, t: 36, b: 38 };
   const allValues = points.flatMap((pt) =>
     [pt.actual, pt.target].filter((v): v is number => v !== null && Number.isFinite(v)),
   );
   const dataMin = allValues.length ? Math.min(...allValues) : 0;
-  const dataMax = allValues.length ? Math.max(...allValues) : 1;
-  const span = dataMax - dataMin || Math.max(1, Math.abs(dataMax) * 0.15);
-  const min = Math.max(0, dataMin - span * 0.24);
-  const max = dataMax + span * 0.26;
+  const dataMax = allValues.length ? Math.max(...allValues) : 100;
+  const unitKind = selected.unit.trim().toLowerCase();
+  const isPctUnit =
+    unitKind === '%' ||
+    unitKind === 'percent' ||
+    unitKind === 'percentage' ||
+    unitKind.includes('%');
+
+  let min: number;
+  let max: number;
+  if (isPctUnit) {
+    max = 100;
+    min = dataMin >= 45 ? 40 : 0;
+  } else {
+    const rawSpan = dataMax - dataMin;
+    const minSpan = Math.max(1, Math.abs(dataMax) * 0.35);
+    const span = Math.max(rawSpan, minSpan);
+    min = Math.max(0, dataMin - span * 0.5);
+    max = dataMax + span * 0.2;
+  }
   const domain = max - min || 1;
   const innerW = width - pad.l - pad.r;
   const innerH = height - pad.t - pad.b;
 
   const xAt = (idx: number) =>
     pad.l + (points.length <= 1 ? innerW / 2 : (idx / (points.length - 1)) * innerW);
-  // Standard Y mapping (or reversed when lower is better so visual up/down is clear with axis labels)
-  const yAt = (value: number) => pad.t + (1 - (value - min) / domain) * innerH;
+  // Standard Y mapping (clamped to [min, max] so percentage charts top out strictly at 100%)
+  const yAt = (value: number) => {
+    const clamped = Math.max(min, Math.min(max, value));
+    return pad.t + (1 - (clamped - min) / domain) * innerH;
+  };
   const baseline = pad.t + innerH;
 
   const actualCoords = points
@@ -416,7 +435,7 @@ export function ProfileKpiSixMonthTrend({
           </defs>
 
           {/* Horizontal Gridlines & Y-Axis Labels */}
-          {[0, 0.33, 0.66, 1].map((step) => {
+          {[0, 1 / 3, 2 / 3, 1].map((step) => {
             const value = min + domain * step;
             const y = yAt(value);
             return (
@@ -532,7 +551,7 @@ export function ProfileKpiSixMonthTrend({
             const missed = item.point.metTarget === false;
             const isPeak = item.idx === peakIndex;
             const isHovered = hoveredIdx === item.idx;
-            const labelY = item.y < pad.t + 22 ? item.y + 20 : item.y - 12;
+            const labelY = item.y < 20 ? item.y + 20 : item.y - 13;
 
             return (
               <g key={item.point.periodKey}>
@@ -703,7 +722,7 @@ const ScoreTrendChart = ({
           tick={{ fontSize: 12, fill: 'var(--text-muted)' }}
           axisLine={false}
           tickLine={false}
-          domain={[0, (dataMax: number) => Math.max(100, Math.ceil(dataMax / 10) * 10)]}
+          domain={[0, 100]}
         />
         <Tooltip content={<CustomTooltip />} />
 
