@@ -1,4 +1,4 @@
-import { isHossamRecord, type PMSAction } from '../../types';
+import { isHossamRecord, type AgentRecord, type PMSAction } from '../../types';
 import {
   kpiRows,
   periodFromKey,
@@ -6,7 +6,8 @@ import {
   type ExecRecord,
 } from '../executive/compose';
 import { executiveFunctionForTeam } from '../executive/functions';
-import { preApprovalsLeaderTeamTotal } from '../team/teamKpiAggregator';
+import { channelBoardScore, preApprovalsLeaderTeamTotal } from '../team/teamKpiAggregator';
+import { INBOUND_TEAM_CONFIG, OUTBOUND_TEAM_CONFIG } from './callCenterTeamConfigs';
 import type { ExecutivePeriod } from '../executive/types';
 import { gradeForScore, type GradeLetter } from './monthlyOverviewData';
 import {
@@ -274,16 +275,16 @@ export const INBOUND_TEAM_DEEP_DIVE_SEP_2026: TeamDeepDiveData = {
   previousMonthLabel: 'August',
   periodKey: '2026-09',
   summary: {
-    score: 91.5,
+    score: 92.6,
     grade: 'B',
     gradeFullLabel: 'Meet Expectations',
     target: 100.0,
-    gap: -8.5,
-    changeVsPrev: 1.2,
+    gap: -7.4,
+    changeVsPrev: -7.4,
     headcount: 35,
     averageOrBelowCount: 10,
     diagnosis:
-      'Inbound Agents carry the Call Center at 91.5% (Meet Expectations), up +1.2% vs August. 25 of 35 agents score ≥ 90%, while 10 Average-grade agents (83.9%–89.9%) are held back by AHT outliers (4.20–5.03 min vs 2.50 min target) and a stretched 65% Booking Rate target.',
+      'Inbound Agents carry the Call Center at 92.6% (Meet Expectations), down -7.4% vs August. 25 of 35 agents score ≥ 90%, while 10 Average-grade agents (83.9%–89.9%) are held back by AHT outliers (4.20–5.03 min vs 2.50 min target) and a stretched 65% Booking Rate target.',
   },
   kpis: [
     {
@@ -646,16 +647,16 @@ export const OUTBOUND_TEAM_DEEP_DIVE_SEP_2026: TeamDeepDiveData = {
   previousMonthLabel: 'August',
   periodKey: '2026-09',
   summary: {
-    score: 87.0,
+    score: 87.7,
     grade: 'C',
     gradeFullLabel: 'Average',
     target: 100.0,
-    gap: -13.0,
-    changeVsPrev: 10.4,
+    gap: -12.3,
+    changeVsPrev: 11.4,
     headcount: 7,
     averageOrBelowCount: 6,
     diagnosis:
-      'Outbound Agents rebounded +10.4% vs August to 87.0% (Average) after Booking Rate beat its recalibrated 30.0% target (32.4%). However, 6 of 7 agents remain in Average grade due to low Reachability (53.3% vs 75.0% target) and Attendance Rate (56.6% vs 65.0% target).',
+      'Outbound Agents rebounded +11.4% vs August to 87.7% (Average) after Booking Rate beat its recalibrated 30.0% target (32.4%). However, 6 of 7 agents remain in Average grade due to low Reachability (53.3% vs 75.0% target) and Attendance Rate (56.6% vs 65.0% target).',
   },
   kpis: [
     {
@@ -1166,8 +1167,19 @@ function buildGenericTeamDeepDive(
 
   const leaderNow = preApprovalsLeaderTeamTotal(current);
   const leaderPrev = preApprovalsLeaderTeamTotal(before);
-  const score = leaderNow ?? round1(mean(current.map((record) => record.score)) ?? located?.data.agentTeams[located.teamIndex].score ?? 0);
-  const prevScore = leaderPrev ?? mean(before.map((record) => record.score));
+  const currentAgents = current.map((record) => record.rawAgent).filter((a): a is AgentRecord => Boolean(a));
+  const beforeAgents = before.map((record) => record.rawAgent).filter((a): a is AgentRecord => Boolean(a));
+  const cfg = canonicalTeam === 'Inbound' ? INBOUND_TEAM_CONFIG : canonicalTeam === 'Outbound' ? OUTBOUND_TEAM_CONFIG : undefined;
+  const currAvg = mean(current.map((record) => record.score));
+  const beforeAvg = mean(before.map((record) => record.score));
+  const pooledScore = cfg && currentAgents.length > 0 && currAvg !== null
+    ? channelBoardScore({ agents: currentAgents, config: cfg, employeeAverage: currAvg })
+    : null;
+  const pooledBefore = cfg && beforeAgents.length > 0 && beforeAvg !== null
+    ? channelBoardScore({ agents: beforeAgents, config: cfg, employeeAverage: beforeAvg })
+    : null;
+  const score = leaderNow ?? pooledScore ?? round1(currAvg ?? located?.data.agentTeams[located.teamIndex].score ?? 0);
+  const prevScore = leaderPrev ?? pooledBefore ?? beforeAvg;
   const changeVsPrev = prevScore !== null ? round1(score - round1(prevScore)) : located?.data.agentTeams[located.teamIndex].changeVsPrev ?? 0;
   const grade = gradeForScore(score);
   const headcount = new Set(current.map((record) => record.employeeId)).size;
@@ -1392,8 +1404,18 @@ export function buildTeamDeepDiveFromRecords(
     return withCallCenterNav({ ...fallback, teamSlug: normalizedSlug }, region);
   }
 
-  const score = round1(mean(current.map((r) => r.score)) ?? fallback.summary.score);
-  const prevScore = mean(before.map((r) => r.score));
+  const cfg = canonicalTeam === 'Outbound' ? OUTBOUND_TEAM_CONFIG : INBOUND_TEAM_CONFIG;
+  const currentAgents = current.map((r) => r.rawAgent).filter((a): a is AgentRecord => Boolean(a));
+  const beforeAgents = before.map((r) => r.rawAgent).filter((a): a is AgentRecord => Boolean(a));
+  const currAvg = mean(current.map((r) => r.score)) ?? fallback.summary.score;
+  const beforeAvg = mean(before.map((r) => r.score));
+
+  const score = currentAgents.length > 0
+    ? (channelBoardScore({ agents: currentAgents, config: cfg, employeeAverage: currAvg }) ?? round1(currAvg))
+    : fallback.summary.score;
+  const prevScore = beforeAgents.length > 0 && beforeAvg !== null
+    ? (channelBoardScore({ agents: beforeAgents, config: cfg, employeeAverage: beforeAvg }) ?? round1(beforeAvg))
+    : beforeAvg;
   const changeVsPrev =
     prevScore !== null ? round1(score - round1(prevScore)) : fallback.summary.changeVsPrev;
   const grade = gradeForScore(score);

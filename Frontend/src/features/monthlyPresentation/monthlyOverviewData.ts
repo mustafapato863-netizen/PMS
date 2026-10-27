@@ -297,10 +297,10 @@ export const OFFSHORE_EGYPT_SEP_2026_DATA: MonthlyOverviewData = {
     {
       functionName: 'Call Center',
       slug: 'call-center',
-      score: 90.8,
+      score: 90.4,
       grade: 'B',
-      gap: -9.2,
-      change: 2.9,
+      gap: -9.6,
+      change: 3.3,
       teamsCount: 2,
       headcount: 42,
       teamsList: 'Inbound · Outbound',
@@ -387,9 +387,9 @@ export const OFFSHORE_EGYPT_SEP_2026_DATA: MonthlyOverviewData = {
     {
       team: 'Outbound',
       functionName: 'Call Center',
-      score: 87.0,
+      score: 87.7,
       grade: 'C',
-      gap: -13.0,
+      gap: -12.3,
       flags: ['Grade C', 'Lowest in function'],
     },
     {

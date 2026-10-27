@@ -158,17 +158,17 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
     expect(
       screen.getByRole('heading', { name: 'Call Center Deep Dive' }),
     ).toBeInTheDocument();
-    expect(screen.getByTestId('deep-dive-function-score')).toHaveTextContent('90.8%');
+    expect(screen.getByTestId('deep-dive-function-score')).toHaveTextContent('90.4%');
 
     // Layer 1: Inbound & Outbound Agent Team Cards
     const inboundCard = screen.getByTestId('agent-team-card-inbound-agents');
     expect(within(inboundCard).getByText('Inbound Agents')).toBeInTheDocument();
-    expect(within(inboundCard).getByText('91.5%')).toBeInTheDocument();
+    expect(within(inboundCard).getByText('92.6%')).toBeInTheDocument();
     expect(within(inboundCard).getByText('35 agents')).toBeInTheDocument();
 
     const outboundCard = screen.getByTestId('agent-team-card-outbound-agents');
     expect(within(outboundCard).getByText('Outbound Agents')).toBeInTheDocument();
-    expect(within(outboundCard).getByText('87.0%')).toBeInTheDocument();
+    expect(within(outboundCard).getByText('87.7%')).toBeInTheDocument();
     expect(within(outboundCard).getByText('7 agents')).toBeInTheDocument();
 
     // Layer 2: Support Positions with real holders
@@ -210,7 +210,7 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
     expect(within(breadcrumb).getByText('Overview')).toBeInTheDocument();
     expect(within(breadcrumb).getByText('Call Center')).toBeInTheDocument();
     expect(within(breadcrumb).getByText('Inbound Agents')).toBeInTheDocument();
-    expect(screen.getByTestId('team-deep-dive-score')).toHaveTextContent('91.5%');
+    expect(screen.getByTestId('team-deep-dive-score')).toHaveTextContent('92.6%');
     expect(screen.getByText('Meet Expectations')).toBeInTheDocument();
 
     // 2. Key Team KPIs — headcount "met" chip is gone; arrow color follows KPI direction
@@ -260,7 +260,7 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
 
     // Switch to Outbound Agents via team switcher
     fireEvent.click(screen.getByTestId('switch-team-outbound'));
-    expect(screen.getByTestId('team-deep-dive-score')).toHaveTextContent('87.0%');
+    expect(screen.getByTestId('team-deep-dive-score')).toHaveTextContent('87.7%');
     expect(
       within(screen.getByTestId('agents-average-below-table')).getByText(
         'Rawan Mohamed Salah Elnajjar',
@@ -658,7 +658,7 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
     expectDrillLink('Open Team');
     expectDrillLink('Open role detail');
     const inbound = screen.getByTestId('agent-team-card-inbound-agents');
-    expect(within(inbound).getByText('91.5%')).toBeInTheDocument();
+    expect(within(inbound).getByText('92.6%')).toBeInTheDocument();
     expect(within(inbound).getByText('Meet Expectations')).toBeInTheDocument();
     expect(within(inbound).getByText('Gap')).toBeInTheDocument();
     expect(within(inbound).getByText(/Diagnosis:/)).toBeInTheDocument();
@@ -772,7 +772,7 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
       screen.getAllByTestId(/^team-action-due-/).some((node) => node.textContent?.trim() === 'No due date'),
     ).toBe(true);
     expect(screen.getByText(/Deploy live AHT pacing alerts/i)).toBeInTheDocument();
-    expect(screen.getByTestId('team-deep-dive-score')).toHaveTextContent('91.5%');
+    expect(screen.getByTestId('team-deep-dive-score')).toHaveTextContent('92.6%');
 
     fireEvent.click(screen.getByTestId('back-to-call-center-deep-dive'));
     fireEvent.click(screen.getByTestId('back-to-monthly-overview'));
@@ -822,7 +822,7 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
     expect(
       screen.getAllByTestId(/^team-action-owner-/).every((node) => (node.textContent?.trim().length ?? 0) > 0),
     ).toBe(true);
-    expect(screen.getByTestId('team-deep-dive-score')).toHaveTextContent('91.5%');
+    expect(screen.getByTestId('team-deep-dive-score')).toHaveTextContent('92.6%');
 
     fireEvent.click(screen.getByTestId('back-to-call-center-deep-dive'));
     fireEvent.click(screen.getByTestId('back-to-monthly-overview'));

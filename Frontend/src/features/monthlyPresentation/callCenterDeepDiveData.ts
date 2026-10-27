@@ -1,4 +1,4 @@
-import type { PMSAction } from '../../types';
+import type { AgentRecord, PMSAction } from '../../types';
 import { GRADE_PALETTE, getGradeClass } from '../../constants/grades';
 import {
   kpiRows,
@@ -8,7 +8,12 @@ import {
   type ExecRecord,
 } from '../executive/compose';
 import { executiveFunctionForTeam } from '../executive/functions';
-import { preApprovalsLeaderTeamTotal } from '../team/teamKpiAggregator';
+import {
+  averagePrintedChannelScores,
+  channelBoardScore,
+  preApprovalsLeaderTeamTotal,
+} from '../team/teamKpiAggregator';
+import { INBOUND_TEAM_CONFIG, OUTBOUND_TEAM_CONFIG } from './callCenterTeamConfigs';
 import type { ExecutivePeriod } from '../executive/types';
 import { gradeForScore, UAE_SEP_2026_DATA, type GradeLetter } from './monthlyOverviewData';
 
@@ -346,12 +351,12 @@ export const CALL_CENTER_DEEP_DIVE_SEP_2026: CallCenterDeepDiveData = {
   periodKey: '2026-09',
   pageIndicator: 'Page 2 of 6 · Function Deep Dive',
   headline: {
-    score: 90.8,
+    score: 90.4,
     grade: 'B',
     gradeLabel: 'Meet Expectations',
     target: 100.0,
-    gap: -9.2,
-    changeVsPrev: 2.9,
+    gap: -9.6,
+    changeVsPrev: 3.3,
     narrative:
       'Agent performance is the main measurement. Trainer is having clear positive impact, while other support positions need stronger linkage to agent KPIs.',
     measuredTeamsCount: 2,
@@ -366,16 +371,16 @@ export const CALL_CENTER_DEEP_DIVE_SEP_2026: CallCenterDeepDiveData = {
       teamName: 'Inbound Agents',
       roleTag: 'Carrying Function',
       roleTone: 'positive',
-      score: 91.5,
+      score: 92.6,
       grade: 'B',
       gradeLabel: 'Meet Expectations',
       target: 100.0,
-      gap: -8.5,
-      changeVsPrev: 1.2,
+      gap: -7.4,
+      changeVsPrev: -7.4,
       headcount: 35,
       memberUnitLabel: 'agents',
       diagnosis:
-        'Carrying the Call Center score with 35 measured agents averaging 91.5% (+1.2% vs August). Quality Score (95.6% vs 95% target) and Booking Rate recovery (60.3%) offset AHT pressure (3.01 min vs 2.50 min target).',
+        'Carrying the Call Center score with 35 measured agents at 92.6% (-7.4% vs August). Quality Score (95.6% vs 95% target) and Booking Rate recovery (60.3%) offset AHT pressure (3.01 min vs 2.50 min target).',
       keyStrengthOrDrag: 'Primary carrier · 35 agents (83% of function headcount)',
     },
     {
@@ -385,16 +390,16 @@ export const CALL_CENTER_DEEP_DIVE_SEP_2026: CallCenterDeepDiveData = {
       teamName: 'Outbound Agents',
       roleTag: 'Pulling Average Down',
       roleTone: 'warning',
-      score: 87.0,
+      score: 87.7,
       grade: 'C',
       gradeLabel: 'Average',
       target: 100.0,
-      gap: -13.0,
-      changeVsPrev: 10.4,
+      gap: -12.3,
+      changeVsPrev: 11.4,
       headcount: 7,
       memberUnitLabel: 'agents',
       diagnosis:
-        'Rebounded +10.4% vs August (from 76.6% to 87.0%) as Booking Rate beat the 30% target (32.4%), but Reachability (53.3% vs 75% target) and Attendance Rate (56.6% vs 65% target) still pull the function average down.',
+        'Rebounded +11.4% vs August (from 76.3% to 87.7%) as Booking Rate beat the 30% target (32.4%), but Reachability (53.3% vs 75% target) and Attendance Rate (56.6% vs 65% target) still pull the function average down.',
       keyStrengthOrDrag: 'Main drag · 6 of 7 agents below 90% threshold',
     },
   ],
@@ -430,7 +435,7 @@ export const CALL_CENTER_DEEP_DIVE_SEP_2026: CallCenterDeepDiveData = {
       linkedKpis: ['Attendance Rate', 'AHT (Handle Time)', 'Reachability'],
       evidenceStat: 'Inbound TL 93.4% (Grade B) · Outbound TL 86.3% (Grade C)',
       explanation:
-        'Inbound floor supervision keeps team average at 91.5%, whereas Outbound supervision has not yet resolved the Reachability (53.3% vs 75%) and Attendance (56.6% vs 65%) gaps.',
+        'Inbound floor supervision keeps team at 92.6%, whereas Outbound supervision has not yet resolved the Reachability (53.3% vs 75%) and Attendance (56.6% vs 65%) gaps.',
     },
     {
       id: 'pos-wfm',
@@ -610,7 +615,7 @@ export const CALL_CENTER_DEEP_DIVE_SEP_2026: CallCenterDeepDiveData = {
           'Restructure Outbound calling windows & enforce daily shift attendance check-ins for 6 Outbound agents below 90%',
         targetScope: 'Outbound Reachability (53.3% → 68%) & Attendance (56.6% → 65%)',
         expectedImpactPct: 1.5,
-        expectedKpiOutcome: 'Lifts Outbound team average from 87.0% → ~91.2% (Grade B)',
+        expectedKpiOutcome: 'Lifts Outbound team score from 87.7% → ~91.2% (Grade B)',
       },
       {
         id: 'act-wfm',
@@ -2102,10 +2107,22 @@ export function buildCallCenterDeepDiveFromRecords(
     return fallback;
   }
 
-  const inboundScore = round1(
-    mean(inboundCurr.map((r) => r.score)) ?? fallback.agentTeams[0].score,
-  );
-  const inboundPrevScore = mean(inboundPrev.map((r) => r.score));
+  const inboundAgents = inboundCurr.map((r) => r.rawAgent).filter((a): a is AgentRecord => Boolean(a));
+  const inboundPrevAgents = inboundPrev.map((r) => r.rawAgent).filter((a): a is AgentRecord => Boolean(a));
+  const outboundAgents = outboundCurr.map((r) => r.rawAgent).filter((a): a is AgentRecord => Boolean(a));
+  const outboundPrevAgents = outboundPrev.map((r) => r.rawAgent).filter((a): a is AgentRecord => Boolean(a));
+
+  const inbAvg = mean(inboundCurr.map((r) => r.score)) ?? fallback.agentTeams[0].score;
+  const inbPrevAvg = mean(inboundPrev.map((r) => r.score));
+  const outAvg = mean(outboundCurr.map((r) => r.score)) ?? fallback.agentTeams[1].score;
+  const outPrevAvg = mean(outboundPrev.map((r) => r.score));
+
+  const inboundScore = inboundAgents.length > 0
+    ? (channelBoardScore({ agents: inboundAgents, config: INBOUND_TEAM_CONFIG, employeeAverage: inbAvg }) ?? round1(inbAvg))
+    : fallback.agentTeams[0].score;
+  const inboundPrevScore = inboundPrevAgents.length > 0 && inbPrevAvg !== null
+    ? (channelBoardScore({ agents: inboundPrevAgents, config: INBOUND_TEAM_CONFIG, employeeAverage: inbPrevAvg }) ?? round1(inbPrevAvg))
+    : inbPrevAvg;
   const inboundChange =
     inboundPrevScore !== null
       ? round1(inboundScore - round1(inboundPrevScore))
@@ -2113,10 +2130,12 @@ export function buildCallCenterDeepDiveFromRecords(
   const inboundGrade = gradeForScore(inboundScore);
   const inboundHc = new Set(inboundCurr.map((r) => r.employeeId)).size;
 
-  const outboundScore = round1(
-    mean(outboundCurr.map((r) => r.score)) ?? fallback.agentTeams[1].score,
-  );
-  const outboundPrevScore = mean(outboundPrev.map((r) => r.score));
+  const outboundScore = outboundAgents.length > 0
+    ? (channelBoardScore({ agents: outboundAgents, config: OUTBOUND_TEAM_CONFIG, employeeAverage: outAvg }) ?? round1(outAvg))
+    : fallback.agentTeams[1].score;
+  const outboundPrevScore = outboundPrevAgents.length > 0 && outPrevAvg !== null
+    ? (channelBoardScore({ agents: outboundPrevAgents, config: OUTBOUND_TEAM_CONFIG, employeeAverage: outPrevAvg }) ?? round1(outPrevAvg))
+    : outPrevAvg;
   const outboundChange =
     outboundPrevScore !== null
       ? round1(outboundScore - round1(outboundPrevScore))
@@ -2124,17 +2143,26 @@ export function buildCallCenterDeepDiveFromRecords(
   const outboundGrade = gradeForScore(outboundScore);
   const outboundHc = new Set(outboundCurr.map((r) => r.employeeId)).size;
 
-  // Overall Call Center Function Score (across Call Center records in scope)
-  const scopedCurr = inPeriod(
-    ccRecords.filter((r) => !region || r.region === region || r.team === 'Call Center'),
-    effective,
-  );
-  const scopedPrev = inPeriod(
-    ccRecords.filter((r) => !region || r.region === region || r.team === 'Call Center'),
-    previous,
-  );
-  const fnScore = round1(mean(scopedCurr.map((r) => r.score)) ?? fallback.headline.score);
-  const fnPrevScore = mean(scopedPrev.map((r) => r.score));
+  // Support Positions: evaluated average across Call Center support position records
+  const supportRecords = ccRecords.filter((r) => r.team === 'Call Center' && r.position);
+  const supportCurr = inPeriod(supportRecords, effective);
+  const supportPrev = inPeriod(supportRecords, previous);
+  const supportScore = round1(mean(supportCurr.map((r) => r.score)) ?? 91.0);
+  const supportPrevScore = mean(supportPrev.map((r) => r.score));
+
+  // Overall Call Center Function Score is the unweighted average of the 3 groups
+  // (Inbound, Outbound, Support Positions), matching the Team Dashboard.
+  const fnScore = averagePrintedChannelScores([
+    { score: inboundScore, count: inboundHc },
+    { score: outboundScore, count: outboundHc },
+    { score: supportScore, count: supportCurr.length || 4 },
+  ]) ?? fallback.headline.score;
+
+  const fnPrevScore = averagePrintedChannelScores([
+    { score: inboundPrevScore, count: inboundPrev.length },
+    { score: outboundPrevScore, count: outboundPrev.length },
+    { score: supportPrevScore, count: supportPrev.length },
+  ]);
   const fnChange =
     fnPrevScore !== null
       ? round1(fnScore - round1(fnPrevScore))
@@ -2175,7 +2203,7 @@ export function buildCallCenterDeepDiveFromRecords(
     memberUnitLabel: 'agents',
     diagnosis:
       inbWeakest && inbStrongest
-        ? `Carrying the Call Center score with ${inboundHc} measured agents averaging ${inboundScore.toFixed(1)}% (${inboundChange >= 0 ? '+' : ''}${inboundChange.toFixed(1)}% vs ${previous?.month ?? 'prior month'}). Strong ${inbStrongest.kpi_label} (${formatKpiValue(inbStrongest.actual, inbStrongest.unit)} vs ${formatKpiValue(inbStrongest.target, inbStrongest.unit)} target) offsets pressure on ${inbWeakest.kpi_label} (${formatKpiValue(inbWeakest.actual, inbWeakest.unit)} vs ${formatKpiValue(inbWeakest.target, inbWeakest.unit)} target).`
+        ? `Carrying the Call Center score with ${inboundHc} measured agents at ${inboundScore.toFixed(1)}% (${inboundChange >= 0 ? '+' : ''}${inboundChange.toFixed(1)}% vs ${previous?.month ?? 'prior month'}). Strong ${inbStrongest.kpi_label} (${formatKpiValue(inbStrongest.actual, inbStrongest.unit)} vs ${formatKpiValue(inbStrongest.target, inbStrongest.unit)} target) offsets pressure on ${inbWeakest.kpi_label} (${formatKpiValue(inbWeakest.actual, inbWeakest.unit)} vs ${formatKpiValue(inbWeakest.target, inbWeakest.unit)} target).`
         : fallback.agentTeams[0].diagnosis,
     keyStrengthOrDrag: `Primary carrier · ${inboundHc} agents (${Math.round((inboundHc / Math.max(1, totalMeasuredAgents)) * 100)}% of measured headcount)`,
   };
@@ -2203,7 +2231,6 @@ export function buildCallCenterDeepDiveFromRecords(
   };
 
   // Layer 2: Support Positions derived from real Call Center position records
-  const supportRecords = ccRecords.filter((r) => r.team === 'Call Center' && r.position);
   const findSupportLatest = (matchFn: (pos: string) => boolean) => {
     const matching = supportRecords
       .filter((r) => matchFn((r.position ?? '').toLowerCase()))

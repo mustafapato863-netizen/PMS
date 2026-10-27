@@ -12,7 +12,15 @@ import { normalizePercentageKpiForDisplay } from '../../components/common/perfor
 import { GRADE_CLASSES, getGradeClassOrNull, type GradeClass } from '../../constants/grades';
 import { CALL_CENTER_TEAM, RCM_TEAM, canonicalTeamName, isMergedBranchTeam, sameEgyptRcmTeam, type AgentRecord } from '../../types';
 import type { TeamConfig } from '../../schemas/teamConfig.schema';
-import { calculateAggregatedTeamPerformance, displayedTeamScore, preApprovalsLeaderTeamTotal, recordsUseAppliedPin } from '../team/teamKpiAggregator';
+import {
+  averagePrintedChannelScores,
+  calculateAggregatedTeamPerformance,
+  channelBoardScore,
+  displayedTeamScore,
+  preApprovalsLeaderTeamTotal,
+  recordsUseAppliedPin,
+} from '../team/teamKpiAggregator';
+import { INBOUND_TEAM_CONFIG, OUTBOUND_TEAM_CONFIG } from '../monthlyPresentation/callCenterTeamConfigs';
 import { normalizePerformanceScore } from '../../utils/kpiScore';
 import { kpiCountsInScore } from '../../utils/kpiCountsInScore';
 import { compareScoringBasis, type BasisRecord } from '../evaluation/scoringBasisComparison';
@@ -759,10 +767,61 @@ function functionCards(scoped: ExecRecord[], effective: ExecutivePeriod, previou
     const current = inPeriod(records, effective);
     if (!current.length) return [];
     const previousRows = inPeriod(records, previous);
-    const score = scoreOf(current);
-    const previousScore = scoreOf(previousRows);
+    let score = scoreOf(current);
+    let previousScore = scoreOf(previousRows);
+    if (name === 'Call Center' && !rangeMonths) {
+      const inbCurr = current.filter((r) => r.team === 'Inbound');
+      const outCurr = current.filter((r) => r.team === 'Outbound');
+      const supCurr = current.filter((r) => r.team === 'Call Center');
+      const inbAgents = inbCurr.map((r) => r.rawAgent).filter((a): a is AgentRecord => Boolean(a));
+      const outAgents = outCurr.map((r) => r.rawAgent).filter((a): a is AgentRecord => Boolean(a));
+      const inbAvg = scoreOf(inbCurr);
+      const outAvg = scoreOf(outCurr);
+      const supAvg = scoreOf(supCurr);
+      const inbScore = inbAgents.length > 0 && inbAvg !== null
+        ? channelBoardScore({ agents: inbAgents, config: INBOUND_TEAM_CONFIG, employeeAverage: inbAvg })
+        : inbAvg;
+      const outScore = outAgents.length > 0 && outAvg !== null
+        ? channelBoardScore({ agents: outAgents, config: OUTBOUND_TEAM_CONFIG, employeeAverage: outAvg })
+        : outAvg;
+      const overall = averagePrintedChannelScores([
+        { score: inbScore, count: inbCurr.length },
+        { score: outScore, count: outCurr.length },
+        { score: supAvg, count: supCurr.length },
+      ]);
+      if (overall !== null) score = overall;
+
+      if (previousRows.length > 0) {
+        const inbPrev = previousRows.filter((r) => r.team === 'Inbound');
+        const outPrev = previousRows.filter((r) => r.team === 'Outbound');
+        const supPrev = previousRows.filter((r) => r.team === 'Call Center');
+        const inbPrevAgents = inbPrev.map((r) => r.rawAgent).filter((a): a is AgentRecord => Boolean(a));
+        const outPrevAgents = outPrev.map((r) => r.rawAgent).filter((a): a is AgentRecord => Boolean(a));
+        const inbPrevAvg = scoreOf(inbPrev);
+        const outPrevAvg = scoreOf(outPrev);
+        const supPrevAvg = scoreOf(supPrev);
+        const inbPrevScore = inbPrevAgents.length > 0 && inbPrevAvg !== null
+          ? channelBoardScore({ agents: inbPrevAgents, config: INBOUND_TEAM_CONFIG, employeeAverage: inbPrevAvg })
+          : inbPrevAvg;
+        const outPrevScore = outPrevAgents.length > 0 && outPrevAvg !== null
+          ? channelBoardScore({ agents: outPrevAgents, config: OUTBOUND_TEAM_CONFIG, employeeAverage: outPrevAvg })
+          : outPrevAvg;
+        const prevOverall = averagePrintedChannelScores([
+          { score: inbPrevScore, count: inbPrev.length },
+          { score: outPrevScore, count: outPrev.length },
+          { score: supPrevAvg, count: supPrev.length },
+        ]);
+        if (prevOverall !== null) previousScore = prevOverall;
+      }
+    }
     const monthlyFunction = monthlyRecords.filter((record) => executiveFunctionForTeam(record.team, teamFunctions) === name);
     const trend = trendOf(monthlyFunction, effective);
+    if (name === 'Call Center' && !rangeMonths) {
+      trend.forEach((pt) => {
+        if (pt.period.key === effective.key && score !== null) pt.score = score;
+        if (previous && pt.period.key === previous.key && previousScore !== null) pt.score = previousScore;
+      });
+    }
     return [{
       function: name,
       score,
