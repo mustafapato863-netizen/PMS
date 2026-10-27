@@ -640,9 +640,16 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
       for (const link of links) {
         expect(link.className).toContain('text-blue-700');
         expect(link.className).toContain('group-hover:text-blue-950');
-        expect(link.className).toContain('group-hover:underline');
+        if (label === 'Open Team' || label === 'Open role detail') {
+          expect(link.className).toContain('group-hover:bg-blue-100');
+          expect(link.className).not.toContain('group-hover:underline');
+        } else {
+          expect(link.className).toContain('group-hover:underline');
+        }
         expect(link.querySelector('svg')?.getAttribute('class') ?? '').toContain(
-          'group-hover:translate-x-1',
+          label === 'Open Team' || label === 'Open role detail'
+            ? 'group-hover:translate-x-0.5'
+            : 'group-hover:translate-x-1',
         );
       }
     };

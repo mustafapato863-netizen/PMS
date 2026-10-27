@@ -4,6 +4,7 @@ import {
   CheckCircle2,
   Headphones,
   PhoneOutgoing,
+  ShieldCheck,
   Target,
   Users,
 } from 'lucide-react';
@@ -14,6 +15,7 @@ import { CALL_CENTER_CHANNEL_LABELS, callCenterChannelForTeam, type CallCenterCh
 import { GRADE_PALETTE, getGradeClassOrNull } from '../../constants/grades';
 
 type CallCenterChannel = Exclude<CallCenterChannelFilter, 'all'>;
+type CallCenterGroupKey = CallCenterChannel | 'support';
 
 interface ChannelKpiAnalysis {
   channel: CallCenterChannel;
@@ -23,43 +25,58 @@ interface ChannelKpiAnalysis {
 interface CallCenterChannelSummaryProps {
   rows: TeamAgentRow[];
   onChannelSelect: (channel: Exclude<CallCenterChannelFilter, 'all'>) => void;
+  onSupportSelect?: () => void;
   channelKpiAnalysis?: ChannelKpiAnalysis[];
   /**
-   * Team score for each channel, from the same headline as that channel's board.
+   * Team score for each channel (from that channel's pooled KPI board), plus
+   * optional Support Positions average score.
    * Absent only for a summary that has not loaded channel configs yet.
    */
-  channelScores?: Partial<Record<CallCenterChannel, number | null>>;
+  channelScores?: Partial<Record<CallCenterGroupKey, number | null>>;
 }
 
 const CHANNELS: CallCenterChannel[] = ['inbound', 'outbound'];
 
-const CHANNEL_META: Record<Exclude<CallCenterChannelFilter, 'all'>, {
+const GROUP_META: Record<CallCenterGroupKey, {
+  label: string;
   icon: typeof Activity;
   tone: string;
   accent: string;
   glow: string;
 }> = {
   inbound: {
+    label: CALL_CENTER_CHANNEL_LABELS.inbound,
     icon: Headphones,
     tone: 'bg-cyan-500/10 text-cyan-600 dark:bg-cyan-400/15 dark:text-cyan-300',
     accent: 'bg-cyan-500',
     glow: 'hover:border-cyan-300/80 hover:shadow-[0_0_28px_rgba(6,182,212,0.24)] dark:hover:border-cyan-400/60 dark:hover:shadow-[0_0_34px_rgba(34,211,238,0.25)]',
   },
   outbound: {
+    label: CALL_CENTER_CHANNEL_LABELS.outbound,
     icon: PhoneOutgoing,
     tone: 'bg-indigo-500/10 text-indigo-600 dark:bg-indigo-400/15 dark:text-indigo-300',
     accent: 'bg-indigo-500',
     glow: 'hover:border-indigo-300/80 hover:shadow-[0_0_28px_rgba(99,102,241,0.24)] dark:hover:border-indigo-400/60 dark:hover:shadow-[0_0_34px_rgba(129,140,248,0.25)]',
   },
+  support: {
+    label: 'Support Positions',
+    icon: ShieldCheck,
+    tone: 'bg-emerald-500/10 text-emerald-600 dark:bg-emerald-400/15 dark:text-emerald-300',
+    accent: 'bg-emerald-500',
+    glow: 'hover:border-emerald-300/80 hover:shadow-[0_0_28px_rgba(16,185,129,0.24)] dark:hover:border-emerald-400/60 dark:hover:shadow-[0_0_34px_rgba(52,211,153,0.25)]',
+  },
 };
 
-type ChannelSnapshot = {
-  channel: Exclude<CallCenterChannelFilter, 'all'>;
+type GroupSnapshot = {
+  key: CallCenterGroupKey;
+  channel: CallCenterChannel | null;
+  label: string;
+  scoreBasisLabel: string;
   count: number;
   score: number | null;
 };
 
-// Channel score signal follows the employee A–E grade palette (global `.grade-A` … `.grade-E`).
+// Group score signal follows the employee A–E grade palette (global `.grade-A` … `.grade-E`).
 const getSignal = (score: number | null) => {
   const grade = getGradeClassOrNull(score);
   if (!grade) return {
@@ -79,42 +96,82 @@ const formatKpiValue = (value: number, unit: TeamKpiAnalysis['unit']) => {
   return value.toFixed(1);
 };
 
-const CallCenterChannelSummary = ({ rows, onChannelSelect, channelKpiAnalysis = [], channelScores }: CallCenterChannelSummaryProps) => {
+const rowDisplayScore = (row: TeamAgentRow) => row.displayWeightedScore ?? row.score;
+
+const CallCenterChannelSummary = ({
+  rows,
+  onChannelSelect,
+  onSupportSelect,
+  channelKpiAnalysis = [],
+  channelScores,
+}: CallCenterChannelSummaryProps) => {
   const usesChannelBoardScores = channelScores !== undefined;
-  const snapshots: ChannelSnapshot[] = CHANNELS.map((channel) => {
+
+  const channelSnapshots: GroupSnapshot[] = CHANNELS.map((channel) => {
     const channelRows = rows.filter((row) => callCenterChannelForTeam(row.raw.identity.team) === channel);
     const employeeAverage = channelRows.length > 0
-      ? channelRows.reduce((sum, row) => sum + row.score, 0) / channelRows.length
+      ? channelRows.reduce((sum, row) => sum + rowDisplayScore(row), 0) / channelRows.length
       : null;
     const boardScore = channelScores?.[channel];
     return {
+      key: channel,
       channel,
+      label: CALL_CENTER_CHANNEL_LABELS[channel],
+      scoreBasisLabel: usesChannelBoardScores ? 'Team score' : 'Average employee score',
       count: channelRows.length,
       score: usesChannelBoardScores ? (boardScore ?? null) : employeeAverage,
     };
   });
 
-  const scoredSnapshots = snapshots.filter((snapshot): snapshot is ChannelSnapshot & { score: number } => snapshot.score !== null);
-  const leadChannel = scoredSnapshots.length > 0
-    ? scoredSnapshots.reduce((best, snapshot) => snapshot.score > best.score ? snapshot : best)
+  const supportRows = rows.filter((row) => callCenterChannelForTeam(row.raw.identity.team) === null);
+  const supportEmployeeAverage = supportRows.length > 0
+    ? supportRows.reduce((sum, row) => sum + rowDisplayScore(row), 0) / supportRows.length
     : null;
-  const focusChannel = scoredSnapshots.length > 0
-    ? scoredSnapshots.reduce((lowest, snapshot) => snapshot.score < lowest.score ? snapshot : lowest)
+  const explicitSupportScore = channelScores?.support;
+  const supportScore = explicitSupportScore !== undefined ? explicitSupportScore : supportEmployeeAverage;
+  const supportEffectiveCount = supportRows.length > 0 ? supportRows.length : (supportScore !== null ? 1 : 0);
+
+  const supportSnapshot: GroupSnapshot = {
+    key: 'support',
+    channel: null,
+    label: GROUP_META.support.label,
+    scoreBasisLabel: 'Average score',
+    count: supportRows.length,
+    score: supportScore,
+  };
+
+  const snapshots: GroupSnapshot[] = [...channelSnapshots, supportSnapshot];
+
+  const scoredChannelSnapshots = channelSnapshots.filter(
+    (snapshot): snapshot is GroupSnapshot & { channel: CallCenterChannel; score: number } => (
+      snapshot.channel !== null && snapshot.score !== null
+    ),
+  );
+  const leadChannel = scoredChannelSnapshots.length > 0
+    ? scoredChannelSnapshots.reduce((best, snapshot) => snapshot.score > best.score ? snapshot : best)
+    : null;
+  const focusChannel = scoredChannelSnapshots.length > 0
+    ? scoredChannelSnapshots.reduce((lowest, snapshot) => snapshot.score < lowest.score ? snapshot : lowest)
     : null;
   const scoreSpread = leadChannel && focusChannel ? leadChannel.score - focusChannel.score : null;
   const totalEmployees = snapshots.reduce((sum, snapshot) => sum + snapshot.count, 0);
   const channelsAreClose = scoreSpread !== null && scoreSpread < 1;
+
   const employeeAverage = rows.length > 0
-    ? rows.reduce((sum, row) => sum + row.score, 0) / rows.length
+    ? rows.reduce((sum, row) => sum + rowDisplayScore(row), 0) / rows.length
     : null;
   const overallScore = usesChannelBoardScores
-    ? averagePrintedChannelScores(snapshots)
+    ? averagePrintedChannelScores([
+        ...channelSnapshots,
+        { score: supportScore, count: supportEffectiveCount },
+      ])
     : employeeAverage;
+
   const impactingEmployees = overallScore === null
     ? []
     : rows
-      .filter((row) => row.score < overallScore)
-      .sort((left, right) => left.score - right.score)
+      .filter((row) => rowDisplayScore(row) < overallScore)
+      .sort((left, right) => rowDisplayScore(left) - rowDisplayScore(right))
       .slice(0, 3);
   const primaryDrag = channelKpiAnalysis
     .flatMap(({ channel, analyses }) => analyses.map((analysis) => ({ channel, analysis })))
@@ -128,8 +185,18 @@ const CallCenterChannelSummary = ({ rows, onChannelSelect, channelKpiAnalysis = 
     ? `${CALL_CENTER_CHANNEL_LABELS[primaryDrag.channel]} · ${primaryDrag.analysis.label} is ${formatKpiValue(primaryDrag.analysis.actual, primaryDrag.analysis.unit)} against ${formatKpiValue(primaryDrag.analysis.target, primaryDrag.analysis.unit)}.`
     : focusChannel && leadChannel && focusChannel.channel !== leadChannel.channel
       ? `${focusLabel} trails ${CALL_CENTER_CHANNEL_LABELS[leadChannel.channel]} by ${scoreSpread?.toFixed(1)}%. Review its KPI board next.`
-      : 'Inbound and Outbound remain separate by design. Open a channel to inspect its KPI board.';
+      : 'Inbound, Outbound, and Support Positions remain distinct by design. Open a channel to inspect its KPI board.';
   const actionChannel = primaryDrag?.channel ?? focusChannel?.channel;
+
+  const handleSupportClick = () => {
+    if (onSupportSelect) {
+      onSupportSelect();
+      return;
+    }
+    if (typeof document !== 'undefined') {
+      document.getElementById('call-center-support-positions')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
 
   return (
     <section className="glass-panel rounded-xl p-4 shadow-sm sm:p-6" aria-labelledby="call-center-overview">
@@ -141,18 +208,18 @@ const CallCenterChannelSummary = ({ rows, onChannelSelect, channelKpiAnalysis = 
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <p className="text-xs font-extrabold uppercase tracking-[0.1em] text-blue-600 dark:text-blue-300">Decision overview</p>
-              <span className="rounded-full border border-[var(--border-light)] bg-[var(--bg-sunken)] px-2 py-0.5 text-xs font-extrabold uppercase tracking-wide text-[var(--text-muted)]">{usesChannelBoardScores ? 'Average of team scores' : 'No pooled KPI score'}</span>
+              <span className="rounded-full border border-[var(--border-light)] bg-[var(--bg-sunken)] px-2 py-0.5 text-xs font-extrabold uppercase tracking-wide text-[var(--text-muted)]">{usesChannelBoardScores ? 'Average of 3 teams' : 'No pooled KPI score'}</span>
             </div>
             <h3 id="call-center-overview" className="mt-1 heading-3">Call Center Overview</h3>
             <p className="mt-1 max-w-3xl text-xs font-medium leading-5 text-[var(--text-secondary)]">
-              Compare channel health first, then open the channel that needs the next KPI-level review.
+              Compare Inbound, Outbound, and Support Positions health first, then open the group that needs the next review.
             </p>
           </div>
         </div>
         <div className="flex w-fit shrink-0 items-center gap-3 text-xs font-extrabold text-[var(--text-secondary)]">
           <span className="flex items-center gap-1.5"><Users size={13} className="text-blue-500" />{totalEmployees} employees</span>
           <span className="h-3 w-px bg-[var(--border-light)]" aria-hidden="true" />
-          <span>2 channels</span>
+          <span>3 teams</span>
         </div>
       </div>
 
@@ -165,7 +232,7 @@ const CallCenterChannelSummary = ({ rows, onChannelSelect, channelKpiAnalysis = 
           <p className="mt-3 text-3xl font-extrabold tracking-tight text-[var(--text-primary)]">{overallScore === null ? '—' : `${displayedScorePoint(overallScore).toFixed(1)}%`}</p>
           <p className="mt-1 text-xs font-medium leading-4 text-[var(--text-secondary)]">
             {usesChannelBoardScores
-              ? 'Average of the Inbound and Outbound team scores, weighted by headcount. Each channel keeps its own KPI definitions.'
+              ? 'Average of the Inbound, Outbound, and Support Positions team scores. Inbound & Outbound use pooled KPI totals; Support Positions uses position average.'
               : `Overall employee score: average across ${totalEmployees} active employees; channel KPI definitions stay separate.`}
           </p>
         </article>
@@ -196,20 +263,21 @@ const CallCenterChannelSummary = ({ rows, onChannelSelect, channelKpiAnalysis = 
               <Activity size={16} className="text-indigo-500" />
               <h4 className="text-sm font-extrabold text-[var(--text-primary)]">Channel comparison</h4>
             </div>
-            <span className="text-xs font-bold uppercase tracking-[0.08em] text-[var(--text-muted)]">{usesChannelBoardScores ? 'Team score' : 'Average score'}</span>
+            <span className="text-xs font-bold uppercase tracking-[0.08em] text-[var(--text-muted)]">{usesChannelBoardScores ? 'Team & support scores' : 'Average score'}</span>
           </div>
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
             {snapshots.map((snapshot) => {
-              const meta = CHANNEL_META[snapshot.channel];
+              const meta = GROUP_META[snapshot.key];
               const Icon = meta.icon;
               const signal = getSignal(snapshot.score);
-              const isFocus = focusChannel?.channel === snapshot.channel && !channelsAreClose;
+              const isFocus = snapshot.channel !== null && focusChannel?.channel === snapshot.channel && !channelsAreClose;
+              const isChannel = snapshot.channel !== null;
               return (
                 <button
-                  key={snapshot.channel}
+                  key={snapshot.key}
                   type="button"
-                  onClick={() => onChannelSelect(snapshot.channel)}
-                  aria-label={`Open ${CALL_CENTER_CHANNEL_LABELS[snapshot.channel]} channel`}
+                  onClick={() => (snapshot.channel ? onChannelSelect(snapshot.channel) : handleSupportClick())}
+                  aria-label={isChannel ? `Open ${snapshot.label} channel` : 'Open Support Positions section'}
                   className={`group relative overflow-hidden rounded-xl border bg-[var(--bg-surface)] p-4 text-left transition-all duration-200 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${isFocus ? 'border-amber-400/60 shadow-[0_0_0_2px_rgba(245,158,11,0.08)]' : 'border-[var(--border-light)]'} ${meta.glow}`}
                 >
                   <span className={`pointer-events-none absolute -right-10 -top-10 h-24 w-24 rounded-full opacity-10 blur-2xl transition-opacity duration-200 group-hover:opacity-30 ${meta.accent}`} />
@@ -219,7 +287,7 @@ const CallCenterChannelSummary = ({ rows, onChannelSelect, channelKpiAnalysis = 
                         <Icon size={17} />
                       </span>
                       <div>
-                        <h5 className="text-sm font-extrabold text-[var(--text-primary)]">{CALL_CENTER_CHANNEL_LABELS[snapshot.channel]}</h5>
+                        <h5 className="text-sm font-extrabold text-[var(--text-primary)]">{snapshot.label}</h5>
                         <p className="mt-0.5 text-xs font-semibold text-[var(--text-muted)]">{snapshot.count} employees</p>
                       </div>
                     </div>
@@ -228,7 +296,7 @@ const CallCenterChannelSummary = ({ rows, onChannelSelect, channelKpiAnalysis = 
                   <div className="mt-4 flex items-end justify-between gap-3">
                     <div>
                       <p className="text-2xl font-extrabold tracking-tight text-[var(--text-primary)]">{snapshot.score === null ? 'No data' : `${displayedScorePoint(snapshot.score).toFixed(1)}%`}</p>
-                      <p className="mt-1 text-xs font-medium text-[var(--text-secondary)]">{usesChannelBoardScores ? 'Team score' : 'Average employee score'}</p>
+                      <p className="mt-1 text-xs font-medium text-[var(--text-secondary)]">{snapshot.scoreBasisLabel}</p>
                     </div>
                     <span className="flex h-8 w-8 items-center justify-center rounded-full border border-[var(--border-light)] text-[var(--text-muted)] transition-colors duration-200 group-hover:border-current group-hover:text-[var(--text-primary)]" aria-hidden="true">
                       <ArrowRight size={15} />
@@ -255,21 +323,21 @@ const CallCenterChannelSummary = ({ rows, onChannelSelect, channelKpiAnalysis = 
               <div className="mt-3 grid gap-2 md:grid-cols-3">
                 {impactingEmployees.map((row) => {
                   const employeeChannel = callCenterChannelForTeam(row.raw.identity.team);
-                  const scoreGap = overallScore === null ? 0 : overallScore - row.score;
+                  const rowScore = rowDisplayScore(row);
+                  const scoreGap = overallScore === null ? 0 : overallScore - rowScore;
                   return (
                     <button
                       key={row.id}
                       type="button"
-                      onClick={() => employeeChannel && onChannelSelect(employeeChannel)}
-                      disabled={!employeeChannel}
-                      className="rounded-xl border border-rose-500/15 bg-[var(--bg-surface)] p-3 text-left transition-colors hover:border-rose-300/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:cursor-default disabled:hover:border-rose-500/15"
+                      onClick={() => (employeeChannel ? onChannelSelect(employeeChannel) : handleSupportClick())}
+                      className="rounded-xl border border-rose-500/15 bg-[var(--bg-surface)] p-3 text-left transition-colors hover:border-rose-300/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
                     >
                       <div className="flex items-start justify-between gap-2">
                         <span className="min-w-0 truncate text-xs font-extrabold text-[var(--text-primary)]" title={row.name}>{row.name}</span>
-                        <span className="shrink-0 text-xs font-extrabold text-rose-600 dark:text-rose-300">{row.score.toFixed(1)}%</span>
+                        <span className="shrink-0 text-xs font-extrabold text-rose-600 dark:text-rose-300">{rowScore.toFixed(1)}%</span>
                       </div>
                       <div className="mt-2 flex items-center justify-between gap-2 text-xs font-semibold text-[var(--text-muted)]">
-                        <span>{employeeChannel ? CALL_CENTER_CHANNEL_LABELS[employeeChannel] : 'Call Center'}</span>
+                        <span>{employeeChannel ? CALL_CENTER_CHANNEL_LABELS[employeeChannel] : 'Support Positions'}</span>
                         <span>−{scoreGap.toFixed(1)}% vs avg</span>
                       </div>
                     </button>

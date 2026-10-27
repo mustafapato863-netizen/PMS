@@ -199,9 +199,9 @@ function AgentTeamCard({
 
       {/* Interactive Footer CTA */}
       <div className="mt-2.5 flex w-full items-center justify-end border-t border-slate-100 pt-2 text-[11px] font-semibold">
-        <span className="inline-flex shrink-0 items-center gap-1 text-[11px] font-semibold text-blue-700 underline-offset-2 transition-colors group-hover:text-blue-950 group-hover:underline">
+        <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-blue-50/70 px-2.5 py-1 text-[11px] font-semibold text-blue-700 transition-[background-color,color,transform] duration-200 group-hover:translate-x-0.5 group-hover:bg-blue-100 group-hover:text-blue-950 motion-reduce:transition-none">
           Open Team
-          <ArrowRight className="size-3 shrink-0 transition-transform group-hover:translate-x-1" aria-hidden />
+          <ArrowRight className="size-3 shrink-0 transition-transform duration-200 group-hover:translate-x-0.5 motion-reduce:transition-none" aria-hidden />
         </span>
       </div>
     </button>
@@ -284,9 +284,9 @@ function SupportPositionCard({
             </span>
           ))}
         </div>
-        <span className="mt-2 inline-flex items-center gap-1 text-[11px] font-semibold text-blue-700 underline-offset-2 transition-colors group-hover:text-blue-950 group-hover:underline">
+        <span className="mt-2 inline-flex items-center gap-1 rounded-full bg-blue-50/70 px-2.5 py-1 text-[11px] font-semibold text-blue-700 transition-[background-color,color,transform] duration-200 group-hover:translate-x-0.5 group-hover:bg-blue-100 group-hover:text-blue-950 motion-reduce:transition-none">
           Open role detail
-          <ArrowRight className="size-3 shrink-0 transition-transform group-hover:translate-x-1" aria-hidden />
+          <ArrowRight className="size-3 shrink-0 transition-transform duration-200 group-hover:translate-x-0.5 motion-reduce:transition-none" aria-hidden />
         </span>
       </div>
     </button>

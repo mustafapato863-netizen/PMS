@@ -563,7 +563,8 @@ function teamsOf(
     const monthlyTeam = monthlyRecords.filter((record) => groupName(record) === team);
     const current = inPeriod(records, effective);
     const teamConfig = byRole ? null : findTeamConfig(teamConfigs, team);
-    const useCanonical = Boolean(teamConfig && !rangeMonths && !isMergedBranchTeam(team));
+    const isParentSupportPositions = sameTeamName(team, CALL_CENTER_TEAM) || sameTeamName(team, RCM_TEAM);
+    const useCanonical = Boolean(teamConfig && !rangeMonths && !isMergedBranchTeam(team) && !isParentSupportPositions);
 
     let score = scoreOf(current);
     let previousScore = scoreOf(inPeriod(records, previous));

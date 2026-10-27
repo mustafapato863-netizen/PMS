@@ -46,7 +46,7 @@ import { useTeamConfig } from '../hooks/useTeamConfig';
 import { GRADE_PALETTE, GRADE_THRESHOLDS } from '../constants/grades';
 import { buildTeamKpiAnalysis } from '../features/team/teamKpiAnalysis';
 import { aggregatePreApprovalsIpMetrics } from '../features/team/preApprovalsIpMetrics';
-import { aggregateConfiguredTeamKpis, calculateAggregatedTeamPerformance, channelBoardScore, displayedTeamScore, headlineTeamScore, recordsUseAppliedPin, scoreMonthKey, trendPointScore } from '../features/team/teamKpiAggregator';
+import { aggregateConfiguredTeamKpis, averagePrintedChannelScores, calculateAggregatedTeamPerformance, channelBoardScore, displayedTeamScore, headlineTeamScore, recordsUseAppliedPin, scoreMonthKey, trendPointScore } from '../features/team/teamKpiAggregator';
 import type { TeamConfig } from '../schemas/teamConfig.schema';
 import { formatMonthChange, missingMonthChangeText } from '../features/team/monthChange';
 import { reportingMonthName, shortMonthLabel } from '../hooks/api/scopedPeriod';
@@ -143,9 +143,12 @@ function positionDepartmentView(
     if (row.gradeClass in classCounts) classCounts[row.gradeClass] += 1;
   });
   const total = positionRows.length;
+  const employeeAverage = total > 0
+    ? positionRows.reduce((sum, row) => sum + scoreForDisplay(row), 0) / total
+    : 0;
   return {
     totalAgents: total,
-    avgScore: aggregate?.score ?? 0,
+    avgScore: employeeAverage || (aggregate?.score ?? 0),
     pctAB: total > 0 ? ((classCounts.A + classCounts.B) / total) * 100 : 0,
     pctDE: total > 0 ? ((classCounts.D + classCounts.E) / total) * 100 : 0,
     classCounts,
@@ -169,7 +172,15 @@ function DepartmentPositionKpis({
 }) {
   if (view.totalAgents === 0 || view.avgScore === 0) return null;
   return (
-    <section aria-label={`${teamName} positions`}>
+    <section id={`${teamId}-support-positions`} aria-label={`${teamName} positions`} className="space-y-3">
+      <div className="flex items-center justify-between px-1">
+        <div>
+          <h3 className="heading-3">{teamName} — Support Positions</h3>
+          <p className="text-xs font-medium text-[var(--text-secondary)]">
+            Average performance and KPIs across support positions ({view.totalAgents} employees).
+          </p>
+        </div>
+      </div>
       <TeamKpiSection
         totalAgents={view.totalAgents}
         avgScore={view.avgScore}
@@ -838,6 +849,86 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
   const isPreApprovalsTeamName = sameEgyptRcmTeam(teamName, 'Pre-Approvals IP')
     || isPreApprovalsSubTeam(teamName);
 
+  const getCallCenterThreeGroupSummary = useCallback((agents: AgentRecord[]) => {
+    const inboundAgents = agents.filter((a) => callCenterChannelForTeam(a.identity.team) === 'inbound');
+    const outboundAgents = agents.filter((a) => callCenterChannelForTeam(a.identity.team) === 'outbound');
+    const supportAgents = agents.filter((a) => isExactDepartmentTeam(a.identity.team, CALL_CENTER_TEAM));
+
+    const avgOf = (list: AgentRecord[]) => (
+      list.length > 0
+        ? list.reduce((sum, a) => sum + resolveDisplayScore(a, undefined), 0) / list.length
+        : 0
+    );
+
+    const inbound = inboundAgents.length > 0
+      ? channelBoardScore({
+          agents: inboundAgents,
+          config: inboundTeamConfig,
+          employeeAverage: avgOf(inboundAgents),
+          location,
+          preferConfiguredWeights: isMergedTeam,
+        })
+      : null;
+    const outbound = outboundAgents.length > 0
+      ? channelBoardScore({
+          agents: outboundAgents,
+          config: outboundTeamConfig,
+          employeeAverage: avgOf(outboundAgents),
+          location,
+          preferConfiguredWeights: isMergedTeam,
+        })
+      : null;
+    const support = supportAgents.length > 0 ? avgOf(supportAgents) : null;
+
+    return {
+      inbound,
+      outbound,
+      support,
+      overall: averagePrintedChannelScores([
+        { score: inbound, count: inboundAgents.length },
+        { score: outbound, count: outboundAgents.length },
+        { score: support, count: supportAgents.length },
+      ]),
+    };
+  }, [inboundTeamConfig, outboundTeamConfig, location, isMergedTeam]);
+
+  // Channel cards use the same pooled headline as the team score inside that channel.
+  // Support Positions uses the average of its support position employees, and the
+  // department figure is the average of the 3 groups (Inbound, Outbound, Support Positions).
+  const callCenterChannelScores = useMemo(() => {
+    if (!isCallCenterAggregate) return undefined;
+    const scoreFor = (channel: 'inbound' | 'outbound') => {
+      const channelRows = presentationRows.filter((row) => callCenterChannelForTeam(row.raw.identity.team) === channel);
+      if (channelRows.length === 0) return null;
+      const agents = agentsForHeadline(channelRows.map((row) => row.raw));
+      const employeeAverage = channelRows.reduce((sum, row) => sum + scoreForDisplay(row), 0) / channelRows.length;
+      return channelBoardScore({
+        agents,
+        config: channel === 'inbound' ? inboundTeamConfig : outboundTeamConfig,
+        employeeAverage,
+        location,
+        preferConfiguredWeights: isMergedTeam,
+      });
+    };
+    const inbound = scoreFor('inbound');
+    const outbound = scoreFor('outbound');
+    const support = callCenterPositionRows.length > 0
+      ? callCenterPositionRows.reduce((sum, row) => sum + scoreForDisplay(row), 0) / callCenterPositionRows.length
+      : null;
+    const inboundCount = presentationRows.filter((row) => callCenterChannelForTeam(row.raw.identity.team) === 'inbound').length;
+    const outboundCount = presentationRows.filter((row) => callCenterChannelForTeam(row.raw.identity.team) === 'outbound').length;
+    return {
+      inbound,
+      outbound,
+      support,
+      overall: averagePrintedChannelScores([
+        { score: inbound, count: inboundCount },
+        { score: outbound, count: outboundCount },
+        { score: support, count: callCenterPositionRows.length },
+      ]),
+    };
+  }, [isCallCenterAggregate, presentationRows, callCenterPositionRows, agentsForHeadline, inboundTeamConfig, outboundTeamConfig, location, isMergedTeam]);
+
   // Memoized current month aggregate performance score
   const calculatedAvgScore = useMemo(() => {
     if (isPreApprovalsTeamName) {
@@ -847,6 +938,9 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
         if (Number.isFinite(s)) return s;
       }
     }
+    if (isCallCenterAggregate && callCenterChannelScores?.overall != null) {
+      return callCenterChannelScores.overall;
+    }
     const teamAgents = agentsForHeadline(presentationRows.map((row) => row.raw));
     return headlineTeamScore({
       scope: headlineScope,
@@ -854,7 +948,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
       pooledScore: getCanonicalTeamScore(teamAgents),
       appliedPin: recordsUseAppliedPin(teamAgents),
     });
-  }, [isPreApprovalsTeamName, allAgents, activeMonthName, headlineScope, agentsForHeadline, getCanonicalTeamScore, hookAvgScore, presentationRows]);
+  }, [isPreApprovalsTeamName, allAgents, activeMonthName, isCallCenterAggregate, callCenterChannelScores, headlineScope, agentsForHeadline, getCanonicalTeamScore, hookAvgScore, presentationRows]);
 
   const calculatedPrevAvgScore = useMemo(() => {
     if (isPreApprovalsTeamName && prevPeriodKey) {
@@ -865,33 +959,16 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
         if (Number.isFinite(s)) return s;
       }
     }
+    if (isCallCenterAggregate && prevPeriodKey) {
+      return getCallCenterThreeGroupSummary(previousTeamAgents).overall ?? prevAvgScore;
+    }
     if (headlineScope !== 'pooled' || !prevPeriodKey) return prevAvgScore;
     return displayedTeamScore(
       getCanonicalTeamScore(previousTeamAgents),
       prevAvgScore,
       recordsUseAppliedPin(previousTeamAgents),
     );
-  }, [isPreApprovalsTeamName, allAgents, prevPeriodKey, headlineScope, getCanonicalTeamScore, prevAvgScore, previousTeamAgents]);
-
-  // Channel cards use the same pooled headline as the team score inside that channel.
-  // The department figure is the headcount-weighted average of those two scores.
-  const callCenterChannelScores = useMemo(() => {
-    if (!isCallCenterAggregate) return undefined;
-    const scoreFor = (channel: 'inbound' | 'outbound') => {
-      const channelRows = presentationRows.filter((row) => callCenterChannelForTeam(row.raw.identity.team) === channel);
-      if (channelRows.length === 0) return null;
-      const agents = agentsForHeadline(channelRows.map((row) => row.raw));
-      const employeeAverage = channelRows.reduce((sum, row) => sum + row.score, 0) / channelRows.length;
-      return channelBoardScore({
-        agents,
-        config: channel === 'inbound' ? inboundTeamConfig : outboundTeamConfig,
-        employeeAverage,
-        location,
-        preferConfiguredWeights: isMergedTeam,
-      });
-    };
-    return { inbound: scoreFor('inbound'), outbound: scoreFor('outbound') };
-  }, [isCallCenterAggregate, presentationRows, agentsForHeadline, inboundTeamConfig, outboundTeamConfig, location, isMergedTeam]);
+  }, [isPreApprovalsTeamName, allAgents, isCallCenterAggregate, prevPeriodKey, getCallCenterThreeGroupSummary, headlineScope, getCanonicalTeamScore, prevAvgScore, previousTeamAgents]);
 
   // Compute metrics dynamically for the current month
   const metrics = useMemo(() => {
@@ -1557,11 +1634,13 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
         ? monthAgents.reduce((sum, a) => sum + resolveDisplayScore(a, activeTeamWeights), 0) / monthAgents.length
         : 0;
 
-      const computedScore = displayedTeamScore(
-        canonicalScore,
-        fallbackScore,
-        recordsUseAppliedPin(monthAgents),
-      );
+      const computedScore = isCallCenterAggregate
+        ? (getCallCenterThreeGroupSummary(monthAgents).overall ?? fallbackScore)
+        : displayedTeamScore(
+            canonicalScore,
+            fallbackScore,
+            recordsUseAppliedPin(monthAgents),
+          );
 
       return {
         month: m.slice(0, 3),
@@ -1576,7 +1655,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
         }),
       };
     });
-  }, [dashboardMonths, allAgents, teamName, location, getCanonicalTeamScore, activeTeamWeights, isCallCenterParent, callCenterChannel, matchesPresentationScope, teamId, previousTeamAgents, activeMonthName, calculatedAvgScore, calculatedPrevAvgScore]);
+  }, [dashboardMonths, allAgents, teamName, location, getCanonicalTeamScore, getCallCenterThreeGroupSummary, activeTeamWeights, isCallCenterParent, isCallCenterAggregate, callCenterChannel, matchesPresentationScope, teamId, previousTeamAgents, activeMonthName, calculatedAvgScore, calculatedPrevAvgScore]);
 
   const performanceBullets = useMemo(() => {
     const bullets: Array<{

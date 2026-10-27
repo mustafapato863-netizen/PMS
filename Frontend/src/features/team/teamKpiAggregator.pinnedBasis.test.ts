@@ -617,11 +617,16 @@ describe('displayed team score', () => {
     expect(displayedScoreDelta(92.64, 91.4)).toBeCloseTo(1.2);
   });
 
-  it('averages the printed channel team scores by headcount', () => {
+  it('averages the printed Call Center group scores across Inbound, Outbound, and Support Positions', () => {
+    expect(averagePrintedChannelScores([
+      { score: 92.64, count: 49 },
+      { score: 87.74, count: 9 },
+      { score: 91.03, count: 4 },
+    ])).toBe(90.4);
     expect(averagePrintedChannelScores([
       { score: 92.64, count: 35 },
       { score: 87.74, count: 7 },
-    ])).toBe(91.8);
+    ])).toBe(90.2);
     expect(averagePrintedChannelScores([
       { score: null, count: 0 },
       { score: 87.7, count: 7 },

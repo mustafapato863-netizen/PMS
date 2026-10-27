@@ -148,7 +148,7 @@ export function OverallCompanyPerformanceCard({
       id="presentation-section-score"
       data-section-label="Score"
       aria-labelledby="overall-performance-heading"
-      className="flex scroll-mt-24 flex-col justify-between rounded-2xl border border-slate-200/90 bg-white p-6 shadow-xs"
+      className="relative flex scroll-mt-24 flex-col justify-between overflow-hidden rounded-2xl border border-slate-200/70 bg-white p-6 shadow-[0_10px_32px_-18px_rgba(15,23,42,0.28)] transition-shadow duration-300 hover:shadow-[0_16px_40px_-20px_rgba(15,23,42,0.34)] motion-reduce:transition-none"
     >
       <div>
         <div className="flex flex-wrap items-center justify-between gap-2">

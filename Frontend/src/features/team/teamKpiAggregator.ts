@@ -468,7 +468,7 @@ const achievementFor = (kpi: AggregatedTeamKpi): number => {
   }
 
   const isTimeKpi = kpi.unit === 'min' || kpi.label.toLowerCase().includes('aht') || kpi.label.toLowerCase().includes('waitingtime');
-  let rawTarget = (isTimeKpi && kpi.target > 0 && kpi.target < 1.0) ? kpi.target * 1440 : kpi.target;
+  let rawTarget = (isTimeKpi && kpi.target > 0 && kpi.target < 1.0 && kpi.actual >= 1.0) ? kpi.target * 1440 : kpi.target;
   let rawActual = kpi.actual;
 
   // Percent KPIs are ratios on both sides, so their scales are never mixed here.
@@ -604,17 +604,16 @@ export function channelBoardScore(input: {
   });
 }
 
-/** Headcount-weighted average of the one-decimal scores printed on the channel cards. */
+/** Average of the one-decimal scores printed on the Call Center group cards (Inbound, Outbound, Support Positions). */
 export function averagePrintedChannelScores(
   channels: Array<{ score: number | null; count: number }>,
 ): number | null {
   const scored = channels.filter((channel): channel is { score: number; count: number } => (
     channel.score !== null && Number.isFinite(channel.score) && channel.count > 0
   ));
-  const headcount = scored.reduce((sum, channel) => sum + channel.count, 0);
-  if (headcount === 0) return null;
-  const weighted = scored.reduce((sum, channel) => sum + displayedScorePoint(channel.score) * channel.count, 0) / headcount;
-  return displayedScorePoint(weighted);
+  if (scored.length === 0) return null;
+  const sum = scored.reduce((acc, channel) => acc + displayedScorePoint(channel.score), 0);
+  return displayedScorePoint(sum / scored.length);
 }
 
 /**
