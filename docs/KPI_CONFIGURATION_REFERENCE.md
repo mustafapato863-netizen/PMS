@@ -116,7 +116,7 @@ Employee/default configuration; all positions.
 |---|---|---:|---|---|
 | `Rejection` | Rejection | 0.40 | L / % | `average` |
 | `Queries` | Queries Handled | 0.30 | H / % | `sum` |
-| `AttendedCR` | Attended CR | 0.30 | H / count | `average` |
+| `AttendedCR` | Attended CR | 0.30 | H / % | `average` |
 
 Why: Rejection is a defect outcome, while handled queries and attended contacts measure productive service delivery.
 

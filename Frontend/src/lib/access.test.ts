@@ -95,10 +95,18 @@ describe('access helpers (current roles and legacy transition)', () => {
 });
 
 describe('canAccessMonthlyPresentation', () => {
-  it('matches the route allow-list exactly', async () => {
-    const { canAccessMonthlyPresentation, ROUTE_ROLES } = await import('./access');
-    expect([...ROUTE_ROLES.monthlyPresentation]).toEqual(['Admin', 'Performance Team']);
+  it('matches Executive Summary: every signed-in role, with function roles sent to Function Summary', async () => {
+    const { canAccessMonthlyPresentation, redirectsToFunctionSummary, ROUTE_ROLES } = await import('./access');
+    expect([...ROUTE_ROLES.monthlyPresentation]).toEqual([
+      'Admin', 'General Manager', 'Performance Team', 'Manager', 'Executive', 'Viewer',
+      'Employee', 'Agent', 'Regional Manager', 'Branch Director', 'Function Director', 'Function Viewer',
+    ]);
     for (const role of ROUTE_ROLES.monthlyPresentation) expect(canAccessMonthlyPresentation(role)).toBe(true);
-    for (const role of ['General Manager', 'Executive', 'Regional Manager', 'Manager', 'Viewer', 'Employee', 'Agent', 'Branch Director', 'Function Director', 'Function Viewer', null]) expect(canAccessMonthlyPresentation(role)).toBe(false);
+    expect(canAccessMonthlyPresentation(null)).toBe(false);
+    expect(canAccessMonthlyPresentation('Not A Role')).toBe(false);
+    for (const role of ['Function Viewer', 'Function Director']) expect(redirectsToFunctionSummary(role)).toBe(true);
+    for (const role of ['Admin', 'General Manager', 'Performance Team', 'Manager', 'Executive', 'Viewer', 'Employee', 'Agent', 'Regional Manager', 'Branch Director']) {
+      expect(redirectsToFunctionSummary(role)).toBe(false);
+    }
   });
 });

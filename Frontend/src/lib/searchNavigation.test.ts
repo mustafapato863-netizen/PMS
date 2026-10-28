@@ -24,7 +24,7 @@ const BROAD_PATHS = ['/reports', '/insights', '/planning'];
 describe('buildLocalSearchResults access (General Manager role string)', () => {
   it('lets a General Manager search product pages, but not Settings shortcuts', () => {
     const paths = pathsFor(user('General Manager', true));
-    for (const path of [...BROAD_PATHS, '/corrective-actions', '/executive', '/team/all']) {
+    for (const path of [...BROAD_PATHS, '/corrective-actions', '/executive', '/monthly-presentation', '/team/all']) {
       expect(paths).toContain(path);
     }
     for (const path of ['/team-management', ...SETTINGS_SHORTCUTS]) expect(paths).not.toContain(path);
@@ -36,7 +36,7 @@ describe('buildLocalSearchResults access (General Manager role string)', () => {
     for (const path of ['/insights', '/team-management', ...SETTINGS_SHORTCUTS]) {
       expect(paths).not.toContain(path);
     }
-    for (const path of ['/executive', '/reports', '/planning', '/corrective-actions']) expect(paths).toContain(path);
+    for (const path of ['/executive', '/monthly-presentation', '/reports', '/planning', '/corrective-actions']) expect(paths).toContain(path);
   });
 
   it('finds the single Executive Summary entry by its old Departmental name', () => {
@@ -57,6 +57,7 @@ describe('buildLocalSearchResults access (General Manager role string)', () => {
   it('offers Executive Corrective Actions but not Admin/GM-only pages', () => {
     const paths = pathsFor(user('Executive'));
     expect(paths).toContain('/corrective-actions');
+    expect(paths).toContain('/monthly-presentation');
     for (const path of [...BROAD_PATHS, '/team-management', ...SETTINGS_SHORTCUTS]) expect(paths).not.toContain(path);
   });
 
@@ -82,7 +83,7 @@ describe('buildLocalSearchResults for Function Viewer', () => {
     const paths = pathsFor(user('Function Viewer'));
     expect(paths).toContain('/function-summary');
     expect(paths).toContain('/reports');
-    for (const path of ['/executive', '/insights', '/planning', '/corrective-actions', '/team/all', ...SETTINGS_SHORTCUTS]) {
+    for (const path of ['/executive', '/monthly-presentation', '/insights', '/planning', '/corrective-actions', '/team/all', ...SETTINGS_SHORTCUTS]) {
       expect(paths).not.toContain(path);
     }
   });

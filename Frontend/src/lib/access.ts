@@ -122,14 +122,25 @@ export const ROUTE_ROLES = {
   correctiveActions: ['Admin', 'Executive', 'General Manager', 'Manager', 'Performance Team'],
   functionSummary: ['Admin', 'General Manager', 'Performance Team', ROLE_FUNCTION_VIEWER, ROLE_FUNCTION_DIRECTOR, ROLE_BRANCH_DIRECTOR, ROLE_REGIONAL_MANAGER],
   /** Saved-report library + preview (read). Legacy and new scoped roles are API-filtered. */
-  /** Monthly Review: Admin and Performance Team only. Region scope still comes from accessible_regions. */
-  monthlyPresentation: ['Admin', 'Performance Team'],
+  /**
+   * Monthly Review follows Executive Summary: every signed-in role may open the route.
+   * Function Viewer and Function Director are sent to Function Summary by the page.
+   * Region scope still comes from accessible_regions.
+   */
+  monthlyPresentation: [
+    'Admin', 'General Manager', 'Performance Team', 'Manager', 'Executive', 'Viewer',
+    'Employee', 'Agent', 'Regional Manager', 'Branch Director', 'Function Director', ROLE_FUNCTION_VIEWER,
+  ],
   reports: ['Admin', 'General Manager', 'Manager', 'Executive', 'Viewer', ROLE_FUNCTION_VIEWER, 'Performance Team'],
 } as const satisfies Record<string, readonly AppRole[]>;
 
 /** Monthly Review: the same allow-list as its route guard (sidebar link and route cannot drift). */
 export const canAccessMonthlyPresentation = (role: RoleInput): boolean =>
   canAccessRoute({ role, allowedRoles: ROUTE_ROLES.monthlyPresentation });
+
+/** Function roles do not stay on Executive Summary or Monthly Review; both send them to Function Summary. */
+export const redirectsToFunctionSummary = (role: RoleInput): boolean =>
+  executiveViewForRole(role) === 'function';
 
 /** Which Executive Summary layout a role gets on `/executive`. */
 export type ExecutiveViewForRole = 'corporate' | 'managerial' | 'function';

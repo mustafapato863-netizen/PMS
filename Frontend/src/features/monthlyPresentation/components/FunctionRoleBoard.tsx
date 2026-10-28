@@ -16,6 +16,34 @@ import { FullWordGradeBadge } from './TeamDeepDiveView';
 
 const ROLES_PER_ROW = 4;
 
+function ViewRoleButton({ tone }: { tone: 'drag' | 'carry' }) {
+  const toneClass =
+    tone === 'drag'
+      ? 'border-slate-900 bg-slate-900 text-white group-hover:border-blue-700 group-hover:bg-blue-700'
+      : 'border-slate-300 bg-white text-slate-800 group-hover:border-emerald-600 group-hover:bg-emerald-600 group-hover:text-white';
+  return (
+    <span
+      className={`inline-flex w-full items-center justify-center gap-1.5 rounded-lg border px-3 py-1.5 text-[11px] font-bold shadow-2xs transition-colors ${toneClass}`}
+    >
+      View role
+      <ArrowRight
+        className="size-3.5 shrink-0 transition-transform duration-200 group-hover:translate-x-0.5 motion-reduce:transition-none"
+        aria-hidden
+      />
+    </span>
+  );
+}
+
+function BranchChip({ label }: { label: string }) {
+  return (
+    <p className="mt-1">
+      <span className="inline-flex max-w-full items-center truncate rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-bold tracking-wide text-slate-700 uppercase">
+        {label}
+      </span>
+    </p>
+  );
+}
+
 function Movement({
   change,
   previousMonthLabel,
@@ -71,7 +99,7 @@ function DraggingRoleCard({
       type="button"
       data-testid={`role-card-${role.roleSlug}`}
       onClick={() => onSelectRole(role.roleSlug)}
-      aria-label={`Open ${role.roleTitle} role detail`}
+      aria-label={`Open ${role.roleTitle}${role.branchLabel ? ` ${role.branchLabel}` : ''} role detail`}
       className={`group relative flex h-full w-full flex-col justify-between overflow-hidden rounded-xl border bg-white p-3.5 text-left shadow-2xs transition-all duration-150 hover:-translate-y-0.5 hover:shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 ${
         isSevere
           ? 'border-rose-200/95 hover:border-rose-300'
@@ -105,6 +133,7 @@ function DraggingRoleCard({
         >
           {role.roleTitle}
         </h3>
+        {role.branchLabel ? <BranchChip label={role.branchLabel} /> : null}
 
         {/* 3. Compact Score + Gap + Movement Metric Box */}
         <div
@@ -168,15 +197,8 @@ function DraggingRoleCard({
         </div>
       </div>
 
-      {/* 5. Compact Footer CTA */}
-      <div className="mt-2.5 flex w-full items-center justify-end border-t border-slate-100 pt-2">
-        <span className="inline-flex shrink-0 items-center gap-1 text-[11px] font-semibold text-blue-700 underline-offset-2 transition-colors group-hover:text-blue-950 group-hover:underline">
-          View role
-          <ArrowRight
-            className="size-3 shrink-0 transition-transform group-hover:translate-x-1"
-            aria-hidden
-          />
-        </span>
+      <div className="mt-2.5 w-full">
+        <ViewRoleButton tone="drag" />
       </div>
     </button>
   );
@@ -202,7 +224,7 @@ function CarryingRoleCard({
       type="button"
       data-testid={`role-card-${role.roleSlug}`}
       onClick={() => onSelectRole(role.roleSlug)}
-      aria-label={`Open ${role.roleTitle} role detail`}
+      aria-label={`Open ${role.roleTitle}${role.branchLabel ? ` ${role.branchLabel}` : ''} role detail`}
       className="group relative flex h-full w-full flex-col justify-between overflow-hidden rounded-xl border border-slate-200/85 bg-white/95 p-3 text-left transition-all duration-150 hover:border-emerald-300 hover:bg-white hover:shadow-2xs focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
     >
       <div className="w-full">
@@ -226,6 +248,7 @@ function CarryingRoleCard({
         >
           {role.roleTitle}
         </h3>
+        {role.branchLabel ? <BranchChip label={role.branchLabel} /> : null}
 
         {/* Compact Score & Gap Row */}
         <div className="mt-2 flex items-baseline justify-between gap-2 border-y border-slate-100 py-1.5">
@@ -252,15 +275,8 @@ function CarryingRoleCard({
         </p>
       </div>
 
-      {/* Quiet Footer Link */}
-      <div className="mt-2 flex w-full items-center justify-end border-t border-slate-100 pt-2">
-        <span className="inline-flex shrink-0 items-center gap-1 text-[11px] font-semibold text-blue-700 underline-offset-2 transition-colors group-hover:text-blue-950 group-hover:underline">
-          View role
-          <ArrowRight
-            className="size-3 shrink-0 transition-transform group-hover:translate-x-1"
-            aria-hidden
-          />
-        </span>
+      <div className="mt-2 w-full">
+        <ViewRoleButton tone="carry" />
       </div>
     </button>
   );

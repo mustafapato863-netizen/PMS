@@ -1,5 +1,5 @@
 import type { PMSAction } from '../../types';
-import { kpiRows, normalizeRegion, type ExecRecord } from '../executive/compose';
+import { SUMMARY_BRANCHES, kpiRows, normalizeRegion, type ExecRecord } from '../executive/compose';
 import { executiveFunctionForTeam } from '../executive/functions';
 import { gradeForScore, type GradeLetter } from './monthlyOverviewData';
 import {
@@ -73,6 +73,9 @@ export interface FunctionRoleCard {
   signal: string;
   linkedKpis: string[];
   impactLevel: SupportImpactLevel;
+  /** Branch this card covers. Absent when the role is not split. */
+  branchKey?: string;
+  branchLabel?: string;
 }
 
 export type RoleKpiStatusBadge = 'Below Target' | 'Needs Attention' | 'On Target';
@@ -136,6 +139,8 @@ export interface RoleDetailData {
   functionSlug: string;
   functionName: string;
   regionName: string;
+  /** Set when the opened card is one branch of a role. */
+  branchLabel?: string;
   monthLabel: string;
   previousMonthLabel: string;
   periodKey: string;
@@ -188,6 +193,8 @@ interface RoleSeed {
   keyKpiActual?: string;
   keyKpiTarget?: string;
   keyKpiMet?: boolean;
+  /** Empty when the person has no branch. A person in two branches is listed on each. */
+  branchKey?: string;
 }
 
 const round1 = (v: number) => Math.round(v * 10) / 10;
@@ -550,34 +557,44 @@ export function parseHoldersFromSupportPosition(
   ];
 }
 
+function branchLabelFor(branchKey: string | undefined): string | undefined {
+  if (!branchKey) return undefined;
+  return SUMMARY_BRANCHES.find((branch) => branch.value === branchKey)?.label ?? branchKey;
+}
+
 /**
- * Aggregates individual RoleSeed entries by `roleTitle` so each role appears as a single card
- * on the Function Deep Dive (e.g., "Graphic Designer" combines all 3 Graphic Designers into 1 role card),
- * while preserving the individual members for the Role Detail page.
+ * One card per role, and per branch when people in that role sit in more than one branch.
+ * "Graphic Designer" with no branch stays one card. CSR Dubai and CSR Ajman become two cards
+ * so a weak branch is visible without opening the whole role.
  */
 function aggregateSeedsByRole(seeds: RoleSeed[]): FunctionRoleCard[] {
   const groups = new Map<
     string,
     {
       roleTitle: string;
+      branchKey?: string;
       seeds: RoleSeed[];
     }
   >();
 
   for (const seed of seeds) {
     const normTitle = normalizeRoleTitle(seed.roleTitle);
-    const key = slugifyIdentifier(normTitle) || 'role';
+    const titleSlug = slugifyIdentifier(normTitle) || 'role';
+    const branchKey = seed.branchKey?.trim().toLowerCase() || undefined;
+    const key = branchKey ? `${titleSlug}-${branchKey}` : titleSlug;
     const existing = groups.get(key);
+    const next = { ...seed, roleTitle: normTitle, branchKey };
     if (existing) {
-      existing.seeds.push({ ...seed, roleTitle: normTitle });
+      existing.seeds.push(next);
     } else {
-      groups.set(key, { roleTitle: normTitle, seeds: [{ ...seed, roleTitle: normTitle }] });
+      groups.set(key, { roleTitle: normTitle, branchKey, seeds: [next] });
     }
   }
 
   const cards: FunctionRoleCard[] = [];
 
   for (const [roleSlug, group] of groups.entries()) {
+    const branchLabel = branchLabelFor(group.branchKey);
     const members: RoleMemberItem[] = group.seeds
       .map((s) => {
         const sc = round1(s.score);
@@ -632,6 +649,8 @@ function aggregateSeedsByRole(seeds: RoleSeed[]): FunctionRoleCard[] {
     cards.push({
       roleSlug,
       roleTitle: group.roleTitle,
+      branchKey: group.branchKey,
+      branchLabel,
       personName: personSummary,
       employeeId: primaryPerson.employeeId,
       headcount: members.length,
@@ -648,7 +667,12 @@ function aggregateSeedsByRole(seeds: RoleSeed[]): FunctionRoleCard[] {
     });
   }
 
-  return cards.sort((a, b) => a.score - b.score || a.roleTitle.localeCompare(b.roleTitle));
+  return cards.sort(
+    (a, b) =>
+      a.score - b.score ||
+      a.roleTitle.localeCompare(b.roleTitle) ||
+      (a.branchLabel ?? '').localeCompare(b.branchLabel ?? ''),
+  );
 }
 
 function cardsFromBaseline(data: CallCenterDeepDiveData): FunctionRoleCard[] {
@@ -723,7 +747,7 @@ function movementFor(record: ExecRecord, records: ExecRecord[]): number | null {
 }
 
 function cardsFromRecords(current: ExecRecord[], records: ExecRecord[]): FunctionRoleCard[] {
-  const seeds: RoleSeed[] = current.map((record) => {
+  const seeds: RoleSeed[] = current.flatMap((record) => {
     const rows = kpiRows([record], []);
     const weakest = rows[0];
     const strongest = rows
@@ -743,7 +767,9 @@ function cardsFromRecords(current: ExecRecord[], records: ExecRecord[]): Functio
     const keyKpiMet = primaryKpiRow
       ? (primaryKpiRow.achievement_percent ?? 0) >= 99.9
       : record.score >= 90;
-    return {
+    const branchKeys = [...new Set((record.branches ?? []).map((branch) => branch.trim().toLowerCase()).filter(Boolean))];
+    const keys = branchKeys.length ? branchKeys : [undefined];
+    return keys.map((branchKey) => ({
       roleTitle: title,
       personName: record.name,
       employeeId: record.employeeId || record.name,
@@ -756,7 +782,8 @@ function cardsFromRecords(current: ExecRecord[], records: ExecRecord[]): Functio
       keyKpiActual: primaryKpiRow ? formatKpiValue(primaryKpiRow.actual, primaryKpiRow.unit) : undefined,
       keyKpiTarget: primaryKpiRow ? formatKpiValue(primaryKpiRow.target, primaryKpiRow.unit) : undefined,
       keyKpiMet,
-    };
+      branchKey,
+    }));
   });
 
   return aggregateSeedsByRole(seeds);
@@ -1016,11 +1043,11 @@ function gapsFor(
   signal: string,
   kpis: RoleKpiSeries[],
 ): RoleAccountabilityGap[] {
-  const holders =
+  const where = card.branchLabel ? `${roleTitle} · ${card.branchLabel}` : roleTitle;
+  const ownership =
     card.members.length > 1
-      ? `${roleTitle} (${card.members.map((m) => m.personName).join(', ')})`
-      : `${card.personName} (${roleTitle})`;
-  const ownership = `Accountable owner: ${holders} · ${functionName}`;
+      ? `Accountable owner: ${where} · ${card.members.length} people`
+      : `Accountable owner: ${card.personName} (${roleTitle}) · ${functionName}`;
   const fromKpis = kpis.flatMap((kpi) => {
     const latest = kpi.trend6Mo[kpi.trend6Mo.length - 1];
     if (latest?.metTarget !== false) return [];
@@ -1348,6 +1375,7 @@ function buildRoleExecutiveDiagnosis(
     return supportExplanation;
   }
   const offTarget = kpis.filter((k) => k.gapLabel !== 'On target');
+  const place = card.branchLabel || 'this role';
   if (card.headcount > 1) {
     const distinctSignals = [...new Set(card.members.map((m) => m.signal).filter(Boolean))];
     if (card.score < 90) {
@@ -1355,9 +1383,9 @@ function buildRoleExecutiveDiagnosis(
         offTarget.length >= 2
           ? `${offTarget[0].shortName} (${offTarget[0].actualDisplay} vs ${offTarget[0].targetDisplay}) and ${offTarget[1].shortName} (${offTarget[1].actualDisplay} vs ${offTarget[1].targetDisplay})`
           : distinctSignals.slice(0, 2).join(' and ') || card.signal;
-      return `${roleTitle} averages ${card.score.toFixed(1)}% (${card.gradeFullLabel}) across ${card.headcount} people in this role (${card.below90Count} below 90%) — performance is primarily pulled down by ${gapSummary}.`;
+      return `${roleTitle} averages ${card.score.toFixed(1)}% (${card.gradeFullLabel}) across ${card.headcount} people in ${place} (${card.below90Count} below 90%) — performance is primarily pulled down by ${gapSummary}.`;
     }
-    return `${roleTitle} averages ${card.score.toFixed(1)}% (${card.gradeFullLabel}) across ${card.headcount} people in this role, sustaining ${functionName} benchmark stability.`;
+    return `${roleTitle} averages ${card.score.toFixed(1)}% (${card.gradeFullLabel}) across ${card.headcount} people in ${place}, sustaining ${functionName} benchmark stability.`;
   }
 
   if (card.score < 90) {
@@ -1664,6 +1692,7 @@ export function buildRoleDetail(
     functionSlug: data.functionSlug,
     functionName: data.functionName,
     regionName: data.regionName,
+    branchLabel: resolvedCard.branchLabel,
     monthLabel: data.monthLabel,
     previousMonthLabel: data.previousMonthLabel,
     periodKey: data.periodKey,

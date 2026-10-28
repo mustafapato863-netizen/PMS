@@ -1880,6 +1880,15 @@ class TestIntegration:
         assert directions['Queries'] == 'higher_better'
         assert directions['AttendedCR'] == 'higher_better'
 
+        # Attended CR is a conversion rate. A count unit rounds the stored ratio
+        # (about 0.49 against a target of 1) to 0 and 1 on Monthly Review.
+        units = {kpi['key']: kpi['unit'] for kpi in config['kpis']}
+        assert units['Rejection'] == '%'
+        assert units['Queries'] == '%'
+        assert units['AttendedCR'] == '%'
+        attended = next(kpi for kpi in config['kpis'] if kpi['key'] == 'AttendedCR')
+        assert attended['aggregation'] == {'method': 'average'}
+
 
 # ============================================================
 # PROPERTY TESTS: Configuration Round-Trip Consistency

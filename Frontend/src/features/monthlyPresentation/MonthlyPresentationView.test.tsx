@@ -1,5 +1,5 @@
 import { render, screen, fireEvent, within, waitFor } from '@testing-library/react';
-import { MemoryRouter, useLocation } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import MonthlyPresentationView from './MonthlyPresentationView';
 import { OFFSHORE_EGYPT_SEP_2026_DATA } from './monthlyOverviewData';
@@ -21,9 +21,11 @@ vi.mock('../../context/auth', () => ({
   }),
 }));
 
+const roleState = vi.hoisted(() => ({ role: 'CEO' }));
+
 vi.mock('../../context/RoleContext', () => ({
   useUserRole: () => ({
-    role: 'CEO',
+    role: roleState.role,
   }),
 }));
 
@@ -57,8 +59,23 @@ function LocationProbe() {
 describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Deep Dive', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    roleState.role = 'CEO';
     window.scrollTo = vi.fn();
     localStorage.clear();
+  });
+
+  it.each(['Function Viewer', 'Function Director'])('sends %s to Function Summary, the same rule as Executive Summary', (role) => {
+    roleState.role = role;
+    render(
+      <MemoryRouter initialEntries={['/monthly-presentation']}>
+        <Routes>
+          <Route path="/monthly-presentation" element={<MonthlyPresentationView />} />
+          <Route path="/function-summary" element={<p>Function Summary</p>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    expect(screen.getByText('Function Summary')).toBeInTheDocument();
+    expect(screen.queryByTestId('monthly-overview-page')).not.toBeInTheDocument();
   });
 
   it('renders Header with title, Offshore Egypt · September 2026 subtitle, region badge, and Page 1 of 6', () => {
@@ -675,19 +692,22 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
       const links = screen.getAllByText(label);
       expect(links.length).toBeGreaterThan(0);
       for (const link of links) {
-        expect(link.className).toContain('text-blue-700');
-        expect(link.className).toContain('group-hover:text-blue-950');
-        if (label === 'Open Team' || label === 'Open role detail') {
+        if (label === 'View role') {
+          expect(link.className).toContain('w-full');
+          expect(link.className).toContain('rounded-lg');
+          expect(link.className).toContain('justify-center');
+          expect(link.className).toContain('font-bold');
+          expect(link.className).not.toContain('underline');
+        } else if (label === 'Open Team' || label === 'Open role detail') {
+          expect(link.className).toContain('text-blue-700');
+          expect(link.className).toContain('group-hover:text-blue-950');
           expect(link.className).toContain('group-hover:bg-blue-100');
           expect(link.className).not.toContain('group-hover:underline');
         } else {
+          expect(link.className).toContain('text-blue-700');
           expect(link.className).toContain('group-hover:underline');
         }
-        expect(link.querySelector('svg')?.getAttribute('class') ?? '').toContain(
-          label === 'Open Team' || label === 'Open role detail'
-            ? 'group-hover:translate-x-0.5'
-            : 'group-hover:translate-x-1',
-        );
+        expect(link.querySelector('svg')?.getAttribute('class') ?? '').toContain('group-hover:translate-x-0.5');
       }
     };
 

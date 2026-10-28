@@ -156,7 +156,7 @@ function AnimatedRoutes() {
           }
         />
 
-        {/* Monthly Performance Review: one region, one month (?region=egy|uae&month=YYYY-MM). */}
+        {/* Monthly Review: same signed-in audience as Executive Summary. Function roles are sent to Function Summary. */}
         <Route
           path="/monthly-presentation"
           element={

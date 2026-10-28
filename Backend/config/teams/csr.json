@@ -40,7 +40,7 @@
       "label": "Attended CR",
       "weight": 0.30,
       "direction": "higher_better",
-      "unit": "count",
+      "unit": "%",
       "color": "#8B5CF6",
       "actual_col": "A.CPTConversion%",
       "target_col": "T.AttendedC.R",

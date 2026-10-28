@@ -31,7 +31,7 @@ const ALLOWED: Record<string, readonly string[]> = {
   insights: ['Admin', 'General Manager', 'Performance Team'],
   planning: ['Admin', 'General Manager', 'Manager', 'Performance Team'],
   'corrective-actions': ['Admin', 'Executive', 'General Manager', 'Manager', 'Performance Team'],
-  'monthly-review': ['Admin', 'Performance Team'],
+  'monthly-review': ['Admin', 'General Manager', 'Performance Team', 'Manager', 'Executive', 'Viewer', 'Employee', 'Agent', 'Regional Manager', 'Branch Director'],
 };
 
 class PartBlocked extends Error {

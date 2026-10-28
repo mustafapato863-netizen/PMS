@@ -197,7 +197,7 @@ describe('Sidebar General Manager navigation (stored role string)', () => {
     mockTeamConfigFetch();
   });
 
-  it.each(['Admin', 'Performance Team'] as const)('shows Monthly Review next to Executive Summary for %s', (role) => {
+  it.each(['Admin', 'Performance Team', 'General Manager', 'Executive', 'Regional Manager', 'Manager', 'Viewer', 'Branch Director', 'Function Director'] as const)('shows Monthly Review next to Executive Summary for %s', (role) => {
     authState.user = { id: 'u-mp', name: 'Mona Pato', username: 'mp', role, accessible_teams: [] };
     renderSidebar();
     const link = screen.getByRole('link', { name: 'Monthly Review' });
@@ -206,10 +206,11 @@ describe('Sidebar General Manager navigation (stored role string)', () => {
     expect(names.indexOf('Monthly Review')).toBe(names.indexOf('Executive Summary') + 1);
   });
 
-  it.each(['General Manager', 'Executive', 'Regional Manager', 'Manager', 'Viewer', 'Branch Director', 'Function Director', 'Function Viewer'] as const)('hides Monthly Review for %s', (role) => {
-    authState.user = { id: 'u-mp', name: 'Mona Pato', username: 'mp', role, accessible_teams: [] };
+  it.each(['Function Viewer', 'Agent', 'Employee'] as const)('hides Monthly Review for %s, the same roles that do not see Executive Summary', (role) => {
+    authState.user = { id: 'u-mp', name: 'Mona Pato', username: 'mp', role, accessible_teams: [], employee_id: 'e-1' };
     renderSidebar();
     expect(screen.queryByRole('link', { name: 'Monthly Review' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Executive Summary' })).not.toBeInTheDocument();
   });
 
   it('gives a General Manager product pages and personal account settings, not administration', () => {

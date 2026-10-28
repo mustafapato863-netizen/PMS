@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import './macCursor.css';
-import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { FileBarChart } from 'lucide-react';
 import { useAuth } from '../../context/auth';
 import { useUserRole } from '../../context/RoleContext';
 import { directorScope } from '../../lib/directorScope';
+import { redirectsToFunctionSummary } from '../../lib/access';
 import { composeExecutiveSummary, normalizeRegion, toExecRecords } from '../executive/compose';
 import { useSummaryRecords } from '../executive/useSummaryRecords';
 import { useActionStore } from '../../hooks/useActionStore';
@@ -87,7 +88,14 @@ function UaeFlag({ className = 'size-4 shrink-0 rounded-xs' }: { className?: str
   );
 }
 
-export default function MonthlyPresentationView({
+export default function MonthlyPresentationView(props: MonthlyPresentationViewProps) {
+  const { role } = useUserRole();
+  // Same rule as /executive: function roles open Function Summary, not the company review.
+  if (redirectsToFunctionSummary(role)) return <Navigate to="/function-summary" replace />;
+  return <MonthlyPresentationScreen {...props} />;
+}
+
+function MonthlyPresentationScreen({
   data,
   callCenterDeepDiveData,
   teamDeepDiveData,

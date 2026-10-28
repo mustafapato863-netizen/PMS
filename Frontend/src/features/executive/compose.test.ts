@@ -15,6 +15,7 @@ import {
 import type { TeamConfig } from '../../schemas/teamConfig.schema';
 import type { AgentRecord } from '../../types';
 import { heroDecision, heroNarrative, heroStatusLabel } from '../../components/executive/v1/execModel';
+import { formatKpiValue } from '../monthlyPresentation/callCenterDeepDiveData';
 import { executiveFunctionForTeam, functionFromSlug, functionSlug } from './functions';
 import { FIXTURE_TEAM_FUNCTIONS, fixtureActions, fixtureAgentRecords, fixtureDrivers } from './executive.fixture';
 
@@ -361,6 +362,22 @@ describe('direction-aware KPI rows', () => {
     expect(rows[1].target).toBe(90);
     expect(rows[1].raw_change).toBe(2);
     expect(rows[1].trend_status).toBe('improving');
+  });
+
+  it('prints CSR Attended CR as a percent when the stored target is a ratio of 1', () => {
+    const attended = {
+      kpi_key: 'AttendedCR', label: 'Attended CR', unit: '%', direction: 'higher_better' as const,
+      actual_value: 0.488, target_value: 1, achievement_ratio: 0.488, weight_applied: 0.30, contribution: 0.146,
+    };
+    const [row] = kpiRows([record(52.3, { team: 'CSR', kpis: [attended] })], []);
+    expect(row.unit).toBe('%');
+    expect(row.actual).toBe(48.8);
+    expect(row.target).toBe(100);
+    expect(row.achievement_percent).toBe(48.8);
+    expect(formatKpiValue(row.actual, row.unit)).toBe('48.8%');
+    expect(formatKpiValue(row.target, row.unit)).toBe('100.0%');
+    const gap = Math.round(((row.actual ?? 0) - (row.target ?? 0)) * 10) / 10;
+    expect(formatKpiValue(Math.abs(gap), row.unit)).toBe('51.2%');
   });
 });
 

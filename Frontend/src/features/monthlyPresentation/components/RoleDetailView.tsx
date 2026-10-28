@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   AlertCircle,
   AlertTriangle,
@@ -29,8 +29,10 @@ import type {
   RoleAssignedAction,
   RoleDetailData,
   RoleIndividualActionPlan,
+  RoleMemberItem,
 } from '../roleDetailData';
 import { showActionSection, showPresentationControl, showStoredPlaceholder } from '../presentationMode';
+import { memberPageWindow } from '../roleMemberPages';
 import { SelectableKpiCard } from './SelectableKpiCard';
 import { FullWordGradeBadge } from './TeamDeepDiveView';
 
@@ -59,6 +61,7 @@ export default function RoleDetailView({
   const [selectedId, setSelectedId] = useState(data.kpis[0]?.id ?? '');
   const [carouselStart, setCarouselStart] = useState(0);
   const [showAllMembers, setShowAllMembers] = useState(false);
+  const [memberPage, setMemberPage] = useState(0);
   const [description, setDescription] = useState('');
   const [owner, setOwner] = useState(data.roleTitle);
   const [dueDate, setDueDate] = useState('');
@@ -99,8 +102,33 @@ export default function RoleDetailView({
     [below90Members, data.members, showAllMembers],
   );
 
+  const pageCache = useRef(new Map<string, readonly RoleMemberItem[]>());
+  const listIdentity = useRef(displayedMembers);
+  const listGeneration = useRef(0);
+  // A new member array drops cached pages. The same array keeps the next page warm.
+  if (listIdentity.current !== displayedMembers) {
+    listIdentity.current = displayedMembers;
+    listGeneration.current += 1;
+    pageCache.current.clear();
+  }
+  const memberListKey = `${data.roleSlug}|${listGeneration.current}`;
+  const [seenMemberList, setSeenMemberList] = useState(memberListKey);
+  let page = memberPage;
+  if (seenMemberList !== memberListKey) {
+    pageCache.current.clear();
+    setSeenMemberList(memberListKey);
+    setMemberPage(0);
+    page = 0;
+  }
+
+  const memberPages = useMemo(
+    () => memberPageWindow(displayedMembers, page, pageCache.current, memberListKey),
+    [displayedMembers, page, memberListKey],
+  );
+  const visibleMembers = memberPages.visible;
+
   const displayedIndividualCards = useMemo(() => {
-    const displayedIds = new Set(displayedMembers.map((m) => m.employeeId));
+    const displayedIds = new Set(visibleMembers.map((m) => m.employeeId));
     const base = (data.individualActionPlans ?? []).filter((c) =>
       displayedIds.has(c.employeeId),
     );
@@ -108,7 +136,7 @@ export default function RoleDetailView({
       ...card,
       ...(individualOverrides[card.id] ?? {}),
     }));
-  }, [data.individualActionPlans, displayedMembers, individualOverrides]);
+  }, [data.individualActionPlans, visibleMembers, individualOverrides]);
 
   const startEditIndividual = (card: RoleIndividualActionPlan) => {
     setEditingIndividualId(card.id);
@@ -267,6 +295,7 @@ export default function RoleDetailView({
             <ChevronRight className="size-3.5 text-slate-300" aria-hidden />
             <span className="rounded-md bg-slate-100 px-2.5 py-1 font-semibold text-slate-900">
               {data.roleTitle}
+              {data.branchLabel ? ` · ${data.branchLabel}` : ''}
             </span>
           </nav>
 
@@ -305,6 +334,9 @@ export default function RoleDetailView({
             {/* Role Name as Main Title */}
             <h1 className="mt-2 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
               {data.roleTitle}
+              {data.branchLabel ? (
+                <span className="font-semibold text-slate-500"> · {data.branchLabel}</span>
+              ) : null}
             </h1>
 
             {/* Person Name Underneath (or Count if Multiple) */}
@@ -316,7 +348,7 @@ export default function RoleDetailView({
               <p className="mt-1.5 inline-flex items-center gap-1.5 text-sm font-medium text-slate-600">
                 <Users className="size-4 text-slate-400" aria-hidden />
                 <span>
-                  {data.headcount} people in this role · {data.below90Count} Average or below
+                  {data.headcount} people in {data.branchLabel ?? 'this role'} · {data.below90Count} Average or below
                 </span>
               </p>
             )}
@@ -725,7 +757,7 @@ export default function RoleDetailView({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {displayedMembers.map((member) => {
+                {visibleMembers.map((member) => {
                   const memberGradeStyle = GRADE_STYLES[member.grade];
                   return (
                     <tr
@@ -795,6 +827,46 @@ export default function RoleDetailView({
                 })}
               </tbody>
             </table>
+            {memberPages.pageCount > 1 && (
+              <nav
+                data-testid="role-members-pager"
+                aria-label="People pages"
+                className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3"
+              >
+                <p className="text-xs font-semibold text-slate-500 tabular-nums" aria-live="polite">
+                  {memberPages.rangeStart}–{memberPages.rangeEnd} of {displayedMembers.length}
+                </p>
+                <div className="inline-flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    data-testid="role-members-prev"
+                    aria-label="Previous people"
+                    disabled={memberPages.page === 0}
+                    onClick={() => setMemberPage((current) => Math.max(0, current - 1))}
+                    className="inline-flex h-8 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-bold text-slate-700 transition-colors hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    <ChevronLeft className="size-3.5" aria-hidden />
+                    Previous
+                  </button>
+                  <span className="px-1 text-xs font-bold text-slate-500 tabular-nums">
+                    {memberPages.page + 1} / {memberPages.pageCount}
+                  </span>
+                  <button
+                    type="button"
+                    data-testid="role-members-next"
+                    aria-label="Next people"
+                    disabled={memberPages.page >= memberPages.pageCount - 1}
+                    onClick={() =>
+                      setMemberPage((current) => Math.min(memberPages.pageCount - 1, current + 1))
+                    }
+                    className="inline-flex h-8 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-bold text-slate-700 transition-colors hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Next
+                    <ChevronRight className="size-3.5" aria-hidden />
+                  </button>
+                </div>
+              </nav>
+            )}
           </div>
         )}
       </section>
