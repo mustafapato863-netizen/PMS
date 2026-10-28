@@ -21,8 +21,8 @@ export interface RoleMemberKpiCell {
   label: string;
   actualFormatted: string;
   targetFormatted: string;
-  achievementPct: number;
-  metTarget: boolean;
+  achievementPct: number | null;
+  metTarget: boolean | null;
 }
 
 export interface RoleIndividualActionPlan {
@@ -37,6 +37,7 @@ export interface RoleIndividualActionPlan {
   owner: string;
   expectedImpact: string;
   linkedKpiKey: string;
+  suggested?: boolean;
 }
 
 export interface RoleMemberItem {
@@ -126,6 +127,7 @@ export interface RoleAssignedAction {
   expectedImpact: string;
   linkedKpiName?: string;
   affectedPeople?: string[];
+  suggested?: boolean;
 }
 
 export interface RoleDetailData {
@@ -345,39 +347,6 @@ export function kpiLabelsMatch(
   if (isReporting(cleanA) && isReporting(cleanB)) return true;
 
   return cleanA.includes(cleanB) || cleanB.includes(cleanA);
-}
-
-function getBaselineMemberKpis(name: string): Array<{
-  label: string;
-  actualFormatted: string;
-  targetFormatted: string;
-  achievementPct: number;
-  metTarget: boolean;
-}> | null {
-  const clean = name.toLowerCase();
-  if (clean.includes('amr badawy')) {
-    return [
-      { label: 'Booking Rate', actualFormatted: '30.5%', targetFormatted: '30.0%', achievementPct: 100, metTarget: true },
-      { label: 'Attendance Rate', actualFormatted: '56.2%', targetFormatted: '65.0%', achievementPct: 86.4, metTarget: false },
-      { label: 'Attended CR%', actualFormatted: '56.2%', targetFormatted: '65.0%', achievementPct: 86.4, metTarget: false },
-      { label: 'Reachability', actualFormatted: '53.0%', targetFormatted: '75.0%', achievementPct: 70.7, metTarget: false },
-      { label: 'Quality Score', actualFormatted: '96.0%', targetFormatted: '95.0%', achievementPct: 100, metTarget: true },
-      { label: 'UTZ%', actualFormatted: '70.2%', targetFormatted: '85.0%', achievementPct: 82.6, metTarget: false },
-      { label: 'AHT', actualFormatted: '—', targetFormatted: '—', achievementPct: 0, metTarget: false },
-    ];
-  }
-  if (clean.includes('adham sameh')) {
-    return [
-      { label: 'Booking Rate', actualFormatted: '62.0%', targetFormatted: '65.0%', achievementPct: 95.4, metTarget: false },
-      { label: 'Attendance Rate', actualFormatted: '68.5%', targetFormatted: '75.0%', achievementPct: 91.3, metTarget: false },
-      { label: 'Attended CR%', actualFormatted: '68.5%', targetFormatted: '75.0%', achievementPct: 91.3, metTarget: false },
-      { label: 'AHT', actualFormatted: '2.73 min', targetFormatted: '2.50 min', achievementPct: 91.0, metTarget: false },
-      { label: 'Quality Score', actualFormatted: '98.4%', targetFormatted: '95.0%', achievementPct: 100, metTarget: true },
-      { label: 'UTZ%', actualFormatted: '82.6%', targetFormatted: '85.0%', achievementPct: 97.1, metTarget: false },
-      { label: 'Reachability', actualFormatted: '—', targetFormatted: '—', achievementPct: 0, metTarget: false },
-    ];
-  }
-  return null;
 }
 
 function roleTitleFromReason(reason: string, fallback: string): string {
@@ -1077,7 +1046,7 @@ function actionStatus(value: string | null | undefined): RoleAssignedAction['sta
   return 'Open';
 }
 
-function noteFields(note: string | null | undefined): {
+export function noteFields(note: string | null | undefined): {
   owner?: string;
   status?: RoleAssignedAction['status'];
   expectedImpact?: string;
@@ -1085,7 +1054,7 @@ function noteFields(note: string | null | undefined): {
   if (!note) return {};
   const owner = note.match(/Owner:\s*([^.]*)\./)?.[1]?.trim();
   const status = note.match(/Status:\s*([^.]*)\./)?.[1]?.trim();
-  const expectedImpact = note.match(/Expected impact:\s*([^.]*)\./)?.[1]?.trim();
+  const expectedImpact = note.match(/Expected impact:\s*(.*?)(?:\.\s*$|$)/is)?.[1]?.trim();
   return {
     owner: owner || undefined,
     status: status ? actionStatus(status) : undefined,
@@ -1285,77 +1254,25 @@ function actionsForRole(
         owner: parsed.owner || action.owner?.name || card.roleTitle,
         dueDate: action.due_date ?? null,
         status: parsed.status || actionStatus(action.status),
-        expectedImpact:
-          parsed.expectedImpact ||
-          action.root_cause_note ||
-          'Expected impact recorded with the action',
+        expectedImpact: parsed.expectedImpact || 'Impact to be confirmed',
         linkedKpiName: matchedKpi?.shortName || defaultLinkedKpi,
         affectedPeople: matchedMember ? [matchedMember.personName] : defaultAffectedPeople,
       };
     });
 
-  const planned = data.actionsByPosition.items
-    .filter((item) => {
-      const sameRole = item.owningPosition.toLowerCase() === card.roleTitle.toLowerCase();
-      const matchesKpi = card.linkedKpis.some(
-        (kpi) =>
-          item.targetScope.toLowerCase().includes(kpi.toLowerCase()) ||
-          item.actionTitle.toLowerCase().includes(kpi.toLowerCase()),
-      );
-      return sameRole || matchesKpi;
-    })
-    .map((item) => ({
-      id: item.id,
-      title: item.actionTitle,
-      description: `Target KPI scope: ${item.targetScope} — ${item.expectedKpiOutcome}`,
-      owner: item.owningPosition,
-      dueDate: '2026-10-18',
-      status: 'Open' as const,
-      expectedImpact: `+${item.expectedImpactPct.toFixed(1)}% expected lift`,
-      linkedKpiName: item.targetScope || defaultLinkedKpi,
-      affectedPeople: defaultAffectedPeople,
-    }));
-
-  const combined = [...fromStore, ...planned];
-  if (combined.length < 2 && card.score < 90) {
-    const firstKpi = offTargetKpis[0];
-    const secondKpi = offTargetKpis[1];
-
-    if (combined.length === 0) {
-      const primaryName = firstKpi?.shortName || card.linkedKpis[0] || 'Primary KPI';
-      combined.push({
-        id: `role-baseline-action-1-${card.roleSlug}`,
-        title: `Close ${primaryName} gap in ${card.roleTitle}`,
-        description: firstKpi
-          ? `Move ${firstKpi.shortName} from ${firstKpi.actualDisplay} toward the ${firstKpi.targetDisplay} target via weekly pacing checkpoints and root-cause coaching.`
-          : `Address ${card.signal} through weekly milestone reviews and pre-delivery QA checks.`,
-        owner: card.roleTitle,
-        dueDate: '2026-10-18',
-        status: 'In Progress' as const,
-        expectedImpact: `+${Math.min(6.0, Math.max(2.0, round1((90 - card.score) * 0.3))).toFixed(1)}% role score lift`,
-        linkedKpiName: primaryName,
-        affectedPeople: defaultAffectedPeople,
-      });
-    }
-
-    if (combined.length === 1 && (secondKpi || card.members.length > 1)) {
-      const secondaryName = secondKpi?.shortName || 'Execution Consistency';
-      combined.push({
-        id: `role-baseline-action-2-${card.roleSlug}`,
-        title: `Standardize ${secondaryName} workflow across ${card.roleTitle}`,
-        description: secondKpi
-          ? `Rebalance campaign/workload allocation to close the ${secondKpi.gapLabel} variance on ${secondKpi.shortName} (${secondKpi.actualDisplay} vs ${secondKpi.targetDisplay}).`
-          : `Align quality benchmarks across all ${card.headcount} members in ${card.roleTitle} to bring scores above the 90% threshold.`,
-        owner: card.roleTitle,
-        dueDate: '2026-10-25',
-        status: 'Open' as const,
-        expectedImpact: `+${Math.min(4.5, Math.max(1.5, round1((90 - card.score) * 0.2))).toFixed(1)}% role score lift`,
-        linkedKpiName: secondaryName,
-        affectedPeople: defaultAffectedPeople,
-      });
-    }
-  }
-
+  const suggestions: RoleAssignedAction[] = card.score < 90 ? (offTargetKpis.length ? offTargetKpis.slice(0, 2) : [null]).map((kpi, index) => ({
+    id: `role-suggestion-${card.roleSlug}-${index}`,
+    title: `Review ${kpi?.shortName || 'performance'} in ${card.roleTitle}`,
+    description: 'Review the available evidence and agree on an appropriate action.',
+    owner: card.roleTitle,
+    dueDate: null,
+    status: 'Open',
+    expectedImpact: 'Impact to be confirmed',
+    linkedKpiName: kpi?.shortName || defaultLinkedKpi,
+    affectedPeople: defaultAffectedPeople,
+    suggested: true,
+  })) : [];
+  const combined = [...fromStore, ...suggestions];
   const seen = new Set<string>();
   return combined.filter((item) => {
     if (seen.has(item.id)) return false;
@@ -1511,9 +1428,7 @@ export function buildRoleDetail(
           namesMatch(rec.name, baseMember.personName)),
     );
     const memberKpiRows = memberRecord ? kpiRows([memberRecord], []) : [];
-    const baselineKpis = getBaselineMemberKpis(baseMember.personName);
-
-    const kpiCells: RoleMemberKpiCell[] = tableKpis.map((kpi, idx) => {
+    const kpiCells: RoleMemberKpiCell[] = tableKpis.map((kpi) => {
       const matchedRow = memberKpiRows.find(
         (r) =>
           r.kpi_key === kpi.kpiKey ||
@@ -1521,7 +1436,7 @@ export function buildRoleDetail(
           kpiLabelsMatch(r.kpi_label, kpi.name, r.kpi_key, kpi.kpiKey),
       );
       if (matchedRow) {
-        const ach = matchedRow.achievement_percent ?? kpi.achievementPct;
+        const ach = matchedRow.achievement_percent;
         const targetStr =
           matchedRow.target != null
             ? formatKpiValue(matchedRow.target, matchedRow.unit || kpi.unit)
@@ -1532,87 +1447,17 @@ export function buildRoleDetail(
           actualFormatted: formatKpiValue(matchedRow.actual, matchedRow.unit || kpi.unit),
           targetFormatted: targetStr,
           achievementPct: ach,
-          metTarget: ach >= 99.9,
-        };
-      }
-
-      if (baselineKpis) {
-        const matchedBaseline = baselineKpis.find(
-          (b) =>
-            kpiLabelsMatch(b.label, kpi.shortName, undefined, kpi.kpiKey) ||
-            kpiLabelsMatch(b.label, kpi.name, undefined, kpi.kpiKey),
-        );
-        if (matchedBaseline) {
-          return {
-            kpiKey: kpi.kpiKey,
-            label: kpi.shortName,
-            actualFormatted: matchedBaseline.actualFormatted,
-            targetFormatted: matchedBaseline.targetFormatted || kpi.targetDisplay,
-            achievementPct: matchedBaseline.achievementPct,
-            metTarget: matchedBaseline.metTarget,
-          };
-        }
-      }
-
-      if (memberRecord) {
-        return {
-          kpiKey: kpi.kpiKey,
-          label: kpi.shortName,
-          actualFormatted: '—',
-          targetFormatted: kpi.targetDisplay,
-          achievementPct: 0,
-          metTarget: false,
-        };
-      }
-
-      const labelLower = kpi.shortName.toLowerCase();
-      const memberKeyLower = baseMember.keyKpiLabel.toLowerCase();
-      if (
-        labelLower.includes(memberKeyLower) ||
-        memberKeyLower.includes(labelLower)
-      ) {
-        return {
-          kpiKey: kpi.kpiKey,
-          label: kpi.shortName,
-          actualFormatted: baseMember.keyKpiActual,
-          targetFormatted: kpi.targetDisplay,
-          achievementPct: baseMember.keyKpiMet ? 100 : Math.min(95, Math.max(45, baseMember.score - 3)),
-          metTarget: baseMember.keyKpiMet,
-        };
-      }
-
-      const latestPt = kpi.trend6Mo[kpi.trend6Mo.length - 1];
-      const roleScore = Math.max(40, resolvedCard.score || 85);
-      const ratio = Math.max(0.78, Math.min(1.18, baseMember.score / roleScore));
-      if (latestPt?.actual != null) {
-        const scaledActual =
-          kpi.betterDirection === 'lower'
-            ? round1(latestPt.actual / ratio)
-            : round1(latestPt.actual * ratio);
-        const scaledAch = round1(Math.min(100, Math.max(20, kpi.achievementPct * ratio)));
-        const met =
-          latestPt.target != null
-            ? kpi.betterDirection === 'lower'
-              ? scaledActual <= latestPt.target + 1e-6
-              : scaledActual >= latestPt.target - 1e-6
-            : scaledAch >= 99.5;
-        return {
-          kpiKey: kpi.kpiKey,
-          label: kpi.shortName,
-          actualFormatted: formatKpiValue(scaledActual, kpi.unit),
-          targetFormatted: kpi.targetDisplay,
-          achievementPct: scaledAch,
-          metTarget: met,
+          metTarget: ach == null ? null : ach >= 99.9,
         };
       }
 
       return {
         kpiKey: kpi.kpiKey,
         label: kpi.shortName,
-        actualFormatted: idx === 0 ? baseMember.keyKpiActual : kpi.actualDisplay,
-        targetFormatted: kpi.targetDisplay,
-        achievementPct: kpi.achievementPct,
-        metTarget: kpi.gapLabel === 'On target',
+        actualFormatted: "—",
+        targetFormatted: "—",
+        achievementPct: null,
+        metTarget: null,
       };
     });
 
@@ -1630,7 +1475,7 @@ export function buildRoleDetail(
         namesMatch(a.employee_name || '', member.personName),
     );
     const parsed = noteFields(storedForMember?.root_cause_note);
-    const missedCells = (member.kpiCells ?? []).filter((c) => !c.metTarget && c.actualFormatted !== '—');
+    const missedCells = (member.kpiCells ?? []).filter((c) => c.metTarget === false && c.achievementPct != null && c.actualFormatted !== '—');
     const mainIssue =
       member.signal ||
       (missedCells.length > 0
@@ -1638,7 +1483,7 @@ export function buildRoleDetail(
             .slice(0, 2)
             .map(
               (c) =>
-                `${c.label} at ${c.actualFormatted} (vs ${c.targetFormatted} target, ${c.achievementPct.toFixed(1)}% achievement)`,
+                `${c.label} at ${c.actualFormatted} (vs ${c.targetFormatted} target, ${c.achievementPct?.toFixed(1)}% achievement)`,
             )
             .join(' & ')
         : `${member.keyKpiLabel} at ${member.keyKpiActual} (vs ${member.keyKpiTarget} target)`);
@@ -1647,9 +1492,6 @@ export function buildRoleDetail(
       member.score < 90
         ? `Conduct weekly 1-on-1 coaching with ${member.personName} on ${member.keyKpiLabel} (${member.keyKpiActual} vs ${member.keyKpiTarget} target), audit root-cause bottlenecks, and track daily pacing checkpoints through ${data.monthLabel}.`
         : `Sustain ${member.personName}'s benchmark execution (${member.score.toFixed(1)}%) and pair as peer reviewer on ${member.keyKpiLabel} workflows across ${roleTitle}.`;
-
-    const empLift = Math.max(2.0, round1((92 - Math.min(90, member.score)) * 0.55));
-    const roleLift = Math.max(0.4, round1(empLift / Math.max(1, resolvedCard.headcount)));
 
     return {
       id: `ind-role-${resolvedCard.roleSlug}-${slugifyIdentifier(member.employeeId)}`,
@@ -1661,9 +1503,8 @@ export function buildRoleDetail(
       mainIssue,
       actionText: storedForMember?.action_text || defaultActionText,
       owner: parsed.owner || storedForMember?.owner?.name || `${roleTitle} Lead`,
-      expectedImpact:
-        parsed.expectedImpact ||
-        `+${empLift.toFixed(1)}% employee score (+${roleLift.toFixed(1)}% role lift)`,
+      expectedImpact: parsed.expectedImpact || 'Impact to be confirmed',
+      suggested: !storedForMember,
       linkedKpiKey:
         storedForMember?.linked_kpi_key ||
         missedCells[0]?.kpiKey ||

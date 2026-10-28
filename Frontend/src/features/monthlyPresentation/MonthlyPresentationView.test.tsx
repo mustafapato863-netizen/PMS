@@ -843,6 +843,8 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
     expect(screen.getByTestId('role-action-form')).toBeInTheDocument();
     const savedRoleAction = screen.getAllByTestId(/^role-action-/)[0]?.textContent ?? '';
     expect(savedRoleAction.trim().length).toBeGreaterThan(0);
+    expect(savedRoleAction).toContain('Suggested action — not saved');
+    expect(screen.queryByRole('button', { name: /export pptx/i })).not.toBeInTheDocument();
 
     fireEvent.click(modeSwitch());
     expect(modeSwitch()).toHaveAttribute('aria-checked', 'true');

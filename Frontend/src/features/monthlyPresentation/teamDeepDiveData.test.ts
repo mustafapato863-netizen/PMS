@@ -1,10 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import type { ExecRecord } from '../executive/compose';
 import { CALL_CENTER_DEEP_DIVE_SEP_2026, HUMAN_RESOURCES_DEEP_DIVE_SEP_2026, RCM_DEEP_DIVE_SEP_2026 } from './callCenterDeepDiveData';
-import { buildRoleDetail } from './roleDetailData';
+import { buildRoleDetail, noteFields } from './roleDetailData';
 import { buildTeamDeepDiveFromRecords } from './teamDeepDiveData';
 
 const september = { year: 2026, month: 'September', key: '2026-09' };
+
+describe('saved action notes', () => {
+  it('preserves decimal values in expected impact', () => {
+    expect(noteFields('Owner: Team Lead. Status: Open. Expected impact: +2.5% role score lift.')).toEqual({
+      owner: 'Team Lead', status: 'Open', expectedImpact: '+2.5% role score lift',
+    });
+  });
+});
 
 function kpi(
   key: string,
@@ -262,24 +270,26 @@ describe('generic team deep dive agent KPIs', () => {
     expect(amr?.gradeFullLabel).toBe('Average');
     expect(amr?.keyKpiLabel).toBe('Reachability');
     expect(amr?.keyKpiActual).toBe('53.0%');
-    expect(amr?.kpiCells?.find((c) => /booking/i.test(c.label))?.actualFormatted).toBe('30.5%');
-    expect(amr?.kpiCells?.find((c) => /quality/i.test(c.label))?.actualFormatted).toBe('96.0%');
+    expect(amr?.kpiCells?.find((c) => /booking/i.test(c.label))?.actualFormatted).toBe('—');
+    expect(amr?.kpiCells?.find((c) => /quality/i.test(c.label))?.metTarget).toBeNull();
 
     const adham = role.members.find((m) => /adham sameh/i.test(m.personName));
     expect(adham).toBeDefined();
     expect(adham?.score).toBe(93.4);
     expect(adham?.grade).toBe('B');
     expect(adham?.gradeFullLabel).toBe('Meet Expectations');
-    expect(adham?.kpiCells?.find((c) => /booking/i.test(c.label))?.actualFormatted).toBe('62.0%');
-    expect(adham?.kpiCells?.find((c) => /aht/i.test(c.label))?.actualFormatted).toBe('2.73 min');
-    expect(adham?.kpiCells?.find((c) => /quality/i.test(c.label))?.actualFormatted).toBe('98.4%');
-    expect(adham?.kpiCells?.find((c) => /quality/i.test(c.label))?.metTarget).toBe(true);
+    expect(adham?.kpiCells?.find((c) => /booking/i.test(c.label))?.actualFormatted).toBe('—');
+    expect(adham?.kpiCells?.find((c) => /aht/i.test(c.label))?.actualFormatted).toBe('—');
+    expect(adham?.kpiCells?.find((c) => /quality/i.test(c.label))?.metTarget).toBeNull();
 
     // Individual action plan focuses on the member requiring action (Amr Badawy Mohamed)
     const amrAction = role.individualActionPlans.find((p) => /amr badawy/i.test(p.personName));
     expect(amrAction).toBeDefined();
     expect(amrAction?.score).toBe(86.3);
     expect(amrAction?.gradeFullLabel).toBe('Average');
+    expect(amrAction?.suggested).toBe(true);
+    expect(amrAction?.expectedImpact).toBe('Impact to be confirmed');
+    expect(role.actions.every((action) => !action.suggested || (action.dueDate === null && action.expectedImpact === 'Impact to be confirmed'))).toBe(true);
   });
 
   it('combines Inbound Team Leader and Outbound Team Leader records into the single Team Leader role detail', () => {

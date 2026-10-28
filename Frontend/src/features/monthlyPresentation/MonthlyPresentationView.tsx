@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import './macCursor.css';
 import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { FileBarChart } from 'lucide-react';
 import { useAuth } from '../../context/auth';
 import { useUserRole } from '../../context/RoleContext';
 import { directorScope } from '../../lib/directorScope';
@@ -9,7 +8,6 @@ import { redirectsToFunctionSummary } from '../../lib/access';
 import { composeExecutiveSummary, normalizeRegion, toExecRecords } from '../executive/compose';
 import { useSummaryRecords } from '../executive/useSummaryRecords';
 import { useActionStore } from '../../hooks/useActionStore';
-import { apiFetch } from '../../lib/apiClient';
 import {
   adaptSummaryToMonthlyOverview,
   type FunctionOverviewItem,
@@ -322,54 +320,7 @@ function MonthlyPresentationScreen({
     [resolvedTeamData, saveAction],
   );
 
-  const [downloadingPptx, setDownloadingPptx] = useState(false);
   const [presentationMode, setPresentationMode] = useState(false);
-  const handleDownloadPptx = useCallback(async () => {
-    const exportRegion = overviewData.regionCode;
-    const [yearStr] = overviewData.periodKey.split('-');
-    const year = Number(yearStr) || 2026;
-    const monthName = overviewData.monthLabel.split(' ')[0] || 'September';
-    try {
-      setDownloadingPptx(true);
-      const res = await apiFetch<{
-        success: boolean;
-        data?: { download_url?: string; file_name?: string };
-      }>('/api/reports/generate', {
-        method: 'POST',
-        headers: {
-          'Idempotency-Key': `pptx-${exportRegion}-${overviewData.periodKey}-${Date.now()}`,
-        },
-        body: JSON.stringify({
-          report_name: `${overviewData.regionName} Monthly Performance Review`,
-          report_type: exportRegion === 'EGY' ? 'monthly_egypt' : 'monthly_uae',
-          output_format: 'pptx',
-          region: exportRegion,
-          start_year: year,
-          start_month: monthName,
-          end_year: year,
-          end_month: monthName,
-          included_sections: ['summary'],
-        }),
-      });
-      const downloadUrl = res.data?.download_url;
-      if (downloadUrl) {
-        const link = document.createElement('a');
-        link.href = downloadUrl;
-        link.download =
-          res.data?.file_name ||
-          `Monthly_Presentation_${exportRegion}_${overviewData.periodKey}.pptx`;
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-      }
-    } catch (err) {
-      console.error('Failed to export Monthly PPTX:', err);
-      window.alert('Monthly report PPTX could not be generated.');
-    } finally {
-      setDownloadingPptx(false);
-    }
-  }, [overviewData]);
-
   const headerToolbar = (
     <>
       {!assigned.regionLocked && (
@@ -412,16 +363,6 @@ function MonthlyPresentationScreen({
         </div>
       )}
 
-      <button
-        type="button"
-        disabled={downloadingPptx}
-        onClick={handleDownloadPptx}
-        className="compact-control inline-flex h-9 !min-h-0 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 shadow-2xs transition-all hover:border-slate-300 hover:bg-slate-50 disabled:opacity-50"
-        title="Download Monthly Executive PPTX"
-      >
-        <FileBarChart size={15} className="text-blue-600" />
-        <span>{downloadingPptx ? 'Exporting…' : 'Export PPTX'}</span>
-      </button>
 
     </>
   );

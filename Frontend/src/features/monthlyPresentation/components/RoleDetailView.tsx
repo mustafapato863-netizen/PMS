@@ -149,15 +149,6 @@ export default function RoleDetailView({
     const nextText = draftIndAction.trim() || card.actionText;
     const nextOwner = draftIndOwner.trim() || card.owner;
     const nextImpact = draftIndImpact.trim() || card.expectedImpact;
-    setIndividualOverrides((prev) => ({
-      ...prev,
-      [card.id]: {
-        actionText: nextText,
-        owner: nextOwner,
-        expectedImpact: nextImpact,
-      },
-    }));
-    setEditingIndividualId(null);
     await onSaveAction({
       employeeId: card.employeeId,
       personName: card.personName,
@@ -170,6 +161,8 @@ export default function RoleDetailView({
       expectedImpact: nextImpact,
       linkedKpiKey: card.linkedKpiKey,
     });
+    setIndividualOverrides((prev) => ({ ...prev, [card.id]: { actionText: nextText, owner: nextOwner, expectedImpact: nextImpact, suggested: false } }));
+    setEditingIndividualId(null);
   };
 
   const localActions = useMemo(
@@ -802,9 +795,11 @@ export default function RoleDetailView({
                         >
                           <span
                             className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-bold ${
-                              cell.metTarget
+                              cell.metTarget === null
+                                ? 'bg-slate-100 text-slate-500'
+                                : cell.metTarget
                                 ? 'bg-emerald-50 text-emerald-700'
-                                : cell.achievementPct < 75
+                                : (cell.achievementPct ?? 0) < 75
                                 ? 'bg-rose-50 text-rose-700'
                                 : 'bg-amber-50 text-amber-800'
                             }`}
@@ -1019,7 +1014,7 @@ export default function RoleDetailView({
                     ) : (
                       <div className="mt-3">
                         <div className="text-[11px] font-bold tracking-wider text-slate-400 uppercase">
-                          Action Plan
+                          {card.suggested ? 'Suggested action — not saved' : 'Action Plan'}
                         </div>
                         <p className="mt-1 text-xs font-medium leading-relaxed text-slate-800 sm:text-sm">
                           {card.actionText}
@@ -1117,7 +1112,7 @@ export default function RoleDetailView({
                     <div className="flex items-center justify-between gap-2">
                       <span className="inline-flex items-center gap-1 rounded-md border border-blue-200 bg-blue-50 px-2.5 py-0.5 text-[11px] font-bold text-blue-700">
                         <Layers className="size-3" aria-hidden />
-                        Whole-Role Action
+                        {action.suggested ? 'Suggested action — not saved' : 'Whole-Role Action'}
                       </span>
 
                       <span
@@ -1129,7 +1124,7 @@ export default function RoleDetailView({
                             : 'bg-slate-200 text-slate-700'
                         }`}
                       >
-                        {action.status}
+                        {action.suggested ? 'Suggestion' : action.status}
                       </span>
                     </div>
 
@@ -1172,7 +1167,7 @@ export default function RoleDetailView({
                       <dt className="font-medium text-slate-400">Owner</dt>
                       <dd className="font-bold text-slate-800">{action.owner}</dd>
                     </div>
-                    {showStoredPlaceholder(action.dueDate?.trim() || 'No due date', presentationMode) && (
+                    {!action.suggested && showStoredPlaceholder(action.dueDate?.trim() || 'No due date', presentationMode) && (
                       <div className="flex items-center justify-between text-slate-700">
                         <dt className="font-medium text-slate-400">Due</dt>
                         <dd className="font-bold text-slate-800">{action.dueDate?.trim() || 'No due date'}</dd>
