@@ -890,6 +890,21 @@ def test_pr5_multi_scope_certification_and_200_employee_latency_gate(monkeypatch
     assert bench["categories"]["standard_comparison"]["warm_p95_ms"] < 5000.0
 
 
+def test_pr6_classifier_evaluation_and_promotion_gate_decision():
+    """PR 6: Evaluate local intent classifier on paraphrase-grouped splits and verify promotion gate decision."""
+    from scripts.evaluate_ai_classifier import run_classifier_evaluation
+
+    report = run_classifier_evaluation()
+    assert report["paraphrase_split_zero_leakage"] is True
+    assert report["splits"]["test"]["hybrid_router_exact_match_pct"] == 100.0
+    assert report["gates"]["accepted_local_exact_match_measured_pct"] >= 99.0
+    assert report["gates"]["overall_test_exact_match_measured_pct"] >= 95.0
+    assert report["gates"]["passes_cost_gate"] is False
+    assert report["promotion_decision"] == "DO_NOT_PROMOTE_KEEP_HYBRID_RULES"
+    assert report["runtime_dependency_added"] is False
+
+
+
 
 
 
