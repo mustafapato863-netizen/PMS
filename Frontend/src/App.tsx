@@ -36,6 +36,7 @@ const PlanningView = lazy(() => import('./pages/PlanningView'));
 const CorrectiveActionsView = lazy(() => import('./pages/CorrectiveActionsView'));
 const MaintenanceView = lazy(() => import('./pages/MaintenanceView'));
 const MonthlyPresentationView = lazy(() => import('./pages/MonthlyPresentationView'));
+const PmsAiWorkspaceView = lazy(() => import('./pages/PmsAiWorkspaceView'));
 const NotFound = lazy(() => import('./pages/NotFound'));
 
 const RouteLoadingFallback = () => <PageLoadingSkeleton variant="dashboard" label="Loading page" />;
@@ -141,6 +142,14 @@ function AnimatedRoutes() {
           element={
             <RouteGuard allowedRoles={ROUTE_ROLES.insights}>
               <Suspense fallback={<RouteLoadingFallback />}><InsightsView /></Suspense>
+            </RouteGuard>
+          }
+        />
+        <Route
+          path="/ai"
+          element={
+            <RouteGuard allowedRoles={ROUTE_ROLES.pmsAi}>
+              <Suspense fallback={<RouteLoadingFallback />}><PmsAiWorkspaceView /></Suspense>
             </RouteGuard>
           }
         />

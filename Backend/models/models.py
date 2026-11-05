@@ -1445,3 +1445,38 @@ class ErrorLog(Base):
     error_message = Column(Text, nullable=False)
     stack_trace = Column(Text, nullable=True)
     occurred_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class AiInteractionTrace(Base):
+    """Stores AI analytical workspace interactions and feedback for local model distillation."""
+
+    __tablename__ = "ai_interaction_traces"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(String(100), nullable=True)
+    role = Column(String(50), nullable=False, default="Manager")
+    prompt = Column(Text, nullable=False)
+    sanitized_prompt = Column(Text, nullable=False)
+    session_state = Column(JSON_COMPAT_TYPE, nullable=False, default=dict)
+    tool_calls = Column(JSON_COMPAT_TYPE, nullable=False, default=list)
+    tool_digest = Column(JSON_COMPAT_TYPE, nullable=False, default=dict)
+    structured_response = Column(JSON_COMPAT_TYPE, nullable=False, default=dict)
+    provider_name = Column(String(60), nullable=False, default="deterministic")
+    model_name = Column(String(100), nullable=False, default="pms-deterministic-v1")
+    latency_ms = Column(Integer, nullable=False, default=0)
+    non_empty_evidence = Column(Boolean, nullable=False, default=False)
+    guardrail_triggered = Column(Boolean, nullable=False, default=False)
+    feedback_rating = Column(String(20), nullable=True)
+    feedback_reason = Column(String(120), nullable=True)
+    is_distillation_eligible = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    __table_args__ = (
+        CheckConstraint(
+            "feedback_rating IS NULL OR feedback_rating IN ('up', 'down')",
+            name="ck_ai_trace_feedback_rating",
+        ),
+        Index("idx_ai_trace_distillation", "is_distillation_eligible", "created_at"),
+        Index("idx_ai_trace_user_created", "user_id", "created_at"),
+    )

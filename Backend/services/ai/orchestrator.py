@@ -1,0 +1,429 @@
+from __future__ import annotations
+
+import time
+from typing import Any
+
+from sqlalchemy.orm import Session
+
+from config.database import release_read_transaction
+from models.ai_schemas import (
+    AiChatRequest,
+    AiChatResponsePayload,
+    AiToolCallRecord,
+    AiWatchingAlertItem,
+    AiWatchingPayload,
+    DeepLinkCta,
+    SessionFilterContext,
+    SourceCitationPill,
+    StructuredVisualCard,
+)
+from services.ai.domain_policies import (
+    build_call_center_guardrails,
+    build_call_center_starter_prompts,
+    extract_prompt_signals,
+    sanitize_untrusted_text,
+)
+from services.ai.providers import CloudOrLocalHttpProviderAdapter
+from services.ai.tool_registry import (
+    DeterministicToolRegistry,
+    ToolExecutionContext,
+    ToolExecutionResult,
+    build_verified_deep_link,
+)
+from services.ai.trace_logger import TrainingTraceLogger
+from services.corrective_action_service import CorrectiveActionService
+
+
+class PmsAiOrchestrator:
+    """Coordinates zero-token 'AI is watching' alerts and multi-tool analytical chat turns."""
+
+    def __init__(self, db: Session, scope: dict[str, Any]) -> None:
+        self.db = db
+        self.scope = scope
+
+    def build_watching_workspace(self, session_state: SessionFilterContext) -> AiWatchingPayload:
+        ctx = ToolExecutionContext(db=self.db, scope=self.scope, session_state=session_state)
+        resolved = ctx.resolve_filters()
+
+        ws = ctx.insights_service.generate_workspace(
+            self.scope,
+            sections="summary,executive_story,priority_insights,risks,team_summaries,comparison",
+            month=resolved["month"],
+            year=resolved["year"],
+            region=resolved["region"],
+            team=resolved["team"],
+            function=resolved["function"],
+            performance_level=resolved["performance_level"],
+            branch=resolved["branch"],
+        )
+
+        res_month = ws.comparison.current.month if ws.comparison and ws.comparison.current else resolved["month"]
+        res_year = ws.comparison.current.year if ws.comparison and ws.comparison.current else resolved["year"]
+        total_employees = sum(int(t.total_employees or 0) for t in (ws.team_summaries or []))
+
+        overdue_count = 0
+        try:
+            ca_res = CorrectiveActionService(self.db).list_follow_up(
+                self.scope,
+                state="overdue",
+                team=resolved["team"],
+                month=res_month,
+            )
+            overdue_actions = list(ca_res.get("actions") or [])
+            if not resolved["team"] and (resolved["function"] or "").casefold() == "call center":
+                overdue_actions = [
+                    a for a in overdue_actions if str(a.get("team") or "").casefold() in ("inbound", "outbound", "call center")
+                ]
+            overdue_count = len(overdue_actions)
+        except Exception:
+            overdue_count = 0
+
+        release_read_transaction(self.db)
+
+        alerts: list[AiWatchingAlertItem] = []
+
+        # 1. Priority Insights / Team Drop Alert
+        for ins in (ws.priority_insights or [])[:2]:
+            sev_val = "critical" if str(ins.severity).casefold() == "critical" else "warning"
+            focus_txt = ins.explanation or (ins.detail.recommended_focus if ins.detail else "")
+            alerts.append(
+                AiWatchingAlertItem(
+                    id=f"watch-{ins.id}",
+                    title=ins.title,
+                    subtitle=sanitize_untrusted_text(focus_txt, 110),
+                    severity=sev_val,  # type: ignore[arg-type]
+                    badge_text=ins.team or (resolved["function"] or "Call Center"),
+                    prompt_to_ask=f"Diagnose why {ins.team or 'Call Center'} triggered '{ins.title}' and show the top employees causing it.",
+                    deep_link=build_verified_deep_link(
+                        "/insights",
+                        month=res_month,
+                        year=res_year,
+                        function=resolved["function"],
+                        team=ins.team or resolved["team"],
+                        branch=resolved["branch"],
+                    ),
+                )
+            )
+
+        # 2. SIP / Risk Candidates Alert
+        if ws.risks:
+            non_zero_risks = [r for r in ws.risks if int(r.count or 0) > 0]
+            if non_zero_risks:
+                top_r = non_zero_risks[0]
+                alerts.append(
+                    AiWatchingAlertItem(
+                        id=f"watch-risk-{top_r.key}",
+                        title=f"{top_r.count} employees in {top_r.label}",
+                        subtitle=sanitize_untrusted_text(top_r.explanation, 110),
+                        severity="warning",
+                        badge_text=f"{top_r.count} flagged",
+                        prompt_to_ask=f"Who are the employees in {top_r.label} for {resolved['team'] or 'Call Center'}?",
+                        deep_link=build_verified_deep_link("/planning", month=res_month, year=res_year, team=resolved["team"]),
+                    )
+                )
+
+        # 3. Overdue Corrective Actions Alert
+        if overdue_count > 0:
+            alerts.append(
+                AiWatchingAlertItem(
+                    id="watch-overdue-actions",
+                    title=f"{overdue_count} corrective actions overdue",
+                    subtitle="Follow-up deadline passed without completion sign-off",
+                    severity="critical",
+                    badge_text=f"{overdue_count} exceptions",
+                    prompt_to_ask="Show overdue corrective actions and their owners.",
+                    deep_link=build_verified_deep_link("/corrective-actions", team=resolved["team"], month=res_month),
+                )
+            )
+
+        # Ensure at least 3 watching cards when team summaries exist
+        if len(alerts) < 3 and ws.team_summaries:
+            lowest_t = min(ws.team_summaries, key=lambda t: (t.current_score if t.current_score is not None else 999.0))
+            alerts.append(
+                AiWatchingAlertItem(
+                    id=f"watch-team-{lowest_t.team}",
+                    title=f"{lowest_t.team} score at {(lowest_t.current_score or 0.0):.1f}%",
+                    subtitle=f"{lowest_t.impacted_employees} of {lowest_t.total_employees} agents below target",
+                    severity="warning" if (lowest_t.current_score or 0.0) < 88 else "info",
+                    badge_text=lowest_t.team,
+                    prompt_to_ask=f"Analyze {lowest_t.team} KPI gaps and who caused the drop in {res_month or 'the latest month'}.",
+                    deep_link=build_verified_deep_link(
+                        f"/team/{lowest_t.team.lower()}",
+                        month=res_month,
+                        year=res_year,
+                        branch=resolved["branch"],
+                    ),
+                )
+            )
+
+        resolved_state = SessionFilterContext(
+            function=resolved["function"],
+            team=resolved["team"],
+            branch=resolved["branch"],
+            region=resolved["region"],
+            performance_level=resolved["performance_level"],
+            month=res_month,
+            year=res_year,
+            employee_id=session_state.employee_id,
+        )
+
+        return AiWatchingPayload(
+            resolved_session_state=resolved_state,
+            alerts=alerts[:4],
+            guardrails=build_call_center_guardrails(),
+            starter_prompts=build_call_center_starter_prompts(resolved_state),
+            summary_score=ws.executive_story.current_score if ws.executive_story else None,
+            summary_score_change=ws.executive_story.score_change if ws.executive_story else None,
+            measured_records=total_employees,
+        )
+
+    def run_chat_turn(self, req: AiChatRequest) -> AiChatResponsePayload:
+        t0 = time.perf_counter()
+        signals = extract_prompt_signals(req.prompt, req.session_state)
+
+        ctx = ToolExecutionContext(db=self.db, scope=self.scope, session_state=req.session_state)
+        registry = DeterministicToolRegistry(ctx)
+
+        tool_results: list[ToolExecutionResult] = []
+        guardrail_notes: list[str] = []
+
+        if signals.asks_revenue_in_call_center:
+            guardrail_notes.append(
+                "Call Center (Inbound & Outbound) measures operational patient volume (Bookings, Attended Visits, and Handled Calls) rather than financial revenue. Financial revenue is tracked under Marketing and RCM."
+            )
+
+        for intent in signals.primary_intents[:2]:
+            if intent == "agent_spotlight_trend":
+                tool_results.append(
+                    registry.execute_agent_spotlight_and_trend(
+                        team=signals.detected_team,
+                        branch=signals.detected_branch,
+                        month=signals.detected_month,
+                        year=signals.detected_year,
+                        employee_query=signals.detected_employee_query,
+                        ranking_direction="worst" if signals.asks_worst_agent else "best",
+                        single_person=signals.asks_single_person,
+                    )
+                )
+            elif intent == "team_trend_spotlight":
+                tool_results.append(
+                    registry.execute_team_trend_spotlight(
+                        team=signals.detected_team,
+                        branch=signals.detected_branch,
+                        month=signals.detected_month,
+                        year=signals.detected_year,
+                    )
+                )
+            elif intent == "management_bsc":
+                tool_results.append(
+                    registry.execute_management_balanced_scorecard(
+                        team=signals.detected_team,
+                        performance_level=signals.detected_level or "Managerial",
+                        month=signals.detected_month,
+                        year=signals.detected_year,
+                    )
+                )
+            elif intent == "corrective_actions":
+                tool_results.append(
+                    registry.execute_corrective_actions_status(
+                        team=signals.detected_team,
+                        month=signals.detected_month,
+                        year=signals.detected_year,
+                    )
+                )
+            elif intent == "governance_plans":
+                tool_results.append(
+                    registry.execute_governance_candidates_and_plans(
+                        team=signals.detected_team,
+                        branch=signals.detected_branch,
+                        month=signals.detected_month,
+                        year=signals.detected_year,
+                    )
+                )
+            elif intent == "employee_history" and signals.detected_employee_query:
+                tool_results.append(
+                    registry.execute_employee_multi_month_history(
+                        employee_query=signals.detected_employee_query,
+                        branch=signals.detected_branch,
+                    )
+                )
+            elif intent == "people_contribution":
+                tool_results.append(
+                    registry.execute_people_contribution_and_rankings(
+                        team=signals.detected_team,
+                        branch=signals.detected_branch,
+                        performance_level=signals.detected_level,
+                        kpi=signals.detected_kpi,
+                        month=signals.detected_month,
+                        year=signals.detected_year,
+                    )
+                )
+            elif intent == "kpi_diagnosis":
+                tool_results.append(
+                    registry.execute_kpi_diagnosis_and_trends(
+                        team=signals.detected_team,
+                        branch=signals.detected_branch,
+                        compare_branch=signals.detected_compare_branch,
+                        asks_branch_comparison=signals.asks_branch_comparison,
+                        performance_level=signals.detected_level,
+                        kpi=signals.detected_kpi,
+                        month=signals.detected_month,
+                        year=signals.detected_year,
+                    )
+                )
+            else:
+                tool_results.append(
+                    registry.execute_executive_and_priority_insights(
+                        team=signals.detected_team,
+                        branch=signals.detected_branch,
+                        performance_level=signals.detected_level,
+                        month=signals.detected_month,
+                        year=signals.detected_year,
+                    )
+                )
+
+        # CRITICAL BLOCKER-2: Release the DB read transaction BEFORE calling any LLM network provider!
+        release_read_transaction(self.db)
+
+        visual_cards: list[StructuredVisualCard] = []
+        citations: list[SourceCitationPill] = []
+        deep_links: list[DeepLinkCta] = []
+        tool_call_records: list[AiToolCallRecord] = []
+        tool_digests: list[dict[str, Any]] = []
+        seen_citations: set[str] = set()
+        seen_links: set[str] = set()
+        res_month = req.session_state.month
+        res_year = req.session_state.year
+        basis_warning: str | None = None
+        any_guardrail = bool(signals.asks_revenue_in_call_center)
+        total_records_eval = 0
+
+        if signals.asks_revenue_in_call_center:
+            visual_cards.append(
+                StructuredVisualCard(
+                    card_type="guardrail_notice",
+                    title="Call Center Production Metric Notice",
+                    subtitle="Domain Schema Guardrail",
+                    notice_text=guardrail_notes[0],
+                )
+            )
+
+        for tr in tool_results:
+            total_records_eval += tr.records_evaluated
+            any_guardrail = any_guardrail or tr.guardrail_triggered
+            if tr.resolved_month:
+                res_month = tr.resolved_month
+            if tr.resolved_year:
+                res_year = tr.resolved_year
+            if tr.basis_warning and not basis_warning:
+                basis_warning = tr.basis_warning
+
+            tool_call_records.append(
+                AiToolCallRecord(
+                    tool_name=tr.tool_name,
+                    arguments=tr.arguments,
+                    records_evaluated=tr.records_evaluated,
+                )
+            )
+            tool_digests.append(tr.digest)
+            visual_cards.extend(tr.visual_cards)
+
+            for c in tr.citations:
+                if c.label not in seen_citations:
+                    seen_citations.add(c.label)
+                    citations.append(c)
+
+            for dl in tr.deep_links:
+                if dl.route not in seen_links:
+                    seen_links.add(dl.route)
+                    deep_links.append(dl)
+
+        # Separate data cards from decision_playbook cards and merge decisions into one cohesive playbook card
+        data_cards: list[StructuredVisualCard] = []
+        merged_decisions = []
+        seen_dec_ids: set[str] = set()
+        playbook_title = "Recommended Executive Decisions & What-If Playbook"
+        playbook_subtitle = "Data-driven managerial actions prioritized by score recovery and patient conversion ROI"
+
+        for vc in visual_cards:
+            if vc.card_type == "decision_playbook":
+                if vc.title:
+                    playbook_title = vc.title
+                if vc.subtitle:
+                    playbook_subtitle = vc.subtitle
+                for d in vc.decisions:
+                    if d.id not in seen_dec_ids:
+                        seen_dec_ids.add(d.id)
+                        merged_decisions.append(d)
+            else:
+                data_cards.append(vc)
+
+        final_cards = data_cards[:3]
+        if merged_decisions:
+            final_cards.append(
+                StructuredVisualCard(
+                    card_type="decision_playbook",
+                    title=playbook_title,
+                    subtitle=playbook_subtitle,
+                    decisions=merged_decisions[:4],
+                )
+            )
+
+        adapter = CloudOrLocalHttpProviderAdapter(provider_override=req.provider_override)
+        synthesis = adapter.synthesize(
+            prompt=req.prompt,
+            signals=signals,
+            tool_digests=tool_digests,
+            guardrail_notes=guardrail_notes,
+        )
+
+        latency_ms = int((time.perf_counter() - t0) * 1000)
+
+        resolved_state = SessionFilterContext(
+            function=req.session_state.function or "Call Center",
+            team=signals.detected_team or req.session_state.team,
+            branch=signals.detected_branch or req.session_state.branch,
+            region=req.session_state.region,
+            performance_level=signals.detected_level or req.session_state.performance_level,
+            month=res_month,
+            year=res_year,
+            employee_id=req.session_state.employee_id,
+        )
+
+        response_dict = {
+            "headline": synthesis.headline,
+            "narrative_bullets": synthesis.narrative_bullets,
+            "citations": [c.model_dump() for c in citations],
+        }
+
+        trace_id = TrainingTraceLogger(self.db).record_turn(
+            user_id=str(self.scope.get("user_id") or ""),
+            role=str(self.scope.get("role") or "Manager"),
+            prompt=req.prompt,
+            session_state=resolved_state,
+            tool_calls=[tc.model_dump() for tc in tool_call_records],
+            tool_digest={"digests": tool_digests},
+            structured_response=response_dict,
+            provider_name=synthesis.provider_used,
+            model_name=synthesis.model_used,
+            latency_ms=latency_ms,
+            non_empty_evidence=total_records_eval > 0,
+            guardrail_triggered=any_guardrail,
+        )
+
+        return AiChatResponsePayload(
+            trace_id=trace_id,
+            headline=synthesis.headline,
+            narrative_bullets=synthesis.narrative_bullets,
+            visual_cards=final_cards,
+            citations=citations,
+            deep_links=deep_links[:3],
+            suggested_followups=synthesis.suggested_followups,
+            resolved_session_state=resolved_state,
+            domain_guardrail_notes=guardrail_notes,
+            tool_calls=tool_call_records,
+            provider_used=synthesis.provider_used,
+            model_used=synthesis.model_used,
+            latency_ms=latency_ms,
+            basis_warning=basis_warning,
+        )

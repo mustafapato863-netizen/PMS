@@ -16,7 +16,12 @@ import { useUserRole } from '../../context/RoleContext';
 import { useAuth } from '../../context/auth';
 import { NotificationBell } from '../notifications';
 import { usePerformanceCatalog } from '../../hooks/api/usePerformanceCatalog';
-import { getRoleDisplayLabel, isGeneralManagerRole, readHasUnrestrictedTeamAccess } from '../../lib/access';
+import {
+  canAccessPmsAi,
+  getRoleDisplayLabel,
+  isGeneralManagerRole,
+  readHasUnrestrictedTeamAccess,
+} from '../../lib/access';
 
 // ── route config ──────────────────────────────────────────────────────────────
 
@@ -33,6 +38,7 @@ const ROUTE_TITLES: Record<string, { title: string; compactTitle: string; subtit
   '/rewards': { title: 'Rewards & Promotions', compactTitle: 'Rewards', subtitle: 'Top performers and recognition' },
   '/reports': { title: 'Reports', compactTitle: 'Reports', subtitle: 'Generate and manage performance reports' },
   '/insights': { title: 'Insights', compactTitle: 'Insights', subtitle: 'Understand what drives performance' },
+  '/ai': { title: 'PMS AI', compactTitle: 'PMS AI', subtitle: 'Analytical copilot & root-cause diagnostics' },
   '/planning': { title: 'Planning', compactTitle: 'Planning', subtitle: 'Create, track and manage performance plans' },
 };
 
@@ -245,6 +251,23 @@ const Header = ({ onMenuClick }: HeaderProps) => {
   const { title, compactTitle, subtitle } = resolveRoute(pathname);
   const currentMonth = (searchParams.get('month') || 'All') as MonthKey;
 
+  const handleOpenAskAi = useCallback(() => {
+    const aiParams = new URLSearchParams();
+    for (const key of ['month', 'year', 'function', 'team', 'branch', 'performance_level']) {
+      const val = searchParams.get(key);
+      if (val) aiParams.set(key, val);
+    }
+    if (!aiParams.get('team') && pathname.startsWith('/team/')) {
+      const slug = pathname.replace('/team/', '').split('/')[0];
+      if (slug && slug !== 'all') {
+        const pretty = slug.charAt(0).toUpperCase() + slug.slice(1);
+        aiParams.set('team', pretty);
+      }
+    }
+    const qs = aiParams.toString();
+    navigate(qs ? `/ai?${qs}` : '/ai');
+  }, [navigate, pathname, searchParams]);
+
   // scroll detection — throttled to animation frame to avoid forced reflow
   useEffect(() => {
     let rafId: number | undefined;
@@ -339,6 +362,18 @@ const Header = ({ onMenuClick }: HeaderProps) => {
 
         {/* ── Right: controls ── */}
         <div className="app-header-actions flex items-center justify-end gap-1.5 md:gap-2 shrink-0">
+          {canAccessPmsAi(role) && pathname !== '/ai' && (
+            <button
+              type="button"
+              onClick={handleOpenAskAi}
+              aria-label="Ask AI analytical assistant"
+              className="inline-flex items-center gap-1.5 rounded-full bg-gradient-to-r from-blue-600 to-cyan-400 px-3 py-1.5 text-xs font-bold text-white shadow-sm shadow-blue-500/25 transition-transform hover:scale-[1.02]"
+            >
+              <Sparkles size={13} aria-hidden="true" />
+              <span>Ask AI</span>
+            </button>
+          )}
+
           <div className="hidden sm:block">
             <MonthSelect
               value={currentMonth}
