@@ -22,7 +22,7 @@ from models.ai_schemas import (
     StructuredVisualCard,
     TypedMetricEvidence,
 )
-from services.ai.catalog import get_ai_catalog
+from services.ai.catalog import get_ai_catalog, user_can_access_branch
 from services.ai.domain_policies import (
     disambiguate_call_center_kpi_label,
     sanitize_untrusted_text,
@@ -105,6 +105,12 @@ class ToolExecutionContext:
         self.source = DatabaseRecordSource(db)
         self.planning_service = PlanningService(self.source, db=db)
         self.insights_service = InsightsService(self.source, self.planning_service, db=db)
+        self._scoped_records: list[Any] | None = None
+
+    def get_scoped_records(self) -> list[Any]:
+        if self._scoped_records is None:
+            self._scoped_records = filter_records_by_scope(self.source.get_all(), self.scope)
+        return self._scoped_records
 
     def resolve_filters(
         self,
@@ -134,8 +140,10 @@ class ToolExecutionContext:
             if eff_branch not in BRANCH_KEYS:
                 eff_branch = None
 
-        allowed_branches = self.scope.get("allowed_branches")
-        if isinstance(allowed_branches, (list, set, tuple)) and len(allowed_branches) == 1:
+        allowed_branches = self.scope.get("accessible_branches")
+        if allowed_branches is None:
+            allowed_branches = self.scope.get("allowed_branches")
+        if eff_branch is None and isinstance(allowed_branches, (list, set, tuple)) and len(allowed_branches) == 1:
             eff_branch = next(iter(allowed_branches)).strip().casefold()
 
         eff_level = performance_level if performance_level not in (None, "", "All") else (
@@ -168,7 +176,7 @@ class ToolExecutionContext:
 
     def _infer_latest_year_for_month(self, month_name: str) -> int:
         try:
-            records = filter_records_by_scope(self.source.get_all(), self.scope)
+            records = self.get_scoped_records()
             years = [
                 int(getattr(r, "year", 0) or (r.get("year") if isinstance(r, dict) else 0) or 0)
                 for r in records
@@ -505,6 +513,7 @@ class DeterministicToolRegistry:
                     if bk not in ordered:
                         ordered.append(bk)
                 branches_to_compare = ordered
+            branches_to_compare = [b for b in branches_to_compare if user_can_access_branch(self.ctx.scope, b)]
 
             bars: list[AiBarItem] = []
             for bk in branches_to_compare:
@@ -645,6 +654,8 @@ class DeterministicToolRegistry:
                     direction=row.direction or "higher_better",
                     people_below_target=int(row.people_below_target or 0),
                     status=status_val if contributes else "info",  # type: ignore[arg-type]
+                    contributes_to_score=contributes,
+                    tracking_only_badge="Tracking Only" if not contributes else None,
                 )
             )
             kpi_bars.append(
@@ -821,13 +832,54 @@ class DeterministicToolRegistry:
                 ),
             )
 
-        lowest_kpi = min(kpi_rows, key=lambda r: (r.achievement_percent or 0.0)) if kpi_rows else None
+        requested_kpi_payload: dict[str, Any] | None = None
+        if kpi:
+            req_cat = catalog.find_metric_definition(
+                team=resolved["team"],
+                kpi_key_or_label=kpi,
+                performance_level=resolved["performance_level"] or "Employee",
+            )
+            matched_ev = next(
+                (
+                    ev
+                    for ev in typed_evidence
+                    if (req_cat and ev.metric_id == req_cat.metric_id)
+                    or ev.kpi_key.casefold() == kpi.strip().casefold()
+                    or kpi.strip().casefold() in ev.display_name.casefold()
+                ),
+                None,
+            )
+            if matched_ev is not None:
+                matched_row = next(
+                    (r for r in kpi_rows if r.kpi_key.casefold() == matched_ev.kpi_key.casefold()),
+                    None,
+                )
+                requested_kpi_payload = {
+                    "metric_id": matched_ev.metric_id,
+                    "kpi_key": matched_ev.kpi_key,
+                    "kpi_label": matched_ev.display_name,
+                    "actual_display": matched_ev.actual_display,
+                    "target_display": matched_ev.target_display,
+                    "achievement_percent": matched_ev.achievement_percent,
+                    "weight_percent": matched_ev.weight_percent,
+                    "people_below_target": matched_row.people_below_target if matched_row else 0,
+                    "contributes_to_score": matched_ev.contributes_to_score,
+                    "tracking_only_note": matched_ev.tracking_only_note,
+                }
+
+        scored_rows = [r for r in kpi_rows if r.contributes_to_score]
+        lowest_kpi = (
+            min(scored_rows or kpi_rows, key=lambda r: (r.achievement_percent if r.achievement_percent is not None else 100.0))
+            if kpi_rows
+            else None
+        )
         digest = {
             "period": period_label,
             "scope": scope_label,
             "branch": branch_label,
             "branch_comparison": branch_comparison_digest,
             "operational_volumes": volume_summary,
+            "requested_kpi": requested_kpi_payload,
             "lowest_kpi": lowest_kpi.model_dump() if lowest_kpi else None,
             "kpis": [r.model_dump() for r in kpi_rows[:8]],
             "decisions": [d.model_dump() for d in kpi_decisions],
@@ -1101,7 +1153,7 @@ class DeterministicToolRegistry:
             month=month,
             year=year,
         )
-        all_records = filter_records_by_scope(self.ctx.source.get_all(), self.ctx.scope)
+        all_records = self.ctx.get_scoped_records()
 
         # Filter to Employee-level records in the requested team/function
         target_team = resolved["team"]
@@ -1494,7 +1546,7 @@ class DeterministicToolRegistry:
             month=month,
             year=year,
         )
-        all_records = filter_records_by_scope(self.ctx.source.get_all(), self.ctx.scope)
+        all_records = self.ctx.get_scoped_records()
         target_team = resolved["team"]
         target_fn = (resolved["function"] or "Call Center").casefold()
 
@@ -1514,8 +1566,10 @@ class DeterministicToolRegistry:
             y_val = int(getattr(rec, "year", 0) or 0)
             m_str = str(getattr(rec, "month", "") or "").strip()
             m_ord = MONTH_ORDER.get(m_str, 0)
-            sc = float(getattr(getattr(rec, "evaluation", None), "score", 0.0) or 0.0)
-            if y_val and m_ord and sc > 0:
+            ev = getattr(rec, "evaluation", None)
+            raw_sc = getattr(ev, "score", None) if ev is not None else None
+            sc = float(raw_sc) if raw_sc is not None else None
+            if y_val and m_ord and sc is not None:
                 by_period.setdefault((y_val, m_ord, m_str), []).append(sc)
 
         sorted_periods = sorted(by_period.keys())[-max(1, min(months_window, 12)) :]
@@ -1536,7 +1590,26 @@ class DeterministicToolRegistry:
 
         scope_label = target_team or resolved["function"] or "Call Center"
         branch_label = resolved["branch"].capitalize() if resolved["branch"] else "All Branches"
-        latest_pt = trend_points[-1] if trend_points else AiTrendPoint(month="September", year=2026, period_label="Sep 2026", score=90.0, target=100.0, grade="B")
+        if not trend_points:
+            fallback_month = resolved["month"] or "Latest Period"
+            fallback_year = resolved["year"] or 2026
+            return ToolExecutionResult(
+                tool_name="get_team_trend_spotlight",
+                arguments=resolved,
+                records_evaluated=0,
+                digest={
+                    "period": f"{fallback_month} {fallback_year}",
+                    "scope": scope_label,
+                    "branch": branch_label,
+                    "spotlight": None,
+                },
+                visual_cards=[],
+                citations=[SourceCitationPill(label=f"Scope · {scope_label}", category="scope")],
+                deep_links=[],
+                resolved_month=resolved["month"],
+                resolved_year=resolved["year"],
+            )
+        latest_pt = trend_points[-1]
         curr_score = latest_pt.score
         curr_grade = self._grade_for_score(curr_score)
         prev_pt = trend_points[-2] if len(trend_points) >= 2 else None
@@ -1943,7 +2016,7 @@ class DeterministicToolRegistry:
         function: str | None,
         branch: str | None,
     ) -> dict[str, float]:
-        records = filter_records_by_scope(self.ctx.source.get_all(), self.ctx.scope)
+        records = self.ctx.get_scoped_records()
         total_bookings = 0.0
         total_attended = 0.0
         total_calls = 0.0

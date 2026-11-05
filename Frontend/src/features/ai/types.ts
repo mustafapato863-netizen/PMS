@@ -151,7 +151,7 @@ export interface AiKpiTableRow {
   achievement_percent?: number | null;
   direction: string;
   people_below_target: number;
-  status: 'critical' | 'warning' | 'good' | 'neutral';
+  status: 'critical' | 'warning' | 'good' | 'neutral' | 'info';
   unit?: string | null;
   contributes_to_score?: boolean;
   tracking_only_badge?: string | null;

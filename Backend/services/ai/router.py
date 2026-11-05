@@ -16,22 +16,23 @@ from models.ai_schemas import (
 )
 from models.report_schemas import MONTHS
 from services.ai.catalog import (
-     get_ai_catalog,
+    get_ai_catalog,
     user_can_access_branch,
     user_can_access_team,
 )
+from services.ai.classifier import LocalIntentClassifier
 from services.ai.config import get_ai_runtime_config
 from services.ai.domain_policies import BRANCH_ALIASES, MONTH_ALIASES
 from services.ai.providers import (
     GeminiStructuredRouterAdapter,
     ProviderCallMetrics,
+    ProviderUnavailableError,
     is_prompt_safe_for_external_projection,
 )
-from utils.report_scope import function_for_team
+from utils.branch_scope import BRANCH_KEYS
+from utils.report_scope import function_for_team, user_can_access_team_level
 
-
-class AiProviderUnavailableError(Exception):
-    """Raised when an external AI routing provider is required or forced and fails."""
+AiProviderUnavailableError = ProviderUnavailableError
 
 
 UNAVAILABLE_FUTURE_PERIODS: frozenset[str] = frozenset(
@@ -472,37 +473,48 @@ class HybridQueryRouter:
             and "patient" not in lower
             and "booking" not in lower
         ):
+            raw_choices = [
+                ClarificationChoice(
+                    id="choice-patient-attendance-inbound",
+                    label="Inbound Patient Attendance Rate (Attended / Bookings)",
+                    prompt_to_send="What is Inbound Patient Attendance Rate vs target in September 2026?",
+                    team="Inbound",
+                    metric_id="inbound:attendance_rate",
+                    performance_level="Employee",
+                ),
+                ClarificationChoice(
+                    id="choice-patient-attendance-outbound",
+                    label="Outbound Patient Attendance Rate (Attended / Bookings)",
+                    prompt_to_send="What is Outbound Patient Attendance Rate vs target in September 2026?",
+                    team="Outbound",
+                    metric_id="outbound:attendance_rate",
+                    performance_level="Employee",
+                ),
+                ClarificationChoice(
+                    id="choice-managerial-attendance",
+                    label="Managerial Attendance Compliance (Balanced Scorecard)",
+                    prompt_to_send="Show Inbound Attendance Compliance on the Managerial scorecard for Sep 2026",
+                    team="Inbound",
+                    metric_id="inbound:attendance_compliance",
+                    performance_level="Managerial",
+                ),
+            ]
+            caller_role = str(self.scope.get("role") or "")
+            filtered_choices = [
+                c
+                for c in raw_choices
+                if (not c.team or user_can_access_team(self.scope, c.team))
+                and (
+                    c.performance_level != "Managerial"
+                    or (caller_role != "Branch Director" and user_can_access_team_level(self.scope, c.team or "Inbound", "Managerial"))
+                )
+            ] or raw_choices[:2]
             clar_prompt = AiClarificationPrompt(
                 code="AMBIGUOUS_ATTENDANCE_DEFINITION",
                 question=(
                     "Which attendance metric would you like to inspect for Call Center?"
                 ),
-                choices=[
-                    ClarificationChoice(
-                        id="choice-patient-attendance-inbound",
-                        label="Inbound Patient Attendance Rate (Attended / Bookings)",
-                        prompt_to_send="What is Inbound Patient Attendance Rate vs target in September 2026?",
-                        team="Inbound",
-                        metric_id="inbound:attendance_rate",
-                        performance_level="Employee",
-                    ),
-                    ClarificationChoice(
-                        id="choice-patient-attendance-outbound",
-                        label="Outbound Patient Attendance Rate (Attended / Bookings)",
-                        prompt_to_send="What is Outbound Patient Attendance Rate vs target in September 2026?",
-                        team="Outbound",
-                        metric_id="outbound:attendance_rate",
-                        performance_level="Employee",
-                    ),
-                    ClarificationChoice(
-                        id="choice-managerial-attendance",
-                        label="Managerial Attendance Compliance (Balanced Scorecard)",
-                        prompt_to_send="Show Inbound Attendance Compliance on the Managerial scorecard for Sep 2026",
-                        team="Inbound",
-                        metric_id="inbound:attendance_compliance",
-                        performance_level="Managerial",
-                    ),
-                ],
+                choices=filtered_choices,
             )
             plan = StructuredQueryPlan(
                 intent="clarify",
@@ -510,15 +522,20 @@ class HybridQueryRouter:
                 periods=eff_periods,
                 clarification_code="AMBIGUOUS_ATTENDANCE_DEFINITION",
             )
-            return RouterValidationResult(
-                outcome="clarification",
-                plan=plan,
-                confirmed_context=ConfirmedQueryContext(
+            preserved_ctx = (
+                prior.model_copy(update={"pending_clarification_code": "AMBIGUOUS_ATTENDANCE_DEFINITION"})
+                if prior is not None
+                else ConfirmedQueryContext(
                     intent="clarify",
                     function=eff_fn,
                     periods=eff_periods,
                     pending_clarification_code="AMBIGUOUS_ATTENDANCE_DEFINITION",
-                ),
+                )
+            )
+            return RouterValidationResult(
+                outcome="clarification",
+                plan=plan,
+                confirmed_context=preserved_ctx,
                 clarification=clar_prompt,
                 headline=clar_prompt.question,
                 narrative_bullets=[
@@ -527,27 +544,31 @@ class HybridQueryRouter:
             )
 
         if re.search(r"\bother\s+(?:kpi|metric)\b", lower) and not eff_team:
+            raw_other_choices = [
+                ClarificationChoice(
+                    id="choice-inbound-abandon",
+                    label="Abandon Rate (Inbound — 10% weight)",
+                    prompt_to_send="What is Inbound Abandon Rate vs target in September 2026?",
+                    team="Inbound",
+                    metric_id="inbound:abandon_rate",
+                ),
+                ClarificationChoice(
+                    id="choice-outbound-reachability",
+                    label="Reachability (Outbound — 10% weight)",
+                    prompt_to_send="How is Outbound Reachability against target in September 2026?",
+                    team="Outbound",
+                    metric_id="outbound:reachability",
+                ),
+            ]
+            filtered_other = [
+                c for c in raw_other_choices if not c.team or user_can_access_team(self.scope, c.team)
+            ] or raw_other_choices
             clar_prompt = AiClarificationPrompt(
                 code="AMBIGUOUS_ABANDON_METRIC",
                 question=(
                     "In Call Center, the 'Other' KPI slot represents different metrics in Inbound and Outbound. Which one would you like to view?"
                 ),
-                choices=[
-                    ClarificationChoice(
-                        id="choice-inbound-abandon",
-                        label="Abandon Rate (Inbound — 10% weight)",
-                        prompt_to_send="What is Inbound Abandon Rate vs target in September 2026?",
-                        team="Inbound",
-                        metric_id="inbound:abandon_rate",
-                    ),
-                    ClarificationChoice(
-                        id="choice-outbound-reachability",
-                        label="Reachability (Outbound — 10% weight)",
-                        prompt_to_send="How is Outbound Reachability against target in September 2026?",
-                        team="Outbound",
-                        metric_id="outbound:reachability",
-                    ),
-                ],
+                choices=filtered_other,
             )
             plan = StructuredQueryPlan(
                 intent="clarify",
@@ -555,15 +576,20 @@ class HybridQueryRouter:
                 periods=eff_periods,
                 clarification_code="AMBIGUOUS_ABANDON_METRIC",
             )
-            return RouterValidationResult(
-                outcome="clarification",
-                plan=plan,
-                confirmed_context=ConfirmedQueryContext(
+            preserved_other_ctx = (
+                prior.model_copy(update={"pending_clarification_code": "AMBIGUOUS_ABANDON_METRIC"})
+                if prior is not None
+                else ConfirmedQueryContext(
                     intent="clarify",
                     function=eff_fn,
                     periods=eff_periods,
                     pending_clarification_code="AMBIGUOUS_ABANDON_METRIC",
-                ),
+                )
+            )
+            return RouterValidationResult(
+                outcome="clarification",
+                plan=plan,
+                confirmed_context=preserved_other_ctx,
                 clarification=clar_prompt,
                 headline=clar_prompt.question,
                 narrative_bullets=[
@@ -673,11 +699,34 @@ class HybridQueryRouter:
             asks_decisions=any(w in lower for w in ("decision", "decisions", "recommend", "what happens if")),
         )
 
-        # Optional shadow/fallback Gemini call if forced or configured
+        # Optional classifier & shadow/fallback Gemini call if forced or configured
         route_used = "local_rules"
         provider_metrics = ProviderCallMetrics()
         shadow_plan: dict[str, Any] | None = None
-        if provider_override == "gemini" or (cfg.router_mode == "shadow" and cfg.can_call_gemini):
+
+        if cfg.classifier_mode in ("shadow", "enabled"):
+            try:
+                clf = LocalIntentClassifier.from_fixture_train_split(confidence_threshold=0.35)
+                clf_pred = clf.predict(text)
+                if cfg.classifier_mode == "enabled" and not clf_pred.abstain and intent == "current_value":
+                    plan.intent = clf_pred.intent
+                    route_used = "local_classifier"
+            except Exception:
+                pass
+
+        should_call_gemini = (
+            provider_override == "gemini"
+            or (cfg.router_mode == "shadow" and cfg.can_call_gemini)
+            or (
+                cfg.router_mode == "hybrid"
+                and cfg.can_call_gemini
+                and not eff_team
+                and not eff_metric
+                and intent == "current_value"
+                and cfg.is_scope_allowed_for_cloud(eff_fn)
+            )
+        )
+        if should_call_gemini:
             if is_prompt_safe_for_external_projection(text):
                 gem_res = GeminiStructuredRouterAdapter().propose_query_plan(
                     prompt=text,
@@ -694,15 +743,40 @@ class HybridQueryRouter:
                 provider_metrics = gem_res.metrics
                 if gem_res.plan is not None:
                     shadow_plan = gem_res.plan.model_dump()
-                    if provider_override == "gemini":
+                    if provider_override == "gemini" or cfg.router_mode == "hybrid":
                         route_used = "gemini_router"
+                        if gem_res.plan.intent:
+                            plan.intent = gem_res.plan.intent
+                        if gem_res.plan.team and not plan.team:
+                            plan.team = gem_res.plan.team
+                        if gem_res.plan.branch and not plan.branch:
+                            plan.branch = gem_res.plan.branch.strip().casefold()
+                        if gem_res.plan.compare_branch and not plan.compare_branch:
+                            plan.compare_branch = gem_res.plan.compare_branch.strip().casefold()
+                        if gem_res.plan.metric and not plan.metric:
+                            plan.metric = gem_res.plan.metric
+                        if gem_res.plan.periods:
+                            plan.periods = list(gem_res.plan.periods[:6])
                 elif provider_override == "gemini":
                     raise AiProviderUnavailableError(
                         "The AI routing provider is temporarily unavailable. Please retry your request."
                     )
 
         # 6. Pre-Read RBAC Access Validation (NEVER substitute Dubai when Sharjah is requested!)
-        if explicit_branch and not user_can_access_branch(self.scope, explicit_branch):
+        branches_to_check: list[str] = []
+        for b_cand in [*explicit_branches, plan.branch, plan.compare_branch]:
+            if b_cand and b_cand not in branches_to_check:
+                branches_to_check.append(b_cand)
+        if asks_branch_comparison and not explicit_compare_branch:
+            for b_key in BRANCH_KEYS:
+                if b_key not in branches_to_check:
+                    branches_to_check.append(b_key)
+
+        unauthorized_branch = next(
+            (b for b in branches_to_check if not user_can_access_branch(self.scope, b)),
+            None,
+        )
+        if unauthorized_branch:
             allowed_b = sorted(
                 str(b).capitalize()
                 for b in (self.scope.get("accessible_branches") or self.scope.get("allowed_branches") or [])
@@ -716,7 +790,7 @@ class HybridQueryRouter:
                 route_used=route_used,
                 provider_metrics=provider_metrics,
                 headline=(
-                    f"Access restricted: your role does not have permission to view {explicit_branch.capitalize()} branch data."
+                    f"Access restricted: your role does not have permission to view {unauthorized_branch.capitalize()} branch data."
                 ),
                 narrative_bullets=[
                     f"Your current access scope is restricted to {allowed_str}.",
@@ -729,7 +803,15 @@ class HybridQueryRouter:
                 ],
             )
 
-        if explicit_team and not user_can_access_team(self.scope, explicit_team):
+        teams_to_check: list[str] = []
+        for t_cand in [*teams_in_prompt, explicit_team, plan.team]:
+            if t_cand and t_cand not in teams_to_check:
+                teams_to_check.append(t_cand)
+        unauthorized_team = next(
+            (t for t in teams_to_check if not user_can_access_team(self.scope, t)),
+            None,
+        )
+        if unauthorized_team:
             allowed_fns = ", ".join(self.scope.get("accessible_functions") or []) or "your assigned teams"
             return RouterValidationResult(
                 outcome="restricted_access",
@@ -739,7 +821,7 @@ class HybridQueryRouter:
                 route_used=route_used,
                 provider_metrics=provider_metrics,
                 headline=(
-                    f"Access restricted: your role does not have permission to view {explicit_team} data."
+                    f"Access restricted: your role does not have permission to view {unauthorized_team} data."
                 ),
                 narrative_bullets=[
                     f"Your account is scoped to {allowed_fns}.",

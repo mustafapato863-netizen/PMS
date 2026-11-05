@@ -21,7 +21,7 @@ from models.ai_schemas import (
     TypedMetricEvidence,
 )
 from models.report_schemas import MONTHS
-from services.ai.catalog import ai_evidence_cache, get_ai_catalog
+from services.ai.catalog import ai_evidence_cache, evaluation_cache_identity, get_ai_catalog
 from services.ai.config import SENIOR_BRIEF_DEFAULT_ROLES, get_ai_runtime_config
 from services.ai.domain_policies import (
     build_call_center_guardrails,
@@ -230,6 +230,8 @@ class PmsAiOrchestrator:
         else:
             effective_detail = "details"
 
+        # Release any open auth read transaction before routing (which may invoke a provider in hybrid mode)
+        release_read_transaction(self.db)
         t_res_start = time.perf_counter()
         routed = HybridQueryRouter(scope=self.scope).resolve_and_validate(
             prompt=req.prompt,
@@ -395,14 +397,18 @@ class PmsAiOrchestrator:
             "kpi": signals.detected_kpi,
             "month": signals.detected_month or req.session_state.month,
             "year": signals.detected_year or req.session_state.year,
+            "periods": list(routed.plan.periods),
             "employee_query": signals.detected_employee_query,
             "worst_agent": signals.asks_worst_agent,
             "single_person": signals.asks_single_person,
+            "asks_revenue_in_call_center": signals.asks_revenue_in_call_center,
         }
+        eval_id = evaluation_cache_identity(self.db)
         cached_results = ai_evidence_cache.get(
             db=self.db,
             scope=self.scope,
             query_signature=cache_sig,
+            eval_id=eval_id,
         )
         cache_hit = False
         if cached_results is not None:
@@ -505,6 +511,7 @@ class PmsAiOrchestrator:
                 scope=self.scope,
                 query_signature=cache_sig,
                 payload=tool_results,
+                eval_id=eval_id,
             )
 
         # CRITICAL BLOCKER-2: Release the DB read transaction BEFORE calling any LLM network provider!

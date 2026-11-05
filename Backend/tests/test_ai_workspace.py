@@ -904,6 +904,116 @@ def test_pr6_classifier_evaluation_and_promotion_gate_decision():
     assert report["runtime_dependency_added"] is False
 
 
+def test_goldfish_review_enhancements_and_security_hardening(monkeypatch):
+    """Goldfish Swarm Review: verify cross-branch comparison RBAC, multi-team RBAC, clarification context preservation, single-KPI headline synthesis, PII phone redaction, and catalog config version invalidation."""
+    from models.ai_schemas import ConfirmedQueryContext
+    from services.ai.catalog import ai_evidence_cache, get_ai_catalog
+    from services.ai.router import HybridQueryRouter
+    from services.ai.trace_logger import sanitize_prompt_for_router_training
+    from services.cache_invalidation_service import CacheInvalidationService
+
+    db = _build_in_memory_db()
+    records = [
+        _make_call_center_record("EMP101", "Sara Mahmoud", "Inbound", 91.0, 45, 50, 90, 200),
+        _make_call_center_record("EMP201", "Lina Tariq", "Outbound", 88.0, 50, 75, 110, 260),
+    ]
+    _patch_records(monkeypatch, records)
+    ai_evidence_cache.clear()
+
+    # 1. Single-branch director asking to compare Dubai and Sharjah or all UAE branches gets restricted_access
+    dubai_director_scope = {
+        "role": "Branch Director",
+        "user_id": "00000000-0000-0000-0000-000000000091",
+        "has_unrestricted_team_access": True,
+        "accessible_branches": ["dubai"],
+    }
+    orch_dubai = PmsAiOrchestrator(db, dubai_director_scope)
+    res_cmp_sharjah = orch_dubai.run_chat_turn(
+        AiChatRequest(
+            prompt="Compare Dubai and Sharjah Inbound Attendance Rate in September 2026.",
+            session_state=SessionFilterContext(function="Call Center", branch="dubai"),
+        )
+    )
+    assert res_cmp_sharjah.outcome == "restricted_access"
+    assert "sharjah" in res_cmp_sharjah.headline.casefold()
+    assert res_cmp_sharjah.tool_calls == []
+
+    res_cmp_all = orch_dubai.run_chat_turn(
+        AiChatRequest(
+            prompt="Compare all UAE branches for Inbound in September 2026.",
+            session_state=SessionFilterContext(function="Call Center", branch="dubai"),
+        )
+    )
+    assert res_cmp_all.outcome == "restricted_access"
+    assert res_cmp_all.tool_calls == []
+
+    # 2. Function-scoped Call Center user asking to compare Coding and Submission gets restricted_access
+    cc_viewer_scope = {
+        "role": "Function Viewer",
+        "user_id": "00000000-0000-0000-0000-000000000092",
+        "has_unrestricted_team_access": False,
+        "accessible_functions": ["Call Center"],
+        "accessible_teams": ["Inbound", "Outbound"],
+    }
+    res_rcm = HybridQueryRouter(scope=cc_viewer_scope).resolve_and_validate(
+        prompt="Compare Coding and Submission scores in September 2026.",
+        session_state=SessionFilterContext(function="Call Center"),
+    )
+    assert res_rcm.outcome == "restricted_access"
+
+    # 3. Clarification preserves prior ConfirmedQueryContext and filters choices by caller RBAC
+    prior_ctx = ConfirmedQueryContext(
+        intent="actual_vs_target",
+        team="Inbound",
+        function="Call Center",
+        branch="dubai",
+        performance_level="Employee",
+        metric_id="inbound:attendance_rate",
+        period="2026-09",
+    )
+    clar_dubai = HybridQueryRouter(scope=dubai_director_scope).resolve_and_validate(
+        prompt="Show the Attendance score in September 2026.",
+        session_state=SessionFilterContext(function="Call Center", last_confirmed_query=prior_ctx),
+    )
+    assert clar_dubai.outcome == "clarification"
+    assert clar_dubai.confirmed_context.team == "Inbound"
+    assert clar_dubai.confirmed_context.branch == "dubai"
+    assert clar_dubai.confirmed_context.metric_id == "inbound:attendance_rate"
+    assert clar_dubai.clarification is not None
+    # Branch Director must NOT be offered Managerial BSC in clarification choices
+    choice_ids = [c.id for c in clar_dubai.clarification.choices]
+    assert "inbound_managerial_attendance" not in choice_ids
+
+    # 4. Single-KPI query leads headline with the requested KPI (both scored and tracking-only)
+    gm_scope = {
+        "role": "General Manager",
+        "user_id": "00000000-0000-0000-0000-000000000002",
+        "has_unrestricted_team_access": True,
+    }
+    orch_gm = PmsAiOrchestrator(db, gm_scope)
+    t_aht = orch_gm.run_chat_turn(
+        AiChatRequest(
+            prompt="What is the Outbound AHT in September 2026?",
+            session_state=SessionFilterContext(function="Call Center", team="Outbound"),
+        )
+    )
+    assert t_aht.outcome == "answer"
+    assert "average handle time" in t_aht.headline.casefold() or "aht" in t_aht.headline.casefold()
+    assert "0%" in t_aht.headline or "tracking" in t_aht.headline.casefold()
+
+    # 5. Phone number redaction in router training prompt sanitizer
+    sanitized = sanitize_prompt_for_router_training("Call agent Sara at +971 50 123 4567 or emp101@sgh.ae")
+    assert "<PHONE>" in sanitized
+    assert "<EMAIL>" in sanitized
+    assert "123 4567" not in sanitized
+
+    # 6. Catalog cache invalidation on config version bump
+    cat1 = get_ai_catalog()
+    CacheInvalidationService.bump_config_version()
+    cat2 = get_ai_catalog()
+    assert cat1 is not cat2
+
+
 
 
 

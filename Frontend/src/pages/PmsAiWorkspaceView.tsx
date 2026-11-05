@@ -153,9 +153,24 @@ export default function PmsAiWorkspaceView() {
       next.set(key, value);
     }
     setSearchParams(next, { replace: true });
-    if (key === 'team') setSelectedTeam(value);
-    if (key === 'branch') setSelectedBranch(value);
-    if (key === 'performance_level') setSelectedLevel(value);
+    if (key === 'team') {
+      setSelectedTeam(value);
+      setLastConfirmedQuery((prev) =>
+        prev ? { ...prev, team: value !== 'All' ? value : null, position: null, metric_id: null } : null,
+      );
+    }
+    if (key === 'branch') {
+      setSelectedBranch(value);
+      setLastConfirmedQuery((prev) =>
+        prev ? { ...prev, branch: value !== 'all' ? value : null, compare_branch: null } : null,
+      );
+    }
+    if (key === 'performance_level') {
+      setSelectedLevel(value);
+      setLastConfirmedQuery((prev) =>
+        prev ? { ...prev, performance_level: value !== 'All' ? value : null, metric_id: null } : null,
+      );
+    }
   };
 
   const watchingQueryKey = [
@@ -229,7 +244,17 @@ export default function PmsAiWorkspaceView() {
           },
         );
         if (res.data.resolved_session_state?.last_confirmed_query) {
-          setLastConfirmedQuery(res.data.resolved_session_state.last_confirmed_query);
+          const nextConfirmed = res.data.resolved_session_state.last_confirmed_query;
+          setLastConfirmedQuery((prev) =>
+            res.data.outcome === 'clarification' && prev
+              ? {
+                  ...prev,
+                  ...Object.fromEntries(
+                    Object.entries(nextConfirmed).filter(([, v]) => v !== null && v !== undefined),
+                  ),
+                }
+              : nextConfirmed,
+          );
         }
         setTurns((prev) =>
           prev.map((item) =>
@@ -470,12 +495,30 @@ export default function PmsAiWorkspaceView() {
                   defaultValue="All"
                   icon={<Layers size={12} />}
                   onChange={(val) => handleFilterChange('performance_level', val)}
-                  options={[
-                    { value: 'All', label: 'All Levels', badge: 'Full Scope' },
-                    { value: 'Employee', label: 'Employee', badge: 'Agents' },
-                    { value: 'Managerial', label: 'Managerial BSC', badge: 'Leaders' },
-                    { value: 'Corporate', label: 'Corporate BSC', badge: 'Executive' },
-                  ]}
+                  options={
+                    watchingData?.eligible_levels && watchingData.eligible_levels.length > 0
+                      ? [
+                          ...(watchingData.eligible_levels.length > 1
+                            ? [{ value: 'All', label: 'All Levels', badge: 'Full Scope' }]
+                            : []),
+                          ...watchingData.eligible_levels.map((lvl) => ({
+                            value: lvl,
+                            label: lvl === 'Employee' ? 'Employee' : `${lvl} BSC`,
+                            badge:
+                              lvl === 'Employee'
+                                ? 'Agents'
+                                : lvl === 'Managerial'
+                                ? 'Leaders'
+                                : 'Executive',
+                          })),
+                        ]
+                      : [
+                          { value: 'All', label: 'All Levels', badge: 'Full Scope' },
+                          { value: 'Employee', label: 'Employee', badge: 'Agents' },
+                          { value: 'Managerial', label: 'Managerial BSC', badge: 'Leaders' },
+                          { value: 'Corporate', label: 'Corporate BSC', badge: 'Executive' },
+                        ]
+                  }
                 />
 
                 <div

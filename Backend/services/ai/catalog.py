@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import re
@@ -461,6 +462,11 @@ class PmsAiCatalog:
             "policyrejection": "pre_approvals_ip_offshore:policy_rejection_rate",
             "pre_approvals_ip_offshore:rejection": "pre_approvals_ip_offshore:rejection_rate",
             "rejection": "pre_approvals_ip_offshore:rejection_rate",
+            "inbound:team_sla": "inbound:managerial:team_sla",
+            "outbound:team_sla": "outbound:managerial:team_sla",
+            "coding:team_sla": "coding:managerial:team_sla",
+            "inbound:attendance_compliance": "inbound:managerial:attendance_compliance",
+            "outbound:attendance_compliance": "outbound:managerial:attendance_compliance",
         }
         mapped_id = shorthand_map.get(needle)
         if mapped_id and mapped_id in self.metrics:
@@ -568,6 +574,8 @@ class PmsAiCatalog:
                 continue
             if fn_for_t not in eligible_functions_set:
                 eligible_functions_set.append(fn_for_t)
+            if fn_norm and fn_norm not in ("all", "") and fn_for_t.casefold() != fn_norm and t.casefold() != fn_norm:
+                continue
             eligible_teams.append(
                 AiEligibleTeamItem(
                     value=t,
@@ -582,7 +590,16 @@ class PmsAiCatalog:
             if user_can_access_branch(scope, b):
                 eligible_branches.append(b)
 
-        eligible_levels = ["Employee", "Managerial", "Corporate"]
+        role = str(scope.get("role") or "")
+        if role == "Branch Director":
+            eligible_levels = ["Employee"]
+        else:
+            sample_team = eligible_teams[0].value if eligible_teams else "Inbound"
+            eligible_levels = [
+                lvl
+                for lvl in ("Employee", "Managerial", "Corporate")
+                if user_can_access_team_level(scope, sample_team, lvl)
+            ] or ["Employee"]
         return {
             "eligible_teams": eligible_teams,
             "eligible_functions": eligible_functions_set,
@@ -593,14 +610,17 @@ class PmsAiCatalog:
 
 _CATALOG_LOCK = threading.Lock()
 _CATALOG_INSTANCE: PmsAiCatalog | None = None
+_CATALOG_CONFIG_VERSION: int | None = None
 
 
 def get_ai_catalog() -> PmsAiCatalog:
-    global _CATALOG_INSTANCE
-    if _CATALOG_INSTANCE is None:
+    global _CATALOG_INSTANCE, _CATALOG_CONFIG_VERSION
+    current_cfg_ver = CacheInvalidationService.get_config_version()
+    if _CATALOG_INSTANCE is None or _CATALOG_CONFIG_VERSION != current_cfg_ver:
         with _CATALOG_LOCK:
-            if _CATALOG_INSTANCE is None:
+            if _CATALOG_INSTANCE is None or _CATALOG_CONFIG_VERSION != current_cfg_ver:
                 _CATALOG_INSTANCE = PmsAiCatalog()
+                _CATALOG_CONFIG_VERSION = current_cfg_ver
     return _CATALOG_INSTANCE
 
 
@@ -625,17 +645,18 @@ class AiScopedEvidenceCache:
         db: Session,
         scope: dict[str, Any],
         query_signature: dict[str, Any],
+        eval_id: str | None = None,
     ) -> tuple[str, dict[str, Any]]:
         scope_id = _scope_identity(scope)
         data_ver = CacheInvalidationService.get_data_version()
         cfg_ver = CacheInvalidationService.get_config_version()
-        eval_id = evaluation_cache_identity(db)
+        resolved_eval_id = eval_id if eval_id is not None else evaluation_cache_identity(db)
         envelope = {
             "q": query_signature,
             "scope": scope_id,
             "data_ver": data_ver,
             "cfg_ver": cfg_ver,
-            "eval_id": eval_id,
+            "eval_id": resolved_eval_id,
         }
         digest = hashlib.sha256(
             json.dumps(envelope, sort_keys=True, default=str, separators=(",", ":")).encode("utf-8")
@@ -648,11 +669,13 @@ class AiScopedEvidenceCache:
         db: Session,
         scope: dict[str, Any],
         query_signature: dict[str, Any],
+        eval_id: str | None = None,
     ) -> Any | None:
         key, caller_scope_id = self.build_key(
             db=db,
             scope=scope,
             query_signature=query_signature,
+            eval_id=eval_id,
         )
         with self._lock:
             entry = self._store.get(key)
@@ -662,7 +685,7 @@ class AiScopedEvidenceCache:
             # Explicit post-lookup access verification: never serve across mismatched scopes
             if cached_scope_id != caller_scope_id:
                 return None
-            return payload
+            return copy.deepcopy(payload)
 
     def set(
         self,
@@ -671,17 +694,19 @@ class AiScopedEvidenceCache:
         scope: dict[str, Any],
         query_signature: dict[str, Any],
         payload: Any,
+        eval_id: str | None = None,
     ) -> str:
         key, caller_scope_id = self.build_key(
             db=db,
             scope=scope,
             query_signature=query_signature,
+            eval_id=eval_id,
         )
         with self._lock:
             if len(self._store) >= self._max_entries:
                 oldest_key = next(iter(self._store))
                 self._store.pop(oldest_key, None)
-            self._store[key] = (caller_scope_id, payload)
+            self._store[key] = (caller_scope_id, copy.deepcopy(payload))
         return key
 
     def clear(self) -> None:

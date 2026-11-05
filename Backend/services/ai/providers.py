@@ -172,6 +172,24 @@ class GeminiStructuredRouterAdapter:
             "generationConfig": {
                 "temperature": 0.0,
                 "responseMimeType": "application/json",
+                "responseSchema": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "intent": {"type": "STRING"},
+                        "team": {"type": "STRING", "nullable": True},
+                        "function": {"type": "STRING", "nullable": True},
+                        "position": {"type": "STRING", "nullable": True},
+                        "branch": {"type": "STRING", "nullable": True},
+                        "compare_branch": {"type": "STRING", "nullable": True},
+                        "performance_level": {"type": "STRING"},
+                        "metric": {"type": "STRING", "nullable": True},
+                        "periods": {"type": "ARRAY", "items": {"type": "STRING"}},
+                        "ranking_direction": {"type": "STRING"},
+                        "single_person": {"type": "BOOLEAN"},
+                        "clarification_code": {"type": "STRING"},
+                    },
+                    "required": ["intent", "performance_level", "clarification_code"],
+                },
             },
         }
         encoded_payload = json.dumps(payload).encode("utf-8")
@@ -416,12 +434,44 @@ class DeterministicLocalProviderAdapter:
         else:
             worst = merged.get("worst_team")
             lowest_kpi = merged.get("lowest_kpi")
+            requested_kpi = merged.get("requested_kpi")
+            period_comp = merged.get("period_comparison")
             avg_score = merged.get("average_score")
             score_change = merged.get("score_change")
             below_cnt = merged.get("employees_below_target", 0)
             tot_rec = merged.get("total_records", 0)
 
-            if worst and avg_score is not None:
+            if period_comp:
+                p_from = period_comp.get("from_period", "Prior Period")
+                p_to = period_comp.get("to_period", period)
+                s_from = period_comp.get("from_score")
+                s_to = period_comp.get("to_score", avg_score)
+                delta = period_comp.get("delta", score_change)
+                delta_txt = f" ({delta:+.1f}% change)" if delta is not None else ""
+                if s_from is not None and s_to is not None:
+                    headline = (
+                        f"{scope} ({branch}) moved from {s_from:.1f}% in {p_from} to {s_to:.1f}% in {p_to}{delta_txt}."
+                    )
+                else:
+                    headline = (
+                        f"Comparing {scope} ({branch}) across {p_from} and {p_to}: latest score is {(s_to or 0.0):.1f}%{delta_txt}."
+                    )
+            elif requested_kpi:
+                if requested_kpi.get("contributes_to_score") is False:
+                    headline = (
+                        f"In {scope} ({period} · {branch}), {requested_kpi['kpi_label']} is a tracking-only indicator "
+                        f"(0% score weight) and does not affect the weighted PMS score."
+                    )
+                    if requested_kpi.get("tracking_only_note"):
+                        bullets.append(str(requested_kpi["tracking_only_note"]))
+                else:
+                    ach_val = requested_kpi.get("achievement_percent")
+                    ach_txt = f"{ach_val:.1f}% achievement" if ach_val is not None else "tracked"
+                    headline = (
+                        f"In {scope} ({period} · {branch}), {requested_kpi['kpi_label']} is at {requested_kpi['actual_display']} "
+                        f"vs target {requested_kpi['target_display']} ({ach_txt}, {requested_kpi.get('weight_percent') or 0:.0f}% weight)."
+                    )
+            elif worst and avg_score is not None:
                 w_score = worst.get("current_score") or 0.0
                 w_change = worst.get("score_change")
                 change_txt_en = f" ({w_change:+.1f}% vs prior month)" if w_change is not None else ""
@@ -442,7 +492,7 @@ class DeterministicLocalProviderAdapter:
             else:
                 headline = f"No performance records matched the selected filters ({scope} · {period})."
 
-            if lowest_kpi and worst:
+            if lowest_kpi and (worst or requested_kpi):
                 bullets.append(
                     f"Lowest KPI: {lowest_kpi['kpi_label']} (Weight {lowest_kpi['weight_percent']:.0f}%) at {lowest_kpi.get('achievement_percent') or 0:.1f}% achievement ({lowest_kpi['people_below_target']} agents below target)."
                 )

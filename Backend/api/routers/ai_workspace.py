@@ -112,6 +112,7 @@ def post_ai_trace_feedback(
         release_read_transaction(db)
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     if not found:
+        release_read_transaction(db)
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Interaction trace not found")
     return AiFeedbackResponse(
         success=True,

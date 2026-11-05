@@ -15,12 +15,12 @@ from services.audit_service import AuditService
 
 logger = logging.getLogger(__name__)
 
-_PII_ID_RE = re.compile(r"\b(?:EMP[-_ ]?\d+|SGHD\d+|SGHA\d+|\d{4,8})\b", re.IGNORECASE)
+_PII_ID_RE = re.compile(r"\b(?:EMP[-_ ]?\d+|SGHD\d+|SGHA\d+|\d{5,8})\b", re.IGNORECASE)
 _EMAIL_RE = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
-_PHONE_RE = re.compile(r"(?:\+?\d{1,3}[\s-]?)?(?:\(?\d{2,4}\)?[\s-]?)?\d{3,4}[\s-]?\d{4}\b")
+_PHONE_RE = re.compile(r"(?:\+\d{1,3}[\s-]?)?(?:\(?\d{2,4}\)?[\s-])\d{3,4}[\s-]\d{4}\b|\b05\d[\s-]?\d{3}[\s-]?\d{4}\b")
 
 _ENGINE_INIT_LOCK = threading.Lock()
-_INITIALIZED_ENGINE_IDS: set[int] = set()
+_INITIALIZED_ENGINE_KEYS: set[str] = set()
 
 PRIVILEGED_REVIEWER_ROLES: frozenset[str] = frozenset(
     {"Admin", "General Manager", "Performance Team"}
@@ -32,9 +32,10 @@ def sanitize_prompt_for_router_training(
     *,
     known_employee_names: list[str] | None = None,
 ) -> str:
-    """Replace concrete employee IDs, emails, keys, and known employee names with canonical tokens."""
+    """Replace concrete employee IDs, emails, phones, keys, and known employee names with canonical tokens."""
     cleaned = redact_secrets(prompt or "")
     cleaned = _EMAIL_RE.sub("<EMAIL>", cleaned)
+    cleaned = _PHONE_RE.sub("<PHONE>", cleaned)
     cleaned = _PII_ID_RE.sub("<EMPLOYEE_ID>", cleaned)
     if known_employee_names:
         for name in sorted({n.strip() for n in known_employee_names if n and len(n.strip()) >= 3}, key=len, reverse=True):
@@ -65,17 +66,18 @@ def redact_nested_payload(value: Any, *, known_employee_names: list[str] | None 
 
 
 def ensure_trace_schema_once(db: Session) -> None:
-    """Ensure the AiInteractionTrace table exists once per database bind, out of the per-turn hot path."""
+    """Ensure the AiInteractionTrace table exists once per database engine, out of the per-turn hot path."""
     try:
         bind = db.get_bind()
-        engine_key = id(bind)
-        if engine_key in _INITIALIZED_ENGINE_IDS:
+        root_engine = getattr(bind, "engine", bind)
+        engine_key = f"{id(root_engine)}:{getattr(root_engine, 'url', '')}"
+        if engine_key in _INITIALIZED_ENGINE_KEYS:
             return
         with _ENGINE_INIT_LOCK:
-            if engine_key in _INITIALIZED_ENGINE_IDS:
+            if engine_key in _INITIALIZED_ENGINE_KEYS:
                 return
             AiInteractionTrace.__table__.create(bind=bind, checkfirst=True)
-            _INITIALIZED_ENGINE_IDS.add(engine_key)
+            _INITIALIZED_ENGINE_KEYS.add(engine_key)
     except Exception as exc:
         logger.debug("AiInteractionTrace one-time schema check skipped: %s", exc)
 

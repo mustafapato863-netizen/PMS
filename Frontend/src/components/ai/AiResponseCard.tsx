@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   AlertTriangle,
@@ -271,6 +271,40 @@ function VisualBlock({ card }: { card: StructuredVisualCard }) {
             })}
           </div>
         )}
+
+        {/* Optional Top-3 Entity List when plural ranking requested */}
+        {card.items && card.items.length > 0 && (
+          <div className="mt-2.5 space-y-1.5 border-t border-slate-200/80 pt-2.5">
+            {card.items.map((item, idx) => (
+              <div
+                key={`${item.id}-${idx}`}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200/80 bg-white px-2.5 py-1.5 text-xs"
+              >
+                <div className="min-w-0">
+                  <span className="font-bold text-slate-900">{item.title}</span>
+                  {item.subtitle && (
+                    <span className="ml-1.5 text-[10px] text-slate-500">{item.subtitle}</span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  {item.badge_text && (
+                    <span className="rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-bold text-slate-700">
+                      {item.badge_text}
+                    </span>
+                  )}
+                  {item.route_link && (
+                    <Link
+                      to={item.route_link}
+                      className="text-[10px] font-bold text-blue-600 hover:underline"
+                    >
+                      Inspect →
+                    </Link>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     );
   }
@@ -423,7 +457,12 @@ function VisualBlock({ card }: { card: StructuredVisualCard }) {
                             SEVERITY_DOT_CLASSES[row.status] || SEVERITY_DOT_CLASSES.neutral
                           }`}
                         />
-                        {row.kpi_label}
+                        <span>{row.kpi_label}</span>
+                        {row.tracking_only_badge && (
+                          <span className="rounded border border-slate-200 bg-slate-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-slate-600">
+                            {row.tracking_only_badge}
+                          </span>
+                        )}
                       </span>
                     </td>
                     <td className="px-2.5 py-2 font-semibold tabular-nums text-slate-600">
@@ -539,6 +578,10 @@ export default function AiResponseCard({ response, onSelectPrompt }: AiResponseC
   const [detailsExpanded, setDetailsExpanded] = useState<boolean>(
     response.answer_detail !== 'brief',
   );
+
+  useEffect(() => {
+    setDetailsExpanded(response.answer_detail !== 'brief');
+  }, [response.answer_detail, response.trace_id]);
 
   const primarySourceLink = response.primary_source_link || response.deep_links[0] || null;
   const secondaryDeepLinks = primarySourceLink

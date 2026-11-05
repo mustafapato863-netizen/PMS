@@ -169,7 +169,7 @@ class AiKpiTableRow(BaseModel):
     achievement_percent: float | None = None
     direction: str = "higher_better"
     people_below_target: int = 0
-    status: Literal["critical", "warning", "good", "neutral"] = "neutral"
+    status: Literal["critical", "warning", "good", "neutral", "info"] = "neutral"
     unit: str | None = None
     contributes_to_score: bool = True
     tracking_only_badge: str | None = None
