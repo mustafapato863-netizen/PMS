@@ -9,7 +9,9 @@ from config.database import release_read_transaction
 from models.ai_schemas import (
     AiChatRequest,
     AiChatResponsePayload,
+    AiProviderUsageMetrics,
     AiToolCallRecord,
+    AiTurnTimingBreakdown,
     AiWatchingAlertItem,
     AiWatchingPayload,
     DeepLinkCta,
@@ -17,6 +19,7 @@ from models.ai_schemas import (
     SourceCitationPill,
     StructuredVisualCard,
 )
+from services.ai.config import SENIOR_BRIEF_DEFAULT_ROLES, get_ai_runtime_config
 from services.ai.domain_policies import (
     build_call_center_guardrails,
     build_call_center_starter_prompts,
@@ -179,8 +182,13 @@ class PmsAiOrchestrator:
 
     def run_chat_turn(self, req: AiChatRequest) -> AiChatResponsePayload:
         t0 = time.perf_counter()
-        signals = extract_prompt_signals(req.prompt, req.session_state)
+        cfg = get_ai_runtime_config()
 
+        t_res_start = time.perf_counter()
+        signals = extract_prompt_signals(req.prompt, req.session_state)
+        resolution_ms = round((time.perf_counter() - t_res_start) * 1000.0, 2)
+
+        t_db_start = time.perf_counter()
         ctx = ToolExecutionContext(db=self.db, scope=self.scope, session_state=req.session_state)
         registry = DeterministicToolRegistry(ctx)
 
@@ -284,7 +292,9 @@ class PmsAiOrchestrator:
 
         # CRITICAL BLOCKER-2: Release the DB read transaction BEFORE calling any LLM network provider!
         release_read_transaction(self.db)
+        database_ms = round((time.perf_counter() - t_db_start) * 1000.0, 2)
 
+        t_render_start = time.perf_counter()
         visual_cards: list[StructuredVisualCard] = []
         citations: list[SourceCitationPill] = []
         deep_links: list[DeepLinkCta] = []
@@ -368,7 +378,9 @@ class PmsAiOrchestrator:
                     decisions=merged_decisions[:4],
                 )
             )
+        render_ms = round((time.perf_counter() - t_render_start) * 1000.0, 2)
 
+        t_prov_start = time.perf_counter()
         adapter = CloudOrLocalHttpProviderAdapter(provider_override=req.provider_override)
         synthesis = adapter.synthesize(
             prompt=req.prompt,
@@ -376,8 +388,7 @@ class PmsAiOrchestrator:
             tool_digests=tool_digests,
             guardrail_notes=guardrail_notes,
         )
-
-        latency_ms = int((time.perf_counter() - t0) * 1000)
+        provider_ms = round(synthesis.metrics.provider_ms or ((time.perf_counter() - t_prov_start) * 1000.0 if synthesis.metrics.provider_calls > 0 else 0.0), 2)
 
         resolved_state = SessionFilterContext(
             function=req.session_state.function or "Call Center",
@@ -390,15 +401,26 @@ class PmsAiOrchestrator:
             employee_id=req.session_state.employee_id,
         )
 
+        role = str(self.scope.get("role") or "Manager")
+        requested_detail = req.answer_detail or "auto"
+        if requested_detail in ("brief", "details"):
+            effective_detail = requested_detail
+        elif cfg.brief_default_enabled and role in SENIOR_BRIEF_DEFAULT_ROLES:
+            effective_detail = "brief"
+        else:
+            effective_detail = "details"
+
         response_dict = {
             "headline": synthesis.headline,
             "narrative_bullets": synthesis.narrative_bullets,
             "citations": [c.model_dump() for c in citations],
         }
 
+        t_trace_start = time.perf_counter()
+        pre_trace_ms = int((t_trace_start - t0) * 1000)
         trace_id = TrainingTraceLogger(self.db).record_turn(
             user_id=str(self.scope.get("user_id") or ""),
-            role=str(self.scope.get("role") or "Manager"),
+            role=role,
             prompt=req.prompt,
             session_state=resolved_state,
             tool_calls=[tc.model_dump() for tc in tool_call_records],
@@ -406,18 +428,41 @@ class PmsAiOrchestrator:
             structured_response=response_dict,
             provider_name=synthesis.provider_used,
             model_name=synthesis.model_used,
-            latency_ms=latency_ms,
+            latency_ms=pre_trace_ms,
             non_empty_evidence=total_records_eval > 0,
             guardrail_triggered=any_guardrail,
+        )
+        trace_ms = round((time.perf_counter() - t_trace_start) * 1000.0, 2)
+        total_ms = round((time.perf_counter() - t0) * 1000.0, 2)
+        latency_ms = max(0, int(round(total_ms)))
+
+        timings = AiTurnTimingBreakdown(
+            resolution_ms=resolution_ms,
+            provider_ms=provider_ms,
+            database_ms=database_ms,
+            render_ms=render_ms,
+            trace_ms=trace_ms,
+            total_ms=total_ms,
+        )
+        provider_usage = AiProviderUsageMetrics(
+            router_mode=cfg.router_mode,
+            route_used="gemini_router" if synthesis.metrics.provider_calls > 0 else "local_rules",
+            provider_calls=synthesis.metrics.provider_calls,
+            input_tokens=synthesis.metrics.input_tokens,
+            output_tokens=synthesis.metrics.output_tokens,
+            estimated_cost_usd=synthesis.metrics.estimated_cost_usd,
+            fallback_outcome=synthesis.metrics.fallback_outcome,
         )
 
         return AiChatResponsePayload(
             trace_id=trace_id,
+            answer_detail=effective_detail,  # type: ignore[arg-type]
             headline=synthesis.headline,
             narrative_bullets=synthesis.narrative_bullets,
             visual_cards=final_cards,
             citations=citations,
             deep_links=deep_links[:3],
+            primary_source_link=deep_links[0] if deep_links else None,
             suggested_followups=synthesis.suggested_followups,
             resolved_session_state=resolved_state,
             domain_guardrail_notes=guardrail_notes,
@@ -425,5 +470,7 @@ class PmsAiOrchestrator:
             provider_used=synthesis.provider_used,
             model_used=synthesis.model_used,
             latency_ms=latency_ms,
+            timings=timings,
+            provider_usage=provider_usage,
             basis_warning=basis_warning,
         )

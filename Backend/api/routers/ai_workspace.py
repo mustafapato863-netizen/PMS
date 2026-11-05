@@ -15,7 +15,8 @@ from models.ai_schemas import (
     SessionFilterContext,
 )
 from services.ai.orchestrator import PmsAiOrchestrator
-from services.ai.trace_logger import TrainingTraceLogger
+from services.ai.providers import ProviderUnavailableError
+from services.ai.trace_logger import TraceOwnershipError, TrainingTraceLogger
 from services.insights_service import InsightAccessError, InsightValidationError
 
 router = APIRouter(prefix="/ai", tags=["PMS AI Workspace"])
@@ -77,6 +78,9 @@ def post_ai_chat_turn(
     scope = require_authenticated_scope(db, request)
     try:
         payload = PmsAiOrchestrator(db, scope).run_chat_turn(body)
+    except ProviderUnavailableError as exc:
+        release_read_transaction(db)
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
     except InsightAccessError as exc:
         release_read_transaction(db)
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
@@ -93,12 +97,19 @@ def post_ai_trace_feedback(
     db: Session = Depends(get_db),
     _role: str = Depends(require_role(AI_WORKSPACE_ROLES)),
 ) -> AiFeedbackResponse:
-    require_authenticated_scope(db, request)
-    found, eligible = TrainingTraceLogger(db).record_feedback(
-        trace_id=body.trace_id,
-        rating=body.rating,
-        reason=body.reason,
-    )
+    scope = require_authenticated_scope(db, request)
+    try:
+        found, eligible = TrainingTraceLogger(db).record_feedback(
+            trace_id=body.trace_id,
+            rating=body.rating,
+            reason=body.reason,
+            caller_user_id=str(scope.get("user_id") or ""),
+            caller_role=str(scope.get("role") or ""),
+            reviewer_verified=body.reviewer_verified,
+        )
+    except TraceOwnershipError as exc:
+        release_read_transaction(db)
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     if not found:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Interaction trace not found")
     return AiFeedbackResponse(
@@ -107,6 +118,7 @@ def post_ai_trace_feedback(
         trace_id=body.trace_id,
         rating=body.rating,
         is_distillation_eligible=eligible,
+        reviewer_verified=bool(body.reviewer_verified),
     )
 
 
@@ -118,10 +130,15 @@ def export_ai_distillation_traces(
     limit: int = Query(default=500, ge=1, le=2000),
     _role: str = Depends(require_role(["Admin", "General Manager", "Performance Team"])),
 ) -> AiDistillationExportResponse:
-    require_authenticated_scope(db, request)
+    scope = require_authenticated_scope(db, request)
+    client_host = request.client.host if request.client else None
+    req_id = request.headers.get("x-request-id")
     records = TrainingTraceLogger(db).export_distillation_dataset(
         verified_only=verified_only,
         limit=limit,
+        performed_by_user_id=str(scope.get("user_id") or "") or None,
+        ip_address=client_host,
+        request_id=req_id,
     )
     release_read_transaction(db)
     return AiDistillationExportResponse(

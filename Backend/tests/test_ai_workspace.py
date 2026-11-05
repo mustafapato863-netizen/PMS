@@ -258,3 +258,187 @@ def test_focused_agent_and_team_trend_spotlight(monkeypatch):
     assert resp.visual_cards[0].spotlight is not None
     assert resp.visual_cards[0].spotlight.grade == "A"
     assert len(resp.visual_cards[0].spotlight.trend_points) == 2
+
+
+def test_pr1_provider_controls_header_auth_redaction_and_trace_ownership(monkeypatch):
+    import io
+    import json
+    from pathlib import Path
+    import pytest
+    from models.models import AuditLog
+    from services.ai.config import redact_secrets
+    from services.ai.providers import (
+        GeminiStructuredRouterAdapter,
+        build_minimized_routing_payload,
+        is_prompt_safe_for_external_projection,
+    )
+    from services.ai.trace_logger import TraceOwnershipError
+
+    # 1. Verify English question fixture set integrity and split isolation
+    fixture_path = Path(__file__).parent / "fixtures" / "ai_english_questions.json"
+    assert fixture_path.exists()
+    fixture_data = json.loads(fixture_path.read_text(encoding="utf-8"))
+    questions = fixture_data["questions"]
+    assert len(questions) >= 120
+    group_splits: dict[str, set[str]] = {}
+    for q in questions:
+        group_splits.setdefault(q["paraphrase_group"], set()).add(q["split"])
+    # Paraphrase groups must never span multiple splits
+    assert all(len(splits) == 1 for splits in group_splits.values())
+
+    # 2. Verify outbound payload minimization and PII/secret redaction
+    minimized = build_minimized_routing_payload(
+        prompt="Show score for Sara Mahmoud (EMP101) and email sara@example.com with key AIzaSySecretKey123456789012345",
+        current_view={"function": "Call Center", "team": "Inbound", "period": "2026-09", "raw_data": {"secret": 1}},
+        candidate_teams=["Inbound", "Outbound"],
+        candidate_metrics=["inbound:abandon_rate"],
+        candidate_branches=["dubai", "sharjah"],
+        known_employee_names=["Sara Mahmoud"],
+    )
+    serialized_min = json.dumps(minimized)
+    assert "Sara Mahmoud" not in serialized_min
+    assert "EMP101" not in serialized_min
+    assert "sara@example.com" not in serialized_min
+    assert "AIzaSySecretKey" not in serialized_min
+    assert "<EMPLOYEE_NAME>" in minimized["question"]
+    assert "<EMPLOYEE_ID>" in minimized["question"]
+    assert "raw_data" not in minimized["current_view"]
+
+    assert is_prompt_safe_for_external_projection("col1\tcol2\tcol3\nval1\tval2\tval3") is False
+    assert "[REDACTED_API_KEY]" in redact_secrets("https://example.com?key=AIzaSy1234567890123456789012345")
+
+    # 3. Verify server-owned switch blocks cloud calls by default, and uses x-goog-api-key header when enabled
+    monkeypatch.setenv("PMS_AI_GEMINI_ROUTING_ENABLED", "false")
+    monkeypatch.setenv("GEMINI_API_KEY", "AIzaSyTestKey12345678901234567890")
+    router_adapter = GeminiStructuredRouterAdapter()
+    disabled_res = router_adapter.propose_query_plan(
+        prompt="Compare Inbound in July vs August",
+        current_view={"function": "Call Center", "team": "Inbound"},
+        candidate_teams=["Inbound"],
+        candidate_metrics=["inbound:abandon_rate"],
+        candidate_branches=["dubai"],
+    )
+    assert disabled_res.plan is None
+    assert disabled_res.metrics.provider_calls == 0
+    assert disabled_res.metrics.fallback_outcome == "cloud_disabled"
+
+    # Enable cloud routing and verify x-goog-api-key header, token usage, and timeout fallback
+    monkeypatch.setenv("PMS_AI_GEMINI_ROUTING_ENABLED", "true")
+    monkeypatch.setenv("PMS_AI_PILOT_SCOPES", "call center,inbound,outbound")
+
+    captured_requests = []
+
+    class _FakeHttpResponse:
+        def __init__(self, payload: dict):
+            self._bytes = json.dumps(payload).encode("utf-8")
+
+        def read(self):
+            return self._bytes
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    def _fake_urlopen(req, timeout=None):
+        captured_requests.append((req, timeout))
+        plan_json = {
+            "intent": "compare_periods",
+            "team": "Inbound",
+            "branch": "dubai",
+            "metric": "inbound:abandon_rate",
+            "performance_level": "Employee",
+            "periods": ["2026-07", "2026-08"],
+        }
+        return _FakeHttpResponse(
+            {
+                "candidates": [{"content": {"parts": [{"text": json.dumps(plan_json)}]}}],
+                "usageMetadata": {"promptTokenCount": 120, "candidatesTokenCount": 40},
+            }
+        )
+
+    monkeypatch.setattr("urllib.request.urlopen", _fake_urlopen)
+    ok_res = router_adapter.propose_query_plan(
+        prompt="Compare Inbound Abandon Rate in Dubai for July vs August 2026",
+        current_view={"function": "Call Center", "team": "Inbound"},
+        candidate_teams=["Inbound", "Outbound"],
+        candidate_metrics=["inbound:abandon_rate"],
+        candidate_branches=["dubai", "sharjah"],
+    )
+    assert ok_res.plan is not None
+    assert ok_res.plan.intent == "compare_periods"
+    assert ok_res.metrics.provider_calls == 1
+    assert ok_res.metrics.input_tokens == 120
+    assert ok_res.metrics.output_tokens == 40
+    assert ok_res.metrics.estimated_cost_usd > 0
+    sent_req, _ = captured_requests[-1]
+    assert "key=" not in sent_req.full_url
+    header_map = {k.casefold(): v for k, v in sent_req.header_items()}
+    assert header_map.get("x-goog-api-key") == "AIzaSyTestKey12345678901234567890"
+
+    # Simulate timeout fallback
+    def _timeout_urlopen(req, timeout=None):
+        raise TimeoutError("Request timed out")
+
+    monkeypatch.setattr("urllib.request.urlopen", _timeout_urlopen)
+    timeout_res = router_adapter.propose_query_plan(
+        prompt="Compare Inbound Abandon Rate in Dubai for July vs August 2026",
+        current_view={"function": "Call Center", "team": "Inbound"},
+        candidate_teams=["Inbound"],
+        candidate_metrics=["inbound:abandon_rate"],
+        candidate_branches=["dubai"],
+    )
+    assert timeout_res.plan is None
+    assert timeout_res.metrics.fallback_outcome == "timeout"
+
+    # 4. Verify trace ownership, redaction, timing breakdown, and audited export
+    db = _build_in_memory_db()
+    records = [
+        _make_call_center_record("EMP101", "Sara Mahmoud", "Inbound", 91.0, 45, 50, 90, 200),
+    ]
+    _patch_records(monkeypatch, records)
+    owner_scope = {"role": "General Manager", "user_id": "00000000-0000-0000-0000-000000000011", "has_unrestricted_team_access": True}
+    resp = PmsAiOrchestrator(db, owner_scope).run_chat_turn(
+        AiChatRequest(
+            prompt="Analyze Inbound KPI gaps in September 2026",
+            session_state=SessionFilterContext(function="Call Center", team="Inbound", month="September", year=2026),
+            provider_override="deterministic",
+        )
+    )
+    assert resp.timings.total_ms >= 0
+    assert resp.provider_usage.provider_calls == 0
+    assert resp.answer_detail == "brief"
+
+    trace_logger = TrainingTraceLogger(db)
+    # Another user cannot modify feedback on owner's trace
+    with pytest.raises(TraceOwnershipError):
+        trace_logger.record_feedback(
+            trace_id=resp.trace_id,
+            rating="up",
+            caller_user_id="00000000-0000-0000-0000-000000000099",
+            caller_role="Manager",
+        )
+
+    # Owner can submit feedback
+    found, eligible = trace_logger.record_feedback(
+        trace_id=resp.trace_id,
+        rating="up",
+        caller_user_id="00000000-0000-0000-0000-000000000011",
+        caller_role="General Manager",
+    )
+    assert found is True
+    assert eligible is True
+
+    # Export logs an AuditLog entry and anonymizes data
+    exported = trace_logger.export_distillation_dataset(
+        verified_only=True,
+        performed_by_user_id="00000000-0000-0000-0000-000000000011",
+        ip_address="127.0.0.1",
+        request_id="req-audit-1",
+    )
+    assert len(exported) == 1
+    audit_rows = db.query(AuditLog).filter(AuditLog.table_name == "ai_interaction_traces").all()
+    assert len(audit_rows) == 1
+    assert audit_rows[0].operation == "EXPORT"
+

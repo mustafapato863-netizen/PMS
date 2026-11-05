@@ -137,6 +137,7 @@ class AiChatRequest(BaseModel):
     session_state: SessionFilterContext = Field(default_factory=SessionFilterContext)
     history: list[AiChatMessage] = Field(default_factory=list, max_length=12)
     provider_override: Literal["auto", "gemini", "openai", "local_ollama", "deterministic"] | None = "auto"
+    answer_detail: Literal["auto", "brief", "details"] | None = "auto"
 
 
 class AiBarItem(BaseModel):
@@ -257,14 +258,36 @@ class AiToolCallRecord(BaseModel):
     records_evaluated: int = 0
 
 
+class AiTurnTimingBreakdown(BaseModel):
+    resolution_ms: float = 0.0
+    provider_ms: float = 0.0
+    database_ms: float = 0.0
+    render_ms: float = 0.0
+    trace_ms: float = 0.0
+    total_ms: float = 0.0
+
+
+class AiProviderUsageMetrics(BaseModel):
+    router_mode: Literal["legacy", "shadow", "hybrid"] = "hybrid"
+    route_used: str = "local_rules"
+    provider_calls: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    estimated_cost_usd: float = 0.0
+    fallback_outcome: str = "none"
+    shadow_plan: dict[str, Any] | None = None
+
+
 class AiChatResponsePayload(BaseModel):
     trace_id: str
     outcome: TurnOutcomeType = "answer"
+    answer_detail: Literal["brief", "details"] = "details"
     headline: str
     narrative_bullets: list[str] = Field(default_factory=list)
     visual_cards: list[StructuredVisualCard] = Field(default_factory=list)
     citations: list[SourceCitationPill] = Field(default_factory=list)
     deep_links: list[DeepLinkCta] = Field(default_factory=list)
+    primary_source_link: DeepLinkCta | None = None
     suggested_followups: list[str] = Field(default_factory=list)
     resolved_session_state: SessionFilterContext
     scope_banner: str | None = None
@@ -277,6 +300,8 @@ class AiChatResponsePayload(BaseModel):
     provider_used: str = "deterministic"
     model_used: str = "pms-deterministic-v1"
     latency_ms: int = 0
+    timings: AiTurnTimingBreakdown = Field(default_factory=AiTurnTimingBreakdown)
+    provider_usage: AiProviderUsageMetrics = Field(default_factory=AiProviderUsageMetrics)
     basis_warning: str | None = None
     cache_hit: bool = False
 
