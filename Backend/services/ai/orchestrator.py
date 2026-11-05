@@ -20,6 +20,7 @@ from models.ai_schemas import (
     StructuredVisualCard,
     TypedMetricEvidence,
 )
+from models.report_schemas import MONTHS
 from services.ai.catalog import ai_evidence_cache, get_ai_catalog
 from services.ai.config import SENIOR_BRIEF_DEFAULT_ROLES, get_ai_runtime_config
 from services.ai.domain_policies import (
@@ -29,6 +30,7 @@ from services.ai.domain_policies import (
     sanitize_untrusted_text,
 )
 from services.ai.providers import CloudOrLocalHttpProviderAdapter
+from services.ai.router import HybridQueryRouter
 from services.ai.tool_registry import (
     DeterministicToolRegistry,
     ToolExecutionContext,
@@ -37,6 +39,16 @@ from services.ai.tool_registry import (
 )
 from services.ai.trace_logger import TrainingTraceLogger
 from services.corrective_action_service import CorrectiveActionService
+
+REVERSE_MONTHS: dict[int, str] = {v: k for k, v in MONTHS.items()}
+
+
+def _period_key_to_month_year(period_key: str) -> tuple[str | None, int | None]:
+    try:
+        yr_s, mo_s = period_key.split("-", 1)
+        return REVERSE_MONTHS.get(int(mo_s)), int(yr_s)
+    except Exception:
+        return None, None
 
 
 class PmsAiOrchestrator:
@@ -194,10 +206,170 @@ class PmsAiOrchestrator:
     def run_chat_turn(self, req: AiChatRequest) -> AiChatResponsePayload:
         t0 = time.perf_counter()
         cfg = get_ai_runtime_config()
+        role = str(self.scope.get("role") or "Manager")
+        requested_detail = req.answer_detail or "auto"
+        lower_prompt = (req.prompt or "").casefold()
+        asks_explicit_breakdown = any(
+            phrase in lower_prompt
+            for phrase in (
+                "show details",
+                "in detail",
+                "detailed breakdown",
+                "full breakdown",
+                "full table",
+                "kpi table",
+                "all kpis",
+            )
+        )
+        if requested_detail in ("brief", "details"):
+            effective_detail = requested_detail
+        elif asks_explicit_breakdown:
+            effective_detail = "details"
+        elif cfg.brief_default_enabled and role in SENIOR_BRIEF_DEFAULT_ROLES:
+            effective_detail = "brief"
+        else:
+            effective_detail = "details"
 
         t_res_start = time.perf_counter()
+        routed = HybridQueryRouter(scope=self.scope).resolve_and_validate(
+            prompt=req.prompt,
+            session_state=req.session_state,
+            provider_override=req.provider_override,
+        )
         signals = extract_prompt_signals(req.prompt, req.session_state)
+
+        # Synchronize signals with validated StructuredQueryPlan (including inherited follow-up context)
+        if routed.plan.team and not signals.detected_team:
+            signals.detected_team = routed.plan.team
+        if routed.plan.branch and not signals.detected_branch:
+            signals.detected_branch = routed.plan.branch
+        if routed.plan.compare_branch and not signals.detected_compare_branch:
+            signals.detected_compare_branch = routed.plan.compare_branch
+        if routed.plan.intent == "compare_branches":
+            signals.asks_branch_comparison = True
+        if routed.plan.performance_level and not signals.detected_level:
+            signals.detected_level = routed.plan.performance_level
+        if routed.plan.metric and not signals.detected_kpi:
+            signals.detected_kpi = routed.plan.metric.split(":")[-1]
+        if routed.plan.periods and not signals.detected_month:
+            p_month, p_year = _period_key_to_month_year(routed.plan.periods[-1])
+            if p_month:
+                signals.detected_month = p_month
+            if p_year and not signals.detected_year:
+                signals.detected_year = p_year
+
+        if routed.inherited_filters or routed.plan.metric or routed.plan.position:
+            if routed.plan.intent in ("actual_vs_target", "score_drivers", "compare_periods", "compare_branches") and "kpi_diagnosis" not in signals.primary_intents:
+                signals.primary_intents.insert(0, "kpi_diagnosis")
+            elif routed.plan.intent == "ranking" and "people_contribution" not in signals.primary_intents and "agent_spotlight_trend" not in signals.primary_intents:
+                signals.primary_intents.insert(0, "agent_spotlight_trend" if routed.plan.single_person else "people_contribution")
+            elif routed.plan.intent == "trend" and "team_trend_spotlight" not in signals.primary_intents:
+                signals.primary_intents.insert(0, "team_trend_spotlight")
+            elif routed.plan.intent == "scorecard_structure" and "management_bsc" not in signals.primary_intents:
+                signals.primary_intents.insert(0, "management_bsc")
+            elif routed.plan.intent == "corrective_actions" and "corrective_actions" not in signals.primary_intents:
+                signals.primary_intents.insert(0, "corrective_actions")
+
         resolution_ms = round((time.perf_counter() - t_res_start) * 1000.0, 2)
+
+        # Pre-read validation short-circuit for clarification, restricted_access, unavailable_data, unsupported_request
+        if routed.outcome != "answer":
+            p_month, p_year = (
+                _period_key_to_month_year(routed.plan.periods[-1])
+                if routed.plan.periods
+                else (req.session_state.month, req.session_state.year)
+            )
+            resolved_state = SessionFilterContext(
+                function=routed.plan.function or req.session_state.function or "Call Center",
+                team=routed.plan.team or req.session_state.team,
+                branch=routed.plan.branch or req.session_state.branch,
+                region=req.session_state.region,
+                performance_level=routed.plan.performance_level or req.session_state.performance_level,
+                month=p_month or req.session_state.month,
+                year=p_year or req.session_state.year,
+                employee_id=req.session_state.employee_id,
+                last_confirmed_query=routed.confirmed_context,
+            )
+            scope_team_or_fn = resolved_state.team or resolved_state.function or "Call Center"
+            scope_branch = (
+                resolved_state.branch.capitalize()
+                if resolved_state.branch and resolved_state.branch.casefold() != "all"
+                else "All Branches"
+            )
+            scope_level = resolved_state.performance_level or "Employee"
+            scope_period = (
+                f"{resolved_state.month} {resolved_state.year}"
+                if resolved_state.month and resolved_state.year
+                else (resolved_state.month or "Latest Period")
+            )
+            scope_banner = f"{scope_branch} · {scope_team_or_fn} · {scope_level} · {scope_period}"
+
+            t_trace_start = time.perf_counter()
+            pre_trace_ms = int((t_trace_start - t0) * 1000)
+            trace_id = TrainingTraceLogger(self.db).record_turn(
+                user_id=str(self.scope.get("user_id") or ""),
+                role=role,
+                prompt=req.prompt,
+                session_state=resolved_state,
+                tool_calls=[],
+                tool_digest={"outcome": routed.outcome, "plan": routed.plan.model_dump()},
+                structured_response={
+                    "headline": routed.headline or "",
+                    "narrative_bullets": routed.narrative_bullets,
+                    "outcome": routed.outcome,
+                },
+                provider_name="gemini" if routed.route_used == "gemini_router" else "local",
+                model_name=cfg.gemini_model if routed.route_used == "gemini_router" else "deterministic-router-v2",
+                latency_ms=pre_trace_ms,
+                non_empty_evidence=False,
+                guardrail_triggered=routed.outcome in ("restricted_access", "unsupported_request"),
+            )
+            trace_ms = round((time.perf_counter() - t_trace_start) * 1000.0, 2)
+            total_ms = round((time.perf_counter() - t0) * 1000.0, 2)
+            timings = AiTurnTimingBreakdown(
+                resolution_ms=resolution_ms,
+                provider_ms=round(routed.provider_metrics.provider_ms, 2),
+                database_ms=0.0,
+                render_ms=0.0,
+                trace_ms=trace_ms,
+                total_ms=total_ms,
+            )
+            provider_usage = AiProviderUsageMetrics(
+                router_mode=cfg.router_mode,
+                route_used=routed.route_used,  # type: ignore[arg-type]
+                provider_calls=routed.provider_metrics.provider_calls,
+                input_tokens=routed.provider_metrics.input_tokens,
+                output_tokens=routed.provider_metrics.output_tokens,
+                estimated_cost_usd=routed.provider_metrics.estimated_cost_usd,
+                fallback_outcome=routed.provider_metrics.fallback_outcome,
+            )
+            return AiChatResponsePayload(
+                trace_id=trace_id,
+                outcome=routed.outcome,
+                answer_detail=effective_detail,  # type: ignore[arg-type]
+                headline=routed.headline or "",
+                narrative_bullets=routed.narrative_bullets,
+                visual_cards=[],
+                citations=[],
+                deep_links=[],
+                primary_source_link=None,
+                suggested_followups=routed.suggested_followups,
+                resolved_session_state=resolved_state,
+                scope_banner=scope_banner,
+                clarification=routed.clarification,
+                structured_query=routed.plan,
+                inherited_filters=routed.inherited_filters,
+                typed_evidence=[],
+                domain_guardrail_notes=[],
+                tool_calls=[],
+                provider_used="gemini" if routed.route_used == "gemini_router" else "local",
+                model_used=cfg.gemini_model if routed.route_used == "gemini_router" else "deterministic-router-v2",
+                latency_ms=max(0, int(round(total_ms))),
+                timings=timings,
+                provider_usage=provider_usage,
+                basis_warning=None,
+                cache_hit=False,
+            )
 
         t_db_start = time.perf_counter()
         ctx = ToolExecutionContext(db=self.db, scope=self.scope, session_state=req.session_state)
@@ -214,7 +386,8 @@ class PmsAiOrchestrator:
         cache_sig = {
             "intents": list(signals.primary_intents[:2]),
             "team": signals.detected_team or req.session_state.team,
-            "function": req.session_state.function,
+            "function": routed.plan.function or req.session_state.function,
+            "position": routed.plan.position,
             "branch": signals.detected_branch or req.session_state.branch,
             "compare_branch": signals.detected_compare_branch,
             "asks_branch_comparison": signals.asks_branch_comparison,
@@ -306,6 +479,7 @@ class PmsAiOrchestrator:
                     tool_results.append(
                         registry.execute_kpi_diagnosis_and_trends(
                             team=signals.detected_team,
+                            function=routed.plan.function,
                             branch=signals.detected_branch,
                             compare_branch=signals.detected_compare_branch,
                             asks_branch_comparison=signals.asks_branch_comparison,
@@ -319,6 +493,7 @@ class PmsAiOrchestrator:
                     tool_results.append(
                         registry.execute_executive_and_priority_insights(
                             team=signals.detected_team,
+                            function=routed.plan.function,
                             branch=signals.detected_branch,
                             performance_level=signals.detected_level,
                             month=signals.detected_month,
@@ -435,7 +610,7 @@ class PmsAiOrchestrator:
         provider_ms = round(synthesis.metrics.provider_ms or ((time.perf_counter() - t_prov_start) * 1000.0 if synthesis.metrics.provider_calls > 0 else 0.0), 2)
 
         resolved_state = SessionFilterContext(
-            function=req.session_state.function or "Call Center",
+            function=routed.plan.function or req.session_state.function or "Call Center",
             team=signals.detected_team or req.session_state.team,
             branch=signals.detected_branch or req.session_state.branch,
             region=req.session_state.region,
@@ -443,31 +618,8 @@ class PmsAiOrchestrator:
             month=res_month,
             year=res_year,
             employee_id=req.session_state.employee_id,
+            last_confirmed_query=routed.confirmed_context,
         )
-
-        role = str(self.scope.get("role") or "Manager")
-        requested_detail = req.answer_detail or "auto"
-        lower_prompt = (req.prompt or "").casefold()
-        asks_explicit_breakdown = any(
-            phrase in lower_prompt
-            for phrase in (
-                "show details",
-                "in detail",
-                "detailed breakdown",
-                "full breakdown",
-                "full table",
-                "kpi table",
-                "all kpis",
-            )
-        )
-        if requested_detail in ("brief", "details"):
-            effective_detail = requested_detail
-        elif asks_explicit_breakdown:
-            effective_detail = "details"
-        elif cfg.brief_default_enabled and role in SENIOR_BRIEF_DEFAULT_ROLES:
-            effective_detail = "brief"
-        else:
-            effective_detail = "details"
 
         scope_team_or_fn = resolved_state.team or resolved_state.function or "Call Center"
         scope_branch = (
@@ -526,18 +678,20 @@ class PmsAiOrchestrator:
             trace_ms=trace_ms,
             total_ms=total_ms,
         )
+        total_provider_calls = routed.provider_metrics.provider_calls + synthesis.metrics.provider_calls
         provider_usage = AiProviderUsageMetrics(
             router_mode=cfg.router_mode,
-            route_used="gemini_router" if synthesis.metrics.provider_calls > 0 else "local_rules",
-            provider_calls=synthesis.metrics.provider_calls,
-            input_tokens=synthesis.metrics.input_tokens,
-            output_tokens=synthesis.metrics.output_tokens,
-            estimated_cost_usd=synthesis.metrics.estimated_cost_usd,
-            fallback_outcome=synthesis.metrics.fallback_outcome,
+            route_used="gemini_router" if total_provider_calls > 0 else "local_rules",
+            provider_calls=total_provider_calls,
+            input_tokens=routed.provider_metrics.input_tokens + synthesis.metrics.input_tokens,
+            output_tokens=routed.provider_metrics.output_tokens + synthesis.metrics.output_tokens,
+            estimated_cost_usd=round(routed.provider_metrics.estimated_cost_usd + synthesis.metrics.estimated_cost_usd, 6),
+            fallback_outcome=synthesis.metrics.fallback_outcome if synthesis.metrics.fallback_outcome != "none" else routed.provider_metrics.fallback_outcome,
         )
 
         return AiChatResponsePayload(
             trace_id=trace_id,
+            outcome=routed.outcome,
             answer_detail=effective_detail,  # type: ignore[arg-type]
             headline=synthesis.headline,
             narrative_bullets=synthesis.narrative_bullets,
@@ -548,6 +702,9 @@ class PmsAiOrchestrator:
             suggested_followups=synthesis.suggested_followups,
             resolved_session_state=resolved_state,
             scope_banner=scope_banner,
+            clarification=routed.clarification,
+            structured_query=routed.plan,
+            inherited_filters=routed.inherited_filters,
             typed_evidence=typed_evidence,
             domain_guardrail_notes=guardrail_notes,
             tool_calls=tool_call_records,

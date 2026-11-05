@@ -23,17 +23,18 @@ def _make_call_center_record(
     sharjah_bookings: int,
     dubai_attended: int,
     dubai_bookings: int,
+    month: str = "September",
 ) -> PerformanceRecord:
     total_attended = sharjah_attended + dubai_attended
     total_bookings = sharjah_bookings + dubai_bookings
     attend_rate = (total_attended / total_bookings) if total_bookings > 0 else 0.0
     other_label = "Abandon Rate" if team == "Inbound" else "Reachability"
     return PerformanceRecord(
-        id=f"{team}_{emp_id}_2026_09",
+        id=f"{team}_{emp_id}_2026_{month[:3]}",
         employee_id=emp_id,
         employee_name=name,
         team=team,
-        month="September",
+        month=month,
         year=2026,
         region="EGY",
         position="Call Center Agent",
@@ -659,6 +660,144 @@ def test_pr3_scoped_evidence_cache_invalidation_and_rbac_isolation(monkeypatch):
     db.commit()
     after_upload = PmsAiOrchestrator(db, gm_scope).run_chat_turn(req)
     assert after_upload.cache_hit is False
+
+
+def test_pr4_local_first_routing_followups_clarifications_and_restricted_branch(monkeypatch):
+    """PR 4: Local-first routing, follow-up inheritance, ambiguity clarification, restricted branch refusal, and unavailable periods."""
+    import json
+    from pathlib import Path
+    from models.ai_schemas import ConfirmedQueryContext
+    from services.ai.router import HybridQueryRouter
+
+    db = _build_in_memory_db()
+    records = [
+        _make_call_center_record("EMP101", "Sara Mahmoud", "Inbound", 91.0, 45, 50, 90, 200, month="September"),
+        _make_call_center_record("EMP101", "Sara Mahmoud", "Inbound", 87.0, 40, 46, 85, 190, month="August"),
+        _make_call_center_record("EMP201", "Mona Hassan", "Outbound", 82.0, 34, 60, 72, 160, month="August"),
+    ]
+    _patch_records(monkeypatch, records)
+
+    gm_scope = {
+        "role": "General Manager",
+        "user_id": "00000000-0000-0000-0000-000000000002",
+        "has_unrestricted_team_access": True,
+    }
+    orch = PmsAiOrchestrator(db, gm_scope)
+
+    # 1. Turn 1: Explicit question establishes ConfirmedQueryContext
+    t1 = orch.run_chat_turn(
+        AiChatRequest(
+            prompt="What is Inbound Booking Conversion Rate in September 2026?",
+            session_state=SessionFilterContext(function="Call Center"),
+        )
+    )
+    assert t1.outcome == "answer"
+    assert t1.structured_query is not None
+    assert t1.structured_query.team == "Inbound"
+    assert t1.structured_query.metric == "inbound:booking_rate"
+    assert t1.structured_query.periods == ["2026-09"]
+    assert t1.resolved_session_state.last_confirmed_query is not None
+
+    # 2. Turn 2: Follow-up "And August?" inherits team, metric, and intent
+    t2 = orch.run_chat_turn(
+        AiChatRequest(
+            prompt="And August?",
+            session_state=SessionFilterContext(
+                function="Call Center",
+                last_confirmed_query=t1.resolved_session_state.last_confirmed_query,
+            ),
+        )
+    )
+    assert t2.outcome == "answer"
+    assert t2.structured_query is not None
+    assert t2.structured_query.team == "Inbound"
+    assert t2.structured_query.metric == "inbound:booking_rate"
+    assert t2.structured_query.periods == ["2026-08"]
+    assert "team" in t2.inherited_filters
+    assert "metric" in t2.inherited_filters
+
+    # 3. Ambiguous Attendance prompt without team/level triggers clarification with 0 DB tool reads
+    t_clar = orch.run_chat_turn(
+        AiChatRequest(
+            prompt="What is the Attendance score in September 2026?",
+            session_state=SessionFilterContext(function="Call Center"),
+        )
+    )
+    assert t_clar.outcome == "clarification"
+    assert t_clar.clarification is not None
+    assert t_clar.clarification.code == "AMBIGUOUS_ATTENDANCE_DEFINITION"
+    assert len(t_clar.clarification.choices) >= 2
+    assert t_clar.tool_calls == []
+    assert t_clar.timings.database_ms == 0.0
+
+    # 4. Restricted branch refusal: Dubai-only user asking about Sharjah gets restricted_access (NEVER Dubai data)
+    dubai_only_scope = {
+        "role": "Branch Director",
+        "user_id": "00000000-0000-0000-0000-000000000009",
+        "has_unrestricted_team_access": True,
+        "accessible_branches": ["dubai"],
+        "allowed_branches": ["dubai"],
+    }
+    t_restr = PmsAiOrchestrator(db, dubai_only_scope).run_chat_turn(
+        AiChatRequest(
+            prompt="What is Inbound score in Sharjah in September 2026?",
+            session_state=SessionFilterContext(function="Call Center", branch="dubai"),
+        )
+    )
+    assert t_restr.outcome == "restricted_access"
+    assert "sharjah" in t_restr.headline.casefold()
+    assert t_restr.tool_calls == []
+    assert t_restr.typed_evidence == []
+
+    # 5. Unavailable future period returns unavailable_data with 0 tool calls
+    t_unavail = orch.run_chat_turn(
+        AiChatRequest(
+            prompt="What is the Inbound team score in December 2026?",
+            session_state=SessionFilterContext(function="Call Center"),
+        )
+    )
+    assert t_unavail.outcome == "unavailable_data"
+    assert "2026-12" in t_unavail.headline
+    assert t_unavail.tool_calls == []
+
+    # 6. Unsupported write/mutation returns unsupported_request
+    t_unsup = orch.run_chat_turn(
+        AiChatRequest(
+            prompt="Delete all September 2026 Inbound evaluation records and recalculate scores.",
+            session_state=SessionFilterContext(function="Call Center"),
+        )
+    )
+    assert t_unsup.outcome == "unsupported_request"
+    assert t_unsup.tool_calls == []
+
+    # 7. Verify >= 95% (actual 100%) exact outcome, intent, and filter match on all 126 English fixtures
+    fixture_path = Path(__file__).parent / "fixtures" / "ai_english_questions.json"
+    data = json.loads(fixture_path.read_text(encoding="utf-8"))
+    questions = data["questions"]
+    matched = 0
+    for q in questions:
+        q_scope = dict(q.get("caller_scope") or {"role": q.get("caller_role", "General Manager")})
+        if q.get("caller_branches") is not None:
+            q_scope["accessible_branches"] = q["caller_branches"]
+            q_scope["allowed_branches"] = q["caller_branches"]
+        if q.get("caller_functions") is not None:
+            q_scope["accessible_functions"] = q["caller_functions"]
+        if not q.get("caller_branches") and not q.get("caller_functions"):
+            q_scope.setdefault("has_unrestricted_team_access", True)
+        ss_dict = dict(q.get("session_state") or {})
+        if q.get("prior_confirmed_query"):
+            ss_dict["last_confirmed_query"] = ConfirmedQueryContext(**q["prior_confirmed_query"])
+        ss = SessionFilterContext(**ss_dict)
+        res = HybridQueryRouter(scope=q_scope).resolve_and_validate(prompt=q["prompt"], session_state=ss)
+        exp_f = q.get("expected_filters") or {}
+        if (
+            res.outcome == q["expected_outcome"]
+            and res.plan.intent == q["expected_intent"]
+            and all(getattr(res.plan, k) == v for k, v in exp_f.items())
+        ):
+            matched += 1
+    assert matched == len(questions)
+
 
 
 

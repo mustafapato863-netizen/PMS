@@ -342,4 +342,96 @@ describe('PmsAiWorkspaceView', () => {
     ).length;
     expect(chatCallsAfterExpand).toBe(1);
   });
+
+  it('handles clarification choice click, persists last_confirmed_query across follow-up turns, and retries 503 errors', async () => {
+    let chatTurn = 0;
+    mockedApiFetch.mockImplementation(async (path: string) => {
+      if (path.startsWith('/api/ai/watching')) {
+        return WATCHING_RESPONSE;
+      }
+      if (path === '/api/ai/chat') {
+        chatTurn += 1;
+        if (chatTurn === 1) {
+          throw new Error('503: The AI routing provider is temporarily unavailable.');
+        }
+        if (chatTurn === 2) {
+          return {
+            success: true,
+            data: {
+              ...CHAT_RESPONSE.data,
+              outcome: 'clarification' as const,
+              headline: 'Which attendance metric would you like to inspect for Call Center?',
+              visual_cards: [],
+              clarification: {
+                code: 'AMBIGUOUS_ATTENDANCE_DEFINITION' as const,
+                question: 'Which attendance metric would you like to inspect for Call Center?',
+                choices: [
+                  {
+                    id: 'choice-patient-attendance-inbound',
+                    label: 'Inbound Patient Attendance Rate (Attended / Bookings)',
+                    prompt_to_send: 'What is Inbound Patient Attendance Rate vs target in September 2026?',
+                    team: 'Inbound',
+                    metric_id: 'inbound:attendance_rate',
+                  },
+                ],
+              },
+              resolved_session_state: {
+                ...CHAT_RESPONSE.data.resolved_session_state,
+                last_confirmed_query: {
+                  intent: 'clarify' as const,
+                  function: 'Call Center',
+                  periods: ['2026-09'],
+                },
+              },
+            },
+          };
+        }
+        return {
+          success: true,
+          data: {
+            ...CHAT_RESPONSE.data,
+            outcome: 'answer' as const,
+            headline: 'Inbound Patient Attendance Rate is 52.8% vs 65.0% target.',
+          },
+        };
+      }
+      return { success: true };
+    });
+
+    renderWorkspace('/ai');
+
+    const input = screen.getByLabelText('Ask PMS AI a question');
+    fireEvent.change(input, { target: { value: 'What is Attendance in September 2026?' } });
+    fireEvent.click(screen.getByLabelText('Send prompt'));
+
+    // Turn 1 fails with 503 error banner + Retry button
+    await waitFor(() => {
+      expect(screen.getByText(/Unable to complete analysis/i)).toBeInTheDocument();
+    });
+    const retryBtn = screen.getByRole('button', { name: /Retry/i });
+    fireEvent.click(retryBtn);
+
+    // Turn 2 returns clarification prompt & choice button
+    await waitFor(() => {
+      expect(
+        screen.getByText('Inbound Patient Attendance Rate (Attended / Bookings)'),
+      ).toBeInTheDocument();
+    });
+
+    // Clicking the clarification choice sends the clarified prompt with last_confirmed_query in session_state
+    fireEvent.click(
+      screen.getByText('Inbound Patient Attendance Rate (Attended / Bookings)'),
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.getByText('Inbound Patient Attendance Rate is 52.8% vs 65.0% target.'),
+      ).toBeInTheDocument();
+    });
+
+    const chatCalls = mockedApiFetch.mock.calls.filter((call) => call[0] === '/api/ai/chat');
+    expect(chatCalls.length).toBe(3);
+    const thirdCallBody = JSON.parse(String(chatCalls[2][1]?.body || '{}'));
+    expect(thirdCallBody.session_state.last_confirmed_query.intent).toBe('clarify');
+  });
 });

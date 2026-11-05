@@ -32,6 +32,7 @@ import type {
   AiChatResponsePayload,
   AiStarterPrompt,
   AiWatchingPayload,
+  ConfirmedQueryContext,
   SessionFilterContext,
 } from '../features/ai/types';
 
@@ -112,6 +113,7 @@ export default function PmsAiWorkspaceView() {
   );
   const [promptInput, setPromptInput] = useState('');
   const [turns, setTurns] = useState<ConversationTurn[]>([]);
+  const [lastConfirmedQuery, setLastConfirmedQuery] = useState<ConfirmedQueryContext | null>(null);
   const [isSending, setIsSending] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [showScenarioTray, setShowScenarioTray] = useState<boolean>(true);
@@ -120,6 +122,11 @@ export default function PmsAiWorkspaceView() {
   useEffect(() => {
     setAnswerDetail(SENIOR_BRIEF_ROLES.has(currentUser?.role || '') ? 'brief' : 'details');
   }, [currentUser?.role]);
+
+  useEffect(() => {
+    setTurns([]);
+    setLastConfirmedQuery(null);
+  }, [currentUser?.id]);
 
   const monthParam = searchParams.get('month') || (activeMonth !== 'All' ? activeMonth : null);
   const yearParam = searchParams.get('year') ? Number(searchParams.get('year')) : null;
@@ -133,8 +140,9 @@ export default function PmsAiWorkspaceView() {
       performance_level: selectedLevel !== 'All' ? selectedLevel : null,
       month: monthParam,
       year: yearParam,
+      last_confirmed_query: lastConfirmedQuery,
     }),
-    [functionParam, selectedTeam, selectedBranch, selectedLevel, monthParam, yearParam],
+    [functionParam, selectedTeam, selectedBranch, selectedLevel, monthParam, yearParam, lastConfirmedQuery],
   );
 
   const handleFilterChange = (key: 'team' | 'branch' | 'performance_level', value: string) => {
@@ -220,6 +228,9 @@ export default function PmsAiWorkspaceView() {
             }),
           },
         );
+        if (res.data.resolved_session_state?.last_confirmed_query) {
+          setLastConfirmedQuery(res.data.resolved_session_state.last_confirmed_query);
+        }
         setTurns((prev) =>
           prev.map((item) =>
             item.id === turnId
@@ -395,11 +406,26 @@ export default function PmsAiWorkspaceView() {
                   defaultValue="All"
                   icon={<Users size={12} />}
                   onChange={(val) => handleFilterChange('team', val)}
-                  options={[
-                    { value: 'All', label: 'All Call Center', badge: '2 Teams' },
-                    { value: 'Inbound', label: 'Inbound', badge: '35 Agents' },
-                    { value: 'Outbound', label: 'Outbound', badge: '7 Agents' },
-                  ]}
+                  options={
+                    watchingData?.eligible_teams && watchingData.eligible_teams.length > 0
+                      ? [
+                          {
+                            value: 'All',
+                            label: `All ${sessionState.function || 'Teams'}`,
+                            badge: `${watchingData.eligible_teams.length} Teams`,
+                          },
+                          ...watchingData.eligible_teams.map((t) => ({
+                            value: t.value,
+                            label: t.label,
+                            badge: t.badge || t.function,
+                          })),
+                        ]
+                      : [
+                          { value: 'All', label: 'All Call Center', badge: '2 Teams' },
+                          { value: 'Inbound', label: 'Inbound', badge: '35 Agents' },
+                          { value: 'Outbound', label: 'Outbound', badge: '7 Agents' },
+                        ]
+                  }
                 />
 
                 <AiScopeDropdown
@@ -409,13 +435,32 @@ export default function PmsAiWorkspaceView() {
                   defaultValue="all"
                   icon={<Building2 size={12} />}
                   onChange={(val) => handleFilterChange('branch', val)}
-                  options={[
-                    { value: 'all', label: 'All UAE', badge: '4 Branches' },
-                    { value: 'dubai', label: 'Dubai', badge: 'Hospital' },
-                    { value: 'sharjah', label: 'Sharjah', badge: 'Hospital' },
-                    { value: 'ajman', label: 'Ajman', badge: 'Hospital' },
-                    { value: 'clinics', label: 'Clinics', badge: 'Outpatient' },
-                  ]}
+                  options={
+                    watchingData?.eligible_branches && watchingData.eligible_branches.length > 0
+                      ? [
+                          ...(watchingData.eligible_branches.length > 1
+                            ? [
+                                {
+                                  value: 'all',
+                                  label: 'All UAE',
+                                  badge: `${watchingData.eligible_branches.length} Branches`,
+                                },
+                              ]
+                            : []),
+                          ...watchingData.eligible_branches.map((b) => ({
+                            value: b,
+                            label: b.charAt(0).toUpperCase() + b.slice(1),
+                            badge: b === 'clinics' ? 'Outpatient' : 'Hospital',
+                          })),
+                        ]
+                      : [
+                          { value: 'all', label: 'All UAE', badge: '4 Branches' },
+                          { value: 'dubai', label: 'Dubai', badge: 'Hospital' },
+                          { value: 'sharjah', label: 'Sharjah', badge: 'Hospital' },
+                          { value: 'ajman', label: 'Ajman', badge: 'Hospital' },
+                          { value: 'clinics', label: 'Clinics', badge: 'Outpatient' },
+                        ]
+                  }
                 />
 
                 <AiScopeDropdown
@@ -467,7 +512,10 @@ export default function PmsAiWorkspaceView() {
                 {turns.length > 0 && (
                   <button
                     type="button"
-                    onClick={() => setTurns([])}
+                    onClick={() => {
+                      setTurns([]);
+                      setLastConfirmedQuery(null);
+                    }}
                     className="inline-flex items-center gap-1 rounded-full border border-slate-200/90 bg-white px-3 py-1.5 text-[11px] font-bold text-slate-700 shadow-2xs transition-colors hover:border-blue-400 hover:text-blue-600"
                   >
                     <RotateCcw size={12} />
@@ -627,9 +675,19 @@ export default function PmsAiWorkspaceView() {
                       )}
 
                       {turn.error && (
-                        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-3.5 text-xs font-semibold text-rose-800">
-                          <p className="font-bold">Unable to complete analysis</p>
-                          <p className="mt-1">{turn.error}</p>
+                        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-3.5 text-xs font-semibold text-rose-800">
+                          <div>
+                            <p className="font-bold">Unable to complete analysis</p>
+                            <p className="mt-1">{turn.error}</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => void sendPrompt(turn.userPrompt)}
+                            className="inline-flex items-center gap-1.5 rounded-full border border-rose-300 bg-white px-3 py-1.5 text-[11px] font-bold text-rose-700 shadow-2xs transition-colors hover:bg-rose-100"
+                          >
+                            <RotateCcw size={12} />
+                            <span>Retry</span>
+                          </button>
                         </div>
                       )}
 

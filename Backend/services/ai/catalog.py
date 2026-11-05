@@ -19,9 +19,16 @@ from services.performance_dashboard_read_service import _scope_identity
 from utils.branch_scope import BRANCH_KEYS
 from utils.report_scope import (
     function_for_team,
-    user_can_access_team,
+    user_can_access_team as _base_user_can_access_team,
     user_can_access_team_level,
 )
+
+
+def user_can_access_team(scope: dict[str, Any], team_name: str) -> bool:
+    normalized_scope = dict(scope)
+    if "accessible_branches" not in normalized_scope and "allowed_branches" in normalized_scope:
+        normalized_scope["accessible_branches"] = normalized_scope["allowed_branches"]
+    return _base_user_can_access_team(normalized_scope, team_name)
 
 
 def user_can_access_branch(scope: dict[str, Any], branch: str) -> bool:

@@ -16,6 +16,7 @@ from models.ai_schemas import (
 )
 from services.ai.orchestrator import PmsAiOrchestrator
 from services.ai.providers import ProviderUnavailableError
+from services.ai.router import AiProviderUnavailableError
 from services.ai.trace_logger import TraceOwnershipError, TrainingTraceLogger
 from services.insights_service import InsightAccessError, InsightValidationError
 
@@ -78,7 +79,7 @@ def post_ai_chat_turn(
     scope = require_authenticated_scope(db, request)
     try:
         payload = PmsAiOrchestrator(db, scope).run_chat_turn(body)
-    except ProviderUnavailableError as exc:
+    except (ProviderUnavailableError, AiProviderUnavailableError) as exc:
         release_read_transaction(db)
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
     except InsightAccessError as exc:
