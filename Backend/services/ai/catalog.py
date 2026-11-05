@@ -439,6 +439,33 @@ class PmsAiCatalog:
         needle = str(kpi_key_or_label or "").strip().casefold()
         if not needle:
             return None
+
+        shorthand_map = {
+            "marketing:mb_cpl": "marketing:media_buyer:cpl",
+            "mb_cpl": "marketing:media_buyer:cpl",
+            "marketing:mb_leads": "marketing:media_buyer:leads",
+            "mb_leads": "marketing:media_buyer:leads",
+            "marketing:gd_rework": "marketing:graphic_designer:rework_percentage",
+            "gd_rework": "marketing:graphic_designer:rework_percentage",
+            "marketing:sms_response_time": "marketing:social_media_specialist:response_time",
+            "sms_response_time": "marketing:social_media_specialist:response_time",
+            "pharmacy:ajm_pharmacy_man_iv_cost_saving": "pharmacy:ajm_pharmacy_manager:iv_cost_saving",
+            "ajm_pharmacy_man_iv_cost_saving": "pharmacy:ajm_pharmacy_manager:iv_cost_saving",
+            "pharmacy:waitingtime": "pharmacy:waiting_time",
+            "waitingtime": "pharmacy:waiting_time",
+            "pharmacy:tendercompliance": "pharmacy:tender_compliance",
+            "tendercompliance": "pharmacy:tender_compliance",
+            "pharmacy:atv": "pharmacy:average_transaction_value",
+            "atv": "pharmacy:average_transaction_value",
+            "pre_approvals_ip_offshore:policyrejection": "pre_approvals_ip_offshore:policy_rejection_rate",
+            "policyrejection": "pre_approvals_ip_offshore:policy_rejection_rate",
+            "pre_approvals_ip_offshore:rejection": "pre_approvals_ip_offshore:rejection_rate",
+            "rejection": "pre_approvals_ip_offshore:rejection_rate",
+        }
+        mapped_id = shorthand_map.get(needle)
+        if mapped_id and mapped_id in self.metrics:
+            return self.metrics[mapped_id]
+
         if needle in self.metrics:
             return self.metrics[needle]
 
@@ -458,6 +485,49 @@ class PmsAiCatalog:
             if any(alias in needle or needle in alias for alias in m.aliases if len(alias) >= 3):
                 return m
         return None
+
+    def get_scope_certification_registry(self) -> list[dict[str, Any]]:
+        """Returns the scope certification matrix across all PMS teams, functions, and BSC levels."""
+        ordered_teams = [
+            "Inbound",
+            "Outbound",
+            "Coding",
+            "Submission",
+            "Re-Submission",
+            "Pre-Approvals OP Final",
+            "Pre-Approvals IP Final",
+            "Pre-Approvals IP Elective",
+            "Pre-Approvals IP Offshore",
+            "Marketing",
+            "Pharmacy",
+            "CSR",
+            "Sales",
+            "Finance",
+            "Human Resources",
+            "IT",
+            "Offshore Admin & Management",
+        ]
+        cfg = get_ai_runtime_config()
+        rows: list[dict[str, Any]] = []
+        for t_name in ordered_teams:
+            t_def = self.teams.get(t_name.casefold())
+            t_metrics = self.metrics_by_team.get(t_name.casefold(), [])
+            scored_metrics = [m for m in t_metrics if m.contributes_to_score]
+            tracking_metrics = [m for m in t_metrics if not m.contributes_to_score]
+            rows.append(
+                {
+                    "team": t_name,
+                    "function": t_def.function if t_def else (function_for_team(t_name) or t_name),
+                    "region": t_def.region if t_def else "UAE",
+                    "positions": list(t_def.positions) if t_def else [],
+                    "performance_levels": list(t_def.performance_levels) if t_def else ["Employee"],
+                    "supports_branches": bool(t_def.supports_branches) if t_def else False,
+                    "scored_kpi_count": len(scored_metrics),
+                    "tracking_only_kpi_count": len(tracking_metrics),
+                    "certified": bool(cfg.is_scope_enabled(t_name)),
+                }
+            )
+        return rows
 
     def get_eligible_scope_options(
         self,

@@ -799,5 +799,97 @@ def test_pr4_local_first_routing_followups_clarifications_and_restricted_branch(
     assert matched == len(questions)
 
 
+def test_pr5_multi_scope_certification_and_200_employee_latency_gate(monkeypatch):
+    """PR 5 & PR 7: Multi-scope certification (RCM/Pre-Approvals June 2026 revision, Marketing positions, Pharmacy, BSC) and 200-emp latency gate."""
+    from scripts.certify_scopes_and_benchmark import run_200_employee_benchmark
+    from services.ai.catalog import get_ai_catalog
+
+    cat = get_ai_catalog()
+    registry = cat.get_scope_certification_registry()
+    assert len(registry) == 17
+    assert all(r["certified"] is True for r in registry)
+
+    # 1. Verify Offshore Pre-Approvals June 2026 controllable vs policy rejection definitions
+    offshore_rej = cat.find_metric_definition(
+        team="Pre-Approvals IP Offshore",
+        kpi_key_or_label="Rejection",
+    )
+    assert offshore_rej is not None
+    assert offshore_rej.contributes_to_score is True
+    assert offshore_rej.weight_percent == 50.0
+    assert offshore_rej.effective_from == "2026-06"
+
+    offshore_pol = cat.find_metric_definition(
+        team="Pre-Approvals IP Offshore",
+        kpi_key_or_label="PolicyRejection",
+    )
+    assert offshore_pol is not None
+    assert offshore_pol.contributes_to_score is False
+    assert offshore_pol.weight_percent == 0.0
+
+    # 2. Verify Marketing position-specific metrics
+    mb_cpl = cat.find_metric_definition(
+        team="Marketing",
+        position="Media Buyer",
+        kpi_key_or_label="CPL",
+    )
+    assert mb_cpl is not None
+    assert mb_cpl.position == "Media Buyer"
+    assert mb_cpl.contributes_to_score is True
+
+    # 3. Verify Pharmacy scored Waiting Time (20%) vs 0-weight diagnostic AJM Pharmacy Manager IV Cost Saving
+    ph_wait = cat.find_metric_definition(
+        team="Pharmacy",
+        kpi_key_or_label="WaitingTime",
+    )
+    assert ph_wait is not None
+    assert ph_wait.contributes_to_score is True
+    assert ph_wait.weight_percent == 20.0
+
+    ph_iv = cat.find_metric_definition(
+        team="Pharmacy",
+        position="AJM Pharmacy Manager",
+        kpi_key_or_label="IV Cost Saving",
+    )
+    assert ph_iv is not None
+    assert ph_iv.contributes_to_score is False
+    assert ph_iv.weight_percent == 0.0
+
+    # 4. Run end-to-end turn on Offshore Pre-Approvals Policy Rejection and verify basis_warning
+    db = _build_in_memory_db()
+    records = [
+        _make_call_center_record("EMP101", "Sara Mahmoud", "Inbound", 91.0, 45, 50, 90, 200),
+    ]
+    _patch_records(monkeypatch, records)
+    gm_scope = {
+        "role": "General Manager",
+        "user_id": "00000000-0000-0000-0000-000000000002",
+        "has_unrestricted_team_access": True,
+    }
+    off_resp = PmsAiOrchestrator(db, gm_scope).run_chat_turn(
+        AiChatRequest(
+            prompt="What is Policy Rejection Rate in Pre-Approvals IP Offshore in September 2026?",
+            session_state=SessionFilterContext(function="RCM", team="Pre-Approvals IP Offshore"),
+        )
+    )
+    assert off_resp.outcome == "answer"
+    assert off_resp.basis_warning is not None
+    assert "2026-06" in off_resp.basis_warning or "policy rejection" in off_resp.basis_warning.casefold()
+    pol_ev = [e for e in off_resp.typed_evidence if "policy_rejection" in e.metric_id]
+    assert len(pol_ev) == 1
+    assert pol_ev[0].contributes_to_score is False
+
+    # 5. Verify 200-employee-per-team concurrency & latency benchmark gates
+    bench = run_200_employee_benchmark()
+    assert bench["employees_per_team"] == 200
+    assert bench["categories"]["routine_local"]["cold_p95_ms"] < 1000.0
+    assert bench["categories"]["routine_local"]["warm_p95_ms"] < 1000.0
+    assert bench["categories"]["single_kpi"]["cold_p95_ms"] < 3000.0
+    assert bench["categories"]["single_kpi"]["warm_p95_ms"] < 3000.0
+    assert bench["categories"]["standard_comparison"]["cold_p95_ms"] < 5000.0
+    assert bench["categories"]["standard_comparison"]["warm_p95_ms"] < 5000.0
+
+
+
 
 

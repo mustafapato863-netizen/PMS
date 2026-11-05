@@ -586,6 +586,11 @@ class DeterministicToolRegistry:
         if ws.executive_story and ws.executive_story.basis_context and not ws.executive_story.basis_context.like_for_like:
             basis_status = "changed"
             basis_note = "; ".join(ws.executive_story.basis_context.reasons[:2]) or "Month-over-month scoring basis changed"
+        elif (resolved["team"] or "").casefold() == "pre-approvals ip offshore":
+            basis_note = (
+                "Effective June 2026 (2026-06), Pre-Approvals IP Offshore scores Controllable Rejection Rate "
+                "(50% weight) while Policy Rejection Rate is tracked as a 0% weight non-scored indicator."
+            )
 
         primary_route = build_verified_deep_link(
             f"/team/{resolved['team'].strip().lower().replace(' ', '-')}" if resolved["team"] else "/insights",
