@@ -270,4 +270,76 @@ describe('PmsAiWorkspaceView', () => {
       }),
     );
   });
+
+  it('renders Executive Brief mode with scope banner, primary source link, and zero-call Show details expansion', async () => {
+    mockedApiFetch.mockImplementation(async (path: string) => {
+      if (path.startsWith('/api/ai/watching')) {
+        return WATCHING_RESPONSE;
+      }
+      if (path === '/api/ai/chat') {
+        return {
+          success: true,
+          data: {
+            ...CHAT_RESPONSE.data,
+            answer_detail: 'brief' as const,
+            scope_banner: 'All UAE · Inbound · Employee · March 2026',
+            primary_source_link: {
+              label: 'Open Inbound Scorecard →',
+              route: '/team/Inbound?month=March',
+              icon_key: 'team' as const,
+            },
+          },
+        };
+      }
+      return { success: true };
+    });
+
+    renderWorkspace('/ai');
+
+    await waitFor(() => {
+      expect(screen.getByText('Which team dropped the most & why?')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText('Which team dropped the most & why?'));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(
+          'Inbound is at 71.2% average score — the lowest among 2 evaluated teams.',
+        ),
+      ).toBeInTheDocument();
+    });
+
+    // Scope banner and primary source link are visible immediately in Brief mode
+    expect(screen.getByTestId('ai-scope-banner')).toHaveTextContent(
+      'All UAE · Inbound · Employee · March 2026',
+    );
+    expect(screen.getByTestId('ai-primary-source-link')).toHaveTextContent(
+      'Open Inbound Scorecard →',
+    );
+
+    // Visual breakdown cards start collapsed in Brief mode
+    expect(screen.queryByText('Tarek Nabil · Inbound')).not.toBeInTheDocument();
+    const showDetailsBtn = screen.getByRole('button', { name: /Show details/i });
+    expect(showDetailsBtn).toHaveAttribute('aria-expanded', 'false');
+
+    const chatCallsBeforeExpand = mockedApiFetch.mock.calls.filter(
+      (call) => call[0] === '/api/ai/chat',
+    ).length;
+    expect(chatCallsBeforeExpand).toBe(1);
+
+    // Clicking Show details expands the same authorized evidence with zero additional model calls
+    fireEvent.click(showDetailsBtn);
+
+    expect(screen.getByText('Tarek Nabil · Inbound')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Hide details/i })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    );
+
+    const chatCallsAfterExpand = mockedApiFetch.mock.calls.filter(
+      (call) => call[0] === '/api/ai/chat',
+    ).length;
+    expect(chatCallsAfterExpand).toBe(1);
+  });
 });

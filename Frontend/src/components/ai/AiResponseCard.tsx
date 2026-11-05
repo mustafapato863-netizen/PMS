@@ -26,6 +26,7 @@ import { apiFetch } from '../../lib/apiClient';
 
 interface AiResponseCardProps {
   response: AiChatResponsePayload;
+  onSelectPrompt?: (prompt: string) => void;
 }
 
 const MONTH_NAME_TO_NUMBER: Record<string, string> = {
@@ -524,7 +525,7 @@ function VisualBlock({ card }: { card: StructuredVisualCard }) {
   return null;
 }
 
-export default function AiResponseCard({ response }: AiResponseCardProps) {
+export default function AiResponseCard({ response, onSelectPrompt }: AiResponseCardProps) {
   const [feedback, setFeedback] = useState<'up' | 'down' | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -535,6 +536,23 @@ export default function AiResponseCard({ response }: AiResponseCardProps) {
     0,
   );
   const [showPlaybook, setShowPlaybook] = useState<boolean>(primaryCards.length === 0);
+  const [detailsExpanded, setDetailsExpanded] = useState<boolean>(
+    response.answer_detail !== 'brief',
+  );
+
+  const primarySourceLink = response.primary_source_link || response.deep_links[0] || null;
+  const secondaryDeepLinks = primarySourceLink
+    ? response.deep_links.filter((d) => d.route !== primarySourceLink.route)
+    : response.deep_links;
+  const hasExpandableDetails =
+    primaryCards.length > 0 ||
+    playbookCards.length > 0 ||
+    secondaryDeepLinks.length > 0 ||
+    response.narrative_bullets.length > 1;
+
+  const visibleBullets = detailsExpanded
+    ? response.narrative_bullets
+    : response.narrative_bullets.slice(0, 1);
 
   const handleFeedback = async (rating: 'up' | 'down') => {
     if (submitting) return;
@@ -567,25 +585,84 @@ export default function AiResponseCard({ response }: AiResponseCardProps) {
 
       {/* Main Compact Response Card */}
       <div className="min-w-0 flex-1 rounded-2xl border border-slate-200/90 bg-white p-4 shadow-[0_6px_24px_rgb(15,23,42,0.05)]">
-        {/* Executive Headline */}
+        {/* Executive Headline (1-2 sentences) */}
         <p dir="auto" className="text-xs font-extrabold leading-relaxed text-slate-900 sm:text-[13px]">
           {response.headline}
         </p>
 
-        {/* Supporting Takeaway Bullets (when present) */}
-        {response.narrative_bullets.length > 0 && (
+        {/* Compact Executive Scope Banner + Primary Source Link + Show Details Toggle */}
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-1.5">
+            {response.scope_banner && (
+              <span
+                data-testid="ai-scope-banner"
+                className="inline-flex items-center rounded-md border border-slate-200/90 bg-slate-50 px-2 py-0.5 text-[10px] font-bold text-slate-600"
+              >
+                {response.scope_banner}
+              </span>
+            )}
+            {primarySourceLink && (
+              <Link
+                to={primarySourceLink.route}
+                data-testid="ai-primary-source-link"
+                className="inline-flex items-center gap-1 rounded-full border border-sky-200 bg-sky-50/90 px-2.5 py-0.5 text-[11px] font-extrabold text-blue-700 transition-all hover:bg-blue-600 hover:text-white"
+              >
+                <span>{primarySourceLink.label}</span>
+              </Link>
+            )}
+          </div>
+
+          {hasExpandableDetails && (
+            <button
+              type="button"
+              aria-expanded={detailsExpanded}
+              onClick={() => setDetailsExpanded((prev) => !prev)}
+              className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-[11px] font-extrabold text-slate-700 transition-colors hover:border-blue-400 hover:text-blue-600"
+            >
+              <span>{detailsExpanded ? 'Hide details' : 'Show details'}</span>
+              {detailsExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+            </button>
+          )}
+        </div>
+
+        {/* Supporting Takeaway Bullets (primary driver in Brief mode; all bullets in Details mode) */}
+        {visibleBullets.length > 0 && (
           <div className="mt-2 rounded-xl border border-sky-200/80 bg-sky-50/60 px-3 py-2">
             <ul
               dir="auto"
               className="space-y-1 text-[11px] font-medium leading-relaxed text-slate-700"
             >
-              {response.narrative_bullets.map((bullet, idx) => (
+              {visibleBullets.map((bullet, idx) => (
                 <li key={idx} className="flex items-start gap-1.5">
                   <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-blue-600" />
                   <span>{bullet}</span>
                 </li>
               ))}
             </ul>
+          </div>
+        )}
+
+        {/* Interactive Clarification Options (when outcome === 'clarification') */}
+        {response.outcome === 'clarification' && response.clarification && (
+          <div className="mt-2.5 rounded-xl border border-sky-200 bg-sky-50/70 p-3">
+            <p className="text-xs font-extrabold text-slate-900">
+              {response.clarification.question}
+            </p>
+            {response.clarification.choices.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {response.clarification.choices.map((choice) => (
+                  <button
+                    key={choice.id}
+                    type="button"
+                    onClick={() => onSelectPrompt?.(choice.prompt_to_send || choice.label)}
+                    className="inline-flex items-center gap-1 rounded-full border border-sky-300 bg-white px-3 py-1 text-[11px] font-extrabold text-blue-700 shadow-2xs transition-all hover:bg-blue-600 hover:text-white"
+                  >
+                    <span>{choice.label}</span>
+                    <ArrowRight size={11} />
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
@@ -597,49 +674,54 @@ export default function AiResponseCard({ response }: AiResponseCardProps) {
           </div>
         )}
 
-        {/* Primary Visual Cards */}
-        {primaryCards.map((card, index) => (
-          <VisualBlock key={`${card.card_type}-${index}`} card={card} />
-        ))}
-
-        {/* Collapsible Decision Playbook Button */}
-        {playbookCards.length > 0 && (
-          <div className="mt-3">
-            {primaryCards.length > 0 && (
-              <button
-                type="button"
-                onClick={() => setShowPlaybook((prev) => !prev)}
-                className="inline-flex items-center gap-1.5 rounded-full border border-sky-200 bg-sky-50/80 px-3 py-1 text-[11px] font-extrabold text-blue-700 transition-all hover:border-blue-400 hover:bg-blue-600 hover:text-white"
-              >
-                <Lightbulb size={12} />
-                <span>
-                  {showPlaybook
-                    ? 'Hide Recommended Decisions'
-                    : `View Recommended Decisions (${totalDecisionsCount})`}
-                </span>
-                {showPlaybook ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-              </button>
-            )}
-            {showPlaybook &&
-              playbookCards.map((card, index) => (
-                <VisualBlock key={`playbook-${index}`} card={card} />
-              ))}
-          </div>
-        )}
-
-        {/* Deep-Link CTA Buttons */}
-        {response.deep_links.length > 0 && (
-          <div className="mt-3 flex flex-wrap items-center gap-1.5">
-            {response.deep_links.map((cta) => (
-              <Link
-                key={cta.route}
-                to={cta.route}
-                className="inline-flex items-center gap-1 rounded-full border border-sky-200 bg-sky-50/80 px-3 py-1 text-[11px] font-extrabold text-blue-700 transition-all hover:bg-blue-600 hover:text-white"
-              >
-                <span>{cta.label}</span>
-              </Link>
+        {/* Expandable Details Region (Zero additional model calls on toggle) */}
+        {detailsExpanded && (
+          <>
+            {/* Primary Visual Cards */}
+            {primaryCards.map((card, index) => (
+              <VisualBlock key={`${card.card_type}-${index}`} card={card} />
             ))}
-          </div>
+
+            {/* Collapsible Decision Playbook Button */}
+            {playbookCards.length > 0 && (
+              <div className="mt-3">
+                {primaryCards.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowPlaybook((prev) => !prev)}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-sky-200 bg-sky-50/80 px-3 py-1 text-[11px] font-extrabold text-blue-700 transition-all hover:border-blue-400 hover:bg-blue-600 hover:text-white"
+                  >
+                    <Lightbulb size={12} />
+                    <span>
+                      {showPlaybook
+                        ? 'Hide Recommended Decisions'
+                        : `View Recommended Decisions (${totalDecisionsCount})`}
+                    </span>
+                    {showPlaybook ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                  </button>
+                )}
+                {showPlaybook &&
+                  playbookCards.map((card, index) => (
+                    <VisualBlock key={`playbook-${index}`} card={card} />
+                  ))}
+              </div>
+            )}
+
+            {/* Additional Deep-Link CTA Buttons */}
+            {secondaryDeepLinks.length > 0 && (
+              <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                {secondaryDeepLinks.map((cta) => (
+                  <Link
+                    key={cta.route}
+                    to={cta.route}
+                    className="inline-flex items-center gap-1 rounded-full border border-sky-200 bg-sky-50/80 px-3 py-1 text-[11px] font-extrabold text-blue-700 transition-all hover:bg-blue-600 hover:text-white"
+                  >
+                    <span>{cta.label}</span>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </>
         )}
 
         {/* Bottom Footer: Source Citation Pills + ✓/✕ Distillation Feedback */}

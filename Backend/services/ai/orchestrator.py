@@ -403,12 +403,50 @@ class PmsAiOrchestrator:
 
         role = str(self.scope.get("role") or "Manager")
         requested_detail = req.answer_detail or "auto"
+        lower_prompt = (req.prompt or "").casefold()
+        asks_explicit_breakdown = any(
+            phrase in lower_prompt
+            for phrase in (
+                "show details",
+                "in detail",
+                "detailed breakdown",
+                "full breakdown",
+                "full table",
+                "kpi table",
+                "all kpis",
+            )
+        )
         if requested_detail in ("brief", "details"):
             effective_detail = requested_detail
+        elif asks_explicit_breakdown:
+            effective_detail = "details"
         elif cfg.brief_default_enabled and role in SENIOR_BRIEF_DEFAULT_ROLES:
             effective_detail = "brief"
         else:
             effective_detail = "details"
+
+        scope_team_or_fn = resolved_state.team or resolved_state.function or "Call Center"
+        scope_branch = (
+            resolved_state.branch.capitalize()
+            if resolved_state.branch and resolved_state.branch.casefold() != "all"
+            else "All Branches"
+        )
+        scope_level = resolved_state.performance_level or "Employee"
+        scope_period = (
+            f"{res_month} {res_year}"
+            if res_month and res_year
+            else (res_month or "Latest Period")
+        )
+        scope_banner = f"{scope_branch} · {scope_team_or_fn} · {scope_level} · {scope_period}"
+
+        # Prefer a direct team/employee/BSC scorecard link as primary_source_link when available
+        primary_link = None
+        for dl in deep_links:
+            if dl.icon_key in ("team", "employee", "bsc"):
+                primary_link = dl
+                break
+        if primary_link is None and deep_links:
+            primary_link = deep_links[0]
 
         response_dict = {
             "headline": synthesis.headline,
@@ -462,9 +500,10 @@ class PmsAiOrchestrator:
             visual_cards=final_cards,
             citations=citations,
             deep_links=deep_links[:3],
-            primary_source_link=deep_links[0] if deep_links else None,
+            primary_source_link=primary_link,
             suggested_followups=synthesis.suggested_followups,
             resolved_session_state=resolved_state,
+            scope_banner=scope_banner,
             domain_guardrail_notes=guardrail_notes,
             tool_calls=tool_call_records,
             provider_used=synthesis.provider_used,

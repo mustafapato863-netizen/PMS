@@ -696,6 +696,22 @@ class DeterministicToolRegistry:
                 icon_key="insights",
             )
         ]
+        if resolved["team"]:
+            team_slug = resolved["team"].strip().lower().replace(" ", "-")
+            deep_links.insert(
+                0,
+                DeepLinkCta(
+                    label=f"Open {resolved['team']} Scorecard →",
+                    route=build_verified_deep_link(
+                        f"/team/{team_slug}",
+                        month=res_month,
+                        year=res_year,
+                        branch=resolved["branch"],
+                        performance_level=resolved["performance_level"],
+                    ),
+                    icon_key="team",
+                ),
+            )
 
         lowest_kpi = min(kpi_rows, key=lambda r: (r.achievement_percent or 0.0)) if kpi_rows else None
         digest = {

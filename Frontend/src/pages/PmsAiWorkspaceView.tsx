@@ -85,6 +85,14 @@ const CATEGORY_STYLES: Record<
   },
 };
 
+const SENIOR_BRIEF_ROLES = new Set([
+  'Executive',
+  'General Manager',
+  'Regional Manager',
+  'Branch Director',
+  'Function Director',
+]);
+
 export default function PmsAiWorkspaceView() {
   const { currentUser } = useAuth();
   const activeMonth = useAppStore((s) => s.activeMonth);
@@ -99,12 +107,19 @@ export default function PmsAiWorkspaceView() {
   const [selectedLevel, setSelectedLevel] = useState<string>(
     () => searchParams.get('performance_level') || 'All',
   );
+  const [answerDetail, setAnswerDetail] = useState<'brief' | 'details'>(() =>
+    SENIOR_BRIEF_ROLES.has(currentUser?.role || '') ? 'brief' : 'details',
+  );
   const [promptInput, setPromptInput] = useState('');
   const [turns, setTurns] = useState<ConversationTurn[]>([]);
   const [isSending, setIsSending] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [showScenarioTray, setShowScenarioTray] = useState<boolean>(true);
   const streamEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setAnswerDetail(SENIOR_BRIEF_ROLES.has(currentUser?.role || '') ? 'brief' : 'details');
+  }, [currentUser?.role]);
 
   const monthParam = searchParams.get('month') || (activeMonth !== 'All' ? activeMonth : null);
   const yearParam = searchParams.get('year') ? Number(searchParams.get('year')) : null;
@@ -201,6 +216,7 @@ export default function PmsAiWorkspaceView() {
               session_state: sessionState,
               history: historyPayload,
               provider_override: 'auto',
+              answer_detail: answerDetail,
             }),
           },
         );
@@ -224,7 +240,7 @@ export default function PmsAiWorkspaceView() {
         setIsSending(false);
       }
     },
-    [isSending, sessionState, turns],
+    [answerDetail, isSending, sessionState, turns],
   );
 
   const firstName = useMemo(() => {
@@ -417,6 +433,37 @@ export default function PmsAiWorkspaceView() {
                   ]}
                 />
 
+                <div
+                  role="group"
+                  aria-label="Response detail mode"
+                  className="inline-flex items-center rounded-full border border-slate-200/90 bg-slate-50/90 p-0.5 text-[11px] font-bold"
+                >
+                  <button
+                    type="button"
+                    aria-pressed={answerDetail === 'brief'}
+                    onClick={() => setAnswerDetail('brief')}
+                    className={`rounded-full px-2.5 py-1 transition-colors ${
+                      answerDetail === 'brief'
+                        ? 'bg-blue-600 text-white shadow-2xs'
+                        : 'text-slate-600 hover:text-blue-600'
+                    }`}
+                  >
+                    Brief
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={answerDetail === 'details'}
+                    onClick={() => setAnswerDetail('details')}
+                    className={`rounded-full px-2.5 py-1 transition-colors ${
+                      answerDetail === 'details'
+                        ? 'bg-blue-600 text-white shadow-2xs'
+                        : 'text-slate-600 hover:text-blue-600'
+                    }`}
+                  >
+                    Details
+                  </button>
+                </div>
+
                 {turns.length > 0 && (
                   <button
                     type="button"
@@ -586,7 +633,12 @@ export default function PmsAiWorkspaceView() {
                         </div>
                       )}
 
-                      {turn.response && <AiResponseCard response={turn.response} />}
+                      {turn.response && (
+                        <AiResponseCard
+                          response={turn.response}
+                          onSelectPrompt={(p) => void sendPrompt(p)}
+                        />
+                      )}
                     </div>
                   ))}
                   <div ref={streamEndRef} />

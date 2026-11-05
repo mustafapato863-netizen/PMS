@@ -442,3 +442,56 @@ def test_pr1_provider_controls_header_auth_redaction_and_trace_ownership(monkeyp
     assert len(audit_rows) == 1
     assert audit_rows[0].operation == "EXPORT"
 
+
+def test_pr2_executive_brief_defaults_scope_banner_and_primary_link(monkeypatch):
+    """PR 2: Senior roles default to Brief with 1-2 sentence headline, scope banner, and primary source link."""
+    db = _build_in_memory_db()
+    records = [
+        _make_call_center_record("EMP101", "Sara Mahmoud", "Inbound", 91.0, 45, 50, 90, 200),
+        _make_call_center_record("EMP102", "Nour Adel", "Inbound", 64.0, 20, 48, 30, 120),
+    ]
+    _patch_records(monkeypatch, records)
+
+    exec_scope = {
+        "role": "Executive",
+        "user_id": "00000000-0000-0000-0000-000000000001",
+        "has_unrestricted_team_access": True,
+    }
+    resp_exec = PmsAiOrchestrator(db, exec_scope).run_chat_turn(
+        AiChatRequest(
+            prompt="What is Inbound's score in September 2026?",
+            session_state=SessionFilterContext(
+                function="Call Center",
+                team="Inbound",
+                month="September",
+                year=2026,
+            ),
+            answer_detail="auto",
+        )
+    )
+    assert resp_exec.answer_detail == "brief"
+    assert resp_exec.scope_banner is not None
+    assert "Inbound" in resp_exec.scope_banner
+    assert "September 2026" in resp_exec.scope_banner
+    assert resp_exec.primary_source_link is not None
+    assert "/team/inbound" in resp_exec.primary_source_link.route.lower()
+    # Headline is 1-2 sentences
+    sentences = [s.strip() for s in resp_exec.headline.split(". ") if s.strip()]
+    assert 1 <= len(sentences) <= 2
+
+    # When explicit breakdown is requested by a senior role, answer_detail resolves to details
+    resp_breakdown = PmsAiOrchestrator(db, exec_scope).run_chat_turn(
+        AiChatRequest(
+            prompt="Show full breakdown table of Inbound KPIs in September 2026",
+            session_state=SessionFilterContext(
+                function="Call Center",
+                team="Inbound",
+                month="September",
+                year=2026,
+            ),
+            answer_detail="auto",
+        )
+    )
+    assert resp_breakdown.answer_detail == "details"
+
+
