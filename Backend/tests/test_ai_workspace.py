@@ -495,3 +495,170 @@ def test_pr2_executive_brief_defaults_scope_banner_and_primary_link(monkeypatch)
     assert resp_breakdown.answer_detail == "details"
 
 
+def test_pr3_call_center_catalog_typed_evidence_and_dashboard_parity(monkeypatch):
+    """PR 3: Call Center catalog disambiguates Other KPIs, flags tracking-only AHT, and matches dashboard parity."""
+    from services.ai.catalog import ai_evidence_cache, get_ai_catalog
+    from services.database_record_source import DatabaseRecordSource
+    from services.insights_service import InsightsService
+    from services.planning_service import PlanningService
+
+    ai_evidence_cache.clear()
+    catalog = get_ai_catalog()
+
+    in_other = catalog.find_metric_definition(team="Inbound", kpi_key_or_label="Other")
+    out_other = catalog.find_metric_definition(team="Outbound", kpi_key_or_label="Other")
+    out_aht = catalog.find_metric_definition(team="Outbound", kpi_key_or_label="AHT")
+
+    assert in_other is not None and in_other.metric_id == "inbound:abandon_rate"
+    assert in_other.display_name == "Abandon Rate (Inbound)"
+    assert out_other is not None and out_other.metric_id == "outbound:reachability"
+    assert out_other.display_name == "Reachability (Outbound)"
+    assert out_aht is not None and out_aht.metric_id == "outbound:aht"
+    assert out_aht.contributes_to_score is False
+    assert out_aht.weight_percent == 0.0
+    assert out_aht.tracking_only_note is not None
+
+    db = _build_in_memory_db()
+    records = [
+        _make_call_center_record("EMP101", "Sara Mahmoud", "Inbound", 91.0, 45, 50, 90, 200),
+        _make_call_center_record("EMP102", "Nour Adel", "Inbound", 64.0, 20, 48, 30, 120),
+        _make_call_center_record("EMP201", "Hossam Ali", "Outbound", 88.0, 35, 42, 70, 160),
+    ]
+    _patch_records(monkeypatch, records)
+    gm_scope = {
+        "role": "General Manager",
+        "user_id": "00000000-0000-0000-0000-000000000002",
+        "has_unrestricted_team_access": True,
+    }
+
+    # Compare AI typed_evidence directly against InsightsService dashboard KPI diagnosis
+    source = DatabaseRecordSource(db)
+    ws = InsightsService(source, PlanningService(source, db=db), db=db).generate_workspace(
+        gm_scope,
+        sections="kpi_diagnosis",
+        team="Inbound",
+        function="Call Center",
+        month="September",
+        year=2026,
+    )
+    dashboard_kpis = {row.key: row for row in (ws.kpi_diagnosis or [])}
+
+    resp = PmsAiOrchestrator(db, gm_scope).run_chat_turn(
+        AiChatRequest(
+            prompt="Diagnose Inbound KPIs and Abandon Rate in September 2026",
+            session_state=SessionFilterContext(
+                function="Call Center",
+                team="Inbound",
+                month="September",
+                year=2026,
+            ),
+        )
+    )
+    assert len(resp.typed_evidence) >= 2
+    ev_by_key = {ev.kpi_key: ev for ev in resp.typed_evidence}
+    assert "Other" in ev_by_key
+    assert ev_by_key["Other"].metric_id == "inbound:abandon_rate"
+    assert ev_by_key["Other"].display_name == "Abandon Rate (Inbound)"
+    for kpi_key, ev in ev_by_key.items():
+        dash_row = dashboard_kpis[kpi_key]
+        expected_ach = min(100.0, round(float(dash_row.achievement_percent or 0.0), 1))
+        assert ev.achievement_percent == expected_ach
+
+    # Asking about Outbound AHT surfaces tracking-only evidence with 0% weight note
+    resp_track = PmsAiOrchestrator(db, gm_scope).run_chat_turn(
+        AiChatRequest(
+            prompt="What is Outbound AHT handle time in September 2026?",
+            session_state=SessionFilterContext(
+                function="Call Center",
+                team="Outbound",
+                month="September",
+                year=2026,
+            ),
+        )
+    )
+    track_ev = [ev for ev in resp_track.typed_evidence if ev.metric_id == "outbound:aht"]
+    assert len(track_ev) == 1
+    assert track_ev[0].contributes_to_score is False
+    assert track_ev[0].weight_percent == 0.0
+    assert resp_track.basis_warning is not None
+    assert "tracking-only" in resp_track.basis_warning.casefold()
+
+
+def test_pr3_scoped_evidence_cache_invalidation_and_rbac_isolation(monkeypatch):
+    """PR 3: Versioned AI cache hits on identical scope, isolates RBAC scopes, and invalidates on data/config/eval changes."""
+    from models.models import UploadLog
+    from services.ai.catalog import ai_evidence_cache
+    from services.cache_invalidation_service import CacheInvalidationService
+
+    ai_evidence_cache.clear()
+    db = _build_in_memory_db()
+    records = [
+        _make_call_center_record("EMP101", "Sara Mahmoud", "Inbound", 91.0, 45, 50, 90, 200),
+        _make_call_center_record("EMP102", "Nour Adel", "Inbound", 64.0, 20, 48, 30, 120),
+    ]
+    _patch_records(monkeypatch, records)
+
+    gm_scope = {
+        "role": "General Manager",
+        "user_id": "00000000-0000-0000-0000-000000000002",
+        "has_unrestricted_team_access": True,
+    }
+    req = AiChatRequest(
+        prompt="Diagnose Inbound KPIs in September 2026",
+        session_state=SessionFilterContext(
+            function="Call Center",
+            team="Inbound",
+            month="September",
+            year=2026,
+        ),
+    )
+
+    cold = PmsAiOrchestrator(db, gm_scope).run_chat_turn(req)
+    assert cold.cache_hit is False
+
+    warm = PmsAiOrchestrator(db, gm_scope).run_chat_turn(req)
+    assert warm.cache_hit is True
+
+    # Different RBAC scope must NOT hit GM's cache entry
+    dubai_scope = {
+        "role": "Branch Director",
+        "user_id": "00000000-0000-0000-0000-000000000009",
+        "has_unrestricted_team_access": True,
+        "accessible_branches": ["dubai"],
+        "allowed_branches": ["dubai"],
+    }
+    dubai_turn = PmsAiOrchestrator(db, dubai_scope).run_chat_turn(req)
+    assert dubai_turn.cache_hit is False
+
+    # Data version bump invalidates cache
+    CacheInvalidationService.bump_data_version()
+    after_data_bump = PmsAiOrchestrator(db, gm_scope).run_chat_turn(req)
+    assert after_data_bump.cache_hit is False
+
+    # Config version bump invalidates cache
+    warm2 = PmsAiOrchestrator(db, gm_scope).run_chat_turn(req)
+    assert warm2.cache_hit is True
+    CacheInvalidationService.bump_config_version()
+    after_cfg_bump = PmsAiOrchestrator(db, gm_scope).run_chat_turn(req)
+    assert after_cfg_bump.cache_hit is False
+
+    # UploadLog mutation changes evaluation_cache_identity(db) and invalidates cache
+    import uuid
+    warm3 = PmsAiOrchestrator(db, gm_scope).run_chat_turn(req)
+    assert warm3.cache_hit is True
+    db.add(
+        UploadLog(
+            id=uuid.uuid4(),
+            team_id=uuid.uuid4(),
+            month="September",
+            year=2026,
+            status="success",
+            record_count=35,
+        )
+    )
+    db.commit()
+    after_upload = PmsAiOrchestrator(db, gm_scope).run_chat_turn(req)
+    assert after_upload.cache_hit is False
+
+
+

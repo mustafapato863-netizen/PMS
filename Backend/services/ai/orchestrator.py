@@ -18,7 +18,9 @@ from models.ai_schemas import (
     SessionFilterContext,
     SourceCitationPill,
     StructuredVisualCard,
+    TypedMetricEvidence,
 )
+from services.ai.catalog import ai_evidence_cache, get_ai_catalog
 from services.ai.config import SENIOR_BRIEF_DEFAULT_ROLES, get_ai_runtime_config
 from services.ai.domain_policies import (
     build_call_center_guardrails,
@@ -170,6 +172,11 @@ class PmsAiOrchestrator:
             employee_id=session_state.employee_id,
         )
 
+        eligible = get_ai_catalog().get_eligible_scope_options(
+            self.scope,
+            active_function=resolved["function"],
+        )
+
         return AiWatchingPayload(
             resolved_session_state=resolved_state,
             alerts=alerts[:4],
@@ -178,6 +185,10 @@ class PmsAiOrchestrator:
             summary_score=ws.executive_story.current_score if ws.executive_story else None,
             summary_score_change=ws.executive_story.score_change if ws.executive_story else None,
             measured_records=total_employees,
+            eligible_teams=eligible["eligible_teams"],
+            eligible_functions=eligible["eligible_functions"],
+            eligible_branches=eligible["eligible_branches"],
+            eligible_levels=eligible["eligible_levels"],
         )
 
     def run_chat_turn(self, req: AiChatRequest) -> AiChatResponsePayload:
@@ -200,95 +211,126 @@ class PmsAiOrchestrator:
                 "Call Center (Inbound & Outbound) measures operational patient volume (Bookings, Attended Visits, and Handled Calls) rather than financial revenue. Financial revenue is tracked under Marketing and RCM."
             )
 
-        for intent in signals.primary_intents[:2]:
-            if intent == "agent_spotlight_trend":
-                tool_results.append(
-                    registry.execute_agent_spotlight_and_trend(
-                        team=signals.detected_team,
-                        branch=signals.detected_branch,
-                        month=signals.detected_month,
-                        year=signals.detected_year,
-                        employee_query=signals.detected_employee_query,
-                        ranking_direction="worst" if signals.asks_worst_agent else "best",
-                        single_person=signals.asks_single_person,
+        cache_sig = {
+            "intents": list(signals.primary_intents[:2]),
+            "team": signals.detected_team or req.session_state.team,
+            "function": req.session_state.function,
+            "branch": signals.detected_branch or req.session_state.branch,
+            "compare_branch": signals.detected_compare_branch,
+            "asks_branch_comparison": signals.asks_branch_comparison,
+            "level": signals.detected_level or req.session_state.performance_level,
+            "kpi": signals.detected_kpi,
+            "month": signals.detected_month or req.session_state.month,
+            "year": signals.detected_year or req.session_state.year,
+            "employee_query": signals.detected_employee_query,
+            "worst_agent": signals.asks_worst_agent,
+            "single_person": signals.asks_single_person,
+        }
+        cached_results = ai_evidence_cache.get(
+            db=self.db,
+            scope=self.scope,
+            query_signature=cache_sig,
+        )
+        cache_hit = False
+        if cached_results is not None:
+            tool_results = cached_results
+            cache_hit = True
+        else:
+            for intent in signals.primary_intents[:2]:
+                if intent == "agent_spotlight_trend":
+                    tool_results.append(
+                        registry.execute_agent_spotlight_and_trend(
+                            team=signals.detected_team,
+                            branch=signals.detected_branch,
+                            month=signals.detected_month,
+                            year=signals.detected_year,
+                            employee_query=signals.detected_employee_query,
+                            ranking_direction="worst" if signals.asks_worst_agent else "best",
+                            single_person=signals.asks_single_person,
+                        )
                     )
-                )
-            elif intent == "team_trend_spotlight":
-                tool_results.append(
-                    registry.execute_team_trend_spotlight(
-                        team=signals.detected_team,
-                        branch=signals.detected_branch,
-                        month=signals.detected_month,
-                        year=signals.detected_year,
+                elif intent == "team_trend_spotlight":
+                    tool_results.append(
+                        registry.execute_team_trend_spotlight(
+                            team=signals.detected_team,
+                            branch=signals.detected_branch,
+                            month=signals.detected_month,
+                            year=signals.detected_year,
+                        )
                     )
-                )
-            elif intent == "management_bsc":
-                tool_results.append(
-                    registry.execute_management_balanced_scorecard(
-                        team=signals.detected_team,
-                        performance_level=signals.detected_level or "Managerial",
-                        month=signals.detected_month,
-                        year=signals.detected_year,
+                elif intent == "management_bsc":
+                    tool_results.append(
+                        registry.execute_management_balanced_scorecard(
+                            team=signals.detected_team,
+                            performance_level=signals.detected_level or "Managerial",
+                            month=signals.detected_month,
+                            year=signals.detected_year,
+                        )
                     )
-                )
-            elif intent == "corrective_actions":
-                tool_results.append(
-                    registry.execute_corrective_actions_status(
-                        team=signals.detected_team,
-                        month=signals.detected_month,
-                        year=signals.detected_year,
+                elif intent == "corrective_actions":
+                    tool_results.append(
+                        registry.execute_corrective_actions_status(
+                            team=signals.detected_team,
+                            month=signals.detected_month,
+                            year=signals.detected_year,
+                        )
                     )
-                )
-            elif intent == "governance_plans":
-                tool_results.append(
-                    registry.execute_governance_candidates_and_plans(
-                        team=signals.detected_team,
-                        branch=signals.detected_branch,
-                        month=signals.detected_month,
-                        year=signals.detected_year,
+                elif intent == "governance_plans":
+                    tool_results.append(
+                        registry.execute_governance_candidates_and_plans(
+                            team=signals.detected_team,
+                            branch=signals.detected_branch,
+                            month=signals.detected_month,
+                            year=signals.detected_year,
+                        )
                     )
-                )
-            elif intent == "employee_history" and signals.detected_employee_query:
-                tool_results.append(
-                    registry.execute_employee_multi_month_history(
-                        employee_query=signals.detected_employee_query,
-                        branch=signals.detected_branch,
+                elif intent == "employee_history" and signals.detected_employee_query:
+                    tool_results.append(
+                        registry.execute_employee_multi_month_history(
+                            employee_query=signals.detected_employee_query,
+                            branch=signals.detected_branch,
+                        )
                     )
-                )
-            elif intent == "people_contribution":
-                tool_results.append(
-                    registry.execute_people_contribution_and_rankings(
-                        team=signals.detected_team,
-                        branch=signals.detected_branch,
-                        performance_level=signals.detected_level,
-                        kpi=signals.detected_kpi,
-                        month=signals.detected_month,
-                        year=signals.detected_year,
+                elif intent == "people_contribution":
+                    tool_results.append(
+                        registry.execute_people_contribution_and_rankings(
+                            team=signals.detected_team,
+                            branch=signals.detected_branch,
+                            performance_level=signals.detected_level,
+                            kpi=signals.detected_kpi,
+                            month=signals.detected_month,
+                            year=signals.detected_year,
+                        )
                     )
-                )
-            elif intent == "kpi_diagnosis":
-                tool_results.append(
-                    registry.execute_kpi_diagnosis_and_trends(
-                        team=signals.detected_team,
-                        branch=signals.detected_branch,
-                        compare_branch=signals.detected_compare_branch,
-                        asks_branch_comparison=signals.asks_branch_comparison,
-                        performance_level=signals.detected_level,
-                        kpi=signals.detected_kpi,
-                        month=signals.detected_month,
-                        year=signals.detected_year,
+                elif intent == "kpi_diagnosis":
+                    tool_results.append(
+                        registry.execute_kpi_diagnosis_and_trends(
+                            team=signals.detected_team,
+                            branch=signals.detected_branch,
+                            compare_branch=signals.detected_compare_branch,
+                            asks_branch_comparison=signals.asks_branch_comparison,
+                            performance_level=signals.detected_level,
+                            kpi=signals.detected_kpi,
+                            month=signals.detected_month,
+                            year=signals.detected_year,
+                        )
                     )
-                )
-            else:
-                tool_results.append(
-                    registry.execute_executive_and_priority_insights(
-                        team=signals.detected_team,
-                        branch=signals.detected_branch,
-                        performance_level=signals.detected_level,
-                        month=signals.detected_month,
-                        year=signals.detected_year,
+                else:
+                    tool_results.append(
+                        registry.execute_executive_and_priority_insights(
+                            team=signals.detected_team,
+                            branch=signals.detected_branch,
+                            performance_level=signals.detected_level,
+                            month=signals.detected_month,
+                            year=signals.detected_year,
+                        )
                     )
-                )
+            ai_evidence_cache.set(
+                db=self.db,
+                scope=self.scope,
+                query_signature=cache_sig,
+                payload=tool_results,
+            )
 
         # CRITICAL BLOCKER-2: Release the DB read transaction BEFORE calling any LLM network provider!
         release_read_transaction(self.db)
@@ -298,6 +340,7 @@ class PmsAiOrchestrator:
         visual_cards: list[StructuredVisualCard] = []
         citations: list[SourceCitationPill] = []
         deep_links: list[DeepLinkCta] = []
+        typed_evidence: list[TypedMetricEvidence] = []
         tool_call_records: list[AiToolCallRecord] = []
         tool_digests: list[dict[str, Any]] = []
         seen_citations: set[str] = set()
@@ -337,6 +380,7 @@ class PmsAiOrchestrator:
             )
             tool_digests.append(tr.digest)
             visual_cards.extend(tr.visual_cards)
+            typed_evidence.extend(tr.typed_evidence)
 
             for c in tr.citations:
                 if c.label not in seen_citations:
@@ -504,6 +548,7 @@ class PmsAiOrchestrator:
             suggested_followups=synthesis.suggested_followups,
             resolved_session_state=resolved_state,
             scope_banner=scope_banner,
+            typed_evidence=typed_evidence,
             domain_guardrail_notes=guardrail_notes,
             tool_calls=tool_call_records,
             provider_used=synthesis.provider_used,
@@ -512,4 +557,5 @@ class PmsAiOrchestrator:
             timings=timings,
             provider_usage=provider_usage,
             basis_warning=basis_warning,
+            cache_hit=cache_hit,
         )

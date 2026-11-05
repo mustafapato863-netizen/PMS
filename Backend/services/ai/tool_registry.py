@@ -20,7 +20,9 @@ from models.ai_schemas import (
     SessionFilterContext,
     SourceCitationPill,
     StructuredVisualCard,
+    TypedMetricEvidence,
 )
+from services.ai.catalog import get_ai_catalog
 from services.ai.domain_policies import (
     disambiguate_call_center_kpi_label,
     sanitize_untrusted_text,
@@ -80,6 +82,7 @@ class ToolExecutionResult:
     visual_cards: list[StructuredVisualCard] = field(default_factory=list)
     citations: list[SourceCitationPill] = field(default_factory=list)
     deep_links: list[DeepLinkCta] = field(default_factory=list)
+    typed_evidence: list[TypedMetricEvidence] = field(default_factory=list)
     resolved_month: str | None = None
     resolved_year: int | None = None
     basis_warning: str | None = None
@@ -574,26 +577,56 @@ class DeterministicToolRegistry:
 
         kpi_rows: list[AiKpiTableRow] = []
         kpi_bars: list[AiBarItem] = []
+        typed_evidence: list[TypedMetricEvidence] = []
         raw_diag = list(ws.kpi_diagnosis or [])
+        catalog = get_ai_catalog()
+
+        basis_status = "unchanged"
+        basis_note: str | None = None
+        if ws.executive_story and ws.executive_story.basis_context and not ws.executive_story.basis_context.like_for_like:
+            basis_status = "changed"
+            basis_note = "; ".join(ws.executive_story.basis_context.reasons[:2]) or "Month-over-month scoring basis changed"
+
+        primary_route = build_verified_deep_link(
+            f"/team/{resolved['team'].strip().lower().replace(' ', '-')}" if resolved["team"] else "/insights",
+            month=res_month,
+            year=res_year,
+            function=None if resolved["team"] else resolved["function"],
+            branch=resolved["branch"],
+            performance_level=resolved["performance_level"],
+        )
 
         for row in raw_diag:
             row_team = resolved["team"] or (str(row.teams[0]) if getattr(row, "teams", None) else scope_label)
             clean_label = disambiguate_call_center_kpi_label(row_team, row.key, row.label)
-            unit = row.unit or "%"
+            cat_def = catalog.find_metric_definition(
+                team=row_team,
+                kpi_key_or_label=row.key,
+                performance_level=resolved["performance_level"] or "Employee",
+            )
+            unit = row.unit or (cat_def.unit if cat_def else "%")
             actual_val = row.actual
             target_val = row.target
             if unit == "%" and actual_val is not None and actual_val <= 1.5 and (target_val is None or target_val <= 1.5):
                 act_str = f"{actual_val * 100:.1f}%"
                 tgt_str = f"{(target_val or 0.0) * 100:.1f}%" if target_val is not None else "—"
+                norm_actual = round(float(actual_val) * 100.0, 2)
+                norm_target = round(float(target_val) * 100.0, 2) if target_val is not None else None
             elif unit == "%":
                 act_str = f"{actual_val:.1f}%" if actual_val is not None else "—"
                 tgt_str = f"{target_val:.1f}%" if target_val is not None else "—"
+                norm_actual = round(float(actual_val), 2) if actual_val is not None else None
+                norm_target = round(float(target_val), 2) if target_val is not None else None
             else:
                 act_str = f"{actual_val:.2f} {unit}".strip() if actual_val is not None else "—"
                 tgt_str = f"{target_val:.2f} {unit}".strip() if target_val is not None else "—"
+                norm_actual = round(float(actual_val), 2) if actual_val is not None else None
+                norm_target = round(float(target_val), 2) if target_val is not None else None
 
             ach_pct = min(100.0, round(float(row.achievement_percent or 0.0), 1)) if row.achievement_percent is not None else 0.0
             weight_pct = round(float((row.weight or 0.0) * 100 if (row.weight or 0.0) <= 1.0 else (row.weight or 0.0)), 1)
+            contributes = bool(weight_pct > 0.0 and (cat_def.contributes_to_score if cat_def else True))
+            tracking_note = cat_def.tracking_only_note if (cat_def and not contributes) else None
             status_val = "critical" if ach_pct < 75 else ("warning" if ach_pct < 92 else "good")
 
             kpi_rows.append(
@@ -603,10 +636,10 @@ class DeterministicToolRegistry:
                     weight_percent=weight_pct,
                     actual_display=act_str,
                     target_display=tgt_str,
-                    achievement_percent=ach_pct,
+                    achievement_percent=ach_pct if contributes else None,
                     direction=row.direction or "higher_better",
                     people_below_target=int(row.people_below_target or 0),
-                    status=status_val,  # type: ignore[arg-type]
+                    status=status_val if contributes else "info",  # type: ignore[arg-type]
                 )
             )
             kpi_bars.append(
@@ -619,6 +652,76 @@ class DeterministicToolRegistry:
                     severity=status_val,  # type: ignore[arg-type]
                 )
             )
+            typed_evidence.append(
+                TypedMetricEvidence(
+                    metric_id=cat_def.metric_id if cat_def else f"{row_team.casefold().replace(' ', '_')}:{row.key.casefold()}",
+                    kpi_key=row.key,
+                    display_name=clean_label,
+                    team=row_team,
+                    position=cat_def.position if cat_def else None,
+                    performance_level=resolved["performance_level"] or "Employee",
+                    branch=resolved["branch"] or "all",
+                    period=period_label,
+                    actual=norm_actual,
+                    target=norm_target,
+                    actual_display=act_str,
+                    target_display=tgt_str,
+                    achievement_percent=ach_pct if contributes else None,
+                    weight_percent=weight_pct,
+                    unit=unit,
+                    direction=row.direction or "higher_better",
+                    contributes_to_score=contributes,
+                    tracking_only_note=tracking_note,
+                    sample_size=total_employees,
+                    source_link=primary_route,
+                    scoring_basis_status=basis_status,
+                    scoring_basis_note=basis_note,
+                )
+            )
+
+        # If a tracking-only KPI was explicitly requested (e.g. outbound:aht or PolicyRejection)
+        if kpi:
+            req_cat = catalog.find_metric_definition(
+                team=resolved["team"],
+                kpi_key_or_label=kpi,
+                performance_level=resolved["performance_level"] or "Employee",
+            )
+            if req_cat and not req_cat.contributes_to_score:
+                already_present = any(ev.metric_id == req_cat.metric_id for ev in typed_evidence)
+                if not already_present:
+                    typed_evidence.insert(
+                        0,
+                        TypedMetricEvidence(
+                            metric_id=req_cat.metric_id,
+                            kpi_key=req_cat.kpi_key,
+                            display_name=req_cat.display_name,
+                            team=req_cat.team,
+                            position=req_cat.position,
+                            performance_level=req_cat.performance_level,
+                            branch=resolved["branch"] or "all",
+                            period=period_label,
+                            actual=None,
+                            target=None,
+                            actual_display="Tracking Only",
+                            target_display="0% Weight",
+                            achievement_percent=None,
+                            weight_percent=0.0,
+                            unit=req_cat.unit,
+                            direction=req_cat.direction,
+                            contributes_to_score=False,
+                            tracking_only_note=req_cat.tracking_only_note,
+                            sample_size=total_employees,
+                            source_link=primary_route,
+                            scoring_basis_status=basis_status,
+                            scoring_basis_note=req_cat.tracking_only_note or basis_note,
+                        ),
+                    )
+                    if req_cat.tracking_only_note:
+                        basis_note = (
+                            f"{req_cat.tracking_only_note} · {basis_note}"
+                            if basis_note
+                            else req_cat.tracking_only_note
+                        )
 
         if kpi_rows:
             cards.append(
@@ -733,8 +836,10 @@ class DeterministicToolRegistry:
             visual_cards=cards,
             citations=citations,
             deep_links=deep_links,
+            typed_evidence=typed_evidence,
             resolved_month=res_month,
             resolved_year=res_year,
+            basis_warning=basis_note,
         )
 
     def execute_people_contribution_and_rankings(

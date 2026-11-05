@@ -96,6 +96,9 @@ class AiRuntimeConfig:
         candidate = (team_or_function or "call center").strip().casefold()
         return candidate in self.pilot_scopes
 
+    def is_scope_enabled(self, team_or_function: str | None) -> bool:
+        return self.is_scope_allowed_for_cloud(team_or_function)
+
 
 def get_ai_runtime_config() -> AiRuntimeConfig:
     raw_router = os.environ.get("PMS_AI_ROUTER_MODE", "hybrid").strip().casefold()
