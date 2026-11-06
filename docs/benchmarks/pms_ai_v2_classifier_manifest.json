@@ -1,0 +1,62 @@
+{
+  "paraphrase_split_zero_leakage": true,
+  "paraphrase_groups_per_split": {
+    "train": 27,
+    "val": 11,
+    "test": 23
+  },
+  "splits": {
+    "train": {
+      "total_questions": 57,
+      "legacy_router_exact_match_pct": 40.35,
+      "hybrid_router_exact_match_pct": 100.0,
+      "hybrid_router_provider_calls": 2,
+      "classifier_backend": "numpy-tfidf-l2-logreg",
+      "classifier_confidence_threshold": 0.35,
+      "classifier_accepted_count": 20,
+      "classifier_abstained_count": 37,
+      "classifier_accepted_exact_match_pct": 100.0,
+      "classifier_overall_exact_match_pct": 100.0,
+      "provider_call_reduction_vs_hybrid_pct": -1750.0
+    },
+    "val": {
+      "total_questions": 22,
+      "legacy_router_exact_match_pct": 54.55,
+      "hybrid_router_exact_match_pct": 100.0,
+      "hybrid_router_provider_calls": 1,
+      "classifier_backend": "numpy-tfidf-l2-logreg",
+      "classifier_confidence_threshold": 0.35,
+      "classifier_accepted_count": 3,
+      "classifier_abstained_count": 19,
+      "classifier_accepted_exact_match_pct": 100.0,
+      "classifier_overall_exact_match_pct": 100.0,
+      "provider_call_reduction_vs_hybrid_pct": -1800.0
+    },
+    "test": {
+      "total_questions": 47,
+      "legacy_router_exact_match_pct": 31.91,
+      "hybrid_router_exact_match_pct": 100.0,
+      "hybrid_router_provider_calls": 2,
+      "classifier_backend": "numpy-tfidf-l2-logreg",
+      "classifier_confidence_threshold": 0.35,
+      "classifier_accepted_count": 14,
+      "classifier_abstained_count": 33,
+      "classifier_accepted_exact_match_pct": 100.0,
+      "classifier_overall_exact_match_pct": 100.0,
+      "provider_call_reduction_vs_hybrid_pct": -1550.0
+    }
+  },
+  "gates": {
+    "accepted_local_exact_match_target_pct": 99.0,
+    "accepted_local_exact_match_measured_pct": 100.0,
+    "passes_precision_gate": true,
+    "provider_call_reduction_target_pct": 20.0,
+    "provider_call_reduction_measured_pct": -1550.0,
+    "passes_cost_gate": false,
+    "overall_test_exact_match_target_pct": 95.0,
+    "overall_test_exact_match_measured_pct": 100.0,
+    "passes_overall_gate": true
+  },
+  "promotion_decision": "DO_NOT_PROMOTE_KEEP_HYBRID_RULES",
+  "runtime_dependency_added": false
+}
