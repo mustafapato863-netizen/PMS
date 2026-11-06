@@ -6,15 +6,17 @@ import type { ReactNode } from 'react';
 import PmsAiWorkspaceView from './PmsAiWorkspaceView';
 import { apiFetch } from '../lib/apiClient';
 
+const mockAuthState = {
+  currentUser: {
+    id: 'mgr-1',
+    name: 'Salma Hassan',
+    username: 'salma',
+    role: 'Manager',
+  },
+};
+
 vi.mock('../context/auth', () => ({
-  useAuth: () => ({
-    currentUser: {
-      id: 'mgr-1',
-      name: 'Salma Hassan',
-      username: 'salma',
-      role: 'Manager',
-    },
-  }),
+  useAuth: () => mockAuthState,
 }));
 
 vi.mock('../store/appStore', () => ({
@@ -203,6 +205,12 @@ function renderWorkspace(initialEntry = '/ai') {
 describe('PmsAiWorkspaceView', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockAuthState.currentUser = {
+      id: 'mgr-1',
+      name: 'Salma Hassan',
+      username: 'salma',
+      role: 'Manager',
+    };
     Element.prototype.scrollIntoView = vi.fn();
     mockedApiFetch.mockImplementation(async (path: string) => {
       if (path.startsWith('/api/ai/watching')) {
@@ -450,5 +458,226 @@ describe('PmsAiWorkspaceView', () => {
         expect.objectContaining({ method: 'DELETE' }),
       );
     });
+  });
+
+  it('cancels in-flight requests on scope filter change and clears incompatible confirmed context', async () => {
+    let resolveDelayedTurn: ((val: unknown) => void) | null = null;
+    let chatCallIdx = 0;
+
+    mockedApiFetch.mockImplementation(async (path: string) => {
+      if (path.startsWith('/api/ai/watching')) {
+        return WATCHING_RESPONSE;
+      }
+      if (path === '/api/ai/chat') {
+        chatCallIdx += 1;
+        if (chatCallIdx === 1) {
+          return {
+            success: true,
+            data: {
+              ...CHAT_RESPONSE.data,
+              conversation_id: 'conv-scope-1',
+              context_version: 2,
+              headline: 'Adham in Inbound scored 91.5%.',
+              resolved_session_state: {
+                ...CHAT_RESPONSE.data.resolved_session_state,
+                team: 'Inbound',
+                last_confirmed_query: {
+                  intent: 'ranking' as const,
+                  function: 'Call Center',
+                  team: 'Inbound',
+                  position: 'Agent',
+                  metric_id: 'inbound:booking_cr',
+                  last_subject_employee_id: 'emp-adham',
+                  last_subject_employee_name: 'Adham',
+                  periods: ['2026-03'],
+                },
+              },
+            },
+          };
+        }
+        if (chatCallIdx === 2) {
+          return new Promise((resolve) => {
+            resolveDelayedTurn = resolve;
+          });
+        }
+        return {
+          success: true,
+          data: {
+            ...CHAT_RESPONSE.data,
+            conversation_id: 'conv-scope-1',
+            context_version: 3,
+            headline: 'Outbound team average is 86.5%.',
+          },
+        };
+      }
+      return { success: true };
+    });
+
+    renderWorkspace('/ai');
+
+    const input = screen.getByLabelText('Ask PMS AI a question');
+    fireEvent.change(input, { target: { value: 'Who is top in Inbound?' } });
+    fireEvent.click(screen.getByLabelText('Send prompt'));
+
+    await waitFor(() => {
+      expect(screen.getByText('Adham in Inbound scored 91.5%.')).toBeInTheDocument();
+    });
+
+    // Start a second slow request in Inbound
+    fireEvent.change(input, { target: { value: 'Slow Inbound follow-up' } });
+    fireEvent.click(screen.getByLabelText('Send prompt'));
+    expect(screen.getByLabelText('Analyzing workspace data')).toBeInTheDocument();
+
+    // Change Team filter to Outbound while request 2 is still in flight
+    const teamDropdownBtn = screen.getByLabelText('Filter Call Center Team');
+    fireEvent.click(teamDropdownBtn);
+    const outboundOption = await screen.findByRole('option', { name: /Outbound/i });
+    fireEvent.click(outboundOption);
+
+    // Pending skeleton should be cancelled immediately and composer re-enabled
+    expect(screen.queryByLabelText('Analyzing workspace data')).not.toBeInTheDocument();
+    expect(input).not.toBeDisabled();
+
+    // Even if the stale Inbound response resolves later, it must never render
+    resolveDelayedTurn?.({
+      success: true,
+      data: {
+        ...CHAT_RESPONSE.data,
+        headline: 'STALE INBOUND REPLY SHOULD NOT RENDER',
+      },
+    });
+
+    // Send a new request under Outbound filter and verify incompatible confirmed context was cleared
+    fireEvent.change(input, { target: { value: 'How is Outbound doing?' } });
+    fireEvent.click(screen.getByLabelText('Send prompt'));
+
+    await waitFor(() => {
+      expect(screen.getByText('Outbound team average is 86.5%.')).toBeInTheDocument();
+    });
+    expect(screen.queryByText('STALE INBOUND REPLY SHOULD NOT RENDER')).not.toBeInTheDocument();
+
+    const chatCalls = mockedApiFetch.mock.calls.filter((call) => call[0] === '/api/ai/chat');
+    expect(chatCalls.length).toBe(3);
+    const thirdBody = JSON.parse(String(chatCalls[2][1]?.body || '{}'));
+    expect(thirdBody.session_state.team).toBe('Outbound');
+    expect(thirdBody.session_state.last_confirmed_query.team).toBe('Outbound');
+    expect(thirdBody.session_state.last_confirmed_query.metric_id).toBeNull();
+    expect(thirdBody.session_state.last_confirmed_query.last_subject_employee_id).toBeNull();
+    expect(thirdBody.session_state.last_confirmed_query.last_subject_employee_name).toBeNull();
+  });
+
+  it('re-enables composer and cancels in-flight turn when switching accounts, and toggles AI is watching rail', async () => {
+    let resolveInFlight: ((val: unknown) => void) | null = null;
+    mockedApiFetch.mockImplementation(async (path: string) => {
+      if (path.startsWith('/api/ai/watching')) {
+        return WATCHING_RESPONSE;
+      }
+      if (path === '/api/ai/chat') {
+        return new Promise((resolve) => {
+          resolveInFlight = resolve;
+        });
+      }
+      return { success: true };
+    });
+
+    const { rerender } = renderWorkspace('/ai');
+
+    // Toggle optional AI is watching panel closed and open
+    expect(screen.getByText('AI is watching')).toBeInTheDocument();
+    const hideRailBtn = screen.getByLabelText('Hide AI is watching panel');
+    fireEvent.click(hideRailBtn);
+    expect(screen.queryByText('AI is watching')).not.toBeInTheDocument();
+    const showRailBtn = screen.getByLabelText('Show AI is watching panel');
+    fireEvent.click(showRailBtn);
+    expect(screen.getByText('AI is watching')).toBeInTheDocument();
+
+    // Send a prompt that stays in flight
+    const input = screen.getByLabelText('Ask PMS AI a question');
+    fireEvent.change(input, { target: { value: 'Check my team' } });
+    fireEvent.click(screen.getByLabelText('Send prompt'));
+    expect(input).toBeDisabled();
+
+    // Switch account while request is in flight
+    mockAuthState.currentUser = {
+      id: 'mgr-2',
+      name: 'Omar Khalid',
+      username: 'omar',
+      role: 'Manager',
+    };
+    rerender(<PmsAiWorkspaceView />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Hi Omar, how can I help\?/i)).toBeInTheDocument();
+    });
+    expect(screen.getByLabelText('Ask PMS AI a question')).not.toBeDisabled();
+
+    // Resolving the old user's request must not leak into Omar's workspace
+    resolveInFlight?.({
+      success: true,
+      data: {
+        ...CHAT_RESPONSE.data,
+        headline: 'SALMA PRIVATE DATA',
+      },
+    });
+    expect(screen.queryByText('SALMA PRIVATE DATA')).not.toBeInTheDocument();
+  });
+
+  it('recovers cleanly from 409 stale context and 404 deleted conversation without duplicate turn bubbles', async () => {
+    let chatAttempt = 0;
+    mockedApiFetch.mockImplementation(async (path: string) => {
+      if (path.startsWith('/api/ai/watching')) {
+        return WATCHING_RESPONSE;
+      }
+      if (path === '/api/ai/conversations/conv-stale/context') {
+        return {
+          success: true,
+          data: {
+            conversation_id: 'conv-stale',
+            context_version: 5,
+            confirmed_context: {
+              intent: 'actual_vs_target',
+              function: 'Call Center',
+              team: 'Inbound',
+              periods: ['2026-03'],
+            },
+          },
+        };
+      }
+      if (path === '/api/ai/chat') {
+        chatAttempt += 1;
+        if (chatAttempt === 1) {
+          throw new Error('409: Stale context_version 1; current is 5.');
+        }
+        return {
+          success: true,
+          data: {
+            ...CHAT_RESPONSE.data,
+            conversation_id: 'conv-stale',
+            context_version: 6,
+            headline: 'Recovered cleanly at context version 6.',
+          },
+        };
+      }
+      return { success: true };
+    });
+
+    renderWorkspace('/ai');
+
+    const input = screen.getByLabelText('Ask PMS AI a question');
+    fireEvent.change(input, { target: { value: 'Check Inbound target' } });
+    fireEvent.click(screen.getByLabelText('Send prompt'));
+
+    await waitFor(() => {
+      expect(screen.getByText(/409: Stale context_version/i)).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /Retry/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Recovered cleanly at context version 6.')).toBeInTheDocument();
+    });
+
+    // Only one user prompt bubble should exist (no duplicate bubble on Retry)
+    expect(screen.getAllByText('Check Inbound target')).toHaveLength(1);
   });
 });

@@ -1395,7 +1395,13 @@ class DeterministicToolRegistry:
             period_recs = list(scoped_recs)
 
         def _rank_key(r: Any) -> tuple[float, float]:
-            sc = float(getattr(getattr(r, "evaluation", None), "score", 0.0) or 0.0)
+            raw_sc = getattr(getattr(r, "evaluation", None), "score", None)
+            if raw_sc is None:
+                raw_sc = getattr(r, "overall_score", None)
+            if raw_sc is None:
+                fallback = float("inf") if ranking_direction == "worst" else float("-inf")
+                return (fallback, fallback)
+            sc = float(raw_sc)
             if kpi:
                 snap = self._extract_record_kpi_snapshot(r, kpi, target_team, target_pos)
                 if snap is not None:
@@ -1499,28 +1505,52 @@ class DeterministicToolRegistry:
             )
         )
         all_history_points: list[dict[str, Any]] = []
+        missing_months: list[str] = []
         for r in emp_history_recs:
             ev_all = getattr(r, "evaluation", None)
-            sc_all = min(100.0, round(float(getattr(ev_all, "score", 0.0) or 0.0), 1))
+            raw_sc_all = getattr(ev_all, "score", None) if ev_all is not None else None
+            if raw_sc_all is None:
+                raw_sc_all = getattr(r, "overall_score", None)
             m_all = str(getattr(r, "month", "") or "").strip()
             y_all = int(getattr(r, "year", 2026) or 2026)
+            p_all = f"{m_all} {y_all}"
+            if raw_sc_all is None:
+                missing_months.append(p_all)
+                continue
+            sc_exact = float(raw_sc_all)
             all_history_points.append(
                 {
                     "month": m_all,
                     "year": y_all,
-                    "period": f"{m_all} {y_all}",
-                    "score": sc_all,
+                    "period": p_all,
+                    "raw_score": sc_exact,
+                    "score": sc_exact,
                 }
             )
         best_score: float | None = None
         best_months: list[str] = []
         best_period_label: str | None = None
+        worst_score: float | None = None
+        worst_months: list[str] = []
+        worst_period_label: str | None = None
         searched_window_label: str = period_label
         is_asked_period_best: bool = False
+        is_asked_period_worst: bool = False
         if all_history_points:
-            best_score = max(float(pt["score"]) for pt in all_history_points)
-            best_months = [str(pt["period"]) for pt in all_history_points if abs(float(pt["score"]) - best_score) < 1e-4]
+            best_score = max(float(pt["raw_score"]) for pt in all_history_points)
+            best_months = [
+                str(pt["period"])
+                for pt in all_history_points
+                if abs(float(pt["raw_score"]) - best_score) < 1e-9
+            ]
             best_period_label = best_months[-1] if best_months else None
+            worst_score = min(float(pt["raw_score"]) for pt in all_history_points)
+            worst_months = [
+                str(pt["period"])
+                for pt in all_history_points
+                if abs(float(pt["raw_score"]) - worst_score) < 1e-9
+            ]
+            worst_period_label = worst_months[0] if worst_months else None
             first_pt = all_history_points[0]
             last_pt = all_history_points[-1]
             if len(all_history_points) >= 2:
@@ -1532,14 +1562,22 @@ class DeterministicToolRegistry:
             else:
                 searched_window_label = str(first_pt["period"])
             is_asked_period_best = any(p.casefold() == period_label.casefold() for p in best_months)
+            is_asked_period_worst = any(p.casefold() == period_label.casefold() for p in worst_months)
 
-        window_records = emp_history_recs[-max(1, min(months_window, 12)) :]
+        window_records = [
+            r
+            for r in emp_history_recs
+            if (getattr(getattr(r, "evaluation", None), "score", None) is not None or getattr(r, "overall_score", None) is not None)
+        ][-max(1, min(months_window, 12)) :]
 
         trend_points: list[AiTrendPoint] = []
         history_digest: list[dict[str, Any]] = []
         for r in window_records:
             ev = getattr(r, "evaluation", None)
-            sc = min(100.0, round(float(getattr(ev, "score", 0.0) or 0.0), 1))
+            raw_sc_w = getattr(ev, "score", None) if ev is not None else None
+            if raw_sc_w is None:
+                raw_sc_w = getattr(r, "overall_score", 0.0)
+            sc = float(raw_sc_w or 0.0)
             gr = str(getattr(ev, "grade", "") or self._grade_for_score(sc))
             m_str = str(getattr(r, "month", "") or "").strip()
             y_int = int(getattr(r, "year", 2026) or 2026)
@@ -1549,7 +1587,7 @@ class DeterministicToolRegistry:
                     month=m_str,
                     year=y_int,
                     period_label=p_lbl,
-                    score=sc,
+                    score=round(sc, 2),
                     target=100.0,
                     grade=gr,
                 )
@@ -1566,7 +1604,10 @@ class DeterministicToolRegistry:
             )
 
         curr_ev = getattr(selected_rec, "evaluation", None)
-        curr_score = min(100.0, round(float(getattr(curr_ev, "score", 0.0) or 0.0), 1))
+        raw_curr = getattr(curr_ev, "score", None) if curr_ev is not None else None
+        if raw_curr is None:
+            raw_curr = getattr(selected_rec, "overall_score", None)
+        curr_score = float(raw_curr) if raw_curr is not None else (float(all_history_points[-1]["raw_score"]) if all_history_points else 0.0)
         curr_grade = self._grade_for_score(curr_score)
         ranking_metric_display = (
             f"{selected_kpi_snap['actual_display']} {ranking_metric_label} (Overall Score {curr_score:.1f}%)"
@@ -1786,8 +1827,13 @@ class DeterministicToolRegistry:
             "best_score": best_score,
             "best_period": best_period_label,
             "best_months": best_months,
+            "worst_score": worst_score,
+            "worst_period": worst_period_label,
+            "worst_months": worst_months,
+            "missing_months": missing_months,
             "searched_window": searched_window_label,
             "is_asked_period_best": is_asked_period_best,
+            "is_asked_period_worst": is_asked_period_worst,
             "all_history": all_history_points,
         }
 

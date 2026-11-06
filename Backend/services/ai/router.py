@@ -376,10 +376,11 @@ def _extract_person_query_from_prompt(text: str) -> str | None:
         return emp_id_match.group(1).upper()
 
     name_patterns = [
-        r"\b([a-zA-Z]+(?:\s+[a-zA-Z]+)?)'s\b",
-        r"\b(?:is|was|did)\s+([a-zA-Z]+(?:\s+[a-zA-Z]+)?)\s+(?:a\s+new\s+joiner|new\s+in|join\b)",
-        r"\bwhen\s+did\s+([a-zA-Z]+(?:\s+[a-zA-Z]+)?)\s+join\b",
-        r"(?:employee|agent|for|about|trend of|trend for|score of|profile of)\s+([a-zA-Z]+(?:\s+[a-zA-Z]+){0,2})",
+        r"\b([a-zA-Z]+(?:\s+[a-zA-Z]+){0,3})'s\b",
+        r"\b(?:is|was|did)\s+([a-zA-Z]+(?:\s+[a-zA-Z]+){0,3})\s+(?:(?:a\s+)?new\s+joiner|new\s+in|join\b)",
+        r"\b([a-zA-Z]+(?:\s+[a-zA-Z]+){0,3})\s+(?:is|was)\s+(?:a\s+)?new\s+joiner\b",
+        r"\bwhen\s+did\s+([a-zA-Z]+(?:\s+[a-zA-Z]+){0,3})\s+join\b",
+        r"(?:employee|agent|for|about|trend of|trend for|score of|profile of)\s+([a-zA-Z]+(?:\s+[a-zA-Z]+){0,3})",
     ]
     stop_words = {
         "inbound", "outbound", "call", "center", "dubai", "sharjah", "ajman", "clinics",
@@ -391,7 +392,7 @@ def _extract_person_query_from_prompt(text: str) -> str | None:
         "scored", "scores", "scoring", "performed", "performing", "performance", "score",
         "rate", "by", "for", "of", "support", "positions", "position", "employee", "employees",
         "agent", "agents", "performer", "performers", "highest", "there", "anyone", "somebody",
-        "recently", "new", "joiner", "joiners",
+        "recently", "new", "joiner", "joiners", "a", "an",
     }
     for pat in name_patterns:
         m = re.search(pat, text, flags=re.IGNORECASE)
@@ -975,15 +976,35 @@ class HybridQueryRouter:
 
         # 5. Determine Intent
         emp_id_match = re.search(r"\b(sghd\d+|emp[-_ ]?\d+|e[-_]\d+)\b", lower)
-        asks_best_month = bool(
-            re.search(r"\b(?:best|highest|peak|strongest|worst|lowest)\s+month\b", lower)
+        asks_worst_month = bool(
+            re.search(
+                r"\b(?:worst|lowest|weakest|poorest|bottom)\s+month\b|\bwhich\s+month\b.*\b(?:worst|lowest|weakest|poorest|bottom)\b|\bwhat\s+month\b.*\b(?:worst|lowest|weakest|poorest|bottom)\b",
+                lower,
+            )
             or (
                 is_short_followup
                 and not is_ranking_correction
                 and prior is not None
-                and prior.last_operation_kind in ("person_best_period", "employee_best_period")
+                and prior.last_operation_kind in ("person_worst_period", "employee_worst_period")
             )
         )
+        asks_best_month = bool(
+            not asks_worst_month
+            and (
+                re.search(
+                    r"\b(?:best|highest|peak|strongest)\s+month\b|\bwhich\s+month\b.*\b(?:best|highest|peak|strongest)\b|\bwhat\s+month\b.*\b(?:best|highest|peak|strongest)\b",
+                    lower,
+                )
+                or (
+                    is_short_followup
+                    and not is_ranking_correction
+                    and prior is not None
+                    and prior.last_operation_kind in ("person_best_period", "employee_best_period")
+                )
+            )
+        )
+        asks_month_extremum = asks_best_month or asks_worst_month
+        has_subject_pronoun = bool(re.search(r"\b(?:his|her|their|him)\b", lower))
         explicit_person_query = (
             matched_choice.employee_id
             if (matched_choice and matched_choice.employee_id)
@@ -1069,7 +1090,8 @@ class HybridQueryRouter:
 
         if (
             not resolved_employee_id
-            and is_short_followup
+            and not explicit_person_query
+            and (is_short_followup or has_subject_pronoun)
             and not is_ranking_correction
             and prior
             and prior.last_subject_employee_id
@@ -1086,7 +1108,7 @@ class HybridQueryRouter:
         asks_ranking_person = bool(
             is_ranking_correction
             or possessive_person_match
-            or asks_best_month
+            or asks_month_extremum
             or any(
                 phrase in lower
                 for phrase in (
@@ -1147,7 +1169,7 @@ class HybridQueryRouter:
             is_ranking_correction
             or emp_id_match
             or possessive_person_match
-            or asks_best_month
+            or asks_month_extremum
             or resolved_employee_id
             or any(
                 phrase in lower
@@ -1358,11 +1380,14 @@ class HybridQueryRouter:
             ["trend", "ranking"] if is_multi_part_trend_and_ranking else [intent]
         )
 
-        op_kind_v2 = (
-            "person_best_period"
-            if asks_best_month
-            else ("person_summary" if resolved_employee_id else intent)
-        )
+        if asks_worst_month:
+            op_kind_v2 = "person_worst_period"
+        elif asks_best_month:
+            op_kind_v2 = "person_best_period"
+        elif resolved_employee_id:
+            op_kind_v2 = "person_summary"
+        else:
+            op_kind_v2 = intent
 
         plan = StructuredQueryPlan(
             intent=intent,
@@ -1549,7 +1574,21 @@ class HybridQueryRouter:
                     if provider_override == "gemini" or cfg.router_mode == "hybrid":
                         route_used = "gemini_router"
                         if gem_res.plan.intent:
-                            plan.intent = gem_res.plan.intent
+                            cand_intent = gem_res.plan.intent
+                            if (
+                                cand_intent == "scorecard_structure"
+                                and eff_level not in ("Managerial", "Corporate")
+                                and not any(k in lower for k in ("balanced scorecard", "bsc", "scorecard"))
+                            ):
+                                cand_intent = "current_value"
+                            if (
+                                cand_intent in ("actual_vs_target", "score_drivers")
+                                and "performance" in lower
+                                and eff_metric is None
+                                and not any(k in lower for k in ("target", "gap", "driver", "why", "kpi", "focus"))
+                            ):
+                                cand_intent = "current_value"
+                            plan.intent = cand_intent
                         valid_parts = {
                             "current_value",
                             "actual_vs_target",
@@ -1581,7 +1620,7 @@ class HybridQueryRouter:
                             plan.position = gem_res.plan.position.strip()
                         if gem_res.plan.branch and not plan.branch:
                             cand_b = gem_res.plan.branch.strip().casefold()
-                            if cand_b in BRANCH_KEYS:
+                            if cand_b in BRANCH_KEYS and not (plan.team and cand_b in plan.team.casefold()):
                                 plan.branch = cand_b
                         if gem_res.plan.compare_branch and not plan.compare_branch:
                             cand_cb = gem_res.plan.compare_branch.strip().casefold()

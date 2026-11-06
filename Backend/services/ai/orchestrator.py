@@ -113,7 +113,11 @@ class PmsAiOrchestrator:
             performance_level=perf_lvl,  # type: ignore[arg-type]
             branches=branches_list,
             periods=list(p.periods),
-            period_window="all_published" if op_kind_override == "employee_best_period" else ("explicit" if p.periods else "latest_published"),
+            period_window=(
+                "all_published"
+                if op_kind_override in ("employee_best_period", "person_best_period", "employee_worst_period", "person_worst_period")
+                else ("explicit" if p.periods else "latest_published")
+            ),
             employee_id=p.employee_id,
             employee_placeholder="<EMP_1>" if p.employee_id else None,
         )
@@ -142,6 +146,7 @@ class PmsAiOrchestrator:
         else:
             kind_map = {
                 "employee_best_period": "person_best_period",
+                "employee_worst_period": "person_worst_period",
                 "joiner_check": "person_tenure_check",
                 "unsupported": "current_value",
             }
@@ -159,6 +164,7 @@ class PmsAiOrchestrator:
                 "ranking",
                 "person_summary",
                 "person_best_period",
+                "person_worst_period",
                 "person_tenure_check",
                 "score_drivers",
                 "scorecard_structure",
@@ -411,26 +417,38 @@ class PmsAiOrchestrator:
         requested_detail = req.answer_detail or "auto"
         lower_prompt = (req.prompt or "").casefold()
 
-        conv_service = AiConversationService(self.db) if req.conversation_id else None
+        conv_service = AiConversationService(self.db, self.scope) if cfg.conversation_state_enabled else None
+        if conv_service is not None:
+            conv_service.validate_live_account_and_scope(self.scope)
         claimed_turn = None
+        claimed_token: str | None = None
+        claimed_context_version: int | None = None
+        active_conversation_id: str | None = req.conversation_id
         active_context_version: int = int(req.context_version or 0)
-        if conv_service and req.conversation_id:
+        if conv_service and (conv_service.is_schema_ready() or req.conversation_id):
             conv_ctx = conv_service.get_context(
                 conversation_id=req.conversation_id,
                 scope=self.scope,
+                initial_state=req.session_state,
             )
+            active_conversation_id = conv_ctx.conversation_id
+            claimed_context_version = int(conv_ctx.context_version)
             if req.session_state.last_confirmed_query is None and conv_ctx.confirmed_context is not None:
                 req.session_state.last_confirmed_query = conv_ctx.confirmed_context
             claimed_turn, replayed_payload = conv_service.claim_or_replay_turn(
-                conversation_id=req.conversation_id,
+                conversation_id=active_conversation_id,
                 scope=self.scope,
                 prompt=req.prompt,
                 client_request_id=req.client_request_id,
                 expected_context_version=req.context_version,
+                clarification_choice_id=req.clarification_choice_id,
+                answer_detail=req.answer_detail,
+                session_state=req.session_state,
             )
             if replayed_payload is not None:
                 return AiChatResponsePayload.model_validate(replayed_payload)
-            active_context_version = conv_ctx.context_version
+            claimed_token = str(claimed_turn.claim_token)
+            active_context_version = claimed_context_version
 
         is_greeting = bool(
             re.fullmatch(
@@ -465,7 +483,7 @@ class PmsAiOrchestrator:
             )
             social_resp = AiChatResponsePayload(
                 trace_id="",
-                conversation_id=req.conversation_id,
+                conversation_id=active_conversation_id,
                 turn_id=str(claimed_turn.id) if claimed_turn else None,
                 context_version=active_context_version,
                 answer_detail="brief",
@@ -475,17 +493,22 @@ class PmsAiOrchestrator:
                 validated_plan_v2=social_plan_v2,
                 evidence_envelope_v2=[],
             )
-            if conv_service and req.conversation_id and claimed_turn:
+            if conv_service and active_conversation_id and claimed_turn:
+                payload_for_store = social_resp.model_dump()
+                if claimed_context_version is not None:
+                    payload_for_store["context_version"] = claimed_context_version + 1
                 new_ver = conv_service.complete_turn(
-                    conversation_id=req.conversation_id,
+                    conversation_id=active_conversation_id,
                     turn_id=str(claimed_turn.id),
+                    expected_context_version=claimed_context_version,
+                    claim_token=claimed_token,
                     scope=self.scope,
                     outcome="answer",
                     turn_kind="social",
                     route_used="local_rules",
                     validated_plan=social_plan_v2.model_dump(),
                     evidence_envelope=[],
-                    response_payload=social_resp.model_dump(),
+                    response_payload=payload_for_store,
                     session_state=req.session_state,
                     confirmed_context=req.session_state.last_confirmed_query,
                     provider_calls=0,
@@ -549,12 +572,18 @@ class PmsAiOrchestrator:
                 signals.asks_booking_count = True
         if routed.plan.employee_id:
             signals.detected_employee_query = routed.plan.employee_id
-        if routed.confirmed_context.last_operation_kind in ("employee_best_period", "person_best_period"):
+        if routed.confirmed_context.last_operation_kind in ("employee_worst_period", "person_worst_period"):
+            signals.asks_worst_month_history = True
+            signals.asks_best_month_history = False
+        elif routed.confirmed_context.last_operation_kind in ("employee_best_period", "person_best_period"):
             signals.asks_best_month_history = True
+            signals.asks_worst_month_history = False
         if routed.plan.periods:
             p_month, p_year = _period_key_to_month_year(routed.plan.periods[-1])
             if p_month:
                 signals.detected_month = p_month
+                if routed.inherited_filters and (signals.asks_best_month_history or signals.asks_worst_month_history):
+                    signals.asks_specific_month_in_prompt = True
             if p_year:
                 signals.detected_year = p_year
         signals.asks_worst_agent = routed.plan.ranking_direction == "worst"
@@ -591,6 +620,7 @@ class PmsAiOrchestrator:
             routed,
             turn_kind="analytical" if routed.outcome == "answer" else "clarification",
         )
+        known_emp_names = [c.employee_name for c in employee_candidates if c.employee_name]
 
         # Pre-read validation short-circuit for clarification, restricted_access, unavailable_data, unsupported_request
         if routed.outcome != "answer":
@@ -647,6 +677,7 @@ class PmsAiOrchestrator:
                 non_empty_evidence=False,
                 guardrail_triggered=routed.outcome in ("restricted_access", "unsupported_request"),
                 turn_id=str(claimed_turn.id) if claimed_turn else None,
+                known_employee_names=known_emp_names,
             )
             trace_ms = round((time.perf_counter() - t_trace_start) * 1000.0, 2)
             total_ms = round((time.perf_counter() - t0) * 1000.0, 2)
@@ -669,7 +700,7 @@ class PmsAiOrchestrator:
             )
             short_resp = AiChatResponsePayload(
                 trace_id=trace_id,
-                conversation_id=req.conversation_id,
+                conversation_id=active_conversation_id,
                 turn_id=str(claimed_turn.id) if claimed_turn else None,
                 context_version=active_context_version,
                 outcome=routed.outcome,
@@ -699,17 +730,22 @@ class PmsAiOrchestrator:
                 basis_warning=None,
                 cache_hit=False,
             )
-            if conv_service and req.conversation_id and claimed_turn:
+            if conv_service and active_conversation_id and claimed_turn:
+                payload_for_store = short_resp.model_dump()
+                if claimed_context_version is not None:
+                    payload_for_store["context_version"] = claimed_context_version + 1
                 new_ver = conv_service.complete_turn(
-                    conversation_id=req.conversation_id,
+                    conversation_id=active_conversation_id,
                     turn_id=str(claimed_turn.id),
+                    expected_context_version=claimed_context_version,
+                    claim_token=claimed_token,
                     scope=self.scope,
                     outcome=routed.outcome,
                     turn_kind="clarification",
                     route_used=routed.route_used,
                     validated_plan=validated_plan_v2.model_dump(),
                     evidence_envelope=[],
-                    response_payload=short_resp.model_dump(),
+                    response_payload=payload_for_store,
                     session_state=resolved_state,
                     confirmed_context=routed.confirmed_context,
                     provider_calls=routed.provider_metrics.provider_calls,
@@ -748,6 +784,8 @@ class PmsAiOrchestrator:
             "worst_agent": signals.asks_worst_agent,
             "single_person": signals.asks_single_person,
             "asks_best_month_history": signals.asks_best_month_history,
+            "asks_worst_month_history": signals.asks_worst_month_history,
+            "asks_specific_month_in_prompt": signals.asks_specific_month_in_prompt,
             "asks_revenue_in_call_center": signals.asks_revenue_in_call_center,
         }
         eval_id = evaluation_cache_identity(self.db)
@@ -1035,6 +1073,7 @@ class PmsAiOrchestrator:
             non_empty_evidence=total_records_eval > 0,
             guardrail_triggered=any_guardrail,
             turn_id=str(claimed_turn.id) if claimed_turn else None,
+            known_employee_names=known_emp_names,
         )
         trace_ms = round((time.perf_counter() - t_trace_start) * 1000.0, 2)
         total_ms = round((time.perf_counter() - t0) * 1000.0, 2)
@@ -1062,7 +1101,7 @@ class PmsAiOrchestrator:
 
         final_resp = AiChatResponsePayload(
             trace_id=trace_id,
-            conversation_id=req.conversation_id,
+            conversation_id=active_conversation_id,
             turn_id=str(claimed_turn.id) if claimed_turn else None,
             context_version=active_context_version,
             outcome=routed.outcome,
@@ -1092,17 +1131,22 @@ class PmsAiOrchestrator:
             basis_warning=basis_warning,
             cache_hit=cache_hit,
         )
-        if conv_service and req.conversation_id and claimed_turn:
+        if conv_service and active_conversation_id and claimed_turn:
+            payload_for_store = final_resp.model_dump()
+            if claimed_context_version is not None:
+                payload_for_store["context_version"] = claimed_context_version + 1
             new_ver = conv_service.complete_turn(
-                conversation_id=req.conversation_id,
+                conversation_id=active_conversation_id,
                 turn_id=str(claimed_turn.id),
+                expected_context_version=claimed_context_version,
+                claim_token=claimed_token,
                 scope=self.scope,
                 outcome=routed.outcome,
                 turn_kind="analytical",
                 route_used="gemini_router" if total_provider_calls > 0 else "local_rules",
                 validated_plan=validated_plan_v2.model_dump(),
                 evidence_envelope=[ev.model_dump() for ev in evidence_envelope_v2],
-                response_payload=final_resp.model_dump(),
+                response_payload=payload_for_store,
                 session_state=resolved_state,
                 confirmed_context=routed.confirmed_context,
                 provider_calls=total_provider_calls,

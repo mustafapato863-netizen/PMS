@@ -237,6 +237,8 @@ def test_branch_director_bsc_guardrail_and_trace_distillation_lifecycle(monkeypa
     assert found is True
     assert eligible is True
 
+    assert logger.export_distillation_dataset(verified_only=True) == []
+    logger.review_trace(trace_id=normal_resp.trace_id, reviewer_verified=True, reviewer_id="admin-1", caller_role="Admin")
     exported = logger.export_distillation_dataset(verified_only=True)
     assert len(exported) == 1
     assert exported[0].trace_id == normal_resp.trace_id
@@ -450,7 +452,8 @@ def test_pr1_provider_controls_header_auth_redaction_and_trace_ownership(monkeyp
     assert found is True
     assert eligible is True
 
-    # Export logs an AuditLog entry and anonymizes data
+    # Export logs an AuditLog entry and anonymizes data (requires reviewer_verified=True when verified_only=True)
+    trace_logger.review_trace(trace_id=resp.trace_id, reviewer_verified=True, reviewer_id="00000000-0000-0000-0000-000000000011", caller_role="Admin")
     exported = trace_logger.export_distillation_dataset(
         verified_only=True,
         performed_by_user_id="00000000-0000-0000-0000-000000000011",
@@ -826,7 +829,8 @@ def test_pr5_multi_scope_certification_and_200_employee_latency_gate(monkeypatch
     cat = get_ai_catalog()
     registry = cat.get_scope_certification_registry()
     assert len(registry) == 18
-    assert all(r["certified"] is True for r in registry)
+    assert all(r["enabled"] is True for r in registry)
+    assert {r["team"] for r in registry if r["certified"] is True} == {"Inbound", "Outbound", "Support Positions"}
 
     # 1. Verify Offshore Pre-Approvals June 2026 controllable vs policy rejection definitions
     offshore_rej = cat.find_metric_definition(
@@ -1469,6 +1473,872 @@ def test_v2_blueprint_conversational_analytics_and_owned_sessions(monkeypatch):
 
 
 
+
+
+
+
+
+def test_v2_multi_role_scenarios_and_phonetic_disambiguation(monkeypatch):
+    """Tests multi-role RBAC enforcement, phonetic name disambiguation (Mariam/Maryam), and Gemini model failover."""
+    import json
+    import urllib.error
+    import pytest
+    from services.ai.catalog import ai_evidence_cache
+    from services.ai.conversation_service import (
+        AiConversationService,
+        ConversationAccessError,
+    )
+    from services.ai.providers import GeminiStructuredRouterAdapter
+    from services.ai.trace_logger import TrainingTraceLogger
+
+    db = _build_in_memory_db()
+    monkeypatch.setenv("PMS_AI_ROUTER_MODE", "rules")
+
+    # Build multi-team, multi-month records:
+    # - 3 Mariams/Maryams in Inbound:
+    #   * SGHD70148: Mariam Tarek Hassan Mohamed (January 2026)
+    #   * SGHD70231: Mariam Mohssen Mahmoud (August & September 2026)
+    #   * SGHD70250: Maryam Elsayed Mahmoud Eid (September 2026)
+    # - 1 Mariam in CSR (outside Inbound Manager's scope):
+    #   * SGHA01306: Mariam Reda Rakha (August 2026)
+    # - Support Positions & Outbound & Coding records
+    records = [
+        _make_call_center_record("SGHD70148", "Mariam Tarek Hassan Mohamed", "Inbound", 85.3, 40, 55, 110, 140, month="January"),
+        _make_call_center_record("SGHD70231", "Mariam Mohssen Mahmoud", "Inbound", 93.7, 45, 60, 120, 150, month="August"),
+        _make_call_center_record("SGHD70231", "Mariam Mohssen Mahmoud", "Inbound", 94.4, 48, 62, 130, 160, month="September"),
+        _make_call_center_record("SGHD70250", "Maryam Elsayed Mahmoud Eid", "Inbound", 83.9, 35, 50, 95, 130, month="September"),
+        _make_call_center_record("SGHA01306", "Mariam Reda Rakha", "CSR", 66.7, 0, 0, 0, 0, month="August"),
+        _make_call_center_record("OUT201", "Omar Khaled", "Outbound", 89.5, 30, 40, 90, 110, month="September"),
+        _make_call_center_record("COD301", "Heba Mostafa", "Coding", 92.1, 0, 0, 0, 0, month="September"),
+    ]
+    for r in records:
+        if r.team == "Inbound":
+            r.geo.bookings.ajman = 75
+            r.geo.attended.ajman = 55
+
+    sup_qa = _make_call_center_record("SUP401", "Kareem Adel", "Call Center", 64.0, 0, 0, 0, 0, month="September")
+    sup_qa.position = "Quality Assurance"
+    records.append(sup_qa)
+
+    _patch_records(monkeypatch, records)
+    ai_evidence_cache.clear()
+
+    # -------------------------------------------------------------------------
+    # Role 1: Team-Scoped Inbound Manager (only Inbound in Call Center)
+    # -------------------------------------------------------------------------
+    inbound_manager_scope = {
+        "role": "Manager",
+        "user_id": "mgr-inbound-01",
+        "has_unrestricted_team_access": False,
+        "accessible_functions": ["Call Center"],
+        "accessible_teams": ["Inbound"],
+    }
+    inbound_orch = PmsAiOrchestrator(db, inbound_manager_scope)
+
+    # Scenario 1A: Statement-order "mariam is new joiner in inbound team ?"
+    # Matches all 3 Inbound Mariam/Maryam records (excluding CSR Mariam Reda Rakha)
+    r_mariam_3 = inbound_orch.run_chat_turn(
+        AiChatRequest(
+            prompt="mariam is new joiner in inbound team ?",
+            session_state=SessionFilterContext(function="Call Center", team="Inbound"),
+        )
+    )
+    assert r_mariam_3.outcome == "clarification"
+    assert r_mariam_3.clarification is not None
+    assert r_mariam_3.clarification.code == "AMBIGUOUS_PERSON"
+    assert "three Mariams in Inbound" in r_mariam_3.headline
+    choice_ids = {c.employee_id for c in r_mariam_3.clarification.choices}
+    assert choice_ids == {"SGHD70148", "SGHD70231", "SGHD70250"}
+    assert "SGHA01306" not in choice_ids  # CSR Mariam excluded by Inbound scope
+
+    # Resolving Maryam Elsayed Mahmoud Eid (SGHD70250) reports September 2026 earliest record + no HR join date
+    maryam_choice = next(c for c in r_mariam_3.clarification.choices if c.employee_id == "SGHD70250")
+    r_maryam_sel = inbound_orch.run_chat_turn(
+        AiChatRequest(
+            prompt="Maryam Elsayed",
+            clarification_choice_id=maryam_choice.id,
+            session_state=r_mariam_3.resolved_session_state,
+        )
+    )
+    assert r_maryam_sel.outcome == "clarification"
+    assert r_maryam_sel.clarification is not None
+    assert r_maryam_sel.clarification.code == "MISSING_HR_JOIN_DATE"
+    assert "Maryam Elsayed Mahmoud Eid's first available Inbound record is September 2026" in r_maryam_sel.headline
+    assert "no verified joining date" in r_maryam_sel.headline
+
+    # Direct partial 2-word or full 4-word name query also resolves uniquely to SGHD70250
+    for direct_prompt in (
+        "Is Maryam Elsayed a new joiner in Inbound?",
+        "Is Maryam Elsayed Mahmoud Eid a new joiner in Inbound?",
+    ):
+        r_direct_maryam = inbound_orch.run_chat_turn(
+            AiChatRequest(
+                prompt=direct_prompt,
+                session_state=SessionFilterContext(function="Call Center", team="Inbound"),
+            )
+        )
+        assert r_direct_maryam.outcome == "clarification"
+        assert r_direct_maryam.clarification is not None
+        assert r_direct_maryam.clarification.code == "MISSING_HR_JOIN_DATE"
+        assert "Maryam Elsayed Mahmoud Eid's first available Inbound record is September 2026" in r_direct_maryam.headline
+
+    # Scenario 1B: Inbound Manager blocked from Support Positions & Outbound
+    r_mgr_sup_blocked = inbound_orch.run_chat_turn(
+        AiChatRequest(
+            prompt="Who is lowest in Support and what is his position?",
+            session_state=SessionFilterContext(function="Call Center", team="Inbound"),
+        )
+    )
+    assert r_mgr_sup_blocked.outcome == "restricted_access"
+    assert "Support Positions" in r_mgr_sup_blocked.headline
+
+    r_mgr_out_blocked = inbound_orch.run_chat_turn(
+        AiChatRequest(
+            prompt="What is Outbound Reachability in September 2026?",
+            session_state=SessionFilterContext(function="Call Center", team="Inbound"),
+        )
+    )
+    assert r_mgr_out_blocked.outcome == "restricted_access"
+    assert "Outbound" in r_mgr_out_blocked.headline
+
+    # -------------------------------------------------------------------------
+    # Role 2: Dubai-Only Branch Director (Employee-level only, Dubai branch only)
+    # -------------------------------------------------------------------------
+    dubai_director_scope = {
+        "role": "Branch Director",
+        "user_id": "dir-dubai-01",
+        "has_unrestricted_team_access": True,
+        "accessible_branches": ["dubai"],
+    }
+    dubai_orch = PmsAiOrchestrator(db, dubai_director_scope)
+
+    # Scenario 2A: 3-branch booking count query is blocked because Ajman and Sharjah are outside Dubai scope
+    r_bd_3branch = dubai_orch.run_chat_turn(
+        AiChatRequest(
+            prompt="Which has more bookings: Dubai, Ajman or Sharjah?",
+            session_state=SessionFilterContext(function="Call Center", team="Inbound", branch="dubai"),
+        )
+    )
+    assert r_bd_3branch.outcome == "restricted_access"
+    assert "Access restricted" in r_bd_3branch.headline
+
+    # Scenario 2B: Authorized Dubai-only query succeeds
+    r_bd_dubai_ok = dubai_orch.run_chat_turn(
+        AiChatRequest(
+            prompt="What is Inbound Booking Rate in Dubai in September 2026?",
+            session_state=SessionFilterContext(function="Call Center", team="Inbound", branch="dubai"),
+        )
+    )
+    assert r_bd_dubai_ok.outcome == "answer"
+    assert "Dubai" in r_bd_dubai_ok.scope_banner
+
+    # Scenario 2C: Ambiguous Attendance clarification omits Managerial option for Branch Director
+    r_bd_att = dubai_orch.run_chat_turn(
+        AiChatRequest(
+            prompt="What is Attendance in Call Center?",
+            session_state=SessionFilterContext(function="Call Center", branch="dubai"),
+        )
+    )
+    assert r_bd_att.outcome == "clarification"
+    assert r_bd_att.clarification is not None
+    assert all(c.performance_level != "Managerial" for c in r_bd_att.clarification.choices)
+
+    # -------------------------------------------------------------------------
+    # Role 3: RCM Function Director (scoped to RCM teams only)
+    # -------------------------------------------------------------------------
+    rcm_director_scope = {
+        "role": "Function Director",
+        "user_id": "dir-rcm-01",
+        "has_unrestricted_team_access": False,
+        "accessible_functions": ["RCM"],
+        "accessible_teams": ["Coding", "Submission", "Re-Submission"],
+    }
+    rcm_orch = PmsAiOrchestrator(db, rcm_director_scope)
+
+    # Scenario 3A: Blocked from Call Center Inbound
+    r_rcm_inb_blocked = rcm_orch.run_chat_turn(
+        AiChatRequest(
+            prompt="What is Inbound Abandon Rate in September 2026?",
+            session_state=SessionFilterContext(function="RCM", team="Coding"),
+        )
+    )
+    assert r_rcm_inb_blocked.outcome == "restricted_access"
+    assert "Inbound" in r_rcm_inb_blocked.headline
+
+    # Scenario 3B: Authorized Coding query succeeds
+    r_rcm_coding_ok = rcm_orch.run_chat_turn(
+        AiChatRequest(
+            prompt="What is Coding score in September 2026?",
+            session_state=SessionFilterContext(function="RCM", team="Coding"),
+        )
+    )
+    assert r_rcm_coding_ok.outcome == "answer"
+    assert "Coding" in r_rcm_coding_ok.headline
+
+    # -------------------------------------------------------------------------
+    # Role 4 & 5: Function Viewer vs Admin Conversation Isolation & Trace Verification
+    # -------------------------------------------------------------------------
+    viewer_scope = {
+        "role": "Function Viewer",
+        "user_id": "viewer-cc-01",
+        "has_unrestricted_team_access": False,
+        "accessible_functions": ["Call Center"],
+        "accessible_teams": ["Inbound", "Outbound"],
+    }
+    conv_svc = AiConversationService(db)
+    mgr_conv = conv_svc.create_conversation(
+        scope=inbound_manager_scope,
+        initial_state=SessionFilterContext(function="Call Center", team="Inbound"),
+    )
+    # Function Viewer cannot read or delete Inbound Manager's conversation
+    with pytest.raises(ConversationAccessError):
+        conv_svc.get_context(conversation_id=mgr_conv.conversation_id, scope=viewer_scope)
+    with pytest.raises(ConversationAccessError):
+        conv_svc.delete_conversation(mgr_conv.conversation_id, scope=viewer_scope)
+
+    # Function Viewer cannot self-certify traces as reviewer_verified
+    viewer_turn = PmsAiOrchestrator(db, viewer_scope).run_chat_turn(
+        AiChatRequest(
+            prompt="What is Inbound Booking Rate in September 2026?",
+            session_state=SessionFilterContext(function="Call Center", team="Inbound"),
+        )
+    )
+    trace_logger = TrainingTraceLogger(db)
+    found_fb, elig_fb = trace_logger.record_feedback(
+        trace_id=viewer_turn.trace_id,
+        rating="up",
+        reason="Accurate",
+        caller_user_id="viewer-cc-01",
+        caller_role="Function Viewer",
+        reviewer_verified=True,
+    )
+    assert found_fb is True
+    assert elig_fb is True
+    assert trace_logger.export_distillation_dataset(verified_only=True) == []  # Non-admin cannot self-verify
+    assert trace_logger.export_distillation_dataset(verified_only=False)[0].reviewer_verified is False
+    with pytest.raises(PermissionError):
+        trace_logger.review_trace(
+            trace_id=viewer_turn.trace_id,
+            reviewer_verified=True,
+            reviewer_id="viewer-cc-01",
+            caller_role="Function Viewer",
+        )
+
+    # Admin can verify the trace and mark reviewer_verified=True
+    found_adm, elig_adm, _ = trace_logger.review_trace(
+        trace_id=viewer_turn.trace_id,
+        reviewer_verified=True,
+        reviewer_id="admin-root-01",
+        caller_role="Admin",
+        notes="Verified by Admin",
+    )
+    assert found_adm is True
+    assert elig_adm is True
+    assert trace_logger.export_distillation_dataset(verified_only=True)[0].reviewer_verified is True
+
+    # -------------------------------------------------------------------------
+    # Scenario 6: Gemini Multi-Model Fallback Chain (503 on primary -> 200 on secondary)
+    # -------------------------------------------------------------------------
+    monkeypatch.setenv("PMS_AI_GEMINI_ROUTING_ENABLED", "true")
+    monkeypatch.setenv("GEMINI_API_KEY", "AIzaSyTestFallbackKey123456789012345")
+    monkeypatch.setenv("PMS_GEMINI_MODEL", "gemini-3.5-flash-lite,gemini-2.5-flash")
+    attempted_urls: list[str] = []
+
+    class _FallbackHttpResponse:
+        def __init__(self, payload: dict):
+            self._bytes = json.dumps(payload).encode("utf-8")
+
+        def read(self):
+            return self._bytes
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    def _fallback_urlopen(req, timeout=None):
+        attempted_urls.append(req.full_url)
+        if "gemini-3.5-flash-lite" in req.full_url:
+            raise urllib.error.HTTPError(
+                req.full_url, 503, "Service Unavailable", hdrs=None, fp=None
+            )
+        plan_json = {
+            "intent": "score_drivers",
+            "team": "Inbound",
+            "performance_level": "Employee",
+            "ranking_direction": "NONE",
+            "clarification_code": "NONE",
+        }
+        return _FallbackHttpResponse(
+            {
+                "candidates": [{"content": {"parts": [{"text": json.dumps(plan_json)}]}}],
+                "usageMetadata": {"promptTokenCount": 95, "candidatesTokenCount": 32},
+            }
+        )
+
+    monkeypatch.setattr("urllib.request.urlopen", _fallback_urlopen)
+    fb_res = GeminiStructuredRouterAdapter().propose_query_plan(
+        prompt="Where should I focus in Inbound this month?",
+        current_view={"function": "Call Center", "team": "Inbound"},
+        candidate_teams=["Inbound"],
+        candidate_metrics=["inbound:abandon_rate"],
+        candidate_branches=["dubai"],
+    )
+    assert fb_res.plan is not None
+    assert fb_res.plan.intent == "score_drivers"
+    assert fb_res.plan.ranking_direction == "best"  # Normalized from "NONE"
+    assert fb_res.metrics.model_used == "gemini-2.5-flash"
+    assert fb_res.metrics.provider_calls == 2
+    assert len(attempted_urls) == 2
+
+
+def test_v2_review_findings_all_nine_fixes(monkeypatch):
+    """Comprehensive verification of all 9 v2 review findings:
+    1. Auto-created server-owned conversation when conversation_id is None + controlled 404 ConversationDeletedError.
+    2. Optimistic concurrency + expired worker claim_token protection at turn completion.
+    3. Safe retries under permission/data/account changes + request_fingerprint conflict detection.
+    4. Best vs worst month distinction, unrounded precision, >100 scores, ties, None score handling, and pronoun inheritance.
+    6. Employee full/partial name redaction in traces/turns/exports + strict verified_only export boundary.
+    7. Separation of enabled allowlist vs 6-gate certified scopes.
+    9. Production runtime DDL prohibition + disposable PostgreSQL schema upgrade/downgrade verification.
+    """
+    from datetime import datetime, timedelta, timezone
+    import pytest
+    from sqlalchemy import create_engine, text
+    from sqlalchemy.orm import sessionmaker
+
+    from models.ai_schemas import ConfirmedQueryContext
+    from models.models import AiInteractionTrace, AiTurn, Base
+    from repositories.ai_conversation_repository import (
+        AiConversationRepository,
+        ConversationDeletedError,
+        ConversationMigrationUnavailableError,
+        ConversationStaleContextError,
+        RequestIdReuseConflictError,
+    )
+    from services.ai.catalog import ai_evidence_cache, get_ai_catalog
+    from services.ai.conversation_service import AiConversationService
+    from services.ai.trace_logger import TrainingTraceLogger, sanitize_prompt_for_router_training
+    from services.cache_invalidation_service import CacheInvalidationService
+    from services.insights_service import InsightAccessError
+
+    db = _build_in_memory_db()
+    monkeypatch.setenv("PMS_AI_ROUTER_MODE", "rules")
+
+    # Build precision multi-month records for Adham Precision (EMP888)
+    adham_months = [
+        ("March", 82.50),
+        ("April", 61.20),
+        ("May", 61.20),
+        ("June", None),      # Missing score -> must NEVER become 0.0%
+        ("July", 94.24),     # Unrounded best (94.24 vs 94.18 both round to 94.2)
+        ("August", 94.18),
+        ("September", 91.00),
+    ]
+    records = []
+    for m_name, sc in adham_months:
+        rec = _make_call_center_record(
+            "EMP888",
+            "Adham Precision",
+            "Inbound",
+            sc if sc is not None else 0.0,
+            45,
+            60,
+            120,
+            150,
+            month=m_name,
+        )
+        if sc is None:
+            object.__setattr__(rec.evaluation, "score", None)
+        else:
+            rec.evaluation.score = sc
+        records.append(rec)
+
+    _patch_records(monkeypatch, records)
+    ai_evidence_cache.clear()
+
+    gm_scope = {
+        "role": "General Manager",
+        "user_id": "00000000-0000-0000-0000-000000000888",
+        "has_unrestricted_team_access": True,
+        "accessible_branches": ["dubai", "sharjah", "ajman", "clinics"],
+    }
+    orch = PmsAiOrchestrator(db, gm_scope)
+    conv_svc = AiConversationService(db, gm_scope)
+
+    # -------------------------------------------------------------------------
+    # Fix 1: Server-owned conversation auto-created when conversation_id is None
+    #        + controlled ConversationDeletedError on late request to deleted conversation
+    # -------------------------------------------------------------------------
+    t1 = orch.run_chat_turn(
+        AiChatRequest(
+            prompt="Hi",
+            conversation_id=None,
+            client_request_id="req-auto-conv-1",
+            session_state=SessionFilterContext(function="Call Center", team="Inbound"),
+        )
+    )
+    assert t1.conversation_id is not None
+    assert t1.context_version == 2
+    persisted_ctx = conv_svc.get_context(conversation_id=t1.conversation_id, scope=gm_scope)
+    assert persisted_ctx.context_version == 2
+
+    # Soft-delete the conversation and verify a late request raises ConversationDeletedError (not IntegrityError)
+    assert conv_svc.delete_conversation(t1.conversation_id, scope=gm_scope) is True
+    with pytest.raises(ConversationDeletedError):
+        orch.run_chat_turn(
+            AiChatRequest(
+                prompt="Follow up after delete",
+                conversation_id=t1.conversation_id,
+                context_version=2,
+                client_request_id="req-after-delete",
+            )
+        )
+
+    # -------------------------------------------------------------------------
+    # Fix 2: Optimistic concurrency at completion + expired worker claim_token protection
+    # -------------------------------------------------------------------------
+    race_conv = conv_svc.create_conversation(
+        scope=gm_scope,
+        initial_state=SessionFilterContext(function="Call Center", team="Inbound"),
+    )
+    race_conv_id = race_conv.conversation_id
+    assert race_conv.context_version == 1
+
+    # Two concurrent turns both start at expected_context_version=1
+    turn_a, replay_a = conv_svc.claim_or_replay_turn(
+        conversation_id=race_conv_id,
+        scope=gm_scope,
+        prompt="What is Inbound score?",
+        client_request_id="req-race-a",
+        expected_context_version=1,
+    )
+    turn_b, replay_b = conv_svc.claim_or_replay_turn(
+        conversation_id=race_conv_id,
+        scope=gm_scope,
+        prompt="What is Outbound score?",
+        client_request_id="req-race-b",
+        expected_context_version=1,
+    )
+    assert replay_a is None and replay_b is None
+
+    # Worker A finishes first and advances context_version to 2
+    ver_after_a = conv_svc.complete_turn(
+        conversation_id=race_conv_id,
+        turn_id=str(turn_a.id),
+        expected_context_version=1,
+        claim_token=str(turn_a.claim_token),
+        scope=gm_scope,
+        outcome="answer",
+        turn_kind="analytics",
+        route_used="local_rules",
+        validated_plan={"intent": "current_value"},
+        evidence_envelope=[],
+        response_payload={"headline": "Worker A answer"},
+        session_state=SessionFilterContext(function="Call Center", team="Inbound"),
+        confirmed_context=ConfirmedQueryContext(intent="current_value", team="Inbound"),
+        provider_calls=0,
+        total_ms=10.0,
+    )
+    assert ver_after_a == 2
+
+    # Worker B tries to complete against stale expected_context_version=1 -> rejected!
+    with pytest.raises(ConversationStaleContextError):
+        conv_svc.complete_turn(
+            conversation_id=race_conv_id,
+            turn_id=str(turn_b.id),
+            expected_context_version=1,
+            claim_token=str(turn_b.claim_token),
+            scope=gm_scope,
+            outcome="answer",
+            turn_kind="analytics",
+            route_used="local_rules",
+            validated_plan={"intent": "current_value"},
+            evidence_envelope=[],
+            response_payload={"headline": "Worker B stale overwrite"},
+            session_state=SessionFilterContext(function="Call Center", team="Outbound"),
+            confirmed_context=ConfirmedQueryContext(intent="current_value", team="Outbound"),
+            provider_calls=0,
+            total_ms=12.0,
+        )
+    assert conv_svc.get_context(conversation_id=race_conv_id, scope=gm_scope).confirmed_context.team == "Inbound"
+
+    # Expired worker A vs reclaiming worker B on the same turn
+    exp_turn_w1, _ = conv_svc.claim_or_replay_turn(
+        conversation_id=race_conv_id,
+        scope=gm_scope,
+        prompt="Slow query",
+        client_request_id="req-expire-reclaim",
+        expected_context_version=2,
+    )
+    old_token = str(exp_turn_w1.claim_token)
+    # Force deadline expiration
+    db.query(AiTurn).filter(AiTurn.id == exp_turn_w1.id).update(
+        {"processing_deadline": datetime.now(timezone.utc) - timedelta(seconds=30)}
+    )
+    db.commit()
+
+    # Worker 2 reclaims the expired turn and gets a new claim_token
+    exp_turn_w2, _ = conv_svc.claim_or_replay_turn(
+        conversation_id=race_conv_id,
+        scope=gm_scope,
+        prompt="Slow query",
+        client_request_id="req-expire-reclaim",
+        expected_context_version=2,
+    )
+    new_token = str(exp_turn_w2.claim_token)
+    assert new_token != old_token
+
+    # Old Worker 1 wakes up and tries to complete using old_token -> rejected!
+    with pytest.raises(ConversationStaleContextError):
+        conv_svc.complete_turn(
+            conversation_id=race_conv_id,
+            turn_id=str(exp_turn_w1.id),
+            expected_context_version=2,
+            claim_token=old_token,
+            scope=gm_scope,
+            outcome="answer",
+            turn_kind="analytics",
+            route_used="local_rules",
+            validated_plan={"intent": "current_value"},
+            evidence_envelope=[],
+            response_payload={"headline": "Old worker answer"},
+            session_state=SessionFilterContext(function="Call Center", team="Inbound"),
+            confirmed_context=ConfirmedQueryContext(intent="current_value", team="Inbound"),
+            provider_calls=0,
+            total_ms=50.0,
+        )
+
+    # Worker 2 completes cleanly with new_token -> advances context_version to 3
+    ver_after_w2 = conv_svc.complete_turn(
+        conversation_id=race_conv_id,
+        turn_id=str(exp_turn_w2.id),
+        expected_context_version=2,
+        claim_token=new_token,
+        scope=gm_scope,
+        outcome="answer",
+        turn_kind="analytics",
+        route_used="local_rules",
+        validated_plan={"intent": "current_value"},
+        evidence_envelope=[],
+        response_payload={"headline": "Worker 2 authoritative answer"},
+        session_state=SessionFilterContext(function="Call Center", team="Inbound"),
+        confirmed_context=ConfirmedQueryContext(intent="current_value", team="Inbound"),
+        provider_calls=0,
+        total_ms=15.0,
+    )
+    assert ver_after_w2 == 3
+
+    # -------------------------------------------------------------------------
+    # Fix 3: Safe retries under permission, account, and data changes + request_fingerprint
+    # -------------------------------------------------------------------------
+    retry_scope = {
+        "role": "Branch Director",
+        "user_id": "00000000-0000-0000-0000-000000000889",
+        "has_unrestricted_team_access": True,
+        "accessible_branches": ["dubai", "sharjah"],
+        "is_active": True,
+    }
+    retry_orch = PmsAiOrchestrator(db, retry_scope)
+    r_sharjah_1 = retry_orch.run_chat_turn(
+        AiChatRequest(
+            prompt="What is Inbound Booking Rate in Sharjah in September 2026?",
+            client_request_id="req-sharjah-retry",
+            session_state=SessionFilterContext(function="Call Center", team="Inbound", branch="sharjah"),
+        )
+    )
+    assert r_sharjah_1.outcome == "answer"
+    retry_conv_id = r_sharjah_1.conversation_id
+
+    # Reusing the same client_request_id with a different prompt raises RequestIdReuseConflictError
+    with pytest.raises(RequestIdReuseConflictError):
+        retry_orch.run_chat_turn(
+            AiChatRequest(
+                prompt="What is Outbound Reachability in Dubai?",
+                conversation_id=retry_conv_id,
+                client_request_id="req-sharjah-retry",
+                session_state=SessionFilterContext(function="Call Center", team="Inbound", branch="sharjah"),
+            )
+        )
+
+    # Deactivating the user account blocks replay with InsightAccessError
+    inactive_scope = {**retry_scope, "is_active": False}
+    with pytest.raises(InsightAccessError):
+        PmsAiOrchestrator(db, inactive_scope).run_chat_turn(
+            AiChatRequest(
+                prompt="What is Inbound Booking Rate in Sharjah in September 2026?",
+                conversation_id=retry_conv_id,
+                client_request_id="req-sharjah-retry",
+                session_state=SessionFilterContext(function="Call Center", team="Inbound", branch="sharjah"),
+            )
+        )
+
+    # Revoking Sharjah branch access invalidates the cached turn replay and returns restricted_access
+    revoked_sharjah_scope = {
+        **retry_scope,
+        "accessible_branches": ["dubai"],
+    }
+    r_sharjah_revoked = PmsAiOrchestrator(db, revoked_sharjah_scope).run_chat_turn(
+        AiChatRequest(
+            prompt="What is Inbound Booking Rate in Sharjah in September 2026?",
+            conversation_id=retry_conv_id,
+            client_request_id="req-sharjah-retry",
+            session_state=SessionFilterContext(function="Call Center", team="Inbound", branch="sharjah"),
+        )
+    )
+    assert r_sharjah_revoked.outcome == "restricted_access"
+
+    # Changing published evaluation data (eval_id bump) invalidates cached replay and recomputes
+    r_eval_initial = orch.run_chat_turn(
+        AiChatRequest(
+            prompt="What is Inbound score in September 2026?",
+            client_request_id="req-inbound-eval-change",
+            session_state=SessionFilterContext(function="Call Center", team="Inbound"),
+        )
+    )
+    assert r_eval_initial.outcome == "answer"
+    assert "91.0%" in r_eval_initial.headline
+    eval_conv_id = r_eval_initial.conversation_id
+
+    # Update September score to 97.5% and bump data version
+    for r in records:
+        if r.month == "September":
+            r.evaluation.score = 97.5
+    CacheInvalidationService.bump_data_version()
+    ai_evidence_cache.clear()
+
+    r_eval_recomputed = orch.run_chat_turn(
+        AiChatRequest(
+            prompt="What is Inbound score in September 2026?",
+            conversation_id=eval_conv_id,
+            client_request_id="req-inbound-eval-change",
+            session_state=SessionFilterContext(function="Call Center", team="Inbound"),
+        )
+    )
+    assert r_eval_recomputed.outcome == "answer"
+    assert "97.5%" in r_eval_recomputed.headline
+
+    # Restore September score to 91.0% for subsequent assertions
+    for r in records:
+        if r.month == "September":
+            r.evaluation.score = 91.0
+    CacheInvalidationService.bump_data_version()
+    ai_evidence_cache.clear()
+
+    # -------------------------------------------------------------------------
+    # Fix 4: Best vs worst month, unrounded precision, ties, None scores, >100 scores, pronoun follow-ups
+    # -------------------------------------------------------------------------
+    # 4a. Unrounded close scores: July (94.24) beats August (94.18) even though both round to 94.2 at 1dp
+    r_best_aug = orch.run_chat_turn(
+        AiChatRequest(
+            prompt="Was August Adham's best month?",
+            session_state=SessionFilterContext(function="Call Center", team="Inbound"),
+        )
+    )
+    assert r_best_aug.outcome == "answer"
+    assert r_best_aug.headline.startswith("No.")
+    assert "July 2026 at 94.24%" in r_best_aug.headline
+    assert "94.18% in August 2026" in r_best_aug.headline
+    # Missing June score is noted as having no evaluated score, never treated as 0.0%
+    assert any("June 2026 had no evaluated score" in b for b in r_best_aug.narrative_bullets)
+
+    # 4b. Pronoun follow-up switching to worst/lowest month ("Which month had his lowest score?")
+    r_worst_pronoun = orch.run_chat_turn(
+        AiChatRequest(
+            prompt="Which month had his lowest score?",
+            conversation_id=r_best_aug.conversation_id,
+            context_version=r_best_aug.context_version,
+            session_state=r_best_aug.resolved_session_state,
+        )
+    )
+    assert r_worst_pronoun.outcome == "answer"
+    assert r_worst_pronoun.validated_plan_v2 is not None
+    assert r_worst_pronoun.validated_plan_v2.operations[0].kind == "person_worst_period"
+    assert "April 2026 and May 2026" in r_worst_pronoun.headline
+    assert "61.2%" in r_worst_pronoun.headline
+    assert "June 2026" not in r_worst_pronoun.headline  # None score never treated as 0.0% worst month
+
+    # 4c. Follow-up "What about April?" retains worst-month check
+    r_worst_april = orch.run_chat_turn(
+        AiChatRequest(
+            prompt="What about April?",
+            conversation_id=r_worst_pronoun.conversation_id,
+            context_version=r_worst_pronoun.context_version,
+            session_state=r_worst_pronoun.resolved_session_state,
+        )
+    )
+    assert r_worst_april.outcome == "answer"
+    assert r_worst_april.headline.startswith("Yes.")
+    assert "April 2026" in r_worst_april.headline
+    assert "tied with May 2026" in r_worst_april.headline
+    assert "worst month" in r_worst_april.headline
+
+    # 4d. Scores > 100 are not capped at 100 before ranking
+    oct_over = _make_call_center_record("EMP888", "Adham Precision", "Inbound", 101.2, 50, 60, 140, 150, month="October")
+    nov_over = _make_call_center_record("EMP888", "Adham Precision", "Inbound", 104.5, 55, 60, 145, 150, month="November")
+    _patch_records(monkeypatch, [*records, oct_over, nov_over])
+    CacheInvalidationService.bump_data_version()
+    ai_evidence_cache.clear()
+
+    r_over_100 = orch.run_chat_turn(
+        AiChatRequest(
+            prompt="Was October Adham's best month?",
+            session_state=SessionFilterContext(function="Call Center", team="Inbound"),
+        )
+    )
+    assert r_over_100.outcome == "answer"
+    assert r_over_100.headline.startswith("No.")
+    assert "November 2026 at 104.5%" in r_over_100.headline
+
+    # -------------------------------------------------------------------------
+    # Fix 6: Privacy & employee name redaction in prompts, traces, and exports
+    # -------------------------------------------------------------------------
+    redacted_prompt = sanitize_prompt_for_router_training(
+        "Was October Adham Precision or Adham's best month?",
+        db=db,
+    )
+    assert "Adham" not in redacted_prompt
+    assert "<EMPLOYEE_NAME>" in redacted_prompt
+
+    # Check that stored AiTurn and AiInteractionTrace rows redacted "Adham"
+    turn_rows = db.query(AiTurn).all()
+    assert len(turn_rows) > 0
+    for tr in turn_rows:
+        assert "adham" not in (tr.user_prompt_redacted or "").casefold()
+
+    # Insert a legacy trace with unredacted employee name and verify export_distillation_dataset re-sanitizes it
+    import json
+    import uuid
+
+    legacy_trace_id = uuid.uuid4()
+    legacy_trace = AiInteractionTrace(
+        id=legacy_trace_id,
+        user_id=gm_scope["user_id"],
+        role="General Manager",
+        prompt="How did Adham Precision perform in July 2026?",
+        sanitized_prompt="How did Adham Precision perform in July 2026?",
+        session_state={"function": "Call Center", "team": "Inbound"},
+        tool_calls=[],
+        tool_digest={"employee": "Adham Precision"},
+        structured_response={"headline": "Adham Precision scored 94.24% in July 2026.", "narrative_bullets": ["Adham led July."]},
+        provider_name="deterministic-local",
+        model_name="pms-deterministic-v1",
+        latency_ms=10,
+        non_empty_evidence=True,
+        guardrail_triggered=False,
+        feedback_rating="up",
+        is_distillation_eligible=True,
+        reviewer_verified=True,
+        reviewer_id="admin-1",
+    )
+    db.add(legacy_trace)
+    db.commit()
+
+    exported_verified = TrainingTraceLogger(db).export_distillation_dataset(verified_only=True)
+    legacy_exported = next(x for x in exported_verified if x.trace_id == str(legacy_trace_id))
+    assert "Adham" not in legacy_exported.router_training_pair["sanitized_prompt"]
+    assert "<EMPLOYEE_NAME>" in legacy_exported.router_training_pair["sanitized_prompt"]
+    assert legacy_exported.narrative_training_pair is not None
+    assert "Adham" not in legacy_exported.narrative_training_pair["headline"]
+    assert "Adham" not in json.dumps(legacy_exported.narrative_training_pair["narrative_bullets"])
+
+    # -------------------------------------------------------------------------
+    # Fix 7: Scope allowlisting vs certification registry
+    # -------------------------------------------------------------------------
+    cat = get_ai_catalog()
+    reg = cat.get_scope_certification_registry()
+    certified_teams = {r["team"] for r in reg if r["certified"] is True}
+    assert certified_teams == {"Inbound", "Outbound", "Support Positions"}
+    for r in reg:
+        if r["certified"]:
+            assert r["status"] == "verified"
+            assert all(r["verification_gates"].values())
+        else:
+            assert r["status"] in {"partial_evidence", "unverified"}
+            assert not all(r["verification_gates"].values())
+
+    monkeypatch.setenv("PMS_AI_ENABLED_SCOPES", "Inbound,Outbound")
+    reg_filtered = cat.get_scope_certification_registry()
+    assert {r["team"] for r in reg_filtered if r["enabled"] is True} == {"Inbound", "Outbound"}
+    monkeypatch.delenv("PMS_AI_ENABLED_SCOPES", raising=False)
+
+    # -------------------------------------------------------------------------
+    # Fix 9: Production runtime DDL prohibition + disposable PostgreSQL schema test
+    # -------------------------------------------------------------------------
+    empty_engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
+    EmptySession = sessionmaker(bind=empty_engine)
+    empty_db = EmptySession()
+
+    monkeypatch.setenv("APP_ENV", "production")
+    prod_repo = AiConversationRepository(empty_db)
+    assert prod_repo.is_schema_ready() is False
+    with pytest.raises(ConversationMigrationUnavailableError):
+        prod_repo.create_conversation(owner_user_id="u1", owner_role="Manager")
+    monkeypatch.setenv("APP_ENV", "test")
+
+    # Verify single Alembic head c9e1a2b3d4f5 and test upgrade() + downgrade() on disposable schema
+    import importlib.util
+    from pathlib import Path
+    from alembic.migration import MigrationContext
+    from alembic.operations import Operations
+    from sqlalchemy import inspect as sa_inspect
+
+    mig_dir = Path(__file__).resolve().parent.parent / "migrations" / "versions"
+    mig_files = list(mig_dir.glob("*c9e1a2b3d4f5*.py"))
+    assert len(mig_files) == 1
+    spec = importlib.util.spec_from_file_location("mig_c9e1a2b3d4f5", mig_files[0])
+    assert spec is not None and spec.loader is not None
+    mig_mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mig_mod)
+
+    # Test upgrade + downgrade on a fresh disposable database with pre-existing ai_interaction_traces
+    mig_engine = create_engine("sqlite:///:memory:")
+    with mig_engine.begin() as conn:
+        conn.execute(text("CREATE TABLE ai_interaction_traces (id VARCHAR(64) PRIMARY KEY, prompt TEXT)"))
+        ctx = MigrationContext.configure(conn)
+        op_proxy = Operations(ctx)
+        monkeypatch.setattr(mig_mod, "op", op_proxy)
+        mig_mod.upgrade()
+        tables_after_up = set(sa_inspect(conn).get_table_names())
+        assert {"ai_conversations", "ai_turns", "ai_interaction_traces"}.issubset(tables_after_up)
+        trace_cols_up = {c["name"] for c in sa_inspect(conn).get_columns("ai_interaction_traces")}
+        assert "turn_id" in trace_cols_up
+        mig_mod.downgrade()
+        tables_after_down = set(sa_inspect(conn).get_table_names())
+        assert "ai_conversations" not in tables_after_down
+        assert "ai_turns" not in tables_after_down
+
+    # Also test upgrade + downgrade on a disposable PostgreSQL schema when local PostgreSQL is configured
+    from config.database import DATABASE_URL
+
+    if str(DATABASE_URL).startswith("postgresql"):
+        tmp_schema = f"tmp_ai_mig_{uuid.uuid4().hex[:12]}"
+        pg_engine = create_engine(DATABASE_URL)
+        try:
+            with pg_engine.begin() as pg_conn:
+                pg_conn.execute(text(f"CREATE SCHEMA {tmp_schema}"))
+                pg_conn.execute(text(f"SET LOCAL search_path TO {tmp_schema}"))
+                ctx_pg = MigrationContext.configure(pg_conn)
+                op_pg = Operations(ctx_pg)
+                monkeypatch.setattr(mig_mod, "op", op_pg)
+                # 1. Fresh schema upgrade -> downgrade
+                mig_mod.upgrade()
+                pg_tables_up = set(sa_inspect(pg_conn).get_table_names(schema=tmp_schema))
+                assert {"ai_conversations", "ai_turns", "ai_interaction_traces"}.issubset(pg_tables_up)
+                mig_mod.downgrade()
+                pg_tables_down = set(sa_inspect(pg_conn).get_table_names(schema=tmp_schema))
+                assert "ai_conversations" not in pg_tables_down
+                assert "ai_turns" not in pg_tables_down
+                # 2. Upgrade again on schema that already has ai_interaction_traces -> downgrade
+                mig_mod.upgrade()
+                pg_tables_up2 = set(sa_inspect(pg_conn).get_table_names(schema=tmp_schema))
+                assert {"ai_conversations", "ai_turns", "ai_interaction_traces"}.issubset(pg_tables_up2)
+                mig_mod.downgrade()
+        finally:
+            with pg_engine.begin() as cleanup_conn:
+                cleanup_conn.execute(text(f"DROP SCHEMA IF EXISTS {tmp_schema} CASCADE"))
+            pg_engine.dispose()
 
 
 

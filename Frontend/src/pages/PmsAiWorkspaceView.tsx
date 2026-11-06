@@ -39,8 +39,11 @@ import type {
 interface ConversationTurn {
   id: string;
   userPrompt: string;
+  clientRequestId: string;
+  clarificationChoiceId?: string;
   response?: AiChatResponsePayload;
   error?: string;
+  conflictCode?: 404 | 409;
   isPending?: boolean;
 }
 
@@ -109,22 +112,89 @@ export default function PmsAiWorkspaceView() {
   const [isSending, setIsSending] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [showScenarioTray, setShowScenarioTray] = useState<boolean>(true);
+  const [showWatchingPanel, setShowWatchingPanel] = useState<boolean>(true);
   const activeRequestSeqRef = useRef<number>(0);
+  const abortControllerRef = useRef<AbortController | null>(null);
   const streamEndRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
+  const cancelInFlightRequests = useCallback(() => {
     activeRequestSeqRef.current += 1;
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setIsSending(false);
+    setTurns((prev) => prev.filter((t) => !t.isPending));
+  }, []);
+
+  useEffect(() => {
+    cancelInFlightRequests();
     setAnswerDetail('auto');
     setTurns([]);
     setConversationId(null);
     setContextVersion(0);
     setLastConfirmedQuery(null);
-  }, [currentUser?.id]);
+  }, [currentUser?.id, cancelInFlightRequests]);
 
   const monthParam = searchParams.get('month') || (activeMonth !== 'All' ? activeMonth : null);
   const yearParam = searchParams.get('year') ? Number(searchParams.get('year')) : null;
   const functionParam = searchParams.get('function') || 'Call Center';
   const positionParam = searchParams.get('position') || null;
+
+  const prevScopeParamsRef = useRef({
+    functionParam,
+    positionParam,
+    monthParam,
+    yearParam,
+  });
+
+  useEffect(() => {
+    const prev = prevScopeParamsRef.current;
+    const fnChanged = prev.functionParam !== functionParam;
+    const posChanged = prev.positionParam !== positionParam;
+    const monthChanged = prev.monthParam !== monthParam;
+    const yearChanged = prev.yearParam !== yearParam;
+    if (!fnChanged && !posChanged && !monthChanged && !yearChanged) {
+      return;
+    }
+    prevScopeParamsRef.current = {
+      functionParam,
+      positionParam,
+      monthParam,
+      yearParam,
+    };
+    cancelInFlightRequests();
+    setLastConfirmedQuery((curr) => {
+      if (!curr) return null;
+      return {
+        ...curr,
+        ...(fnChanged
+          ? {
+              function: functionParam,
+              team: null,
+              position: null,
+              metric_id: null,
+              last_subject_employee_id: null,
+              last_subject_employee_name: null,
+            }
+          : {}),
+        ...(posChanged
+          ? {
+              position: positionParam,
+              metric_id: null,
+              last_subject_employee_id: null,
+              last_subject_employee_name: null,
+            }
+          : {}),
+        ...(monthChanged || yearChanged
+          ? {
+              periods: [],
+              compare_period: null,
+            }
+          : {}),
+      };
+    });
+  }, [functionParam, positionParam, monthParam, yearParam, cancelInFlightRequests]);
 
   const sessionState: SessionFilterContext = useMemo(
     () => ({
@@ -141,6 +211,7 @@ export default function PmsAiWorkspaceView() {
   );
 
   const handleFilterChange = (key: 'team' | 'branch' | 'performance_level', value: string) => {
+    cancelInFlightRequests();
     const next = new URLSearchParams(searchParams);
     if (value === 'All' || value === 'all' || !value) {
       next.delete(key);
@@ -151,7 +222,16 @@ export default function PmsAiWorkspaceView() {
     if (key === 'team') {
       setSelectedTeam(value);
       setLastConfirmedQuery((prev) =>
-        prev ? { ...prev, team: value !== 'All' ? value : null, position: null, metric_id: null } : null,
+        prev
+          ? {
+              ...prev,
+              team: value !== 'All' ? value : null,
+              position: null,
+              metric_id: null,
+              last_subject_employee_id: null,
+              last_subject_employee_name: null,
+            }
+          : null,
       );
     }
     if (key === 'branch') {
@@ -163,7 +243,15 @@ export default function PmsAiWorkspaceView() {
     if (key === 'performance_level') {
       setSelectedLevel(value);
       setLastConfirmedQuery((prev) =>
-        prev ? { ...prev, performance_level: value !== 'All' ? value : null, metric_id: null } : null,
+        prev
+          ? {
+              ...prev,
+              performance_level: value !== 'All' ? value : null,
+              metric_id: null,
+              last_subject_employee_id: null,
+              last_subject_employee_name: null,
+            }
+          : null,
       );
     }
   };
@@ -204,26 +292,99 @@ export default function PmsAiWorkspaceView() {
   }, [turns]);
 
   const sendPrompt = useCallback(
-    async (rawPrompt: string, clarificationChoiceId?: string) => {
+    async (
+      rawPrompt: string,
+      clarificationChoiceId?: string,
+      options?: {
+        retryTurnId?: string;
+        reuseClientRequestId?: string;
+        conflictCode?: 404 | 409;
+      },
+    ) => {
       const cleanPrompt = rawPrompt.trim();
       if (!cleanPrompt || isSending) return;
 
       const reqSeq = activeRequestSeqRef.current + 1;
       activeRequestSeqRef.current = reqSeq;
-      const turnId = `turn-${Date.now()}-${reqSeq}`;
-      const clientRequestId = `req-${Date.now()}-${reqSeq}`;
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
+
+      const isRetry = Boolean(options?.retryTurnId);
+      const turnId = options?.retryTurnId || `turn-${Date.now()}-${reqSeq}`;
+
+      let effectiveConversationId = conversationId;
+      let effectiveContextVersion = contextVersion;
+      const clientRequestId =
+        options?.reuseClientRequestId && !options?.conflictCode
+          ? options.reuseClientRequestId
+          : `req-${Date.now()}-${reqSeq}`;
+
+      if (options?.conflictCode === 404) {
+        effectiveConversationId = null;
+        effectiveContextVersion = 0;
+        setConversationId(null);
+        setContextVersion(0);
+      } else if (options?.conflictCode === 409) {
+        effectiveContextVersion = 0;
+        if (effectiveConversationId) {
+          try {
+            const ctxRes = await apiFetch<{
+              success: boolean;
+              data?: { context_version?: number; confirmed_context?: ConfirmedQueryContext };
+            }>(`/api/ai/conversations/${effectiveConversationId}/context`);
+            if (typeof ctxRes?.data?.context_version === 'number') {
+              effectiveContextVersion = ctxRes.data.context_version;
+              setContextVersion(ctxRes.data.context_version);
+            }
+            if (ctxRes?.data?.confirmed_context) {
+              setLastConfirmedQuery(ctxRes.data.confirmed_context);
+            }
+          } catch {
+            effectiveContextVersion = 0;
+          }
+        }
+      }
+
+      const historySource = isRetry
+        ? turns.filter((t) => t.id !== turnId).slice(-4)
+        : turns.slice(-4);
       const historyPayload: AiChatMessage[] = [];
-      for (const t of turns.slice(-4)) {
+      for (const t of historySource) {
         historyPayload.push({ role: 'user', content: t.userPrompt });
         if (t.response?.headline) {
           historyPayload.push({ role: 'assistant', content: t.response.headline });
         }
       }
 
-      setTurns((prev) => [
-        ...prev,
-        { id: turnId, userPrompt: cleanPrompt, isPending: true },
-      ]);
+      if (isRetry) {
+        setTurns((prev) =>
+          prev.map((item) =>
+            item.id === turnId
+              ? {
+                  ...item,
+                  clientRequestId,
+                  error: undefined,
+                  conflictCode: undefined,
+                  isPending: true,
+                }
+              : item,
+          ),
+        );
+      } else {
+        setTurns((prev) => [
+          ...prev,
+          {
+            id: turnId,
+            userPrompt: cleanPrompt,
+            clientRequestId,
+            clarificationChoiceId,
+            isPending: true,
+          },
+        ]);
+      }
       setPromptInput('');
       setIsSending(true);
 
@@ -234,8 +395,8 @@ export default function PmsAiWorkspaceView() {
             method: 'POST',
             body: JSON.stringify({
               prompt: cleanPrompt,
-              conversation_id: conversationId,
-              context_version: contextVersion,
+              conversation_id: effectiveConversationId,
+              context_version: effectiveContextVersion,
               client_request_id: clientRequestId,
               clarification_choice_id: clarificationChoiceId || null,
               session_state: sessionState,
@@ -245,7 +406,7 @@ export default function PmsAiWorkspaceView() {
             }),
           },
         );
-        if (activeRequestSeqRef.current !== reqSeq) {
+        if (activeRequestSeqRef.current !== reqSeq || controller.signal.aborted) {
           return;
         }
         if (res.data.conversation_id) {
@@ -270,19 +431,25 @@ export default function PmsAiWorkspaceView() {
         setTurns((prev) =>
           prev.map((item) =>
             item.id === turnId
-              ? { ...item, response: res.data, isPending: false }
+              ? { ...item, response: res.data, error: undefined, conflictCode: undefined, isPending: false }
               : item,
           ),
         );
       } catch (err) {
-        if (activeRequestSeqRef.current !== reqSeq) {
+        if (activeRequestSeqRef.current !== reqSeq || controller.signal.aborted) {
           return;
         }
         const msg = err instanceof Error ? err.message : 'Unable to reach PMS AI service';
+        const conflictCode: 404 | 409 | undefined =
+          msg.includes('404') || /deleted|no longer available/i.test(msg)
+            ? 404
+            : msg.includes('409') || /stale|conflict|already in progress/i.test(msg)
+            ? 409
+            : undefined;
         setTurns((prev) =>
           prev.map((item) =>
             item.id === turnId
-              ? { ...item, error: msg, isPending: false }
+              ? { ...item, error: msg, conflictCode, isPending: false }
               : item,
           ),
         );
@@ -403,7 +570,11 @@ export default function PmsAiWorkspaceView() {
   return (
     <div className="min-h-full bg-gradient-to-br from-[#EDF4FC] via-[#F5F9FD] to-[#EBF3FA] px-3 py-3 sm:px-5">
       <div className="mx-auto max-w-[1440px]">
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1fr_310px]">
+        <div
+          className={`grid grid-cols-1 gap-4 ${
+            showWatchingPanel ? 'xl:grid-cols-[1fr_310px]' : 'xl:grid-cols-1'
+          }`}
+        >
           {/* Center Workspace Card */}
           <section
             aria-label="PMS AI analytical conversation workspace"
@@ -569,17 +740,31 @@ export default function PmsAiWorkspaceView() {
                   </button>
                 </div>
 
+                <button
+                  type="button"
+                  aria-expanded={showWatchingPanel}
+                  aria-label={showWatchingPanel ? 'Hide AI is watching panel' : 'Show AI is watching panel'}
+                  onClick={() => setShowWatchingPanel((prev) => !prev)}
+                  className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1.5 text-[11px] font-bold shadow-2xs transition-colors ${
+                    showWatchingPanel
+                      ? 'border-sky-200 bg-sky-50 text-sky-700 hover:border-sky-300'
+                      : 'border-slate-200/90 bg-white text-slate-600 hover:border-blue-400 hover:text-blue-600'
+                  }`}
+                >
+                  <ShieldCheck size={12} />
+                  <span>{showWatchingPanel ? 'Hide rail' : 'Show rail'}</span>
+                </button>
+
                 {turns.length > 0 && (
                   <button
                     type="button"
                     onClick={() => {
-                      activeRequestSeqRef.current += 1;
+                      cancelInFlightRequests();
                       if (conversationId) {
                         void apiFetch(`/api/ai/conversations/${conversationId}`, {
                           method: 'DELETE',
                         }).catch(() => undefined);
                       }
-                      setIsSending(false);
                       setTurns([]);
                       setConversationId(null);
                       setContextVersion(0);
@@ -751,7 +936,13 @@ export default function PmsAiWorkspaceView() {
                           </div>
                           <button
                             type="button"
-                            onClick={() => void sendPrompt(turn.userPrompt)}
+                            onClick={() =>
+                              void sendPrompt(turn.userPrompt, turn.clarificationChoiceId, {
+                                retryTurnId: turn.id,
+                                reuseClientRequestId: turn.clientRequestId,
+                                conflictCode: turn.conflictCode,
+                              })
+                            }
                             className="inline-flex items-center gap-1.5 rounded-full border border-rose-300 bg-white px-3 py-1.5 text-[11px] font-bold text-rose-700 shadow-2xs transition-colors hover:bg-rose-100"
                           >
                             <RotateCcw size={12} />
@@ -852,12 +1043,14 @@ export default function PmsAiWorkspaceView() {
           </section>
 
           {/* Compact Right Rail: AI is watching + Guardrails */}
-          <AiWatchingRail
-            alerts={watchingData?.alerts || []}
-            guardrails={watchingData?.guardrails || []}
-            isLoading={isWatchingLoading}
-            onSelectAlert={(prompt) => void sendPrompt(prompt)}
-          />
+          {showWatchingPanel && (
+            <AiWatchingRail
+              alerts={watchingData?.alerts || []}
+              guardrails={watchingData?.guardrails || []}
+              isLoading={isWatchingLoading}
+              onSelectAlert={(prompt) => void sendPrompt(prompt)}
+            />
+          )}
         </div>
       </div>
     </div>

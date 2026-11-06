@@ -1495,7 +1495,7 @@ class AiConversation(Base):
     owner_user_id = Column(String(100), nullable=False, index=True)
     owner_role = Column(String(64), nullable=False, default="Manager")
     status = Column(String(24), nullable=False, default="active")
-    context_version = Column(Integer, nullable=False, default=0)
+    context_version = Column(Integer, nullable=False, default=1, server_default=text("1"))
     confirmed_context = Column(JSON_COMPAT_TYPE, nullable=False, default=dict)
     pending_clarification = Column(JSON_COMPAT_TYPE, nullable=True)
     last_subject_employee_id = Column(String(100), nullable=True)

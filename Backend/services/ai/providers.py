@@ -199,7 +199,7 @@ class GeminiStructuredRouterAdapter:
         calls_made = 0
         t_start = time.perf_counter()
 
-        for model_name in candidate_models[:1]:
+        for model_name in candidate_models:
             calls_made += 1
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
             req = urllib.request.Request(
@@ -252,7 +252,7 @@ class GeminiStructuredRouterAdapter:
             except TimeoutError as exc:
                 elapsed_ms = round((time.perf_counter() - t0) * 1000.0, 2)
                 logger.warning("Gemini router (%s) timed out after %.1f ms", model_name, elapsed_ms)
-                last_result = StructuredRoutingProviderResult(
+                return StructuredRoutingProviderResult(
                     plan=None,
                     metrics=ProviderCallMetrics(
                         provider_used="gemini",
@@ -266,7 +266,7 @@ class GeminiStructuredRouterAdapter:
                 )
             except (json.JSONDecodeError, KeyError, ValueError) as exc:
                 logger.warning("Gemini router (%s) returned invalid structured output: %s", model_name, redact_secrets(str(exc)))
-                last_result = StructuredRoutingProviderResult(
+                return StructuredRoutingProviderResult(
                     plan=None,
                     metrics=ProviderCallMetrics(
                         provider_used="gemini",
@@ -293,6 +293,9 @@ class GeminiStructuredRouterAdapter:
                     ),
                     error_detail=redact_secrets(str(exc)),
                 )
+                http_code = getattr(exc, "code", None)
+                if http_code not in (429, 500, 502, 503, 504):
+                    return last_result
 
         return last_result or StructuredRoutingProviderResult(plan=None)
 
@@ -372,31 +375,69 @@ class DeterministicLocalProviderAdapter:
             metric_lbl = sp.get("metric_label") or "Overall Score"
             rank_metric_lbl = sp.get("ranking_metric_label") or "Overall PMS Score"
 
+            def _fmt_pct(v: float) -> str:
+                if abs(round(v, 2) - round(v, 1)) >= 1e-6:
+                    return f"{v:.2f}%"
+                return f"{v:.1f}%"
+
+            sc_disp = _fmt_pct(sc)
             chg_txt = f", moving {chg:+.1f}% vs {prev_lbl}" if chg is not None else ""
             six_txt = f" ({six_d:+.1f}% since {first_lbl})" if six_d is not None and first_lbl else ""
             ties = list(sp.get("ties") or [])
             tie_txt = f", tied with {', '.join(ties[:2])}" if ties else ""
-            if signals.asks_best_month_history and sp.get("all_history"):
-                best_sc = float(sp.get("best_score") if sp.get("best_score") is not None else sc)
-                best_months = list(sp.get("best_months") or [period])
+            if (signals.asks_best_month_history or signals.asks_worst_month_history) and sp.get("all_history"):
+                is_worst_q = bool(signals.asks_worst_month_history)
+                target_label = "worst" if is_worst_q else "best"
+                extremum_sc = float(
+                    (sp.get("worst_score") if is_worst_q else sp.get("best_score"))
+                    if (sp.get("worst_score") if is_worst_q else sp.get("best_score")) is not None
+                    else sc
+                )
+                extremum_disp = _fmt_pct(extremum_sc)
+                extremum_months = list(
+                    (sp.get("worst_months") if is_worst_q else sp.get("best_months")) or [period]
+                )
                 searched_win = str(sp.get("searched_window") or period)
-                is_best = bool(sp.get("is_asked_period_best"))
-                if is_best:
-                    others = [m for m in best_months if m.casefold() != str(period).casefold()]
-                    best_tie_str = f" (tied with {', '.join(others)})" if others else ""
-                    headline = (
-                        f"Yes. {period} was {e_name}'s ({e_id}{pos_txt}) best month across {searched_win} "
-                        f"in {e_team} at {sc:.1f}%{best_tie_str}."
-                    )
+                missing_months = list(sp.get("missing_months") or [])
+                is_match = bool(
+                    sp.get("is_asked_period_worst") if is_worst_q else sp.get("is_asked_period_best")
+                )
+                win_months_str = (
+                    " and ".join(extremum_months)
+                    if len(extremum_months) <= 2
+                    else ", ".join(extremum_months)
+                )
+                if signals.asks_specific_month_in_prompt:
+                    if is_match:
+                        others = [m for m in extremum_months if m.casefold() != str(period).casefold()]
+                        tie_str = f" (tied with {', '.join(others)})" if others else ""
+                        headline = (
+                            f"Yes. {period} was {e_name}'s ({e_id}{pos_txt}) {target_label} month across {searched_win} "
+                            f"in {e_team} by {rank_metric_lbl} at {sc_disp}{tie_str}."
+                        )
+                    else:
+                        headline = (
+                            f"No. {e_name} ({e_id}{pos_txt}) scored {sc_disp} in {period}, while their {target_label} month across "
+                            f"{searched_win} by {rank_metric_lbl} was {win_months_str} at {extremum_disp}."
+                        )
                 else:
-                    best_str = " and ".join(best_months) if len(best_months) <= 2 else ", ".join(best_months)
+                    tie_note = " (tied)" if len(extremum_months) > 1 else ""
                     headline = (
-                        f"No. {e_name} ({e_id}{pos_txt}) scored {sc:.1f}% in {period}, while their best month across "
-                        f"{searched_win} was {best_str} at {best_sc:.1f}%."
+                        f"{e_name}'s ({e_id}{pos_txt}) {target_label} month across {searched_win} in {e_team} "
+                        f"by {rank_metric_lbl} was {win_months_str}{tie_note} at {extremum_disp}."
                     )
-                hist_pts = [f"{pt['period']}: {float(pt['score']):.1f}%" for pt in (sp.get("all_history") or [])]
+                hist_pts = [
+                    f"{pt['period']}: {_fmt_pct(float(pt.get('raw_score', pt['score'])))}"
+                    for pt in (sp.get("all_history") or [])
+                ]
                 if hist_pts:
-                    bullets.append(f"Full history ({searched_win}): " + " · ".join(hist_pts) + ".")
+                    bullets.append(
+                        f"Full history ({searched_win} · {rank_metric_lbl}): " + " · ".join(hist_pts) + "."
+                    )
+                if missing_months:
+                    bullets.append(
+                        f"Note: {', '.join(missing_months)} had no evaluated score and was excluded rather than treated as 0%."
+                    )
             elif r_dir == "team_trend":
                 if metric_lbl and metric_lbl != "Overall Score":
                     headline = f"{e_team} {metric_lbl} reached {sc:.1f}% in {period}{chg_txt}{six_txt}."

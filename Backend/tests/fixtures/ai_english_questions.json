@@ -1,6 +1,6 @@
 {
   "schema_version": "pms-ai-english-eval-v1",
-  "total_questions": 126,
+  "total_questions": 132,
   "questions": [
     {
       "id": "q001",
@@ -2881,6 +2881,170 @@
         "compare_branch": null,
         "performance_level": "Employee",
         "metric": "pharmacy:atv",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q127",
+      "paraphrase_group": "grp_61",
+      "split": "train",
+      "scope_category": "call_center_pilot",
+      "caller_role": "Manager",
+      "caller_scope": {
+        "role": "Manager",
+        "has_unrestricted_team_access": false,
+        "accessible_functions": [
+          "Call Center"
+        ],
+        "accessible_teams": [
+          "Inbound"
+        ]
+      },
+      "prompt": "Diagnose Inbound KPI gaps in September 2026",
+      "session_state": {
+        "function": "Call Center",
+        "team": "Inbound"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "score_drivers",
+      "expected_filters": {
+        "team": "Inbound",
+        "function": "Call Center",
+        "performance_level": "Employee",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q128",
+      "paraphrase_group": "grp_61",
+      "split": "train",
+      "scope_category": "call_center_pilot",
+      "caller_role": "Manager",
+      "caller_scope": {
+        "role": "Manager",
+        "has_unrestricted_team_access": false,
+        "accessible_functions": [
+          "Call Center"
+        ],
+        "accessible_teams": [
+          "Inbound"
+        ]
+      },
+      "prompt": "What is Outbound Booking Conversion Rate in September 2026?",
+      "session_state": {
+        "function": "Call Center",
+        "team": "Inbound"
+      },
+      "expected_outcome": "restricted_access",
+      "expected_intent": "actual_vs_target",
+      "expected_filters": {
+        "team": "Outbound",
+        "function": "Call Center",
+        "metric": "outbound:booking_rate",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q129",
+      "paraphrase_group": "grp_62",
+      "split": "val",
+      "scope_category": "rcm_pre_approvals",
+      "caller_role": "Function Director",
+      "caller_functions": [
+        "RCM"
+      ],
+      "prompt": "Compare Coding and Submission team scores in September 2026",
+      "session_state": {
+        "function": "RCM"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "compare_teams",
+      "expected_filters": {
+        "team": null,
+        "function": "RCM",
+        "performance_level": "Employee",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q130",
+      "paraphrase_group": "grp_62",
+      "split": "val",
+      "scope_category": "rcm_pre_approvals",
+      "caller_role": "Function Director",
+      "caller_functions": [
+        "RCM"
+      ],
+      "prompt": "What is Inbound Abandon Rate in September 2026?",
+      "session_state": {
+        "function": "RCM"
+      },
+      "expected_outcome": "restricted_access",
+      "expected_intent": "actual_vs_target",
+      "expected_filters": {
+        "team": "Inbound",
+        "metric": "inbound:abandon_rate",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q131",
+      "paraphrase_group": "grp_63",
+      "split": "test",
+      "scope_category": "call_center_pilot",
+      "caller_role": "Branch Director",
+      "caller_branches": [
+        "dubai"
+      ],
+      "prompt": "What is Inbound Booking Conversion Rate in Dubai for September 2026?",
+      "session_state": {
+        "function": "Call Center",
+        "branch": "dubai"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "actual_vs_target",
+      "expected_filters": {
+        "team": "Inbound",
+        "function": "Call Center",
+        "branch": "dubai",
+        "metric": "inbound:booking_rate",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q132",
+      "paraphrase_group": "grp_63",
+      "split": "test",
+      "scope_category": "call_center_pilot",
+      "caller_role": "Branch Director",
+      "caller_branches": [
+        "dubai"
+      ],
+      "prompt": "Compare Dubai and Sharjah Inbound Attendance Rate in September 2026",
+      "session_state": {
+        "function": "Call Center",
+        "branch": "dubai"
+      },
+      "expected_outcome": "restricted_access",
+      "expected_intent": "compare_branches",
+      "expected_filters": {
+        "team": "Inbound",
+        "function": "Call Center",
+        "branch": "dubai",
+        "compare_branch": "sharjah",
+        "metric": "inbound:attendance_rate",
         "periods": [
           "2026-09"
         ]

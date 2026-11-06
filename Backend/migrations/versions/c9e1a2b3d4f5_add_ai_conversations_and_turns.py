@@ -73,6 +73,10 @@ def upgrade() -> None:
                 sa.Column("reviewed_at", sa.DateTime(timezone=True), nullable=True),
             )
         existing_ix = {ix["name"] for ix in insp.get_indexes("ai_interaction_traces")}
+        if "idx_ai_trace_distillation" not in existing_ix and {"is_distillation_eligible", "created_at"}.issubset(existing_cols):
+            op.create_index("idx_ai_trace_distillation", "ai_interaction_traces", ["is_distillation_eligible", "created_at"])
+        if "idx_ai_trace_user_created" not in existing_ix and {"user_id", "created_at"}.issubset(existing_cols):
+            op.create_index("idx_ai_trace_user_created", "ai_interaction_traces", ["user_id", "created_at"])
         if "ix_ai_interaction_traces_turn_id" not in existing_ix:
             op.create_index("ix_ai_interaction_traces_turn_id", "ai_interaction_traces", ["turn_id"])
 
@@ -84,7 +88,7 @@ def upgrade() -> None:
             sa.Column("owner_user_id", sa.String(length=100), nullable=False),
             sa.Column("owner_role", sa.String(length=64), nullable=False, server_default="Manager"),
             sa.Column("status", sa.String(length=24), nullable=False, server_default="active"),
-            sa.Column("context_version", sa.Integer(), nullable=False, server_default="0"),
+            sa.Column("context_version", sa.Integer(), nullable=False, server_default="1"),
             sa.Column("confirmed_context", sa.JSON(), nullable=False),
             sa.Column("pending_clarification", sa.JSON(), nullable=True),
             sa.Column("last_subject_employee_id", sa.String(length=100), nullable=True),
@@ -100,6 +104,12 @@ def upgrade() -> None:
         )
         op.create_index("ix_ai_conversations_owner_user_id", "ai_conversations", ["owner_user_id"])
         op.create_index("idx_ai_conversations_owner_updated", "ai_conversations", ["owner_user_id", "updated_at"])
+    else:
+        existing_conv_ix = {ix["name"] for ix in insp.get_indexes("ai_conversations")}
+        if "ix_ai_conversations_owner_user_id" not in existing_conv_ix:
+            op.create_index("ix_ai_conversations_owner_user_id", "ai_conversations", ["owner_user_id"])
+        if "idx_ai_conversations_owner_updated" not in existing_conv_ix:
+            op.create_index("idx_ai_conversations_owner_updated", "ai_conversations", ["owner_user_id", "updated_at"])
 
     if "ai_turns" not in existing_tables:
         op.create_table(
@@ -135,6 +145,12 @@ def upgrade() -> None:
         )
         op.create_index("ix_ai_turns_conversation_id", "ai_turns", ["conversation_id"])
         op.create_index("idx_ai_turns_conv_created", "ai_turns", ["conversation_id", "created_at"])
+    else:
+        existing_turn_ix = {ix["name"] for ix in insp.get_indexes("ai_turns")}
+        if "ix_ai_turns_conversation_id" not in existing_turn_ix:
+            op.create_index("ix_ai_turns_conversation_id", "ai_turns", ["conversation_id"])
+        if "idx_ai_turns_conv_created" not in existing_turn_ix:
+            op.create_index("idx_ai_turns_conv_created", "ai_turns", ["conversation_id", "created_at"])
 
 
 def downgrade() -> None:

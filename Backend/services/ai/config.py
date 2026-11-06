@@ -18,6 +18,9 @@ if "pytest" not in sys.modules and "PYTEST_CURRENT_TEST" not in os.environ:
     _ENV_PATH = _BACKEND_DIR / ".env"
     if _ENV_PATH.exists():
         load_dotenv(dotenv_path=_ENV_PATH, override=False)
+else:
+    # Ensure unit tests start with cloud routing disabled by default unless monkeypatched by a test
+    os.environ.pop("PMS_AI_GEMINI_ROUTING_ENABLED", None)
 
 RouterModeType = Literal["legacy", "shadow", "hybrid"]
 ClassifierModeType = Literal["off", "shadow", "enabled"]
@@ -92,6 +95,7 @@ class AiRuntimeConfig:
     provider_timeout_seconds: float
     pilot_scopes: frozenset[str]
     redact_raw_prompts: bool
+    conversation_state_enabled: bool = True
 
     @property
     def can_call_gemini(self) -> bool:
@@ -145,7 +149,11 @@ def get_ai_runtime_config() -> AiRuntimeConfig:
     except (TypeError, ValueError):
         timeout_seconds = 4.0
 
-    raw_scopes = os.environ.get("PMS_AI_PILOT_SCOPES", "").strip()
+    raw_scopes = (
+        os.environ.get("PMS_AI_ENABLED_SCOPES")
+        or os.environ.get("PMS_AI_PILOT_SCOPES")
+        or ""
+    ).strip()
     if raw_scopes:
         pilot_scopes = frozenset(
             s.strip().casefold() for s in raw_scopes.split(",") if s.strip()
@@ -155,6 +163,9 @@ def get_ai_runtime_config() -> AiRuntimeConfig:
 
     redact_raw_prompts = _parse_bool(
         os.environ.get("PMS_AI_TRACE_REDACT_RAW_PROMPT"), default=True
+    )
+    conversation_state_enabled = _parse_bool(
+        os.environ.get("PMS_AI_CONVERSATION_STATE_ENABLED"), default=True
     )
 
     return AiRuntimeConfig(
@@ -167,6 +178,7 @@ def get_ai_runtime_config() -> AiRuntimeConfig:
         provider_timeout_seconds=timeout_seconds,
         pilot_scopes=pilot_scopes,
         redact_raw_prompts=redact_raw_prompts,
+        conversation_state_enabled=conversation_state_enabled,
     )
 
 

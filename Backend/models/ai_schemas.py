@@ -62,6 +62,7 @@ OperationKindV2 = Literal[
     "ranking",
     "person_summary",
     "person_best_period",
+    "person_worst_period",
     "person_tenure_check",
     "score_drivers",
     "scorecard_structure",

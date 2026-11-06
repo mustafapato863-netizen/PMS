@@ -22,8 +22,11 @@ from models.ai_schemas import (
 from services.ai.catalog import get_ai_catalog
 from services.ai.conversation_service import (
     AiConversationService,
+    ConversationDeletedError,
+    ConversationMigrationUnavailableError,
     ConversationOwnershipError,
     ConversationStaleContextError,
+    RequestIdReuseConflictError,
     TurnAlreadyInFlightError,
 )
 from services.ai.orchestrator import PmsAiOrchestrator
@@ -91,13 +94,13 @@ def post_ai_chat_turn(
     scope = require_authenticated_scope(db, request)
     try:
         payload = PmsAiOrchestrator(db, scope).run_chat_turn(body)
-    except ConversationOwnershipError as exc:
+    except (ConversationOwnershipError, ConversationDeletedError) as exc:
         release_read_transaction(db)
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    except (ConversationStaleContextError, TurnAlreadyInFlightError) as exc:
+    except (ConversationStaleContextError, RequestIdReuseConflictError, TurnAlreadyInFlightError) as exc:
         release_read_transaction(db)
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
-    except (ProviderUnavailableError, AiProviderUnavailableError) as exc:
+    except (ProviderUnavailableError, AiProviderUnavailableError, ConversationMigrationUnavailableError) as exc:
         release_read_transaction(db)
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
     except InsightAccessError as exc:
@@ -118,9 +121,16 @@ def create_ai_conversation(
 ) -> AiConversationResponse:
     scope = require_authenticated_scope(db, request)
     svc = AiConversationService(db, scope)
-    data = svc.create_conversation(
-        session_state=body.session_state if body is not None else None
-    )
+    try:
+        data = svc.create_conversation(
+            session_state=body.session_state if body is not None else None
+        )
+    except ConversationMigrationUnavailableError as exc:
+        release_read_transaction(db)
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    except InsightAccessError as exc:
+        release_read_transaction(db)
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     release_read_transaction(db)
     return AiConversationResponse(
         success=True,
@@ -140,9 +150,15 @@ def get_ai_conversation_context(
     svc = AiConversationService(db, scope)
     try:
         data = svc.get_conversation_context(conversation_id)
-    except ConversationOwnershipError as exc:
+    except (ConversationOwnershipError, ConversationDeletedError) as exc:
         release_read_transaction(db)
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ConversationMigrationUnavailableError as exc:
+        release_read_transaction(db)
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    except InsightAccessError as exc:
+        release_read_transaction(db)
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     release_read_transaction(db)
     if data is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
@@ -164,9 +180,15 @@ def delete_ai_conversation(
     svc = AiConversationService(db, scope)
     try:
         deleted = svc.delete_conversation(conversation_id)
-    except ConversationOwnershipError as exc:
+    except (ConversationOwnershipError, ConversationDeletedError) as exc:
         release_read_transaction(db)
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ConversationMigrationUnavailableError as exc:
+        release_read_transaction(db)
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    except InsightAccessError as exc:
+        release_read_transaction(db)
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     release_read_transaction(db)
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")

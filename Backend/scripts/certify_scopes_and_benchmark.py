@@ -163,6 +163,9 @@ def run_200_employee_benchmark() -> dict[str, Any]:
             f"sqlite:///{db_path.as_posix()}",
             connect_args={"check_same_thread": False, "timeout": 30},
         )
+        with engine.connect() as conn:
+            conn.exec_driver_sql("PRAGMA journal_mode=WAL;")
+            conn.exec_driver_sql("PRAGMA synchronous=NORMAL;")
         Base.metadata.create_all(bind=engine)
         SessionLocal = sessionmaker(bind=engine)
 
@@ -253,14 +256,14 @@ def run_200_employee_benchmark() -> dict[str, Any]:
                 for req in req_list:
                     with SessionLocal() as db:
                         t0 = time.perf_counter()
-                        PmsAiOrchestrator(db, gm_scope).run_chat_turn(req)
+                        PmsAiOrchestrator(db, gm_scope).run_chat_turn(req.model_copy(deep=True))
                         cold_latencies.append((time.perf_counter() - t0) * 1000.0)
 
                 # 2. Warm cache concurrent measurement (4 concurrent workers x 3 passes = 12 turns per category)
                 def _run_one(r: AiChatRequest) -> float:
                     with SessionLocal() as db:
                         t0 = time.perf_counter()
-                        PmsAiOrchestrator(db, gm_scope).run_chat_turn(r)
+                        PmsAiOrchestrator(db, gm_scope).run_chat_turn(r.model_copy(deep=True))
                         return (time.perf_counter() - t0) * 1000.0
 
                 warm_reqs = req_list * 3

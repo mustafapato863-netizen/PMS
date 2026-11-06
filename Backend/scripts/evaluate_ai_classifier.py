@@ -9,10 +9,14 @@ BACKEND_DIR = Path(__file__).resolve().parents[1]
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
-from models.ai_schemas import ConfirmedQueryContext, SessionFilterContext
+from models.ai_schemas import AiChatRequest, ConfirmedQueryContext, SessionFilterContext
+from models.schemas import CallsData, EvaluationData, GeoBreakdown, GeoData, PerformanceRecord
+from services.ai.catalog import ai_evidence_cache
 from services.ai.classifier import LocalIntentClassifier
 from services.ai.domain_policies import extract_prompt_signals
+from services.ai.orchestrator import PmsAiOrchestrator
 from services.ai.router import HybridQueryRouter
+from services.dashboard_record_service import DashboardRecordService
 
 
 def _legacy_intent_from_signals(prompt: str, session_state: SessionFilterContext) -> str:
@@ -31,6 +35,209 @@ def _legacy_intent_from_signals(prompt: str, session_state: SessionFilterContext
     if primary == "kpi_diagnosis":
         return "actual_vs_target" if sig.detected_kpi else "score_drivers"
     return "current_value"
+
+
+def _build_v2_scenario_fixture_records() -> list[PerformanceRecord]:
+    def _mk(
+        emp_id: str,
+        name: str,
+        team: str,
+        score: float,
+        shj_att: int,
+        shj_book: int,
+        dxb_att: int,
+        dxb_book: int,
+        month: str = "September",
+        position: str = "Call Center Agent",
+        ajm_book: int = 20,
+        ajm_att: int = 15,
+    ) -> PerformanceRecord:
+        tot_att = shj_att + dxb_att
+        tot_book = shj_book + dxb_book
+        att_rate = (tot_att / tot_book) if tot_book > 0 else 0.0
+        return PerformanceRecord(
+            id=f"{team}_{emp_id}_2026_{month[:3]}",
+            employee_id=emp_id,
+            employee_name=name,
+            team=team,
+            month=month,
+            year=2026,
+            region="EGY",
+            position=position,
+            performance_level="Employee",
+            status="Below Target" if score < 80 else "On Track",
+            evaluation=EvaluationData(score=score, grade="C" if score < 80 else "B"),
+            calls=CallsData(inbound=400, total_handled=500, abandoned=15),
+            geo=GeoData(
+                bookings=GeoBreakdown(dubai=dxb_book, sharjah=shj_book, ajman=ajm_book, clinics=10),
+                attended=GeoBreakdown(dubai=dxb_att, sharjah=shj_att, ajman=ajm_att, clinics=8),
+            ),
+            kpi_values=[
+                {
+                    "kpi_key": "Attendance",
+                    "label": "Attendance Rate",
+                    "actual_value": att_rate,
+                    "target_value": 0.65,
+                    "weight_applied": 0.70,
+                    "contribution": min(att_rate / 0.65, 1.0) * 0.70,
+                },
+                {
+                    "kpi_key": "Booking",
+                    "label": "Booking Rate",
+                    "actual_value": 0.28,
+                    "target_value": 0.30,
+                    "weight_applied": 0.10,
+                    "contribution": (0.28 / 0.30) * 0.10,
+                },
+            ],
+        )
+
+    recs: list[PerformanceRecord] = []
+    # Adham Tarek (EMP501): March-September 2026, worst in March (82.0%), best in August (96.5%)
+    for m_name, sc in (
+        ("March", 82.0),
+        ("April", 85.0),
+        ("May", 87.5),
+        ("June", 90.0),
+        ("July", 91.0),
+        ("August", 96.5),
+        ("September", 91.0),
+    ):
+        recs.append(_mk("EMP501", "Adham Tarek", "Inbound", sc, 45, 60, 120, 150, month=m_name, ajm_book=85, ajm_att=65))
+
+    # 3 Mariam/Maryam records in Inbound (for phonetic/disambiguation + Mariam Ali earliest July 2026)
+    for m_name in ("July", "August", "September"):
+        recs.append(_mk("EMP601", "Mariam Ali", "Inbound", 88.0, 30, 50, 80, 100, month=m_name, ajm_book=20, ajm_att=15))
+    for m_name in ("August", "September"):
+        recs.append(_mk("SGHD70231", "Mariam Mohssen Mahmoud", "Inbound", 94.4, 25, 45, 70, 95, month=m_name, ajm_book=10, ajm_att=8))
+    recs.append(_mk("SGHD70250", "Maryam Elsayed Mahmoud Eid", "Inbound", 83.9, 0, 0, 0, 0, month="September", ajm_book=10, ajm_att=8))
+
+    # Support Positions (stored under team="Call Center" with position)
+    recs.append(_mk("EMP701", "Kareem Adel", "Call Center", 62.0, 0, 0, 0, 0, month="September", position="Quality Assurance"))
+    recs.append(_mk("EMP702", "Ziad Nabil", "Call Center", 62.0, 0, 0, 0, 0, month="September", position="Trainer"))
+    recs.append(_mk("EMP703", "Nour Hassan", "Call Center", 93.0, 0, 0, 0, 0, month="September", position="Workforce analyst"))
+
+    # Coding record for RCM Director scenario
+    recs.append(_mk("COD301", "Heba Mostafa", "Coding", 92.1, 0, 0, 0, 0, month="September", position="Medical Coder"))
+    return recs
+
+
+def evaluate_v2_conversation_scenarios() -> dict[str, Any]:
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from config.database import Base
+
+    scenario_path = BACKEND_DIR / "tests" / "fixtures" / "ai_questions" / "conversation_v2_scenarios.jsonl"
+    if not scenario_path.exists():
+        return {"total_scenarios": 0, "by_split": {}, "scenarios": []}
+
+    lines = [
+        json.loads(line)
+        for line in scenario_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(bind=engine)
+    SessionLocal = sessionmaker(bind=engine)
+    records = _build_v2_scenario_fixture_records()
+
+    orig_list_records = DashboardRecordService.list_records
+    orig_list_analysis = DashboardRecordService.list_analysis_records
+    orig_list_index = DashboardRecordService.list_record_index
+    DashboardRecordService.list_records = lambda _self, **_kw: records  # type: ignore[method-assign]
+    DashboardRecordService.list_analysis_records = lambda _self, **_kw: records  # type: ignore[method-assign]
+    DashboardRecordService.list_record_index = lambda _self: None  # type: ignore[method-assign]
+
+    try:
+        ai_evidence_cache.clear()
+        by_split: dict[str, list[bool]] = {"train": [], "val": [], "test": []}
+        scenario_details: list[dict[str, Any]] = []
+
+        with SessionLocal() as db:
+            for item in lines:
+                role = item.get("role") or "General Manager"
+                scope: dict[str, Any] = {
+                    "role": role,
+                    "user_id": f"eval-{item['scenario_id']}",
+                }
+                if item.get("accessible_teams") is not None:
+                    scope["has_unrestricted_team_access"] = False
+                    scope["accessible_functions"] = item.get("accessible_functions") or ["Call Center"]
+                    scope["accessible_teams"] = item["accessible_teams"]
+                elif item.get("accessible_functions") is not None:
+                    scope["has_unrestricted_team_access"] = False
+                    scope["accessible_functions"] = item["accessible_functions"]
+                else:
+                    scope["has_unrestricted_team_access"] = True
+
+                if item.get("accessible_branches") is not None:
+                    scope["accessible_branches"] = item["accessible_branches"]
+                    scope["allowed_branches"] = item["accessible_branches"]
+
+                ss_dict = dict(item.get("session_state") or {"function": "Call Center"})
+                if item.get("prior_confirmed_query"):
+                    ss_dict["last_confirmed_query"] = ConfirmedQueryContext(**item["prior_confirmed_query"])
+                ss = SessionFilterContext(**ss_dict)
+
+                res = PmsAiOrchestrator(db, scope).run_chat_turn(
+                    AiChatRequest(prompt=item["prompt"], session_state=ss)
+                )
+
+                outcome_ok = res.outcome == item["expected_outcome"]
+                clar_ok = True
+                if item.get("expected_clarification_code"):
+                    actual_code = res.clarification.code if res.clarification else None
+                    clar_ok = actual_code == item["expected_clarification_code"]
+
+                op_ok = True
+                if item.get("expected_operation_kind") and res.validated_plan_v2:
+                    op_kinds = [op.kind for op in res.validated_plan_v2.operations]
+                    op_ok = item["expected_operation_kind"] in op_kinds
+
+                zero_reads_ok = True
+                if item.get("zero_performance_reads"):
+                    zero_reads_ok = len(res.tool_calls) == 0
+
+                must_contain_ok = True
+                full_text = f"{res.headline} {' '.join(res.narrative_bullets)}".casefold()
+                for token in item.get("expected_must_contain") or []:
+                    if str(token).casefold() not in full_text:
+                        must_contain_ok = False
+                        break
+
+                passed = bool(outcome_ok and clar_ok and op_ok and zero_reads_ok and must_contain_ok)
+                split_key = item.get("split", "test")
+                by_split.setdefault(split_key, []).append(passed)
+                scenario_details.append(
+                    {
+                        "scenario_id": item["scenario_id"],
+                        "split": split_key,
+                        "passed": passed,
+                        "actual_outcome": res.outcome,
+                        "headline": res.headline,
+                    }
+                )
+
+        total_passed = sum(1 for s in scenario_details if s["passed"])
+        return {
+            "total_scenarios": len(scenario_details),
+            "passed_scenarios": total_passed,
+            "exact_match_pct": round(100.0 * total_passed / len(scenario_details), 2) if scenario_details else 0.0,
+            "by_split": {
+                k: {
+                    "matched": sum(v),
+                    "total": len(v),
+                    "pct": round(100.0 * sum(v) / len(v), 2) if v else 0.0,
+                }
+                for k, v in by_split.items()
+            },
+            "scenarios": scenario_details,
+        }
+    finally:
+        DashboardRecordService.list_records = orig_list_records  # type: ignore[method-assign]
+        DashboardRecordService.list_analysis_records = orig_list_analysis  # type: ignore[method-assign]
+        DashboardRecordService.list_record_index = orig_list_index  # type: ignore[method-assign]
+        engine.dispose()
 
 
 def run_classifier_evaluation() -> dict[str, Any]:
@@ -163,6 +370,7 @@ def run_classifier_evaluation() -> dict[str, Any]:
         },
         "promotion_decision": "PROMOTE" if promote_classifier else "DO_NOT_PROMOTE_KEEP_HYBRID_RULES",
         "runtime_dependency_added": promote_classifier,
+        "v2_conversation_scenarios": evaluate_v2_conversation_scenarios(),
     }
 
 

@@ -477,6 +477,7 @@ class PmsAiCatalog:
                         "ranking",
                         "person_summary",
                         "person_best_period",
+                        "person_worst_period",
                     ),
                 )
             )
@@ -578,6 +579,10 @@ class PmsAiCatalog:
             scale = "ratio_0_1"
             agg_sem = "simple_average"
 
+        is_certified_cc_emp = (
+            team_name in ("Inbound", "Outbound", "Support Positions", "Call Center")
+            and str(performance_level or "Employee").strip().casefold() == "employee"
+        )
         self._register_metric(
             CatalogMetricDefinition(
                 metric_id=metric_id,
@@ -598,6 +603,7 @@ class PmsAiCatalog:
                 value_kind=val_kind,
                 storage_scale=scale,
                 aggregation=agg_sem,
+                status="verified" if is_certified_cc_emp else "unverified",
             )
         )
 
@@ -714,7 +720,12 @@ class PmsAiCatalog:
         return None
 
     def get_scope_certification_registry(self) -> list[dict[str, Any]]:
-        """Returns the scope certification matrix across all PMS teams, functions, and BSC levels."""
+        """Returns the scope certification matrix across all PMS teams, functions, and BSC levels.
+
+        Separates configuration allowlisting (`enabled`) from end-to-end evidence certification (`certified`).
+        Only scopes where source mappings, metric semantics, calculations, permissions, periods,
+        and destination links have been verified against PMS evidence are marked `certified = True`.
+        """
         ordered_teams = [
             "Inbound",
             "Outbound",
@@ -735,24 +746,76 @@ class PmsAiCatalog:
             "IT",
             "Offshore Admin & Management",
         ]
+        fully_certified_teams = {"Inbound", "Outbound", "Support Positions"}
+        partial_evidence_teams = {
+            "Coding",
+            "Pre-Approvals IP Offshore",
+            "Marketing",
+            "Pharmacy",
+        }
         cfg = get_ai_runtime_config()
         rows: list[dict[str, Any]] = []
         for t_name in ordered_teams:
             t_def = self.teams.get(t_name) or self.teams.get(t_name.casefold())
+            fn_name = t_def.function if t_def else (function_for_team(t_name) or t_name)
             t_metrics = self.metrics_by_team.get(t_name.casefold(), [])
             scored_metrics = [m for m in t_metrics if m.contributes_to_score]
             tracking_metrics = [m for m in t_metrics if not m.contributes_to_score]
+            perf_levels = list(t_def.performance_levels) if t_def else ["Employee"]
+
+            is_enabled = bool(cfg.is_scope_enabled(t_name) or cfg.is_scope_enabled(fn_name))
+            is_certified = t_name in fully_certified_teams
+            if is_certified:
+                cert_status = "certified"
+                verified_levels = ["Employee"]
+                gates = {
+                    "source_mappings": True,
+                    "metric_semantics": True,
+                    "calculations": True,
+                    "permissions": True,
+                    "periods": True,
+                    "destination_links": True,
+                }
+            elif t_name in partial_evidence_teams:
+                cert_status = "partial_evidence"
+                verified_levels = []
+                gates = {
+                    "source_mappings": True,
+                    "metric_semantics": True,
+                    "calculations": False,
+                    "permissions": True,
+                    "periods": False,
+                    "destination_links": True,
+                }
+            else:
+                cert_status = "unverified"
+                verified_levels = []
+                gates = {
+                    "source_mappings": True,
+                    "metric_semantics": False,
+                    "calculations": False,
+                    "permissions": True,
+                    "periods": False,
+                    "destination_links": False,
+                }
+            unverified_levels = [lvl for lvl in perf_levels if lvl not in verified_levels]
             rows.append(
                 {
                     "team": t_name,
-                    "function": t_def.function if t_def else (function_for_team(t_name) or t_name),
+                    "function": fn_name,
                     "region": t_def.region if t_def else "UAE",
                     "positions": list(t_def.positions) if t_def else [],
-                    "performance_levels": list(t_def.performance_levels) if t_def else ["Employee"],
+                    "performance_levels": perf_levels,
+                    "verified_levels": verified_levels,
+                    "unverified_levels": unverified_levels,
                     "supports_branches": bool(t_def.supports_branches) if t_def else False,
                     "scored_kpi_count": len(scored_metrics),
                     "tracking_only_kpi_count": len(tracking_metrics),
-                    "certified": bool(cfg.is_scope_enabled(t_name)),
+                    "enabled": is_enabled,
+                    "certified": is_certified,
+                    "certification_status": cert_status,
+                    "status": "verified" if is_certified else cert_status,
+                    "verification_gates": gates,
                 }
             )
         return rows

@@ -96,6 +96,8 @@ class ParsedPromptSignals:
     asks_branch_comparison: bool = False
     asks_booking_count: bool = False
     asks_best_month_history: bool = False
+    asks_worst_month_history: bool = False
+    asks_specific_month_in_prompt: bool = False
     asks_decisions_or_what_if: bool = False
     asks_best_agent: bool = False
     asks_worst_agent: bool = False
@@ -169,7 +171,15 @@ def extract_prompt_signals(prompt: str, session_state: SessionFilterContext) -> 
     ):
         signals.asks_booking_count = True
 
-    if re.search(r"\b(?:best|highest|peak|strongest|worst|lowest)\s+month\b", lower):
+    if re.search(
+        r"\b(?:worst|lowest|weakest|poorest|bottom)\s+month\b|\bwhich\s+month\b.*\b(?:worst|lowest|weakest|poorest|bottom)\b|\bwhat\s+month\b.*\b(?:worst|lowest|weakest|poorest|bottom)\b",
+        lower,
+    ):
+        signals.asks_worst_month_history = True
+    elif re.search(
+        r"\b(?:best|highest|peak|strongest)\s+month\b|\bwhich\s+month\b.*\b(?:best|highest|peak|strongest)\b|\bwhat\s+month\b.*\b(?:best|highest|peak|strongest)\b",
+        lower,
+    ):
         signals.asks_best_month_history = True
 
     if any(
@@ -231,6 +241,7 @@ def extract_prompt_signals(prompt: str, session_state: SessionFilterContext) -> 
     for alias, canonical_month in MONTH_ALIASES.items():
         if re.search(rf"(?<![a-z0-9]){re.escape(alias)}(?![a-z0-9])", lower):
             signals.detected_month = canonical_month
+            signals.asks_specific_month_in_prompt = True
             break
     year_match = re.search(r"\b(202[4-9])\b", lower)
     if year_match:

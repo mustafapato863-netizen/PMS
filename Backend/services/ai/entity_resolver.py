@@ -95,6 +95,8 @@ _PERSON_STOPWORDS: frozenset[str] = frozenset(
         "when",
         "why",
         "the",
+        "a",
+        "an",
         "and",
         "for",
         "in",
@@ -259,9 +261,6 @@ def build_employee_candidates_from_records(
         if score_val is None:
             ev_obj = getattr(rec, "evaluation", None)
             score_val = getattr(ev_obj, "score", None) if ev_obj is not None else None
-        if score_val is None:
-            score_val = 0.0
-        score_f = round(float(score_val), 2)
 
         entry = by_emp.setdefault(
             emp_id,
@@ -273,11 +272,15 @@ def build_employee_candidates_from_records(
                 "position": raw_pos,
                 "branch": getattr(rec, "branch", None),
                 "period_scores": {},
+                "missing_periods": set(),
             },
         )
         if raw_pos and not entry.get("position"):
             entry["position"] = raw_pos
-        entry["period_scores"][pk] = score_f
+        if score_val is not None:
+            entry["period_scores"][pk] = float(score_val)
+        else:
+            entry["missing_periods"].add(pk)
 
     total_window_periods = sorted(all_observed_periods) or ["2026-09"]
     window_label = format_period_window_label(total_window_periods)
@@ -292,15 +295,15 @@ def build_employee_candidates_from_records(
         latest_p = ordered_p[-1]
         max_score = max(p_scores.values())
         min_score = min(p_scores.values())
-        best_p_keys = [p for p in ordered_p if abs(p_scores[p] - max_score) < 1e-6]
-        worst_p_keys = [p for p in ordered_p if abs(p_scores[p] - min_score) < 1e-6]
+        best_p_keys = [p for p in ordered_p if abs(p_scores[p] - max_score) < 1e-9]
+        worst_p_keys = [p for p in ordered_p if abs(p_scores[p] - min_score) < 1e-9]
         best_p = best_p_keys[-1]
         worst_p = worst_p_keys[0]
         best_ties = [format_period_label(p) for p in best_p_keys] if len(best_p_keys) > 1 else []
         worst_ties = [format_period_label(p) for p in worst_p_keys] if len(worst_p_keys) > 1 else []
 
         emp_window = format_period_window_label(ordered_p) if len(ordered_p) >= 2 else window_label
-        missing_cnt = max(0, len(total_window_periods) - len(ordered_p))
+        missing_cnt = max(len(info.get("missing_periods") or set()), len(total_window_periods) - len(ordered_p))
 
         candidates.append(
             EmployeeHistoryCandidate(
@@ -335,6 +338,31 @@ def build_employee_candidates_from_records(
     return candidates
 
 
+_TRANSLITERATION_EQUIVALENTS: dict[str, str] = {
+    "mariam": "mariam",
+    "maryam": "mariam",
+    "meryem": "mariam",
+    "mohamed": "mohamed",
+    "mohammed": "mohamed",
+    "muhammad": "mohamed",
+    "mohamad": "mohamed",
+    "ahmed": "ahmed",
+    "ahmad": "ahmed",
+    "sara": "sara",
+    "sarah": "sara",
+    "youssef": "youssef",
+    "yousef": "youssef",
+    "yusef": "youssef",
+    "abdelrahman": "abdelrahman",
+    "abdulrahman": "abdelrahman",
+}
+
+
+def _normalize_name_token(token: str) -> str:
+    norm = (token or "").strip().casefold()
+    return _TRANSLITERATION_EQUIVALENTS.get(norm, norm)
+
+
 def extract_person_token_from_prompt(prompt: str) -> str | None:
     """Extract a likely person name or employee code token from natural English questions."""
     text = (prompt or "").strip()
@@ -347,7 +375,7 @@ def extract_person_token_from_prompt(prompt: str) -> str | None:
 
     # 2. Possessive pattern: "<Name>'s best month", "<Name>'s position", "<Name>'s score"
     poss_match = re.search(
-        r"\b([a-z][a-z]+(?:\s+[a-z][a-z]+)?)'s\s+(?:best|worst|lowest|highest|position|score|performance|history|record|month|trend)\b",
+        r"\b([a-z][a-z]+(?:\s+[a-z][a-z]+){0,3})'s\s+(?:best|worst|lowest|highest|position|score|performance|history|record|month|trend)\b",
         lower,
     )
     if poss_match:
@@ -356,11 +384,16 @@ def extract_person_token_from_prompt(prompt: str) -> str | None:
         if tokens:
             return " ".join(tokens)
 
-    # 3. Joiner / tenure pattern: "Is <Name> a new joiner", "Did <Name> join"
+    # 3. Joiner / tenure pattern: "Is <Name> [a] new joiner", "<Name> is [a] new joiner", "Did <Name> join"
     joiner_match = re.search(
-        r"\b(?:is|was|did)\s+([a-z][a-z]+(?:\s+[a-z][a-z]+)?)\s+(?:a\s+new\s+joiner|join(?:ed)?\b|new\s+in\b)",
+        r"\b(?:is|was|did)\s+([a-z][a-z]+(?:\s+[a-z][a-z]+){0,3})\s+(?:(?:a\s+)?new\s+joiner|join(?:ed)?\b|new\s+in\b)",
         lower,
     )
+    if not joiner_match:
+        joiner_match = re.search(
+            r"\b([a-z][a-z]+(?:\s+[a-z][a-z]+){0,3})\s+(?:is|was)\s+(?:a\s+)?new\s+joiner\b",
+            lower,
+        )
     if joiner_match:
         raw_tok = joiner_match.group(1).strip()
         tokens = [w for w in raw_tok.split() if w not in _PERSON_STOPWORDS]
@@ -369,7 +402,7 @@ def extract_person_token_from_prompt(prompt: str) -> str | None:
 
     # 4. "for <Name>" or "about <Name>" when asking best month / score / position
     for_match = re.search(
-        r"\b(?:for|about|of)\s+([a-z][a-z]+(?:\s+[a-z][a-z]+)?)(?:\s+in\b|\s+during\b|[\s?.!]*$)",
+        r"\b(?:for|about|of)\s+([a-z][a-z]+(?:\s+[a-z][a-z]+){0,3})(?:\s+in\b|\s+during\b|[\s?.!]*$)",
         lower,
     )
     if for_match:
@@ -460,6 +493,36 @@ def resolve_employee_from_candidates(
 
     extracted = extract_person_token_from_prompt(prompt)
 
+    # 3b. Multi-token partial name match (e.g. 'Maryam Elsayed' matching 'Maryam Elsayed Mahmoud Eid')
+    candidate_words = [
+        w for w in re.findall(r"\b[a-z]{3,}\b", (extracted or lower).casefold())
+        if w not in _PERSON_STOPWORDS
+    ]
+    if len(candidate_words) >= 2:
+        norm_query_words = [_normalize_name_token(w) for w in candidate_words]
+        multi_matches = [
+            c
+            for c in candidates
+            if all(
+                qw in {_normalize_name_token(part) for part in c.employee_name.split()}
+                for qw in norm_query_words
+            )
+        ]
+        if len(multi_matches) == 1:
+            return EmployeeResolutionResult(
+                status="unique",
+                matched_employee=multi_matches[0],
+                candidates=multi_matches,
+                extracted_token=multi_matches[0].employee_name,
+            )
+        if len(multi_matches) > 1:
+            return EmployeeResolutionResult(
+                status="ambiguous",
+                matched_employee=None,
+                candidates=multi_matches[:4],
+                extracted_token=" ".join(w.title() for w in candidate_words),
+            )
+
     # 4. Exact first-name or last-name token match across candidates
     search_tokens: list[str] = []
     if extracted:
@@ -470,11 +533,13 @@ def resolve_employee_from_candidates(
                 search_tokens.append(word)
 
     for tok in search_tokens:
+        tok_norm = _normalize_name_token(tok)
         token_matches = [
             c
             for c in candidates
             if tok == c.employee_name.casefold()
             or tok in [part.casefold() for part in c.employee_name.split()]
+            or tok_norm in [_normalize_name_token(part) for part in c.employee_name.split()]
         ]
         if len(token_matches) == 1:
             return EmployeeResolutionResult(
@@ -487,7 +552,7 @@ def resolve_employee_from_candidates(
             return EmployeeResolutionResult(
                 status="ambiguous",
                 matched_employee=None,
-                candidates=token_matches[:3],
+                candidates=token_matches[:4],
                 extracted_token=tok.title(),
             )
 

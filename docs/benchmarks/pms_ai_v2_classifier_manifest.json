@@ -1,45 +1,45 @@
 {
   "paraphrase_split_zero_leakage": true,
   "paraphrase_groups_per_split": {
-    "train": 27,
-    "val": 11,
-    "test": 23
+    "train": 28,
+    "val": 12,
+    "test": 24
   },
   "splits": {
     "train": {
-      "total_questions": 57,
-      "legacy_router_exact_match_pct": 40.35,
+      "total_questions": 59,
+      "legacy_router_exact_match_pct": 40.68,
       "hybrid_router_exact_match_pct": 100.0,
       "hybrid_router_provider_calls": 2,
       "classifier_backend": "numpy-tfidf-l2-logreg",
       "classifier_confidence_threshold": 0.35,
-      "classifier_accepted_count": 20,
+      "classifier_accepted_count": 22,
       "classifier_abstained_count": 37,
       "classifier_accepted_exact_match_pct": 100.0,
       "classifier_overall_exact_match_pct": 100.0,
       "provider_call_reduction_vs_hybrid_pct": -1750.0
     },
     "val": {
-      "total_questions": 22,
-      "legacy_router_exact_match_pct": 54.55,
+      "total_questions": 24,
+      "legacy_router_exact_match_pct": 50.0,
       "hybrid_router_exact_match_pct": 100.0,
       "hybrid_router_provider_calls": 1,
       "classifier_backend": "numpy-tfidf-l2-logreg",
       "classifier_confidence_threshold": 0.35,
-      "classifier_accepted_count": 3,
-      "classifier_abstained_count": 19,
+      "classifier_accepted_count": 4,
+      "classifier_abstained_count": 20,
       "classifier_accepted_exact_match_pct": 100.0,
       "classifier_overall_exact_match_pct": 100.0,
-      "provider_call_reduction_vs_hybrid_pct": -1800.0
+      "provider_call_reduction_vs_hybrid_pct": -1900.0
     },
     "test": {
-      "total_questions": 47,
-      "legacy_router_exact_match_pct": 31.91,
+      "total_questions": 49,
+      "legacy_router_exact_match_pct": 32.65,
       "hybrid_router_exact_match_pct": 100.0,
       "hybrid_router_provider_calls": 2,
       "classifier_backend": "numpy-tfidf-l2-logreg",
       "classifier_confidence_threshold": 0.35,
-      "classifier_accepted_count": 14,
+      "classifier_accepted_count": 16,
       "classifier_abstained_count": 33,
       "classifier_accepted_exact_match_pct": 100.0,
       "classifier_overall_exact_match_pct": 100.0,
@@ -58,5 +58,27 @@
     "passes_overall_gate": true
   },
   "promotion_decision": "DO_NOT_PROMOTE_KEEP_HYBRID_RULES",
-  "runtime_dependency_added": false
+  "runtime_dependency_added": false,
+  "v2_conversation_scenarios": {
+    "total_scenarios": 20,
+    "passed_scenarios": 20,
+    "exact_match_pct": 100.0,
+    "by_split": {
+      "train": {
+        "matched": 1,
+        "total": 1,
+        "pct": 100.0
+      },
+      "val": {
+        "matched": 2,
+        "total": 2,
+        "pct": 100.0
+      },
+      "test": {
+        "matched": 17,
+        "total": 17,
+        "pct": 100.0
+      }
+    }
+  }
 }
