@@ -25,7 +25,11 @@ ClarificationCodeType = Literal[
     "AMBIGUOUS_ATTENDANCE_DEFINITION",
     "AMBIGUOUS_TEAM_SCOPE",
     "AMBIGUOUS_KPI_SCOPE",
+    "AMBIGUOUS_PERSON",
+    "AMBIGUOUS_RANKING_METRIC",
+    "AMBIGUOUS_COUNT_VS_RATE",
     "MISSING_COMPARISON_PERIOD",
+    "MISSING_HR_JOIN_DATE",
     "RESTRICTED_SCOPE_SUGGESTION",
     "UNAVAILABLE_PERIOD_SUGGESTION",
 ]
@@ -37,6 +41,75 @@ TurnOutcomeType = Literal[
     "unavailable_data",
     "unsupported_request",
 ]
+
+TurnKindV2 = Literal[
+    "social",
+    "analytical",
+    "clarification",
+    "correction",
+    "unsupported",
+]
+
+OperationKindV2 = Literal[
+    "greeting",
+    "thanks",
+    "current_value",
+    "actual_vs_target",
+    "compare_periods",
+    "compare_branches",
+    "compare_teams",
+    "trend",
+    "ranking",
+    "person_summary",
+    "person_best_period",
+    "person_tenure_check",
+    "score_drivers",
+    "scorecard_structure",
+    "corrective_actions",
+]
+
+MetricValueKindType = Literal[
+    "count",
+    "rate",
+    "duration",
+    "currency",
+    "score",
+    "diagnostic_indicator",
+]
+
+
+class QueryScopeV2(BaseModel):
+    function: str | None = "Call Center"
+    team: str | None = None
+    position_group: str | None = None
+    position: str | None = None
+    performance_level: Literal["Employee", "Managerial", "Corporate"] = "Employee"
+    branches: list[str] = Field(default_factory=list)
+    periods: list[str] = Field(default_factory=list)
+    period_window: Literal["explicit", "latest_published", "all_published", "trailing_6_months"] = "latest_published"
+    employee_id: str | None = None
+    employee_placeholder: str | None = None
+
+
+class QueryOperationV2(BaseModel):
+    operation_id: str
+    kind: OperationKindV2
+    metric_id: str | None = None
+    value_kind: MetricValueKindType | None = None
+    dimension: Literal["employee", "position", "team", "branch", "period", "kpi"] | None = None
+    direction: Literal["best", "worst", "higher", "lower"] | None = None
+    limit: int = Field(default=1, ge=1, le=10)
+    include_ties: bool = True
+
+
+class ValidatedQueryPlanV2(BaseModel):
+    schema_version: Literal["pms-ai-query-v2"] = "pms-ai-query-v2"
+    turn_kind: TurnKindV2 = "analytical"
+    scope: QueryScopeV2 = Field(default_factory=QueryScopeV2)
+    operations: list[QueryOperationV2] = Field(default_factory=list, max_length=2)
+    clarification_code: ClarificationCodeType = "NONE"
+    resolution_source: Literal["local_rules", "local_classifier", "gemini_router", "clarification_choice"] = "local_rules"
+    confidence: float = Field(default=1.0, ge=0.0, le=1.0)
 
 
 class ClarificationChoice(BaseModel):
@@ -50,6 +123,8 @@ class ClarificationChoice(BaseModel):
     performance_level: str | None = None
     period: str | None = None
     branch: str | None = None
+    employee_id: str | None = None
+    employee_name: str | None = None
 
 
 class AiClarificationPrompt(BaseModel):
@@ -64,6 +139,7 @@ class ConfirmedQueryContext(BaseModel):
     function: str | None = None
     position: str | None = None
     branch: str | None = None
+    branches: list[str] = Field(default_factory=list)
     performance_level: str | None = None
     metric_id: str | None = None
     metric_display_name: str | None = None
@@ -71,7 +147,11 @@ class ConfirmedQueryContext(BaseModel):
     comparison_type: Literal["period", "branch", "team", "none"] | None = "none"
     ranking_direction: Literal["best", "worst"] = "best"
     single_person: bool = False
+    last_subject_employee_id: str | None = None
+    last_subject_employee_name: str | None = None
+    last_operation_kind: str | None = None
     pending_clarification_code: ClarificationCodeType | None = None
+    pending_clarification_choices: list[ClarificationChoice] = Field(default_factory=list)
     inherited_filters: list[str] = Field(default_factory=list)
 
 
@@ -83,12 +163,17 @@ class StructuredQueryPlan(BaseModel):
     position: str | None = None
     branch: str | None = None
     compare_branch: str | None = None
+    branches: list[str] = Field(default_factory=list)
     performance_level: str | None = None
     metric: str | None = None
     periods: list[str] = Field(default_factory=list)
     ranking_direction: Literal["best", "worst"] = "best"
     single_person: bool = False
+    employee_id: str | None = None
+    employee_name: str | None = None
     employee_placeholder: str | None = None
+    turn_kind_v2: TurnKindV2 = "analytical"
+    operation_kind_v2: OperationKindV2 | None = None
     clarification_code: ClarificationCodeType = "NONE"
     asks_decisions: bool = False
 
@@ -142,6 +227,10 @@ class AiChatRequest(BaseModel):
     history: list[AiChatMessage] = Field(default_factory=list, max_length=12)
     provider_override: Literal["auto", "gemini", "openai", "local_ollama", "deterministic"] | None = "auto"
     answer_detail: Literal["auto", "brief", "details"] | None = "auto"
+    conversation_id: str | None = Field(default=None, max_length=100)
+    client_request_id: str | None = Field(default=None, max_length=100)
+    context_version: int | None = Field(default=None, ge=0)
+    clarification_choice_id: str | None = Field(default=None, max_length=120)
 
 
 class AiBarItem(BaseModel):
@@ -256,6 +345,32 @@ class DeepLinkCta(BaseModel):
     icon_key: Literal["insights", "team", "employee", "planning", "actions", "bsc"] = "insights"
 
 
+class EvidenceItemV2(BaseModel):
+    operation_id: str
+    outcome: Literal["ok", "empty", "restricted", "unavailable", "unverified_capability"] = "ok"
+    scope: QueryScopeV2 = Field(default_factory=QueryScopeV2)
+    metric_id: str | None = None
+    metric_display_name: str | None = None
+    value_kind: str | None = None
+    unit: str | None = None
+    headline_value: float | str | None = None
+    headline_display: str | None = None
+    target_value: float | None = None
+    target_display: str | None = None
+    achievement_percent: float | None = None
+    weight_percent: float | None = None
+    contributes_to_score: bool = True
+    rows: list[dict[str, Any]] = Field(default_factory=list)
+    ties: list[str] = Field(default_factory=list)
+    record_count: int = 0
+    missing_count: int = 0
+    publication_id: str | None = None
+    revision_id: str | None = None
+    aggregation_version: str = "v2"
+    source_link: DeepLinkCta | None = None
+    notes: list[str] = Field(default_factory=list)
+
+
 class AiToolCallRecord(BaseModel):
     tool_name: str
     arguments: dict[str, Any] = Field(default_factory=dict)
@@ -284,6 +399,9 @@ class AiProviderUsageMetrics(BaseModel):
 
 class AiChatResponsePayload(BaseModel):
     trace_id: str
+    conversation_id: str | None = None
+    turn_id: str | None = None
+    context_version: int = 0
     outcome: TurnOutcomeType = "answer"
     answer_detail: Literal["brief", "details"] = "details"
     headline: str
@@ -298,7 +416,9 @@ class AiChatResponsePayload(BaseModel):
     inherited_filters: list[str] = Field(default_factory=list)
     clarification: AiClarificationPrompt | None = None
     structured_query: StructuredQueryPlan | None = None
+    validated_plan_v2: ValidatedQueryPlanV2 | None = None
     typed_evidence: list[TypedMetricEvidence] = Field(default_factory=list)
+    evidence_envelope_v2: list[EvidenceItemV2] = Field(default_factory=list)
     domain_guardrail_notes: list[str] = Field(default_factory=list)
     tool_calls: list[AiToolCallRecord] = Field(default_factory=list)
     provider_used: str = "deterministic"
@@ -400,3 +520,76 @@ class AiDistillationExportResponse(BaseModel):
     success: bool = True
     total_exported: int
     records: list[AiDistillationRecord] = Field(default_factory=list)
+
+
+class AiConversationCreateRequest(BaseModel):
+    session_state: SessionFilterContext = Field(default_factory=SessionFilterContext)
+
+
+class AiConversationContextPayload(BaseModel):
+    conversation_id: str
+    owner_user_id: str
+    status: Literal["active", "archived", "deleted"] = "active"
+    context_version: int = 0
+    confirmed_context: ConfirmedQueryContext = Field(default_factory=ConfirmedQueryContext)
+    pending_clarification: AiClarificationPrompt | None = None
+    last_subject_employee_id: str | None = None
+    last_subject_employee_name: str | None = None
+    last_operation_kind: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+class AiConversationResponse(BaseModel):
+    success: bool = True
+    message: str = "Conversation loaded"
+    data: AiConversationContextPayload
+
+
+class AiCatalogMetricItem(BaseModel):
+    metric_id: str
+    kpi_key: str
+    display_name: str
+    team: str
+    function: str
+    position: str | None = None
+    performance_level: str = "Employee"
+    value_kind: MetricValueKindType = "rate"
+    unit: str = "%"
+    storage_scale: str = "ratio_0_1"
+    direction: str = "higher_better"
+    aggregation: str = "ratio_of_sums"
+    weight_percent: float = 0.0
+    contributes_to_score: bool = True
+    available_operations: list[str] = Field(default_factory=list)
+    status: Literal["verified", "partial", "unverified", "unavailable"] = "verified"
+
+
+class AiCatalogPayload(BaseModel):
+    eligible_teams: list[AiEligibleTeamItem] = Field(default_factory=list)
+    eligible_functions: list[str] = Field(default_factory=list)
+    eligible_branches: list[str] = Field(default_factory=list)
+    eligible_levels: list[str] = Field(default_factory=list)
+    metrics: list[AiCatalogMetricItem] = Field(default_factory=list)
+    capabilities: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class AiCatalogResponse(BaseModel):
+    success: bool = True
+    message: str = "Authorized AI catalog loaded"
+    data: AiCatalogPayload
+
+
+class AiTraceReviewRequest(BaseModel):
+    reviewer_verified: bool = True
+    notes: str | None = Field(default=None, max_length=240)
+
+
+class AiTraceReviewResponse(BaseModel):
+    success: bool = True
+    message: str = "Trace review updated"
+    trace_id: str
+    reviewer_verified: bool
+    reviewer_id: str
+    reviewed_at: str
+    is_distillation_eligible: bool

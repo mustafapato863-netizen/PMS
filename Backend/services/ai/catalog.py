@@ -12,7 +12,13 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from config.loader import load_all_team_configs
-from models.ai_schemas import AiEligibleTeamItem, TypedMetricEvidence
+from models.ai_schemas import (
+    AiCatalogMetricItem,
+    AiCatalogPayload,
+    AiEligibleTeamItem,
+    MetricValueKindType,
+    TypedMetricEvidence,
+)
 from services.ai.config import get_ai_runtime_config
 from services.cache_invalidation_service import CacheInvalidationService
 from services.evaluation.cache_identity import evaluation_cache_identity
@@ -61,6 +67,18 @@ class CatalogMetricDefinition:
     tracking_only_note: str | None = None
     effective_from: str | None = None
     aliases: tuple[str, ...] = ()
+    value_kind: MetricValueKindType = "rate"
+    storage_scale: str = "ratio_0_1"
+    aggregation: str = "ratio_of_sums"
+    available_operations: tuple[str, ...] = (
+        "current_value",
+        "actual_vs_target",
+        "compare_periods",
+        "compare_branches",
+        "trend",
+        "ranking",
+    )
+    status: str = "verified"
 
 
 @dataclass(frozen=True)
@@ -85,11 +103,13 @@ TEAM_ENGLISH_ALIASES: dict[str, tuple[str, ...]] = {
     "Inbound": ("inbound", "inbound team", "inbound call center", "inbound agents"),
     "Outbound": ("outbound", "outbound team", "outbound call center", "outbound agents"),
     "Support Positions": (
+        "support",
         "support positions",
         "call center support positions",
         "call center support",
         "support roles",
         "support position",
+        "support team",
     ),
     "Call Center": ("call center", "contact center", "cc"),
     "RCM": ("rcm", "revenue cycle", "revenue cycle management"),
@@ -315,6 +335,149 @@ class PmsAiCatalog:
                         "indicator (0% weight) and does not contribute to the weighted employee score."
                     ),
                     aliases=("outbound aht", "outbound handle time", "aht in outbound", "aht"),
+                    value_kind="diagnostic_indicator",
+                    storage_scale="raw",
+                    aggregation="weighted_average",
+                    available_operations=("current_value", "compare_periods", "compare_branches", "trend"),
+                )
+            )
+
+        # Register explicit Call Center count / volume metrics and overall score metrics (Section 5.2)
+        for cc_team in ("Inbound", "Outbound"):
+            t_slug = cc_team.casefold()
+            self._register_metric(
+                CatalogMetricDefinition(
+                    metric_id=f"{t_slug}:bookings_count",
+                    kpi_key="TotalBookings",
+                    display_name="Bookings (Count)",
+                    team=cc_team,
+                    function="Call Center",
+                    position=None,
+                    performance_level="Employee",
+                    weight_percent=0.0,
+                    unit="count",
+                    direction="higher_better",
+                    aggregation_method="sum",
+                    contributes_to_score=False,
+                    tracking_only_note=(
+                        "Bookings (Count) measures total bookings by destination branch or agent "
+                        "and is distinct from Booking Rate (Bookings / Handled Calls)."
+                    ),
+                    aliases=(
+                        "bookings count",
+                        "total bookings",
+                        "number of bookings",
+                        "booking volume",
+                        "more bookings",
+                        "most bookings",
+                    ),
+                    value_kind="count",
+                    storage_scale="raw",
+                    aggregation="sum",
+                    available_operations=("current_value", "compare_periods", "compare_branches", "trend", "ranking"),
+                )
+            )
+            self._register_metric(
+                CatalogMetricDefinition(
+                    metric_id=f"{t_slug}:attended_count",
+                    kpi_key="AttendedPatients",
+                    display_name="Attended Bookings (Count)",
+                    team=cc_team,
+                    function="Call Center",
+                    position=None,
+                    performance_level="Employee",
+                    weight_percent=0.0,
+                    unit="count",
+                    direction="higher_better",
+                    aggregation_method="sum",
+                    contributes_to_score=False,
+                    tracking_only_note="Attended Bookings (Count) measures total attended patient appointments.",
+                    aliases=("attended count", "attended bookings count", "total attended", "attended patients"),
+                    value_kind="count",
+                    storage_scale="raw",
+                    aggregation="sum",
+                    available_operations=("current_value", "compare_periods", "compare_branches", "trend", "ranking"),
+                )
+            )
+            self._register_metric(
+                CatalogMetricDefinition(
+                    metric_id=f"{t_slug}:handled_calls_count",
+                    kpi_key="HandledCalls",
+                    display_name="Handled Calls (Count)",
+                    team=cc_team,
+                    function="Call Center",
+                    position=None,
+                    performance_level="Employee",
+                    weight_percent=0.0,
+                    unit="count",
+                    direction="higher_better",
+                    aggregation_method="sum",
+                    contributes_to_score=False,
+                    tracking_only_note="Handled Calls (Count) measures total call volume.",
+                    aliases=("handled calls", "handled calls count", "call volume", "total calls"),
+                    value_kind="count",
+                    storage_scale="raw",
+                    aggregation="sum",
+                    available_operations=("current_value", "compare_periods", "compare_branches", "trend", "ranking"),
+                )
+            )
+
+        self._register_metric(
+            CatalogMetricDefinition(
+                metric_id="inbound:abandoned_calls_count",
+                kpi_key="AbandonedCalls",
+                display_name="Abandoned Calls (Count)",
+                team="Inbound",
+                function="Call Center",
+                position=None,
+                performance_level="Employee",
+                weight_percent=0.0,
+                unit="count",
+                direction="lower_better",
+                aggregation_method="sum",
+                contributes_to_score=False,
+                tracking_only_note=(
+                    "Abandoned Calls (Count) is raw abandoned call volume and is distinct from "
+                    "Abandon Rate (Abandoned Calls / Offered Calls)."
+                ),
+                aliases=("abandoned calls count", "number of abandoned calls", "total abandoned calls"),
+                value_kind="count",
+                storage_scale="raw",
+                aggregation="sum",
+                available_operations=("current_value", "compare_periods", "trend", "ranking"),
+            )
+        )
+
+        for cc_team_score in ("Inbound", "Outbound", "Support Positions"):
+            t_slug_score = _slugify(cc_team_score)
+            self._register_metric(
+                CatalogMetricDefinition(
+                    metric_id=f"{t_slug_score}:overall_score",
+                    kpi_key="OverallScore",
+                    display_name="Overall Weighted PMS Score",
+                    team=cc_team_score,
+                    function="Call Center",
+                    position=None,
+                    performance_level="Employee",
+                    weight_percent=100.0,
+                    unit="%",
+                    direction="higher_better",
+                    aggregation_method="average",
+                    contributes_to_score=True,
+                    aliases=("overall score", "weighted score", "pms score", "total score"),
+                    value_kind="score",
+                    storage_scale="percent_0_100",
+                    aggregation="simple_average",
+                    available_operations=(
+                        "current_value",
+                        "compare_periods",
+                        "compare_branches",
+                        "compare_teams",
+                        "trend",
+                        "ranking",
+                        "person_summary",
+                        "person_best_period",
+                    ),
                 )
             )
 
@@ -389,6 +552,32 @@ class PmsAiCatalog:
             metric_slug=metric_slug,
         )
 
+        unit_lower = unit.casefold()
+        if not contributes:
+            val_kind: MetricValueKindType = "diagnostic_indicator"
+            scale = "raw" if unit != "%" else "ratio_0_1"
+            agg_sem = "simple_average"
+        elif unit_lower in ("min", "minutes", "sec", "seconds", "hrs", "hours"):
+            val_kind = "duration"
+            scale = "raw"
+            agg_sem = "weighted_average"
+        elif unit_lower in ("aed", "usd", "egp", "sar"):
+            val_kind = "currency"
+            scale = "raw"
+            agg_sem = "simple_average"
+        elif unit_lower in ("count", "leads", "bookings", "calls", "claims"):
+            val_kind = "count"
+            scale = "raw"
+            agg_sem = "sum"
+        elif agg_method == "ratio":
+            val_kind = "rate"
+            scale = "ratio_0_1"
+            agg_sem = "ratio_of_sums"
+        else:
+            val_kind = "rate"
+            scale = "ratio_0_1"
+            agg_sem = "simple_average"
+
         self._register_metric(
             CatalogMetricDefinition(
                 metric_id=metric_id,
@@ -406,6 +595,9 @@ class PmsAiCatalog:
                 tracking_only_note=tracking_note,
                 effective_from=effective_from,
                 aliases=aliases,
+                value_kind=val_kind,
+                storage_scale=scale,
+                aggregation=agg_sem,
             )
         )
 
@@ -637,6 +829,51 @@ class PmsAiCatalog:
             "eligible_branches": eligible_branches,
             "eligible_levels": eligible_levels,
         }
+
+    def get_authorized_catalog_payload(self, scope: dict[str, Any]) -> AiCatalogPayload:
+        eligible = self.get_eligible_scope_options(scope)
+        eligible_team_names = {t.value.casefold() for t in eligible["eligible_teams"]}
+        eligible_levels_set = {lvl.casefold() for lvl in eligible["eligible_levels"]}
+        metrics_out: list[AiCatalogMetricItem] = []
+        for m in self.metrics.values():
+            t_norm = m.team.casefold()
+            if t_norm not in eligible_team_names and not (t_norm == "call center" and "support positions" in eligible_team_names):
+                continue
+            if m.performance_level.casefold() not in eligible_levels_set:
+                continue
+            metrics_out.append(
+                AiCatalogMetricItem(
+                    metric_id=m.metric_id,
+                    kpi_key=m.kpi_key,
+                    display_name=m.display_name,
+                    team="Support Positions" if (t_norm == "call center" and m.position) else m.team,
+                    function=m.function,
+                    position=m.position,
+                    performance_level=m.performance_level,
+                    value_kind=m.value_kind,
+                    unit=m.unit,
+                    storage_scale=m.storage_scale,
+                    direction=m.direction,
+                    aggregation=m.aggregation,
+                    weight_percent=m.weight_percent,
+                    contributes_to_score=m.contributes_to_score,
+                    available_operations=list(m.available_operations),
+                    status=m.status,  # type: ignore[arg-type]
+                )
+            )
+        capabilities = [
+            row
+            for row in self.get_scope_certification_registry()
+            if row["team"].casefold() in eligible_team_names
+        ]
+        return AiCatalogPayload(
+            eligible_teams=eligible["eligible_teams"],
+            eligible_functions=eligible["eligible_functions"],
+            eligible_branches=eligible["eligible_branches"],
+            eligible_levels=eligible["eligible_levels"],
+            metrics=metrics_out,
+            capabilities=capabilities,
+        )
 
 
 _CATALOG_LOCK = threading.Lock()
