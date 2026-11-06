@@ -6,13 +6,25 @@ from sqlalchemy.orm import Session
 from api.dependencies import require_authenticated_scope, require_role
 from config.database import get_db, release_read_transaction
 from models.ai_schemas import (
+    AiCatalogResponse,
     AiChatRequest,
     AiChatResponse,
+    AiConversationCreateRequest,
+    AiConversationResponse,
     AiDistillationExportResponse,
     AiFeedbackRequest,
     AiFeedbackResponse,
+    AiTraceReviewRequest,
+    AiTraceReviewResponse,
     AiWatchingResponse,
     SessionFilterContext,
+)
+from services.ai.catalog import get_ai_catalog
+from services.ai.conversation_service import (
+    AiConversationService,
+    ConversationOwnershipError,
+    ConversationStaleContextError,
+    TurnAlreadyInFlightError,
 )
 from services.ai.orchestrator import PmsAiOrchestrator
 from services.ai.providers import ProviderUnavailableError
@@ -79,6 +91,12 @@ def post_ai_chat_turn(
     scope = require_authenticated_scope(db, request)
     try:
         payload = PmsAiOrchestrator(db, scope).run_chat_turn(body)
+    except ConversationOwnershipError as exc:
+        release_read_transaction(db)
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except (ConversationStaleContextError, TurnAlreadyInFlightError) as exc:
+        release_read_transaction(db)
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except (ProviderUnavailableError, AiProviderUnavailableError) as exc:
         release_read_transaction(db)
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
@@ -91,6 +109,90 @@ def post_ai_chat_turn(
     return AiChatResponse(success=True, message="AI analytical response generated", data=payload)
 
 
+@router.post("/conversations", response_model=AiConversationResponse)
+def create_ai_conversation(
+    request: Request,
+    body: AiConversationCreateRequest | None = None,
+    db: Session = Depends(get_db),
+    _role: str = Depends(require_role(AI_WORKSPACE_ROLES)),
+) -> AiConversationResponse:
+    scope = require_authenticated_scope(db, request)
+    svc = AiConversationService(db, scope)
+    data = svc.create_conversation(
+        session_state=body.session_state if body is not None else None
+    )
+    release_read_transaction(db)
+    return AiConversationResponse(
+        success=True,
+        message="Conversation created",
+        data=data,
+    )
+
+
+@router.get("/conversations/{conversation_id}/context", response_model=AiConversationResponse)
+def get_ai_conversation_context(
+    conversation_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    _role: str = Depends(require_role(AI_WORKSPACE_ROLES)),
+) -> AiConversationResponse:
+    scope = require_authenticated_scope(db, request)
+    svc = AiConversationService(db, scope)
+    try:
+        data = svc.get_conversation_context(conversation_id)
+    except ConversationOwnershipError as exc:
+        release_read_transaction(db)
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    release_read_transaction(db)
+    if data is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
+    return AiConversationResponse(
+        success=True,
+        message="Conversation context loaded",
+        data=data,
+    )
+
+
+@router.delete("/conversations/{conversation_id}")
+def delete_ai_conversation(
+    conversation_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    _role: str = Depends(require_role(AI_WORKSPACE_ROLES)),
+) -> dict[str, object]:
+    scope = require_authenticated_scope(db, request)
+    svc = AiConversationService(db, scope)
+    try:
+        deleted = svc.delete_conversation(conversation_id)
+    except ConversationOwnershipError as exc:
+        release_read_transaction(db)
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    release_read_transaction(db)
+    if not deleted:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
+    return {
+        "success": True,
+        "message": "Conversation reset",
+        "conversation_id": conversation_id,
+    }
+
+
+@router.get("/catalog", response_model=AiCatalogResponse)
+def get_ai_authorized_catalog(
+    request: Request,
+    db: Session = Depends(get_db),
+    _role: str = Depends(require_role(AI_WORKSPACE_ROLES)),
+) -> AiCatalogResponse:
+    scope = require_authenticated_scope(db, request)
+    payload = get_ai_catalog().get_authorized_catalog_payload(scope)
+    release_read_transaction(db)
+    return AiCatalogResponse(
+        success=True,
+        message="Authorized AI catalog loaded",
+        data=payload,
+    )
+
+
 @router.post("/feedback", response_model=AiFeedbackResponse)
 def post_ai_trace_feedback(
     body: AiFeedbackRequest,
@@ -99,14 +201,15 @@ def post_ai_trace_feedback(
     _role: str = Depends(require_role(AI_WORKSPACE_ROLES)),
 ) -> AiFeedbackResponse:
     scope = require_authenticated_scope(db, request)
+    caller_role = str(scope.get("role") or "")
     try:
         found, eligible = TrainingTraceLogger(db).record_feedback(
             trace_id=body.trace_id,
             rating=body.rating,
             reason=body.reason,
             caller_user_id=str(scope.get("user_id") or ""),
-            caller_role=str(scope.get("role") or ""),
-            reviewer_verified=body.reviewer_verified,
+            caller_role=caller_role,
+            reviewer_verified=body.reviewer_verified if caller_role == "Admin" else None,
         )
     except TraceOwnershipError as exc:
         release_read_transaction(db)
@@ -120,7 +223,43 @@ def post_ai_trace_feedback(
         trace_id=body.trace_id,
         rating=body.rating,
         is_distillation_eligible=eligible,
-        reviewer_verified=bool(body.reviewer_verified),
+        reviewer_verified=bool(body.reviewer_verified and caller_role == "Admin"),
+    )
+
+
+@router.post("/traces/{trace_id}/review", response_model=AiTraceReviewResponse)
+def post_ai_trace_review(
+    trace_id: str,
+    body: AiTraceReviewRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    _role: str = Depends(require_role(["Admin"])),
+) -> AiTraceReviewResponse:
+    scope = require_authenticated_scope(db, request)
+    reviewer_id = str(scope.get("user_id") or "admin")
+    caller_role = str(scope.get("role") or "")
+    try:
+        found, eligible, reviewed_at = TrainingTraceLogger(db).review_trace(
+            trace_id=trace_id,
+            reviewer_verified=body.reviewer_verified,
+            reviewer_id=reviewer_id,
+            caller_role=caller_role,
+            notes=body.notes,
+        )
+    except PermissionError as exc:
+        release_read_transaction(db)
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    if not found:
+        release_read_transaction(db)
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Interaction trace not found")
+    return AiTraceReviewResponse(
+        success=True,
+        message="Trace review updated",
+        trace_id=trace_id,
+        reviewer_verified=body.reviewer_verified,
+        reviewer_id=reviewer_id,
+        reviewed_at=reviewed_at,
+        is_distillation_eligible=eligible,
     )
 
 

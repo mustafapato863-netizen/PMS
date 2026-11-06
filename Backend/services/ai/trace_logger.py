@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import logging
+import os
 import re
 import threading
 import uuid
@@ -9,7 +11,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from models.ai_schemas import AiDistillationRecord, SessionFilterContext
-from models.models import AiInteractionTrace
+from models.models import AiConversation, AiInteractionTrace, AiTurn
 from services.ai.config import get_ai_runtime_config, redact_secrets
 from services.audit_service import AuditService
 
@@ -66,7 +68,9 @@ def redact_nested_payload(value: Any, *, known_employee_names: list[str] | None 
 
 
 def ensure_trace_schema_once(db: Session) -> None:
-    """Ensure the AiInteractionTrace table exists once per database engine, out of the per-turn hot path."""
+    """Ensure AI tables exist once per database engine in non-production environments (never run DDL in production)."""
+    if os.environ.get("APP_ENV", "").strip().casefold() == "production":
+        return
     try:
         bind = db.get_bind()
         root_engine = getattr(bind, "engine", bind)
@@ -76,10 +80,12 @@ def ensure_trace_schema_once(db: Session) -> None:
         with _ENGINE_INIT_LOCK:
             if engine_key in _INITIALIZED_ENGINE_KEYS:
                 return
+            AiConversation.__table__.create(bind=bind, checkfirst=True)
+            AiTurn.__table__.create(bind=bind, checkfirst=True)
             AiInteractionTrace.__table__.create(bind=bind, checkfirst=True)
             _INITIALIZED_ENGINE_KEYS.add(engine_key)
     except Exception as exc:
-        logger.debug("AiInteractionTrace one-time schema check skipped: %s", exc)
+        logger.debug("AI schema one-time check skipped: %s", exc)
 
 
 class TraceOwnershipError(PermissionError):
@@ -108,6 +114,7 @@ class TrainingTraceLogger:
         non_empty_evidence: bool,
         guardrail_triggered: bool,
         known_employee_names: list[str] | None = None,
+        turn_id: str | None = None,
     ) -> str:
         trace_uuid = uuid.uuid4()
         cfg = get_ai_runtime_config()
@@ -128,6 +135,7 @@ class TrainingTraceLogger:
             ensure_trace_schema_once(self.db)
             row = AiInteractionTrace(
                 id=trace_uuid,
+                turn_id=str(turn_id) if turn_id else None,
                 user_id=str(user_id) if user_id else None,
                 role=role or "Manager",
                 prompt=stored_prompt,
@@ -144,6 +152,7 @@ class TrainingTraceLogger:
                 non_empty_evidence=bool(non_empty_evidence),
                 guardrail_triggered=bool(guardrail_triggered),
                 is_distillation_eligible=False,
+                reviewer_verified=False,
             )
             self.db.add(row)
             self.db.commit()
@@ -162,7 +171,7 @@ class TrainingTraceLogger:
         caller_role: str | None = None,
         reviewer_verified: bool | None = None,
     ) -> tuple[bool, bool]:
-        """Upsert user ✓/✕ feedback on an existing trace. Enforces trace ownership."""
+        """Upsert user ✓/✕ feedback on an existing trace. Enforces trace ownership and never self-certifies non-Admin users."""
         try:
             ensure_trace_schema_once(self.db)
             parsed_id = uuid.UUID(str(trace_id))
@@ -176,13 +185,10 @@ class TrainingTraceLogger:
 
             owner_id = str(row.user_id or "").strip()
             caller_id = str(caller_user_id or "").strip()
-            is_privileged_reviewer = (
-                str(caller_role or "") in PRIVILEGED_REVIEWER_ROLES
-                and reviewer_verified is not None
-            )
-            if owner_id and caller_id and owner_id != caller_id and not is_privileged_reviewer:
+            is_admin_reviewer = str(caller_role or "") == "Admin" and reviewer_verified is not None
+            if owner_id and caller_id and owner_id != caller_id and not is_admin_reviewer:
                 raise TraceOwnershipError("Cannot submit feedback for another user's interaction trace")
-            if owner_id and not caller_id and not is_privileged_reviewer and caller_role is not None:
+            if owner_id and not caller_id and not is_admin_reviewer and caller_role is not None:
                 raise TraceOwnershipError("Cannot submit feedback for another user's interaction trace")
 
             row.feedback_rating = rating
@@ -190,10 +196,14 @@ class TrainingTraceLogger:
             row.is_distillation_eligible = bool(
                 rating == "up" and row.non_empty_evidence and not row.guardrail_triggered
             )
-            if is_privileged_reviewer and isinstance(row.structured_response, dict):
-                updated_resp = dict(row.structured_response)
-                updated_resp["reviewer_verified"] = bool(reviewer_verified)
-                row.structured_response = updated_resp
+            if is_admin_reviewer:
+                row.reviewer_verified = bool(reviewer_verified)
+                row.reviewer_id = caller_id or "admin"
+                row.reviewed_at = datetime.now(timezone.utc)
+                if isinstance(row.structured_response, dict):
+                    updated_resp = dict(row.structured_response)
+                    updated_resp["reviewer_verified"] = bool(reviewer_verified)
+                    row.structured_response = updated_resp
             self.db.commit()
             return True, bool(row.is_distillation_eligible)
         except TraceOwnershipError:
@@ -203,6 +213,45 @@ class TrainingTraceLogger:
             self.db.rollback()
             logger.warning("Failed to update feedback on trace %s: %s", trace_id, redact_secrets(str(exc)))
             return False, False
+
+    def review_trace(
+        self,
+        *,
+        trace_id: str,
+        reviewer_verified: bool,
+        reviewer_id: str,
+        caller_role: str,
+        notes: str | None = None,
+    ) -> tuple[bool, bool, str]:
+        """Admin-only trace verification for distillation curation."""
+        if str(caller_role or "") != "Admin":
+            raise PermissionError("Only Admin reviewers can verify AI traces for distillation.")
+        try:
+            ensure_trace_schema_once(self.db)
+            parsed_id = uuid.UUID(str(trace_id))
+        except (ValueError, TypeError):
+            return False, False, ""
+
+        try:
+            row = self.db.query(AiInteractionTrace).filter(AiInteractionTrace.id == parsed_id).first()
+            if not row:
+                return False, False, ""
+            now_dt = datetime.now(timezone.utc)
+            row.reviewer_verified = bool(reviewer_verified)
+            row.reviewer_id = str(reviewer_id or "admin")
+            row.reviewed_at = now_dt
+            if notes:
+                row.feedback_reason = sanitize_prompt_for_router_training(notes)
+            if isinstance(row.structured_response, dict):
+                updated_resp = dict(row.structured_response)
+                updated_resp["reviewer_verified"] = bool(reviewer_verified)
+                row.structured_response = updated_resp
+            self.db.commit()
+            return True, bool(row.is_distillation_eligible), now_dt.isoformat()
+        except Exception as exc:
+            self.db.rollback()
+            logger.warning("Failed to review trace %s: %s", trace_id, redact_secrets(str(exc)))
+            return False, False, ""
 
     def export_distillation_dataset(
         self,
