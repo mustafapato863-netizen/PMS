@@ -886,7 +886,13 @@ class HybridQueryRouter:
         )
 
         intent: RouterIntentType = "current_value"
-        if is_short_followup and prior and prior.intent and "compare it with" not in lower:
+        if (
+            is_short_followup
+            and prior
+            and prior.intent
+            and prior.intent not in ("clarify", "unsupported")
+            and "compare it with" not in lower
+        ):
             intent = prior.intent
             if intent == "ranking" and not asks_ranking_person:
                 asks_worst = prior.ranking_direction == "worst"
@@ -1049,6 +1055,8 @@ class HybridQueryRouter:
             eff_metric is not None
             or intent != "current_value"
             or eff_pos is not None
+            or is_short_followup
+            or bool(inherited_filters)
             or any(
                 kw in lower
                 for kw in (
@@ -1069,17 +1077,22 @@ class HybridQueryRouter:
                     "branch",
                     "corrective",
                     "scorecard",
+                    "revenue",
+                    "ايرادات",
+                    "إيرادات",
+                    "واقع",
+                    "السبب",
                 )
             )
         )
 
-        should_call_gemini = (
+        should_call_gemini = provider_override != "deterministic" and (
             provider_override == "gemini"
             or (cfg.router_mode == "shadow" and cfg.can_call_gemini)
             or (
                 cfg.router_mode == "hybrid"
                 and cfg.can_call_gemini
-                and (not eff_team or not has_explicit_local_action)
+                and not has_explicit_local_action
                 and cfg.is_scope_allowed_for_cloud(eff_team or eff_fn)
             )
         )

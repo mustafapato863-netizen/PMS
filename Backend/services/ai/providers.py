@@ -164,7 +164,7 @@ class GeminiStructuredRouterAdapter:
             "Return ONLY valid JSON."
         )
 
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{cfg.gemini_model}:generateContent"
+        candidate_models = [m.strip() for m in cfg.gemini_model.split(",") if m.strip()] or ["gemini-2.5-flash"]
         user_text = json.dumps(minimized_input, ensure_ascii=False, separators=(",", ":"))
         payload = {
             "systemInstruction": {"parts": [{"text": system_instruction}]},
@@ -185,7 +185,7 @@ class GeminiStructuredRouterAdapter:
                         "performance_level": {"type": "STRING"},
                         "metric": {"type": "STRING", "nullable": True},
                         "periods": {"type": "ARRAY", "items": {"type": "STRING"}},
-                        "ranking_direction": {"type": "STRING"},
+                        "ranking_direction": {"type": "STRING", "enum": ["best", "worst"]},
                         "single_person": {"type": "BOOLEAN"},
                         "clarification_code": {"type": "STRING"},
                     },
@@ -194,92 +194,107 @@ class GeminiStructuredRouterAdapter:
             },
         }
         encoded_payload = json.dumps(payload).encode("utf-8")
-        req = urllib.request.Request(
-            url,
-            data=encoded_payload,
-            headers={
-                "Content-Type": "application/json",
-                "x-goog-api-key": cfg.gemini_api_key,
-            },
-            method="POST",
-        )
 
-        t0 = time.perf_counter()
-        try:
-            with urllib.request.urlopen(req, timeout=cfg.provider_timeout_seconds) as resp:
-                raw_body = resp.read().decode("utf-8")
-            elapsed_ms = round((time.perf_counter() - t0) * 1000.0, 2)
-            body = json.loads(raw_body)
-            usage = body.get("usageMetadata") or {}
-            in_tok = int(usage.get("promptTokenCount") or _estimate_tokens(system_instruction + user_text))
-            out_tok = int(usage.get("candidatesTokenCount") or _estimate_tokens(raw_body))
-            cost_usd = round(
-                in_tok * GEMINI_FLASH_INPUT_USD_PER_TOKEN + out_tok * GEMINI_FLASH_OUTPUT_USD_PER_TOKEN,
-                8,
+        last_result: StructuredRoutingProviderResult | None = None
+        calls_made = 0
+        t_start = time.perf_counter()
+
+        for model_name in candidate_models[:1]:
+            calls_made += 1
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
+            req = urllib.request.Request(
+                url,
+                data=encoded_payload,
+                headers={
+                    "Content-Type": "application/json",
+                    "x-goog-api-key": cfg.gemini_api_key,
+                },
+                method="POST",
             )
-            text_out = body["candidates"][0]["content"]["parts"][0]["text"]
-            parsed_dict = json.loads(text_out)
-            plan = StructuredQueryPlan.model_validate(parsed_dict)
-            return StructuredRoutingProviderResult(
-                plan=plan,
-                metrics=ProviderCallMetrics(
-                    provider_used="gemini",
-                    model_used=cfg.gemini_model,
-                    provider_calls=1,
-                    provider_ms=elapsed_ms,
-                    input_tokens=in_tok,
-                    output_tokens=out_tok,
-                    estimated_cost_usd=cost_usd,
-                    fallback_outcome="none",
-                    outbound_payload=minimized_input,
-                ),
-            )
-        except TimeoutError as exc:
-            elapsed_ms = round((time.perf_counter() - t0) * 1000.0, 2)
-            logger.warning("Gemini router timed out after %.1f ms", elapsed_ms)
-            return StructuredRoutingProviderResult(
-                plan=None,
-                metrics=ProviderCallMetrics(
-                    provider_used="gemini",
-                    model_used=cfg.gemini_model,
-                    provider_calls=1,
-                    provider_ms=elapsed_ms,
-                    fallback_outcome="timeout",
-                    outbound_payload=minimized_input,
-                ),
-                error_detail=redact_secrets(str(exc)),
-            )
-        except (json.JSONDecodeError, KeyError, ValueError) as exc:
-            elapsed_ms = round((time.perf_counter() - t0) * 1000.0, 2)
-            logger.warning("Gemini router returned invalid structured output: %s", redact_secrets(str(exc)))
-            return StructuredRoutingProviderResult(
-                plan=None,
-                metrics=ProviderCallMetrics(
-                    provider_used="gemini",
-                    model_used=cfg.gemini_model,
-                    provider_calls=1,
-                    provider_ms=elapsed_ms,
-                    fallback_outcome="invalid_json",
-                    outbound_payload=minimized_input,
-                ),
-                error_detail=redact_secrets(str(exc)),
-            )
-        except Exception as exc:
-            elapsed_ms = round((time.perf_counter() - t0) * 1000.0, 2)
-            outcome = "timeout" if "timed out" in str(exc).casefold() else "http_error"
-            logger.warning("Gemini router request failed (%s): %s", outcome, redact_secrets(str(exc)))
-            return StructuredRoutingProviderResult(
-                plan=None,
-                metrics=ProviderCallMetrics(
-                    provider_used="gemini",
-                    model_used=cfg.gemini_model,
-                    provider_calls=1,
-                    provider_ms=elapsed_ms,
-                    fallback_outcome=outcome,
-                    outbound_payload=minimized_input,
-                ),
-                error_detail=redact_secrets(str(exc)),
-            )
+
+            t0 = time.perf_counter()
+            try:
+                with urllib.request.urlopen(req, timeout=cfg.provider_timeout_seconds) as resp:
+                    raw_body = resp.read().decode("utf-8")
+                elapsed_ms = round((time.perf_counter() - t_start) * 1000.0, 2)
+                body = json.loads(raw_body)
+                usage = body.get("usageMetadata") or {}
+                in_tok = int(usage.get("promptTokenCount") or _estimate_tokens(system_instruction + user_text))
+                out_tok = int(usage.get("candidatesTokenCount") or _estimate_tokens(raw_body))
+                cost_usd = round(
+                    in_tok * GEMINI_FLASH_INPUT_USD_PER_TOKEN + out_tok * GEMINI_FLASH_OUTPUT_USD_PER_TOKEN,
+                    8,
+                )
+                text_out = body["candidates"][0]["content"]["parts"][0]["text"]
+                parsed_dict = json.loads(text_out)
+                if isinstance(parsed_dict, dict):
+                    if str(parsed_dict.get("ranking_direction") or "").strip().casefold() not in ("best", "worst"):
+                        parsed_dict["ranking_direction"] = "best"
+                    else:
+                        parsed_dict["ranking_direction"] = str(parsed_dict["ranking_direction"]).strip().casefold()
+                    if not parsed_dict.get("clarification_code"):
+                        parsed_dict["clarification_code"] = "NONE"
+                plan = StructuredQueryPlan.model_validate(parsed_dict)
+                return StructuredRoutingProviderResult(
+                    plan=plan,
+                    metrics=ProviderCallMetrics(
+                        provider_used="gemini",
+                        model_used=model_name,
+                        provider_calls=calls_made,
+                        provider_ms=elapsed_ms,
+                        input_tokens=in_tok,
+                        output_tokens=out_tok,
+                        estimated_cost_usd=cost_usd,
+                        fallback_outcome="none",
+                        outbound_payload=minimized_input,
+                    ),
+                )
+            except TimeoutError as exc:
+                elapsed_ms = round((time.perf_counter() - t0) * 1000.0, 2)
+                logger.warning("Gemini router (%s) timed out after %.1f ms", model_name, elapsed_ms)
+                last_result = StructuredRoutingProviderResult(
+                    plan=None,
+                    metrics=ProviderCallMetrics(
+                        provider_used="gemini",
+                        model_used=model_name,
+                        provider_calls=calls_made,
+                        provider_ms=round((time.perf_counter() - t_start) * 1000.0, 2),
+                        fallback_outcome="timeout",
+                        outbound_payload=minimized_input,
+                    ),
+                    error_detail=redact_secrets(str(exc)),
+                )
+            except (json.JSONDecodeError, KeyError, ValueError) as exc:
+                logger.warning("Gemini router (%s) returned invalid structured output: %s", model_name, redact_secrets(str(exc)))
+                last_result = StructuredRoutingProviderResult(
+                    plan=None,
+                    metrics=ProviderCallMetrics(
+                        provider_used="gemini",
+                        model_used=model_name,
+                        provider_calls=calls_made,
+                        provider_ms=round((time.perf_counter() - t_start) * 1000.0, 2),
+                        fallback_outcome="invalid_json",
+                        outbound_payload=minimized_input,
+                    ),
+                    error_detail=redact_secrets(str(exc)),
+                )
+            except Exception as exc:
+                outcome = "timeout" if "timed out" in str(exc).casefold() else "http_error"
+                logger.warning("Gemini router (%s) request failed (%s): %s", model_name, outcome, redact_secrets(str(exc)))
+                last_result = StructuredRoutingProviderResult(
+                    plan=None,
+                    metrics=ProviderCallMetrics(
+                        provider_used="gemini",
+                        model_used=model_name,
+                        provider_calls=calls_made,
+                        provider_ms=round((time.perf_counter() - t_start) * 1000.0, 2),
+                        fallback_outcome=outcome,
+                        outbound_payload=minimized_input,
+                    ),
+                    error_detail=redact_secrets(str(exc)),
+                )
+
+        return last_result or StructuredRoutingProviderResult(plan=None)
 
 
 class DeterministicLocalProviderAdapter:
@@ -664,7 +679,7 @@ class CloudOrLocalHttpProviderAdapter:
         timeout: float,
     ) -> NarrativeSynthesisResult:
         # Use header x-goog-api-key (never URL query parameter) and send only sanitized summary text
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+        candidate_models = [m.strip() for m in model.split(",") if m.strip()] or ["gemini-2.5-flash"]
         sanitized_prompt = sanitize_prompt_for_router_training(prompt)[:300]
         sanitized_headline = sanitize_prompt_for_router_training(baseline.headline)
         user_content = f"Question: {sanitized_prompt}\nVerified Summary: {sanitized_headline}"
@@ -673,46 +688,61 @@ class CloudOrLocalHttpProviderAdapter:
             "contents": [{"role": "user", "parts": [{"text": user_content}]}],
             "generationConfig": {"temperature": 0.1, "responseMimeType": "application/json"},
         }
-        req = urllib.request.Request(
-            url,
-            data=json.dumps(payload).encode("utf-8"),
-            headers={
-                "Content-Type": "application/json",
-                "x-goog-api-key": api_key,
-            },
-            method="POST",
-        )
-        t0 = time.perf_counter()
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            raw_body = resp.read().decode("utf-8")
-        elapsed_ms = round((time.perf_counter() - t0) * 1000.0, 2)
-        body = json.loads(raw_body)
-        usage = body.get("usageMetadata") or {}
-        in_tok = int(usage.get("promptTokenCount") or _estimate_tokens(user_content))
-        out_tok = int(usage.get("candidatesTokenCount") or _estimate_tokens(raw_body))
-        cost_usd = round(
-            in_tok * GEMINI_FLASH_INPUT_USD_PER_TOKEN + out_tok * GEMINI_FLASH_OUTPUT_USD_PER_TOKEN,
-            8,
-        )
-        text_out = body["candidates"][0]["content"]["parts"][0]["text"]
-        parsed = json.loads(text_out)
-        return NarrativeSynthesisResult(
-            headline=str(parsed.get("headline") or baseline.headline),
-            narrative_bullets=[str(b) for b in (parsed.get("bullets") or baseline.narrative_bullets)[:4]],
-            suggested_followups=baseline.suggested_followups,
-            provider_used="gemini",
-            model_used=model,
-            metrics=ProviderCallMetrics(
-                provider_used="gemini",
-                model_used=model,
-                provider_calls=1,
-                provider_ms=elapsed_ms,
-                input_tokens=in_tok,
-                output_tokens=out_tok,
-                estimated_cost_usd=cost_usd,
-                fallback_outcome="none",
-            ),
-        )
+        encoded_payload = json.dumps(payload).encode("utf-8")
+        last_exc: Exception | None = None
+        calls_made = 0
+        t_start = time.perf_counter()
+
+        for model_name in candidate_models[:1]:
+            calls_made += 1
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
+            req = urllib.request.Request(
+                url,
+                data=encoded_payload,
+                headers={
+                    "Content-Type": "application/json",
+                    "x-goog-api-key": api_key,
+                },
+                method="POST",
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    raw_body = resp.read().decode("utf-8")
+                elapsed_ms = round((time.perf_counter() - t_start) * 1000.0, 2)
+                body = json.loads(raw_body)
+                usage = body.get("usageMetadata") or {}
+                in_tok = int(usage.get("promptTokenCount") or _estimate_tokens(user_content))
+                out_tok = int(usage.get("candidatesTokenCount") or _estimate_tokens(raw_body))
+                cost_usd = round(
+                    in_tok * GEMINI_FLASH_INPUT_USD_PER_TOKEN + out_tok * GEMINI_FLASH_OUTPUT_USD_PER_TOKEN,
+                    8,
+                )
+                text_out = body["candidates"][0]["content"]["parts"][0]["text"]
+                parsed = json.loads(text_out)
+                return NarrativeSynthesisResult(
+                    headline=str(parsed.get("headline") or baseline.headline),
+                    narrative_bullets=[str(b) for b in (parsed.get("bullets") or baseline.narrative_bullets)[:4]],
+                    suggested_followups=baseline.suggested_followups,
+                    provider_used="gemini",
+                    model_used=model_name,
+                    metrics=ProviderCallMetrics(
+                        provider_used="gemini",
+                        model_used=model_name,
+                        provider_calls=calls_made,
+                        provider_ms=elapsed_ms,
+                        input_tokens=in_tok,
+                        output_tokens=out_tok,
+                        estimated_cost_usd=cost_usd,
+                        fallback_outcome="none",
+                    ),
+                )
+            except Exception as exc:
+                last_exc = exc
+                logger.warning("Gemini synthesis (%s) failed: %s", model_name, redact_secrets(str(exc)))
+
+        if last_exc is not None:
+            raise last_exc
+        return baseline
 
     def _call_openai_compatible(
         self,

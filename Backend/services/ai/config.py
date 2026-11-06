@@ -2,16 +2,22 @@ from __future__ import annotations
 
 import os
 import re
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
 from dotenv import load_dotenv
 
-# Load .env once if present without overriding explicit process environment variables
-_ENV_PATH = Path(__file__).resolve().parents[2] / ".env"
-if _ENV_PATH.exists():
-    load_dotenv(dotenv_path=_ENV_PATH, override=False)
+from config.environment import load_project_environment
+
+# Load shared DevOps/.env and local overrides once when not running under pytest
+_BACKEND_DIR = Path(__file__).resolve().parents[2]
+if "pytest" not in sys.modules and "PYTEST_CURRENT_TEST" not in os.environ:
+    load_project_environment(str(_BACKEND_DIR))
+    _ENV_PATH = _BACKEND_DIR / ".env"
+    if _ENV_PATH.exists():
+        load_dotenv(dotenv_path=_ENV_PATH, override=False)
 
 RouterModeType = Literal["legacy", "shadow", "hybrid"]
 ClassifierModeType = Literal["off", "shadow", "enabled"]
@@ -61,7 +67,7 @@ DEFAULT_PILOT_SCOPES: frozenset[str] = frozenset(
     }
 )
 
-_API_KEY_PATTERN = re.compile(r"(?:AIza[0-9A-Za-z\-_]{20,}|sk-[0-9A-Za-z\-_]{16,})")
+_API_KEY_PATTERN = re.compile(r"(?:AIza[0-9A-Za-z\-_]{20,}|AQ\.[0-9A-Za-z\-_]{20,}|oc_sk_[0-9A-Za-z\-_]{16,}|sk-[0-9A-Za-z\-_]{16,})")
 
 
 def _parse_bool(value: str | None, default: bool = False) -> bool:
@@ -128,6 +134,7 @@ def get_ai_runtime_config() -> AiRuntimeConfig:
     )
     gemini_api_key = (
         os.environ.get("GEMINI_API_KEY")
+        or os.environ.get("Gemini_API_KEY")
         or os.environ.get("GOOGLE_API_KEY")
         or ""
     ).strip()
