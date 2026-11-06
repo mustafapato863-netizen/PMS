@@ -35,6 +35,7 @@ export interface ClarificationChoice {
   description?: string | null;
   prompt_to_send: string;
   team?: string | null;
+  position?: string | null;
   metric_id?: string | null;
   performance_level?: string | null;
   period?: string | null;
@@ -64,6 +65,7 @@ export interface ConfirmedQueryContext {
 
 export interface StructuredQueryPlan {
   intent: RouterIntentType;
+  requested_parts?: string[];
   team?: string | null;
   function?: string | null;
   position?: string | null;

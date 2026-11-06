@@ -31,6 +31,7 @@ DEFAULT_PILOT_SCOPES: frozenset[str] = frozenset(
         "call center",
         "inbound",
         "outbound",
+        "support positions",
         "rcm",
         "pre-approvals",
         "pre-approvals op final",
@@ -94,6 +95,8 @@ class AiRuntimeConfig:
         if "*" in self.pilot_scopes:
             return True
         candidate = (team_or_function or "call center").strip().casefold()
+        if candidate == "support positions":
+            return candidate in self.pilot_scopes or "call center" in self.pilot_scopes
         return candidate in self.pilot_scopes
 
     def is_scope_enabled(self, team_or_function: str | None) -> bool:

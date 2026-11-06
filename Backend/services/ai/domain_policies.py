@@ -129,7 +129,7 @@ def extract_prompt_signals(prompt: str, session_state: SessionFilterContext) -> 
     if any(
         k in lower
         for k in (
-            "compare branch", "all branches", "across branches", "branches",
+            "compare branch", "all branches", "across branches", "branches", "which branch", "what branch",
             "كل الفروع", "جميع الفروع", "مقارنة الفروع", "بين الفروع", "فروع الإمارات", "الفروع",
         )
     ):
@@ -147,7 +147,7 @@ def extract_prompt_signals(prompt: str, session_state: SessionFilterContext) -> 
     # Detect Best / Worst / Trend / Single-Person intent
     if any(
         re.search(rf"\b{w}\b", lower)
-        for w in ("better", "best", "top", "highest", "leader", "star", "strongest", "number 1")
+        for w in ("better", "best", "top", "highest", "leader", "led", "leading", "star", "strongest", "number 1")
     ) or "#1" in lower:
         # Exclude "top negative contributors" from being treated as "best agent"
         if "negative" not in lower and "below target" not in lower and "loss" not in lower:
@@ -237,6 +237,7 @@ def extract_prompt_signals(prompt: str, session_state: SessionFilterContext) -> 
         signals.detected_employee_query = emp_id_match.group(1).upper()
     else:
         name_patterns = [
+            r"\b([a-zA-Z]+(?:\s+[a-zA-Z]+)?)'s\b",
             r"(?:employee|agent|for|about|trend of|trend for|score of|profile of)\s+([a-zA-Z]+(?:\s+[a-zA-Z]+){0,2})",
             r"(?:الموظف|موظف|ايجنت|أيجنت|عن)\s+([\u0600-\u06FFa-zA-Z]+(?:\s+[\u0600-\u06FFa-zA-Z]+)?)",
         ]
@@ -245,6 +246,10 @@ def extract_prompt_signals(prompt: str, session_state: SessionFilterContext) -> 
             "all", "team", "teams", "branch", "branches", "the", "his", "her", "and", "in",
             "on", "at", "to", "from", "with", "who", "what", "which", "better", "best", "worst",
             "lowest", "top", "bottom", "trend", "month", "september", "august", "july",
+            "had", "has", "have", "was", "were", "is", "are", "led", "leads", "leading",
+            "scored", "scores", "scoring", "performed", "performing", "performance", "score",
+            "rate", "by", "for", "of", "support", "positions", "position", "employee", "employees",
+            "agent", "agents", "performer", "performers", "highest",
         }
         for pat in name_patterns:
             m = re.search(pat, text, flags=re.IGNORECASE)

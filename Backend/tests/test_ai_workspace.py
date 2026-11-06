@@ -88,6 +88,25 @@ def _patch_records(monkeypatch, records):
     monkeypatch.setattr("services.dashboard_record_service.DashboardRecordService.list_record_index", lambda _self: None)
 
 
+def test_greeting_returns_a_short_reply_without_running_analytics(monkeypatch):
+    def fail_if_called(*args, **kwargs):
+        raise AssertionError("A greeting must not run the analytics router")
+
+    monkeypatch.setattr(
+        "services.ai.orchestrator.HybridQueryRouter.resolve_and_validate",
+        fail_if_called,
+    )
+    with _build_in_memory_db() as db:
+        response = PmsAiOrchestrator(db, {"role": "Admin"}).run_chat_turn(
+            AiChatRequest(prompt="Hi!")
+        )
+
+    assert response.headline.startswith("Hi!")
+    assert response.answer_detail == "brief"
+    assert not response.tool_calls
+    assert not response.visual_cards
+
+
 def test_call_center_kpi_disambiguation_and_signal_extraction():
     assert disambiguate_call_center_kpi_label("Inbound", "Other", "Abandon Rate") == "Abandon Rate (Inbound)"
     assert disambiguate_call_center_kpi_label("Outbound", "Other", "Reachability") == "Reachability (Outbound)"
@@ -806,7 +825,7 @@ def test_pr5_multi_scope_certification_and_200_employee_latency_gate(monkeypatch
 
     cat = get_ai_catalog()
     registry = cat.get_scope_certification_registry()
-    assert len(registry) == 17
+    assert len(registry) == 18
     assert all(r["certified"] is True for r in registry)
 
     # 1. Verify Offshore Pre-Approvals June 2026 controllable vs policy rejection definitions
@@ -1012,6 +1031,202 @@ def test_goldfish_review_enhancements_and_security_hardening(monkeypatch):
     CacheInvalidationService.bump_config_version()
     cat2 = get_ai_catalog()
     assert cat1 is not cat2
+
+
+def test_conversation_and_hierarchy_acceptance_criteria(monkeypatch):
+    """Verify Monthly Presentation Call Center hierarchy (Support Positions + position drill-down),
+    greeting turn, multi-part booking trend + top performer with explicit ranking metric,
+    ambiguous ranking clarification, open-ended Gemini routing when team is known, and dynamic latest month."""
+    from models.ai_schemas import StructuredQueryPlan
+    from services.ai.catalog import ai_evidence_cache
+    from services.ai.providers import ProviderCallMetrics, StructuredRoutingProviderResult
+
+    db = _build_in_memory_db()
+    aug_in = _make_call_center_record("EMP101", "Sara Mahmoud", "Inbound", 88.0, 40, 50, 170, 220)
+    aug_in.id = "Inbound_EMP101_2026_08"
+    aug_in.month = "August"
+    sep_in1 = _make_call_center_record("EMP101", "Sara Mahmoud", "Inbound", 93.0, 48, 50, 195, 220)
+    sep_in2 = _make_call_center_record("EMP102", "Radwa Ahmed", "Inbound", 84.0, 30, 50, 140, 220)
+
+    # Support position record stored in DB as team="Call Center" with position="Workforce analyst"
+    sup_rec = _make_call_center_record("EMP301", "Nour Hassan", "Call Center", 91.5, 0, 0, 0, 0)
+    sup_rec.position = "Workforce analyst"
+    sup_rec.kpi_values = [
+        {
+            "kpi_key": "ForecastAccuracy",
+            "label": "Forecast Accuracy",
+            "actual_value": 0.92,
+            "target_value": 0.90,
+            "achievement_ratio": 1.0,
+            "weight_applied": 0.40,
+            "unit": "%",
+            "direction": "higher_better",
+        },
+        {
+            "kpi_key": "ScheduleAdherence",
+            "label": "Schedule Adherence",
+            "actual_value": 0.94,
+            "target_value": 0.95,
+            "achievement_ratio": 0.989,
+            "weight_applied": 0.30,
+            "unit": "%",
+            "direction": "higher_better",
+        },
+    ]
+
+    records = [aug_in, sep_in1, sep_in2, sup_rec]
+    _patch_records(monkeypatch, records)
+    ai_evidence_cache.clear()
+
+    gm_scope = {
+        "role": "General Manager",
+        "user_id": "00000000-0000-0000-0000-000000000002",
+        "has_unrestricted_team_access": True,
+    }
+    orch = PmsAiOrchestrator(db, gm_scope)
+
+    # 1. Greeting turn: short English sentence, zero performance reads
+    greet_res = orch.run_chat_turn(
+        AiChatRequest(
+            prompt="Hi!",
+            session_state=SessionFilterContext(function="Call Center"),
+        )
+    )
+    assert greet_res.outcome == "answer"
+    assert greet_res.answer_detail == "brief"
+    assert greet_res.headline == "Hi! What would you like to know about performance?"
+    assert greet_res.tool_calls == []
+    assert greet_res.visual_cards == []
+
+    # 2. Support Positions group & individual position drill-down (Workforce analyst)
+    sup_res = orch.run_chat_turn(
+        AiChatRequest(
+            prompt="How is Workforce analyst performing in Support Positions in September 2026?",
+            session_state=SessionFilterContext(function="Call Center"),
+        )
+    )
+    assert sup_res.outcome == "answer"
+    assert sup_res.structured_query is not None
+    assert sup_res.structured_query.function == "Call Center"
+    assert sup_res.structured_query.team == "Support Positions"
+    assert sup_res.structured_query.position == "Workforce analyst"
+    assert "Support Positions (Workforce analyst)" in (sup_res.scope_banner or "")
+    assert sup_res.primary_source_link is not None
+    assert "position=Workforce+analyst" in sup_res.primary_source_link.route
+
+    # 3. Multi-part booking trend + top performer yields compact trend AND one person with explicit ranking metric, period, scope, source
+    multi_res = orch.run_chat_turn(
+        AiChatRequest(
+            prompt="Show Inbound booking trend and top performer in September 2026.",
+            session_state=SessionFilterContext(function="Call Center"),
+        )
+    )
+    assert multi_res.outcome == "answer"
+    assert multi_res.structured_query is not None
+    assert multi_res.structured_query.requested_parts == ["trend", "ranking"]
+    assert "Booking Rate" in multi_res.headline
+    assert "Sara Mahmoud" in multi_res.headline
+    assert "September 2026" in multi_res.headline
+    assert any("Ranking metric: Booking Rate" in b and "/employee/EMP101" in b for b in multi_res.narrative_bullets)
+    assert len(multi_res.suggested_followups) >= 1
+
+    # 4. Ambiguous ranking metric triggers focused clarification (AMBIGUOUS_KPI_SCOPE)
+    ambig_rank = orch.run_chat_turn(
+        AiChatRequest(
+            prompt="Who is the top performer in Inbound by conversion?",
+            session_state=SessionFilterContext(function="Call Center", team="Inbound"),
+        )
+    )
+    assert ambig_rank.outcome == "clarification"
+    assert ambig_rank.structured_query is not None
+    assert ambig_rank.structured_query.clarification_code == "AMBIGUOUS_KPI_SCOPE"
+    assert ambig_rank.tool_calls == []
+
+    # 5. Gemini interprets open-ended requests even when team is known and metric/action is unclear,
+    #    after authorization and payload checks pass
+    monkeypatch.setenv("PMS_AI_ROUTER_MODE", "hybrid")
+    monkeypatch.setenv("PMS_AI_GEMINI_ROUTING_ENABLED", "true")
+    monkeypatch.setenv("GEMINI_API_KEY", "test-secret-gemini-key-999")
+
+    gemini_calls: list[str] = []
+
+    def _mock_gemini_propose(self, **kwargs):
+        gemini_calls.append(kwargs.get("prompt", ""))
+        return StructuredRoutingProviderResult(
+            plan=StructuredQueryPlan(
+                intent="score_drivers",
+                requested_parts=["score_drivers"],
+                team="Inbound",
+                function="Call Center",
+                performance_level="Employee",
+                periods=["2026-09"],
+                clarification_code="NONE",
+            ),
+            metrics=ProviderCallMetrics(
+                provider_used="gemini",
+                model_used="gemini-2.5-flash",
+                provider_calls=1,
+                provider_ms=12.5,
+                input_tokens=80,
+                output_tokens=30,
+                estimated_cost_usd=0.000021,
+                fallback_outcome="none",
+            ),
+        )
+
+    monkeypatch.setattr(
+        "services.ai.router.GeminiStructuredRouterAdapter.propose_query_plan",
+        _mock_gemini_propose,
+    )
+
+    open_res = orch.run_chat_turn(
+        AiChatRequest(
+            prompt="Where should I focus in Inbound this month?",
+            session_state=SessionFilterContext(function="Call Center", team="Inbound"),
+        )
+    )
+    assert len(gemini_calls) == 1
+    assert open_res.outcome == "answer"
+    assert open_res.provider_usage is not None
+    assert open_res.provider_usage.route_used == "gemini_router"
+    assert open_res.provider_usage.provider_calls == 1
+
+    # Unauthorized branch request is blocked BEFORE calling Gemini
+    dubai_only_scope = {
+        "role": "Branch Director",
+        "user_id": "00000000-0000-0000-0000-000000000095",
+        "has_unrestricted_team_access": True,
+        "accessible_branches": ["dubai"],
+    }
+    gemini_calls.clear()
+    blocked_res = PmsAiOrchestrator(db, dubai_only_scope).run_chat_turn(
+        AiChatRequest(
+            prompt="Where should I focus in Inbound for Sharjah this month?",
+            session_state=SessionFilterContext(function="Call Center", team="Inbound", branch="dubai"),
+        )
+    )
+    assert blocked_res.outcome == "restricted_access"
+    assert len(gemini_calls) == 0
+
+    # 6. Dynamic latest published month advances from September 2026 to October 2026 upon new upload
+    monkeypatch.setenv("PMS_AI_ROUTER_MODE", "rules")
+    oct_in = _make_call_center_record("EMP101", "Sara Mahmoud", "Inbound", 96.0, 49, 50, 205, 220)
+    oct_in.id = "Inbound_EMP101_2026_10"
+    oct_in.month = "October"
+    oct_in.year = 2026
+    _patch_records(monkeypatch, [aug_in, sep_in1, sep_in2, sup_rec, oct_in])
+    ai_evidence_cache.clear()
+
+    oct_res = orch.run_chat_turn(
+        AiChatRequest(
+            prompt="What is the Inbound score in October 2026?",
+            session_state=SessionFilterContext(function="Call Center", team="Inbound"),
+        )
+    )
+    assert oct_res.outcome == "answer"
+    assert oct_res.resolved_session_state.month == "October"
+    assert oct_res.resolved_session_state.year == 2026
+
 
 
 

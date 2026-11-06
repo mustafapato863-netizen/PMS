@@ -45,6 +45,7 @@ class ClarificationChoice(BaseModel):
     description: str | None = None
     prompt_to_send: str
     team: str | None = None
+    position: str | None = None
     metric_id: str | None = None
     performance_level: str | None = None
     period: str | None = None
@@ -68,12 +69,15 @@ class ConfirmedQueryContext(BaseModel):
     metric_display_name: str | None = None
     periods: list[str] = Field(default_factory=list)
     comparison_type: Literal["period", "branch", "team", "none"] | None = "none"
+    ranking_direction: Literal["best", "worst"] = "best"
+    single_person: bool = False
     pending_clarification_code: ClarificationCodeType | None = None
     inherited_filters: list[str] = Field(default_factory=list)
 
 
 class StructuredQueryPlan(BaseModel):
     intent: RouterIntentType = "actual_vs_target"
+    requested_parts: list[str] = Field(default_factory=list)
     team: str | None = None
     function: str | None = None
     position: str | None = None

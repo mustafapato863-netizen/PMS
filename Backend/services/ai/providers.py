@@ -176,6 +176,7 @@ class GeminiStructuredRouterAdapter:
                     "type": "OBJECT",
                     "properties": {
                         "intent": {"type": "STRING"},
+                        "requested_parts": {"type": "ARRAY", "items": {"type": "STRING"}},
                         "team": {"type": "STRING", "nullable": True},
                         "function": {"type": "STRING", "nullable": True},
                         "position": {"type": "STRING", "nullable": True},
@@ -307,11 +308,42 @@ class DeterministicLocalProviderAdapter:
         scope = merged.get("scope") or "Call Center"
         branch = merged.get("branch") or "All Branches"
 
-        # 0. Focused Agent or Team Spotlight & 6-Month Trend (concise 1-sentence answer, zero bullet clutter)
-        if merged.get("spotlight"):
+        # 0. Multi-part Team/Metric Trend + Top/Lowest Performer OR Single Spotlight
+        if merged.get("team_trend_spotlight") and merged.get("agent_spotlight"):
+            tt = merged["team_trend_spotlight"]
+            ap = merged["agent_spotlight"]
+            t_scope = tt.get("team") or scope
+            t_metric = tt.get("metric_label") or "Overall Score"
+            t_sc = float(tt.get("score") or 0.0)
+            t_first_sc = float(tt.get("first_score") or t_sc)
+            t_first_lbl = tt.get("first_month_label") or ""
+            t_six_d = tt.get("six_month_delta")
+            t_delta_txt = f" ({t_six_d:+.1f}%)" if t_six_d is not None else ""
+
+            e_name = ap.get("entity_name") or "Agent"
+            e_id = ap.get("entity_id")
+            e_team = ap.get("team") or scope
+            r_dir = ap.get("ranking_direction")
+            rank_num = ap.get("rank")
+            tot_team = ap.get("total_in_team")
+            rank_metric_lbl = ap.get("ranking_metric_label") or "Overall PMS Score"
+            rank_metric_disp = ap.get("ranking_metric_display") or f"{float(ap.get('score') or 0.0):.1f}%"
+            src_route = ap.get("source_route") or f"/employee/{e_id}"
+            role_lbl = "lowest-scoring performer" if r_dir == "worst" else "#1 top performer"
+
+            headline = (
+                f"{t_scope} {t_metric} moved from {t_first_lbl} ({t_first_sc:.1f}%) to {period} ({t_sc:.1f}%{t_delta_txt}), "
+                f"and {e_name} ({e_id}) is the {role_lbl} in {e_team} ({branch}) for {period} by {rank_metric_lbl} at {rank_metric_disp} (Rank #{rank_num} of {tot_team})."
+            )
+            bullets.append(
+                f"Verified performer evidence: {e_name} ({e_id}) · Ranking metric: {rank_metric_lbl} ({rank_metric_disp}) · Period: {period} · Scope: {e_team} ({branch}) · Source: {src_route}."
+            )
+        elif merged.get("spotlight"):
             sp = merged["spotlight"]
             e_name = sp.get("entity_name") or "Agent"
             e_id = sp.get("entity_id")
+            e_pos = str(sp.get("position") or "").strip()
+            pos_txt = f" · {e_pos}" if e_pos and e_pos.casefold() not in ("agent", "call center agent") else ""
             e_team = sp.get("team") or scope
             sc = float(sp.get("score") or 0.0)
             gr = sp.get("grade") or "B"
@@ -322,24 +354,29 @@ class DeterministicLocalProviderAdapter:
             r_dir = sp.get("ranking_direction")
             rank_num = sp.get("rank")
             tot_team = sp.get("total_in_team")
+            metric_lbl = sp.get("metric_label") or "Overall Score"
+            rank_metric_lbl = sp.get("ranking_metric_label") or "Overall PMS Score"
 
             chg_txt = f", moving {chg:+.1f}% vs {prev_lbl}" if chg is not None else ""
             six_txt = f" ({six_d:+.1f}% since {first_lbl})" if six_d is not None and first_lbl else ""
             if r_dir == "team_trend":
-                headline = f"{e_team} scored {sc:.1f}% (Grade {gr}) in {period}{chg_txt}{six_txt}."
+                if metric_lbl and metric_lbl != "Overall Score":
+                    headline = f"{e_team} {metric_lbl} reached {sc:.1f}% in {period}{chg_txt}{six_txt}."
+                else:
+                    headline = f"{e_team} scored {sc:.1f}% (Grade {gr}) in {period}{chg_txt}{six_txt}."
             elif r_dir == "worst" and not signals.detected_employee_query:
                 headline = (
-                    f"{e_name} ({e_id}) is the lowest-scoring agent in {e_team} for {period} at "
+                    f"{e_name} ({e_id}{pos_txt}) is the lowest-scoring agent in {e_team} ({branch}) for {period} by {rank_metric_lbl} at "
                     f"{sc:.1f}% (Grade {gr}, Rank #{rank_num} of {tot_team}){chg_txt}{six_txt}."
                 )
             elif not signals.detected_employee_query:
                 headline = (
-                    f"{e_name} ({e_id}) is the #1 top performer in {e_team} for {period} at "
+                    f"{e_name} ({e_id}{pos_txt}) is the #1 top performer in {e_team} ({branch}) for {period} by {rank_metric_lbl} at "
                     f"{sc:.1f}% (Grade {gr}, Rank #{rank_num} of {tot_team}){chg_txt}{six_txt}."
                 )
             else:
                 headline = (
-                    f"{e_name} ({e_id}) scored {sc:.1f}% (Grade {gr}, Rank #{rank_num} of {tot_team} in {e_team}) "
+                    f"{e_name} ({e_id}{pos_txt}) scored {sc:.1f}% (Grade {gr}, Rank #{rank_num} of {tot_team} in {e_team}) "
                     f"in {period}{chg_txt}{six_txt}."
                 )
 
@@ -497,11 +534,18 @@ class DeterministicLocalProviderAdapter:
                     f"Lowest KPI: {lowest_kpi['kpi_label']} (Weight {lowest_kpi['weight_percent']:.0f}%) at {lowest_kpi.get('achievement_percent') or 0:.1f}% achievement ({lowest_kpi['people_below_target']} agents below target)."
                 )
 
+        if str(branch).casefold() in ("all branches", "all", "") and not merged.get("branch_comparison"):
+            primary_drilldown = f"Compare Dubai vs Sharjah branch performance for {scope}"
+        elif not merged.get("top_contributors"):
+            primary_drilldown = f"Show verified KPI score drivers for {scope} in {period}"
+        else:
+            primary_drilldown = f"What is {scope} 6-month trend?"
+
         followups = [
+            primary_drilldown,
             f"Who is the best agent in {scope} and his trend?",
             f"Who is the lowest agent in {scope} and his trend?",
             f"What is {scope} 6-month trend?",
-            f"Compare Dubai vs Sharjah branch performance for {scope}",
         ]
 
         return NarrativeSynthesisResult(

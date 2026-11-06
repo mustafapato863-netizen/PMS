@@ -86,14 +86,6 @@ const CATEGORY_STYLES: Record<
   },
 };
 
-const SENIOR_BRIEF_ROLES = new Set([
-  'Executive',
-  'General Manager',
-  'Regional Manager',
-  'Branch Director',
-  'Function Director',
-]);
-
 export default function PmsAiWorkspaceView() {
   const { currentUser } = useAuth();
   const activeMonth = useAppStore((s) => s.activeMonth);
@@ -108,9 +100,7 @@ export default function PmsAiWorkspaceView() {
   const [selectedLevel, setSelectedLevel] = useState<string>(
     () => searchParams.get('performance_level') || 'All',
   );
-  const [answerDetail, setAnswerDetail] = useState<'brief' | 'details'>(() =>
-    SENIOR_BRIEF_ROLES.has(currentUser?.role || '') ? 'brief' : 'details',
-  );
+  const [answerDetail, setAnswerDetail] = useState<'auto' | 'brief' | 'details'>('auto');
   const [promptInput, setPromptInput] = useState('');
   const [turns, setTurns] = useState<ConversationTurn[]>([]);
   const [lastConfirmedQuery, setLastConfirmedQuery] = useState<ConfirmedQueryContext | null>(null);
@@ -120,10 +110,7 @@ export default function PmsAiWorkspaceView() {
   const streamEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    setAnswerDetail(SENIOR_BRIEF_ROLES.has(currentUser?.role || '') ? 'brief' : 'details');
-  }, [currentUser?.role]);
-
-  useEffect(() => {
+    setAnswerDetail('auto');
     setTurns([]);
     setLastConfirmedQuery(null);
   }, [currentUser?.id]);
@@ -131,18 +118,20 @@ export default function PmsAiWorkspaceView() {
   const monthParam = searchParams.get('month') || (activeMonth !== 'All' ? activeMonth : null);
   const yearParam = searchParams.get('year') ? Number(searchParams.get('year')) : null;
   const functionParam = searchParams.get('function') || 'Call Center';
+  const positionParam = searchParams.get('position') || null;
 
   const sessionState: SessionFilterContext = useMemo(
     () => ({
       function: functionParam,
       team: selectedTeam !== 'All' ? selectedTeam : null,
+      position: positionParam,
       branch: selectedBranch !== 'all' ? selectedBranch : null,
       performance_level: selectedLevel !== 'All' ? selectedLevel : null,
       month: monthParam,
       year: yearParam,
       last_confirmed_query: lastConfirmedQuery,
     }),
-    [functionParam, selectedTeam, selectedBranch, selectedLevel, monthParam, yearParam, lastConfirmedQuery],
+    [functionParam, selectedTeam, positionParam, selectedBranch, selectedLevel, monthParam, yearParam, lastConfirmedQuery],
   );
 
   const handleFilterChange = (key: 'team' | 'branch' | 'performance_level', value: string) => {
@@ -446,9 +435,10 @@ export default function PmsAiWorkspaceView() {
                           })),
                         ]
                       : [
-                          { value: 'All', label: 'All Call Center', badge: '2 Teams' },
+                          { value: 'All', label: 'All Call Center', badge: '3 Scopes' },
                           { value: 'Inbound', label: 'Inbound', badge: '35 Agents' },
                           { value: 'Outbound', label: 'Outbound', badge: '7 Agents' },
+                          { value: 'Support Positions', label: 'Support Positions', badge: 'Call Center' },
                         ]
                   }
                 />
@@ -528,10 +518,10 @@ export default function PmsAiWorkspaceView() {
                 >
                   <button
                     type="button"
-                    aria-pressed={answerDetail === 'brief'}
+                    aria-pressed={answerDetail === 'brief' || answerDetail === 'auto'}
                     onClick={() => setAnswerDetail('brief')}
                     className={`rounded-full px-2.5 py-1 transition-colors ${
-                      answerDetail === 'brief'
+                      answerDetail === 'brief' || answerDetail === 'auto'
                         ? 'bg-blue-600 text-white shadow-2xs'
                         : 'text-slate-600 hover:text-blue-600'
                     }`}

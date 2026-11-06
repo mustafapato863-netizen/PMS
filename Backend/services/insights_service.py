@@ -1287,14 +1287,21 @@ class InsightsService:
             ]
         selected_team = filters.get("team")
         if selected_team:
-            # Parent domains such as Call Center / RCM / Pre-Approvals expand to
-            # every underlying source team so domain averages include the full
-            # rollup rather than an exact-name match that finds no rows.
-            team_values = selection_team_keys(str(selected_team))
-            result = [
-                record for record in result
-                if str(_value(record, "team", "")).casefold() in team_values
-            ]
+            if str(selected_team).strip().casefold() in {"support positions", "call center support positions"}:
+                result = [
+                    record for record in result
+                    if str(_value(record, "team", "")).casefold() == "call center"
+                    and bool(str(_value(record, "position", "") or "").strip())
+                ]
+            else:
+                # Parent domains such as Call Center / RCM / Pre-Approvals expand to
+                # every underlying source team so domain averages include the full
+                # rollup rather than an exact-name match that finds no rows.
+                team_values = selection_team_keys(str(selected_team))
+                result = [
+                    record for record in result
+                    if str(_value(record, "team", "")).casefold() in team_values
+                ]
         selected_branch = filters.get("branch")
         if selected_branch:
             result = [

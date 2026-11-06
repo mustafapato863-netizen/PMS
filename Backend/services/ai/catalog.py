@@ -84,6 +84,13 @@ def _slugify(value: str) -> str:
 TEAM_ENGLISH_ALIASES: dict[str, tuple[str, ...]] = {
     "Inbound": ("inbound", "inbound team", "inbound call center", "inbound agents"),
     "Outbound": ("outbound", "outbound team", "outbound call center", "outbound agents"),
+    "Support Positions": (
+        "support positions",
+        "call center support positions",
+        "call center support",
+        "support roles",
+        "support position",
+    ),
     "Call Center": ("call center", "contact center", "cc"),
     "RCM": ("rcm", "revenue cycle", "revenue cycle management"),
     "Coding": ("coding", "medical coding", "coding team", "coding egy"),
@@ -132,6 +139,15 @@ TEAM_ENGLISH_ALIASES: dict[str, tuple[str, ...]] = {
 }
 
 POSITION_ENGLISH_ALIASES: dict[str, tuple[str, str]] = {
+    "call center trainer": ("Support Positions", "Call Center trainer"),
+    "trainer": ("Support Positions", "Call Center trainer"),
+    "quality assurance": ("Support Positions", "Quality Assurance"),
+    "quality specialist": ("Support Positions", "Quality Assurance"),
+    "qa specialist": ("Support Positions", "Quality Assurance"),
+    "workforce analyst": ("Support Positions", "Workforce analyst"),
+    "wfm analyst": ("Support Positions", "Workforce analyst"),
+    "inbound team leader": ("Support Positions", "Inbound Team Leader"),
+    "outbound team leader": ("Support Positions", "Outbound Team Leader"),
     "media buyer": ("Marketing", "Media Buyer"),
     "media buyers": ("Marketing", "Media Buyer"),
     "graphic designer": ("Marketing", "Graphic Designer"),
@@ -156,6 +172,8 @@ class PmsAiCatalog:
         self.metrics[metric.metric_id] = metric
         team_key = metric.team.casefold()
         self.metrics_by_team.setdefault(team_key, []).append(metric)
+        if team_key == "call center" and metric.position:
+            self.metrics_by_team.setdefault("support positions", []).append(metric)
 
     def _build(self) -> None:
         raw_configs = load_all_team_configs()
@@ -201,6 +219,17 @@ class PmsAiCatalog:
                 supports_branches=supports_branches,
                 aliases=TEAM_ENGLISH_ALIASES.get(team_name, (team_name.casefold(),)),
             )
+            if team_name == "Call Center":
+                self.teams["Support Positions"] = CatalogTeamDefinition(
+                    team="Support Positions",
+                    db_name="Call Center",
+                    function="Call Center",
+                    region=region,
+                    positions=positions,
+                    performance_levels=("Employee",),
+                    supports_branches=supports_branches,
+                    aliases=TEAM_ENGLISH_ALIASES["Support Positions"],
+                )
 
             team_slug = _slugify(team_name)
 
@@ -497,6 +526,7 @@ class PmsAiCatalog:
         ordered_teams = [
             "Inbound",
             "Outbound",
+            "Support Positions",
             "Coding",
             "Submission",
             "Re-Submission",
@@ -516,7 +546,7 @@ class PmsAiCatalog:
         cfg = get_ai_runtime_config()
         rows: list[dict[str, Any]] = []
         for t_name in ordered_teams:
-            t_def = self.teams.get(t_name.casefold())
+            t_def = self.teams.get(t_name) or self.teams.get(t_name.casefold())
             t_metrics = self.metrics_by_team.get(t_name.casefold(), [])
             scored_metrics = [m for m in t_metrics if m.contributes_to_score]
             tracking_metrics = [m for m in t_metrics if not m.contributes_to_score]
@@ -548,6 +578,7 @@ class PmsAiCatalog:
         ordered_teams = [
             "Inbound",
             "Outbound",
+            "Support Positions",
             "Coding",
             "Submission",
             "Re-Submission",

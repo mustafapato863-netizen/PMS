@@ -4,6 +4,14 @@
 
 **First release** — A read-only Call Center pilot covering published Employee data for eligible Inbound and Outbound scopes. Default senior managers to a brief answer. Expand to every team, position, and performance level in batches that pass the same data and access checks.
 
+## Conversation and hierarchy acceptance criteria
+
+- Use Monthly Presentation as the reference for hierarchy and analysis. Call Center is the parent function. Inbound and Outbound are teams. The source records stored as Call Center with a position belong under Support Positions, with individual positions available for drill-down. Carry the function, team or position group, position, performance level, and branch through resolution, authorized reads, aggregation, and links. Verify totals against the presentation before changing the visible labels. [Call Center presentation aggregation](../../Frontend/src/features/monthlyPresentation/callCenterDeepDiveData.ts)
+- Treat a greeting as a conversation turn. Reply in one short English sentence with zero performance reads. For analysis, answer each part the user asked for. A booking trend plus a top performer should yield a compact trend and one person with the explicit ranking metric, period, scope, and source. Ask a focused question when the ranking metric is ambiguous.
+- Start with the direct answer at every role. Offer one relevant deeper drill-down when available, such as a branch breakdown or the verified drivers. Keep detailed cards collapsed until requested. Use the approved presentation metric definitions for counts, rates, comparisons, and rankings.
+- Gemini interprets open-ended requests before tool selection, including when the team is known and the metric or action is unclear. Send only an approved, sanitized projection. Validate its intent, requested parts, scopes, and periods, then dispatch the validated request. Compose the final reply locally from PMS evidence. Enable cloud traffic after the authorization and payload checks pass.
+- September is the latest available month in the current data. Derive the displayed month from authorized published evidence so a new upload can advance it.
+
 ## 1. Scope and implementation decisions
 
 - Use English for the chat interface, starter questions, clarifications, answers, provider instructions, and new question fixtures. Display names as stored in PMS.

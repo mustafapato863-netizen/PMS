@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import time
 from typing import Any
 
@@ -22,14 +23,14 @@ from models.ai_schemas import (
 )
 from models.report_schemas import MONTHS
 from services.ai.catalog import ai_evidence_cache, evaluation_cache_identity, get_ai_catalog
-from services.ai.config import SENIOR_BRIEF_DEFAULT_ROLES, get_ai_runtime_config
+from services.ai.config import get_ai_runtime_config
 from services.ai.domain_policies import (
     build_call_center_guardrails,
     build_call_center_starter_prompts,
     extract_prompt_signals,
     sanitize_untrusted_text,
 )
-from services.ai.providers import CloudOrLocalHttpProviderAdapter
+from services.ai.providers import DeterministicLocalProviderAdapter
 from services.ai.router import HybridQueryRouter
 from services.ai.tool_registry import (
     DeterministicToolRegistry,
@@ -39,6 +40,8 @@ from services.ai.tool_registry import (
 )
 from services.ai.trace_logger import TrainingTraceLogger
 from services.corrective_action_service import CorrectiveActionService
+from services.database_record_source import DatabaseRecordSource
+from utils.report_scope import filter_records_by_scope
 
 REVERSE_MONTHS: dict[int, str] = {v: k for k, v in MONTHS.items()}
 
@@ -57,6 +60,22 @@ class PmsAiOrchestrator:
     def __init__(self, db: Session, scope: dict[str, Any]) -> None:
         self.db = db
         self.scope = scope
+
+    def _get_published_periods(self) -> set[str]:
+        try:
+            records = filter_records_by_scope(DatabaseRecordSource(self.db).get_all(), self.scope)
+            periods: set[str] = set()
+            for r in records:
+                yr = getattr(r, "year", None)
+                mo = getattr(r, "month", None)
+                if not yr or not mo:
+                    continue
+                m_num = MONTHS.get(str(mo).strip())
+                if m_num:
+                    periods.add(f"{int(yr):04d}-{int(m_num):02d}")
+            return periods
+        except Exception:
+            return set()
 
     def build_watching_workspace(self, session_state: SessionFilterContext) -> AiWatchingPayload:
         ctx = ToolExecutionContext(db=self.db, scope=self.scope, session_state=session_state)
@@ -209,6 +228,16 @@ class PmsAiOrchestrator:
         role = str(self.scope.get("role") or "Manager")
         requested_detail = req.answer_detail or "auto"
         lower_prompt = (req.prompt or "").casefold()
+        if re.fullmatch(
+            r"(?:hi|hello|hey|good morning|good afternoon|good evening)(?:\s+there)?[\s!.,?]*",
+            lower_prompt.strip(),
+        ):
+            return AiChatResponsePayload(
+                trace_id="",
+                answer_detail="brief",
+                headline="Hi! What would you like to know about performance?",
+                resolved_session_state=req.session_state,
+            )
         asks_explicit_breakdown = any(
             phrase in lower_prompt
             for phrase in (
@@ -225,15 +254,16 @@ class PmsAiOrchestrator:
             effective_detail = requested_detail
         elif asks_explicit_breakdown:
             effective_detail = "details"
-        elif cfg.brief_default_enabled and role in SENIOR_BRIEF_DEFAULT_ROLES:
+        elif cfg.brief_default_enabled:
             effective_detail = "brief"
         else:
             effective_detail = "details"
 
-        # Release any open auth read transaction before routing (which may invoke a provider in hybrid mode)
+        # Derive authorized published periods and release the read transaction before routing
+        published_periods = self._get_published_periods()
         release_read_transaction(self.db)
         t_res_start = time.perf_counter()
-        routed = HybridQueryRouter(scope=self.scope).resolve_and_validate(
+        routed = HybridQueryRouter(scope=self.scope, published_periods=published_periods).resolve_and_validate(
             prompt=req.prompt,
             session_state=req.session_state,
             provider_override=req.provider_override,
@@ -241,32 +271,49 @@ class PmsAiOrchestrator:
         signals = extract_prompt_signals(req.prompt, req.session_state)
 
         # Synchronize signals with validated StructuredQueryPlan (including inherited follow-up context)
-        if routed.plan.team and not signals.detected_team:
+        if routed.plan.team:
             signals.detected_team = routed.plan.team
-        if routed.plan.branch and not signals.detected_branch:
+        if routed.plan.branch:
             signals.detected_branch = routed.plan.branch
-        if routed.plan.compare_branch and not signals.detected_compare_branch:
+        if routed.plan.compare_branch:
             signals.detected_compare_branch = routed.plan.compare_branch
         if routed.plan.intent == "compare_branches":
             signals.asks_branch_comparison = True
-        if routed.plan.performance_level and not signals.detected_level:
+        if routed.plan.performance_level:
             signals.detected_level = routed.plan.performance_level
-        if routed.plan.metric and not signals.detected_kpi:
+        if routed.plan.metric:
             signals.detected_kpi = routed.plan.metric.split(":")[-1]
-        if routed.plan.periods and not signals.detected_month:
+        if routed.plan.periods:
             p_month, p_year = _period_key_to_month_year(routed.plan.periods[-1])
             if p_month:
                 signals.detected_month = p_month
-            if p_year and not signals.detected_year:
+            if p_year:
                 signals.detected_year = p_year
+        if routed.plan.ranking_direction == "worst":
+            signals.asks_worst_agent = True
 
-        if routed.inherited_filters or routed.plan.metric or routed.plan.position:
+        if routed.plan.requested_parts == ["trend", "ranking"] or (
+            "trend" in routed.plan.requested_parts and "ranking" in routed.plan.requested_parts
+        ):
+            signals.primary_intents = ["team_trend_spotlight", "agent_spotlight_trend"]
+            signals.asks_single_person = True
+        elif routed.plan.intent == "ranking" and routed.plan.single_person:
+            signals.primary_intents = ["agent_spotlight_trend"]
+            signals.asks_single_person = True
+        elif routed.plan.intent == "trend":
+            signals.primary_intents = ["team_trend_spotlight"]
+        elif routed.route_used == "gemini_router" or routed.inherited_filters or routed.plan.metric or routed.plan.position or routed.plan.intent in ("compare_periods", "compare_branches"):
             if routed.plan.intent in ("actual_vs_target", "score_drivers", "compare_periods", "compare_branches") and "kpi_diagnosis" not in signals.primary_intents:
-                signals.primary_intents.insert(0, "kpi_diagnosis")
+                if signals.primary_intents == ["executive_summary"]:
+                    signals.primary_intents = ["kpi_diagnosis"]
+                else:
+                    signals.primary_intents.insert(0, "kpi_diagnosis")
             elif routed.plan.intent == "ranking" and "people_contribution" not in signals.primary_intents and "agent_spotlight_trend" not in signals.primary_intents:
-                signals.primary_intents.insert(0, "agent_spotlight_trend" if routed.plan.single_person else "people_contribution")
-            elif routed.plan.intent == "trend" and "team_trend_spotlight" not in signals.primary_intents:
-                signals.primary_intents.insert(0, "team_trend_spotlight")
+                target_tool = "agent_spotlight_trend" if routed.plan.single_person else "people_contribution"
+                if signals.primary_intents == ["executive_summary"]:
+                    signals.primary_intents = [target_tool]
+                else:
+                    signals.primary_intents.insert(0, target_tool)
             elif routed.plan.intent == "scorecard_structure" and "management_bsc" not in signals.primary_intents:
                 signals.primary_intents.insert(0, "management_bsc")
             elif routed.plan.intent == "corrective_actions" and "corrective_actions" not in signals.primary_intents:
@@ -284,6 +331,7 @@ class PmsAiOrchestrator:
             resolved_state = SessionFilterContext(
                 function=routed.plan.function or req.session_state.function or "Call Center",
                 team=routed.plan.team or req.session_state.team,
+                position=routed.plan.position or req.session_state.position,
                 branch=routed.plan.branch or req.session_state.branch,
                 region=req.session_state.region,
                 performance_level=routed.plan.performance_level or req.session_state.performance_level,
@@ -293,6 +341,8 @@ class PmsAiOrchestrator:
                 last_confirmed_query=routed.confirmed_context,
             )
             scope_team_or_fn = resolved_state.team or resolved_state.function or "Call Center"
+            if resolved_state.position:
+                scope_team_or_fn = f"{scope_team_or_fn} ({resolved_state.position})"
             scope_branch = (
                 resolved_state.branch.capitalize()
                 if resolved_state.branch and resolved_state.branch.casefold() != "all"
@@ -420,9 +470,12 @@ class PmsAiOrchestrator:
                     tool_results.append(
                         registry.execute_agent_spotlight_and_trend(
                             team=signals.detected_team,
+                            position=routed.plan.position,
+                            function=routed.plan.function,
                             branch=signals.detected_branch,
                             month=signals.detected_month,
                             year=signals.detected_year,
+                            kpi=signals.detected_kpi,
                             employee_query=signals.detected_employee_query,
                             ranking_direction="worst" if signals.asks_worst_agent else "best",
                             single_person=signals.asks_single_person,
@@ -432,9 +485,12 @@ class PmsAiOrchestrator:
                     tool_results.append(
                         registry.execute_team_trend_spotlight(
                             team=signals.detected_team,
+                            position=routed.plan.position,
+                            function=routed.plan.function,
                             branch=signals.detected_branch,
                             month=signals.detected_month,
                             year=signals.detected_year,
+                            kpi=signals.detected_kpi,
                         )
                     )
                 elif intent == "management_bsc":
@@ -474,6 +530,8 @@ class PmsAiOrchestrator:
                     tool_results.append(
                         registry.execute_people_contribution_and_rankings(
                             team=signals.detected_team,
+                            position=routed.plan.position,
+                            function=routed.plan.function,
                             branch=signals.detected_branch,
                             performance_level=signals.detected_level,
                             kpi=signals.detected_kpi,
@@ -485,10 +543,12 @@ class PmsAiOrchestrator:
                     tool_results.append(
                         registry.execute_kpi_diagnosis_and_trends(
                             team=signals.detected_team,
+                            position=routed.plan.position,
                             function=routed.plan.function,
                             branch=signals.detected_branch,
                             compare_branch=signals.detected_compare_branch,
                             asks_branch_comparison=signals.asks_branch_comparison,
+                            asks_period_comparison=routed.plan.intent == "compare_periods",
                             performance_level=signals.detected_level,
                             kpi=signals.detected_kpi,
                             month=signals.detected_month,
@@ -499,6 +559,7 @@ class PmsAiOrchestrator:
                     tool_results.append(
                         registry.execute_executive_and_priority_insights(
                             team=signals.detected_team,
+                            position=routed.plan.position,
                             function=routed.plan.function,
                             branch=signals.detected_branch,
                             performance_level=signals.detected_level,
@@ -607,7 +668,7 @@ class PmsAiOrchestrator:
         render_ms = round((time.perf_counter() - t_render_start) * 1000.0, 2)
 
         t_prov_start = time.perf_counter()
-        adapter = CloudOrLocalHttpProviderAdapter(provider_override=req.provider_override)
+        adapter = DeterministicLocalProviderAdapter()
         synthesis = adapter.synthesize(
             prompt=req.prompt,
             signals=signals,
@@ -619,6 +680,7 @@ class PmsAiOrchestrator:
         resolved_state = SessionFilterContext(
             function=routed.plan.function or req.session_state.function or "Call Center",
             team=signals.detected_team or req.session_state.team,
+            position=routed.plan.position or req.session_state.position,
             branch=signals.detected_branch or req.session_state.branch,
             region=req.session_state.region,
             performance_level=signals.detected_level or req.session_state.performance_level,
@@ -629,6 +691,8 @@ class PmsAiOrchestrator:
         )
 
         scope_team_or_fn = resolved_state.team or resolved_state.function or "Call Center"
+        if resolved_state.position:
+            scope_team_or_fn = f"{scope_team_or_fn} ({resolved_state.position})"
         scope_branch = (
             resolved_state.branch.capitalize()
             if resolved_state.branch and resolved_state.branch.casefold() != "all"

@@ -653,6 +653,17 @@ export default function AiResponseCard({ response, onSelectPrompt }: AiResponseC
                 <span>{primarySourceLink.label}</span>
               </Link>
             )}
+            {response.outcome === 'answer' && response.suggested_followups.length > 0 && (
+              <button
+                type="button"
+                data-testid="ai-primary-drilldown"
+                onClick={() => onSelectPrompt?.(response.suggested_followups[0])}
+                className="inline-flex items-center gap-1 rounded-full border border-slate-200/90 bg-white px-2.5 py-0.5 text-[11px] font-bold text-slate-700 transition-colors hover:border-blue-400 hover:text-blue-600"
+              >
+                <span>Drill down: {response.suggested_followups[0]}</span>
+                <ArrowRight size={11} />
+              </button>
+            )}
           </div>
 
           {hasExpandableDetails && (
@@ -784,7 +795,7 @@ export default function AiResponseCard({ response, onSelectPrompt }: AiResponseC
             ))}
           </div>
 
-          <div className="flex items-center gap-1">
+          {response.trace_id && <div className="flex items-center gap-1">
             {feedback === 'up' && (
               <span className="mr-1 text-[11px] font-bold text-emerald-600">Verified ✓</span>
             )}
@@ -814,7 +825,7 @@ export default function AiResponseCard({ response, onSelectPrompt }: AiResponseC
             >
               <X size={12} />
             </button>
-          </div>
+          </div>}
         </div>
       </div>
     </div>

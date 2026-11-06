@@ -113,6 +113,8 @@ def _team_keys(value: str) -> set[str]:
         return _PRE_APPROVALS_IP_ELECTIVE_KEYS
     if normalized == "call center":
         return _CALL_CENTER_KEYS
+    if normalized in {"support positions", "call center support positions"}:
+        return {"call center"}
     if normalized == "rcm":
         return _RCM_KEYS
     if normalized in _ADMINISTRATION_KEYS:
@@ -147,6 +149,8 @@ def functions_for_team(team_name: str) -> list[str]:
     if not normalized:
         return []
     key = normalized.casefold()
+    if key in {"support positions", "call center support positions"}:
+        return ["Call Center"]
     parents = [function for function, keys in _FUNCTION_TEAM_KEYS.items() if key in keys]
     return parents or [normalized]
 
