@@ -23,6 +23,10 @@ from services.ai.catalog import (
 from services.ai.classifier import LocalIntentClassifier
 from services.ai.config import get_ai_runtime_config
 from services.ai.domain_policies import BRANCH_ALIASES, MONTH_ALIASES
+from services.ai.entity_resolver import (
+    EmployeeHistoryCandidate,
+    resolve_employee_from_candidates,
+)
 from services.ai.providers import (
     GeminiStructuredRouterAdapter,
     ProviderCallMetrics,
@@ -92,6 +96,13 @@ ORDERED_TEAM_PATTERNS: tuple[tuple[str, tuple[str, ...]], ...] = (
             "support staff",
             "support agent",
             "support agents",
+            "lowest in support",
+            "best in support",
+            "top in support",
+            "worst in support",
+            "in support",
+            "from support",
+            "for support",
         ),
     ),
     ("Marketing", ("marketing", "ماركتنج", "التسويق")),
@@ -316,6 +327,22 @@ def _detect_metric_id(
         return f"{prefix}:aht"
     if any(
         k in text_lower
+        for k in (
+            "more bookings",
+            "most bookings",
+            "fewer bookings",
+            "least bookings",
+            "bookings count",
+            "total bookings",
+            "number of bookings",
+            "booking volume",
+            "how many bookings",
+        )
+    ):
+        prefix = "outbound" if t_norm == "outbound" else "inbound"
+        return f"{prefix}:bookings_count"
+    if any(
+        k in text_lower
         for k in ("booking rate", "booking conversion", "booking trend", "by booking", "on booking")
     ) or (
         t_norm in ("inbound", "outbound", "call center", "")
@@ -342,6 +369,50 @@ def _detect_metric_id(
     return None
 
 
+def _extract_person_query_from_prompt(text: str) -> str | None:
+    lower = (text or "").strip().casefold()
+    emp_id_match = re.search(r"\b(sghd\d+|emp[-_ ]?\d+|e[-_]\d+)\b", lower)
+    if emp_id_match:
+        return emp_id_match.group(1).upper()
+
+    name_patterns = [
+        r"\b([a-zA-Z]+(?:\s+[a-zA-Z]+)?)'s\b",
+        r"\b(?:is|was|did)\s+([a-zA-Z]+(?:\s+[a-zA-Z]+)?)\s+(?:a\s+new\s+joiner|new\s+in|join\b)",
+        r"\bwhen\s+did\s+([a-zA-Z]+(?:\s+[a-zA-Z]+)?)\s+join\b",
+        r"(?:employee|agent|for|about|trend of|trend for|score of|profile of)\s+([a-zA-Z]+(?:\s+[a-zA-Z]+){0,2})",
+    ]
+    stop_words = {
+        "inbound", "outbound", "call", "center", "dubai", "sharjah", "ajman", "clinics",
+        "all", "team", "teams", "branch", "branches", "the", "his", "her", "and", "in",
+        "on", "at", "to", "from", "with", "who", "what", "which", "better", "best", "worst",
+        "lowest", "top", "bottom", "trend", "month", "january", "february", "march", "april",
+        "may", "june", "july", "august", "september", "october", "november", "december",
+        "had", "has", "have", "was", "were", "is", "are", "led", "leads", "leading",
+        "scored", "scores", "scoring", "performed", "performing", "performance", "score",
+        "rate", "by", "for", "of", "support", "positions", "position", "employee", "employees",
+        "agent", "agents", "performer", "performers", "highest", "there", "anyone", "somebody",
+        "recently", "new", "joiner", "joiners",
+    }
+    for pat in name_patterns:
+        m = re.search(pat, text, flags=re.IGNORECASE)
+        if m:
+            raw_tokens = [
+                tok for tok in m.group(1).strip().split()
+                if tok.casefold() not in stop_words
+            ]
+            if raw_tokens:
+                return " ".join(raw_tokens)
+    return None
+
+
+_COUNT_WORDS: dict[int, str] = {
+    2: "two",
+    3: "three",
+    4: "four",
+    5: "five",
+}
+
+
 class HybridQueryRouter:
     """Local-first query router and pre-read validator for PMS AI."""
 
@@ -350,6 +421,7 @@ class HybridQueryRouter:
         *,
         scope: dict[str, Any],
         published_periods: Iterable[str] | None = None,
+        employee_candidates: Iterable[EmployeeHistoryCandidate] | None = None,
     ) -> None:
         self.scope = scope
         self.catalog = get_ai_catalog()
@@ -361,6 +433,9 @@ class HybridQueryRouter:
         self.latest_published_period: str = (
             max(self.published_periods) if self.published_periods else "2026-09"
         )
+        self.employee_candidates: list[EmployeeHistoryCandidate] = (
+            list(employee_candidates) if employee_candidates is not None else []
+        )
 
     def resolve_and_validate(
         self,
@@ -368,11 +443,20 @@ class HybridQueryRouter:
         prompt: str,
         session_state: SessionFilterContext,
         provider_override: str = "auto",
+        clarification_choice_id: str | None = None,
     ) -> RouterValidationResult:
         cfg = get_ai_runtime_config()
         text = (prompt or "").strip()
-        lower = text.casefold()
         prior = session_state.last_confirmed_query
+        matched_choice: ClarificationChoice | None = None
+        if clarification_choice_id and prior and prior.pending_clarification_choices:
+            matched_choice = next(
+                (c for c in prior.pending_clarification_choices if c.id == clarification_choice_id),
+                None,
+            )
+            if matched_choice and matched_choice.prompt_to_send:
+                text = matched_choice.prompt_to_send.strip()
+        lower = text.casefold()
 
         # 1. Unsupported Write / Mutation Guardrail
         if any(
@@ -451,10 +535,20 @@ class HybridQueryRouter:
 
         # 3. Context Inheritance for Follow-Up Questions
         inherited_filters: list[str] = []
+        is_ranking_correction = bool(
+            prior
+            and (prior.intent == "ranking" or prior.last_operation_kind in ("ranking", "person_summary"))
+            and re.search(
+                r"\b(?:no\b|i\s+mean(?:t)?\b|instead\b|actually\b|what\s+about\s+the\s+(?:lowest|worst|highest|best|top))",
+                lower,
+            )
+            and any(w in lower for w in ("lowest", "worst", "bottom", "highest", "best", "top"))
+        )
         is_short_followup = bool(
             prior
             and (
-                lower.startswith("and ")
+                is_ranking_correction
+                or lower.startswith("and ")
                 or lower.startswith("what about ")
                 or "compare it with" in lower
                 or len(text.split()) <= 5
@@ -463,7 +557,9 @@ class HybridQueryRouter:
 
         eff_team = explicit_team
         if not eff_team and not asks_team_comparison:
-            if is_short_followup and prior and prior.team:
+            if matched_choice and matched_choice.team:
+                eff_team = matched_choice.team
+            elif is_short_followup and prior and prior.team:
                 eff_team = prior.team
                 inherited_filters.append("team")
             elif session_state.team and session_state.team not in ("All", "all"):
@@ -471,7 +567,9 @@ class HybridQueryRouter:
 
         eff_pos = detected_pos
         if not eff_pos:
-            if is_short_followup and prior and prior.position:
+            if matched_choice and matched_choice.position:
+                eff_pos = matched_choice.position
+            elif is_short_followup and prior and prior.position:
                 if not explicit_team or explicit_team == prior.team:
                     eff_pos = prior.position
                     inherited_filters.append("position")
@@ -486,7 +584,9 @@ class HybridQueryRouter:
 
         eff_branch = explicit_branch
         if not eff_branch and not asks_branch_comparison:
-            if is_short_followup and prior and prior.branch:
+            if matched_choice and matched_choice.branch:
+                eff_branch = matched_choice.branch
+            elif is_short_followup and prior and prior.branch:
                 eff_branch = prior.branch
                 inherited_filters.append("branch")
             elif (
@@ -497,21 +597,36 @@ class HybridQueryRouter:
                 # Note: only inherit session_state.branch if prompt didn't explicitly ask a global team question
                 pass
 
+        eff_branches: list[str] = list(explicit_branches)
+        if not eff_branches:
+            if is_short_followup and prior and prior.branches:
+                eff_branches = list(prior.branches)
+            elif eff_branch:
+                eff_branches = [eff_branch]
+
         eff_level = explicit_level or (
-            prior.performance_level
-            if (is_short_followup and prior and prior.performance_level)
+            matched_choice.performance_level
+            if (matched_choice and matched_choice.performance_level)
             else (
-                session_state.performance_level
-                if session_state.performance_level not in (None, "", "All", "all")
-                else "Employee"
+                prior.performance_level
+                if (is_short_followup and prior and prior.performance_level)
+                else (
+                    session_state.performance_level
+                    if session_state.performance_level not in (None, "", "All", "all")
+                    else "Employee"
+                )
             )
         )
 
-        eff_metric = _detect_metric_id(
-            lower,
-            team=eff_team,
-            position=eff_pos,
-            performance_level=eff_level,
+        eff_metric = (
+            matched_choice.metric_id
+            if (matched_choice and matched_choice.metric_id)
+            else _detect_metric_id(
+                lower,
+                team=eff_team,
+                position=eff_pos,
+                performance_level=eff_level,
+            )
         )
         if not eff_metric and is_short_followup and prior and prior.metric_id:
             # Inherit metric only if team did not switch to an incompatible team
@@ -543,7 +658,7 @@ class HybridQueryRouter:
                 eff_periods = list(prior.periods)
                 inherited_filters.append("periods")
 
-        # 4. Clarification Checks (Ambiguous Attendance, Ambiguous "Other" KPI, or Ambiguous Ranking Metric)
+        # 4. Clarification Checks (Ambiguous Attendance, Ambiguous "Other" KPI, Joiner/Tenure, or Ambiguous Ranking Metric)
         if (
             re.search(r"\battendance\b", lower)
             and not eff_team
@@ -599,16 +714,23 @@ class HybridQueryRouter:
                 intent="clarify",
                 function=eff_fn,
                 periods=eff_periods,
+                turn_kind_v2="clarification",
                 clarification_code="AMBIGUOUS_ATTENDANCE_DEFINITION",
             )
             preserved_ctx = (
-                prior.model_copy(update={"pending_clarification_code": "AMBIGUOUS_ATTENDANCE_DEFINITION"})
+                prior.model_copy(
+                    update={
+                        "pending_clarification_code": "AMBIGUOUS_ATTENDANCE_DEFINITION",
+                        "pending_clarification_choices": filtered_choices,
+                    }
+                )
                 if prior is not None
                 else ConfirmedQueryContext(
                     intent="clarify",
                     function=eff_fn,
                     periods=eff_periods,
                     pending_clarification_code="AMBIGUOUS_ATTENDANCE_DEFINITION",
+                    pending_clarification_choices=filtered_choices,
                 )
             )
             return RouterValidationResult(
@@ -620,6 +742,7 @@ class HybridQueryRouter:
                 narrative_bullets=[
                     "Call Center tracks Patient Attendance Rate (Attended / Bookings, 70% weight) on Employee scorecards and Attendance Compliance (15% weight) on Managerial scorecards."
                 ],
+                route_used="clarification_choice" if matched_choice else "local_rules",
             )
 
         if re.search(r"\bother\s+(?:kpi|metric)\b", lower) and not eff_team:
@@ -653,16 +776,23 @@ class HybridQueryRouter:
                 intent="clarify",
                 function=eff_fn,
                 periods=eff_periods,
+                turn_kind_v2="clarification",
                 clarification_code="AMBIGUOUS_ABANDON_METRIC",
             )
             preserved_other_ctx = (
-                prior.model_copy(update={"pending_clarification_code": "AMBIGUOUS_ABANDON_METRIC"})
+                prior.model_copy(
+                    update={
+                        "pending_clarification_code": "AMBIGUOUS_ABANDON_METRIC",
+                        "pending_clarification_choices": filtered_other,
+                    }
+                )
                 if prior is not None
                 else ConfirmedQueryContext(
                     intent="clarify",
                     function=eff_fn,
                     periods=eff_periods,
                     pending_clarification_code="AMBIGUOUS_ABANDON_METRIC",
+                    pending_clarification_choices=filtered_other,
                 )
             )
             return RouterValidationResult(
@@ -674,11 +804,138 @@ class HybridQueryRouter:
                 narrative_bullets=[
                     "Select Inbound Abandon Rate or Outbound Reachability below to continue."
                 ],
+                route_used="clarification_choice" if matched_choice else "local_rules",
             )
 
-        if re.search(r"\b(?:new\s+joiners?|join(?:ed)?\b.*\brecently|hire\s+date|tenure)\b", lower):
+        if re.search(r"\b(?:new\s+joiners?|join(?:ed)?\b.*\brecently|when\s+did\b.*\bjoin|hire\s+date|joining\s+date|tenure)\b", lower):
             target_t = eff_team or "Inbound"
             latest_lbl = _format_period_label(eff_periods[-1] if eff_periods else self.latest_published_period)
+            person_q = (
+                matched_choice.employee_id
+                if (matched_choice and matched_choice.employee_id)
+                else _extract_person_query_from_prompt(text)
+            )
+            if person_q and self.employee_candidates:
+                emp_res = resolve_employee_from_candidates(
+                    person_q,
+                    self.employee_candidates,
+                    team=eff_team,
+                    function=eff_fn,
+                    position=eff_pos,
+                )
+                if emp_res.status == "ambiguous":
+                    cnt_word = _COUNT_WORDS.get(len(emp_res.matches), str(len(emp_res.matches)))
+                    tok_title = person_q.strip().title()
+                    question = f"I found {cnt_word} {tok_title}s in {target_t}. Which one do you mean?"
+                    person_choices = [
+                        ClarificationChoice(
+                            id=f"choice-person-{cand.employee_id}",
+                            label=f"{cand.employee_name} ({cand.employee_id}) · {cand.position or cand.team}",
+                            description=f"Tracked {cand.earliest_period_label} – {cand.latest_period_label} ({cand.months_tracked} months)",
+                            prompt_to_send=f"Is {cand.employee_name} ({cand.employee_id}) a new joiner in {cand.team}?",
+                            team=cand.team,
+                            position=cand.position,
+                            performance_level=eff_level,
+                            employee_id=cand.employee_id,
+                            employee_name=cand.employee_name,
+                        )
+                        for cand in emp_res.matches[:4]
+                    ]
+                    clar_ambig = AiClarificationPrompt(
+                        code="AMBIGUOUS_PERSON",
+                        question=question,
+                        choices=person_choices,
+                    )
+                    plan_ambig = StructuredQueryPlan(
+                        intent="clarify",
+                        team=eff_team,
+                        function=eff_fn,
+                        periods=eff_periods,
+                        turn_kind_v2="clarification",
+                        operation_kind_v2="person_tenure_check",
+                        clarification_code="AMBIGUOUS_PERSON",
+                    )
+                    ctx_ambig = ConfirmedQueryContext(
+                        intent="clarify",
+                        team=eff_team,
+                        function=eff_fn,
+                        periods=eff_periods,
+                        last_operation_kind="person_tenure_check",
+                        pending_clarification_code="AMBIGUOUS_PERSON",
+                        pending_clarification_choices=person_choices,
+                    )
+                    return RouterValidationResult(
+                        outcome="clarification",
+                        plan=plan_ambig,
+                        confirmed_context=ctx_ambig,
+                        clarification=clar_ambig,
+                        headline=question,
+                        narrative_bullets=[
+                            f"Matching employees in {target_t}: "
+                            + ", ".join(
+                                f"{c.employee_name} ({c.employee_id}, earliest record {c.earliest_period_label})"
+                                for c in emp_res.matches[:4]
+                            )
+                            + "."
+                        ],
+                        route_used="clarification_choice" if matched_choice else "local_rules",
+                    )
+                if emp_res.status == "unique" and emp_res.selected is not None:
+                    cand = emp_res.selected
+                    headline_msg = (
+                        f"{cand.employee_name}'s first available {cand.team} record is {cand.earliest_period_label}. "
+                        f"PMS has no verified joining date, so I can't confirm whether they joined that month."
+                    )
+                    hist_choices = [
+                        ClarificationChoice(
+                            id=f"choice-history-{cand.employee_id}",
+                            label=f"Show {cand.employee_name}'s evaluation history ({cand.earliest_period_label} – {cand.latest_period_label})",
+                            prompt_to_send=f"Show trend for employee {cand.employee_id} across tracked months",
+                            team=cand.team,
+                            performance_level=eff_level,
+                            employee_id=cand.employee_id,
+                            employee_name=cand.employee_name,
+                        )
+                    ]
+                    clar_unique = AiClarificationPrompt(
+                        code="MISSING_HR_JOIN_DATE",
+                        question=headline_msg,
+                        choices=hist_choices,
+                    )
+                    plan_unique = StructuredQueryPlan(
+                        intent="clarify",
+                        team=cand.team,
+                        function=eff_fn,
+                        periods=eff_periods,
+                        employee_id=cand.employee_id,
+                        employee_name=cand.employee_name,
+                        turn_kind_v2="clarification",
+                        operation_kind_v2="person_tenure_check",
+                        clarification_code="MISSING_HR_JOIN_DATE",
+                    )
+                    ctx_unique = ConfirmedQueryContext(
+                        intent="clarify",
+                        team=cand.team,
+                        function=eff_fn,
+                        periods=eff_periods,
+                        last_subject_employee_id=cand.employee_id,
+                        last_subject_employee_name=cand.employee_name,
+                        last_operation_kind="person_tenure_check",
+                        pending_clarification_code="MISSING_HR_JOIN_DATE",
+                        pending_clarification_choices=hist_choices,
+                    )
+                    return RouterValidationResult(
+                        outcome="clarification",
+                        plan=plan_unique,
+                        confirmed_context=ctx_unique,
+                        clarification=clar_unique,
+                        headline=headline_msg,
+                        narrative_bullets=[
+                            f"{cand.employee_name} ({cand.employee_id}) has {cand.months_tracked} published evaluation month(s) in {cand.team} ({cand.earliest_period_label} to {cand.latest_period_label})."
+                        ],
+                        route_used="clarification_choice" if matched_choice else "local_rules",
+                    )
+
             clar_joiner = AiClarificationPrompt(
                 code="AMBIGUOUS_KPI_SCOPE",
                 question=(
@@ -700,6 +957,8 @@ class HybridQueryRouter:
                 team=eff_team,
                 function=eff_fn,
                 periods=eff_periods,
+                turn_kind_v2="clarification",
+                operation_kind_v2="person_tenure_check",
                 clarification_code="AMBIGUOUS_KPI_SCOPE",
             )
             return RouterValidationResult(
@@ -711,17 +970,123 @@ class HybridQueryRouter:
                 narrative_bullets=[
                     "Employee onboarding dates and new-joiner flags are not part of the published PMS scorecard dataset."
                 ],
+                route_used="clarification_choice" if matched_choice else "local_rules",
             )
 
         # 5. Determine Intent
         emp_id_match = re.search(r"\b(sghd\d+|emp[-_ ]?\d+|e[-_]\d+)\b", lower)
-        possessive_person_match = re.search(r"\b([a-z]+(?:\s+[a-z]+)?)'s\s+position\b", lower)
+        asks_best_month = bool(
+            re.search(r"\b(?:best|highest|peak|strongest|worst|lowest)\s+month\b", lower)
+            or (
+                is_short_followup
+                and not is_ranking_correction
+                and prior is not None
+                and prior.last_operation_kind in ("person_best_period", "employee_best_period")
+            )
+        )
+        explicit_person_query = (
+            matched_choice.employee_id
+            if (matched_choice and matched_choice.employee_id)
+            else _extract_person_query_from_prompt(text)
+        )
+        possessive_person_match = bool(
+            explicit_person_query
+            and re.search(
+                r"\b([a-z]+(?:\s+[a-z]+)?)'s\s+(?:position|score|performance|best\s+month|worst\s+month|highest\s+month|lowest\s+month|trend)\b",
+                lower,
+            )
+        )
+        resolved_employee_id: str | None = matched_choice.employee_id if matched_choice else None
+        resolved_employee_name: str | None = matched_choice.employee_name if matched_choice else None
+
+        if explicit_person_query and self.employee_candidates and not resolved_employee_id:
+            emp_res = resolve_employee_from_candidates(
+                explicit_person_query,
+                self.employee_candidates,
+                team=eff_team,
+                function=eff_fn,
+                position=eff_pos,
+            )
+            if emp_res.status == "ambiguous":
+                target_t = eff_team or eff_fn or "Call Center"
+                cnt_word = _COUNT_WORDS.get(len(emp_res.matches), str(len(emp_res.matches)))
+                tok_title = explicit_person_query.strip().title()
+                question = f"I found {cnt_word} {tok_title}s in {target_t}. Which one do you mean?"
+                person_choices = [
+                    ClarificationChoice(
+                        id=f"choice-person-{cand.employee_id}",
+                        label=f"{cand.employee_name} ({cand.employee_id}) · {cand.position or cand.team}",
+                        description=f"Tracked {cand.earliest_period_label} – {cand.latest_period_label}",
+                        prompt_to_send=re.sub(
+                            re.escape(explicit_person_query),
+                            cand.employee_id,
+                            text,
+                            flags=re.IGNORECASE,
+                        ),
+                        team=cand.team,
+                        position=cand.position,
+                        performance_level=eff_level,
+                        employee_id=cand.employee_id,
+                        employee_name=cand.employee_name,
+                    )
+                    for cand in emp_res.matches[:4]
+                ]
+                clar_ambig_p = AiClarificationPrompt(
+                    code="AMBIGUOUS_PERSON",
+                    question=question,
+                    choices=person_choices,
+                )
+                plan_ambig_p = StructuredQueryPlan(
+                    intent="clarify",
+                    team=eff_team,
+                    function=eff_fn,
+                    periods=eff_periods,
+                    turn_kind_v2="clarification",
+                    clarification_code="AMBIGUOUS_PERSON",
+                )
+                return RouterValidationResult(
+                    outcome="clarification",
+                    plan=plan_ambig_p,
+                    confirmed_context=ConfirmedQueryContext(
+                        intent="clarify",
+                        team=eff_team,
+                        function=eff_fn,
+                        periods=eff_periods,
+                        pending_clarification_code="AMBIGUOUS_PERSON",
+                        pending_clarification_choices=person_choices,
+                    ),
+                    clarification=clar_ambig_p,
+                    headline=question,
+                    narrative_bullets=[
+                        f"Select which {tok_title} you would like to inspect."
+                    ],
+                )
+            if emp_res.status == "unique" and emp_res.selected is not None:
+                resolved_employee_id = emp_res.selected.employee_id
+                resolved_employee_name = emp_res.selected.employee_name
+                if not eff_team and emp_res.selected.team:
+                    eff_team = emp_res.selected.team
+
+        if (
+            not resolved_employee_id
+            and is_short_followup
+            and not is_ranking_correction
+            and prior
+            and prior.last_subject_employee_id
+            and not explicit_team
+        ):
+            resolved_employee_id = prior.last_subject_employee_id
+            resolved_employee_name = prior.last_subject_employee_name
+            inherited_filters.append("employee")
+
         asks_trend = any(
             w in lower
             for w in ("6-month", "trend", "trajectory", "progression", "over time", "multi-month", "history")
         )
         asks_ranking_person = bool(
-            possessive_person_match
+            is_ranking_correction
+            or possessive_person_match
+            or asks_best_month
             or any(
                 phrase in lower
                 for phrase in (
@@ -730,20 +1095,34 @@ class HybridQueryRouter:
                     "best inbound",
                     "best outbound",
                     "best support",
+                    "best in support",
                     "#1 top performer",
                     "top performer",
                     "top inbound",
                     "top outbound",
                     "top support",
+                    "top in support",
                     "lowest agent",
                     "lowest performer",
                     "lowest inbound",
                     "lowest outbound",
                     "lowest support",
+                    "lowest in support",
                     "worst inbound",
                     "worst outbound",
                     "worst support",
+                    "worst in support",
                     "worst performing agent",
+                    "who is lowest",
+                    "who is the lowest",
+                    "who is worst",
+                    "who is the worst",
+                    "who is best",
+                    "who is the best",
+                    "who is highest",
+                    "who is the highest",
+                    "who is top",
+                    "who is the top",
                     "top negative contributors",
                     "which employees caused",
                     "bottom agents",
@@ -765,8 +1144,11 @@ class HybridQueryRouter:
             for w in ("lowest", "worst", "bottom", "negative contributors", "caused")
         )
         asks_single_person = bool(
-            emp_id_match
+            is_ranking_correction
+            or emp_id_match
             or possessive_person_match
+            or asks_best_month
+            or resolved_employee_id
             or any(
                 phrase in lower
                 for phrase in (
@@ -775,20 +1157,34 @@ class HybridQueryRouter:
                     "best inbound",
                     "best outbound",
                     "best support",
+                    "best in support",
                     "#1 top performer",
                     "top performer",
                     "top inbound",
                     "top outbound",
                     "top support",
+                    "top in support",
                     "lowest agent",
                     "lowest performer",
                     "lowest inbound",
                     "lowest outbound",
                     "lowest support",
+                    "lowest in support",
                     "worst inbound",
                     "worst outbound",
                     "worst support",
+                    "worst in support",
                     "worst performing agent",
+                    "who is lowest",
+                    "who is the lowest",
+                    "who is worst",
+                    "who is the worst",
+                    "who is best",
+                    "who is the best",
+                    "who is highest",
+                    "who is the highest",
+                    "who is top",
+                    "who is the top",
                     "scored lowest",
                     "scored highest",
                     "had the lowest",
@@ -850,12 +1246,19 @@ class HybridQueryRouter:
                 function=eff_fn,
                 position=eff_pos,
                 branch=eff_branch,
+                branches=eff_branches,
                 performance_level=eff_level,
                 periods=eff_periods,
+                turn_kind_v2="clarification",
                 clarification_code="AMBIGUOUS_KPI_SCOPE",
             )
             preserved_rank_ctx = (
-                prior.model_copy(update={"pending_clarification_code": "AMBIGUOUS_KPI_SCOPE"})
+                prior.model_copy(
+                    update={
+                        "pending_clarification_code": "AMBIGUOUS_KPI_SCOPE",
+                        "pending_clarification_choices": ranking_choices,
+                    }
+                )
                 if prior is not None
                 else ConfirmedQueryContext(
                     intent="clarify",
@@ -863,9 +1266,11 @@ class HybridQueryRouter:
                     function=eff_fn,
                     position=eff_pos,
                     branch=eff_branch,
+                    branches=eff_branches,
                     performance_level=eff_level,
                     periods=eff_periods,
                     pending_clarification_code="AMBIGUOUS_KPI_SCOPE",
+                    pending_clarification_choices=ranking_choices,
                 )
             )
             return RouterValidationResult(
@@ -877,6 +1282,7 @@ class HybridQueryRouter:
                 narrative_bullets=[
                     f"Specify whether to rank {eff_team or 'Call Center'} agents by Booking Rate, Patient Attendance Rate, or Overall Weighted PMS Score."
                 ],
+                route_used="clarification_choice" if matched_choice else "local_rules",
             )
 
         is_multi_part_trend_and_ranking = bool(
@@ -886,7 +1292,12 @@ class HybridQueryRouter:
         )
 
         intent: RouterIntentType = "current_value"
-        if (
+        if is_ranking_correction:
+            intent = "ranking"
+            asks_single_person = bool((prior and prior.single_person) or True)
+            if "intent" not in inherited_filters:
+                inherited_filters.append("intent")
+        elif (
             is_short_followup
             and prior
             and prior.intent
@@ -894,8 +1305,12 @@ class HybridQueryRouter:
             and "compare it with" not in lower
         ):
             intent = prior.intent
+            has_explicit_direction_word = any(
+                w in lower for w in ("lowest", "worst", "bottom", "highest", "best", "top")
+            )
             if intent == "ranking" and not asks_ranking_person:
-                asks_worst = prior.ranking_direction == "worst"
+                if not has_explicit_direction_word:
+                    asks_worst = prior.ranking_direction == "worst"
                 asks_single_person = bool(prior.single_person)
             if "intent" not in inherited_filters:
                 inherited_filters.append("intent")
@@ -943,6 +1358,12 @@ class HybridQueryRouter:
             ["trend", "ranking"] if is_multi_part_trend_and_ranking else [intent]
         )
 
+        op_kind_v2 = (
+            "person_best_period"
+            if asks_best_month
+            else ("person_summary" if resolved_employee_id else intent)
+        )
+
         plan = StructuredQueryPlan(
             intent=intent,
             requested_parts=requested_parts,
@@ -951,12 +1372,17 @@ class HybridQueryRouter:
             position=eff_pos,
             branch=eff_branch,
             compare_branch=explicit_compare_branch,
+            branches=eff_branches,
             performance_level=eff_level,
             metric=eff_metric,
             periods=eff_periods,
             ranking_direction="worst" if asks_worst else "best",
             single_person=asks_single_person,
-            employee_placeholder="[EMPLOYEE_ID]" if emp_id_match else None,
+            employee_id=resolved_employee_id,
+            employee_name=resolved_employee_name,
+            employee_placeholder="[EMPLOYEE_ID]" if (emp_id_match or resolved_employee_id) else None,
+            turn_kind_v2="correction" if is_ranking_correction else "analytical",
+            operation_kind_v2=op_kind_v2,  # type: ignore[arg-type]
             clarification_code="NONE",
             asks_decisions=any(w in lower for w in ("decision", "decisions", "recommend", "what happens if")),
         )
@@ -1032,7 +1458,7 @@ class HybridQueryRouter:
                 )
             return None
 
-        route_used = "local_rules"
+        route_used = "clarification_choice" if matched_choice else "local_rules"
         provider_metrics = ProviderCallMetrics()
         shadow_plan: dict[str, Any] | None = None
 
@@ -1057,6 +1483,7 @@ class HybridQueryRouter:
             or eff_pos is not None
             or is_short_followup
             or bool(inherited_filters)
+            or matched_choice is not None
             or any(
                 kw in lower
                 for kw in (
@@ -1101,6 +1528,7 @@ class HybridQueryRouter:
                 eligible_team_names = [
                     t.value for t in self.catalog.get_eligible_scope_options(self.scope)["eligible_teams"]
                 ]
+                known_emp_names = [c.employee_name for c in self.employee_candidates if c.employee_name]
                 gem_res = GeminiStructuredRouterAdapter().propose_query_plan(
                     prompt=text,
                     current_view={
@@ -1113,6 +1541,7 @@ class HybridQueryRouter:
                     candidate_teams=eligible_team_names,
                     candidate_metrics=list(self.catalog.metrics.keys())[:40],
                     candidate_branches=["dubai", "sharjah", "ajman", "clinics"],
+                    known_employee_names=known_emp_names,
                 )
                 provider_metrics = gem_res.metrics
                 if gem_res.plan is not None:
@@ -1228,6 +1657,7 @@ class HybridQueryRouter:
             function=plan.function,
             position=plan.position,
             branch=plan.branch,
+            branches=plan.branches,
             performance_level=plan.performance_level,
             metric_id=plan.metric,
             periods=plan.periods,
@@ -1238,7 +1668,11 @@ class HybridQueryRouter:
             ),
             ranking_direction=plan.ranking_direction,
             single_person=plan.single_person,
+            last_subject_employee_id=plan.employee_id,
+            last_subject_employee_name=plan.employee_name,
+            last_operation_kind=plan.operation_kind_v2 or plan.intent,
             pending_clarification_code=None,
+            pending_clarification_choices=[],
             inherited_filters=inherited_filters,
         )
 

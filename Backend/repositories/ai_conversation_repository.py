@@ -45,7 +45,7 @@ class AiConversationRepository:
             owner_user_id=str(owner_user_id or "anonymous"),
             owner_role=str(owner_role or "Manager"),
             status="active",
-            context_version=0,
+            context_version=1,
             confirmed_context=dict(initial_confirmed_context or {}),
             pending_clarification=None,
             last_subject_employee_id=None,

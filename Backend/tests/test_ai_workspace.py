@@ -1228,6 +1228,245 @@ def test_conversation_and_hierarchy_acceptance_criteria(monkeypatch):
     assert oct_res.resolved_session_state.year == 2026
 
 
+def test_v2_blueprint_conversational_analytics_and_owned_sessions(monkeypatch):
+    """Covers all 9 required v2 blueprint behaviors plus owned conversation sessions, optimistic concurrency, and idempotency."""
+    import pytest
+    from services.ai.catalog import ai_evidence_cache
+    from services.ai.conversation_service import (
+        AiConversationService,
+        ConversationAccessError,
+        ConversationVersionConflictError,
+    )
+
+    db = _build_in_memory_db()
+    monkeypatch.setenv("PMS_AI_ROUTER_MODE", "rules")
+
+    # Build multi-month records for Adham (March-September 2026, best in August at 96.5%),
+    # two Mariams in Inbound (Mariam Ali earliest July, Mariam Hassan earliest August),
+    # and Support Positions records with a tie for lowest.
+    records = []
+    adham_scores = [
+        ("March", 82.0),
+        ("April", 85.0),
+        ("May", 87.5),
+        ("June", 90.0),
+        ("July", 91.0),
+        ("August", 96.5),
+        ("September", 91.0),
+    ]
+    for m_name, sc in adham_scores:
+        rec = _make_call_center_record("EMP501", "Adham Tarek", "Inbound", sc, 45, 60, 120, 150, month=m_name)
+        rec.geo.bookings.ajman = 85
+        rec.geo.attended.ajman = 65
+        records.append(rec)
+
+    # Mariam 1 (earliest July 2026) and Mariam 2 (earliest August 2026)
+    for m_name in ("July", "August", "September"):
+        records.append(
+            _make_call_center_record("EMP601", "Mariam Ali", "Inbound", 88.0, 30, 50, 80, 100, month=m_name)
+        )
+    for m_name in ("August", "September"):
+        records.append(
+            _make_call_center_record("EMP602", "Mariam Hassan", "Inbound", 84.0, 25, 45, 70, 95, month=m_name)
+        )
+
+    # Support Positions stored under team="Call Center" with specific position
+    sup_low_1 = _make_call_center_record("EMP701", "Kareem Adel", "Call Center", 62.0, 0, 0, 0, 0, month="September")
+    sup_low_1.position = "Quality Assurance"
+    sup_low_2 = _make_call_center_record("EMP702", "Ziad Nabil", "Call Center", 62.0, 0, 0, 0, 0, month="September")
+    sup_low_2.position = "Trainer"
+    sup_high = _make_call_center_record("EMP703", "Nour Hassan", "Call Center", 93.0, 0, 0, 0, 0, month="September")
+    sup_high.position = "Workforce analyst"
+    records.extend([sup_low_1, sup_low_2, sup_high])
+
+    _patch_records(monkeypatch, records)
+    ai_evidence_cache.clear()
+
+    scope = {
+        "role": "General Manager",
+        "user_id": "00000000-0000-0000-0000-000000000077",
+        "has_unrestricted_team_access": True,
+    }
+    orch = PmsAiOrchestrator(db, scope)
+    conv_svc = AiConversationService(db)
+    created_conv = conv_svc.create_conversation(
+        scope=scope,
+        initial_state=SessionFilterContext(function="Call Center", team="Inbound"),
+    )
+    conv_id = created_conv.conversation_id
+    assert created_conv.context_version == 1
+
+    # 1. "Hi" -> short welcome, zero tool/provider calls, increments conversation version
+    r_hi = orch.run_chat_turn(
+        AiChatRequest(
+            prompt="Hi",
+            conversation_id=conv_id,
+            context_version=1,
+            client_request_id="req-hi-1",
+            session_state=SessionFilterContext(function="Call Center", team="Inbound"),
+        )
+    )
+    assert r_hi.headline.startswith("Hi!")
+    assert r_hi.tool_calls == []
+    assert r_hi.suggested_followups == []
+    assert r_hi.validated_plan_v2 is not None and r_hi.validated_plan_v2.turn_kind == "social"
+    assert r_hi.context_version == 2
+
+    # Idempotent replay with same client_request_id returns identical response without incrementing version
+    r_hi_replay = orch.run_chat_turn(
+        AiChatRequest(
+            prompt="Hi",
+            conversation_id=conv_id,
+            context_version=1,
+            client_request_id="req-hi-1",
+        )
+    )
+    assert r_hi_replay.turn_id == r_hi.turn_id
+
+    # Stale context_version raises ConversationVersionConflictError
+    with pytest.raises(ConversationVersionConflictError):
+        orch.run_chat_turn(
+            AiChatRequest(
+                prompt="Hi again",
+                conversation_id=conv_id,
+                context_version=1,
+                client_request_id="req-stale",
+            )
+        )
+
+    # Cross-user access is denied
+    with pytest.raises(ConversationAccessError):
+        conv_svc.get_context(
+            conversation_id=conv_id,
+            scope={"role": "Manager", "user_id": "00000000-0000-0000-0000-000000000099"},
+        )
+
+    # 2. "Is Mariam a new joiner in Inbound?" -> Disambiguates the two Mariams first (AMBIGUOUS_PERSON),
+    # then after selecting Mariam Hassan via clarification_choice_id, states earliest record month (August 2026)
+    # without fabricating an HR join date (MISSING_HR_JOIN_DATE).
+    r_mariam_ambig = orch.run_chat_turn(
+        AiChatRequest(
+            prompt="Is Mariam a new joiner in Inbound?",
+            conversation_id=conv_id,
+            context_version=2,
+            session_state=SessionFilterContext(function="Call Center", team="Inbound"),
+        )
+    )
+    assert r_mariam_ambig.outcome == "clarification"
+    assert r_mariam_ambig.clarification is not None
+    assert r_mariam_ambig.clarification.code == "AMBIGUOUS_PERSON"
+    assert "two Mariams in Inbound" in r_mariam_ambig.headline
+    choice_mariam_2 = next(c for c in r_mariam_ambig.clarification.choices if c.employee_id == "EMP602")
+
+    r_mariam_resolved = orch.run_chat_turn(
+        AiChatRequest(
+            prompt="Mariam Hassan",
+            conversation_id=conv_id,
+            context_version=r_mariam_ambig.context_version,
+            clarification_choice_id=choice_mariam_2.id,
+            session_state=r_mariam_ambig.resolved_session_state,
+        )
+    )
+    assert r_mariam_resolved.outcome == "clarification"
+    assert r_mariam_resolved.clarification is not None
+    assert r_mariam_resolved.clarification.code == "MISSING_HR_JOIN_DATE"
+    assert "Mariam Hassan's first available Inbound record is August 2026" in r_mariam_resolved.headline
+    assert "no verified joining date" in r_mariam_resolved.headline
+
+    # 3. "Who is lowest in Support and what is his position?" -> Support Positions, person, position, score, month, and tie
+    r_support = orch.run_chat_turn(
+        AiChatRequest(
+            prompt="Who is lowest in Support and what is his position?",
+            session_state=SessionFilterContext(function="Call Center"),
+        )
+    )
+    assert r_support.outcome == "answer"
+    assert r_support.structured_query is not None
+    assert r_support.structured_query.team == "Support Positions"
+    assert ("Kareem Adel" in r_support.headline or "Ziad Nabil" in r_support.headline)
+    assert ("Quality Assurance" in r_support.headline or "Trainer" in r_support.headline)
+    assert "62.0%" in r_support.headline
+    assert "September 2026" in r_support.headline
+    assert "tied with" in r_support.headline
+
+    # 4. "Was September Adham's best month?" -> Compares March–September 2026 (all 7 months), identifies August 2026 at 96.5%
+    r_adham_sep = orch.run_chat_turn(
+        AiChatRequest(
+            prompt="Was September Adham's best month?",
+            session_state=SessionFilterContext(function="Call Center", team="Inbound"),
+        )
+    )
+    assert r_adham_sep.outcome == "answer"
+    assert r_adham_sep.headline.startswith("No.")
+    assert "Adham Tarek" in r_adham_sep.headline
+    assert "91.0% in September 2026" in r_adham_sep.headline
+    assert "March–September 2026" in r_adham_sep.headline
+    assert "August 2026 at 96.5%" in r_adham_sep.headline
+
+    # 7. "What about August?" -> Retains Adham and best-month check, confirms August 2026 was Adham's best month
+    r_adham_aug = orch.run_chat_turn(
+        AiChatRequest(
+            prompt="What about August?",
+            session_state=r_adham_sep.resolved_session_state,
+        )
+    )
+    assert r_adham_aug.outcome == "answer"
+    assert r_adham_aug.headline.startswith("Yes.")
+    assert "August 2026 was Adham Tarek's" in r_adham_aug.headline
+    assert "96.5%" in r_adham_aug.headline
+
+    # 5. "Which has more bookings: Dubai, Ajman or Sharjah?" -> Ranks all 3 branches by booking count
+    r_3branch = orch.run_chat_turn(
+        AiChatRequest(
+            prompt="Which has more bookings: Dubai, Ajman or Sharjah?",
+            session_state=SessionFilterContext(function="Call Center", team="Inbound", month="September", year=2026),
+        )
+    )
+    assert r_3branch.outcome == "answer"
+    assert r_3branch.structured_query is not None
+    assert r_3branch.structured_query.branches == ["dubai", "ajman", "sharjah"]
+    assert "Dubai led September 2026 Inbound bookings with 345" in r_3branch.headline
+    assert "Sharjah with 155" in r_3branch.headline
+    assert "Ajman with 125" in r_3branch.headline
+
+    # 6 & 8. "Show booking trend and who is best" -> followed by "No, I mean the lowest"
+    r_trend_best = orch.run_chat_turn(
+        AiChatRequest(
+            prompt="Show booking trend and who is best in Inbound",
+            session_state=SessionFilterContext(function="Call Center", team="Inbound", month="September", year=2026),
+        )
+    )
+    assert r_trend_best.outcome == "answer"
+    assert "Booking Rate" in r_trend_best.headline
+    assert "#1 top performer" in r_trend_best.headline
+
+    r_correction = orch.run_chat_turn(
+        AiChatRequest(
+            prompt="No, I mean the lowest",
+            session_state=r_trend_best.resolved_session_state,
+        )
+    )
+    assert r_correction.outcome == "answer"
+    assert r_correction.structured_query is not None
+    assert r_correction.structured_query.ranking_direction == "worst"
+    assert "lowest-scoring" in r_correction.headline
+    assert "Mariam Hassan" in r_correction.headline
+
+    # 9. "Thanks" -> Short acknowledgement without analytics
+    r_thanks = orch.run_chat_turn(
+        AiChatRequest(
+            prompt="Thanks!",
+            session_state=r_correction.resolved_session_state,
+        )
+    )
+    assert r_thanks.outcome == "answer"
+    assert "welcome" in r_thanks.headline.lower()
+    assert r_thanks.tool_calls == []
+    assert r_thanks.suggested_followups == []
+    assert r_thanks.validated_plan_v2 is not None and r_thanks.validated_plan_v2.turn_kind == "social"
+
+
+
 
 
 

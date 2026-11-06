@@ -34,6 +34,10 @@ BRANCH_ALIASES: dict[str, str] = {
 TEAM_ALIASES: dict[str, str] = {
     "inbound": "Inbound", "انباوند": "Inbound", "إنباوند": "Inbound", "الاستقبال": "Inbound",
     "outbound": "Outbound", "اوتباوند": "Outbound", "أوتباوند": "Outbound", "اوت باوند": "Outbound",
+    "support positions": "Support Positions", "call center support": "Support Positions",
+    "support team": "Support Positions", "in support": "Support Positions",
+    "lowest in support": "Support Positions", "best in support": "Support Positions",
+    "top in support": "Support Positions", "worst in support": "Support Positions",
     "marketing": "Marketing", "ماركتنج": "Marketing", "الماركتنج": "Marketing", "التسويق": "Marketing",
     "coding": "Coding", "كودينج": "Coding",
     "submission": "Submission", "سبمشن": "Submission",
@@ -88,7 +92,10 @@ class ParsedPromptSignals:
     detected_team: str | None = None
     detected_branch: str | None = None
     detected_compare_branch: str | None = None
+    detected_branches: list[str] = field(default_factory=list)
     asks_branch_comparison: bool = False
+    asks_booking_count: bool = False
+    asks_best_month_history: bool = False
     asks_decisions_or_what_if: bool = False
     asks_best_agent: bool = False
     asks_worst_agent: bool = False
@@ -116,12 +123,23 @@ def extract_prompt_signals(prompt: str, session_state: SessionFilterContext) -> 
             signals.detected_team = canonical
             break
 
-    # 2. Detect Branches (supports comparison of two branches like Dubai vs Sharjah, or all UAE branches)
+    # 2. Detect Branches (supports comparison of 2 or 3+ branches like Dubai, Ajman or Sharjah, or all UAE branches)
+    branch_hits: list[tuple[int, str]] = []
+    used_b_spans: list[tuple[int, int]] = []
+    for alias, canonical in sorted(BRANCH_ALIASES.items(), key=lambda kv: len(kv[0]), reverse=True):
+        for m_b in re.finditer(rf"(?<![a-z0-9]){re.escape(alias)}(?![a-z0-9])", lower):
+            span = m_b.span()
+            if any(not (span[1] <= s[0] or span[0] >= s[1]) for s in used_b_spans):
+                continue
+            used_b_spans.append(span)
+            branch_hits.append((span[0], canonical))
+    branch_hits.sort(key=lambda x: x[0])
     found_branches: list[str] = []
-    for alias, canonical in BRANCH_ALIASES.items():
-        if alias in lower and canonical not in found_branches:
+    for _, canonical in branch_hits:
+        if canonical not in found_branches:
             found_branches.append(canonical)
     if found_branches:
+        signals.detected_branches = list(found_branches)
         signals.detected_branch = found_branches[0]
         if len(found_branches) > 1:
             signals.detected_compare_branch = found_branches[1]
@@ -134,6 +152,25 @@ def extract_prompt_signals(prompt: str, session_state: SessionFilterContext) -> 
         )
     ):
         signals.asks_branch_comparison = True
+
+    if any(
+        k in lower
+        for k in (
+            "more bookings",
+            "most bookings",
+            "fewer bookings",
+            "least bookings",
+            "bookings count",
+            "total bookings",
+            "number of bookings",
+            "booking volume",
+            "how many bookings",
+        )
+    ):
+        signals.asks_booking_count = True
+
+    if re.search(r"\b(?:best|highest|peak|strongest|worst|lowest)\s+month\b", lower):
+        signals.asks_best_month_history = True
 
     if any(
         k in lower
@@ -238,6 +275,8 @@ def extract_prompt_signals(prompt: str, session_state: SessionFilterContext) -> 
     else:
         name_patterns = [
             r"\b([a-zA-Z]+(?:\s+[a-zA-Z]+)?)'s\b",
+            r"\b(?:is|was|did)\s+([a-zA-Z]+(?:\s+[a-zA-Z]+)?)\s+(?:a\s+new\s+joiner|new\s+in|join\b)",
+            r"\bwhen\s+did\s+([a-zA-Z]+(?:\s+[a-zA-Z]+)?)\s+join\b",
             r"(?:employee|agent|for|about|trend of|trend for|score of|profile of)\s+([a-zA-Z]+(?:\s+[a-zA-Z]+){0,2})",
             r"(?:الموظف|موظف|ايجنت|أيجنت|عن)\s+([\u0600-\u06FFa-zA-Z]+(?:\s+[\u0600-\u06FFa-zA-Z]+)?)",
         ]
@@ -245,7 +284,8 @@ def extract_prompt_signals(prompt: str, session_state: SessionFilterContext) -> 
             "inbound", "outbound", "call", "center", "dubai", "sharjah", "ajman", "clinics",
             "all", "team", "teams", "branch", "branches", "the", "his", "her", "and", "in",
             "on", "at", "to", "from", "with", "who", "what", "which", "better", "best", "worst",
-            "lowest", "top", "bottom", "trend", "month", "september", "august", "july",
+            "lowest", "top", "bottom", "trend", "month", "january", "february", "march", "april",
+            "may", "june", "july", "august", "september", "october", "november", "december",
             "had", "has", "have", "was", "were", "is", "are", "led", "leads", "leading",
             "scored", "scores", "scoring", "performed", "performing", "performance", "score",
             "rate", "by", "for", "of", "support", "positions", "position", "employee", "employees",

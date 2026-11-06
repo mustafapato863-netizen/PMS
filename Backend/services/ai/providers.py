@@ -374,7 +374,30 @@ class DeterministicLocalProviderAdapter:
 
             chg_txt = f", moving {chg:+.1f}% vs {prev_lbl}" if chg is not None else ""
             six_txt = f" ({six_d:+.1f}% since {first_lbl})" if six_d is not None and first_lbl else ""
-            if r_dir == "team_trend":
+            ties = list(sp.get("ties") or [])
+            tie_txt = f", tied with {', '.join(ties[:2])}" if ties else ""
+            if signals.asks_best_month_history and sp.get("all_history"):
+                best_sc = float(sp.get("best_score") if sp.get("best_score") is not None else sc)
+                best_months = list(sp.get("best_months") or [period])
+                searched_win = str(sp.get("searched_window") or period)
+                is_best = bool(sp.get("is_asked_period_best"))
+                if is_best:
+                    others = [m for m in best_months if m.casefold() != str(period).casefold()]
+                    best_tie_str = f" (tied with {', '.join(others)})" if others else ""
+                    headline = (
+                        f"Yes. {period} was {e_name}'s ({e_id}{pos_txt}) best month across {searched_win} "
+                        f"in {e_team} at {sc:.1f}%{best_tie_str}."
+                    )
+                else:
+                    best_str = " and ".join(best_months) if len(best_months) <= 2 else ", ".join(best_months)
+                    headline = (
+                        f"No. {e_name} ({e_id}{pos_txt}) scored {sc:.1f}% in {period}, while their best month across "
+                        f"{searched_win} was {best_str} at {best_sc:.1f}%."
+                    )
+                hist_pts = [f"{pt['period']}: {float(pt['score']):.1f}%" for pt in (sp.get("all_history") or [])]
+                if hist_pts:
+                    bullets.append(f"Full history ({searched_win}): " + " · ".join(hist_pts) + ".")
+            elif r_dir == "team_trend":
                 if metric_lbl and metric_lbl != "Overall Score":
                     headline = f"{e_team} {metric_lbl} reached {sc:.1f}% in {period}{chg_txt}{six_txt}."
                 else:
@@ -382,12 +405,12 @@ class DeterministicLocalProviderAdapter:
             elif r_dir == "worst" and not signals.detected_employee_query:
                 headline = (
                     f"{e_name} ({e_id}{pos_txt}) is the lowest-scoring agent in {e_team} ({branch}) for {period} by {rank_metric_lbl} at "
-                    f"{sc:.1f}% (Grade {gr}, Rank #{rank_num} of {tot_team}){chg_txt}{six_txt}."
+                    f"{sc:.1f}% (Grade {gr}, Rank #{rank_num} of {tot_team}{tie_txt}){chg_txt}{six_txt}."
                 )
             elif not signals.detected_employee_query:
                 headline = (
                     f"{e_name} ({e_id}{pos_txt}) is the #1 top performer in {e_team} ({branch}) for {period} by {rank_metric_lbl} at "
-                    f"{sc:.1f}% (Grade {gr}, Rank #{rank_num} of {tot_team}){chg_txt}{six_txt}."
+                    f"{sc:.1f}% (Grade {gr}, Rank #{rank_num} of {tot_team}{tie_txt}){chg_txt}{six_txt}."
                 )
             else:
                 headline = (
@@ -411,21 +434,74 @@ class DeterministicLocalProviderAdapter:
         # 2. Branch comparison
         elif merged.get("branch_comparison"):
             bc = merged["branch_comparison"]
-            b1, b2 = bc[0], bc[1]
-            diff = round(float(b1["score"] or 0.0) - float(b2["score"] or 0.0), 1)
-            leader = b1 if diff >= 0 else b2
-            lagger = b2 if diff >= 0 else b1
-            with_vol = [b for b in bc if int(b.get("bookings") or 0) > 0]
-            most_noshows = max(with_vol, key=lambda b: int(b.get("no_shows") or 0)) if with_vol else None
-            headline = (
-                f"In {period}, {leader['branch']} leads at {leader['score']:.1f}% vs. "
-                f"{lagger['branch']} at {lagger['score']:.1f}% ({abs(diff):.1f} pts gap)."
-            )
-            if most_noshows:
-                bullets.append(
-                    f"{most_noshows['branch']} holds the largest No-Show volume ({most_noshows['no_shows']:,} missed visits out of "
-                    f"{most_noshows['bookings']:,} bookings · {most_noshows['attendance_rate_pct']:.1f}% Attended)."
+            req_branches = list(merged.get("requested_branches") or [])
+            if len(req_branches) >= 2:
+                req_set = {rb.casefold() for rb in req_branches}
+                target_bc = [b for b in bc if str(b.get("branch") or "").casefold() in req_set]
+                if len(target_bc) < 2:
+                    target_bc = list(bc[:2])
+            else:
+                target_bc = list(bc[:2])
+
+            asks_least = any(w in (prompt or "").casefold() for w in ("fewer", "least", "lowest"))
+            if signals.asks_booking_count or signals.detected_kpi == "bookings_count":
+                ranked_b = sorted(
+                    target_bc,
+                    key=lambda b: int(b.get("bookings") or 0),
+                    reverse=not asks_least,
                 )
+                winner = ranked_b[0]
+                others = ranked_b[1:]
+                if len(others) == 1:
+                    others_txt = f"{others[0]['branch']} with {int(others[0].get('bookings') or 0):,}"
+                elif len(others) == 2:
+                    others_txt = (
+                        f"{others[0]['branch']} with {int(others[0].get('bookings') or 0):,} and "
+                        f"{others[1]['branch']} with {int(others[1].get('bookings') or 0):,}"
+                    )
+                else:
+                    others_txt = ", ".join(f"{o['branch']} with {int(o.get('bookings') or 0):,}" for o in others)
+                verb = "had the fewest" if asks_least else "led"
+                headline = (
+                    f"{winner['branch']} {verb} {period} {scope} bookings with "
+                    f"{int(winner.get('bookings') or 0):,}, followed by {others_txt}."
+                )
+                bullets.append(
+                    "Branch booking breakdown: "
+                    + " · ".join(
+                        f"{b['branch']}: {int(b.get('bookings') or 0):,} bookings ({int(b.get('attended') or 0):,} attended, {float(b.get('attendance_rate_pct') or 0.0):.1f}%)"
+                        for b in ranked_b
+                    )
+                    + "."
+                )
+            elif len(target_bc) >= 3:
+                ranked_b = sorted(
+                    target_bc,
+                    key=lambda b: float(b.get("score") or 0.0),
+                    reverse=not asks_least,
+                )
+                winner = ranked_b[0]
+                others_txt = ", ".join(f"{o['branch']} at {float(o.get('score') or 0.0):.1f}%" for o in ranked_b[1:])
+                headline = (
+                    f"In {period}, {winner['branch']} leads {scope} at {float(winner.get('score') or 0.0):.1f}%, "
+                    f"followed by {others_txt}."
+                )
+            else:
+                b1, b2 = target_bc[0], target_bc[1]
+                diff = round(float(b1["score"] or 0.0) - float(b2["score"] or 0.0), 1)
+                leader = b1 if diff >= 0 else b2
+                lagger = b2 if diff >= 0 else b1
+                with_vol = [b for b in bc if int(b.get("bookings") or 0) > 0]
+                most_noshows = max(with_vol, key=lambda b: int(b.get("no_shows") or 0)) if with_vol else None
+                headline = (
+                    f"In {period}, {leader['branch']} leads at {leader['score']:.1f}% vs. "
+                    f"{lagger['branch']} at {lagger['score']:.1f}% ({abs(diff):.1f} pts gap)."
+                )
+                if most_noshows:
+                    bullets.append(
+                        f"{most_noshows['branch']} holds the largest No-Show volume ({most_noshows['no_shows']:,} missed visits out of "
+                        f"{most_noshows['bookings']:,} bookings · {most_noshows['attendance_rate_pct']:.1f}% Attended)."
+                    )
 
         # 3. Root-cause employees (People Contribution)
         elif merged.get("top_contributors"):
@@ -509,7 +585,14 @@ class DeterministicLocalProviderAdapter:
                         f"Comparing {scope} ({branch}) across {p_from} and {p_to}: latest score is {(s_to or 0.0):.1f}%{delta_txt}."
                     )
             elif requested_kpi:
-                if requested_kpi.get("contributes_to_score") is False:
+                if requested_kpi.get("kpi_key") in ("bookings_count", "attended_count", "handled_calls_count", "abandoned_calls_count"):
+                    headline = (
+                        f"In {scope} ({period} · {branch}), {requested_kpi['kpi_label']} reached "
+                        f"{requested_kpi['actual_display']}."
+                    )
+                    if requested_kpi.get("tracking_only_note"):
+                        bullets.append(str(requested_kpi["tracking_only_note"]))
+                elif requested_kpi.get("contributes_to_score") is False:
                     headline = (
                         f"In {scope} ({period} · {branch}), {requested_kpi['kpi_label']} is a tracking-only indicator "
                         f"(0% score weight) and does not affect the weighted PMS score."

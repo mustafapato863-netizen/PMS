@@ -509,6 +509,7 @@ class DeterministicToolRegistry:
         position: str | None = None,
         branch: str | None = None,
         compare_branch: str | None = None,
+        branches: list[str] | None = None,
         asks_branch_comparison: bool = False,
         asks_period_comparison: bool = False,
         performance_level: str | None = None,
@@ -516,9 +517,21 @@ class DeterministicToolRegistry:
         month: str | None = None,
         year: int | None = None,
     ) -> ToolExecutionResult:
+        requested_branches: list[str] = []
+        if branches:
+            for b in branches:
+                b_clean = str(b).strip().casefold()
+                if b_clean in BRANCH_KEYS and b_clean not in requested_branches:
+                    requested_branches.append(b_clean)
+        if branch and compare_branch and branch.casefold() != compare_branch.casefold():
+            for b in (branch, compare_branch):
+                b_clean = str(b).strip().casefold()
+                if b_clean in BRANCH_KEYS and b_clean not in requested_branches:
+                    requested_branches.append(b_clean)
+
         # When comparing branches (e.g., Dubai vs Sharjah or all branches), keep the main KPI diagnosis
         # across All Branches unless the session filter explicitly locked a single branch without comparison.
-        is_comparing_branches = bool(compare_branch or asks_branch_comparison)
+        is_comparing_branches = bool(compare_branch or asks_branch_comparison or len(requested_branches) >= 2)
         kpi_table_branch = None if is_comparing_branches else branch
         resolved = self.ctx.resolve_filters(
             team=team,
@@ -559,11 +572,8 @@ class DeterministicToolRegistry:
         branch_comparison_digest: list[dict[str, Any]] = []
         if is_comparing_branches:
             branches_to_compare = list(BRANCH_KEYS)
-            if branch and compare_branch and branch.casefold() != compare_branch.casefold():
-                # Put the two requested branches first, followed by the remaining UAE branches for full context
-                b_first = branch.strip().casefold()
-                b_second = compare_branch.strip().casefold()
-                ordered = [b for b in (b_first, b_second) if b in BRANCH_KEYS]
+            if len(requested_branches) >= 2:
+                ordered = list(requested_branches)
                 for bk in BRANCH_KEYS:
                     if bk not in ordered:
                         ordered.append(bk)
@@ -752,7 +762,15 @@ class DeterministicToolRegistry:
                 )
             )
 
-        # If a tracking-only KPI was explicitly requested (e.g. outbound:aht or PolicyRejection)
+        volume_summary = self._compute_operational_volumes(
+            month=res_month,
+            year=res_year,
+            team=resolved["team"],
+            function=resolved["function"],
+            branch=resolved["branch"],
+        )
+
+        # If a tracking-only or count KPI was explicitly requested (e.g. outbound:aht, PolicyRejection, or bookings_count)
         if kpi:
             req_cat = catalog.find_metric_definition(
                 team=resolved["team"],
@@ -762,6 +780,20 @@ class DeterministicToolRegistry:
             if req_cat and not req_cat.contributes_to_score:
                 already_present = any(ev.metric_id == req_cat.metric_id for ev in typed_evidence)
                 if not already_present:
+                    vol_val: float | None = None
+                    act_disp_val = "Tracking Only"
+                    tgt_disp_val = "0% Weight"
+                    if getattr(req_cat, "value_kind", None) == "count":
+                        vol_map = {
+                            "bookings_count": int(volume_summary.get("total_bookings") or 0),
+                            "attended_count": int(volume_summary.get("total_attended") or 0),
+                            "handled_calls_count": int(volume_summary.get("total_calls_handled") or 0),
+                            "abandoned_calls_count": int(volume_summary.get("total_abandoned") or 0),
+                        }
+                        cnt_v = vol_map.get(req_cat.kpi_key, 0)
+                        vol_val = float(cnt_v)
+                        act_disp_val = f"{cnt_v:,} {req_cat.unit}".strip()
+                        tgt_disp_val = "Volume Count"
                     typed_evidence.insert(
                         0,
                         TypedMetricEvidence(
@@ -773,10 +805,10 @@ class DeterministicToolRegistry:
                             performance_level=req_cat.performance_level,
                             branch=resolved["branch"] or "all",
                             period=period_label,
-                            actual=None,
+                            actual=vol_val,
                             target=None,
-                            actual_display="Tracking Only",
-                            target_display="0% Weight",
+                            actual_display=act_disp_val,
+                            target_display=tgt_disp_val,
                             achievement_percent=None,
                             weight_percent=0.0,
                             unit=req_cat.unit,
@@ -814,14 +846,6 @@ class DeterministicToolRegistry:
                     bars=kpi_bars[:6],
                 )
             )
-
-        volume_summary = self._compute_operational_volumes(
-            month=res_month,
-            year=res_year,
-            team=resolved["team"],
-            function=resolved["function"],
-            branch=resolved["branch"],
-        )
 
         # Build Data-Analyst Decision Playbook & What-If ROI based on KPI & Branch patterns
         kpi_decisions = self._build_kpi_and_branch_decisions(
@@ -956,6 +980,7 @@ class DeterministicToolRegistry:
             "period": period_label,
             "scope": scope_label,
             "branch": branch_label,
+            "requested_branches": [b.capitalize() for b in requested_branches if user_can_access_branch(self.ctx.scope, b)],
             "branch_comparison": branch_comparison_digest,
             "period_comparison": period_comparison_payload,
             "operational_volumes": volume_summary,
@@ -967,7 +992,7 @@ class DeterministicToolRegistry:
 
         return ToolExecutionResult(
             tool_name="get_kpi_diagnosis_and_trends",
-            arguments={**resolved, "compare_branch": compare_branch, "kpi": kpi},
+            arguments={**resolved, "compare_branch": compare_branch, "branches": requested_branches, "kpi": kpi},
             records_evaluated=max(total_employees, len(kpi_rows)),
             digest=digest,
             visual_cards=cards,
@@ -1438,6 +1463,22 @@ class DeterministicToolRegistry:
         total_in_team = max(len(team_period_recs), 1)
         rank_label = f"Rank #{rank_idx} of {total_in_team} in {emp_team}"
 
+        selected_rank_key = _rank_key(selected_rec)
+        ties_list: list[str] = []
+        for r in team_period_recs:
+            r_id = str(getattr(r, "employee_id", "") or "").strip()
+            if r_id == emp_id_resolved:
+                continue
+            rk = _rank_key(r)
+            if abs(rk[0] - selected_rank_key[0]) < 1e-4:
+                r_nm = str(getattr(r, "employee_name", "") or r_id).strip()
+                r_pos_val = str(getattr(r, "position", "") or "").strip()
+                ties_list.append(
+                    f"{r_nm} ({r_id} · {r_pos_val})"
+                    if r_pos_val and r_pos_val.casefold() not in ("agent", "call center agent")
+                    else f"{r_nm} ({r_id})"
+                )
+
         selected_kpi_snap = self._extract_record_kpi_snapshot(selected_rec, kpi, emp_team, emp_pos) if kpi else None
         ranking_metric_label = str(selected_kpi_snap["kpi_label"]) if selected_kpi_snap else "Overall PMS Score"
 
@@ -1457,6 +1498,41 @@ class DeterministicToolRegistry:
                 MONTH_ORDER.get(str(getattr(r, "month", "")).strip(), 0),
             )
         )
+        all_history_points: list[dict[str, Any]] = []
+        for r in emp_history_recs:
+            ev_all = getattr(r, "evaluation", None)
+            sc_all = min(100.0, round(float(getattr(ev_all, "score", 0.0) or 0.0), 1))
+            m_all = str(getattr(r, "month", "") or "").strip()
+            y_all = int(getattr(r, "year", 2026) or 2026)
+            all_history_points.append(
+                {
+                    "month": m_all,
+                    "year": y_all,
+                    "period": f"{m_all} {y_all}",
+                    "score": sc_all,
+                }
+            )
+        best_score: float | None = None
+        best_months: list[str] = []
+        best_period_label: str | None = None
+        searched_window_label: str = period_label
+        is_asked_period_best: bool = False
+        if all_history_points:
+            best_score = max(float(pt["score"]) for pt in all_history_points)
+            best_months = [str(pt["period"]) for pt in all_history_points if abs(float(pt["score"]) - best_score) < 1e-4]
+            best_period_label = best_months[-1] if best_months else None
+            first_pt = all_history_points[0]
+            last_pt = all_history_points[-1]
+            if len(all_history_points) >= 2:
+                searched_window_label = (
+                    f"{first_pt['month']}–{last_pt['month']} {last_pt['year']}"
+                    if first_pt["year"] == last_pt["year"]
+                    else f"{first_pt['period']}–{last_pt['period']}"
+                )
+            else:
+                searched_window_label = str(first_pt["period"])
+            is_asked_period_best = any(p.casefold() == period_label.casefold() for p in best_months)
+
         window_records = emp_history_recs[-max(1, min(months_window, 12)) :]
 
         trend_points: list[AiTrendPoint] = []
@@ -1706,6 +1782,13 @@ class DeterministicToolRegistry:
             "six_month_delta": six_month_delta,
             "months_tracked": len(trend_points),
             "first_month_label": first_month_label,
+            "ties": ties_list,
+            "best_score": best_score,
+            "best_period": best_period_label,
+            "best_months": best_months,
+            "searched_window": searched_window_label,
+            "is_asked_period_best": is_asked_period_best,
+            "all_history": all_history_points,
         }
 
         digest = {

@@ -16,22 +16,31 @@ from models.ai_schemas import (
     AiWatchingAlertItem,
     AiWatchingPayload,
     DeepLinkCta,
+    EvidenceItemV2,
+    QueryOperationV2,
+    QueryScopeV2,
     SessionFilterContext,
     SourceCitationPill,
     StructuredVisualCard,
     TypedMetricEvidence,
+    ValidatedQueryPlanV2,
 )
 from models.report_schemas import MONTHS
 from services.ai.catalog import ai_evidence_cache, evaluation_cache_identity, get_ai_catalog
 from services.ai.config import get_ai_runtime_config
+from services.ai.conversation_service import AiConversationService
 from services.ai.domain_policies import (
     build_call_center_guardrails,
     build_call_center_starter_prompts,
     extract_prompt_signals,
     sanitize_untrusted_text,
 )
+from services.ai.entity_resolver import (
+    EmployeeHistoryCandidate,
+    build_employee_candidates_from_records,
+)
 from services.ai.providers import DeterministicLocalProviderAdapter
-from services.ai.router import HybridQueryRouter
+from services.ai.router import HybridQueryRouter, RouterValidationResult
 from services.ai.tool_registry import (
     DeterministicToolRegistry,
     ToolExecutionContext,
@@ -61,7 +70,7 @@ class PmsAiOrchestrator:
         self.db = db
         self.scope = scope
 
-    def _get_published_periods(self) -> set[str]:
+    def _get_published_periods_and_candidates(self) -> tuple[set[str], list[EmployeeHistoryCandidate]]:
         try:
             records = filter_records_by_scope(DatabaseRecordSource(self.db).get_all(), self.scope)
             periods: set[str] = set()
@@ -73,9 +82,182 @@ class PmsAiOrchestrator:
                 m_num = MONTHS.get(str(mo).strip())
                 if m_num:
                     periods.add(f"{int(yr):04d}-{int(m_num):02d}")
-            return periods
+            candidates = build_employee_candidates_from_records(records)
+            return periods, candidates
         except Exception:
-            return set()
+            return set(), []
+
+    def _get_published_periods(self) -> set[str]:
+        periods, _ = self._get_published_periods_and_candidates()
+        return periods
+
+    @staticmethod
+    def _build_validated_plan_v2(
+        routed: RouterValidationResult,
+        *,
+        turn_kind: str = "analytical",
+    ) -> ValidatedQueryPlanV2:
+        p = routed.plan
+        op_kind_override = routed.confirmed_context.last_operation_kind
+        branches_list = list(p.branches)
+        if not branches_list:
+            for b in (p.branch, p.compare_branch):
+                if b and b not in branches_list:
+                    branches_list.append(b)
+        perf_lvl = p.performance_level if p.performance_level in ("Employee", "Managerial", "Corporate") else "Employee"
+        scope_v2 = QueryScopeV2(
+            function=p.function or "Call Center",
+            team=p.team,
+            position_group="Support Positions" if p.team == "Support Positions" else None,
+            position=p.position,
+            performance_level=perf_lvl,  # type: ignore[arg-type]
+            branches=branches_list,
+            periods=list(p.periods),
+            period_window="all_published" if op_kind_override == "employee_best_period" else ("explicit" if p.periods else "latest_published"),
+            employee_id=p.employee_id,
+            employee_placeholder="<EMP_1>" if p.employee_id else None,
+        )
+        ops: list[QueryOperationV2] = []
+        if p.requested_parts == ["trend", "ranking"] or (
+            "trend" in p.requested_parts and "ranking" in p.requested_parts
+        ):
+            ops.append(
+                QueryOperationV2(
+                    operation_id="op_1",
+                    kind="trend",
+                    metric_id=p.metric,
+                    dimension="period",
+                )
+            )
+            ops.append(
+                QueryOperationV2(
+                    operation_id="op_2",
+                    kind="ranking",
+                    metric_id=p.metric,
+                    dimension="employee",
+                    direction=p.ranking_direction,
+                    limit=1 if p.single_person else 3,
+                )
+            )
+        else:
+            kind_map = {
+                "employee_best_period": "person_best_period",
+                "joiner_check": "person_tenure_check",
+                "unsupported": "current_value",
+            }
+            raw_kind = op_kind_override or p.intent
+            effective_kind = kind_map.get(str(raw_kind), str(raw_kind))
+            valid_kinds = {
+                "greeting",
+                "thanks",
+                "current_value",
+                "actual_vs_target",
+                "compare_periods",
+                "compare_branches",
+                "compare_teams",
+                "trend",
+                "ranking",
+                "person_summary",
+                "person_best_period",
+                "person_tenure_check",
+                "score_drivers",
+                "scorecard_structure",
+                "corrective_actions",
+            }
+            if effective_kind not in valid_kinds:
+                effective_kind = "actual_vs_target"
+            ops.append(
+                QueryOperationV2(
+                    operation_id="op_1",
+                    kind=effective_kind,  # type: ignore[arg-type]
+                    metric_id=p.metric,
+                    direction=p.ranking_direction if effective_kind == "ranking" else None,
+                    limit=1 if p.single_person else 3,
+                )
+            )
+        res_src = "gemini_router" if routed.route_used == "gemini_router" else "local_rules"
+        return ValidatedQueryPlanV2(
+            turn_kind=turn_kind if turn_kind in ("social", "analytical", "clarification", "correction", "unsupported") else "analytical",  # type: ignore[arg-type]
+            scope=scope_v2,
+            operations=ops,
+            clarification_code=routed.clarification.code if routed.clarification else "NONE",
+            resolution_source=res_src,  # type: ignore[arg-type]
+            confidence=1.0,
+        )
+
+    @staticmethod
+    def _build_evidence_envelope_v2(
+        typed_evidence: list[TypedMetricEvidence],
+        tool_digests: list[dict[str, Any]],
+    ) -> list[EvidenceItemV2]:
+        catalog = get_ai_catalog()
+        envelope: list[EvidenceItemV2] = []
+        for idx, ev in enumerate(typed_evidence, start=1):
+            cat_def = catalog.find_metric_definition(
+                team=ev.team,
+                kpi_key_or_label=ev.metric_id,
+                performance_level=ev.performance_level,
+            )
+            val_kind = getattr(cat_def, "value_kind", None) or ("rate" if ev.unit == "%" else "score")
+            perf_lvl = ev.performance_level if ev.performance_level in ("Employee", "Managerial", "Corporate") else "Employee"
+            envelope.append(
+                EvidenceItemV2(
+                    operation_id=f"op_{idx}",
+                    outcome="ok",
+                    scope=QueryScopeV2(
+                        function=getattr(cat_def, "function", "Call Center") if cat_def else "Call Center",
+                        team=ev.team,
+                        position=ev.position,
+                        performance_level=perf_lvl,  # type: ignore[arg-type]
+                        branches=[ev.branch] if ev.branch and ev.branch != "all" else [],
+                        periods=[ev.period],
+                    ),
+                    metric_id=ev.metric_id,
+                    metric_display_name=ev.display_name,
+                    value_kind=str(val_kind),
+                    unit=ev.unit,
+                    headline_value=ev.actual,
+                    headline_display=ev.actual_display,
+                    target_value=ev.target,
+                    target_display=ev.target_display,
+                    achievement_percent=ev.achievement_percent,
+                    weight_percent=ev.weight_percent,
+                    contributes_to_score=ev.contributes_to_score,
+                    record_count=ev.sample_size,
+                    source_link=DeepLinkCta(label=f"Open {ev.team} Source →", route=ev.source_link, icon_key="team") if ev.source_link else None,
+                )
+            )
+        for d in tool_digests:
+            sp = d.get("spotlight") or d.get("agent_spotlight")
+            if isinstance(sp, dict) and sp.get("entity_id"):
+                emp_team = str(sp.get("team") or "Call Center")
+                src_route = str(sp.get("source_route") or "")
+                envelope.append(
+                    EvidenceItemV2(
+                        operation_id="op_spotlight",
+                        outcome="ok",
+                        scope=QueryScopeV2(
+                            function="Call Center",
+                            team=emp_team,
+                            position=sp.get("position"),
+                            periods=[str(sp.get("period") or d.get("period") or "Latest Period")],
+                            employee_id=str(sp.get("entity_id")),
+                        ),
+                        metric_id=f"{emp_team.casefold().replace(' ', '_')}:overall_score",
+                        metric_display_name=str(sp.get("ranking_metric_label") or "Overall PMS Score"),
+                        value_kind="score",
+                        unit="%",
+                        headline_value=float(sp.get("score") or 0.0),
+                        headline_display=f"{float(sp.get('score') or 0.0):.1f}%",
+                        target_value=100.0,
+                        target_display="100.0%",
+                        rows=list(sp.get("all_history") or []),
+                        ties=[str(t) for t in (sp.get("ties") or [])],
+                        record_count=int(sp.get("total_in_team") or 1),
+                        source_link=DeepLinkCta(label=f"Open {sp.get('entity_name')} Profile →", route=src_route, icon_key="employee") if src_route else None,
+                    )
+                )
+        return envelope
 
     def build_watching_workspace(self, session_state: SessionFilterContext) -> AiWatchingPayload:
         ctx = ToolExecutionContext(db=self.db, scope=self.scope, session_state=session_state)
@@ -228,16 +410,89 @@ class PmsAiOrchestrator:
         role = str(self.scope.get("role") or "Manager")
         requested_detail = req.answer_detail or "auto"
         lower_prompt = (req.prompt or "").casefold()
-        if re.fullmatch(
-            r"(?:hi|hello|hey|good morning|good afternoon|good evening)(?:\s+there)?[\s!.,?]*",
-            lower_prompt.strip(),
-        ):
-            return AiChatResponsePayload(
-                trace_id="",
-                answer_detail="brief",
-                headline="Hi! What would you like to know about performance?",
-                resolved_session_state=req.session_state,
+
+        conv_service = AiConversationService(self.db) if req.conversation_id else None
+        claimed_turn = None
+        active_context_version: int = int(req.context_version or 0)
+        if conv_service and req.conversation_id:
+            conv_ctx = conv_service.get_context(
+                conversation_id=req.conversation_id,
+                scope=self.scope,
             )
+            if req.session_state.last_confirmed_query is None and conv_ctx.confirmed_context is not None:
+                req.session_state.last_confirmed_query = conv_ctx.confirmed_context
+            claimed_turn, replayed_payload = conv_service.claim_or_replay_turn(
+                conversation_id=req.conversation_id,
+                scope=self.scope,
+                prompt=req.prompt,
+                client_request_id=req.client_request_id,
+                expected_context_version=req.context_version,
+            )
+            if replayed_payload is not None:
+                return AiChatResponsePayload.model_validate(replayed_payload)
+            active_context_version = conv_ctx.context_version
+
+        is_greeting = bool(
+            re.fullmatch(
+                r"(?:hi|hello|hey|good morning|good afternoon|good evening)(?:\s+there)?[\s!.,?]*",
+                lower_prompt.strip(),
+            )
+        )
+        is_social_thanks = bool(
+            re.fullmatch(
+                r"(?:thanks|thank you|thx|ty|many thanks|thanks a lot|thank you so much|got it,?\s*thanks|ok\s*thanks|okay\s*thanks|appreciate it|great,?\s*thanks)[\s!.,?]*",
+                lower_prompt.strip(),
+            )
+        )
+        if is_greeting or is_social_thanks:
+            social_headline = (
+                "Hi! What would you like to know about performance?"
+                if is_greeting
+                else "You're welcome! Let me know if you need anything else."
+            )
+            social_plan_v2 = ValidatedQueryPlanV2(
+                turn_kind="social",
+                scope=QueryScopeV2(
+                    function=req.session_state.function or "Call Center",
+                    team=req.session_state.team,
+                ),
+                operations=[
+                    QueryOperationV2(
+                        operation_id="op_1",
+                        kind="greeting" if is_greeting else "thanks",
+                    )
+                ],
+            )
+            social_resp = AiChatResponsePayload(
+                trace_id="",
+                conversation_id=req.conversation_id,
+                turn_id=str(claimed_turn.id) if claimed_turn else None,
+                context_version=active_context_version,
+                answer_detail="brief",
+                headline=social_headline,
+                suggested_followups=[],
+                resolved_session_state=req.session_state,
+                validated_plan_v2=social_plan_v2,
+                evidence_envelope_v2=[],
+            )
+            if conv_service and req.conversation_id and claimed_turn:
+                new_ver = conv_service.complete_turn(
+                    conversation_id=req.conversation_id,
+                    turn_id=str(claimed_turn.id),
+                    scope=self.scope,
+                    outcome="answer",
+                    turn_kind="social",
+                    route_used="local_rules",
+                    validated_plan=social_plan_v2.model_dump(),
+                    evidence_envelope=[],
+                    response_payload=social_resp.model_dump(),
+                    session_state=req.session_state,
+                    confirmed_context=req.session_state.last_confirmed_query,
+                    provider_calls=0,
+                    total_ms=round((time.perf_counter() - t0) * 1000.0, 2),
+                )
+                social_resp.context_version = new_ver
+            return social_resp
         asks_explicit_breakdown = any(
             phrase in lower_prompt
             for phrase in (
@@ -259,14 +514,19 @@ class PmsAiOrchestrator:
         else:
             effective_detail = "details"
 
-        # Derive authorized published periods and release the read transaction before routing
-        published_periods = self._get_published_periods()
+        # Derive authorized published periods + employee candidates and release the read transaction before routing
+        published_periods, employee_candidates = self._get_published_periods_and_candidates()
         release_read_transaction(self.db)
         t_res_start = time.perf_counter()
-        routed = HybridQueryRouter(scope=self.scope, published_periods=published_periods).resolve_and_validate(
+        routed = HybridQueryRouter(
+            scope=self.scope,
+            published_periods=published_periods,
+            employee_candidates=employee_candidates,
+        ).resolve_and_validate(
             prompt=req.prompt,
             session_state=req.session_state,
             provider_override=req.provider_override,
+            clarification_choice_id=req.clarification_choice_id,
         )
         signals = extract_prompt_signals(req.prompt, req.session_state)
 
@@ -277,27 +537,34 @@ class PmsAiOrchestrator:
             signals.detected_branch = routed.plan.branch
         if routed.plan.compare_branch:
             signals.detected_compare_branch = routed.plan.compare_branch
+        if routed.plan.branches:
+            signals.detected_branches = list(routed.plan.branches)
         if routed.plan.intent == "compare_branches":
             signals.asks_branch_comparison = True
         if routed.plan.performance_level:
             signals.detected_level = routed.plan.performance_level
         if routed.plan.metric:
             signals.detected_kpi = routed.plan.metric.split(":")[-1]
+            if routed.plan.metric.endswith(":bookings_count"):
+                signals.asks_booking_count = True
+        if routed.plan.employee_id:
+            signals.detected_employee_query = routed.plan.employee_id
+        if routed.confirmed_context.last_operation_kind in ("employee_best_period", "person_best_period"):
+            signals.asks_best_month_history = True
         if routed.plan.periods:
             p_month, p_year = _period_key_to_month_year(routed.plan.periods[-1])
             if p_month:
                 signals.detected_month = p_month
             if p_year:
                 signals.detected_year = p_year
-        if routed.plan.ranking_direction == "worst":
-            signals.asks_worst_agent = True
+        signals.asks_worst_agent = routed.plan.ranking_direction == "worst"
 
         if routed.plan.requested_parts == ["trend", "ranking"] or (
             "trend" in routed.plan.requested_parts and "ranking" in routed.plan.requested_parts
         ):
             signals.primary_intents = ["team_trend_spotlight", "agent_spotlight_trend"]
             signals.asks_single_person = True
-        elif routed.plan.intent == "ranking" and routed.plan.single_person:
+        elif routed.plan.intent == "ranking" and (routed.plan.single_person or routed.plan.employee_id):
             signals.primary_intents = ["agent_spotlight_trend"]
             signals.asks_single_person = True
         elif routed.plan.intent == "trend":
@@ -320,6 +587,10 @@ class PmsAiOrchestrator:
                 signals.primary_intents.insert(0, "corrective_actions")
 
         resolution_ms = round((time.perf_counter() - t_res_start) * 1000.0, 2)
+        validated_plan_v2 = self._build_validated_plan_v2(
+            routed,
+            turn_kind="analytical" if routed.outcome == "answer" else "clarification",
+        )
 
         # Pre-read validation short-circuit for clarification, restricted_access, unavailable_data, unsupported_request
         if routed.outcome != "answer":
@@ -337,7 +608,7 @@ class PmsAiOrchestrator:
                 performance_level=routed.plan.performance_level or req.session_state.performance_level,
                 month=p_month or req.session_state.month,
                 year=p_year or req.session_state.year,
-                employee_id=req.session_state.employee_id,
+                employee_id=routed.plan.employee_id or req.session_state.employee_id,
                 last_confirmed_query=routed.confirmed_context,
             )
             scope_team_or_fn = resolved_state.team or resolved_state.function or "Call Center"
@@ -375,6 +646,7 @@ class PmsAiOrchestrator:
                 latency_ms=pre_trace_ms,
                 non_empty_evidence=False,
                 guardrail_triggered=routed.outcome in ("restricted_access", "unsupported_request"),
+                turn_id=str(claimed_turn.id) if claimed_turn else None,
             )
             trace_ms = round((time.perf_counter() - t_trace_start) * 1000.0, 2)
             total_ms = round((time.perf_counter() - t0) * 1000.0, 2)
@@ -395,8 +667,11 @@ class PmsAiOrchestrator:
                 estimated_cost_usd=routed.provider_metrics.estimated_cost_usd,
                 fallback_outcome=routed.provider_metrics.fallback_outcome,
             )
-            return AiChatResponsePayload(
+            short_resp = AiChatResponsePayload(
                 trace_id=trace_id,
+                conversation_id=req.conversation_id,
+                turn_id=str(claimed_turn.id) if claimed_turn else None,
+                context_version=active_context_version,
                 outcome=routed.outcome,
                 answer_detail=effective_detail,  # type: ignore[arg-type]
                 headline=routed.headline or "",
@@ -410,6 +685,8 @@ class PmsAiOrchestrator:
                 scope_banner=scope_banner,
                 clarification=routed.clarification,
                 structured_query=routed.plan,
+                validated_plan_v2=validated_plan_v2,
+                evidence_envelope_v2=[],
                 inherited_filters=routed.inherited_filters,
                 typed_evidence=[],
                 domain_guardrail_notes=[],
@@ -422,6 +699,24 @@ class PmsAiOrchestrator:
                 basis_warning=None,
                 cache_hit=False,
             )
+            if conv_service and req.conversation_id and claimed_turn:
+                new_ver = conv_service.complete_turn(
+                    conversation_id=req.conversation_id,
+                    turn_id=str(claimed_turn.id),
+                    scope=self.scope,
+                    outcome=routed.outcome,
+                    turn_kind="clarification",
+                    route_used=routed.route_used,
+                    validated_plan=validated_plan_v2.model_dump(),
+                    evidence_envelope=[],
+                    response_payload=short_resp.model_dump(),
+                    session_state=resolved_state,
+                    confirmed_context=routed.confirmed_context,
+                    provider_calls=routed.provider_metrics.provider_calls,
+                    total_ms=total_ms,
+                )
+                short_resp.context_version = new_ver
+            return short_resp
 
         t_db_start = time.perf_counter()
         ctx = ToolExecutionContext(db=self.db, scope=self.scope, session_state=req.session_state)
@@ -442,6 +737,7 @@ class PmsAiOrchestrator:
             "position": routed.plan.position,
             "branch": signals.detected_branch or req.session_state.branch,
             "compare_branch": signals.detected_compare_branch,
+            "branches": list(signals.detected_branches),
             "asks_branch_comparison": signals.asks_branch_comparison,
             "level": signals.detected_level or req.session_state.performance_level,
             "kpi": signals.detected_kpi,
@@ -451,6 +747,7 @@ class PmsAiOrchestrator:
             "employee_query": signals.detected_employee_query,
             "worst_agent": signals.asks_worst_agent,
             "single_person": signals.asks_single_person,
+            "asks_best_month_history": signals.asks_best_month_history,
             "asks_revenue_in_call_center": signals.asks_revenue_in_call_center,
         }
         eval_id = evaluation_cache_identity(self.db)
@@ -547,6 +844,7 @@ class PmsAiOrchestrator:
                             function=routed.plan.function,
                             branch=signals.detected_branch,
                             compare_branch=signals.detected_compare_branch,
+                            branches=signals.detected_branches,
                             asks_branch_comparison=signals.asks_branch_comparison,
                             asks_period_comparison=routed.plan.intent == "compare_periods",
                             performance_level=signals.detected_level,
@@ -686,7 +984,7 @@ class PmsAiOrchestrator:
             performance_level=signals.detected_level or req.session_state.performance_level,
             month=res_month,
             year=res_year,
-            employee_id=req.session_state.employee_id,
+            employee_id=routed.plan.employee_id or req.session_state.employee_id,
             last_confirmed_query=routed.confirmed_context,
         )
 
@@ -736,6 +1034,7 @@ class PmsAiOrchestrator:
             latency_ms=pre_trace_ms,
             non_empty_evidence=total_records_eval > 0,
             guardrail_triggered=any_guardrail,
+            turn_id=str(claimed_turn.id) if claimed_turn else None,
         )
         trace_ms = round((time.perf_counter() - t_trace_start) * 1000.0, 2)
         total_ms = round((time.perf_counter() - t0) * 1000.0, 2)
@@ -759,9 +1058,13 @@ class PmsAiOrchestrator:
             estimated_cost_usd=round(routed.provider_metrics.estimated_cost_usd + synthesis.metrics.estimated_cost_usd, 6),
             fallback_outcome=synthesis.metrics.fallback_outcome if synthesis.metrics.fallback_outcome != "none" else routed.provider_metrics.fallback_outcome,
         )
+        evidence_envelope_v2 = self._build_evidence_envelope_v2(typed_evidence, tool_digests)
 
-        return AiChatResponsePayload(
+        final_resp = AiChatResponsePayload(
             trace_id=trace_id,
+            conversation_id=req.conversation_id,
+            turn_id=str(claimed_turn.id) if claimed_turn else None,
+            context_version=active_context_version,
             outcome=routed.outcome,
             answer_detail=effective_detail,  # type: ignore[arg-type]
             headline=synthesis.headline,
@@ -775,6 +1078,8 @@ class PmsAiOrchestrator:
             scope_banner=scope_banner,
             clarification=routed.clarification,
             structured_query=routed.plan,
+            validated_plan_v2=validated_plan_v2,
+            evidence_envelope_v2=evidence_envelope_v2,
             inherited_filters=routed.inherited_filters,
             typed_evidence=typed_evidence,
             domain_guardrail_notes=guardrail_notes,
@@ -787,3 +1092,21 @@ class PmsAiOrchestrator:
             basis_warning=basis_warning,
             cache_hit=cache_hit,
         )
+        if conv_service and req.conversation_id and claimed_turn:
+            new_ver = conv_service.complete_turn(
+                conversation_id=req.conversation_id,
+                turn_id=str(claimed_turn.id),
+                scope=self.scope,
+                outcome=routed.outcome,
+                turn_kind="analytical",
+                route_used="gemini_router" if total_provider_calls > 0 else "local_rules",
+                validated_plan=validated_plan_v2.model_dump(),
+                evidence_envelope=[ev.model_dump() for ev in evidence_envelope_v2],
+                response_payload=final_resp.model_dump(),
+                session_state=resolved_state,
+                confirmed_context=routed.confirmed_context,
+                provider_calls=total_provider_calls,
+                total_ms=total_ms,
+            )
+            final_resp.context_version = new_ver
+        return final_resp
