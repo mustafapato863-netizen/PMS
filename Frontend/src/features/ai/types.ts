@@ -18,6 +18,9 @@ export type ClarificationCodeType =
   | 'AMBIGUOUS_ATTENDANCE_DEFINITION'
   | 'AMBIGUOUS_TEAM_SCOPE'
   | 'AMBIGUOUS_KPI_SCOPE'
+  | 'AMBIGUOUS_PERSON'
+  | 'AMBIGUOUS_COUNT_VS_RATE'
+  | 'MISSING_HR_JOIN_DATE'
   | 'MISSING_COMPARISON_PERIOD'
   | 'RESTRICTED_SCOPE_SUGGESTION'
   | 'UNAVAILABLE_PERIOD_SUGGESTION';
@@ -40,6 +43,8 @@ export interface ClarificationChoice {
   performance_level?: string | null;
   period?: string | null;
   branch?: string | null;
+  employee_id?: string | null;
+  employee_name?: string | null;
 }
 
 export interface AiClarificationPrompt {
@@ -54,12 +59,17 @@ export interface ConfirmedQueryContext {
   function?: string | null;
   position?: string | null;
   branch?: string | null;
+  branches?: string[];
   performance_level?: string | null;
   metric_id?: string | null;
   metric_display_name?: string | null;
   periods?: string[];
   comparison_type?: 'period' | 'branch' | 'team' | 'none' | null;
   pending_clarification_code?: ClarificationCodeType | null;
+  pending_clarification_choices?: ClarificationChoice[];
+  last_subject_employee_id?: string | null;
+  last_subject_employee_name?: string | null;
+  last_operation_kind?: string | null;
   inherited_filters?: string[];
 }
 
@@ -263,6 +273,9 @@ export interface AiProviderUsageMetrics {
 
 export interface AiChatResponsePayload {
   trace_id: string;
+  conversation_id?: string | null;
+  turn_id?: string | null;
+  context_version?: number;
   outcome?: TurnOutcomeType;
   answer_detail?: 'brief' | 'details';
   headline: string;

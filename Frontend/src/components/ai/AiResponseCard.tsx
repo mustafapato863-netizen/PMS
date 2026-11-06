@@ -26,7 +26,7 @@ import { apiFetch } from '../../lib/apiClient';
 
 interface AiResponseCardProps {
   response: AiChatResponsePayload;
-  onSelectPrompt?: (prompt: string) => void;
+  onSelectPrompt?: (prompt: string, choiceId?: string) => void;
 }
 
 const MONTH_NAME_TO_NUMBER: Record<string, string> = {
@@ -708,7 +708,8 @@ export default function AiResponseCard({ response, onSelectPrompt }: AiResponseC
                   <button
                     key={choice.id}
                     type="button"
-                    onClick={() => onSelectPrompt?.(choice.prompt_to_send || choice.label)}
+                    data-testid={`ai-clarification-choice-${choice.id}`}
+                    onClick={() => onSelectPrompt?.(choice.prompt_to_send || choice.label, choice.id)}
                     className="inline-flex items-center gap-1 rounded-full border border-sky-300 bg-white px-3 py-1 text-[11px] font-extrabold text-blue-700 shadow-2xs transition-all hover:bg-blue-600 hover:text-white"
                   >
                     <span>{choice.label}</span>

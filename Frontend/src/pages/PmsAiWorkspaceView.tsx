@@ -103,15 +103,21 @@ export default function PmsAiWorkspaceView() {
   const [answerDetail, setAnswerDetail] = useState<'auto' | 'brief' | 'details'>('auto');
   const [promptInput, setPromptInput] = useState('');
   const [turns, setTurns] = useState<ConversationTurn[]>([]);
+  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [contextVersion, setContextVersion] = useState<number>(0);
   const [lastConfirmedQuery, setLastConfirmedQuery] = useState<ConfirmedQueryContext | null>(null);
   const [isSending, setIsSending] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [showScenarioTray, setShowScenarioTray] = useState<boolean>(true);
+  const activeRequestSeqRef = useRef<number>(0);
   const streamEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    activeRequestSeqRef.current += 1;
     setAnswerDetail('auto');
     setTurns([]);
+    setConversationId(null);
+    setContextVersion(0);
     setLastConfirmedQuery(null);
   }, [currentUser?.id]);
 
@@ -198,11 +204,14 @@ export default function PmsAiWorkspaceView() {
   }, [turns]);
 
   const sendPrompt = useCallback(
-    async (rawPrompt: string) => {
+    async (rawPrompt: string, clarificationChoiceId?: string) => {
       const cleanPrompt = rawPrompt.trim();
       if (!cleanPrompt || isSending) return;
 
-      const turnId = `turn-${Date.now()}`;
+      const reqSeq = activeRequestSeqRef.current + 1;
+      activeRequestSeqRef.current = reqSeq;
+      const turnId = `turn-${Date.now()}-${reqSeq}`;
+      const clientRequestId = `req-${Date.now()}-${reqSeq}`;
       const historyPayload: AiChatMessage[] = [];
       for (const t of turns.slice(-4)) {
         historyPayload.push({ role: 'user', content: t.userPrompt });
@@ -225,6 +234,10 @@ export default function PmsAiWorkspaceView() {
             method: 'POST',
             body: JSON.stringify({
               prompt: cleanPrompt,
+              conversation_id: conversationId,
+              context_version: contextVersion,
+              client_request_id: clientRequestId,
+              clarification_choice_id: clarificationChoiceId || null,
               session_state: sessionState,
               history: historyPayload,
               provider_override: 'auto',
@@ -232,6 +245,15 @@ export default function PmsAiWorkspaceView() {
             }),
           },
         );
+        if (activeRequestSeqRef.current !== reqSeq) {
+          return;
+        }
+        if (res.data.conversation_id) {
+          setConversationId(res.data.conversation_id);
+        }
+        if (typeof res.data.context_version === 'number') {
+          setContextVersion(res.data.context_version);
+        }
         if (res.data.resolved_session_state?.last_confirmed_query) {
           const nextConfirmed = res.data.resolved_session_state.last_confirmed_query;
           setLastConfirmedQuery((prev) =>
@@ -253,6 +275,9 @@ export default function PmsAiWorkspaceView() {
           ),
         );
       } catch (err) {
+        if (activeRequestSeqRef.current !== reqSeq) {
+          return;
+        }
         const msg = err instanceof Error ? err.message : 'Unable to reach PMS AI service';
         setTurns((prev) =>
           prev.map((item) =>
@@ -262,10 +287,12 @@ export default function PmsAiWorkspaceView() {
           ),
         );
       } finally {
-        setIsSending(false);
+        if (activeRequestSeqRef.current === reqSeq) {
+          setIsSending(false);
+        }
       }
     },
-    [answerDetail, isSending, sessionState, turns],
+    [answerDetail, contextVersion, conversationId, isSending, sessionState, turns],
   );
 
   const firstName = useMemo(() => {
@@ -546,7 +573,16 @@ export default function PmsAiWorkspaceView() {
                   <button
                     type="button"
                     onClick={() => {
+                      activeRequestSeqRef.current += 1;
+                      if (conversationId) {
+                        void apiFetch(`/api/ai/conversations/${conversationId}`, {
+                          method: 'DELETE',
+                        }).catch(() => undefined);
+                      }
+                      setIsSending(false);
                       setTurns([]);
+                      setConversationId(null);
+                      setContextVersion(0);
                       setLastConfirmedQuery(null);
                     }}
                     className="inline-flex items-center gap-1 rounded-full border border-slate-200/90 bg-white px-3 py-1.5 text-[11px] font-bold text-slate-700 shadow-2xs transition-colors hover:border-blue-400 hover:text-blue-600"
@@ -727,7 +763,7 @@ export default function PmsAiWorkspaceView() {
                       {turn.response && (
                         <AiResponseCard
                           response={turn.response}
-                          onSelectPrompt={(p) => void sendPrompt(p)}
+                          onSelectPrompt={(p, choiceId) => void sendPrompt(p, choiceId)}
                         />
                       )}
                     </div>

@@ -359,6 +359,8 @@ describe('PmsAiWorkspaceView', () => {
             success: true,
             data: {
               ...CHAT_RESPONSE.data,
+              conversation_id: 'conv-123',
+              context_version: 2,
               outcome: 'clarification' as const,
               headline: 'Which attendance metric would you like to inspect for Call Center?',
               visual_cards: [],
@@ -390,6 +392,8 @@ describe('PmsAiWorkspaceView', () => {
           success: true,
           data: {
             ...CHAT_RESPONSE.data,
+            conversation_id: 'conv-123',
+            context_version: 3,
             outcome: 'answer' as const,
             headline: 'Inbound Patient Attendance Rate is 52.8% vs 65.0% target.',
           },
@@ -433,5 +437,18 @@ describe('PmsAiWorkspaceView', () => {
     expect(chatCalls.length).toBe(3);
     const thirdCallBody = JSON.parse(String(chatCalls[2][1]?.body || '{}'));
     expect(thirdCallBody.session_state.last_confirmed_query.intent).toBe('clarify');
+    expect(thirdCallBody.conversation_id).toBe('conv-123');
+    expect(thirdCallBody.context_version).toBe(2);
+    expect(thirdCallBody.clarification_choice_id).toBe('choice-patient-attendance-inbound');
+
+    // Clicking New chat deletes the server conversation and resets the stream
+    const newChatBtn = screen.getByRole('button', { name: /New chat/i });
+    fireEvent.click(newChatBtn);
+    await waitFor(() => {
+      expect(mockedApiFetch).toHaveBeenCalledWith(
+        '/api/ai/conversations/conv-123',
+        expect.objectContaining({ method: 'DELETE' }),
+      );
+    });
   });
 });
