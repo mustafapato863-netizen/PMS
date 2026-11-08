@@ -137,6 +137,51 @@ function formatKpiAxisValue(value: number, unit: string): string {
   return Number.isInteger(value) ? value.toLocaleString('en-US') : value.toFixed(1);
 }
 
+function metTargetOf(
+  point: Pick<SixMonthKpiPoint, 'actual' | 'target'>,
+  lowerBetter: boolean,
+): boolean | null {
+  if (point.actual === null || point.target === null) return null;
+  return lowerBetter
+    ? point.actual <= point.target + 1e-9
+    : point.actual >= point.target - 1e-9;
+}
+
+function niceStep(rawStep: number): number {
+  if (!Number.isFinite(rawStep) || rawStep <= 0) return 1;
+  const exponent = Math.floor(Math.log10(rawStep));
+  const magnitude = Math.pow(10, exponent);
+  const fraction = rawStep / magnitude;
+  const niceFraction = fraction <= 1 ? 1 : fraction <= 2 ? 2 : fraction <= 2.5 ? 2.5 : fraction <= 5 ? 5 : 10;
+  return niceFraction * magnitude;
+}
+
+/**
+ * Lower-is-better KPIs need a local, reversed scale: the best (lowest) value sits
+ * at the top, while values above the target stay visible below it. The scale never
+ * starts below zero and includes every actual/target value plus a little padding.
+ */
+function buildLowerBetterScale(values: number[]): {
+  min: number;
+  max: number;
+  ticks: number[];
+} {
+  const finite = values.filter((value) => Number.isFinite(value));
+  const rawMin = finite.length ? Math.min(...finite) : 0;
+  const rawMax = finite.length ? Math.max(...finite) : 1;
+  const span = Math.max(rawMax - rawMin, Math.abs(rawMax) * 0.2, 0.1);
+  const paddedMin = Math.max(0, rawMin - span * 0.12);
+  const paddedMax = rawMax + span * 0.18;
+  const step = niceStep((paddedMax - paddedMin) / 4);
+  const min = Math.max(0, Math.floor(paddedMin / step) * step);
+  const max = Math.max(min + step, Math.ceil(paddedMax / step) * step);
+  const ticks: number[] = [];
+  for (let value = min; value <= max + step * 1e-6; value += step) {
+    ticks.push(Number(value.toFixed(6)));
+  }
+  return { min, max, ticks };
+}
+
 function buildSmoothCurvePath(coords: Array<{ x: number; y: number }>): string {
   if (!coords.length) return '';
   if (coords.length === 1) return `M ${coords[0].x.toFixed(1)} ${coords[0].y.toFixed(1)}`;
@@ -187,8 +232,8 @@ export function ProfileKpiSixMonthTrend({
   }
   const peakPoint = peakIndex >= 0 ? points[peakIndex] : null;
 
-  const evaluatedPoints = points.filter((pt) => pt.actual !== null && pt.metTarget !== null);
-  const metCount = evaluatedPoints.filter((pt) => pt.metTarget === true).length;
+  const evaluatedPoints = points.filter((pt) => metTargetOf(pt, lowerBetter) !== null);
+  const metCount = points.filter((pt) => metTargetOf(pt, lowerBetter) === true).length;
   const totalEvaluated = evaluatedPoints.length || points.length;
   const isPartialWindow =
     evaluatedPoints.length > 0 && evaluatedPoints.length < points.length;
@@ -211,15 +256,26 @@ export function ProfileKpiSixMonthTrend({
 
   let min: number;
   let max: number;
-  if (isPctUnit) {
-    max = 100;
-    min = dataMin >= 45 ? 40 : 0;
+  let axisTicks: number[];
+  if (lowerBetter) {
+    // Lower is better: build a local scale around the actual/target band and
+    // reverse the visual direction so the smallest (best) value sits at the top.
+    const scale = buildLowerBetterScale(allValues);
+    min = scale.min;
+    max = scale.max;
+    axisTicks = scale.ticks;
   } else {
-    const rawSpan = dataMax - dataMin;
-    const minSpan = Math.max(1, Math.abs(dataMax) * 0.35);
-    const span = Math.max(rawSpan, minSpan);
-    min = Math.max(0, dataMin - span * 0.5);
-    max = dataMax + span * 0.2;
+    if (isPctUnit) {
+      max = 100;
+      min = dataMin >= 45 ? 40 : 0;
+    } else {
+      const rawSpan = dataMax - dataMin;
+      const minSpan = Math.max(1, Math.abs(dataMax) * 0.35);
+      const span = Math.max(rawSpan, minSpan);
+      min = Math.max(0, dataMin - span * 0.5);
+      max = dataMax + span * 0.2;
+    }
+    axisTicks = [0, 1 / 3, 2 / 3, 1].map((step) => min + (max - min) * step);
   }
   const domain = max - min || 1;
   const innerW = width - pad.l - pad.r;
@@ -227,10 +283,12 @@ export function ProfileKpiSixMonthTrend({
 
   const xAt = (idx: number) =>
     pad.l + (points.length <= 1 ? innerW / 2 : (idx / (points.length - 1)) * innerW);
-  // Standard Y mapping (clamped to [min, max] so percentage charts top out strictly at 100%)
+  // Higher-is-better keeps the standard upward scale; lower-is-better is reversed
+  // so smaller actuals (better outcomes) render higher on the plot.
   const yAt = (value: number) => {
     const clamped = Math.max(min, Math.min(max, value));
-    return pad.t + (1 - (clamped - min) / domain) * innerH;
+    const ratio = (clamped - min) / domain;
+    return pad.t + (lowerBetter ? ratio : 1 - ratio) * innerH;
   };
   const baseline = pad.t + innerH;
 
@@ -405,7 +463,11 @@ export function ProfileKpiSixMonthTrend({
             </span>
             <span className="inline-flex items-center gap-2">
               <span className="inline-block w-5 border-t-2 border-dashed border-amber-600" />
-              <span>Target ({selected.targetDisplay})</span>
+              <span>
+                {lowerBetter
+                  ? `Maximum acceptable ≤ ${selected.targetDisplay}`
+                  : `Minimum acceptable ≥ ${selected.targetDisplay}`}
+              </span>
             </span>
             <span className="inline-flex items-center gap-1.5 text-slate-500">
               <span>🏆</span>
@@ -421,9 +483,11 @@ export function ProfileKpiSixMonthTrend({
           data-testid="role-kpi-chart"
           viewBox={`0 0 ${width} ${height}`}
           role="img"
-          aria-label={`${selected.name} over 6 months. Actual ${selected.actualDisplay}. Target ${selected.targetDisplay}. ${
-            lowerBetter ? 'Lower is better.' : 'Higher is better.'
-          }`}
+          aria-label={`${selected.name} over 6 months. Actual ${selected.actualDisplay}. ${
+            lowerBetter
+              ? `Maximum acceptable ${selected.targetDisplay}.`
+              : `Minimum acceptable ${selected.targetDisplay}.`
+          } ${lowerBetter ? 'Lower is better.' : 'Higher is better.'}`}
           className="h-60 w-full select-none"
           onMouseLeave={() => setHoveredIdx(null)}
         >
@@ -435,18 +499,17 @@ export function ProfileKpiSixMonthTrend({
           </defs>
 
           {/* Horizontal Gridlines & Y-Axis Labels */}
-          {[0, 1 / 3, 2 / 3, 1].map((step) => {
-            const value = min + domain * step;
+          {axisTicks.map((value, tickIndex) => {
             const y = yAt(value);
             return (
-              <g key={step}>
+              <g key={`tick-${tickIndex}`}>
                 <line
                   x1={pad.l}
                   x2={width - pad.r}
                   y1={y}
                   y2={y}
                   stroke="#e2e8f0"
-                  strokeDasharray={step === 0 ? undefined : '4 4'}
+                  strokeDasharray={tickIndex === 0 ? undefined : '4 4'}
                   strokeWidth="1"
                 />
                 <text
@@ -513,6 +576,25 @@ export function ProfileKpiSixMonthTrend({
             />
           ) : null}
 
+          {targetCoords.length > 0 && (
+            <text
+              data-testid="target-direction-label"
+              x={width - pad.r - 4}
+              y={Math.max(
+                pad.t + 10,
+                Math.min(...targetCoords.map((coord) => coord.y)) - 7,
+              )}
+              textAnchor="end"
+              fill="#b45309"
+              fontSize="10.5"
+              fontWeight="700"
+            >
+              {lowerBetter
+                ? `Maximum acceptable ≤ ${selected.targetDisplay}`
+                : `Minimum acceptable ≥ ${selected.targetDisplay}`}
+            </text>
+          )}
+
           {/* Actual: Smooth Solid Blue Curve */}
           {actualCoords.length >= 1 && (
             <path
@@ -526,7 +608,7 @@ export function ProfileKpiSixMonthTrend({
             />
           )}
 
-          {/* Unmeasured Month Markers ("No data") */}
+          {/* Unmeasured Month Markers ("Unavailable") */}
           {points.map((pt, idx) => {
             if (pt.actual !== null) return null;
             const x = xAt(idx);
@@ -541,23 +623,25 @@ export function ProfileKpiSixMonthTrend({
                 fontSize="10"
                 fontWeight="600"
               >
-                No data
+                Unavailable
               </text>
             );
           })}
 
           {/* Data Points + Peak Month Trophy + Value Callouts */}
           {actualCoords.map((item) => {
-            const missed = item.point.metTarget === false;
+            const missed = metTargetOf(item.point, lowerBetter) === false;
             const isPeak = item.idx === peakIndex;
             const isHovered = hoveredIdx === item.idx;
             const labelY = item.y < 20 ? item.y + 20 : item.y - 13;
 
             return (
-              <g key={item.point.periodKey}>
+              <g key={item.point.periodKey} data-testid={`trend-point-${item.point.periodKey}`}>
                 {isPeak ? (
                   <g>
                     <circle
+                      data-testid={`trend-peak-${item.point.periodKey}`}
+                      data-missed={missed ? 'true' : 'false'}
                       cx={item.x}
                       cy={item.y}
                       r={isHovered ? 10 : 8.5}
@@ -571,6 +655,8 @@ export function ProfileKpiSixMonthTrend({
                   </g>
                 ) : (
                   <circle
+                    data-testid={`trend-dot-${item.point.periodKey}`}
+                    data-missed={missed ? 'true' : 'false'}
                     cx={item.x}
                     cy={item.y}
                     r={isHovered ? 6 : 4.5}
@@ -647,14 +733,14 @@ export function ProfileKpiSixMonthTrend({
                 className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
                   hoveredItem === null
                     ? 'bg-slate-100 text-slate-600'
-                    : hoveredPoint.metTarget === false
+                    : metTargetOf(hoveredPoint, lowerBetter) === false
                     ? 'bg-rose-50 text-rose-700'
                     : 'bg-emerald-50 text-emerald-700'
                 }`}
               >
                 {hoveredItem === null
-                  ? 'No Data'
-                  : hoveredPoint.metTarget === false
+                  ? 'Unavailable'
+                  : metTargetOf(hoveredPoint, lowerBetter) === false
                   ? 'Missed'
                   : 'Met Target'}
               </span>
@@ -682,7 +768,7 @@ export function ProfileKpiSixMonthTrend({
               </>
             ) : (
               <div className="py-1 text-slate-500">
-                No KPI data recorded in this month.
+                Value unavailable for this month.
               </div>
             )}
           </div>

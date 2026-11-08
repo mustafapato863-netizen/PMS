@@ -18,6 +18,7 @@ import ScoreTrendChart from '../components/employee/ScoreTrendChart';
 import KpiBreakdownPanel from '../components/employee/KpiBreakdownPanel';
 import ActionTimeline from '../components/employee/ActionTimeline';
 import EmployeeActionModal from '../components/team/EmployeeActionModal';
+import { ContextualAssistantPanel } from '../components/ai/ContextualAssistantPanel';
 import type { TeamAgentRow, TeamWeightConfig } from '../hooks/usePerformanceData';
 import { bookingVolumeText, getKPIsForAgent, getStatusFromScore, isPreApprovalsIpElectiveTeam, resolvePreApprovalsWorkstream } from '../types';
 import { useSummaryRecords } from '../features/executive/useSummaryRecords';
@@ -1191,6 +1192,18 @@ const EmployeeProfileView = () => {
       )}
 
       {/* Action Modal */}
+      <ContextualAssistantPanel
+        pageContext={{
+          page_id: 'employee_profile',
+          route_id: `/employee/${encodeURIComponent(employee.id)}`,
+          employee_id: employee.id,
+          team_id: employee.team || null,
+          performance_level: performanceLevel !== 'All' ? performanceLevel : 'Employee',
+          month: activeMonth || null,
+          year: selectedYear ?? null,
+        }}
+        onActionSaved={triggerRefresh}
+      />
       {showModal && employee && (
         <EmployeeActionModal
           employee={employee}

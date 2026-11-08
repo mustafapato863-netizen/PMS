@@ -1,0 +1,322 @@
+[
+  {
+    "id": 5,
+    "question": "What is the Inbound score in September 2026?",
+    "outcome": "answer",
+    "headline": "In September 2026 (All Branches), Inbound has the lowest score at 85.0% (+2.5% vs prior month), with 0 of 2 agents below target.",
+    "bullets": [
+      "Primary driver: Attendance Rate contributed to the performance gap."
+    ],
+    "tools": [
+      {
+        "tool_name": "get_executive_and_priority_insights",
+        "arguments": {
+          "team": "Inbound",
+          "function": "Call Center",
+          "position": null,
+          "branch": null,
+          "performance_level": "Employee",
+          "month": "September",
+          "year": 2026,
+          "region": null
+        },
+        "records_evaluated": 3
+      }
+    ],
+    "provider": "llama_cpp",
+    "missing": [],
+    "passed_basic": true,
+    "seconds": 6.195
+  },
+  {
+    "id": 9,
+    "question": "What was Inbound score in August 2026?",
+    "outcome": "answer",
+    "headline": "In August 2026 (All Branches), Inbound has the lowest score at 82.5%, with 0 of 2 agents below target.",
+    "bullets": [
+      "Primary driver: Attendance Rate contributed to the performance gap."
+    ],
+    "tools": [
+      {
+        "tool_name": "get_executive_and_priority_insights",
+        "arguments": {
+          "team": "Inbound",
+          "function": "Call Center",
+          "position": null,
+          "branch": null,
+          "performance_level": "Employee",
+          "month": "August",
+          "year": 2026,
+          "region": null
+        },
+        "records_evaluated": 5
+      }
+    ],
+    "provider": "llama_cpp",
+    "missing": [],
+    "passed_basic": true,
+    "seconds": 5.853
+  },
+  {
+    "id": 11,
+    "question": "What is Outbound score in September 2026?",
+    "outcome": "answer",
+    "headline": "In September 2026 (All Branches), Outbound has the lowest score at 60.0% (-10.0% vs prior month), with 1 of 1 agents below target.",
+    "bullets": [
+      "Primary driver: No Show Rate remains above target."
+    ],
+    "tools": [
+      {
+        "tool_name": "get_executive_and_priority_insights",
+        "arguments": {
+          "team": "Outbound",
+          "function": "Call Center",
+          "position": null,
+          "branch": null,
+          "performance_level": "Employee",
+          "month": "September",
+          "year": 2026,
+          "region": null
+        },
+        "records_evaluated": 4
+      }
+    ],
+    "provider": "llama_cpp",
+    "missing": [],
+    "passed_basic": true,
+    "seconds": 5.58
+  },
+  {
+    "id": 13,
+    "question": "Who is the lowest person in Inbound in September 2026?",
+    "outcome": "answer",
+    "headline": "Alice Example (EMP001) is the lowest-scoring agent in Inbound (All Branches) for September 2026 by Overall PMS Score at 80.0% (Grade C, Rank #2 of 2), moving +10.0% vs August (+10.0% since August).",
+    "bullets": [],
+    "tools": [
+      {
+        "tool_name": "get_agent_spotlight_and_trend",
+        "arguments": {
+          "team": "Inbound",
+          "position": "Call Center Agent",
+          "branch": null,
+          "kpi": null,
+          "employee_query": null,
+          "ranking_direction": "worst"
+        },
+        "records_evaluated": 2
+      }
+    ],
+    "provider": "llama_cpp",
+    "missing": [],
+    "passed_basic": true,
+    "seconds": 5.234
+  },
+  {
+    "id": 21,
+    "question": "Which branch had the most Inbound bookings in September 2026: Dubai or Sharjah?",
+    "outcome": "answer",
+    "headline": "Dubai led September 2026 Inbound bookings with 180, followed by Sharjah with 70.",
+    "bullets": [
+      "Branch booking breakdown: Dubai: 180 bookings (70 attended, 38.9%) \u00b7 Sharjah: 70 bookings (30 attended, 42.9%)."
+    ],
+    "tools": [
+      {
+        "tool_name": "get_kpi_diagnosis_and_trends",
+        "arguments": {
+          "team": "Inbound",
+          "function": "Call Center",
+          "position": null,
+          "branch": null,
+          "performance_level": "Employee",
+          "month": "September",
+          "year": 2026,
+          "region": null,
+          "compare_branch": "sharjah",
+          "branches": [
+            "dubai",
+            "sharjah"
+          ],
+          "kpi": "TotalBookings"
+        },
+        "records_evaluated": 3
+      }
+    ],
+    "provider": "llama_cpp",
+    "missing": [],
+    "passed_basic": true,
+    "seconds": 5.357
+  },
+  {
+    "id": 24,
+    "question": "Compare Dubai and Sharjah Inbound bookings in September 2026.",
+    "outcome": "answer",
+    "headline": "Dubai led September 2026 Inbound bookings with 180, followed by Sharjah with 70.",
+    "bullets": [
+      "Branch booking breakdown: Dubai: 180 bookings (70 attended, 38.9%) \u00b7 Sharjah: 70 bookings (30 attended, 42.9%)."
+    ],
+    "tools": [
+      {
+        "tool_name": "get_kpi_diagnosis_and_trends",
+        "arguments": {
+          "team": "Inbound",
+          "function": "Call Center",
+          "position": null,
+          "branch": null,
+          "performance_level": "Employee",
+          "month": "September",
+          "year": 2026,
+          "region": null,
+          "compare_branch": "sharjah",
+          "branches": [
+            "dubai",
+            "sharjah"
+          ],
+          "kpi": "TotalBookings"
+        },
+        "records_evaluated": 3
+      }
+    ],
+    "provider": "llama_cpp",
+    "missing": [],
+    "passed_basic": true,
+    "seconds": 5.471
+  },
+  {
+    "id": 41,
+    "question": "What is the Inbound score and who is the lowest employee?",
+    "outcome": "answer",
+    "headline": "In September 2026 (All Branches), Inbound has the lowest score at 85.0% (+2.5% vs prior month), with 0 of 2 agents below target. Alice Example (EMP001) is the lowest-scoring agent in Inbound (All Branches) for September 2026 by Overall PMS Score at 80.0% (Grade C, Rank #2 of 2), moving +10.0% vs August (+10.0% since August).",
+    "bullets": [
+      "Primary driver: Attendance Rate contributed to the performance gap."
+    ],
+    "tools": [
+      {
+        "tool_name": "get_executive_and_priority_insights",
+        "arguments": {
+          "team": "Inbound",
+          "function": "Call Center",
+          "position": null,
+          "branch": null,
+          "performance_level": "Employee",
+          "month": "September",
+          "year": 2026,
+          "region": null
+        },
+        "records_evaluated": 3
+      },
+      {
+        "tool_name": "get_agent_spotlight_and_trend",
+        "arguments": {
+          "team": "Inbound",
+          "position": "Call Center Agent",
+          "branch": null,
+          "kpi": null,
+          "employee_query": null,
+          "ranking_direction": "worst"
+        },
+        "records_evaluated": 2
+      }
+    ],
+    "provider": "llama_cpp",
+    "missing": [],
+    "passed_basic": true,
+    "seconds": 8.006
+  },
+  {
+    "id": 42,
+    "question": "What is Inbound score and who is the best performer?",
+    "outcome": "answer",
+    "headline": "In September 2026 (All Branches), Inbound has the lowest score at 85.0% (+2.5% vs prior month), with 0 of 2 agents below target. Bob Example (EMP002) is the #1 top performer in Inbound (All Branches) for September 2026 by Overall PMS Score at 90.0% (Grade B, Rank #1 of 2), moving -5.0% vs August (-5.0% since August).",
+    "bullets": [
+      "Primary driver: Attendance Rate contributed to the performance gap."
+    ],
+    "tools": [
+      {
+        "tool_name": "get_executive_and_priority_insights",
+        "arguments": {
+          "team": "Inbound",
+          "function": "Call Center",
+          "position": null,
+          "branch": null,
+          "performance_level": "Employee",
+          "month": "September",
+          "year": 2026,
+          "region": null
+        },
+        "records_evaluated": 3
+      },
+      {
+        "tool_name": "get_agent_spotlight_and_trend",
+        "arguments": {
+          "team": "Inbound",
+          "position": "Call Center Agent",
+          "branch": null,
+          "kpi": null,
+          "employee_query": null,
+          "ranking_direction": "best"
+        },
+        "records_evaluated": 2
+      }
+    ],
+    "provider": "llama_cpp",
+    "missing": [],
+    "passed_basic": true,
+    "seconds": 7.934
+  },
+  {
+    "id": 43,
+    "question": "Show Inbound score trend and who was the best performer.",
+    "outcome": "answer",
+    "headline": "Inbound scored 85.0% (Grade C) in September 2026, moving +2.5% vs August (+2.5% since August). Bob Example (EMP002) is the #1 top performer in Inbound (All Branches) for September 2026 by Overall PMS Score at 90.0% (Grade B, Rank #1 of 2), moving -5.0% vs August (-5.0% since August).",
+    "bullets": [
+      "Verified performer evidence: Bob Example (EMP002) \u00b7 Ranking metric: Overall PMS Score (90.0% Overall PMS Score) \u00b7 Period: September 2026 \u00b7 Scope: Inbound (All Branches) \u00b7 Source: /employee/EMP002?month=September&year=2026&function=Call+Center&team=Inbound&position=Call+Center+Agent."
+    ],
+    "tools": [
+      {
+        "tool_name": "get_team_trend_spotlight",
+        "arguments": {
+          "team": "Inbound",
+          "function": "Call Center",
+          "position": null,
+          "branch": null,
+          "performance_level": null,
+          "month": "September",
+          "year": 2026,
+          "region": null,
+          "kpi": null
+        },
+        "records_evaluated": 4
+      },
+      {
+        "tool_name": "get_agent_spotlight_and_trend",
+        "arguments": {
+          "team": "Inbound",
+          "position": "Call Center Agent",
+          "branch": null,
+          "kpi": null,
+          "employee_query": null,
+          "ranking_direction": "best"
+        },
+        "records_evaluated": 2
+      }
+    ],
+    "provider": "llama_cpp",
+    "missing": [],
+    "passed_basic": true,
+    "seconds": 7.81
+  },
+  {
+    "id": 46,
+    "question": "Which one is doing better?",
+    "outcome": "clarification",
+    "headline": "Which teams, branches, or employees would you like to compare? Please specify the scope and metric.",
+    "bullets": [
+      "Specify at least two teams or branches and the performance measure to compare."
+    ],
+    "tools": [],
+    "provider": "deterministic",
+    "missing": [],
+    "passed_basic": true,
+    "seconds": 0.004
+  }
+]

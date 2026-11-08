@@ -153,21 +153,33 @@ try {
     $FrontendUrl = "http://localhost:$FrontendPort"
     $started = @()
 
-    $backendCmd = "`$Host.UI.RawUI.WindowTitle='PMS backend'; `$env:PORT='$BackendPort'; & '$BackendPython' -m uvicorn app:app --host 127.0.0.1 --port $BackendPort --reload"
-    $p = Start-Process powershell -ArgumentList @('-NoExit', '-Command', "cd '$Root\Backend'; $backendCmd") -WorkingDirectory "$Root\Backend" -PassThru
-    $started += $p.Id
-    Write-Host "Backend starting (PID $($p.Id)) -> $BackendUrl" -ForegroundColor Cyan
-
-    if (-not $NoWorker) {
-        $p = Start-Process powershell -ArgumentList @('-NoExit', '-Command', "cd '$Root\Backend'; `$Host.UI.RawUI.WindowTitle='PMS worker'; & '$BackendPython' worker.py") -WorkingDirectory "$Root\Backend" -PassThru
-        $started += $p.Id
-        Write-Host "Worker starting (PID $($p.Id))..." -ForegroundColor Cyan
+    function Start-ServerProcess {
+        param([string]$WorkingDirectory, [string]$Command, [string]$Title)
+        $fullCmd = "powershell.exe -NoExit -Command `"cd '$WorkingDirectory'; `$Host.UI.RawUI.WindowTitle='$Title'; $Command`""
+        try {
+            $res = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = $fullCmd; CurrentDirectory = $WorkingDirectory } -ErrorAction Stop
+            if ($res.ProcessId) { return $res.ProcessId }
+        } catch { }
+        $p = Start-Process powershell -ArgumentList @('-NoExit', '-Command', "cd '$WorkingDirectory'; `$Host.UI.RawUI.WindowTitle='$Title'; $Command") -WorkingDirectory $WorkingDirectory -PassThru
+        return $p.Id
     }
 
-    $frontendEnv = "`$env:VITE_API_BASE_URL='$BackendUrl'; `$env:VITE_SOCKET_URL='ws://127.0.0.1:$BackendPort'; `$env:PORT='$FrontendPort'"
-    $p = Start-Process powershell -ArgumentList @('-NoExit', '-Command', "cd '$Root\Frontend'; `$Host.UI.RawUI.WindowTitle='PMS frontend'; $frontendEnv; npm run dev -- --port $FrontendPort --strictPort") -WorkingDirectory "$Root\Frontend" -PassThru
-    $started += $p.Id
-    Write-Host "Frontend starting (PID $($p.Id)) -> $FrontendUrl" -ForegroundColor Cyan
+    $backendCmd = "`$env:PORT='$BackendPort'; & '$BackendPython' -m uvicorn app:app --host 127.0.0.1 --port $BackendPort --reload"
+    $pidBackend = Start-ServerProcess -WorkingDirectory "$Root\Backend" -Command $backendCmd -Title 'PMS backend'
+    $started += $pidBackend
+    Write-Host "Backend starting (PID $pidBackend) -> $BackendUrl" -ForegroundColor Cyan
+
+    if (-not $NoWorker) {
+        $pidWorker = Start-ServerProcess -WorkingDirectory "$Root\Backend" -Command "& '$BackendPython' worker.py" -Title 'PMS worker'
+        $started += $pidWorker
+        Write-Host "Worker starting (PID $pidWorker)..." -ForegroundColor Cyan
+    }
+
+    $frontendDevScript = if (Test-Path "$Root\Frontend\dev.mjs") { "node dev.mjs" } else { "npm run dev -- --port $FrontendPort --strictPort" }
+    $frontendEnv = "`$env:VITE_API_BASE_URL='$BackendUrl'; `$env:VITE_SOCKET_URL='ws://127.0.0.1:$BackendPort'; `$env:PORT='$FrontendPort'; $frontendDevScript"
+    $pidFrontend = Start-ServerProcess -WorkingDirectory "$Root\Frontend" -Command $frontendEnv -Title 'PMS frontend'
+    $started += $pidFrontend
+    Write-Host "Frontend starting (PID $pidFrontend) -> $FrontendUrl" -ForegroundColor Cyan
 
     $started | ConvertTo-Json | Set-Content $PidFile
     if ($FrontendPort -ne 5173) {

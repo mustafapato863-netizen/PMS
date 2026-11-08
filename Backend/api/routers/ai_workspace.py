@@ -11,6 +11,8 @@ from models.ai_schemas import (
     AiChatResponse,
     AiConversationCreateRequest,
     AiConversationResponse,
+    AiCorrectiveActionConfirmRequest,
+    AiCorrectiveActionConfirmResponse,
     AiDistillationExportResponse,
     AiFeedbackRequest,
     AiFeedbackResponse,
@@ -20,6 +22,10 @@ from models.ai_schemas import (
     SessionFilterContext,
 )
 from services.ai.catalog import get_ai_catalog
+from services.ai.contextual_assistant import (
+    ProposalStaleEvidenceError,
+    confirm_corrective_action_proposal,
+)
 from services.ai.conversation_service import (
     AiConversationService,
     ConversationDeletedError,
@@ -33,6 +39,11 @@ from services.ai.orchestrator import PmsAiOrchestrator
 from services.ai.providers import ProviderUnavailableError
 from services.ai.router import AiProviderUnavailableError
 from services.ai.trace_logger import TraceOwnershipError, TrainingTraceLogger
+from services.corrective_action_service import (
+    CorrectiveActionAccessError,
+    CorrectiveActionNotFoundError,
+    CorrectiveActionValidationError,
+)
 from services.insights_service import InsightAccessError, InsightValidationError
 
 router = APIRouter(prefix="/ai", tags=["PMS AI Workspace"])
@@ -47,6 +58,7 @@ AI_WORKSPACE_ROLES = [
     "Branch Director",
     "Function Director",
     "Function Viewer",
+    "Employee",
 ]
 
 
@@ -110,6 +122,30 @@ def post_ai_chat_turn(
         release_read_transaction(db)
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
     return AiChatResponse(success=True, message="AI analytical response generated", data=payload)
+
+
+@router.post("/proposals/confirm", response_model=AiCorrectiveActionConfirmResponse)
+def post_confirm_corrective_action_proposal(
+    body: AiCorrectiveActionConfirmRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    _role: str = Depends(require_role(AI_WORKSPACE_ROLES)),
+) -> AiCorrectiveActionConfirmResponse:
+    scope = require_authenticated_scope(db, request)
+    try:
+        return confirm_corrective_action_proposal(db, scope, body)
+    except (CorrectiveActionAccessError, InsightAccessError, PermissionError) as exc:
+        release_read_transaction(db)
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except CorrectiveActionNotFoundError as exc:
+        release_read_transaction(db)
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ProposalStaleEvidenceError as exc:
+        release_read_transaction(db)
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except (CorrectiveActionValidationError, InsightValidationError, ValueError) as exc:
+        release_read_transaction(db)
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
 
 
 @router.post("/conversations", response_model=AiConversationResponse)
@@ -228,6 +264,7 @@ def post_ai_trace_feedback(
         found, eligible = TrainingTraceLogger(db).record_feedback(
             trace_id=body.trace_id,
             rating=body.rating,
+            category=body.category,
             reason=body.reason,
             caller_user_id=str(scope.get("user_id") or ""),
             caller_role=caller_role,
@@ -241,10 +278,11 @@ def post_ai_trace_feedback(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Interaction trace not found")
     return AiFeedbackResponse(
         success=True,
-        message="Feedback recorded for model distillation",
+        message="Feedback recorded for administrator review",
         trace_id=body.trace_id,
         rating=body.rating,
-        is_distillation_eligible=eligible,
+        category=body.category,
+        is_distillation_eligible=bool(eligible and body.reviewer_verified and caller_role == "Admin"),
         reviewer_verified=bool(body.reviewer_verified and caller_role == "Admin"),
     )
 
@@ -291,9 +329,11 @@ def export_ai_distillation_traces(
     db: Session = Depends(get_db),
     verified_only: bool = Query(default=True),
     limit: int = Query(default=500, ge=1, le=2000),
-    _role: str = Depends(require_role(["Admin", "General Manager", "Performance Team"])),
+    _role: str = Depends(require_role(["Admin"])),
 ) -> AiDistillationExportResponse:
     scope = require_authenticated_scope(db, request)
+    if not verified_only:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Only administrator-reviewed examples can be exported for training.")
     client_host = request.client.host if request.client else None
     req_id = request.headers.get("x-request-id")
     records = TrainingTraceLogger(db).export_distillation_dataset(

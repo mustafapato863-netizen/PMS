@@ -19,8 +19,10 @@ if "pytest" not in sys.modules and "PYTEST_CURRENT_TEST" not in os.environ:
     if _ENV_PATH.exists():
         load_dotenv(dotenv_path=_ENV_PATH, override=False)
 else:
-    # Ensure unit tests start with cloud routing disabled by default unless monkeypatched by a test
-    os.environ.pop("PMS_AI_GEMINI_ROUTING_ENABLED", None)
+    # Ensure unit tests start with cloud/local model routing disabled by default unless monkeypatched by a test
+    os.environ["PMS_AI_GEMINI_ROUTING_ENABLED"] = "false"
+    os.environ["PMS_AI_LOCAL_ROUTER_ENABLED"] = "false"
+    os.environ["PMS_AI_LOCAL_EXPLORATION_ENABLED"] = "false"
 
 RouterModeType = Literal["legacy", "shadow", "hybrid"]
 ClassifierModeType = Literal["off", "shadow", "enabled"]
@@ -51,6 +53,7 @@ DEFAULT_PILOT_SCOPES: frozenset[str] = frozenset(
         "pre-approvals ip final shjajm",
         "pre-approvals ip elective",
         "pre-approvals ip elective dubai",
+        "pre-approvals ip",
         "pre-approvals ip offshore",
         "coding",
         "coding egy",
@@ -67,6 +70,9 @@ DEFAULT_PILOT_SCOPES: frozenset[str] = frozenset(
         "it",
         "administration",
         "offshore admin & management",
+        "crm",
+        "nursing",
+        "pmo",
     }
 )
 
@@ -123,10 +129,14 @@ def get_ai_runtime_config() -> AiRuntimeConfig:
         os.environ.get("PMS_AI_GEMINI_ROUTING_ENABLED"), default=False
     )
 
+    app_env = os.environ.get("APP_ENV", "").strip().casefold()
     raw_clf = os.environ.get("PMS_AI_CLASSIFIER_MODE", "off").strip().casefold()
-    classifier_mode: ClassifierModeType = (
-        raw_clf if raw_clf in ("off", "shadow", "enabled") else "off"  # type: ignore[assignment]
-    )
+    if app_env == "production":
+        classifier_mode: ClassifierModeType = "off"
+    else:
+        classifier_mode = (
+            raw_clf if raw_clf in ("off", "shadow", "enabled") else "off"  # type: ignore[assignment]
+        )
 
     brief_default_enabled = _parse_bool(
         os.environ.get("PMS_AI_BRIEF_DEFAULT_ENABLED"), default=True

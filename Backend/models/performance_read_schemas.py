@@ -23,10 +23,19 @@ class PerformanceScope(BaseModel):
     location: str | None = None
 
 
+class AuthorizedPerformanceTeam(BaseModel):
+    team: str
+    region: str | None = None
+    functions: list[str] = Field(default_factory=list)
+    performance_levels: list[str] = Field(default_factory=list)
+
+
 class PerformanceCatalogData(BaseModel):
     periods: list[dict[str, Any]] = Field(default_factory=list)
     months: list[str] = Field(default_factory=list)
     scopes: list[dict[str, Any]] = Field(default_factory=list)
+    teams: list[AuthorizedPerformanceTeam] = Field(default_factory=list)
+    authorized_functions: list[str] = Field(default_factory=list)
     data_version: int = 0
     as_of: str
 

@@ -79,6 +79,8 @@ function AnimatedRoutes() {
         {/* Executive Summary: corporate, managerial (team scope) and function redirect. */}
         <Route path="/executive" element={<Suspense fallback={<RouteLoadingFallback />}><DepartmentalSummaryView /></Suspense>} />
         <Route path="/departmental-summary" element={<RedirectToExecutiveSummary />} />
+        <Route path="/bsc" element={<RedirectToExecutiveSummary />} />
+        <Route path="/balanced-scorecard" element={<RedirectToExecutiveSummary />} />
 
         {/* Function Summary: Admin, General Manager, Function Viewer (own functions only). */}
         <Route path="/function-summary" element={<RouteGuard allowedRoles={ROUTE_ROLES.functionSummary}><Suspense fallback={<RouteLoadingFallback />}><FunctionSummaryView /></Suspense></RouteGuard>} />

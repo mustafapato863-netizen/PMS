@@ -36,7 +36,7 @@ from utils.branch_scope import (
     project_record_for_branch,
     record_matches_branch,
 )
-from utils.report_scope import filter_records_by_scope
+from utils.report_scope import filter_records_by_scope, selection_team_keys
 
 logger = logging.getLogger(__name__)
 
@@ -123,14 +123,17 @@ class ToolExecutionContext:
         self.db = db
         self.scope = scope
         self.session_state = session_state
-        self.source = DatabaseRecordSource(db)
+        self.source = DatabaseRecordSource(db, scope=scope)
         self.planning_service = PlanningService(self.source, db=db)
         self.insights_service = InsightsService(self.source, self.planning_service, db=db)
         self._scoped_records: list[Any] | None = None
 
     def get_scoped_records(self) -> list[Any]:
         if self._scoped_records is None:
-            self._scoped_records = filter_records_by_scope(self.source.get_all(), self.scope)
+            self._scoped_records = filter_records_by_scope(
+                self.source.get_all(scope=self.scope),
+                self.scope,
+            )
         return self._scoped_records
 
     def resolve_filters(
@@ -176,6 +179,8 @@ class ToolExecutionContext:
             if self.session_state.performance_level not in (None, "", "All")
             else None
         )
+        if eff_team and eff_team.casefold() in ("crm", "nursing", "pmo") and eff_level in (None, "", "Employee"):
+            eff_level = "Corporate"
 
         eff_month = month if month not in (None, "", "All") else (
             self.session_state.month if self.session_state.month not in (None, "", "All") else None
@@ -268,15 +273,31 @@ class DeterministicToolRegistry:
         )
         branch_label = resolved["branch"].capitalize() if resolved["branch"] else "All Branches"
 
-        total_employees = sum(int(t.total_employees or 0) for t in (ws.team_summaries or []))
-        impacted_employees = sum(int(t.impacted_employees or 0) for t in (ws.team_summaries or []))
-        avg_score = ws.executive_story.current_score if ws.executive_story else None
+        scoped_summaries = list(ws.team_summaries or [])
+        if resolved["team"]:
+            req_team_cf = _display_team_name(resolved["team"]).strip().casefold()
+            raw_team_cf = str(resolved["team"]).strip().casefold()
+            t_keys_cf = selection_team_keys(resolved["team"])
+            scoped_summaries = [
+                t
+                for t in scoped_summaries
+                if _display_team_name(t.team).strip().casefold() == req_team_cf
+                or str(t.team or "").strip().casefold() == raw_team_cf
+                or str(t.team or "").strip().casefold() in t_keys_cf
+            ]
+        total_employees = sum(int(t.total_employees or 0) for t in scoped_summaries)
+        impacted_employees = sum(int(t.impacted_employees or 0) for t in scoped_summaries)
+        avg_score = (
+            ws.executive_story.current_score
+            if ws.executive_story and (not resolved["team"] or scoped_summaries)
+            else None
+        )
 
         cards: list[StructuredVisualCard] = []
-        if ws.team_summaries:
+        if scoped_summaries:
             bars: list[AiBarItem] = []
             sorted_teams = sorted(
-                ws.team_summaries,
+                scoped_summaries,
                 key=lambda t: (t.current_score if t.current_score is not None else 999.0),
             )
             for t in sorted_teams[:8]:
@@ -484,14 +505,27 @@ class DeterministicToolRegistry:
                     "total": t.total_employees,
                     "main_cause": t.main_cause,
                 }
-                for t in ws.team_summaries[:6]
+                for t in scoped_summaries[:6]
             ],
         }
+
+        scoped_insights = [
+            ins
+            for ins in (ws.priority_insights or [])
+            if not resolved["team"]
+            or not ins.team
+            or str(ins.team).strip().casefold() == str(resolved["team"]).strip().casefold()
+        ]
+        records_eval = (
+            total_employees
+            if resolved["team"]
+            else max(total_employees, len(scoped_insights))
+        )
 
         return ToolExecutionResult(
             tool_name="get_executive_and_priority_insights",
             arguments=resolved,
-            records_evaluated=max(total_employees, len(ws.priority_insights or [])),
+            records_evaluated=records_eval,
             digest=digest,
             visual_cards=cards,
             citations=citations,
@@ -786,9 +820,13 @@ class DeterministicToolRegistry:
                     if getattr(req_cat, "value_kind", None) == "count":
                         vol_map = {
                             "bookings_count": int(volume_summary.get("total_bookings") or 0),
+                            "TotalBookings": int(volume_summary.get("total_bookings") or 0),
                             "attended_count": int(volume_summary.get("total_attended") or 0),
+                            "AttendedPatients": int(volume_summary.get("total_attended") or 0),
                             "handled_calls_count": int(volume_summary.get("total_calls_handled") or 0),
+                            "HandledCalls": int(volume_summary.get("total_calls_handled") or 0),
                             "abandoned_calls_count": int(volume_summary.get("total_abandoned") or 0),
+                            "AbandonedCalls": int(volume_summary.get("total_abandoned") or 0),
                         }
                         cnt_v = vol_map.get(req_cat.kpi_key, 0)
                         vol_val = float(cnt_v)
@@ -976,10 +1014,15 @@ class DeterministicToolRegistry:
             if kpi_rows
             else None
         )
+        avg_score_val = round(float(ws.executive_story.current_score), 1) if (ws.executive_story and ws.executive_story.current_score is not None) else None
+        score_chg_val = round(float(ws.executive_story.score_change), 1) if (ws.executive_story and ws.executive_story.score_change is not None) else None
         digest = {
             "period": period_label,
             "scope": scope_label,
             "branch": branch_label,
+            "average_score": avg_score_val,
+            "score_change": score_chg_val,
+            "total_records": total_employees,
             "requested_branches": [b.capitalize() for b in requested_branches if user_can_access_branch(self.ctx.scope, b)],
             "branch_comparison": branch_comparison_digest,
             "period_comparison": period_comparison_payload,
@@ -1026,6 +1069,16 @@ class DeterministicToolRegistry:
             month=month,
             year=year,
         )
+        cat_kpi_def = (
+            get_ai_catalog().find_metric_definition(
+                team=resolved["team"],
+                kpi_key_or_label=kpi,
+                performance_level=resolved["performance_level"] or "Employee",
+            )
+            if kpi
+            else None
+        )
+        effective_kpi_key = cat_kpi_def.kpi_key if cat_kpi_def else kpi
         ws = self.ctx.insights_service.generate_workspace(
             self.ctx.scope,
             sections="summary,team_summaries,people_contribution_analysis,comparison",
@@ -1036,7 +1089,7 @@ class DeterministicToolRegistry:
             function=resolved["function"],
             position=resolved["position"],
             performance_level=resolved["performance_level"],
-            kpi=kpi,
+            kpi=effective_kpi_key,
             branch=resolved["branch"],
         )
 
@@ -1346,9 +1399,11 @@ class DeterministicToolRegistry:
             r_pos = str(getattr(rec, "position", "") or "").strip()
             if target_team:
                 if target_team.casefold() in ("support positions", "call center support positions"):
-                    if r_team.casefold() != "call center" or not r_pos:
+                    if r_team.casefold() not in ("call center", "support positions", "call center support positions") or (
+                        r_team.casefold() == "call center" and not r_pos
+                    ):
                         continue
-                elif r_team.casefold() != target_team.casefold():
+                elif r_team.casefold() != target_team.casefold() and r_team.casefold() not in selection_team_keys(target_team):
                     continue
             elif not target_team and target_fn == "call center" and r_team.casefold() not in ("inbound", "outbound", "call center"):
                 continue
@@ -1607,7 +1662,12 @@ class DeterministicToolRegistry:
         raw_curr = getattr(curr_ev, "score", None) if curr_ev is not None else None
         if raw_curr is None:
             raw_curr = getattr(selected_rec, "overall_score", None)
-        curr_score = float(raw_curr) if raw_curr is not None else (float(all_history_points[-1]["raw_score"]) if all_history_points else 0.0)
+        selected_rec_in_requested_period = bool(
+            str(getattr(selected_rec, "month", "")).strip().casefold() == str(res_month).strip().casefold()
+            and int(getattr(selected_rec, "year", 0) or 0) == int(res_year)
+        )
+        selected_period_has_score = bool(selected_rec_in_requested_period and raw_curr is not None)
+        curr_score = float(raw_curr) if selected_period_has_score and raw_curr is not None else 0.0
         curr_grade = self._grade_for_score(curr_score)
         ranking_metric_display = (
             f"{selected_kpi_snap['actual_display']} {ranking_metric_label} (Overall Score {curr_score:.1f}%)"
@@ -1712,7 +1772,7 @@ class DeterministicToolRegistry:
             for idx, r in enumerate(ordered[:3], start=1):
                 r_id = str(getattr(r, "employee_id", "") or "")
                 r_nm = str(getattr(r, "employee_name", "") or r_id).title()
-                r_sc = min(100.0, round(float(getattr(getattr(r, "evaluation", None), "score", 0.0) or 0.0), 1))
+                r_sc = round(float(getattr(getattr(r, "evaluation", None), "score", 0.0) or 0.0), 2)
                 r_gr = self._grade_for_score(r_sc)
                 extra_items.append(
                     AiEntityListItem(
@@ -1816,7 +1876,10 @@ class DeterministicToolRegistry:
             "period": period_label,
             "scope": f"{emp_team} ({branch_label})",
             "source_route": primary_emp_route,
-            "score": curr_score,
+            "score": curr_score if selected_period_has_score else None,
+            "raw_score": curr_score if selected_period_has_score else None,
+            "selected_period_has_score": selected_period_has_score,
+            "requested_period": period_label,
             "grade": curr_grade,
             "change_vs_prev": change_vs_prev,
             "previous_month_label": prev_month_label,
@@ -1914,9 +1977,11 @@ class DeterministicToolRegistry:
             r_pos = str(getattr(rec, "position", "") or "").strip()
             if target_team:
                 if target_team.casefold() in ("support positions", "call center support positions"):
-                    if r_team.casefold() != "call center" or not r_pos:
+                    if r_team.casefold() not in ("call center", "support positions", "call center support positions") or (
+                        r_team.casefold() == "call center" and not r_pos
+                    ):
                         continue
-                elif r_team.casefold() != target_team.casefold():
+                elif r_team.casefold() != target_team.casefold() and r_team.casefold() not in selection_team_keys(target_team):
                     continue
             elif not target_team and target_fn == "call center" and r_team.casefold() not in ("inbound", "outbound", "call center"):
                 continue
@@ -2048,6 +2113,8 @@ class DeterministicToolRegistry:
             spotlight=spotlight_meta,
         )
 
+        selected_period_has_score = True
+        period_label = f"{latest_pt.month} {latest_pt.year}"
         team_trend_dict = {
             "entity_name": scope_label,
             "entity_id": None,
@@ -2055,7 +2122,10 @@ class DeterministicToolRegistry:
             "metric_label": metric_label,
             "rank_label": f"{len(trend_points)} Months Tracked",
             "ranking_direction": "team_trend",
-            "score": curr_score,
+            "score": curr_score if selected_period_has_score else None,
+            "raw_score": curr_score if selected_period_has_score else None,
+            "selected_period_has_score": selected_period_has_score,
+            "requested_period": period_label,
             "first_score": trend_points[0].score if trend_points else curr_score,
             "target": curr_target,
             "grade": curr_grade,
@@ -2320,12 +2390,14 @@ class DeterministicToolRegistry:
         self,
         *,
         team: str | None = None,
+        function: str | None = None,
         performance_level: str | None = None,
         month: str | None = None,
         year: int | None = None,
     ) -> ToolExecutionResult:
         resolved = self.ctx.resolve_filters(
             team=team,
+            function=function,
             performance_level=performance_level or "Managerial",
             month=month,
             year=year,
@@ -2359,44 +2431,181 @@ class DeterministicToolRegistry:
 
         target_team = resolved["team"] or "Inbound"
         lvl = resolved["performance_level"] if resolved["performance_level"] in ("Managerial", "Corporate") else "Managerial"
-        cfg = find_team_config_by_db_name(target_team) or load_team_config("inbound")
-        lvl_cfg = (cfg.get("performance_levels") or {}).get(lvl) or {}
-        kpis_cfg = lvl_cfg.get("kpis") or []
+        if target_team.casefold() in ("crm", "nursing", "pmo"):
+            lvl = "Corporate"
 
+        bsc_score: float | None = None
+        bsc_period_label: str | None = None
+        typed_evidence: list[TypedMetricEvidence] = []
         bars: list[AiBarItem] = []
         bsc_digest: list[dict[str, Any]] = []
-        for k in kpis_cfg:
-            w_pct = round(float(k.get("weight", 0.0)) * 100, 1)
-            label = disambiguate_call_center_kpi_label(target_team, k.get("key", ""), k.get("label", ""))
-            persp = k.get("perspective", "Internal Process")
-            bars.append(
-                AiBarItem(
-                    label=f"{label} ({persp})",
-                    value=w_pct,
-                    display_value=f"Weight {w_pct:.0f}%",
-                    target_value=100.0,
-                    secondary_label=f"Perspective: {persp}",
-                    severity="neutral",
+        bsc_route = build_verified_deep_link(
+            "/executive" if lvl == "Corporate" else f"/team/{_team_route_slug(target_team)}",
+            team=target_team,
+            performance_level=lvl,
+            month=resolved["month"],
+            year=resolved["year"],
+        )
+
+        if lvl == "Corporate":
+            try:
+                from services.management_bsc_service import ManagementBSCService
+
+                ds = ManagementBSCService(self.ctx.db).build_scorecard_dataset(
+                    team_name=target_team,
+                    performance_level="Corporate",
+                    month=resolved["month"] or "All",
+                    year=resolved["year"],
+                    employee_ids=None,
+                    history_months=6,
+                    selected_kpi=None,
+                    base_config={},
                 )
-            )
-            bsc_digest.append({"key": k.get("key"), "label": label, "weight_percent": w_pct, "perspective": persp})
+                sc_meta = ds.get("scorecard") or {}
+                if sc_meta.get("score") is not None and ds.get("kpi_table"):
+                    bsc_score = round(float(sc_meta["score"]), 1)
+                    sel = ds.get("selection") or {}
+                    eff_m = sel.get("effective_month") or resolved["month"] or "Latest"
+                    eff_y = sel.get("effective_year") or resolved["year"] or 2026
+                    bsc_period_label = f"{eff_m} {eff_y}"
+                    for row in ds.get("kpi_table") or []:
+                        raw_w = float(row.get("weight") or 0.0)
+                        is_track = raw_w <= 0.0005
+                        w_pct = 0.0 if is_track else round(raw_w * 100.0, 1)
+                        k_key = str(row.get("kpi_key") or "")
+                        label = str(row.get("kpi_label") or k_key)
+                        persp = str(row.get("perspective") or "Internal Process")
+                        k_score = round(float(row.get("score") or 0.0), 1) if row.get("score") is not None else None
+                        act_v = row.get("actual_value")
+                        tgt_v = row.get("target_value")
+                        unit_s = str(row.get("unit") or "%")
+                        if unit_s == "%" and isinstance(act_v, (int, float)) and abs(act_v) <= 1.5:
+                            act_disp = f"{act_v * 100.0:.1f}%"
+                            tgt_disp = f"{(tgt_v or 0.0) * 100.0:.1f}%" if tgt_v is not None else "—"
+                        else:
+                            act_disp = f"{act_v} {unit_s}".strip() if act_v is not None else "—"
+                            tgt_disp = f"{tgt_v} {unit_s}".strip() if tgt_v is not None else "—"
+                        bars.append(
+                            AiBarItem(
+                                label=f"{label} ({persp})",
+                                value=k_score if (k_score is not None and not is_track) else w_pct,
+                                display_value=f"{k_score:.1f}% ach" if (k_score is not None and not is_track) else f"Weight {w_pct:.0f}%",
+                                target_value=100.0,
+                                secondary_label=f"{act_disp} vs {tgt_disp} · Weight {w_pct:.0f}%",
+                                severity="good" if (k_score or 0.0) >= 85 else ("warning" if (k_score or 0.0) >= 75 else "critical"),
+                            )
+                        )
+                        bsc_digest.append(
+                            {
+                                "key": k_key,
+                                "label": label,
+                                "weight_percent": w_pct,
+                                "perspective": persp,
+                                "actual_display": act_disp,
+                                "target_display": tgt_disp,
+                                "achievement_percent": k_score if not is_track else None,
+                            }
+                        )
+                        typed_evidence.append(
+                            TypedMetricEvidence(
+                                metric_id=f"{target_team.casefold().replace(' ', '_')}:corporate:{k_key}",
+                                kpi_key=k_key,
+                                display_name=label,
+                                team=target_team,
+                                performance_level="Corporate",
+                                branch="all",
+                                period=bsc_period_label,
+                                actual=float(act_v) if isinstance(act_v, (int, float)) else None,
+                                target=float(tgt_v) if isinstance(tgt_v, (int, float)) else None,
+                                actual_display=act_disp,
+                                target_display=tgt_disp,
+                                achievement_percent=k_score if not is_track else None,
+                                weight_percent=w_pct,
+                                unit=unit_s,
+                                direction=str(row.get("direction") or "higher_better"),
+                                contributes_to_score=not is_track,
+                                sample_size=int(sc_meta.get("record_count") or 1),
+                                source_link=bsc_route,
+                            )
+                        )
+            except Exception:
+                pass
+        elif lvl == "Managerial":
+            try:
+                from utils.report_scope import selection_team_keys
+                t_keys = selection_team_keys(target_team)
+                mgr_recs = [
+                    r for r in self.ctx.get_scoped_records()
+                    if str(getattr(r, "team", "") or "").casefold() in t_keys
+                    and str(getattr(r, "performance_level", "") or "").casefold() == "managerial"
+                    and (not resolved["month"] or str(getattr(r, "month", "") or "").casefold() == str(resolved["month"]).casefold())
+                    and (not resolved["year"] or int(getattr(r, "year", 0) or 0) == int(resolved["year"]))
+                ]
+                if mgr_recs:
+                    scores = []
+                    for r in mgr_recs:
+                        ev = getattr(r, "evaluation", None)
+                        raw_sc = getattr(ev, "score", None) if ev is not None else getattr(r, "score", None)
+                        if raw_sc is not None:
+                            scores.append(float(raw_sc))
+                    if scores:
+                        bsc_score = round(sum(scores) / len(scores), 1)
+                        bsc_period_label = f"{getattr(mgr_recs[0], 'month', 'Latest')} {getattr(mgr_recs[0], 'year', 2026)}"
+            except Exception:
+                pass
+
+        if not bsc_digest:
+            from services.ai.corporate_bsc_catalog_data import CORPORATE_BSC_CATALOG_TEAMS
+
+            cfg = find_team_config_by_db_name(target_team) or load_team_config("inbound")
+            lvl_cfg = (cfg.get("performance_levels") or {}).get(lvl) or {}
+            kpis_cfg = list(lvl_cfg.get("kpis") or [])
+            if not kpis_cfg and isinstance(lvl_cfg.get("positions"), dict):
+                for pos_cfg in lvl_cfg["positions"].values():
+                    if isinstance(pos_cfg, dict) and pos_cfg.get("kpis"):
+                        kpis_cfg.extend(pos_cfg["kpis"])
+            if not kpis_cfg and lvl == "Corporate" and target_team in CORPORATE_BSC_CATALOG_TEAMS:
+                kpis_cfg = list(CORPORATE_BSC_CATALOG_TEAMS[target_team].get("kpis") or [])
+
+            for k in kpis_cfg:
+                raw_w = float(k.get("weight", 0.0))
+                w_pct = 0.0 if raw_w <= 0.0005 else round(raw_w * 100, 1)
+                label = disambiguate_call_center_kpi_label(target_team, k.get("key", ""), k.get("label", ""))
+                persp = k.get("perspective", "Internal Process")
+                bars.append(
+                    AiBarItem(
+                        label=f"{label} ({persp})",
+                        value=w_pct,
+                        display_value=f"Weight {w_pct:.0f}%",
+                        target_value=100.0,
+                        secondary_label=f"Perspective: {persp}",
+                        severity="neutral",
+                    )
+                )
+                bsc_digest.append({"key": k.get("key"), "label": label, "weight_percent": w_pct, "perspective": persp})
 
         cards = [
             StructuredVisualCard(
                 card_type="horizontal_bar",
-                title=f"{target_team} · {lvl} Balanced Scorecard Structure",
-                subtitle="Four-perspective strategic governance scorecard (Financial, Customer, Internal Process, Learning & Growth)",
-                bars=bars,
+                title=f"{target_team} · {lvl} Balanced Scorecard" + (f" ({bsc_period_label})" if bsc_period_label else " Structure"),
+                subtitle=(
+                    f"Overall {lvl} Score: {bsc_score:.1f}% · Four-perspective strategic governance scorecard"
+                    if bsc_score is not None
+                    else "Four-perspective strategic governance scorecard (Financial, Customer, Internal Process, Learning & Growth)"
+                ),
+                bars=bars[:10],
             )
         ]
         citations = [
             SourceCitationPill(label=f"Team · {target_team}", category="scope"),
             SourceCitationPill(label=f"Level · {lvl} BSC", category="policy"),
         ]
+        if bsc_period_label:
+            citations.insert(0, SourceCitationPill(label=f"Period · {bsc_period_label}", category="period"))
         deep_links = [
             DeepLinkCta(
                 label=f"Open {target_team} {lvl} Scorecard →",
-                route=build_verified_deep_link(f"/team/{target_team.lower()}", performance_level=lvl),
+                route=bsc_route,
                 icon_key="bsc",
             )
         ]
@@ -2405,10 +2614,18 @@ class DeterministicToolRegistry:
             tool_name="get_management_balanced_scorecard",
             arguments={**resolved, "team": target_team, "performance_level": lvl},
             records_evaluated=len(bsc_digest),
-            digest={"team": target_team, "level": lvl, "bsc_kpis": bsc_digest},
+            digest={
+                "team": target_team,
+                "scope": target_team,
+                "level": lvl,
+                "period": bsc_period_label or "Latest Period",
+                "average_score": bsc_score,
+                "bsc_kpis": bsc_digest,
+            },
             visual_cards=cards,
             citations=citations,
             deep_links=deep_links,
+            typed_evidence=typed_evidence,
         )
 
     def _compute_operational_volumes(

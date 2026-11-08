@@ -12,30 +12,82 @@ from sqlalchemy.orm import Session
 
 from models.models import AiConversation, AiInteractionTrace, AiTurn
 from services.ai.trace_logger import ensure_trace_schema_once
+from utils.report_scope import canonical_scope_identity
+
+
+class ConversationRepositoryError(RuntimeError):
+    """Base error for conversation persistence operations."""
 
 
 class ConversationOwnershipError(PermissionError):
     """Raised when a caller attempts to access or mutate another user's conversation."""
 
 
+ConversationAccessError = ConversationOwnershipError
+
+
 class ConversationDeletedError(ConversationOwnershipError):
     """Raised when a caller sends a request for a conversation that was already deleted/reset."""
 
 
-class ConversationStaleContextError(RuntimeError):
+class ConversationStaleContextError(ConversationRepositoryError):
     """Raised when a turn carries a stale context_version or superseded claim token."""
+
+
+ConversationVersionConflictError = ConversationStaleContextError
 
 
 class RequestIdReuseConflictError(ConversationStaleContextError):
     """Raised when a client_request_id is reused with different prompt or filter parameters."""
 
 
-class TurnAlreadyInFlightError(RuntimeError):
+class TurnAlreadyInFlightError(ConversationRepositoryError):
     """Raised when a duplicate client_request_id is currently being processed by another worker."""
 
 
-class ConversationMigrationUnavailableError(RuntimeError):
-    """Raised when conversation persistence tables are not yet migrated in production."""
+class ConversationMigrationUnavailableError(ConversationRepositoryError):
+    """Raised when conversation persistence tables are not yet migrated in production/staging."""
+
+
+def _norm_str(val: Any, default: str = "") -> str:
+    if val is None:
+        return default
+    return " ".join(str(val).strip().casefold().split())
+
+
+def _normalize_session_filters(session_filters: Any) -> dict[str, Any]:
+    if session_filters is None:
+        raw: dict[str, Any] = {}
+    elif hasattr(session_filters, "model_dump"):
+        raw = session_filters.model_dump()
+    elif isinstance(session_filters, dict):
+        raw = dict(session_filters)
+    else:
+        raw = {}
+
+    periods_raw = raw.get("periods")
+    norm_periods: list[str] = []
+    if isinstance(periods_raw, (list, tuple)):
+        norm_periods = [_norm_str(p) for p in periods_raw if _norm_str(p)]
+    elif _norm_str(raw.get("period")):
+        norm_periods = [_norm_str(raw.get("period"))]
+
+    year_val = raw.get("year")
+    norm_year = str(int(year_val)) if year_val is not None and str(year_val).strip() != "" else ""
+
+    return {
+        "function": _norm_str(raw.get("function") or "Call Center"),
+        "team": _norm_str(raw.get("team")),
+        "position": _norm_str(raw.get("position")),
+        "employee_id": _norm_str(raw.get("employee_id")),
+        "region": _norm_str(raw.get("region")),
+        "branch": _norm_str(raw.get("branch")),
+        "performance_level": _norm_str(raw.get("performance_level")),
+        "month": _norm_str(raw.get("month")),
+        "year": norm_year,
+        "period": _norm_str(raw.get("period")),
+        "periods": norm_periods,
+    }
 
 
 def compute_request_fingerprint(
@@ -43,30 +95,24 @@ def compute_request_fingerprint(
     prompt: str,
     clarification_choice_id: str | None = None,
     answer_detail: str | None = None,
-    session_filters: dict[str, Any] | None = None,
+    session_filters: dict[str, Any] | Any | None = None,
+    session_state: Any | None = None,
 ) -> str:
+    """Compute a canonical SHA-256 request fingerprint binding prompt, clarification choice, answer detail, and session filters."""
+    eff_filters = session_filters if session_filters is not None else session_state
     canonical = {
-        "prompt": " ".join((prompt or "").strip().split()).casefold(),
-        "clarification_choice_id": str(clarification_choice_id or "").strip(),
-        "answer_detail": str(answer_detail or "auto").strip().casefold(),
+        "prompt": _norm_str(prompt),
+        "clarification_choice_id": _norm_str(clarification_choice_id),
+        "answer_detail": _norm_str(answer_detail or "auto", default="auto"),
+        "filters": _normalize_session_filters(eff_filters),
     }
     raw = json.dumps(canonical, sort_keys=True, default=str, separators=(",", ":"))
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
 def compute_scope_fingerprint(scope: dict[str, Any] | None) -> str:
-    s = scope or {}
-    canonical = {
-        "user_id": str(s.get("user_id") or "anonymous"),
-        "role": str(s.get("role") or "Manager"),
-        "is_active": bool(s.get("is_active", True)),
-        "has_unrestricted_team_access": bool(s.get("has_unrestricted_team_access", False)),
-        "accessible_teams": sorted(str(x) for x in (s.get("accessible_teams") or s.get("allowed_teams") or [])),
-        "accessible_functions": sorted(str(x) for x in (s.get("accessible_functions") or s.get("allowed_functions") or [])),
-        "accessible_branches": sorted(str(x) for x in (s.get("accessible_branches") or s.get("allowed_branches") or [])),
-        "accessible_regions": sorted(str(x) for x in (s.get("accessible_regions") or s.get("allowed_regions") or [])),
-        "allowed_performance_levels": sorted(str(x) for x in (s.get("allowed_performance_levels") or [])),
-    }
+    """Compute a canonical SHA-256 scope fingerprint covering all effective authorization dimensions."""
+    canonical = canonical_scope_identity(scope)
     raw = json.dumps(canonical, sort_keys=True, default=str, separators=(",", ":"))
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
@@ -182,6 +228,29 @@ class AiConversationRepository:
             conversation_id=conversation_id,
         )
 
+    def archive_conversation(
+        self,
+        *,
+        conversation_id: str,
+        owner_user_id: str,
+    ) -> AiConversation:
+        self._require_schema_ready()
+        row = self.get_owned_conversation(
+            conversation_id=conversation_id,
+            owner_user_id=owner_user_id,
+            include_deleted=True,
+        )
+        if row is None:
+            raise ConversationOwnershipError("Conversation not found.")
+        if row.status == "deleted":
+            raise ConversationDeletedError("Conversation has been reset or deleted.")
+        now_dt = datetime.now(timezone.utc)
+        row.status = "archived"
+        row.updated_at = now_dt
+        self.db.commit()
+        self.db.refresh(row)
+        return row
+
     def soft_delete_conversation(
         self,
         *,
@@ -208,6 +277,32 @@ class AiConversationRepository:
         self.db.commit()
         return True
 
+    @staticmethod
+    def _verify_legacy_request_compatibility(
+        existing: AiTurn,
+        user_prompt_redacted: str,
+        session_filters: dict[str, Any] | None = None,
+    ) -> None:
+        stored_prompt = _norm_str(existing.user_prompt_redacted)
+        incoming_prompt = _norm_str(user_prompt_redacted)
+        if stored_prompt and incoming_prompt and stored_prompt != incoming_prompt:
+            raise RequestIdReuseConflictError(
+                "client_request_id was already used with a different prompt on a legacy turn."
+            )
+        if session_filters:
+            norm_incoming = _normalize_session_filters(session_filters)
+            resp_payload = existing.response_payload if isinstance(existing.response_payload, dict) else {}
+            resolved_st = resp_payload.get("resolved_session_state") if isinstance(resp_payload, dict) else None
+            if isinstance(resolved_st, dict):
+                norm_stored = _normalize_session_filters(resolved_st)
+                for key in ("function", "team", "position", "branch", "region", "performance_level", "employee_id"):
+                    inc_val = norm_incoming.get(key, "")
+                    st_val = norm_stored.get(key, "")
+                    if inc_val and st_val and inc_val != st_val:
+                        raise RequestIdReuseConflictError(
+                            f"client_request_id was already used with a different {key} filter on a legacy turn."
+                        )
+
     def claim_or_get_turn(
         self,
         *,
@@ -217,14 +312,17 @@ class AiConversationRepository:
         request_fingerprint: str = "",
         scope_fingerprint: str = "",
         eval_id: str = "",
+        expected_context_version: int | None = None,
+        current_context_version: int | None = None,
+        session_filters: dict[str, Any] | None = None,
         deadline_seconds: int = 15,
     ) -> tuple[AiTurn, bool]:
         """Claim an idempotent turn slot using compare-and-swap semantics.
 
         Returns `(turn_row, is_already_completed)`.
-        Raises:
-        - `RequestIdReuseConflictError` if the same `client_request_id` is reused with different input.
-        - `TurnAlreadyInFlightError` if another active worker owns the claim before deadline.
+        Never replays a turn when request_fingerprint, scope_fingerprint, or eval_id is missing/incomplete.
+        Validates expected_context_version before creating or claiming a pending turn so stale requests
+        do not leave claimed turns blocking corrected retries.
         """
         self._require_schema_ready()
         now_dt = datetime.now(timezone.utc)
@@ -241,21 +339,52 @@ class AiConversationRepository:
         )
         if existing is not None:
             ev_sum = dict(existing.evidence_summary or {})
-            stored_req_fp = str(ev_sum.get("request_fingerprint") or "")
-            if stored_req_fp and request_fingerprint and stored_req_fp != request_fingerprint:
-                raise RequestIdReuseConflictError(
-                    "client_request_id was already used with a different prompt or filter context."
+            stored_req_fp = str(ev_sum.get("request_fingerprint") or "").strip()
+            stored_scope_fp = str(ev_sum.get("scope_fingerprint") or "").strip()
+            stored_eval_id = str(ev_sum.get("eval_id") or "").strip()
+
+            if stored_req_fp:
+                if not request_fingerprint or stored_req_fp != request_fingerprint:
+                    raise RequestIdReuseConflictError(
+                        "client_request_id was already used with a different prompt or filter context."
+                    )
+            else:
+                self._verify_legacy_request_compatibility(
+                    existing,
+                    user_prompt_redacted=user_prompt_redacted,
+                    session_filters=session_filters,
                 )
 
             was_completed = existing.status == "completed"
-            if was_completed and existing.response_payload:
-                stored_scope_fp = str(ev_sum.get("scope_fingerprint") or "")
-                stored_eval_id = str(ev_sum.get("eval_id") or "")
-                scope_unchanged = (not stored_scope_fp) or (not scope_fingerprint) or (stored_scope_fp == scope_fingerprint)
-                eval_unchanged = (not stored_eval_id) or (not eval_id) or (stored_eval_id == eval_id)
-                if scope_unchanged and eval_unchanged:
+            has_complete_fingerprints = bool(
+                stored_req_fp
+                and stored_scope_fp
+                and stored_eval_id
+                and request_fingerprint
+                and scope_fingerprint
+                and eval_id
+            )
+            if was_completed and existing.response_payload and has_complete_fingerprints:
+                if (
+                    stored_req_fp == request_fingerprint
+                    and stored_scope_fp == scope_fingerprint
+                    and stored_eval_id == eval_id
+                ):
                     return existing, True
-                # Scope or published data changed since original execution -> re-claim to recompute!
+
+            # Validate context_version BEFORE claiming or reclaiming a turn
+            if (
+                expected_context_version is not None
+                and int(expected_context_version) > 0
+                and current_context_version is not None
+            ):
+                allowed_versions = {int(current_context_version)}
+                if was_completed:
+                    allowed_versions.add(int(current_context_version) - 1)
+                if int(expected_context_version) not in allowed_versions:
+                    raise ConversationStaleContextError(
+                        f"Stale context_version {expected_context_version}; current is {current_context_version}."
+                    )
 
             existing_deadline = existing.processing_deadline
             if existing_deadline is not None and existing_deadline.tzinfo is None:
@@ -264,34 +393,27 @@ class AiConversationRepository:
                 raise TurnAlreadyInFlightError(
                     "Duplicate client_request_id is currently in flight."
                 )
-            # Re-claim expired, failed, or invalidated turn via compare-and-swap update
-            ev_sum["request_fingerprint"] = request_fingerprint
-            ev_sum["scope_fingerprint"] = scope_fingerprint
-            ev_sum["eval_id"] = eval_id
-            ev_sum["reclaimed_from_completed"] = bool(was_completed)
-            updated = (
-                self.db.query(AiTurn)
-                .filter(
-                    AiTurn.id == existing.id,
-                    AiTurn.claim_token == existing.claim_token,
-                )
-                .update(
-                    {
-                        AiTurn.status: "pending",
-                        AiTurn.claim_token: claim_tok,
-                        AiTurn.processing_deadline: deadline_dt,
-                        AiTurn.evidence_summary: ev_sum,
-                    },
-                    synchronize_session=False,
-                )
+
+            return self.reclaim_turn_for_recompute(
+                turn=existing,
+                user_prompt_redacted=user_prompt_redacted,
+                request_fingerprint=request_fingerprint,
+                scope_fingerprint=scope_fingerprint,
+                eval_id=eval_id,
+                was_completed=was_completed,
+                deadline_seconds=deadline_seconds,
+            ), False
+
+        # Brand new turn: verify expected_context_version BEFORE inserting a claimed pending turn
+        if (
+            expected_context_version is not None
+            and int(expected_context_version) > 0
+            and current_context_version is not None
+            and int(expected_context_version) != int(current_context_version)
+        ):
+            raise ConversationStaleContextError(
+                f"Stale context_version {expected_context_version}; current is {current_context_version}."
             )
-            self.db.commit()
-            if updated == 0:
-                raise TurnAlreadyInFlightError(
-                    "Turn claim was acquired by another concurrent request."
-                )
-            self.db.refresh(existing)
-            return existing, False
 
         max_idx_row = (
             self.db.query(AiTurn.turn_index)
@@ -340,16 +462,94 @@ class AiConversationRepository:
             )
             if raced is not None:
                 ev_raced = dict(raced.evidence_summary or {})
-                stored_req_fp = str(ev_raced.get("request_fingerprint") or "")
+                stored_req_fp = str(ev_raced.get("request_fingerprint") or "").strip()
+                stored_scope_fp = str(ev_raced.get("scope_fingerprint") or "").strip()
+                stored_eval_id = str(ev_raced.get("eval_id") or "").strip()
                 if stored_req_fp and request_fingerprint and stored_req_fp != request_fingerprint:
                     raise RequestIdReuseConflictError(
                         "client_request_id was already used with a different prompt or filter context."
                     )
-                if raced.status == "completed" and raced.response_payload:
+                if (
+                    raced.status == "completed"
+                    and raced.response_payload
+                    and stored_req_fp
+                    and stored_scope_fp
+                    and stored_eval_id
+                    and stored_req_fp == request_fingerprint
+                    and stored_scope_fp == scope_fingerprint
+                    and stored_eval_id == eval_id
+                ):
                     return raced, True
-            raise TurnAlreadyInFlightError(
-                "Duplicate client_request_id is currently in flight."
+            raise TurnAlreadyInFlightError("Concurrent request is already processing this turn.")
+
+    def reclaim_turn_for_recompute(
+        self,
+        *,
+        turn: AiTurn,
+        user_prompt_redacted: str,
+        request_fingerprint: str,
+        scope_fingerprint: str,
+        eval_id: str,
+        was_completed: bool = True,
+        deadline_seconds: int = 15,
+    ) -> AiTurn:
+        """Atomically reclaim a turn so it can be recomputed under current scope/data."""
+        now_dt = datetime.now(timezone.utc)
+        deadline_dt = now_dt + timedelta(seconds=max(5, deadline_seconds))
+        claim_tok = str(uuid.uuid4())
+        ev_sum = dict(turn.evidence_summary or {})
+        ev_sum["request_fingerprint"] = request_fingerprint
+        ev_sum["scope_fingerprint"] = scope_fingerprint
+        ev_sum["eval_id"] = eval_id
+        ev_sum["reclaimed_from_completed"] = bool(was_completed)
+
+        updated = (
+            self.db.query(AiTurn)
+            .filter(
+                AiTurn.id == turn.id,
+                AiTurn.claim_token == turn.claim_token,
             )
+            .update(
+                {
+                    AiTurn.status: "pending",
+                    AiTurn.claim_token: claim_tok,
+                    AiTurn.processing_deadline: deadline_dt,
+                    AiTurn.user_prompt_redacted: user_prompt_redacted,
+                    AiTurn.evidence_summary: ev_sum,
+                },
+                synchronize_session=False,
+            )
+        )
+        self.db.commit()
+        if updated == 0:
+            raise TurnAlreadyInFlightError(
+                "Turn claim was acquired by another concurrent request."
+            )
+        self.db.refresh(turn)
+        return turn
+
+    def release_turn_claim(
+        self,
+        *,
+        turn_id: str,
+        claim_token: str | None,
+    ) -> None:
+        """Release an active turn claim when a request fails before or during completion."""
+        if not turn_id or not claim_token:
+            return
+        now_dt = datetime.now(timezone.utc)
+        self.db.query(AiTurn).filter(
+            AiTurn.id == str(turn_id),
+            AiTurn.claim_token == str(claim_token),
+            AiTurn.status == "pending",
+        ).update(
+            {
+                AiTurn.status: "failed",
+                AiTurn.processing_deadline: now_dt - timedelta(seconds=1),
+            },
+            synchronize_session=False,
+        )
+        self.db.commit()
 
     def complete_turn_and_advance_context(
         self,
@@ -358,26 +558,25 @@ class AiConversationRepository:
         owner_user_id: str,
         expected_context_version: int | None,
         turn_id: str,
-        claim_token: str | None,
-        validated_plan: dict[str, Any],
-        evidence_summary: dict[str, Any],
+        claim_token: str | None = None,
+        validated_plan: dict[str, Any] | None = None,
+        evidence_summary: dict[str, Any] | None = None,
         response_payload: dict[str, Any],
-        outcome: str,
-        route_used: str,
-        provider_calls: int,
-        total_ms: float,
-        new_confirmed_context: dict[str, Any],
-        pending_clarification: dict[str, Any] | None,
-        last_subject_employee_id: str | None,
-        last_subject_employee_name: str | None,
-        last_operation_kind: str | None,
+        outcome: str = "answer",
+        route_used: str = "local_rules",
+        provider_calls: int = 0,
+        total_ms: float = 0.0,
+        new_confirmed_context: dict[str, Any] | None = None,
+        pending_clarification: dict[str, Any] | None = None,
+        last_subject_employee_id: str | None = None,
+        last_subject_employee_name: str | None = None,
+        last_operation_kind: str | None = None,
     ) -> int:
-        """Complete a claimed turn and advance conversation context_version atomically.
-
-        Rejects stale `expected_context_version` or superseded `claim_token` without mutating
-        either the turn or the conversation.
-        """
+        """Atomically verify claim ownership and context version, complete the turn, and advance context_version."""
         self._require_schema_ready()
+        if not claim_token:
+            raise ConversationStaleContextError("Missing turn claim_token for turn completion.")
+
         now_dt = datetime.now(timezone.utc)
         conv = self.get_owned_conversation(
             conversation_id=conversation_id,
@@ -389,14 +588,28 @@ class AiConversationRepository:
         if conv.status == "deleted":
             raise ConversationDeletedError("Conversation was deleted before turn completion.")
 
-        target_version = (
-            int(expected_context_version)
-            if expected_context_version is not None
-            else int(conv.context_version)
+        existing_turn = self.db.query(AiTurn).filter(AiTurn.id == str(turn_id)).first()
+        reclaimed_completed = bool(
+            existing_turn
+            and isinstance(existing_turn.evidence_summary, dict)
+            and existing_turn.evidence_summary.get("reclaimed_from_completed")
         )
-        if int(conv.context_version) != target_version:
+
+        current_ver = int(conv.context_version)
+        if expected_context_version is not None and int(expected_context_version) > 0:
+            exp_ver = int(expected_context_version)
+            if reclaimed_completed and current_ver == exp_ver + 1:
+                target_version = current_ver
+            else:
+                target_version = exp_ver
+        else:
+            target_version = current_ver
+
+        if current_ver != target_version:
+            # Release the turn claim if owned by this worker so a retry is not blocked
+            self.release_turn_claim(turn_id=str(turn_id), claim_token=str(claim_token))
             raise ConversationStaleContextError(
-                f"Stale context_version {target_version}; current is {conv.context_version}."
+                f"Stale context_version {target_version}; current is {current_ver}."
             )
 
         next_version = target_version + 1
@@ -405,21 +618,18 @@ class AiConversationRepository:
         response_with_version["turn_id"] = str(turn_id)
         response_with_version["context_version"] = next_version
 
-        existing_turn = self.db.query(AiTurn).filter(AiTurn.id == str(turn_id)).first()
         merged_ev_summary = dict((existing_turn.evidence_summary if existing_turn else None) or {})
         merged_ev_summary.update(dict(evidence_summary or {}))
-
-        turn_filter = [
-            AiTurn.id == str(turn_id),
-            AiTurn.conversation_id == str(conversation_id),
-            AiTurn.status == "pending",
-        ]
-        if claim_token is not None:
-            turn_filter.append(AiTurn.claim_token == str(claim_token))
+        merged_ev_summary.pop("reclaimed_from_completed", None)
 
         updated_turn = (
             self.db.query(AiTurn)
-            .filter(*turn_filter)
+            .filter(
+                AiTurn.id == str(turn_id),
+                AiTurn.conversation_id == str(conversation_id),
+                AiTurn.status == "pending",
+                AiTurn.claim_token == str(claim_token),
+            )
             .update(
                 {
                     AiTurn.status: "completed",
@@ -464,6 +674,7 @@ class AiConversationRepository:
         )
         if updated_conv == 0:
             self.db.rollback()
+            self.release_turn_claim(turn_id=str(turn_id), claim_token=str(claim_token))
             raise ConversationStaleContextError(
                 f"Concurrent turn advanced conversation context_version from {target_version}."
             )

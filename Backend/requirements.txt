@@ -19,10 +19,7 @@ psycopg2-binary>=2.9.9
 psycopg[binary]>=3.1.0
 greenlet>=3.0.0
 
-# ── Testing & Exports ──────────────────────────────
-pytest>=8.0.0
-pytest-asyncio>=0.23.0
-hypothesis>=6.0.0
+# ── HTTP Client, Fuzzy Matching & Exports ──────────
 httpx>=0.27.0
 python-pptx>=1.0.0
 rapidfuzz>=3.6.0

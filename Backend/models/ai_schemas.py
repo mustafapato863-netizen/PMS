@@ -109,7 +109,7 @@ class ValidatedQueryPlanV2(BaseModel):
     scope: QueryScopeV2 = Field(default_factory=QueryScopeV2)
     operations: list[QueryOperationV2] = Field(default_factory=list, max_length=2)
     clarification_code: ClarificationCodeType = "NONE"
-    resolution_source: Literal["local_rules", "local_classifier", "gemini_router", "clarification_choice"] = "local_rules"
+    resolution_source: Literal["local_rules", "local_classifier", "local_model_router", "gemini_router", "clarification_choice"] = "local_rules"
     confidence: float = Field(default=1.0, ge=0.0, le=1.0)
 
 
@@ -204,6 +204,127 @@ class TypedMetricEvidence(BaseModel):
     scoring_basis_note: str | None = None
 
 
+class PageContextV1(BaseModel):
+    page_id: str | None = Field(default=None, max_length=80)
+    route_id: str | None = Field(default=None, max_length=240)
+    function_id: str | None = Field(default=None, max_length=80)
+    team_id: str | None = Field(default=None, max_length=120)
+    position_id: str | None = Field(default=None, max_length=120)
+    employee_id: str | None = Field(default=None, max_length=80)
+    performance_level: str | None = Field(default=None, max_length=40)
+    region: str | None = Field(default=None, max_length=40)
+    branch: str | None = Field(default=None, max_length=40)
+    period: str | None = Field(default=None, max_length=40)
+    month: str | None = Field(default=None, max_length=30)
+    year: int | None = Field(default=None, ge=2000, le=2100)
+    selected_entity_type: Literal["team", "employee", "metric", "branch", "position"] | None = None
+    selected_entity_id: str | None = Field(default=None, max_length=120)
+    selected_metric_id: str | None = Field(default=None, max_length=120)
+    selected_visual_id: str | None = Field(default=None, max_length=120)
+    is_fallback_data: bool = False
+    client_context_version: int = Field(default=0, ge=0)
+
+
+ContextualCapabilityMode = Literal[
+    "page_help",
+    "navigation",
+    "performance_query",
+    "clarification",
+    "proposal",
+    "greeting",
+    "unsupported",
+]
+
+FeedbackCategoryType = Literal[
+    "helpful",
+    "incorrect_answer",
+    "incorrect_scope",
+    "incomplete_response",
+    "poor_suggestion",
+    "other",
+]
+
+
+class AiPageHelpSection(BaseModel):
+    page_id: str
+    page_title: str
+    summary: str
+    key_elements: list[str] = Field(default_factory=list)
+    available_actions: list[str] = Field(default_factory=list)
+    metric_explanation: str | None = None
+    fallback_data_warning: str | None = None
+
+
+class AiNavigationTarget(BaseModel):
+    id: str
+    label: str
+    route: str
+    description: str
+    icon_key: Literal["insights", "team", "employee", "planning", "actions", "bsc", "presentation"] = "insights"
+
+
+class AiCorrectiveActionProposal(BaseModel):
+    proposal_id: str
+    title: str
+    scope_summary: str
+    team: str
+    function: str | None = None
+    position: str | None = None
+    performance_level: str = "Employee"
+    branch_key: str | None = None
+    period: str
+    month: str
+    year: int
+    employee_id: str | None = None
+    employee_name: str | None = None
+    metric_id: str
+    linked_kpi_key: str
+    metric_display_name: str
+    actual_display: str
+    target_display: str
+    gap_display: str
+    sample_size: int = 0
+    observed_facts: list[str] = Field(default_factory=list)
+    hypothesis: str | None = None
+    suggested_steps: list[str] = Field(default_factory=list)
+    success_measure: str
+    action_type: Literal["Coaching", "Training", "PIP", "Monitor", "Warning", "Reward", "Promotion"] = "Coaching"
+    priority: Literal["Low", "Medium", "High"] = "Medium"
+    proposed_action_text: str
+    proposed_root_cause_note: str
+    evidence_revision: str
+    source_link: str | None = None
+    can_user_create_action: bool = False
+    persisted_status_on_save: Literal["Open"] = "Open"
+    assignable_owners: list[dict[str, str]] = Field(default_factory=list)
+
+
+class AiCorrectiveActionConfirmRequest(BaseModel):
+    proposal_id: str = Field(..., min_length=1, max_length=120)
+    team: str = Field(..., min_length=1, max_length=120)
+    month: str = Field(..., min_length=1, max_length=30)
+    year: int = Field(..., ge=2000, le=2100)
+    action_type: Literal["Coaching", "Training", "PIP", "Monitor", "Warning", "Reward", "Promotion", "Team Action"] = "Coaching"
+    action_text: str = Field(..., min_length=3, max_length=1500)
+    root_cause_note: str = Field(default="", max_length=1500)
+    employee_id: str | None = Field(default=None, max_length=80)
+    priority: Literal["Low", "Medium", "High"] | None = None
+    due_date: str | None = Field(default=None, max_length=30)
+    owner_user_id: str | None = Field(default=None, max_length=80)
+    linked_kpi_key: str | None = Field(default=None, max_length=100)
+    evidence_revision: str = Field(..., min_length=1, max_length=160)
+    is_fallback_data: bool = False
+    trace_id: str | None = Field(default=None, max_length=100)
+
+
+class AiCorrectiveActionConfirmResponse(BaseModel):
+    success: bool = True
+    message: str = "Corrective action created with status Open"
+    persisted_status: Literal["Open"] = "Open"
+    action_scope: Literal["employee", "team"] = "employee"
+    action: dict[str, Any]
+
+
 class SessionFilterContext(BaseModel):
     function: str | None = Field(default="Call Center")
     team: str | None = None
@@ -225,6 +346,8 @@ class AiChatMessage(BaseModel):
 class AiChatRequest(BaseModel):
     prompt: str = Field(..., min_length=1, max_length=2000)
     session_state: SessionFilterContext = Field(default_factory=SessionFilterContext)
+    page_context: PageContextV1 | None = None
+    capability_hint: Literal["auto", "page_help", "navigation", "performance_query", "proposal"] | None = "auto"
     history: list[AiChatMessage] = Field(default_factory=list, max_length=12)
     provider_override: Literal["auto", "gemini", "openai", "local_ollama", "deterministic"] | None = "auto"
     answer_detail: Literal["auto", "brief", "details"] | None = "auto"
@@ -429,6 +552,11 @@ class AiChatResponsePayload(BaseModel):
     provider_usage: AiProviderUsageMetrics = Field(default_factory=AiProviderUsageMetrics)
     basis_warning: str | None = None
     cache_hit: bool = False
+    capability_mode: ContextualCapabilityMode = "performance_query"
+    effective_context_label: str | None = None
+    page_help: AiPageHelpSection | None = None
+    navigation_targets: list[AiNavigationTarget] = Field(default_factory=list)
+    action_proposal: AiCorrectiveActionProposal | None = None
 
 
 class AiChatResponse(BaseModel):
@@ -493,6 +621,7 @@ class AiWatchingResponse(BaseModel):
 class AiFeedbackRequest(BaseModel):
     trace_id: str = Field(..., min_length=1, max_length=100)
     rating: Literal["up", "down"]
+    category: FeedbackCategoryType | None = None
     reason: str | None = Field(default=None, max_length=120)
     reviewer_verified: bool | None = None
 
@@ -502,6 +631,7 @@ class AiFeedbackResponse(BaseModel):
     message: str = "Feedback recorded"
     trace_id: str
     rating: Literal["up", "down"]
+    category: FeedbackCategoryType | None = None
     is_distillation_eligible: bool
     reviewer_verified: bool = False
 

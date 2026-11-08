@@ -1,3 +1,4 @@
+from collections import defaultdict
 from starlette.concurrency import run_in_threadpool
 from fastapi import APIRouter, Depends, Query, HTTPException, Request, Response, UploadFile, File
 from fastapi.responses import StreamingResponse, FileResponse
@@ -14,14 +15,16 @@ from api.dependencies import (
     user_can_access_team_level,
     require_authenticated_scope,
 )
-from utils.report_scope import filter_records_by_team_levels
+from utils.report_scope import filter_records_by_team_levels, functions_for_team, user_can_access_region
 from config.database import get_db, release_read_transaction
 from sqlalchemy.orm import Session
 from models.schemas import StandardResponse
+from models.models import Team
 from models.performance_read_schemas import PerformanceCatalogData, PerformanceRecordPage, PerformanceSummaryData
 from exports.report_exporter import ReportExporter
 from repositories.performance_repository import PerformanceRepository as SQLPerformanceRepository
-from utils.performance_levels import normalize_performance_level
+from utils.performance_levels import PERFORMANCE_LEVELS, normalize_performance_level
+from utils.team_identity import logical_team_name
 from config.loader import ConfigurationError, load_team_config, resolve_team_config
 from services.balanced_scorecard_service import BalancedScorecardService
 from services.bsc_template_service import bsc_template_service
@@ -402,6 +405,8 @@ def get_performance_catalog(
     rows = filter_records_by_scope(rows, scope)
     rows = filter_records_by_team_levels(rows, scope)
 
+    authorized_teams, authorized_functions = _authorized_catalog_teams(db, scope, rows)
+
     periods = sorted(
         {
             (int(row["year"]), MONTHS[str(row["month"])], str(row["month"]))
@@ -441,6 +446,8 @@ def get_performance_catalog(
             }
             for team, region, performance_level, position in scopes
         ],
+        "teams": authorized_teams,
+        "authorized_functions": authorized_functions,
         "data_version": CacheInvalidationService.get_data_version(),
         "as_of": datetime.now(timezone.utc).isoformat(),
     })
@@ -449,6 +456,93 @@ def get_performance_catalog(
         message="Authorized performance catalog retrieved",
         data=catalog_data.model_dump(mode="json"),
     )
+
+
+def _authorized_catalog_teams(db: Session, scope: dict, scoped_rows: list[dict]) -> tuple[list[dict], list[str]]:
+    """Return active team metadata only when the current server scope can open it.
+
+    Branch and self-only grants need record-derived inventory because a Team row
+    has no branch/employee association. Other roles can be checked directly
+    against the active Team directory and their existing team, region, function,
+    and level grants.
+    """
+    role = str(scope.get("role") or "")
+    observed: dict[tuple[str, str], set[str]] = defaultdict(set)
+    for row in scoped_rows:
+        name = str(row.get("team") or "").strip()
+        if not name:
+            continue
+        region = str(row.get("region") or "").strip().upper()
+        level = normalize_performance_level(row.get("performance_level")) or "Employee"
+        observed[(name.casefold(), region)].add(level)
+
+    team_rows = db.query(Team).filter(Team.is_active.is_(True)).order_by(Team.name.asc()).all()
+    grants = {
+        str(value).strip().casefold()
+        for value in scope.get("accessible_functions", [])
+        if str(value).strip()
+    }
+    # Team has no branch key; do not reveal every country-wide team to a Branch
+    # Director. The row inventory is already filtered by branch at the API layer.
+    record_derived_inventory = role == "Branch Director" or bool(scope.get("is_self_only"))
+    entries: dict[tuple[str, str], dict] = {}
+    for team in team_rows:
+        name = logical_team_name(team)
+        region = str(team.region or "").strip().upper() or None
+        key = (name.casefold(), (region or "").casefold())
+        if record_derived_inventory:
+            levels = observed.get(key) or observed.get((name.casefold(), ""))
+            if not levels:
+                continue
+        else:
+            if not user_can_access_team(scope, name):
+                continue
+            if role == "Regional Manager" and not user_can_access_region(scope, region):
+                continue
+            levels = {
+                level
+                for level in PERFORMANCE_LEVELS
+                if user_can_access_team_level(scope, name, level)
+            }
+            if not levels:
+                continue
+
+        functions = functions_for_team(name)
+        if role in {"Function Viewer", "Function Director"}:
+            functions = [function for function in functions if function.casefold() in grants]
+        if not functions:
+            # Unknown team/function mapping is not a valid navigation grant.
+            continue
+
+        entry = entries.setdefault(key, {
+            "team": name,
+            "region": region,
+            "functions": set(),
+            "performance_levels": set(),
+        })
+        entry["functions"].update(functions)
+        entry["performance_levels"].update(levels)
+
+    teams = [
+        {
+            "team": entry["team"],
+            "region": entry["region"],
+            "functions": sorted(entry["functions"], key=str.casefold),
+            "performance_levels": [level for level in PERFORMANCE_LEVELS if level in entry["performance_levels"]],
+        }
+        for _, entry in sorted(entries.items())
+    ]
+    if role in {"Function Viewer", "Function Director"}:
+        authorized_functions = sorted(
+            {str(value).strip() for value in scope.get("accessible_functions", []) if str(value).strip()},
+            key=str.casefold,
+        )
+    else:
+        authorized_functions = sorted(
+            {function for team in teams for function in team["functions"]},
+            key=str.casefold,
+        )
+    return teams, authorized_functions
 
 
 def _require_scoped_read_api(scope: dict) -> None:

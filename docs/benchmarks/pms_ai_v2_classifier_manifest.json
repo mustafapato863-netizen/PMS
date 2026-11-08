@@ -8,42 +8,63 @@
   "splits": {
     "train": {
       "total_questions": 59,
+      "legacy_router_matched": 24,
+      "legacy_router_failed": 35,
       "legacy_router_exact_match_pct": 40.68,
+      "hybrid_router_matched": 59,
+      "hybrid_router_failed": 0,
+      "hybrid_router_failures": [],
       "hybrid_router_exact_match_pct": 100.0,
-      "hybrid_router_provider_calls": 2,
+      "hybrid_router_provider_calls": 3,
       "classifier_backend": "numpy-tfidf-l2-logreg",
       "classifier_confidence_threshold": 0.35,
       "classifier_accepted_count": 22,
+      "classifier_accepted_failed_count": 0,
+      "classifier_accepted_failures": [],
       "classifier_abstained_count": 37,
       "classifier_accepted_exact_match_pct": 100.0,
       "classifier_overall_exact_match_pct": 100.0,
-      "provider_call_reduction_vs_hybrid_pct": -1750.0
+      "provider_call_reduction_vs_hybrid_pct": -1133.33
     },
     "val": {
       "total_questions": 24,
+      "legacy_router_matched": 12,
+      "legacy_router_failed": 12,
       "legacy_router_exact_match_pct": 50.0,
-      "hybrid_router_exact_match_pct": 100.0,
-      "hybrid_router_provider_calls": 1,
-      "classifier_backend": "numpy-tfidf-l2-logreg",
-      "classifier_confidence_threshold": 0.35,
-      "classifier_accepted_count": 4,
-      "classifier_abstained_count": 20,
-      "classifier_accepted_exact_match_pct": 100.0,
-      "classifier_overall_exact_match_pct": 100.0,
-      "provider_call_reduction_vs_hybrid_pct": -1900.0
-    },
-    "test": {
-      "total_questions": 49,
-      "legacy_router_exact_match_pct": 32.65,
+      "hybrid_router_matched": 24,
+      "hybrid_router_failed": 0,
+      "hybrid_router_failures": [],
       "hybrid_router_exact_match_pct": 100.0,
       "hybrid_router_provider_calls": 2,
       "classifier_backend": "numpy-tfidf-l2-logreg",
       "classifier_confidence_threshold": 0.35,
+      "classifier_accepted_count": 4,
+      "classifier_accepted_failed_count": 0,
+      "classifier_accepted_failures": [],
+      "classifier_abstained_count": 20,
+      "classifier_accepted_exact_match_pct": 100.0,
+      "classifier_overall_exact_match_pct": 100.0,
+      "provider_call_reduction_vs_hybrid_pct": -900.0
+    },
+    "test": {
+      "total_questions": 49,
+      "legacy_router_matched": 16,
+      "legacy_router_failed": 33,
+      "legacy_router_exact_match_pct": 32.65,
+      "hybrid_router_matched": 49,
+      "hybrid_router_failed": 0,
+      "hybrid_router_failures": [],
+      "hybrid_router_exact_match_pct": 100.0,
+      "hybrid_router_provider_calls": 3,
+      "classifier_backend": "numpy-tfidf-l2-logreg",
+      "classifier_confidence_threshold": 0.35,
       "classifier_accepted_count": 16,
+      "classifier_accepted_failed_count": 0,
+      "classifier_accepted_failures": [],
       "classifier_abstained_count": 33,
       "classifier_accepted_exact_match_pct": 100.0,
       "classifier_overall_exact_match_pct": 100.0,
-      "provider_call_reduction_vs_hybrid_pct": -1550.0
+      "provider_call_reduction_vs_hybrid_pct": -1000.0
     }
   },
   "gates": {
@@ -51,7 +72,7 @@
     "accepted_local_exact_match_measured_pct": 100.0,
     "passes_precision_gate": true,
     "provider_call_reduction_target_pct": 20.0,
-    "provider_call_reduction_measured_pct": -1550.0,
+    "provider_call_reduction_measured_pct": -1000.0,
     "passes_cost_gate": false,
     "overall_test_exact_match_target_pct": 95.0,
     "overall_test_exact_match_measured_pct": 100.0,
@@ -59,26 +80,350 @@
   },
   "promotion_decision": "DO_NOT_PROMOTE_KEEP_HYBRID_RULES",
   "runtime_dependency_added": false,
+  "evaluation_limitations": [
+    "Single-turn routing benchmark consists of 132 curated English questions across 64 paraphrase groups (59 train, 24 val, 49 held-out test).",
+    "Local TF-IDF + LogisticRegression classifier abstained on 33/49 held-out test questions at threshold 0.35 (-1550.0% provider call reduction vs deterministic hybrid rules) and is therefore NOT promoted to runtime.",
+    "Synthetic benchmark suites verify deterministic logic and regression gates; ongoing production trace review by Admins is required to measure real-world user phrasing coverage."
+  ],
   "v2_conversation_scenarios": {
-    "total_scenarios": 20,
-    "passed_scenarios": 20,
+    "paraphrase_split_zero_leakage": true,
+    "paraphrase_groups_per_split": {
+      "train": 1,
+      "val": 2,
+      "test": 12
+    },
+    "total_scenarios": 25,
+    "passed_scenarios": 25,
+    "failed_scenarios_count": 0,
+    "failed_scenarios": [],
     "exact_match_pct": 100.0,
     "by_split": {
       "train": {
         "matched": 1,
         "total": 1,
+        "failed": 0,
         "pct": 100.0
       },
       "val": {
-        "matched": 2,
-        "total": 2,
+        "matched": 5,
+        "total": 5,
+        "failed": 0,
         "pct": 100.0
       },
       "test": {
-        "matched": 17,
-        "total": 17,
+        "matched": 19,
+        "total": 19,
+        "failed": 0,
         "pct": 100.0
       }
-    }
+    },
+    "evaluation_limitations": [
+      "Evaluates 25 controlled multi-turn and RBAC scenarios against an isolated in-memory fixture dataset (16 performance records across Inbound, Support Positions, and Coding).",
+      "Proves deterministic routing, RBAC boundary enforcement, follow-up context inheritance/override, missing-score handling, and semantic answer consistency on the fixture suite, not open-ended production user traffic.",
+      "Only 3 Call Center Employee scopes (Inbound, Outbound, Support Positions) have full 6-gate certification; 4 scopes have partial evidence and 11 allowlisted scopes remain unverified for full multi-period calculation parity."
+    ],
+    "scenarios": [
+      {
+        "scenario_id": "v2_s01_greeting",
+        "split": "test",
+        "paraphrase_group": "social_greeting",
+        "passed": true,
+        "actual_outcome": "answer",
+        "validated_operations": [
+          "greeting"
+        ],
+        "headline": "Hi! What would you like to know about performance?",
+        "failures": []
+      },
+      {
+        "scenario_id": "v2_s02_thanks",
+        "split": "test",
+        "paraphrase_group": "social_thanks",
+        "passed": true,
+        "actual_outcome": "answer",
+        "validated_operations": [
+          "thanks"
+        ],
+        "headline": "You're welcome! Let me know if you need anything else.",
+        "failures": []
+      },
+      {
+        "scenario_id": "v2_s03_mariam_new_joiner",
+        "split": "test",
+        "paraphrase_group": "person_tenure_mariam",
+        "passed": true,
+        "actual_outcome": "clarification",
+        "validated_operations": [
+          "person_tenure_check"
+        ],
+        "headline": "Mariam Ali's first available Inbound record is July 2026. PMS has no verified joining date, so I can't confirm whether they joined that month.",
+        "failures": []
+      },
+      {
+        "scenario_id": "v2_s04_support_lowest_position",
+        "split": "test",
+        "paraphrase_group": "support_lowest_person_position",
+        "passed": true,
+        "actual_outcome": "answer",
+        "validated_operations": [
+          "ranking"
+        ],
+        "headline": "Kareem Adel (EMP701 \u00b7 Quality Assurance) is the lowest-scoring agent in Support Positions (All Branches) for September 2026 by Overall PMS Score at 62.0% (Grade E, Rank #2 of 3, tied with Ziad Nabil (EMP702 \u00b7 Trainer)).",
+        "failures": []
+      },
+      {
+        "scenario_id": "v2_s05_adham_best_month_sep",
+        "split": "test",
+        "paraphrase_group": "person_best_period_adham",
+        "passed": true,
+        "actual_outcome": "answer",
+        "validated_operations": [
+          "person_best_period"
+        ],
+        "headline": "No. Adham Tarek (EMP501) scored 91.0% in September 2026, while their best month across March\u2013September 2026 by Overall PMS Score was August 2026 at 96.5%.",
+        "failures": []
+      },
+      {
+        "scenario_id": "v2_s06_adham_followup_august",
+        "split": "test",
+        "paraphrase_group": "person_best_period_adham",
+        "passed": true,
+        "actual_outcome": "answer",
+        "validated_operations": [
+          "person_best_period"
+        ],
+        "headline": "Yes. August 2026 was Adham Tarek's (EMP501) best month across March\u2013September 2026 in Inbound by Overall PMS Score at 96.5%.",
+        "failures": []
+      },
+      {
+        "scenario_id": "v2_s07_three_branch_booking_counts",
+        "split": "test",
+        "paraphrase_group": "branch_booking_count_3way",
+        "passed": true,
+        "actual_outcome": "answer",
+        "validated_operations": [
+          "compare_branches"
+        ],
+        "headline": "Dubai led September 2026 Inbound bookings with 345, followed by Sharjah with 155 and Ajman with 125.",
+        "failures": []
+      },
+      {
+        "scenario_id": "v2_s08_booking_trend_and_best",
+        "split": "test",
+        "paraphrase_group": "multipart_booking_trend_rank",
+        "passed": true,
+        "actual_outcome": "answer",
+        "validated_operations": [
+          "trend",
+          "ranking"
+        ],
+        "headline": "Inbound Booking Rate moved from April (28.0%) to September 2026 (28.0% (+0.0%)), and Mariam Mohssen Mahmoud (SGHD70231) is the #1 top performer in Inbound (All Branches) for September 2026 by Booking Rate at 28.0% Booking Rate (Overall Score 94.4%) (Rank #1 of 4).",
+        "failures": []
+      },
+      {
+        "scenario_id": "v2_s09_correction_lowest",
+        "split": "test",
+        "paraphrase_group": "multipart_booking_trend_rank",
+        "passed": true,
+        "actual_outcome": "answer",
+        "validated_operations": [
+          "ranking"
+        ],
+        "headline": "Maryam Elsayed Mahmoud Eid (SGHD70250) is the lowest-scoring agent in Inbound (All Branches) for September 2026 by Booking Rate at 83.9% (Grade C, Rank #4 of 4, tied with Mariam Mohssen Mahmoud (SGHD70231), Adham Tarek (EMP501)).",
+        "failures": []
+      },
+      {
+        "scenario_id": "v2_s10_count_vs_rate_bookings",
+        "split": "val",
+        "paraphrase_group": "count_vs_rate_bookings",
+        "passed": true,
+        "actual_outcome": "answer",
+        "validated_operations": [
+          "compare_branches"
+        ],
+        "headline": "Dubai led September 2026 Inbound bookings with 345, followed by Sharjah with 155.",
+        "failures": []
+      },
+      {
+        "scenario_id": "v2_s11_booking_rate_comparison",
+        "split": "val",
+        "paraphrase_group": "count_vs_rate_bookings",
+        "passed": true,
+        "actual_outcome": "answer",
+        "validated_operations": [
+          "compare_branches"
+        ],
+        "headline": "In September 2026, Dubai leads at 93.2% vs. Sharjah at 77.7% (15.5 pts gap).",
+        "failures": []
+      },
+      {
+        "scenario_id": "v2_s12_ambiguous_attendance",
+        "split": "train",
+        "paraphrase_group": "ambiguous_attendance",
+        "passed": true,
+        "actual_outcome": "clarification",
+        "validated_operations": [
+          "actual_vs_target"
+        ],
+        "headline": "Which attendance metric would you like to inspect for Call Center?",
+        "failures": []
+      },
+      {
+        "scenario_id": "v2_s13_mariam_statement_order_inbound_manager",
+        "split": "test",
+        "paraphrase_group": "person_tenure_mariam",
+        "passed": true,
+        "actual_outcome": "clarification",
+        "validated_operations": [
+          "person_tenure_check"
+        ],
+        "headline": "I found three Mariams in Inbound. Which one do you mean?",
+        "failures": []
+      },
+      {
+        "scenario_id": "v2_s14_branch_director_3branch_restricted",
+        "split": "test",
+        "paraphrase_group": "branch_booking_count_3way_rbac",
+        "passed": true,
+        "actual_outcome": "restricted_access",
+        "validated_operations": [
+          "compare_branches"
+        ],
+        "headline": "Access restricted: your role does not have permission to view Ajman branch data.",
+        "failures": []
+      },
+      {
+        "scenario_id": "v2_s15_branch_director_managerial_bsc_guardrail",
+        "split": "test",
+        "paraphrase_group": "branch_director_bsc_guardrail",
+        "passed": true,
+        "actual_outcome": "answer",
+        "validated_operations": [
+          "scorecard_structure"
+        ],
+        "headline": "Managerial and Corporate Balanced Scorecards (Team SLA, Team Quality, Coaching Completion, Attendance Compliance, Cost Efficiency) are evaluated at the team level and are not partitioned by individual UAE hospital branches (Dubai/Sharjah).",
+        "failures": []
+      },
+      {
+        "scenario_id": "v2_s16_inbound_manager_support_restricted",
+        "split": "test",
+        "paraphrase_group": "support_lowest_person_position_rbac",
+        "passed": true,
+        "actual_outcome": "restricted_access",
+        "validated_operations": [
+          "ranking"
+        ],
+        "headline": "Access restricted: your role does not have permission to view Support Positions data.",
+        "failures": []
+      },
+      {
+        "scenario_id": "v2_s17_rcm_director_inbound_restricted",
+        "split": "test",
+        "paraphrase_group": "cross_function_rbac_rcm",
+        "passed": true,
+        "actual_outcome": "restricted_access",
+        "validated_operations": [
+          "actual_vs_target"
+        ],
+        "headline": "Access restricted: your role does not have permission to view Inbound data.",
+        "failures": []
+      },
+      {
+        "scenario_id": "v2_s18_rcm_director_coding_authorized",
+        "split": "test",
+        "paraphrase_group": "cross_function_rbac_rcm",
+        "passed": true,
+        "actual_outcome": "answer",
+        "validated_operations": [
+          "current_value"
+        ],
+        "headline": "In September 2026 (All Branches), Coding has the lowest score at 92.1%, with 0 of 1 agents below target.",
+        "failures": []
+      },
+      {
+        "scenario_id": "v2_s19_adham_worst_month",
+        "split": "test",
+        "paraphrase_group": "person_worst_period_adham",
+        "passed": true,
+        "actual_outcome": "answer",
+        "validated_operations": [
+          "person_worst_period"
+        ],
+        "headline": "Adham Tarek's (EMP501) worst month across March\u2013September 2026 in Inbound by Overall PMS Score was March 2026 at 82.0%.",
+        "failures": []
+      },
+      {
+        "scenario_id": "v2_s20_adham_pronoun_lowest_score",
+        "split": "test",
+        "paraphrase_group": "person_worst_period_adham",
+        "passed": true,
+        "actual_outcome": "answer",
+        "validated_operations": [
+          "person_worst_period"
+        ],
+        "headline": "Adham Tarek's (EMP501) worst month across March\u2013September 2026 in Inbound by Overall PMS Score was March 2026 at 82.0%.",
+        "failures": []
+      },
+      {
+        "scenario_id": "v2_s21_adham_worst_then_best_followup",
+        "split": "test",
+        "paraphrase_group": "person_worst_period_adham",
+        "passed": true,
+        "actual_outcome": "answer",
+        "validated_operations": [
+          "person_best_period"
+        ],
+        "headline": "Adham Tarek's (EMP501) best month across March\u2013September 2026 in Inbound by Overall PMS Score was August 2026 at 96.5%.",
+        "failures": []
+      },
+      {
+        "scenario_id": "v2_s22_adham_best_then_worst_followup",
+        "split": "test",
+        "paraphrase_group": "person_best_period_adham",
+        "passed": true,
+        "actual_outcome": "answer",
+        "validated_operations": [
+          "person_worst_period"
+        ],
+        "headline": "Adham Tarek's (EMP501) worst month across March\u2013September 2026 in Inbound by Overall PMS Score was March 2026 at 82.0%.",
+        "failures": []
+      },
+      {
+        "scenario_id": "v2_s23_salma_missing_month_may",
+        "split": "val",
+        "paraphrase_group": "person_missing_and_ties_salma",
+        "passed": true,
+        "actual_outcome": "answer",
+        "validated_operations": [
+          "person_summary"
+        ],
+        "headline": "No published evaluation score is available for Salma Fathy (EMP502) in May 2026 (Inbound). Published scores are available across March\u2013June 2026.",
+        "failures": []
+      },
+      {
+        "scenario_id": "v2_s24_salma_later_month_june_above_100",
+        "split": "val",
+        "paraphrase_group": "person_missing_and_ties_salma",
+        "passed": true,
+        "actual_outcome": "answer",
+        "validated_operations": [
+          "person_summary"
+        ],
+        "headline": "Salma Fathy (EMP502) scored 104.35% (Grade A, Rank #1 of 2 in Inbound) in June 2026, moving +30.1% vs April (+30.1% since March).",
+        "failures": []
+      },
+      {
+        "scenario_id": "v2_s25_salma_worst_month_tie_and_missing_limitation",
+        "split": "val",
+        "paraphrase_group": "person_missing_and_ties_salma",
+        "passed": true,
+        "actual_outcome": "answer",
+        "validated_operations": [
+          "person_worst_period"
+        ],
+        "headline": "Salma Fathy's (EMP502) worst month across March\u2013June 2026 in Inbound by Overall PMS Score was March 2026 and April 2026 (tied) at 74.25%. (Note: May 2026 had no evaluated score and was excluded.)",
+        "failures": []
+      }
+    ]
   }
 }

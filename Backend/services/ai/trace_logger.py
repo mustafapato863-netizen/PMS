@@ -5,6 +5,7 @@ import logging
 import os
 import re
 import threading
+import unicodedata
 import uuid
 from typing import Any
 
@@ -17,10 +18,15 @@ from services.audit_service import AuditService
 
 logger = logging.getLogger(__name__)
 
-_PII_ID_RE = re.compile(r"\b(?:EMP[-_ ]?\d+|SGHD\d+|SGHA\d+|INB[-_]\w+|OUT[-_]\w+|SUP[-_]\w+|\d{5,8})\b", re.IGNORECASE)
+_PII_ID_RE = re.compile(
+    r"\b(?:EMP[-_ ]?\d+|SGHD\d+|SGHA\d+|INB[-_]\w+|OUT[-_]\w+|SUP[-_]\w+|\d{5,8})\b",
+    re.IGNORECASE,
+)
 _EMP_ROUTE_RE = re.compile(r"(/employee/)([^/?#\s]+)", re.IGNORECASE)
 _EMAIL_RE = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
-_PHONE_RE = re.compile(r"(?:\+\d{1,3}[\s-]?)?(?:\(?\d{2,4}\)?[\s-])\d{3,4}[\s-]\d{4}\b|\b05\d[\s-]?\d{3}[\s-]?\d{4}\b")
+_PHONE_RE = re.compile(
+    r"(?:\+\d{1,3}[\s-]?)?(?:\(?\d{2,4}\)?[\s-])\d{3,4}[\s-]\d{4}\b|\b05\d[\s-]?\d{3}[\s-]?\d{4}\b"
+)
 
 _NON_NAME_DOMAIN_WORDS: frozenset[str] = frozenset(
     {
@@ -33,6 +39,7 @@ _NON_NAME_DOMAIN_WORDS: frozenset[str] = frozenset(
         "position",
         "coding",
         "submission",
+        "resubmission",
         "marketing",
         "pharmacy",
         "sales",
@@ -60,43 +67,203 @@ _NON_NAME_DOMAIN_WORDS: frozenset[str] = frozenset(
         "november",
         "december",
         "employee",
+        "employees",
         "managerial",
         "corporate",
         "manager",
         "admin",
         "agent",
+        "agents",
         "supervisor",
         "quality",
         "assurance",
         "training",
+        "trainer",
+        "workforce",
+        "analyst",
         "analytics",
         "specialist",
         "social",
         "media",
+        "buyer",
+        "graphic",
+        "designer",
+        "account",
         "attendance",
         "booking",
         "bookings",
         "attended",
         "abandon",
+        "abandoned",
         "reachability",
         "score",
+        "scores",
+        "scored",
+        "scoring",
         "target",
+        "targets",
         "trend",
+        "trends",
         "best",
         "worst",
         "lowest",
         "highest",
+        "peak",
+        "weakest",
+        "strongest",
         "month",
+        "months",
         "period",
+        "periods",
         "team",
+        "teams",
         "branch",
+        "branches",
         "rate",
         "overall",
+        "weighted",
         "pms",
         "rank",
+        "ranks",
+        "ranking",
         "grade",
+        "what",
+        "which",
+        "who",
+        "where",
+        "when",
+        "how",
+        "why",
+        "was",
+        "were",
+        "is",
+        "are",
+        "did",
+        "does",
+        "had",
+        "has",
+        "have",
+        "his",
+        "her",
+        "their",
+        "the",
+        "and",
+        "for",
+        "from",
+        "with",
+        "into",
+        "over",
+        "across",
+        "show",
+        "compare",
+        "diagnose",
+        "summary",
+        "performance",
+        "performer",
+        "performers",
+        "evaluation",
+        "record",
+        "records",
+        "published",
+        "available",
+        "unavailable",
+        "verified",
+        "joiner",
+        "join",
+        "joined",
+        "joining",
+        "date",
+        "history",
+        "full",
+        "note",
+        "tied",
+        "top",
+        "bottom",
+        "first",
+        "last",
+        "prior",
+        "current",
+        "kpi",
+        "kpis",
+        "metric",
+        "metrics",
+        "bsc",
+        "scorecard",
+        "yes",
+        "no",
+        "هل",
+        "ما",
+        "هو",
+        "هي",
+        "من",
+        "في",
+        "عن",
+        "على",
+        "الى",
+        "إلى",
+        "او",
+        "أو",
+        "فريق",
+        "تيم",
+        "شهر",
+        "سبتمبر",
+        "أغسطس",
+        "اغسطس",
+        "يوليو",
+        "يونيو",
+        "مايو",
+        "أبريل",
+        "ابريل",
+        "مارس",
+        "فبراير",
+        "يناير",
+        "أكتوبر",
+        "اكتوبر",
+        "نوفمبر",
+        "ديسمبر",
+        "دبي",
+        "الشارقة",
+        "عجمان",
+        "عيادات",
+        "أداء",
+        "اداء",
+        "تقييم",
+        "نتيجة",
+        "موظف",
+        "الموظف",
+        "الموظفة",
+        "موظفة",
+        "ايجنت",
+        "أيجنت",
+        "حجز",
+        "حجوزات",
+        "الحجوزات",
+        "حضور",
+        "الحضور",
+        "مؤشر",
+        "مؤشرات",
+        "تارجت",
+        "انباوند",
+        "إنباوند",
+        "اوتباوند",
+        "أوتباوند",
+        "كول",
+        "سنتر",
+        "الكول",
+        "جديد",
+        "جديدة",
+        "أفضل",
+        "افضل",
+        "أسوأ",
+        "اسوا",
+        "أقل",
+        "اقل",
+        "أعلى",
+        "اعلى",
     }
 )
+
+_ARABIC_PREFIXES = ("و", "ف", "ب", "ل", "ك")
 
 _ENGINE_INIT_LOCK = threading.Lock()
 _INITIALIZED_ENGINE_KEYS: set[str] = set()
@@ -106,23 +273,109 @@ PRIVILEGED_REVIEWER_ROLES: frozenset[str] = frozenset(
 )
 
 
-def _build_name_token_set(known_employee_names: list[str] | set[str] | tuple[str, ...] | None) -> set[str]:
+def _normalize_unicode_token(tok: str) -> str:
+    """Normalize a Unicode word token (strips Latin accents and unifies Arabic Alef/Yeh/Teh-Marbuta)."""
+    if not tok:
+        return ""
+    nfc = unicodedata.normalize("NFC", tok).strip().casefold()
+    # Strip combining marks (accents/harakat) while preserving base letters
+    decomposed = unicodedata.normalize("NFKD", nfc)
+    stripped = "".join(ch for ch in decomposed if not unicodedata.combining(ch))
+    # Normalize common Arabic orthographic variants
+    stripped = (
+        stripped.replace("أ", "ا")
+        .replace("إ", "ا")
+        .replace("آ", "ا")
+        .replace("ٱ", "ا")
+        .replace("ى", "ي")
+        .replace("ة", "ه")
+        .replace("ؤ", "و")
+        .replace("ئ", "ي")
+    )
+    return unicodedata.normalize("NFC", stripped)
+
+
+def _is_alpha_unicode_token(tok: str) -> bool:
+    if not tok:
+        return False
+    return all(ch.isalpha() or ch in ("-", "'", "’") for ch in tok) and any(ch.isalpha() for ch in tok)
+
+
+def _min_name_token_len(tok: str) -> int:
+    # Arabic/CJK/non-Latin names can be 2 characters (e.g., "مي", "طه"), Latin tokens >= 3 chars
+    return 2 if any(ord(ch) > 127 for ch in tok) else 3
+
+
+def _build_name_token_set(
+    known_employee_names: list[str] | set[str] | tuple[str, ...] | None,
+) -> set[str]:
     if not known_employee_names:
         return set()
     tokens: set[str] = set()
     for raw in known_employee_names:
-        clean = (raw or "").strip()
+        clean = unicodedata.normalize("NFC", str(raw or "")).strip()
         if not clean:
             continue
-        for token in clean.split():
-            tok = token.strip(" ,.'\"()[]{}").casefold()
-            if len(tok) >= 3 and tok.isalpha() and tok not in _NON_NAME_DOMAIN_WORDS:
-                tokens.add(tok)
+        for part in re.split(r"[\s\-/]+", clean):
+            tok = part.strip(" ,.'\"’()[]{}؟،؛:!?").casefold()
+            if tok.endswith("'s") or tok.endswith("’s"):
+                tok = tok[:-2]
+            if not _is_alpha_unicode_token(tok):
+                continue
+            if len(tok) < _min_name_token_len(tok):
+                continue
+            norm_tok = _normalize_unicode_token(tok)
+            if tok in _NON_NAME_DOMAIN_WORDS or norm_tok in _NON_NAME_DOMAIN_WORDS:
+                continue
+            tokens.add(tok)
+            if norm_tok and len(norm_tok) >= _min_name_token_len(norm_tok):
+                tokens.add(norm_tok)
     return tokens
 
 
-_WORD_TOKEN_RE = re.compile(r"\b([A-Za-z]{3,})('s)?\b")
-_CONSECUTIVE_EMP_NAME_RE = re.compile(r"<EMPLOYEE_NAME>(?:\s+<EMPLOYEE_NAME>)+('s)?")
+_UNICODE_WORD_TOKEN_RE = re.compile(
+    r"(?<!\w)([^\W\d_]{2,}(?:['’\-][^\W\d_]{2,})?)(?:('s|’s))?(?!\w)",
+    re.UNICODE,
+)
+_CONSECUTIVE_EMP_NAME_RE = re.compile(
+    r"<EMPLOYEE_NAME>(?:[\s·\-]+<EMPLOYEE_NAME>)+('s|’s)?",
+    re.UNICODE,
+)
+_AGENT_PILL_RE = re.compile(
+    r"\b(Agent|Employee)\s*·\s*([^\n·()]+)",
+    re.IGNORECASE | re.UNICODE,
+)
+_POSSESSIVE_PERSON_RE = re.compile(
+    r"(?<!\w)([^\W\d_]{3,}(?:\s+[^\W\d_]{3,}){0,2})(?:'s|’s)\s+(?=score|performance|best|worst|lowest|highest|trend|month|position|record|history|kpi|evaluation|first\s+available)",
+    re.IGNORECASE | re.UNICODE,
+)
+_ARABIC_PERSON_CONTEXT_RE = re.compile(
+    r"(?:الموظف|الموظفة|موظف|موظفة|الايجنت|الأيجنت|ايجنت|أيجنت|أداء|اداء|تقييم|نتيجة)\s+([\u0600-\u06FF]{2,}(?:\s+[\u0600-\u06FF]{2,}){0,2})",
+    re.UNICODE,
+)
+
+
+def _token_matches_name_set(word: str, token_set: set[str]) -> bool:
+    if not word or not token_set:
+        return False
+    cf = word.casefold()
+    norm = _normalize_unicode_token(cf)
+    if cf in _NON_NAME_DOMAIN_WORDS or norm in _NON_NAME_DOMAIN_WORDS:
+        return False
+    if cf in token_set or norm in token_set:
+        return True
+    # Check hyphenated sub-parts
+    if "-" in cf:
+        parts = [p for p in cf.split("-") if p]
+        if parts and any(_token_matches_name_set(p, token_set) for p in parts):
+            return True
+    # Check attached single-letter Arabic prefixes (e.g. لمريم, ومريم, بمريم)
+    if len(cf) >= 4 and any("\u0600" <= ch <= "\u06FF" for ch in cf) and cf[0] in _ARABIC_PREFIXES:
+        stem = cf[1:]
+        stem_norm = _normalize_unicode_token(stem)
+        if stem not in _NON_NAME_DOMAIN_WORDS and (stem in token_set or stem_norm in token_set):
+            return True
+    return False
 
 
 def sanitize_prompt_for_router_training(
@@ -133,12 +386,13 @@ def sanitize_prompt_for_router_training(
     run_syntactic_extraction: bool = True,
     _precomputed_tokens: set[str] | None = None,
 ) -> str:
-    """Replace concrete employee IDs, emails, phones, keys, and employee names with canonical tokens."""
-    cleaned = redact_secrets(prompt or "")
+    """Replace concrete employee IDs, emails, phones, keys, and Unicode employee names with canonical tokens."""
+    cleaned = unicodedata.normalize("NFC", redact_secrets(prompt or ""))
     cleaned = _EMAIL_RE.sub("<EMAIL>", cleaned)
     cleaned = _PHONE_RE.sub("<PHONE>", cleaned)
     cleaned = _EMP_ROUTE_RE.sub(r"\1<EMPLOYEE_ID>", cleaned)
     cleaned = _PII_ID_RE.sub("<EMPLOYEE_ID>", cleaned)
+    cleaned = _AGENT_PILL_RE.sub(r"\1 · <EMPLOYEE_NAME>", cleaned)
 
     if _precomputed_tokens is not None:
         token_set = set(_precomputed_tokens)
@@ -157,22 +411,33 @@ def sanitize_prompt_for_router_training(
 
             extracted = extract_person_token_from_prompt(cleaned)
             if extracted:
-                for part in extracted.strip().split():
-                    tok = part.strip(" ,.'\"()[]{}").casefold()
-                    if len(tok) >= 3 and tok.isalpha() and tok not in _NON_NAME_DOMAIN_WORDS:
-                        token_set.add(tok)
+                token_set.update(_build_name_token_set([extracted]))
         except Exception:
             pass
 
+        # Extract possessive person names (e.g. "Adham's worst month", "Renée's score")
+        for m_pos in _POSSESSIVE_PERSON_RE.finditer(cleaned):
+            cand_phrase = m_pos.group(1)
+            token_set.update(_build_name_token_set([cand_phrase]))
+
+        # Extract Arabic person names following person/performance context markers
+        for m_ar in _ARABIC_PERSON_CONTEXT_RE.finditer(cleaned):
+            cand_ar = m_ar.group(1)
+            token_set.update(_build_name_token_set([cand_ar]))
+
     if token_set:
-        cleaned = _WORD_TOKEN_RE.sub(
-            lambda m: ("<EMPLOYEE_NAME>'s" if m.group(2) else "<EMPLOYEE_NAME>")
-            if m.group(1).casefold() in token_set
-            else m.group(0),
-            cleaned,
-        )
+        def _replace_word(match: re.Match[str]) -> str:
+            base_word = match.group(1)
+            possessive_suffix = match.group(2)
+            if base_word in ("EMPLOYEE_NAME", "EMPLOYEE_ID", "EMAIL", "PHONE", "REDACTED"):
+                return match.group(0)
+            if _token_matches_name_set(base_word, token_set):
+                return "<EMPLOYEE_NAME>'s" if possessive_suffix else "<EMPLOYEE_NAME>"
+            return match.group(0)
+
+        cleaned = _UNICODE_WORD_TOKEN_RE.sub(_replace_word, cleaned)
         cleaned = _CONSECUTIVE_EMP_NAME_RE.sub(
-            lambda m: f"<EMPLOYEE_NAME>{m.group(1) or ''}",
+            lambda m: "<EMPLOYEE_NAME>'s" if m.group(1) else "<EMPLOYEE_NAME>",
             cleaned,
         )
 
@@ -185,12 +450,16 @@ def redact_nested_payload(
     known_employee_names: list[str] | None = None,
     _precomputed_tokens: set[str] | None = None,
 ) -> Any:
-    """Recursively redact PII and secrets from trace digests and exported training structures."""
-    tokens = _precomputed_tokens if _precomputed_tokens is not None else _build_name_token_set(known_employee_names)
+    """Recursively redact PII, Unicode employee names, and secrets from nested trace and export structures."""
+    tokens = (
+        set(_precomputed_tokens)
+        if _precomputed_tokens is not None
+        else _build_name_token_set(known_employee_names)
+    )
     if isinstance(value, str):
         return sanitize_prompt_for_router_training(
             value,
-            run_syntactic_extraction=False,
+            run_syntactic_extraction=True,
             _precomputed_tokens=tokens,
         )
     if isinstance(value, list):
@@ -199,6 +468,19 @@ def redact_nested_payload(
             for item in value
         ]
     if isinstance(value, dict):
+        # First harvest any explicit employee name fields inside this dict into tokens
+        for k_scan, v_scan in value.items():
+            if str(k_scan).casefold() in (
+                "employee_name",
+                "agent_name",
+                "last_subject_employee_name",
+                "subject_employee_name",
+                "person_name",
+                "candidate_name",
+                "employee",
+            ) and isinstance(v_scan, str) and v_scan.strip():
+                tokens.update(_build_name_token_set([v_scan]))
+
         redacted: dict[str, Any] = {}
         for k, v in value.items():
             key_lower = str(k).casefold()
@@ -217,20 +499,111 @@ def redact_nested_payload(
                 "agent_name",
                 "last_subject_employee_name",
                 "subject_employee_name",
-                "entity_name",
+                "person_name",
+                "candidate_name",
+                "employee",
             ) and v:
                 redacted[k] = "<EMPLOYEE_NAME>"
+            elif key_lower == "entity_name" and isinstance(v, str) and v.strip():
+                if "trajectory" in v.casefold():
+                    redacted[k] = sanitize_prompt_for_router_training(
+                        v, run_syntactic_extraction=True, _precomputed_tokens=tokens
+                    )
+                else:
+                    tokens.update(_build_name_token_set([v]))
+                    redacted[k] = "<EMPLOYEE_NAME>"
             else:
                 redacted[k] = redact_nested_payload(v, _precomputed_tokens=tokens)
         return redacted
     return value
 
 
+def assess_pii_quarantine(
+    sanitized_text: str,
+    *,
+    original_text: str | None = None,
+    known_employee_names: list[str] | None = None,
+    _precomputed_tokens: set[str] | None = None,
+) -> tuple[bool, list[str]]:
+    """Evaluate whether a sanitized string still carries residual PII or uncertain unredacted person references.
+
+    Does not rely solely on a regex to prove text is PII-free: if person-oriented cues (joiner/tenure/pronoun/possessive
+    or unknown non-domain proper/Unicode tokens) remain without a corresponding `<EMPLOYEE_NAME>` or `<EMPLOYEE_ID>` placeholder,
+    quarantines the example for explicit Admin review.
+    """
+    reasons: list[str] = []
+    text = unicodedata.normalize("NFC", sanitized_text or "")
+    tokens = (
+        set(_precomputed_tokens)
+        if _precomputed_tokens is not None
+        else _build_name_token_set(known_employee_names)
+    )
+
+    if _EMAIL_RE.search(text):
+        reasons.append("residual_email")
+    if _PHONE_RE.search(text):
+        reasons.append("residual_phone")
+    if _PII_ID_RE.search(text):
+        reasons.append("residual_employee_id")
+
+    # Check if any known employee name token survived sanitization
+    for match in _UNICODE_WORD_TOKEN_RE.finditer(text):
+        word = match.group(1)
+        if word in ("EMPLOYEE_NAME", "EMPLOYEE_ID", "EMAIL", "PHONE", "REDACTED"):
+            continue
+        if _token_matches_name_set(word, tokens):
+            reasons.append(f"residual_known_name:{word}")
+            break
+
+    # Heuristic quarantine for uncertain person-targeted queries that produced no redaction placeholder
+    lower_orig = (original_text or text).casefold()
+    has_redaction_token = "<EMPLOYEE_NAME>" in text or "<EMPLOYEE_ID>" in text
+    person_specific_cue = bool(
+        re.search(
+            r"\b(?:new\s+joiner|joining\s+date|hire\s+date|when\s+did\s+\S+\s+join|is\s+\S+\s+a\s+new\s+joiner)\b",
+            lower_orig,
+        )
+        or re.search(r"(?:هل\s+\S+.*موظف|تاريخ\s+تعيين|انضم\s+حديثا)", lower_orig)
+    )
+    if person_specific_cue and not has_redaction_token:
+        reasons.append("uncertain_person_query_without_redaction_token")
+
+    # Check for unknown non-domain Arabic words or multi-word capitalized names in person-query contexts
+    if not has_redaction_token:
+        for match in _UNICODE_WORD_TOKEN_RE.finditer(text):
+            word = match.group(1)
+            if word in ("EMPLOYEE_NAME", "EMPLOYEE_ID", "EMAIL", "PHONE", "REDACTED"):
+                continue
+            cf = word.casefold()
+            norm = _normalize_unicode_token(cf)
+            if any("\u0600" <= ch <= "\u06FF" for ch in word):
+                stem = cf[1:] if (len(cf) >= 4 and cf[0] in _ARABIC_PREFIXES) else cf
+                stem_norm = _normalize_unicode_token(stem)
+                if (
+                    cf not in _NON_NAME_DOMAIN_WORDS
+                    and norm not in _NON_NAME_DOMAIN_WORDS
+                    and stem not in _NON_NAME_DOMAIN_WORDS
+                    and stem_norm not in _NON_NAME_DOMAIN_WORDS
+                ):
+                    reasons.append(f"uncertain_unrecognized_unicode_token:{word}")
+                    break
+
+    return (len(reasons) > 0), reasons
+
+
 def ensure_trace_schema_once(db: Session) -> None:
-    """Ensure AI tables exist once per database engine in non-production environments (never run DDL in production)."""
+    """Ensure AI tables exist once per database engine in local/test environments only.
+
+    Request-time DDL is strictly prohibited in production and staging; Alembic migrations must establish the schema.
+    """
     app_env = os.environ.get("APP_ENV", "").strip().casefold()
-    disable_ddl = os.environ.get("PMS_DISABLE_RUNTIME_DDL", "").strip().casefold() in ("1", "true", "yes", "on")
-    if app_env == "production" or disable_ddl:
+    disable_ddl = os.environ.get("PMS_DISABLE_RUNTIME_DDL", "").strip().casefold() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+    if app_env in ("production", "staging", "prod", "stage") or disable_ddl:
         return
     try:
         bind = db.get_bind()
@@ -254,7 +627,7 @@ class TraceOwnershipError(PermissionError):
 
 
 class TrainingTraceLogger:
-    """Persists AI turns with redaction and curates verified, anonymized training pairs."""
+    """Persists AI turns with Unicode-safe redaction and curates Admin-verified anonymized training pairs."""
 
     def __init__(self, db: Session) -> None:
         self.db = db
@@ -270,15 +643,17 @@ class TrainingTraceLogger:
             for (fn,) in emp_rows:
                 if fn and str(fn).strip():
                     names.add(str(fn).strip())
-            if not emp_rows:
-                from services.database_record_source import DatabaseRecordSource
+            from services.dashboard_record_service import DashboardRecordService
 
-                for rec in DatabaseRecordSource(self.db).get_all():
-                    emp_nm = getattr(rec, "employee_name", None)
-                    if emp_nm and str(emp_nm).strip():
-                        names.add(str(emp_nm).strip())
+            for rec in DashboardRecordService(self.db).list_analysis_records() or []:
+                emp_nm = getattr(rec, "employee_name", None)
+                if emp_nm and str(emp_nm).strip():
+                    names.add(str(emp_nm).strip())
         except Exception:
-            self.db.rollback()
+            try:
+                self.db.rollback()
+            except Exception:
+                pass
         return sorted(names, key=len, reverse=True)
 
     def record_turn(
@@ -302,18 +677,40 @@ class TrainingTraceLogger:
         trace_uuid = uuid.uuid4()
         cfg = get_ai_runtime_config()
         all_names = self._collect_known_employee_names(known_employee_names)
+        name_tokens = _build_name_token_set(all_names)
+
+        # Also harvest any employee names inside tool_digest or structured_response before sanitizing prompt
+        redact_nested_payload(tool_digest, _precomputed_tokens=name_tokens)
+        redact_nested_payload(structured_response, _precomputed_tokens=name_tokens)
+
         sanitized = sanitize_prompt_for_router_training(
-            prompt, known_employee_names=all_names
+            prompt,
+            known_employee_names=all_names,
+            _precomputed_tokens=name_tokens,
+        )
+        is_quarantined, quarantine_reasons = assess_pii_quarantine(
+            sanitized,
+            original_text=prompt,
+            _precomputed_tokens=name_tokens,
         )
         stored_prompt = sanitized if cfg.redact_raw_prompts else redact_secrets(prompt)
         redacted_session = redact_nested_payload(
-            session_state.model_dump(), known_employee_names=all_names
+            session_state.model_dump(), _precomputed_tokens=name_tokens
         )
         redacted_digest = redact_nested_payload(
-            tool_digest, known_employee_names=all_names
+            tool_digest, _precomputed_tokens=name_tokens
         )
+        if isinstance(redacted_digest, dict) and is_quarantined:
+            redacted_digest = dict(redacted_digest)
+            redacted_digest["pii_quarantine"] = {
+                "quarantined": True,
+                "reasons": quarantine_reasons,
+            }
         redacted_calls = redact_nested_payload(
-            tool_calls, known_employee_names=all_names
+            tool_calls, _precomputed_tokens=name_tokens
+        )
+        redacted_response = redact_nested_payload(
+            structured_response, _precomputed_tokens=name_tokens
         )
         try:
             ensure_trace_schema_once(self.db)
@@ -327,9 +724,7 @@ class TrainingTraceLogger:
                 session_state=redacted_session,
                 tool_calls=redacted_calls,
                 tool_digest=redacted_digest,
-                structured_response=redact_nested_payload(
-                    structured_response, known_employee_names=all_names
-                ),
+                structured_response=redacted_response,
                 provider_name=provider_name,
                 model_name=model_name,
                 latency_ms=max(0, int(latency_ms)),
@@ -350,6 +745,7 @@ class TrainingTraceLogger:
         *,
         trace_id: str,
         rating: str,
+        category: str | None = None,
         reason: str | None = None,
         caller_user_id: str | None = None,
         caller_role: str | None = None,
@@ -375,12 +771,35 @@ class TrainingTraceLogger:
             if owner_id and not caller_id and not is_admin_reviewer and caller_role is not None:
                 raise TraceOwnershipError("Cannot submit feedback for another user's interaction trace")
 
+            all_names = self._collect_known_employee_names()
             row.feedback_rating = rating
-            row.feedback_reason = sanitize_prompt_for_router_training(reason or "") if reason else None
+            combined_reason = reason or ""
+            if category and reason:
+                combined_reason = f"[{category}] {reason}"
+            elif category and not reason:
+                combined_reason = f"[{category}]"
+            row.feedback_reason = (
+                sanitize_prompt_for_router_training(combined_reason, known_employee_names=all_names)
+                if combined_reason
+                else None
+            )
+            if category and isinstance(row.structured_response, dict):
+                updated_resp = dict(row.structured_response)
+                updated_resp["feedback_category"] = category
+                row.structured_response = updated_resp
             row.is_distillation_eligible = bool(
                 rating == "up" and row.non_empty_evidence and not row.guardrail_triggered
             )
-            # Non-Admin user feedback NEVER sets reviewer_verified=True
+            # New feedback changes the reviewable example. A prior review must not
+            # automatically certify a later change to the rating or feedback.
+            row.reviewer_verified = False
+            row.reviewer_id = None
+            row.reviewed_at = None
+            if isinstance(row.structured_response, dict):
+                updated_resp = dict(row.structured_response)
+                updated_resp["reviewer_verified"] = False
+                row.structured_response = updated_resp
+            # Only an explicit Admin verification can certify this feedback.
             if is_admin_reviewer:
                 row.reviewer_verified = bool(reviewer_verified)
                 row.reviewer_id = caller_id or "admin"
@@ -422,11 +841,14 @@ class TrainingTraceLogger:
             if not row:
                 return False, False, ""
             now_dt = datetime.now(timezone.utc)
+            all_names = self._collect_known_employee_names()
             row.reviewer_verified = bool(reviewer_verified)
             row.reviewer_id = str(reviewer_id or "admin")
             row.reviewed_at = now_dt
             if notes:
-                row.feedback_reason = sanitize_prompt_for_router_training(notes)
+                row.feedback_reason = sanitize_prompt_for_router_training(
+                    notes, known_employee_names=all_names
+                )
             if isinstance(row.structured_response, dict):
                 updated_resp = dict(row.structured_response)
                 updated_resp["reviewer_verified"] = bool(reviewer_verified)
@@ -464,37 +886,69 @@ class TrainingTraceLogger:
             return []
 
         all_names = self._collect_known_employee_names(known_employee_names)
+        base_tokens = _build_name_token_set(all_names)
         records: list[AiDistillationRecord] = []
         for r in rows:
-            clean_session = redact_nested_payload(r.session_state or {}, known_employee_names=all_names)
+            rev_verified = bool(getattr(r, "reviewer_verified", False))
+            if verified_only and not rev_verified:
+                continue
+
+            row_tokens = set(base_tokens)
+            # Harvest any employee names embedded inside legacy tool_digest or structured_response
+            clean_digest = redact_nested_payload(r.tool_digest or {}, _precomputed_tokens=row_tokens)
+            clean_session = redact_nested_payload(r.session_state or {}, _precomputed_tokens=row_tokens)
             if isinstance(clean_session, dict):
                 clean_session.pop("employee_id", None)
                 if isinstance(clean_session.get("last_confirmed_query"), dict):
                     clean_session["last_confirmed_query"].pop("last_subject_employee_id", None)
                     clean_session["last_confirmed_query"].pop("last_subject_employee_name", None)
-            clean_calls = redact_nested_payload(r.tool_calls or [], known_employee_names=all_names)
+            clean_calls = redact_nested_payload(r.tool_calls or [], _precomputed_tokens=row_tokens)
+            clean_resp = redact_nested_payload(r.structured_response or {}, _precomputed_tokens=row_tokens)
+
+            sanitized_prompt = sanitize_prompt_for_router_training(
+                r.sanitized_prompt or r.prompt or "",
+                _precomputed_tokens=row_tokens,
+            )
+            quarantined, q_reasons = assess_pii_quarantine(
+                sanitized_prompt,
+                original_text=r.prompt or r.sanitized_prompt or "",
+                _precomputed_tokens=row_tokens,
+            )
+            # Always block any record that still contains a known residual PII token;
+            # also quarantine uncertain unreviewed examples from unverified exports.
+            has_hard_residual = any(
+                reason.startswith("residual_") for reason in q_reasons
+            )
+            stored_quarantined = isinstance(r.tool_digest, dict) and bool(r.tool_digest.get("pii_quarantined"))
+            if has_hard_residual or ((quarantined or stored_quarantined) and not rev_verified):
+                continue
+
             router_pair = {
                 "schema_version": "pms-ai-router-v1",
-                "sanitized_prompt": sanitize_prompt_for_router_training(
-                    r.sanitized_prompt or r.prompt or "",
-                    known_employee_names=all_names,
-                ),
+                "sanitized_prompt": sanitized_prompt,
                 "session_filter_state": clean_session,
                 "expected_tool_calls": clean_calls,
+                "tool_digest": clean_digest,
             }
             narrative_pair = None
-            rev_verified = bool(getattr(r, "reviewer_verified", False))
-            if r.is_distillation_eligible and isinstance(r.structured_response, dict):
+            if r.is_distillation_eligible and isinstance(clean_resp, dict):
+                headline_redacted = sanitize_prompt_for_router_training(
+                    str(clean_resp.get("headline") or ""),
+                    _precomputed_tokens=row_tokens,
+                )
+                bullets_redacted = [
+                    sanitize_prompt_for_router_training(str(b), _precomputed_tokens=row_tokens)
+                    for b in (clean_resp.get("narrative_bullets") or [])
+                ]
+                citations_redacted = redact_nested_payload(
+                    clean_resp.get("citations") or [],
+                    _precomputed_tokens=row_tokens,
+                )
                 narrative_pair = {
                     "schema_version": "pms-ai-narrative-v1",
-                    "headline": sanitize_prompt_for_router_training(
-                        str(r.structured_response.get("headline") or ""),
-                        known_employee_names=all_names,
-                    ),
-                    "narrative_bullets": [
-                        sanitize_prompt_for_router_training(str(b), known_employee_names=all_names)
-                        for b in (r.structured_response.get("narrative_bullets") or [])
-                    ],
+                    "headline": headline_redacted,
+                    "narrative_bullets": bullets_redacted,
+                    "citations": citations_redacted,
                 }
             records.append(
                 AiDistillationRecord(

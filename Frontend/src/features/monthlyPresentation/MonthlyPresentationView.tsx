@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import './macCursor.css';
-import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../context/auth';
 import { useUserRole } from '../../context/RoleContext';
 import { directorScope } from '../../lib/directorScope';
-import { redirectsToFunctionSummary } from '../../lib/access';
+import { isFunctionViewerRole, readAccessibleFunctions } from '../../lib/access';
+import { usePerformanceCatalog } from '../../hooks/api/usePerformanceCatalog';
 import { composeExecutiveSummary, normalizeRegion, toExecRecords } from '../executive/compose';
 import { useSummaryRecords } from '../executive/useSummaryRecords';
 import { useActionStore } from '../../hooks/useActionStore';
@@ -24,7 +25,7 @@ import {
   type IndividualActionPlanCard,
   type TeamDeepDiveData,
 } from './teamDeepDiveData';
-import { buildRoleDetail, isRoleBasedFunction, resolveRoleCards, type RoleActionDraft } from './roleDetailData';
+import { buildRoleDetail, hasRoleDetailForSlug, isRoleBasedFunction, resolveRoleCards, type RoleActionDraft } from './roleDetailData';
 import {
   FunctionsOverviewSection,
   GradeDistributionSection,
@@ -45,6 +46,8 @@ import RoleDetailView from './components/RoleDetailView';
 import TeamDeepDiveView from './components/TeamDeepDiveView';
 import { isMonthAvailable, periodFromKey } from './model';
 import { presentationMonthOptions, stepPresentation } from './presentationControls';
+import { ContextualAssistantPanel } from '../../components/ai/ContextualAssistantPanel';
+import type { PageContextV1 } from '../ai/types';
 
 export type MonthlyRegionFilter = 'EGY' | 'UAE';
 
@@ -58,6 +61,35 @@ export interface MonthlyPresentationViewProps {
   /** Optional handler invoked when a Function card is clicked */
   onSelectFunction?: (fn: FunctionOverviewItem) => void;
   today?: Date;
+}
+
+function TeamsWithoutMonthlyData({
+  teams,
+  periodLabel,
+}: {
+  teams: Array<{ team: string; region: string | null }>;
+  periodLabel: string;
+}) {
+  if (!teams.length) return null;
+  return (
+    <section
+      data-testid="monthly-teams-without-data"
+      aria-label={`Teams without data for ${periodLabel}`}
+      className="rounded-2xl border border-amber-200 bg-amber-50/70 p-4"
+    >
+      <h2 className="text-sm font-bold text-amber-950">Teams without data for {periodLabel}</h2>
+      <p className="mt-1 text-sm text-amber-900">
+        These active teams are in your authorized scope, but no results were uploaded for this period.
+      </p>
+      <ul className="mt-3 flex flex-wrap gap-2">
+        {teams.map((team) => (
+          <li key={`${team.team}:${team.region ?? ''}`} className="rounded-full border border-amber-200 bg-white px-3 py-1 text-xs font-semibold text-amber-950">
+            {team.team}{team.region ? ` · ${team.region}` : ''}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
 }
 
 function EgyptFlag({ className = 'size-4 shrink-0 rounded-xs' }: { className?: string }) {
@@ -87,9 +119,8 @@ function UaeFlag({ className = 'size-4 shrink-0 rounded-xs' }: { className?: str
 }
 
 export default function MonthlyPresentationView(props: MonthlyPresentationViewProps) {
-  const { role } = useUserRole();
-  // Same rule as /executive: function roles open Function Summary, not the company review.
-  if (redirectsToFunctionSummary(role)) return <Navigate to="/function-summary" replace />;
+  // Function roles are allowed to open Monthly Review in their authorized scope.
+  // (The /executive redirect is preserved separately in ExecutiveSummaryView.)
   return <MonthlyPresentationScreen {...props} />;
 }
 
@@ -117,10 +148,35 @@ function MonthlyPresentationScreen({
 
   // Connect to real performance summary records & corrective actions store
   const summaryRecordsQuery = useSummaryRecords(true);
+  const catalogQuery = usePerformanceCatalog(true);
   const execRecords = useMemo(
     () => toExecRecords(summaryRecordsQuery.data ?? []),
     [summaryRecordsQuery.data],
   );
+  const explicitPreview = Boolean(data || callCenterDeepDiveData || teamDeepDiveData);
+  const functionScopeRestricted = isFunctionViewerRole(role);
+  const serverTeams = catalogQuery.data?.teams ?? [];
+  const authorizedFunctionNames = useMemo(
+    () => functionScopeRestricted
+      ? (explicitPreview
+          ? readAccessibleFunctions(currentUser)
+          : (catalogQuery.data?.authorized_functions ?? []))
+      : [...new Set(serverTeams.flatMap((team) => team.functions))],
+    [catalogQuery.data?.authorized_functions, currentUser, explicitPreview, functionScopeRestricted, serverTeams],
+  );
+  const authorizedFunctionSlugs = useMemo(
+    () => new Set(authorizedFunctionNames.map(normalizeFunctionSlug)),
+    [authorizedFunctionNames],
+  );
+  const availableRegions = useMemo<MonthlyRegionFilter[]>(() => {
+    if (explicitPreview) return ['EGY', 'UAE'];
+    const regions = new Set<MonthlyRegionFilter>();
+    for (const team of serverTeams) {
+      const normalized = normalizeRegion(team.region);
+      if (normalized === 'EGY' || normalized === 'UAE') regions.add(normalized);
+    }
+    return [...regions].sort((a, b) => (a === 'EGY' ? -1 : b === 'EGY' ? 1 : 0));
+  }, [explicitPreview, serverTeams]);
   const { getAllActions, saveAction } = useActionStore();
   const storedActions = getAllActions();
 
@@ -129,22 +185,25 @@ function MonthlyPresentationScreen({
   const periodParam = searchParams.get('period') || searchParams.get('month') || undefined;
 
   const activeRegion: MonthlyRegionFilter = useMemo(() => {
-    if (assigned.regionLocked && assigned.region) {
-      return (normalizeRegion(assigned.region) as MonthlyRegionFilter) || 'EGY';
+    const validRegions: MonthlyRegionFilter[] = availableRegions.length ? availableRegions : ['EGY'];
+    if (
+      (normalizedUrlRegion === 'UAE' || normalizedUrlRegion === 'EGY') &&
+      validRegions.includes(normalizedUrlRegion)
+    ) return normalizedUrlRegion;
+    const assignedRegion = normalizeRegion(assigned.region);
+    if ((assignedRegion === 'UAE' || assignedRegion === 'EGY') && validRegions.includes(assignedRegion)) {
+      return assignedRegion;
     }
-    if (normalizedUrlRegion === 'UAE' || normalizedUrlRegion === 'EGY') return normalizedUrlRegion;
-    if (data?.regionCode === 'UAE' || data?.regionCode === 'EGY') return data.regionCode;
-    const accessible = currentUser?.accessible_regions || [];
-    if (accessible.length === 1 && normalizeRegion(accessible[0]) === 'UAE') {
-      return 'UAE';
+    if (explicitPreview && data?.regionCode && validRegions.includes(data.regionCode)) {
+      return data.regionCode;
     }
-    return 'EGY';
+    return validRegions[0];
   }, [
-    assigned.regionLocked,
     assigned.region,
     data?.regionCode,
+    explicitPreview,
     normalizedUrlRegion,
-    currentUser?.accessible_regions,
+    availableRegions,
   ]);
 
   const handleRegionChange = useCallback(
@@ -162,18 +221,82 @@ function MonthlyPresentationScreen({
     ? parsedUrlPeriod.key
     : undefined;
 
-  const overviewData: MonthlyOverviewData = useMemo(() => {
-    if (data && data.regionCode === activeRegion) return data;
-    const summary = composeExecutiveSummary({
-      view: 'corporate',
-      role,
-      records: execRecords,
-      filters: { region: activeRegion },
-      today: clock,
-      requestedPeriodKey,
+  const authorizedRecords = useMemo(() => {
+    if (explicitPreview) return execRecords;
+    return execRecords.filter((record) => {
+      const recordRegion = normalizeRegion(record.region);
+      const recordLevel = String(record.level || 'Employee').trim().toLowerCase();
+      return serverTeams.some((team) => {
+        if (slugifyIdentifier(team.team) !== slugifyIdentifier(record.team)) return false;
+        const teamRegion = normalizeRegion(team.region);
+        if (recordRegion && teamRegion && recordRegion !== teamRegion) return false;
+        return team.performance_levels.some((level) => level.toLowerCase() === recordLevel);
+      });
     });
-    return adaptSummaryToMonthlyOverview(summary, activeRegion);
-  }, [activeRegion, clock, data, execRecords, requestedPeriodKey, role]);
+  }, [execRecords, explicitPreview, serverTeams]);
+
+  const overviewData: MonthlyOverviewData = useMemo(() => {
+    const base =
+      explicitPreview && data && data.regionCode === activeRegion
+        ? data
+        : adaptSummaryToMonthlyOverview(
+            composeExecutiveSummary({
+              view: 'corporate',
+              role,
+              records: authorizedRecords,
+              filters: { region: activeRegion },
+              today: clock,
+              requestedPeriodKey,
+            }),
+            activeRegion,
+            { allowSnapshotFallback: explicitPreview },
+          );
+    const regionFunctionSlugs = new Set(
+      (explicitPreview ? authorizedFunctionNames : serverTeams
+        .filter((team) => normalizeRegion(team.region) === activeRegion)
+        .flatMap((team) => team.functions))
+        .map(normalizeFunctionSlug),
+    );
+    return {
+      ...base,
+      functions: base.functions.filter((fn) =>
+        regionFunctionSlugs.has(fn.slug) &&
+        (!functionScopeRestricted || authorizedFunctionSlugs.has(fn.slug)),
+      ),
+    };
+  }, [
+    activeRegion,
+    authorizedFunctionNames,
+    authorizedFunctionSlugs,
+    authorizedRecords,
+    clock,
+    data,
+    explicitPreview,
+    functionScopeRestricted,
+    requestedPeriodKey,
+    role,
+    serverTeams,
+  ]);
+
+  const latestAuthorizedPeriod = authorizedRecords
+    .filter((record) => normalizeRegion(record.region) === activeRegion)
+    .map((record) => record.period.key)
+    .sort((a, b) => b.localeCompare(a))[0];
+  const currentPeriodKey = `${clock.getFullYear()}-${String(clock.getMonth() + 1).padStart(2, '0')}`;
+  const displayedPeriodKey = requestedPeriodKey ??
+    (explicitPreview && data?.regionCode === activeRegion ? data.periodKey : undefined) ??
+    latestAuthorizedPeriod ??
+    currentPeriodKey;
+  const monthOptions = useMemo(
+    () => presentationMonthOptions(
+      authorizedRecords.map((record) => ({ region: record.region, periodKey: record.period.key })),
+      activeRegion,
+      clock,
+      displayedPeriodKey,
+    ),
+    [activeRegion, authorizedRecords, clock, displayedPeriodKey],
+  );
+  const selectedPeriodKey = displayedPeriodKey;
 
   const rawDeepDive = (searchParams.get('deepDive') || params.functionSlug || '').trim();
   const functionSlug = rawDeepDive ? normalizeFunctionSlug(rawDeepDive) : '';
@@ -181,6 +304,157 @@ function MonthlyPresentationScreen({
   const activeTeamSlug = rawTeamParam ? slugifyIdentifier(rawTeamParam) : '';
   const rawRoleParam = (searchParams.get('role') || '').trim();
   const activeRoleSlug = rawRoleParam ? slugifyIdentifier(rawRoleParam) : '';
+
+  const allowedFunctions = functionScopeRestricted ? authorizedFunctionNames : null;
+
+  const isFunctionAuthorized = useCallback((fnSlug: string) => {
+    if (!fnSlug) return false;
+    if (functionScopeRestricted) return authorizedFunctionSlugs.has(fnSlug);
+    if (explicitPreview) return overviewData.functions.some((fn) => fn.slug === fnSlug);
+    return serverTeams.some((team) =>
+      normalizeRegion(team.region) === activeRegion &&
+      team.functions.some((name) => normalizeFunctionSlug(name) === fnSlug),
+    );
+  }, [activeRegion, authorizedFunctionSlugs, explicitPreview, functionScopeRestricted, overviewData.functions, serverTeams]);
+
+  const teamBelongsToFunction = useCallback(
+    (
+      teamSlug: string,
+      fnSlug: string,
+      region: MonthlyRegionFilter,
+    ) => {
+      return serverTeams.some((team) =>
+        slugifyIdentifier(team.team) === teamSlug &&
+        normalizeRegion(team.region) === region &&
+        team.functions.some((name) => normalizeFunctionSlug(name) === fnSlug),
+      );
+    },
+    [serverTeams],
+  );
+
+  const selectedPeriodRecords = useMemo(
+    () => authorizedRecords.filter(
+      (record) => normalizeRegion(record.region) === activeRegion && record.period.key === selectedPeriodKey,
+    ),
+    [activeRegion, authorizedRecords, selectedPeriodKey],
+  );
+  const currentFunctionRecords = useMemo(
+    () => selectedPeriodRecords.filter((record) => {
+      const metadata = serverTeams.find((team) =>
+        slugifyIdentifier(team.team) === slugifyIdentifier(record.team) &&
+        normalizeRegion(team.region) === activeRegion,
+      );
+      return metadata?.functions.some((name) => normalizeFunctionSlug(name) === functionSlug) ?? false;
+    }),
+    [activeRegion, functionSlug, selectedPeriodRecords, serverTeams],
+  );
+  const currentTeamRecords = useMemo(
+    () => selectedPeriodRecords.filter((record) => slugifyIdentifier(record.team) === activeTeamSlug),
+    [activeTeamSlug, selectedPeriodRecords],
+  );
+  const currentRoleRecords = useMemo(
+    () => currentFunctionRecords.filter((record) => slugifyIdentifier(record.position ?? '') === activeRoleSlug),
+    [activeRoleSlug, currentFunctionRecords],
+  );
+
+  // Open the single assigned function automatically for function-scoped accounts.
+  useEffect(() => {
+    if (catalogQuery.isLoading || !functionScopeRestricted || !allowedFunctions || allowedFunctions.length !== 1) return;
+    if (functionSlug) return;
+    const slug = normalizeFunctionSlug(allowedFunctions[0]);
+    const next = new URLSearchParams(searchParams);
+    next.set('deepDive', slug);
+    next.delete('team');
+    next.delete('role');
+    setSearchParams(next, { replace: true });
+  }, [catalogQuery.isLoading, functionScopeRestricted, allowedFunctions, functionSlug, searchParams, setSearchParams]);
+
+  // Keep deep links inside the server-enforced function scope.
+  useEffect(() => {
+    if (catalogQuery.isLoading || !functionScopeRestricted || !allowedFunctions || !functionSlug) return;
+    const allowedSlugs = new Set(allowedFunctions.map(normalizeFunctionSlug));
+    if (allowedSlugs.has(functionSlug)) return;
+    const next = new URLSearchParams(searchParams);
+    next.delete('deepDive');
+    next.delete('team');
+    next.delete('role');
+    setSearchParams(next, { replace: true });
+  }, [catalogQuery.isLoading, functionScopeRestricted, allowedFunctions, functionSlug, searchParams, setSearchParams]);
+
+  useEffect(() => {
+    if (catalogQuery.isLoading || !rawRegion || !normalizedUrlRegion) return;
+    if ((normalizedUrlRegion === 'EGY' || normalizedUrlRegion === 'UAE') && availableRegions.includes(normalizedUrlRegion)) return;
+    const next = new URLSearchParams(searchParams);
+    next.delete('region');
+    next.delete('deepDive');
+    next.delete('team');
+    next.delete('role');
+    setSearchParams(next, { replace: true });
+  }, [availableRegions, catalogQuery.isLoading, normalizedUrlRegion, rawRegion, searchParams, setSearchParams]);
+
+  useEffect(() => {
+    if (catalogQuery.isLoading || (!explicitPreview && catalogQuery.isError)) return;
+    if (!functionSlug || functionScopeRestricted) return;
+    if (isFunctionAuthorized(functionSlug)) return;
+    const next = new URLSearchParams(searchParams);
+    next.delete('deepDive');
+    next.delete('team');
+    next.delete('role');
+    setSearchParams(next, { replace: true });
+  }, [catalogQuery.isError, catalogQuery.isLoading, explicitPreview, functionScopeRestricted, functionSlug, isFunctionAuthorized, searchParams, setSearchParams]);
+
+  // Clear team-only, invalid-team, and zero-grant deep links before rendering detail.
+  useEffect(() => {
+    if (catalogQuery.isLoading || (!explicitPreview && catalogQuery.isError)) return;
+    if (activeTeamSlug && !functionSlug) {
+      const next = new URLSearchParams(searchParams);
+      next.delete('team');
+      next.delete('role');
+      setSearchParams(next, { replace: true });
+      return;
+    }
+    if (activeRoleSlug && !functionSlug) {
+      const next = new URLSearchParams(searchParams);
+      next.delete('role');
+      setSearchParams(next, { replace: true });
+      return;
+    }
+    if (
+      functionScopeRestricted &&
+      (!allowedFunctions || allowedFunctions.length === 0) &&
+      (functionSlug || activeTeamSlug || activeRoleSlug)
+    ) {
+      const next = new URLSearchParams(searchParams);
+      next.delete('deepDive');
+      next.delete('team');
+      next.delete('role');
+      setSearchParams(next, { replace: true });
+      return;
+    }
+    if (
+      activeTeamSlug &&
+      functionSlug &&
+      !teamBelongsToFunction(activeTeamSlug, functionSlug, activeRegion)
+    ) {
+      const next = new URLSearchParams(searchParams);
+      next.delete('team');
+      next.delete('role');
+      setSearchParams(next, { replace: true });
+    }
+  }, [
+    activeTeamSlug,
+    activeRoleSlug,
+    functionSlug,
+    functionScopeRestricted,
+    allowedFunctions,
+    activeRegion,
+    searchParams,
+    setSearchParams,
+    teamBelongsToFunction,
+    catalogQuery.isError,
+    catalogQuery.isLoading,
+    explicitPreview,
+  ]);
 
   const handleFunctionClick = useCallback(
     (fn: FunctionOverviewItem) => {
@@ -250,40 +524,54 @@ function MonthlyPresentationScreen({
   }, [functionSlug, searchParams, setSearchParams]);
 
   const resolvedFunctionData: CallCenterDeepDiveData | null = useMemo(() => {
-    if (!functionSlug) return null;
-    if (functionSlug === 'call-center' && callCenterDeepDiveData) return callCenterDeepDiveData;
+    if (!functionSlug || !isFunctionAuthorized(functionSlug)) return null;
+    if (!explicitPreview && currentFunctionRecords.length === 0) return null;
+    if (functionSlug === 'call-center' && explicitPreview && callCenterDeepDiveData) return callCenterDeepDiveData;
     return buildFunctionDeepDiveFromRecords(
       functionSlug,
-      execRecords,
+      authorizedRecords,
       storedActions,
       activeRegion,
-      periodParam,
+      selectedPeriodKey,
     );
-  }, [activeRegion, callCenterDeepDiveData, execRecords, functionSlug, periodParam, storedActions]);
+  }, [activeRegion, authorizedRecords, callCenterDeepDiveData, currentFunctionRecords.length, explicitPreview, functionSlug, isFunctionAuthorized, selectedPeriodKey, storedActions]);
 
   const roleCards = useMemo(() => {
     if (!resolvedFunctionData || !isRoleBasedFunction(resolvedFunctionData.functionSlug)) return [];
-    return resolveRoleCards(resolvedFunctionData, execRecords);
-  }, [execRecords, resolvedFunctionData]);
+    return resolveRoleCards(resolvedFunctionData, authorizedRecords);
+  }, [authorizedRecords, resolvedFunctionData]);
 
   const resolvedTeamData: TeamDeepDiveData | null = useMemo(() => {
-    if (!activeTeamSlug || activeRoleSlug) return null;
-    if (teamDeepDiveData && teamDeepDiveData.teamSlug === activeTeamSlug) {
+    if (!activeTeamSlug || activeRoleSlug || !functionSlug || !teamBelongsToFunction(activeTeamSlug, functionSlug, activeRegion)) return null;
+    if (!explicitPreview && currentTeamRecords.length === 0) return null;
+    if (explicitPreview && teamDeepDiveData && teamDeepDiveData.teamSlug === activeTeamSlug) {
       return teamDeepDiveData;
     }
     return buildTeamDeepDiveFromRecords(
       activeTeamSlug,
-      execRecords,
+      authorizedRecords,
       storedActions,
       activeRegion,
-      periodParam,
+      selectedPeriodKey,
     );
-  }, [activeRegion, activeRoleSlug, activeTeamSlug, execRecords, periodParam, storedActions, teamDeepDiveData]);
+  }, [activeRegion, activeRoleSlug, activeTeamSlug, authorizedRecords, currentTeamRecords.length, explicitPreview, functionSlug, selectedPeriodKey, storedActions, teamBelongsToFunction, teamDeepDiveData]);
 
   const resolvedRoleData = useMemo(() => {
-    if (!activeRoleSlug || !resolvedFunctionData) return null;
-    return buildRoleDetail(resolvedFunctionData, activeRoleSlug, storedActions, execRecords);
-  }, [activeRoleSlug, execRecords, resolvedFunctionData, storedActions]);
+    if (!activeRoleSlug || !resolvedFunctionData || (!explicitPreview && currentRoleRecords.length === 0)) return null;
+    if (!hasRoleDetailForSlug(resolvedFunctionData, activeRoleSlug, authorizedRecords)) return null;
+    return buildRoleDetail(resolvedFunctionData, activeRoleSlug, storedActions, authorizedRecords);
+  }, [activeRoleSlug, authorizedRecords, currentRoleRecords.length, explicitPreview, resolvedFunctionData, storedActions]);
+
+  const teamsInActiveRegion = serverTeams.filter((team) => normalizeRegion(team.region) === activeRegion);
+  const teamsInCurrentFunction = functionSlug
+    ? teamsInActiveRegion.filter((team) => team.functions.some((name) => normalizeFunctionSlug(name) === functionSlug))
+    : teamsInActiveRegion;
+  const teamsWithoutData = teamsInCurrentFunction.filter((team) =>
+    !selectedPeriodRecords.some((record) =>
+      slugifyIdentifier(record.team) === slugifyIdentifier(team.team) &&
+      team.performance_levels.some((level) => level.toLowerCase() === String(record.level || 'Employee').toLowerCase()),
+    ),
+  );
 
   const handleSaveRoleAction = useCallback(
     async (draft: RoleActionDraft) => {
@@ -323,7 +611,7 @@ function MonthlyPresentationScreen({
   const [presentationMode, setPresentationMode] = useState(false);
   const headerToolbar = (
     <>
-      {!assigned.regionLocked && (
+      {availableRegions.length > 1 && (
         <div
           role="tablist"
           aria-label="Region filter"
@@ -335,6 +623,7 @@ function MonthlyPresentationScreen({
             aria-selected={activeRegion === 'EGY'}
             data-testid="region-egy"
             onClick={() => handleRegionChange('EGY')}
+            disabled={!availableRegions.includes('EGY')}
             className={`compact-control inline-flex h-8 !min-h-0 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold transition-all ${
               activeRegion === 'EGY'
                 ? 'bg-white font-bold text-blue-600 shadow-xs'
@@ -351,6 +640,7 @@ function MonthlyPresentationScreen({
             aria-selected={activeRegion === 'UAE'}
             data-testid="region-uae"
             onClick={() => handleRegionChange('UAE')}
+            disabled={!availableRegions.includes('UAE')}
             className={`compact-control inline-flex h-8 !min-h-0 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold transition-all ${
               activeRegion === 'UAE'
                 ? 'bg-white font-bold text-blue-600 shadow-xs'
@@ -367,19 +657,6 @@ function MonthlyPresentationScreen({
     </>
   );
 
-  const displayedPeriodKey = requestedPeriodKey ?? overviewData.periodKey;
-  const monthOptions = useMemo(
-    () => presentationMonthOptions(
-      execRecords.map((record) => ({ region: record.region, periodKey: record.period.key })),
-      activeRegion,
-      clock,
-      displayedPeriodKey,
-    ),
-    [activeRegion, clock, displayedPeriodKey, execRecords],
-  );
-  const selectedPeriodKey = monthOptions.some((option) => option.key === displayedPeriodKey)
-    ? displayedPeriodKey
-    : (monthOptions[0]?.key ?? overviewData.periodKey);
   const insideDetail = Boolean(activeTeamSlug || activeRoleSlug);
   const functionSlugs = overviewData.functions.map((fn) => fn.slug);
   const previousDisabled = !functionSlug && !insideDetail;
@@ -434,6 +711,14 @@ function MonthlyPresentationScreen({
   ]);
 
   const renderActiveView = () => {
+    if (activeTeamSlug && !functionSlug) {
+      return null;
+    }
+
+    if (activeTeamSlug && functionSlug && !teamBelongsToFunction(activeTeamSlug, functionSlug, activeRegion)) {
+      return null;
+    }
+
     if (activeRoleSlug && resolvedRoleData) {
       return (
         <RoleDetailView
@@ -465,24 +750,40 @@ function MonthlyPresentationScreen({
     if (functionSlug && resolvedFunctionData) {
       if (isRoleBasedFunction(resolvedFunctionData.functionSlug)) {
         return (
-          <FunctionDeepDiveView
-            data={resolvedFunctionData}
-            roles={roleCards}
-            onBackToOverview={handleBackToOverview}
-            onSelectRole={handleSelectRole}
-            toolbar={headerToolbar}
-            presentationMode={presentationMode}
-          />
+          <div className="mx-auto max-w-7xl space-y-6">
+            <FunctionDeepDiveView
+              data={resolvedFunctionData}
+              roles={roleCards}
+              onBackToOverview={handleBackToOverview}
+              onSelectRole={handleSelectRole}
+              toolbar={headerToolbar}
+              presentationMode={presentationMode}
+            />
+            {!explicitPreview && currentFunctionRecords.length > 0 && (
+              <TeamsWithoutMonthlyData
+                teams={teamsWithoutData.map(({ team, region }) => ({ team, region }))}
+                periodLabel={periodFromKey(selectedPeriodKey)?.label ?? selectedPeriodKey}
+              />
+            )}
+          </div>
         );
       }
       return (
-        <CallCenterDeepDiveView
-          data={resolvedFunctionData}
-          onBackToOverview={handleBackToOverview}
-          onSelectAgentTeam={handleSelectAgentTeam}
-          onSelectRole={handleSelectRole}
-          toolbar={headerToolbar}
-        />
+        <div className="mx-auto max-w-7xl space-y-6">
+          <CallCenterDeepDiveView
+            data={resolvedFunctionData}
+            onBackToOverview={handleBackToOverview}
+            onSelectAgentTeam={handleSelectAgentTeam}
+            onSelectRole={handleSelectRole}
+            toolbar={headerToolbar}
+          />
+          {!explicitPreview && currentFunctionRecords.length > 0 && (
+            <TeamsWithoutMonthlyData
+              teams={teamsWithoutData.map(({ team, region }) => ({ team, region }))}
+              periodLabel={periodFromKey(selectedPeriodKey)?.label ?? selectedPeriodKey}
+            />
+          )}
+        </div>
       );
     }
 
@@ -546,6 +847,12 @@ function MonthlyPresentationScreen({
             handleSelectAgentTeam(slugifyIdentifier(row.team), match?.slug || row.functionName);
           }}
         />
+        {selectedPeriodRecords.length > 0 && (
+          <TeamsWithoutMonthlyData
+            teams={teamsWithoutData.map(({ team, region }) => ({ team, region }))}
+            periodLabel={periodFromKey(selectedPeriodKey)?.label ?? selectedPeriodKey}
+          />
+        )}
       </div>
     );
   };
@@ -554,18 +861,18 @@ function MonthlyPresentationScreen({
     const sorted = [...overviewData.functions].sort((a, b) => a.score - b.score);
     return sorted.map((fn) => {
       const fnDeepDive =
-        fn.slug === 'call-center' && callCenterDeepDiveData
+        explicitPreview && fn.slug === 'call-center' && callCenterDeepDiveData
           ? callCenterDeepDiveData
           : buildFunctionDeepDiveFromRecords(
               fn.slug,
-              execRecords,
+              authorizedRecords,
               storedActions,
               activeRegion,
-              periodParam,
+              selectedPeriodKey,
             );
 
       if (isRoleBasedFunction(fn.slug)) {
-        const cards = resolveRoleCards(fnDeepDive, execRecords).sort(
+        const cards = resolveRoleCards(fnDeepDive, authorizedRecords).sort(
           (a, b) => a.score - b.score,
         );
         const withIssues = cards.filter((c) => c.score < 90);
@@ -618,10 +925,11 @@ function MonthlyPresentationScreen({
     });
   }, [
     activeRegion,
+    authorizedRecords,
     callCenterDeepDiveData,
-    execRecords,
+    explicitPreview,
     overviewData.functions,
-    periodParam,
+    selectedPeriodKey,
     storedActions,
   ]);
 
@@ -633,6 +941,153 @@ function MonthlyPresentationScreen({
     activeRoleSlug,
     presentationMode ? 'present' : 'edit',
   ].join('|');
+
+  const monthlyPageContext = useMemo<PageContextV1>(() => {
+    const primaryDriverMetric =
+      resolvedTeamData?.kpis?.[0]?.label ??
+      overviewData.drivers?.negative?.[0]?.kpi ??
+      null;
+    const isFallbackData =
+      !summaryRecordsQuery.isLoading &&
+      !explicitPreview &&
+      authorizedRecords.length === 0;
+    const monthParts = (
+      resolvedTeamData?.monthLabel ??
+      resolvedFunctionData?.monthLabel ??
+      overviewData.monthLabel ??
+      ''
+    ).split(' ');
+    const parsedYear = Number(monthParts[1]);
+    return {
+      page_id: 'monthly_presentation',
+      route_id: `${location.pathname}${location.search}`,
+      region: activeRegion,
+      period: selectedPeriodKey,
+      month: monthParts[0] || null,
+      year: Number.isFinite(parsedYear) && parsedYear >= 2000 ? parsedYear : null,
+      function_id: resolvedFunctionData?.functionName ?? null,
+      team_id: resolvedTeamData?.canonicalTeam ?? resolvedTeamData?.name ?? null,
+      position_id: resolvedRoleData?.roleTitle ?? null,
+      selected_metric_id: primaryDriverMetric,
+      is_fallback_data: isFallbackData,
+    };
+  }, [
+    activeRegion,
+    authorizedRecords.length,
+    explicitPreview,
+    location.pathname,
+    location.search,
+    overviewData.drivers?.negative,
+    overviewData.monthLabel,
+    overviewData.title,
+    resolvedFunctionData?.functionName,
+    resolvedFunctionData?.monthLabel,
+    resolvedRoleData?.roleTitle,
+    resolvedTeamData?.canonicalTeam,
+    resolvedTeamData?.kpis,
+    resolvedTeamData?.monthLabel,
+    resolvedTeamData?.name,
+    selectedPeriodKey,
+    summaryRecordsQuery.isLoading,
+  ]);
+
+  const pageIsLoading = !explicitPreview && (summaryRecordsQuery.isLoading || catalogQuery.isLoading);
+  const pageHasError = !explicitPreview && (summaryRecordsQuery.isError || catalogQuery.isError);
+  const hasNoAssignments = !pageIsLoading && !pageHasError &&
+    (functionScopeRestricted
+      ? authorizedFunctionNames.length === 0
+      : !explicitPreview && serverTeams.length === 0);
+  const invalidRegionRequest = !explicitPreview && Boolean(rawRegion) &&
+    (!normalizedUrlRegion || !availableRegions.includes(normalizedUrlRegion as MonthlyRegionFilter));
+  const invalidFunctionRequest = Boolean(functionSlug) && !isFunctionAuthorized(functionSlug);
+  const invalidTeamRequest = Boolean(activeTeamSlug) && (
+    !functionSlug || !teamBelongsToFunction(activeTeamSlug, functionSlug, activeRegion)
+  );
+  const invalidRoleRequest = Boolean(activeRoleSlug) && (
+    !resolvedFunctionData || !hasRoleDetailForSlug(resolvedFunctionData, activeRoleSlug, authorizedRecords)
+  );
+  const invalidScopeRequest = invalidRegionRequest || invalidFunctionRequest || invalidTeamRequest || invalidRoleRequest;
+  const selectionHasData = activeRoleSlug
+    ? currentRoleRecords.length > 0
+    : activeTeamSlug
+      ? currentTeamRecords.length > 0
+      : functionSlug
+        ? currentFunctionRecords.length > 0
+        : selectedPeriodRecords.length > 0;
+  const noDataForSelection = !explicitPreview && !pageIsLoading && !pageHasError &&
+    !hasNoAssignments && !invalidScopeRequest && !selectionHasData;
+  const scopeTeamsForNoData = activeTeamSlug
+    ? teamsInCurrentFunction.filter((team) => slugifyIdentifier(team.team) === activeTeamSlug)
+    : teamsInCurrentFunction;
+  const selectedPeriodLabel = periodFromKey(selectedPeriodKey)?.label ?? selectedPeriodKey;
+
+  if (pageIsLoading || pageHasError || hasNoAssignments || invalidScopeRequest || noDataForSelection) {
+    const heading = pageIsLoading
+      ? 'Loading Monthly Review data'
+      : pageHasError
+        ? 'Monthly Review data could not be loaded'
+        : hasNoAssignments
+          ? 'No monthly review assignments'
+          : invalidScopeRequest
+            ? 'This Monthly Review link is outside your access'
+            : `No performance data for ${selectedPeriodLabel}`;
+    const detail = pageIsLoading
+      ? 'Loading the teams and performance records available to your account.'
+      : pageHasError
+        ? 'The authorized team list or performance records could not be fetched. Retry to load your scope again.'
+        : hasNoAssignments
+          ? functionScopeRestricted
+            ? 'Your account has no authorized function for Monthly Review. Contact your administrator to request access.'
+            : 'No active teams are currently assigned to your account. Contact your administrator if this looks wrong.'
+          : invalidScopeRequest
+            ? 'The requested region, function, team, or position is not included in your authorized scope.'
+            : functionSlug
+              ? 'No results were uploaded for this function, team, or position in the selected period.'
+              : 'No results were uploaded for your authorized scope in the selected period.';
+
+    return (
+      <main className="mx-auto max-w-7xl space-y-5 px-4 py-8 sm:px-6 lg:px-8">
+        {headerToolbar && <div className="flex flex-wrap items-center gap-3">{headerToolbar}</div>}
+        <section
+          data-testid={hasNoAssignments ? 'monthly-assignment-message' : noDataForSelection ? 'monthly-no-data' : pageHasError ? 'monthly-data-error' : invalidScopeRequest ? 'monthly-scope-restricted' : 'monthly-loading'}
+          role={pageHasError || invalidScopeRequest ? 'alert' : 'status'}
+          aria-live="polite"
+          className={`rounded-2xl border p-5 sm:p-6 ${pageHasError || invalidScopeRequest ? 'border-rose-200 bg-rose-50' : 'border-slate-200 bg-white'}`}
+        >
+          <h1 className="text-lg font-bold text-slate-900">{heading}</h1>
+          <p className="mt-2 text-sm text-slate-600">{detail}</p>
+          {!pageIsLoading && !pageHasError && !hasNoAssignments && !invalidScopeRequest && (
+            <label className="mt-4 flex max-w-xs flex-col gap-1 text-xs font-semibold text-slate-600">
+              Reporting month
+              <select
+                aria-label="Reporting month"
+                value={selectedPeriodKey}
+                onChange={(event) => handlePeriodChange(event.target.value)}
+                className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900"
+              >
+                {monthOptions.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}
+              </select>
+            </label>
+          )}
+          {pageHasError && (
+            <button
+              type="button"
+              className="mt-4 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+              onClick={() => { void summaryRecordsQuery.refetch(); void catalogQuery.refetch(); }}
+            >
+              Try again
+            </button>
+          )}
+        </section>
+        {noDataForSelection && scopeTeamsForNoData.length > 0 && (
+          <TeamsWithoutMonthlyData
+            teams={scopeTeamsForNoData.map(({ team, region }) => ({ team, region }))}
+            periodLabel={selectedPeriodLabel}
+          />
+        )}
+      </main>
+    );
+  }
 
   return (
     <>
@@ -677,6 +1132,7 @@ function MonthlyPresentationScreen({
           }
         }}
       />
+      <ContextualAssistantPanel pageContext={monthlyPageContext} />
     </>
   );
 }

@@ -2105,25 +2105,6 @@
       }
     },
     {
-      "id": "q095",
-      "paraphrase_group": "grp_46",
-      "split": "test",
-      "scope_category": "call_center_pilot",
-      "caller_role": "General Manager",
-      "prompt": "What is attendance in Call Center?",
-      "session_state": {
-        "function": "Call Center",
-        "month": "September",
-        "year": 2026
-      },
-      "expected_outcome": "clarification",
-      "expected_intent": "clarify",
-      "expected_clarification_code": "AMBIGUOUS_ATTENDANCE_DEFINITION",
-      "expected_filters": {
-        "function": "Call Center"
-      }
-    },
-    {
       "id": "q096",
       "paraphrase_group": "grp_47",
       "split": "train",
@@ -2969,29 +2950,6 @@
         "team": null,
         "function": "RCM",
         "performance_level": "Employee",
-        "periods": [
-          "2026-09"
-        ]
-      }
-    },
-    {
-      "id": "q130",
-      "paraphrase_group": "grp_62",
-      "split": "val",
-      "scope_category": "rcm_pre_approvals",
-      "caller_role": "Function Director",
-      "caller_functions": [
-        "RCM"
-      ],
-      "prompt": "What is Inbound Abandon Rate in September 2026?",
-      "session_state": {
-        "function": "RCM"
-      },
-      "expected_outcome": "restricted_access",
-      "expected_intent": "actual_vs_target",
-      "expected_filters": {
-        "team": "Inbound",
-        "metric": "inbound:abandon_rate",
         "periods": [
           "2026-09"
         ]

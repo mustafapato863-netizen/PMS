@@ -39,14 +39,39 @@ TEAM_ALIASES: dict[str, str] = {
     "lowest in support": "Support Positions", "best in support": "Support Positions",
     "top in support": "Support Positions", "worst in support": "Support Positions",
     "marketing": "Marketing", "ماركتنج": "Marketing", "الماركتنج": "Marketing", "التسويق": "Marketing",
+    "sales": "Sales",
+    "csr": "CSR",
+    "pharmacy": "Pharmacy",
+    "coding egy": "Coding EGY",
     "coding": "Coding", "كودينج": "Coding",
+    "submission egy": "Submission EGY",
     "submission": "Submission", "سبمشن": "Submission",
-    "re-submission": "Re-Submission", "resubmission": "Re-Submission",
+    "re-submission": "Re-Submission",
+    "resubmission": "Resubmission",
+    "pre-approvals ip offshore": "Pre-Approvals IP Offshore",
+    "pre-approvals ip elective dubai": "Pre-Approvals IP Elective Dubai",
+    "ip elective dubai": "Pre-Approvals IP Elective Dubai",
+    "pre-approvals ip final dubai": "Pre-Approvals IP Final Dubai",
+    "ip final dubai": "Pre-Approvals IP Final Dubai",
+    "pre-approvals ip final shjajm": "Pre-Approvals IP Final SHJAJM",
+    "ip sharjah": "Pre-Approvals IP Final SHJAJM",
+    "pre-approvals op dubai": "Pre-Approvals OP Dubai",
+    "op dubai": "Pre-Approvals OP Dubai",
+    "pre-approvals op final shjajm": "Pre-Approvals OP Final SHJAJM",
+    "op sharjah": "Pre-Approvals OP Final SHJAJM",
+    "pre-approvals ip": "Pre-Approvals IP",
     "pre-approvals": "Pre-Approvals", "preapprovals": "Pre-Approvals",
+    "human resources": "Human Resources",
+    "offshore admin & management": "Offshore Admin & Management",
+    "finance": "Finance",
+    "crm": "CRM",
+    "nursing": "Nursing",
+    "pmo": "PMO",
+    "rcm": "RCM",
 }
 
 REVENUE_KEYWORDS: tuple[str, ...] = (
-    "revenue", "revenues", "sales", "income", "financial return", "cash",
+    "revenue", "revenues", "income", "financial return", "cash",
     "ايراد", "إيراد", "ايرادات", "إيرادات", "مبيعات", "عائد مالي", "فلوس", "دخل",
 )
 
@@ -120,14 +145,16 @@ def extract_prompt_signals(prompt: str, session_state: SessionFilterContext) -> 
     signals = ParsedPromptSignals(is_arabic=is_arabic_text(text))
 
     # 1. Detect Team
-    for alias, canonical in TEAM_ALIASES.items():
-        if re.search(rf"(?<![a-z0-9]){re.escape(alias)}(?![a-z0-9])", lower):
+    used_b_spans: list[tuple[int, int]] = []
+    for alias, canonical in sorted(TEAM_ALIASES.items(), key=lambda kv: len(kv[0]), reverse=True):
+        m_team = re.search(rf"(?<![a-z0-9]){re.escape(alias)}(?![a-z0-9])", lower)
+        if m_team:
             signals.detected_team = canonical
+            used_b_spans.append(m_team.span())
             break
 
     # 2. Detect Branches (supports comparison of 2 or 3+ branches like Dubai, Ajman or Sharjah, or all UAE branches)
     branch_hits: list[tuple[int, str]] = []
-    used_b_spans: list[tuple[int, int]] = []
     for alias, canonical in sorted(BRANCH_ALIASES.items(), key=lambda kv: len(kv[0]), reverse=True):
         for m_b in re.finditer(rf"(?<![a-z0-9]){re.escape(alias)}(?![a-z0-9])", lower):
             span = m_b.span()
@@ -214,7 +241,7 @@ def extract_prompt_signals(prompt: str, session_state: SessionFilterContext) -> 
 
     asks_person_word = any(
         re.search(rf"\b{w}\b", lower)
-        for w in ("who", "agent", "agents", "employee", "employees", "person", "people", "his", "her", "performer")
+        for w in ("who", "agent", "agents", "employee", "employees", "person", "people", "his", "her", "performer", "member", "members")
     )
     if any(
         phrase in lower
@@ -272,11 +299,13 @@ def extract_prompt_signals(prompt: str, session_state: SessionFilterContext) -> 
         signals.detected_level = "Managerial"
 
     # 6. Check Call Center Revenue Guardrail
-    active_fn = (session_state.function or "Call Center").casefold()
+    active_fn = (session_state.function or "").casefold()
     active_team = (signals.detected_team or session_state.team or "").casefold()
-    is_cc_scope = "call center" in active_fn or active_team in ("inbound", "outbound", "")
+    is_cc_scope = active_team in ("inbound", "outbound", "support positions", "call center") or (
+        not active_team and ("call center" in active_fn or not active_fn)
+    )
     if is_cc_scope and any(rk in lower for rk in REVENUE_KEYWORDS):
-        if signals.detected_team != "Marketing":
+        if signals.detected_team not in ("Marketing", "Sales", "Finance", "RCM", "Pharmacy", "CSR"):
             signals.asks_revenue_in_call_center = True
 
     # 7. Detect Employee Name / ID query (supports SGHD70xxx, EMP-xxx, or case-insensitive name phrases)

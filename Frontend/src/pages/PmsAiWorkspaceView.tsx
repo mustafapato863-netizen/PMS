@@ -112,7 +112,7 @@ export default function PmsAiWorkspaceView() {
   const [isSending, setIsSending] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [showScenarioTray, setShowScenarioTray] = useState<boolean>(true);
-  const [showWatchingPanel, setShowWatchingPanel] = useState<boolean>(true);
+  const [showWatchingPanel, setShowWatchingPanel] = useState<boolean>(false);
   const activeRequestSeqRef = useRef<number>(0);
   const abortControllerRef = useRef<AbortController | null>(null);
   const streamEndRef = useRef<HTMLDivElement>(null);
@@ -281,6 +281,7 @@ export default function PmsAiWorkspaceView() {
       );
       return res.data;
     },
+    enabled: showWatchingPanel,
     staleTime: 60_000,
     retry: false,
   });
@@ -317,6 +318,7 @@ export default function PmsAiWorkspaceView() {
 
       let effectiveConversationId = conversationId;
       let effectiveContextVersion = contextVersion;
+      let effectiveSessionState: SessionFilterContext = sessionState;
       const clientRequestId =
         options?.reuseClientRequestId && !options?.conflictCode
           ? options.reuseClientRequestId
@@ -324,9 +326,12 @@ export default function PmsAiWorkspaceView() {
 
       if (options?.conflictCode === 404) {
         effectiveConversationId = null;
+        effectiveSessionState = { ...sessionState, last_confirmed_query: null };
         effectiveContextVersion = 0;
         setConversationId(null);
         setContextVersion(0);
+        // lastConfirmedQuery cleared above
+        setLastConfirmedQuery(null);
       } else if (options?.conflictCode === 409) {
         effectiveContextVersion = 0;
         if (effectiveConversationId) {
@@ -339,8 +344,11 @@ export default function PmsAiWorkspaceView() {
               effectiveContextVersion = ctxRes.data.context_version;
               setContextVersion(ctxRes.data.context_version);
             }
-            if (ctxRes?.data?.confirmed_context) {
-              setLastConfirmedQuery(ctxRes.data.confirmed_context);
+            if (ctxRes?.data && 'confirmed_context' in ctxRes.data) {
+
+              const refreshedConfirmed = ctxRes.data.confirmed_context ?? null;
+              setLastConfirmedQuery(refreshedConfirmed);
+              effectiveSessionState = { ...sessionState, last_confirmed_query: refreshedConfirmed };
             }
           } catch {
             effectiveContextVersion = 0;
@@ -399,7 +407,7 @@ export default function PmsAiWorkspaceView() {
               context_version: effectiveContextVersion,
               client_request_id: clientRequestId,
               clarification_choice_id: clarificationChoiceId || null,
-              session_state: sessionState,
+              session_state: effectiveSessionState,
               history: historyPayload,
               provider_override: 'auto',
               answer_detail: answerDetail,
@@ -768,7 +776,9 @@ export default function PmsAiWorkspaceView() {
                       setTurns([]);
                       setConversationId(null);
                       setContextVersion(0);
-                      setLastConfirmedQuery(null);
+        // lastConfirmedQuery cleared above
+        setLastConfirmedQuery(null);
+                      // lastConfirmedQuery cleared above
                     }}
                     className="inline-flex items-center gap-1 rounded-full border border-slate-200/90 bg-white px-3 py-1.5 text-[11px] font-bold text-slate-700 shadow-2xs transition-colors hover:border-blue-400 hover:text-blue-600"
                   >
@@ -1036,7 +1046,7 @@ export default function PmsAiWorkspaceView() {
               <p className="mt-1.5 flex items-center justify-center gap-1 text-center text-[10px] font-medium text-slate-400">
                 <Info size={11} className="shrink-0" />
                 <span>
-                  Every answer &amp; decision playbook is computed deterministically by the official PMS scoring engine and scoped to your role.
+                  Performance figures come from PMS data within your authorized scope.
                 </span>
               </p>
             </div>

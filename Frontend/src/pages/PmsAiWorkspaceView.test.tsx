@@ -226,10 +226,23 @@ describe('PmsAiWorkspaceView', () => {
     });
   });
 
-  it('renders ZainX-styled empty state, AI is watching rail, and Guardrails', async () => {
+  it('keeps AI is watching panel closed by default without fetching /api/ai/watching until opened', async () => {
     renderWorkspace('/ai');
 
     expect(screen.getByText(/Hi Salma, how can I help\?/i)).toBeInTheDocument();
+    expect(screen.queryByText('AI is watching')).not.toBeInTheDocument();
+
+    // Verify /api/ai/watching is not called while the rail is closed
+    const watchingCallsWhileClosed = mockedApiFetch.mock.calls.filter((call) =>
+      String(call[0]).startsWith('/api/ai/watching'),
+    );
+    expect(watchingCallsWhileClosed).toHaveLength(0);
+
+    // Open the rail and verify /api/ai/watching executes and renders alerts & guardrails
+    const showRailBtn = screen.getByLabelText('Show AI is watching panel');
+    expect(showRailBtn).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(showRailBtn);
+
     expect(screen.getByText('AI is watching')).toBeInTheDocument();
     expect(screen.getByText('Guardrails')).toBeInTheDocument();
 
@@ -238,16 +251,18 @@ describe('PmsAiWorkspaceView', () => {
     });
     expect(screen.getByText('3 corrective actions overdue')).toBeInTheDocument();
     expect(screen.getByText('Which team dropped the most & why?')).toBeInTheDocument();
+
+    const watchingCallsAfterOpen = mockedApiFetch.mock.calls.filter((call) =>
+      String(call[0]).startsWith('/api/ai/watching'),
+    );
+    expect(watchingCallsAfterOpen).toHaveLength(1);
   });
 
-  it('dispatches a starter prompt, renders structured visual card, and records verification feedback', async () => {
+  it('dispatches a starter prompt and records feedback without claiming it was verified', async () => {
     renderWorkspace('/ai');
 
-    await waitFor(() => {
-      expect(screen.getByText('Which team dropped the most & why?')).toBeInTheDocument();
-    });
-
-    fireEvent.click(screen.getByText('Which team dropped the most & why?'));
+    expect(screen.getByText('Which Call Center team dropped most?')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Which Call Center team dropped most?'));
 
     await waitFor(() => {
       expect(
@@ -264,12 +279,12 @@ describe('PmsAiWorkspaceView', () => {
     expect(screen.getByText('Open Insights →')).toBeInTheDocument();
     expect(screen.getByText('Scope · Call Center')).toBeInTheDocument();
 
-    // Click thumbs-up verification button for distillation trace
-    const approveBtn = screen.getByLabelText('Approve response for AI training');
+    // User feedback is a review signal, not an Admin verification.
+    const approveBtn = screen.getByLabelText('Mark response as useful');
     fireEvent.click(approveBtn);
 
     await waitFor(() => {
-      expect(screen.getByText(/Verified/i)).toBeInTheDocument();
+      expect(screen.getByText('Feedback saved')).toBeInTheDocument();
     });
     expect(mockedApiFetch).toHaveBeenCalledWith(
       '/api/ai/feedback',
@@ -277,6 +292,20 @@ describe('PmsAiWorkspaceView', () => {
         method: 'POST',
       }),
     );
+  });
+
+  it('does not show feedback as saved when its request fails', async () => {
+    mockedApiFetch.mockImplementation(async (path: string) => {
+      if (path === '/api/ai/chat') return CHAT_RESPONSE;
+      if (path === '/api/ai/feedback') throw new Error('Unavailable');
+      return { success: true };
+    });
+    renderWorkspace('/ai');
+    fireEvent.click(screen.getByText('Which Call Center team dropped most?'));
+    const useful = await screen.findByLabelText('Mark response as useful');
+    fireEvent.click(useful);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not save feedback');
+    expect(screen.queryByText('Feedback saved')).not.toBeInTheDocument();
   });
 
   it('renders Executive Brief mode with scope banner, primary source link, and zero-call Show details expansion', async () => {
@@ -304,11 +333,7 @@ describe('PmsAiWorkspaceView', () => {
 
     renderWorkspace('/ai');
 
-    await waitFor(() => {
-      expect(screen.getByText('Which team dropped the most & why?')).toBeInTheDocument();
-    });
-
-    fireEvent.click(screen.getByText('Which team dropped the most & why?'));
+    fireEvent.click(screen.getByText('Which Call Center team dropped most?'));
 
     await waitFor(() => {
       expect(
@@ -539,7 +564,7 @@ describe('PmsAiWorkspaceView', () => {
     expect(input).not.toBeDisabled();
 
     // Even if the stale Inbound response resolves later, it must never render
-    resolveDelayedTurn?.({
+    (resolveDelayedTurn as ((val: unknown) => void) | null)?.({
       success: true,
       data: {
         ...CHAT_RESPONSE.data,
@@ -582,14 +607,14 @@ describe('PmsAiWorkspaceView', () => {
 
     const { rerender } = renderWorkspace('/ai');
 
-    // Toggle optional AI is watching panel closed and open
-    expect(screen.getByText('AI is watching')).toBeInTheDocument();
-    const hideRailBtn = screen.getByLabelText('Hide AI is watching panel');
-    fireEvent.click(hideRailBtn);
+    // Panel starts closed; toggle open and then closed
     expect(screen.queryByText('AI is watching')).not.toBeInTheDocument();
     const showRailBtn = screen.getByLabelText('Show AI is watching panel');
     fireEvent.click(showRailBtn);
     expect(screen.getByText('AI is watching')).toBeInTheDocument();
+    const hideRailBtn = screen.getByLabelText('Hide AI is watching panel');
+    fireEvent.click(hideRailBtn);
+    expect(screen.queryByText('AI is watching')).not.toBeInTheDocument();
 
     // Send a prompt that stays in flight
     const input = screen.getByLabelText('Ask PMS AI a question');
@@ -612,7 +637,7 @@ describe('PmsAiWorkspaceView', () => {
     expect(screen.getByLabelText('Ask PMS AI a question')).not.toBeDisabled();
 
     // Resolving the old user's request must not leak into Omar's workspace
-    resolveInFlight?.({
+    (resolveInFlight as ((val: unknown) => void) | null)?.({
       success: true,
       data: {
         ...CHAT_RESPONSE.data,
@@ -622,7 +647,7 @@ describe('PmsAiWorkspaceView', () => {
     expect(screen.queryByText('SALMA PRIVATE DATA')).not.toBeInTheDocument();
   });
 
-  it('recovers cleanly from 409 stale context and 404 deleted conversation without duplicate turn bubbles', async () => {
+  it('recovers from 409 stale context by immediately binding retry payload to freshly fetched confirmed_context and context_version', async () => {
     let chatAttempt = 0;
     mockedApiFetch.mockImplementation(async (path: string) => {
       if (path.startsWith('/api/ai/watching')) {
@@ -637,8 +662,8 @@ describe('PmsAiWorkspaceView', () => {
             confirmed_context: {
               intent: 'actual_vs_target',
               function: 'Call Center',
-              team: 'Inbound',
-              periods: ['2026-03'],
+              team: 'Outbound',
+              periods: ['2026-08'],
             },
           },
         };
@@ -646,7 +671,29 @@ describe('PmsAiWorkspaceView', () => {
       if (path === '/api/ai/chat') {
         chatAttempt += 1;
         if (chatAttempt === 1) {
-          throw new Error('409: Stale context_version 1; current is 5.');
+          // Turn 1 establishes conv-stale at context_version 2 with Inbound context
+          return {
+            success: true,
+            data: {
+              ...CHAT_RESPONSE.data,
+              conversation_id: 'conv-stale',
+              context_version: 2,
+              headline: 'Initial Inbound turn at version 2.',
+              resolved_session_state: {
+                ...CHAT_RESPONSE.data.resolved_session_state,
+                last_confirmed_query: {
+                  intent: 'ranking' as const,
+                  function: 'Call Center',
+                  team: 'Inbound',
+                  periods: ['2026-03'],
+                },
+              },
+            },
+          };
+        }
+        if (chatAttempt === 2) {
+          // Turn 2 encounters a 409 conflict because another tab advanced conv-stale to version 5
+          throw new Error('409: Stale context_version 2; current is 5.');
         }
         return {
           success: true,
@@ -664,7 +711,15 @@ describe('PmsAiWorkspaceView', () => {
     renderWorkspace('/ai');
 
     const input = screen.getByLabelText('Ask PMS AI a question');
-    fireEvent.change(input, { target: { value: 'Check Inbound target' } });
+    fireEvent.change(input, { target: { value: 'Initial Inbound question' } });
+    fireEvent.click(screen.getByLabelText('Send prompt'));
+
+    await waitFor(() => {
+      expect(screen.getByText('Initial Inbound turn at version 2.')).toBeInTheDocument();
+    });
+
+    // Now send Turn 2, which fails with 409
+    fireEvent.change(input, { target: { value: 'Check target after other tab update' } });
     fireEvent.click(screen.getByLabelText('Send prompt'));
 
     await waitFor(() => {
@@ -677,7 +732,23 @@ describe('PmsAiWorkspaceView', () => {
       expect(screen.getByText('Recovered cleanly at context version 6.')).toBeInTheDocument();
     });
 
-    // Only one user prompt bubble should exist (no duplicate bubble on Retry)
-    expect(screen.getAllByText('Check Inbound target')).toHaveLength(1);
+    // Verify retry payload used freshly fetched context_version (5) and confirmed_context (Outbound / 2026-08), NOT stale React state (Inbound / 2026-03)
+    const chatCalls = mockedApiFetch.mock.calls.filter((call) => call[0] === '/api/ai/chat');
+    expect(chatCalls).toHaveLength(3);
+    const retryBody = JSON.parse(String(chatCalls[2][1]?.body || '{}'));
+    expect(retryBody.conversation_id).toBe('conv-stale');
+    expect(retryBody.context_version).toBe(5);
+    expect(retryBody.session_state.last_confirmed_query).toEqual({
+      intent: 'actual_vs_target',
+      function: 'Call Center',
+      team: 'Outbound',
+      periods: ['2026-08'],
+    });
+    // Also verify a fresh client_request_id was generated on 409 conflict recovery
+    const failedBody = JSON.parse(String(chatCalls[1][1]?.body || '{}'));
+    expect(retryBody.client_request_id).not.toBe(failedBody.client_request_id);
+
+    // Only one user prompt bubble for Turn 2 should exist (no duplicate bubble on Retry)
+    expect(screen.getAllByText('Check target after other tab update')).toHaveLength(1);
   });
 });

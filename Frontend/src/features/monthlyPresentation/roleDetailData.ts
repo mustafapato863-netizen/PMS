@@ -786,6 +786,28 @@ function supportForSlug(data: CallCenterDeepDiveData, roleSlug: string): Support
   );
 }
 
+function roleCardForSlug(cards: FunctionRoleCard[], roleSlug: string): FunctionRoleCard | undefined {
+  const slug = slugifyIdentifier(roleSlug);
+  return (
+    cards.find((item) => item.roleSlug === slug) ||
+    cards.find((item) => slugifyIdentifier(item.roleTitle) === slug) ||
+    cards.find((item) => slugifyIdentifier(normalizeRoleTitle(item.roleTitle)) === slug) ||
+    cards.find((item) => item.members.some((member) => slugifyIdentifier(member.personName) === slug)) ||
+    cards.find((item) => item.members.some((member) => namesMatch(member.personName, roleSlug)))
+  );
+}
+
+/** Check a role deep link against measured role cards and known support positions. */
+export function hasRoleDetailForSlug(
+  data: CallCenterDeepDiveData,
+  roleSlug: string,
+  records: ExecRecord[] = [],
+): boolean {
+  const slug = slugifyIdentifier(roleSlug);
+  if (!slug) return false;
+  return Boolean(supportForSlug(data, slug) || roleCardForSlug(resolveRoleCards(data, records), slug));
+}
+
 function kpiMatches(kpi: AgentKeyKpiItem, needle: string): boolean {
   const hay = `${kpi.name} ${kpi.shortName} ${kpi.kpiKey}`.toLowerCase();
   const n = needle.toLowerCase();
@@ -1340,16 +1362,7 @@ export function buildRoleDetail(
         }
       : supportCardRaw;
 
-  const normSlug = slugifyIdentifier(roleSlug);
-  const card =
-    cards.find((item) => item.roleSlug === slug) ||
-    cards.find((item) => slugifyIdentifier(item.roleTitle) === slug) ||
-    cards.find((item) => slugifyIdentifier(normalizeRoleTitle(item.roleTitle)) === slug) ||
-    cards.find((item) => item.roleSlug === normSlug) ||
-    cards.find((item) => slugifyIdentifier(normalizeRoleTitle(item.roleTitle)) === normSlug) ||
-    cards.find((item) => item.members.some((m) => slugifyIdentifier(m.personName) === slug)) ||
-    cards.find((item) => item.members.some((m) => namesMatch(m.personName, roleSlug))) ||
-    supportCard;
+  const card = roleCardForSlug(cards, slug) || supportCard;
 
   const roleTitle = card?.roleTitle || support?.positionName || canonicalFunctionNameFromSlug(slug);
   const personName = card?.personName || support?.holderName || roleTitle;

@@ -1323,6 +1323,7 @@ def test_v2_blueprint_conversational_analytics_and_owned_sessions(monkeypatch):
             conversation_id=conv_id,
             context_version=1,
             client_request_id="req-hi-1",
+            session_state=SessionFilterContext(function="Call Center", team="Inbound"),
         )
     )
     assert r_hi_replay.turn_id == r_hi.turn_id
@@ -1735,6 +1736,11 @@ def test_v2_multi_role_scenarios_and_phonetic_disambiguation(monkeypatch):
     assert found_adm is True
     assert elig_adm is True
     assert trace_logger.export_distillation_dataset(verified_only=True)[0].reviewer_verified is True
+    # Feedback changes invalidate the existing review, even if the owner later
+    # changes a negative rating back to positive.
+    trace_logger.record_feedback(trace_id=viewer_turn.trace_id, rating="down", caller_user_id="viewer-cc-01", caller_role="Function Viewer")
+    trace_logger.record_feedback(trace_id=viewer_turn.trace_id, rating="up", caller_user_id="viewer-cc-01", caller_role="Function Viewer")
+    assert trace_logger.export_distillation_dataset(verified_only=True) == []
 
     # -------------------------------------------------------------------------
     # Scenario 6: Gemini Multi-Model Fallback Chain (503 on primary -> 200 on secondary)
@@ -2157,7 +2163,8 @@ def test_v2_review_findings_all_nine_fixes(monkeypatch):
     assert r_worst_pronoun.validated_plan_v2.operations[0].kind == "person_worst_period"
     assert "April 2026 and May 2026" in r_worst_pronoun.headline
     assert "61.2%" in r_worst_pronoun.headline
-    assert "June 2026" not in r_worst_pronoun.headline  # None score never treated as 0.0% worst month
+    assert "was April 2026 and May 2026 (tied) at 61.2%" in r_worst_pronoun.headline
+    assert "June 2026 had no evaluated score and was excluded" in r_worst_pronoun.headline
 
     # 4c. Follow-up "What about April?" retains worst-month check
     r_worst_april = orch.run_chat_turn(
@@ -2295,7 +2302,13 @@ def test_v2_review_findings_all_nine_fixes(monkeypatch):
     # Test upgrade + downgrade on a fresh disposable database with pre-existing ai_interaction_traces
     mig_engine = create_engine("sqlite:///:memory:")
     with mig_engine.begin() as conn:
-        conn.execute(text("CREATE TABLE ai_interaction_traces (id VARCHAR(64) PRIMARY KEY, prompt TEXT)"))
+        with pytest.raises(RuntimeError, match="missing required base columns"):
+            conn.execute(text("CREATE TABLE ai_interaction_traces (id VARCHAR(64) PRIMARY KEY, prompt TEXT)"))
+            ctx_bad = MigrationContext.configure(conn)
+            monkeypatch.setattr(mig_mod, "op", Operations(ctx_bad))
+            mig_mod.upgrade()
+        conn.execute(text("DROP TABLE ai_interaction_traces"))
+        AiInteractionTrace.__table__.create(bind=conn, checkfirst=True)
         ctx = MigrationContext.configure(conn)
         op_proxy = Operations(ctx)
         monkeypatch.setattr(mig_mod, "op", op_proxy)
@@ -2342,3 +2355,835 @@ def test_v2_review_findings_all_nine_fixes(monkeypatch):
 
 
 
+
+
+def test_v2_post_b470ef6_nine_review_fixes(monkeypatch):
+    """Comprehensive verification for all 9 post-b470ef6 review findings."""
+    import importlib.util
+    import json
+    import uuid
+    import pytest
+    from pathlib import Path
+    from alembic.migration import MigrationContext
+    from alembic.operations import Operations
+    from sqlalchemy import create_engine, inspect as sa_inspect, text
+    from sqlalchemy.orm import sessionmaker
+
+    from config.database import Base, DATABASE_URL
+    from models.ai_schemas import (
+        AiChatRequest,
+        AiChatResponsePayload,
+        ConfirmedQueryContext,
+        SessionFilterContext,
+    )
+    from models.models import (
+        AiConversation,
+        AiInteractionTrace,
+        AiTurn,
+        Team,
+        User,
+        UserBranchAssignment,
+        UserFunctionAssignment,
+        UserTeamAssignment,
+    )
+    from repositories.ai_conversation_repository import (
+        AiConversationRepository,
+        ConversationMigrationUnavailableError,
+        ConversationStaleContextError,
+        ConversationVersionConflictError,
+        RequestIdReuseConflictError,
+        compute_request_fingerprint,
+        compute_scope_fingerprint,
+    )
+    from scripts.evaluate_ai_classifier import verify_semantic_answer_correctness
+    from services.ai.catalog import ai_evidence_cache
+    from services.ai.conversation_service import AiConversationService
+    from services.ai.orchestrator import PmsAiOrchestrator
+    from services.ai.trace_logger import (
+        TrainingTraceLogger,
+        assess_pii_quarantine,
+        ensure_trace_schema_once,
+        redact_nested_payload,
+        sanitize_prompt_for_router_training,
+    )
+    from services.cache_invalidation_service import CacheInvalidationService
+    from services.insights_service import InsightAccessError
+
+    db = _build_in_memory_db()
+
+    adham_months = [
+        ("March", 82.50),
+        ("April", 61.20),
+        ("May", 61.20),
+        ("June", None),
+        ("July", 94.24),
+        ("August", 94.18),
+        ("September", 91.00),
+        ("October", 101.20),
+        ("November", 104.50),
+    ]
+    records = []
+    for m_name, sc in adham_months:
+        rec = _make_call_center_record(
+            "EMP888",
+            "Adham Precision",
+            "Inbound",
+            sc if sc is not None else 0.0,
+            45,
+            60,
+            120,
+            150,
+            month=m_name,
+        )
+        if sc is None:
+            object.__setattr__(rec.evaluation, "score", None)
+        else:
+            rec.evaluation.score = sc
+        records.append(rec)
+
+    _patch_records(monkeypatch, records)
+    ai_evidence_cache.clear()
+
+    # -------------------------------------------------------------------------
+    # Issue 1: Replay authorization for team-specific performance levels
+    # -------------------------------------------------------------------------
+    scope_with_corp = {
+        "role": "Manager",
+        "user_id": "00000000-0000-0000-0000-000000000701",
+        "has_unrestricted_team_access": False,
+        "accessible_functions": ["Call Center"],
+        "accessible_teams": ["Inbound"],
+        "accessible_team_levels": [
+            ("Inbound", "Employee"),
+            ("Inbound", "Managerial"),
+            ("Inbound", "Corporate"),
+        ],
+        "accessible_regions": ["EGY"],
+        "accessible_branches": ["dubai"],
+        "employee_id": "MGR701",
+        "is_self_only": False,
+    }
+    scope_without_corp = {
+        **scope_with_corp,
+        "accessible_team_levels": [
+            ("Inbound", "Employee"),
+        ],
+    }
+    assert compute_scope_fingerprint(scope_with_corp) != compute_scope_fingerprint(scope_without_corp)
+    assert compute_scope_fingerprint(scope_with_corp) != compute_scope_fingerprint({**scope_with_corp, "is_self_only": True})
+    assert compute_scope_fingerprint(scope_with_corp) != compute_scope_fingerprint({**scope_with_corp, "employee_id": "MGR999"})
+    assert compute_scope_fingerprint(scope_with_corp) != compute_scope_fingerprint({**scope_with_corp, "accessible_regions": ["UAE"]})
+
+    orch_corp = PmsAiOrchestrator(db, scope_with_corp)
+    r_corp_ok = orch_corp.run_chat_turn(
+        AiChatRequest(
+            prompt="Show Inbound Corporate Balanced Scorecard in September 2026",
+            client_request_id="req-inbound-corp-1",
+            session_state=SessionFilterContext(
+                function="Call Center",
+                team="Inbound",
+                performance_level="Corporate",
+            ),
+        )
+    )
+    assert r_corp_ok.outcome == "answer"
+    assert "Access restricted" not in r_corp_ok.headline
+
+    # Remove only the Corporate/Managerial grant for Inbound while keeping Inbound Employee access;
+    # retrying the exact same client_request_id must NOT replay the old Corporate answer.
+    orch_no_corp = PmsAiOrchestrator(db, scope_without_corp)
+    r_corp_revoked = orch_no_corp.run_chat_turn(
+        AiChatRequest(
+            prompt="Show Inbound Corporate Balanced Scorecard in September 2026",
+            conversation_id=r_corp_ok.conversation_id,
+            context_version=1,
+            client_request_id="req-inbound-corp-1",
+            session_state=SessionFilterContext(
+                function="Call Center",
+                team="Inbound",
+                performance_level="Corporate",
+            ),
+        )
+    )
+    assert r_corp_revoked.outcome == "restricted_access"
+    assert "Access restricted" in r_corp_revoked.headline
+    assert r_corp_revoked.headline != r_corp_ok.headline
+
+    # -------------------------------------------------------------------------
+    # Issue 2: Fail safely for legacy turns without fingerprints
+    # -------------------------------------------------------------------------
+    legacy_scope = {
+        "role": "Manager",
+        "user_id": "00000000-0000-0000-0000-000000000702",
+        "has_unrestricted_team_access": False,
+        "accessible_functions": ["Call Center"],
+        "accessible_teams": ["Inbound"],
+    }
+    conv_svc_leg = AiConversationService(db, legacy_scope)
+    leg_conv = conv_svc_leg.create_conversation(
+        scope=legacy_scope,
+        initial_state=SessionFilterContext(function="Call Center", team="Inbound"),
+    )
+    # Insert a completed legacy turn WITHOUT request_fingerprint, scope_fingerprint, or eval_id
+    legacy_turn_row = AiTurn(
+        id=str(uuid.uuid4()),
+        conversation_id=leg_conv.conversation_id,
+        turn_index=1,
+        client_request_id="req-legacy-nofp",
+        status="completed",
+        user_prompt_redacted="What was <EMPLOYEE_NAME>'s score in September 2026?",
+        validated_plan={"intent": "ranking", "team": "Inbound", "function": "Call Center"},
+        evidence_summary={"records": 1},  # No fingerprints!
+        response_payload={
+            "trace_id": "leg-trace-1",
+            "outcome": "answer",
+            "headline": "LEGACY STALE ANSWER 50.0%",
+            "narrative_bullets": [],
+            "visual_cards": [],
+            "citations": [],
+            "deep_links": [],
+            "suggested_followups": [],
+            "resolved_session_state": {"function": "Call Center", "team": "Inbound"},
+            "domain_guardrail_notes": [],
+            "tool_calls": [],
+            "provider_used": "deterministic-local",
+            "model_used": "pms-deterministic-v1",
+            "latency_ms": 5,
+        },
+        outcome="answer",
+        route_used="local_rules",
+        provider_calls=0,
+        total_ms=5.0,
+    )
+    db.add(legacy_turn_row)
+    db.commit()
+
+    # 2a. Legacy turn after changed prompt -> raises RequestIdReuseConflictError
+    with pytest.raises(RequestIdReuseConflictError):
+        PmsAiOrchestrator(db, legacy_scope).run_chat_turn(
+            AiChatRequest(
+                prompt="Completely different prompt on legacy request id",
+                conversation_id=leg_conv.conversation_id,
+                context_version=1,
+                client_request_id="req-legacy-nofp",
+                session_state=SessionFilterContext(function="Call Center", team="Inbound"),
+            )
+        )
+
+    # 2b. Legacy turn after changed access -> does NOT replay "LEGACY STALE ANSWER 50.0%"; returns restricted_access
+    revoked_legacy_scope = {
+        **legacy_scope,
+        "accessible_teams": ["Outbound"],
+    }
+    r_leg_revoked = PmsAiOrchestrator(db, revoked_legacy_scope).run_chat_turn(
+        AiChatRequest(
+            prompt="What was Adham's score in September 2026?",
+            conversation_id=leg_conv.conversation_id,
+            context_version=1,
+            client_request_id="req-legacy-nofp",
+            session_state=SessionFilterContext(function="Call Center", team="Inbound"),
+        )
+    )
+    assert r_leg_revoked.outcome == "restricted_access"
+    assert "LEGACY STALE ANSWER" not in r_leg_revoked.headline
+
+    # 2c. Legacy turn after changed published data with authorized scope -> recomputes fresh 91.0% instead of replaying 50.0%
+    legacy_turn_row.status = "completed"
+    legacy_turn_row.evidence_summary = {"records": 1}
+    legacy_turn_row.response_payload = {
+        **legacy_turn_row.response_payload,
+        "headline": "LEGACY STALE ANSWER 50.0%",
+    }
+    conv_obj = db.query(AiConversation).filter(AiConversation.id == leg_conv.conversation_id).first()
+    assert conv_obj is not None
+    conv_obj.context_version = 1
+    db.commit()
+
+    CacheInvalidationService.bump_data_version()
+    ai_evidence_cache.clear()
+    r_leg_recomputed = PmsAiOrchestrator(db, legacy_scope).run_chat_turn(
+        AiChatRequest(
+            prompt="What was Adham's score in September 2026?",
+            conversation_id=leg_conv.conversation_id,
+            context_version=1,
+            client_request_id="req-legacy-nofp",
+            session_state=SessionFilterContext(function="Call Center", team="Inbound"),
+        )
+    )
+    assert r_leg_recomputed.outcome == "answer"
+    assert "91.0%" in r_leg_recomputed.headline
+    assert "LEGACY STALE ANSWER" not in r_leg_recomputed.headline
+
+    # -------------------------------------------------------------------------
+    # Issue 3: Revalidate permissions during execution and context restoration
+    # -------------------------------------------------------------------------
+    team_inb = Team(id=uuid.uuid4(), name="Inbound", db_name="Inbound", display_name="Inbound", is_active=True)
+    team_out = Team(id=uuid.uuid4(), name="Outbound", db_name="Outbound", display_name="Outbound", is_active=True)
+    db.add_all([team_inb, team_out])
+    db.flush()
+
+    live_user_uuid = uuid.uuid4()
+    live_user = User(
+        id=live_user_uuid,
+        username="live_mgr",
+        email="live_mgr@sgh.com",
+        password_hash="hashed",
+        full_name="Live Manager",
+        role="Manager",
+        is_active=True,
+    )
+    db.add(live_user)
+    db.flush()
+
+    ufa = UserFunctionAssignment(user_id=live_user_uuid, function_name="Call Center", assigned_by="system")
+    uta_emp = UserTeamAssignment(user_id=live_user_uuid, team_id=team_inb.id, performance_level="Employee", assigned_by="system")
+    uta_mgr = UserTeamAssignment(user_id=live_user_uuid, team_id=team_inb.id, performance_level="Managerial", assigned_by="system")
+    uba = UserBranchAssignment(user_id=live_user_uuid, branch_key="dubai", assigned_by="system")
+    db.add_all([ufa, uta_emp, uta_mgr, uba])
+    db.commit()
+
+    live_scope = {
+        "user_id": str(live_user_uuid),
+        "role": "Manager",
+        "is_active": True,
+        "has_unrestricted_team_access": False,
+        "accessible_functions": ["Call Center"],
+        "accessible_teams": ["Inbound"],
+        "accessible_team_levels": [("Inbound", "Employee"), ("Inbound", "Managerial")],
+        "accessible_branches": ["dubai"],
+        "_db_user_verified": True,
+    }
+    live_orch = PmsAiOrchestrator(db, live_scope)
+    r_live_t1 = live_orch.run_chat_turn(
+        AiChatRequest(
+            prompt="What was Adham's score in September 2026?",
+            session_state=SessionFilterContext(function="Call Center", team="Inbound", branch="dubai"),
+        )
+    )
+    assert r_live_t1.outcome == "answer"
+    assert r_live_t1.conversation_id is not None
+
+    # Save pending clarification choices referencing Inbound and Outbound on the conversation
+    live_conv_row = db.query(AiConversation).filter(AiConversation.id == r_live_t1.conversation_id).first()
+    assert live_conv_row is not None
+    live_conv_row.pending_clarification = {
+        "code": "AMBIGUOUS_PERSON",
+        "question": "Which person?",
+        "choices": [
+            {
+                "id": "c-inb",
+                "label": "Adham Precision (Inbound)",
+                "prompt_to_send": "Adham Precision in Inbound",
+                "team": "Inbound",
+                "employee_id": "EMP888",
+                "employee_name": "Adham Precision",
+            },
+            {
+                "id": "c-out",
+                "label": "Secret Agent (Outbound)",
+                "prompt_to_send": "Secret Agent in Outbound",
+                "team": "Outbound",
+                "employee_id": "EMP_OUT",
+                "employee_name": "Secret Agent",
+            },
+        ],
+    }
+    db.commit()
+
+    # 3a. Mid-execution permission revocation: revoke Inbound access in DB while tool execution is running
+    from services.ai.tool_registry import DeterministicToolRegistry
+
+    orig_exec_spotlight = DeterministicToolRegistry.execute_agent_spotlight_and_trend
+
+    def _exec_spotlight_and_revoke_db(self_tools, *args, **kwargs):
+        res_tool = orig_exec_spotlight(self_tools, *args, **kwargs)
+        # Revoke Inbound team access in DB before orchestrator completes turn!
+        db.query(UserTeamAssignment).filter(UserTeamAssignment.user_id == live_user_uuid).delete()
+        db.add(UserTeamAssignment(user_id=live_user_uuid, team_id=team_out.id, performance_level="Employee", assigned_by="system"))
+        db.commit()
+        return res_tool
+
+    monkeypatch.setattr(DeterministicToolRegistry, "execute_agent_spotlight_and_trend", _exec_spotlight_and_revoke_db)
+    r_mid_revoke = PmsAiOrchestrator(db, live_scope).run_chat_turn(
+        AiChatRequest(
+            prompt="What was Adham's score in July 2026?",
+            conversation_id=r_live_t1.conversation_id,
+            context_version=r_live_t1.context_version,
+            session_state=SessionFilterContext(function="Call Center", team="Inbound", branch="dubai"),
+        )
+    )
+    monkeypatch.setattr(DeterministicToolRegistry, "execute_agent_spotlight_and_trend", orig_exec_spotlight)
+    assert r_mid_revoke.outcome == "restricted_access"
+    assert "permissions changed during execution" in r_mid_revoke.headline
+    assert "94.24%" not in r_mid_revoke.headline
+    assert r_mid_revoke.visual_cards == []
+
+    # 3b. Context restoration after Inbound revocation: get_context must redact Adham Precision & Inbound choices
+    restored_ctx = AiConversationService(db, live_scope).get_context(
+        conversation_id=r_live_t1.conversation_id,
+        scope=live_scope,
+    )
+    assert restored_ctx.confirmed_context.last_subject_employee_id is None
+    assert restored_ctx.confirmed_context.last_subject_employee_name is None
+    assert restored_ctx.confirmed_context.team is None
+    if restored_ctx.pending_clarification:
+        choice_ids = [c.id for c in restored_ctx.pending_clarification.choices]
+        assert "c-inb" not in choice_ids
+        assert "Adham" not in json.dumps(restored_ctx.model_dump())
+
+    # 3c. Role demotion in DB (Manager -> Employee self-only with employee_id="EMP999") replaces effective role
+    live_user.role = "Employee"
+    live_user.employee_id = "EMP999"
+    db.commit()
+    rebuilt = AiConversationService(db, live_scope).validate_live_account_and_scope(live_scope)
+    assert rebuilt["role"] == "Employee"
+    assert rebuilt["is_self_only"] is True
+    assert rebuilt["employee_id"] == "EMP999"
+
+    # -------------------------------------------------------------------------
+    # Issue 4: Best/worst month follow-ups and missing-score handling
+    # -------------------------------------------------------------------------
+    gm_scope = {
+        "role": "General Manager",
+        "user_id": "00000000-0000-0000-0000-000000000704",
+        "has_unrestricted_team_access": True,
+        "accessible_branches": ["dubai", "sharjah", "ajman", "clinics"],
+    }
+    gm_orch = PmsAiOrchestrator(db, gm_scope)
+
+    # 4a. Open-ended worst month question does NOT start with "No." and surfaces missing-month limitation in headline
+    r_open_worst = gm_orch.run_chat_turn(
+        AiChatRequest(
+            prompt="What was Adham's worst month?",
+            session_state=SessionFilterContext(function="Call Center", team="Inbound"),
+        )
+    )
+    assert r_open_worst.outcome == "answer"
+    assert not r_open_worst.headline.startswith("No.")
+    assert not r_open_worst.headline.startswith("Yes.")
+    assert "was April 2026 and May 2026 (tied) at 61.2%" in r_open_worst.headline
+    assert "June 2026 had no evaluated score and was excluded" in r_open_worst.headline
+
+    # 4b. Follow-up "And his best month?" overrides inherited worst-month operation
+    r_followup_best = gm_orch.run_chat_turn(
+        AiChatRequest(
+            prompt="And his best month?",
+            conversation_id=r_open_worst.conversation_id,
+            context_version=r_open_worst.context_version,
+            session_state=r_open_worst.resolved_session_state,
+        )
+    )
+    assert r_followup_best.outcome == "answer"
+    assert r_followup_best.validated_plan_v2 is not None
+    assert r_followup_best.validated_plan_v2.operations[0].kind == "person_best_period"
+    assert not r_followup_best.headline.startswith("No.")
+    assert "was November 2026 at 104.5%" in r_followup_best.headline
+    assert "worst month" not in r_followup_best.headline
+
+    # 4c. Follow-up "What about his worst?" overrides inherited best-month operation
+    r_followup_worst_again = gm_orch.run_chat_turn(
+        AiChatRequest(
+            prompt="What about his worst?",
+            conversation_id=r_followup_best.conversation_id,
+            context_version=r_followup_best.context_version,
+            session_state=r_followup_best.resolved_session_state,
+        )
+    )
+    assert r_followup_worst_again.outcome == "answer"
+    assert r_followup_worst_again.validated_plan_v2 is not None
+    assert r_followup_worst_again.validated_plan_v2.operations[0].kind == "person_worst_period"
+    assert "was April 2026 and May 2026 (tied) at 61.2%" in r_followup_worst_again.headline
+    assert "best month" not in r_followup_worst_again.headline
+
+    # 4d. Requested month with no score (June 2026) reports unavailable and never borrows another month's score,
+    # followed by a later month with a score (July 2026 -> 94.24%)
+    r_june_missing = gm_orch.run_chat_turn(
+        AiChatRequest(
+            prompt="What was Adham's score in June 2026?",
+            session_state=SessionFilterContext(function="Call Center", team="Inbound"),
+        )
+    )
+    assert r_june_missing.outcome == "answer"
+    assert "No published evaluation score is available for Adham Precision (EMP888) in June 2026" in r_june_missing.headline
+    assert "104.5%" not in r_june_missing.headline
+    assert "94.24%" not in r_june_missing.headline
+
+    r_july_after_missing = gm_orch.run_chat_turn(
+        AiChatRequest(
+            prompt="What about July 2026?",
+            conversation_id=r_june_missing.conversation_id,
+            context_version=r_june_missing.context_version,
+            session_state=r_june_missing.resolved_session_state,
+        )
+    )
+    assert r_july_after_missing.outcome == "answer"
+    assert "Adham Precision (EMP888) scored 94.24%" in r_july_after_missing.headline
+    assert "July 2026" in r_july_after_missing.headline
+
+    # -------------------------------------------------------------------------
+    # Issue 5: Bind retries to full request and refreshed context
+    # -------------------------------------------------------------------------
+    base_fp = compute_request_fingerprint(
+        prompt="Show score",
+        session_filters={
+            "function": "Call Center",
+            "team": "Inbound",
+            "position": "Agent",
+            "employee_id": "EMP888",
+            "region": "UAE",
+            "branch": "dubai",
+            "performance_level": "Employee",
+            "month": "September",
+            "year": 2026,
+            "period": "2026-09",
+            "periods": ["2026-09"],
+        },
+        answer_detail="brief",
+        clarification_choice_id="c1",
+    )
+    for changed_k, changed_v in (
+        ("function", "RCM"),
+        ("team", "Outbound"),
+        ("position", "Trainer"),
+        ("employee_id", "EMP999"),
+        ("region", "EGY"),
+        ("branch", "sharjah"),
+        ("performance_level", "Managerial"),
+        ("month", "August"),
+        ("year", 2025),
+        ("periods", ["2026-08"]),
+    ):
+        mod_filters = {
+            "function": "Call Center",
+            "team": "Inbound",
+            "position": "Agent",
+            "employee_id": "EMP888",
+            "region": "UAE",
+            "branch": "dubai",
+            "performance_level": "Employee",
+            "month": "September",
+            "year": 2026,
+            "period": "2026-09",
+            "periods": ["2026-09"],
+            changed_k: changed_v,
+        }
+        assert compute_request_fingerprint(
+            prompt="Show score",
+            session_filters=mod_filters,
+            answer_detail="brief",
+            clarification_choice_id="c1",
+        ) != base_fp
+
+    # Reusing a client_request_id with different filters raises RequestIdReuseConflictError
+    r_fp_1 = gm_orch.run_chat_turn(
+        AiChatRequest(
+            prompt="Hi",
+            client_request_id="req-filter-bind-1",
+            session_state=SessionFilterContext(function="Call Center", team="Inbound"),
+        )
+    )
+    with pytest.raises(RequestIdReuseConflictError):
+        gm_orch.run_chat_turn(
+            AiChatRequest(
+                prompt="Hi",
+                conversation_id=r_fp_1.conversation_id,
+                context_version=1,
+                client_request_id="req-filter-bind-1",
+                session_state=SessionFilterContext(function="Call Center", team="Outbound"),
+            )
+        )
+
+    # Stale request with wrong context_version must fail BEFORE claiming a turn so immediate retry is not blocked
+    with pytest.raises(ConversationVersionConflictError):
+        gm_orch.run_chat_turn(
+            AiChatRequest(
+                prompt="Follow up with stale version",
+                conversation_id=r_fp_1.conversation_id,
+                context_version=1,  # current is 2!
+                client_request_id="req-stale-no-block",
+                session_state=SessionFilterContext(function="Call Center", team="Inbound"),
+            )
+        )
+    # Immediate retry with the same client_request_id and refreshed context_version=2 succeeds without TurnAlreadyInFlightError!
+    r_retry_after_409 = gm_orch.run_chat_turn(
+        AiChatRequest(
+            prompt="Follow up with stale version",
+            conversation_id=r_fp_1.conversation_id,
+            context_version=2,
+            client_request_id="req-stale-no-block",
+            session_state=SessionFilterContext(function="Call Center", team="Inbound"),
+        )
+    )
+    assert r_retry_after_409.context_version == 3
+
+    # -------------------------------------------------------------------------
+    # Issue 6: Unicode-safe trace and training-data redaction + PII quarantine
+    # -------------------------------------------------------------------------
+    unicode_names = [
+        "مريم محسن محمود",
+        "Renée Joséphine",
+        "Fatima-Zahra Al-Mansoor",
+        "Adham Precision",
+    ]
+    unicode_prompt = (
+        "Compare مريم محسن محمود and مريم with Renée Joséphine (Renée) and Fatima-Zahra in Inbound"
+    )
+    redacted_unicode = sanitize_prompt_for_router_training(
+        unicode_prompt,
+        known_employee_names=unicode_names,
+    )
+    for forbidden_tok in ("مريم", "محسن", "Renée", "Joséphine", "Fatima-Zahra", "Fatima"):
+        assert forbidden_tok not in redacted_unicode
+    assert "<EMPLOYEE_NAME>" in redacted_unicode
+
+    nested_unicode = redact_nested_payload(
+        {
+            "headline": "مريم محسن محمود scored 94.4% while Renée scored 88.0%.",
+            "nested": {"employee_name": "مريم محسن محمود", "note": "Check Fatima-Zahra's trend"},
+        },
+        known_employee_names=unicode_names,
+    )
+    assert "مريم" not in json.dumps(nested_unicode, ensure_ascii=False)
+    assert "Renée" not in json.dumps(nested_unicode, ensure_ascii=False)
+    assert "Fatima" not in json.dumps(nested_unicode, ensure_ascii=False)
+
+    # Uncertain person reference not in known_employee_names is flagged by assess_pii_quarantine
+    uncertain_sanitized = sanitize_prompt_for_router_training(
+        "Is UnknownPersonXyz a new joiner in Inbound?",
+        known_employee_names=unicode_names,
+        run_syntactic_extraction=False,
+    )
+    is_quarantined, q_reasons = assess_pii_quarantine(
+        uncertain_sanitized,
+        original_text="Is UnknownPersonXyz a new joiner in Inbound?",
+        known_employee_names=unicode_names,
+    )
+    assert is_quarantined is True
+    assert len(q_reasons) > 0
+
+    # Quarantined trace is excluded from unverified export unless explicitly Admin-reviewed
+    q_trace_id = uuid.uuid4()
+    db.add(
+        AiInteractionTrace(
+            id=q_trace_id,
+            user_id=gm_scope["user_id"],
+            role="General Manager",
+            prompt="Is UnknownPersonXyz a new joiner in Inbound?",
+            sanitized_prompt="Is UnknownPersonXyz a new joiner in Inbound?",
+            session_state={"function": "Call Center", "team": "Inbound"},
+            tool_calls=[],
+            tool_digest={"pii_quarantined": True, "pii_quarantine_reasons": ["unredacted_person_context"]},
+            structured_response={"headline": "Clarification needed."},
+            provider_name="deterministic-local",
+            model_name="pms-deterministic-v1",
+            latency_ms=5,
+            non_empty_evidence=True,
+            guardrail_triggered=False,
+            feedback_rating="up",
+            is_distillation_eligible=True,
+            reviewer_verified=False,
+        )
+    )
+    db.commit()
+    unverified_exports = TrainingTraceLogger(db).export_distillation_dataset(verified_only=False)
+    assert all(x.trace_id != str(q_trace_id) for x in unverified_exports)
+
+    # -------------------------------------------------------------------------
+    # Issue 7: Hardened migration adoption and rollback (staging/prod DDL + 4 schema cases)
+    # -------------------------------------------------------------------------
+    for env_name in ("staging", "production"):
+        stg_engine = create_engine("sqlite:///:memory:")
+        StgSession = sessionmaker(bind=stg_engine)
+        stg_db = StgSession()
+        monkeypatch.setenv("APP_ENV", env_name)
+        ensure_trace_schema_once(stg_db)
+        assert sa_inspect(stg_engine).get_table_names() == []
+        stg_repo = AiConversationRepository(stg_db)
+        assert stg_repo.is_schema_ready() is False
+        with pytest.raises(ConversationMigrationUnavailableError):
+            stg_repo.create_conversation(owner_user_id="u1", owner_role="Manager")
+    monkeypatch.setenv("APP_ENV", "test")
+
+    mig_dir = Path(__file__).resolve().parent.parent / "migrations" / "versions"
+    mig_file = next(mig_dir.glob("*c9e1a2b3d4f5*.py"))
+    spec = importlib.util.spec_from_file_location("mig_c9e1a2b3d4f5_v2", mig_file)
+    assert spec is not None and spec.loader is not None
+    mig_mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mig_mod)
+
+    # Test (a) Production-shaped pre-v2 trace table (19 base columns + existing trace row) -> upgrade -> data preserved -> review data blocks destructive downgrade
+    prod_shape_engine = create_engine("sqlite:///:memory:")
+    with prod_shape_engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                CREATE TABLE ai_interaction_traces (
+                    id VARCHAR(64) PRIMARY KEY NOT NULL,
+                    user_id VARCHAR(100),
+                    role VARCHAR(50) NOT NULL,
+                    prompt TEXT NOT NULL,
+                    sanitized_prompt TEXT NOT NULL,
+                    session_state JSON NOT NULL,
+                    tool_calls JSON NOT NULL,
+                    tool_digest JSON NOT NULL,
+                    structured_response JSON NOT NULL,
+                    provider_name VARCHAR(60) NOT NULL,
+                    model_name VARCHAR(100) NOT NULL,
+                    latency_ms INTEGER NOT NULL,
+                    non_empty_evidence BOOLEAN NOT NULL,
+                    guardrail_triggered BOOLEAN NOT NULL,
+                    feedback_rating VARCHAR(20),
+                    feedback_reason VARCHAR(120),
+                    is_distillation_eligible BOOLEAN NOT NULL,
+                    created_at TIMESTAMP NOT NULL,
+                    updated_at TIMESTAMP NOT NULL
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                INSERT INTO ai_interaction_traces (
+                    id, user_id, role, prompt, sanitized_prompt, session_state,
+                    tool_calls, tool_digest, structured_response, provider_name,
+                    model_name, latency_ms, non_empty_evidence, guardrail_triggered,
+                    is_distillation_eligible, created_at, updated_at
+                ) VALUES (
+                    'trace-pre-1', 'u-1', 'Manager', 'Hi', 'Hi', '{}',
+                    '[]', '{}', '{}', 'deterministic', 'v1', 5, 1, 0, 1,
+                    CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                )
+                """
+            )
+        )
+        monkeypatch.setattr(mig_mod, "op", Operations(MigrationContext.configure(conn)))
+        mig_mod.upgrade()
+        cols_after_adopt = {c["name"] for c in sa_inspect(conn).get_columns("ai_interaction_traces")}
+        assert {"turn_id", "reviewer_verified", "reviewer_id", "reviewed_at"}.issubset(cols_after_adopt)
+        preserved_count = int(conn.execute(text("SELECT COUNT(*) FROM ai_interaction_traces WHERE id = 'trace-pre-1'")).scalar() or 0)
+        assert preserved_count == 1
+
+        # Mark row as Admin-reviewed -> downgrade must refuse destructive rollback
+        conn.execute(text("UPDATE ai_interaction_traces SET reviewer_verified = 1, reviewer_id = 'admin-1' WHERE id = 'trace-pre-1'"))
+        with pytest.raises(RuntimeError, match="Refusing destructive downgrade"):
+            mig_mod.downgrade()
+
+        # Clear review metadata -> downgrade drops ai_turns and ai_conversations while preserving trace rows & columns
+        conn.execute(text("UPDATE ai_interaction_traces SET reviewer_verified = 0, reviewer_id = NULL WHERE id = 'trace-pre-1'"))
+        mig_mod.downgrade()
+        cols_after_down = {c["name"] for c in sa_inspect(conn).get_columns("ai_interaction_traces")}
+        assert {"turn_id", "reviewer_verified", "reviewer_id", "reviewed_at"}.issubset(cols_after_down)
+        assert int(conn.execute(text("SELECT COUNT(*) FROM ai_interaction_traces WHERE id = 'trace-pre-1'")).scalar() or 0) == 1
+
+    if str(DATABASE_URL).startswith("postgresql"):
+        pg_engine = create_engine(DATABASE_URL)
+        tmp_bad = f"tmp_ai_mig_bad_{uuid.uuid4().hex[:10]}"
+        tmp_prod = f"tmp_ai_mig_prod_{uuid.uuid4().hex[:10]}"
+        try:
+            with pg_engine.begin() as pg_conn:
+                pg_conn.execute(text(f"CREATE SCHEMA {tmp_bad}"))
+                pg_conn.execute(text(f"SET LOCAL search_path TO {tmp_bad}"))
+                pg_conn.execute(text("CREATE TABLE ai_interaction_traces (id UUID PRIMARY KEY, prompt TEXT)"))
+                monkeypatch.setattr(mig_mod, "op", Operations(MigrationContext.configure(pg_conn)))
+                with pytest.raises(RuntimeError, match="missing required base columns"):
+                    mig_mod.upgrade()
+
+            with pg_engine.begin() as pg_conn2:
+                pg_conn2.execute(text(f"CREATE SCHEMA {tmp_prod}"))
+                pg_conn2.execute(text(f"SET LOCAL search_path TO {tmp_prod}"))
+                pg_conn2.execute(
+                    text(
+                        """
+                        CREATE TABLE ai_interaction_traces (
+                            id UUID PRIMARY KEY NOT NULL,
+                            user_id VARCHAR(100),
+                            role VARCHAR(50) NOT NULL,
+                            prompt TEXT NOT NULL,
+                            sanitized_prompt TEXT NOT NULL,
+                            session_state JSON NOT NULL,
+                            tool_calls JSON NOT NULL,
+                            tool_digest JSON NOT NULL,
+                            structured_response JSON NOT NULL,
+                            provider_name VARCHAR(60) NOT NULL,
+                            model_name VARCHAR(100) NOT NULL,
+                            latency_ms INTEGER NOT NULL,
+                            non_empty_evidence BOOLEAN NOT NULL,
+                            guardrail_triggered BOOLEAN NOT NULL,
+                            feedback_rating VARCHAR(20),
+                            feedback_reason VARCHAR(120),
+                            is_distillation_eligible BOOLEAN NOT NULL,
+                            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                        )
+                        """
+                    )
+                )
+                pg_conn2.execute(
+                    text(
+                        """
+                        INSERT INTO ai_interaction_traces (
+                            id, user_id, role, prompt, sanitized_prompt, session_state,
+                            tool_calls, tool_digest, structured_response, provider_name,
+                            model_name, latency_ms, non_empty_evidence, guardrail_triggered,
+                            is_distillation_eligible
+                        ) VALUES (
+                            '00000000-0000-0000-0000-000000000901', 'u-pg', 'Manager', 'Hi', 'Hi', '{}',
+                            '[]', '{}', '{}', 'deterministic', 'v1', 5, true, false, true
+                        )
+                        """
+                    )
+                )
+                monkeypatch.setattr(mig_mod, "op", Operations(MigrationContext.configure(pg_conn2)))
+                mig_mod.upgrade()
+                pg_cols_up = {c["name"] for c in sa_inspect(pg_conn2).get_columns("ai_interaction_traces", schema=tmp_prod)}
+                assert {"turn_id", "reviewer_verified", "reviewer_id", "reviewed_at"}.issubset(pg_cols_up)
+                assert int(pg_conn2.execute(text("SELECT COUNT(*) FROM ai_interaction_traces")).scalar() or 0) == 1
+                mig_mod.downgrade()
+                pg_cols_down = {c["name"] for c in sa_inspect(pg_conn2).get_columns("ai_interaction_traces", schema=tmp_prod)}
+                assert {"turn_id", "reviewer_verified", "reviewer_id", "reviewed_at"}.issubset(pg_cols_down)
+                assert int(pg_conn2.execute(text("SELECT COUNT(*) FROM ai_interaction_traces")).scalar() or 0) == 1
+        finally:
+            with pg_engine.begin() as clean_conn:
+                clean_conn.execute(text(f"DROP SCHEMA IF EXISTS {tmp_bad} CASCADE"))
+                clean_conn.execute(text(f"DROP SCHEMA IF EXISTS {tmp_prod} CASCADE"))
+            pg_engine.dispose()
+
+    # -------------------------------------------------------------------------
+    # Issue 8: Evaluation proves semantic answer correctness & rejects contradictions
+    # -------------------------------------------------------------------------
+    scenario_item = {
+        "scenario_id": "test_contradiction",
+        "expected_outcome": "answer",
+        "expected_operation_kind": "person_worst_period",
+        "expected_polarity": "open",
+        "expected_facts": {
+            "subject_name": "Adham Tarek",
+            "direction": "worst",
+            "target_period": "March 2026",
+            "target_value": "82.0%",
+        },
+        "expected_must_contain": ["Adham Tarek", "March 2026", "82.0%"],
+    }
+    # 8a. Missing validated_plan_v2 must fail when expected_operation_kind is set
+    resp_no_plan = r_open_worst.model_copy(
+        update={
+            "headline": "Adham Tarek's worst month was March 2026 at 82.0%.",
+            "validated_plan_v2": None,
+        }
+    )
+    ok_no_plan, errs_no_plan = verify_semantic_answer_correctness(scenario_item, resp_no_plan)
+    assert ok_no_plan is False
+    assert any("validated_plan_v2" in e for e in errs_no_plan)
+
+    # 8b. Contradictory answer containing all expected substrings ("Adham Tarek", "March 2026", "82.0%") must fail
+    contradictory_resp = r_open_worst.model_copy(
+        update={
+            "headline": (
+                "No. Adham Tarek's best month was March 2026 at 82.0%, while their worst month was August 2026 at 96.5%."
+            ),
+        }
+    )
+    ok_contra, errs_contra = verify_semantic_answer_correctness(scenario_item, contradictory_resp)
+    assert ok_contra is False
+    assert len(errs_contra) >= 2

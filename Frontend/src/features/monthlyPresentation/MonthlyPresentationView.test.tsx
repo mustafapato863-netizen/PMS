@@ -2,6 +2,7 @@ import { render, screen, fireEvent, within, waitFor } from '@testing-library/rea
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import MonthlyPresentationView from './MonthlyPresentationView';
+import type { MonthlyPresentationViewProps } from './MonthlyPresentationView';
 import { OFFSHORE_EGYPT_SEP_2026_DATA } from './monthlyOverviewData';
 import { recommendedActionForKpi, teamActionDueLabel } from './teamDeepDiveData';
 import { readKpiTrend } from './components/SelectableKpiCard';
@@ -11,30 +12,50 @@ import {
   showStoredPlaceholder,
 } from './presentationMode';
 
-vi.mock('../../context/auth', () => ({
-  useAuth: () => ({
-    currentUser: {
-      email: 'exec@company.com',
-      accessible_regions: ['EGY', 'UAE'],
-      assigned_region: null,
-    },
-  }),
+const monthlyTestState = vi.hoisted(() => ({
+  role: 'CEO',
+  currentUser: null as null | {
+    email: string;
+    accessible_regions: string[];
+    accessible_functions: string[];
+    assigned_region: string | null;
+  },
+  catalog: null as null | {
+    data: {
+      periods: Array<{ year: number; month: string; key: string }>;
+      months: string[];
+      scopes: Array<{ team: string; region: string | null; performance_level: string; position: string | null }>;
+      teams: Array<{ team: string; region: string | null; functions: string[]; performance_levels: string[] }>;
+      authorized_functions: string[];
+    };
+    isLoading: boolean;
+    isError: boolean;
+    refetch: () => void;
+  },
+  summary: null as null | {
+    data: unknown[];
+    isLoading: boolean;
+    isError: boolean;
+    refetch: () => void;
+  },
 }));
 
-const roleState = vi.hoisted(() => ({ role: 'CEO' }));
+vi.mock('../../context/auth', () => ({
+  useAuth: () => ({ currentUser: monthlyTestState.currentUser }),
+}));
 
 vi.mock('../../context/RoleContext', () => ({
   useUserRole: () => ({
-    role: roleState.role,
+    role: monthlyTestState.role,
   }),
 }));
 
 vi.mock('../executive/useSummaryRecords', () => ({
-  useSummaryRecords: () => ({
-    data: [],
-    isLoading: false,
-    isError: false,
-  }),
+  useSummaryRecords: () => monthlyTestState.summary,
+}));
+
+vi.mock('../../hooks/api/usePerformanceCatalog', () => ({
+  usePerformanceCatalog: () => monthlyTestState.catalog,
 }));
 
 const mockSaveAction = vi.fn().mockResolvedValue({
@@ -56,32 +77,133 @@ function LocationProbe() {
   return <div data-testid="location-probe">{location.pathname}{location.search}</div>;
 }
 
+function MonthlyPreview(props: MonthlyPresentationViewProps = {}) {
+  return <MonthlyPresentationView data={OFFSHORE_EGYPT_SEP_2026_DATA} {...props} />;
+}
+
 describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Deep Dive', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    roleState.role = 'CEO';
+    monthlyTestState.role = 'CEO';
+    monthlyTestState.currentUser = {
+      email: 'exec@company.com',
+      accessible_regions: ['EGY', 'UAE'],
+      accessible_functions: [],
+      assigned_region: null,
+    };
+    monthlyTestState.catalog = {
+      data: {
+        periods: [{ year: 2026, month: 'September', key: '2026-09' }],
+        months: ['September'],
+        scopes: [],
+        teams: [
+          { team: 'Inbound', region: 'EGY', functions: ['Call Center'], performance_levels: ['Employee'] },
+          { team: 'Coding EGY', region: 'EGY', functions: ['RCM'], performance_levels: ['Employee'] },
+          { team: 'Submission EGY', region: 'EGY', functions: ['RCM'], performance_levels: ['Employee'] },
+          { team: 'Pre-Approvals IP', region: 'EGY', functions: ['RCM'], performance_levels: ['Employee'] },
+          { team: 'Outbound', region: 'EGY', functions: ['Call Center'], performance_levels: ['Employee'] },
+          { team: 'RCM', region: 'EGY', functions: ['RCM'], performance_levels: ['Employee'] },
+          { team: 'Marketing', region: 'EGY', functions: ['Marketing'], performance_levels: ['Employee'] },
+          { team: 'IT', region: 'EGY', functions: ['IT'], performance_levels: ['Employee'] },
+          { team: 'Human Resources', region: 'EGY', functions: ['Human Resources'], performance_levels: ['Employee'] },
+          { team: 'Administration', region: 'EGY', functions: ['Administration'], performance_levels: ['Employee'] },
+          { team: 'Finance', region: 'EGY', functions: ['Finance'], performance_levels: ['Employee'] },
+          { team: 'CSR', region: 'UAE', functions: ['CSR'], performance_levels: ['Employee'] },
+          { team: 'Pharmacy', region: 'UAE', functions: ['Pharmacy'], performance_levels: ['Employee'] },
+        ],
+        authorized_functions: [],
+      },
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    };
+    monthlyTestState.summary = { data: [], isLoading: false, isError: false, refetch: vi.fn() };
     window.scrollTo = vi.fn();
     localStorage.clear();
   });
 
-  it.each(['Function Viewer', 'Function Director'])('sends %s to Function Summary, the same rule as Executive Summary', (role) => {
-    roleState.role = role;
+  it.each(['Function Viewer', 'Function Director'])('opens Monthly Review in its authorized scope instead of redirecting to Function Summary', (role) => {
+    monthlyTestState.role = role;
     render(
       <MemoryRouter initialEntries={['/monthly-presentation']}>
         <Routes>
-          <Route path="/monthly-presentation" element={<MonthlyPresentationView />} />
+          <Route path="/monthly-presentation" element={<MonthlyPreview />} />
           <Route path="/function-summary" element={<p>Function Summary</p>} />
         </Routes>
       </MemoryRouter>,
     );
-    expect(screen.getByText('Function Summary')).toBeInTheDocument();
-    expect(screen.queryByTestId('monthly-overview-page')).not.toBeInTheDocument();
+    expect(screen.queryByText('Function Summary')).not.toBeInTheDocument();
+    expect(screen.getByTestId('monthly-assignment-message')).toBeInTheDocument();
+  });
+
+  it('auto-opens a single server-assigned function and leaves other functions out of its overview', async () => {
+    monthlyTestState.role = 'Function Director';
+    monthlyTestState.currentUser!.accessible_functions = ['RCM'];
+    monthlyTestState.catalog!.data.authorized_functions = ['RCM'];
+    render(
+      <MemoryRouter initialEntries={['/monthly-presentation']}>
+        <MonthlyPreview />
+        <LocationProbe />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(screen.getByTestId('location-probe').textContent).toContain('deepDive=rcm'));
+    expect(screen.getByRole('heading', { name: 'RCM Deep Dive' })).toBeInTheDocument();
+    expect(screen.queryByTestId('function-card-marketing')).not.toBeInTheDocument();
+  });
+
+  it('keeps multiple assigned functions selectable and hides unassigned functions', () => {
+    monthlyTestState.role = 'Function Viewer';
+    monthlyTestState.currentUser!.accessible_functions = ['RCM', 'Marketing'];
+    monthlyTestState.catalog!.data.authorized_functions = ['RCM', 'Marketing'];
+    render(
+      <MemoryRouter initialEntries={['/monthly-presentation']}>
+        <MonthlyPreview />
+        <LocationProbe />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByTestId('monthly-overview-page')).toBeInTheDocument();
+    expect(screen.getByTestId('function-card-rcm')).toBeInTheDocument();
+    expect(screen.getByTestId('function-card-marketing')).toBeInTheDocument();
+    expect(screen.queryByTestId('function-card-call-center')).not.toBeInTheDocument();
+    expect(screen.getByTestId('location-probe').textContent).not.toContain('deepDive=');
+  });
+
+  it('does not render an out-of-scope team deep link and clears it from the URL', async () => {
+    monthlyTestState.role = 'Function Director';
+    monthlyTestState.currentUser!.accessible_functions = ['RCM'];
+    monthlyTestState.catalog!.data.authorized_functions = ['RCM'];
+    render(
+      <MemoryRouter initialEntries={['/monthly-presentation?region=egy&deepDive=rcm&team=marketing']}>
+        <MonthlyPreview />
+        <LocationProbe />
+      </MemoryRouter>,
+    );
+
+    expect(screen.queryByTestId('team-deep-dive-page')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('role-detail-page')).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByTestId('location-probe').textContent).not.toContain('team=marketing'));
+  });
+
+  it('shows a truthful no-data state and authorized team names instead of the Egypt sample', () => {
+    render(
+      <MemoryRouter initialEntries={['/monthly-presentation?period=2026-10']}>
+        <MonthlyPresentationView />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByTestId('monthly-no-data')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'No performance data for October 2026' })).toBeInTheDocument();
+    const coveredTeams = screen.getByTestId('monthly-teams-without-data');
+    expect(within(coveredTeams).getByText(/Inbound/)).toBeInTheDocument();
+    expect(screen.queryByText('86.6%')).not.toBeInTheDocument();
   });
 
   it('renders Header with title, Offshore Egypt · September 2026 subtitle, region badge, and Page 1 of 6', () => {
     render(
       <MemoryRouter initialEntries={['/monthly-presentation']}>
-        <MonthlyPresentationView />
+        <MonthlyPreview />
       </MemoryRouter>,
     );
 
@@ -110,7 +232,7 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
   it('renders Overall Company Performance with 86.6%, Grade C, 13.4% below target, +0.5% vs August, Current/Target/Gap, and evaluation note', () => {
     render(
       <MemoryRouter initialEntries={['/monthly-presentation']}>
-        <MonthlyPresentationView />
+        <MonthlyPreview />
       </MemoryRouter>,
     );
 
@@ -134,7 +256,7 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
     const onSelectFunction = vi.fn();
     render(
       <MemoryRouter initialEntries={['/monthly-presentation']}>
-        <MonthlyPresentationView onSelectFunction={onSelectFunction} />
+        <MonthlyPreview onSelectFunction={onSelectFunction} />
         <LocationProbe />
       </MemoryRouter>,
     );
@@ -161,7 +283,7 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
   it('opens Call Center Deep Dive with real employees, support positions, and expandable 6-Month KPI trends', () => {
     render(
       <MemoryRouter initialEntries={['/monthly-presentation']}>
-        <MonthlyPresentationView />
+        <MonthlyPreview />
         <LocationProbe />
       </MemoryRouter>,
     );
@@ -210,7 +332,7 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
   it('navigates from Call Center Deep Dive to Inbound Team Deep Dive and renders all 6 required sections with full-word grades', () => {
     render(
       <MemoryRouter initialEntries={['/monthly-presentation?deepDive=call-center']}>
-        <MonthlyPresentationView />
+        <MonthlyPreview />
         <LocationProbe />
       </MemoryRouter>,
     );
@@ -294,7 +416,7 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
   it('opens RCM, Marketing, IT, Call Center, and Human Resources inside the presentation', () => {
     render(
       <MemoryRouter initialEntries={['/monthly-presentation']}>
-        <MonthlyPresentationView />
+        <MonthlyPreview />
         <LocationProbe />
       </MemoryRouter>,
     );
@@ -320,7 +442,7 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
   it('opens a support position role detail with the 6-month chart, accountability, and a new action', async () => {
     render(
       <MemoryRouter initialEntries={['/monthly-presentation?deepDive=call-center']}>
-        <MonthlyPresentationView />
+        <MonthlyPreview />
         <LocationProbe />
       </MemoryRouter>,
     );
@@ -362,7 +484,7 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
   it('opens Team Leader role detail showing separated individual members with actual performance', async () => {
     render(
       <MemoryRouter initialEntries={['/monthly-presentation?deepDive=call-center&role=team-leader']}>
-        <MonthlyPresentationView />
+        <MonthlyPreview />
         <LocationProbe />
       </MemoryRouter>,
     );
@@ -399,7 +521,7 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
   it('aggregates roles into single cards on the Function Deep Dive and shows individual people only inside Role Detail', () => {
     render(
       <MemoryRouter initialEntries={['/monthly-presentation']}>
-        <MonthlyPresentationView />
+        <MonthlyPreview />
         <LocationProbe />
       </MemoryRouter>,
     );
@@ -541,7 +663,7 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
   it('opens any measured team, including Coding EGY, and a teams-at-risk row', () => {
     render(
       <MemoryRouter initialEntries={['/monthly-presentation']}>
-        <MonthlyPresentationView />
+        <MonthlyPreview />
         <LocationProbe />
       </MemoryRouter>,
     );
@@ -563,6 +685,7 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
 
     fireEvent.click(screen.getByTestId('breadcrumb-function'));
     fireEvent.click(screen.getByTestId('agent-team-card-pre-approvals-ip'));
+    expect(screen.getByTestId('location-probe').textContent).toContain('team=pre-approvals-ip');
     expect(screen.getByTestId('team-deep-dive-score')).toHaveTextContent('82.8%');
     expect(screen.getAllByText('Average').length).toBeGreaterThan(0);
   });
@@ -570,7 +693,7 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
   it('opens the same function deep dive and role detail for every role-based function', () => {
     render(
       <MemoryRouter initialEntries={['/monthly-presentation']}>
-        <MonthlyPresentationView />
+        <MonthlyPreview />
         <LocationProbe />
       </MemoryRouter>,
     );
@@ -665,7 +788,7 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
   it('keeps deep-dive cards scannable, clickable, and bound to the overview trend', () => {
     render(
       <MemoryRouter initialEntries={['/monthly-presentation']}>
-        <MonthlyPresentationView />
+        <MonthlyPreview />
         <LocationProbe />
       </MemoryRouter>,
     );
@@ -808,7 +931,7 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
 
     render(
       <MemoryRouter initialEntries={['/monthly-presentation']}>
-        <MonthlyPresentationView />
+        <MonthlyPreview />
         <LocationProbe />
       </MemoryRouter>,
     );
@@ -914,7 +1037,7 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
   it('uses the UAE overview and does not reuse Egypt people when the region switches', () => {
     render(
       <MemoryRouter initialEntries={['/monthly-presentation']}>
-        <MonthlyPresentationView />
+        <MonthlyPreview />
         <LocationProbe />
       </MemoryRouter>,
     );
@@ -938,7 +1061,7 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
   it('steps from the control bar and saves agenda and notes for the region and month', () => {
     const { unmount } = render(
       <MemoryRouter initialEntries={['/monthly-presentation']}>
-        <MonthlyPresentationView />
+        <MonthlyPreview />
         <LocationProbe />
       </MemoryRouter>,
     );
@@ -1029,7 +1152,7 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
     unmount();
     render(
       <MemoryRouter initialEntries={['/monthly-presentation']}>
-        <MonthlyPresentationView />
+        <MonthlyPreview />
       </MemoryRouter>,
     );
     fireEvent.click(screen.getByTestId('presentation-agenda'));
@@ -1043,7 +1166,7 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
   it('opens data compliance from the presentation menu and flips back after an edit', () => {
     render(
       <MemoryRouter initialEntries={['/monthly-presentation']}>
-        <MonthlyPresentationView />
+        <MonthlyPreview />
       </MemoryRouter>,
     );
 

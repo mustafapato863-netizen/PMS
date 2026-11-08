@@ -567,6 +567,7 @@ function VisualBlock({ card }: { card: StructuredVisualCard }) {
 export default function AiResponseCard({ response, onSelectPrompt }: AiResponseCardProps) {
   const [feedback, setFeedback] = useState<'up' | 'down' | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [feedbackError, setFeedbackError] = useState(false);
 
   const primaryCards = response.visual_cards.filter((c) => c.card_type !== 'decision_playbook');
   const playbookCards = response.visual_cards.filter((c) => c.card_type === 'decision_playbook');
@@ -595,12 +596,12 @@ export default function AiResponseCard({ response, onSelectPrompt }: AiResponseC
 
   const visibleBullets = detailsExpanded
     ? response.narrative_bullets
-    : response.narrative_bullets.slice(0, 1);
+    : response.narrative_bullets.filter((b, idx) => idx === 0 || b.startsWith('Note:') || b.toLowerCase().includes('no evaluated score') || b.toLowerCase().includes('no published'));
 
   const handleFeedback = async (rating: 'up' | 'down') => {
     if (submitting) return;
     setSubmitting(true);
-    setFeedback(rating);
+    setFeedbackError(false);
     try {
       await apiFetch('/api/ai/feedback', {
         method: 'POST',
@@ -609,8 +610,9 @@ export default function AiResponseCard({ response, onSelectPrompt }: AiResponseC
           rating,
         }),
       });
+      setFeedback(rating);
     } catch {
-      // Keep local feedback state visible even if network call fails
+      setFeedbackError(true);
     } finally {
       setSubmitting(false);
     }
@@ -798,13 +800,15 @@ export default function AiResponseCard({ response, onSelectPrompt }: AiResponseC
 
           {response.trace_id && <div className="flex items-center gap-1">
             {feedback === 'up' && (
-              <span className="mr-1 text-[11px] font-bold text-emerald-600">Verified ✓</span>
+              <span className="mr-1 text-[11px] font-bold text-emerald-600">Feedback saved</span>
             )}
+            {feedbackError && <span role="alert" className="mr-1 text-[11px] text-rose-600">Could not save feedback. Try again.</span>}
             <button
               type="button"
               onClick={() => void handleFeedback('up')}
-              aria-label="Approve response for AI training"
-              title="Approve response (adds to verified local model training set)"
+              aria-label="Mark response as useful"
+              title="Mark response as useful (subject to administrator review)"
+              disabled={submitting}
               className={`flex h-6 w-6 items-center justify-center rounded-md border text-xs transition-colors ${
                 feedback === 'up'
                   ? 'border-emerald-400 bg-emerald-50 text-emerald-700'
@@ -818,6 +822,7 @@ export default function AiResponseCard({ response, onSelectPrompt }: AiResponseC
               onClick={() => void handleFeedback('down')}
               aria-label="Flag response as inaccurate"
               title="Flag response"
+              disabled={submitting}
               className={`flex h-6 w-6 items-center justify-center rounded-md border text-xs transition-colors ${
                 feedback === 'down'
                   ? 'border-rose-400 bg-rose-50 text-rose-700'

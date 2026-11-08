@@ -32,6 +32,122 @@ export type TurnOutcomeType =
   | 'unavailable_data'
   | 'unsupported_request';
 
+export type ContextualCapabilityMode =
+  | 'page_help'
+  | 'navigation'
+  | 'performance_query'
+  | 'clarification'
+  | 'proposal'
+  | 'unsupported';
+
+export type FeedbackCategoryType =
+  | 'incorrect_answer'
+  | 'incorrect_scope'
+  | 'incomplete_response'
+  | 'poor_suggestion'
+  | 'helpful';
+
+export interface PageContextV1 {
+  schema_version?: 'pms-page-context-v1';
+  page_id: string;
+  route_id?: string | null;
+  function_id?: string | null;
+  team_id?: string | null;
+  position_id?: string | null;
+  employee_id?: string | null;
+  region?: string | null;
+  branch?: string | null;
+  performance_level?: string | null;
+  period?: string | null;
+  month?: string | null;
+  year?: number | null;
+  selected_metric_id?: string | null;
+  selected_entity_type?: 'function' | 'team' | 'position' | 'employee' | 'branch' | 'metric' | 'none' | null;
+  selected_entity_id?: string | null;
+  is_fallback_data?: boolean;
+  ui_capabilities?: string[];
+}
+
+export interface AiPageHelpSection {
+  page_id: string;
+  page_title: string;
+  summary: string;
+  key_elements: string[];
+  available_actions: string[];
+  metric_explanation?: string | null;
+  fallback_data_warning?: string | null;
+}
+
+export interface AiNavigationTarget {
+  id: string;
+  label: string;
+  route: string;
+  description: string;
+  icon_key: 'insights' | 'team' | 'employee' | 'planning' | 'actions' | 'bsc' | 'presentation';
+}
+
+export interface AiCorrectiveActionProposal {
+  proposal_id: string;
+  title: string;
+  scope_summary: string;
+  team: string;
+  function?: string | null;
+  position?: string | null;
+  performance_level: string;
+  branch_key?: string | null;
+  period: string;
+  month: string;
+  year: number;
+  employee_id?: string | null;
+  employee_name?: string | null;
+  metric_id: string;
+  linked_kpi_key: string;
+  metric_display_name: string;
+  actual_display: string;
+  target_display: string;
+  gap_display: string;
+  sample_size: number;
+  observed_facts: string[];
+  hypothesis?: string | null;
+  suggested_steps: string[];
+  success_measure: string;
+  action_type: 'Coaching' | 'Training' | 'PIP' | 'Monitor' | 'Warning' | 'Reward' | 'Promotion';
+  priority: 'Low' | 'Medium' | 'High';
+  proposed_action_text: string;
+  proposed_root_cause_note: string;
+  evidence_revision: string;
+  source_link?: string | null;
+  can_user_create_action: boolean;
+  persisted_status_on_save: 'Open';
+  assignable_owners: Array<{ id: string; name?: string; full_name?: string; username?: string; role?: string }>;
+}
+
+export interface AiCorrectiveActionConfirmRequest {
+  proposal_id: string;
+  team: string;
+  month: string;
+  year: number;
+  action_type: 'Coaching' | 'Training' | 'PIP' | 'Monitor' | 'Warning' | 'Reward' | 'Promotion' | 'Team Action';
+  action_text: string;
+  root_cause_note?: string;
+  employee_id?: string | null;
+  priority?: 'Low' | 'Medium' | 'High' | null;
+  due_date?: string | null;
+  owner_user_id?: string | null;
+  linked_kpi_key?: string | null;
+  evidence_revision: string;
+  is_fallback_data?: boolean;
+  trace_id?: string | null;
+}
+
+export interface AiCorrectiveActionConfirmResponse {
+  success: boolean;
+  message: string;
+  persisted_status: 'Open';
+  action_scope: 'employee' | 'team';
+  action: Record<string, unknown>;
+}
+
 export interface ClarificationChoice {
   id: string;
   label: string;
@@ -300,6 +416,11 @@ export interface AiChatResponsePayload {
   provider_usage?: AiProviderUsageMetrics;
   basis_warning?: string | null;
   cache_hit?: boolean;
+  capability_mode?: ContextualCapabilityMode;
+  effective_context_label?: string | null;
+  page_help?: AiPageHelpSection | null;
+  navigation_targets?: AiNavigationTarget[];
+  action_proposal?: AiCorrectiveActionProposal | null;
 }
 
 export interface AiWatchingAlertItem {

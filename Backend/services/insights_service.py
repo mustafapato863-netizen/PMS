@@ -1290,8 +1290,8 @@ class InsightsService:
             if str(selected_team).strip().casefold() in {"support positions", "call center support positions"}:
                 result = [
                     record for record in result
-                    if str(_value(record, "team", "")).casefold() == "call center"
-                    and bool(str(_value(record, "position", "") or "").strip())
+                    if (str(_value(record, "team", "")).casefold() in {"support positions", "call center support positions"} or (str(_value(record, "team", "")).casefold() == "call center"
+                    and bool(str(_value(record, "position", "") or "").strip())))
                 ]
             else:
                 # Parent domains such as Call Center / RCM / Pre-Approvals expand to

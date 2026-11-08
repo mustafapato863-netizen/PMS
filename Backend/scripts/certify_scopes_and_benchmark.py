@@ -279,9 +279,9 @@ def run_200_employee_benchmark() -> dict[str, Any]:
                     "warm_mean_ms": round(statistics.mean(warm_latencies), 2),
                 }
 
-            engine.dispose()
             return results
         finally:
+            engine.dispose()
             DashboardRecordService.list_records = orig_list_records  # type: ignore[method-assign]
             DashboardRecordService.list_analysis_records = orig_list_analysis  # type: ignore[method-assign]
             DashboardRecordService.list_record_index = orig_list_index  # type: ignore[method-assign]

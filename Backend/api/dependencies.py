@@ -479,6 +479,107 @@ def get_current_user_scope(db, request: Request) -> dict:
         raise
 
 
+def build_user_scope_from_db_user(db, user: User) -> dict[str, Any]:
+    """Authoritative scope builder from a live User row and its assignment tables."""
+    active_teams = db.query(Team).filter(Team.is_active.is_(True)).all()
+    active_team_names = list(dict.fromkeys(logical_team_name(team) for team in active_teams))
+    assignments = (
+        db.query(UserTeamAssignment, Team)
+        .join(Team, Team.id == UserTeamAssignment.team_id)
+        .filter(UserTeamAssignment.user_id == user.id, Team.is_active.is_(True))
+        .all()
+    )
+    assigned_teams = list(dict.fromkeys(logical_team_name(team) for _, team in assignments))
+    accessible_team_levels = list(dict.fromkeys(
+        (logical_team_name(team), level)
+        for assignment, team in assignments
+        for level in ([assignment.performance_level] if assignment.performance_level else PERFORMANCE_LEVELS)
+    ))
+    unrestricted_teams = {
+        logical_team_name(team)
+        for assignment, team in assignments
+        if assignment.performance_level is None
+    }
+    assigned_regions = []
+    if user.role == "Regional Manager":
+        assigned_regions = [
+            str(region_code)
+            for (region_code,) in (
+                db.query(UserRegionAssignment.region_code)
+                .filter(UserRegionAssignment.user_id == user.id)
+                .order_by(UserRegionAssignment.region_code.asc())
+                .all()
+            )
+        ]
+    assigned_branches = []
+    if user.role == "Branch Director":
+        assigned_branches = [
+            str(branch_key)
+            for (branch_key,) in (
+                db.query(UserBranchAssignment.branch_key)
+                .filter(UserBranchAssignment.user_id == user.id)
+                .order_by(UserBranchAssignment.branch_key.asc())
+                .all()
+            )
+        ]
+    if user.role == "Regional Manager":
+        region_keys = {value.casefold() for value in assigned_regions}
+        assigned_teams = [
+            logical_team_name(team)
+            for team in active_teams
+            if str(team.region or "").strip().casefold() in region_keys
+        ]
+        accessible_team_levels = list(dict.fromkeys(
+            (logical_team_name(team), level)
+            for team in active_teams
+            if str(team.region or "").strip().casefold() in region_keys
+            for level in PERFORMANCE_LEVELS
+        ))
+
+    has_unrestricted_team_access = user.role in {"Admin", "General Manager", "Performance Team"} or (
+        user.role == "Manager" and bool(active_team_names) and unrestricted_teams >= set(active_team_names)
+    )
+
+    if user.role in {"Admin", "General Manager", "Performance Team"} or has_unrestricted_team_access:
+        accessible_teams = active_team_names
+    elif user.role in {"Manager", "Regional Manager"}:
+        accessible_teams = assigned_teams
+    else:
+        accessible_teams = []
+
+    if user.role in {"Function Viewer", "Function Director"}:
+        accessible_functions = [
+            function_name
+            for (function_name,) in (
+                db.query(UserFunctionAssignment.function_name)
+                .filter(UserFunctionAssignment.user_id == user.id)
+                .order_by(UserFunctionAssignment.function_name.asc())
+                .all()
+            )
+        ]
+    else:
+        accessible_functions = []
+
+    return {
+        "user": user,
+        "user_id": str(user.id),
+        "role": user.role,
+        "db_role": str(user.role),
+        "is_active": bool(getattr(user, "is_active", True)),
+        "employee_id": user.employee_id,
+        "accessible_teams": accessible_teams,
+        "accessible_functions": accessible_functions,
+        "accessible_regions": assigned_regions,
+        "accessible_branches": assigned_branches,
+        "accessible_team_levels": accessible_team_levels,
+        "has_unrestricted_team_access": has_unrestricted_team_access,
+        "is_self_only": user.role in {"Agent", "Employee", "Executive"},
+        "active_team_names": active_team_names,
+        "legacy_unscoped": False,
+        "_db_user_verified": True,
+    }
+
+
 def _get_current_user_scope(db, request: Request) -> dict:
     payload = get_current_user_payload(request)
     user_id = payload.get("user_id")
@@ -502,6 +603,7 @@ def _get_current_user_scope(db, request: Request) -> dict:
     user = db.query(User).filter(User.id == UUID(str(user_id))).first()
     if not user:
         raise HTTPException(status_code=401, detail="Authenticated user is unavailable")
+    return build_user_scope_from_db_user(db, user)
 
     active_teams = db.query(Team).filter(Team.is_active.is_(True)).all()
     active_team_names = list(dict.fromkeys(logical_team_name(team) for team in active_teams))

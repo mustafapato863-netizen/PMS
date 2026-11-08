@@ -363,11 +363,12 @@ class DeterministicLocalProviderAdapter:
             e_pos = str(sp.get("position") or "").strip()
             pos_txt = f" · {e_pos}" if e_pos and e_pos.casefold() not in ("agent", "call center agent") else ""
             e_team = sp.get("team") or scope
+            has_period_score = bool(sp.get("selected_period_has_score", sp.get("score") is not None))
             sc = float(sp.get("score") or 0.0)
             gr = sp.get("grade") or "B"
-            chg = sp.get("change_vs_prev")
+            chg = sp.get("change_vs_prev") if has_period_score else None
             prev_lbl = sp.get("previous_month_label") or "prior month"
-            six_d = sp.get("six_month_delta")
+            six_d = sp.get("six_month_delta") if has_period_score else None
             first_lbl = sp.get("first_month_label") or ""
             r_dir = sp.get("ranking_direction")
             rank_num = sp.get("rank")
@@ -385,6 +386,12 @@ class DeterministicLocalProviderAdapter:
             six_txt = f" ({six_d:+.1f}% since {first_lbl})" if six_d is not None and first_lbl else ""
             ties = list(sp.get("ties") or [])
             tie_txt = f", tied with {', '.join(ties[:2])}" if ties else ""
+            missing_months = list(sp.get("missing_months") or [])
+            missing_headline_note = (
+                f" (Note: {', '.join(missing_months)} had no evaluated score and was excluded.)"
+                if missing_months
+                else ""
+            )
             if (signals.asks_best_month_history or signals.asks_worst_month_history) and sp.get("all_history"):
                 is_worst_q = bool(signals.asks_worst_month_history)
                 target_label = "worst" if is_worst_q else "best"
@@ -398,7 +405,6 @@ class DeterministicLocalProviderAdapter:
                     (sp.get("worst_months") if is_worst_q else sp.get("best_months")) or [period]
                 )
                 searched_win = str(sp.get("searched_window") or period)
-                missing_months = list(sp.get("missing_months") or [])
                 is_match = bool(
                     sp.get("is_asked_period_worst") if is_worst_q else sp.get("is_asked_period_best")
                 )
@@ -408,23 +414,32 @@ class DeterministicLocalProviderAdapter:
                     else ", ".join(extremum_months)
                 )
                 if signals.asks_specific_month_in_prompt:
-                    if is_match:
+                    if not has_period_score:
+                        headline = (
+                            f"No. {e_name} ({e_id}{pos_txt}) had no published evaluation score in {period}, while their {target_label} month across "
+                            f"{searched_win} by {rank_metric_lbl} was {win_months_str} at {extremum_disp}.{missing_headline_note}"
+                        )
+                    elif is_match:
                         others = [m for m in extremum_months if m.casefold() != str(period).casefold()]
                         tie_str = f" (tied with {', '.join(others)})" if others else ""
                         headline = (
                             f"Yes. {period} was {e_name}'s ({e_id}{pos_txt}) {target_label} month across {searched_win} "
-                            f"in {e_team} by {rank_metric_lbl} at {sc_disp}{tie_str}."
+                            f"in {e_team} by {rank_metric_lbl} at {sc_disp}{tie_str}.{missing_headline_note}"
                         )
                     else:
                         headline = (
                             f"No. {e_name} ({e_id}{pos_txt}) scored {sc_disp} in {period}, while their {target_label} month across "
-                            f"{searched_win} by {rank_metric_lbl} was {win_months_str} at {extremum_disp}."
+                            f"{searched_win} by {rank_metric_lbl} was {win_months_str} at {extremum_disp}.{missing_headline_note}"
                         )
                 else:
                     tie_note = " (tied)" if len(extremum_months) > 1 else ""
                     headline = (
                         f"{e_name}'s ({e_id}{pos_txt}) {target_label} month across {searched_win} in {e_team} "
-                        f"by {rank_metric_lbl} was {win_months_str}{tie_note} at {extremum_disp}."
+                        f"by {rank_metric_lbl} was {win_months_str}{tie_note} at {extremum_disp}.{missing_headline_note}"
+                    )
+                if missing_months:
+                    bullets.append(
+                        f"Note: {', '.join(missing_months)} had no evaluated score and was excluded rather than treated as 0%."
                     )
                 hist_pts = [
                     f"{pt['period']}: {_fmt_pct(float(pt.get('raw_score', pt['score'])))}"
@@ -434,29 +449,39 @@ class DeterministicLocalProviderAdapter:
                     bullets.append(
                         f"Full history ({searched_win} · {rank_metric_lbl}): " + " · ".join(hist_pts) + "."
                     )
-                if missing_months:
-                    bullets.append(
-                        f"Note: {', '.join(missing_months)} had no evaluated score and was excluded rather than treated as 0%."
-                    )
             elif r_dir == "team_trend":
                 if metric_lbl and metric_lbl != "Overall Score":
-                    headline = f"{e_team} {metric_lbl} reached {sc:.1f}% in {period}{chg_txt}{six_txt}."
+                    headline = f"{e_team} {metric_lbl} reached {sc_disp} in {period}{chg_txt}{six_txt}."
                 else:
-                    headline = f"{e_team} scored {sc:.1f}% (Grade {gr}) in {period}{chg_txt}{six_txt}."
+                    headline = f"{e_team} scored {sc_disp} (Grade {gr}) in {period}{chg_txt}{six_txt}."
+            elif not has_period_score:
+                searched_win = str(sp.get("searched_window") or "")
+                avail_pts = list(sp.get("all_history") or [])
+                avail_note = (
+                    f" Published scores are available across {searched_win}."
+                    if searched_win and avail_pts
+                    else ""
+                )
+                headline = (
+                    f"No published evaluation score is available for {e_name} ({e_id}{pos_txt}) in {period} ({e_team}).{avail_note}"
+                )
+                bullets.append(
+                    f"Note: {period} has no published evaluation score for {e_name} ({e_id}); PMS AI does not substitute another month's score."
+                )
             elif r_dir == "worst" and not signals.detected_employee_query:
                 headline = (
                     f"{e_name} ({e_id}{pos_txt}) is the lowest-scoring agent in {e_team} ({branch}) for {period} by {rank_metric_lbl} at "
-                    f"{sc:.1f}% (Grade {gr}, Rank #{rank_num} of {tot_team}{tie_txt}){chg_txt}{six_txt}."
+                    f"{sc_disp} (Grade {gr}, Rank #{rank_num} of {tot_team}{tie_txt}){chg_txt}{six_txt}."
                 )
             elif not signals.detected_employee_query:
                 headline = (
                     f"{e_name} ({e_id}{pos_txt}) is the #1 top performer in {e_team} ({branch}) for {period} by {rank_metric_lbl} at "
-                    f"{sc:.1f}% (Grade {gr}, Rank #{rank_num} of {tot_team}{tie_txt}){chg_txt}{six_txt}."
+                    f"{sc_disp} (Grade {gr}, Rank #{rank_num} of {tot_team}{tie_txt}){chg_txt}{six_txt}."
                 )
             else:
                 headline = (
-                    f"{e_name} ({e_id}{pos_txt}) scored {sc:.1f}% (Grade {gr}, Rank #{rank_num} of {tot_team} in {e_team}) "
-                    f"in {period}{chg_txt}{six_txt}."
+                    f"{e_name} ({e_id}{pos_txt}) scored {sc_disp} (Grade {gr}, Rank #{rank_num} of {tot_team} in {e_team}) "
+                    f"in {period}{chg_txt}{six_txt}.{missing_headline_note if signals.asks_trend else ''}"
                 )
 
         # 1. Revenue guardrail note
@@ -485,7 +510,16 @@ class DeterministicLocalProviderAdapter:
                 target_bc = list(bc[:2])
 
             asks_least = any(w in (prompt or "").casefold() for w in ("fewer", "least", "lowest"))
-            if signals.asks_booking_count or signals.detected_kpi == "bookings_count":
+            prompt_lower_bc = (prompt or "").casefold()
+            asks_bc_bookings = bool(
+                signals.asks_booking_count
+                or signals.detected_kpi in ("bookings_count", "TotalBookings", "Booking", "booking_rate")
+                or (
+                    re.search(r"\bbookings?\b", prompt_lower_bc)
+                    and "attendance" not in prompt_lower_bc
+                )
+            )
+            if asks_bc_bookings:
                 ranked_b = sorted(
                     target_bc,
                     key=lambda b: int(b.get("bookings") or 0),
@@ -544,8 +578,14 @@ class DeterministicLocalProviderAdapter:
                         f"{most_noshows['bookings']:,} bookings · {most_noshows['attendance_rate_pct']:.1f}% Attended)."
                     )
 
-        # 3. Root-cause employees (People Contribution)
-        elif merged.get("top_contributors"):
+        # 3. Root-cause employees (People Contribution — when user explicitly asks who/employees or no KPI diagnosis is active)
+        elif merged.get("top_contributors") and (
+            any(
+                w in (prompt or "").casefold()
+                for w in ("who", "employee", "employees", "agent", "agents", "person", "people", "contributors")
+            )
+            or (not merged.get("requested_kpi") and not merged.get("lowest_kpi"))
+        ):
             top_list = merged["top_contributors"]
             first = top_list[0]
             neg_cnt = merged.get("negative_contributors", len(top_list))
@@ -597,7 +637,20 @@ class DeterministicLocalProviderAdapter:
             else:
                 lvl = merged.get("level", "Managerial")
                 t_name = merged.get("team", "Inbound")
-                headline = f"{t_name} {lvl} Balanced Scorecard is structured across 4 strategic perspectives."
+                avg_bsc = merged.get("average_score")
+                if isinstance(avg_bsc, (int, float)):
+                    headline = f"{t_name} {lvl} Balanced Scorecard scored {float(avg_bsc):.1f}% in {period} across 4 strategic perspectives."
+                else:
+                    headline = f"{t_name} {lvl} Balanced Scorecard is structured across 4 strategic perspectives."
+                bsc_rows = merged.get("bsc_kpis") or []
+                scored_bsc = [r for r in bsc_rows if float(r.get("weight_percent") or 0.0) > 0]
+                if scored_bsc:
+                    top_labels = ", ".join(
+                        f"{r.get('label')} ({r.get('weight_percent'):.0f}%)"
+                        + (f" — {r.get('actual_display')} vs {r.get('target_display')}" if r.get("actual_display") else "")
+                        for r in scored_bsc[:3]
+                    )
+                    bullets.append(f"Key {lvl} BSC KPIs: {top_labels}.")
 
         # 7. Team / KPI Diagnosis Summary
         else:
@@ -626,7 +679,16 @@ class DeterministicLocalProviderAdapter:
                         f"Comparing {scope} ({branch}) across {p_from} and {p_to}: latest score is {(s_to or 0.0):.1f}%{delta_txt}."
                     )
             elif requested_kpi:
-                if requested_kpi.get("kpi_key") in ("bookings_count", "attended_count", "handled_calls_count", "abandoned_calls_count"):
+                if requested_kpi.get("kpi_key") in (
+                    "bookings_count",
+                    "TotalBookings",
+                    "attended_count",
+                    "AttendedPatients",
+                    "handled_calls_count",
+                    "HandledCalls",
+                    "abandoned_calls_count",
+                    "AbandonedCalls",
+                ):
                     headline = (
                         f"In {scope} ({period} · {branch}), {requested_kpi['kpi_label']} reached "
                         f"{requested_kpi['actual_display']}."
@@ -643,10 +705,28 @@ class DeterministicLocalProviderAdapter:
                 else:
                     ach_val = requested_kpi.get("achievement_percent")
                     ach_txt = f"{ach_val:.1f}% achievement" if ach_val is not None else "tracked"
+                    below_kpi_cnt = int(requested_kpi.get("people_below_target") or 0)
+                    below_kpi_note = (
+                        f", with {below_kpi_cnt} agents below target"
+                        if below_kpi_cnt > 0
+                        else ""
+                    )
                     headline = (
                         f"In {scope} ({period} · {branch}), {requested_kpi['kpi_label']} is at {requested_kpi['actual_display']} "
-                        f"vs target {requested_kpi['target_display']} ({ach_txt}, {requested_kpi.get('weight_percent') or 0:.0f}% weight)."
+                        f"vs target {requested_kpi['target_display']} ({ach_txt}, {requested_kpi.get('weight_percent') or 0:.0f}% weight){below_kpi_note}."
                     )
+                    if merged.get("top_contributors"):
+                        top_c = merged["top_contributors"]
+                        first_c = top_c[0]
+                        neg_c = merged.get("negative_contributors", len(top_c))
+                        tot_c = merged.get("total_employees", len(top_c))
+                        top_names = ", ".join(
+                            f"{c['employee_name']} ({c.get('weighted_impact') or 0:+.2f} pts)"
+                            for c in top_c[:3]
+                        )
+                        bullets.append(
+                            f"Root-cause drivers on {requested_kpi['kpi_label']}: {neg_c} of {tot_c} employees are below target, led by {top_names}."
+                        )
             elif worst and avg_score is not None:
                 w_score = worst.get("current_score") or 0.0
                 w_change = worst.get("score_change")
@@ -658,17 +738,37 @@ class DeterministicLocalProviderAdapter:
                 if worst.get("main_cause"):
                     bullets.append(f"Primary driver: {worst['main_cause']}.")
             elif lowest_kpi:
+                below_low_cnt = int(lowest_kpi.get("people_below_target") or 0)
+                below_low_note = f", {below_low_cnt} agents below target" if below_low_cnt > 0 else ""
                 headline = (
                     f"The primary KPI bottleneck in {scope} ({period} · {branch}) is {lowest_kpi['kpi_label']} "
-                    f"at {lowest_kpi.get('achievement_percent') or 0:.1f}% achievement ({lowest_kpi['actual_display']} vs target {lowest_kpi['target_display']})."
+                    f"at {lowest_kpi.get('achievement_percent') or 0:.1f}% achievement ({lowest_kpi['actual_display']} vs target {lowest_kpi['target_display']}{below_low_note})."
                 )
+                if merged.get("top_contributors"):
+                    top_c = merged["top_contributors"]
+                    neg_c = merged.get("negative_contributors", len(top_c))
+                    tot_c = merged.get("total_employees", len(top_c))
+                    top_names = ", ".join(
+                        f"{c['employee_name']} ({c.get('weighted_impact') or 0:+.2f} pts)"
+                        for c in top_c[:3]
+                    )
+                    bullets.append(
+                        f"Root-cause drivers on {lowest_kpi['kpi_label']}: {neg_c} of {tot_c} employees are below target, led by {top_names}."
+                    )
             elif avg_score is not None:
                 delta_str = f" ({score_change:+.1f}%)" if score_change is not None else ""
                 headline = f"{scope} average performance in {period} ({branch}) is {avg_score:.1f}%{delta_str} across {tot_rec} evaluated records."
             else:
                 headline = f"No performance records matched the selected filters ({scope} · {period})."
 
-            if lowest_kpi and (worst or requested_kpi):
+            if lowest_kpi and (
+                worst
+                or (
+                    requested_kpi
+                    and str(requested_kpi.get("kpi_key") or "").casefold()
+                    != str(lowest_kpi.get("kpi_key") or "").casefold()
+                )
+            ):
                 bullets.append(
                     f"Lowest KPI: {lowest_kpi['kpi_label']} (Weight {lowest_kpi['weight_percent']:.0f}%) at {lowest_kpi.get('achievement_percent') or 0:.1f}% achievement ({lowest_kpi['people_below_target']} agents below target)."
                 )
