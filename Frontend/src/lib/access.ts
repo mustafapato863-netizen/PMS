@@ -105,8 +105,10 @@ export const canAccessInsights = (role: RoleInput): boolean => canAccessBroadApp
  * the old Executive page showed only that user's own actions. Viewer is not included: the corrective-action
  * read endpoints do not allow it (Backend api/routers/users_and_actions.py), so it needs a backend change first.
  */
-export const canSeeSummaryActionAnalytics = (role: RoleInput): boolean =>
+export const canAccessSummaryActionAnalytics = (role: RoleInput): boolean =>
   canAccessCorrectiveActions(role) || isScopedDirectorRole(role);
+
+export const canSeeSummaryActionAnalytics = canAccessSummaryActionAnalytics;
 
 /** Function Summary page: Admin, General Manager and Function Viewer (limited to its functions). */
 export const canAccessFunctionSummary = (role: RoleInput): boolean =>
@@ -121,6 +123,10 @@ export const ROUTE_ROLES = {
   planning: ['Admin', 'General Manager', 'Manager', 'Performance Team'],
   correctiveActions: ['Admin', 'Executive', 'General Manager', 'Manager', 'Performance Team'],
   functionSummary: ['Admin', 'General Manager', 'Performance Team', ROLE_FUNCTION_VIEWER, ROLE_FUNCTION_DIRECTOR, ROLE_BRANCH_DIRECTOR, ROLE_REGIONAL_MANAGER],
+  pmsAi: [
+    'Admin', 'General Manager', 'Performance Team', 'Manager', 'Executive',
+    ROLE_FUNCTION_VIEWER, ROLE_FUNCTION_DIRECTOR, ROLE_BRANCH_DIRECTOR, ROLE_REGIONAL_MANAGER,
+  ],
   /** Saved-report library + preview (read). Legacy and new scoped roles are API-filtered. */
   /**
    * Monthly Review follows Executive Summary: every signed-in role may open the route.
@@ -137,6 +143,10 @@ export const ROUTE_ROLES = {
 /** Monthly Review: the same allow-list as its route guard (sidebar link and route cannot drift). */
 export const canAccessMonthlyPresentation = (role: RoleInput): boolean =>
   canAccessRoute({ role, allowedRoles: ROUTE_ROLES.monthlyPresentation });
+
+/** PMS AI Workspace: available to all management, director, and analytical roles within their RBAC scope. */
+export const canAccessPmsAi = (role: RoleInput): boolean =>
+  canAccessRoute({ role, allowedRoles: ROUTE_ROLES.pmsAi });
 
 /** Function roles do not stay on Executive Summary or Monthly Review; both send them to Function Summary. */
 export const redirectsToFunctionSummary = (role: RoleInput): boolean =>

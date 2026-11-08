@@ -1,0 +1,1039 @@
+{
+  "teams_count": 38,
+  "active_teams_count": 32,
+  "inactive_teams_count": 6,
+  "teams": [
+    {
+      "id": "7c4a9310-5eb5-456b-bf4e-4a4950b3592c",
+      "name": "Finance",
+      "db_name": "Finance",
+      "display_name": "Finance",
+      "logical_name": "Finance",
+      "region": "All",
+      "team_level": "employee",
+      "is_active": true
+    },
+    {
+      "id": "065d4341-8854-489d-a4d4-1865b5a5a6fa",
+      "name": "RCM",
+      "db_name": "RCM",
+      "display_name": "RCM",
+      "logical_name": "RCM",
+      "region": "All",
+      "team_level": "employee",
+      "is_active": true
+    },
+    {
+      "id": "ffd199bf-5eee-4e04-8fc0-345cdf81afc8",
+      "name": "Call Center",
+      "db_name": "Call Center",
+      "display_name": "Call Center",
+      "logical_name": "Call Center",
+      "region": "EGY",
+      "team_level": "employee",
+      "is_active": true
+    },
+    {
+      "id": "ebe517f9-a5bc-48bb-a96a-935a8139cbd4",
+      "name": "call_center_offshore",
+      "db_name": "Call Center_offshore",
+      "display_name": "call_center_offshore",
+      "logical_name": "call_center_offshore",
+      "region": "EGY",
+      "team_level": "employee",
+      "is_active": false
+    },
+    {
+      "id": "facf4cf0-fafe-4ec3-896f-035c06f8a7ab",
+      "name": "Coding EGY",
+      "db_name": "Coding EGY",
+      "display_name": "Coding EGY",
+      "logical_name": "Coding EGY",
+      "region": "EGY",
+      "team_level": "employee",
+      "is_active": true
+    },
+    {
+      "id": "c6f8814c-738f-4768-a2c9-49ebae9d39f6",
+      "name": "Human Resources",
+      "db_name": "Human Resources",
+      "display_name": "Human Resources",
+      "logical_name": "Human Resources",
+      "region": "EGY",
+      "team_level": "employee",
+      "is_active": true
+    },
+    {
+      "id": "d93e94a2-5df5-40da-aff1-2b5ee56f1a7b",
+      "name": "Inbound",
+      "db_name": "Inbound",
+      "display_name": "Inbound",
+      "logical_name": "Inbound",
+      "region": "EGY",
+      "team_level": "employee",
+      "is_active": true
+    },
+    {
+      "id": "a59d4cde-b6f0-426c-b616-147b81b5be51",
+      "name": "IT",
+      "db_name": "IT",
+      "display_name": "IT",
+      "logical_name": "IT",
+      "region": "EGY",
+      "team_level": "employee",
+      "is_active": true
+    },
+    {
+      "id": "23d1e338-35c0-4c5b-af81-9632ea457be0",
+      "name": "Marketing",
+      "db_name": "Marketing",
+      "display_name": "Marketing",
+      "logical_name": "Marketing",
+      "region": "EGY",
+      "team_level": "employee",
+      "is_active": true
+    },
+    {
+      "id": "cad2deb4-20ed-487a-ac8e-3c68e6a9033b",
+      "name": "Offshore Admin & Management",
+      "db_name": "Offshore Admin & Management",
+      "display_name": "Offshore Admin & Management",
+      "logical_name": "Offshore Admin & Management",
+      "region": "EGY",
+      "team_level": "employee",
+      "is_active": true
+    },
+    {
+      "id": "569966f5-cf1f-426d-9f1e-e171d25c3a16",
+      "name": "Outbound",
+      "db_name": "Outbound",
+      "display_name": "Outbound",
+      "logical_name": "Outbound",
+      "region": "EGY",
+      "team_level": "employee",
+      "is_active": true
+    },
+    {
+      "id": "8e8c038b-1b41-42b6-b19b-b10554a2befd",
+      "name": "Pre-Approvals IP",
+      "db_name": "Pre-Approvals IP",
+      "display_name": "Pre-Approvals IP",
+      "logical_name": "Pre-Approvals IP",
+      "region": "EGY",
+      "team_level": "employee",
+      "is_active": true
+    },
+    {
+      "id": "a346edef-8d9b-4825-bc1a-fc9a0fbfac03",
+      "name": "Pre-Approvals IP Offshore",
+      "db_name": "Pre-Approvals IP Offshore",
+      "display_name": "Pre-Approvals IP Offshore",
+      "logical_name": "Pre-Approvals IP Offshore",
+      "region": "EGY",
+      "team_level": "employee",
+      "is_active": true
+    },
+    {
+      "id": "30123658-7cf1-4c6b-a371-551b87b93310",
+      "name": "Resubmission",
+      "db_name": "Resubmission",
+      "display_name": "Resubmission",
+      "logical_name": "Resubmission",
+      "region": "EGY",
+      "team_level": "employee",
+      "is_active": true
+    },
+    {
+      "id": "0649f64d-c33a-4b0d-800b-9fecdffafde9",
+      "name": "Submission EGY",
+      "db_name": "Submission EGY",
+      "display_name": "Submission EGY",
+      "logical_name": "Submission EGY",
+      "region": "EGY",
+      "team_level": "employee",
+      "is_active": true
+    },
+    {
+      "id": "e45cb6e8-90ff-40d5-b4bd-7c83593c6ed7",
+      "name": "Coding",
+      "db_name": "Coding",
+      "display_name": "Coding",
+      "logical_name": "Coding",
+      "region": "UAE",
+      "team_level": "employee",
+      "is_active": true
+    },
+    {
+      "id": "04590a53-8a2a-4cf5-8de9-39dfbbfe37de",
+      "name": "CSR",
+      "db_name": "CSR",
+      "display_name": "CSR",
+      "logical_name": "CSR",
+      "region": "UAE",
+      "team_level": "employee",
+      "is_active": true
+    },
+    {
+      "id": "68c804dc-c1c2-4232-a38c-7174a3c4d6b4",
+      "name": "Pharmacy",
+      "db_name": "Pharmacy",
+      "display_name": "Pharmacy",
+      "logical_name": "Pharmacy",
+      "region": "UAE",
+      "team_level": "employee",
+      "is_active": true
+    },
+    {
+      "id": "caf74538-f147-43a6-a7f3-b57a3d8b1ab6",
+      "name": "Pre-Approvals IP Elective Dubai",
+      "db_name": "Pre-Approvals IP Elective Dubai",
+      "display_name": "Pre-Approvals IP Elective Dubai",
+      "logical_name": "Pre-Approvals IP Elective Dubai",
+      "region": "UAE",
+      "team_level": "employee",
+      "is_active": true
+    },
+    {
+      "id": "a64ca0e6-badd-4f6b-a53e-b661d26d0792",
+      "name": "Pre-Approvals IP Final Dubai",
+      "db_name": "Pre-Approvals IP Final Dubai",
+      "display_name": "Pre-Approvals IP Final Dubai",
+      "logical_name": "Pre-Approvals IP Final Dubai",
+      "region": "UAE",
+      "team_level": "employee",
+      "is_active": true
+    },
+    {
+      "id": "413fcfd8-3c4d-416a-8777-75ca77563990",
+      "name": "Pre-Approvals IP Final SHJAJM",
+      "db_name": "Pre-Approvals IP Final SHJAJM",
+      "display_name": "Pre-Approvals IP Final SHJAJM",
+      "logical_name": "Pre-Approvals IP Final SHJAJM",
+      "region": "UAE",
+      "team_level": "employee",
+      "is_active": true
+    },
+    {
+      "id": "faa66018-fdd2-4c69-932a-55c0ef43ceea",
+      "name": "Pre-Approvals OP Final SHJAJM",
+      "db_name": "Pre-Approvals OP Final SHJAJM",
+      "display_name": "Pre-Approvals OP Final SHJAJM",
+      "logical_name": "Pre-Approvals OP Final SHJAJM",
+      "region": "UAE",
+      "team_level": "employee",
+      "is_active": true
+    },
+    {
+      "id": "b9227bae-dc7c-4b6a-b598-89a007a9dbe3",
+      "name": "pre_approval_op_dubai",
+      "db_name": "Pre-Approval-OP-Dubai",
+      "display_name": "Pre-Approval-OP-Dub",
+      "logical_name": "Pre-Approval-OP-Dub",
+      "region": "UAE",
+      "team_level": "employee",
+      "is_active": false
+    },
+    {
+      "id": "d53d4aef-8125-4d26-8a13-d6f96a6585d3",
+      "name": "pre_approvals_op_dubai",
+      "db_name": "Pre-Approvals OP Dubai",
+      "display_name": "Pre-Approvals OP Dubai",
+      "logical_name": "Pre-Approvals OP Dubai",
+      "region": "UAE",
+      "team_level": "employee",
+      "is_active": true
+    },
+    {
+      "id": "081f9fd5-f831-40f4-8821-81f9d9a7c1be",
+      "name": "Re-Submission",
+      "db_name": "Re-Submission",
+      "display_name": "Re-Submission",
+      "logical_name": "Re-Submission",
+      "region": "UAE",
+      "team_level": "employee",
+      "is_active": true
+    },
+    {
+      "id": "eab4f375-0373-4c24-856a-40774e1fc83d",
+      "name": "Sales",
+      "db_name": "Sales",
+      "display_name": "Sales",
+      "logical_name": "Sales",
+      "region": "UAE",
+      "team_level": "employee",
+      "is_active": true
+    },
+    {
+      "id": "6861abda-9e40-40e0-931d-e03de907d0c2",
+      "name": "Submission",
+      "db_name": "Submission",
+      "display_name": "Submission",
+      "logical_name": "Submission",
+      "region": "UAE",
+      "team_level": "employee",
+      "is_active": true
+    },
+    {
+      "id": "38fbb96a-e9f1-4a5c-9120-2d49845d0020",
+      "name": "marketing_management",
+      "db_name": "marketing_management",
+      "display_name": "Marketing",
+      "logical_name": "Marketing",
+      "region": "EGY",
+      "team_level": "management",
+      "is_active": true
+    },
+    {
+      "id": "b2678512-85cb-4cf8-abe5-6feba94e3efb",
+      "name": "call_center_management",
+      "db_name": "call_center_management",
+      "display_name": "Call Center",
+      "logical_name": "Call Center",
+      "region": "UAE",
+      "team_level": "management",
+      "is_active": false
+    },
+    {
+      "id": "4a0048be-da03-4945-981f-d0b263ebe7aa",
+      "name": "crm_management",
+      "db_name": "crm_management",
+      "display_name": "CRM",
+      "logical_name": "CRM",
+      "region": "UAE",
+      "team_level": "management",
+      "is_active": true
+    },
+    {
+      "id": "a26e1488-5d09-42d3-ba72-41dcaa6e2d8d",
+      "name": "csr_management",
+      "db_name": "csr_management",
+      "display_name": "CSR",
+      "logical_name": "CSR",
+      "region": "UAE",
+      "team_level": "management",
+      "is_active": false
+    },
+    {
+      "id": "9fbbaa75-de77-48b9-9375-3952070747f4",
+      "name": "finance_management",
+      "db_name": "finance_management",
+      "display_name": "Finance",
+      "logical_name": "Finance",
+      "region": "UAE",
+      "team_level": "management",
+      "is_active": true
+    },
+    {
+      "id": "7edec8f7-0cd0-464d-865d-859e30678bdc",
+      "name": "nursing_management",
+      "db_name": "nursing_management",
+      "display_name": "Nursing",
+      "logical_name": "Nursing",
+      "region": "UAE",
+      "team_level": "management",
+      "is_active": true
+    },
+    {
+      "id": "b395d066-960d-4093-800a-dbcf7491e983",
+      "name": "pharmacy_management",
+      "db_name": "pharmacy_management",
+      "display_name": "Pharmacy",
+      "logical_name": "Pharmacy",
+      "region": "UAE",
+      "team_level": "management",
+      "is_active": true
+    },
+    {
+      "id": "fc79a958-222f-4472-94f3-e8bb83ada35f",
+      "name": "pmo_management",
+      "db_name": "pmo_management",
+      "display_name": "PMO",
+      "logical_name": "PMO",
+      "region": "UAE",
+      "team_level": "management",
+      "is_active": true
+    },
+    {
+      "id": "444a3c58-6071-4422-b90b-4450cd750827",
+      "name": "rcm_management",
+      "db_name": "rcm_management",
+      "display_name": "RCM",
+      "logical_name": "RCM",
+      "region": "UAE",
+      "team_level": "management",
+      "is_active": true
+    },
+    {
+      "id": "2efbec0d-83ef-4183-ab7f-2b7b0065d7fe",
+      "name": "sales_management",
+      "db_name": "sales_management",
+      "display_name": "sales_management",
+      "logical_name": "sales_management",
+      "region": "UAE",
+      "team_level": "management",
+      "is_active": false
+    },
+    {
+      "id": "71e9ed71-e225-468a-9e46-4f44fa153267",
+      "name": "sales_management_2",
+      "db_name": "sales_management_2",
+      "display_name": "Sales",
+      "logical_name": "Sales",
+      "region": "UAE",
+      "team_level": "management",
+      "is_active": false
+    }
+  ],
+  "performance_records_by_scope": [
+    {
+      "logical_team": "CSR",
+      "db_team_name": "CSR",
+      "level": "Employee",
+      "team_region": "UAE",
+      "record_regions": [
+        "UAE"
+      ],
+      "records": 378,
+      "periods_count": 7,
+      "periods": [
+        "2026-April",
+        "2026-August",
+        "2026-February",
+        "2026-January",
+        "2026-June",
+        "2026-March",
+        "2026-May"
+      ],
+      "positions": []
+    },
+    {
+      "logical_team": "Call Center",
+      "db_team_name": "Call Center",
+      "level": "Employee",
+      "team_region": "EGY",
+      "record_regions": [
+        "EGY"
+      ],
+      "records": 26,
+      "periods_count": 6,
+      "periods": [
+        "2026-April",
+        "2026-August",
+        "2026-July",
+        "2026-June",
+        "2026-May",
+        "2026-September"
+      ],
+      "positions": [
+        "Call Center trainer",
+        "Inbound Team Leader",
+        "Outbound Team Leader",
+        "Quality Assurance",
+        "Workforce analyst"
+      ]
+    },
+    {
+      "logical_team": "Coding EGY",
+      "db_team_name": "Coding EGY",
+      "level": "Employee",
+      "team_region": "EGY",
+      "record_regions": [
+        "EGY"
+      ],
+      "records": 2,
+      "periods_count": 1,
+      "periods": [
+        "2026-September"
+      ],
+      "positions": [
+        "RCM -SHJ- OP CODING"
+      ]
+    },
+    {
+      "logical_team": "Coding",
+      "db_team_name": "Coding",
+      "level": "Employee",
+      "team_region": "UAE",
+      "record_regions": [
+        "UAE"
+      ],
+      "records": 153,
+      "periods_count": 7,
+      "periods": [
+        "2026-April",
+        "2026-August",
+        "2026-February",
+        "2026-January",
+        "2026-June",
+        "2026-March",
+        "2026-May"
+      ],
+      "positions": []
+    },
+    {
+      "logical_team": "Finance",
+      "db_team_name": "Finance",
+      "level": "Employee",
+      "team_region": "All",
+      "record_regions": [
+        "All"
+      ],
+      "records": 31,
+      "periods_count": 6,
+      "periods": [
+        "2026-April",
+        "2026-February",
+        "2026-January",
+        "2026-March",
+        "2026-May",
+        "2026-September"
+      ],
+      "positions": [
+        "FP&A Manager",
+        "Finance Controller",
+        "General Accountant",
+        "Head of Accounts Payable",
+        "Head of Accounts Receivable",
+        "Head of Taxation",
+        "Head of Treasury"
+      ]
+    },
+    {
+      "logical_team": "Human Resources",
+      "db_team_name": "Human Resources",
+      "level": "Employee",
+      "team_region": "EGY",
+      "record_regions": [
+        "EGY"
+      ],
+      "records": 6,
+      "periods_count": 2,
+      "periods": [
+        "2026-August",
+        "2026-September"
+      ],
+      "positions": [
+        "Assessment Center Lead",
+        "HR Operation Supervisor",
+        "HR Specialist"
+      ]
+    },
+    {
+      "logical_team": "IT",
+      "db_team_name": "IT",
+      "level": "Employee",
+      "team_region": "EGY",
+      "record_regions": [
+        "EGY"
+      ],
+      "records": 2,
+      "periods_count": 2,
+      "periods": [
+        "2026-August",
+        "2026-September"
+      ],
+      "positions": [
+        "IT Technical Support"
+      ]
+    },
+    {
+      "logical_team": "Inbound",
+      "db_team_name": "Inbound",
+      "level": "Employee",
+      "team_region": "EGY",
+      "record_regions": [
+        "EGY"
+      ],
+      "records": 230,
+      "periods_count": 9,
+      "periods": [
+        "2026-April",
+        "2026-August",
+        "2026-February",
+        "2026-January",
+        "2026-July",
+        "2026-June",
+        "2026-March",
+        "2026-May",
+        "2026-September"
+      ],
+      "positions": []
+    },
+    {
+      "logical_team": "Marketing",
+      "db_team_name": "Marketing",
+      "level": "Employee",
+      "team_region": "EGY",
+      "record_regions": [
+        "EGY"
+      ],
+      "records": 58,
+      "periods_count": 5,
+      "periods": [
+        "2026-August",
+        "2026-July",
+        "2026-June",
+        "2026-May",
+        "2026-September"
+      ],
+      "positions": [
+        "Account Manager",
+        "Content Writer",
+        "Creative Director",
+        "Graphic Designer",
+        "Media Buyer",
+        "Media Buyer & SEO Manager",
+        "Social Media Head",
+        "Social Media Specialist",
+        "Web Developer"
+      ]
+    },
+    {
+      "logical_team": "Offshore Admin & Management",
+      "db_team_name": "Offshore Admin & Management",
+      "level": "Employee",
+      "team_region": "EGY",
+      "record_regions": [
+        "EGY"
+      ],
+      "records": 4,
+      "periods_count": 3,
+      "periods": [
+        "2026-August",
+        "2026-July",
+        "2026-September"
+      ],
+      "positions": [
+        "Admin Supervisor",
+        "Offshore PMO"
+      ]
+    },
+    {
+      "logical_team": "Outbound",
+      "db_team_name": "Outbound",
+      "level": "Employee",
+      "team_region": "EGY",
+      "record_regions": [
+        "EGY"
+      ],
+      "records": 60,
+      "periods_count": 9,
+      "periods": [
+        "2026-April",
+        "2026-August",
+        "2026-February",
+        "2026-January",
+        "2026-July",
+        "2026-June",
+        "2026-March",
+        "2026-May",
+        "2026-September"
+      ],
+      "positions": []
+    },
+    {
+      "logical_team": "Pharmacy",
+      "db_team_name": "Pharmacy",
+      "level": "Employee",
+      "team_region": "UAE",
+      "record_regions": [
+        "UAE"
+      ],
+      "records": 132,
+      "periods_count": 6,
+      "periods": [
+        "2026-April",
+        "2026-February",
+        "2026-January",
+        "2026-June",
+        "2026-March",
+        "2026-May"
+      ],
+      "positions": [
+        "AJM Pharmacy Manager",
+        "Dubai Pharmacy Manager",
+        "SHJ Pharmacy Manager"
+      ]
+    },
+    {
+      "logical_team": "Pre-Approvals IP Elective Dubai",
+      "db_team_name": "Pre-Approvals IP Elective Dubai",
+      "level": "Employee",
+      "team_region": "UAE",
+      "record_regions": [
+        "UAE"
+      ],
+      "records": 45,
+      "periods_count": 7,
+      "periods": [
+        "2026-April",
+        "2026-August",
+        "2026-February",
+        "2026-January",
+        "2026-June",
+        "2026-March",
+        "2026-May"
+      ],
+      "positions": [
+        "ER / IP Approval",
+        "IP Elective"
+      ]
+    },
+    {
+      "logical_team": "Pre-Approvals IP Final Dubai",
+      "db_team_name": "Pre-Approvals IP Final Dubai",
+      "level": "Employee",
+      "team_region": "UAE",
+      "record_regions": [
+        "UAE"
+      ],
+      "records": 10,
+      "periods_count": 5,
+      "periods": [
+        "2026-August",
+        "2026-January",
+        "2026-June",
+        "2026-March",
+        "2026-May"
+      ],
+      "positions": [
+        "Combined",
+        "IP Approval",
+        "IP Discharge"
+      ]
+    },
+    {
+      "logical_team": "Pre-Approvals IP Final SHJAJM",
+      "db_team_name": "Pre-Approvals IP Final SHJAJM",
+      "level": "Employee",
+      "team_region": "UAE",
+      "record_regions": [
+        "UAE"
+      ],
+      "records": 6,
+      "periods_count": 3,
+      "periods": [
+        "2026-April",
+        "2026-August",
+        "2026-May"
+      ],
+      "positions": [
+        "IP Final"
+      ]
+    },
+    {
+      "logical_team": "Pre-Approvals IP",
+      "db_team_name": "Pre-Approvals IP",
+      "level": "Employee",
+      "team_region": "EGY",
+      "record_regions": [
+        "EGY"
+      ],
+      "records": 39,
+      "periods_count": 7,
+      "periods": [
+        "2026-April",
+        "2026-August",
+        "2026-July",
+        "2026-June",
+        "2026-March",
+        "2026-May",
+        "2026-September"
+      ],
+      "positions": [
+        "Pre-Authorization Senior Specialist",
+        "Pre-Authorization Specialist"
+      ]
+    },
+    {
+      "logical_team": "Pre-Approvals IP",
+      "db_team_name": "Pre-Approvals IP",
+      "level": "Managerial",
+      "team_region": "EGY",
+      "record_regions": [
+        "EGY"
+      ],
+      "records": 7,
+      "periods_count": 7,
+      "periods": [
+        "2026-April",
+        "2026-August",
+        "2026-July",
+        "2026-June",
+        "2026-March",
+        "2026-May",
+        "2026-September"
+      ],
+      "positions": [
+        "Pre-Authorization Supervisor"
+      ]
+    },
+    {
+      "logical_team": "Pre-Approvals OP Dubai",
+      "db_team_name": "pre_approvals_op_dubai",
+      "level": "Employee",
+      "team_region": "UAE",
+      "record_regions": [
+        "UAE"
+      ],
+      "records": 57,
+      "periods_count": 7,
+      "periods": [
+        "2026-April",
+        "2026-August",
+        "2026-February",
+        "2026-January",
+        "2026-June",
+        "2026-March",
+        "2026-May"
+      ],
+      "positions": [
+        "Calls",
+        "Final Submission",
+        "Initial Submission"
+      ]
+    },
+    {
+      "logical_team": "Pre-Approvals OP Final SHJAJM",
+      "db_team_name": "Pre-Approvals OP Final SHJAJM",
+      "level": "Employee",
+      "team_region": "UAE",
+      "record_regions": [
+        "UAE"
+      ],
+      "records": 31,
+      "periods_count": 4,
+      "periods": [
+        "2026-April",
+        "2026-August",
+        "2026-June",
+        "2026-May"
+      ],
+      "positions": [
+        "OP Final"
+      ]
+    },
+    {
+      "logical_team": "RCM",
+      "db_team_name": "RCM",
+      "level": "Employee",
+      "team_region": "All",
+      "record_regions": [
+        "All"
+      ],
+      "records": 18,
+      "periods_count": 6,
+      "periods": [
+        "2026-April",
+        "2026-February",
+        "2026-January",
+        "2026-June",
+        "2026-March",
+        "2026-May"
+      ],
+      "positions": [
+        "Group Claims Operations Manager",
+        "Group Clinical Revenue Manager",
+        "RCM Manager SHJ, AJM"
+      ]
+    },
+    {
+      "logical_team": "Re-Submission",
+      "db_team_name": "Re-Submission",
+      "level": "Employee",
+      "team_region": "UAE",
+      "record_regions": [
+        "UAE"
+      ],
+      "records": 67,
+      "periods_count": 7,
+      "periods": [
+        "2026-April",
+        "2026-August",
+        "2026-February",
+        "2026-January",
+        "2026-June",
+        "2026-March",
+        "2026-May"
+      ],
+      "positions": []
+    },
+    {
+      "logical_team": "Resubmission",
+      "db_team_name": "Resubmission",
+      "level": "Employee",
+      "team_region": "EGY",
+      "record_regions": [
+        "EGY"
+      ],
+      "records": 1,
+      "periods_count": 1,
+      "periods": [
+        "2026-September"
+      ],
+      "positions": [
+        "Resubmission Analyst"
+      ]
+    },
+    {
+      "logical_team": "Sales",
+      "db_team_name": "Sales",
+      "level": "Employee",
+      "team_region": "UAE",
+      "record_regions": [
+        "UAE"
+      ],
+      "records": 67,
+      "periods_count": 8,
+      "periods": [
+        "2026-April",
+        "2026-August",
+        "2026-February",
+        "2026-January",
+        "2026-July",
+        "2026-June",
+        "2026-March",
+        "2026-May"
+      ],
+      "positions": []
+    },
+    {
+      "logical_team": "Submission EGY",
+      "db_team_name": "Submission EGY",
+      "level": "Employee",
+      "team_region": "EGY",
+      "record_regions": [
+        "EGY"
+      ],
+      "records": 1,
+      "periods_count": 1,
+      "periods": [
+        "2026-September"
+      ],
+      "positions": [
+        "Claim & Audit Specialist"
+      ]
+    },
+    {
+      "logical_team": "Submission",
+      "db_team_name": "Submission",
+      "level": "Employee",
+      "team_region": "UAE",
+      "record_regions": [
+        "UAE"
+      ],
+      "records": 41,
+      "periods_count": 7,
+      "periods": [
+        "2026-April",
+        "2026-August",
+        "2026-February",
+        "2026-January",
+        "2026-June",
+        "2026-March",
+        "2026-May"
+      ],
+      "positions": []
+    }
+  ],
+  "management_bsc_by_scope": [
+    {
+      "logical_team": "CRM",
+      "db_team_name": "crm_management",
+      "level": "Corporate",
+      "region": "UAE",
+      "snapshot_rows": 108,
+      "periods": [
+        "2026-April",
+        "2026-February",
+        "2026-January",
+        "2026-June",
+        "2026-March",
+        "2026-May"
+      ]
+    },
+    {
+      "logical_team": "Finance",
+      "db_team_name": "finance_management",
+      "level": "Corporate",
+      "region": "UAE",
+      "snapshot_rows": 60,
+      "periods": [
+        "2026-April",
+        "2026-February",
+        "2026-January",
+        "2026-March",
+        "2026-May"
+      ]
+    },
+    {
+      "logical_team": "Marketing",
+      "db_team_name": "marketing_management",
+      "level": "Corporate",
+      "region": "EGY",
+      "snapshot_rows": 3,
+      "periods": [
+        "2026-April"
+      ]
+    },
+    {
+      "logical_team": "Nursing",
+      "db_team_name": "nursing_management",
+      "level": "Corporate",
+      "region": "UAE",
+      "snapshot_rows": 90,
+      "periods": [
+        "2026-April",
+        "2026-February",
+        "2026-January",
+        "2026-June",
+        "2026-March",
+        "2026-May"
+      ]
+    },
+    {
+      "logical_team": "PMO",
+      "db_team_name": "pmo_management",
+      "level": "Corporate",
+      "region": "UAE",
+      "snapshot_rows": 12,
+      "periods": [
+        "2026-June"
+      ]
+    },
+    {
+      "logical_team": "Pharmacy",
+      "db_team_name": "pharmacy_management",
+      "level": "Corporate",
+      "region": "UAE",
+      "snapshot_rows": 90,
+      "periods": [
+        "2026-April",
+        "2026-February",
+        "2026-January",
+        "2026-March",
+        "2026-May"
+      ]
+    },
+    {
+      "logical_team": "RCM",
+      "db_team_name": "rcm_management",
+      "level": "Corporate",
+      "region": "UAE",
+      "snapshot_rows": 102,
+      "periods": [
+        "2026-April",
+        "2026-February",
+        "2026-January",
+        "2026-June",
+        "2026-March",
+        "2026-May"
+      ]
+    }
+  ],
+  "kpi_values_integrity": {
+    "total_kpi_value_rows": 5671,
+    "joined_by_record_id_and_year": 5671,
+    "orphan_kpi_value_rows": 0
+  }
+}

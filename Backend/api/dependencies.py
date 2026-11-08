@@ -479,30 +479,8 @@ def get_current_user_scope(db, request: Request) -> dict:
         raise
 
 
-def _get_current_user_scope(db, request: Request) -> dict:
-    payload = get_current_user_payload(request)
-    user_id = payload.get("user_id")
-    if not user_id:
-        if payload.get("legacy_unscoped"):
-            return {
-                "user_id": "",
-                "role": payload.get("role", "Admin"),
-                "employee_id": payload.get("employee_id") or "",
-                "accessible_teams": [],
-                "accessible_functions": [],
-                "accessible_regions": [],
-                "accessible_branches": [],
-                "has_unrestricted_team_access": True,
-                "is_self_only": False,
-                "active_team_names": [],
-                "legacy_unscoped": True,
-            }
-        raise HTTPException(status_code=401, detail="Authentication required")
-
-    user = db.query(User).filter(User.id == UUID(str(user_id))).first()
-    if not user:
-        raise HTTPException(status_code=401, detail="Authenticated user is unavailable")
-
+def build_user_scope_from_db_user(db, user: User) -> dict[str, Any]:
+    """Authoritative scope builder from a live User row and its assignment tables."""
     active_teams = db.query(Team).filter(Team.is_active.is_(True)).all()
     active_team_names = list(dict.fromkeys(logical_team_name(team) for team in active_teams))
     assignments = (
@@ -558,7 +536,6 @@ def _get_current_user_scope(db, request: Request) -> dict:
             for level in PERFORMANCE_LEVELS
         ))
 
-    # True for global roles or a Manager explicitly assigned every active team.
     has_unrestricted_team_access = user.role in {"Admin", "General Manager", "Performance Team"} or (
         user.role == "Manager" and bool(active_team_names) and unrestricted_teams >= set(active_team_names)
     )
@@ -587,6 +564,8 @@ def _get_current_user_scope(db, request: Request) -> dict:
         "user": user,
         "user_id": str(user.id),
         "role": user.role,
+        "db_role": str(user.role),
+        "is_active": bool(getattr(user, "is_active", True)),
         "employee_id": user.employee_id,
         "accessible_teams": accessible_teams,
         "accessible_functions": accessible_functions,
@@ -594,11 +573,37 @@ def _get_current_user_scope(db, request: Request) -> dict:
         "accessible_branches": assigned_branches,
         "accessible_team_levels": accessible_team_levels,
         "has_unrestricted_team_access": has_unrestricted_team_access,
-        "is_self_only": user.role in {"Agent", "Employee"},
+        "is_self_only": user.role in {"Agent", "Employee", "Executive"},
         "active_team_names": active_team_names,
         "legacy_unscoped": False,
+        "_db_user_verified": True,
     }
 
+
+def _get_current_user_scope(db, request: Request) -> dict:
+    payload = get_current_user_payload(request)
+    user_id = payload.get("user_id")
+    if not user_id:
+        if payload.get("legacy_unscoped"):
+            return {
+                "user_id": "",
+                "role": payload.get("role", "Admin"),
+                "employee_id": payload.get("employee_id") or "",
+                "accessible_teams": [],
+                "accessible_functions": [],
+                "accessible_regions": [],
+                "accessible_branches": [],
+                "has_unrestricted_team_access": True,
+                "is_self_only": False,
+                "active_team_names": [],
+                "legacy_unscoped": True,
+            }
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    user = db.query(User).filter(User.id == UUID(str(user_id))).first()
+    if not user:
+        raise HTTPException(status_code=401, detail="Authenticated user is unavailable")
+    return build_user_scope_from_db_user(db, user)
 
 def user_can_access_team(scope: dict, team_name: str) -> bool:
     return scope_can_access_team(scope, team_name)

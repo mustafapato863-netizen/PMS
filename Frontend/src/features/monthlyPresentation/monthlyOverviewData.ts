@@ -685,7 +685,7 @@ function emptyMonthlyOverview(
   summary: ExecutiveSummary | null | undefined,
 ): MonthlyOverviewData {
   const effective = summary?.period.effective;
-  const label = effective?.label ?? 'No period selected';
+  const label = effective ? `${effective.month} ${effective.year}` : 'No period selected';
   return {
     title: 'Monthly Review',
     FlowName: 'Authorized scope',

@@ -36,6 +36,7 @@ import { summaryFilterValue } from '../features/executive/filterState';
 import { useActionStore } from '../hooks/useActionStore';
 import PeriodRangeControl, { type PeriodMode } from '../components/executive/v1/PeriodRangeControl';
 import { rangeLabel, rangeMonthKeys, rangePeriods, rangeRequestIsInvalid, readRangeSelection, type RangeSelection } from '../features/executive/rangeParams';
+import { ContextualAssistantPanel } from '../components/ai/ContextualAssistantPanel';
 
 type PageFilters = ExecutiveFilterState & { subTeam?: string };
 const PARAM: Record<keyof PageFilters, string> = {
@@ -278,6 +279,18 @@ function DepartmentalSummaryPage({ view }: { view: Exclude<ExecutiveViewKind, 'f
         </p>
       )}
       {body}
+      <ContextualAssistantPanel
+        pageContext={{
+          page_id: 'executive_summary',
+          route_id: '/executive',
+          region: (managerial ? scope?.region : assigned.regionLocked ? assigned.region : filters.region) ?? null,
+          branch: (assigned.branchLocked ? assigned.branch : filters.branch) ?? null,
+          function_id: (managerial ? managerialFunction : filters.teamFunction) ?? null,
+          team_id: (managerial ? managerTeam : filters.subTeam || filters.team) ?? null,
+          performance_level: filters.performanceLevel ?? null,
+          period: filters.periodKey ?? summary?.period.effective?.key ?? null,
+        }}
+      />
     </div>
   );
 }

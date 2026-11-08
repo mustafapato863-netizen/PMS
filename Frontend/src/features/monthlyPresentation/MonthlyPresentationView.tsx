@@ -46,6 +46,8 @@ import RoleDetailView from './components/RoleDetailView';
 import TeamDeepDiveView from './components/TeamDeepDiveView';
 import { isMonthAvailable, periodFromKey } from './model';
 import { presentationMonthOptions, stepPresentation } from './presentationControls';
+import { ContextualAssistantPanel } from '../../components/ai/ContextualAssistantPanel';
+import type { PageContextV1 } from '../ai/types';
 
 export type MonthlyRegionFilter = 'EGY' | 'UAE';
 
@@ -940,6 +942,54 @@ function MonthlyPresentationScreen({
     presentationMode ? 'present' : 'edit',
   ].join('|');
 
+  const monthlyPageContext = useMemo<PageContextV1>(() => {
+    const primaryDriverMetric =
+      resolvedTeamData?.kpis?.[0]?.label ??
+      overviewData.drivers?.negative?.[0]?.kpiName ??
+      null;
+    const isFallbackData =
+      !summaryRecordsQuery.isLoading &&
+      !explicitPreview &&
+      authorizedRecords.length === 0;
+    const monthParts = (
+      resolvedTeamData?.monthLabel ??
+      resolvedFunctionData?.monthLabel ??
+      overviewData.monthLabel ??
+      ''
+    ).split(' ');
+    const parsedYear = Number(monthParts[1]);
+    return {
+      page_id: 'monthly_presentation',
+      route_id: `${location.pathname}${location.search}`,
+      region: activeRegion,
+      period: selectedPeriodKey,
+      month: monthParts[0] || null,
+      year: Number.isFinite(parsedYear) && parsedYear >= 2000 ? parsedYear : null,
+      function_id: resolvedFunctionData?.functionName ?? null,
+      team_id: resolvedTeamData?.canonicalTeam ?? resolvedTeamData?.teamDisplayName ?? null,
+      position_id: resolvedRoleData?.roleTitle ?? null,
+      selected_metric_id: primaryDriverMetric,
+      is_fallback_data: isFallbackData,
+    };
+  }, [
+    activeRegion,
+    authorizedRecords.length,
+    explicitPreview,
+    location.pathname,
+    location.search,
+    overviewData.drivers?.negative,
+    overviewData.monthLabel,
+    overviewData.title,
+    resolvedFunctionData?.functionName,
+    resolvedFunctionData?.monthLabel,
+    resolvedRoleData?.roleTitle,
+    resolvedTeamData?.canonicalTeam,
+    resolvedTeamData?.kpis,
+    resolvedTeamData?.monthLabel,
+    resolvedTeamData?.teamDisplayName,
+    selectedPeriodKey,
+    summaryRecordsQuery.isLoading,
+  ]);
   const pageIsLoading = !explicitPreview && (summaryRecordsQuery.isLoading || catalogQuery.isLoading);
   const pageHasError = !explicitPreview && (summaryRecordsQuery.isError || catalogQuery.isError);
   const hasNoAssignments = !pageIsLoading && !pageHasError &&
@@ -1081,6 +1131,7 @@ function MonthlyPresentationScreen({
           }
         }}
       />
+      <ContextualAssistantPanel pageContext={monthlyPageContext} />
     </>
   );
 }

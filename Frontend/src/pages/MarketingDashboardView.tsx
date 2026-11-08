@@ -7,6 +7,7 @@ import MarketingFiltersHeader from '../components/marketing/MarketingFiltersHead
 import MarketingOverview from '../components/marketing/MarketingOverview';
 import MarketingPositionDetail from '../components/marketing/MarketingPositionDetail';
 import EmployeeActionModal from '../components/team/EmployeeActionModal';
+import { ContextualAssistantPanel } from '../components/ai/ContextualAssistantPanel';
 import { API_BASE } from '../config';
 import { useUserRole } from '../context/RoleContext';
 import { buildMarketingAnalytics, getMarketingPeriods } from '../features/marketing/marketingAnalytics';
@@ -217,6 +218,19 @@ export const MarketingDashboardContent = ({
           teamLabel={teamLabel}
         />
       )}
+      <ContextualAssistantPanel
+        pageContext={{
+          page_id: 'team_dashboard',
+          route_id: `/team/${encodeURIComponent(teamDbName.toLowerCase())}`,
+          team_id: teamDbName,
+          position_id: effectiveFilters.position ?? null,
+          region: effectiveFilters.region !== 'All' ? effectiveFilters.region : null,
+          performance_level: 'Employee',
+          month: effectiveFilters.month !== 'All' ? effectiveFilters.month : null,
+          year: effectiveFilters.year,
+        }}
+        onActionSaved={onEmployeeChanged}
+      />
     </motion.div>
   );
 };

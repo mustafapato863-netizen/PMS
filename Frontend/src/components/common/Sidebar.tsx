@@ -10,6 +10,7 @@ import {
   Layers,
   PanelLeftClose,
   PanelLeftOpen,
+  Sparkles,
 } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { useUserRole } from '../../context/RoleContext';
@@ -30,6 +31,7 @@ import {
   canAccessSettingsContent,
   canAccessInsights,
   canAccessMonthlyPresentation,
+  canAccessPmsAi,
   canAccessPlanning,
   canSeeReportsNav,
   getRoleDisplayLabel,
@@ -322,6 +324,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed: collapsedPreference = false, 
     ? [
         { name: 'Executive Summary', path: '/executive', icon: <Gauge size={18} /> },
         ...(canAccessMonthlyPresentation(role) ? [{ name: 'Monthly Review', path: '/monthly-presentation', icon: <Presentation size={18} />, resetQuery: true, drawerOnly: true }] : []),
+        ...(canAccessPmsAi(role) ? [{ name: 'PMS AI', path: '/ai', icon: <Sparkles size={18} />, resetQuery: true, drawerOnly: true }] : []),
         ...(!scopedDirector ? teamsItem : []),
         ...(canSeeReportsNav(role) ? [{ name: 'Reports', path: '/reports', icon: <FileBarChart size={18} /> }] : []),
         // Plain /insights: Insights keeps its own filters in the URL
@@ -342,7 +345,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed: collapsedPreference = false, 
       { label: 'Functions', destination: '/function-summary', icon: <Layers size={20} />, active: pathname.startsWith('/function-summary') },
       ...(canSeeReportsNav(role) ? [{ label: 'Reports', destination: linkFor('/reports'), icon: <FileBarChart size={20} />, active: pathname.startsWith('/reports') }] : []),
     ]
-    // Monthly Review is a desktop report: listed in the sidebar/drawer, not in the compact dock.
+    // Monthly Review and PMS AI are desktop/drawer workspaces: listed in the sidebar/drawer, not in the compact dock.
     : generalItems.filter((item) => !item.drawerOnly).map((item) => {
       const tabletOnly = primaryDockCount >= 3;
       primaryDockCount += 1;

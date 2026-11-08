@@ -50,32 +50,49 @@ _PRE_APPROVALS_UAE_KEYS = {
     "pre-approvals",
     "pre-approvals op final",
     "pre-approvals op dubai",
+    "op dubai",
     "pre-approvals op final shjajm",
+    "op sharjah",
     "pre-approvals ip final",
     "pre-approvals ip final dubai",
+    "ip final dubai",
     "pre-approvals ip final shjajm",
+    "ip sharjah",
     "pre-approvals ip elective",
     "pre-approvals ip elective dubai",
+    "ip elective dubai",
 }
 
 _PRE_APPROVALS_OP_FINAL_KEYS = {
     "pre-approvals op final",
     "pre-approvals op dubai",
+    "op dubai",
     "pre-approvals op final shjajm",
+    "op sharjah",
 }
 
 _PRE_APPROVALS_IP_FINAL_KEYS = {
     "pre-approvals ip final",
     "pre-approvals ip final dubai",
+    "ip final dubai",
     "pre-approvals ip final shjajm",
+    "ip sharjah",
 }
 
 _PRE_APPROVALS_IP_ELECTIVE_KEYS = {
     "pre-approvals ip elective",
     "pre-approvals ip elective dubai",
+    "ip elective dubai",
 }
 
-_CALL_CENTER_KEYS = {"call center", "inbound", "inbound uae", "outbound"}
+_CALL_CENTER_KEYS = {
+    "call center",
+    "inbound",
+    "inbound uae",
+    "outbound",
+    "support positions",
+    "call center support positions",
+}
 
 _ADMINISTRATION_KEYS = {"administration", "offshore admin & management"}
 
@@ -92,38 +109,134 @@ _RCM_KEYS = {
     "pre-approvals ip",
     "pre-approvals op final",
     "pre-approvals op dubai",
+    "op dubai",
     "pre-approvals op final shjajm",
+    "op sharjah",
     "pre-approvals ip final",
     "pre-approvals ip final dubai",
+    "ip final dubai",
     "pre-approvals ip final shjajm",
+    "ip sharjah",
     "pre-approvals ip elective",
     "pre-approvals ip elective dubai",
+    "ip elective dubai",
 }
+
+
+def _exact_team_keys(value: str) -> set[str]:
+    """Return 1-to-1 spelling aliases for a single team WITHOUT expanding a parent rollup downward to child teams."""
+    normalized = str(value).strip().casefold()
+    if normalized in {"pre-approvals op dubai", "op dubai"}:
+        return {"pre-approvals op dubai", "op dubai"}
+    if normalized in {"pre-approvals op final shjajm", "op sharjah"}:
+        return {"pre-approvals op final shjajm", "op sharjah"}
+    if normalized in {"pre-approvals ip final dubai", "ip final dubai"}:
+        return {"pre-approvals ip final dubai", "ip final dubai"}
+    if normalized in {"pre-approvals ip final shjajm", "ip sharjah"}:
+        return {"pre-approvals ip final shjajm", "ip sharjah"}
+    if normalized in _PRE_APPROVALS_IP_ELECTIVE_KEYS:
+        return set(_PRE_APPROVALS_IP_ELECTIVE_KEYS)
+    if normalized in {"support positions", "call center support positions"}:
+        return {"call center", "support positions", "call center support positions"}
+    if normalized in {"rcm", "rcm_management"}:
+        return {"rcm", "rcm_management"}
+    if normalized in {
+        "crm", "crm_management", "nursing", "nursing_management",
+        "pmo", "pmo_management", "finance", "finance_management",
+        "marketing", "marketing_management", "pharmacy", "pharmacy_management",
+    }:
+        base = normalized.removesuffix("_management")
+        return {base, f"{base}_management"}
+    if normalized in _ADMINISTRATION_KEYS:
+        return set(_ADMINISTRATION_KEYS)
+    return {normalized}
 
 
 def _team_keys(value: str) -> set[str]:
     normalized = str(value).strip().casefold()
     if normalized == "pre-approvals":
         return _PRE_APPROVALS_UAE_KEYS
-    if normalized in _PRE_APPROVALS_OP_FINAL_KEYS:
+    if normalized == "pre-approvals op final":
         return _PRE_APPROVALS_OP_FINAL_KEYS
-    if normalized in _PRE_APPROVALS_IP_FINAL_KEYS:
+    if normalized == "pre-approvals ip final":
         return _PRE_APPROVALS_IP_FINAL_KEYS
     if normalized in _PRE_APPROVALS_IP_ELECTIVE_KEYS:
         return _PRE_APPROVALS_IP_ELECTIVE_KEYS
     if normalized == "call center":
         return _CALL_CENTER_KEYS
-    if normalized == "rcm":
-        return _RCM_KEYS
-    if normalized in _ADMINISTRATION_KEYS:
-        return set(_ADMINISTRATION_KEYS)
-    return {normalized}
+    if normalized in {"rcm", "rcm_management"}:
+        return _RCM_KEYS | {"rcm_management"}
+    return _exact_team_keys(value)
 
 
 FUNCTION_VIEWER_FUNCTIONS = ("Call Center", "RCM", "Pre-Approvals", "Marketing", "Sales", "CSR", "Pharmacy")
 FUNCTION_SCOPED_ROLES = {"Function Viewer", "Function Director"}
 GLOBAL_DATA_ROLES = {"Admin", "General Manager", "Performance Team", "Viewer"}
 SELF_SCOPED_ROLES = {"Agent", "Executive", "Employee"}
+
+
+def _normalize_team_level_entry(item) -> str:
+    if isinstance(item, (list, tuple)) and len(item) >= 2:
+        t = str(item[0] or "").strip().casefold()
+        lvl = str(item[1] or "").strip().casefold()
+        return f"{t}:{lvl}" if t else ""
+    if isinstance(item, str) and ":" in item:
+        t, lvl = item.split(":", 1)
+        return f"{t.strip().casefold()}:{lvl.strip().casefold()}" if t.strip() else ""
+    return str(item or "").strip().casefold()
+
+
+def canonical_scope_identity(scope: dict | None) -> dict:
+    """Build a canonical, deterministic representation of all effective authorization dimensions."""
+    if not scope:
+        return {}
+    role = str(scope.get("role") or scope.get("db_role") or "").strip()
+    emp_id = str(scope.get("employee_id") or "").strip()
+    is_self_only = bool(scope.get("is_self_only")) or (role in SELF_SCOPED_ROLES)
+    return {
+        "user_id": str(scope.get("user_id") or "").strip(),
+        "role": role,
+        "employee_id": emp_id,
+        "is_self_only": is_self_only,
+        "is_active": bool(scope.get("is_active", True)),
+        "legacy_unscoped": bool(scope.get("legacy_unscoped", False)),
+        "has_unrestricted_team_access": bool(scope.get("has_unrestricted_team_access", False)),
+        "accessible_teams": sorted(
+            {
+                str(v).strip()
+                for v in (scope.get("accessible_teams") or scope.get("allowed_teams") or [])
+                if str(v).strip()
+            }
+        ),
+        "accessible_team_levels": sorted(
+            {
+                norm
+                for item in (scope.get("accessible_team_levels") or [])
+                if (norm := _normalize_team_level_entry(item))
+            }
+        ),
+        "accessible_functions": sorted(
+            {
+                str(v).strip()
+                for v in (scope.get("accessible_functions") or scope.get("allowed_functions") or [])
+                if str(v).strip()
+            }
+        ),
+        "accessible_regions": sorted(
+            {
+                str(v).strip()
+                for v in (scope.get("accessible_regions") or scope.get("allowed_regions") or [])
+                if str(v).strip()
+            }
+        ),
+        "accessible_branches": sorted(
+            {
+                str(v).strip()
+                for v in (scope.get("accessible_branches") or scope.get("allowed_branches") or [])
+                if str(v).strip()
+            }
+        ),
+    }
 
 
 # "Functions" are the parent domains that ``_team_keys`` already expands into
@@ -147,6 +260,8 @@ def functions_for_team(team_name: str) -> list[str]:
     if not normalized:
         return []
     key = normalized.casefold()
+    if key in {"support positions", "call center support positions"}:
+        return ["Call Center"]
     parents = [function for function, keys in _FUNCTION_TEAM_KEYS.items() if key in keys]
     return parents or [normalized]
 
@@ -164,6 +279,9 @@ def function_for_team(team_name: str) -> str | None:
 
 def function_team_keys(function_name: str) -> set[str]:
     """Casefolded source-team keys covered by a function selection."""
+    norm = str(function_name).strip().casefold()
+    if norm == "call center":
+        return _team_keys(str(function_name)) | {"inbound uae"}
     return _team_keys(str(function_name))
 
 
@@ -173,8 +291,21 @@ def selection_team_keys(team_name: str) -> set[str]:
     The new RCM Pre-Approvals team includes Offshore as a sub-team. Legacy
     Pre-Approvals grants retain their UAE-only meaning in ``_team_keys``.
     """
-    if str(team_name).strip().casefold() == "pre-approvals":
+    norm = str(team_name).strip().casefold()
+    if norm == "inbound":
+        return {"inbound", "inbound uae"}
+    if norm == "pre-approvals":
         return _PRE_APPROVALS_UAE_KEYS | {"pre-approvals ip offshore"}
+    if norm in {"pre-approvals op dubai", "op dubai"}:
+        return {"pre-approvals op dubai", "op dubai"}
+    if norm in {"pre-approvals op final shjajm", "op sharjah"}:
+        return {"pre-approvals op final shjajm", "op sharjah"}
+    if norm in {"pre-approvals ip final dubai", "ip final dubai"}:
+        return {"pre-approvals ip final dubai", "ip final dubai"}
+    if norm in {"pre-approvals ip final shjajm", "ip sharjah"}:
+        return {"pre-approvals ip final shjajm", "ip sharjah"}
+    if norm in {"pre-approvals ip elective dubai", "ip elective dubai"}:
+        return {"pre-approvals ip elective dubai", "ip elective dubai"}
     return _team_keys(team_name)
 
 
@@ -197,7 +328,7 @@ def user_can_access_team(scope: dict, team_name: str) -> bool:
         return any(str(value).strip() for value in scope.get("accessible_regions", []))
     if role == "Branch Director":
         # Team-only checks are followed by branch filtering on the records.
-        return bool(scope.get("accessible_branches"))
+        return bool(scope.get("accessible_branches") or scope.get("allowed_branches"))
     accessible = set().union(*(_team_keys(str(team)) for team in scope.get("accessible_teams", [])))
     return bool(_team_keys(team_name) & accessible)
 
@@ -219,8 +350,9 @@ def user_can_access_team_level(scope: dict, team_name: str, performance_level: s
         for team, level in scope.get("accessible_team_levels", [])
         for team_key in _team_keys(str(team))
     }
-    team_levels = {level for team, level in configured if team == team_name.lower()}
-    return not team_levels or performance_level in team_levels
+    target_keys = _exact_team_keys(team_name)
+    team_levels = {str(level).strip().casefold() for team, level in configured if team in target_keys}
+    return not team_levels or str(performance_level or "Employee").strip().casefold() in team_levels
 
 
 def user_can_access_region(scope: dict, region: str | None) -> bool:
@@ -252,7 +384,7 @@ def filter_records_by_scope(records, scope: dict):
     if scope.get("legacy_unscoped"):
         return records
     if role == "Branch Director":
-        allowed_branches = {str(value).strip().casefold() for value in scope.get("accessible_branches", [])}
+        allowed_branches = {str(value).strip().casefold() for value in (scope.get("accessible_branches") or scope.get("allowed_branches") or [])}
         scoped_records = []
         for record in records:
             branch = str(_record_value(record, "branch_key", "") or "").strip().casefold()
@@ -276,7 +408,12 @@ def filter_records_by_scope(records, scope: dict):
     if role == "Manager" and not scope.get("has_unrestricted_team_access"):
         accessible = set().union(*(_team_keys(str(team)) for team in scope.get("accessible_teams", [])))
         return filter_records_by_team_levels(
-            [record for record in records if str(_record_value(record, "team")).lower() in accessible], scope,
+            [
+                record
+                for record in records
+                if bool(_exact_team_keys(str(_record_value(record, "team"))) & accessible)
+            ],
+            scope,
         )
     if role in GLOBAL_DATA_ROLES or role == "Manager":
         return records
@@ -290,7 +427,7 @@ def filter_records_by_team_levels(records, scope: dict):
     if scope.get("role") in GLOBAL_DATA_ROLES or scope.get("has_unrestricted_team_access") or scope.get("legacy_unscoped"):
         return records
     configured = {
-        (team_key, str(level))
+        (team_key, str(level).strip().casefold())
         for team, level in scope.get("accessible_team_levels", [])
         for team_key in _team_keys(str(team))
     }
@@ -300,7 +437,7 @@ def filter_records_by_team_levels(records, scope: dict):
         record
         for record in records
         if any(
-            (team_key, str(_record_value(record, "performance_level"))) in configured
-            for team_key in _team_keys(str(_record_value(record, "team")))
+            (team_key, str(_record_value(record, "performance_level") or "Employee").strip().casefold()) in configured
+            for team_key in _exact_team_keys(str(_record_value(record, "team")))
         )
     ]

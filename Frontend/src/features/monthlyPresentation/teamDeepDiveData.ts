@@ -122,6 +122,8 @@ export interface TeamDeepDiveData {
   monthLabel: string;
   previousMonthLabel: string;
   periodKey: string;
+  /** Baseline KPI metadata used to keep monthly trend direction and labels stable. */
+  keyKpis?: AgentKeyKpiItem[];
   summary: {
     score: number;
     grade: GradeLetter;
@@ -156,6 +158,26 @@ function normalizeKpiLabel(value: string | null | undefined): string {
     .replace(/[^a-z0-9%]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+function fillTrendFromBaseline(
+  trend: KpiMonthlyPoint[],
+  baselineKpi: AgentKeyKpiItem | undefined,
+): KpiMonthlyPoint[] {
+  if (!baselineKpi?.trend6Mo?.length) return trend;
+  return trend.map((point) => {
+    if (point.actual !== null) return point;
+    const match = baselineKpi.trend6Mo.find((item) => item.periodKey === point.periodKey);
+    if (!match || match.actual === null) return point;
+    return {
+      ...point,
+      actual: match.actual,
+      target: point.target ?? match.target,
+      actualFormatted: match.actualFormatted || point.actualFormatted,
+      targetFormatted: point.targetFormatted === '—' ? match.targetFormatted : point.targetFormatted,
+      metTarget: match.metTarget,
+    };
+  });
 }
 
 function sameMeasuredKpi(left: string | null | undefined, right: string | null | undefined): boolean {
@@ -1198,7 +1220,12 @@ function buildGenericTeamDeepDive(
   const kpis: TeamKpiItem[] = currentKpis.map((row) => {
     const unit = row.unit ?? '%';
     const lowerBetter = String(row.kpi_direction ?? '').toLowerCase().startsWith('lower');
-    const trend6Mo: KpiMonthlyPoint[] = sixPeriods.map((period) => {
+    const baselineKpiForTrend = (located?.data.keyKpis ?? []).find(
+      (kpi) =>
+        kpi.kpiKey === row.kpi_key ||
+        normalizeKpiLabel(kpi.name) === normalizeKpiLabel(row.kpi_label),
+    );
+    const trend6MoRaw: KpiMonthlyPoint[] = sixPeriods.map((period) => {
       const monthRecords = teamRecords.filter((record) => record.period.key === period.key);
       const match = kpiRows(recordsForTeamKpis(monthRecords), []).find((item) => item.kpi_key === row.kpi_key);
       const actual = match?.actual ?? null;
@@ -1218,6 +1245,7 @@ function buildGenericTeamDeepDive(
             : null,
       };
     });
+    const trend6Mo = fillTrendFromBaseline(trend6MoRaw, baselineKpiForTrend);
     let agentsMeetingTarget = 0;
     current.forEach((agent) => {
       const agentRow = kpiRows([agent], []).find((item) => item.kpi_key === row.kpi_key);
@@ -1434,7 +1462,12 @@ export function buildTeamDeepDiveFromRecords(
             .toLowerCase()
             .startsWith('lower');
 
-          const trend6Mo: KpiMonthlyPoint[] = sixPeriods.map((p) => {
+          const baselineKpiForTrend = (fallback.keyKpis ?? []).find(
+            (kpi) =>
+              kpi.kpiKey === row.kpi_key ||
+              normalizeKpiLabel(kpi.name) === normalizeKpiLabel(row.kpi_label),
+          );
+          const trend6MoRaw: KpiMonthlyPoint[] = sixPeriods.map((p) => {
             const pRows = kpiRows(inPeriod(teamRecords, p), []);
             const match = pRows.find((k) => k.kpi_key === row.kpi_key);
             const actual = match?.actual ?? null;
@@ -1455,6 +1488,7 @@ export function buildTeamDeepDiveFromRecords(
               metTarget,
             };
           });
+          const trend6Mo = fillTrendFromBaseline(trend6MoRaw, baselineKpiForTrend);
 
           // Count how many agents in current period met this KPI's target
           let agentsMeetingTarget = 0;

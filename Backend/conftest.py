@@ -16,3 +16,6 @@ os.environ.setdefault("JWT_SECRET", "ci-only-anonymous-test-secret-never-product
 os.environ.setdefault("PMS_AUTO_SEED", "false")
 os.environ.setdefault("PMS_SEED_DEMO_LEVELS", "false")
 os.environ.setdefault("PMS_SEED_PERMISSIONS_ON_STARTUP", "false")
+os.environ.setdefault("PMS_AI_GEMINI_ROUTING_ENABLED", "false")
+os.environ.setdefault("PMS_AI_LOCAL_ROUTER_ENABLED", "false")
+os.environ.setdefault("PMS_AI_LOCAL_SYNTHESIS_ENABLED", "false")

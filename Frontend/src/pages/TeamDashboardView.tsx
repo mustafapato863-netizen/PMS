@@ -56,6 +56,8 @@ import { directorScope } from '../lib/directorScope';
 import { teamExportFailureAlert } from '../features/team/teamExportFailure';
 import { useFunctionScope } from '../features/executive/useFunctionScope';
 import { teamBreadcrumbs } from '../features/executive/functions';
+import { ContextualAssistantPanel } from '../components/ai/ContextualAssistantPanel';
+import type { PageContextV1 } from '../features/ai/types';
 
 const TeamChartsSection = lazy(() => import('../components/team/TeamChartsSection'));
 const BalancedScorecardWorkspace = lazy(() => import('../components/team/BalancedScorecardWorkspace'));
@@ -934,7 +936,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
     if (isPreApprovalsTeamName) {
       const hossam = allAgents.find((a) => isHossamRecord(a) && scoreMonthKey(a.identity.month || '') === scoreMonthKey(activeMonthName));
       if (hossam) {
-        const s = Number(hossam.evaluation?.score ?? hossam.score);
+        const s = Number(hossam.evaluation?.score);
         if (Number.isFinite(s)) return s;
       }
     }
@@ -952,10 +954,9 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
 
   const calculatedPrevAvgScore = useMemo(() => {
     if (isPreApprovalsTeamName && prevPeriodKey) {
-      const prevMonthName = monthNameFromPeriodKey(prevPeriodKey);
-      const hossam = allAgents.find((a) => isHossamRecord(a) && scoreMonthKey(a.identity.month || '') === scoreMonthKey(prevMonthName ?? ''));
+      const hossam = previousPeriodAgents.find((a) => isHossamRecord(a));
       if (hossam) {
-        const s = Number(hossam.evaluation?.score ?? hossam.score);
+        const s = Number(hossam.evaluation?.score);
         if (Number.isFinite(s)) return s;
       }
     }
@@ -1904,6 +1905,66 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
     return bullets;
   }, [teamId, scoredTeamId, hookAvgScore, calculatedAvgScore, presentationRows, teamMetrics]);
 
+  const teamPageContext = useMemo<PageContextV1>(() => {
+    const effectiveTeamName =
+      workflowConfigTeam ||
+      teamName ||
+      (displayName && displayName !== 'All Teams' ? displayName : null);
+    const primaryDriverKpi =
+      teamKpiAnalysis.find((kpi) => !kpi.targetMet)?.label ??
+      teamKpiAnalysis[0]?.label ??
+      null;
+    const normalizedBranch =
+      location === 'all'
+        ? null
+        : location === 'dubai'
+          ? 'Dubai'
+          : location === 'sharjah'
+            ? 'Sharjah'
+            : location === 'ajman'
+              ? 'Ajman'
+              : location === 'clinics'
+                ? 'Clinics'
+                : location;
+    const normalizedRegion =
+      region === 'All'
+        ? null
+        : region === 'EGY'
+          ? 'Egypt'
+          : region === 'UAE'
+            ? 'UAE'
+            : region;
+    return {
+      page_id: 'team_dashboard',
+      route_id: `/team/${teamId ?? 'all'}`,
+      region: normalizedRegion,
+      branch: normalizedBranch,
+      period: insightPeriodKey ?? null,
+      month: activeMonthName || (month === 'All' ? null : month),
+      year: insightYear ?? null,
+      team_id: effectiveTeamName,
+      performance_level: performanceLevel === 'All' ? null : performanceLevel,
+      selected_metric_id: primaryDriverKpi,
+      employee_id: modalEmployee?.id ?? null,
+      is_fallback_data: String(dataSource) === 'sample' || String(dataSource) === 'fallback',
+    };
+  }, [
+    activeMonthName,
+    dataSource,
+    displayName,
+    insightPeriodKey,
+    insightYear,
+    location,
+    modalEmployee?.id,
+    month,
+    performanceLevel,
+    region,
+    teamId,
+    teamKpiAnalysis,
+    teamName,
+    workflowConfigTeam,
+  ]);
+
   if (loading) {
     return <OperationalViewSkeleton />;
   }
@@ -2071,6 +2132,9 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
             setPage(1);
           }}
         />
+        {!isTeamAccessRestricted && (
+          <ContextualAssistantPanel pageContext={teamPageContext} onActionSaved={refreshPerformanceData} />
+        )}
       </div>
     );
   }
@@ -2650,6 +2714,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
           <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-0.5 border-4 border-transparent border-t-slate-900/95 dark:border-t-slate-800/95" />
         </div>
       )}
+      <ContextualAssistantPanel pageContext={teamPageContext} onActionSaved={refreshPerformanceData} />
     </div>
   );
 };

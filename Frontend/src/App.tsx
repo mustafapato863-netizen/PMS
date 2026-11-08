@@ -36,6 +36,7 @@ const PlanningView = lazy(() => import('./pages/PlanningView'));
 const CorrectiveActionsView = lazy(() => import('./pages/CorrectiveActionsView'));
 const MaintenanceView = lazy(() => import('./pages/MaintenanceView'));
 const MonthlyPresentationView = lazy(() => import('./pages/MonthlyPresentationView'));
+const PmsAiWorkspaceView = lazy(() => import('./pages/PmsAiWorkspaceView'));
 const NotFound = lazy(() => import('./pages/NotFound'));
 
 const RouteLoadingFallback = () => <PageLoadingSkeleton variant="dashboard" label="Loading page" />;
@@ -78,6 +79,8 @@ function AnimatedRoutes() {
         {/* Executive Summary: corporate, managerial (team scope) and function redirect. */}
         <Route path="/executive" element={<Suspense fallback={<RouteLoadingFallback />}><DepartmentalSummaryView /></Suspense>} />
         <Route path="/departmental-summary" element={<RedirectToExecutiveSummary />} />
+        <Route path="/bsc" element={<RedirectToExecutiveSummary />} />
+        <Route path="/balanced-scorecard" element={<RedirectToExecutiveSummary />} />
 
         {/* Function Summary: Admin, General Manager, Function Viewer (own functions only). */}
         <Route path="/function-summary" element={<RouteGuard allowedRoles={ROUTE_ROLES.functionSummary}><Suspense fallback={<RouteLoadingFallback />}><FunctionSummaryView /></Suspense></RouteGuard>} />
@@ -141,6 +144,14 @@ function AnimatedRoutes() {
           element={
             <RouteGuard allowedRoles={ROUTE_ROLES.insights}>
               <Suspense fallback={<RouteLoadingFallback />}><InsightsView /></Suspense>
+            </RouteGuard>
+          }
+        />
+        <Route
+          path="/ai"
+          element={
+            <RouteGuard allowedRoles={ROUTE_ROLES.pmsAi}>
+              <Suspense fallback={<RouteLoadingFallback />}><PmsAiWorkspaceView /></Suspense>
             </RouteGuard>
           }
         />

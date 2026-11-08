@@ -27,6 +27,7 @@ import { currentPeriodKey, periodOptionsFor, subtitleFor } from '../features/exe
 import { useExecutiveSummary, type ExecutiveFilterState } from '../features/executive/useExecutiveSummary';
 import type { ExecutiveFunction } from '../features/executive/types';
 import { summaryFilterValue } from '../features/executive/filterState';
+import { ContextualAssistantPanel } from '../components/ai/ContextualAssistantPanel';
 
 type PageFilters = ExecutiveFilterState & { subTeam?: string };
 const PARAM: Record<Exclude<keyof PageFilters, 'teamFunction'>, string> = {
@@ -214,6 +215,19 @@ function FunctionSummaryPage({ fn, allowed }: { fn: ExecutiveFunction; allowed: 
     <div className="app-page-shell rf-page rf-page--executive executive-v1 [--app-section-gap:16px] [--rf-page-gap:16px]">
       {header}
       {body}
+      <ContextualAssistantPanel
+        pageContext={{
+          page_id: 'function_summary',
+          route_id: `/function-summary/${functionSlug(fn)}`,
+          region: (assigned.regionLocked ? assigned.region : filters.region) ?? null,
+          branch: (assigned.branchLocked ? assigned.branch : filters.branch) ?? null,
+          function_id: fn,
+          team_id: filters.subTeam || filters.team || null,
+          position_id: filters.position ?? null,
+          performance_level: filters.performanceLevel ?? null,
+          period: filters.periodKey ?? summary?.period.effective?.key ?? null,
+        }}
+      />
     </div>
   );
 }

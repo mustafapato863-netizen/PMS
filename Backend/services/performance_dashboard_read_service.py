@@ -26,6 +26,7 @@ from services.dashboard_record_service import DashboardRecordService
 from services.evaluation.cache_identity import evaluation_cache_identity
 from services.scoring_basis_comparison import compare_adjacent_records
 from utils.branch_scope import record_matches_branch
+from utils.report_scope import canonical_scope_identity
 from utils.scoring_rules import letter_grade, score_percent
 
 
@@ -77,6 +78,10 @@ def _number(value: Any, default: float = 0.0) -> float:
 
 
 def _scope_identity(scope: dict) -> dict[str, Any]:
+    return canonical_scope_identity(scope)
+
+
+def _legacy_scope_identity_unused(scope: dict) -> dict[str, Any]:
     return {
         "user_id": str(scope.get("user_id") or ""),
         "role": str(scope.get("role") or ""),

@@ -1,5 +1,6 @@
 # Python cache and byte-code
 __pycache__/
+**/__pycache__/
 *.py[cod]
 *$py.class
 .venv/
@@ -7,12 +8,36 @@ __pycache__/
 venv/
 ENV/
 env/
+.pytest_cache/
+**/.pytest_cache/
+.hypothesis/
+**/.hypothesis/
 
-# Application state, persistent storage and local assets
+# Local credentials and machine-specific settings must not enter build images.
+.env
+.env.*
+!.env.example
+
+# Application state, logs, test suites, dev manifests, and local model artifacts
+logs/
+tmp/
+*.log
+*.log.*
+tests/
+conftest.py
+pytest.ini
+requirements-dev.txt
+requirements-ai-eval.txt
 data/*.json
 *.xlsx
 *.xls
 *.csv
+*.gguf
+*.bin
+*.safetensors
+*.onnx
+*.pkl
+*.joblib
 
 # Docker and configs
 Dockerfile

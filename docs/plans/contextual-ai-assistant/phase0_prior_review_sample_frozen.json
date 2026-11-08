@@ -1,0 +1,325 @@
+[
+  {
+    "id": 5,
+    "question": "What is the Inbound score in September 2026?",
+    "outcome": "answer",
+    "headline": "Your authorized PMS scope covers teams (Inbound, Outbound, Support Positions, Coding, Submission, Re-Submission, Pre-Approvals OP Final, Pre-Approvals IP Final, Pre-Approvals IP Elective, Pre-Approvals IP Offshore, Marketing, Pharmacy, CSR, Sales, Finance, Human Resources, IT, Offshore Admin & Management) across periods (2026-08, 2026-09).",
+    "bullets": [
+      "Authorized branches: dubai, sharjah, ajman, clinics.",
+      "Authorized performance levels: Employee, Managerial, Corporate."
+    ],
+    "tools": [
+      {
+        "tool_name": "inspect_authorized_concepts",
+        "arguments": {
+          "team": null,
+          "function": "Call Center"
+        },
+        "records_evaluated": 0
+      }
+    ],
+    "provider": "llama_cpp",
+    "missing": [
+      "85.0%|85%"
+    ],
+    "passed_basic": false,
+    "seconds": 8.846
+  },
+  {
+    "id": 9,
+    "question": "What was Inbound score in August 2026?",
+    "outcome": "answer",
+    "headline": "Your authorized PMS scope covers teams (Inbound, Outbound, Support Positions, Coding, Submission, Re-Submission, Pre-Approvals OP Final, Pre-Approvals IP Final, Pre-Approvals IP Elective, Pre-Approvals IP Offshore, Marketing, Pharmacy, CSR, Sales, Finance, Human Resources, IT, Offshore Admin & Management) across periods (2026-08, 2026-09).",
+    "bullets": [
+      "Authorized branches: dubai, sharjah, ajman, clinics.",
+      "Authorized performance levels: Employee, Managerial, Corporate."
+    ],
+    "tools": [
+      {
+        "tool_name": "inspect_authorized_concepts",
+        "arguments": {
+          "team": null,
+          "function": "Call Center"
+        },
+        "records_evaluated": 0
+      }
+    ],
+    "provider": "llama_cpp",
+    "missing": [
+      "82.5%"
+    ],
+    "passed_basic": false,
+    "seconds": 11.996
+  },
+  {
+    "id": 11,
+    "question": "What is Outbound score in September 2026?",
+    "outcome": "answer",
+    "headline": "Your authorized PMS scope covers teams (Inbound, Outbound, Support Positions, Coding, Submission, Re-Submission, Pre-Approvals OP Final, Pre-Approvals IP Final, Pre-Approvals IP Elective, Pre-Approvals IP Offshore, Marketing, Pharmacy, CSR, Sales, Finance, Human Resources, IT, Offshore Admin & Management) across periods (2026-08, 2026-09).",
+    "bullets": [
+      "Authorized branches: dubai, sharjah, ajman, clinics.",
+      "Authorized performance levels: Employee, Managerial, Corporate."
+    ],
+    "tools": [
+      {
+        "tool_name": "inspect_authorized_concepts",
+        "arguments": {
+          "team": null,
+          "function": "Call Center"
+        },
+        "records_evaluated": 0
+      }
+    ],
+    "provider": "llama_cpp",
+    "missing": [
+      "60.0%|60%"
+    ],
+    "passed_basic": false,
+    "seconds": 10.509
+  },
+  {
+    "id": 13,
+    "question": "Who is the lowest person in Inbound in September 2026?",
+    "outcome": "answer",
+    "headline": "Your authorized PMS scope covers teams (Inbound, Outbound, Support Positions, Coding, Submission, Re-Submission, Pre-Approvals OP Final, Pre-Approvals IP Final, Pre-Approvals IP Elective, Pre-Approvals IP Offshore, Marketing, Pharmacy, CSR, Sales, Finance, Human Resources, IT, Offshore Admin & Management) across periods (2026-08, 2026-09).",
+    "bullets": [
+      "Authorized branches: dubai, sharjah, ajman, clinics.",
+      "Authorized performance levels: Employee, Managerial, Corporate."
+    ],
+    "tools": [
+      {
+        "tool_name": "inspect_authorized_concepts",
+        "arguments": {
+          "team": null,
+          "function": "Call Center"
+        },
+        "records_evaluated": 0
+      }
+    ],
+    "provider": "llama_cpp",
+    "missing": [
+      "alice",
+      "80.0%|80%"
+    ],
+    "passed_basic": false,
+    "seconds": 7.575
+  },
+  {
+    "id": 21,
+    "question": "Which branch had the most Inbound bookings in September 2026: Dubai or Sharjah?",
+    "outcome": "answer",
+    "headline": "In September 2026, Dubai leads at 71.2% vs. Sharjah at 59.2% (12.0 pts gap).",
+    "bullets": [
+      "Dubai holds the largest No-Show volume (130 missed visits out of 240 bookings \u00b7 45.8% Attended)."
+    ],
+    "tools": [
+      {
+        "tool_name": "get_kpi_diagnosis_and_trends",
+        "arguments": {
+          "team": null,
+          "function": "Call Center",
+          "position": null,
+          "branch": null,
+          "performance_level": "Employee",
+          "month": "September",
+          "year": 2026,
+          "region": null,
+          "compare_branch": "sharjah",
+          "branches": [
+            "dubai",
+            "sharjah"
+          ],
+          "kpi": null
+        },
+        "records_evaluated": 3
+      }
+    ],
+    "provider": "llama_cpp",
+    "missing": [
+      "180"
+    ],
+    "passed_basic": false,
+    "seconds": 7.389
+  },
+  {
+    "id": 24,
+    "question": "Compare Dubai and Sharjah Inbound bookings in September 2026.",
+    "outcome": "answer",
+    "headline": "In September 2026, Dubai leads at 71.2% vs. Sharjah at 59.2% (12.0 pts gap).",
+    "bullets": [
+      "Dubai holds the largest No-Show volume (130 missed visits out of 240 bookings \u00b7 45.8% Attended)."
+    ],
+    "tools": [
+      {
+        "tool_name": "get_kpi_diagnosis_and_trends",
+        "arguments": {
+          "team": null,
+          "function": "Call Center",
+          "position": null,
+          "branch": null,
+          "performance_level": "Employee",
+          "month": "September",
+          "year": 2026,
+          "region": null,
+          "compare_branch": "sharjah",
+          "branches": [
+            "dubai",
+            "sharjah"
+          ],
+          "kpi": null
+        },
+        "records_evaluated": 3
+      }
+    ],
+    "provider": "llama_cpp",
+    "missing": [
+      "180",
+      "70"
+    ],
+    "passed_basic": false,
+    "seconds": 15.56
+  },
+  {
+    "id": 41,
+    "question": "What is the Inbound score and who is the lowest employee?",
+    "outcome": "answer",
+    "headline": "No performance records matched the selected filters (Call Center \u00b7 Latest Period). In September 2026 (All Branches), Outbound has the lowest score at 60.0% (-10.0% vs prior month), with 1 of 1 agents below target.",
+    "bullets": [
+      "Primary driver: No Show Rate remains above target."
+    ],
+    "tools": [
+      {
+        "tool_name": "inspect_authorized_concepts",
+        "arguments": {
+          "team": null,
+          "function": "Call Center"
+        },
+        "records_evaluated": 0
+      },
+      {
+        "tool_name": "get_executive_and_priority_insights",
+        "arguments": {
+          "team": null,
+          "function": "Call Center",
+          "position": null,
+          "branch": null,
+          "performance_level": "Employee",
+          "month": "September",
+          "year": 2026,
+          "region": null
+        },
+        "records_evaluated": 6
+      }
+    ],
+    "provider": "llama_cpp",
+    "missing": [
+      "85.0%|85%",
+      "alice"
+    ],
+    "passed_basic": false,
+    "seconds": 16.409
+  },
+  {
+    "id": 42,
+    "question": "What is Inbound score and who is the best performer?",
+    "outcome": "answer",
+    "headline": "No performance records matched the selected filters (Call Center \u00b7 Latest Period). The primary KPI bottleneck in Call Center (September 2026 \u00b7 All Branches) is Attendance Rate (Patient Attended / Bookings) at 71.2% achievement (46.3% vs target 65.0%, 3 agents below target).",
+    "bullets": [],
+    "tools": [
+      {
+        "tool_name": "inspect_authorized_concepts",
+        "arguments": {
+          "team": null,
+          "function": "Call Center"
+        },
+        "records_evaluated": 0
+      },
+      {
+        "tool_name": "get_kpi_diagnosis_and_trends",
+        "arguments": {
+          "team": null,
+          "function": "Call Center",
+          "position": null,
+          "branch": null,
+          "performance_level": "Employee",
+          "month": "September",
+          "year": 2026,
+          "region": null,
+          "compare_branch": null,
+          "branches": [],
+          "kpi": null
+        },
+        "records_evaluated": 3
+      }
+    ],
+    "provider": "llama_cpp",
+    "missing": [
+      "85.0%|85%",
+      "bob"
+    ],
+    "passed_basic": false,
+    "seconds": 16.213
+  },
+  {
+    "id": 43,
+    "question": "Show Inbound score trend and who was the best performer.",
+    "outcome": "answer",
+    "headline": "Call Center scored 76.7% (Grade D) in September 2026, moving -1.6% vs August (-1.6% since August).",
+    "bullets": [],
+    "tools": [
+      {
+        "tool_name": "get_team_trend_spotlight",
+        "arguments": {
+          "team": null,
+          "function": "Call Center",
+          "position": null,
+          "branch": null,
+          "performance_level": null,
+          "month": "September",
+          "year": 2026,
+          "region": null,
+          "kpi": null
+        },
+        "records_evaluated": 6
+      }
+    ],
+    "provider": "llama_cpp",
+    "missing": [
+      "85.0%|85%",
+      "bob"
+    ],
+    "passed_basic": false,
+    "seconds": 16.038
+  },
+  {
+    "id": 46,
+    "question": "Which one is doing better?",
+    "outcome": "answer",
+    "headline": "In September 2026 (All Branches), Outbound has the lowest score at 60.0% (-10.0% vs prior month), with 1 of 1 agents below target.",
+    "bullets": [
+      "Primary driver: No Show Rate remains above target."
+    ],
+    "tools": [
+      {
+        "tool_name": "get_executive_and_priority_insights",
+        "arguments": {
+          "team": null,
+          "function": "Call Center",
+          "position": null,
+          "branch": null,
+          "performance_level": "Employee",
+          "month": "September",
+          "year": 2026,
+          "region": null
+        },
+        "records_evaluated": 6
+      }
+    ],
+    "provider": "llama_cpp",
+    "missing": [
+      "which|specify|clarif"
+    ],
+    "passed_basic": false,
+    "seconds": 8.169
+  }
+]

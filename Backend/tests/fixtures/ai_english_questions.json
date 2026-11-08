@@ -1,0 +1,3012 @@
+{
+  "schema_version": "pms-ai-english-eval-v1",
+  "total_questions": 132,
+  "questions": [
+    {
+      "id": "q001",
+      "paraphrase_group": "grp_01",
+      "split": "train",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "What is the Inbound team score in September 2026?",
+      "session_state": {
+        "function": "Call Center"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "current_value",
+      "expected_filters": {
+        "team": "Inbound",
+        "branch": null,
+        "performance_level": "Employee",
+        "metric": null,
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q002",
+      "paraphrase_group": "grp_01",
+      "split": "train",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "Show me Inbound overall performance for Sep 2026",
+      "session_state": {
+        "function": "Call Center"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "current_value",
+      "expected_filters": {
+        "team": "Inbound",
+        "branch": null,
+        "performance_level": "Employee",
+        "metric": null,
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q003",
+      "paraphrase_group": "grp_01",
+      "split": "train",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "How did inboud score in september 2026?",
+      "session_state": {
+        "function": "Call Center"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "current_value",
+      "expected_filters": {
+        "team": "Inbound",
+        "branch": null,
+        "performance_level": "Employee",
+        "metric": null,
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q004",
+      "paraphrase_group": "grp_02",
+      "split": "test",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "What is Dubai Outbound current score in August 2026?",
+      "session_state": {
+        "function": "Call Center"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "current_value",
+      "expected_filters": {
+        "team": "Outbound",
+        "branch": "dubai",
+        "performance_level": "Employee",
+        "metric": null,
+        "periods": [
+          "2026-08"
+        ]
+      }
+    },
+    {
+      "id": "q005",
+      "paraphrase_group": "grp_02",
+      "split": "test",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "Give me Outbound score for DXB in Aug 2026",
+      "session_state": {
+        "function": "Call Center"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "current_value",
+      "expected_filters": {
+        "team": "Outbound",
+        "branch": "dubai",
+        "performance_level": "Employee",
+        "metric": null,
+        "periods": [
+          "2026-08"
+        ]
+      }
+    },
+    {
+      "id": "q006",
+      "paraphrase_group": "grp_03",
+      "split": "val",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "What is the current score for Outbound in Sharjah for September 2026?",
+      "session_state": {
+        "function": "Call Center"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "current_value",
+      "expected_filters": {
+        "team": "Outbound",
+        "branch": "sharjah",
+        "performance_level": "Employee",
+        "metric": null,
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q007",
+      "paraphrase_group": "grp_03",
+      "split": "val",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "Show SHJ Outbound overall score in Sep 2026",
+      "session_state": {
+        "function": "Call Center"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "current_value",
+      "expected_filters": {
+        "team": "Outbound",
+        "branch": "sharjah",
+        "performance_level": "Employee",
+        "metric": null,
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q008",
+      "paraphrase_group": "grp_04",
+      "split": "train",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "What are the Call Center operational volumes and revenue in September 2026?",
+      "session_state": {
+        "function": "Call Center",
+        "month": "September",
+        "year": 2026
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "current_value",
+      "expected_filters": {
+        "team": null,
+        "function": "Call Center",
+        "branch": null,
+        "performance_level": "Employee",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q009",
+      "paraphrase_group": "grp_04",
+      "split": "train",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "Show Outbound revenue numbers for September 2026",
+      "session_state": {
+        "function": "Call Center",
+        "month": "September",
+        "year": 2026
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "current_value",
+      "expected_filters": {
+        "team": "Outbound",
+        "function": "Call Center",
+        "branch": null,
+        "performance_level": "Employee",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q010",
+      "paraphrase_group": "grp_05",
+      "split": "train",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "What is Inbound Abandon Rate vs target in September 2026?",
+      "session_state": {
+        "function": "Call Center"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "actual_vs_target",
+      "expected_filters": {
+        "team": "Inbound",
+        "branch": null,
+        "performance_level": "Employee",
+        "metric": "inbound:abandon_rate",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q011",
+      "paraphrase_group": "grp_05",
+      "split": "train",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "Show Inbound abondan rate actual versus target for Sep 2026",
+      "session_state": {
+        "function": "Call Center"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "actual_vs_target",
+      "expected_filters": {
+        "team": "Inbound",
+        "branch": null,
+        "performance_level": "Employee",
+        "metric": "inbound:abandon_rate",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q012",
+      "paraphrase_group": "grp_05",
+      "split": "train",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "Did Inbound meet its Abandon Rate target in September 2026?",
+      "session_state": {
+        "function": "Call Center"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "actual_vs_target",
+      "expected_filters": {
+        "team": "Inbound",
+        "branch": null,
+        "performance_level": "Employee",
+        "metric": "inbound:abandon_rate",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q013",
+      "paraphrase_group": "grp_06",
+      "split": "test",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "How is Outbound Reachability against target in September 2026?",
+      "session_state": {
+        "function": "Call Center"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "actual_vs_target",
+      "expected_filters": {
+        "team": "Outbound",
+        "branch": null,
+        "performance_level": "Employee",
+        "metric": "outbound:reachability",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q014",
+      "paraphrase_group": "grp_06",
+      "split": "test",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "Show Outbound reachability actual vs target for Sep 2026",
+      "session_state": {
+        "function": "Call Center"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "actual_vs_target",
+      "expected_filters": {
+        "team": "Outbound",
+        "branch": null,
+        "performance_level": "Employee",
+        "metric": "outbound:reachability",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q015",
+      "paraphrase_group": "grp_07",
+      "split": "train",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "What is Inbound AHT vs target in September 2026?",
+      "session_state": {
+        "function": "Call Center"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "actual_vs_target",
+      "expected_filters": {
+        "team": "Inbound",
+        "branch": null,
+        "performance_level": "Employee",
+        "metric": "inbound:aht",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q016",
+      "paraphrase_group": "grp_07",
+      "split": "train",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "Show handle time actual and target for Inbound in Sep 2026",
+      "session_state": {
+        "function": "Call Center"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "actual_vs_target",
+      "expected_filters": {
+        "team": "Inbound",
+        "branch": null,
+        "performance_level": "Employee",
+        "metric": "inbound:aht",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q017",
+      "paraphrase_group": "grp_08",
+      "split": "val",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "What is Inbound Booking Rate vs target in Dubai for September 2026?",
+      "session_state": {
+        "function": "Call Center"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "actual_vs_target",
+      "expected_filters": {
+        "team": "Inbound",
+        "branch": "dubai",
+        "performance_level": "Employee",
+        "metric": "inbound:booking_rate",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q018",
+      "paraphrase_group": "grp_08",
+      "split": "val",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "Check DXB Inbound booking conversion rate against target in Sep 2026",
+      "session_state": {
+        "function": "Call Center"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "actual_vs_target",
+      "expected_filters": {
+        "team": "Inbound",
+        "branch": "dubai",
+        "performance_level": "Employee",
+        "metric": "inbound:booking_rate",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q019",
+      "paraphrase_group": "grp_09",
+      "split": "test",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "What is Outbound AHT in September 2026?",
+      "session_state": {
+        "function": "Call Center"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "actual_vs_target",
+      "expected_filters": {
+        "team": "Outbound",
+        "branch": null,
+        "performance_level": "Employee",
+        "metric": "outbound:aht",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q020",
+      "paraphrase_group": "grp_09",
+      "split": "test",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "Show Outbound handle time (AHT) diagnostic metric for Sep 2026",
+      "session_state": {
+        "function": "Call Center"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "actual_vs_target",
+      "expected_filters": {
+        "team": "Outbound",
+        "branch": null,
+        "performance_level": "Employee",
+        "metric": "outbound:aht",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q021",
+      "paraphrase_group": "grp_10",
+      "split": "train",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "What is Inbound Patient Attendance Rate vs target in September 2026?",
+      "session_state": {
+        "function": "Call Center"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "actual_vs_target",
+      "expected_filters": {
+        "team": "Inbound",
+        "branch": null,
+        "performance_level": "Employee",
+        "metric": "inbound:attendance_rate",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q022",
+      "paraphrase_group": "grp_10",
+      "split": "train",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "Show patient attended vs bookings rate against target for Inbound in Sep 2026",
+      "session_state": {
+        "function": "Call Center"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "actual_vs_target",
+      "expected_filters": {
+        "team": "Inbound",
+        "branch": null,
+        "performance_level": "Employee",
+        "metric": "inbound:attendance_rate",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q023",
+      "paraphrase_group": "grp_11",
+      "split": "test",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "Compare Inbound Abandon Rate in Dubai between July 2026 and August 2026",
+      "session_state": {
+        "function": "Call Center"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "compare_periods",
+      "expected_filters": {
+        "team": "Inbound",
+        "branch": "dubai",
+        "performance_level": "Employee",
+        "metric": "inbound:abandon_rate",
+        "periods": [
+          "2026-07",
+          "2026-08"
+        ]
+      }
+    },
+    {
+      "id": "q024",
+      "paraphrase_group": "grp_11",
+      "split": "test",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "How did DXB Inbound abandon rate change from Jul 2026 to Aug 2026?",
+      "session_state": {
+        "function": "Call Center"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "compare_periods",
+      "expected_filters": {
+        "team": "Inbound",
+        "branch": "dubai",
+        "performance_level": "Employee",
+        "metric": "inbound:abandon_rate",
+        "periods": [
+          "2026-07",
+          "2026-08"
+        ]
+      }
+    },
+    {
+      "id": "q025",
+      "paraphrase_group": "grp_12",
+      "split": "train",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "Compare Outbound score in August 2026 vs September 2026",
+      "session_state": {
+        "function": "Call Center"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "compare_periods",
+      "expected_filters": {
+        "team": "Outbound",
+        "branch": null,
+        "performance_level": "Employee",
+        "metric": null,
+        "periods": [
+          "2026-08",
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q026",
+      "paraphrase_group": "grp_12",
+      "split": "train",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "How did Outbound performance move between Aug 2026 and Sep 2026?",
+      "session_state": {
+        "function": "Call Center"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "compare_periods",
+      "expected_filters": {
+        "team": "Outbound",
+        "branch": null,
+        "performance_level": "Employee",
+        "metric": null,
+        "periods": [
+          "2026-08",
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q027",
+      "paraphrase_group": "grp_13",
+      "split": "val",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "Compare Inbound Booking Rate in August 2026 versus September 2026",
+      "session_state": {
+        "function": "Call Center"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "compare_periods",
+      "expected_filters": {
+        "team": "Inbound",
+        "branch": null,
+        "performance_level": "Employee",
+        "metric": "inbound:booking_rate",
+        "periods": [
+          "2026-08",
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q028",
+      "paraphrase_group": "grp_13",
+      "split": "val",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "Inbound booking rate comparison Aug 2026 vs Sep 2026",
+      "session_state": {
+        "function": "Call Center"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "compare_periods",
+      "expected_filters": {
+        "team": "Inbound",
+        "branch": null,
+        "performance_level": "Employee",
+        "metric": "inbound:booking_rate",
+        "periods": [
+          "2026-08",
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q029",
+      "paraphrase_group": "grp_14",
+      "split": "train",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "Compare Dubai Outbound score in July 2026 vs August 2026",
+      "session_state": {
+        "function": "Call Center"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "compare_periods",
+      "expected_filters": {
+        "team": "Outbound",
+        "branch": "dubai",
+        "performance_level": "Employee",
+        "metric": null,
+        "periods": [
+          "2026-07",
+          "2026-08"
+        ]
+      }
+    },
+    {
+      "id": "q030",
+      "paraphrase_group": "grp_14",
+      "split": "train",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "Show July vs August 2026 comparison for Outbound in Dubai",
+      "session_state": {
+        "function": "Call Center"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "compare_periods",
+      "expected_filters": {
+        "team": "Outbound",
+        "branch": "dubai",
+        "performance_level": "Employee",
+        "metric": null,
+        "periods": [
+          "2026-07",
+          "2026-08"
+        ]
+      }
+    },
+    {
+      "id": "q031",
+      "paraphrase_group": "grp_15",
+      "split": "train",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "Compare Dubai vs Sharjah performance for Call Center in September 2026",
+      "session_state": {
+        "function": "Call Center"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "compare_branches",
+      "expected_filters": {
+        "team": null,
+        "function": "Call Center",
+        "branch": "dubai",
+        "compare_branch": "sharjah",
+        "performance_level": "Employee",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q032",
+      "paraphrase_group": "grp_15",
+      "split": "train",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "Compare DXB and SHJ branch scores for Call Center in Sep 2026",
+      "session_state": {
+        "function": "Call Center"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "compare_branches",
+      "expected_filters": {
+        "team": null,
+        "function": "Call Center",
+        "branch": "dubai",
+        "compare_branch": "sharjah",
+        "performance_level": "Employee",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q033",
+      "paraphrase_group": "grp_16",
+      "split": "test",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "Compare Dubai vs Sharjah Attendance Rate for Inbound in September 2026",
+      "session_state": {
+        "function": "Call Center"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "compare_branches",
+      "expected_filters": {
+        "team": "Inbound",
+        "branch": "dubai",
+        "compare_branch": "sharjah",
+        "performance_level": "Employee",
+        "metric": "inbound:attendance_rate",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q034",
+      "paraphrase_group": "grp_16",
+      "split": "test",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "How does Inbound patient attendance compare between Dubai and Sharjah in Sep 2026?",
+      "session_state": {
+        "function": "Call Center"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "compare_branches",
+      "expected_filters": {
+        "team": "Inbound",
+        "branch": "dubai",
+        "compare_branch": "sharjah",
+        "performance_level": "Employee",
+        "metric": "inbound:attendance_rate",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q035",
+      "paraphrase_group": "grp_17",
+      "split": "val",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "Compare all UAE branches (Dubai, Sharjah, Ajman, Clinics) for Outbound in September 2026",
+      "session_state": {
+        "function": "Call Center"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "compare_branches",
+      "expected_filters": {
+        "team": "Outbound",
+        "branch": "dubai",
+        "compare_branch": "sharjah",
+        "performance_level": "Employee",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q036",
+      "paraphrase_group": "grp_17",
+      "split": "val",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "Show branch comparison across all branches for Outbound in Sep 2026",
+      "session_state": {
+        "function": "Call Center"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "compare_branches",
+      "expected_filters": {
+        "team": "Outbound",
+        "branch": null,
+        "compare_branch": null,
+        "performance_level": "Employee",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q037",
+      "paraphrase_group": "grp_18",
+      "split": "train",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "Which Call Center team dropped the most this month, what is the main KPI driver, and what decisions do you recommend?",
+      "session_state": {
+        "function": "Call Center",
+        "month": "September",
+        "year": 2026
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "compare_teams",
+      "expected_filters": {
+        "team": null,
+        "function": "Call Center",
+        "branch": null,
+        "performance_level": "Employee",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q038",
+      "paraphrase_group": "grp_18",
+      "split": "train",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "Compare Inbound vs Outbound team performance in September 2026",
+      "session_state": {
+        "function": "Call Center"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "compare_teams",
+      "expected_filters": {
+        "team": null,
+        "function": "Call Center",
+        "branch": null,
+        "performance_level": "Employee",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q039",
+      "paraphrase_group": "grp_19",
+      "split": "test",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "Which Call Center team has the lowest score in September 2026?",
+      "session_state": {
+        "function": "Call Center"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "compare_teams",
+      "expected_filters": {
+        "team": null,
+        "function": "Call Center",
+        "branch": null,
+        "performance_level": "Employee",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q040",
+      "paraphrase_group": "grp_19",
+      "split": "test",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "Compare Call Center teams in Sep 2026",
+      "session_state": {
+        "function": "Call Center"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "compare_teams",
+      "expected_filters": {
+        "team": null,
+        "function": "Call Center",
+        "branch": null,
+        "performance_level": "Employee",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q041",
+      "paraphrase_group": "grp_20",
+      "split": "train",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "What is Inbound 6-month score trend?",
+      "session_state": {
+        "function": "Call Center",
+        "month": "September",
+        "year": 2026
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "trend",
+      "expected_filters": {
+        "team": "Inbound",
+        "branch": null,
+        "performance_level": "Employee",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q042",
+      "paraphrase_group": "grp_20",
+      "split": "train",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "Show the monthly score trajectory for Inbound over time",
+      "session_state": {
+        "function": "Call Center",
+        "month": "September",
+        "year": 2026
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "trend",
+      "expected_filters": {
+        "team": "Inbound",
+        "branch": null,
+        "performance_level": "Employee",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q043",
+      "paraphrase_group": "grp_21",
+      "split": "test",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "Show Outbound 6-month performance trend in Dubai",
+      "session_state": {
+        "function": "Call Center",
+        "month": "September",
+        "year": 2026
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "trend",
+      "expected_filters": {
+        "team": "Outbound",
+        "branch": "dubai",
+        "performance_level": "Employee",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q044",
+      "paraphrase_group": "grp_21",
+      "split": "test",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "What is the monthly progression for DXB Outbound?",
+      "session_state": {
+        "function": "Call Center",
+        "month": "September",
+        "year": 2026
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "trend",
+      "expected_filters": {
+        "team": "Outbound",
+        "branch": "dubai",
+        "performance_level": "Employee",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q045",
+      "paraphrase_group": "grp_22",
+      "split": "val",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "Show trend for employee EMP101 across tracked months",
+      "session_state": {
+        "function": "Call Center",
+        "month": "September",
+        "year": 2026
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "trend",
+      "expected_filters": {
+        "team": null,
+        "branch": null,
+        "performance_level": "Employee",
+        "single_person": true,
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q046",
+      "paraphrase_group": "grp_22",
+      "split": "val",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "What is the multi-month history for agent EMP101?",
+      "session_state": {
+        "function": "Call Center",
+        "month": "September",
+        "year": 2026
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "trend",
+      "expected_filters": {
+        "team": null,
+        "branch": null,
+        "performance_level": "Employee",
+        "single_person": true,
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q047",
+      "paraphrase_group": "grp_23",
+      "split": "train",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "Who is the best agent in Inbound and his trend?",
+      "session_state": {
+        "function": "Call Center",
+        "month": "September",
+        "year": 2026
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "ranking",
+      "expected_filters": {
+        "team": "Inbound",
+        "branch": null,
+        "performance_level": "Employee",
+        "ranking_direction": "best",
+        "single_person": true,
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q048",
+      "paraphrase_group": "grp_23",
+      "split": "train",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "who is better agent in inbound and his trend",
+      "session_state": {
+        "function": "Call Center",
+        "month": "September",
+        "year": 2026
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "ranking",
+      "expected_filters": {
+        "team": "Inbound",
+        "branch": null,
+        "performance_level": "Employee",
+        "ranking_direction": "best",
+        "single_person": true,
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q049",
+      "paraphrase_group": "grp_23",
+      "split": "train",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "Show the #1 top performer in Inbound for September 2026",
+      "session_state": {
+        "function": "Call Center"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "ranking",
+      "expected_filters": {
+        "team": "Inbound",
+        "branch": null,
+        "performance_level": "Employee",
+        "ranking_direction": "best",
+        "single_person": true,
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q050",
+      "paraphrase_group": "grp_24",
+      "split": "test",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "Who is the lowest agent in Outbound and his trend?",
+      "session_state": {
+        "function": "Call Center",
+        "month": "September",
+        "year": 2026
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "ranking",
+      "expected_filters": {
+        "team": "Outbound",
+        "branch": null,
+        "performance_level": "Employee",
+        "ranking_direction": "worst",
+        "single_person": true,
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q051",
+      "paraphrase_group": "grp_24",
+      "split": "test",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "Who is the worst performing agent in Outbound in September 2026?",
+      "session_state": {
+        "function": "Call Center"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "ranking",
+      "expected_filters": {
+        "team": "Outbound",
+        "branch": null,
+        "performance_level": "Employee",
+        "ranking_direction": "worst",
+        "single_person": true,
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q052",
+      "paraphrase_group": "grp_25",
+      "split": "train",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "Who are the top negative contributors to the Attendance Rate gap in Outbound and what happens if we coach the bottom 3?",
+      "session_state": {
+        "function": "Call Center",
+        "month": "September",
+        "year": 2026
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "ranking",
+      "expected_filters": {
+        "team": "Outbound",
+        "branch": null,
+        "performance_level": "Employee",
+        "metric": "outbound:attendance_rate",
+        "ranking_direction": "worst",
+        "single_person": false,
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q053",
+      "paraphrase_group": "grp_25",
+      "split": "train",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "Which employees caused the patient attendance drop in Outbound in September 2026?",
+      "session_state": {
+        "function": "Call Center"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "ranking",
+      "expected_filters": {
+        "team": "Outbound",
+        "branch": null,
+        "performance_level": "Employee",
+        "metric": "outbound:attendance_rate",
+        "ranking_direction": "worst",
+        "single_person": false,
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q054",
+      "paraphrase_group": "grp_26",
+      "split": "val",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "List the bottom agents below target in Inbound for September 2026",
+      "session_state": {
+        "function": "Call Center"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "ranking",
+      "expected_filters": {
+        "team": "Inbound",
+        "branch": null,
+        "performance_level": "Employee",
+        "ranking_direction": "worst",
+        "single_person": false,
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q055",
+      "paraphrase_group": "grp_26",
+      "split": "val",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "Who are the lowest scoring employees in Inbound in Sep 2026?",
+      "session_state": {
+        "function": "Call Center"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "ranking",
+      "expected_filters": {
+        "team": "Inbound",
+        "branch": null,
+        "performance_level": "Employee",
+        "ranking_direction": "worst",
+        "single_person": false,
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q056",
+      "paraphrase_group": "grp_27",
+      "split": "train",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "Diagnose Outbound KPIs (Attendance Rate, Reachability, Booking Rate) and propose an executive decision playbook to reduce patient no-shows.",
+      "session_state": {
+        "function": "Call Center",
+        "month": "September",
+        "year": 2026
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "score_drivers",
+      "expected_filters": {
+        "team": "Outbound",
+        "branch": null,
+        "performance_level": "Employee",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q057",
+      "paraphrase_group": "grp_27",
+      "split": "train",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "What are the main KPI score drivers for Outbound in September 2026?",
+      "session_state": {
+        "function": "Call Center"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "score_drivers",
+      "expected_filters": {
+        "team": "Outbound",
+        "branch": null,
+        "performance_level": "Employee",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q058",
+      "paraphrase_group": "grp_28",
+      "split": "test",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "Analyze Inbound KPI gaps in September 2026",
+      "session_state": {
+        "function": "Call Center"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "score_drivers",
+      "expected_filters": {
+        "team": "Inbound",
+        "branch": null,
+        "performance_level": "Employee",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q059",
+      "paraphrase_group": "grp_28",
+      "split": "test",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "Which KPIs drove the score gap in Inbound for Sep 2026?",
+      "session_state": {
+        "function": "Call Center"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "score_drivers",
+      "expected_filters": {
+        "team": "Inbound",
+        "branch": null,
+        "performance_level": "Employee",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q060",
+      "paraphrase_group": "grp_29",
+      "split": "val",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "Why did Dubai Outbound score drop in August 2026?",
+      "session_state": {
+        "function": "Call Center"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "score_drivers",
+      "expected_filters": {
+        "team": "Outbound",
+        "branch": "dubai",
+        "performance_level": "Employee",
+        "periods": [
+          "2026-08"
+        ]
+      }
+    },
+    {
+      "id": "q061",
+      "paraphrase_group": "grp_29",
+      "split": "val",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "Show KPI bottlenecks for Outbound in Dubai during Aug 2026",
+      "session_state": {
+        "function": "Call Center"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "score_drivers",
+      "expected_filters": {
+        "team": "Outbound",
+        "branch": "dubai",
+        "performance_level": "Employee",
+        "periods": [
+          "2026-08"
+        ]
+      }
+    },
+    {
+      "id": "q062",
+      "paraphrase_group": "grp_30",
+      "split": "train",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "Summarize open or overdue corrective actions and SIP/PI risk candidates in Call Center with recommended next steps.",
+      "session_state": {
+        "function": "Call Center",
+        "month": "September",
+        "year": 2026
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "corrective_actions",
+      "expected_filters": {
+        "team": null,
+        "function": "Call Center",
+        "performance_level": "Employee",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q063",
+      "paraphrase_group": "grp_30",
+      "split": "train",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "Show overdue corrective actions and their owners for Call Center",
+      "session_state": {
+        "function": "Call Center",
+        "month": "September",
+        "year": 2026
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "corrective_actions",
+      "expected_filters": {
+        "team": null,
+        "function": "Call Center",
+        "performance_level": "Employee",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q064",
+      "paraphrase_group": "grp_31",
+      "split": "test",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "What corrective actions are tracked for Outbound in September 2026?",
+      "session_state": {
+        "function": "Call Center"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "corrective_actions",
+      "expected_filters": {
+        "team": "Outbound",
+        "function": "Call Center",
+        "performance_level": "Employee",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q065",
+      "paraphrase_group": "grp_31",
+      "split": "test",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "Show open corrective action plans for Outbound in Sep 2026",
+      "session_state": {
+        "function": "Call Center"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "corrective_actions",
+      "expected_filters": {
+        "team": "Outbound",
+        "function": "Call Center",
+        "performance_level": "Employee",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q066",
+      "paraphrase_group": "grp_32",
+      "split": "train",
+      "scope_category": "managerial_corporate_bsc",
+      "caller_role": "General Manager",
+      "prompt": "Show Managerial Balanced Scorecard for Inbound",
+      "session_state": {
+        "function": "Call Center",
+        "team": "Inbound",
+        "month": "September",
+        "year": 2026
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "scorecard_structure",
+      "expected_filters": {
+        "team": "Inbound",
+        "performance_level": "Managerial",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q067",
+      "paraphrase_group": "grp_32",
+      "split": "train",
+      "scope_category": "managerial_corporate_bsc",
+      "caller_role": "General Manager",
+      "prompt": "What is the Inbound Managerial BSC structure and KPI weights?",
+      "session_state": {
+        "function": "Call Center",
+        "team": "Inbound",
+        "month": "September",
+        "year": 2026
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "scorecard_structure",
+      "expected_filters": {
+        "team": "Inbound",
+        "performance_level": "Managerial",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q068",
+      "paraphrase_group": "grp_33",
+      "split": "test",
+      "scope_category": "managerial_corporate_bsc",
+      "caller_role": "General Manager",
+      "prompt": "Show Corporate Balanced Scorecard for Inbound in September 2026",
+      "session_state": {
+        "function": "Call Center",
+        "team": "Inbound"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "scorecard_structure",
+      "expected_filters": {
+        "team": "Inbound",
+        "performance_level": "Corporate",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q069",
+      "paraphrase_group": "grp_33",
+      "split": "test",
+      "scope_category": "managerial_corporate_bsc",
+      "caller_role": "General Manager",
+      "prompt": "What is the Corporate scorecard for Inbound?",
+      "session_state": {
+        "function": "Call Center",
+        "team": "Inbound",
+        "month": "September",
+        "year": 2026
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "scorecard_structure",
+      "expected_filters": {
+        "team": "Inbound",
+        "performance_level": "Corporate",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q070",
+      "paraphrase_group": "grp_34",
+      "split": "val",
+      "scope_category": "managerial_corporate_bsc",
+      "caller_role": "General Manager",
+      "prompt": "What is Inbound Managerial Team SLA vs target in September 2026?",
+      "session_state": {
+        "function": "Call Center",
+        "team": "Inbound"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "actual_vs_target",
+      "expected_filters": {
+        "team": "Inbound",
+        "performance_level": "Managerial",
+        "metric": "inbound:team_sla",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q071",
+      "paraphrase_group": "grp_34",
+      "split": "val",
+      "scope_category": "managerial_corporate_bsc",
+      "caller_role": "General Manager",
+      "prompt": "Show Inbound Attendance Compliance on the Managerial scorecard for Sep 2026",
+      "session_state": {
+        "function": "Call Center",
+        "team": "Inbound"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "actual_vs_target",
+      "expected_filters": {
+        "team": "Inbound",
+        "performance_level": "Managerial",
+        "metric": "inbound:attendance_compliance",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q072",
+      "paraphrase_group": "grp_35",
+      "split": "train",
+      "scope_category": "rcm_pre_approvals",
+      "caller_role": "General Manager",
+      "prompt": "What is the Coding team score in September 2026?",
+      "session_state": {
+        "function": "RCM"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "current_value",
+      "expected_filters": {
+        "team": "Coding",
+        "function": "RCM",
+        "performance_level": "Employee",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q073",
+      "paraphrase_group": "grp_35",
+      "split": "train",
+      "scope_category": "rcm_pre_approvals",
+      "caller_role": "General Manager",
+      "prompt": "Show Coding performance for Sep 2026",
+      "session_state": {
+        "function": "RCM"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "current_value",
+      "expected_filters": {
+        "team": "Coding",
+        "function": "RCM",
+        "performance_level": "Employee",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q074",
+      "paraphrase_group": "grp_36",
+      "split": "test",
+      "scope_category": "rcm_pre_approvals",
+      "caller_role": "General Manager",
+      "prompt": "How is Pre-Approvals IP Offshore Rejection Rate vs target in September 2026?",
+      "session_state": {
+        "function": "RCM"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "actual_vs_target",
+      "expected_filters": {
+        "team": "Pre-Approvals IP Offshore",
+        "function": "RCM",
+        "performance_level": "Employee",
+        "metric": "pre_approvals_ip_offshore:rejection",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q075",
+      "paraphrase_group": "grp_36",
+      "split": "test",
+      "scope_category": "rcm_pre_approvals",
+      "caller_role": "General Manager",
+      "prompt": "Show Offshore Pre-Approvals rejection rate actual vs target in Sep 2026",
+      "session_state": {
+        "function": "RCM"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "actual_vs_target",
+      "expected_filters": {
+        "team": "Pre-Approvals IP Offshore",
+        "function": "RCM",
+        "performance_level": "Employee",
+        "metric": "pre_approvals_ip_offshore:rejection",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q076",
+      "paraphrase_group": "grp_37",
+      "split": "train",
+      "scope_category": "rcm_pre_approvals",
+      "caller_role": "General Manager",
+      "prompt": "Diagnose Submission KPI gaps in September 2026",
+      "session_state": {
+        "function": "RCM"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "score_drivers",
+      "expected_filters": {
+        "team": "Submission",
+        "function": "RCM",
+        "performance_level": "Employee",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q077",
+      "paraphrase_group": "grp_37",
+      "split": "train",
+      "scope_category": "rcm_pre_approvals",
+      "caller_role": "General Manager",
+      "prompt": "What are the score drivers for Re-Submission in September 2026?",
+      "session_state": {
+        "function": "RCM"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "score_drivers",
+      "expected_filters": {
+        "team": "Re-Submission",
+        "function": "RCM",
+        "performance_level": "Employee",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q078",
+      "paraphrase_group": "grp_38",
+      "split": "val",
+      "scope_category": "rcm_pre_approvals",
+      "caller_role": "General Manager",
+      "prompt": "What is Pre-Approvals OP Dubai score in September 2026?",
+      "session_state": {
+        "function": "Pre-Approvals"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "current_value",
+      "expected_filters": {
+        "team": "Pre-Approvals OP Dubai",
+        "function": "Pre-Approvals",
+        "performance_level": "Employee",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q079",
+      "paraphrase_group": "grp_38",
+      "split": "val",
+      "scope_category": "rcm_pre_approvals",
+      "caller_role": "General Manager",
+      "prompt": "Show Pre-Approvals IP Final Dubai performance in Sep 2026",
+      "session_state": {
+        "function": "Pre-Approvals"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "current_value",
+      "expected_filters": {
+        "team": "Pre-Approvals IP Final Dubai",
+        "function": "Pre-Approvals",
+        "performance_level": "Employee",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q080",
+      "paraphrase_group": "grp_39",
+      "split": "test",
+      "scope_category": "marketing",
+      "caller_role": "General Manager",
+      "prompt": "What is Media Buyer CPL vs target in Marketing for September 2026?",
+      "session_state": {
+        "function": "Marketing",
+        "team": "Marketing"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "actual_vs_target",
+      "expected_filters": {
+        "team": "Marketing",
+        "position": "Media Buyer",
+        "performance_level": "Employee",
+        "metric": "marketing:mb_cpl",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q081",
+      "paraphrase_group": "grp_39",
+      "split": "test",
+      "scope_category": "marketing",
+      "caller_role": "General Manager",
+      "prompt": "Show Marketing Media Buyer CPL actual and target in Sep 2026",
+      "session_state": {
+        "function": "Marketing",
+        "team": "Marketing"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "actual_vs_target",
+      "expected_filters": {
+        "team": "Marketing",
+        "position": "Media Buyer",
+        "performance_level": "Employee",
+        "metric": "marketing:mb_cpl",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q082",
+      "paraphrase_group": "grp_40",
+      "split": "train",
+      "scope_category": "marketing",
+      "caller_role": "General Manager",
+      "prompt": "What is Graphic Designer Rework percentage vs target in Marketing for September 2026?",
+      "session_state": {
+        "function": "Marketing",
+        "team": "Marketing"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "actual_vs_target",
+      "expected_filters": {
+        "team": "Marketing",
+        "position": "Graphic Designer",
+        "performance_level": "Employee",
+        "metric": "marketing:gd_rework",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q083",
+      "paraphrase_group": "grp_40",
+      "split": "train",
+      "scope_category": "marketing",
+      "caller_role": "General Manager",
+      "prompt": "Show Social Media Specialist Response Time vs target in Marketing for Sep 2026",
+      "session_state": {
+        "function": "Marketing",
+        "team": "Marketing"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "actual_vs_target",
+      "expected_filters": {
+        "team": "Marketing",
+        "position": "Social Media Specialist",
+        "performance_level": "Employee",
+        "metric": "marketing:sms_response_time",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q084",
+      "paraphrase_group": "grp_41",
+      "split": "val",
+      "scope_category": "marketing",
+      "caller_role": "General Manager",
+      "prompt": "What is Marketing Corporate Balanced Scorecard in September 2026?",
+      "session_state": {
+        "function": "Marketing",
+        "team": "Marketing"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "scorecard_structure",
+      "expected_filters": {
+        "team": "Marketing",
+        "performance_level": "Corporate",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q085",
+      "paraphrase_group": "grp_41",
+      "split": "val",
+      "scope_category": "marketing",
+      "caller_role": "General Manager",
+      "prompt": "Show Corporate scorecard structure for Marketing",
+      "session_state": {
+        "function": "Marketing",
+        "team": "Marketing",
+        "month": "September",
+        "year": 2026
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "scorecard_structure",
+      "expected_filters": {
+        "team": "Marketing",
+        "performance_level": "Corporate",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q086",
+      "paraphrase_group": "grp_42",
+      "split": "test",
+      "scope_category": "pharmacy",
+      "caller_role": "General Manager",
+      "prompt": "What is Pharmacy Waiting Time vs target in September 2026?",
+      "session_state": {
+        "function": "Pharmacy",
+        "team": "Pharmacy"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "actual_vs_target",
+      "expected_filters": {
+        "team": "Pharmacy",
+        "performance_level": "Employee",
+        "metric": "pharmacy:waitingtime",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q087",
+      "paraphrase_group": "grp_42",
+      "split": "test",
+      "scope_category": "pharmacy",
+      "caller_role": "General Manager",
+      "prompt": "Show Pharmacy Leakage actual versus target for Sep 2026",
+      "session_state": {
+        "function": "Pharmacy",
+        "team": "Pharmacy"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "actual_vs_target",
+      "expected_filters": {
+        "team": "Pharmacy",
+        "performance_level": "Employee",
+        "metric": "pharmacy:leakage",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q088",
+      "paraphrase_group": "grp_43",
+      "split": "train",
+      "scope_category": "pharmacy",
+      "caller_role": "General Manager",
+      "prompt": "What is AJM Pharmacy Manager IV Cost Saving in September 2026?",
+      "session_state": {
+        "function": "Pharmacy",
+        "team": "Pharmacy"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "actual_vs_target",
+      "expected_filters": {
+        "team": "Pharmacy",
+        "position": "AJM Pharmacy Manager",
+        "performance_level": "Employee",
+        "metric": "pharmacy:ajm_pharmacy_man_iv_cost_saving",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q089",
+      "paraphrase_group": "grp_43",
+      "split": "train",
+      "scope_category": "pharmacy",
+      "caller_role": "General Manager",
+      "prompt": "Show Pharmacy overall score in September 2026",
+      "session_state": {
+        "function": "Pharmacy",
+        "team": "Pharmacy"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "current_value",
+      "expected_filters": {
+        "team": "Pharmacy",
+        "performance_level": "Employee",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q090",
+      "paraphrase_group": "grp_44",
+      "split": "test",
+      "scope_category": "csr_sales_other",
+      "caller_role": "General Manager",
+      "prompt": "What is CSR team score in September 2026?",
+      "session_state": {
+        "function": "CSR",
+        "team": "CSR"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "current_value",
+      "expected_filters": {
+        "team": "CSR",
+        "performance_level": "Employee",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q091",
+      "paraphrase_group": "grp_44",
+      "split": "test",
+      "scope_category": "csr_sales_other",
+      "caller_role": "General Manager",
+      "prompt": "What is Sales team performance in September 2026?",
+      "session_state": {
+        "function": "Sales",
+        "team": "Sales"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "current_value",
+      "expected_filters": {
+        "team": "Sales",
+        "performance_level": "Employee",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q092",
+      "paraphrase_group": "grp_45",
+      "split": "train",
+      "scope_category": "csr_sales_other",
+      "caller_role": "General Manager",
+      "prompt": "Diagnose CSR KPI gaps in September 2026",
+      "session_state": {
+        "function": "CSR",
+        "team": "CSR"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "score_drivers",
+      "expected_filters": {
+        "team": "CSR",
+        "performance_level": "Employee",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q093",
+      "paraphrase_group": "grp_45",
+      "split": "train",
+      "scope_category": "csr_sales_other",
+      "caller_role": "General Manager",
+      "prompt": "Show Sales KPI score drivers for September 2026",
+      "session_state": {
+        "function": "Sales",
+        "team": "Sales"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "score_drivers",
+      "expected_filters": {
+        "team": "Sales",
+        "performance_level": "Employee",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q094",
+      "paraphrase_group": "grp_46",
+      "split": "test",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "Show me Call Center attendance",
+      "session_state": {
+        "function": "Call Center",
+        "month": "September",
+        "year": 2026
+      },
+      "expected_outcome": "clarification",
+      "expected_intent": "clarify",
+      "expected_clarification_code": "AMBIGUOUS_ATTENDANCE_DEFINITION",
+      "expected_filters": {
+        "function": "Call Center"
+      }
+    },
+    {
+      "id": "q096",
+      "paraphrase_group": "grp_47",
+      "split": "train",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "What is the Other KPI in Call Center for September 2026?",
+      "session_state": {
+        "function": "Call Center"
+      },
+      "expected_outcome": "clarification",
+      "expected_intent": "clarify",
+      "expected_clarification_code": "AMBIGUOUS_ABANDON_METRIC",
+      "expected_filters": {
+        "function": "Call Center",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q097",
+      "paraphrase_group": "grp_47",
+      "split": "train",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "Show the Other metric in Call Center",
+      "session_state": {
+        "function": "Call Center",
+        "month": "September",
+        "year": 2026
+      },
+      "expected_outcome": "clarification",
+      "expected_intent": "clarify",
+      "expected_clarification_code": "AMBIGUOUS_ABANDON_METRIC",
+      "expected_filters": {
+        "function": "Call Center",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q098",
+      "paraphrase_group": "grp_48",
+      "split": "test",
+      "scope_category": "call_center_pilot",
+      "caller_role": "Branch Director",
+      "caller_branches": [
+        "dubai"
+      ],
+      "prompt": "What is Inbound performance in Sharjah for September 2026?",
+      "session_state": {
+        "function": "Call Center",
+        "branch": "dubai"
+      },
+      "expected_outcome": "restricted_access",
+      "expected_intent": "current_value",
+      "expected_filters": {
+        "team": "Inbound",
+        "branch": "sharjah",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q099",
+      "paraphrase_group": "grp_48",
+      "split": "test",
+      "scope_category": "call_center_pilot",
+      "caller_role": "Branch Director",
+      "caller_branches": [
+        "dubai"
+      ],
+      "prompt": "Show Sharjah Outbound Attendance Rate in September 2026",
+      "session_state": {
+        "function": "Call Center",
+        "branch": "dubai"
+      },
+      "expected_outcome": "restricted_access",
+      "expected_intent": "actual_vs_target",
+      "expected_filters": {
+        "team": "Outbound",
+        "branch": "sharjah",
+        "metric": "outbound:attendance_rate",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q100",
+      "paraphrase_group": "grp_48",
+      "split": "test",
+      "scope_category": "rcm_pre_approvals",
+      "caller_role": "Function Director",
+      "caller_functions": [
+        "Call Center"
+      ],
+      "prompt": "What is Coding team score in September 2026?",
+      "session_state": {
+        "function": "Call Center"
+      },
+      "expected_outcome": "restricted_access",
+      "expected_intent": "current_value",
+      "expected_filters": {
+        "team": "Coding",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q101",
+      "paraphrase_group": "grp_48",
+      "split": "test",
+      "scope_category": "rcm_pre_approvals",
+      "caller_role": "Function Viewer",
+      "caller_functions": [
+        "Pre-Approvals"
+      ],
+      "prompt": "Show Inbound Abandon Rate in September 2026",
+      "session_state": {
+        "function": "Pre-Approvals"
+      },
+      "expected_outcome": "restricted_access",
+      "expected_intent": "actual_vs_target",
+      "expected_filters": {
+        "team": "Inbound",
+        "metric": "inbound:abandon_rate",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q102",
+      "paraphrase_group": "grp_49",
+      "split": "test",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "What is Inbound score in December 2026?",
+      "session_state": {
+        "function": "Call Center"
+      },
+      "expected_outcome": "unavailable_data",
+      "expected_intent": "current_value",
+      "expected_filters": {
+        "team": "Inbound",
+        "periods": [
+          "2026-12"
+        ]
+      }
+    },
+    {
+      "id": "q103",
+      "paraphrase_group": "grp_49",
+      "split": "test",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "Show Outbound Reachability vs target in November 2026",
+      "session_state": {
+        "function": "Call Center"
+      },
+      "expected_outcome": "unavailable_data",
+      "expected_intent": "actual_vs_target",
+      "expected_filters": {
+        "team": "Outbound",
+        "metric": "outbound:reachability",
+        "periods": [
+          "2026-11"
+        ]
+      }
+    },
+    {
+      "id": "q104",
+      "paraphrase_group": "grp_50",
+      "split": "train",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "Delete the September 2026 evaluation for EMP101",
+      "session_state": {
+        "function": "Call Center"
+      },
+      "expected_outcome": "unsupported_request",
+      "expected_intent": "unsupported",
+      "expected_filters": {}
+    },
+    {
+      "id": "q105",
+      "paraphrase_group": "grp_50",
+      "split": "train",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "Update Outbound Attendance target to 85% and recalculate scores",
+      "session_state": {
+        "function": "Call Center"
+      },
+      "expected_outcome": "unsupported_request",
+      "expected_intent": "unsupported",
+      "expected_filters": {}
+    },
+    {
+      "id": "q106",
+      "paraphrase_group": "grp_50b",
+      "split": "test",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "Approve and close all overdue corrective actions in Inbound",
+      "session_state": {
+        "function": "Call Center"
+      },
+      "expected_outcome": "unsupported_request",
+      "expected_intent": "unsupported",
+      "expected_filters": {}
+    },
+    {
+      "id": "q107",
+      "paraphrase_group": "grp_51",
+      "split": "test",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "And August?",
+      "session_state": {
+        "function": "Call Center",
+        "team": "Inbound",
+        "branch": "dubai",
+        "month": "September",
+        "year": 2026,
+        "last_confirmed_query": {
+          "intent": "actual_vs_target",
+          "team": "Inbound",
+          "function": "Call Center",
+          "branch": "dubai",
+          "performance_level": "Employee",
+          "metric_id": "inbound:abandon_rate",
+          "metric_display_name": "Abandon Rate (Inbound)",
+          "periods": [
+            "2026-09"
+          ]
+        }
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "actual_vs_target",
+      "expected_filters": {
+        "team": "Inbound",
+        "branch": "dubai",
+        "performance_level": "Employee",
+        "metric": "inbound:abandon_rate",
+        "periods": [
+          "2026-08"
+        ]
+      }
+    },
+    {
+      "id": "q108",
+      "paraphrase_group": "grp_51",
+      "split": "test",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "What about Outbound?",
+      "session_state": {
+        "function": "Call Center",
+        "team": "Inbound",
+        "branch": "dubai",
+        "month": "September",
+        "year": 2026,
+        "last_confirmed_query": {
+          "intent": "current_value",
+          "team": "Inbound",
+          "function": "Call Center",
+          "branch": "dubai",
+          "performance_level": "Employee",
+          "periods": [
+            "2026-09"
+          ]
+        }
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "current_value",
+      "expected_filters": {
+        "team": "Outbound",
+        "branch": "dubai",
+        "performance_level": "Employee",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q109",
+      "paraphrase_group": "grp_52",
+      "split": "train",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "And in Sharjah?",
+      "session_state": {
+        "function": "Call Center",
+        "team": "Outbound",
+        "branch": "dubai",
+        "month": "September",
+        "year": 2026,
+        "last_confirmed_query": {
+          "intent": "score_drivers",
+          "team": "Outbound",
+          "function": "Call Center",
+          "branch": "dubai",
+          "performance_level": "Employee",
+          "periods": [
+            "2026-09"
+          ]
+        }
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "score_drivers",
+      "expected_filters": {
+        "team": "Outbound",
+        "branch": "sharjah",
+        "performance_level": "Employee",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q110",
+      "paraphrase_group": "grp_52",
+      "split": "train",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "Compare it with August 2026",
+      "session_state": {
+        "function": "Call Center",
+        "team": "Inbound",
+        "branch": "dubai",
+        "month": "September",
+        "year": 2026,
+        "last_confirmed_query": {
+          "intent": "actual_vs_target",
+          "team": "Inbound",
+          "function": "Call Center",
+          "branch": "dubai",
+          "performance_level": "Employee",
+          "metric_id": "inbound:abandon_rate",
+          "periods": [
+            "2026-09"
+          ]
+        }
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "compare_periods",
+      "expected_filters": {
+        "team": "Inbound",
+        "branch": "dubai",
+        "performance_level": "Employee",
+        "metric": "inbound:abandon_rate",
+        "periods": [
+          "2026-08",
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q111",
+      "paraphrase_group": "grp_53",
+      "split": "train",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "What is Inbound Quality Score vs target in September 2026?",
+      "session_state": {
+        "function": "Call Center"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "actual_vs_target",
+      "expected_filters": {
+        "team": "Inbound",
+        "function": "Call Center",
+        "position": null,
+        "branch": null,
+        "compare_branch": null,
+        "performance_level": "Employee",
+        "metric": "inbound:quality_score",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q112",
+      "paraphrase_group": "grp_53",
+      "split": "train",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "How did Inbound QA quality score perform against target in Sep 2026?",
+      "session_state": {
+        "function": "Call Center"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "actual_vs_target",
+      "expected_filters": {
+        "team": "Inbound",
+        "function": "Call Center",
+        "position": null,
+        "branch": null,
+        "compare_branch": null,
+        "performance_level": "Employee",
+        "metric": "inbound:quality_score",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q113",
+      "paraphrase_group": "grp_54",
+      "split": "test",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "What is Outbound Quality Score vs target in September 2026?",
+      "session_state": {
+        "function": "Call Center"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "actual_vs_target",
+      "expected_filters": {
+        "team": "Outbound",
+        "function": "Call Center",
+        "position": null,
+        "branch": null,
+        "compare_branch": null,
+        "performance_level": "Employee",
+        "metric": "outbound:quality_score",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q114",
+      "paraphrase_group": "grp_54",
+      "split": "test",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "Show Outbound quality achievement vs target for Sep 2026",
+      "session_state": {
+        "function": "Call Center"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "actual_vs_target",
+      "expected_filters": {
+        "team": "Outbound",
+        "function": "Call Center",
+        "position": null,
+        "branch": null,
+        "compare_branch": null,
+        "performance_level": "Employee",
+        "metric": "outbound:quality_score",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q115",
+      "paraphrase_group": "grp_55",
+      "split": "train",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "Compare Ajman vs Clinics branch performance for Inbound in September 2026",
+      "session_state": {
+        "function": "Call Center"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "compare_branches",
+      "expected_filters": {
+        "team": "Inbound",
+        "function": "Call Center",
+        "position": null,
+        "branch": "ajman",
+        "compare_branch": "clinics",
+        "performance_level": "Employee",
+        "metric": null,
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q116",
+      "paraphrase_group": "grp_55",
+      "split": "train",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "How does AJM compare against Clinics for Inbound in Sep 2026?",
+      "session_state": {
+        "function": "Call Center"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "compare_branches",
+      "expected_filters": {
+        "team": "Inbound",
+        "function": "Call Center",
+        "position": null,
+        "branch": "ajman",
+        "compare_branch": "clinics",
+        "performance_level": "Employee",
+        "metric": null,
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q117",
+      "paraphrase_group": "grp_56",
+      "split": "val",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "What is Inbound score in Ajman for September 2026?",
+      "session_state": {
+        "function": "Call Center"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "current_value",
+      "expected_filters": {
+        "team": "Inbound",
+        "function": "Call Center",
+        "position": null,
+        "branch": "ajman",
+        "compare_branch": null,
+        "performance_level": "Employee",
+        "metric": null,
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q118",
+      "paraphrase_group": "grp_56",
+      "split": "val",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "Show AJM Inbound team score in Sep 2026",
+      "session_state": {
+        "function": "Call Center"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "current_value",
+      "expected_filters": {
+        "team": "Inbound",
+        "function": "Call Center",
+        "position": null,
+        "branch": "ajman",
+        "compare_branch": null,
+        "performance_level": "Employee",
+        "metric": null,
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q119",
+      "paraphrase_group": "grp_57",
+      "split": "test",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "What is Outbound score in Clinics for September 2026?",
+      "session_state": {
+        "function": "Call Center"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "current_value",
+      "expected_filters": {
+        "team": "Outbound",
+        "function": "Call Center",
+        "position": null,
+        "branch": "clinics",
+        "compare_branch": null,
+        "performance_level": "Employee",
+        "metric": null,
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q120",
+      "paraphrase_group": "grp_57",
+      "split": "test",
+      "scope_category": "call_center_pilot",
+      "caller_role": "General Manager",
+      "prompt": "Show Clinics Outbound performance for Sep 2026",
+      "session_state": {
+        "function": "Call Center"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "current_value",
+      "expected_filters": {
+        "team": "Outbound",
+        "function": "Call Center",
+        "position": null,
+        "branch": "clinics",
+        "compare_branch": null,
+        "performance_level": "Employee",
+        "metric": null,
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q121",
+      "paraphrase_group": "grp_58",
+      "split": "train",
+      "scope_category": "rcm_pre_approvals",
+      "caller_role": "General Manager",
+      "prompt": "Compare Coding vs Submission team scores in September 2026",
+      "session_state": {
+        "function": "RCM"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "compare_teams",
+      "expected_filters": {
+        "team": null,
+        "function": "RCM",
+        "position": null,
+        "branch": null,
+        "compare_branch": null,
+        "performance_level": "Employee",
+        "metric": null,
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q122",
+      "paraphrase_group": "grp_58",
+      "split": "train",
+      "scope_category": "rcm_pre_approvals",
+      "caller_role": "General Manager",
+      "prompt": "Which RCM team has the lowest score in September 2026?",
+      "session_state": {
+        "function": "RCM"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "compare_teams",
+      "expected_filters": {
+        "team": null,
+        "function": "RCM",
+        "position": null,
+        "branch": null,
+        "compare_branch": null,
+        "performance_level": "Employee",
+        "metric": null,
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q123",
+      "paraphrase_group": "grp_59",
+      "split": "test",
+      "scope_category": "marketing",
+      "caller_role": "General Manager",
+      "prompt": "What is Media Buyer Leads vs target in Marketing for September 2026?",
+      "session_state": {
+        "function": "Marketing"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "actual_vs_target",
+      "expected_filters": {
+        "team": "Marketing",
+        "function": "Marketing",
+        "position": "Media Buyer",
+        "branch": null,
+        "compare_branch": null,
+        "performance_level": "Employee",
+        "metric": "marketing:mb_leads",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q124",
+      "paraphrase_group": "grp_59",
+      "split": "test",
+      "scope_category": "marketing",
+      "caller_role": "General Manager",
+      "prompt": "Show Marketing Media Buyer Leads actual vs target in Sep 2026",
+      "session_state": {
+        "function": "Marketing"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "actual_vs_target",
+      "expected_filters": {
+        "team": "Marketing",
+        "function": "Marketing",
+        "position": "Media Buyer",
+        "branch": null,
+        "compare_branch": null,
+        "performance_level": "Employee",
+        "metric": "marketing:mb_leads",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q125",
+      "paraphrase_group": "grp_60",
+      "split": "train",
+      "scope_category": "pharmacy",
+      "caller_role": "General Manager",
+      "prompt": "What is Pharmacy Tender Compliance vs target in September 2026?",
+      "session_state": {
+        "function": "Pharmacy"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "actual_vs_target",
+      "expected_filters": {
+        "team": "Pharmacy",
+        "function": "Pharmacy",
+        "position": null,
+        "branch": null,
+        "compare_branch": null,
+        "performance_level": "Employee",
+        "metric": "pharmacy:tendercompliance",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q126",
+      "paraphrase_group": "grp_60",
+      "split": "train",
+      "scope_category": "pharmacy",
+      "caller_role": "General Manager",
+      "prompt": "Show Pharmacy Average Transaction Value (ATV) vs target in Sep 2026",
+      "session_state": {
+        "function": "Pharmacy"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "actual_vs_target",
+      "expected_filters": {
+        "team": "Pharmacy",
+        "function": "Pharmacy",
+        "position": null,
+        "branch": null,
+        "compare_branch": null,
+        "performance_level": "Employee",
+        "metric": "pharmacy:atv",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q127",
+      "paraphrase_group": "grp_61",
+      "split": "train",
+      "scope_category": "call_center_pilot",
+      "caller_role": "Manager",
+      "caller_scope": {
+        "role": "Manager",
+        "has_unrestricted_team_access": false,
+        "accessible_functions": [
+          "Call Center"
+        ],
+        "accessible_teams": [
+          "Inbound"
+        ]
+      },
+      "prompt": "Diagnose Inbound KPI gaps in September 2026",
+      "session_state": {
+        "function": "Call Center",
+        "team": "Inbound"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "score_drivers",
+      "expected_filters": {
+        "team": "Inbound",
+        "function": "Call Center",
+        "performance_level": "Employee",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q128",
+      "paraphrase_group": "grp_61",
+      "split": "train",
+      "scope_category": "call_center_pilot",
+      "caller_role": "Manager",
+      "caller_scope": {
+        "role": "Manager",
+        "has_unrestricted_team_access": false,
+        "accessible_functions": [
+          "Call Center"
+        ],
+        "accessible_teams": [
+          "Inbound"
+        ]
+      },
+      "prompt": "What is Outbound Booking Conversion Rate in September 2026?",
+      "session_state": {
+        "function": "Call Center",
+        "team": "Inbound"
+      },
+      "expected_outcome": "restricted_access",
+      "expected_intent": "actual_vs_target",
+      "expected_filters": {
+        "team": "Outbound",
+        "function": "Call Center",
+        "metric": "outbound:booking_rate",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q129",
+      "paraphrase_group": "grp_62",
+      "split": "val",
+      "scope_category": "rcm_pre_approvals",
+      "caller_role": "Function Director",
+      "caller_functions": [
+        "RCM"
+      ],
+      "prompt": "Compare Coding and Submission team scores in September 2026",
+      "session_state": {
+        "function": "RCM"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "compare_teams",
+      "expected_filters": {
+        "team": null,
+        "function": "RCM",
+        "performance_level": "Employee",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q131",
+      "paraphrase_group": "grp_63",
+      "split": "test",
+      "scope_category": "call_center_pilot",
+      "caller_role": "Branch Director",
+      "caller_branches": [
+        "dubai"
+      ],
+      "prompt": "What is Inbound Booking Conversion Rate in Dubai for September 2026?",
+      "session_state": {
+        "function": "Call Center",
+        "branch": "dubai"
+      },
+      "expected_outcome": "answer",
+      "expected_intent": "actual_vs_target",
+      "expected_filters": {
+        "team": "Inbound",
+        "function": "Call Center",
+        "branch": "dubai",
+        "metric": "inbound:booking_rate",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    },
+    {
+      "id": "q132",
+      "paraphrase_group": "grp_63",
+      "split": "test",
+      "scope_category": "call_center_pilot",
+      "caller_role": "Branch Director",
+      "caller_branches": [
+        "dubai"
+      ],
+      "prompt": "Compare Dubai and Sharjah Inbound Attendance Rate in September 2026",
+      "session_state": {
+        "function": "Call Center",
+        "branch": "dubai"
+      },
+      "expected_outcome": "restricted_access",
+      "expected_intent": "compare_branches",
+      "expected_filters": {
+        "team": "Inbound",
+        "function": "Call Center",
+        "branch": "dubai",
+        "compare_branch": "sharjah",
+        "metric": "inbound:attendance_rate",
+        "periods": [
+          "2026-09"
+        ]
+      }
+    }
+  ]
+}

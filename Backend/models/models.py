@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import Column, String, Integer, SmallInteger, Numeric, Boolean, Date, DateTime, ForeignKey, Text, LargeBinary, ForeignKeyConstraint, UniqueConstraint, CheckConstraint, Enum as SQLEnum, JSON, Index, Uuid as UUID
+from sqlalchemy import Column, String, Integer, SmallInteger, Float, Numeric, Boolean, Date, DateTime, ForeignKey, Text, LargeBinary, ForeignKeyConstraint, UniqueConstraint, CheckConstraint, Enum as SQLEnum, JSON, Index, Uuid as UUID
 from sqlalchemy.dialects.postgresql import JSONB, INET
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func, false, text, true
@@ -1445,3 +1445,109 @@ class ErrorLog(Base):
     error_message = Column(Text, nullable=False)
     stack_trace = Column(Text, nullable=True)
     occurred_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class AiInteractionTrace(Base):
+    """Stores AI analytical workspace interactions and feedback for local model distillation."""
+
+    __tablename__ = "ai_interaction_traces"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    turn_id = Column(String(64), nullable=True, index=True)
+    user_id = Column(String(100), nullable=True)
+    role = Column(String(50), nullable=False, default="Manager")
+    prompt = Column(Text, nullable=False)
+    sanitized_prompt = Column(Text, nullable=False)
+    session_state = Column(JSON_COMPAT_TYPE, nullable=False, default=dict)
+    tool_calls = Column(JSON_COMPAT_TYPE, nullable=False, default=list)
+    tool_digest = Column(JSON_COMPAT_TYPE, nullable=False, default=dict)
+    structured_response = Column(JSON_COMPAT_TYPE, nullable=False, default=dict)
+    provider_name = Column(String(60), nullable=False, default="deterministic")
+    model_name = Column(String(100), nullable=False, default="pms-deterministic-v1")
+    latency_ms = Column(Integer, nullable=False, default=0)
+    non_empty_evidence = Column(Boolean, nullable=False, default=False)
+    guardrail_triggered = Column(Boolean, nullable=False, default=False)
+    feedback_rating = Column(String(20), nullable=True)
+    feedback_reason = Column(String(120), nullable=True)
+    is_distillation_eligible = Column(Boolean, nullable=False, default=False)
+    reviewer_verified = Column(Boolean, nullable=False, default=False)
+    reviewer_id = Column(String(100), nullable=True)
+    reviewed_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    __table_args__ = (
+        CheckConstraint(
+            "feedback_rating IS NULL OR feedback_rating IN ('up', 'down')",
+            name="ck_ai_trace_feedback_rating",
+        ),
+        Index("idx_ai_trace_distillation", "is_distillation_eligible", "created_at"),
+        Index("idx_ai_trace_user_created", "user_id", "created_at"),
+    )
+
+
+class AiConversation(Base):
+    """Server-owned conversation state for PMS AI multi-turn dialogue."""
+
+    __tablename__ = "ai_conversations"
+
+    id = Column(String(64), primary_key=True, default=lambda: str(uuid.uuid4()))
+    owner_user_id = Column(String(100), nullable=False, index=True)
+    owner_role = Column(String(64), nullable=False, default="Manager")
+    status = Column(String(24), nullable=False, default="active")
+    context_version = Column(Integer, nullable=False, default=1, server_default=text("1"))
+    confirmed_context = Column(JSON_COMPAT_TYPE, nullable=False, default=dict)
+    pending_clarification = Column(JSON_COMPAT_TYPE, nullable=True)
+    last_subject_employee_id = Column(String(100), nullable=True)
+    last_subject_employee_name = Column(String(160), nullable=True)
+    last_operation_kind = Column(String(64), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('active', 'archived', 'deleted')",
+            name="ck_ai_conversations_status",
+        ),
+        Index("idx_ai_conversations_owner_updated", "owner_user_id", "updated_at"),
+    )
+
+
+class AiTurn(Base):
+    """Append-only turn log with compare-and-swap claim token and idempotent client_request_id."""
+
+    __tablename__ = "ai_turns"
+
+    id = Column(String(64), primary_key=True, default=lambda: str(uuid.uuid4()))
+    conversation_id = Column(
+        String(64),
+        ForeignKey("ai_conversations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    turn_index = Column(Integer, nullable=False)
+    client_request_id = Column(String(100), nullable=False)
+    status = Column(String(24), nullable=False, default="pending")
+    claim_token = Column(String(64), nullable=True)
+    processing_deadline = Column(DateTime(timezone=True), nullable=True)
+    user_prompt_redacted = Column(Text, nullable=False, default="")
+    validated_plan = Column(JSON_COMPAT_TYPE, nullable=False, default=dict)
+    evidence_summary = Column(JSON_COMPAT_TYPE, nullable=False, default=dict)
+    response_payload = Column(JSON_COMPAT_TYPE, nullable=False, default=dict)
+    outcome = Column(String(40), nullable=False, default="answer")
+    route_used = Column(String(40), nullable=False, default="local_rules")
+    provider_calls = Column(Integer, nullable=False, default=0)
+    total_ms = Column(Float, nullable=False, default=0.0)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("conversation_id", "client_request_id", name="uq_ai_turns_conv_client_req"),
+        UniqueConstraint("conversation_id", "turn_index", name="uq_ai_turns_conv_turn_index"),
+        CheckConstraint(
+            "status IN ('pending', 'completed', 'failed', 'superseded')",
+            name="ck_ai_turns_status",
+        ),
+        Index("idx_ai_turns_conv_created", "conversation_id", "created_at"),
+    )
