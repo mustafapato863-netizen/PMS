@@ -24,6 +24,7 @@ import {
 import { useAuth } from '../context/auth';
 import { useAppStore } from '../store/appStore';
 import { apiFetch } from '../lib/apiClient';
+import type { User } from '../types';
 import AiResponseCard from '../components/ai/AiResponseCard';
 import AiScopeDropdown from '../components/ai/AiScopeDropdown';
 import AiWatchingRail from '../components/ai/AiWatchingRail';
@@ -91,6 +92,10 @@ const CATEGORY_STYLES: Record<
 
 export default function PmsAiWorkspaceView() {
   const { currentUser } = useAuth();
+  return <PmsAiWorkspaceSession key={currentUser?.id ?? 'anonymous'} currentUser={currentUser} />;
+}
+
+function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
   const activeMonth = useAppStore((s) => s.activeMonth);
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -127,14 +132,14 @@ export default function PmsAiWorkspaceView() {
     setTurns((prev) => prev.filter((t) => !t.isPending));
   }, []);
 
-  useEffect(() => {
-    cancelInFlightRequests();
-    setAnswerDetail('auto');
-    setTurns([]);
-    setConversationId(null);
-    setContextVersion(0);
-    setLastConfirmedQuery(null);
-  }, [currentUser?.id, cancelInFlightRequests]);
+  useEffect(
+    () => () => {
+      activeRequestSeqRef.current += 1;
+      abortControllerRef.current?.abort();
+      abortControllerRef.current = null;
+    },
+    [],
+  );
 
   const monthParam = searchParams.get('month') || (activeMonth !== 'All' ? activeMonth : null);
   const yearParam = searchParams.get('year') ? Number(searchParams.get('year')) : null;
@@ -484,9 +489,10 @@ export default function PmsAiWorkspaceView() {
     return full.slice(0, 2).toUpperCase();
   }, [currentUser]);
 
+  const serverStarterPrompts = watchingData?.starter_prompts;
   const starterPrompts: AiStarterPrompt[] = useMemo(() => {
-    if (watchingData?.starter_prompts && watchingData.starter_prompts.length > 0) {
-      return watchingData.starter_prompts;
+    if (serverStarterPrompts && serverStarterPrompts.length > 0) {
+      return serverStarterPrompts;
     }
     return [
       {
@@ -555,7 +561,7 @@ export default function PmsAiWorkspaceView() {
         icon_key: 'chart',
       },
     ];
-  }, [watchingData?.starter_prompts]);
+  }, [serverStarterPrompts]);
 
   const filteredStarterPrompts = useMemo(() => {
     if (selectedCategory === 'all') return starterPrompts;

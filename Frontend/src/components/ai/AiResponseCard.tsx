@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   AlertTriangle,
@@ -576,13 +576,16 @@ export default function AiResponseCard({ response, onSelectPrompt }: AiResponseC
     0,
   );
   const [showPlaybook, setShowPlaybook] = useState<boolean>(primaryCards.length === 0);
-  const [detailsExpanded, setDetailsExpanded] = useState<boolean>(
-    response.answer_detail !== 'brief',
-  );
-
-  useEffect(() => {
-    setDetailsExpanded(response.answer_detail !== 'brief');
-  }, [response.answer_detail, response.trace_id]);
+  const [detailsOverride, setDetailsOverride] = useState<{
+    traceId: string;
+    answerDetail: AiChatResponsePayload['answer_detail'];
+    expanded: boolean;
+  } | null>(null);
+  const detailsExpanded =
+    detailsOverride?.traceId === (response.trace_id ?? '') &&
+    detailsOverride.answerDetail === response.answer_detail
+      ? detailsOverride.expanded
+      : response.answer_detail !== 'brief';
 
   const primarySourceLink = response.primary_source_link || response.deep_links[0] || null;
   const secondaryDeepLinks = primarySourceLink
@@ -672,7 +675,13 @@ export default function AiResponseCard({ response, onSelectPrompt }: AiResponseC
             <button
               type="button"
               aria-expanded={detailsExpanded}
-              onClick={() => setDetailsExpanded((prev) => !prev)}
+              onClick={() =>
+                setDetailsOverride({
+                  traceId: response.trace_id ?? '',
+                  answerDetail: response.answer_detail,
+                  expanded: !detailsExpanded,
+                })
+              }
               className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-[11px] font-extrabold text-slate-700 transition-colors hover:border-blue-400 hover:text-blue-600"
             >
               <span>{detailsExpanded ? 'Hide details' : 'Show details'}</span>
