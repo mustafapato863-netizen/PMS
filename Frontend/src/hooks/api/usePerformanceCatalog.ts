@@ -11,6 +11,13 @@ export interface PerformanceCatalog {
     performance_level: string;
     position: string | null;
   }>;
+  teams: Array<{
+    team: string;
+    region: string | null;
+    functions: string[];
+    performance_levels: string[];
+  }>;
+  authorized_functions: string[];
   data_version?: number;
   as_of?: string;
 }

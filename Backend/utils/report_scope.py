@@ -75,7 +75,7 @@ _PRE_APPROVALS_IP_ELECTIVE_KEYS = {
     "pre-approvals ip elective dubai",
 }
 
-_CALL_CENTER_KEYS = {"call center", "inbound", "outbound"}
+_CALL_CENTER_KEYS = {"call center", "inbound", "inbound uae", "outbound"}
 
 _ADMINISTRATION_KEYS = {"administration", "offshore admin & management"}
 

@@ -506,8 +506,11 @@ function measuredGradeTakeaway(distribution: NonNullable<ExecutiveSummary['grade
 export function adaptSummaryToMonthlyOverview(
   summary: ExecutiveSummary | null | undefined,
   region: 'EGY' | 'UAE',
+  options: { allowSnapshotFallback?: boolean } = {},
 ): MonthlyOverviewData {
-  const fallback = region === 'UAE' ? UAE_SEP_2026_DATA : OFFSHORE_EGYPT_SEP_2026_DATA;
+  const snapshot = region === 'UAE' ? UAE_SEP_2026_DATA : OFFSHORE_EGYPT_SEP_2026_DATA;
+  const allowSnapshotFallback = options.allowSnapshotFallback ?? true;
+  const fallback = allowSnapshotFallback ? snapshot : emptyMonthlyOverview(region, summary);
   if (!summary || !summary.data_status.has_data || summary.hero.score === null) {
     return fallback;
   }
@@ -531,7 +534,14 @@ export function adaptSummaryToMonthlyOverview(
           score: pt.score ?? 0,
           target: pt.target ?? 100,
         }))
-      : fallback.trend;
+      : allowSnapshotFallback
+        ? fallback.trend
+        : summary.trend.map((pt) => ({
+            month: pt.period.month.slice(0, 3),
+            key: pt.period.key,
+            score: pt.score ?? 0,
+            target: pt.target ?? 100,
+          }));
 
   // Compose stores the mix as counts, percents, and movement. There is no `.grades` list.
   const distribution = summary.grade_distribution;
@@ -548,7 +558,9 @@ export function adaptSummaryToMonthlyOverview(
             change: distribution.movement?.[g] ?? 0,
           };
         })
-      : fallback.gradeDistribution.rows;
+      : allowSnapshotFallback
+        ? fallback.gradeDistribution.rows
+        : [];
 
   const negativeDrivers: ScoreDriverItem[] =
     summary.drivers.negative.length > 0
@@ -561,7 +573,7 @@ export function adaptSummaryToMonthlyOverview(
           betterDirection: d.direction === 'lower_better' ? 'lower' : 'higher',
           actualValue: d.actual !== null && d.actual !== undefined ? `${ Number(d.actual).toFixed(1) }%` : '—',
         }))
-      : region === 'UAE'
+      : !allowSnapshotFallback || region === 'UAE'
         ? []
         : fallback.drivers.negative;
 
@@ -576,7 +588,7 @@ export function adaptSummaryToMonthlyOverview(
           betterDirection: d.direction === 'lower_better' ? 'lower' : 'higher',
           actualValue: d.actual !== null && d.actual !== undefined ? `${ Number(d.actual).toFixed(1) }%` : '—',
         }))
-      : region === 'UAE'
+      : !allowSnapshotFallback || region === 'UAE'
         ? []
         : fallback.drivers.positive;
 
@@ -627,7 +639,7 @@ export function adaptSummaryToMonthlyOverview(
               flags,
             };
           })
-      : region === 'UAE'
+      : !allowSnapshotFallback || region === 'UAE'
         ? []
         : fallback.teamsAtRisk;
 
@@ -646,8 +658,8 @@ export function adaptSummaryToMonthlyOverview(
       change,
       previousScore,
       headline: `${Math.abs(gap).toFixed(1)}% ${gap <= 0 ? 'below' : 'above'} target`,
-      employeesCount: summary.hero.employees || fallback.overall.employeesCount,
-      teamsCount: summary.hero.teams_count || fallback.overall.teamsCount,
+      employeesCount: summary.hero.employees ?? fallback.overall.employeesCount,
+      teamsCount: summary.hero.teams_count ?? fallback.overall.teamsCount,
       functionsCount: functions.length || fallback.overall.functionsCount,
       evaluationNote: summary.basis_context?.message || fallback.overall.evaluationNote,
     },
@@ -655,7 +667,7 @@ export function adaptSummaryToMonthlyOverview(
     gradeDistribution: {
       totalEmployees: distribution?.total || fallback.gradeDistribution.totalEmployees,
       rows: gradeRows,
-      takeaway: region === 'UAE' && distribution
+      takeaway: distribution && (!allowSnapshotFallback || region === 'UAE')
         ? measuredGradeTakeaway(distribution)
         : fallback.gradeDistribution.takeaway,
     },
@@ -665,5 +677,41 @@ export function adaptSummaryToMonthlyOverview(
     },
     functions,
     teamsAtRisk,
+  };
+}
+
+function emptyMonthlyOverview(
+  region: 'EGY' | 'UAE',
+  summary: ExecutiveSummary | null | undefined,
+): MonthlyOverviewData {
+  const effective = summary?.period.effective;
+  const label = effective?.label ?? 'No period selected';
+  return {
+    title: 'Monthly Review',
+    FlowName: 'Authorized scope',
+    regionCode: region,
+    regionName: region === 'EGY' ? 'Offshore Egypt' : 'UAE Region',
+    monthLabel: label,
+    previousMonthLabel: summary?.period.previous?.month ?? 'Previous period',
+    periodKey: effective?.key ?? '',
+    pageIndicator: { current: 1, total: 1, label: 'Overview' },
+    overall: {
+      score: 0,
+      grade: 'E',
+      target: 100,
+      gap: -100,
+      change: 0,
+      previousScore: 0,
+      headline: 'No measured results',
+      employeesCount: 0,
+      teamsCount: 0,
+      functionsCount: 0,
+      evaluationNote: 'No measured results are available for this scope and period.',
+    },
+    trend: [],
+    gradeDistribution: { totalEmployees: 0, rows: [], takeaway: '' },
+    drivers: { negative: [], positive: [] },
+    functions: [],
+    teamsAtRisk: [],
   };
 }

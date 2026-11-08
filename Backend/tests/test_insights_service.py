@@ -755,7 +755,7 @@ def test_function_for_team_maps_source_teams_to_parent_domains():
     # UAE pre-approvals roll up into RCM and the narrower Pre-Approvals function.
     assert functions_for_team("pre-approvals ip final dubai") == ["RCM", "Pre-Approvals"]
     assert functions_for_team("Pre-Approvals IP Offshore") == ["RCM"]
-    assert functions_for_team("Inbound UAE") == ["Inbound UAE"]
+    assert functions_for_team("Inbound UAE") == ["Call Center"]
     assert function_for_team("Offshore Admin & Management") == "Administration"
     assert function_for_team("Administration") == "Administration"
     assert functions_for_team("Offshore Admin & Management") == ["Administration"]

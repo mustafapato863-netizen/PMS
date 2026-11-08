@@ -193,8 +193,12 @@ def test_function_viewer_http_scope_tampering_and_revocation(monkeypatch):
     try:
         _seed(db)
         marketing = Team(id=uuid.uuid4(), name="Marketing", db_name="marketing", region="EGY", is_active=True)
+        inbound_uae = Team(
+            id=uuid.uuid4(), name="Inbound UAE", db_name="inbound_uae", display_name="Inbound UAE",
+            region="UAE", team_level="employee", is_active=True,
+        )
         employee = Employee(id=uuid.uuid4(), employee_id="EMP-M", name="Hidden", team_id=marketing.id, region="EGY")
-        db.add_all([marketing, employee])
+        db.add_all([marketing, inbound_uae, employee])
         db.flush()
         db.add(PerformanceRecord(
             id=uuid.uuid4(), year=2026, month="June", employee_id=employee.id, team_id=marketing.id,
@@ -231,6 +235,9 @@ def test_function_viewer_http_scope_tampering_and_revocation(monkeypatch):
             assert client.get("/api/performance/team/Marketing", headers=viewer_headers).status_code == 403
             catalog = client.get("/api/performance/catalog", headers=viewer_headers).json()["data"]
             assert {item["team"] for item in catalog["scopes"]} == {"Inbound", "Outbound"}
+            assert catalog["authorized_functions"] == ["Call Center"]
+            assert {item["team"] for item in catalog["teams"]} == {"Inbound", "Outbound", "Inbound UAE"}
+            assert next(item for item in catalog["teams"] if item["team"] == "Inbound UAE")["region"] == "UAE"
             summary_url = "/api/performance/summary?period=2026-06"
             assert client.get(summary_url, headers=viewer_headers).json()["data"]["current"]["total_agents"] == 3
             assert cache
@@ -243,6 +250,9 @@ def test_function_viewer_http_scope_tampering_and_revocation(monkeypatch):
             assert client.get(summary_url, headers=viewer_headers).json()["data"]["current"]["total_agents"] == 0
             assert client.get("/api/performance/records?period=2026-06", headers=viewer_headers).json()["data"]["items"] == []
             assert client.get("/api/performance/catalog", headers=viewer_headers).json()["data"]["scopes"] == []
+            revoked_catalog = client.get("/api/performance/catalog", headers=viewer_headers).json()["data"]
+            assert revoked_catalog["teams"] == []
+            assert revoked_catalog["authorized_functions"] == []
     finally:
         db.close()
 

@@ -36,6 +36,28 @@ function liveSummary(gradeDistribution: ExecutiveSummary['grade_distribution']):
 }
 
 describe('adaptSummaryToMonthlyOverview', () => {
+  it('keeps an empty live scope empty instead of filling it with a regional snapshot', () => {
+    const overview = adaptSummaryToMonthlyOverview(undefined, 'EGY', { allowSnapshotFallback: false });
+
+    expect(overview.overall.employeesCount).toBe(0);
+    expect(overview.trend).toEqual([]);
+    expect(overview.gradeDistribution.rows).toEqual([]);
+    expect(overview.drivers).toEqual({ negative: [], positive: [] });
+    expect(overview.functions).toEqual([]);
+    expect(overview.teamsAtRisk).toEqual([]);
+  });
+
+  it('does not borrow Egypt sample sections when a scoped live summary omits them', () => {
+    const overview = adaptSummaryToMonthlyOverview(liveSummary(null), 'EGY', { allowSnapshotFallback: false });
+
+    expect(overview.overall.score).toBe(91.8);
+    expect(overview.trend).toEqual([]);
+    expect(overview.gradeDistribution.rows).toEqual([]);
+    expect(overview.drivers.negative).toEqual([]);
+    expect(overview.teamsAtRisk).toEqual([]);
+    expect(overview.functions).toEqual([]);
+  });
+
   it('maps compose grade counts for a live UAE month instead of calling .grades.find', () => {
     const overview = adaptSummaryToMonthlyOverview(
       liveSummary({
