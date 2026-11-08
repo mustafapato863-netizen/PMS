@@ -39,6 +39,7 @@ import {
   isScopedDirectorRole,
   isManagerRole,
 } from '../../lib/access';
+import { useAiAvailability } from '../../features/ai/aiAvailability';
 import { useFunctionScope } from '../../features/executive/useFunctionScope';
 import { prepareBalancedScorecardTeamParams } from '../team/balancedScorecardNavigation';
 import SghHeartSvg from './SghHeartSvg';
@@ -118,6 +119,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed: collapsedPreference = false, 
     };
   }, [drawerOpen, setIsOpen]);
   const { pathname } = useLocation();
+  const { enabled: aiEnabled } = useAiAvailability();
   const [searchParams] = useSearchParams();
   const selectedLevel = searchParams.get('performance_level');
   const { role } = useUserRole();
@@ -324,7 +326,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed: collapsedPreference = false, 
     ? [
         { name: 'Executive Summary', path: '/executive', icon: <Gauge size={18} /> },
         ...(canAccessMonthlyPresentation(role) ? [{ name: 'Monthly Review', path: '/monthly-presentation', icon: <Presentation size={18} />, resetQuery: true, drawerOnly: true }] : []),
-        ...(canAccessPmsAi(role) ? [{ name: 'PMS AI', path: '/ai', icon: <Sparkles size={18} />, resetQuery: true, drawerOnly: true }] : []),
+        ...(aiEnabled && canAccessPmsAi(role) ? [{ name: 'PMS AI', path: '/ai', icon: <Sparkles size={18} />, resetQuery: true, drawerOnly: true }] : []),
         ...(!scopedDirector ? teamsItem : []),
         ...(canSeeReportsNav(role) ? [{ name: 'Reports', path: '/reports', icon: <FileBarChart size={18} /> }] : []),
         // Plain /insights: Insights keeps its own filters in the URL

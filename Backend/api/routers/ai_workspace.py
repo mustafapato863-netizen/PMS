@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session
 
 from api.dependencies import require_authenticated_scope, require_role
+from services.ai.feature_gate import require_ai_enabled
 from config.database import get_db, release_read_transaction
 from models.ai_schemas import (
     AiCatalogResponse,
@@ -46,7 +47,11 @@ from services.corrective_action_service import (
 )
 from services.insights_service import InsightAccessError, InsightValidationError
 
-router = APIRouter(prefix="/ai", tags=["PMS AI Workspace"])
+router = APIRouter(
+    prefix="/ai",
+    tags=["PMS AI Workspace"],
+    dependencies=[Depends(require_ai_enabled)],
+)
 
 AI_WORKSPACE_ROLES = [
     "Admin",

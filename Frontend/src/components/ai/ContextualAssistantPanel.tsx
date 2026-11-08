@@ -16,6 +16,7 @@ import {
   X,
 } from 'lucide-react';
 import { apiFetch } from '../../lib/apiClient';
+import { useAiAvailability } from '../../features/ai/aiAvailability';
 import { useAuth } from '../../context/auth';
 import { useUserRole } from '../../context/RoleContext';
 import type {
@@ -119,6 +120,7 @@ export function ContextualAssistantPanel({
 }: ContextualAssistantPanelProps) {
   const { role } = useUserRole();
   const { currentUser } = useAuth();
+  const { enabled: aiEnabled } = useAiAvailability();
   const [isOpen, setIsOpen] = useState(defaultOpen);
   const [input, setInput] = useState('');
   const [turns, setTurns] = useState<AssistantTurn[]>([]);
@@ -410,6 +412,8 @@ export function ContextualAssistantPanel({
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [activeProposalTurnId, cancelProposalReview, isOpen]);
+
+  if (!aiEnabled) return null;
 
   return (
     <div

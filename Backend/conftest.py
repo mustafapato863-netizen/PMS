@@ -19,3 +19,13 @@ os.environ.setdefault("PMS_SEED_PERMISSIONS_ON_STARTUP", "false")
 os.environ.setdefault("PMS_AI_GEMINI_ROUTING_ENABLED", "false")
 os.environ.setdefault("PMS_AI_LOCAL_ROUTER_ENABLED", "false")
 os.environ.setdefault("PMS_AI_LOCAL_SYNTHESIS_ENABLED", "false")
+
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _keep_ai_available_unless_a_test_reads_the_switch(monkeypatch):
+    """Chat suites predate the administrator switch. Production stays off until an admin enables it."""
+    import services.ai.feature_gate as feature_gate
+
+    monkeypatch.setattr(feature_gate, "is_ai_enabled", lambda db: True)

@@ -144,7 +144,7 @@ export const ROUTE_ROLES = {
 export const canAccessMonthlyPresentation = (role: RoleInput): boolean =>
   canAccessRoute({ role, allowedRoles: ROUTE_ROLES.monthlyPresentation });
 
-/** PMS AI Workspace: available to all management, director, and analytical roles within their RBAC scope. */
+/** PMS AI Workspace roles. The administrator switch must also be on; a role check alone does not show AI. */
 export const canAccessPmsAi = (role: RoleInput): boolean =>
   canAccessRoute({ role, allowedRoles: ROUTE_ROLES.pmsAi });
 

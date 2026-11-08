@@ -30,6 +30,7 @@ import {
   type UserSummary,
 } from './adminOverviewData';
 import { settingsPathFor } from './settingsNavigation';
+import { AiFeatureSwitch } from './AiFeatureSwitch';
 import { useAdminOverview } from './useAdminOverview';
 
 interface QueryState {
@@ -631,6 +632,8 @@ export function AdminOverview() {
           </button>
         </div>
       </div>
+
+      <AiFeatureSwitch />
 
       <AdminSection
         plain

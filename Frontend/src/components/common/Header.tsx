@@ -22,6 +22,7 @@ import {
   isGeneralManagerRole,
   readHasUnrestrictedTeamAccess,
 } from '../../lib/access';
+import { useAiAvailability } from '../../features/ai/aiAvailability';
 
 // ── route config ──────────────────────────────────────────────────────────────
 
@@ -244,6 +245,7 @@ const Header = ({ onMenuClick }: HeaderProps) => {
   const navigate = useNavigate();
 
   const { role } = useUserRole();
+  const { enabled: aiEnabled } = useAiAvailability();
   const { currentUser, logout } = useAuth();
   const { data: performanceCatalog } = usePerformanceCatalog();
   const uniqueMonths = performanceCatalog?.months || [];
@@ -362,7 +364,7 @@ const Header = ({ onMenuClick }: HeaderProps) => {
 
         {/* ── Right: controls ── */}
         <div className="app-header-actions flex items-center justify-end gap-1.5 md:gap-2 shrink-0">
-          {canAccessPmsAi(role) && pathname !== '/ai' && (
+          {aiEnabled && canAccessPmsAi(role) && pathname !== '/ai' && (
             <button
               type="button"
               onClick={handleOpenAskAi}

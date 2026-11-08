@@ -17,6 +17,7 @@ import WorkspaceLoader from './components/common/WorkspaceLoader';
 import { PageLoadingSkeleton } from './components/common/SkeletonLoader';
 import RouteGuard from './components/common/RouteGuard';
 import { ROUTE_ROLES } from './lib/access';
+import { AiAvailabilityProvider, useAiAvailability } from './features/ai/aiAvailability';
 import PasswordChangeGate from './components/common/PasswordChangeGate';
 import { useDesktopNavigation } from './hooks/useDesktopNavigation';
 
@@ -151,7 +152,7 @@ function AnimatedRoutes() {
           path="/ai"
           element={
             <RouteGuard allowedRoles={ROUTE_ROLES.pmsAi}>
-              <Suspense fallback={<RouteLoadingFallback />}><PmsAiWorkspaceView /></Suspense>
+              <AiWorkspaceRoute />
             </RouteGuard>
           }
         />
@@ -290,6 +291,13 @@ function AppContent() {
   );
 }
 
+function AiWorkspaceRoute() {
+  const { enabled, ready } = useAiAvailability();
+  if (!ready) return <RouteLoadingFallback />;
+  if (!enabled) return <Navigate to="/executive" replace />;
+  return <Suspense fallback={<RouteLoadingFallback />}><PmsAiWorkspaceView /></Suspense>;
+}
+
 function AppRouter() {
   const { currentUser } = useAuth();
 
@@ -309,11 +317,13 @@ function App() {
     <ThemeProvider>
       <ToastProvider>
         <AuthProvider>
-          <RoleProvider>
-            <AppErrorBoundary>
-              <AppRouter />
-            </AppErrorBoundary>
-          </RoleProvider>
+          <AiAvailabilityProvider>
+            <RoleProvider>
+              <AppErrorBoundary>
+                <AppRouter />
+              </AppErrorBoundary>
+            </RoleProvider>
+          </AiAvailabilityProvider>
         </AuthProvider>
       </ToastProvider>
     </ThemeProvider>

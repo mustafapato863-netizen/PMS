@@ -1434,6 +1434,21 @@ class CacheInvalidationOutbox(Base):
 register_apply_foundation_guards(Base.metadata)
 
 
+class ProductSetting(Base):
+    """Operator switches that apply to the whole deployment.
+
+    ``ai_enabled`` starts off. A missing row stays off, so AI is hidden until
+    an administrator turns it on.
+    """
+
+    __tablename__ = "product_settings"
+
+    key = Column(String(80), primary_key=True)
+    enabled = Column(Boolean, nullable=False, default=False, server_default=false())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    updated_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+
 class ErrorLog(Base):
     __tablename__ = "error_logs"
 

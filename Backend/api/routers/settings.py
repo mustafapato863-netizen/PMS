@@ -3,7 +3,8 @@ from starlette.concurrency import run_in_threadpool
 from datetime import datetime, timezone
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Response, UploadFile
+from pydantic import BaseModel
 
 from api.dependencies import clear_serialization_cache, require_role
 from api.middleware.rbac_middleware import require_permission
@@ -13,6 +14,7 @@ from models.models import ErrorLog
 from models.schemas import StandardResponse, KPIWeight, Target
 from services.cache_invalidation_service import CacheInvalidationService
 from services.corrective_action_service import CorrectiveActionService, CorrectiveActionValidationError
+from services.ai.feature_gate import read_ai_enabled, set_ai_enabled
 from services.kpi_configuration_service import KPIConfigurationService
 from sqlalchemy.orm import Session
 
@@ -171,4 +173,49 @@ async def update_targets(
     raise HTTPException(
         status_code=409,
         detail="KPI targets are sourced from persisted workbook evidence; upload a corrected workbook instead.",
+    )
+
+
+class AiAssistantSettingUpdate(BaseModel):
+    enabled: bool
+
+
+def _signed_in_user(request: Request) -> dict:
+    user = getattr(request.state, "user", None)
+    if isinstance(user, dict) and user.get("role"):
+        return user
+    role = request.headers.get("x-user-role")
+    if role:
+        return {"role": role, "user_id": request.headers.get("x-user-id")}
+    raise HTTPException(status_code=401, detail="Authentication required")
+
+
+@router.get("/ai-assistant", response_model=StandardResponse)
+def get_ai_assistant_setting(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Any signed-in user can see whether PMS AI is on. The value is a switch, not performance data."""
+    _signed_in_user(request)
+    return StandardResponse(
+        success=True,
+        message="PMS AI setting retrieved",
+        data={"enabled": read_ai_enabled(db)},
+    )
+
+
+@router.put("/ai-assistant", response_model=StandardResponse)
+def update_ai_assistant_setting(
+    payload: AiAssistantSettingUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
+    _role: str = Depends(require_role(["Admin"])),
+):
+    """Administrators turn PMS AI on or off for every user, including themselves."""
+    user = _signed_in_user(request)
+    enabled = set_ai_enabled(db, payload.enabled, user.get("user_id"))
+    return StandardResponse(
+        success=True,
+        message="PMS AI setting updated",
+        data={"enabled": enabled},
     )
