@@ -22,7 +22,7 @@ import {
   isGeneralManagerRole,
   readHasUnrestrictedTeamAccess,
 } from '../../lib/access';
-import { useAiAvailability } from '../../features/ai/aiAvailability';
+import { useAiAvailability } from '../../features/ai/aiAvailabilityContext';
 
 // ── route config ──────────────────────────────────────────────────────────────
 

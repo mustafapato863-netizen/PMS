@@ -1,43 +1,25 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useAuth } from '../../context/auth';
 import { apiFetch } from '../../lib/apiClient';
+import { AiAvailabilityContext } from './aiAvailabilityContext';
 
 type AiSettingResponse = { success: boolean; data?: { enabled?: boolean } };
 
-export interface AiAvailability {
-  /** False until an administrator turns PMS AI on. Components rendered outside the provider stay available for their own tests. */
-  enabled: boolean;
-  ready: boolean;
-  saving: boolean;
-  error: string | null;
-  setEnabled: (enabled: boolean) => Promise<void>;
-}
-
-const standalone: AiAvailability = {
-  enabled: true,
-  ready: true,
-  saving: false,
-  error: null,
-  setEnabled: async () => {},
-};
-
-const AiAvailabilityContext = createContext<AiAvailability>(standalone);
-
 export function AiAvailabilityProvider({ children }: { children: ReactNode }) {
   const { currentUser } = useAuth();
+  const userId = currentUser?.id;
+  return <AiAvailabilitySession key={userId ?? 'anonymous'} userId={userId}>{children}</AiAvailabilitySession>;
+}
+
+function AiAvailabilitySession({ userId, children }: { userId: string | undefined; children: ReactNode }) {
   const [enabled, setEnabledState] = useState(false);
-  const [ready, setReady] = useState(false);
+  const [ready, setReady] = useState(!userId);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!currentUser) {
-      setEnabledState(false);
-      setReady(true);
-      return;
-    }
+    if (!userId) return;
     let active = true;
-    setReady(false);
     apiFetch<AiSettingResponse>('/api/settings/ai-assistant')
       .then((response) => {
         if (active) setEnabledState(response.data?.enabled === true);
@@ -51,7 +33,7 @@ export function AiAvailabilityProvider({ children }: { children: ReactNode }) {
     return () => {
       active = false;
     };
-  }, [currentUser?.id]);
+  }, [userId]);
 
   const setEnabled = async (next: boolean) => {
     setSaving(true);
@@ -77,8 +59,4 @@ export function AiAvailabilityProvider({ children }: { children: ReactNode }) {
       {children}
     </AiAvailabilityContext.Provider>
   );
-}
-
-export function useAiAvailability(): AiAvailability {
-  return useContext(AiAvailabilityContext);
 }

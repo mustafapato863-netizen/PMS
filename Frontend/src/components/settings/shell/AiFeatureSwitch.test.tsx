@@ -8,10 +8,11 @@ import { AiAvailabilityProvider } from '../../../features/ai/aiAvailability';
 import { AiFeatureSwitch } from './AiFeatureSwitch';
 
 const apiFetch = vi.hoisted(() => vi.fn());
+const auth = vi.hoisted(() => ({ currentUser: { id: 'admin-1', role: 'Admin', name: 'Admin' } as { id: string; role: string; name: string } | null }));
 
 vi.mock('../../../lib/apiClient', () => ({ apiFetch }));
 vi.mock('../../../context/auth', () => ({
-  useAuth: () => ({ currentUser: { id: 'admin-1', role: 'Admin', name: 'Admin' }, logout: vi.fn() }),
+  useAuth: () => ({ currentUser: auth.currentUser, logout: vi.fn() }),
 }));
 vi.mock('../../../context/RoleContext', () => ({
   useUserRole: () => ({ role: 'Admin', fetchWithRole: vi.fn() }),
@@ -29,6 +30,7 @@ function renderWithAvailability(ui: ReactNode) {
 
 describe('PMS AI administrator switch', () => {
   beforeEach(() => {
+    auth.currentUser = { id: 'admin-1', role: 'Admin', name: 'Admin' };
     apiFetch.mockReset();
     apiFetch.mockImplementation((_url: string, options?: { method?: string }) => {
       if (options?.method === 'PUT') return Promise.resolve({ success: true, data: { enabled: true } });
@@ -61,5 +63,21 @@ describe('PMS AI administrator switch', () => {
     expect(toggle).toHaveAttribute('aria-checked', 'true');
     expect(screen.getByRole('button', { name: 'Ask AI analytical assistant' })).toBeInTheDocument();
     expect(apiFetch).toHaveBeenLastCalledWith('/api/settings/ai-assistant', expect.objectContaining({ method: 'PUT' }));
+  });
+
+  it('does not reuse an enabled setting after logout and login', async () => {
+    apiFetch.mockResolvedValueOnce({ success: true, data: { enabled: true } });
+    const view = renderWithAvailability(<AiFeatureSwitch />);
+    expect(await screen.findByRole('switch', { name: 'Enable PMS AI', checked: true })).toBeInTheDocument();
+
+    auth.currentUser = null;
+    view.rerender(<MemoryRouter><AiAvailabilityProvider><AiFeatureSwitch /></AiAvailabilityProvider></MemoryRouter>);
+    expect(screen.getByRole('switch', { name: 'Enable PMS AI' })).toHaveAttribute('aria-checked', 'false');
+
+    apiFetch.mockImplementationOnce(() => new Promise(() => {}));
+    auth.currentUser = { id: 'admin-1', role: 'Admin', name: 'Admin' };
+    view.rerender(<MemoryRouter><AiAvailabilityProvider><AiFeatureSwitch /></AiAvailabilityProvider></MemoryRouter>);
+    expect(screen.getByRole('switch', { name: 'Enable PMS AI' })).toBeDisabled();
+    expect(screen.getByRole('switch', { name: 'Enable PMS AI' })).toHaveAttribute('aria-checked', 'false');
   });
 });

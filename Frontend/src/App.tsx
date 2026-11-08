@@ -17,7 +17,8 @@ import WorkspaceLoader from './components/common/WorkspaceLoader';
 import { PageLoadingSkeleton } from './components/common/SkeletonLoader';
 import RouteGuard from './components/common/RouteGuard';
 import { ROUTE_ROLES } from './lib/access';
-import { AiAvailabilityProvider, useAiAvailability } from './features/ai/aiAvailability';
+import { AiAvailabilityProvider } from './features/ai/aiAvailability';
+import { useAiAvailability } from './features/ai/aiAvailabilityContext';
 import PasswordChangeGate from './components/common/PasswordChangeGate';
 import { useDesktopNavigation } from './hooks/useDesktopNavigation';
 

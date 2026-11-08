@@ -1,5 +1,5 @@
 import { Sparkles } from 'lucide-react';
-import { useAiAvailability } from '../../../features/ai/aiAvailability';
+import { useAiAvailability } from '../../../features/ai/aiAvailabilityContext';
 
 /** Administration control. Visible while AI itself is hidden from every role, including Admin. */
 export function AiFeatureSwitch() {

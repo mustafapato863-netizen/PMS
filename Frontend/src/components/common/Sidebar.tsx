@@ -39,7 +39,7 @@ import {
   isScopedDirectorRole,
   isManagerRole,
 } from '../../lib/access';
-import { useAiAvailability } from '../../features/ai/aiAvailability';
+import { useAiAvailability } from '../../features/ai/aiAvailabilityContext';
 import { useFunctionScope } from '../../features/executive/useFunctionScope';
 import { prepareBalancedScorecardTeamParams } from '../team/balancedScorecardNavigation';
 import SghHeartSvg from './SghHeartSvg';

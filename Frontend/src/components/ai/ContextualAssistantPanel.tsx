@@ -16,7 +16,7 @@ import {
   X,
 } from 'lucide-react';
 import { apiFetch } from '../../lib/apiClient';
-import { useAiAvailability } from '../../features/ai/aiAvailability';
+import { useAiAvailability } from '../../features/ai/aiAvailabilityContext';
 import { useAuth } from '../../context/auth';
 import { useUserRole } from '../../context/RoleContext';
 import type {
