@@ -10,6 +10,11 @@ describe('resolveTeamRouteId', () => {
     expect(resolveTeamRouteId('pre-approvals-ip-final-shjajm')).toBe('pre-approvals-ip-final-shj-ajm');
     expect(resolveTeamRouteId('pre-approvals-ip-elective')).toBe('pre-approvals-ip-elective-dubai');
     expect(resolveTeamRouteId('pre-approvals-uae')).toBe('pre-approvals-uae');
+    expect(resolveTeamRouteId('submission-egy')).toBe('submission-egy');
+    expect(resolveTeamRouteId('coding-egy')).toBe('coding-egy');
+    expect(resolveTeamRouteId('pre-approvals-ip')).toBe('pre-approvals-ip');
+    expect(resolveTeamRouteId('resubmission')).toBe('resubmission');
+    expect(resolveTeamRouteId('re-submission')).toBe('re-submission');
   });
 
   it('returns null for unknown ids, empty input and object-prototype names', () => {
@@ -29,6 +34,12 @@ describe('teamPath', () => {
     expect(teamPath('Pre-Approvals IP Final SHJAJM')).toBe('/team/pre-approvals-ip-final');
     expect(teamPath('Pre-Approvals IP Elective')).toBe('/team/pre-approvals-ip-elective-dubai');
     expect(teamPath('Coding')).toBe('/team/coding');
+    expect(teamPath('Coding EGY')).toBe('/team/coding-egy');
+    expect(teamPath('Submission EGY')).toBe('/team/submission-egy');
+    expect(teamPath('Pre-Approvals IP')).toBe('/team/pre-approvals-ip');
+    expect(teamPath('Resubmission')).toBe('/team/resubmission');
+    expect(teamPath('Re-Submission')).toBe('/team/re-submission');
+    expect(teamPath('Re-Submission EGY')).toBe('/team/re-submission-egy');
   });
 
   it('slugs only an unknown team', () => {

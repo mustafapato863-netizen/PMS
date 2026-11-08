@@ -54,6 +54,7 @@ const EXPECTED_TITLE: Record<string, string> = {
   'IT': 'IT',
   'Offshore Admin & Management': 'Administration',
   'Coding': 'Coding',
+  'Coding EGY': 'Coding EGY',
   'Inbound': 'Inbound',
   'Marketing': 'Marketing',
   'Outbound': 'Outbound',
@@ -64,14 +65,18 @@ const EXPECTED_TITLE: Record<string, string> = {
   'Pre-Approvals IP Final': 'Pre-Approvals IP Final',
   'Pre-Approvals IP Final Dubai': 'Pre-Approvals IP Final',
   'Pre-Approvals IP Final SHJAJM': 'Pre-Approvals IP Final',
+  'Pre-Approvals IP': 'Pre-Approvals IP',
   'Pre-Approvals IP Offshore': 'Pre-Approvals IP Offshore',
   'Pre-Approvals OP Dubai': 'Pre-Approvals OP Final',
   'Pre-Approvals OP Final': 'Pre-Approvals OP Final',
   'Pre-Approvals OP Final SHJAJM': 'Pre-Approvals OP Final',
   'RCM': 'RCM',
   'Re-Submission': 'Re-Submission',
+  'Re-Submission EGY': 'Re-Submission EGY',
+  'Resubmission': 'Resubmission',
   'Sales': 'Sales',
   'Submission': 'Submission',
+  'Submission EGY': 'Submission EGY',
 };
 
 const KNOWN_NAMES = [...new Set([

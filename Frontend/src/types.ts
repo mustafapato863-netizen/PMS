@@ -433,7 +433,12 @@ export const TEAM_ID_MAP: Record<string, string> = {
   'CSR': 'csr',
   'Pharmacy': 'pharmacy',
   'Submission': 'submission',
+  'Submission EGY': 'submission-egy',
   'Re-Submission': 're-submission',
+  'Resubmission': 'resubmission',
+  'Re-Submission EGY': 're-submission-egy',
+  'Coding EGY': 'coding-egy',
+  'Pre-Approvals IP': 'pre-approvals-ip',
   'Pre-Approvals OP Final': 'pre-approvals-op-final',
   'Pre-Approvals IP Final': 'pre-approvals-ip-final',
   [PRE_APPROVALS_UAE_TEAM]: PRE_APPROVALS_UAE_TEAM_ID,
@@ -457,10 +462,15 @@ export const TEAM_NAME_MAP: Record<string, string> = {
   'pre-approvals': 'Pre-Approvals IP Offshore',
   'sales': 'Sales',
   'coding': 'Coding',
+  'coding-egy': 'Coding EGY',
   'csr': 'CSR',
   'pharmacy': 'Pharmacy',
   'submission': 'Submission',
+  'submission-egy': 'Submission EGY',
   're-submission': 'Re-Submission',
+  'resubmission': 'Resubmission',
+  're-submission-egy': 'Re-Submission EGY',
+  'pre-approvals-ip': 'Pre-Approvals IP',
   'pre-approvals-op-final': 'Pre-Approvals OP Final',
   'pre-approvals-ip-final': 'Pre-Approvals IP Final',
   [PRE_APPROVALS_UAE_TEAM_ID]: PRE_APPROVALS_UAE_TEAM,
@@ -484,10 +494,15 @@ export const TEAM_DB_NAME_MAP: Record<string, string> = {
   'pre-approvals': 'Pre-Approvals IP Offshore',
   'sales': 'Sales',
   'coding': 'Coding',
+  'coding-egy': 'Coding EGY',
   'csr': 'CSR',
   'pharmacy': 'Pharmacy',
   'submission': 'Submission',
+  'submission-egy': 'Submission EGY',
   're-submission': 'Re-Submission',
+  'resubmission': 'Resubmission',
+  're-submission-egy': 'Re-Submission EGY',
+  'pre-approvals-ip': 'Pre-Approvals IP',
   'pre-approvals-op-final': 'Pre-Approvals OP Final',
   'pre-approvals-ip-final': 'Pre-Approvals IP Final',
   [PRE_APPROVALS_UAE_TEAM_ID]: PRE_APPROVALS_UAE_TEAM,
@@ -526,6 +541,22 @@ export const TEAM_ROUTE_ALIASES: ReadonlyMap<string, string> = (() => {
 })();
 
 /**
+ * Full-name routes. "Re-Submission" and "Resubmission" share one letter-only
+ * alias, so a catalog name is matched exactly before that alias is used.
+ */
+const TEAM_EXACT_ROUTES: ReadonlyMap<string, string> = (() => {
+  const exact = new Map<string, string>();
+  const add = (name: string, id: string) => {
+    const key = String(name).trim().toLowerCase();
+    if (key && !exact.has(key)) exact.set(key, id);
+  };
+  Object.entries(TEAM_ID_MAP).forEach(([name, id]) => add(name, id));
+  Object.entries(TEAM_NAME_MAP).forEach(([id, name]) => add(name, id));
+  Object.entries(TEAM_DB_NAME_MAP).forEach(([id, name]) => add(name, id));
+  return exact;
+})();
+
+/**
  * Canonical route id for a `:teamId` URL segment, or null when no team matches.
  * Accepts a route id (current or legacy, any case) or the slug of a display or
  * DB name. Source OP/IP Final teams keep their own ids and resolve to the same
@@ -540,8 +571,17 @@ export function resolveTeamRouteId(segment: string | null | undefined): string |
 
 /** Canonical route id for a known team name (display, DB or config name), or null for an unknown team. */
 export function teamRouteIdForName(name: string | null | undefined): string | null {
-  return TEAM_ROUTE_ALIASES.get(teamRouteKey(canonicalTeamName(name)))
-    ?? TEAM_ROUTE_ALIASES.get(teamRouteKey(name))
+  const raw = String(name ?? '').trim();
+  if (!raw) return null;
+  const canonical = canonicalTeamName(raw);
+  if (canonical.toLowerCase() !== raw.toLowerCase()) {
+    const merged = TEAM_EXACT_ROUTES.get(canonical.toLowerCase());
+    if (merged) return merged;
+  }
+  return TEAM_EXACT_ROUTES.get(raw.toLowerCase())
+    ?? TEAM_EXACT_ROUTES.get(canonical.toLowerCase())
+    ?? TEAM_ROUTE_ALIASES.get(teamRouteKey(canonical))
+    ?? TEAM_ROUTE_ALIASES.get(teamRouteKey(raw))
     ?? null;
 }
 
