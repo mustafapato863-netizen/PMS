@@ -1082,14 +1082,31 @@ def test_control_row_blocks_downgrade_before_schema_change(foundation):
     assert "evaluation_apply" in KIND_CHECK_SQL
 
 
-def test_migration_head_is_the_foundation_revision():
+def test_foundation_revision_remains_in_the_single_migration_head_history():
     backend = __import__("pathlib").Path(__file__).resolve().parents[1]
     config = Config(str(backend / "alembic.ini"))
     config.set_main_option("script_location", str(backend / "migrations"))
     scripts = ScriptDirectory.from_config(config)
-    assert scripts.get_heads() == [APPLY_FOUNDATION_REVISION]
+    heads = scripts.get_heads()
+    assert len(heads) == 1
     revision = scripts.get_revision(APPLY_FOUNDATION_REVISION)
     assert revision.down_revision == APPLY_FOUNDATION_PREDECESSOR
+
+    ancestors = set()
+    pending = list(heads)
+    while pending:
+        revision_id = pending.pop()
+        if revision_id in ancestors:
+            continue
+        ancestors.add(revision_id)
+        current = scripts.get_revision(revision_id)
+        down_revisions = current.down_revision
+        if isinstance(down_revisions, str):
+            pending.append(down_revisions)
+        elif down_revisions:
+            pending.extend(down_revisions)
+
+    assert APPLY_FOUNDATION_REVISION in ancestors
 
 
 def test_postgres_check_module_is_outside_normal_collection():

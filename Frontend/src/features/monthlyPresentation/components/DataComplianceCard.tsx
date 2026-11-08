@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Check, CheckCheck, Minus, Plus, RotateCcw, SlidersHorizontal } from 'lucide-react';
 import { getGradeTone } from '../../../constants/grades';
+import { compliancePercent } from './dataComplianceUtils';
 
 export type ComplianceFunction = {
   slug: string;
@@ -54,11 +55,6 @@ function clampCount(value: unknown): number {
   const parsed = typeof value === 'number' ? value : Number(value);
   if (!Number.isFinite(parsed) || parsed < 0) return 0;
   return Math.min(99999, Math.round(parsed));
-}
-
-export function compliancePercent(done: number, total: number): number {
-  if (total <= 0) return 0;
-  return Math.round((done / total) * 100);
 }
 
 function readCounts(region: string, periodKey: string): Record<string, StoredCount> {

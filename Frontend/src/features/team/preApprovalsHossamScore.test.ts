@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { AgentRecord, TeamAgentRow } from '../../types';
+import type { AgentRecord } from '../../types';
 import { isHossamRecord } from '../../types';
 import { calculateAggregatedTeamPerformance } from './teamKpiAggregator';
 import type { TeamConfig } from '../../schemas/teamConfig.schema';

@@ -1,6 +1,7 @@
 import { render } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import { LineChart, percentageScoreAxisMax } from './LineChart';
+import { LineChart } from './LineChart';
+import { percentageScoreAxisMax } from './lineChartUtils';
 
 const axisLabels = (svg: HTMLElement) =>
   [...svg.querySelectorAll('text')].map((node) => node.textContent ?? '');

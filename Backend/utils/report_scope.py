@@ -88,7 +88,6 @@ _PRE_APPROVALS_IP_ELECTIVE_KEYS = {
 _CALL_CENTER_KEYS = {
     "call center",
     "inbound",
-    "inbound uae",
     "outbound",
     "support positions",
     "call center support positions",
@@ -246,8 +245,9 @@ def canonical_scope_identity(scope: dict | None) -> dict:
 # ``_team_keys`` fallback of an exact team match. Order is broadest first:
 # UAE Pre-Approvals teams belong to RCM *and* to the narrower Pre-Approvals
 # function, exactly as ``_RCM_KEYS`` and ``_PRE_APPROVALS_UAE_KEYS`` overlap.
+_FUNCTION_CALL_CENTER_KEYS = _CALL_CENTER_KEYS | {"inbound uae"}
 _FUNCTION_TEAM_KEYS: dict[str, set[str]] = {
-    "Call Center": _CALL_CENTER_KEYS,
+    "Call Center": _FUNCTION_CALL_CENTER_KEYS,
     "RCM": _RCM_KEYS,
     "Pre-Approvals": _PRE_APPROVALS_UAE_KEYS,
     "Administration": _ADMINISTRATION_KEYS,

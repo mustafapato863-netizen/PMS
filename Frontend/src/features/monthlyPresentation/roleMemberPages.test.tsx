@@ -6,36 +6,28 @@ import type { RoleDetailData, RoleKpiSeries, RoleMemberItem } from './roleDetail
 import { memberPageWindow } from './roleMemberPages';
 
 describe('memberPageWindow', () => {
-  it('shows 10 rows and keeps the next page so the following click reuses it', () => {
+  it('shows local 10-row pages without changing their contents', () => {
     const items = Array.from({ length: 25 }, (_, index) => index);
-    const cache = new Map<string, readonly number[]>();
 
-    const first = memberPageWindow(items, 0, cache, 'csr');
+    const first = memberPageWindow(items, 0);
     expect(first.visible).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
     expect(first.pageCount).toBe(3);
     expect(first.rangeStart).toBe(1);
     expect(first.rangeEnd).toBe(10);
-    expect(cache.has('csr:1')).toBe(true);
-    expect(cache.has('csr:2')).toBe(false);
-
-    const second = memberPageWindow(items, 1, cache, 'csr');
-    expect(second.visible).toBe(cache.get('csr:1'));
+    const second = memberPageWindow(items, 1);
     expect(second.visible).toEqual([10, 11, 12, 13, 14, 15, 16, 17, 18, 19]);
-    expect(cache.get('csr:2')).toEqual([20, 21, 22, 23, 24]);
-
-    const third = memberPageWindow(items, 2, cache, 'csr');
-    expect(third.visible).toBe(cache.get('csr:2'));
+    const third = memberPageWindow(items, 2);
     expect(third.rangeStart).toBe(21);
     expect(third.rangeEnd).toBe(25);
-    expect(memberPageWindow(items, 9, cache, 'csr').page).toBe(2);
+    expect(memberPageWindow(items, 9).page).toBe(2);
   });
 
   it('hides paging when the list fits on one page', () => {
-    const small = memberPageWindow([1, 2, 3, 4, 5, 6, 7, 8], 0, new Map(), 'small');
+    const small = memberPageWindow([1, 2, 3, 4, 5, 6, 7, 8], 0);
     expect(small.pageCount).toBe(1);
     expect(small.visible).toHaveLength(8);
 
-    const empty = memberPageWindow<number>([], 0, new Map(), 'none');
+    const empty = memberPageWindow<number>([], 0);
     expect(empty.pageCount).toBe(1);
     expect(empty.visible).toEqual([]);
     expect(empty.rangeStart).toBe(0);

@@ -63,8 +63,8 @@ function CollapseSlot({
     const slot = slotRef.current;
     if (!slot) return;
     if (duration === 0) {
-      setLockedWidth(collapsed ? 0 : null);
-      return;
+      const frame = requestAnimationFrame(() => setLockedWidth(collapsed ? 0 : null));
+      return () => cancelAnimationFrame(frame);
     }
     if (collapsed) {
       setLockedWidth(slot.getBoundingClientRect().width);
@@ -255,27 +255,37 @@ function monthCaption(option: { key: string; label: string }, options: Array<{ k
   return sharesMonth && period ? `${short} ${period.year}` : short;
 }
 
-function MonthMenu({
-  options,
-  value,
-  onChange,
-  suspended = false,
-}: {
+type MonthMenuProps = {
   options: Array<{ key: string; label: string }>;
   value: string;
   onChange: (key: string) => void;
   suspended?: boolean;
-}) {
+};
+
+function MonthMenu({ options, value, onChange, suspended = false }: MonthMenuProps) {
+  return (
+    <MonthMenuContent
+      key={suspended ? 'suspended' : 'active'}
+      options={options}
+      value={value}
+      onChange={onChange}
+      suspended={suspended}
+    />
+  );
+}
+
+function MonthMenuContent({
+  options,
+  value,
+  onChange,
+  suspended = false,
+}: MonthMenuProps) {
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
   const rootRef = useRef<HTMLDivElement>(null);
   const activeRef = useRef<HTMLButtonElement>(null);
   const selectedIndex = Math.max(0, options.findIndex((option) => option.key === value));
   const selected = options[selectedIndex];
-
-  useEffect(() => {
-    if (suspended) setOpen(false);
-  }, [suspended]);
 
   useEffect(() => {
     if (!open) return;
@@ -296,6 +306,7 @@ function MonthMenu({
   };
 
   const onKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (suspended) return;
     const opensMenu = event.key === 'ArrowDown' || event.key === 'ArrowUp' || event.key === 'Enter' || event.key === ' ';
     if (!open && !opensMenu && event.key !== 'Escape') return;
     if (!['ArrowDown', 'ArrowUp', 'Enter', ' ', 'Escape', 'Home', 'End'].includes(event.key)) return;
@@ -327,7 +338,8 @@ function MonthMenu({
         aria-label="Month"
         title={selected?.label ?? 'Month'}
         aria-haspopup="listbox"
-        aria-expanded={open}
+        aria-expanded={open && !suspended}
+        disabled={suspended}
         onClick={() => {
           setActiveIndex(selectedIndex);
           setOpen((current) => !current);
@@ -341,7 +353,7 @@ function MonthMenu({
         <ChevronDown size={13} aria-hidden="true" className={`shrink-0 text-slate-400 ${open ? 'rotate-180' : ''}`} />
       </button>
       <AnimatePresence>
-        {open && (
+        {open && !suspended && (
           <motion.ul
             role="listbox"
             aria-label="Month"
@@ -561,14 +573,14 @@ function NotesEditor({
   onPaperChange: (paper: NotePaperId) => void;
 }) {
   const editorRef = useRef<HTMLDivElement>(null);
-  const htmlRef = useRef(html);
-  htmlRef.current = html;
   const sheet = notePaper(paper);
 
   useEffect(() => {
     const editor = editorRef.current;
     if (!editor) return;
-    editor.innerHTML = sanitizeNotesHtml(htmlRef.current);
+    editor.innerHTML = sanitizeNotesHtml(html);
+    // Synchronize only when the selected pad changes; updating innerHTML for each keystroke resets the caret.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [padKey]);
 
   const publish = () => {

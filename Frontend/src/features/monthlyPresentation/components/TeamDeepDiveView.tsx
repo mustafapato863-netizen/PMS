@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import {
   AlertTriangle,
   ArrowDownRight,
@@ -76,7 +76,13 @@ export function FullWordGradeBadge({
   );
 }
 
-export default function TeamDeepDiveView({
+export default function TeamDeepDiveView(props: TeamDeepDiveViewProps) {
+  const { data } = props;
+  const contextKey = `${data.teamSlug}|${data.regionCode}|${data.periodKey}`;
+  return <TeamDeepDiveViewContent key={contextKey} {...props} />;
+}
+
+function TeamDeepDiveViewContent({
   data,
   onNavigateToOverview,
   onNavigateToCallCenter,
@@ -174,14 +180,6 @@ export default function TeamDeepDiveView({
   const [newTeamTargetKpi, setNewTeamTargetKpi] = useState('');
   const [newTeamOwner, setNewTeamOwner] = useState(`${data.canonicalTeam} Team Leader`);
   const [newTeamImpact, setNewTeamImpact] = useState('+1.0% team score lift');
-
-  useEffect(() => {
-    setSelectedKpiKey(data.kpis[0]?.kpiKey ?? 'AHT');
-    setCarouselStart(0);
-    setIndividualCards(data.individualActionPlans);
-    setTeamCards(data.teamActionPlans);
-    setEditingIndividualId(null);
-  }, [data]);
 
   const maxCarouselStart = Math.max(0, enrichedKpis.length - TEAM_KPI_CARDS_PER_ROW);
   const safeCarouselStart = Math.min(carouselStart, maxCarouselStart);

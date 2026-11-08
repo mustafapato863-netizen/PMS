@@ -1,5 +1,8 @@
 {
  "actions": [],
+ "ai_conversations": [],
+ "ai_interaction_traces": [],
+ "ai_turns": [],
  "audit_log": [],
  "cache_invalidation_outbox": [],
  "employee_upload_batches": [

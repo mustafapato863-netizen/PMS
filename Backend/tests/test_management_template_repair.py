@@ -1,6 +1,7 @@
 """The management-template repair is the shipped transform, exercised on a fixture and the real workbook."""
 from __future__ import annotations
 
+import shutil
 from collections import defaultdict
 from datetime import date, datetime
 from pathlib import Path
@@ -199,12 +200,14 @@ def test_repair_fixes_the_five_workbook_bugs(tmp_path: Path):
     assert_criterion_one(path)
 
 
-def test_real_management_workbook_matches_new_temp_after_repair():
+def test_real_management_workbook_matches_new_temp_after_repair(tmp_path: Path):
     if not REAL_WORKBOOK.exists():
         pytest.skip("management workbook is not on this machine")
-    repair_workbook(REAL_WORKBOOK)
-    book = load_workbook(REAL_WORKBOOK, data_only=False)
-    values = load_workbook(REAL_WORKBOOK, data_only=True)
+    workbook_path = tmp_path / REAL_WORKBOOK.name
+    shutil.copy2(REAL_WORKBOOK, workbook_path)
+    repair_workbook(workbook_path)
+    book = load_workbook(workbook_path, data_only=False)
+    values = load_workbook(workbook_path, data_only=True)
     data = book[DATA_SHEET]
     source = book[SOURCE_SHEET]
     value_data = values[DATA_SHEET]
@@ -273,11 +276,10 @@ def test_real_management_workbook_matches_new_temp_after_repair():
         (index for index in range(0, max(0, len(bare_data) - width + 1)) if bare_data[index:index + width] == bare_source),
         None,
     )
-    # Repair realigns a New Temp block only when that code/KPI sequence is already
-    # a contiguous slice of KPI's Data. This workbook's New Temp also contains rows
-    # the data sheet does not, so there is no slice to realign.
+    # Repair realigns a New Temp block only when its code/KPI sequence is already
+    # a contiguous slice of KPI's Data. Compare the aligned slice, not the sheet tail.
     if block is not None:
-        assert source_keys == data_keys[-len(source_keys):]
+        assert source_keys == data_keys[block:block + len(source_keys)]
     none_units = 0
     for number in range(2, data.max_row + 1):
         if data.cell(number, 1).value is None:

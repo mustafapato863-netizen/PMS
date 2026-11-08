@@ -257,6 +257,7 @@ class TestPerformanceRouter:
         with (
             patch("api.routers.performance.DashboardRecordService") as mock_service,
             patch("api.routers.performance.get_current_user_scope") as mock_scope,
+            patch("api.routers.performance._authorized_catalog_teams", return_value=([], [])),
         ):
             mock_service.return_value.list_option_rows.return_value = [
                 {

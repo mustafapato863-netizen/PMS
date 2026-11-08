@@ -5,7 +5,7 @@ import MonthlyPresentationView from './MonthlyPresentationView';
 import type { MonthlyPresentationViewProps } from './MonthlyPresentationView';
 import { OFFSHORE_EGYPT_SEP_2026_DATA } from './monthlyOverviewData';
 import { recommendedActionForKpi, teamActionDueLabel } from './teamDeepDiveData';
-import { readKpiTrend } from './components/SelectableKpiCard';
+import { readKpiTrend } from './components/selectableKpiCardUtils';
 import {
   showActionSection,
   showPresentationControl,

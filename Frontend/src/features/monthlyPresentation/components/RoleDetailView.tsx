@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import {
   AlertCircle,
   AlertTriangle,
@@ -29,7 +29,6 @@ import type {
   RoleAssignedAction,
   RoleDetailData,
   RoleIndividualActionPlan,
-  RoleMemberItem,
 } from '../roleDetailData';
 import { showActionSection, showPresentationControl, showStoredPlaceholder } from '../presentationMode';
 import { memberPageWindow } from '../roleMemberPages';
@@ -61,7 +60,6 @@ export default function RoleDetailView({
   const [selectedId, setSelectedId] = useState(data.kpis[0]?.id ?? '');
   const [carouselStart, setCarouselStart] = useState(0);
   const [showAllMembers, setShowAllMembers] = useState(false);
-  const [memberPage, setMemberPage] = useState(0);
   const [description, setDescription] = useState('');
   const [owner, setOwner] = useState(data.roleTitle);
   const [dueDate, setDueDate] = useState('');
@@ -102,28 +100,16 @@ export default function RoleDetailView({
     [below90Members, data.members, showAllMembers],
   );
 
-  const pageCache = useRef(new Map<string, readonly RoleMemberItem[]>());
-  const listIdentity = useRef(displayedMembers);
-  const listGeneration = useRef(0);
-  // A new member array drops cached pages. The same array keeps the next page warm.
-  if (listIdentity.current !== displayedMembers) {
-    listIdentity.current = displayedMembers;
-    listGeneration.current += 1;
-    pageCache.current.clear();
-  }
-  const memberListKey = `${data.roleSlug}|${listGeneration.current}`;
-  const [seenMemberList, setSeenMemberList] = useState(memberListKey);
-  let page = memberPage;
-  if (seenMemberList !== memberListKey) {
-    pageCache.current.clear();
-    setSeenMemberList(memberListKey);
-    setMemberPage(0);
-    page = 0;
-  }
+  const memberListKey = `${data.roleSlug}|${data.periodKey}|${showAllMembers ? 'all' : 'below-90'}`;
+  const [memberPageState, setMemberPageState] = useState({
+    listKey: memberListKey,
+    page: 0,
+  });
+  const requestedPage = memberPageState.listKey === memberListKey ? memberPageState.page : 0;
 
   const memberPages = useMemo(
-    () => memberPageWindow(displayedMembers, page, pageCache.current, memberListKey),
-    [displayedMembers, page, memberListKey],
+    () => memberPageWindow(displayedMembers, requestedPage),
+    [displayedMembers, requestedPage],
   );
   const visibleMembers = memberPages.visible;
 
@@ -837,7 +823,7 @@ export default function RoleDetailView({
                     data-testid="role-members-prev"
                     aria-label="Previous people"
                     disabled={memberPages.page === 0}
-                    onClick={() => setMemberPage((current) => Math.max(0, current - 1))}
+                    onClick={() => setMemberPageState({ listKey: memberListKey, page: Math.max(0, memberPages.page - 1) })}
                     className="inline-flex h-8 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-bold text-slate-700 transition-colors hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     <ChevronLeft className="size-3.5" aria-hidden />
@@ -851,9 +837,7 @@ export default function RoleDetailView({
                     data-testid="role-members-next"
                     aria-label="Next people"
                     disabled={memberPages.page >= memberPages.pageCount - 1}
-                    onClick={() =>
-                      setMemberPage((current) => Math.min(memberPages.pageCount - 1, current + 1))
-                    }
+                    onClick={() => setMemberPageState({ listKey: memberListKey, page: Math.min(memberPages.pageCount - 1, memberPages.page + 1) })}
                     className="inline-flex h-8 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-bold text-slate-700 transition-colors hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     Next
