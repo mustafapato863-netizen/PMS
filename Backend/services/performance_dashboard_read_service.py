@@ -28,6 +28,7 @@ from services.scoring_basis_comparison import compare_adjacent_records
 from utils.branch_scope import record_matches_branch
 from utils.report_scope import canonical_scope_identity
 from utils.scoring_rules import letter_grade, score_percent
+from utils.team_identity import dedupe_egypt_resubmission_records, is_egypt_resubmission_team
 
 
 _MONTH_BY_NUMBER = {number: name for name, number in MONTHS.items()}
@@ -164,7 +165,8 @@ def _grade(record, score: float) -> str:
 
 
 def _active_records(records: Iterable, location: str) -> list:
-    return [record for record in records if _has_real_activity(record) and _record_location(record, location)]
+    active = [record for record in records if _has_real_activity(record) and _record_location(record, location)]
+    return active
 
 
 def _summary_record(row: dict[str, Any]) -> SummaryRecord:
@@ -286,7 +288,8 @@ def _summary(records: list, location: str) -> dict[str, Any]:
 def _team_breakdown(records: list, location: str) -> list[dict[str, Any]]:
     buckets: dict[str, list] = {}
     for record in _active_records(records, location):
-        team = str(record.team or "Unknown").strip() or "Unknown"
+        raw_team = str(record.team or "Unknown").strip() or "Unknown"
+        team = "Resubmission" if is_egypt_resubmission_team(raw_team) else raw_team
         buckets.setdefault(team, []).append(record)
 
     result = []
@@ -545,13 +548,14 @@ class PerformanceDashboardReadService:
         return data
 
     def _inactive_record_ids(self, *, year: int, month: str) -> list:
-        """Record ids of zero-score rows in this scope and period that the activity rule drops."""
+        """Record ids of zero-score rows with no real activity."""
         candidates = self.repository.get_dashboard_summary_rows(
             periods=[(year, month)],
             scope=self.scope,
             max_score=0,
         )
-        return [row["record_id"] for row in candidates if not _has_real_activity(_summary_record(row))]
+        excluded = [row["record_id"] for row in candidates if not _has_real_activity(_summary_record(row))]
+        return excluded
 
     def records_page(
         self,

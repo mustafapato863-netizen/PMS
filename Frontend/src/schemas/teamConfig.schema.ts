@@ -101,6 +101,7 @@ export type GradeThresholds = z.infer<typeof GradeThresholdsSchema>;
 export const TeamConfigSchema = z.object({
   team: z.string().min(1).describe('Team name (e.g., "Inbound", "Sales")'),
   db_name: z.string().min(1).describe('Database/dataset name for this team'),
+  aliases: z.array(z.string()).optional(),
   region: z.enum(['EGY', 'UAE']).describe('Geographic region'),
   employee_id_col: z.string().describe('Column name for employee ID'),
   employee_name_col: z.string().describe('Column name for employee name'),

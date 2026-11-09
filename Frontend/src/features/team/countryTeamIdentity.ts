@@ -46,6 +46,46 @@ const LEGACY_ROUTES: Record<string, { routeId: string; region: TeamCountry }> = 
 const exactKey = (value: string | null | undefined) =>
   String(value ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
 
+export const EGYPT_RESUBMISSION_TEAM_ALIASES = ['Resubmission', 'Re-Submission EGY'] as const;
+
+export function isEgyptResubmissionTeam(value: string | null | undefined): boolean {
+  const key = exactKey(value);
+  return key === 'resubmission' || key === 're-submission egy';
+}
+
+export function canonicalEgyptResubmissionTeam(value: string | null | undefined): string {
+  return isEgyptResubmissionTeam(value) ? 'Resubmission' : String(value ?? '').trim();
+}
+
+export function dedupeEgyptResubmissionRecords<T>(
+  records: readonly T[],
+  getIdentity: (record: T) => {
+    team?: string | null;
+    employeeId?: string | null;
+    periodKey?: string | null;
+    year?: number | string | null;
+    month?: string | null;
+    level?: string | null;
+  } = (record: T) => {
+    const anyRec = record as Record<string, unknown>;
+    const identity = (anyRec.identity ?? {}) as Record<string, unknown>;
+    const period = (anyRec.period ?? {}) as Record<string, unknown>;
+    return {
+      team: String(anyRec.team ?? identity.team ?? ''),
+      employeeId: String(anyRec.employeeId ?? anyRec.employee_id ?? identity.employee_id ?? identity.name ?? ''),
+      periodKey: typeof period.key === 'string' ? period.key : undefined,
+      year: (anyRec.year ?? period.year) as number | string | null | undefined,
+      month: String(anyRec.month ?? period.month ?? identity.month ?? ''),
+      level: String(anyRec.level ?? anyRec.performance_level ?? 'Employee'),
+    };
+  },
+): T[] {
+  // Upload status and timestamps are only available on the server. Never let
+  // array ordering choose between conflicting records in a client projection.
+  void getIdentity;
+  return [...records];
+}
+
 export function parseTeamCountry(value: string | null | undefined): TeamCountry | null {
   const raw = String(value ?? '').trim().toLowerCase();
   if (raw === 'egy' || raw === 'egypt') return 'EGY';
@@ -60,6 +100,11 @@ function aliasByIdentity(name: string | null | undefined): { alias: CountryAlias
   }
   const key = exactKey(raw);
   if (!key) return null;
+  const legacy = LEGACY_ROUTES[key];
+  if (legacy) {
+    const alias = COUNTRY_ALIASES.find((item) => item.routeId === legacy.routeId);
+    if (alias) return { alias, country: legacy.region };
+  }
   for (const alias of COUNTRY_ALIASES) {
     for (const country of ['EGY', 'UAE'] as const) {
       if (alias.sources[country].some((source) => exactKey(source) === key)) {

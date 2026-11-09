@@ -12,7 +12,7 @@ import type { LucideIcon } from 'lucide-react';
 import type { TeamAgentRow, TeamWeightConfig } from '../hooks/usePerformanceData';
 import { TEAM_NAME_MAP, TEAM_DB_NAME_MAP, resolveTeamRouteId, MERGED_OP_FINAL_TEAM, MERGED_IP_FINAL_TEAM, PRE_APPROVALS_UAE_TEAM, PRE_APPROVALS_UAE_SOURCE_TEAMS, CALL_CENTER_TEAM, RCM_TEAM, RCM_DOMAIN_LABELS, callCenterChannelForTeam, isCallCenterChannelTeam, isPreApprovalsWorkflowTeam, isRcmDomainTeam, isRcmGroupTeam, egyptRcmTeamLabel, egyptRcmTeamValue, sameEgyptRcmTeam, isMergedBranchTeam, isMergedOpFinalTeam, sameCanonicalTeam, inboundCallCount, isHossamRecord } from '../types';
 import { isPreApprovalsSubTeam } from '../features/executive/functions';
-import { countryForSharedRoute, parseTeamCountry, sourceNamesFor } from '../features/team/countryTeamIdentity';
+import { countryForSharedRoute, dedupeEgyptResubmissionRecords, isEgyptResubmissionTeam, legacySharedTeamRedirect, parseTeamCountry, sourceNamesFor } from '../features/team/countryTeamIdentity';
 import type { AgentRecord, GeoBreakdown, LocationKey, PreApprovalsWorkflowFilter, CallCenterChannelFilter, RcmDomainFilter, RcmGroupFilter } from '../types';
 import { useUserRole } from '../context/RoleContext';
 import { useAuth } from '../context/auth';
@@ -50,7 +50,7 @@ import { aggregatePreApprovalsIpMetrics } from '../features/team/preApprovalsIpM
 import { aggregateConfiguredTeamKpis, averagePrintedChannelScores, calculateAggregatedTeamPerformance, channelBoardScore, displayedTeamScore, headlineTeamScore, recordsUseAppliedPin, scoreMonthKey, trendPointScore } from '../features/team/teamKpiAggregator';
 import type { TeamConfig } from '../schemas/teamConfig.schema';
 import { formatMonthChange, missingMonthChangeText } from '../features/team/monthChange';
-import { reportingMonthName, shortMonthLabel } from '../hooks/api/scopedPeriod';
+import { filterByReportingPeriod, overviewPeriodSelector, parseReportingSelector, reportingMonthName, shortMonthLabel } from '../hooks/api/scopedPeriod';
 import { resolveAvailableTeamPeriods } from '../features/team/teamPeriods';
 import { canAccessBroadAppPages, canAccessFunctionSummary, hasAllTeamsScope, isScopedDirectorRole } from '../lib/access';
 import { directorScope } from '../lib/directorScope';
@@ -107,7 +107,7 @@ const getGeoValue = (geo: GeoBreakdown | undefined, loc: LocationKey) => {
 };
 
 const sameTeam = (left: string | null | undefined, right: string | null | undefined) =>
-  sameCanonicalTeam(left, right);
+  (isEgyptResubmissionTeam(left) && isEgyptResubmissionTeam(right)) || sameCanonicalTeam(left, right);
 
 const departmentIdentity = (value: string | null | undefined) =>
   String(value ?? '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '');
@@ -233,8 +233,9 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
   // Team actions keep the id the link used (requestedTeamId): the backend matches
   // that string to a team row, so notes saved before this change stay where they are.
   const requestedTeamId = teamIdOverride ?? routeTeamId;
-  const teamId = teamIdOverride ?? (routeTeamId === 'all' ? routeTeamId : resolveTeamRouteId(routeTeamId) ?? routeTeamId);
-  const canonicalTeamId = teamId === 'all' ? null : resolveTeamRouteId(teamId);
+  const legacyRedirect = teamIdOverride ? null : legacySharedTeamRedirect(routeTeamId);
+  const teamId = teamIdOverride ?? (routeTeamId === 'all' ? routeTeamId : legacyRedirect?.routeId ?? resolveTeamRouteId(routeTeamId) ?? routeTeamId);
+  const canonicalTeamId = legacyRedirect?.routeId ?? (teamId === 'all' ? null : resolveTeamRouteId(teamId));
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { role, fetchWithRole } = useUserRole();
@@ -276,17 +277,23 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
   const assigned = directorScope(role, currentUser);
   const sharedCountry = countryForSharedRoute(
     canonicalTeamId,
-    searchParams.get('region'),
+    searchParams.get('region') ?? legacyRedirect?.region,
     assigned.regionLocked ? assigned.region : null,
   );
   const sourceTeams = sharedCountry && canonicalTeamId ? [...sourceNamesFor(canonicalTeamId, sharedCountry)] : [];
   const scopedTeamName = sourceTeams[0] || teamName;
   useEffect(() => {
+    if (legacyRedirect) {
+      const next = new URLSearchParams(searchParams);
+      if (sharedCountry) next.set('region', sharedCountry);
+      navigate(`/team/${legacyRedirect.routeId}?${next.toString()}`, { replace: true });
+      return;
+    }
     if (!sharedCountry || parseTeamCountry(searchParams.get('region')) === sharedCountry) return;
     const next = new URLSearchParams(searchParams);
     next.set('region', sharedCountry);
     setSearchParams(next, { replace: true });
-  }, [searchParams, setSearchParams, sharedCountry]);
+  }, [legacyRedirect, navigate, searchParams, setSearchParams, sharedCountry]);
   const { locations: requestedBranches, setLocations: setBranchSelections } = useLocationsParam(['all']);
   const branchSelections: LocationKey[] = assigned.branchLocked
     ? assigned.branches.filter((value): value is LocationKey => ['dubai', 'sharjah', 'ajman', 'clinics'].includes(value))
@@ -294,6 +301,12 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
   const location: LocationKey = assigned.branchLocked ? (assigned.branch as LocationKey | undefined) ?? 'all' : isMergedTeam ? 'all' : requestedLocation;
   const setLocation = setRequestedLocation;
   const { month, setMonth } = useMonthParam('All');
+  const selectedPeriod = overviewPeriodSelector(searchParams.get('period'), month);
+  const selectedYear = searchParams.get('year');
+  const monthNumber = MONTH_NUMBER[month];
+  const monthSelector = selectedPeriod === month && monthNumber && /^\d{4}$/.test(selectedYear ?? '')
+    ? `${selectedYear}-${String(monthNumber).padStart(2, '0')}`
+    : selectedPeriod;
   const { performanceLevel, setPerformanceLevel } = usePerformanceLevelParam('All');
   const { workflow: preApprovalsWorkflow, setWorkflow: setPreApprovalsWorkflow } = usePreApprovalsWorkflowParam('all');
   const { channel: callCenterChannel, setChannel: setCallCenterChannel } = useCallCenterChannelParam('all');
@@ -484,7 +497,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
     prevTotalAgents,
   } = useTeamData(
     scopedTeamName || teamName,
-    month,
+    monthSelector,
     region,
     location,
     weightsList,
@@ -501,11 +514,26 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
 
   const { uniqueMonths, agents: allAgentsRaw } = usePerformanceData('All', location, region, 'All', true, sourceTeams.length > 1 ? undefined : scopedTeamName ?? undefined);
   const allAgents = useMemo(
-    () => isMergedTeam && !isCallCenterParent && !branchSelections.includes('all')
-      ? allAgentsRaw.filter((agent) => branchSelections.some((branch) => agentMatchesLocation(agent, branch)))
-      : allAgentsRaw,
+    () => {
+      const branchFiltered = isMergedTeam && !isCallCenterParent && !branchSelections.includes('all')
+        ? allAgentsRaw.filter((agent) => branchSelections.some((branch) => agentMatchesLocation(agent, branch)))
+        : allAgentsRaw;
+      return dedupeEgyptResubmissionRecords(branchFiltered, (record) => ({
+        team: record.identity?.team,
+        employeeId: record.identity?.employee_id || record.identity?.name,
+        year: record.year,
+        month: record.identity?.month,
+        level: record.performance_level || 'Employee',
+      }));
+    },
     [allAgentsRaw, branchSelections, isMergedTeam, isCallCenterParent],
   );
+  const matchesRouteTeam = useCallback((agentTeam: string | null | undefined) => {
+    if (sourceTeams.length) {
+      return sourceTeams.some((source) => sameTeam(agentTeam, source));
+    }
+    return !teamName || sameTeam(agentTeam, teamName);
+  }, [sourceTeams, teamName]);
   const egyptTeamOptions = useMemo(() => {
     const labels = new Set<string>();
     allAgents.forEach((agent) => {
@@ -518,7 +546,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
   }, [allAgents]);
 
   const periodAgents = sourceTeams.length
-    ? allAgents.filter((agent) => sourceTeams.some((source) => normalizeTeamName(agent.identity.team || '') === normalizeTeamName(source)))
+    ? allAgents.filter((agent) => matchesRouteTeam(agent.identity.team))
     : allAgents;
   const periodTeamName = sourceTeams.length ? null : teamName;
   const availableTeamPeriods = resolveAvailableTeamPeriods(periodAgents, periodTeamName);
@@ -568,7 +596,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
 
     let prevAgents = previousPeriodAgents.filter((a) => {
       if (isCallCenterParent && callCenterChannel !== 'all' && !isCallCenterChannelTeam(a.identity.team, callCenterChannel)) return false;
-      return !teamName || sameTeam(a.identity.team, teamName);
+      return matchesRouteTeam(a.identity.team);
     });
 
     if (location !== 'all') {
@@ -659,24 +687,24 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
   const previousTeamAgents = useMemo(() => {
     if (!prevPeriodKey) return [];
     return previousPeriodAgents.filter((agent) => {
-      if (teamName && !sameTeam(agent.identity.team, teamName)) return false;
+      if (!matchesRouteTeam(agent.identity.team)) return false;
       if (!matchesPresentationScope(agent)) return false;
       return location === 'all' || agentMatchesLocation(agent, location);
     });
-  }, [prevPeriodKey, previousPeriodAgents, teamName, location, matchesPresentationScope]);
+  }, [prevPeriodKey, previousPeriodAgents, matchesRouteTeam, location, matchesPresentationScope]);
   const historicalTeamAgents = useMemo(
     () => allAgents.filter((agent) => {
-      if (teamName && !sameTeam(agent.identity.team, teamName)) return false;
+      if (!matchesRouteTeam(agent.identity.team)) return false;
       if (!matchesPresentationScope(agent)) return false;
       return location === 'all' || agentMatchesLocation(agent, location);
     }),
-    [allAgents, teamName, location, matchesPresentationScope],
+    [allAgents, matchesRouteTeam, location, matchesPresentationScope],
   );
   const weightsTeamName = (isCallCenterParent && callCenterChannel !== 'all')
     || (isPreApprovalsParent && preApprovalsWorkflow !== 'all')
     || (isRcmParent && workflowConfigTeam && (rcmDomain !== 'all' || (rcmGroup === 'offshore_egy' && Boolean(egyTeam))))
     ? workflowConfigTeam
-    : teamName || '';
+    : scopedTeamName || teamName || '';
   const activeTeamWeights = useMemo(
     () => weightsList.find((weightConfig) => matchesTeamConfig(
       {
@@ -743,12 +771,14 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
   );
 
   const insightYear = useMemo(() => {
+    const parsed = parseReportingSelector(monthSelector);
+    if (parsed.kind === 'exact') return parsed.year;
     const currentRowYear = (rows || []).find((row) => row.raw.year)?.raw.year;
     if (currentRowYear) return currentRowYear;
     return allAgents.find((agent) =>
       agent.identity.month === activeMonthName && (!teamName || sameTeam(agent.identity.team, teamName)) && agent.year
     )?.year;
-  }, [rows, allAgents, activeMonthName, teamName]);
+  }, [rows, allAgents, activeMonthName, teamName, monthSelector]);
   const insightPeriodKey = insightYear && MONTH_NUMBER[activeMonthName]
     ? `${insightYear}-${String(MONTH_NUMBER[activeMonthName]).padStart(2, '0')}`
     : undefined;
@@ -961,7 +991,8 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
   // Memoized current month aggregate performance score
   const calculatedAvgScore = useMemo(() => {
     if (isPreApprovalsTeamName) {
-      const hossam = allAgents.find((a) => isHossamRecord(a) && scoreMonthKey(a.identity.month || '') === scoreMonthKey(activeMonthName));
+      const periodAgents = filterByReportingPeriod(allAgents, monthSelector === 'All' ? activeMonthName : monthSelector, (agent) => ({ month: agent.identity.month, year: agent.year }));
+      const hossam = periodAgents.find((a) => isHossamRecord(a));
       if (hossam) {
         const s = Number(hossam.evaluation?.score);
         if (Number.isFinite(s)) return s;
@@ -977,7 +1008,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
       pooledScore: getCanonicalTeamScore(teamAgents),
       appliedPin: recordsUseAppliedPin(teamAgents),
     });
-  }, [isPreApprovalsTeamName, allAgents, activeMonthName, isCallCenterAggregate, callCenterChannelScores, headlineScope, agentsForHeadline, getCanonicalTeamScore, hookAvgScore, presentationRows]);
+  }, [isPreApprovalsTeamName, allAgents, activeMonthName, monthSelector, isCallCenterAggregate, callCenterChannelScores, headlineScope, agentsForHeadline, getCanonicalTeamScore, hookAvgScore, presentationRows]);
 
   const calculatedPrevAvgScore = useMemo(() => {
     if (isPreApprovalsTeamName && prevPeriodKey) {
@@ -1322,7 +1353,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
 
     let prevAgents = previousPeriodAgents.filter((a) => {
       if (isCallCenterParent && callCenterChannel !== 'all' && !isCallCenterChannelTeam(a.identity.team, callCenterChannel)) return false;
-      return !teamName || sameTeam(a.identity.team, teamName);
+      return matchesRouteTeam(a.identity.team);
     });
 
     if (location !== 'all') {
@@ -1637,8 +1668,8 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
 
   // Trend line: avg score over months (team-filtered)
   const trendData = useMemo(() => {
-    let filteredAgents = teamName
-      ? allAgents.filter((a) => sameTeam(a.identity.team, teamName))
+    let filteredAgents = (teamName || sourceTeams.length)
+      ? allAgents.filter((a) => matchesRouteTeam(a.identity.team))
       : allAgents;
 
     if (isCallCenterParent && callCenterChannel !== 'all') {

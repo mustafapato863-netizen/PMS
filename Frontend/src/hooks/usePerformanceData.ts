@@ -11,6 +11,7 @@ import { calculatePerformanceSummary } from '../utils/performanceSummary';
 import { scopedPerformanceApiEnabled } from './api/usePerformanceDashboard';
 import { filterByReportingPeriod, monthNameFromPeriodKey, parseReportingSelector, previousPeriodKey, previousReportingSelector, reportingMonthName } from './api/scopedPeriod';
 import { agentMatchesLocation } from '../utils/branchScope';
+import { dedupeEgyptResubmissionRecords, EGYPT_RESUBMISSION_TEAM_ALIASES, isEgyptResubmissionTeam } from '../features/team/countryTeamIdentity';
 
 const MONTH_ORDER: Record<string, number> = {
   January: 1, February: 2, March: 3, April: 4, May: 5, June: 6,
@@ -23,6 +24,7 @@ export function normalizeScore(score: number): number {
 }
 
 function sameTeam(left: string | null | undefined, right: string | null | undefined): boolean {
+  if (isEgyptResubmissionTeam(left) && isEgyptResubmissionTeam(right)) return true;
   return sameCanonicalTeam(left, right);
 }
 
@@ -724,9 +726,16 @@ export function usePerformanceData(
   }, [enabled, location, month, performanceLevel, refreshVersion, region, scopedTeam, session]);
 
   return useMemo(() => {
-    const levelData = performanceLevel === 'All'
+    const rawLevelData = performanceLevel === 'All'
       ? allData
       : allData.filter((record) => (record.performance_level || 'Employee') === performanceLevel);
+    const levelData = dedupeEgyptResubmissionRecords(rawLevelData, (record) => ({
+      team: record.identity?.team,
+      employeeId: record.identity?.employee_id || record.identity?.name,
+      year: record.year,
+      month: record.identity?.month,
+      level: record.performance_level || 'Employee',
+    }));
 
     // Step 0: Get unique months dynamically from allData
     const monthsSet = new Set<string>();
@@ -1170,7 +1179,14 @@ export function useTeamData(
   matchTeams: string[] = NO_MATCH_TEAMS,
 ) {
   const sourceMonth = scopedPerformanceApiEnabled ? month : 'All';
-  const acceptedTeams = useMemo(() => matchTeams.length ? matchTeams : teamName ? [teamName] : NO_MATCH_TEAMS, [matchTeams, teamName]);
+  const acceptedTeams = useMemo(
+    () => matchTeams.length
+      ? matchTeams
+      : teamName
+        ? (isEgyptResubmissionTeam(teamName) ? [...EGYPT_RESUBMISSION_TEAM_ALIASES] : [teamName])
+        : NO_MATCH_TEAMS,
+    [matchTeams, teamName],
+  );
   const scopedTeam = scopedPerformanceApiEnabled && acceptedTeams.length === 1
     ? acceptedTeams[0]
     : undefined;
@@ -1296,7 +1312,7 @@ export function useTeamData(
         // RCM rows intentionally retain their source-team identity for actions
         // and history; the rows are already scoped before this summary runs.
         // Applying a literal `team: RCM` filter here would exclude every source row.
-        team: teamName && teamName !== RCM_TEAM ? teamName : undefined,
+        team: teamName && teamName !== RCM_TEAM && acceptedTeams.length <= 1 && !isEgyptResubmissionTeam(teamName) ? teamName : undefined,
         month: selectedMonthName ?? month,
       }
     );

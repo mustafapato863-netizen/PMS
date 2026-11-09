@@ -22,6 +22,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from utils.kpi_direction import normalize_direction
+from utils.team_identity import is_egypt_resubmission_team
 
 MONTHS = (
     "January", "February", "March", "April", "May", "June",
@@ -222,8 +223,10 @@ def _employee_id(record: Any) -> str | None:
 
 
 def _scope_key(record: Any) -> tuple[str, str, str]:
+    raw_team = _text(_get(record, "team"))
+    team = "Resubmission" if is_egypt_resubmission_team(raw_team) else raw_team
     return (
-        _text(_get(record, "team")),
+        team,
         _text(_get(record, "position")),
         _text(_get(record, "performance_level")),
     )

@@ -11,6 +11,7 @@
 import { normalizePercentageKpiForDisplay } from '../../components/common/performanceKpiProgress';
 import { GRADE_CLASSES, getGradeClassOrNull, type GradeClass } from '../../constants/grades';
 import { CALL_CENTER_TEAM, RCM_TEAM, canonicalTeamName, isMergedBranchTeam, sameEgyptRcmTeam, type AgentRecord } from '../../types';
+import { canonicalEgyptResubmissionTeam, dedupeEgyptResubmissionRecords, isEgyptResubmissionTeam } from '../team/countryTeamIdentity';
 import type { TeamConfig } from '../../schemas/teamConfig.schema';
 import {
   averagePrintedChannelScores,
@@ -137,7 +138,7 @@ export function hasRealActivity(agent: AgentRecord): boolean {
 }
 
 export function toExecRecords(agents: AgentRecord[], fallbackYear = new Date().getFullYear()): ExecRecord[] {
-  return agents.flatMap((agent) => {
+  const mapped = agents.flatMap((agent) => {
     const month = agent.identity?.month;
     const team = canonicalTeamName(agent.identity?.team);
     if (!month || !MONTHS.includes(month) || !team) return [];
@@ -161,6 +162,12 @@ export function toExecRecords(agents: AgentRecord[], fallbackYear = new Date().g
       rawAgent: agent,
     }];
   });
+  return dedupeEgyptResubmissionRecords(mapped, (record) => ({
+    team: record.team,
+    employeeId: record.employeeId,
+    periodKey: record.period.key,
+    level: record.level,
+  }));
 }
 
 const round1 = (value: number) => Math.round(value * 10) / 10;
@@ -529,6 +536,14 @@ function people(current: ExecRecord[], previous: ExecRecord[]): ExecutivePeople 
 
 function teamNamesMatch(a: string | null | undefined, b: string | null | undefined): boolean {
   if (!a || !b) return false;
+  if (isEgyptResubmissionTeam(a) || isEgyptResubmissionTeam(b)) {
+    return isEgyptResubmissionTeam(a) && isEgyptResubmissionTeam(b);
+  }
+  const exactA = a.trim().toLowerCase().replace(/\s+/g, ' ');
+  const exactB = b.trim().toLowerCase().replace(/\s+/g, ' ');
+  if (exactA === 're-submission' || exactB === 're-submission') {
+    return exactA === exactB;
+  }
   const normA = a.trim().toLowerCase().replace(/[^a-z0-9]+/g, '');
   const normB = b.trim().toLowerCase().replace(/[^a-z0-9]+/g, '');
   if (normA === normB) return true;
@@ -547,7 +562,9 @@ export function findTeamConfig(
       : Object.values(teamConfigs);
 
   return list.find((cfg) =>
-    teamNamesMatch(cfg.team, teamName) || teamNamesMatch(cfg.db_name, teamName)
+    teamNamesMatch(cfg.team, teamName)
+    || teamNamesMatch(cfg.db_name, teamName)
+    || ((cfg as { aliases?: string[] }).aliases ?? []).some((alias) => teamNamesMatch(alias, teamName))
   ) ?? null;
 }
 
@@ -562,7 +579,7 @@ function teamsOf(
   teamConfigs?: Map<string, TeamConfig> | Record<string, TeamConfig> | TeamConfig[],
   unlevelMonthly?: ExecRecord[],
 ): ExecutiveTeam[] {
-  const groupName = (record: ExecRecord) => byRole ? record.position || record.team : record.team;
+  const groupName = (record: ExecRecord) => byRole ? record.position || record.team : canonicalEgyptResubmissionTeam(record.team);
   const monthlyRecords = monthly ?? scoped;
   const names = [...new Set(inPeriod(scoped, effective).map(groupName))];
   const base = names.map((team) => {
@@ -745,7 +762,7 @@ function cohortOf(current: ExecRecord[], previous: ExecRecord[]): ExecutiveFunct
     gap: score === null ? null : round1(score - TARGET),
     grade: getGradeClassOrNull(score),
     change: diff(score, scoreOf(previous)),
-    teams: [...new Set(current.map((record) => canonicalTeamName(record.team)))].sort(),
+    teams: [...new Set(current.map((record) => canonicalEgyptResubmissionTeam(canonicalTeamName(record.team))))].sort(),
   };
 }
 
@@ -1111,7 +1128,7 @@ export interface ComposeInput {
 
 function applyFilters(records: ExecRecord[], input: ComposeInput, teamFunctions?: TeamFunctionMap) {
   const { region, branch, teamFunction, team, position, performanceLevel } = input.filters;
-  return records.filter((record) => (
+  const filtered = records.filter((record) => (
     (!normalizeRegion(region) || normalizeRegion(record.region) === normalizeRegion(region))
     && (!branch || record.branches?.includes(branch))
     && (!position || record.position === position)
@@ -1122,6 +1139,12 @@ function applyFilters(records: ExecRecord[], input: ComposeInput, teamFunctions?
     && (!team || summaryTeamMatches(record.team, team))
     && (!input.teamScope || input.teamScope.some((allowed) => summaryTeamMatches(record.team, allowed)))
   ));
+  return dedupeEgyptResubmissionRecords(filtered, (record) => ({
+    team: record.team,
+    employeeId: record.employeeId,
+    periodKey: record.period.key,
+    level: record.level,
+  }));
 }
 
 export function composeExecutiveSummary(input: ComposeInput): ExecutiveSummary {
@@ -1369,7 +1392,7 @@ export function composeExecutiveSummary(input: ComposeInput): ExecutiveSummary {
       grade: getGradeClassOrNull(score),
       score_basis: scoreBasis,
       employees: employeesOf(current),
-      teams_count: new Set(current.map((record) => record.team)).size,
+      teams_count: new Set(current.map((record) => canonicalEgyptResubmissionTeam(record.team))).size,
       functions_count: functions.length,
       story: {
         headline: null,

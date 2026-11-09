@@ -31,6 +31,7 @@ import type { FullGradeLabel } from '../callCenterDeepDiveData';
 import { showActionSection, showPresentationControl, showStoredPlaceholder } from '../presentationMode';
 import {
   applyTeamTrendConfig,
+  defaultTeamTrendConfig,
   selectedTeamConfigSource,
   unavailableTeamTrend,
   withEmptyTeamTrend,
@@ -41,6 +42,7 @@ import {
   type TeamSlug,
 } from '../teamDeepDiveData';
 import { useTeamConfig } from '../../../hooks/useTeamConfig';
+import { memberPageWindow, TEAM_AGENT_PAGE_SIZE } from '../roleMemberPages';
 
 const TEAM_KPI_CARDS_PER_ROW = 4;
 
@@ -86,14 +88,19 @@ export function FullWordGradeBadge({
 export default function TeamDeepDiveView(props: TeamDeepDiveViewProps) {
   const client = useContext(QueryClientContext);
   const data = withEmptyTeamTrend(props.data);
-  if (!client) return <TeamDeepDiveViewContent key={`${data.teamSlug}|${data.regionCode}|${data.periodKey}`} {...props} data={unavailableTeamTrend(data)} />;
+  if (!client) {
+    const fallbackConfig = defaultTeamTrendConfig(data);
+    const resolved = fallbackConfig ? applyTeamTrendConfig(data, fallbackConfig) : unavailableTeamTrend(data);
+    return <TeamDeepDiveViewContent key={`${resolved.teamSlug}|${resolved.regionCode}|${resolved.periodKey}`} {...props} data={resolved} />;
+  }
   return <ConfiguredTeamDeepDiveView {...props} data={data} />;
 }
 
 function ConfiguredTeamDeepDiveView(props: TeamDeepDiveViewProps) {
   const { data: original } = props;
   const { data: config } = useTeamConfig(selectedTeamConfigSource(original));
-  const data = config ? applyTeamTrendConfig(original, config) : unavailableTeamTrend(original);
+  const resolvedConfig = config ?? defaultTeamTrendConfig(original);
+  const data = resolvedConfig ? applyTeamTrendConfig(original, resolvedConfig) : unavailableTeamTrend(original);
   const contextKey = `${data.teamSlug}|${data.regionCode}|${data.periodKey}`;
   return <TeamDeepDiveViewContent key={contextKey} {...props} data={data} />;
 }
@@ -189,6 +196,34 @@ function TeamDeepDiveViewContent({
   const [draftActionText, setDraftActionText] = useState<string>('');
   const [draftOwner, setDraftOwner] = useState<string>('');
   const [draftImpact, setDraftImpact] = useState<string>('');
+
+  // Agent pagination state (10 agents per page with cachedNext buffer)
+  const agentListKey = `${data.teamSlug}|${data.regionCode}|${data.periodKey}`;
+  const [agentPageState, setAgentPageState] = useState({
+    listKey: agentListKey,
+    page: 0,
+  });
+  const requestedAgentPage = agentPageState.listKey === agentListKey ? agentPageState.page : 0;
+
+  const agentPages = useMemo(
+    () => memberPageWindow(data.agentsAverageOrBelow, requestedAgentPage, TEAM_AGENT_PAGE_SIZE),
+    [data.agentsAverageOrBelow, requestedAgentPage],
+  );
+  const visibleAgents = agentPages.visible;
+
+  // Individual Action Plans synchronized to visible agents on the current page
+  const displayedIndividualCards = useMemo(() => {
+    if (individualCards.length <= TEAM_AGENT_PAGE_SIZE && agentPages.pageCount <= 1) {
+      return individualCards;
+    }
+    const visibleIds = new Set(visibleAgents.map((a) => a.employeeId.toLowerCase()));
+    const visibleNames = new Set(visibleAgents.map((a) => a.agentName.toLowerCase()));
+    return individualCards.filter(
+      (c) =>
+        visibleIds.has(c.employeeId.toLowerCase()) ||
+        visibleNames.has(c.agentName.toLowerCase()),
+    );
+  }, [individualCards, visibleAgents, agentPages.pageCount]);
 
   // Editable Team-Level Action Plans state
   const [teamCards, setTeamCards] = useState<TeamLevelActionPlanCard[]>(
@@ -380,8 +415,9 @@ function TeamDeepDiveViewContent({
         </div>
 
         {/* Team Hero Summary: Name, Score, Full-Word Grade, Gap, Diagnosis */}
-        <div className="mt-5 flex flex-col gap-4 xl:flex-row xl:items-stretch xl:justify-between">
-          <div className="min-w-0 space-y-2 xl:max-w-xl">
+        <div className="mt-5 space-y-4">
+          {/* Identity & Diagnosis */}
+          <div className="space-y-2">
             <div className="flex flex-wrap items-center gap-2.5">
               <span className="inline-flex items-center gap-1 rounded-md bg-blue-600 px-2.5 py-0.5 text-[11px] font-bold tracking-wider text-white uppercase">
                 Team Deep Dive
@@ -401,96 +437,121 @@ function TeamDeepDiveViewContent({
 
             <p
               data-testid="team-header-diagnosis"
-              className="max-w-3xl text-sm leading-relaxed text-slate-600"
+              className="max-w-4xl text-sm leading-relaxed text-slate-600"
             >
               {data.summary.diagnosis}
             </p>
           </div>
 
-          {/* Score + Full-Word Grade + Gap + Movement */}
-          <div className="flex min-w-0 flex-1 flex-col gap-3 sm:flex-row sm:items-stretch">
-          <div className="flex shrink-0 flex-wrap items-center gap-4 rounded-2xl border border-slate-200/80 bg-slate-50/70 p-4 sm:p-5">
-            <div>
-              <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-                {data.summary.scoreLabel ?? 'Team Score'}
-              </div>
-              <div className="mt-1 flex items-baseline gap-3">
-                <span
-                  data-testid="team-deep-dive-score"
-                  className={`text-4xl font-extrabold tracking-tight sm:text-5xl ${summaryGradeStyle.scoreText}`}
-                >
-                  {data.summary.scoreLabel === 'Unmeasured team score' ? '—' : `${data.summary.score.toFixed(1)}%`}
-                </span>
-                {data.summary.scoreLabel !== 'Unmeasured team score' && <FullWordGradeBadge
-                  grade={data.summary.grade}
-                  gradeFullLabel={data.summary.gradeFullLabel}
-                  size="lg"
-                />}
-              </div>
-            </div>
-
-            <div className="h-12 w-px bg-slate-200 hidden sm:block" />
-
-            <div className="flex flex-col gap-1.5 text-xs">
-              {data.summary.scoreLabel !== 'Unmeasured team score' && <span className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1 font-bold text-rose-700">
-                <Target className="size-3.5" />
-                {data.summary.gap.toFixed(1)}% gap to 100% target
-              </span>}
-
-              {showChange && measuredChange !== null && (
-              <span
-                className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 font-bold ${
-                  isPositiveChange
-                    ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                    : measuredChange < 0
-                    ? 'border-rose-200 bg-rose-50 text-rose-700'
-                    : 'border-slate-200 bg-white text-slate-700'
-                }`}
-              >
-                {isPositiveChange ? (
-                  <ArrowUpRight className="size-3.5" />
-                ) : measuredChange < 0 ? (
-                  <ArrowDownRight className="size-3.5" />
-                ) : null}
-                {isPositiveChange ? `+${measuredChange.toFixed(1)}%` : `${measuredChange.toFixed(1)}%`} vs {comparedMonth}
-              </span>
-              )}
-              {data.scoreTrend?.basisNote && (
-                <span data-testid="team-score-basis-note" className="max-w-xs text-[11px] font-semibold leading-snug text-amber-800">
-                  {data.scoreTrend.basisNote}
-                </span>
-              )}
-            </div>
-          </div>
-
-          {data.scoreTrend && (
-            <section
-              aria-label={`${data.teamDisplayName} score trend`}
-              data-testid="team-score-trend"
-              className="min-w-0 flex-1 rounded-2xl border border-slate-200/80 bg-white p-3 sm:p-4"
+          {/* Performance Summary Grid: Score Card + 6-Month Trend */}
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-12 items-stretch">
+            {/* Score Card */}
+            <div
+              className={`flex flex-col justify-between rounded-2xl border border-slate-200/80 bg-slate-50/70 p-4 sm:p-5 ${
+                data.scoreTrend ? 'lg:col-span-5' : 'lg:col-span-12 max-w-xl'
+              }`}
             >
-              <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-                6-month team score
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                  {data.summary.scoreLabel ?? 'Team Score'}
+                </div>
+                <div className="mt-1 flex flex-wrap items-baseline gap-3">
+                  <span
+                    data-testid="team-deep-dive-score"
+                    className={`text-4xl font-extrabold tracking-tight sm:text-5xl ${summaryGradeStyle.scoreText}`}
+                  >
+                    {data.summary.scoreLabel === 'Unmeasured team score' ? '—' : `${data.summary.score.toFixed(1)}%`}
+                  </span>
+                  {data.summary.scoreLabel !== 'Unmeasured team score' && (
+                    <FullWordGradeBadge
+                      grade={data.summary.grade}
+                      gradeFullLabel={data.summary.gradeFullLabel}
+                      size="lg"
+                    />
+                  )}
+                </div>
               </div>
-              <ScoreTrendChart
-                data={data.scoreTrend.points.map((point) => ({
-                  month: point.month,
-                  score: point.score,
-                  periodKey: point.periodKey,
-                  selected: point.selected,
-                  basisDetail: point.basisDetail,
-                }))}
-                targetScore={100}
-                targetLabel="100% target"
-                height={148}
-                animate={false}
-                caption={`${data.teamDisplayName} ${data.regionName} team score, selected month and five preceding months`}
-              />
-              {data.scoreTrend.points.some((point) => point.basisDetail?.includes('current pooling rules') || point.basisDetail?.includes('historical settings unavailable')) && (
-                <p className="mt-1 text-xs text-slate-500">Team scores use the dashboard calculation and current pooling rules; historical settings may be unavailable. Hover each month for details.</p>
-              )}
-            </section>
-          )}
+
+              <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-slate-200/60 pt-3 text-xs">
+                {data.summary.scoreLabel !== 'Unmeasured team score' && (
+                  <span className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1 font-bold text-rose-700">
+                    <Target className="size-3.5" />
+                    {data.summary.gap.toFixed(1)}% gap to 100% target
+                  </span>
+                )}
+
+                {showChange && measuredChange !== null && (
+                  <span
+                    className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 font-bold ${
+                      isPositiveChange
+                        ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                        : measuredChange < 0
+                        ? 'border-rose-200 bg-rose-50 text-rose-700'
+                        : 'border-slate-200 bg-white text-slate-700'
+                    }`}
+                  >
+                    {isPositiveChange ? (
+                      <ArrowUpRight className="size-3.5" />
+                    ) : measuredChange < 0 ? (
+                      <ArrowDownRight className="size-3.5" />
+                    ) : null}
+                    {isPositiveChange ? `+${measuredChange.toFixed(1)}%` : `${measuredChange.toFixed(1)}%`} vs {comparedMonth}
+                  </span>
+                )}
+                {data.scoreTrend?.basisNote && (
+                  <span
+                    data-testid="team-score-basis-note"
+                    className="w-full text-[11px] font-semibold leading-snug text-amber-800"
+                  >
+                    {data.scoreTrend.basisNote}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* 6-Month Team Score Trend */}
+            {data.scoreTrend && (
+              <section
+                aria-label={`${data.teamDisplayName} score trend`}
+                data-testid="team-score-trend"
+                className="flex flex-col justify-between rounded-2xl border border-slate-200/80 bg-white p-4 shadow-2xs lg:col-span-7"
+              >
+                <div>
+                  <div className="flex items-center justify-between pb-1">
+                    <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                      6-month team score
+                    </div>
+                    <span className="text-[11px] font-medium text-slate-400">
+                      Target: 100%
+                    </span>
+                  </div>
+                  <ScoreTrendChart
+                    data={data.scoreTrend.points.map((point) => ({
+                      month: point.month,
+                      score: point.score,
+                      periodKey: point.periodKey,
+                      selected: point.selected,
+                      basisDetail: point.basisDetail,
+                    }))}
+                    targetScore={100}
+                    targetLabel="100% target"
+                    targetLabelPosition="insideTopRight"
+                    height={140}
+                    animate={false}
+                    caption={`${data.teamDisplayName} ${data.regionName} team score, selected month and five preceding months`}
+                  />
+                </div>
+                {data.scoreTrend.points.some(
+                  (point) =>
+                    point.basisDetail?.includes('current pooling rules') ||
+                    point.basisDetail?.includes('historical settings unavailable'),
+                ) && (
+                  <p className="mt-2 border-t border-slate-100 pt-2 text-xs leading-relaxed text-slate-500">
+                    Team scores use the dashboard calculation and current pooling rules; historical settings may be unavailable. Hover each month for details.
+                  </p>
+                )}
+              </section>
+            )}
           </div>
         </div>
       </header>
@@ -701,72 +762,131 @@ function TeamDeepDiveViewContent({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {data.agentsAverageOrBelow.map((agent) => {
-                const gradeStyle = GRADE_STYLES[agent.grade];
-                return (
-                  <tr
-                    key={agent.employeeId}
-                    data-testid={`low-agent-row-${agent.employeeId}`}
-                    className="transition-colors hover:bg-slate-50/80"
+              {visibleAgents.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={2 + Math.min(4, data.kpis.length) + 1}
+                    className="py-8 text-center text-xs text-slate-500"
                   >
-                    <td className="py-3.5 pr-4">
-                      <div className="font-bold text-slate-900">{agent.agentName}</div>
-                      <div className="mt-0.5 text-xs text-slate-500">{agent.mainIssue}</div>
-                    </td>
-
-                    <td className="px-4 py-3.5 text-right">
-                      <div className={`text-base font-extrabold ${gradeStyle.scoreText}`}>
-                        {agent.score.toFixed(1)}%
-                      </div>
-                      {agent.changeVsPrev !== null && (
-                        <div
-                          className={`text-[11px] font-semibold ${
-                            agent.changeVsPrev >= 0 ? 'text-emerald-600' : 'text-rose-600'
-                          }`}
-                        >
-                          {agent.changeVsPrev >= 0
-                            ? `+${agent.changeVsPrev.toFixed(1)}%`
-                            : `${agent.changeVsPrev.toFixed(1)}%`}{' '}
-                          vs {data.previousMonthLabel}
-                        </div>
-                      )}
-                    </td>
-
-                    {agent.kpiCells.map((cell) => (
-                      <td key={cell.kpiKey} className="px-4 py-3.5 text-right">
-                        <span
-                          className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-bold ${
-                            cell.metTarget
-                              ? 'bg-emerald-50 text-emerald-700'
-                              : cell.achievementPct < 75
-                              ? 'bg-rose-50 text-rose-700'
-                              : 'bg-amber-50 text-amber-800'
-                          }`}
-                        >
-                          {cell.actualFormatted}
-                        </span>
+                    No agents in this team are Average or below for this month.
+                  </td>
+                </tr>
+              ) : (
+                visibleAgents.map((agent) => {
+                  const gradeStyle = GRADE_STYLES[agent.grade];
+                  return (
+                    <tr
+                      key={agent.employeeId}
+                      data-testid={`low-agent-row-${agent.employeeId}`}
+                      className="transition-colors hover:bg-slate-50/80"
+                    >
+                      <td className="py-3.5 pr-4">
+                        <div className="font-bold text-slate-900">{agent.agentName}</div>
+                        <div className="mt-0.5 text-xs text-slate-500">{agent.mainIssue}</div>
                       </td>
-                    ))}
 
-                    <td className="py-3.5 pl-4 text-center">
-                      <FullWordGradeBadge
-                        grade={agent.grade}
-                        gradeFullLabel={agent.gradeFullLabel}
-                        size="sm"
-                      />
-                    </td>
-                  </tr>
-                );
-              })}
+                      <td className="px-4 py-3.5 text-right">
+                        <div className={`text-base font-extrabold ${gradeStyle.scoreText}`}>
+                          {agent.score.toFixed(1)}%
+                        </div>
+                        {agent.changeVsPrev !== null && (
+                          <div
+                            className={`text-[11px] font-semibold ${
+                              agent.changeVsPrev >= 0 ? 'text-emerald-600' : 'text-rose-600'
+                            }`}
+                          >
+                            {agent.changeVsPrev >= 0
+                              ? `+${agent.changeVsPrev.toFixed(1)}%`
+                              : `${agent.changeVsPrev.toFixed(1)}%`}{' '}
+                            vs {data.previousMonthLabel}
+                          </div>
+                        )}
+                      </td>
+
+                      {agent.kpiCells.map((cell) => (
+                        <td key={cell.kpiKey} className="px-4 py-3.5 text-right">
+                          <span
+                            className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-bold ${
+                              cell.metTarget
+                                ? 'bg-emerald-50 text-emerald-700'
+                                : cell.achievementPct < 75
+                                ? 'bg-rose-50 text-rose-700'
+                                : 'bg-amber-50 text-amber-800'
+                            }`}
+                          >
+                            {cell.actualFormatted}
+                          </span>
+                        </td>
+                      ))}
+
+                      <td className="py-3.5 pl-4 text-center">
+                        <FullWordGradeBadge
+                          grade={agent.grade}
+                          gradeFullLabel={agent.gradeFullLabel}
+                          size="sm"
+                        />
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
             </tbody>
           </table>
+          {agentPages.pageCount > 1 && (
+            <nav
+              data-testid="agents-average-below-pager"
+              aria-label="Agent pages"
+              className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3"
+            >
+              <p className="text-xs font-semibold text-slate-500 tabular-nums" aria-live="polite">
+                Showing {agentPages.rangeStart}–{agentPages.rangeEnd} of {data.agentsAverageOrBelow.length} agents
+              </p>
+              <div className="inline-flex items-center gap-1.5">
+                <button
+                  type="button"
+                  data-testid="agents-average-below-prev"
+                  aria-label="Previous agents"
+                  disabled={agentPages.page === 0}
+                  onClick={() =>
+                    setAgentPageState({
+                      listKey: agentListKey,
+                      page: Math.max(0, agentPages.page - 1),
+                    })
+                  }
+                  className="inline-flex h-8 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-bold text-slate-700 transition-colors hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <ChevronLeft className="size-3.5" aria-hidden />
+                  Previous
+                </button>
+                <span className="px-1 text-xs font-bold text-slate-500 tabular-nums">
+                  {agentPages.page + 1} / {agentPages.pageCount}
+                </span>
+                <button
+                  type="button"
+                  data-testid="agents-average-below-next"
+                  aria-label="Next agents"
+                  disabled={agentPages.page >= agentPages.pageCount - 1}
+                  onClick={() =>
+                    setAgentPageState({
+                      listKey: agentListKey,
+                      page: Math.min(agentPages.pageCount - 1, agentPages.page + 1),
+                    })
+                  }
+                  className="inline-flex h-8 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-bold text-slate-700 transition-colors hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Next
+                  <ChevronRight className="size-3.5" aria-hidden />
+                </button>
+              </div>
+            </nav>
+          )}
         </div>
       </section>
 
       {/* ================================================================== */}
       {/* 5. INDIVIDUAL ACTION PLAN (Card Layout, Editable)                  */}
       {/* ================================================================== */}
-      {showActionSection(individualCards.length, presentationMode) && (
+      {showActionSection(displayedIndividualCards.length, presentationMode) && (
       <section
         id="presentation-section-team-coaching"
         data-section-label="Coaching"
@@ -793,7 +913,7 @@ function TeamDeepDiveViewContent({
         </div>
 
         <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
-          {individualCards.map((card) => {
+          {displayedIndividualCards.map((card) => {
             const isEditing = showPresentationControl(presentationMode) && editingIndividualId === card.id;
             const gradeStyle = GRADE_STYLES[card.grade];
 

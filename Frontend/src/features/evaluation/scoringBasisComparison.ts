@@ -4,6 +4,8 @@
  * another month or treat a version id as evidence that the rules changed.
  */
 
+import { canonicalEgyptResubmissionTeam } from '../team/countryTeamIdentity';
+
 export type BasisState = 'unchanged' | 'changed' | 'mixed' | 'unknown' | 'unavailable';
 export type BasisRaw = 'unchanged' | 'changed' | 'not_comparable' | 'unknown' | 'partial';
 export type BasisMembership = 'stable' | 'changed' | 'none' | 'unknown';
@@ -177,7 +179,7 @@ function employeeId(record: BasisRecord): string | null {
 }
 
 function scopeKey(record: BasisRecord): string {
-  return [text(record.team), text(record.position), text(record.performance_level || record.level)].join('\u0000');
+  return [canonicalEgyptResubmissionTeam(text(record.team)), text(record.position), text(record.performance_level || record.level)].join('\u0000');
 }
 
 function trustedScope(record: BasisRecord): boolean {

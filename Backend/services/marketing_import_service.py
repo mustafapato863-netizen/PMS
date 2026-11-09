@@ -556,6 +556,15 @@ class MarketingImportService:
                 issues_by_key.setdefault(key, []).extend(row_errors)
                 continue
 
+            resolved_config = team_config or self.config
+            alias_match = next(
+                (
+                    str(alias).strip()
+                    for alias in (resolved_config.get("aliases") or [])
+                    if _lookup_key(alias) == _lookup_key(team)
+                ),
+                None,
+            )
             valid_rows.append(
                 {
                     "row": row_number,
@@ -564,9 +573,9 @@ class MarketingImportService:
                     "employee_name": employee_name,
                     "position": position if self.preserve_sheet_position else position_config["position_name"],
                     "level": level,
-                    "team_name": (team_config or self.config).get("team") or team,
-                    "grade_thresholds": (team_config or self.config).get("grade_thresholds"),
-                    "team_config": team_config or self.config,
+                    "team_name": alias_match or resolved_config.get("team") or team,
+                    "grade_thresholds": resolved_config.get("grade_thresholds"),
+                    "team_config": resolved_config,
                     "region": region,
                     "date": period_date,
                     "year": period_date.year,
@@ -853,6 +862,10 @@ def load_rcm_offshore_team_configs() -> dict[str, dict[str, Any]]:
         sheet_team = str(data.get("sheet_team") or "").strip()
         if sheet_team:
             loaded[_lookup_key(sheet_team)] = config
+        for alias in data.get("aliases") or []:
+            alias_text = str(alias or "").strip()
+            if alias_text:
+                loaded[_lookup_key(alias_text)] = config
     return loaded
 
 

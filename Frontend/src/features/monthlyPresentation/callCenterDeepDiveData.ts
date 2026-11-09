@@ -9,11 +9,24 @@ import {
 } from '../executive/compose';
 import { executiveFunctionForTeam } from '../executive/functions';
 import {
+  canonicalEgyptResubmissionTeam,
+  dedupeEgyptResubmissionRecords,
+  isEgyptResubmissionTeam,
+} from '../team/countryTeamIdentity';
+import {
   averagePrintedChannelScores,
+  calculateAggregatedTeamPerformance,
   channelBoardScore,
+  displayedTeamScore,
   preApprovalsLeaderTeamTotal,
+  recordsUseAppliedPin,
 } from '../team/teamKpiAggregator';
-import { INBOUND_TEAM_CONFIG, OUTBOUND_TEAM_CONFIG } from './callCenterTeamConfigs';
+import {
+  EGYPT_RESUBMISSION_TEAM_CONFIG,
+  INBOUND_TEAM_CONFIG,
+  OUTBOUND_TEAM_CONFIG,
+  UAE_RESUBMISSION_TEAM_CONFIG,
+} from './callCenterTeamConfigs';
 import type { ExecutivePeriod } from '../executive/types';
 import { gradeForScore, UAE_SEP_2026_DATA, type GradeLetter } from './monthlyOverviewData';
 
@@ -715,10 +728,10 @@ export const RCM_DEEP_DIVE_SEP_2026: CallCenterDeepDiveData = {
       keyStrengthOrDrag: 'Primary carrier · 7 specialists (64% of RCM headcount)',
     },
     {
-      id: 'resubmission',
-      teamSlug: 'resubmission',
+      id: 're-submission',
+      teamSlug: 're-submission',
       canonicalTeam: 'Resubmission',
-      teamName: 'Resubmission',
+      teamName: 'Re-Submission',
       roleTag: 'Pulling Average Down',
       roleTone: 'warning',
       score: 77.7,
@@ -965,8 +978,8 @@ export const RCM_DEEP_DIVE_SEP_2026: CallCenterDeepDiveData = {
       id: 'rcm-att-esraa',
       employeeId: 'Esraa Ahmed Helmy Ismail',
       agentName: 'Esraa Ahmed Helmy Ismail',
-      team: 'Resubmission',
-      teamSlug: 'resubmission',
+      team: 'Re-Submission',
+      teamSlug: 're-submission',
       score: 77.7,
       grade: 'D',
       gradeLabel: 'Below Average',
@@ -2477,6 +2490,30 @@ export function buildCallCenterDeepDiveFromRecords(
   };
 }
 
+function resubmissionPooledScore(records: ExecRecord[]): number | null {
+  if (!records.length) return null;
+  const agents = records.map((record) => record.rawAgent).filter((agent): agent is AgentRecord => Boolean(agent));
+  const average = mean(records.map((record) => record.score));
+  if (agents.length !== records.length || average === null) return null;
+  const config = records.every((record) => isEgyptResubmissionTeam(record.team))
+    ? EGYPT_RESUBMISSION_TEAM_CONFIG
+    : records.every((record) => record.team.trim().toLowerCase() === 're-submission')
+      ? UAE_RESUBMISSION_TEAM_CONFIG
+      : undefined;
+  if (!config) return null;
+  const norm = (value: string | undefined) => (value ?? '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '');
+  const configuredKeys = new Set(config.kpis.flatMap((kpi) => [norm(kpi.key), norm(kpi.label)]));
+  const hasMatchingKpi = records.some((record) =>
+    record.kpis.some((kpi) => configuredKeys.has(norm(kpi.kpi_key)) || configuredKeys.has(norm(kpi.label)))
+    || (record.rawAgent?.kpi_values ?? []).some((kpi) => configuredKeys.has(norm(kpi.kpi_key)) || configuredKeys.has(norm(kpi.label))),
+  );
+  if (!hasMatchingKpi) return null;
+  const pooled = calculateAggregatedTeamPerformance(agents, config);
+  return pooled == null || pooled.kpis.size === 0
+    ? null
+    : round1(displayedTeamScore(pooled.score, average, recordsUseAppliedPin(agents)));
+}
+
 /**
  * Generic real-data builder for ANY function (RCM, Marketing, IT, Call Center, Human Resources, Administration, Finance, CSR, Sales, Pharmacy).
  */
@@ -2488,7 +2525,7 @@ export function buildFunctionDeepDiveFromRecords(
   requestedPeriodKey?: string,
 ): CallCenterDeepDiveData {
   const normSlug = normalizeFunctionSlug(functionSlug);
-  const scopedRecords = scopeRecordsToRegion(allRecords, region);
+  const scopedRecords = dedupeEgyptResubmissionRecords(scopeRecordsToRegion(allRecords, region));
   if (normSlug === 'call-center') {
     return buildCallCenterDeepDiveFromRecords(scopedRecords, actions, region, requestedPeriodKey);
   }
@@ -2539,21 +2576,22 @@ export function buildFunctionDeepDiveFromRecords(
   const fnGrade = gradeForScore(fnScore);
   const totalMeasuredHc = new Set(currRecords.map((r) => r.employeeId)).size;
 
-  // Group Layer 1 Measured Teams from currRecords by r.team
-  const distinctTeams = [...new Set(currRecords.map((r) => r.team))];
+  // Group Layer 1 Measured Teams from currRecords by canonical team
+  const distinctTeams = [...new Set(currRecords.map((r) => canonicalEgyptResubmissionTeam(r.team)))];
   const agentTeams: AgentTeamPerformanceItem[] = distinctTeams
     .map((teamName) => {
-      const tAll = fnRecords.filter((r) => r.team === teamName);
+      const tAll = fnRecords.filter((r) => canonicalEgyptResubmissionTeam(r.team) === teamName);
       const tCurr = inPeriod(tAll, effective);
       const tPrev = inPeriod(tAll, previous);
       const leaderTotal = preApprovalsLeaderTeamTotal(tCurr);
-      const tScore = leaderTotal ?? round1(mean(tCurr.map((r) => r.score)) ?? fnScore);
-      const tPrevMean = preApprovalsLeaderTeamTotal(tPrev) ?? mean(tPrev.map((r) => r.score));
+      const pooledTotal = resubmissionPooledScore(tCurr);
+      const tScore = leaderTotal ?? pooledTotal ?? round1(mean(tCurr.map((r) => r.score)) ?? fnScore);
+      const tPrevMean = preApprovalsLeaderTeamTotal(tPrev) ?? resubmissionPooledScore(tPrev) ?? mean(tPrev.map((r) => r.score));
       const tChange = tPrevMean !== null ? round1(tScore - round1(tPrevMean)) : 0;
       const tGrade = gradeForScore(tScore);
       const tHc = new Set(tCurr.map((r) => r.employeeId)).size;
       const tBelow90 = tCurr.filter((r) => r.score < 90).length;
-      const tSlug = slugifyIdentifier(teamName);
+      const tSlug = isEgyptResubmissionTeam(teamName) ? 're-submission' : slugifyIdentifier(teamName);
       const tKpis = kpiRows(tCurr, tPrev);
       const weakestKpi = tKpis[0];
       const strongestKpi = [...tKpis].sort(
@@ -2563,6 +2601,9 @@ export function buildFunctionDeepDiveFromRecords(
       const fallbackTeam = fallback.agentTeams.find(
         (ft) => ft.teamSlug === tSlug || ft.canonicalTeam.toLowerCase() === teamName.toLowerCase(),
       );
+      const displayTeamName = isEgyptResubmissionTeam(teamName)
+        ? 'Re-Submission'
+        : (fallbackTeam?.teamName ?? teamName);
 
       const isCarrying =
         distinctTeams.length === 1
@@ -2583,17 +2624,17 @@ export function buildFunctionDeepDiveFromRecords(
 
       const diagnosis =
         leaderTotal !== null
-          ? `${teamName} is ${tScore.toFixed(1)}% on the leader scorecard across ${tHc} measured people.`
+          ? `${displayTeamName} is ${tScore.toFixed(1)}% on the leader scorecard across ${tHc} measured people.`
           : fallbackTeam?.diagnosis ||
         (weakestKpi && strongestKpi
-          ? `${teamName} averaged ${tScore.toFixed(1)}% across ${tHc} ${tHc === 1 ? 'specialist' : 'specialists'}. ${strongestKpi.kpi_label} reached ${formatKpiValue(strongestKpi.actual, strongestKpi.unit)} (target ${formatKpiValue(strongestKpi.target, strongestKpi.unit)}), while ${weakestKpi.kpi_label} (${formatKpiValue(weakestKpi.actual, weakestKpi.unit)} vs ${formatKpiValue(weakestKpi.target, weakestKpi.unit)}) is the main gap.`
-          : `${teamName} averaged ${tScore.toFixed(1)}% across ${tHc} measured ${tHc === 1 ? 'member' : 'members'}.`);
+          ? `${displayTeamName} averaged ${tScore.toFixed(1)}% across ${tHc} ${tHc === 1 ? 'specialist' : 'specialists'}. ${strongestKpi.kpi_label} reached ${formatKpiValue(strongestKpi.actual, strongestKpi.unit)} (target ${formatKpiValue(strongestKpi.target, strongestKpi.unit)}), while ${weakestKpi.kpi_label} (${formatKpiValue(weakestKpi.actual, weakestKpi.unit)} vs ${formatKpiValue(weakestKpi.target, weakestKpi.unit)}) is the main gap.`
+          : `${displayTeamName} averaged ${tScore.toFixed(1)}% across ${tHc} measured ${tHc === 1 ? 'member' : 'members'}.`);
 
       return {
         id: `team-${tSlug}`,
         teamSlug: tSlug,
         canonicalTeam: teamName,
-        teamName: fallbackTeam?.teamName ?? teamName,
+        teamName: displayTeamName,
         roleTag,
         roleTone,
         score: tScore,
@@ -2705,8 +2746,8 @@ export function buildFunctionDeepDiveFromRecords(
             id: `att-${emp.employeeId}`,
             employeeId: emp.employeeId,
             agentName: emp.name,
-            team: emp.team,
-            teamSlug: slugifyIdentifier(emp.team),
+            team: isEgyptResubmissionTeam(emp.team) ? 'Re-Submission' : emp.team,
+            teamSlug: isEgyptResubmissionTeam(emp.team) ? 're-submission' : slugifyIdentifier(emp.team),
             score: round1(emp.score),
             grade: g,
             gradeLabel: fullGradeLabel(g),
@@ -2722,7 +2763,7 @@ export function buildFunctionDeepDiveFromRecords(
   // Actions by Position (incorporate any stored actions for teams in this function)
   const teamNamesLower = new Set(distinctTeams.map((t) => t.toLowerCase()));
   const fnActions = actions.filter(
-    (a) => a.team && teamNamesLower.has(a.team.toLowerCase()),
+    (a) => a.team && teamNamesLower.has(canonicalEgyptResubmissionTeam(a.team).toLowerCase()),
   );
   const actionItems: PositionActionPlanItem[] =
     fnActions.length > 0

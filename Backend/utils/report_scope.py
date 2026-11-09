@@ -103,6 +103,7 @@ _RCM_KEYS = {
     "submission egy",
     "re-submission",
     "resubmission",
+    "re-submission egy",
     "pre-approvals",
     "pre-approvals ip offshore",
     "pre-approvals ip",
@@ -139,6 +140,8 @@ def _exact_team_keys(value: str) -> set[str]:
         return {"call center", "support positions", "call center support positions"}
     if normalized in {"rcm", "rcm_management"}:
         return {"rcm", "rcm_management"}
+    if normalized in {"resubmission", "re-submission egy"}:
+        return {"resubmission", "re-submission egy"}
     if normalized in {
         "crm", "crm_management", "nursing", "nursing_management",
         "pmo", "pmo_management", "finance", "finance_management",

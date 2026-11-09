@@ -1,13 +1,15 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import TeamDashboardView from './TeamDashboardView';
 import { TEAM_DB_NAME_MAP, TEAM_ID_MAP, TEAM_NAME_MAP, teamPath } from '../types';
 
-const roleState = vi.hoisted(() => ({ role: 'Admin' }));
+const roleState = vi.hoisted(() => ({ role: 'Admin', allowsTeam: true }));
 const performanceState = vi.hoisted(() => ({
-  agents: [] as Array<{ identity: { team: string; month: string }; year: number }>,
+  agents: [] as Array<{ identity: { employee_id?: string; team: string; month: string }; year: number }>,
   calls: vi.fn(),
+  teamDataCalls: vi.fn(),
+  teamConfigCalls: vi.fn(),
 }));
 
 vi.mock('../context/RoleContext', () => ({
@@ -15,9 +17,14 @@ vi.mock('../context/RoleContext', () => ({
 }));
 vi.mock('../context/auth', () => ({ useAuth: () => ({ currentUser: null }) }));
 vi.mock('../features/executive/useFunctionScope', () => ({
-  useFunctionScope: () => ({ restricted: false, allowed: [], allowsTeam: () => true }),
+  useFunctionScope: () => ({ restricted: !roleState.allowsTeam, ready: true, allowed: [], allowsTeam: () => roleState.allowsTeam }),
 }));
-vi.mock('../hooks/useTeamConfig', () => ({ useTeamConfig: () => ({ data: undefined }) }));
+vi.mock('../hooks/useTeamConfig', () => ({
+  useTeamConfig: (teamName: string) => {
+    performanceState.teamConfigCalls(teamName);
+    return { data: undefined };
+  },
+}));
 vi.mock('../hooks/api/useInsightsWorkspace', () => ({ useInsightsWorkspace: () => ({ data: undefined }) }));
 vi.mock('../hooks/useActionStore', () => ({
   useActionStore: () => ({ getActionsForEmployee: () => [], getAllActions: () => [] }),
@@ -29,7 +36,7 @@ vi.mock('../components/team/BalancedScorecardWorkspace', () => ({
 vi.mock('../hooks/usePerformanceData', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../hooks/usePerformanceData')>()),
   // No agents for any team: the page renders its header and the empty state, which is all these tests read.
-  useTeamData: () => ({
+  useTeamData: (...args: unknown[]) => (performanceState.teamDataCalls(...args), {
     rows: [], avgScore: null, classCounts: { A: 0, B: 0, C: 0, D: 0, E: 0 }, pctAB: 0, pctDE: 0,
     totalAgents: 0, uniqueTeamCount: 0, prevMonth: null, loading: false, dataSource: null,
     errorMessage: null, prevAvgScore: null, prevPctAB: null, prevPctDE: null, prevTotalAgents: null,
@@ -40,11 +47,16 @@ vi.mock('../hooks/usePerformanceData', async (importOriginal) => ({
   },
 }));
 
+function LocationProbe() {
+  const location = useLocation();
+  return <div data-testid="team-location-probe">{location.pathname}{location.search}</div>;
+}
+
 function renderTeamPage(path: string) {
   return render(
     <MemoryRouter initialEntries={[path]}>
       <Routes>
-        <Route path="/team/:teamId" element={<TeamDashboardView />} />
+        <Route path="/team/:teamId" element={<><TeamDashboardView /><LocationProbe /></>} />
         <Route path="/executive" element={<p>Executive Summary page</p>} />
       </Routes>
     </MemoryRouter>,
@@ -94,11 +106,19 @@ const KNOWN_NAMES = [...new Set([
 
 beforeEach(() => {
   roleState.role = 'Admin';
+  roleState.allowsTeam = true;
   performanceState.agents = [];
   performanceState.calls.mockClear();
+  performanceState.teamDataCalls.mockClear();
+  performanceState.teamConfigCalls.mockClear();
 });
 
 describe('team page resolution', () => {
+  it('keeps the selected year when loading a historical team period', () => {
+    renderTeamPage('/team/re-submission?region=EGY&period=2025-09');
+    expect(performanceState.teamDataCalls).toHaveBeenCalled();
+    expect(performanceState.teamDataCalls.mock.calls.at(-1)?.[1]).toBe('2025-09');
+  });
   it.each([
     ['coding', 'Coding EGY'],
     ['submission', 'Submission EGY'],
@@ -122,11 +142,43 @@ describe('team page resolution', () => {
     ];
     renderTeamPage('/team/re-submission?region=EGY');
     expect(performanceState.calls).toHaveBeenCalledWith('All', 'all', 'EGY', 'All', true, undefined);
+    expect(performanceState.teamConfigCalls).toHaveBeenCalledWith('Resubmission');
     expect(screen.getByText(/June 2026/)).toBeInTheDocument();
     expect(screen.getByText(/July 2026/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /filters/i }));
     expect(document.querySelector('option[value="June"]')).toBeInTheDocument();
     expect(document.querySelector('option[value="July"]')).toBeInTheDocument();
+  });
+
+  it('switches between Egypt and UAE on the shared /team/re-submission route and preserves legacy URLs with period/month', () => {
+    performanceState.agents = [
+      { identity: { employee_id: 'E1', team: 'Resubmission', month: 'June' }, year: 2026 },
+      { identity: { employee_id: 'E1', team: 'Re-Submission EGY', month: 'June' }, year: 2026 },
+      { identity: { employee_id: 'U1', team: 'Re-Submission', month: 'August' }, year: 2026 },
+    ];
+    const uaeView = renderTeamPage('/team/re-submission?region=UAE');
+    expect(performanceState.calls).toHaveBeenCalledWith('All', 'all', 'UAE', 'All', true, 'Re-Submission');
+    expect(performanceState.teamConfigCalls).toHaveBeenCalledWith('Re-Submission');
+    expect(screen.getByRole('heading', { level: 2, name: 'Re-Submission' })).toBeInTheDocument();
+    expect(screen.getByText(/August 2026/)).toBeInTheDocument();
+    expect(screen.queryByText(/June 2026/)).not.toBeInTheDocument();
+    uaeView.unmount();
+
+    const legacy1 = renderTeamPage('/team/resubmission?month=June');
+    expect(screen.getByTestId('team-location-probe').textContent).toBe('/team/re-submission?month=June&region=EGY');
+    expect(screen.getByRole('heading', { level: 2, name: 'Re-Submission' })).toBeInTheDocument();
+    legacy1.unmount();
+
+    const legacy2 = renderTeamPage('/team/re-submission-egy?period=2026-06');
+    expect(screen.getByTestId('team-location-probe').textContent).toBe('/team/re-submission?period=2026-06&region=EGY');
+    expect(screen.getByRole('heading', { level: 2, name: 'Re-Submission' })).toBeInTheDocument();
+    legacy2.unmount();
+  });
+
+  it('blocks unauthorized team access with Authorization Context Restricted', () => {
+    roleState.allowsTeam = false;
+    renderTeamPage('/team/re-submission?region=EGY');
+    expect(screen.getByText('Authorization Context Restricted')).toBeInTheDocument();
   });
   it('has a title expectation for every known team name and display name', () => {
     expect(KNOWN_NAMES.filter((name) => !(name in EXPECTED_TITLE))).toEqual([]);

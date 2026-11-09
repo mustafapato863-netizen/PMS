@@ -1,6 +1,9 @@
 {
   "team": "Resubmission",
   "db_name": "Resubmission",
+  "aliases": [
+    "Re-Submission EGY"
+  ],
   "region": "EGY",
   "employee_id_col": "Employee ID",
   "employee_name_col": "Employee Name",

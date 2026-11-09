@@ -11,12 +11,15 @@ describe('memberPageWindow', () => {
 
     const first = memberPageWindow(items, 0);
     expect(first.visible).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    expect(first.cachedNext).toEqual([10, 11, 12, 13, 14, 15, 16, 17, 18, 19]);
     expect(first.pageCount).toBe(3);
     expect(first.rangeStart).toBe(1);
     expect(first.rangeEnd).toBe(10);
     const second = memberPageWindow(items, 1);
     expect(second.visible).toEqual([10, 11, 12, 13, 14, 15, 16, 17, 18, 19]);
+    expect(second.cachedNext).toEqual([20, 21, 22, 23, 24]);
     const third = memberPageWindow(items, 2);
+    expect(third.cachedNext).toEqual([]);
     expect(third.rangeStart).toBe(21);
     expect(third.rangeEnd).toBe(25);
     expect(memberPageWindow(items, 9).page).toBe(2);

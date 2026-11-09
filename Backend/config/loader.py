@@ -508,15 +508,29 @@ def load_team_config(team_name: str) -> Dict[str, Any]:
     config_path = config_dir / filename
     
     if not config_path.exists():
+        normalized_target = str(team_name).strip().casefold()
+        alias_match_path = None
         for cfg_file in sorted(config_dir.glob("*.json")):
             try:
                 with cfg_file.open("r", encoding="utf-8") as f:
                     cfg = json.load(f)
-                if cfg.get("team", "").casefold() == team_name.casefold() or cfg.get("db_name", "").casefold() == team_name.casefold():
+                if (
+                    str(cfg.get("team", "")).strip().casefold() == normalized_target
+                    or str(cfg.get("db_name", "")).strip().casefold() == normalized_target
+                ):
                     config_path = cfg_file
                     break
+                aliases = [
+                    str(alias).strip().casefold()
+                    for alias in (cfg.get("aliases") or [])
+                    if str(alias).strip()
+                ]
+                if normalized_target in aliases and alias_match_path is None:
+                    alias_match_path = cfg_file
             except Exception:
                 continue
+        if not config_path.exists() and alias_match_path is not None:
+            config_path = alias_match_path
         if not config_path.exists():
             raise ConfigurationError(f"Team configuration not found: {config_path}")
 
@@ -580,5 +594,21 @@ def find_team_config_by_db_name(db_name: str) -> Optional[Dict[str, Any]]:
     configs = load_all_team_configs()
     for config in configs:
         if config.get('db_name') == db_name:
+            return config
+    normalized_target = str(db_name or "").strip().casefold()
+    if not normalized_target:
+        return None
+    for config in configs:
+        if (
+            str(config.get("db_name", "")).strip().casefold() == normalized_target
+            or str(config.get("team", "")).strip().casefold() == normalized_target
+        ):
+            return config
+        aliases = [
+            str(alias).strip().casefold()
+            for alias in (config.get("aliases") or [])
+            if str(alias).strip()
+        ]
+        if normalized_target in aliases:
             return config
     return None

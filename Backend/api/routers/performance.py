@@ -15,7 +15,12 @@ from api.dependencies import (
     user_can_access_team_level,
     require_authenticated_scope,
 )
-from utils.report_scope import filter_records_by_team_levels, functions_for_team, user_can_access_region
+from utils.report_scope import (
+    _exact_team_keys,
+    filter_records_by_team_levels,
+    functions_for_team,
+    user_can_access_region,
+)
 from config.database import get_db, release_read_transaction
 from sqlalchemy.orm import Session
 from models.schemas import StandardResponse
@@ -24,7 +29,7 @@ from models.performance_read_schemas import PerformanceCatalogData, PerformanceR
 from exports.report_exporter import ReportExporter
 from repositories.performance_repository import PerformanceRepository as SQLPerformanceRepository
 from utils.performance_levels import PERFORMANCE_LEVELS, normalize_performance_level
-from utils.team_identity import logical_team_name
+from utils.team_identity import dedupe_egypt_resubmission_records, logical_team_name
 from config.loader import ConfigurationError, load_team_config, resolve_team_config
 from services.balanced_scorecard_service import BalancedScorecardService
 from services.bsc_template_service import bsc_template_service
@@ -363,6 +368,7 @@ def _summary_records_legacy(db, record_service, scope, filters: SummaryFilters, 
     source = DatabaseRecordSource(db)
     service = InsightsService(source, PlanningService(source, db=db), db=db, record_service=record_service)
     records, _ = service.authorized_records(scope)
+    records = list(records)
     data = []
     for record in records:
         if not summary_matches(record, filters):
@@ -404,6 +410,7 @@ def get_performance_catalog(
     ).list_option_rows(scope, include_scores=True)
     rows = filter_records_by_scope(rows, scope)
     rows = filter_records_by_team_levels(rows, scope)
+    rows = list(rows)
 
     authorized_teams, authorized_functions = _authorized_catalog_teams(db, scope, rows)
 
@@ -474,7 +481,8 @@ def _authorized_catalog_teams(db: Session, scope: dict, scoped_rows: list[dict])
             continue
         region = str(row.get("region") or "").strip().upper()
         level = normalize_performance_level(row.get("performance_level")) or "Employee"
-        observed[(name.casefold(), region)].add(level)
+        for alias_key in _exact_team_keys(name):
+            observed[(alias_key, region)].add(level)
 
     team_rows = db.query(Team).filter(Team.is_active.is_(True)).order_by(Team.name.asc()).all()
     grants = {

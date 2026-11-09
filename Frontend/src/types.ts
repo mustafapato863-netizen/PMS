@@ -221,13 +221,15 @@ export function rcmGroupForTeam(value: string | null | undefined, region?: strin
   const normalizedRegion = String(region ?? '').trim().toLowerCase();
   if (normalizedRegion.includes('egy') || normalizedRegion.includes('offshore')) return 'offshore_egy';
   if (normalizedRegion.includes('uae') || normalizedRegion.includes('united arab')) return 'uae';
+  const exact = String(value ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
+  if (exact === 're-submission') return 'uae';
   const normalized = normalizeTeamIdentity(value);
   const offshore = normalized === normalizeTeamIdentity('Pre-Approvals IP Offshore')
     || normalized === normalizeTeamIdentity('Pre-Approvals IP')
     || normalized === normalizeTeamIdentity('Coding EGY')
     || normalized === normalizeTeamIdentity('Submission EGY')
-    || normalized === normalizeTeamIdentity('Resubmission')
-    || normalized === normalizeTeamIdentity('Re-Submission EGY');
+    || exact === 'resubmission'
+    || exact === 're-submission egy';
   return offshore ? 'offshore_egy' : 'uae';
 }
 
@@ -267,8 +269,12 @@ export function isHossamRecord(record: {
   return false;
 }
 
-/** Stored team selected by an Egypt card. Legacy offshore rows share Pre-Approvals IP. */
+/** Stored team selected by an Egypt card. Legacy offshore rows share Pre-Approvals IP; Egypt Re-Submission aliases share Resubmission. */
 export function egyptRcmTeamValue(value: string | null | undefined): string {
+  const exact = String(value ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
+  if (exact === 'resubmission' || exact === 're-submission egy') {
+    return 'Resubmission';
+  }
   const normalized = normalizeTeamIdentity(value);
   if (normalized === normalizeTeamIdentity('Pre-Approvals IP')
     || normalized === normalizeTeamIdentity('Pre-Approvals IP Offshore')) {
@@ -280,10 +286,11 @@ export function egyptRcmTeamValue(value: string | null | undefined): string {
 /** Sheet name shown on the Egypt card. Stored names stay unique beside the UAE domains. */
 export function egyptRcmTeamLabel(value: string | null | undefined): string {
   const stored = egyptRcmTeamValue(value);
+  const exact = stored.trim().toLowerCase().replace(/\s+/g, ' ');
+  if (exact === 'resubmission' || exact === 're-submission egy') return 'Re-Submission';
   const normalized = normalizeTeamIdentity(stored);
   if (normalized === normalizeTeamIdentity('Coding EGY')) return 'Coding';
   if (normalized === normalizeTeamIdentity('Submission EGY')) return 'Submission';
-  if (normalized === normalizeTeamIdentity('Resubmission') || normalized === normalizeTeamIdentity('Re-Submission EGY')) return 'Re-Submission';
   return stored;
 }
 
@@ -1252,7 +1259,7 @@ export function getKPIsForAgent(agent: AgentRecord): KPIConfig[] {
     ];
   }
 
-  if (team === 'Re-Submission') {
+  if (team === 'Resubmission' || team === 'Re-Submission EGY' || (team === 'Re-Submission' && ((agent.region || agent.identity?.region || '').toUpperCase() === 'EGY' || raw_data['T.QualityErrorsRate'] !== undefined || raw_data['A.QualityErrorsRate'] !== undefined))) {
     const targetQualityErrors = getTargetValue(raw_data, ['T.QualityErrorsRate'], 0.05);
     const targetRejection = getTargetValue(raw_data, ['T.RejectionRateAfterResubmission'], 0.60);
     const targetTat = getTargetValue(raw_data, ['T.TAT'], 1.0);
@@ -1261,6 +1268,18 @@ export function getKPIsForAgent(agent: AgentRecord): KPIConfig[] {
       { label: 'Quality Errors Rate', actual: actual.quality_rate ?? 0, target: targetQualityErrors, unit: '%', isLowerBetter: true, color: '#EF4444' },
       { label: 'Rejection Rate After Re-Submission', actual: actual.rejection_rate ?? 0, target: targetRejection, unit: '%', isLowerBetter: true, color: '#F97316' },
       { label: 'TAT', actual: actual.submission_rate ?? 0, target: targetTat, unit: '%', color: '#2563EB' },
+    ];
+  }
+
+  if (team === 'Re-Submission') {
+    const targetQualityErrors = getTargetValue(raw_data, ['T.QualityErrorsRate'], 0.05);
+    const targetRejection = getTargetValue(raw_data, ['T.RejectionRateAfterRe-Submission', 'T.RejectionRateAfterResubmission'], 0.60);
+    const targetTat = getTargetValue(raw_data, ['T.TAT'], 1.0);
+
+    return [
+      { label: 'Quality Errors Rate', actual: actual.quality_rate ?? 0, target: targetQualityErrors, unit: '%', isLowerBetter: true, color: '#EF4444', weight: 0.2 },
+      { label: 'Rejection Rate After Re-Submission', actual: actual.rejection_rate ?? 0, target: targetRejection, unit: '%', isLowerBetter: true, color: '#F97316', weight: 0.5 },
+      { label: 'TAT compliance %', actual: actual.submission_rate ?? 0, target: targetTat, unit: '%', color: '#2563EB', weight: 0.3 },
     ];
   }
 

@@ -2,14 +2,19 @@
 
 import pandas as pd
 
-from config.loader import load_team_config
+from config.loader import find_team_config_by_db_name, load_team_config
+from repositories.performance_repository import _team_filter_values
 from services.marketing_import_service import (
     MarketingImportService,
     RcmOffshoreImportService,
     legacy_offshore_sheet_enabled,
     load_rcm_offshore_team_configs,
 )
+from services.scoring_basis_comparison import compare_scoring_basis
 from services.seeding_service import json_safe
+from services.summary_records_service import SummaryFilters, matches
+from utils.report_scope import _exact_team_keys, filter_records_by_scope, user_can_access_team
+from utils.team_identity import dedupe_egypt_resubmission_records, is_egypt_resubmission_team
 
 
 def _row(**overrides):
@@ -251,3 +256,131 @@ def test_legacy_offshore_sheet_is_skipped_when_rcm_offshore_is_present():
     assert legacy_offshore_sheet_enabled(["RCM Offshore", "Pre-Approvals IP Offshore"]) is False
     assert legacy_offshore_sheet_enabled(["Pre-Approvals IP Offshore"]) is True
     assert legacy_offshore_sheet_enabled(["RCM Offshore"]) is False
+
+
+def test_egypt_resubmission_aliases_use_same_config_and_calculation_while_uae_remains_separate():
+    configs = load_rcm_offshore_team_configs()
+    assert configs["resubmission"]["team"] == "Resubmission"
+    assert configs["re-submission egy"]["team"] == "Resubmission"
+
+    egy_primary = load_team_config("Resubmission")
+    egy_alias = load_team_config("Re-Submission EGY")
+    uae_config = load_team_config("Re-Submission")
+    assert egy_primary["region"] == "EGY"
+    assert egy_alias["region"] == "EGY"
+    assert egy_primary["team"] == egy_alias["team"] == "Resubmission"
+    assert find_team_config_by_db_name("Re-Submission EGY") == egy_alias
+    assert uae_config["region"] == "UAE"
+    assert uae_config["team"] == "Re-Submission"
+    assert [k["key"] for k in uae_config["kpis"]] == [
+        "quality_errors_rate",
+        "rejection_rate_after_resubmission",
+        "tat",
+    ]
+
+    parsed = RcmOffshoreImportService().parse_frame(pd.DataFrame(
+        _month("Resubmission", "Resubmission Analyst", "SGHD70104", [
+            ("Quality Errors Rate", 0.5, "Internal Process", "Lower Better", 0.05, 0.07),
+            ("Rejection Rate After Re-Submission", 0, "Customer", "Lower Better", 0.6, 0),
+            ("TAT", 0.5, "Customer", "Higher Better", 1, 0.84),
+        ])
+        + _month("Re-Submission EGY", "Resubmission Analyst", "SGHD70105", [
+            ("Quality Errors Rate", 0.5, "Internal Process", "Lower Better", 0.05, 0.07),
+            ("Rejection Rate After Re-Submission", 0, "Customer", "Lower Better", 0.6, 0),
+            ("TAT", 0.5, "Customer", "Higher Better", 1, 0.84),
+        ])
+    ))
+    assert parsed.report["rejected_employee_months"] == []
+    by_id = {record.employee_id: record for record in parsed.records}
+    # Stored source names are preserved while calculation is identical
+    assert by_id["SGHD70104"].team == "Resubmission"
+    assert by_id["SGHD70105"].team == "Re-Submission EGY"
+    assert by_id["SGHD70104"].evaluation.score == by_id["SGHD70105"].evaluation.score
+    assert by_id["SGHD70104"].evaluation.grade == by_id["SGHD70105"].evaluation.grade
+    assert [k["kpi_key"] for k in by_id["SGHD70104"].kpi_values] == [
+        "egy_resubmission_quality_errors",
+        "egy_resubmission_rejection",
+        "egy_resubmission_tat",
+    ]
+    assert [k["kpi_key"] for k in by_id["SGHD70105"].kpi_values] == [
+        "egy_resubmission_quality_errors",
+        "egy_resubmission_rejection",
+        "egy_resubmission_tat",
+    ]
+
+
+def test_dedupe_and_authorization_for_egypt_resubmission_aliases_and_uae():
+    assert is_egypt_resubmission_team("Resubmission") is True
+    assert is_egypt_resubmission_team("Re-Submission EGY") is True
+    assert is_egypt_resubmission_team("Re-Submission") is False
+
+    rows = [
+        {"employee_id": "SGHD70104", "team": "Resubmission", "region": "EGY", "year": 2026, "month": "September", "performance_level": "Employee", "branches": []},
+        {"employee_id": "SGHD70104", "team": "Re-Submission EGY", "region": "EGY", "year": 2026, "month": "September", "performance_level": "Employee", "branches": []},
+        {"employee_id": "SGHD70105", "team": "Re-Submission EGY", "region": "EGY", "year": 2026, "month": "September", "performance_level": "Employee", "branches": []},
+        {"employee_id": "UAE9001", "team": "Re-Submission", "region": "UAE", "year": 2026, "month": "September", "performance_level": "Employee", "branches": []},
+    ]
+    deduped = dedupe_egypt_resubmission_records(rows)
+    assert len(deduped) == 3
+    assert [(r["employee_id"], r["team"]) for r in deduped] == [
+        ("SGHD70104", "Resubmission"),
+        ("SGHD70105", "Re-Submission EGY"),
+        ("UAE9001", "Re-Submission"),
+    ]
+
+    assert _exact_team_keys("Resubmission") == {"resubmission", "re-submission egy"}
+    assert _exact_team_keys("Re-Submission EGY") == {"resubmission", "re-submission egy"}
+    assert _exact_team_keys("Re-Submission") == {"re-submission"}
+    assert _team_filter_values("Resubmission") == ("resubmission", "re-submission egy")
+    assert _team_filter_values("Re-Submission EGY") == ("resubmission", "re-submission egy")
+    assert _team_filter_values("Re-Submission") == ("re-submission",)
+
+    # Authorized Egypt RCM scope includes both Egypt aliases (deduplicated) and excludes UAE
+    egy_scope = {"role": "Manager", "accessible_teams": ["Resubmission"]}
+    assert user_can_access_team(egy_scope, "Resubmission") is True
+    assert user_can_access_team(egy_scope, "Re-Submission EGY") is True
+    assert user_can_access_team(egy_scope, "Re-Submission") is False
+
+    egy_authorized = dedupe_egypt_resubmission_records(filter_records_by_scope(rows, egy_scope))
+    assert [(r["employee_id"], r["team"]) for r in egy_authorized] == [
+        ("SGHD70104", "Resubmission"),
+        ("SGHD70105", "Re-Submission EGY"),
+    ]
+    egy_filters = SummaryFilters(team="Resubmission", region="EGY")
+    assert matches(rows[1], egy_filters) is True
+    assert matches(rows[3], egy_filters) is False
+
+    # Scoring basis comparison treats both Egypt aliases as the same team scope across months
+    aug = [{
+        "employee_id": "SGHD70104",
+        "team": "Re-Submission EGY",
+        "position": "Resubmission Analyst",
+        "performance_level": "Employee",
+        "kpi_values": [{
+            "kpi_key": "egy_resubmission_quality_errors",
+            "target_value": 0.08,
+            "weight_applied": 0.4,
+            "direction": "lower_better",
+            "unit": "%",
+            "actual_value": 0.07,
+            "evaluation_pinned": True,
+        }],
+    }]
+    sep = [{
+        "employee_id": "SGHD70104",
+        "team": "Resubmission",
+        "position": "Resubmission Analyst",
+        "performance_level": "Employee",
+        "kpi_values": [{
+            "kpi_key": "egy_resubmission_quality_errors",
+            "target_value": 0.05,
+            "weight_applied": 0.5,
+            "direction": "lower_better",
+            "unit": "%",
+            "actual_value": 0.07,
+            "evaluation_pinned": True,
+        }],
+    }]
+    comparison = compare_scoring_basis(sep, aug)
+    assert comparison["state"] == "changed"
+    assert set(comparison["reasons"]) == {"target", "weight"}

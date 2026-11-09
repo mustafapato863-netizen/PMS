@@ -12,11 +12,54 @@ from models.models import Team, UserTeamAssignment
 
 TeamLevel = Literal["employee", "management"]
 MANAGEMENT_PERFORMANCE_LEVELS = {"Managerial", "Corporate"}
+EGYPT_RESUBMISSION_TEAM_ALIASES = frozenset({"resubmission", "re-submission egy"})
 
 
 def logical_team_name(team: Team) -> str:
     """Return the stable user-facing name shared by scoped team identities."""
     return str(team.display_name or team.name).strip()
+
+
+def is_egypt_resubmission_team(value: str | Team | None) -> bool:
+    """True when value names either confirmed Egypt Re-Submission source team alias."""
+    if value is None:
+        return False
+    name = value if isinstance(value, str) else logical_team_name(value)
+    return str(name or "").strip().casefold() in EGYPT_RESUBMISSION_TEAM_ALIASES
+
+
+def dedupe_egypt_resubmission_records(records: list) -> list:
+    """Deduplicate Egypt Resubmission / Re-Submission EGY records by employee + period + level."""
+    seen: set[tuple[str, int, str, str]] = set()
+    output = []
+    for record in records:
+        if isinstance(record, dict):
+            team_name = record.get("team")
+            employee_id = record.get("employee_id")
+            year = record.get("year")
+            month = record.get("month")
+            level = record.get("performance_level")
+        else:
+            team_name = getattr(record, "team", None)
+            employee_id = getattr(record, "employee_id", None)
+            year = getattr(record, "year", None)
+            month = getattr(record, "month", None)
+            level = getattr(record, "performance_level", None)
+        if is_egypt_resubmission_team(team_name):
+            emp_key = str(employee_id or "").strip().casefold()
+            month_key = str(month or "").strip().casefold()
+            level_key = str(level or "Employee").strip().casefold()
+            try:
+                year_key = int(year) if year is not None else 0
+            except (TypeError, ValueError):
+                year_key = 0
+            if emp_key and year_key and month_key:
+                dedupe_key = (emp_key, year_key, month_key, level_key)
+                if dedupe_key in seen:
+                    continue
+                seen.add(dedupe_key)
+        output.append(record)
+    return output
 
 
 def team_level_for_performance(performance_level: str | None) -> TeamLevel:

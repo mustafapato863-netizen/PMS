@@ -52,6 +52,7 @@ interface ScoreTrendChartProps {
   data: ScoreTrendPoint[];
   targetScore?: number;
   targetLabel?: string;
+  targetLabelPosition?: 'insideTopLeft' | 'insideTopRight' | 'insideBottomLeft' | 'insideBottomRight';
   benchmarkName?: string;
   mode?: 'actuals' | 'team_avg' | 'team_best' | 'personal_best';
   height?: number;
@@ -819,6 +820,7 @@ const ScoreTrendChart = ({
   data,
   targetScore = 80,
   targetLabel,
+  targetLabelPosition = 'insideTopRight',
   benchmarkName = 'Benchmark',
   height = 220,
   animate = true,
@@ -877,11 +879,12 @@ const ScoreTrendChart = ({
             strokeOpacity={0.4}
             label={{
               value: targetLabel ?? `Target Threshold (${targetScore}%)`,
-              position: 'insideTopLeft',
-              fontSize: 12,
+              position: targetLabelPosition,
+              fontSize: 11,
               fill: 'var(--color-meet)',
               fontWeight: 600,
               dy: -8,
+              dx: targetLabelPosition === 'insideTopLeft' ? 8 : -8,
             }}
           />
 

@@ -33,7 +33,11 @@ from models.models import Team
 from services.management_bsc_service import ManagementBSCService
 from utils.months import month_number
 from utils.report_scope import filter_records_by_scope, filter_records_by_team_levels
-from utils.team_identity import logical_team_name
+from utils.team_identity import (
+    EGYPT_RESUBMISSION_TEAM_ALIASES,
+    dedupe_egypt_resubmission_records,
+    logical_team_name,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +86,12 @@ def _field(record: Any, name: str):
     return getattr(record, name, None)
 
 
+def _team_filter_keys(team_key: str) -> set[str]:
+    if team_key in EGYPT_RESUBMISSION_TEAM_ALIASES:
+        return set(EGYPT_RESUBMISSION_TEAM_ALIASES)
+    return {team_key}
+
+
 def matches(record: Any, filters: SummaryFilters) -> bool:
     """The legacy per-record predicate, unchanged."""
     if filters.employee_id and str(_field(record, "employee_id")) != filters.employee_id:
@@ -90,7 +100,7 @@ def matches(record: Any, filters: SummaryFilters) -> bool:
         return False
     if filters.month_key and str(_field(record, "month") or "").strip().casefold() != filters.month_key:
         return False
-    if filters.team_key and str(_field(record, "team") or "").strip().casefold() != filters.team_key:
+    if filters.team_key and str(_field(record, "team") or "").strip().casefold() not in _team_filter_keys(filters.team_key):
         return False
     return not (filters.region_key and str(_field(record, "region") or "").strip().casefold() != filters.region_key)
 
@@ -121,14 +131,15 @@ def summary_records_indexed(
     if not callable(index_loader) or not callable(keys_loader):
         return None
 
-    sql_filters: dict[str, Any] = {}
+    sql_filters: dict[str, Any] = {"scope": scope}
     if filters.year is not None:
         sql_filters["year"] = filters.year
     if filters.month_key:
         sql_filters["months"] = _month_spellings(filters.month)
     if filters.team_key:
+        wanted_keys = _team_filter_keys(filters.team_key)
         sql_filters["team_names"] = sorted({
-            team.name for team in db.query(Team).all() if logical_team_name(team).strip().casefold() == filters.team_key
+            team.name for team in db.query(Team).all() if logical_team_name(team).strip().casefold() in wanted_keys
         })
     if filters.region_key:
         # Same predicate as the dashboard list: record, then employee, then team.
@@ -142,7 +153,8 @@ def summary_records_indexed(
 
     def authorize(rows):
         allowed = filter_records_by_team_levels(filter_records_by_scope(list(rows), scope), scope)
-        return [row for row in allowed if matches(row, filters)]
+        filtered = [row for row in allowed if matches(row, filters)]
+        return filtered
 
     management_payloads = [
         payload for payload in (to_payload(record) for record in authorize(

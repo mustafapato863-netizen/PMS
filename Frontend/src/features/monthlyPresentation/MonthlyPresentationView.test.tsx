@@ -1232,4 +1232,188 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
     expect(within(uaeChart).queryByText('19/20')).not.toBeInTheDocument();
     expect(localStorage.getItem('pms-monthly-pad:EGY:2026-09:compliance')).toContain('"rcm"');
   });
+
+  it('unifies Egypt Re-Submission aliases, switches between Egypt and UAE on the shared route, and supports legacy URLs', () => {
+    monthlyTestState.catalog!.data.teams.push(
+      { team: 'Resubmission', region: 'EGY', functions: ['RCM'], performance_levels: ['Employee'] },
+      { team: 'Re-Submission EGY', region: 'EGY', functions: ['RCM'], performance_levels: ['Employee'] },
+      { team: 'Re-Submission', region: 'UAE', functions: ['RCM'], performance_levels: ['Employee'] },
+    );
+    monthlyTestState.summary = {
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+      data: [
+        {
+          identity: { employee_id: 'SGHD70104', name: 'Esraa Ahmed Helmy', team: 'Resubmission', month: 'September', position: 'Resubmission Analyst' },
+          region: 'EGY',
+          year: 2026,
+          position: 'Resubmission Analyst',
+          performance_level: 'Employee',
+          raw_data: {},
+          evaluation: { score: 0.65, grade: 'E' },
+          kpi_values: [
+            { kpi_key: 'egy_resubmission_quality_errors', label: 'Quality Errors Rate', actual_value: 0.1, target_value: 0.05, unit: '%', direction: 'lower_better', weight_applied: 0.5, achievement_ratio: 0.5, contribution: 0.25, evaluation_pinned: true },
+            { kpi_key: 'egy_resubmission_tat', label: 'TAT', actual_value: 0.8, target_value: 1, unit: '%', direction: 'higher_better', weight_applied: 0.5, achievement_ratio: 0.8, contribution: 0.4, evaluation_pinned: true },
+          ],
+        },
+        {
+          identity: { employee_id: 'SGHD70105', name: 'Mona Adel', team: 'Re-Submission EGY', month: 'September', position: 'Resubmission Analyst' },
+          region: 'EGY',
+          year: 2026,
+          position: 'Resubmission Analyst',
+          performance_level: 'Employee',
+          raw_data: {},
+          evaluation: { score: 1.0, grade: 'A' },
+          kpi_values: [
+            { kpi_key: 'egy_resubmission_quality_errors', label: 'Quality Errors Rate', actual_value: 0.05, target_value: 0.05, unit: '%', direction: 'lower_better', weight_applied: 0.5, achievement_ratio: 1, contribution: 0.5, evaluation_pinned: true },
+            { kpi_key: 'egy_resubmission_tat', label: 'TAT', actual_value: 1, target_value: 1, unit: '%', direction: 'higher_better', weight_applied: 0.5, achievement_ratio: 1, contribution: 0.5, evaluation_pinned: true },
+          ],
+        },
+        {
+          identity: { employee_id: 'UAE9001', name: 'Fatima Al-Mansoori', team: 'Re-Submission', month: 'September' },
+          region: 'UAE',
+          year: 2026,
+          performance_level: 'Employee',
+          raw_data: {
+            'FinalErrorsClaims(RaisedbyQualitySameMonth)': '1',
+            QltySamples: '50',
+            'A.QualityErrorsRate': '0.02',
+            'T.QualityErrorsRate': '0.05',
+            'RejectedClaims3MonthsPrevious(byInsurance)': '5',
+            RemittanceAmount: '100',
+            'A.RejectionRateAfterRe-Submission': '0.05',
+            'T.RejectionRateAfterRe-Submission': '0.10',
+            'TotalSubmittedWithin(TAT)': '95',
+            Allocatedclaims: '100',
+            'A.TAT': '0.95',
+            'T.TAT': '0.90',
+          },
+          evaluation: { score: 0.96, grade: 'A' },
+          kpi_values: [
+            { kpi_key: 'quality_errors_rate', label: 'Quality Errors Rate', actual_value: 0.02, target_value: 0.05, unit: '%', direction: 'lower_better', weight_applied: 0.2, achievement_ratio: 1, contribution: 0.2, evaluation_pinned: true },
+            { kpi_key: 'rejection_rate_after_resubmission', label: 'Rejection Rate After Re-Submission', actual_value: 0.05, target_value: 0.1, unit: '%', direction: 'lower_better', weight_applied: 0.5, achievement_ratio: 1, contribution: 0.5, evaluation_pinned: true },
+            { kpi_key: 'tat', label: 'TAT compliance %', actual_value: 0.95, target_value: 0.9, unit: '%', direction: 'higher_better', weight_applied: 0.3, achievement_ratio: 1, contribution: 0.3, evaluation_pinned: true },
+          ],
+        },
+      ],
+    };
+
+    const { unmount } = render(
+      <MemoryRouter initialEntries={['/monthly-presentation?region=egy&deepDive=rcm&team=re-submission&period=2026-09']}>
+        <MonthlyPresentationView />
+        <LocationProbe />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByTestId('team-deep-dive-page')).toBeInTheDocument();
+    expect(within(screen.getByTestId('team-deep-dive-breadcrumb')).getByText('Re-Submission')).toBeInTheDocument();
+    expect(screen.getByTestId('team-deep-dive-score')).toHaveTextContent('78.3%');
+    expect(screen.getAllByText('Esraa Ahmed Helmy').length).toBeGreaterThan(0);
+
+    // Switch region to UAE on the shared route
+    fireEvent.click(screen.getByTestId('region-uae'));
+    expect(screen.getByTestId('location-probe').textContent).toContain('region=uae');
+    expect(screen.getByTestId('location-probe').textContent).toContain('team=re-submission');
+    expect(screen.getByTestId('team-deep-dive-score')).toHaveTextContent('100.0%');
+    expect(screen.queryByText('Esraa Ahmed Helmy')).not.toBeInTheDocument();
+    unmount();
+
+    // Legacy URLs (?team=resubmission and ?team=re-submission-egy) open Egypt Re-Submission
+    const legacy = render(
+      <MemoryRouter initialEntries={['/monthly-presentation?region=egy&deepDive=rcm&team=re-submission-egy&period=2026-09']}>
+        <MonthlyPresentationView />
+        <LocationProbe />
+      </MemoryRouter>,
+    );
+    expect(screen.getByTestId('team-deep-dive-page')).toBeInTheDocument();
+    expect(screen.getByTestId('team-deep-dive-score')).toHaveTextContent('78.3%');
+    legacy.unmount();
+  });
+
+  it('opens Call Center support position role details (Trainer, Quality Specialist) in production mode without explicitPreview', async () => {
+    monthlyTestState.catalog.data.teams = [
+      { team: 'Inbound', region: 'EGY', functions: ['Call Center'], performance_levels: ['Employee'] },
+      { team: 'Outbound', region: 'EGY', functions: ['Call Center'], performance_levels: ['Employee'] },
+      { team: 'Call Center', region: 'EGY', functions: ['Call Center'], performance_levels: ['Employee'] },
+    ];
+    monthlyTestState.catalog.data.periods = [
+      { year: 2026, month: 'September', key: '2026-09' },
+    ];
+    monthlyTestState.catalog.data.months = ['September'];
+    monthlyTestState.summary = {
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+      data: [
+        {
+          identity: { employee_id: 'SGHD70117', name: 'Hagar Ahmed Amin Diab', team: 'Call Center', month: 'September', position: 'Call Center trainer' },
+          region: 'EGY',
+          year: 2026,
+          position: 'Call Center trainer',
+          performance_level: 'Employee',
+          raw_data: { Position: 'Call Center trainer' },
+          evaluation: { score: 1.0, grade: 'A' },
+          kpi_values: [],
+        },
+        {
+          identity: { employee_id: 'SGHD70138', name: 'Fahmy Sabry El-Saadany', team: 'Call Center', month: 'September', position: 'Quality Assurance' },
+          region: 'EGY',
+          year: 2026,
+          position: 'Quality Assurance',
+          performance_level: 'Employee',
+          raw_data: { Position: 'Quality Assurance' },
+          evaluation: { score: 0.844, grade: 'C' },
+          kpi_values: [],
+        },
+        {
+          identity: { employee_id: 'SGHD70070', name: 'Adham Sameh Abdallah Arafa', team: 'Call Center', month: 'September', position: 'Inbound Team Leader' },
+          region: 'EGY',
+          year: 2026,
+          position: 'Inbound Team Leader',
+          performance_level: 'Employee',
+          raw_data: { Position: 'Inbound Team Leader' },
+          evaluation: { score: 0.934, grade: 'B' },
+          kpi_values: [],
+        },
+        {
+          identity: { employee_id: 'SGHD70001', name: 'Agent One', team: 'Inbound', month: 'September' },
+          region: 'EGY',
+          year: 2026,
+          performance_level: 'Employee',
+          raw_data: {},
+          evaluation: { score: 0.92, grade: 'B' },
+          kpi_values: [],
+        },
+      ],
+    };
+
+    // 1. Navigate to Trainer role detail in production mode (no explicitPreview data prop)
+    const trainerRender = render(
+      <MemoryRouter initialEntries={['/monthly-presentation?region=egy&deepDive=call-center&role=trainer&period=2026-09']}>
+        <MonthlyPresentationView />
+        <LocationProbe />
+      </MemoryRouter>,
+    );
+    expect(trainerRender.queryByText(/No performance data/i)).not.toBeInTheDocument();
+    expect(trainerRender.getByTestId('role-detail-page')).toBeInTheDocument();
+    expect(trainerRender.getByRole('heading', { name: 'Trainer' })).toBeInTheDocument();
+    expect(trainerRender.getAllByText('Hagar Ahmed Amin Diab').length).toBeGreaterThan(0);
+    expect(trainerRender.getByTestId('role-detail-score')).toHaveTextContent('100.0%');
+    trainerRender.unmount();
+
+    // 2. Navigate to Quality Specialist role detail
+    const qaRender = render(
+      <MemoryRouter initialEntries={['/monthly-presentation?region=egy&deepDive=call-center&role=quality-specialist&period=2026-09']}>
+        <MonthlyPresentationView />
+        <LocationProbe />
+      </MemoryRouter>,
+    );
+    expect(qaRender.queryByText(/No performance data/i)).not.toBeInTheDocument();
+    expect(qaRender.getByTestId('role-detail-page')).toBeInTheDocument();
+    expect(qaRender.getByRole('heading', { name: 'Quality Specialist' })).toBeInTheDocument();
+    expect(qaRender.getAllByText('Fahmy Sabry El-Saadany').length).toBeGreaterThan(0);
+    expect(qaRender.getByTestId('role-detail-score')).toHaveTextContent('84.4%');
+    qaRender.unmount();
+  });
 });

@@ -1,6 +1,7 @@
 import { INSIGHT_FUNCTIONS, teamBelongsToFunction, type TeamFunctionMap } from '../insights/filterCascade';
 import type { ExecutiveFunction } from './types';
 import { CALL_CENTER_TEAM, PRE_APPROVALS_UAE_TEAM, RCM_TEAM, canonicalTeamName, isCallCenterTeam, isPreApprovalsUaeTeam, isRcmTeam, teamPath } from '../../types';
+import { canonicalEgyptResubmissionTeam, isEgyptResubmissionTeam } from '../team/countryTeamIdentity';
 import { isFunctionViewerRole } from '../../lib/access';
 
 const IP_OFFSHORE_TEAM = 'Pre-Approvals IP Offshore';
@@ -15,11 +16,15 @@ export function isPreApprovalsSubTeam(team: string | null | undefined): boolean 
 }
 
 export function summaryTeamMatches(team: string, selected: string): boolean {
-  return selected === 'Pre-Approvals' ? isPreApprovalsSubTeam(team) : canonicalTeamName(team) === canonicalTeamName(selected);
+  if (selected === 'Pre-Approvals') return isPreApprovalsSubTeam(team);
+  if (isEgyptResubmissionTeam(team) || isEgyptResubmissionTeam(selected)) {
+    return isEgyptResubmissionTeam(team) && isEgyptResubmissionTeam(selected);
+  }
+  return canonicalTeamName(team) === canonicalTeamName(selected);
 }
 
 export function summaryTeamOptions(teams: string[]): string[] {
-  return [...new Set(teams.map((team) => isPreApprovalsSubTeam(team) ? 'Pre-Approvals' : canonicalTeamName(team)))].sort((a, b) => a.localeCompare(b));
+  return [...new Set(teams.map((team) => isPreApprovalsSubTeam(team) ? 'Pre-Approvals' : canonicalEgyptResubmissionTeam(canonicalTeamName(team))))].sort((a, b) => a.localeCompare(b));
 }
 
 export function preApprovalsSubTeamOptions(teams: string[]): string[] {

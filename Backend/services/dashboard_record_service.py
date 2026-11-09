@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from models.models import PerformanceRecord
 from repositories.performance_repository import PerformanceRepository as SQLPerformanceRepository
-from utils.team_identity import logical_team_name
+from utils.team_identity import dedupe_egypt_resubmission_records, logical_team_name
 from utils.regions import first_region
 from config.loader import (
     GLOBAL_KPI_ACHIEVEMENT_CAP,
@@ -361,6 +361,7 @@ _POSITION_DEPARTMENTS = frozenset({
     "submission egy",
     "coding egy",
     "resubmission",
+    "re-submission egy",
 })
 
 

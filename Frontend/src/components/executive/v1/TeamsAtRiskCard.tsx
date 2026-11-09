@@ -4,6 +4,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import type { ExecutiveTeam } from '../../../features/executive/types';
 import { teamPath, withTeamQuery } from '../../../types';
 import { presentationTeamName } from '../../../features/team/countryTeamIdentity';
+import { MONTHS } from '../../../features/executive/compose';
 import { FLAG_LABEL, FLAG_ORDER, formatShare } from './execModel';
 import { arrow, fmtScore, fmtSigned } from '../../../features/executive/format';
 import { ExecCard, ExecCardHeader, GradeSquare, ScoreText, SoftEmpty, Sparkline, StatusPill } from './ExecPrimitives';
@@ -24,13 +25,26 @@ export default function TeamsAtRiskCard({ teams, rangeLabel = null, onSelectTeam
       return left.score - right.score || left.team.localeCompare(right.team);
     });
   const head = 'text-xs font-semibold text-[var(--text-muted)]';
-  const teamHref = (team: string) => {
+  const teamHref = (team: ExecutiveTeam) => {
     const params = new URLSearchParams();
     const branch = searchParams.get('branch')?.trim().toLowerCase();
     const level = searchParams.get('level');
+    const region = searchParams.get('region')?.trim();
+    const month = searchParams.get('month')?.trim();
+    const year = searchParams.get('year')?.trim();
+    const period = searchParams.get('period')?.trim();
     if (branch && TEAM_BRANCHES.has(branch)) params.set('branch', branch);
     if (level && TEAM_LEVELS.has(level)) params.set('performance_level', level);
-    return withTeamQuery(teamPath(team), params);
+    if (region && region.toLowerCase() !== 'all') params.set('region', region);
+    else if (team.regions.length === 1) params.set('region', team.regions[0]);
+    if (month) params.set('month', month);
+    if (year) params.set('year', year);
+    if (period && /^\d{4}-(0[1-9]|1[0-2])$/.test(period)) {
+      const [pYear, pMonth] = period.split('-');
+      params.set('year', pYear);
+      params.set('month', MONTHS[Number(pMonth) - 1]);
+    }
+    return withTeamQuery(teamPath(team.source_team || team.team), params);
   };
 
   return (
@@ -70,7 +84,7 @@ export default function TeamsAtRiskCard({ teams, rangeLabel = null, onSelectTeam
                 {onSelectTeam ? (
                   <button type="button" title={`Review ${presentationTeamName(team.team, searchParams.get('region'))} on this page`} className="text-left text-[13px] font-semibold leading-[1.3] text-[var(--insights-heading)] hover:underline" onClick={() => onSelectTeam(team.team)}>{presentationTeamName(team.team, searchParams.get('region'))}</button>
                 ) : (
-                  <Link to={teamHref(team.team)} title={`View ${presentationTeamName(team.team, searchParams.get('region'))} team details`} className="text-[13px] font-semibold leading-[1.3] text-[var(--insights-heading)] hover:underline">{presentationTeamName(team.team, searchParams.get('region'))}</Link>
+                  <Link to={teamHref(team)} title={`View ${presentationTeamName(team.team, searchParams.get('region'))} team details`} className="text-[13px] font-semibold leading-[1.3] text-[var(--insights-heading)] hover:underline">{presentationTeamName(team.team, searchParams.get('region'))}</Link>
                 )}
                 <span className="truncate text-xs text-[var(--text-muted)]">{[team.function, team.regions.join(' + '), team.score_basis === 'leader_scorecard' ? 'Leader scorecard' : null].filter(Boolean).join(' · ')}</span>
                 {team.gap_share_percent != null && team.gap_share_percent > 0 && (

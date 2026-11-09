@@ -10,6 +10,7 @@ import { composeExecutiveSummary, normalizeRegion, toExecRecords } from '../exec
 import {
   businessTeamName,
   distinctCatalogTeams,
+  legacySharedTeamRedirect,
   parseTeamCountry,
   presentationTeamName,
   recordMatchesCatalogTeam,
@@ -33,7 +34,14 @@ import {
   type IndividualActionPlanCard,
   type TeamDeepDiveData,
 } from './teamDeepDiveData';
-import { buildRoleDetail, hasRoleDetailForSlug, isRoleBasedFunction, resolveRoleCards, type RoleActionDraft } from './roleDetailData';
+import {
+  buildRoleDetail,
+  hasRoleDetailForSlug,
+  isRoleBasedFunction,
+  recordMatchesRole,
+  resolveRoleCards,
+  type RoleActionDraft,
+} from './roleDetailData';
 import { MonthlyReviewLoading } from './components/MonthlyReviewLoading';
 import {
   FunctionsOverviewSection,
@@ -312,7 +320,11 @@ function MonthlyPresentationScreen({
   const rawDeepDive = (searchParams.get('deepDive') || params.functionSlug || '').trim();
   const functionSlug = rawDeepDive ? normalizeFunctionSlug(rawDeepDive) : '';
   const rawTeamParam = (searchParams.get('team') || params.teamSlug || '').trim();
-  const activeTeamSlug = rawTeamParam ? slugifyIdentifier(rawTeamParam) : '';
+  const rawTeamSlug = rawTeamParam ? slugifyIdentifier(rawTeamParam) : '';
+  const legacyTeam = rawTeamSlug ? legacySharedTeamRedirect(rawTeamSlug) : null;
+  const activeTeamSlug = legacyTeam && (!rawRegion || activeRegion === legacyTeam.region)
+    ? legacyTeam.routeId
+    : rawTeamSlug;
   const rawRoleParam = (searchParams.get('role') || '').trim();
   const activeRoleSlug = rawRoleParam ? slugifyIdentifier(rawRoleParam) : '';
 
@@ -366,10 +378,6 @@ function MonthlyPresentationScreen({
       || (parseTeamCountry(activeRegion) !== null && sameCountryBusinessTeam(record.team, activeTeamSlug, parseTeamCountry(activeRegion) as 'EGY' | 'UAE')),
     ),
     [activeRegion, activeTeamSlug, selectedPeriodRecords],
-  );
-  const currentRoleRecords = useMemo(
-    () => currentFunctionRecords.filter((record) => slugifyIdentifier(record.position ?? '') === activeRoleSlug),
-    [activeRoleSlug, currentFunctionRecords],
   );
 
   // Open the single assigned function automatically for function-scoped accounts.
@@ -556,6 +564,24 @@ function MonthlyPresentationScreen({
     return resolveRoleCards(resolvedFunctionData, authorizedRecords);
   }, [authorizedRecords, resolvedFunctionData]);
 
+  const currentRoleRecords = useMemo(() => {
+    if (!activeRoleSlug) return [];
+    const directMatches = currentFunctionRecords.filter((record) =>
+      recordMatchesRole(record, activeRoleSlug, resolvedFunctionData),
+    );
+    if (directMatches.length > 0) return directMatches;
+    const effectivePeriodKey = resolvedFunctionData?.periodKey;
+    if (effectivePeriodKey && effectivePeriodKey !== selectedPeriodKey) {
+      return authorizedRecords.filter(
+        (record) =>
+          normalizeRegion(record.region) === activeRegion &&
+          record.period.key === effectivePeriodKey &&
+          recordMatchesRole(record, activeRoleSlug, resolvedFunctionData),
+      );
+    }
+    return [];
+  }, [activeRegion, activeRoleSlug, authorizedRecords, currentFunctionRecords, resolvedFunctionData, selectedPeriodKey]);
+
   const resolvedTeamData: TeamDeepDiveData | null = useMemo(() => {
     if (!activeTeamSlug || activeRoleSlug || !functionSlug || !teamBelongsToFunction(activeTeamSlug, functionSlug, activeRegion)) return null;
     if (!explicitPreview && currentTeamRecords.length === 0) return null;
@@ -572,10 +598,10 @@ function MonthlyPresentationScreen({
   }, [activeRegion, activeRoleSlug, activeTeamSlug, authorizedRecords, currentTeamRecords.length, explicitPreview, functionSlug, selectedPeriodKey, storedActions, teamBelongsToFunction, teamDeepDiveData]);
 
   const resolvedRoleData = useMemo(() => {
-    if (!activeRoleSlug || !resolvedFunctionData || (!explicitPreview && currentRoleRecords.length === 0)) return null;
+    if (!activeRoleSlug || !resolvedFunctionData) return null;
     if (!hasRoleDetailForSlug(resolvedFunctionData, activeRoleSlug, authorizedRecords)) return null;
     return buildRoleDetail(resolvedFunctionData, activeRoleSlug, storedActions, authorizedRecords);
-  }, [activeRoleSlug, authorizedRecords, currentRoleRecords.length, explicitPreview, resolvedFunctionData, storedActions]);
+  }, [activeRoleSlug, authorizedRecords, resolvedFunctionData, storedActions]);
 
   const teamsInActiveRegion = distinctCatalogTeams(
     serverTeams.filter((team) => normalizeRegion(team.region) === activeRegion),
@@ -1029,7 +1055,13 @@ function MonthlyPresentationScreen({
   );
   const invalidScopeRequest = invalidRegionRequest || invalidFunctionRequest || invalidTeamRequest || invalidRoleRequest;
   const selectionHasData = activeRoleSlug
-    ? currentRoleRecords.length > 0
+    ? Boolean(
+        resolvedRoleData && (
+          currentRoleRecords.length > 0 ||
+          (resolvedRoleData.members && resolvedRoleData.members.length > 0) ||
+          resolvedRoleData.score > 0
+        ),
+      )
     : activeTeamSlug
       ? currentTeamRecords.length > 0
       : functionSlug
@@ -1038,7 +1070,10 @@ function MonthlyPresentationScreen({
   const noDataForSelection = !explicitPreview && !pageIsLoading && !pageHasError &&
     !hasNoAssignments && !invalidScopeRequest && !selectionHasData;
   const scopeTeamsForNoData = activeTeamSlug
-    ? teamsInCurrentFunction.filter((team) => slugifyIdentifier(team.team) === activeTeamSlug)
+    ? teamsInCurrentFunction.filter((team) =>
+        slugifyIdentifier(team.team) === activeTeamSlug
+        || (parseTeamCountry(activeRegion) !== null && sameCountryBusinessTeam(team.team, activeTeamSlug, parseTeamCountry(activeRegion) as 'EGY' | 'UAE')),
+      )
     : teamsInCurrentFunction;
   const selectedPeriodLabel = periodFromKey(selectedPeriodKey)?.label ?? selectedPeriodKey;
 

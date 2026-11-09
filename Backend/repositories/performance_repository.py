@@ -1,11 +1,12 @@
 from types import SimpleNamespace
 
 from sqlalchemy.orm import Session, selectinload
+from fastapi import HTTPException
 from utils.scoring_rules import score_percent_sql
 from repositories.base_repository import BaseRepository
 from sqlalchemy import String, and_, case, cast, false, func, or_, select, tuple_
 
-from models.models import PerformanceRecord, Employee, KPIValue, Team
+from models.models import PerformanceRecord, Employee, KPIValue, Team, UploadLog
 from utils.report_scope import FUNCTION_SCOPED_ROLES, _team_keys, selection_team_keys
 from utils.team_identity import logical_team_name
 from utils.months import MONTH_NUMBERS
@@ -36,6 +37,8 @@ def _team_filter_values(team: str) -> tuple[str, ...]:
         return MERGED_OP_FINAL_SOURCES
     if normalized == MERGED_IP_FINAL_TEAM:
         return MERGED_IP_FINAL_SOURCES
+    if normalized in {"resubmission", "re-submission egy"}:
+        return ("resubmission", "re-submission egy")
     if normalized == PRE_APPROVALS_UAE_TEAM:
         return tuple(sorted(selection_team_keys(team)))
     if normalized == 'rcm':
@@ -84,6 +87,57 @@ def month_number_sql():
 
 class PerformanceRepository(BaseRepository[PerformanceRecord]):
     """Repository for PerformanceRecord model"""
+
+    def _egypt_resubmission_duplicate_keys(self, scope: dict | None) -> list[tuple]:
+        """Resolve conflicts before user-facing filters and paging, within the authorized scope."""
+        query = (
+            self.db.query(
+                PerformanceRecord.id, PerformanceRecord.employee_id, PerformanceRecord.year,
+                PerformanceRecord.month, PerformanceRecord.performance_level,
+                Team.id.label("source_team_id"),
+                PerformanceRecord.uploaded_at, UploadLog.id.label("upload_id"),
+                UploadLog.status.label("upload_status"), UploadLog.uploaded_at.label("upload_time"),
+            )
+            .join(Team, PerformanceRecord.team_id == Team.id)
+            .join(Employee, PerformanceRecord.employee_id == Employee.id)
+            .outerjoin(UploadLog, PerformanceRecord.upload_id == UploadLog.id)
+            .filter(
+                Team.team_level == "employee",
+                _team_name_clause({"resubmission", "re-submission egy"}),
+                func.lower(func.trim(_row_region())).in_({"egy", "egypt"}),
+            )
+        )
+        rows = self._apply_scope(query, scope).all()
+        groups: dict[tuple, list] = {}
+        for row in rows:
+            month = MONTH_NUMBERS.get(str(row.month or "").strip().lower())
+            if not month:
+                continue
+            key = (row.employee_id, row.year, month, str(row.performance_level or "Employee").casefold())
+            groups.setdefault(key, []).append(row)
+
+        excluded: list[tuple] = []
+        for group in groups.values():
+            if len({row.source_team_id for row in group}) < 2:
+                continue
+            successful = [row for row in group if str(row.upload_status or "").casefold() in {"success", "completed"} and row.upload_time is not None]
+            if not successful:
+                logger.warning("Egypt Re-Submission duplicate unresolved: no successful upload evidence; record_ids=%s", [str(row.id) for row in group])
+                raise HTTPException(status_code=409, detail="Conflicting Egypt Re-Submission records lack successful upload history; contact an administrator.")
+            newest_time = max(row.upload_time for row in successful)
+            newest = [row for row in successful if row.upload_time == newest_time]
+            if len(newest) != 1:
+                logger.warning("Egypt Re-Submission duplicate unresolved: successful uploads share the latest timestamp; record_ids=%s", [str(row.id) for row in newest])
+                raise HTTPException(status_code=409, detail="Conflicting Egypt Re-Submission uploads have the same timestamp; contact an administrator.")
+            winner = newest[0]
+            discarded = [(row.id, row.year) for row in group if row.id != winner.id or row.year != winner.year]
+            excluded.extend(discarded)
+            logger.info("Egypt Re-Submission duplicate resolved: selected_record=%s selected_upload=%s discarded_records=%s", winner.id, winner.upload_id, [str(record_id) for record_id, _ in discarded])
+        return excluded
+
+    def _exclude_egypt_resubmission_duplicates(self, query, scope: dict | None):
+        excluded = self._egypt_resubmission_duplicate_keys(scope)
+        return query.filter(tuple_(PerformanceRecord.id, PerformanceRecord.year).not_in(excluded)) if excluded else query
 
     def _dashboard_query(self, *, kpi_values: bool = True):
         # Without kpi_values the KPI rows are not loaded as objects; get_kpi_value_rows reads only the columns the
@@ -256,7 +310,7 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
             .join(Team, PerformanceRecord.team_id == Team.id)
             .filter(Team.team_level == "employee")
         )
-        rows = self._apply_scope(query, scope).all()
+        rows = self._exclude_egypt_resubmission_duplicates(self._apply_scope(query, scope), scope).all()
         items = [
             {
                 "employee_id": str(employee_id),
@@ -302,7 +356,7 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
             .join(Employee, PerformanceRecord.employee_id == Employee.id)
             .filter(Team.team_level == "employee")
         )
-        query = self._apply_scope(query, scope)
+        query = self._exclude_egypt_resubmission_duplicates(self._apply_scope(query, scope), scope)
         return [str(kpi_key) for (kpi_key,) in query.distinct().order_by(KPIValue.kpi_key).all() if kpi_key]
 
     def get_dashboard_record_keys(
@@ -401,7 +455,7 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
         """get_dashboard_record_rows' rows for the given (record id, year) keys, in the order of the keys."""
         rows = []
         for start in range(0, len(keys), 500):
-            query = self._dashboard_records_query(False).filter(
+            query = self._dashboard_records_query(False, resolve_alias_duplicates=False).filter(
                 tuple_(PerformanceRecord.id, PerformanceRecord.year).in_(keys[start:start + 500])
             )
             rows.extend(self.db.connection().execute(query.statement).mappings().all())
@@ -417,6 +471,7 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
         team_names: list[str] | None = None,
         employee_code: str | None = None,
         region: str | None = None,
+        scope: dict | None = None,
         newest_first: bool = False,
         limit: int | None = None,
         offset: int = 0,
@@ -430,7 +485,7 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
         """
         connection = self.db.connection()
         query = self._dashboard_records_query(
-            False, year=year, employee_id=employee_code or None, region=region or None,
+            False, year=year, employee_id=employee_code or None, region=region or None, scope=scope,
         )
         # Optional narrowing for callers that filter by period/team: plain
         # IN predicates on the raw columns, so indexes stay usable.
@@ -448,12 +503,9 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
             )
         if limit is not None:
             query = query.limit(limit).offset(offset)
-        compiled = query.statement.compile(
-            dialect=connection.dialect, compile_kwargs={"render_postcompile": True}
-        )
-        params = compiled.construct_params()
-        arguments = tuple(params[name] for name in compiled.positiontup) if compiled.positional else params
-        rows = connection.exec_driver_sql(compiled.string, arguments).mappings().all()
+        # Execute through SQLAlchemy so UUID bind processors also run for
+        # excluded composite keys and authorization filters.
+        rows = connection.execute(query.statement).mappings().all()
         if not rows:
             return []
         employees = {
@@ -569,6 +621,7 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
         scope: dict | None = None,
         employee_search: str | None = None,
         kpi: str | None = None,
+        resolve_alias_duplicates: bool = True,
     ):
         query = self._dashboard_query(kpi_values=kpi_values)
         query = self._apply_dashboard_filters(
@@ -591,7 +644,8 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
                 KPIValue,
                 and_(KPIValue.record_id == PerformanceRecord.id, KPIValue.record_year == PerformanceRecord.year),
             ).filter(func.lower(KPIValue.kpi_key) == str(kpi).casefold())
-        return self._apply_scope(query, scope)
+        scoped = self._apply_scope(query, scope)
+        return self._exclude_egypt_resubmission_duplicates(scoped, scope) if resolve_alias_duplicates else scoped
 
     def get_dashboard_summary_rows(
         self,
@@ -652,13 +706,13 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
             ).filter(func.lower(KPIValue.kpi_key) == str(kpi).casefold())
         if max_score is not None:
             query = query.filter(PerformanceRecord.score <= max_score)
-        query = self._apply_scope(query, scope)
+        query = self._exclude_egypt_resubmission_duplicates(self._apply_scope(query, scope), scope)
         return [dict(row._mapping) for row in query.all()]
 
     def get_active_period_pairs(self, *, scope: dict | None = None) -> list[tuple[int, str]]:
         """(year, month) of scope rows with a score above zero; those rows always count under the activity rule."""
         query = self._dashboard_query().filter(PerformanceRecord.score > 0)
-        query = self._apply_scope(query, scope)
+        query = self._exclude_egypt_resubmission_duplicates(self._apply_scope(query, scope), scope)
         rows = query.with_entities(PerformanceRecord.year, PerformanceRecord.month).distinct().all()
         return [(int(row.year), str(row.month)) for row in rows]
 
@@ -707,7 +761,7 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
                 KPIValue,
                 and_(KPIValue.record_id == PerformanceRecord.id, KPIValue.record_year == PerformanceRecord.year),
             ).filter(func.lower(KPIValue.kpi_key) == str(kpi).casefold())
-        query = self._apply_scope(query, scope)
+        query = self._exclude_egypt_resubmission_duplicates(self._apply_scope(query, scope), scope)
         if exclude_record_ids:
             query = query.filter(PerformanceRecord.id.not_in(list(exclude_record_ids)))
 

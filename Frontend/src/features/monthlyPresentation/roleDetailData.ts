@@ -775,18 +775,23 @@ export function resolveRoleCards(
   return cardsFromBaseline(data);
 }
 
-function supportForSlug(data: CallCenterDeepDiveData, roleSlug: string): SupportPositionItem | undefined {
+export function supportForSlug(data: CallCenterDeepDiveData, roleSlug: string): SupportPositionItem | undefined {
   const norm = slugifyIdentifier(roleSlug);
   return data.supportPositions.find(
     (position) =>
       slugifyIdentifier(position.positionName) === norm ||
       slugifyIdentifier(position.id) === norm ||
       position.id === roleSlug ||
-      (norm.includes('team-leader') && slugifyIdentifier(position.positionName) === 'team-leader'),
+      (norm.includes('team-leader') && slugifyIdentifier(position.positionName) === 'team-leader') ||
+      (norm === 'trainer' && slugifyIdentifier(position.positionName).includes('trainer')) ||
+      ((norm === 'quality-specialist' || norm === 'qa') &&
+        (slugifyIdentifier(position.positionName).includes('quality') || slugifyIdentifier(position.positionName).includes('qa'))) ||
+      ((norm === 'workforce-planning' || norm === 'wfm') &&
+        (slugifyIdentifier(position.positionName).includes('workforce') || slugifyIdentifier(position.positionName).includes('wfm'))),
   );
 }
 
-function roleCardForSlug(cards: FunctionRoleCard[], roleSlug: string): FunctionRoleCard | undefined {
+export function roleCardForSlug(cards: FunctionRoleCard[], roleSlug: string): FunctionRoleCard | undefined {
   const slug = slugifyIdentifier(roleSlug);
   return (
     cards.find((item) => item.roleSlug === slug) ||
@@ -795,6 +800,74 @@ function roleCardForSlug(cards: FunctionRoleCard[], roleSlug: string): FunctionR
     cards.find((item) => item.members.some((member) => slugifyIdentifier(member.personName) === slug)) ||
     cards.find((item) => item.members.some((member) => namesMatch(member.personName, roleSlug)))
   );
+}
+
+/**
+ * Determine whether a measured performance record belongs to the given role or support position.
+ * Resolves title variations, support keywords (trainer, qa/quality, leader, workforce/wfm),
+ * and individual holder assignments.
+ */
+export function recordMatchesRole(
+  record: ExecRecord,
+  roleSlug: string,
+  functionData?: CallCenterDeepDiveData | null,
+): boolean {
+  const slug = slugifyIdentifier(roleSlug);
+  if (!slug) return false;
+
+  const rawPos = (record.position ?? '').trim();
+  const posSlug = slugifyIdentifier(rawPos);
+  const normTitle = normalizeRoleTitle(rawPos);
+  const normTitleSlug = slugifyIdentifier(normTitle);
+
+  // 1. Direct or normalized position slug equality
+  if (posSlug === slug || normTitleSlug === slug) {
+    return true;
+  }
+
+  // 2. Category / keyword matching for common support positions
+  if (slug === 'trainer' || slug.includes('trainer')) {
+    if (posSlug.includes('trainer') || /trainer/i.test(rawPos)) return true;
+  }
+  if (slug === 'quality-specialist' || slug === 'qa' || slug.includes('quality') || slug.includes('qa')) {
+    if (posSlug.includes('quality') || posSlug.includes('qa') || /quality|qa/i.test(rawPos)) return true;
+  }
+  if (slug === 'team-leader' || slug === 'tl' || slug.includes('leader')) {
+    if (posSlug.includes('leader') || /leader/i.test(rawPos)) return true;
+  }
+  if (slug === 'workforce-planning' || slug === 'wfm' || slug.includes('workforce')) {
+    if (posSlug.includes('workforce') || posSlug.includes('wfm') || /workforce|wfm/i.test(rawPos)) return true;
+  }
+
+  // 3. Match against support position holders or members in functionData
+  if (functionData) {
+    const support = supportForSlug(functionData, slug);
+    if (support) {
+      const holders = parseHoldersFromSupportPosition(support, functionData);
+      const recName = (record.name || '').trim();
+      const recId = (record.employeeId || '').trim();
+      for (const holder of holders) {
+        if (recId && holder.employeeId && recId.toLowerCase() === holder.employeeId.toLowerCase()) return true;
+        if (recName && holder.personName && (
+          recName.toLowerCase() === holder.personName.toLowerCase() ||
+          namesMatch(recName, holder.personName)
+        )) {
+          return true;
+        }
+      }
+    }
+
+    const cards = resolveRoleCards(functionData, [record]);
+    const matchedCard = roleCardForSlug(cards, slug);
+    if (matchedCard?.members.some((m) =>
+      (record.employeeId && m.employeeId && record.employeeId.toLowerCase() === m.employeeId.toLowerCase()) ||
+      namesMatch(record.name, m.personName)
+    )) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 /** Check a role deep link against measured role cards and known support positions. */
@@ -1433,13 +1506,21 @@ export function buildRoleDetail(
           }
         : m;
 
-    const memberRecord = records.find(
-      (rec) =>
-        rec.period.key === data.periodKey &&
-        (rec.employeeId.toLowerCase() === baseMember.employeeId.toLowerCase() ||
+    const memberRecord =
+      records.find(
+        (rec) =>
+          rec.period.key === data.periodKey &&
+          (rec.employeeId.toLowerCase() === baseMember.employeeId.toLowerCase() ||
+            rec.name.toLowerCase() === baseMember.personName.toLowerCase() ||
+            namesMatch(rec.name, baseMember.personName)),
+      ) ||
+      records
+        .filter((rec) =>
+          rec.employeeId.toLowerCase() === baseMember.employeeId.toLowerCase() ||
           rec.name.toLowerCase() === baseMember.personName.toLowerCase() ||
-          namesMatch(rec.name, baseMember.personName)),
-    );
+          namesMatch(rec.name, baseMember.personName),
+        )
+        .sort((a, b) => b.period.key.localeCompare(a.period.key))[0];
     const memberKpiRows = memberRecord ? kpiRows([memberRecord], []) : [];
     const kpiCells: RoleMemberKpiCell[] = tableKpis.map((kpi) => {
       const matchedRow = memberKpiRows.find(
@@ -1476,6 +1557,7 @@ export function buildRoleDetail(
 
     return {
       ...baseMember,
+      employeeId: memberRecord?.employeeId || baseMember.employeeId,
       kpiCells,
     };
   });

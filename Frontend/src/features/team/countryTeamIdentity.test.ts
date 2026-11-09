@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
   businessTeamName,
+  canonicalEgyptResubmissionTeam,
   countryForSharedRoute,
   countryForStoredTeam,
+  dedupeEgyptResubmissionRecords,
   distinctCatalogTeams,
+  isEgyptResubmissionTeam,
   legacySharedTeamRedirect,
   presentationTeamName,
   recordMatchesCatalogTeam,
@@ -46,10 +49,36 @@ describe('country team identity', () => {
     expect(legacySharedTeamRedirect('coding-egy')).toEqual({ routeId: 'coding', region: 'EGY' });
     expect(legacySharedTeamRedirect('submission-egy')).toEqual({ routeId: 'submission', region: 'EGY' });
     expect(legacySharedTeamRedirect('resubmission')).toEqual({ routeId: 're-submission', region: 'EGY' });
+    expect(legacySharedTeamRedirect('re-submission-egy')).toEqual({ routeId: 're-submission', region: 'EGY' });
     expect(countryForSharedRoute('coding', null, null)).toBe('UAE');
     expect(countryForSharedRoute('coding', 'egy', null)).toBe('EGY');
     expect(countryForSharedRoute('coding', 'egy', 'UAE')).toBe('UAE');
     expect(countryForSharedRoute('inbound', 'egy', null)).toBeNull();
+  });
+
+  it('leaves duplicate resolution to the server, which has upload evidence', () => {
+    expect(isEgyptResubmissionTeam('Resubmission')).toBe(true);
+    expect(isEgyptResubmissionTeam('Re-Submission EGY')).toBe(true);
+    expect(isEgyptResubmissionTeam('Re-Submission')).toBe(false);
+    expect(canonicalEgyptResubmissionTeam('Re-Submission EGY')).toBe('Resubmission');
+    expect(canonicalEgyptResubmissionTeam('Re-Submission')).toBe('Re-Submission');
+
+    const records = [
+      { employeeId: 'SGHD70104', team: 'Resubmission', period: { key: '2026-09', year: 2026, month: 'September' }, level: 'Employee' },
+      { employeeId: 'SGHD70104', team: 'Re-Submission EGY', period: { key: '2026-09', year: 2026, month: 'September' }, level: 'Employee' },
+      { employeeId: 'SGHD70105', team: 'Re-Submission EGY', period: { key: '2026-09', year: 2026, month: 'September' }, level: 'Employee' },
+      { employeeId: 'SGHD70104', team: 'Re-Submission EGY', period: { key: '2026-08', year: 2026, month: 'August' }, level: 'Employee' },
+      { employeeId: 'UAE9001', team: 'Re-Submission', period: { key: '2026-09', year: 2026, month: 'September' }, level: 'Employee' },
+    ];
+    const deduped = dedupeEgyptResubmissionRecords(records);
+    expect(deduped).toHaveLength(5);
+    expect(deduped.map((r) => `${r.employeeId}:${r.team}:${r.period.key}`)).toEqual([
+      'SGHD70104:Resubmission:2026-09',
+      'SGHD70104:Re-Submission EGY:2026-09',
+      'SGHD70105:Re-Submission EGY:2026-09',
+      'SGHD70104:Re-Submission EGY:2026-08',
+      'UAE9001:Re-Submission:2026-09',
+    ]);
   });
 
   it('does not call a team missing when either Egypt alias has a record at that level', () => {

@@ -2,10 +2,20 @@ import { describe, expect, it } from 'vitest';
 import { toExecRecords, type ExecRecord } from '../executive/compose';
 import type { AgentRecord } from '../../types';
 import type { TeamConfig } from '../../schemas/teamConfig.schema';
-import { CALL_CENTER_DEEP_DIVE_SEP_2026, HUMAN_RESOURCES_DEEP_DIVE_SEP_2026, RCM_DEEP_DIVE_SEP_2026 } from './callCenterDeepDiveData';
+import {
+  CALL_CENTER_DEEP_DIVE_SEP_2026,
+  HUMAN_RESOURCES_DEEP_DIVE_SEP_2026,
+  RCM_DEEP_DIVE_SEP_2026,
+  buildFunctionDeepDiveFromRecords,
+} from './callCenterDeepDiveData';
 import { buildRoleDetail, noteFields } from './roleDetailData';
 import { applyTeamTrendConfig, buildTeamDeepDiveFromRecords, selectedTeamConfigSource, unavailableTeamTrend } from './teamDeepDiveData';
-import { INBOUND_TEAM_CONFIG } from './callCenterTeamConfigs';
+import {
+  EGYPT_RESUBMISSION_TEAM_CONFIG,
+  INBOUND_TEAM_CONFIG,
+  UAE_RESUBMISSION_TEAM_CONFIG,
+} from './callCenterTeamConfigs';
+import { calculateAggregatedTeamPerformance, displayedTeamScore, recordsUseAppliedPin } from '../team/teamKpiAggregator';
 
 const september = { year: 2026, month: 'September', key: '2026-09' };
 
@@ -390,13 +400,16 @@ describe('team score trend', () => {
     }
   });
 
-  it('does not apply one source configuration to both Egypt re-submission aliases', () => {
+  it('applies the Egypt Resubmission configuration to both Egypt aliases and rejects UAE config on Egypt records', () => {
     const records = [scored('Resubmission', 'EGY', '2026-09', 'September', 80), scored('Re-Submission EGY', 'EGY', '2026-09', 'September', 90)];
     const dive = buildTeamDeepDiveFromRecords('re-submission', records, [], 'EGY', '2026-09');
     expect(dive.scoringRecords).toHaveLength(2);
-    const configured = applyTeamTrendConfig(dive, { ...INBOUND_TEAM_CONFIG, team: 'Resubmission', db_name: 'Resubmission' });
-    expect(configured.scoreTrend?.points.at(-1)).toMatchObject({ score: null, basisDetail: 'Scoring basis unavailable' });
-    expect(configured.summary.scoreLabel).toMatch(/unavailable/);
+    expect(selectedTeamConfigSource(dive)).toBe('Resubmission');
+    expect(dive.summary.score).toBe(85);
+    expect(dive.scoreTrend?.points.at(-1)?.score).toBe(85);
+    const uaeRejected = applyTeamTrendConfig(dive, UAE_RESUBMISSION_TEAM_CONFIG);
+    expect(uaeRejected.scoreTrend?.points.at(-1)).toMatchObject({ score: null, basisDetail: 'Scoring basis unavailable' });
+    expect(uaeRejected.summary.scoreLabel).toMatch(/unavailable/);
   });
 
   it('keeps a short history inside the six-month window', () => {
@@ -481,7 +494,7 @@ describe('team score trend', () => {
     const wrongConfig = applyTeamTrendConfig(initial, { ...config, team: 'Other', db_name: 'Other' });
     expect(wrongConfig.scoreTrend?.points.at(-1)?.score).toBeNull();
 
-    const aliasConfig = { ...config, team: 'Resubmission', db_name: 'Resubmission' };
+    const aliasConfig = { ...config, team: 'Resubmission', db_name: 'Resubmission', aliases: ['Re-Submission EGY'] };
     const aliases = toExecRecords([
       agent('a', 'August', 10, 20, 0.9, 'Re-Submission EGY'),
       agent('b', 'August', 80, 80, 0.9, 'Resubmission'),
@@ -493,18 +506,231 @@ describe('team score trend', () => {
     const aliasDive = buildTeamDeepDiveFromRecords('re-submission', aliases, [], 'EGY', '2026-09');
     expect(selectedTeamConfigSource(aliasDive)).toBe('Resubmission');
     const aliasResult = applyTeamTrendConfig(aliasDive, aliasConfig);
-    expect(aliasResult.scoreTrend?.points.slice(-4).map((point) => point.score)).toEqual([50, null, null, 90]);
-    expect(aliasResult.scoreTrend?.points.at(-2)?.basisDetail).toBe('Scoring basis unavailable');
-    expect(aliasResult.scoreTrend?.points.at(-3)?.basisDetail).toBe('Scoring basis unavailable');
+    expect(aliasResult.scoreTrend?.points.slice(-4).map((point) => point.score)).toEqual([50, 50, 40, 90]);
+    expect(aliasResult.scoreTrend?.points.at(-2)?.basisDetail).toMatch(/Applied targets and weights; current pooling rules/);
+    expect(aliasResult.scoreTrend?.points.at(-3)?.basisDetail).toMatch(/Applied targets and weights; current pooling rules/);
     expect(aliasResult.summary.score).toBe(90);
-    expect(aliasResult.scoreTrend?.changeVsPrevious).toBeNull();
+    expect(aliasResult.scoreTrend?.changeVsPrevious).toBe(50);
+    expect(aliasResult.scoreTrend?.basisNote).toMatch(/evaluation settings/i);
 
     const mixedSelected = buildTeamDeepDiveFromRecords('re-submission', [
       ...aliases,
       ...toExecRecords([agent('c', 'September', 70, 100, 1, 'Re-Submission EGY')]),
     ], [], 'EGY', '2026-09');
-    expect(selectedTeamConfigSource(mixedSelected)).toBe('');
-    expect(applyTeamTrendConfig(mixedSelected, aliasConfig).scoreTrend?.points.at(-1)?.score).toBeNull();
+    expect(selectedTeamConfigSource(mixedSelected)).toBe('Resubmission');
+    expect(applyTeamTrendConfig(mixedSelected, aliasConfig).scoreTrend?.points.at(-1)?.score).toBe(80);
+
+    // Unconfirmed multi-source teams must still report unavailable scoring basis when mixed
+    const unconfirmedMix = buildTeamDeepDiveFromRecords('pre-approvals-ip', [
+      ...toExecRecords([agent('a', 'September', 10, 20, 1, 'Pre-Approvals IP')]),
+      { ...toExecRecords([agent('b', 'September', 80, 80, 1, 'Pre-Approvals IP Offshore')])[0], team: 'Pre-Approvals IP Offshore' },
+    ], [], 'EGY', '2026-09');
+    unconfirmedMix.scoringRecords = [
+      ...toExecRecords([agent('a', 'September', 10, 20, 1, 'Pre-Approvals IP')]),
+      ...toExecRecords([agent('b', 'September', 80, 80, 1, 'Pre-Approvals IP Offshore')]),
+    ];
+    expect(selectedTeamConfigSource(unconfirmedMix)).toBe('');
+    expect(applyTeamTrendConfig(unconfirmedMix, { ...config, team: 'Pre-Approvals IP', db_name: 'Pre-Approvals IP' }).scoreTrend?.points.at(-1)?.score).toBeNull();
+  });
+
+  it('scores Egypt Re-Submission aliases separately and together, deduplicates duplicate employee records, and keeps UAE Re-Submission separate', () => {
+    const egyAgent = (
+      id: string,
+      team: 'Resubmission' | 'Re-Submission EGY',
+      month: string,
+      qualityActual: number,
+      tatActual: number,
+      qualityTarget = 0.05,
+      qualityWeight = 0.5,
+      tatWeight = 0.5,
+      pinned = true,
+    ): AgentRecord => {
+      const qAch = Math.min(1, qualityTarget / qualityActual);
+      const tAch = Math.min(1, tatActual / 1.0);
+      const score = qAch * qualityWeight + tAch * tatWeight;
+      return {
+        identity: { employee_id: id, name: `Analyst ${id}`, team, month, position: 'Resubmission Analyst' },
+        region: 'EGY',
+        year: 2026,
+        position: 'Resubmission Analyst',
+        performance_level: 'Employee',
+        raw_data: {},
+        evaluation: { score, grade: 'C' },
+        kpi_values: [
+          {
+            kpi_key: 'egy_resubmission_quality_errors',
+            label: 'Quality Errors Rate',
+            actual_value: qualityActual,
+            target_value: qualityTarget,
+            unit: '%',
+            direction: 'lower_better',
+            weight_applied: qualityWeight,
+            achievement_ratio: qAch,
+            contribution: qAch * qualityWeight,
+            evaluation_pinned: pinned,
+          },
+          {
+            kpi_key: 'egy_resubmission_rejection',
+            label: 'Rejection Rate After Re-Submission',
+            actual_value: 0,
+            target_value: 0.6,
+            unit: '%',
+            direction: 'lower_better',
+            weight_applied: 0,
+            achievement_ratio: 1,
+            contribution: 0,
+            evaluation_pinned: pinned,
+            view_only: true,
+          },
+          {
+            kpi_key: 'egy_resubmission_tat',
+            label: 'TAT',
+            actual_value: tatActual,
+            target_value: 1.0,
+            unit: '%',
+            direction: 'higher_better',
+            weight_applied: tatWeight,
+            achievement_ratio: tAch,
+            contribution: tAch * tatWeight,
+            evaluation_pinned: pinned,
+          },
+        ],
+      } as unknown as AgentRecord;
+    };
+
+    const uaeAgent = (id: string, month: string): AgentRecord => ({
+      identity: { employee_id: id, name: `UAE ${id}`, team: 'Re-Submission', month },
+      region: 'UAE',
+      year: 2026,
+      performance_level: 'Employee',
+      raw_data: {
+        'FinalErrorsClaims(RaisedbyQualitySameMonth)': '1',
+        QltySamples: '50',
+        'A.QualityErrorsRate': '0.02',
+        'T.QualityErrorsRate': '0.05',
+        'RejectedClaims3MonthsPrevious(byInsurance)': '5',
+        RemittanceAmount: '100',
+        'A.RejectionRateAfterRe-Submission': '0.05',
+        'T.RejectionRateAfterRe-Submission': '0.10',
+        'TotalSubmittedWithin(TAT)': '95',
+        Allocatedclaims: '100',
+        'A.TAT': '0.95',
+        'T.TAT': '0.90',
+      },
+      evaluation: { score: 0.96, grade: 'A' },
+      kpi_values: [
+        {
+          kpi_key: 'quality_errors_rate',
+          label: 'Quality Errors Rate',
+          actual_value: 0.02,
+          target_value: 0.05,
+          unit: '%',
+          direction: 'lower_better',
+          weight_applied: 0.2,
+          achievement_ratio: 1,
+          contribution: 0.2,
+          evaluation_pinned: true,
+        },
+        {
+          kpi_key: 'rejection_rate_after_resubmission',
+          label: 'Rejection Rate After Re-Submission',
+          actual_value: 0.05,
+          target_value: 0.1,
+          unit: '%',
+          direction: 'lower_better',
+          weight_applied: 0.5,
+          achievement_ratio: 1,
+          contribution: 0.5,
+          evaluation_pinned: true,
+        },
+        {
+          kpi_key: 'tat',
+          label: 'TAT compliance %',
+          actual_value: 0.95,
+          target_value: 0.9,
+          unit: '%',
+          direction: 'higher_better',
+          weight_applied: 0.3,
+          achievement_ratio: 1,
+          contribution: 0.3,
+          evaluation_pinned: true,
+        },
+      ],
+    } as unknown as AgentRecord);
+
+    // 1. Each Egypt alias separately (June: Resubmission only; July: Re-Submission EGY only)
+    // 2. Missing month (May has no records -> null gap)
+    // 3. Both aliases in the same month (September) + duplicate employee record for SGHD70104
+    const rawAgents: AgentRecord[] = [
+      egyAgent('SGHD70104', 'Resubmission', 'April', 0.05, 0.80, 0.05, 0.5, 0.5, false), // unpinned historical month -> 90.0%
+      // May is missing -> null gap
+      egyAgent('SGHD70104', 'Resubmission', 'June', 0.05, 0.90), // Resubmission only -> 95.0%
+      egyAgent('SGHD70104', 'Re-Submission EGY', 'July', 0.05, 0.86), // Re-Submission EGY only -> 93.0%
+      egyAgent('SGHD70104', 'Re-Submission EGY', 'August', 0.10, 0.80, 0.08, 0.4, 0.6), // historical target 0.08 & weight 0.4/0.6 -> (0.8*0.4 + 0.8*0.6)=80.0%
+      egyAgent('SGHD70104', 'Resubmission', 'September', 0.10, 0.80), // 0.5*0.5 + 0.8*0.5 = 65.0%
+      egyAgent('SGHD70105', 'Re-Submission EGY', 'September', 0.05, 1.00), // second employee under alias -> 100.0%
+      uaeAgent('UAE9001', 'September'),
+    ];
+
+    // The API has already resolved conflicting alias rows using upload evidence.
+    const execRecords = toExecRecords(rawAgents);
+    const egyptDive = buildTeamDeepDiveFromRecords('re-submission', execRecords, [], 'EGY', '2026-09');
+    const configuredEgypt = applyTeamTrendConfig(egyptDive, EGYPT_RESUBMISSION_TEAM_CONFIG);
+    const fnDiveEgypt = buildFunctionDeepDiveFromRecords('rcm', execRecords, [], 'EGY', '2026-09');
+    const fnCardEgypt = fnDiveEgypt.agentTeams.find((t) => t.teamSlug === 're-submission');
+
+    // Deduplicated headcount in September is 2 (SGHD70104 + SGHD70105), not 3
+    expect(configuredEgypt.summary.headcount).toBe(2);
+    expect(fnCardEgypt?.headcount).toBe(2);
+    expect(fnCardEgypt?.teamName).toBe('Re-Submission');
+
+    // Dashboard pooled score for September across SGHD70104 (quality 0.10, tat 0.80) and SGHD70105 (quality 0.05, tat 1.00):
+    // Average quality actual = 0.075 vs target 0.05 -> achievement 0.05 / 0.075 = 66.6667% * 0.5 = 33.3333%
+    // Average TAT actual = 0.90 vs target 1.00 -> achievement 90.0% * 0.5 = 45.0%
+    // Pooled score = 78.3%
+    const sepDedupedAgents = [
+      egyAgent('SGHD70104', 'Resubmission', 'September', 0.10, 0.80),
+      egyAgent('SGHD70105', 'Re-Submission EGY', 'September', 0.05, 1.00),
+    ];
+    const dashboardPooled = calculateAggregatedTeamPerformance(sepDedupedAgents, EGYPT_RESUBMISSION_TEAM_CONFIG);
+    const dashboardScore = Math.round(
+      displayedTeamScore(
+        dashboardPooled?.score,
+        (65 + 100) / 2,
+        recordsUseAppliedPin(sepDedupedAgents),
+      ) * 10,
+    ) / 10;
+
+    expect(dashboardScore).toBe(78.3);
+    // Agreement across Function Deep Dive card, Team Deep Dive card, 6-month trend selected point, and Team Dashboard
+    expect(configuredEgypt.summary.score).toBe(dashboardScore);
+    expect(egyptDive.summary.score).toBe(dashboardScore);
+    expect(fnCardEgypt?.score).toBe(dashboardScore);
+    expect(configuredEgypt.scoreTrend?.points.find((p) => p.selected)?.score).toBe(dashboardScore);
+
+    // 6-month trend: Apr (90), May (null gap), Jun (95), Jul (93), Aug (80), Sep (78.3)
+    expect(configuredEgypt.scoreTrend?.points.map((p) => p.score)).toEqual([90, null, 95, 93, 80, 78.3]);
+    expect(configuredEgypt.scoreTrend?.points[0]?.basisDetail).toBe(
+      'Dashboard calculation; current settings used, historical settings unavailable',
+    );
+    expect(configuredEgypt.scoreTrend?.points[1]?.basisDetail).toBeUndefined();
+    expect(configuredEgypt.scoreTrend?.points[4]?.basisDetail).toBe(
+      'Applied targets and weights; current pooling rules',
+    );
+    expect(configuredEgypt.scoreTrend?. basisNote).toMatch(/evaluation settings/i);
+
+    // UAE Re-Submission stays separate with its own config and 100% score
+    const uaeDive = buildTeamDeepDiveFromRecords('re-submission', execRecords, [], 'UAE', '2026-09');
+    const configuredUae = applyTeamTrendConfig(uaeDive, UAE_RESUBMISSION_TEAM_CONFIG);
+    expect(configuredUae.summary.headcount).toBe(1);
+    expect(configuredUae.summary.score).toBe(100);
+    expect(configuredUae.scoreTrend?.points.map((p) => p.score)).toEqual([null, null, null, null, null, 100]);
+
+    // Legacy slugs ('resubmission' and 're-submission-egy') resolve the same Egypt records
+    const legacyResub = buildTeamDeepDiveFromRecords('resubmission', execRecords, [], 'EGY', '2026-09');
+    const legacyResubEgy = buildTeamDeepDiveFromRecords('re-submission-egy', execRecords, [], 'EGY', '2026-09');
+    expect(legacyResub.summary.score).toBe(dashboardScore);
+    expect(legacyResubEgy.summary.score).toBe(dashboardScore);
   });
   it('marks a comparison when the scoring weight changed', () => {
     const light = [{ ...kpi('quality', 'Quality', 80, 100, 'higher_better', 0.8), evaluation_pinned: true, weight_applied: 0.4 }];

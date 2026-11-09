@@ -7,10 +7,22 @@ import {
 } from '../executive/compose';
 import { executiveFunctionForTeam } from '../executive/functions';
 import type { TeamConfig } from '../../schemas/teamConfig.schema';
-import { businessTeamName, sameCountryBusinessTeam, sourceNamesFor } from '../team/countryTeamIdentity';
+import {
+  businessTeamName,
+  canonicalEgyptResubmissionTeam,
+  dedupeEgyptResubmissionRecords,
+  isEgyptResubmissionTeam,
+  sameCountryBusinessTeam,
+  sourceNamesFor,
+} from '../team/countryTeamIdentity';
 import { compareScoringBasis } from '../evaluation/scoringBasisComparison';
 import { calculateAggregatedTeamPerformance, channelBoardScore, displayedTeamScore, preApprovalsLeaderTeamTotal, recordsUseAppliedPin } from '../team/teamKpiAggregator';
-import { INBOUND_TEAM_CONFIG, OUTBOUND_TEAM_CONFIG } from './callCenterTeamConfigs';
+import {
+  EGYPT_RESUBMISSION_TEAM_CONFIG,
+  INBOUND_TEAM_CONFIG,
+  OUTBOUND_TEAM_CONFIG,
+  UAE_RESUBMISSION_TEAM_CONFIG,
+} from './callCenterTeamConfigs';
 import type { ExecutivePeriod } from '../executive/types';
 import { gradeForScore, type GradeLetter } from './monthlyOverviewData';
 import {
@@ -165,20 +177,44 @@ export interface TeamScoreTrend {
   basisNote: string | null;
 }
 
-function officialTeamMonthScore(records: ExecRecord[], canonicalTeam: string, teamConfig?: TeamConfig): number | null {
+function defaultResubmissionConfig(records: ExecRecord[]): TeamConfig | undefined {
+  if (!records.length) return undefined;
+  const candidate = records.every((record) => isEgyptResubmissionTeam(record.team))
+    ? EGYPT_RESUBMISSION_TEAM_CONFIG
+    : records.every((record) => record.team.trim().toLowerCase() === 're-submission')
+      ? UAE_RESUBMISSION_TEAM_CONFIG
+      : undefined;
+  if (!candidate) return undefined;
+  const norm = (value: string | undefined) => (value ?? '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '');
+  const configuredKeys = new Set(
+    candidate.kpis.flatMap((kpi) => [norm(kpi.key), norm(kpi.label)]),
+  );
+  const hasMatchingKpi = records.some((record) =>
+    record.kpis.some((kpi) => configuredKeys.has(norm(kpi.kpi_key)) || configuredKeys.has(norm(kpi.label)))
+    || (record.rawAgent?.kpi_values ?? []).some((kpi) => configuredKeys.has(norm(kpi.kpi_key)) || configuredKeys.has(norm(kpi.label))),
+  );
+  return hasMatchingKpi ? candidate : undefined;
+}
+
+export function defaultTeamTrendConfig(data: TeamDeepDiveData): TeamConfig | undefined {
+  return defaultResubmissionConfig(data.scoringRecords ?? []);
+}
+
+export function officialTeamMonthScore(records: ExecRecord[], canonicalTeam: string, teamConfig?: TeamConfig): number | null {
   if (!records.length) return null;
   const leader = preApprovalsLeaderTeamTotal(records);
   if (leader !== null) return round1(leader);
   const agents = records.map((record) => record.rawAgent).filter((agent): agent is AgentRecord => Boolean(agent));
   const average = mean(records.map((record) => record.score));
-  const config = teamConfig ?? (canonicalTeam === 'Inbound'
+  const resolvedTeamConfig = teamConfig ?? defaultResubmissionConfig(records);
+  const config = resolvedTeamConfig ?? (canonicalTeam === 'Inbound'
     ? INBOUND_TEAM_CONFIG
     : canonicalTeam === 'Outbound'
       ? OUTBOUND_TEAM_CONFIG
       : undefined);
-  if (teamConfig) {
+  if (resolvedTeamConfig) {
     if (agents.length !== records.length || average === null) return null;
-    const pooled = calculateAggregatedTeamPerformance(agents, teamConfig);
+    const pooled = calculateAggregatedTeamPerformance(agents, resolvedTeamConfig);
     return pooled == null || pooled.kpis.size === 0 ? null : round1(displayedTeamScore(pooled.score, average, recordsUseAppliedPin(agents)));
   }
   if (config && agents.length > 0 && average !== null) {
@@ -191,8 +227,9 @@ function officialTeamMonthScore(records: ExecRecord[], canonicalTeam: string, te
 function singleSourceTeam(records: ExecRecord[]): string | null {
   const names = new Map<string, string>();
   for (const record of records) {
-    const name = record.team.trim();
-    if (!name) return null;
+    const rawName = record.team.trim();
+    if (!rawName) return null;
+    const name = canonicalEgyptResubmissionTeam(rawName);
     names.set(name.toLowerCase(), name);
   }
   return names.size === 1 ? [...names.values()][0] : null;
@@ -204,7 +241,16 @@ export function selectedTeamConfigSource(data: TeamDeepDiveData): string {
 
 function configMatchesSource(config: TeamConfig, source: string): boolean {
   const key = source.trim().toLowerCase();
-  return [config.team, config.db_name].some((name) => name?.trim().toLowerCase() === key);
+  const candidates = [config.team, config.db_name, ...(config.aliases ?? [])]
+    .filter((name): name is string => Boolean(name))
+    .map((name) => name.trim().toLowerCase());
+  if (isEgyptResubmissionTeam(source)) {
+    return candidates.some((name) => isEgyptResubmissionTeam(name));
+  }
+  if (key === 're-submission') {
+    return candidates.includes('re-submission');
+  }
+  return candidates.includes(key);
 }
 
 function buildTeamScoreTrend(records: ExecRecord[], effective: ExecutivePeriod, canonicalTeam: string, teamConfig?: TeamConfig): TeamScoreTrend {
@@ -212,9 +258,10 @@ function buildTeamScoreTrend(records: ExecRecord[], effective: ExecutivePeriod, 
   const points = periods.map((period) => {
     const monthRecords = records.filter((record) => record.period.key === period.key);
     const source = singleSourceTeam(monthRecords);
-    const sourceSupported = !teamConfig || (source !== null && configMatchesSource(teamConfig, source));
+    const resolvedConfig = teamConfig ?? defaultResubmissionConfig(monthRecords);
+    const sourceSupported = !resolvedConfig ? source !== null : (source !== null && configMatchesSource(resolvedConfig, source));
     const leader = sourceSupported ? preApprovalsLeaderTeamTotal(monthRecords) : null;
-    const score = sourceSupported ? officialTeamMonthScore(monthRecords, canonicalTeam, teamConfig) : null;
+    const score = sourceSupported ? officialTeamMonthScore(monthRecords, canonicalTeam, resolvedConfig) : null;
     const allPinned = monthRecords.length > 0 && monthRecords.every((record) => {
       const rows = record.rawAgent?.kpi_values?.filter((row) => (row.weight_applied ?? 0) > 0) ?? [];
       return rows.length > 0 && rows.every((row) => row.evaluation_pinned === true);
@@ -226,7 +273,7 @@ function buildTeamScoreTrend(records: ExecRecord[], effective: ExecutivePeriod, 
       selected: period.key === effective.key,
       basisDetail: monthRecords.length === 0 ? undefined
         : score === null ? 'Scoring basis unavailable'
-          : leader === null && teamConfig
+          : leader === null && resolvedConfig
             ? allPinned ? 'Applied targets and weights; current pooling rules' : 'Dashboard calculation; current settings used, historical settings unavailable'
             : undefined,
     };
@@ -1196,7 +1243,10 @@ function teamFromBaseline(
     label: item.teamName,
   }));
   const people = located.data.agentsNeedingAttention.filter(
-    (agent) => agent.teamSlug === team.teamSlug || slugifyIdentifier(agent.team) === team.teamSlug,
+    (agent) =>
+      agent.teamSlug === team.teamSlug
+      || slugifyIdentifier(agent.team) === team.teamSlug
+      || slugifyIdentifier(agent.team) === slugifyIdentifier(team.canonicalTeam),
   );
   const kpis = located.data.keyKpis.slice(0, 4).map((kpi) => kpiFromBaseline(kpi, team.headcount));
   const agentsAverageOrBelow: AgentAverageOrBelowRow[] = people.map((agent) => ({
@@ -1291,13 +1341,22 @@ function teamFromBaseline(
 }
 
 function recordsForSlug(allRecords: ExecRecord[], teamSlug: string, canonicalTeam: string, region: 'EGY' | 'UAE'): ExecRecord[] {
-  return allRecords.filter(
-    (record) =>
+  const knownCountrySources = sourceNamesFor(teamSlug, region).length > 0 || sourceNamesFor(canonicalTeam, region).length > 0;
+  const filtered = allRecords.filter((record) => {
+    if (knownCountrySources) {
+      return (
+        sameCountryBusinessTeam(record.team, teamSlug, region)
+        || sameCountryBusinessTeam(record.team, canonicalTeam, region)
+      );
+    }
+    return (
       slugifyIdentifier(record.team) === teamSlug
       || record.team.toLowerCase() === canonicalTeam.toLowerCase()
       || sameCountryBusinessTeam(record.team, teamSlug, region)
-      || sameCountryBusinessTeam(record.team, canonicalTeam, region),
-  );
+      || sameCountryBusinessTeam(record.team, canonicalTeam, region)
+    );
+  });
+  return dedupeEgyptResubmissionRecords(filtered);
 }
 
 /** A leader scorecard month uses that scorecard. A month without one keeps everyone on the team. */
@@ -1317,7 +1376,7 @@ function buildGenericTeamDeepDive(
   const sourceName = sourceNamesFor(teamSlug, region)[0];
   const lookupSlug = sourceName ? slugifyIdentifier(sourceName) : teamSlug;
   const located = region === 'UAE' ? null : locateBaselineTeam(lookupSlug);
-  const canonicalTeam = located?.data.agentTeams[located.teamIndex].canonicalTeam ?? teamSlug;
+  const canonicalTeam = located?.data.agentTeams[located.teamIndex].canonicalTeam ?? sourceName ?? teamSlug;
   const teamRecords = recordsForSlug(allRecords, teamSlug, canonicalTeam, region);
   if (!teamRecords.length) {
     const requested = requestedPeriodKey ? periodFromKey(requestedPeriodKey) : null;
@@ -1387,10 +1446,13 @@ function buildGenericTeamDeepDive(
     'Team';
   const fnSlug = located?.data.functionSlug || slugifyIdentifier(fnName);
   const siblingSource = allRecords.filter((record) => executiveFunctionForTeam(record.team) === fnName);
-  const siblingNames = [...new Set((siblingSource.length ? siblingSource : current).map((record) => record.team))];
+  const siblingNames = [...new Set((siblingSource.length ? siblingSource : current).map((record) => canonicalEgyptResubmissionTeam(record.team)))];
   const siblingTeams: TeamSibling[] =
     located?.data.agentTeams.map((team) => ({ slug: team.teamSlug, label: team.teamName })) ||
-    siblingNames.map((name) => ({ slug: slugifyIdentifier(name), label: name }));
+    siblingNames.map((name) => ({
+      slug: isEgyptResubmissionTeam(name) ? 're-submission' : slugifyIdentifier(name),
+      label: isEgyptResubmissionTeam(name) ? 'Re-Submission' : name,
+    }));
   const currentKpis = kpiRows(recordsForTeamKpis(current), recordsForTeamKpis(before)).slice(0, 4);
   const sixPeriods = trailingPeriods(effective, 6);
   const kpis: TeamKpiItem[] = currentKpis.map((row) => {
