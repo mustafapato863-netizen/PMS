@@ -13,11 +13,13 @@ from config.database import Base
 from models.models import (
     Action,
     Employee,
+    EmployeeUploadBatch,
     KPIValue,
     ManagementKPIConfig,
     ManagementKPISnapshot,
     PerformanceRecord,
     Team,
+    UploadLog,
     User,
     UserTeamAssignment,
 )
@@ -59,6 +61,8 @@ def _make_db():
         bind=engine,
         tables=[
             Team.__table__,
+            EmployeeUploadBatch.__table__,
+            UploadLog.__table__,
             Employee.__table__,
             PerformanceRecord.__table__,
             KPIValue.__table__,

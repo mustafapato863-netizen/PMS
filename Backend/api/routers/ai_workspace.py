@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session
 
 from api.dependencies import require_authenticated_scope, require_role
-from services.ai.feature_gate import require_ai_enabled
+from services.ai.feature_gate import require_ai_admin, require_ai_enabled
 from config.database import get_db, release_read_transaction
 from models.ai_schemas import (
     AiCatalogResponse,
@@ -50,20 +50,13 @@ from services.insights_service import InsightAccessError, InsightValidationError
 router = APIRouter(
     prefix="/ai",
     tags=["PMS AI Workspace"],
-    dependencies=[Depends(require_ai_enabled)],
+    dependencies=[Depends(require_ai_enabled), Depends(require_ai_admin)],
 )
 
+# The router dependency is the pilot boundary. This list stays Admin-only so a
+# route-level check cannot admit a wider role if the router dependency is copied.
 AI_WORKSPACE_ROLES = [
     "Admin",
-    "General Manager",
-    "Manager",
-    "Executive",
-    "Performance Team",
-    "Regional Manager",
-    "Branch Director",
-    "Function Director",
-    "Function Viewer",
-    "Employee",
 ]
 
 

@@ -303,7 +303,7 @@ def test_summary_records_rate_limit_returns_429(auth_client, monkeypatch):
         mode="enforce",
         limiter=RateLimiter(primary=None, fallback=InProcessCounterStore(max_keys=100), clock=time.time,
                             cool_down_seconds=1),
-        rules=policy.RuleSet.from_limits(policy.RateLimits(*(10_000,) * 7)),
+        rules=policy.RuleSet.from_limits(policy.RateLimits(*(10_000,) * 8)),
         trusted_networks=(),
     )
     previous = policy.set_runtime(runtime)

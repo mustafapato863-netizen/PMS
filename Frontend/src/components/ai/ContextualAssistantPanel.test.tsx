@@ -44,8 +44,22 @@ const basePageContext: PageContextV1 = {
 describe('ContextualAssistantPanel', () => {
   beforeEach(() => {
     mockApiFetch.mockReset();
-    mockRole = 'Manager';
-    mockUserId = 'user-manager-1';
+    mockRole = 'Admin';
+    mockUserId = 'user-admin-1';
+  });
+
+  it('hides every entry point for non-admin roles even when AI is marked available', () => {
+    for (const role of ['Manager', 'Employee', 'General Manager', 'Executive', 'Performance Team', 'Function Viewer']) {
+      mockRole = role;
+      const view = render(
+        <MemoryRouter>
+          <ContextualAssistantPanel pageContext={basePageContext} />
+        </MemoryRouter>,
+      );
+      expect(screen.queryByTestId('contextual-assistant-root')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('contextual-assistant-launcher')).not.toBeInTheDocument();
+      view.unmount();
+    }
   });
 
   it('opens the panel and displays the active page context banner and starter prompts', async () => {
@@ -204,89 +218,15 @@ describe('ContextualAssistantPanel', () => {
     expect(onActionSaved).toHaveBeenCalledTimes(1);
   });
 
-  it('hides Review action button for read-only users and displays read-only notice', async () => {
+  it('does not render the assistant or call AI for a read-only non-admin', () => {
     mockRole = 'Function Viewer';
-    const user = userEvent.setup();
-
-    mockApiFetch.mockResolvedValue({
-      success: true,
-      data: {
-        trace_id: 'trace-proposal-ro',
-        conversation_id: 'conv-ro',
-        turn_id: 'turn-ro',
-        outcome: 'answer',
-        capability_mode: 'proposal',
-        headline: 'In September 2026, Booking Rate is 42.1% vs 45.0% target.',
-        narrative_bullets: [],
-        visual_cards: [],
-        citations: [],
-        deep_links: [],
-        suggested_followups: [],
-        resolved_session_state: {
-          function: 'Call Center',
-          team: 'Inbound',
-          performance_level: 'Employee',
-          month: 'September',
-          year: 2026,
-        },
-        domain_guardrail_notes: [],
-        tool_calls: [],
-        provider_used: 'deterministic',
-        model_used: 'pms-deterministic-v1',
-        latency_ms: 10,
-        action_proposal: {
-          proposal_id: 'prop-ro',
-          title: 'Booking Rate Coaching Plan',
-          scope_summary: 'Inbound · September 2026',
-          team: 'Inbound',
-          performance_level: 'Employee',
-          period: '2026-09',
-          month: 'September',
-          year: 2026,
-          metric_id: 'Booking',
-          linked_kpi_key: 'Booking',
-          metric_display_name: 'Booking Rate',
-          actual_display: '42.1%',
-          target_display: '45.0%',
-          gap_display: '-2.9 pts',
-          sample_size: 8,
-          observed_facts: ['Booking Rate is 42.1% vs 45.0% target.'],
-          hypothesis: 'Verify call audit findings.',
-          suggested_steps: ['Inspect call handling.'],
-          success_measure: 'Reach >= 45.0% Booking Rate.',
-          action_type: 'Coaching',
-          priority: 'High',
-          proposed_action_text: 'Review Booking Rate.',
-          proposed_root_cause_note: 'Observed KPI gap.',
-          evidence_revision: 'rev-1',
-          can_user_create_action: false,
-          persisted_status_on_save: 'Open',
-          assignable_owners: [],
-        },
-      },
-    });
-
     render(
       <MemoryRouter>
         <ContextualAssistantPanel pageContext={basePageContext} />
       </MemoryRouter>,
     );
-
-    await user.click(screen.getByTestId('contextual-assistant-launcher'));
-    expect(
-      screen.queryByText('Propose a corrective action for Booking Rate'),
-    ).not.toBeInTheDocument();
-
-    await user.type(
-      screen.getByTestId('contextual-assistant-input'),
-      'Propose a corrective action for Booking Rate',
-    );
-    await user.click(screen.getByTestId('contextual-assistant-send'));
-
-    await waitFor(() => {
-      expect(screen.getByText(/Read-only role: share this proposal/i)).toBeInTheDocument();
-    });
-    expect(screen.queryByTestId('contextual-assistant-review-action-btn')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('contextual-assistant-root')).not.toBeInTheDocument();
+    expect(mockApiFetch).not.toHaveBeenCalled();
   });
 
   it('ignores late responses when pageContext changes mid-request', async () => {

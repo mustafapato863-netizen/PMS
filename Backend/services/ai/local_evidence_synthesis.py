@@ -6,22 +6,20 @@ not a general-purpose factuality verifier or an authorization boundary.
 """
 from __future__ import annotations
 
-import ipaddress
 import json
 import math
-import os
 import re
-import threading
-import time
-import urllib.parse
-import urllib.request
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from services.ai.local_model_router import _NoRedirect
+from services.ai.llm_client import (
+    chat_completion,
+    configured_model_name,
+    local_synthesis_enabled,
+    synthesis_timeout_seconds,
+)
 from services.ai.providers import NarrativeSynthesisResult, ProviderCallMetrics
 
-_model_slot = threading.BoundedSemaphore(1)
 _number = re.compile(r"\d[\d,]*(?:\.\d+)?")
 _dangerous = re.compile(r"[<>`\n\r]|\b(?:less|fewer|lower|lowest|least|equal|same|tied|tie|not|no|never|without|neither|declin(?:e|ed)|dropped|increased|decreased|difference|gap|percent|percentage)\b|%", re.I)
 _allowed_words = frozenset("a an and as at bookings booking by compared count during for from had has have in is leads leading led more most number of on recorded respectively the than to total vs was were which with s".split())
@@ -40,10 +38,6 @@ class OverallScoreFacts:
     scope: str
     branch: str
     score: float
-
-
-def local_synthesis_enabled() -> bool:
-    return os.environ.get("PMS_AI_LOCAL_SYNTHESIS_ENABLED", "false").strip().casefold() in {"1", "true", "yes", "on"}
 
 
 def extract_branch_booking_facts(question: str, digests: list[dict[str, Any]]) -> BranchBookingFacts | None:
@@ -85,8 +79,13 @@ def _safe_fallback(facts: BranchBookingFacts) -> str:
     return f"{facts.scope} bookings in {facts.period}: {detail}."
 
 
+def _ascii_only(answer: str) -> bool:
+    """Reject non-ASCII so a model cannot smuggle a second number as a unicode digit."""
+    return answer.isascii()
+
+
 def _validated_answer(answer: Any, facts: BranchBookingFacts) -> bool:
-    if not isinstance(answer, str) or not 1 <= len(answer) <= 320 or _dangerous.search(answer):
+    if not isinstance(answer, str) or not 1 <= len(answer) <= 320 or not _ascii_only(answer) or _dangerous.search(answer):
         return False
     # Do not allow the model to introduce another branch, identity, score,
     # percentage or number. Only PMS supplied branch counts and the year exist.
@@ -151,7 +150,7 @@ def extract_overall_score_facts(question: str, digests: list[dict[str, Any]]) ->
 
 
 def _validated_score_answer(answer: Any, facts: OverallScoreFacts) -> bool:
-    if not isinstance(answer, str) or not 1 <= len(answer) <= 260 or re.search(r"[<>`\n\r]|\b(?:not|no|never|without|higher|lower|above|below|target|gap|increase|decrease|improved|declined|best|worst|grade|versus|compared|more|less)\b", answer, re.I):
+    if not isinstance(answer, str) or not 1 <= len(answer) <= 260 or not _ascii_only(answer) or re.search(r"[<>`\n\r]|\b(?:not|no|never|without|higher|lower|above|below|target|gap|increase|decrease|improved|declined|best|worst|grade|versus|compared|more|less)\b", answer, re.I):
         return False
     lower = answer.casefold()
     if facts.scope.casefold() not in lower or facts.period.casefold() not in lower:
@@ -181,48 +180,57 @@ def _generate_local_answer(
     metrics = ProviderCallMetrics(provider_used="deterministic", model_used=fallback_model, fallback_outcome="not_called")
 
     def result(answer: str, provider: str) -> NarrativeSynthesisResult:
-        return NarrativeSynthesisResult(headline=answer, narrative_bullets=[], suggested_followups=[], provider_used=provider, model_used=("qwen3-local" if provider == "llama_cpp" else fallback_model), metrics=metrics)
+        model_name = configured_model_name() if provider == "llama_cpp" else fallback_model
+        return NarrativeSynthesisResult(
+            headline=answer,
+            narrative_bullets=[],
+            suggested_followups=[],
+            provider_used=provider,
+            model_used=model_name,
+            metrics=metrics,
+        )
 
-    url = os.environ.get("PMS_AI_LOCAL_ROUTER_URL", "http://127.0.0.1:18080/v1/chat/completions").strip()
+    schema = {
+        "name": "grounded_answer",
+        "strict": True,
+        "schema": {
+            "type": "object",
+            "properties": {"answer": {"type": "string"}},
+            "required": ["answer"],
+            "additionalProperties": False,
+        },
+    }
+    call = chat_completion(
+        messages=[
+            {"role": "system", "content": instruction},
+            {"role": "user", "content": json.dumps({"question": question[:600], **facts_payload}, ensure_ascii=False)},
+        ],
+        max_tokens=120,
+        temperature=0,
+        response_format={"type": "json_schema", "json_schema": schema},
+        timeout_seconds=synthesis_timeout_seconds(),
+        purpose="synthesis",
+    )
+    metrics.provider_ms = call.elapsed_ms
+    if not call.ok:
+        metrics.fallback_outcome = call.reason
+        if call.reason not in {"invalid_endpoint", "busy", "call_cap"}:
+            metrics.provider_calls = 1
+        return result(fallback, "deterministic")
+    metrics.provider_calls = 1
     try:
-        parsed = urllib.parse.urlsplit(url)
-        if parsed.scheme != "http" or parsed.username or parsed.password or not parsed.hostname or not ipaddress.ip_address(parsed.hostname).is_loopback or parsed.path != "/v1/chat/completions" or parsed.query or parsed.fragment:
-            metrics.fallback_outcome = "invalid_endpoint"
-            return result(fallback, "deterministic")
-    except ValueError:
-        metrics.fallback_outcome = "invalid_endpoint"
+        data = json.loads(call.content or "")
+    except (ValueError, TypeError):
+        metrics.fallback_outcome = "invalid_or_unverified_response"
         return result(fallback, "deterministic")
-    if not _model_slot.acquire(blocking=False):
-        metrics.fallback_outcome = "busy"
+    answer = data.get("answer") if isinstance(data, dict) and set(data) == {"answer"} else None
+    if not validator(answer):
+        metrics.fallback_outcome = "invalid_or_unverified_response"
         return result(fallback, "deterministic")
-    start = time.perf_counter()
-    try:
-        metrics.provider_calls = 1
-        schema = {"name": "grounded_answer", "strict": True, "schema": {"type": "object", "properties": {"answer": {"type": "string"}}, "required": ["answer"], "additionalProperties": False}}
-        payload = {"model": "local", "temperature": 0, "max_tokens": 120, "response_format": {"type": "json_schema", "json_schema": schema}, "messages": [{"role": "system", "content": instruction}, {"role": "user", "content": json.dumps({"question": question[:600], **facts_payload}, ensure_ascii=False)}]}
-        request = urllib.request.Request(url, data=json.dumps(payload).encode("utf8"), headers={"Content-Type": "application/json"}, method="POST")
-        timeout = min(30.0, max(1.0, float(os.environ.get("PMS_AI_LOCAL_SYNTHESIS_TIMEOUT_SECONDS", "15"))))
-        with urllib.request.build_opener(_NoRedirect()).open(request, timeout=timeout) as response:
-            raw = response.read(65537)
-        if len(raw) > 65536:
-            metrics.fallback_outcome = "response_too_large"
-            return result(fallback, "deterministic")
-        envelope = json.loads(raw)
-        data = json.loads(envelope["choices"][0]["message"]["content"])
-        answer = data.get("answer") if isinstance(data, dict) and set(data) == {"answer"} else None
-        if not validator(answer):
-            metrics.fallback_outcome = "invalid_or_unverified_response"
-            return result(fallback, "deterministic")
-        metrics.provider_used = "llama_cpp"
-        metrics.model_used = "qwen3-local"
-        metrics.fallback_outcome = "none"
-        return result(answer.strip(), "llama_cpp")
-    except (ValueError, TypeError, KeyError, IndexError, OSError):
-        metrics.fallback_outcome = "unavailable_or_invalid"
-        return result(fallback, "deterministic")
-    finally:
-        metrics.provider_ms = round((time.perf_counter() - start) * 1000, 2)
-        _model_slot.release()
+    metrics.provider_used = "llama_cpp"
+    metrics.model_used = configured_model_name()
+    metrics.fallback_outcome = "none"
+    return result(str(answer).strip(), "llama_cpp")
 
 
 def synthesize_overall_score(question: str, digests: list[dict[str, Any]]) -> NarrativeSynthesisResult | None:

@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 import uuid
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -20,6 +20,7 @@ from services.audit_service import AuditService
 logger = logging.getLogger(__name__)
 
 AI_SETTING_KEY = "ai_enabled"
+AI_PILOT_ROLE = "Admin"
 
 
 def read_ai_enabled(db: Session) -> bool:
@@ -73,3 +74,25 @@ def require_ai_enabled(db: Session = Depends(get_db)) -> None:
             status_code=status.HTTP_403_FORBIDDEN,
             detail="PMS AI is turned off.",
         )
+
+
+def request_role(request: Request) -> str:
+    """Role attached by auth middleware, otherwise the legacy test header."""
+    user = getattr(request.state, "user", None)
+    if isinstance(user, dict) and user.get("role"):
+        return str(user.get("role"))
+    header = request.headers.get("x-user-role")
+    if header:
+        return header
+    return "Viewer"
+
+
+def require_ai_admin(request: Request) -> str:
+    """Pilot gate. Non-Admin is rejected even when the product switch is on."""
+    role = request_role(request)
+    if role != AI_PILOT_ROLE:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="PMS AI is limited to administrators during the pilot.",
+        )
+    return role

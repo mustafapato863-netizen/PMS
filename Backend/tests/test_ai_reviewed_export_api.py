@@ -44,7 +44,13 @@ def test_training_export_requires_admin_and_reviewed_only(monkeypatch):
         headers={'x-test-role': 'Manager'},
         json={'trace_id': 'test-trace', 'rating': 'up', 'reviewer_verified': True},
     )
-    assert feedback.status_code == 200
-    assert feedback.json()['is_distillation_eligible'] is False
-    assert feedback.json()['reviewer_verified'] is False
-    assert calls[-1]['reviewer_verified'] is None
+    assert feedback.status_code == 403
+    assert len(calls) == 1
+    admin_feedback = client.post(
+        '/api/ai/feedback',
+        headers={'x-test-role': 'Admin'},
+        json={'trace_id': 'test-trace', 'rating': 'up', 'reviewer_verified': True},
+    )
+    assert admin_feedback.status_code == 200
+    assert admin_feedback.json()['reviewer_verified'] is True
+    assert calls[-1]['caller_role'] == 'Admin'
