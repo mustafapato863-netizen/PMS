@@ -1,4 +1,4 @@
-import type { ExecutiveSummary } from '../executive/types';
+import type { ExecutiveDriver, ExecutiveSummary } from '../executive/types';
 
 export type GradeLetter = 'A' | 'B' | 'C' | 'D' | 'E';
 
@@ -492,6 +492,25 @@ export const UAE_SEP_2026_DATA: MonthlyOverviewData = {
   ],
 };
 
+/** Negative cards use the weighted gap; positive cards use the gap closed since last month. */
+function driverImpactPct(driver: ExecutiveDriver, polarity: 'negative' | 'positive'): number {
+  const ranked = polarity === 'negative'
+    ? driver.weighted_gap_points ?? driver.impact_points
+    : driver.impact_change_points ?? driver.impact_points;
+  const value = ranked ?? driver.change_value ?? 0;
+  return Number.isFinite(value) ? value : 0;
+}
+
+function driverBetterDirection(driver: ExecutiveDriver): 'lower' | 'higher' {
+  return driver.kpi_direction === 'lower_better' ? 'lower' : 'higher';
+}
+
+function driverActualValue(driver: ExecutiveDriver): string {
+  return driver.current_value != null && Number.isFinite(driver.current_value)
+    ? `${Number(driver.current_value).toFixed(1)}%`
+    : '—';
+}
+
 function measuredGradeTakeaway(distribution: NonNullable<ExecutiveSummary['grade_distribution']>): string {
   const ab = (distribution.counts?.A ?? 0) + (distribution.counts?.B ?? 0);
   const de = (distribution.counts?.D ?? 0) + (distribution.counts?.E ?? 0);
@@ -569,9 +588,9 @@ export function adaptSummaryToMonthlyOverview(
           kpiName: d.kpi_label,
           team: d.team ?? region,
           functionName: d.function ?? 'Operations',
-          impactPct: d.weighted_impact ?? d.change_percent ?? 0,
-          betterDirection: d.direction === 'lower_better' ? 'lower' : 'higher',
-          actualValue: d.actual !== null && d.actual !== undefined ? `${ Number(d.actual).toFixed(1) }%` : '—',
+          impactPct: driverImpactPct(d, 'negative'),
+          betterDirection: driverBetterDirection(d),
+          actualValue: driverActualValue(d),
         }))
       : !allowSnapshotFallback || region === 'UAE'
         ? []
@@ -584,9 +603,9 @@ export function adaptSummaryToMonthlyOverview(
           kpiName: d.kpi_label,
           team: d.team ?? region,
           functionName: d.function ?? 'Operations',
-          impactPct: d.weighted_impact ?? d.change_percent ?? 0,
-          betterDirection: d.direction === 'lower_better' ? 'lower' : 'higher',
-          actualValue: d.actual !== null && d.actual !== undefined ? `${ Number(d.actual).toFixed(1) }%` : '—',
+          impactPct: driverImpactPct(d, 'positive'),
+          betterDirection: driverBetterDirection(d),
+          actualValue: driverActualValue(d),
         }))
       : !allowSnapshotFallback || region === 'UAE'
         ? []
@@ -629,7 +648,7 @@ export function adaptSummaryToMonthlyOverview(
             const tGrade = (t.grade as GradeLetter) || gradeForScore(tScore);
             const flags: string[] = [`Grade ${tGrade}`];
             if (t.flags.includes('lowest_in_function')) flags.push('Lowest in function');
-            if (t.flags.includes('below_function_average')) flags.push('Below function avg');
+            if (t.flags.includes('below_function_avg')) flags.push('Below function avg');
             return {
               team: t.team,
               functionName: t.function ?? 'General',

@@ -72,7 +72,7 @@ const RcmDomainSummary = ({ rows, onDomainSelect, allAgents, domainScores }: Rcm
               } else if (allAgents && allAgents.length > 0) {
                 const hossamAgent = allAgents.find((a) => isHossamRecord(a));
                 if (hossamAgent) {
-                  const s = Number(hossamAgent.evaluation?.score ?? hossamAgent.score);
+                  const s = Number(hossamAgent.evaluation?.score);
                   if (Number.isFinite(s)) score = s;
                 }
               }

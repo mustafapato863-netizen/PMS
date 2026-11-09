@@ -731,7 +731,7 @@ describe('team score trend', () => {
     const dashboardPooled = calculateAggregatedTeamPerformance(sepDedupedAgents, EGYPT_RESUBMISSION_TEAM_CONFIG);
     const dashboardScore = Math.round(
       displayedTeamScore(
-        dashboardPooled?.score,
+        dashboardPooled?.score ?? null,
         (65 + 100) / 2,
         recordsUseAppliedPin(sepDedupedAgents),
       ) * 10,

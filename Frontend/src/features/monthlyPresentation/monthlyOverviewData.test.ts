@@ -6,6 +6,15 @@ import { adaptSummaryToMonthlyOverview } from './monthlyOverviewData';
 function liveSummary(gradeDistribution: ExecutiveSummary['grade_distribution']): ExecutiveSummary {
   return {
     data_status: { has_data: true, last_upload: null },
+    scope: {
+      view: 'corporate',
+      role: 'Admin',
+      locked: { region: false, function: false, team: false },
+      team: null,
+      function: null,
+      region: 'UAE',
+      accessible_functions: [],
+    },
     hero: {
       label: 'UAE',
       score: 91.8,
@@ -22,17 +31,25 @@ function liveSummary(gradeDistribution: ExecutiveSummary['grade_distribution']):
     },
     period: {
       requested: null,
-      effective: { key: '2026-09', month: 'September', year: 2026, label: 'September 2026' },
-      previous: { key: '2026-08', month: 'August', year: 2026, label: 'August 2026' },
+      effective: { key: '2026-09', month: 'September', year: 2026 },
+      previous: { key: '2026-08', month: 'August', year: 2026 },
       fallback_applied: false,
       notice: null,
     },
     trend: [],
     drivers: { negative: [], positive: [] },
     functions: [],
+    regions: [],
     teams: [],
     grade_distribution: gradeDistribution,
-  } as ExecutiveSummary;
+    kpis: [],
+    levels: [],
+    people: null,
+    highlights: { most_improved: null, lowest_in_function: null },
+    corrective_actions: null,
+    periods: [],
+    meta: { source: 'composed', unavailable: [], driver_metric: 'weighted_gap' },
+  };
 }
 
 describe('adaptSummaryToMonthlyOverview', () => {
@@ -115,5 +132,70 @@ describe('adaptSummaryToMonthlyOverview', () => {
     expect(overview.drivers.negative).toEqual([]);
     expect(overview.drivers.positive).toEqual([]);
     expect(overview.teamsAtRisk).toEqual([]);
+  });
+
+  it('maps live drivers and the below-function flag from the executive summary contract', () => {
+    const summary = liveSummary(null);
+    const driver = {
+      kpi_key: 'rejection',
+      kpi_label: 'Initial Rejection %',
+      team: 'Coding',
+      function: 'RCM',
+      kpi_direction: 'lower_better',
+      unit: '%',
+      current_value: 3.8,
+      previous_value: null,
+      raw_change: null,
+      change_value: 1.2,
+      trend_status: null,
+      gap_value: null,
+      achievement_percent: null,
+      weight: 0.3,
+      impact_points: -1,
+      weighted_gap_points: -2.5,
+      impact_change_points: 0.4,
+    };
+    summary.drivers.negative = [driver];
+    summary.drivers.positive = [{
+      ...driver,
+      kpi_label: 'Quality Score',
+      kpi_direction: 'higher_better',
+      current_value: 95.5,
+      weighted_gap_points: -0.2,
+      impact_change_points: 1.4,
+    }];
+    summary.teams = [{
+      team: 'Coding',
+      function: 'RCM',
+      regions: ['UAE'],
+      employees: 2,
+      score: 70,
+      previous_score: null,
+      change: null,
+      gap: -30,
+      grade: 'D',
+      trend: [],
+      vs_function_avg: -5,
+      rank_in_function: 2,
+      flags: ['grade_d', 'below_function_avg'],
+      flag_detail: null,
+    }];
+
+    const overview = adaptSummaryToMonthlyOverview(summary, 'UAE', { allowSnapshotFallback: false });
+
+    expect(overview.drivers.negative[0]).toMatchObject({
+      kpiName: 'Initial Rejection %',
+      team: 'Coding',
+      functionName: 'RCM',
+      impactPct: -2.5,
+      betterDirection: 'lower',
+      actualValue: '3.8%',
+    });
+    expect(overview.drivers.positive[0]).toMatchObject({
+      impactPct: 1.4,
+      betterDirection: 'higher',
+      actualValue: '95.5%',
+    });
+    expect(overview.teamsAtRisk[0]?.flags).toEqual(['Grade D', 'Below function avg']);
   });
 });

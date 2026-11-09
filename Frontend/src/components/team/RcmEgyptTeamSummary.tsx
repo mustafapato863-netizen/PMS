@@ -69,7 +69,7 @@ const RcmEgyptTeamSummary = ({ rows, onTeamSelect, allAgents, teamScores }: RcmE
               } else if (allAgents && allAgents.length > 0) {
                 const hossamAgent = allAgents.find((a) => isHossamRecord(a) && (sameEgyptRcmTeam(a.identity.team, stored) || isPreApprovalsSubTeam(a.identity.team)));
                 if (hossamAgent) {
-                  const s = Number(hossamAgent.evaluation?.score ?? hossamAgent.score);
+                  const s = Number(hossamAgent.evaluation?.score);
                   if (Number.isFinite(s)) score = s;
                 }
               }

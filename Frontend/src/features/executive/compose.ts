@@ -193,7 +193,7 @@ function stampGapShares<T extends { score: number | null; employees: number; gap
   });
 }
 
-function byGapShare(left: { gap_share_percent?: number | null; score: number | null; team?: string; function?: string }, right: { gap_share_percent?: number | null; score: number | null; team?: string; function?: string }): number {
+function byGapShare(left: { gap_share_percent?: number | null; score: number | null; team?: string | null; function?: string | null }, right: { gap_share_percent?: number | null; score: number | null; team?: string | null; function?: string | null }): number {
   const leftShare = left.gap_share_percent ?? -1;
   const rightShare = right.gap_share_percent ?? -1;
   if (leftShare !== rightShare) return rightShare - leftShare;

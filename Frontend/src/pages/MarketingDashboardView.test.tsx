@@ -6,6 +6,10 @@ import type { AgentRecord } from '../types';
 import type { MarketingTeamConfig } from '../features/marketing/types';
 import { MarketingDashboardContent } from './MarketingDashboardView';
 
+vi.mock('../components/ai/ContextualAssistantPanel', () => ({
+  ContextualAssistantPanel: () => null,
+}));
+
 vi.mock('recharts', () => {
   const Component = ({ children }: { children?: React.ReactNode }) => <div>{children}</div>;
   return {

@@ -3,9 +3,11 @@ import { describe, expect, it, vi } from 'vitest';
 import RcmEgyptTeamSummary from './RcmEgyptTeamSummary';
 import RcmDomainSummary from './RcmDomainSummary';
 import type { TeamAgentRow } from '../../hooks/usePerformanceData';
-import type { AgentRecord } from '../../types';
+import type { AgentRecord, PerformanceLevel } from '../../types';
 
-const createRow = (id: string, name: string, team: string, score: number, plevel = 'Employee'): TeamAgentRow => ({
+const ZERO_GEO = { dubai: 0, sharjah: 0, ajman: 0, clinics: 0 };
+
+const createRow = (id: string, name: string, team: string, score: number, plevel: PerformanceLevel = 'Employee'): TeamAgentRow => ({
   id,
   name,
   team,
@@ -38,12 +40,14 @@ const createHossamAgent = (): AgentRecord => ({
     position: 'Pre-Authorization Supervisor',
   },
   performance_level: 'Managerial',
-  score: 88.61,
-  evaluation: { score: 88.61 },
-  kpi_values: [],
-  calls: { total: 0, aht_raw: '' },
   region: 'EGY',
   year: 2026,
+  kpi_values: [],
+  calls: { inbound: 0, outbound: 0, total_handled: 0, abandoned: 0, aht_raw: '00:00:00' },
+  geo: { bookings: { ...ZERO_GEO }, attended: { ...ZERO_GEO } },
+  actual: { booking_rate: 0, attend_rate: 0, abandon_rate: 0 },
+  achievement: { booking_ach: 0, attend_ach: 0 },
+  evaluation: { score: 88.61, grade: 'C' },
 });
 
 describe('RCM Summaries Team Score Display', () => {

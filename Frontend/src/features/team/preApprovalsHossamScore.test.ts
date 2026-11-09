@@ -2,10 +2,36 @@ import { describe, expect, it } from 'vitest';
 import type { AgentRecord } from '../../types';
 import { isHossamRecord } from '../../types';
 import { calculateAggregatedTeamPerformance } from './teamKpiAggregator';
-import type { TeamConfig } from '../../schemas/teamConfig.schema';
+import type { KPI, TeamConfig } from '../../schemas/teamConfig.schema';
 import { composeExecutiveSummary } from '../executive/compose';
 import type { ExecRecord } from '../executive/compose';
 import { buildTeamDeepDiveFromRecords } from '../monthlyPresentation/teamDeepDiveData';
+
+const kpi = (definition: Omit<KPI, 'score_formula' | 'cap_achievement'>): KPI => ({
+  ...definition,
+  score_formula: 'target_ratio',
+  cap_achievement: true,
+});
+
+const ZERO_GEO = { dubai: 0, sharjah: 0, ajman: 0, clinics: 0 };
+
+const agentShell = (
+  identity: AgentRecord['identity'],
+  score: number,
+  level: AgentRecord['performance_level'],
+  kpiValues: AgentRecord['kpi_values'] = [],
+): AgentRecord => ({
+  identity,
+  performance_level: level,
+  region: 'EGY',
+  year: 2026,
+  kpi_values: kpiValues,
+  calls: { inbound: 0, outbound: 0, total_handled: 0, abandoned: 0, aht_raw: '00:00:00' },
+  geo: { bookings: { ...ZERO_GEO }, attended: { ...ZERO_GEO } },
+  actual: { booking_rate: 0, attend_rate: 0, abandon_rate: 0 },
+  achievement: { booking_ach: 0, attend_ach: 0 },
+  evaluation: { score, grade: 'C' },
+});
 
 const PRE_APPROVALS_CONFIG: TeamConfig = {
   team: 'Pre-Approvals IP',
@@ -19,9 +45,9 @@ const PRE_APPROVALS_CONFIG: TeamConfig = {
       positions: {
         'Pre-Authorization Specialist': {
           kpis: [
-            { key: 'pa_initial_rejection', label: 'IP Initial Rejection %', weight: 0.3, direction: 'lower_better', unit: '%', color: '#DC2626', actual_col: 'Actual Value', target_col: 'Target Value', aggregation: { method: 'average' }, display_order: 1 },
-            { key: 'pa_error_rate', label: 'Error %', weight: 0.3, direction: 'lower_better', unit: '%', color: '#D97706', actual_col: 'Actual Value', target_col: 'Target Value', aggregation: { method: 'average' }, display_order: 2 },
-            { key: 'pa_approval_48h', label: '% Approval within 48 hrs', weight: 0.4, direction: 'higher_better', unit: '%', color: '#0D9488', actual_col: 'Actual Value', target_col: 'Target Value', aggregation: { method: 'average' }, display_order: 3 },
+            kpi({ key: 'pa_initial_rejection', label: 'IP Initial Rejection %', weight: 0.3, direction: 'lower_better', unit: '%', color: '#DC2626', actual_col: 'Actual Value', target_col: 'Target Value', aggregation: { method: 'average' } }),
+            kpi({ key: 'pa_error_rate', label: 'Error %', weight: 0.3, direction: 'lower_better', unit: '%', color: '#D97706', actual_col: 'Actual Value', target_col: 'Target Value', aggregation: { method: 'average' } }),
+            kpi({ key: 'pa_approval_48h', label: '% Approval within 48 hrs', weight: 0.4, direction: 'higher_better', unit: '%', color: '#0D9488', actual_col: 'Actual Value', target_col: 'Target Value', aggregation: { method: 'average' } }),
           ],
         },
       },
@@ -30,10 +56,10 @@ const PRE_APPROVALS_CONFIG: TeamConfig = {
       positions: {
         'Pre-Authorization Supervisor': {
           kpis: [
-            { key: 'pa_initial_rejection', label: 'IP Initial Rejection %', weight: 0.5, direction: 'lower_better', unit: '%', color: '#DC2626', actual_col: 'Actual Value', target_col: 'Target Value', aggregation: { method: 'average' }, display_order: 1 },
-            { key: 'pa_initial_rejection_all', label: 'IP Initial Rejection %(All)', weight: 0, direction: 'lower_better', unit: '%', color: '#7C3AED', actual_col: 'Actual Value', target_col: 'Target Value', aggregation: { method: 'average' }, display_order: 2, view_only: true },
-            { key: 'pa_error_rate', label: 'Error %', weight: 0.2, direction: 'lower_better', unit: '%', color: '#D97706', actual_col: 'Actual Value', target_col: 'Target Value', aggregation: { method: 'average' }, display_order: 3 },
-            { key: 'pa_approval_48h', label: '% Approval within 48 hrs', weight: 0.3, direction: 'higher_better', unit: '%', color: '#0D9488', actual_col: 'Actual Value', target_col: 'Target Value', aggregation: { method: 'average' }, display_order: 4 },
+            kpi({ key: 'pa_initial_rejection', label: 'IP Initial Rejection %', weight: 0.5, direction: 'lower_better', unit: '%', color: '#DC2626', actual_col: 'Actual Value', target_col: 'Target Value', aggregation: { method: 'average' } }),
+            kpi({ key: 'pa_initial_rejection_all', label: 'IP Initial Rejection %(All)', weight: 0, direction: 'lower_better', unit: '%', color: '#7C3AED', actual_col: 'Actual Value', target_col: 'Target Value', aggregation: { method: 'average' } }),
+            kpi({ key: 'pa_error_rate', label: 'Error %', weight: 0.2, direction: 'lower_better', unit: '%', color: '#D97706', actual_col: 'Actual Value', target_col: 'Target Value', aggregation: { method: 'average' } }),
+            kpi({ key: 'pa_approval_48h', label: '% Approval within 48 hrs', weight: 0.3, direction: 'higher_better', unit: '%', color: '#0D9488', actual_col: 'Actual Value', target_col: 'Target Value', aggregation: { method: 'average' } }),
           ],
         },
       },
@@ -42,37 +68,28 @@ const PRE_APPROVALS_CONFIG: TeamConfig = {
   kpis: [],
 };
 
-const createSpecialist = (id: string, name: string, score: number): AgentRecord => ({
-  identity: { employee_id: id, name, team: 'Pre-Approvals IP', month: 'September', position: 'Pre-Authorization Specialist' },
-  performance_level: 'Employee',
+const createSpecialist = (id: string, name: string, score: number): AgentRecord => agentShell(
+  { employee_id: id, name, team: 'Pre-Approvals IP', month: 'September', position: 'Pre-Authorization Specialist' },
   score,
-  evaluation: { score },
-  kpi_values: [],
-  calls: { total: 0, aht_raw: '' },
-  region: 'EGY',
-  year: 2026,
-});
+  'Employee',
+);
 
-const createHossam = (score = 88.61): AgentRecord => ({
-  identity: {
+const createHossam = (score = 88.61): AgentRecord => agentShell(
+  {
     employee_id: 'SGHD70094',
     name: 'Hossam Mohamed Abdelsameea Tolba Ahmed',
     team: 'Pre-Approvals IP',
     month: 'September',
     position: 'Pre-Authorization Supervisor',
   },
-  performance_level: 'Managerial',
   score,
-  evaluation: { score },
-  kpi_values: [
-    { kpi_key: 'pa_initial_rejection', label: 'IP Initial Rejection %', actual_value: 0.0, target_value: 0.01, weight_applied: 0.5, achievement_ratio: 1.0, direction: 'lower_better', unit: '%' },
-    { kpi_key: 'pa_error_rate', label: 'Error %', actual_value: 0.01, target_value: 0.01, weight_applied: 0.2, achievement_ratio: 1.0, direction: 'lower_better', unit: '%' },
-    { kpi_key: 'pa_approval_48h', label: '% Approval within 48 hrs', actual_value: 0.96, target_value: 0.9, weight_applied: 0.3, achievement_ratio: 1.0667, direction: 'higher_better', unit: '%' },
+  'Managerial',
+  [
+    { kpi_key: 'pa_initial_rejection', label: 'IP Initial Rejection %', actual_value: 0.0, target_value: 0.01, weight_applied: 0.5, achievement_ratio: 1.0, contribution: 0.5, direction: 'lower_better', unit: '%' },
+    { kpi_key: 'pa_error_rate', label: 'Error %', actual_value: 0.01, target_value: 0.01, weight_applied: 0.2, achievement_ratio: 1.0, contribution: 0.2, direction: 'lower_better', unit: '%' },
+    { kpi_key: 'pa_approval_48h', label: '% Approval within 48 hrs', actual_value: 0.96, target_value: 0.9, weight_applied: 0.3, achievement_ratio: 1.0667, contribution: 0.32, direction: 'higher_better', unit: '%' },
   ],
-  calls: { total: 0, aht_raw: '' },
-  region: 'EGY',
-  year: 2026,
-});
+);
 
 describe('Pre-Approvals team scoring with Hossam supervisor scorecard', () => {
   it('correctly identifies Hossam Mohamed record by employee ID, name or position', () => {
@@ -160,7 +177,7 @@ describe('Pre-Approvals team scoring with Hossam supervisor scorecard', () => {
       position: agent.identity.position ?? null,
       level: agent.performance_level || 'Employee',
       period: september,
-      score: Number(agent.evaluation?.score ?? (agent as unknown as { score?: number }).score),
+      score: agent.evaluation.score,
       kpis: [],
       rawAgent: agent,
     });

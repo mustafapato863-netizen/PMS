@@ -659,7 +659,7 @@ export function calculateAggregatedTeamPerformance(
   if (isPreApprovalsTeam) {
     const hossam = agents.find(isHossamRecord);
     if (hossam) {
-      const rawScore = Number(hossam.evaluation?.score ?? hossam.score);
+      const rawScore = Number(hossam.evaluation?.score);
       if (Number.isFinite(rawScore)) {
         const hossamKpis = aggregateConfiguredTeamKpis([hossam], config, options);
         return {
