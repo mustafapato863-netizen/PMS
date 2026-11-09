@@ -373,6 +373,36 @@ describe('team score trend', () => {
     expect(dive.scoreTrend?.basisNote).toBeNull();
   });
 
+  it.each([
+    ['coding', 'Coding EGY', 'EGY', 'quality_errors', 'Quality Errors Rate'],
+    ['inbound', 'Inbound', 'EGY', 'booking', 'Booking Rate'],
+    ['outbound', 'Outbound', 'EGY', 'booking', 'Booking Rate'],
+    ['coding', 'Coding', 'UAE', 'quality_errors', 'Quality Errors Rate'],
+  ] as const)('uses recorded months for both KPI trend and score movement: %s %s', (slug, team, region, key, label) => {
+    const records = [
+      scored(team, region, '2026-08', 'August', 70, [kpi(key, label, 40, 100, 'higher_better', 0.4)]),
+      scored(team, region, '2026-09', 'September', 80, [kpi(key, label, 60, 100, 'higher_better', 0.6)]),
+    ];
+    const dive = buildTeamDeepDiveFromRecords(slug, records, [], region, '2026-09');
+    const trend = dive.kpis.find((item) => item.kpiKey === key)?.trend6Mo;
+    expect(trend?.map((point) => point.actual)).toEqual([null, null, null, null, 40, 60]);
+    const scorePoints = dive.scoreTrend!.points;
+    expect(dive.scoreTrend?.changeVsPrevious).toBeCloseTo(scorePoints[5].score! - scorePoints[4].score!, 1);
+  });
+
+  it.each([
+    ['coding', 'Coding EGY', 'quality_errors', 'Quality Errors Rate'],
+    ['inbound', 'Inbound', 'booking', 'Booking Rate'],
+  ] as const)('does not compare a KPI to an earlier month when the previous month is missing: %s', (slug, team, key, label) => {
+    const records = [
+      scored(team, 'EGY', '2026-07', 'July', 70, [kpi(key, label, 40, 100, 'higher_better', 0.4)]),
+      scored(team, 'EGY', '2026-09', 'September', 80, [kpi(key, label, 60, 100, 'higher_better', 0.6)]),
+    ];
+    const dive = buildTeamDeepDiveFromRecords(slug, records, [], 'EGY', '2026-09');
+    expect(dive.kpis.find((item) => item.kpiKey === key)?.movementFormatted).toBe('—');
+    expect(dive.scoreTrend?.changeVsPrevious).toBeNull();
+  });
+
   it('leaves missing months empty and compares only the previous calendar month', () => {
     const records = [
       scored('Coding EGY', 'EGY', '2026-07', 'July', 80),
@@ -485,12 +515,18 @@ describe('team score trend', () => {
     expect(result.scoreTrend?.points.slice(-2).map((point) => point.score)).toEqual([40, 90]);
     expect(result.summary.score).toBe(90);
     expect(result.scoreTrend?.changeVsPrevious).toBe(50);
-    expect(result.scoreTrend?.points.at(-2)?.basisDetail).toMatch(/Applied targets and weights; current pooling rules/);
+    expect(result.scoreTrend?.points.at(-2)?.basisDetail).toMatch(/saved targets and weights; current pooling rules/i);
     expect(result.scoreTrend?.points.at(-1)?.basisDetail).toMatch(/current pooling rules/);
     const legacy = toExecRecords([agent('a', 'August', 10, 20, 0.9), agent('b', 'August', 80, 80, 0.9), agent('a', 'September', 10, 20, 1), agent('b', 'September', 80, 80, 1)]);
     legacy[0].rawAgent!.kpi_values![0].evaluation_pinned = false;
     const incomplete = applyTeamTrendConfig(buildTeamDeepDiveFromRecords('support', legacy, [], 'EGY', '2026-09'), config);
-    expect(incomplete.scoreTrend?.points.at(-2)?.basisDetail).toMatch(/historical settings unavailable/);
+    expect(incomplete.scoreTrend?.points.at(-2)?.basisDetail).toMatch(/Some weighted KPIs use saved settings.*not verified/);
+    expect(incomplete.scoreTrend?.basisNote).toBeNull();
+    const unpinned = toExecRecords([agent('a', 'August', 10, 20, 0.9), agent('a', 'September', 10, 20, 1)]);
+    unpinned.forEach((record) => { record.rawAgent!.kpi_values![0].evaluation_pinned = false; });
+    const unknown = applyTeamTrendConfig(buildTeamDeepDiveFromRecords('support', unpinned, [], 'EGY', '2026-09'), config);
+    expect(unknown.scoreTrend?.points.at(-2)?.basisDetail).toMatch(/Historical settings are not verified.*stored or workbook values/);
+    expect(unknown.scoreTrend?.basisNote).toBeNull();
     const wrongConfig = applyTeamTrendConfig(initial, { ...config, team: 'Other', db_name: 'Other' });
     expect(wrongConfig.scoreTrend?.points.at(-1)?.score).toBeNull();
 
@@ -507,8 +543,8 @@ describe('team score trend', () => {
     expect(selectedTeamConfigSource(aliasDive)).toBe('Resubmission');
     const aliasResult = applyTeamTrendConfig(aliasDive, aliasConfig);
     expect(aliasResult.scoreTrend?.points.slice(-4).map((point) => point.score)).toEqual([50, 50, 40, 90]);
-    expect(aliasResult.scoreTrend?.points.at(-2)?.basisDetail).toMatch(/Applied targets and weights; current pooling rules/);
-    expect(aliasResult.scoreTrend?.points.at(-3)?.basisDetail).toMatch(/Applied targets and weights; current pooling rules/);
+    expect(aliasResult.scoreTrend?.points.at(-2)?.basisDetail).toMatch(/saved targets and weights; current pooling rules/i);
+    expect(aliasResult.scoreTrend?.points.at(-3)?.basisDetail).toMatch(/saved targets and weights; current pooling rules/i);
     expect(aliasResult.summary.score).toBe(90);
     expect(aliasResult.scoreTrend?.changeVsPrevious).toBe(50);
     expect(aliasResult.scoreTrend?.basisNote).toMatch(/evaluation settings/i);
@@ -711,11 +747,11 @@ describe('team score trend', () => {
     // 6-month trend: Apr (90), May (null gap), Jun (95), Jul (93), Aug (80), Sep (78.3)
     expect(configuredEgypt.scoreTrend?.points.map((p) => p.score)).toEqual([90, null, 95, 93, 80, 78.3]);
     expect(configuredEgypt.scoreTrend?.points[0]?.basisDetail).toBe(
-      'Dashboard calculation; current settings used, historical settings unavailable',
+      'Historical settings are not verified. The score may use stored or workbook values and current pooling rules.',
     );
     expect(configuredEgypt.scoreTrend?.points[1]?.basisDetail).toBeUndefined();
     expect(configuredEgypt.scoreTrend?.points[4]?.basisDetail).toBe(
-      'Applied targets and weights; current pooling rules',
+      'Available weighted KPIs use saved targets and weights; current pooling rules.',
     );
     expect(configuredEgypt.scoreTrend?. basisNote).toMatch(/evaluation settings/i);
 

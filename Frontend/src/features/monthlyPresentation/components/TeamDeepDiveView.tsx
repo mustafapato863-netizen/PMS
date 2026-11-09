@@ -541,13 +541,9 @@ function TeamDeepDiveViewContent({
                     caption={`${data.teamDisplayName} ${data.regionName} team score, selected month and five preceding months`}
                   />
                 </div>
-                {data.scoreTrend.points.some(
-                  (point) =>
-                    point.basisDetail?.includes('current pooling rules') ||
-                    point.basisDetail?.includes('historical settings unavailable'),
-                ) && (
+                {data.scoreTrend.points.some((point) => point.basisDetail) && (
                   <p className="mt-2 border-t border-slate-100 pt-2 text-xs leading-relaxed text-slate-500">
-                    Team scores use the dashboard calculation and current pooling rules; historical settings may be unavailable. Hover each month for details.
+                    Hover over a month to see what is known about its scoring basis. Team scores use current pooling rules.
                   </p>
                 )}
               </section>

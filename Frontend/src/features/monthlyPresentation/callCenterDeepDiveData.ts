@@ -2335,7 +2335,7 @@ export function buildCallCenterDeepDiveFromRecords(
       const mRows = kpiRows(inPeriod(scopeRecords, p), []);
       const match = mRows.find((k) => k.kpi_key === targetKey);
       const actual = match?.actual ?? null;
-      const target = match?.target ?? (actual !== null ? row.target : null);
+      const target = match?.target ?? null;
       const metTarget =
         actual !== null && target !== null
           ? lowerBetter
@@ -2388,7 +2388,7 @@ export function buildCallCenterDeepDiveFromRecords(
       trendLabel:
         rawDelta !== null
           ? `${rawDelta >= 0 ? '▲ +' : '▼ '}${formatKpiValue(Math.abs(rawDelta), unit)} vs ${previous?.month ?? 'August'} (${improved ? 'Improving' : 'Needs attention'})`
-          : fallbackCard.trendLabel,
+          : 'No previous-month data',
       targetRealismDiagnosis,
       trend6Mo,
     };
@@ -2692,7 +2692,7 @@ export function buildFunctionDeepDiveFromRecords(
                 k.kpi_label.toLowerCase() === row.kpi_label.toLowerCase(),
             );
             const actual = match?.actual ?? null;
-            const target = match?.target ?? (actual !== null ? row.target : null);
+            const target = match?.target ?? null;
             const metTarget =
               actual !== null && target !== null
                 ? lowerBetter
