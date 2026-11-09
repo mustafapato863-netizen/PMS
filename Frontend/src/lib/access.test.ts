@@ -4,7 +4,9 @@ import {
   USER_ROLE_OPTIONS,
   canAccessBroadAppPages,
   canAccessCorrectiveActions,
+  canAccessPmsAi,
   canAccessRoute,
+  ROUTE_ROLES,
   canAccessSettings,
   canAccessSettingsContent,
   getRoleDisplayLabel,
@@ -53,6 +55,18 @@ describe('access helpers (current roles and legacy transition)', () => {
     expect(canAccessCorrectiveActions('Regional Manager')).toBe(false);
     expect(canAccessCorrectiveActions('Performance Team')).toBe(true);
     expect(canAccessCorrectiveActions('Viewer')).toBe(false);
+  });
+
+  it('keeps the PMS AI pilot Admin-only, including General Manager', () => {
+    expect([...ROUTE_ROLES.pmsAi]).toEqual(['Admin']);
+    expect(canAccessPmsAi('Admin')).toBe(true);
+    for (const role of [
+      'General Manager', 'Manager', 'Employee', 'Executive', 'Performance Team',
+      'Function Viewer', 'Function Director', 'Branch Director', 'Regional Manager',
+      'Viewer', 'Agent', undefined,
+    ]) {
+      expect(canAccessPmsAi(role)).toBe(false);
+    }
   });
 
   it('keeps Settings content Admin-only (General Manager gets the soft-lock)', () => {

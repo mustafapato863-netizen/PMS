@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { apiFetch } from '../../lib/apiClient';
 import { useAiAvailability } from '../../features/ai/aiAvailabilityContext';
+import { isAdminRole } from '../../lib/access';
 import { useAuth } from '../../context/auth';
 import { useUserRole } from '../../context/RoleContext';
 import type {
@@ -121,6 +122,7 @@ export function ContextualAssistantPanel({
   const { role } = useUserRole();
   const { currentUser } = useAuth();
   const { enabled: aiEnabled } = useAiAvailability();
+  const pilotVisible = aiEnabled && isAdminRole(role);
   const [isOpen, setIsOpen] = useState(defaultOpen);
   const [input, setInput] = useState('');
   const [turns, setTurns] = useState<AssistantTurn[]>([]);
@@ -190,7 +192,7 @@ export function ContextualAssistantPanel({
   const sendPrompt = useCallback(
     async (promptText: string) => {
       const trimmed = promptText.trim();
-      if (!trimmed) return;
+      if (!trimmed || !isAdminRole(role) || !aiEnabled) return;
 
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
@@ -287,7 +289,7 @@ export function ContextualAssistantPanel({
         );
       }
     },
-    [conversationId, pageContext],
+    [aiEnabled, conversationId, pageContext, role],
   );
 
   const openProposalReview = useCallback((turnId: string, proposal: AiCorrectiveActionProposal) => {
@@ -413,7 +415,7 @@ export function ContextualAssistantPanel({
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [activeProposalTurnId, cancelProposalReview, isOpen]);
 
-  if (!aiEnabled) return null;
+  if (!pilotVisible) return null;
 
   return (
     <div

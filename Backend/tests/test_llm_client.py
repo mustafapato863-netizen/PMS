@@ -128,6 +128,44 @@ def test_timeout_falls_back_before_any_number_is_trusted(monkeypatch):
     assert response.model_used != "qwen2.5-3b-instruct"
 
 
+def test_http_error_and_bad_json_fall_back_to_verified_counts(monkeypatch):
+    import urllib.error
+
+    monkeypatch.setenv("PMS_AI_LLM_SYNTHESIS_ENABLED", "true")
+    monkeypatch.setenv("PMS_AI_LLM_BASE_URL", "http://127.0.0.1:8080/v1")
+    evidence = [{
+        "period": "September 2026",
+        "scope": "Inbound",
+        "requested_branches": ["Dubai", "Sharjah"],
+        "branch_comparison": [
+            {"branch": "Dubai", "bookings": 180},
+            {"branch": "Sharjah", "bookings": 70},
+        ],
+    }]
+
+    class HttpOpener:
+        def open(self, request, timeout):
+            raise urllib.error.HTTPError(request.full_url, 503, "unavailable", hdrs=None, fp=io.BytesIO(b"no"))
+
+    monkeypatch.setattr("services.ai.llm_client.urllib.request.build_opener", lambda *_: HttpOpener())
+    http_response = synthesize_branch_bookings("Compare Dubai and Sharjah Inbound bookings", evidence)
+    assert http_response is not None
+    assert http_response.provider_used == "deterministic"
+    assert http_response.metrics.fallback_outcome == "http_error"
+    assert "Dubai: 180" in http_response.headline
+
+    class BadJsonOpener:
+        def open(self, request, timeout):
+            return io.BytesIO(b"not-json")
+
+    monkeypatch.setattr("services.ai.llm_client.urllib.request.build_opener", lambda *_: BadJsonOpener())
+    bad_json = synthesize_branch_bookings("Compare Dubai and Sharjah Inbound bookings", evidence)
+    assert bad_json is not None
+    assert bad_json.provider_used == "deterministic"
+    assert bad_json.metrics.fallback_outcome == "invalid_response"
+    assert "999" not in bad_json.headline
+
+
 def test_validator_rejection_keeps_the_rules_headline(monkeypatch):
     monkeypatch.setenv("PMS_AI_LLM_SYNTHESIS_ENABLED", "true")
     monkeypatch.setenv("PMS_AI_LLM_MODEL", "qwen2.5-3b-instruct")
@@ -209,6 +247,7 @@ def test_cpu_timeouts_default_to_fifteen_and_thirty_seconds(monkeypatch):
 
 
 def test_prompt_and_completion_fit_2048_token_context(monkeypatch):
+    monkeypatch.delenv("PMS_AI_LLM_MODEL", raising=False)
     monkeypatch.setenv("PMS_AI_LLM_BASE_URL", "http://pms-qwen-pilot:8080")
     monkeypatch.setenv("PMS_AI_LLM_CONTEXT", "2048")
     captured: dict = {}
@@ -224,6 +263,7 @@ def test_prompt_and_completion_fit_2048_token_context(monkeypatch):
     )
     assert result.ok
     body = captured["body"]
+    assert body["model"] == "qwen3-4b-q4_k_m"
     assert body["max_tokens"] <= 256
     assert body["chat_template_kwargs"] == {"enable_thinking": False}
     assert "/no_think" in body["messages"][0]["content"]

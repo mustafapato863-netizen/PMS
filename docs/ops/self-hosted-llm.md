@@ -29,8 +29,8 @@ PMS_AI_LLM_BASE_URL=http://pms-qwen-pilot:8080
 PMS_AI_LLM_MODEL=qwen3-4b-q4_k_m
 PMS_AI_LLM_API_KEY=
 PMS_AI_LLM_ALLOWED_HOSTS=localhost,127.0.0.1,::1,llm,pms-qwen-pilot,host.docker.internal
-PMS_AI_LLM_INTENT_ENABLED=true
-PMS_AI_LLM_SYNTHESIS_ENABLED=true
+PMS_AI_LLM_INTENT_ENABLED=false
+PMS_AI_LLM_SYNTHESIS_ENABLED=false
 PMS_AI_LLM_EXPLORATION_ENABLED=false
 PMS_AI_LLM_TIMEOUT_SECONDS=15
 PMS_AI_LLM_SYNTHESIS_TIMEOUT_SECONDS=30
@@ -41,7 +41,7 @@ PMS_RATE_LIMIT_AI_CHAT_PER_MINUTE=20
 
 `PMS_AI_LLM_BASE_URL` may be the origin (`http://pms-qwen-pilot:8080`) or the `/v1` base. The client calls `POST /v1/chat/completions`. `PMS_AI_LOCAL_ROUTER_URL` is still accepted when the base URL is unset, and must be the full chat URL.
 
-Exploration stays off while `APP_ENV=production`. Intent routing and validated synthesis are the production paths. Turn the Settings switch `ai_enabled` on only after a chat reports `provider_used=llama_cpp` and `model_used=qwen3-4b-q4_k_m`.
+Checked-in Compose files, env examples, and the Hostinger workflow default intent and synthesis to false. Turning either flag on is a separate pilot step. It does not start a model: the `llm` Compose profile stays opt-in, and the product switch `ai_enabled` stays off until an administrator enables it. Exploration stays off while `APP_ENV=production`, even if its flag is true.
 
 ## Option A — attach the existing container
 
