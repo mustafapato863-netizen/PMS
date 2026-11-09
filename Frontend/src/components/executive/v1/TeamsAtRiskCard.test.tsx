@@ -32,7 +32,7 @@ describe('TeamsAtRiskCard', () => {
     ]} /></MemoryRouter>);
 
     expect(screen.getByRole('link', { name: 'Pre-Approvals IP Offshore' }))
-      .toHaveAttribute('href', '/team/pre-approvals?branch=sharjah&performance_level=Managerial');
+      .toHaveAttribute('href', '/team/pre-approvals?branch=sharjah&performance_level=Managerial&region=UAE');
   });
 
   it('includes Grade C/D/E and declining healthy teams, with matching flag labels', () => {
@@ -49,7 +49,7 @@ describe('TeamsAtRiskCard', () => {
     expect(screen.getByText('Score under 90%, ranked by share of the gap')).toBeInTheDocument();
     expect(screen.getAllByTestId('risk-row')).toHaveLength(3);
     expect(screen.getByText('Grade C team')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Grade C team' })).toHaveAttribute('href', '/team/grade-c-team');
+    expect(screen.getByRole('link', { name: 'Grade C team' })).toHaveAttribute('href', '/team/grade-c-team?region=UAE');
     expect(screen.getByText('Grade C')).toBeInTheDocument();
     expect(screen.queryByText('Declining B team')).not.toBeInTheDocument();
     expect(screen.queryByText('Stable B team')).not.toBeInTheDocument();
@@ -110,7 +110,7 @@ describe('TeamsAtRiskCard', () => {
 
     expect(screen.getByRole('link', { name: 'Stable A team' })).toHaveAttribute(
       'href',
-      '/team/stable-a-team?branch=sharjah&performance_level=Managerial',
+      '/team/stable-a-team?branch=sharjah&performance_level=Managerial&region=UAE&year=2026&month=June',
     );
   });
 });

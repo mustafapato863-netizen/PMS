@@ -498,7 +498,7 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
         if newest_first:
             # Newest period first, chronological months, stable id tiebreak;
             # matches summary_records_service.order_key.
-            query = query.order_by(
+            query = query.order_by(None).order_by(
                 PerformanceRecord.year.desc(), month_number_sql().desc(), PerformanceRecord.id.desc()
             )
         if limit is not None:
@@ -644,7 +644,9 @@ class PerformanceRepository(BaseRepository[PerformanceRecord]):
                 KPIValue,
                 and_(KPIValue.record_id == PerformanceRecord.id, KPIValue.record_year == PerformanceRecord.year),
             ).filter(func.lower(KPIValue.kpi_key) == str(kpi).casefold())
-        scoped = self._apply_scope(query, scope)
+        # Both the scoped index and the full-record path must share an
+        # explicit order; database query plans otherwise reorder scoped rows.
+        scoped = self._apply_scope(query, scope).order_by(PerformanceRecord.id, PerformanceRecord.year)
         return self._exclude_egypt_resubmission_duplicates(scoped, scope) if resolve_alias_duplicates else scoped
 
     def get_dashboard_summary_rows(

@@ -4,7 +4,7 @@ import { GRADE_PALETTE, getGradeClassOrNull, type GradeClass } from '../../const
 import {
   MASKED_DETAILS_LABEL, REGION_FUNCTIONS, REGION_LABEL, displayActionState, isHighPerformerAction,
   type DeckAction, type LockedPeriod, type RegionCode,
-} from './model';
+} from './legacyDeckModel';
 import type { SlideState, TeamReady } from './deckTypes';
 import { NoDataBadge } from './SlideParts';
 

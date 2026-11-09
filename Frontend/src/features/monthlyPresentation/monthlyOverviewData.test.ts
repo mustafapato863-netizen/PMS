@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { ExecutiveSummary } from '../executive/types';
+import type { ExecutiveDriver, ExecutiveSummary } from '../executive/types';
 import { adaptSummaryToMonthlyOverview } from './monthlyOverviewData';
 
 /** The fields the overview adapter reads. Compose stores grades as counts, not a `.grades` list. */
@@ -32,10 +32,24 @@ function liveSummary(gradeDistribution: ExecutiveSummary['grade_distribution']):
     functions: [],
     teams: [],
     grade_distribution: gradeDistribution,
-  } as ExecutiveSummary;
+  } as unknown as ExecutiveSummary;
 }
 
 describe('adaptSummaryToMonthlyOverview', () => {
+  it('reads the actual executive driver fields and direction for the live review', () => {
+    const summary = liveSummary(null);
+    const driver: ExecutiveDriver = {
+      kpi_key: 'response_time', kpi_label: 'Response Time', team: 'CSR', function: 'Call Center',
+      kpi_direction: 'lower_better', unit: 'min', current_value: 31, previous_value: 25,
+      raw_change: 6, change_value: -6, trend_status: null, gap_value: -1,
+      achievement_percent: 90, weight: 0.4, impact_points: -2, weighted_gap_points: -3,
+    };
+    summary.drivers.negative = [driver];
+    const overview = adaptSummaryToMonthlyOverview(summary, 'UAE', { allowSnapshotFallback: false });
+    expect(overview.drivers.negative[0]).toMatchObject({
+      kpiName: 'Response Time', impactPct: -3, betterDirection: 'lower', actualValue: '31.0 min',
+    });
+  });
   it('keeps an empty live scope empty instead of filling it with a regional snapshot', () => {
     const overview = adaptSummaryToMonthlyOverview(undefined, 'EGY', { allowSnapshotFallback: false });
 

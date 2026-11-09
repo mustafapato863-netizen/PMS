@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { GRADE_PALETTE, getGradeClassOrNull } from '../../constants/grades';
-import { SLIDE_COUNT, REGION_LABEL, kpiMovementTone, movementArrow, type KpiBadge, type Readiness, type Tone } from './model';
+import { SLIDE_COUNT, REGION_LABEL, kpiMovementTone, movementArrow, type KpiBadge, type Readiness, type Tone } from './legacyDeckModel';
 import type { DeckData } from './deckTypes';
 
 const fmtNum = (v: number | null | undefined, d = 1) => (v == null || !Number.isFinite(v) ? '—' : `${Number(v.toFixed(d))}`);

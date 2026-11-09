@@ -3,7 +3,7 @@ import { GRADE_PALETTE, getGradeClassOrNull, type GradeClass } from '../../const
 import {
   REGION_FUNCTIONS, REGION_LABEL, SLIDE_COUNT, actionMix, displayActionState, expectedImpact, isCriticalKpi, isHighPerformerAction, kpiBadge,
   kpiMovementTone, MASKED_DETAILS_LABEL, movementArrow, outlookLine, regionMoM, type Readiness, type Tone,
-} from './model';
+} from './legacyDeckModel';
 import type { DeckData, SlideState } from './deckTypes';
 import { Bar, GradeBadge, Movement, NoDataBadge, ReadyBadge, SlideEmpty, SlideFrame, StatusBadge } from './SlideParts';
 

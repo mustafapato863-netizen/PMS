@@ -2,12 +2,12 @@ import { describe, expect, it } from 'vitest';
 import type { AgentRecord } from '../../types';
 import { isHossamRecord } from '../../types';
 import { calculateAggregatedTeamPerformance } from './teamKpiAggregator';
-import type { TeamConfig } from '../../schemas/teamConfig.schema';
+import { TeamConfigSchema, type TeamConfig } from '../../schemas/teamConfig.schema';
 import { composeExecutiveSummary } from '../executive/compose';
 import type { ExecRecord } from '../executive/compose';
 import { buildTeamDeepDiveFromRecords } from '../monthlyPresentation/teamDeepDiveData';
 
-const PRE_APPROVALS_CONFIG: TeamConfig = {
+const PRE_APPROVALS_CONFIG: TeamConfig = TeamConfigSchema.parse({
   team: 'Pre-Approvals IP',
   db_name: 'Pre-Approvals IP',
   region: 'EGY',
@@ -40,15 +40,18 @@ const PRE_APPROVALS_CONFIG: TeamConfig = {
     },
   },
   kpis: [],
-};
+});
 
 const createSpecialist = (id: string, name: string, score: number): AgentRecord => ({
   identity: { employee_id: id, name, team: 'Pre-Approvals IP', month: 'September', position: 'Pre-Authorization Specialist' },
   performance_level: 'Employee',
   score,
-  evaluation: { score },
+  evaluation: { score, grade: 'B' },
   kpi_values: [],
-  calls: { total: 0, aht_raw: '' },
+  calls: { inbound: 0, outbound: 0, total_handled: 0, abandoned: 0, aht_raw: '' },
+  geo: { bookings: { dubai: 0, sharjah: 0, ajman: 0, clinics: 0 }, attended: { dubai: 0, sharjah: 0, ajman: 0, clinics: 0 } },
+  actual: { booking_rate: 0, attend_rate: 0, abandon_rate: 0 },
+  achievement: { booking_ach: 0, attend_ach: 0 },
   region: 'EGY',
   year: 2026,
 });
@@ -63,13 +66,16 @@ const createHossam = (score = 88.61): AgentRecord => ({
   },
   performance_level: 'Managerial',
   score,
-  evaluation: { score },
+  evaluation: { score, grade: 'B' },
   kpi_values: [
-    { kpi_key: 'pa_initial_rejection', label: 'IP Initial Rejection %', actual_value: 0.0, target_value: 0.01, weight_applied: 0.5, achievement_ratio: 1.0, direction: 'lower_better', unit: '%' },
-    { kpi_key: 'pa_error_rate', label: 'Error %', actual_value: 0.01, target_value: 0.01, weight_applied: 0.2, achievement_ratio: 1.0, direction: 'lower_better', unit: '%' },
-    { kpi_key: 'pa_approval_48h', label: '% Approval within 48 hrs', actual_value: 0.96, target_value: 0.9, weight_applied: 0.3, achievement_ratio: 1.0667, direction: 'higher_better', unit: '%' },
+    { kpi_key: 'pa_initial_rejection', label: 'IP Initial Rejection %', actual_value: 0.0, target_value: 0.01, weight_applied: 0.5, achievement_ratio: 1.0, contribution: 0.5, direction: 'lower_better', unit: '%' },
+    { kpi_key: 'pa_error_rate', label: 'Error %', actual_value: 0.01, target_value: 0.01, weight_applied: 0.2, achievement_ratio: 1.0, contribution: 0.2, direction: 'lower_better', unit: '%' },
+    { kpi_key: 'pa_approval_48h', label: '% Approval within 48 hrs', actual_value: 0.96, target_value: 0.9, weight_applied: 0.3, achievement_ratio: 1.0667, contribution: 0.3, direction: 'higher_better', unit: '%' },
   ],
-  calls: { total: 0, aht_raw: '' },
+  calls: { inbound: 0, outbound: 0, total_handled: 0, abandoned: 0, aht_raw: '' },
+  geo: { bookings: { dubai: 0, sharjah: 0, ajman: 0, clinics: 0 }, attended: { dubai: 0, sharjah: 0, ajman: 0, clinics: 0 } },
+  actual: { booking_rate: 0, attend_rate: 0, abandon_rate: 0 },
+  achievement: { booking_ach: 0, attend_ach: 0 },
   region: 'EGY',
   year: 2026,
 });

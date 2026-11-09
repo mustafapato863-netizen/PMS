@@ -569,9 +569,9 @@ export function adaptSummaryToMonthlyOverview(
           kpiName: d.kpi_label,
           team: d.team ?? region,
           functionName: d.function ?? 'Operations',
-          impactPct: d.weighted_impact ?? d.change_percent ?? 0,
-          betterDirection: d.direction === 'lower_better' ? 'lower' : 'higher',
-          actualValue: d.actual !== null && d.actual !== undefined ? `${ Number(d.actual).toFixed(1) }%` : '—',
+          impactPct: d.weighted_gap_points ?? d.impact_points ?? 0,
+          betterDirection: d.kpi_direction === 'lower_better' ? 'lower' : 'higher',
+          actualValue: d.current_value == null ? '—' : `${d.current_value.toFixed(1)}${d.unit === '%' ? '%' : d.unit ? ` ${d.unit}` : ''}`,
         }))
       : !allowSnapshotFallback || region === 'UAE'
         ? []
@@ -584,9 +584,9 @@ export function adaptSummaryToMonthlyOverview(
           kpiName: d.kpi_label,
           team: d.team ?? region,
           functionName: d.function ?? 'Operations',
-          impactPct: d.weighted_impact ?? d.change_percent ?? 0,
-          betterDirection: d.direction === 'lower_better' ? 'lower' : 'higher',
-          actualValue: d.actual !== null && d.actual !== undefined ? `${ Number(d.actual).toFixed(1) }%` : '—',
+          impactPct: d.impact_change_points ?? d.impact_points ?? 0,
+          betterDirection: d.kpi_direction === 'lower_better' ? 'lower' : 'higher',
+          actualValue: d.current_value == null ? '—' : `${d.current_value.toFixed(1)}${d.unit === '%' ? '%' : d.unit ? ` ${d.unit}` : ''}`,
         }))
       : !allowSnapshotFallback || region === 'UAE'
         ? []
@@ -629,7 +629,7 @@ export function adaptSummaryToMonthlyOverview(
             const tGrade = (t.grade as GradeLetter) || gradeForScore(tScore);
             const flags: string[] = [`Grade ${tGrade}`];
             if (t.flags.includes('lowest_in_function')) flags.push('Lowest in function');
-            if (t.flags.includes('below_function_average')) flags.push('Below function avg');
+            if (t.flags.includes('below_function_avg')) flags.push('Below function avg');
             return {
               team: t.team,
               functionName: t.function ?? 'General',

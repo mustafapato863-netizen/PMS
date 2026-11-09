@@ -1,6 +1,6 @@
-import type { TeamConfig } from '../../schemas/teamConfig.schema';
+import { TeamConfigSchema, type TeamConfig } from '../../schemas/teamConfig.schema';
 
-export const INBOUND_TEAM_CONFIG: TeamConfig = {
+export const INBOUND_TEAM_CONFIG: TeamConfig = TeamConfigSchema.parse({
   team: 'Inbound',
   db_name: 'Inbound',
   region: 'EGY',
@@ -74,9 +74,9 @@ export const INBOUND_TEAM_CONFIG: TeamConfig = {
       achievement_col: 'AbandonRate%Ach%',
     },
   ],
-};
+});
 
-export const OUTBOUND_TEAM_CONFIG: TeamConfig = {
+export const OUTBOUND_TEAM_CONFIG: TeamConfig = TeamConfigSchema.parse({
   team: 'Outbound',
   db_name: 'Outbound',
   region: 'EGY',
@@ -138,7 +138,7 @@ export const OUTBOUND_TEAM_CONFIG: TeamConfig = {
       achievement_col: 'Reachability%Ach%',
     },
   ],
-};
+});
 
 const EGYPT_RESUBMISSION_KPIS: TeamConfig['kpis'] = [
   {

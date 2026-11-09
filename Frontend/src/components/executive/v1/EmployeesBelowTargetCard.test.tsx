@@ -196,7 +196,7 @@ describe('EmployeesBelowTargetCard', () => {
     expect(await screen.findByText('Server Person 0')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Server Person 0/ })).toHaveAttribute(
       'href',
-      '/team/coding?performance_level=Corporate&month=August&year=2026&employee_ids=server-0&branch=dubai',
+      '/team/coding?region=UAE&performance_level=Corporate&month=August&year=2026&employee_ids=server-0&branch=dubai',
     );
     expect(screen.getByText(/Corporate-level names open their BSC/)).toBeInTheDocument();
   });

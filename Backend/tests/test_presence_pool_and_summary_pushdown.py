@@ -216,6 +216,16 @@ def test_query_level_summary_matches_legacy(window_engine, scope_name, filters):
     assert pushed.truncated is False
 
 
+def test_executive_summary_index_retains_october_and_matches_full_order(window_engine):
+    with Session(window_engine) as db:
+        legacy = performance._summary_records_legacy(db, _record_service(db), SCOPES['Executive'], SummaryFilters(), 50_000)
+        indexed = summary_records_indexed(db, _record_service(db), SCOPES['Executive'], SummaryFilters(), 50_000)
+    assert indexed is not None
+    assert [row['id'] for row in indexed.data] == [row['id'] for row in legacy.data]
+    assert any(row['employee_id'] == 'WIN-003' and row['month'] == 'October'
+               and row['year'] == 2026 and row['evaluation']['score'] == 47 for row in indexed.data)
+
+
 def test_query_level_limit_and_truncation(window_engine):
     with Session(window_engine) as db:
         legacy = performance._summary_records_legacy(db, _record_service(db), SCOPES["Admin"], SummaryFilters(), None)

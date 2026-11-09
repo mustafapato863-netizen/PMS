@@ -1332,15 +1332,15 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
   });
 
   it('opens Call Center support position role details (Trainer, Quality Specialist) in production mode without explicitPreview', async () => {
-    monthlyTestState.catalog.data.teams = [
+    monthlyTestState.catalog!.data.teams = [
       { team: 'Inbound', region: 'EGY', functions: ['Call Center'], performance_levels: ['Employee'] },
       { team: 'Outbound', region: 'EGY', functions: ['Call Center'], performance_levels: ['Employee'] },
       { team: 'Call Center', region: 'EGY', functions: ['Call Center'], performance_levels: ['Employee'] },
     ];
-    monthlyTestState.catalog.data.periods = [
+    monthlyTestState.catalog!.data.periods = [
       { year: 2026, month: 'September', key: '2026-09' },
     ];
-    monthlyTestState.catalog.data.months = ['September'];
+    monthlyTestState.catalog!.data.months = ['September'];
     monthlyTestState.summary = {
       isLoading: false,
       isError: false,

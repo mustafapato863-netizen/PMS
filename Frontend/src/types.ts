@@ -7,6 +7,8 @@ export type { GradeClass } from './constants/grades';
 export type RawData = Record<string, string>;
 
 export interface AgentRecord {
+  /** Legacy summary payloads can also expose the score at the top level. */
+  score?: number;
   raw_data?: RawData;
   region?: string;
   branch_key?: string | null;

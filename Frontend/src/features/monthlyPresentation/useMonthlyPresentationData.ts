@@ -7,7 +7,7 @@ import { useQueries, useQuery } from '@tanstack/react-query';
 import { apiFetch } from '../../lib/apiClient';
 import { insightsWorkspaceUrl, type InsightSection } from '../../hooks/api/useInsightsWorkspace';
 import type { InsightsWorkspace } from '../insights/types';
-import { regionTeams, type DeckAction, type LockedPeriod, type RegionCode } from './model';
+import { regionTeams, type DeckAction, type LockedPeriod, type RegionCode } from './legacyDeckModel';
 
 export const MP_QUERY_ROOT = 'monthly-presentation';
 

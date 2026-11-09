@@ -6,6 +6,12 @@ import type { AgentRecord } from '../types';
 import type { MarketingTeamConfig } from '../features/marketing/types';
 import { MarketingDashboardContent } from './MarketingDashboardView';
 
+// This suite exercises the dashboard in isolation; the assistant has its own
+// provider-backed tests and is outside this component's supplied role props.
+vi.mock('../components/ai/ContextualAssistantPanel', () => ({
+  ContextualAssistantPanel: () => null,
+}));
+
 vi.mock('recharts', () => {
   const Component = ({ children }: { children?: React.ReactNode }) => <div>{children}</div>;
   return {

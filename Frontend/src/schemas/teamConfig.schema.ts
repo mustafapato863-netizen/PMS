@@ -41,6 +41,8 @@ export const KPISchema = z.object({
   actual_col: z.string().describe('Column name for actual value in raw data'),
   target_col: z.string().describe('Column name for target value in raw data'),
   achievement_col: z.string().optional().describe('Column name for achievement ratio'),
+  display_order: z.number().optional(),
+  view_only: z.boolean().optional(),
   score_target: z.number().nonnegative().optional()
     .describe('Scoring threshold after aggregation when the target column is a source denominator'),
   score_formula: z.enum(['target_ratio', 'baseline_80']).default('target_ratio')
