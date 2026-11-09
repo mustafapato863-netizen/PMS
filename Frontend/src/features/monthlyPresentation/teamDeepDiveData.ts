@@ -6,7 +6,10 @@ import {
   type ExecRecord,
 } from '../executive/compose';
 import { executiveFunctionForTeam } from '../executive/functions';
-import { channelBoardScore, preApprovalsLeaderTeamTotal } from '../team/teamKpiAggregator';
+import type { TeamConfig } from '../../schemas/teamConfig.schema';
+import { businessTeamName, sameCountryBusinessTeam, sourceNamesFor } from '../team/countryTeamIdentity';
+import { compareScoringBasis } from '../evaluation/scoringBasisComparison';
+import { calculateAggregatedTeamPerformance, channelBoardScore, displayedTeamScore, preApprovalsLeaderTeamTotal, recordsUseAppliedPin } from '../team/teamKpiAggregator';
 import { INBOUND_TEAM_CONFIG, OUTBOUND_TEAM_CONFIG } from './callCenterTeamConfigs';
 import type { ExecutivePeriod } from '../executive/types';
 import { gradeForScore, type GradeLetter } from './monthlyOverviewData';
@@ -135,14 +138,182 @@ export interface TeamDeepDiveData {
     headcount: number;
     averageOrBelowCount: number;
     diagnosis: string;
+    /** Present when the card is not the measured monthly team score shown on the trend. */
+    scoreLabel?: string;
   };
+  /** Measured team score for the selected month and the five calendar months before it. */
+  scoreTrend?: TeamScoreTrend;
+  scoringRecords?: ExecRecord[];
   kpis: TeamKpiItem[];
   agentsAverageOrBelow: AgentAverageOrBelowRow[];
   individualActionPlans: IndividualActionPlanCard[];
   teamActionPlans: TeamLevelActionPlanCard[];
 }
 
-const round1 = (v: number) => Math.round(v * 10) / 10;
+export interface TeamScoreTrendPoint {
+  month: string;
+  periodKey: string;
+  score: number | null;
+  selected: boolean;
+  basisDetail?: string;
+}
+
+export interface TeamScoreTrend {
+  points: TeamScoreTrendPoint[];
+  changeVsPrevious: number | null;
+  previousMonthLabel: string | null;
+  basisNote: string | null;
+}
+
+function officialTeamMonthScore(records: ExecRecord[], canonicalTeam: string, teamConfig?: TeamConfig): number | null {
+  if (!records.length) return null;
+  const leader = preApprovalsLeaderTeamTotal(records);
+  if (leader !== null) return round1(leader);
+  const agents = records.map((record) => record.rawAgent).filter((agent): agent is AgentRecord => Boolean(agent));
+  const average = mean(records.map((record) => record.score));
+  const config = teamConfig ?? (canonicalTeam === 'Inbound'
+    ? INBOUND_TEAM_CONFIG
+    : canonicalTeam === 'Outbound'
+      ? OUTBOUND_TEAM_CONFIG
+      : undefined);
+  if (teamConfig) {
+    if (agents.length !== records.length || average === null) return null;
+    const pooled = calculateAggregatedTeamPerformance(agents, teamConfig);
+    return pooled == null || pooled.kpis.size === 0 ? null : round1(displayedTeamScore(pooled.score, average, recordsUseAppliedPin(agents)));
+  }
+  if (config && agents.length > 0 && average !== null) {
+    const pooled = channelBoardScore({ agents, config, employeeAverage: average });
+    if (pooled !== null) return round1(pooled);
+  }
+  return average === null ? null : round1(average);
+}
+
+function singleSourceTeam(records: ExecRecord[]): string | null {
+  const names = new Map<string, string>();
+  for (const record of records) {
+    const name = record.team.trim();
+    if (!name) return null;
+    names.set(name.toLowerCase(), name);
+  }
+  return names.size === 1 ? [...names.values()][0] : null;
+}
+
+export function selectedTeamConfigSource(data: TeamDeepDiveData): string {
+  return singleSourceTeam((data.scoringRecords ?? []).filter((record) => record.period.key === data.periodKey)) ?? '';
+}
+
+function configMatchesSource(config: TeamConfig, source: string): boolean {
+  const key = source.trim().toLowerCase();
+  return [config.team, config.db_name].some((name) => name?.trim().toLowerCase() === key);
+}
+
+function buildTeamScoreTrend(records: ExecRecord[], effective: ExecutivePeriod, canonicalTeam: string, teamConfig?: TeamConfig): TeamScoreTrend {
+  const periods = trailingPeriods(effective, 6);
+  const points = periods.map((period) => {
+    const monthRecords = records.filter((record) => record.period.key === period.key);
+    const source = singleSourceTeam(monthRecords);
+    const sourceSupported = !teamConfig || (source !== null && configMatchesSource(teamConfig, source));
+    const leader = sourceSupported ? preApprovalsLeaderTeamTotal(monthRecords) : null;
+    const score = sourceSupported ? officialTeamMonthScore(monthRecords, canonicalTeam, teamConfig) : null;
+    const allPinned = monthRecords.length > 0 && monthRecords.every((record) => {
+      const rows = record.rawAgent?.kpi_values?.filter((row) => (row.weight_applied ?? 0) > 0) ?? [];
+      return rows.length > 0 && rows.every((row) => row.evaluation_pinned === true);
+    });
+    return {
+      month: period.month.slice(0, 3),
+      periodKey: period.key,
+      score,
+      selected: period.key === effective.key,
+      basisDetail: monthRecords.length === 0 ? undefined
+        : score === null ? 'Scoring basis unavailable'
+          : leader === null && teamConfig
+            ? allPinned ? 'Applied targets and weights; current pooling rules' : 'Dashboard calculation; current settings used, historical settings unavailable'
+            : undefined,
+    };
+  });
+  const previous = periods[periods.length - 2];
+  const selectedScore = points[points.length - 1]?.score ?? null;
+  const previousScore = previous ? points.find((point) => point.periodKey === previous.key)?.score ?? null : null;
+  const basis = compareScoringBasis(
+    records.filter((record) => record.period.key === effective.key).map((record) => ({
+      employee_id: record.employeeId,
+      team: record.team,
+      position: record.position,
+      performance_level: record.level,
+      year: record.period.year,
+      month: record.period.month,
+      kpi_values: record.kpis,
+    })),
+    previous
+      ? records.filter((record) => record.period.key === previous.key).map((record) => ({
+        employee_id: record.employeeId,
+        team: record.team,
+        position: record.position,
+        performance_level: record.level,
+        year: record.period.year,
+        month: record.period.month,
+        kpi_values: record.kpis,
+      }))
+      : [],
+  );
+  return {
+    points,
+    changeVsPrevious: selectedScore !== null && previousScore !== null ? round1(selectedScore - previousScore) : null,
+    previousMonthLabel: previous?.month ?? null,
+    basisNote: selectedScore !== null && previousScore !== null && (basis.state === 'changed' || basis.state === 'mixed') && basis.message
+      ? basis.message
+      : null,
+  };
+}
+
+function withSelectedTeamScore(trend: TeamScoreTrend, score: number): TeamScoreTrend {
+  const points = trend.points.map((point) => (point.selected ? { ...point, score } : point));
+  const selectedIndex = points.findIndex((point) => point.selected);
+  const previous = selectedIndex > 0 ? points[selectedIndex - 1].score : null;
+  return {
+    ...trend,
+    points,
+    changeVsPrevious: previous !== null ? round1(score - previous) : null,
+  };
+}
+
+export function applyTeamTrendConfig(data: TeamDeepDiveData, config: TeamConfig): TeamDeepDiveData {
+  const period = periodFromKey(data.periodKey);
+  if (!period || !data.scoringRecords?.length) return data;
+  const scoreTrend = buildTeamScoreTrend(data.scoringRecords, period, data.canonicalTeam, config);
+  const score = scoreTrend.points.find((point) => point.selected)?.score;
+  if (score == null) return { ...data, scoreTrend, summary: { ...data.summary, scoreLabel: data.scoringRecords.some((record) => record.period.key === period.key) ? 'Employee average (team score unavailable)' : 'Unmeasured team score' } };
+  const grade = gradeForScore(score);
+  return {
+    ...data,
+    scoreTrend,
+    summary: { ...data.summary, score, grade, gradeFullLabel: fullGradeLabel(grade), gap: round1(score - data.summary.target), changeVsPrev: scoreTrend.changeVsPrevious ?? 0, scoreLabel: scoreTrend.points.find((point) => point.selected)?.basisDetail ? 'Team score · current pooling rules' : data.summary.scoreLabel, diagnosis: `${data.teamDisplayName} scored ${score.toFixed(1)}% across ${data.summary.headcount} measured people.` },
+  };
+}
+
+export function unavailableTeamTrend(data: TeamDeepDiveData): TeamDeepDiveData {
+  if (!data.scoringRecords?.length || !data.scoreTrend) return data;
+  const points = data.scoreTrend.points.map((point) => {
+    const records = data.scoringRecords!.filter((record) => record.period.key === point.periodKey);
+    const score = singleSourceTeam(records) ? preApprovalsLeaderTeamTotal(records) : null;
+    return { ...point, score, basisDetail: records.length && score === null ? 'Scoring basis unavailable' : undefined };
+  });
+  const selected = points.find((point) => point.selected)?.score ?? null;
+  const previous = points.at(-2)?.score ?? null;
+  return {
+    ...data,
+    scoreTrend: { ...data.scoreTrend, points, changeVsPrevious: selected !== null && previous !== null ? round1(selected - previous) : null, basisNote: null },
+    summary: selected === null ? { ...data.summary, scoreLabel: data.scoringRecords.some((record) => record.period.key === data.periodKey) ? 'Employee average (team score unavailable)' : 'Unmeasured team score' } : data.summary,
+  };
+}
+
+export function withEmptyTeamTrend(data: TeamDeepDiveData): TeamDeepDiveData {
+  const period = periodFromKey(data.periodKey);
+  return !data.scoreTrend && period
+    ? { ...data, scoreTrend: buildTeamScoreTrend([], period, data.canonicalTeam) }
+    : data;
+}
+const round1 = (value: number) => Math.round(value * 10) / 10;
 const mean = (vals: number[]) =>
   vals.length ? vals.reduce((s, v) => s + v, 0) / vals.length : null;
 
@@ -1119,11 +1290,13 @@ function teamFromBaseline(
   };
 }
 
-function recordsForSlug(allRecords: ExecRecord[], teamSlug: string, canonicalTeam: string): ExecRecord[] {
+function recordsForSlug(allRecords: ExecRecord[], teamSlug: string, canonicalTeam: string, region: 'EGY' | 'UAE'): ExecRecord[] {
   return allRecords.filter(
     (record) =>
-      slugifyIdentifier(record.team) === teamSlug ||
-      record.team.toLowerCase() === canonicalTeam.toLowerCase(),
+      slugifyIdentifier(record.team) === teamSlug
+      || record.team.toLowerCase() === canonicalTeam.toLowerCase()
+      || sameCountryBusinessTeam(record.team, teamSlug, region)
+      || sameCountryBusinessTeam(record.team, canonicalTeam, region),
   );
 }
 
@@ -1141,16 +1314,27 @@ function buildGenericTeamDeepDive(
   region: 'EGY' | 'UAE',
   requestedPeriodKey?: string,
 ): TeamDeepDiveData {
-  const located = region === 'UAE' ? null : locateBaselineTeam(teamSlug);
+  const sourceName = sourceNamesFor(teamSlug, region)[0];
+  const lookupSlug = sourceName ? slugifyIdentifier(sourceName) : teamSlug;
+  const located = region === 'UAE' ? null : locateBaselineTeam(lookupSlug);
   const canonicalTeam = located?.data.agentTeams[located.teamIndex].canonicalTeam ?? teamSlug;
-  const teamRecords = recordsForSlug(allRecords, teamSlug, canonicalTeam);
+  const teamRecords = recordsForSlug(allRecords, teamSlug, canonicalTeam, region);
   if (!teamRecords.length) {
-    if (located) return teamFromBaseline(located, region);
+    const requested = requestedPeriodKey ? periodFromKey(requestedPeriodKey) : null;
+    if (located) {
+      const baseline = teamFromBaseline(located, region);
+      const end = periodFromKey(baseline.periodKey) ?? requested;
+      return {
+        ...baseline,
+        summary: { ...baseline.summary, scoreLabel: 'Sample team score' },
+        scoreTrend: end ? buildTeamScoreTrend([], end, canonicalTeam) : undefined,
+      };
+    }
     const fallbackFn = getBaselineFunctionDeepDive('call-center', region);
     return {
       teamSlug,
       canonicalTeam,
-      teamDisplayName: canonicalTeam,
+      teamDisplayName: businessTeamName(canonicalTeam),
       functionName: executiveFunctionForTeam(canonicalTeam) || 'Team',
       functionSlug: slugifyIdentifier(executiveFunctionForTeam(canonicalTeam) || 'team'),
       siblingTeams: [],
@@ -1169,7 +1353,9 @@ function buildGenericTeamDeepDive(
         headcount: 0,
         averageOrBelowCount: 0,
         diagnosis: 'No scored people for this team in the locked month.',
+        scoreLabel: 'Unmeasured team score',
       },
+      scoreTrend: requested ? buildTeamScoreTrend([], requested, canonicalTeam) : undefined,
       kpis: [],
       agentsAverageOrBelow: [],
       individualActionPlans: [],
@@ -1181,28 +1367,18 @@ function buildGenericTeamDeepDive(
     (a, b) => b.key.localeCompare(a.key),
   );
   const requested = requestedPeriodKey ? periodFromKey(requestedPeriodKey) : null;
-  const effective = (requested && periods.find((period) => period.key === requested.key)) || periods[0];
+  const effective = requested ?? periods[0];
   const previous = periods.find((period) => period.key < effective.key) ?? null;
   const current = teamRecords.filter((record) => record.period.key === effective.key);
   const before = previous ? teamRecords.filter((record) => record.period.key === previous.key) : [];
-  if (!current.length && located) return teamFromBaseline(located, region);
 
   const leaderNow = preApprovalsLeaderTeamTotal(current);
-  const leaderPrev = preApprovalsLeaderTeamTotal(before);
-  const currentAgents = current.map((record) => record.rawAgent).filter((a): a is AgentRecord => Boolean(a));
-  const beforeAgents = before.map((record) => record.rawAgent).filter((a): a is AgentRecord => Boolean(a));
-  const cfg = canonicalTeam === 'Inbound' ? INBOUND_TEAM_CONFIG : canonicalTeam === 'Outbound' ? OUTBOUND_TEAM_CONFIG : undefined;
-  const currAvg = mean(current.map((record) => record.score));
-  const beforeAvg = mean(before.map((record) => record.score));
-  const pooledScore = cfg && currentAgents.length > 0 && currAvg !== null
-    ? channelBoardScore({ agents: currentAgents, config: cfg, employeeAverage: currAvg })
-    : null;
-  const pooledBefore = cfg && beforeAgents.length > 0 && beforeAvg !== null
-    ? channelBoardScore({ agents: beforeAgents, config: cfg, employeeAverage: beforeAvg })
-    : null;
-  const score = leaderNow ?? pooledScore ?? round1(currAvg ?? located?.data.agentTeams[located.teamIndex].score ?? 0);
-  const prevScore = leaderPrev ?? pooledBefore ?? beforeAvg;
-  const changeVsPrev = prevScore !== null ? round1(score - round1(prevScore)) : located?.data.agentTeams[located.teamIndex].changeVsPrev ?? 0;
+  const measuredScore = officialTeamMonthScore(current, canonicalTeam);
+  const score = measuredScore ?? 0;
+  const scoreTrend = measuredScore === null
+    ? buildTeamScoreTrend(teamRecords, effective, canonicalTeam)
+    : withSelectedTeamScore(buildTeamScoreTrend(teamRecords, effective, canonicalTeam), measuredScore);
+  const changeVsPrev = scoreTrend.changeVsPrevious ?? 0;
   const grade = gradeForScore(score);
   const headcount = new Set(current.map((record) => record.employeeId)).size;
   const fnName =
@@ -1312,7 +1488,7 @@ function buildGenericTeamDeepDive(
   return {
     teamSlug,
     canonicalTeam,
-    teamDisplayName: located?.data.agentTeams[located.teamIndex].teamName ?? canonicalTeam,
+    teamDisplayName: businessTeamName(located?.data.agentTeams[located.teamIndex].teamName ?? canonicalTeam),
     functionName: fnName,
     functionSlug: fnSlug,
     siblingTeams,
@@ -1331,11 +1507,15 @@ function buildGenericTeamDeepDive(
       headcount,
       averageOrBelowCount: agentsAverageOrBelow.length,
       diagnosis:
-        leaderNow !== null
-          ? `${canonicalTeam} is ${score.toFixed(1)}% on the leader scorecard, across ${headcount} measured people.`
-          : located?.data.agentTeams[located.teamIndex].diagnosis ??
-            `${canonicalTeam} averaged ${score.toFixed(1)}% across ${headcount} people.`,
+        !current.length
+          ? 'No scored people for this team in the selected month.'
+          : leaderNow !== null
+          ? `${businessTeamName(canonicalTeam)} is ${score.toFixed(1)}% on the leader scorecard, across ${headcount} measured people.`
+          : `${businessTeamName(canonicalTeam)} scored ${score.toFixed(1)}% across ${headcount} measured people.`,
+      scoreLabel: measuredScore === null ? 'Unmeasured team score' : undefined,
     },
+    scoreTrend,
+    scoringRecords: teamRecords,
     kpis,
     agentsAverageOrBelow,
     individualActionPlans: agentsAverageOrBelow.map((row, index) => {
@@ -1404,6 +1584,8 @@ export function buildTeamDeepDiveFromRecords(
       {
         ...fallback,
         teamSlug: normalizedSlug,
+        summary: { ...fallback.summary, scoreLabel: 'Sample team score' },
+        scoreTrend: buildTeamScoreTrend([], periodFromKey(fallback.periodKey)!, canonicalTeam),
       },
       region,
     );
@@ -1414,8 +1596,7 @@ export function buildTeamDeepDiveFromRecords(
   ].sort((a, b) => b.key.localeCompare(a.key));
 
   const requested = requestedPeriodKey ? periodFromKey(requestedPeriodKey) : null;
-  const effective: ExecutivePeriod =
-    (requested && periods.find((p) => p.key === requested.key)) || periods[0];
+  const effective: ExecutivePeriod = requested ?? periods[0];
   const previous: ExecutivePeriod | null =
     periods.find((p) => p.key < effective.key) ?? null;
 
@@ -1429,23 +1610,30 @@ export function buildTeamDeepDiveFromRecords(
     if (region === 'UAE') {
       return buildGenericTeamDeepDive(normalizedSlug, [], actions, region, requestedPeriodKey);
     }
-    return withCallCenterNav({ ...fallback, teamSlug: normalizedSlug }, region);
+    return withCallCenterNav({
+      ...fallback,
+      teamSlug: normalizedSlug,
+      periodKey: effective.key,
+      monthLabel: `${effective.month} ${effective.year}`,
+      summary: { ...fallback.summary, score: 0, scoreLabel: 'Unmeasured team score', headcount: 0, averageOrBelowCount: 0, diagnosis: 'No scored people for this team in the selected month.' },
+      scoreTrend: buildTeamScoreTrend(teamRecords, effective, canonicalTeam),
+      scoringRecords: teamRecords,
+      kpis: [], agentsAverageOrBelow: [], individualActionPlans: [], teamActionPlans: [],
+    }, region);
   }
 
   const cfg = canonicalTeam === 'Outbound' ? OUTBOUND_TEAM_CONFIG : INBOUND_TEAM_CONFIG;
   const currentAgents = current.map((r) => r.rawAgent).filter((a): a is AgentRecord => Boolean(a));
-  const beforeAgents = before.map((r) => r.rawAgent).filter((a): a is AgentRecord => Boolean(a));
   const currAvg = mean(current.map((r) => r.score)) ?? fallback.summary.score;
-  const beforeAvg = mean(before.map((r) => r.score));
 
-  const score = currentAgents.length > 0
+  const measuredScore = currentAgents.length > 0
     ? (channelBoardScore({ agents: currentAgents, config: cfg, employeeAverage: currAvg }) ?? round1(currAvg))
-    : fallback.summary.score;
-  const prevScore = beforeAgents.length > 0 && beforeAvg !== null
-    ? (channelBoardScore({ agents: beforeAgents, config: cfg, employeeAverage: beforeAvg }) ?? round1(beforeAvg))
-    : beforeAvg;
-  const changeVsPrev =
-    prevScore !== null ? round1(score - round1(prevScore)) : fallback.summary.changeVsPrev;
+    : officialTeamMonthScore(current, canonicalTeam);
+  const score = measuredScore ?? fallback.summary.score;
+  const scoreTrend = measuredScore === null
+    ? buildTeamScoreTrend(teamRecords, effective, canonicalTeam)
+    : withSelectedTeamScore(buildTeamScoreTrend(teamRecords, effective, canonicalTeam), measuredScore);
+  const changeVsPrev = scoreTrend.changeVsPrevious ?? 0;
   const grade = gradeForScore(score);
   const gradeFull = fullGradeLabel(grade);
   const headcount = new Set(current.map((r) => r.employeeId)).size;
@@ -1671,8 +1859,11 @@ export function buildTeamDeepDiveFromRecords(
       changeVsPrev,
       headcount,
       averageOrBelowCount: agentsAverageOrBelow.length,
-      diagnosis: fallback.summary.diagnosis,
+      diagnosis: `${canonicalTeam} scored ${score.toFixed(1)}% across ${headcount} measured agents.`,
+      scoreLabel: measuredScore === null ? 'Sample team score' : undefined,
     },
+    scoreTrend,
+    scoringRecords: teamRecords,
     kpis,
     agentsAverageOrBelow,
     individualActionPlans,

@@ -328,7 +328,7 @@ describe('Function Viewer sidebar (Figma 48:3)', () => {
 
     // First function expanded: its teams (IP Offshore counts under RCM) link to read-only team dashboards.
     const rcmTeams = screen.getByRole('group', { name: 'RCM teams' });
-    expect(within(rcmTeams).getByRole('link', { name: 'Coding' })).toHaveAttribute('href', '/team/coding');
+    expect(within(rcmTeams).getByRole('link', { name: 'Coding' })).toHaveAttribute('href', '/team/coding?region=UAE');
     expect(within(rcmTeams).getByRole('link', { name: 'Pre-Approvals IP Offshore' })).toBeInTheDocument();
     expect(within(rcmTeams).queryByRole('link', { name: 'Inbound' })).not.toBeInTheDocument();
     expect(within(rcmTeams).getByRole('link', { name: 'Pre-Approvals OP Final' })).toBeInTheDocument();
@@ -501,6 +501,70 @@ describe('responsive dock and navigation drawer', () => {
     <MemoryRouter initialEntries={[path]}><ThemeProvider><ResponsiveSidebarHarness /></ThemeProvider></MemoryRouter>,
     { wrapper: QueryWrapper },
   );
+
+  it.each(['EGY', 'UAE'])('groups country aliases in the director sidebar and dock and keeps selected %s', (selected) => {
+    authState.user = { id: 'director', name: 'Director', username: 'director', role: 'Function Director', accessible_functions: ['RCM'] };
+    catalogState.scopes = [
+      { team: 'Coding EGY', region: 'EGY', performance_level: 'Employee', position: '' },
+      { team: 'Coding', region: 'UAE', performance_level: 'Employee', position: '' },
+      { team: 'Resubmission', region: 'EGY', performance_level: 'Employee', position: '' },
+      { team: 'Re-Submission EGY', region: 'EGY', performance_level: 'Employee', position: '' },
+      { team: 'Re-Submission', region: 'UAE', performance_level: 'Employee', position: '' },
+    ];
+    renderResponsive(`/executive?region=${selected}&month=June`);
+    const dock = screen.getByRole('navigation', { name: 'Quick navigation' });
+    const codingDock = within(dock).getByRole('link', { name: 'Go to Coding' });
+    expect(new URL(codingDock.getAttribute('href')!, 'http://localhost').searchParams.get('region')).toBe(selected);
+    expect(within(dock).getAllByRole('link', { name: /Go to Coding/ })).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Open full navigation' }));
+    const group = screen.getByRole('group', { name: 'Employee teams' });
+    for (const name of ['Coding', 'Re-Submission']) {
+      const link = within(group).getByRole('link', { name });
+      expect(new URL(link.getAttribute('href')!, 'http://localhost').searchParams.get('region')).toBe(selected);
+      expect(within(group).getAllByRole('link', { name })).toHaveLength(1);
+    }
+  });
+
+  it.each([
+    ['Coding EGY', 'EGY', 'UAE'],
+    ['Coding', 'UAE', 'EGY'],
+    ['Re-Submission EGY', 'EGY', 'UAE'],
+  ])('keeps the authorized country for a single source %s', (source, authorized, selected) => {
+    authState.user = { id: 'director', name: 'Director', username: 'director', role: 'Function Director', accessible_functions: ['RCM'] };
+    catalogState.scopes = [{ team: source, region: authorized, performance_level: 'Employee', position: '' }];
+    renderResponsive(`/executive?region=${selected}`);
+    const dock = screen.getByRole('navigation', { name: 'Quick navigation' });
+    const link = within(dock).getByRole('link', { name: source.includes('Coding') ? 'Go to Coding' : 'Go to Re-Submission' });
+    expect(new URL(link.getAttribute('href')!, 'http://localhost').searchParams.get('region')).toBe(authorized);
+    fireEvent.click(screen.getByRole('button', { name: 'Open full navigation' }));
+    const group = screen.getByRole('group', { name: 'Employee teams' });
+    expect(new URL(within(group).getByRole('link').getAttribute('href')!, 'http://localhost').searchParams.get('region')).toBe(authorized);
+  });
+
+  it('preserves a selected country for a regional manager authorized in both countries', () => {
+    authState.user = { id: 'regional', name: 'Regional', username: 'regional', role: 'Regional Manager', accessible_regions: ['EGY', 'UAE'] };
+    catalogState.scopes = [
+      { team: 'Coding EGY', region: 'EGY', performance_level: 'Employee', position: '' },
+      { team: 'Coding', region: 'UAE', performance_level: 'Employee', position: '' },
+    ];
+    renderResponsive('/executive?region=EGY');
+    const dock = screen.getByRole('navigation', { name: 'Quick navigation' });
+    expect(new URL(within(dock).getByRole('link', { name: 'Go to Coding' }).getAttribute('href')!, 'http://localhost').searchParams.get('region')).toBe('EGY');
+  });
+
+  it('uses only the countries authorized at each performance level', () => {
+    authState.user = { id: 'director', name: 'Director', username: 'director', role: 'Function Director', accessible_functions: ['RCM'] };
+    catalogState.scopes = [
+      { team: 'Coding EGY', region: 'EGY', performance_level: 'Employee', position: '' },
+      { team: 'Coding', region: 'UAE', performance_level: 'Corporate', position: '' },
+    ];
+    renderSidebar('/executive?region=EGY');
+    const employee = screen.getByRole('group', { name: 'Employee teams' });
+    expect(new URL(within(employee).getByRole('link', { name: 'Coding' }).getAttribute('href')!, 'http://localhost').searchParams.get('region')).toBe('EGY');
+    fireEvent.click(screen.getByRole('button', { name: 'Corporate teams' }));
+    const corporate = screen.getByRole('group', { name: 'Corporate teams' });
+    expect(new URL(within(corporate).getByRole('link', { name: 'Coding' }).getAttribute('href')!, 'http://localhost').searchParams.get('region')).toBe('UAE');
+  });
 
   it('shows compact permitted shortcuts and keeps the closed drawer out of the accessibility tree', () => {
     renderResponsive('/team/coding?period=2026-08&team=Coding&performance_level=Employee');

@@ -7,6 +7,14 @@ import { directorScope } from '../../lib/directorScope';
 import { isFunctionViewerRole, readAccessibleFunctions } from '../../lib/access';
 import { usePerformanceCatalog } from '../../hooks/api/usePerformanceCatalog';
 import { composeExecutiveSummary, normalizeRegion, toExecRecords } from '../executive/compose';
+import {
+  businessTeamName,
+  distinctCatalogTeams,
+  parseTeamCountry,
+  presentationTeamName,
+  recordMatchesCatalogTeam,
+  sameCountryBusinessTeam,
+} from '../team/countryTeamIdentity';
 import { useSummaryRecords } from '../executive/useSummaryRecords';
 import { useActionStore } from '../../hooks/useActionStore';
 import {
@@ -26,6 +34,7 @@ import {
   type TeamDeepDiveData,
 } from './teamDeepDiveData';
 import { buildRoleDetail, hasRoleDetailForSlug, isRoleBasedFunction, resolveRoleCards, type RoleActionDraft } from './roleDetailData';
+import { MonthlyReviewLoading } from './components/MonthlyReviewLoading';
 import {
   FunctionsOverviewSection,
   GradeDistributionSection,
@@ -84,7 +93,7 @@ function TeamsWithoutMonthlyData({
       <ul className="mt-3 flex flex-wrap gap-2">
         {teams.map((team) => (
           <li key={`${team.team}:${team.region ?? ''}`} className="rounded-full border border-amber-200 bg-white px-3 py-1 text-xs font-semibold text-amber-950">
-            {team.team}{team.region ? ` · ${team.region}` : ''}
+            {presentationTeamName(team.team)}
           </li>
         ))}
       </ul>
@@ -226,12 +235,14 @@ function MonthlyPresentationScreen({
     return execRecords.filter((record) => {
       const recordRegion = normalizeRegion(record.region);
       const recordLevel = String(record.level || 'Employee').trim().toLowerCase();
-      return serverTeams.some((team) => {
-        if (slugifyIdentifier(team.team) !== slugifyIdentifier(record.team)) return false;
-        const teamRegion = normalizeRegion(team.region);
-        if (recordRegion && teamRegion && recordRegion !== teamRegion) return false;
-        return team.performance_levels.some((level) => level.toLowerCase() === recordLevel);
-      });
+      return serverTeams.some((team) => recordMatchesCatalogTeam({
+        recordTeam: record.team,
+        recordRegion,
+        recordLevel,
+        catalogTeam: team.team,
+        catalogRegion: normalizeRegion(team.region),
+        levels: team.performance_levels,
+      }));
     });
   }, [execRecords, explicitPreview, serverTeams]);
 
@@ -324,7 +335,7 @@ function MonthlyPresentationScreen({
       region: MonthlyRegionFilter,
     ) => {
       return serverTeams.some((team) =>
-        slugifyIdentifier(team.team) === teamSlug &&
+        (slugifyIdentifier(team.team) === teamSlug || (parseTeamCountry(region) !== null && sameCountryBusinessTeam(team.team, teamSlug, parseTeamCountry(region) as 'EGY' | 'UAE'))) &&
         normalizeRegion(team.region) === region &&
         team.functions.some((name) => normalizeFunctionSlug(name) === fnSlug),
       );
@@ -341,7 +352,8 @@ function MonthlyPresentationScreen({
   const currentFunctionRecords = useMemo(
     () => selectedPeriodRecords.filter((record) => {
       const metadata = serverTeams.find((team) =>
-        slugifyIdentifier(team.team) === slugifyIdentifier(record.team) &&
+        (slugifyIdentifier(team.team) === slugifyIdentifier(record.team)
+          || (parseTeamCountry(activeRegion) !== null && sameCountryBusinessTeam(team.team, record.team, parseTeamCountry(activeRegion) as 'EGY' | 'UAE'))) &&
         normalizeRegion(team.region) === activeRegion,
       );
       return metadata?.functions.some((name) => normalizeFunctionSlug(name) === functionSlug) ?? false;
@@ -349,8 +361,11 @@ function MonthlyPresentationScreen({
     [activeRegion, functionSlug, selectedPeriodRecords, serverTeams],
   );
   const currentTeamRecords = useMemo(
-    () => selectedPeriodRecords.filter((record) => slugifyIdentifier(record.team) === activeTeamSlug),
-    [activeTeamSlug, selectedPeriodRecords],
+    () => selectedPeriodRecords.filter((record) =>
+      slugifyIdentifier(record.team) === activeTeamSlug
+      || (parseTeamCountry(activeRegion) !== null && sameCountryBusinessTeam(record.team, activeTeamSlug, parseTeamCountry(activeRegion) as 'EGY' | 'UAE')),
+    ),
+    [activeRegion, activeTeamSlug, selectedPeriodRecords],
   );
   const currentRoleRecords = useMemo(
     () => currentFunctionRecords.filter((record) => slugifyIdentifier(record.position ?? '') === activeRoleSlug),
@@ -493,7 +508,7 @@ function MonthlyPresentationScreen({
         ? normalizeFunctionSlug(functionName)
         : functionSlug || 'call-center';
       next.set('deepDive', targetFunction);
-      next.set('team', slugifyIdentifier(teamSlug));
+      next.set('team', businessTeamName(teamSlug) === teamSlug ? slugifyIdentifier(teamSlug) : slugifyIdentifier(businessTeamName(teamSlug)));
       next.delete('role');
       setSearchParams(next);
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -562,15 +577,22 @@ function MonthlyPresentationScreen({
     return buildRoleDetail(resolvedFunctionData, activeRoleSlug, storedActions, authorizedRecords);
   }, [activeRoleSlug, authorizedRecords, currentRoleRecords.length, explicitPreview, resolvedFunctionData, storedActions]);
 
-  const teamsInActiveRegion = serverTeams.filter((team) => normalizeRegion(team.region) === activeRegion);
+  const teamsInActiveRegion = distinctCatalogTeams(
+    serverTeams.filter((team) => normalizeRegion(team.region) === activeRegion),
+    activeRegion,
+  );
   const teamsInCurrentFunction = functionSlug
     ? teamsInActiveRegion.filter((team) => team.functions.some((name) => normalizeFunctionSlug(name) === functionSlug))
     : teamsInActiveRegion;
   const teamsWithoutData = teamsInCurrentFunction.filter((team) =>
-    !selectedPeriodRecords.some((record) =>
-      slugifyIdentifier(record.team) === slugifyIdentifier(team.team) &&
-      team.performance_levels.some((level) => level.toLowerCase() === String(record.level || 'Employee').toLowerCase()),
-    ),
+    !selectedPeriodRecords.some((record) => recordMatchesCatalogTeam({
+      recordTeam: record.team,
+      recordRegion: record.region,
+      recordLevel: record.level,
+      catalogTeam: team.team,
+      catalogRegion: activeRegion,
+      levels: team.performance_levels,
+    })),
   );
 
   const handleSaveRoleAction = useCallback(
@@ -844,7 +866,7 @@ function MonthlyPresentationScreen({
           teams={overviewData.teamsAtRisk}
           onSelectTeam={(row) => {
             const match = overviewData.functions.find((fn) => fn.functionName === row.functionName);
-            handleSelectAgentTeam(slugifyIdentifier(row.team), match?.slug || row.functionName);
+            handleSelectAgentTeam(businessTeamName(row.team), match?.slug || row.functionName);
           }}
         />
         {selectedPeriodRecords.length > 0 && (
@@ -1020,19 +1042,19 @@ function MonthlyPresentationScreen({
     : teamsInCurrentFunction;
   const selectedPeriodLabel = periodFromKey(selectedPeriodKey)?.label ?? selectedPeriodKey;
 
-  if (pageIsLoading || pageHasError || hasNoAssignments || invalidScopeRequest || noDataForSelection) {
-    const heading = pageIsLoading
-      ? 'Loading Monthly Review data'
-      : pageHasError
+  if (pageIsLoading) {
+    return <MonthlyReviewLoading toolbar={headerToolbar} />;
+  }
+
+  if (pageHasError || hasNoAssignments || invalidScopeRequest || noDataForSelection) {
+    const heading = pageHasError
         ? 'Monthly Review data could not be loaded'
         : hasNoAssignments
           ? 'No monthly review assignments'
           : invalidScopeRequest
             ? 'This Monthly Review link is outside your access'
             : `No performance data for ${selectedPeriodLabel}`;
-    const detail = pageIsLoading
-      ? 'Loading the teams and performance records available to your account.'
-      : pageHasError
+    const detail = pageHasError
         ? 'The authorized team list or performance records could not be fetched. Retry to load your scope again.'
         : hasNoAssignments
           ? functionScopeRestricted
@@ -1048,7 +1070,7 @@ function MonthlyPresentationScreen({
       <main className="mx-auto max-w-7xl space-y-5 px-4 py-8 sm:px-6 lg:px-8">
         {headerToolbar && <div className="flex flex-wrap items-center gap-3">{headerToolbar}</div>}
         <section
-          data-testid={hasNoAssignments ? 'monthly-assignment-message' : noDataForSelection ? 'monthly-no-data' : pageHasError ? 'monthly-data-error' : invalidScopeRequest ? 'monthly-scope-restricted' : 'monthly-loading'}
+          data-testid={hasNoAssignments ? 'monthly-assignment-message' : noDataForSelection ? 'monthly-no-data' : pageHasError ? 'monthly-data-error' : 'monthly-scope-restricted'}
           role={pageHasError || invalidScopeRequest ? 'alert' : 'status'}
           aria-live="polite"
           className={`rounded-2xl border p-5 sm:p-6 ${pageHasError || invalidScopeRequest ? 'border-rose-200 bg-rose-50' : 'border-slate-200 bg-white'}`}

@@ -38,18 +38,33 @@ export interface SixMonthKpiSeriesItem {
   trend6Mo: SixMonthKpiPoint[];
 }
 
+export interface ScoreTrendPoint {
+  month: string;
+  score: number | null;
+  periodKey?: string;
+  selected?: boolean;
+  basisDetail?: string;
+  benchmarkScore?: number;
+  isPeak?: boolean;
+}
+
 interface ScoreTrendChartProps {
-  data: Array<{ month: string; score: number; benchmarkScore?: number; isPeak?: boolean }>;
+  data: ScoreTrendPoint[];
   targetScore?: number;
+  targetLabel?: string;
   benchmarkName?: string;
   mode?: 'actuals' | 'team_avg' | 'team_best' | 'personal_best';
+  height?: number;
+  animate?: boolean;
+  caption?: string;
 }
 
 interface TooltipEntry {
-  value: number;
+  value: number | null;
   color: string;
   dataKey: string;
   name: string;
+  payload?: ScoreTrendPoint;
 }
 
 interface CustomTooltipProps {
@@ -61,10 +76,10 @@ interface CustomTooltipProps {
 interface CustomDotProps {
   cx?: number;
   cy?: number;
-  payload?: { isPeak?: boolean };
+  payload?: ScoreTrendPoint;
 }
 
-const CustomTooltip = ({ active, payload, label }: CustomTooltipProps) => {
+export const CustomTooltip = ({ active, payload, label }: CustomTooltipProps) => {
   if (!active || !payload?.length) return null;
 
   return (
@@ -74,13 +89,21 @@ const CustomTooltip = ({ active, payload, label }: CustomTooltipProps) => {
       </div>
       {payload.map((entry, index) => {
         const score = entry.value;
+        if (score == null || Number.isNaN(score)) {
+          return (
+            <div key={index} className="py-0.5 text-xs font-semibold text-[var(--text-secondary)]">
+              {entry.payload?.basisDetail ?? 'No data'}
+            </div>
+          );
+        }
         let color = entry.color;
         if (entry.dataKey === 'score') {
           color = getGradeTone(score).text;
         }
 
         return (
-          <div key={index} className="flex justify-between items-center py-0.5">
+          <div key={index} className="py-0.5">
+            <div className="flex justify-between items-center">
             <span className="text-xs font-semibold text-[var(--text-secondary)] flex items-center gap-1.5">
               <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: entry.color }} />
               {entry.name}:
@@ -88,6 +111,8 @@ const CustomTooltip = ({ active, payload, label }: CustomTooltipProps) => {
             <span className="font-mono font-black text-sm ml-4" style={{ color }}>
               {score.toFixed(1)}%
             </span>
+            </div>
+            {entry.dataKey === 'score' && entry.payload?.basisDetail && <div className="mt-1 text-xs text-[var(--text-secondary)]">{entry.payload.basisDetail}</div>}
           </div>
         );
       })}
@@ -98,6 +123,18 @@ const CustomTooltip = ({ active, payload, label }: CustomTooltipProps) => {
 const CustomDot = (props: CustomDotProps) => {
   const { cx, cy, payload } = props;
   if (cx == null || cy == null) return null;
+  if (payload?.selected) {
+    return (
+      <circle
+        cx={cx}
+        cy={cy}
+        r={6}
+        fill="var(--color-meet)"
+        stroke="#2563eb"
+        strokeWidth={2}
+      />
+    );
+  }
   if (payload?.isPeak) {
     return (
       <g>
@@ -781,7 +818,11 @@ export function ProfileKpiSixMonthTrend({
 const ScoreTrendChart = ({
   data,
   targetScore = 80,
+  targetLabel,
   benchmarkName = 'Benchmark',
+  height = 220,
+  animate = true,
+  caption,
 }: ScoreTrendChartProps) => {
   if (!data || !data.length) {
     return (
@@ -792,74 +833,87 @@ const ScoreTrendChart = ({
   }
 
   const hasBenchmark = data.some((d) => d.benchmarkScore !== undefined);
+  const textAlternative = data
+    .map((point) => `${point.month}: ${point.score == null || Number.isNaN(point.score) ? point.basisDetail ?? 'No data' : `${point.score.toFixed(1)}%`}${point.selected ? ' (selected)' : ''}${point.score != null && point.basisDetail ? ` (${point.basisDetail})` : ''}`)
+    .join(', ');
 
   return (
-    <ResponsiveContainer width="100%" height={220}>
-      <LineChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-        <CartesianGrid strokeDasharray="3 3" stroke="var(--border-light)" vertical={false} />
-        <XAxis
-          dataKey="month"
-          tick={{ fontSize: 12, fill: 'var(--text-muted)' }}
-          axisLine={false}
-          tickLine={false}
-          padding={{ left: 10, right: 10 }}
-        />
-        <YAxis
-          tick={{ fontSize: 12, fill: 'var(--text-muted)' }}
-          axisLine={false}
-          tickLine={false}
-          domain={[0, 100]}
-        />
-        <Tooltip content={<CustomTooltip />} />
-
-        {hasBenchmark && (
-          <Legend
-            verticalAlign="top"
-            height={36}
-            iconType="circle"
-            wrapperStyle={{ fontSize: '12px', fontWeight: 500 }}
+    <div className="min-w-0">
+      <p className="sr-only">
+        {caption ? `${caption}. ` : ''}
+        {targetLabel ?? `Target ${targetScore}%`}. {textAlternative}
+      </p>
+      <ResponsiveContainer width="100%" height={height}>
+        <LineChart data={data} margin={{ top: 16, right: 8, left: -18, bottom: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="var(--border-light)" vertical={false} />
+          <XAxis
+            dataKey="month"
+            tick={{ fontSize: 12, fill: 'var(--text-muted)' }}
+            axisLine={false}
+            tickLine={false}
+            padding={{ left: 10, right: 10 }}
           />
-        )}
+          <YAxis
+            tick={{ fontSize: 12, fill: 'var(--text-muted)' }}
+            axisLine={false}
+            tickLine={false}
+            domain={[0, 100]}
+          />
+          <Tooltip filterNull={false} content={<CustomTooltip />} />
 
-        <ReferenceLine
-          y={targetScore}
-          stroke="var(--color-meet)"
-          strokeDasharray="4 4"
-          strokeOpacity={0.4}
-          label={{
-            value: `Target Threshold (${targetScore}%)`,
-            position: 'insideTopLeft',
-            fontSize: 12,
-            fill: 'var(--color-meet)',
-            fontWeight: 600,
-            dy: -8,
-          }}
-        />
+          {hasBenchmark && (
+            <Legend
+              verticalAlign="top"
+              height={36}
+              iconType="circle"
+              wrapperStyle={{ fontSize: '12px', fontWeight: 500 }}
+            />
+          )}
 
-        {hasBenchmark && (
+          <ReferenceLine
+            y={targetScore}
+            stroke="var(--color-meet)"
+            strokeDasharray="4 4"
+            strokeOpacity={0.4}
+            label={{
+              value: targetLabel ?? `Target Threshold (${targetScore}%)`,
+              position: 'insideTopLeft',
+              fontSize: 12,
+              fill: 'var(--color-meet)',
+              fontWeight: 600,
+              dy: -8,
+            }}
+          />
+
+          {hasBenchmark && (
+            <Line
+              name={benchmarkName}
+              type="monotone"
+              dataKey="benchmarkScore"
+              stroke="#8b5cf6"
+              strokeWidth={2}
+              strokeDasharray="5 5"
+              dot={{ fill: '#8b5cf6', r: 3, strokeWidth: 1, stroke: 'var(--bg-surface)' }}
+              activeDot={{ r: 5, stroke: '#8b5cf6', strokeWidth: 2 }}
+              isAnimationActive={animate}
+              connectNulls={false}
+            />
+          )}
+
           <Line
-            name={benchmarkName}
+            name="Actual Score"
             type="monotone"
-            dataKey="benchmarkScore"
-            stroke="#8b5cf6"
-            strokeWidth={2}
-            strokeDasharray="5 5"
-            dot={{ fill: '#8b5cf6', r: 3, strokeWidth: 1, stroke: 'var(--bg-surface)' }}
-            activeDot={{ r: 5, stroke: '#8b5cf6', strokeWidth: 2 }}
+            dataKey="score"
+            stroke="var(--color-meet)"
+            strokeWidth={3}
+            dot={<CustomDot />}
+            activeDot={{ r: 6, stroke: 'var(--color-meet)', strokeWidth: 2 }}
+            isAnimationActive={animate}
+            connectNulls={false}
           />
-        )}
-
-        <Line
-          name="Actual Score"
-          type="monotone"
-          dataKey="score"
-          stroke="var(--color-meet)"
-          strokeWidth={3}
-          dot={<CustomDot />}
-          activeDot={{ r: 6, stroke: 'var(--color-meet)', strokeWidth: 2 }}
-        />
-      </LineChart>
-    </ResponsiveContainer>
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
   );
 };
 

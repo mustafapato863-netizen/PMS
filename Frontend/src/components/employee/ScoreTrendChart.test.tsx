@@ -6,6 +6,20 @@ import {
   type SixMonthKpiPoint,
   type SixMonthKpiSeriesItem,
 } from './ScoreTrendChart';
+import ScoreTrendChart from './ScoreTrendChart';
+import { CustomTooltip } from './ScoreTrendChart';
+
+it('shows no data in the tooltip for a missing score', () => {
+  render(<CustomTooltip active label="Aug" payload={[{ value: null, color: 'blue', dataKey: 'score', name: 'Actual Score' }]} />);
+  expect(screen.getByText('Aug')).toBeInTheDocument();
+  expect(screen.getByText('No data')).toBeInTheDocument();
+});
+
+it('distinguishes unavailable scoring evidence from a missing month', () => {
+  render(<CustomTooltip active label="Aug" payload={[{ value: null, color: 'blue', dataKey: 'score', name: 'Actual Score', payload: { month: 'Aug', score: null, basisDetail: 'Scoring basis unavailable' } }]} />);
+  expect(screen.getByText('Scoring basis unavailable')).toBeInTheDocument();
+  expect(screen.queryByText('No data')).not.toBeInTheDocument();
+});
 
 function point(
   month: string,
@@ -190,5 +204,25 @@ describe('ProfileKpiSixMonthTrend direction handling', () => {
     expect(screen.getByTestId('trend-peak-2026-07')).toBeInTheDocument();
     expect(screen.getByTestId('trend-dot-2026-09')).toHaveAttribute('data-missed', 'false');
     expect(screen.getByTestId('trend-dot-2026-05')).toHaveAttribute('data-missed', 'true');
+  });
+});
+
+describe('employee score trend', () => {
+  it('reads numeric scores and leaves a missing month as no data', () => {
+    render(
+      <ScoreTrendChart
+        data={[
+          { month: 'Aug', score: 80, isPeak: true },
+          { month: 'Sep', score: null, selected: true },
+        ]}
+        targetScore={100}
+        targetLabel="100% target"
+        animate={false}
+      />,
+    );
+
+    expect(screen.getByText(/Aug: 80\.0%/)).toBeInTheDocument();
+    expect(screen.getByText(/Sep: No data \(selected\)/)).toBeInTheDocument();
+    expect(screen.getByText(/100% target/)).toBeInTheDocument();
   });
 });

@@ -181,7 +181,7 @@ describe('Function Summary page', () => {
     expect(names).toEqual(expect.arrayContaining(['Coding', 'Submission', 'Re-Submission', 'Pre-Approvals IP Offshore']));
     expect(names).not.toContain('Inbound');
     expect(names).toContain('Pre-Approvals OP Final');
-    expect(within(board).getByRole('link', { name: 'Coding' })).toHaveAttribute('href', '/team/coding');
+    expect(within(board).getByRole('link', { name: 'Coding' })).toHaveAttribute('href', '/team/coding?region=UAE');
   });
 
   it('switching function navigates and keeps period + level only', () => {

@@ -122,6 +122,40 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
     localStorage.clear();
   });
 
+  it('shows the review layout while records are still loading', () => {
+    monthlyTestState.summary = { data: [], isLoading: true, isError: false, refetch: vi.fn() };
+    render(
+      <MemoryRouter initialEntries={['/monthly-presentation']}>
+        <Routes>
+          <Route path="/monthly-presentation" element={<MonthlyPresentationView />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    const status = screen.getByTestId('monthly-loading');
+    expect(status).toHaveAttribute('aria-busy', 'true');
+    expect(within(status).getByRole('heading', { name: 'Loading Monthly Review' })).toBeInTheDocument();
+    expect(within(status).getByText(/teams and scores available to your account/i)).toBeInTheDocument();
+    expect(screen.getByTestId('monthly-loading-preview')).toHaveAttribute('aria-hidden', 'true');
+    expect(screen.getByTestId('region-egy')).toBeEnabled();
+    expect(screen.getByTestId('region-uae')).toBeEnabled();
+  });
+
+  it('keeps a retry message when Monthly Review fails to load', () => {
+    monthlyTestState.summary = { data: [], isLoading: false, isError: true, refetch: vi.fn() };
+    render(
+      <MemoryRouter initialEntries={['/monthly-presentation']}>
+        <Routes>
+          <Route path="/monthly-presentation" element={<MonthlyPresentationView />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByTestId('monthly-data-error')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+    expect(screen.queryByTestId('monthly-loading')).not.toBeInTheDocument();
+  });
+
   it.each(['Function Viewer', 'Function Director'])('opens Monthly Review in its authorized scope instead of redirecting to Function Summary', (role) => {
     monthlyTestState.role = role;
     render(
@@ -670,7 +704,7 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
 
     fireEvent.click(screen.getByTestId('team-at-risk-coding-egy'));
     expect(screen.getByTestId('location-probe').textContent).toContain('deepDive=rcm');
-    expect(screen.getByTestId('location-probe').textContent).toContain('team=coding-egy');
+    expect(screen.getByTestId('location-probe').textContent).toContain('team=coding');
     expect(screen.getByTestId('team-deep-dive-page')).toBeInTheDocument();
     expect(screen.getByTestId('team-deep-dive-score')).toHaveTextContent('53.6%');
     const breadcrumb = screen.getByTestId('team-deep-dive-breadcrumb');

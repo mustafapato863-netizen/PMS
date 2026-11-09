@@ -1,4 +1,5 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useContext, useMemo, useState, type ReactNode } from 'react';
+import { QueryClientContext } from '@tanstack/react-query';
 import {
   AlertTriangle,
   ArrowDownRight,
@@ -23,17 +24,23 @@ import {
   ProfileKpiSixMonthTrend,
   type SixMonthKpiSeriesItem,
 } from '../../../components/employee/ScoreTrendChart';
+import ScoreTrendChart from '../../../components/employee/ScoreTrendChart';
 import { KpiTrendMovement, SelectableKpiCard } from './SelectableKpiCard';
 import { GRADE_STYLES, type GradeLetter } from '../monthlyOverviewData';
 import type { FullGradeLabel } from '../callCenterDeepDiveData';
 import { showActionSection, showPresentationControl, showStoredPlaceholder } from '../presentationMode';
 import {
+  applyTeamTrendConfig,
+  selectedTeamConfigSource,
+  unavailableTeamTrend,
+  withEmptyTeamTrend,
   teamActionDueLabel,
   type IndividualActionPlanCard,
   type TeamDeepDiveData,
   type TeamLevelActionPlanCard,
   type TeamSlug,
 } from '../teamDeepDiveData';
+import { useTeamConfig } from '../../../hooks/useTeamConfig';
 
 const TEAM_KPI_CARDS_PER_ROW = 4;
 
@@ -77,9 +84,18 @@ export function FullWordGradeBadge({
 }
 
 export default function TeamDeepDiveView(props: TeamDeepDiveViewProps) {
-  const { data } = props;
+  const client = useContext(QueryClientContext);
+  const data = withEmptyTeamTrend(props.data);
+  if (!client) return <TeamDeepDiveViewContent key={`${data.teamSlug}|${data.regionCode}|${data.periodKey}`} {...props} data={unavailableTeamTrend(data)} />;
+  return <ConfiguredTeamDeepDiveView {...props} data={data} />;
+}
+
+function ConfiguredTeamDeepDiveView(props: TeamDeepDiveViewProps) {
+  const { data: original } = props;
+  const { data: config } = useTeamConfig(selectedTeamConfigSource(original));
+  const data = config ? applyTeamTrendConfig(original, config) : unavailableTeamTrend(original);
   const contextKey = `${data.teamSlug}|${data.regionCode}|${data.periodKey}`;
-  return <TeamDeepDiveViewContent key={contextKey} {...props} />;
+  return <TeamDeepDiveViewContent key={contextKey} {...props} data={data} />;
 }
 
 function TeamDeepDiveViewContent({
@@ -92,7 +108,10 @@ function TeamDeepDiveViewContent({
   presentationMode = false,
 }: TeamDeepDiveViewProps) {
   const summaryGradeStyle = GRADE_STYLES[data.summary.grade];
-  const isPositiveChange = data.summary.changeVsPrev >= 0;
+  const measuredChange = data.scoreTrend ? data.scoreTrend.changeVsPrevious : data.summary.changeVsPrev;
+  const showChange = measuredChange !== null && Number.isFinite(measuredChange);
+  const isPositiveChange = showChange && measuredChange > 0;
+  const comparedMonth = data.scoreTrend?.previousMonthLabel ?? data.previousMonthLabel;
 
   // Enrich & sort team KPIs from worst to best (lowest achievement / highest points lost first)
   const enrichedKpis = useMemo(() => {
@@ -361,8 +380,8 @@ function TeamDeepDiveViewContent({
         </div>
 
         {/* Team Hero Summary: Name, Score, Full-Word Grade, Gap, Diagnosis */}
-        <div className="mt-5 flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
-          <div className="space-y-2">
+        <div className="mt-5 flex flex-col gap-4 xl:flex-row xl:items-stretch xl:justify-between">
+          <div className="min-w-0 space-y-2 xl:max-w-xl">
             <div className="flex flex-wrap items-center gap-2.5">
               <span className="inline-flex items-center gap-1 rounded-md bg-blue-600 px-2.5 py-0.5 text-[11px] font-bold tracking-wider text-white uppercase">
                 Team Deep Dive
@@ -389,52 +408,89 @@ function TeamDeepDiveViewContent({
           </div>
 
           {/* Score + Full-Word Grade + Gap + Movement */}
+          <div className="flex min-w-0 flex-1 flex-col gap-3 sm:flex-row sm:items-stretch">
           <div className="flex shrink-0 flex-wrap items-center gap-4 rounded-2xl border border-slate-200/80 bg-slate-50/70 p-4 sm:p-5">
             <div>
               <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-                Team Score
+                {data.summary.scoreLabel ?? 'Team Score'}
               </div>
               <div className="mt-1 flex items-baseline gap-3">
                 <span
                   data-testid="team-deep-dive-score"
                   className={`text-4xl font-extrabold tracking-tight sm:text-5xl ${summaryGradeStyle.scoreText}`}
                 >
-                  {data.summary.score.toFixed(1)}%
+                  {data.summary.scoreLabel === 'Unmeasured team score' ? '—' : `${data.summary.score.toFixed(1)}%`}
                 </span>
-                <FullWordGradeBadge
+                {data.summary.scoreLabel !== 'Unmeasured team score' && <FullWordGradeBadge
                   grade={data.summary.grade}
                   gradeFullLabel={data.summary.gradeFullLabel}
                   size="lg"
-                />
+                />}
               </div>
             </div>
 
             <div className="h-12 w-px bg-slate-200 hidden sm:block" />
 
             <div className="flex flex-col gap-1.5 text-xs">
-              <span className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1 font-bold text-rose-700">
+              {data.summary.scoreLabel !== 'Unmeasured team score' && <span className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1 font-bold text-rose-700">
                 <Target className="size-3.5" />
                 {data.summary.gap.toFixed(1)}% gap to 100% target
-              </span>
+              </span>}
 
+              {showChange && measuredChange !== null && (
               <span
                 className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 font-bold ${
                   isPositiveChange
                     ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                    : 'border-rose-200 bg-rose-50 text-rose-700'
+                    : measuredChange < 0
+                    ? 'border-rose-200 bg-rose-50 text-rose-700'
+                    : 'border-slate-200 bg-white text-slate-700'
                 }`}
               >
                 {isPositiveChange ? (
                   <ArrowUpRight className="size-3.5" />
-                ) : (
+                ) : measuredChange < 0 ? (
                   <ArrowDownRight className="size-3.5" />
-                )}
-                {isPositiveChange
-                  ? `+${data.summary.changeVsPrev.toFixed(1)}%`
-                  : `${data.summary.changeVsPrev.toFixed(1)}%`}{' '}
-                vs {data.previousMonthLabel}
+                ) : null}
+                {isPositiveChange ? `+${measuredChange.toFixed(1)}%` : `${measuredChange.toFixed(1)}%`} vs {comparedMonth}
               </span>
+              )}
+              {data.scoreTrend?.basisNote && (
+                <span data-testid="team-score-basis-note" className="max-w-xs text-[11px] font-semibold leading-snug text-amber-800">
+                  {data.scoreTrend.basisNote}
+                </span>
+              )}
             </div>
+          </div>
+
+          {data.scoreTrend && (
+            <section
+              aria-label={`${data.teamDisplayName} score trend`}
+              data-testid="team-score-trend"
+              className="min-w-0 flex-1 rounded-2xl border border-slate-200/80 bg-white p-3 sm:p-4"
+            >
+              <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                6-month team score
+              </div>
+              <ScoreTrendChart
+                data={data.scoreTrend.points.map((point) => ({
+                  month: point.month,
+                  score: point.score,
+                  periodKey: point.periodKey,
+                  selected: point.selected,
+                  basisDetail: point.basisDetail,
+                }))}
+                targetScore={100}
+                targetLabel="100% target"
+                height={148}
+                animate={false}
+                caption={`${data.teamDisplayName} ${data.regionName} team score, selected month and five preceding months`}
+              />
+              {data.scoreTrend.points.some((point) => point.basisDetail?.includes('current pooling rules') || point.basisDetail?.includes('historical settings unavailable')) && (
+                <p className="mt-1 text-xs text-slate-500">Team scores use the dashboard calculation and current pooling rules; historical settings may be unavailable. Hover each month for details.</p>
+              )}
+            </section>
+          )}
           </div>
         </div>
       </header>

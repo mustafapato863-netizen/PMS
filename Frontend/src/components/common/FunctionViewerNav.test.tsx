@@ -15,7 +15,7 @@ describe('FunctionViewerNav team links', () => {
     const group = screen.getByRole('group', { name: 'RCM teams' });
     expect(within(group).getByRole('link', { name: 'Pre-Approvals IP Offshore' })).toHaveAttribute('href', '/team/pre-approvals');
     expect(within(group).getByRole('link', { name: 'Pre-Approvals OP Final' })).toHaveAttribute('href', '/team/pre-approvals-op-final');
-    expect(within(group).getByRole('link', { name: 'Coding' })).toHaveAttribute('href', '/team/coding');
+    expect(within(group).getByRole('link', { name: 'Coding' })).toHaveAttribute('href', '/team/coding?region=UAE');
     expect(within(group).queryByRole('link', { name: 'Inbound' })).not.toBeInTheDocument();
   });
 });

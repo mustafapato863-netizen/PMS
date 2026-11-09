@@ -1,7 +1,7 @@
 /** Page-level helpers for the Executive / Function Summary headers. */
 import type { FilterOption } from '../../components/insights/overview/InsightsHeader';
 import { MONTHS, formatPeriod, periodOf } from './compose';
-import { teamPath } from '../../types';
+import { teamPath, withTeamQuery } from '../../types';
 import type { ExecutivePerson, ExecutivePeriod, ExecutiveSummary, ExecutiveView } from './types';
 import { hasAllTeamsScope } from '../../lib/access';
 
@@ -37,7 +37,7 @@ export function employeeBalancedScorecardPath(
   }
   params.set('employee_ids', person.employee_id);
   if (branch && branch !== 'All') params.set('branch', branch.toLowerCase());
-  return `${teamPath(person.team)}?${params.toString()}`;
+  return withTeamQuery(teamPath(person.team), params);
 }
 
 export function executivePersonPath(

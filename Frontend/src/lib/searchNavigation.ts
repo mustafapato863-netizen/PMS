@@ -1,4 +1,5 @@
-import { teamPath, type User } from '../types';
+import { teamPath, withTeamQuery, type User } from '../types';
+import { businessTeamName } from '../features/team/countryTeamIdentity';
 import {
   canAccessCorrectiveActions,
   canAccessFunctionSummary,
@@ -274,17 +275,17 @@ export function buildRemoteSearchResults(data: GlobalSearchResponse): SearchResu
       id: `employee-${employee.employee_id}`,
       group: 'employees' as const,
       label: employee.name,
-      subtitle: `${employee.team} · ${employee.employee_id}`,
+      subtitle: `${businessTeamName(employee.team)} · ${employee.employee_id}`,
       icon: 'employee' as const,
       path: `/employee/${employee.employee_id}`,
     })),
     ...data.teams.map((team) => ({
       id: `team-${team.name}`,
       group: 'teams' as const,
-      label: team.name,
+      label: businessTeamName(team.name),
       subtitle: team.subtitle,
       icon: 'team' as const,
-      path: teamPath(team.name),
+      path: withTeamQuery(teamPath(team.name)),
     })),
   ];
 }

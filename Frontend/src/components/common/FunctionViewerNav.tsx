@@ -1,6 +1,7 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { ChevronDown, FileBarChart, LayoutGrid } from 'lucide-react';
 import { canonicalTeamName, teamPath } from '../../types';
+import { sidebarTeamLabel } from '../../features/team/countryTeamIdentity';
 import { executiveFunctionForTeam, functionSlug, isTeamInFunctions } from '../../features/executive/functions';
 import type { ExecutiveFunction } from '../../features/executive/types';
 import { getTeamIcon, isHiddenTeam } from './sidebarTeamItems';
@@ -69,7 +70,7 @@ export default function FunctionViewerNav({ allowed, catalogTeams, renderLink, i
             </div>
             {isOpen && teams.length > 0 && (
               <div className={`space-y-0.5 ${isCollapsed ? 'xl:hidden' : ''}`} role="group" aria-label={`${fn} teams`}>
-                {teams.map((team) => renderLink({ id: `fn-${fn}-${team}`, name: team, path: teamPath(team), icon: <span className="block h-1.5 w-1.5 rounded-full bg-current" /> }, true))}
+                {teams.map((team) => renderLink({ id: `fn-${fn}-${team}`, name: sidebarTeamLabel(team, teams), path: teamPath(team), icon: <span className="block h-1.5 w-1.5 rounded-full bg-current" /> }, true))}
               </div>
             )}
           </div>

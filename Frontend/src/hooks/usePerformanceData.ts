@@ -16,6 +16,7 @@ const MONTH_ORDER: Record<string, number> = {
   January: 1, February: 2, March: 3, April: 4, May: 5, June: 6,
   July: 7, August: 8, September: 9, October: 10, November: 11, December: 12,
 };
+const NO_MATCH_TEAMS: string[] = [];
 
 export function normalizeScore(score: number): number {
   return normalizePerformanceScore(score);
@@ -1166,10 +1167,12 @@ export function useTeamData(
   rcmGroup: RcmGroupFilter = 'all',
   egyptTeam = '',
   legacyEnabled = true,
+  matchTeams: string[] = NO_MATCH_TEAMS,
 ) {
   const sourceMonth = scopedPerformanceApiEnabled ? month : 'All';
-  const scopedTeam = scopedPerformanceApiEnabled && teamName
-    ? teamName
+  const acceptedTeams = useMemo(() => matchTeams.length ? matchTeams : teamName ? [teamName] : NO_MATCH_TEAMS, [matchTeams, teamName]);
+  const scopedTeam = scopedPerformanceApiEnabled && acceptedTeams.length === 1
+    ? acceptedTeams[0]
     : undefined;
   const { agents: allAgents, periodAgents, loading, dataSource, errorMessage } = usePerformanceData(
     sourceMonth,
@@ -1184,8 +1187,8 @@ export function useTeamData(
     // The same team, workflow, call-centre, RCM and branch scope applies to the selected month
     // and to the period it is compared with.
     const scopeAgents = (source: AgentRecord[]) => {
-      let scoped = teamName
-        ? source.filter((a) => sameTeam(a.identity.team, teamName))
+      let scoped = acceptedTeams.length
+        ? source.filter((agent) => acceptedTeams.some((name) => sameTeam(agent.identity.team, name)))
         : source;
 
       if (teamName && (isPreApprovalsUaeTeam(teamName) || (isRcmTeam(teamName) && rcmDomain === 'pre_approvals')) && preApprovalsWorkflow !== 'all') {
@@ -1339,5 +1342,5 @@ export function useTeamData(
       prevPctDE,
       prevTotalAgents,
     };
-  }, [allAgents, periodAgents, teamName, month, location, loading, dataSource, errorMessage, weightsList, selectedLocations, preApprovalsWorkflow, callCenterChannel, rcmDomain, rcmGroup, egyptTeam]);
+  }, [allAgents, periodAgents, teamName, month, location, loading, dataSource, errorMessage, weightsList, selectedLocations, preApprovalsWorkflow, callCenterChannel, rcmDomain, rcmGroup, egyptTeam, acceptedTeams]);
 }

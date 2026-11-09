@@ -2,7 +2,8 @@ import { AlertTriangle, BarChart3, TrendingDown } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
 import type { ExecutiveTeam, ExecutivePeriod } from '../../../features/executive/types';
 import { arrow, fmtKpiValue, fmtScore, fmtSigned, isLowerBetter, scoreTone } from '../../../features/executive/format';
-import { teamPath } from '../../../types';
+import { teamPath, withTeamQuery } from '../../../types';
+import { presentationTeamName } from '../../../features/team/countryTeamIdentity';
 import { MONTHS } from '../../../features/executive/compose';
 import { ExecCard, ExecCardHeader, Footnote, GradeSquare, ScoreText, SoftEmpty, Sparkline, StatusPill, ToneText } from './ExecPrimitives';
 import { FLAG_LABEL, FLAG_ORDER } from './execModel';
@@ -13,7 +14,7 @@ function leaderboardPath(team: ExecutiveTeam, params: URLSearchParams) {
   const next = new URLSearchParams();
   for (const key of ['month', 'year', 'region', 'branch', 'location']) {
     const value = params.get(key);
-    if (value) next.set(key, value);
+    if (value && !(key === 'region' && value.toLowerCase() === 'all')) next.set(key, value);
   }
   const period = params.get('period');
   if (period && /^\d{4}-(0[1-9]|1[0-2])$/.test(period)) {
@@ -32,7 +33,7 @@ function leaderboardPath(team: ExecutiveTeam, params: URLSearchParams) {
     next.set(employeeMarketingSheet ? 'position_view' : 'position', team.position);
   }
   const query = next.toString();
-  return `${teamPath(sourceTeam)}${query ? `?${query}` : ''}`;
+  return withTeamQuery(teamPath(sourceTeam), query);
 }
 
 /** Function Summary (Figma 48:3): teams ranked by score. */
@@ -67,9 +68,9 @@ export function TeamLeaderboardCard({ teams, fn, effective, previous, onSelectTe
               <span role="cell" className="flex w-[24px]"><span className="flex size-[22px] items-center justify-center rounded-full bg-[var(--exec-chip-bg)] text-xs font-bold text-[var(--exec-chip-text)]">{index + 1}</span></span>
               <span role="cell" className="flex min-w-0 flex-1 flex-col gap-[2px]">
                 {onSelectTeam ? (
-                  <button type="button" className="text-left text-[13px] font-semibold leading-[1.3] text-[var(--insights-heading)] hover:underline" onClick={() => onSelectTeam(team.team)}>{team.team}</button>
+                  <button type="button" className="text-left text-[13px] font-semibold leading-[1.3] text-[var(--insights-heading)] hover:underline" onClick={() => onSelectTeam(team.team)}>{presentationTeamName(team.team)}</button>
                 ) : (
-                  <Link to={leaderboardPath(team, params)} className="text-[13px] font-semibold leading-[1.3] text-[var(--insights-heading)] hover:underline">{team.team}</Link>
+                  <Link to={leaderboardPath(team, params)} className="text-[13px] font-semibold leading-[1.3] text-[var(--insights-heading)] hover:underline">{presentationTeamName(team.team)}</Link>
                 )}
                 <span className="truncate text-xs text-[var(--text-muted)]">{[team.regions.join(' + '), `${team.employees} people`].filter(Boolean).join(' · ')}</span>
               </span>
@@ -103,7 +104,7 @@ export function TeamsNeedingAttentionCard({ teams, fn }: { teams: ExecutiveTeam[
               <li key={team.team} className="flex flex-col gap-[6px] rounded-[10px] border border-[var(--exec-card-border)] bg-[var(--exec-tile-bg)] p-[12px]" data-testid="attention-team">
                 <div className="flex items-start gap-[8px]">
                   <span className="flex min-w-0 flex-1 flex-col">
-                    <Link to={leaderboardPath(team, params)} className="text-[13px] font-semibold text-[var(--insights-heading)] hover:underline">{team.team}</Link>
+                    <Link to={leaderboardPath(team, params)} className="text-[13px] font-semibold text-[var(--insights-heading)] hover:underline">{presentationTeamName(team.team)}</Link>
                     <span className="text-xs text-[var(--text-muted)]">{team.regions.join(' + ')}</span>
                   </span>
                   <ScoreText score={team.score} className="text-[14px]">{fmtScore(team.score)}</ScoreText>

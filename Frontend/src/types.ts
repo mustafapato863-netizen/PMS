@@ -1,5 +1,7 @@
 // --- Core Data Types ---
 
+import { sharedTeamRoute } from './features/team/countryTeamIdentity';
+
 export type { GradeClass } from './constants/grades';
 
 export type RawData = Record<string, string>;
@@ -586,14 +588,30 @@ export function teamRouteIdForName(name: string | null | undefined): string | nu
 }
 
 /**
- * The only team link builder. A known team gets its canonical route id, so
- * saved links to the legacy ids keep working. An unknown team gets a slug,
- * which the team page does not resolve, so it shows the not-found state.
+ * Team link. A country-specific source name opens the shared business route
+ * with that country's region. Other teams keep their existing route id.
+ * An unknown team gets a slug, which the team page shows as not found.
  */
 export function teamPath(team: string): string {
+  const shared = sharedTeamRoute(team);
+  if (shared) return `/team/${shared.routeId}?region=${shared.region}`;
   const id = teamRouteIdForName(team);
   if (id) return `/team/${id}`;
   return `/team/${team.trim().toLowerCase().replace(/&/g, 'and').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')}`;
+}
+
+/** Merge a query onto a team path that may already carry ?region=. Later keys win. */
+export function withTeamQuery(path: string, extra?: string | URLSearchParams | null): string {
+  const [pathname, existing = ''] = path.split('?');
+  const params = new URLSearchParams(existing);
+  if (extra) {
+    const more = typeof extra === 'string' ? new URLSearchParams(extra.replace(/^\?/, '')) : extra;
+    more.forEach((value, key) => {
+      if (value) params.set(key, value);
+    });
+  }
+  const query = params.toString();
+  return query ? `${pathname}?${query}` : pathname;
 }
 
 // --- Action / CRM Types ---

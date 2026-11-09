@@ -1,7 +1,8 @@
 import './PageEnhancements.css';
 import { lazy, Suspense } from 'react';
-import { useParams, useSearchParams } from 'react-router-dom';
+import { Navigate, useParams, useSearchParams } from 'react-router-dom';
 import { resolveTeamRouteId } from '../types';
+import { legacySharedTeamRedirect } from '../features/team/countryTeamIdentity';
 import {
   isDepartmentManagementLevel,
   isPositionOverviewTeam,
@@ -14,6 +15,12 @@ const PositionDepartmentRoute = () => {
   const { teamId } = useParams();
   const [searchParams] = useSearchParams();
   const performanceLevel = searchParams.get('performance_level');
+  const legacy = legacySharedTeamRedirect(teamId);
+  if (legacy) {
+    const next = new URLSearchParams(searchParams);
+    next.set('region', legacy.region);
+    return <Navigate to={`/team/${legacy.routeId}?${next.toString()}`} replace />;
+  }
   const canonicalTeamId = resolveTeamRouteId(teamId) ?? teamId;
   const overview = isPositionOverviewTeam(canonicalTeamId) && !isDepartmentManagementLevel(performanceLevel);
 

@@ -71,6 +71,15 @@ const surfaces = [
 ];
 
 describe.each(surfaces)('Function detail links: $name', ({ component }) => {
+  it('keeps the Egypt source region when the summary region is All', () => {
+    render(<MemoryRouter initialEntries={['/function-summary/rcm?region=All&period=2026-06']}>
+      {component({ ...team('Coding EGY', 75), regions: ['EGY'], flags: ['grade_e'] })}
+    </MemoryRouter>);
+    const target = new URL(screen.getByRole('link', { name: 'Coding' }).getAttribute('href')!, 'http://local');
+    expect(target.pathname).toBe('/team/coding');
+    expect(target.searchParams.get('region')).toBe('EGY');
+    expect(target.searchParams.get('month')).toBe('June');
+  });
   it('opens the Media Buyer sheet instead of filtering the function summary', () => {
     render(<MemoryRouter initialEntries={['/function-summary/marketing?period=2026-08&region=EGY&branch=dubai&level=Employee&team=Marketing&position=Content+Writer']}>
       {component(mediaBuyer)}<Location />

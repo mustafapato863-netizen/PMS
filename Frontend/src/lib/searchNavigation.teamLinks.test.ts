@@ -15,7 +15,7 @@ describe('global search team results', () => {
     expect(results.filter((item) => item.group === 'teams').map((item) => [item.label, item.path])).toEqual([
       ['Pre-Approvals IP Offshore', '/team/pre-approvals'],
       ['Pre-Approvals OP Dubai', '/team/pre-approvals-op-final'],
-      ['Coding', '/team/coding'],
+      ['Coding', '/team/coding?region=UAE'],
     ]);
   });
 });

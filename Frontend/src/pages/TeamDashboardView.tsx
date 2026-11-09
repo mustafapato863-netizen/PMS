@@ -1,6 +1,6 @@
 import './PageEnhancements.css';
 import { lazy, Suspense, useState, useMemo, useEffect, useCallback } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { useTeamData, usePerformanceData, parseAHTtoSeconds, formatSecondsToMMSS, agentMatchesLocation, refreshPerformanceData, resolveTeamMonths, hasRealActivity } from '../hooks/usePerformanceData';
 import { useActionStore } from '../hooks/useActionStore';
 import { useMonthParam } from '../hooks/useMonthParam';
@@ -12,6 +12,7 @@ import type { LucideIcon } from 'lucide-react';
 import type { TeamAgentRow, TeamWeightConfig } from '../hooks/usePerformanceData';
 import { TEAM_NAME_MAP, TEAM_DB_NAME_MAP, resolveTeamRouteId, MERGED_OP_FINAL_TEAM, MERGED_IP_FINAL_TEAM, PRE_APPROVALS_UAE_TEAM, PRE_APPROVALS_UAE_SOURCE_TEAMS, CALL_CENTER_TEAM, RCM_TEAM, RCM_DOMAIN_LABELS, callCenterChannelForTeam, isCallCenterChannelTeam, isPreApprovalsWorkflowTeam, isRcmDomainTeam, isRcmGroupTeam, egyptRcmTeamLabel, egyptRcmTeamValue, sameEgyptRcmTeam, isMergedBranchTeam, isMergedOpFinalTeam, sameCanonicalTeam, inboundCallCount, isHossamRecord } from '../types';
 import { isPreApprovalsSubTeam } from '../features/executive/functions';
+import { countryForSharedRoute, parseTeamCountry, sourceNamesFor } from '../features/team/countryTeamIdentity';
 import type { AgentRecord, GeoBreakdown, LocationKey, PreApprovalsWorkflowFilter, CallCenterChannelFilter, RcmDomainFilter, RcmGroupFilter } from '../types';
 import { useUserRole } from '../context/RoleContext';
 import { useAuth } from '../context/auth';
@@ -235,6 +236,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
   const teamId = teamIdOverride ?? (routeTeamId === 'all' ? routeTeamId : resolveTeamRouteId(routeTeamId) ?? routeTeamId);
   const canonicalTeamId = teamId === 'all' ? null : resolveTeamRouteId(teamId);
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { role, fetchWithRole } = useUserRole();
   const functionScope = useFunctionScope();
   const { currentUser } = useAuth();
@@ -272,6 +274,19 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
   } | null>(null);
   const { location: requestedLocation, setLocation: setRequestedLocation } = useLocationParam('all');
   const assigned = directorScope(role, currentUser);
+  const sharedCountry = countryForSharedRoute(
+    canonicalTeamId,
+    searchParams.get('region'),
+    assigned.regionLocked ? assigned.region : null,
+  );
+  const sourceTeams = sharedCountry && canonicalTeamId ? [...sourceNamesFor(canonicalTeamId, sharedCountry)] : [];
+  const scopedTeamName = sourceTeams[0] || teamName;
+  useEffect(() => {
+    if (!sharedCountry || parseTeamCountry(searchParams.get('region')) === sharedCountry) return;
+    const next = new URLSearchParams(searchParams);
+    next.set('region', sharedCountry);
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams, sharedCountry]);
   const { locations: requestedBranches, setLocations: setBranchSelections } = useLocationsParam(['all']);
   const branchSelections: LocationKey[] = assigned.branchLocked
     ? assigned.branches.filter((value): value is LocationKey => ['dubai', 'sharjah', 'ajman', 'clinics'].includes(value))
@@ -287,12 +302,13 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
   const { egyTeam, setEgyTeam } = useRcmEgyptTeamParam();
 
   // Executive Summary > Function > Team or parent view > Sub-team (see teamBreadcrumbs).
+  const allTeamsHref = isScopedDirectorRole(role) || assigned.branchLocked || assigned.regionLocked ? '/executive' : '/team/all';
   const breadcrumbs = useMemo(() => {
     const base = teamBreadcrumbs({
       team: teamName,
       displayName,
       canOpenFunctionSummary: canAccessFunctionSummary(role),
-      allTeamsHref: isScopedDirectorRole(role) || assigned.branchLocked || assigned.regionLocked ? '/executive' : '/team/all',
+      allTeamsHref,
     });
     if (isRcmParent) {
       if (rcmGroup === 'offshore_egy') {
@@ -316,7 +332,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
       }
     }
     return base;
-  }, [teamName, displayName, role, assigned, isRcmParent, rcmGroup, egyTeam, rcmDomain]);
+  }, [teamName, displayName, role, allTeamsHref, isRcmParent, rcmGroup, egyTeam, rcmDomain]);
 
   const canExport = role === 'Manager' || role === 'Admin' || role === 'General Manager';
   const [hoverTooltip, setHoverTooltip] = useState<{ text: string; x: number; y: number } | null>(null);
@@ -356,16 +372,24 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
             : rcmDomain === 'coding'
               ? rcmGroup === 'offshore_egy' ? 'Coding EGY' : 'Coding'
               : ''
-    : teamName || '';
+    : scopedTeamName || teamName || '';
   const { data: teamConfig } = useTeamConfig(workflowConfigTeam);
   const { data: inboundTeamConfig } = useTeamConfig(isCallCenterParent ? 'Inbound' : '');
   const { data: outboundTeamConfig } = useTeamConfig(isCallCenterParent ? 'Outbound' : '');
-  const region = assigned.regionLocked ? (assigned.region === 'EGY' || assigned.region === 'UAE' ? assigned.region : 'All') : regionSelection?.teamName === teamName
+  const region = assigned.regionLocked ? (assigned.region === 'EGY' || assigned.region === 'UAE' ? assigned.region : 'All') : sharedCountry
+    ? sharedCountry
+    : regionSelection?.teamName === teamName
     ? regionSelection.value
     : isPreApprovalsParent ? 'UAE' : isCallCenterParent ? 'EGY' : teamName ? (teamConfig?.region ?? 'All') : 'All';
-  const setRegion = useCallback((value: 'All' | 'EGY' | 'UAE') => {
+  const setRegion = (value: 'All' | 'EGY' | 'UAE') => {
+    if (sharedCountry && (value === 'EGY' || value === 'UAE') && !assigned.regionLocked) {
+      const next = new URLSearchParams(searchParams);
+      next.set('region', value);
+      setSearchParams(next);
+      return;
+    }
     setRegionSelection({ teamName, value });
-  }, [teamName, setRegionSelection]);
+  };
   const bscConfig = teamConfig?.performance_levels?.[performanceLevel === 'All' ? 'Managerial' : performanceLevel];
   const isBscContext = isCorporateBalancedScorecard(teamName, performanceLevel);
   // Management templates are DB-backed and may not exist in the static team
@@ -377,10 +401,10 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
   );
   const showBscFallbackMessage = isBscContext && !hasBalancedScorecard;
 
-  const isTeamAccessRestricted = useMemo(() => {
+  const isTeamAccessRestricted = (() => {
     if (isScopedDirectorRole(role) && teamId === 'all') return true;
     // Function Viewer: scoped by accessible_functions, not accessible_teams; no all-teams view.
-    if (functionScope.restricted) return teamId === 'all' || !functionScope.allowsTeam(teamName);
+    if (functionScope.restricted) return teamId === 'all' || !functionScope.allowsTeam(scopedTeamName || teamName);
     if (!currentUser) return false;
     // Branch Directors are scoped by branch assignments rather than a static
     // team list. The backend enforces that branch scope on every data request.
@@ -390,7 +414,10 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
     if (currentUser.role === 'Regional Manager') return !(currentUser.accessible_regions?.length);
     if (hasAllTeamsScope(role, currentUser)) return false;
     if (!teamName) return false; // 'all' view has its own scoping
-    
+    if (sourceTeams.length) {
+      const allowed = (currentUser.accessible_teams || []).map(normalizeTeamName);
+      return !sourceTeams.some((source) => allowed.includes(normalizeTeamName(source)));
+    }
     const normTeam = normalizeTeamName(teamName);
     const allowed = (currentUser.accessible_teams || []).map(normalizeTeamName);
     if (isRcmParent) {
@@ -421,7 +448,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
       return !(hasParentAccess || hasCallCenterParentAccess || hasSourceAccess || allowed.includes(normalizeTeamName(mergedTeamName)));
     }
     return !allowed.includes(normTeam);
-  }, [currentUser, role, teamName, teamId, functionScope, isMergedTeam, isPreApprovalsParent, isCallCenterParent, isRcmParent, isMergedOpFinal, mergedTeamName]);
+  })();
 
   const isCallCenterView = teamId?.toLowerCase() === 'inbound' || teamId?.toLowerCase() === 'outbound'
     || (isCallCenterParent && callCenterChannel !== 'all');
@@ -456,7 +483,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
     prevPctDE,
     prevTotalAgents,
   } = useTeamData(
-    teamName,
+    scopedTeamName || teamName,
     month,
     region,
     location,
@@ -468,9 +495,11 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
     isRcmParent ? rcmDomain : 'all',
     isRcmParent ? rcmGroup : 'all',
     isRcmParent && rcmGroup === 'offshore_egy' ? egyTeam : '',
+    true,
+    sourceTeams,
   );
 
-  const { uniqueMonths, agents: allAgentsRaw } = usePerformanceData('All', location, region, 'All', true, teamName ?? undefined);
+  const { uniqueMonths, agents: allAgentsRaw } = usePerformanceData('All', location, region, 'All', true, sourceTeams.length > 1 ? undefined : scopedTeamName ?? undefined);
   const allAgents = useMemo(
     () => isMergedTeam && !isCallCenterParent && !branchSelections.includes('all')
       ? allAgentsRaw.filter((agent) => branchSelections.some((branch) => agentMatchesLocation(agent, branch)))
@@ -488,14 +517,12 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
     return [...labels].sort((left, right) => egyptRcmTeamLabel(left).localeCompare(egyptRcmTeamLabel(right)));
   }, [allAgents]);
 
-  const availableTeamPeriods = useMemo(
-    () => resolveAvailableTeamPeriods(allAgents, teamName),
-    [allAgents, teamName],
-  );
-  const dashboardMonths = useMemo(
-    () => teamId === 'all' ? uniqueMonths : resolveTeamMonths(allAgents, teamName),
-    [allAgents, teamId, teamName, uniqueMonths],
-  );
+  const periodAgents = sourceTeams.length
+    ? allAgents.filter((agent) => sourceTeams.some((source) => normalizeTeamName(agent.identity.team || '') === normalizeTeamName(source)))
+    : allAgents;
+  const periodTeamName = sourceTeams.length ? null : teamName;
+  const availableTeamPeriods = resolveAvailableTeamPeriods(periodAgents, periodTeamName);
+  const dashboardMonths = teamId === 'all' ? uniqueMonths : resolveTeamMonths(periodAgents, periodTeamName);
 
   const latestMonth = dashboardMonths[dashboardMonths.length - 1] || '';
   const headcountMonth = month === 'All' ? latestMonth : month;
@@ -969,7 +996,7 @@ const TeamDashboardView = ({ teamIdOverride }: TeamDashboardViewProps = {}) => {
       prevAvgScore,
       recordsUseAppliedPin(previousTeamAgents),
     );
-  }, [isPreApprovalsTeamName, allAgents, isCallCenterAggregate, prevPeriodKey, getCallCenterThreeGroupSummary, headlineScope, getCanonicalTeamScore, prevAvgScore, previousTeamAgents]);
+  }, [isPreApprovalsTeamName, previousPeriodAgents, isCallCenterAggregate, prevPeriodKey, getCallCenterThreeGroupSummary, headlineScope, getCanonicalTeamScore, prevAvgScore, previousTeamAgents]);
 
   // Compute metrics dynamically for the current month
   const metrics = useMemo(() => {

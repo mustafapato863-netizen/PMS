@@ -21,7 +21,7 @@ import { performanceSessionKey } from '../../lib/performanceSessionKey';
 import { normalizeTeamName } from '../../hooks/api/useKpiWeights';
 import { shouldShowMarketingNavigation } from '../../features/marketing/navigation';
 import type { PerformanceLevel } from '../../types';
-import { canonicalTeamName, isCallCenterTeam, CALL_CENTER_TEAM, isRcmTeam, RCM_TEAM, teamPath } from '../../types';
+import { canonicalTeamName, isCallCenterTeam, CALL_CENTER_TEAM, isRcmTeam, RCM_TEAM, teamPath, withTeamQuery } from '../../types';
 import { directorScope } from '../../lib/directorScope';
 import ThemeToggle from './ThemeToggle';
 import { TEAM_ITEMS, getTeamIcon, isHiddenTeam } from './sidebarTeamItems';
@@ -40,6 +40,7 @@ import {
   isManagerRole,
 } from '../../lib/access';
 import { useAiAvailability } from '../../features/ai/aiAvailabilityContext';
+import { businessTeamName, countryForStoredTeam, parseTeamCountry } from '../../features/team/countryTeamIdentity';
 import { useFunctionScope } from '../../features/executive/useFunctionScope';
 import { prepareBalancedScorecardTeamParams } from '../team/balancedScorecardNavigation';
 import SghHeartSvg from './SghHeartSvg';
@@ -186,13 +187,26 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed: collapsedPreference = false, 
     return new Set((currentUser?.accessible_teams || []).map(normalizeTeamName));
   }, [currentUser, role, performanceCatalog?.scopes]);
 
-  const directorTeams = scopedDirector ? [...new Map((performanceCatalog?.scopes ?? [])
-    .filter((scope) => !isHiddenTeam(scope.team))
-    .map((scope) => {
-      const team = canonicalTeamName(scope.team);
+  const directorTeamGroups = new Map<string, { team: string; level: PerformanceLevel; sources: string[] }>();
+  if (scopedDirector) {
+    for (const scope of performanceCatalog?.scopes ?? []) {
+      if (isHiddenTeam(scope.team)) continue;
+      const source = canonicalTeamName(scope.team);
+      const team = businessTeamName(source);
       const level = scope.performance_level as PerformanceLevel;
-      return [`${team}:${level}`, { team, level }] as const;
-    })).values()].sort((a, b) => a.team.localeCompare(b.team) || a.level.localeCompare(b.level)) : [];
+      const key = `${team}:${level}`;
+      const group = directorTeamGroups.get(key) ?? { team, level, sources: [] };
+      if (!group.sources.includes(source)) group.sources.push(source);
+      directorTeamGroups.set(key, group);
+    }
+  }
+  const directorTeams = [...directorTeamGroups.values()].sort((a, b) => a.team.localeCompare(b.team) || a.level.localeCompare(b.level));
+  const directorTeamPath = (item: typeof directorTeams[number]) => {
+    const selectedCountry = parseTeamCountry(assigned.region ?? searchParams.get('region'));
+    const selectedSource = item.sources.find((source) => selectedCountry && countryForStoredTeam(source) === selectedCountry);
+    const defaultSource = item.sources.find((source) => countryForStoredTeam(source) === 'UAE') ?? item.sources[0];
+    return teamPath(selectedSource ?? defaultSource);
+  };
 
   const availableFromData = useMemo(() => {
     const result = new Set<string>();
@@ -239,7 +253,8 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed: collapsedPreference = false, 
   // page-specific team/function/level filters must not narrow the company view.
   // Assigned director boundaries are applied separately below.
   const linkFor = (path: string, performanceLevel?: PerformanceLevel) => {
-    const params = path === '/executive'
+    const [pathnamePart, pathQuery = ''] = path.split('?');
+    const params = pathnamePart === '/executive'
       ? new URLSearchParams([...searchParams].filter(([key]) => ['period', 'month', 'year'].includes(key)))
       : performanceLevel === 'Managerial' || performanceLevel === 'Corporate'
       ? prepareBalancedScorecardTeamParams(searchParams, performanceLevel)
@@ -247,6 +262,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed: collapsedPreference = false, 
     if (performanceLevel && performanceLevel !== 'Managerial' && performanceLevel !== 'Corporate') {
       params.set('performance_level', performanceLevel);
     }
+    new URLSearchParams(pathQuery).forEach((value, key) => params.set(key, value));
     if (assigned.branchLocked) {
       params.delete('branches');
       params.delete('location');
@@ -254,11 +270,10 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed: collapsedPreference = false, 
       if (assigned.branch) params.set('branch', assigned.branch);
     }
     if (assigned.regionLocked) {
-      params.delete('region');
       if (assigned.region) params.set('region', assigned.region);
+      else if (!new URLSearchParams(pathQuery).has('region')) params.delete('region');
     }
-    const query = params.toString();
-    return `${path}${query ? `?${query}` : ''}`;
+    return withTeamQuery(pathnamePart, params);
   };
 
   const renderLink = (
@@ -275,7 +290,8 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed: collapsedPreference = false, 
         ? effectiveSelectedLevel === 'Employee'
         : !performanceLevel || effectiveSelectedLevel === performanceLevel;
     // Exact match for every item. Only an item that opts in (Administration) also stays active on its sub-pages.
-    const onPath = pathname === item.path || (item.matchSubpaths === true && pathname.startsWith(`${item.path}/`));
+    const itemPath = item.path.split('?')[0];
+    const onPath = pathname === itemPath || (item.matchSubpaths === true && pathname.startsWith(`${itemPath}/`));
     const active = onPath && levelMatches;
     const destination = resetQuery
       ? `${item.path}${performanceLevel ? `?performance_level=${performanceLevel}` : ''}`
@@ -318,7 +334,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed: collapsedPreference = false, 
   // Manager (Mustafa, binding): Executive, their team, Reports, Corrective Actions, Planning — no Insights.
   const teamsItem = hasAllTeamsScope(role, currentUser) || managerTeams.length || isScopedDirectorRole(role)
     ? [isManager && managerTeams.length === 1
-      ? { name: `My Team · ${managerTeams[0]}`, path: teamPath(managerTeams[0]), icon: <UsersRound size={18} /> }
+      ? { name: `My Team · ${businessTeamName(managerTeams[0])}`, path: teamPath(managerTeams[0]), icon: <UsersRound size={18} /> }
       : { name: isManager ? 'Assigned Teams' : 'All Teams', path: '/team/all', icon: <UsersRound size={18} /> }]
     : [];
   const planningItem = { name: 'Planning', path: '/planning', icon: <CalendarCheck size={18} /> };
@@ -366,8 +382,16 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed: collapsedPreference = false, 
     for (const team of directorTeams) {
       if (!quickTeams.has(team.team) || team.level === 'Employee') quickTeams.set(team.team, team);
     }
-    for (const { team, level } of [...quickTeams.values()].slice(0, 3)) {
-      dockItems.push({ label: team, destination: linkFor(teamPath(team), level), icon: getTeamIcon(team), active: pathname === teamPath(team) && (selectedLevel || 'Employee') === level, tabletOnly: true });
+    for (const item of [...quickTeams.values()].slice(0, 3)) {
+      const { team, level } = item;
+      const path = directorTeamPath(item);
+      dockItems.push({
+        label: team,
+        destination: linkFor(path, level),
+        icon: getTeamIcon(team),
+        active: pathname === path.split('?')[0] && (selectedLevel || 'Employee') === level,
+        tabletOnly: true,
+      });
     }
   }
   dockItems.push({ label: 'Account', destination: '/account', icon: <User size={20} />, active: pathname === '/account', tabletOnly: canSeeBroadNavigation && !scopedDirector });
@@ -454,7 +478,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed: collapsedPreference = false, 
               <AnimatePresence initial={false}>
                 {isLevelOpen && (
                   <motion.div id={groupId} role="group" aria-label={`${level.name} teams`} initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={groupTransition} className="space-y-0.5 overflow-hidden">
-                    {teams.map(({ team }) => renderLink({ name: team, path: teamPath(team), icon: getTeamIcon(team) }, level.name, true))}
+                    {teams.map((item) => renderLink({ name: item.team, path: directorTeamPath(item), icon: getTeamIcon(item.team) }, level.name, true))}
                   </motion.div>
                 )}
               </AnimatePresence>

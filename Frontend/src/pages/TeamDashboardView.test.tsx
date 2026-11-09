@@ -1,10 +1,14 @@
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import TeamDashboardView from './TeamDashboardView';
 import { TEAM_DB_NAME_MAP, TEAM_ID_MAP, TEAM_NAME_MAP, teamPath } from '../types';
 
 const roleState = vi.hoisted(() => ({ role: 'Admin' }));
+const performanceState = vi.hoisted(() => ({
+  agents: [] as Array<{ identity: { team: string; month: string }; year: number }>,
+  calls: vi.fn(),
+}));
 
 vi.mock('../context/RoleContext', () => ({
   useUserRole: () => ({ role: roleState.role, fetchWithRole: vi.fn() }),
@@ -30,7 +34,10 @@ vi.mock('../hooks/usePerformanceData', async (importOriginal) => ({
     totalAgents: 0, uniqueTeamCount: 0, prevMonth: null, loading: false, dataSource: null,
     errorMessage: null, prevAvgScore: null, prevPctAB: null, prevPctDE: null, prevTotalAgents: null,
   }),
-  usePerformanceData: () => ({ uniqueMonths: [], agents: [] }),
+  usePerformanceData: (...args: unknown[]) => {
+    performanceState.calls(...args);
+    return { uniqueMonths: [], agents: performanceState.agents };
+  },
 }));
 
 function renderTeamPage(path: string) {
@@ -54,7 +61,7 @@ const EXPECTED_TITLE: Record<string, string> = {
   'IT': 'IT',
   'Offshore Admin & Management': 'Administration',
   'Coding': 'Coding',
-  'Coding EGY': 'Coding EGY',
+  'Coding EGY': 'Coding',
   'Inbound': 'Inbound',
   'Marketing': 'Marketing',
   'Outbound': 'Outbound',
@@ -72,11 +79,11 @@ const EXPECTED_TITLE: Record<string, string> = {
   'Pre-Approvals OP Final SHJAJM': 'Pre-Approvals OP Final',
   'RCM': 'RCM',
   'Re-Submission': 'Re-Submission',
-  'Re-Submission EGY': 'Re-Submission EGY',
-  'Resubmission': 'Resubmission',
+  'Re-Submission EGY': 'Re-Submission',
+  'Resubmission': 'Re-Submission',
   'Sales': 'Sales',
   'Submission': 'Submission',
-  'Submission EGY': 'Submission EGY',
+  'Submission EGY': 'Submission',
 };
 
 const KNOWN_NAMES = [...new Set([
@@ -87,9 +94,40 @@ const KNOWN_NAMES = [...new Set([
 
 beforeEach(() => {
   roleState.role = 'Admin';
+  performanceState.agents = [];
+  performanceState.calls.mockClear();
 });
 
 describe('team page resolution', () => {
+  it.each([
+    ['coding', 'Coding EGY'],
+    ['submission', 'Submission EGY'],
+  ])('uses the Egypt source for %s history and available periods', (route, source) => {
+    performanceState.agents = [
+      { identity: { team: source, month: 'June' }, year: 2026 },
+      { identity: { team: 'Unrelated', month: 'March' }, year: 2026 },
+    ];
+    renderTeamPage(`/team/${route}?region=EGY`);
+    expect(performanceState.calls).toHaveBeenCalledWith('All', 'all', 'EGY', 'All', true, source);
+    expect(screen.getByText(/June 2026/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /filters/i }));
+    expect(document.querySelector('option[value="June"]')).toBeInTheDocument();
+    expect(document.querySelector('option[value="March"]')).not.toBeInTheDocument();
+  });
+
+  it('includes both Egyptian re-submission source aliases in available periods', () => {
+    performanceState.agents = [
+      { identity: { team: 'Resubmission', month: 'June' }, year: 2026 },
+      { identity: { team: 'Re-Submission EGY', month: 'July' }, year: 2026 },
+    ];
+    renderTeamPage('/team/re-submission?region=EGY');
+    expect(performanceState.calls).toHaveBeenCalledWith('All', 'all', 'EGY', 'All', true, undefined);
+    expect(screen.getByText(/June 2026/)).toBeInTheDocument();
+    expect(screen.getByText(/July 2026/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /filters/i }));
+    expect(document.querySelector('option[value="June"]')).toBeInTheDocument();
+    expect(document.querySelector('option[value="July"]')).toBeInTheDocument();
+  });
   it('has a title expectation for every known team name and display name', () => {
     expect(KNOWN_NAMES.filter((name) => !(name in EXPECTED_TITLE))).toEqual([]);
   });

@@ -33,13 +33,14 @@ describe('teamPath', () => {
     expect(teamPath('Pre-Approvals OP Dubai')).toBe('/team/pre-approvals-op-final');
     expect(teamPath('Pre-Approvals IP Final SHJAJM')).toBe('/team/pre-approvals-ip-final');
     expect(teamPath('Pre-Approvals IP Elective')).toBe('/team/pre-approvals-ip-elective-dubai');
-    expect(teamPath('Coding')).toBe('/team/coding');
-    expect(teamPath('Coding EGY')).toBe('/team/coding-egy');
-    expect(teamPath('Submission EGY')).toBe('/team/submission-egy');
+    expect(teamPath('Coding')).toBe('/team/coding?region=UAE');
+    expect(teamPath('Coding EGY')).toBe('/team/coding?region=EGY');
+    expect(teamPath('Submission EGY')).toBe('/team/submission?region=EGY');
+    expect(teamPath('Submission')).toBe('/team/submission?region=UAE');
     expect(teamPath('Pre-Approvals IP')).toBe('/team/pre-approvals-ip');
-    expect(teamPath('Resubmission')).toBe('/team/resubmission');
-    expect(teamPath('Re-Submission')).toBe('/team/re-submission');
-    expect(teamPath('Re-Submission EGY')).toBe('/team/re-submission-egy');
+    expect(teamPath('Resubmission')).toBe('/team/re-submission?region=EGY');
+    expect(teamPath('Re-Submission')).toBe('/team/re-submission?region=UAE');
+    expect(teamPath('Re-Submission EGY')).toBe('/team/re-submission?region=EGY');
   });
 
   it('slugs only an unknown team', () => {
