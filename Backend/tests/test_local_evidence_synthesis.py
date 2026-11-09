@@ -52,7 +52,7 @@ def test_model_receives_scoped_facts_and_validated_output_is_used(monkeypatch):
             message = json.dumps({"answer": "Inbound bookings in September 2026: Dubai 180, Sharjah 70."})
             return io.BytesIO(json.dumps({"choices": [{"message": {"content": message}}]}).encode())
 
-    monkeypatch.setattr("services.ai.local_evidence_synthesis.urllib.request.build_opener", lambda *_: Opener())
+    monkeypatch.setattr("services.ai.llm_client.urllib.request.build_opener", lambda *_: Opener())
     response = synthesize_branch_bookings("Compare Dubai and Sharjah Inbound bookings", evidence())
     assert response is not None and response.provider_used == "llama_cpp"
     assert response.headline == "Inbound bookings in September 2026: Dubai 180, Sharjah 70."
@@ -69,7 +69,7 @@ def test_invalid_model_output_or_external_endpoint_falls_back_to_verified_counts
             message = json.dumps({"answer": "Inbound bookings in September 2026: Dubai 70, Sharjah 180."})
             return io.BytesIO(json.dumps({"choices": [{"message": {"content": message}}]}).encode())
 
-    monkeypatch.setattr("services.ai.local_evidence_synthesis.urllib.request.build_opener", lambda *_: Opener())
+    monkeypatch.setattr("services.ai.llm_client.urllib.request.build_opener", lambda *_: Opener())
     response = synthesize_branch_bookings("Compare Dubai and Sharjah Inbound bookings", evidence())
     assert response is not None and response.provider_used == "deterministic"
     assert "Dubai: 180" in response.headline and "Sharjah: 70" in response.headline
@@ -83,7 +83,7 @@ def test_zero_or_missing_booking_evidence_does_not_claim_a_measured_zero(monkeyp
     monkeypatch.setenv("PMS_AI_LOCAL_SYNTHESIS_ENABLED", "true")
     data = evidence()
     data[0]["branch_comparison"][1]["bookings"] = 0
-    monkeypatch.setattr("services.ai.local_evidence_synthesis.urllib.request.build_opener", lambda *_: pytest.fail("missing evidence sent to model"))
+    monkeypatch.setattr("services.ai.llm_client.urllib.request.build_opener", lambda *_: pytest.fail("missing evidence sent to model"))
     response = synthesize_branch_bookings("Compare Dubai and Sharjah Inbound bookings", data)
     assert response is not None and "zero or missing" in response.headline
     assert response.metrics.fallback_outcome == "zero_or_missing_evidence"
@@ -114,7 +114,7 @@ def test_model_can_compose_a_scoped_score_and_fallback_rejects_added_claims(monk
             message = json.dumps({'answer': model_answer[0]})
             return io.BytesIO(json.dumps({'choices': [{'message': {'content': message}}]}).encode())
 
-    monkeypatch.setattr("services.ai.local_evidence_synthesis.urllib.request.build_opener", lambda *_: Opener())
+    monkeypatch.setattr("services.ai.llm_client.urllib.request.build_opener", lambda *_: Opener())
     response = synthesize_overall_score("What is Inbound score?", data)
     assert response is not None and response.provider_used == 'llama_cpp'
     assert response.headline == model_answer[0]
@@ -165,7 +165,7 @@ def test_assistant_uses_model_after_fetching_scoped_branch_counts(monkeypatch):
             message = json.dumps({'answer': 'Inbound bookings in September 2026: Dubai 180, Sharjah 70.'})
             return io.BytesIO(json.dumps({'choices': [{'message': {'content': message}}]}).encode())
 
-    monkeypatch.setattr("services.ai.local_evidence_synthesis.urllib.request.build_opener", lambda *_: Opener())
+    monkeypatch.setattr("services.ai.llm_client.urllib.request.build_opener", lambda *_: Opener())
     with _build_in_memory_db() as db:
         response = PmsAiOrchestrator(db, {'role': 'Admin', 'has_unrestricted_team_access': True}).run_chat_turn(
             AiChatRequest(prompt='Compare Dubai and Sharjah Inbound bookings in September 2026.', session_state=SessionFilterContext(function='Call Center', month='September', year=2026))
@@ -204,7 +204,7 @@ def test_assistant_uses_model_after_fetching_scoped_overall_score(monkeypatch):
             message = json.dumps({'answer': 'Inbound scored 85.0% in September 2026.'})
             return io.BytesIO(json.dumps({'choices': [{'message': {'content': message}}]}).encode())
 
-    monkeypatch.setattr("services.ai.local_evidence_synthesis.urllib.request.build_opener", lambda *_: Opener())
+    monkeypatch.setattr("services.ai.llm_client.urllib.request.build_opener", lambda *_: Opener())
     with _build_in_memory_db() as db:
         response = PmsAiOrchestrator(db, {'role': 'Admin', 'has_unrestricted_team_access': True}).run_chat_turn(
             AiChatRequest(prompt='What is Inbound score in September 2026?', session_state=SessionFilterContext(function='Call Center', month='September', year=2026))

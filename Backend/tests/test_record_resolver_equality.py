@@ -6,6 +6,10 @@ module's build_database and snapshot. The data is synthetic and covers the resol
 scoring method, a pinned evaluation, a payload that fails validation and a missing payload. Record ids are
 replaced by their order of first appearance, and request and database times and the process-wide cache version are
 removed, so the comparison does not depend on random ids, the clock or earlier tests in the same process.
+
+Commit 3f1d914 orders the shared dashboard query by (record id, year) so the index path and the full-record
+path cannot be reordered by the query planner. Those ids are new UUIDs on every run, so the golden file cannot
+freeze that sequence. ``_comparable`` checks the same rows and the same upload cohorts without that order.
 """
 
 import json
@@ -172,6 +176,62 @@ def snapshot(engine) -> dict[str, str]:
     return result
 
 
+def _is_performance_row(item: object) -> bool:
+    if not isinstance(item, dict):
+        return False
+    if "employee_id" in item and "team" in item:
+        return True
+    return "Employee ID" in item and "Team" in item
+
+
+def _row_business_key(record: dict) -> tuple[str, ...]:
+    return (
+        str(record.get("team") or record.get("Team") or ""),
+        str(record.get("employee_id") or record.get("Employee ID") or ""),
+        str(record.get("year") or ""),
+        str(record.get("month") or record.get("Month") or ""),
+        str(record.get("performance_level") or ""),
+        str(record.get("position") or ""),
+        str(record.get("employee_name") or record.get("Employee Name") or ""),
+    )
+
+
+def _comparable(value):
+    """Same payload as the golden file, independent of primary-key order.
+
+    Record ids are random. Upload ids stay, rewritten to the sorted employee
+    cohort that shares one upload, so a split or merged upload still fails.
+    """
+    if isinstance(value, dict):
+        compared = {
+            key: _comparable(item)
+            for key, item in value.items()
+            if not (key == "id" and "employee_id" in value)
+        }
+        return compared
+    if isinstance(value, list):
+        items = [_comparable(item) for item in value]
+        if items and all(_is_performance_row(item) for item in items):
+            items.sort(key=_row_business_key)
+            cohorts: dict[str, list[str]] = {}
+            for item in items:
+                upload_id = item.get("upload_id")
+                if upload_id:
+                    cohorts.setdefault(str(upload_id), []).append(
+                        str(item.get("employee_id") or item.get("Employee ID") or "")
+                    )
+            tokens = {
+                upload_id: "upload:" + ",".join(sorted(employee_ids))
+                for upload_id, employee_ids in cohorts.items()
+            }
+            for item in items:
+                upload_id = item.get("upload_id")
+                if upload_id:
+                    item["upload_id"] = tokens[str(upload_id)]
+        return items
+    return value
+
+
 def test_the_resolver_and_its_endpoints_answer_exactly_as_the_captured_baseline():
     engine = build_database()
     try:
@@ -182,7 +242,7 @@ def test_the_resolver_and_its_endpoints_answer_exactly_as_the_captured_baseline(
 
     assert current.keys() == baseline.keys()
     for label in baseline:
-        assert current[label] == baseline[label], label
+        assert _comparable(json.loads(current[label])) == _comparable(json.loads(baseline[label])), label
 
 
 def test_the_column_rows_resolve_exactly_like_the_orm_rows():

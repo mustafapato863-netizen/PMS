@@ -22,6 +22,7 @@ from services.ai.catalog import (
     user_can_access_team,
 )
 from services.ai.config import get_ai_runtime_config
+from services.ai.llm_client import configured_model_name
 from services.ai.local_model_router import local_intent_enabled, suggest_intent
 from services.ai.domain_policies import BRANCH_ALIASES, MONTH_ALIASES
 from services.ai.entity_resolver import (
@@ -1991,7 +1992,7 @@ class HybridQueryRouter:
             local_result = suggest_intent(text)
             provider_metrics = ProviderCallMetrics(
                 provider_used="llama_cpp",
-                model_used="local-intent-model",
+                model_used=configured_model_name(),
                 provider_calls=1,
                 provider_ms=local_result.elapsed_ms,
                 fallback_outcome="none" if local_result.reason == "ok" else local_result.reason,

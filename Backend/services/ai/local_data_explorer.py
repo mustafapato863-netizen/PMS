@@ -1,8 +1,8 @@
 """Opt-in, bounded local-model data exploration loop over permission-scoped PMS tools.
 
 Security & Architecture Invariants:
-1. Opt-in only (`PMS_AI_LOCAL_EXPLORATION_ENABLED=true`, disabled by default and in production).
-2. Loopback-only HTTP transport (`127.0.0.1` / `::1`, `/v1/chat/completions`, no redirects, max 64 KB).
+1. Opt-in only (`PMS_AI_LLM_EXPLORATION_ENABLED` or `PMS_AI_LOCAL_EXPLORATION_ENABLED`, disabled by default and in production).
+2. Allowlisted OpenAI-compatible HTTP transport (no credentials, no redirects, max 64 KB).
 3. Zero raw SQL, zero dynamic filter expressions, zero model-computed scores.
 4. Strictly scoped concept catalog: the local model only sees teams, functions, branches,
    performance levels, periods, and KPI definitions authorized for the caller's live RBAC scope.
@@ -16,15 +16,11 @@ Security & Architecture Invariants:
 
 from __future__ import annotations
 
-import ipaddress
 import json
 import os
 import re
 import threading
 import time
-import urllib.error
-import urllib.parse
-import urllib.request
 from dataclasses import dataclass, field
 from typing import Any, Iterable
 
@@ -61,7 +57,7 @@ from services.ai.entity_resolver import (
     EmployeeHistoryCandidate,
     resolve_employee_from_candidates,
 )
-from services.ai.local_model_router import _NoRedirect
+from services.ai.llm_client import chat_completion, exploration_timeout_seconds, local_exploration_enabled, synthesis_timeout_seconds
 from services.ai.providers import DeterministicLocalProviderAdapter
 from services.ai.router import (
     UNAVAILABLE_FUTURE_PERIODS,
@@ -333,21 +329,6 @@ class LocalExplorationResult:
     fallback_reason: str = "none"
 
 
-def local_exploration_enabled() -> bool:
-    """Return True only when opt-in local exploration is enabled outside production."""
-    if os.environ.get("APP_ENV", "").strip().casefold() == "production":
-        return False
-    truthy = {"1", "true", "yes", "on", "enabled"}
-    falsy = {"0", "false", "no", "off", "disabled"}
-    v_data = os.environ.get("PMS_AI_LOCAL_DATA_EXPLORATION_ENABLED", "").strip().casefold()
-    v_exp = os.environ.get("PMS_AI_LOCAL_EXPLORATION_ENABLED", "").strip().casefold()
-    if v_data in falsy:
-        return False
-    if v_data in truthy or v_exp in truthy:
-        return True
-    return False
-
-
 def get_max_exploration_steps() -> int:
     try:
         raw = int(os.environ.get("PMS_AI_LOCAL_EXPLORATION_MAX_STEPS", "2"))
@@ -528,20 +509,6 @@ def build_authorized_concept_summary(
     }
 
 
-def _validate_loopback_endpoint(url: str) -> bool:
-    try:
-        parsed = urllib.parse.urlsplit(url)
-        if parsed.scheme != "http" or parsed.username or parsed.password or not parsed.hostname:
-            return False
-        if not ipaddress.ip_address(parsed.hostname).is_loopback:
-            return False
-        if parsed.path != "/v1/chat/completions" or parsed.query or parsed.fragment:
-            return False
-        return True
-    except ValueError:
-        return False
-
-
 def _is_safe_string_param(val: Any, *, max_len: int = 120) -> bool:
     if val is None:
         return True
@@ -617,12 +584,7 @@ def _call_local_exploration_model(
     required_parts: list[str] | None = None,
     missing_parts: list[str] | None = None,
 ) -> tuple[dict[str, Any] | None, float, str]:
-    """Invoke the loopback llama.cpp server for one bounded exploration step."""
-    started = time.perf_counter()
-    url = os.environ.get("PMS_AI_LOCAL_ROUTER_URL", "http://127.0.0.1:18080/v1/chat/completions").strip()
-    if not _validate_loopback_endpoint(url):
-        return None, 0.0, "invalid_endpoint"
-
+    """Ask the configured model for one bounded exploration step. PMS executes the tools."""
     instruction = (
         'PMS AI Explorer. Never invent numbers. Return compact single-line JSON: '
         '{"action":"call_tools","unknown_code":"none","tools":[{"tool":"...","team":"...","period":"..."}]}. '
@@ -674,51 +636,24 @@ def _call_local_exploration_model(
         "missing_parts": missing_parts if missing_parts is not None else (required_parts or ["score"]),
         "collected_evidence": compact_evidence,
     }
-    body = json.dumps(
-        {
-            "model": "local",
-            "id_slot": 0,
-            "cache_prompt": True,
-            "temperature": 0,
-            "max_tokens": 140,
-            "chat_template_kwargs": {"enable_thinking": False},
-            "response_format": {
-                "type": "json_schema",
-                "json_schema": build_exploration_step_json_schema(),
-            },
-            "messages": [
-                {"role": "system", "content": instruction},
-                {"role": "user", "content": json.dumps(user_payload, ensure_ascii=False, separators=(",", ":"))},
-            ],
-        }
-    ).encode("utf-8")
-
-    request = urllib.request.Request(
-        url,
-        data=body,
-        headers={"Content-Type": "application/json"},
-        method="POST",
+    call = chat_completion(
+        messages=[
+            {"role": "system", "content": instruction},
+            {"role": "user", "content": json.dumps(user_payload, ensure_ascii=False, separators=(",", ":"))},
+        ],
+        max_tokens=140,
+        temperature=0,
+        response_format={"type": "json_schema", "json_schema": build_exploration_step_json_schema()},
+        timeout_seconds=exploration_timeout_seconds(),
+        purpose="exploration",
     )
-    try:
-        timeout = min(
-            25.0,
-            max(0.5, float(os.environ.get("PMS_AI_LOCAL_EXPLORATION_TIMEOUT_SECONDS", "8.0"))),
-        )
-        with urllib.request.build_opener(_NoRedirect()).open(request, timeout=timeout) as response:
-            raw = response.read(65537)
-        elapsed_ms = round((time.perf_counter() - started) * 1000.0, 2)
-        if len(raw) > 65536:
-            return None, elapsed_ms, "response_too_large"
-        envelope = json.loads(raw)
-        content = envelope["choices"][0]["message"]["content"]
-        parsed, status = _parse_and_validate_step_payload(content)
-        if parsed is None:
-            return None, elapsed_ms, status
-        return parsed, elapsed_ms, "ok"
-    except TimeoutError:
-        return None, round((time.perf_counter() - started) * 1000.0, 2), "timeout"
-    except (ValueError, TypeError, KeyError, IndexError, OSError, urllib.error.URLError):
-        return None, round((time.perf_counter() - started) * 1000.0, 2), "unavailable_or_invalid"
+    if not call.ok:
+        reason = "unavailable_or_invalid" if call.reason == "http_error" else call.reason
+        return None, call.elapsed_ms, reason
+    parsed, status = _parse_and_validate_step_payload(call.content or "")
+    if parsed is None:
+        return None, call.elapsed_ms, status
+    return parsed, call.elapsed_ms, "ok"
 
 
 def _build_unknown_response(
@@ -2133,12 +2068,7 @@ def _compose_grounded_answer_with_qwen(
     question: str,
     fact_ledger: list[dict[str, Any]],
 ) -> tuple[str | None, float, str]:
-    """Ask local Qwen to compose a short grounded headline citing `fact_ids` from `fact_ledger`."""
-    started = time.perf_counter()
-    url = os.environ.get("PMS_AI_LOCAL_ROUTER_URL", "http://127.0.0.1:18080/v1/chat/completions").strip()
-    if not _validate_loopback_endpoint(url):
-        return None, 0.0, "invalid_endpoint"
-
+    """Ask the configured model for a short headline. The fact-ledger validator must accept it."""
     schema = {
         "name": "pms_grounded_synthesis",
         "strict": True,
@@ -2157,41 +2087,36 @@ def _compose_grounded_answer_with_qwen(
         'Include every fact_id in fact_ids and state each subject, period, and exact display value in headline. '
         'Never invent numbers. Return compact JSON: {"fact_ids":["F1"],"headline":"..."}. /no_think'
     )
-    body = json.dumps(
-        {
-            "model": "local",
-            "id_slot": 1,
-            "cache_prompt": True,
-            "temperature": 0,
-            "max_tokens": 96,
-            "chat_template_kwargs": {"enable_thinking": False},
-            "response_format": {"type": "json_schema", "json_schema": schema},
-            "messages": [
-                {"role": "system", "content": sys_msg},
-                {"role": "user", "content": json.dumps({"question": question[:240], "facts": fact_ledger}, ensure_ascii=False, separators=(",", ":"))},
-            ],
-        }
-    ).encode("utf-8")
-
-    request = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"}, method="POST")
+    call = chat_completion(
+        messages=[
+            {"role": "system", "content": sys_msg},
+            {
+                "role": "user",
+                "content": json.dumps(
+                    {"question": question[:240], "facts": fact_ledger},
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                ),
+            },
+        ],
+        max_tokens=96,
+        temperature=0,
+        response_format={"type": "json_schema", "json_schema": schema},
+        timeout_seconds=synthesis_timeout_seconds(),
+        purpose="exploration_synthesis",
+    )
+    if not call.ok:
+        reason = "unavailable_or_invalid" if call.reason == "http_error" else call.reason
+        return None, call.elapsed_ms, reason
     try:
-        timeout = min(20.0, max(0.5, float(os.environ.get("PMS_AI_LOCAL_SYNTHESIS_TIMEOUT_SECONDS", "8.0"))))
-        with urllib.request.build_opener(_NoRedirect()).open(request, timeout=timeout) as response:
-            raw = response.read(65537)
-        elapsed_ms = round((time.perf_counter() - started) * 1000.0, 2)
-        if len(raw) > 65536:
-            return None, elapsed_ms, "response_too_large"
-        envelope = json.loads(raw)
-        content = _JSON_FENCE_RE.sub("", envelope["choices"][0]["message"]["content"].strip()).strip()
+        content = _JSON_FENCE_RE.sub("", (call.content or "").strip()).strip()
         draft = json.loads(content)
-        validated_text, v_status = validate_qwen_grounded_synthesis(draft_payload=draft, fact_ledger=fact_ledger)
-        if validated_text is None:
-            return None, elapsed_ms, v_status
-        return validated_text, elapsed_ms, "ok"
-    except TimeoutError:
-        return None, round((time.perf_counter() - started) * 1000.0, 2), "timeout"
-    except (ValueError, TypeError, KeyError, IndexError, OSError, urllib.error.URLError):
-        return None, round((time.perf_counter() - started) * 1000.0, 2), "unavailable_or_invalid"
+    except (ValueError, TypeError):
+        return None, call.elapsed_ms, "invalid_response"
+    validated_text, v_status = validate_qwen_grounded_synthesis(draft_payload=draft, fact_ledger=fact_ledger)
+    if validated_text is None:
+        return None, call.elapsed_ms, v_status
+    return validated_text, call.elapsed_ms, "ok"
 
 
 def _covered_parts_for_calls(calls: list[ValidatedExplorationToolCall]) -> set[str]:
