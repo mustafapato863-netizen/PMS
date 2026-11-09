@@ -31,7 +31,7 @@ def test_validates_model_response_and_sends_no_pms_data(monkeypatch):
             captured.update(json.loads(request.data))
             return io.BytesIO(json.dumps({"choices": [{"message": {"content": '{"intent":"trend"}'}}]}).encode())
 
-    monkeypatch.setattr("services.ai.local_model_router.urllib.request.build_opener", lambda *_: Opener())
+    monkeypatch.setattr("services.ai.llm_client.urllib.request.build_opener", lambda *_: Opener())
     result = suggest_intent("How has booking evolved?")
     assert result.intent == "trend"
     assert len(captured["messages"]) == 2
@@ -45,7 +45,7 @@ def test_rejects_model_generated_extra_fields(monkeypatch):
         def open(self, request, timeout):
             return io.BytesIO(json.dumps({"choices": [{"message": {"content": '{"intent":"trend","score":99}'}}]}).encode())
 
-    monkeypatch.setattr("services.ai.local_model_router.urllib.request.build_opener", lambda *_: Opener())
+    monkeypatch.setattr("services.ai.llm_client.urllib.request.build_opener", lambda *_: Opener())
     assert suggest_intent("How has booking evolved?").reason == "invalid_response"
 
 

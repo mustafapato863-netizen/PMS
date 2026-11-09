@@ -203,6 +203,7 @@ PMS_RATE_LIMIT_API_PER_MINUTE = _positive_int_setting("PMS_RATE_LIMIT_API_PER_MI
 PMS_RATE_LIMIT_HEAVY_PER_MINUTE = _positive_int_setting("PMS_RATE_LIMIT_HEAVY_PER_MINUTE", 10)
 PMS_RATE_LIMIT_WRITE_PER_MINUTE = _positive_int_setting("PMS_RATE_LIMIT_WRITE_PER_MINUTE", 120)
 PMS_RATE_LIMIT_READ_PER_MINUTE = _positive_int_setting("PMS_RATE_LIMIT_READ_PER_MINUTE", 600)
+PMS_RATE_LIMIT_AI_CHAT_PER_MINUTE = _positive_int_setting("PMS_RATE_LIMIT_AI_CHAT_PER_MINUTE", 20)
 # Upper bound on counters kept in this process while Redis is absent or failing.
 PMS_RATE_LIMIT_FALLBACK_MAX_KEYS = _positive_int_setting("PMS_RATE_LIMIT_FALLBACK_MAX_KEYS", 50_000)
 

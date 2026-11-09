@@ -29,6 +29,7 @@ API_PREFIX_LABEL = "/api/*"
 
 class RouteClass(str, Enum):
     HEAVY = "heavy"
+    AI_CHAT = "ai_chat"
     WRITE = "write"
     READ = "read"
 
@@ -42,6 +43,7 @@ class RateLimits:
     heavy_user: int
     write_user: int
     read_user: int
+    ai_chat_user: int = 20
 
 
 @dataclass(frozen=True)
@@ -53,6 +55,7 @@ class RuleSet:
     heavy_user: RateRule
     write_user: RateRule
     read_user: RateRule
+    ai_chat_user: RateRule
 
     @classmethod
     def from_limits(cls, limits: RateLimits) -> RuleSet:
@@ -64,6 +67,7 @@ class RuleSet:
             heavy_user=RateRule("heavy_user", limits.heavy_user, WINDOW_SECONDS),
             write_user=RateRule("write_user", limits.write_user, WINDOW_SECONDS),
             read_user=RateRule("read_user", limits.read_user, WINDOW_SECONDS),
+            ai_chat_user=RateRule("ai_chat_user", limits.ai_chat_user, WINDOW_SECONDS),
         )
 
 
@@ -78,6 +82,11 @@ class RateLimitRuntime:
 # Heavy operations: workbook ingestion, evaluation calculation and apply, and report
 # generation or export. Matched on method plus a full path, after removing any trailing slash.
 # The label is the path template written to logs.
+AI_CHAT_ROUTES: tuple[tuple[str, re.Pattern[str], str], ...] = (
+    ("POST", re.compile(r"^/api/ai/chat$"), "POST /api/ai/chat"),
+)
+
+
 HEAVY_ROUTES: tuple[tuple[str, re.Pattern[str], str], ...] = (
     ("POST", re.compile(r"^/api/uploads/pms$"), "POST /api/uploads/pms"),
     ("POST", re.compile(r"^/api/performance/balanced-scorecard/template/upload$"), "POST /api/performance/balanced-scorecard/template/upload"),
@@ -120,6 +129,9 @@ def is_exempt(method: str, path: str) -> bool:
 
 def classify_user_route(method: str, path: str) -> tuple[RouteClass, str]:
     normalized = normalized_path(path)
+    for route_method, pattern, label in AI_CHAT_ROUTES:
+        if method == route_method and pattern.match(normalized):
+            return RouteClass.AI_CHAT, label
     for route_method, pattern, label in HEAVY_ROUTES:
         if method == route_method and pattern.match(normalized):
             return RouteClass.HEAVY, label
@@ -158,6 +170,7 @@ def post_auth_check(method: str, path: str, user_id: str, rules: RuleSet) -> tup
     route_class, label = classify_user_route(method, path)
     rule = {
         RouteClass.HEAVY: rules.heavy_user,
+        RouteClass.AI_CHAT: rules.ai_chat_user,
         RouteClass.WRITE: rules.write_user,
         RouteClass.READ: rules.read_user,
     }[route_class]
@@ -182,6 +195,7 @@ def build_runtime_from_settings() -> RateLimitRuntime:
         heavy_user=settings.PMS_RATE_LIMIT_HEAVY_PER_MINUTE,
         write_user=settings.PMS_RATE_LIMIT_WRITE_PER_MINUTE,
         read_user=settings.PMS_RATE_LIMIT_READ_PER_MINUTE,
+        ai_chat_user=settings.PMS_RATE_LIMIT_AI_CHAT_PER_MINUTE,
     )
     limiter = RateLimiter(
         primary=RedisCounterStore(redis_client) if settings.REDIS_URL else None,

@@ -39,7 +39,7 @@ def _mock_llama_steps(monkeypatch: pytest.MonkeyPatch, step_payloads: list[dict[
             envelope = {"choices": [{"message": {"content": content_str}}]}
             return io.BytesIO(json.dumps(envelope).encode("utf-8"))
 
-    monkeypatch.setattr("services.ai.local_data_explorer.urllib.request.build_opener", lambda *_: _MockOpener())
+    monkeypatch.setattr("services.ai.llm_client.urllib.request.build_opener", lambda *_: _MockOpener())
     return captured_requests
 
 
@@ -365,6 +365,7 @@ def test_clear_unknowns_disclose_missing_schema_concepts_without_guessing(monkey
 def test_multi_part_iterative_exploration_combines_two_step_evidence(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("PMS_AI_LOCAL_EXPLORATION_ENABLED", "true")
     monkeypatch.setenv("PMS_AI_CONVERSATION_STATE_ENABLED", "false")
+    monkeypatch.setenv("PMS_AI_LLM_MODEL", "qwen2.5-3b-instruct")
     records = [
         _make_call_center_record("EMP001", "Alice Example", "Inbound", 76.0, 10, 30, 30, 80, month="September"),
         _make_call_center_record("EMP002", "Bob Example", "Inbound", 94.0, 25, 30, 70, 80, month="September"),
@@ -405,7 +406,8 @@ def test_multi_part_iterative_exploration_combines_two_step_evidence(monkeypatch
 
     assert resp.outcome == "answer"
     assert resp.provider_used == "llama_cpp"
-    assert resp.model_used == "qwen3-4b-explorer"
+    assert resp.model_used == "qwen2.5-3b-instruct"
+    assert captured[0]["model"] == "qwen2.5-3b-instruct"
     assert resp.provider_usage.provider_calls in (2, 3)
     assert len(resp.tool_calls) == 2
     assert [tc.tool_name for tc in resp.tool_calls] == [

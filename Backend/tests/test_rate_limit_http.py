@@ -205,6 +205,24 @@ def test_unauthenticated_401s_count_against_the_address_ceiling(world, install_r
     assert_standard_rate_limit_body(response)
 
 
+def test_ai_chat_is_limited_per_user_without_spending_the_write_budget(world, install_runtime):
+    limits = replace(TEST_LIMITS, ai_chat_user=2, write_user=10)
+    install_runtime(make_runtime(limits=limits))
+    alice = {"Authorization": f"Bearer {token_for(world.db, 'rl-alice')}"}
+    bob = {"Authorization": f"Bearer {token_for(world.db, 'rl-bob')}"}
+    body = {"prompt": "What is Inbound score?", "session_state": {"function": "Call Center"}}
+
+    allowed = [world.client.post("/api/ai/chat", headers=alice, json=body).status_code for _ in range(2)]
+    assert 429 not in allowed
+    blocked = world.client.post("/api/ai/chat", headers=alice, json=body)
+    assert blocked.status_code == 429
+    assert_standard_rate_limit_body(blocked)
+    assert blocked.headers["ratelimit-limit"] == "2"
+    assert world.client.post("/api/ai/chat", headers=bob, json=body).status_code != 429
+    # The chat budget is not the generic write budget.
+    assert world.client.post("/api/users/notifications/read-all", headers=alice).status_code != 429
+
+
 def test_authenticated_read_write_and_heavy_classes_are_limited_per_user_and_isolated(world, install_runtime):
     limits = replace(TEST_LIMITS, read_user=3, write_user=2, heavy_user=1)
     install_runtime(make_runtime(limits=limits))

@@ -52,6 +52,8 @@ NOT_HEAVY_CASES = [
     ("PATCH", "/api/settings/evaluation/drafts/v1", RouteClass.WRITE),
     ("DELETE", "/api/uploads/u1", RouteClass.WRITE),
     ("POST", "/api/auth/logout", RouteClass.WRITE),
+    ("POST", "/api/ai/watching", RouteClass.WRITE),
+    ("GET", "/api/ai/chat", RouteClass.READ),
 ]
 
 
@@ -67,13 +69,22 @@ def test_other_paths_are_read_or_write(method, path, expected):
     assert route_class is expected
 
 
+def test_ai_chat_has_its_own_class():
+    route_class, label = classify_user_route("POST", "/api/ai/chat")
+    assert route_class is RouteClass.AI_CHAT
+    assert label == "POST /api/ai/chat"
+    route_class, _ = classify_user_route("POST", "/api/ai/chat/")
+    assert route_class is RouteClass.AI_CHAT
+
+
 def test_post_auth_rule_follows_the_class():
     rules = RuleSet.from_limits(RateLimits(
         login_address=10, login_username=5, refresh_address=30, api_address=1200,
-        heavy_user=10, write_user=120, read_user=600,
+        heavy_user=10, write_user=120, read_user=600, ai_chat_user=20,
     ))
     assert post_auth_check("POST", "/api/uploads/pms", "u1", rules)[0] is rules.heavy_user
     assert post_auth_check("POST", "/api/uploads/batch-delete", "u1", rules)[0] is rules.write_user
+    assert post_auth_check("POST", "/api/ai/chat", "u1", rules)[0] is rules.ai_chat_user
     assert post_auth_check("GET", "/api/auth/me", "u1", rules)[0] is rules.read_user
     assert post_auth_check("GET", "/api/health", "u1", rules) is None
     assert post_auth_check("OPTIONS", "/api/auth/me", "u1", rules) is None
