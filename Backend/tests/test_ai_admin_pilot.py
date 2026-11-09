@@ -284,6 +284,33 @@ def test_model_stays_off_and_production_exploration_cannot_be_enabled(monkeypatc
     assert get_ai_runtime_config().classifier_mode == "off"
 
 
+def _hostinger_trigger_keys(workflow: str) -> set[str]:
+    """Top-level keys of the workflow `on:` block. Job steps are not triggers."""
+    lines = workflow.splitlines()
+    start = next(index for index, line in enumerate(lines) if line == "on:")
+    keys: set[str] = set()
+    for line in lines[start + 1:]:
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        if not line.startswith(" "):
+            break
+        if line.startswith("  ") and not line.startswith("   ") and line.endswith(":"):
+            keys.add(line.strip()[:-1])
+    return keys
+
+
+def test_hostinger_deploy_workflow_has_no_automatic_trigger():
+    workflow = (REPO / ".github" / "workflows" / "deploy-hostinger.yml").read_text(encoding="utf-8")
+    triggers = _hostinger_trigger_keys(workflow)
+    assert "workflow_run" not in triggers
+    assert "push" not in triggers
+    assert "pull_request" not in triggers
+    assert triggers == {"workflow_dispatch"}
+    header = workflow.split("on:", 1)[0]
+    assert "Dokploy" in header
+    assert "manual-only" in header
+
+
 def test_compose_and_deploy_do_not_start_a_model_or_turn_ai_on():
     for relative in ("docker-compose.yml", "compose.production.yml"):
         text_value = (REPO / relative).read_text(encoding="utf-8")
@@ -296,8 +323,7 @@ def test_compose_and_deploy_do_not_start_a_model_or_turn_ai_on():
         assert ":-true" not in text_value.split("PMS_AI_LLM_SYNTHESIS_ENABLED")[1].split("\n", 1)[0]
 
     workflow = (REPO / ".github" / "workflows" / "deploy-hostinger.yml").read_text(encoding="utf-8")
-    assert "pull_request:" not in workflow
-    assert "branches: [main]" in workflow
+    assert _hostinger_trigger_keys(workflow) == {"workflow_dispatch"}
     assert "PMS_AI_LLM_INTENT_ENABLED=${{ vars.PMS_AI_LLM_INTENT_ENABLED || 'false' }}" in workflow
     assert "PMS_AI_LLM_SYNTHESIS_ENABLED=${{ vars.PMS_AI_LLM_SYNTHESIS_ENABLED || 'false' }}" in workflow
     assert "PMS_AI_LLM_EXPLORATION_ENABLED=false" in workflow

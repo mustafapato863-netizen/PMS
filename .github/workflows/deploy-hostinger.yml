@@ -1,10 +1,10 @@
+# Dokploy (docker-compose.yml on push to main) is the live deploy path.
+# This workflow is manual-only. Running it on the Dokploy VPS would duplicate
+# the stack: Caddy against Traefik on ports 80/443, plus a second backend,
+# worker, redis, and frontend.
 name: Deploy to Hostinger VPS
 
 on:
-  workflow_run:
-    workflows: [CI]
-    types: [completed]
-    branches: [main]
   workflow_dispatch:
 
 permissions:
