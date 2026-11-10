@@ -67,6 +67,7 @@ export default function AiScopeDropdown({
         aria-label={ariaLabel}
         aria-haspopup="listbox"
         aria-expanded={isOpen}
+        disabled={options.length === 0}
         onClick={() => setIsOpen((prev) => !prev)}
         className={`group inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[11px] transition-all ${
           isOpen
@@ -91,7 +92,7 @@ export default function AiScopeDropdown({
             isFiltered ? 'text-blue-700' : 'text-slate-800'
           }`}
         >
-          {selectedOption.label}
+          {selectedOption?.label ?? 'Unavailable'}
         </span>
         {isFiltered && (
           <span

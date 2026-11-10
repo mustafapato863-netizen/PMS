@@ -486,29 +486,40 @@ class DeterministicLocalProviderAdapter:
         # 1. Revenue guardrail note
         elif signals.asks_revenue_in_call_center:
             vols = merged.get("operational_volumes") or {}
-            b_cnt = int(vols.get("total_bookings") or 0)
-            a_cnt = int(vols.get("total_attended") or 0)
-            c_cnt = int(vols.get("total_calls_handled") or 0)
+            b_cnt = vols.get("total_bookings")
+            a_cnt = vols.get("total_attended")
+            c_cnt = vols.get("total_calls_handled")
+            b_text = f"{int(b_cnt):,}" if b_cnt is not None and not vols.get("has_partial_evidence") else "unavailable"
+            a_text = f"{int(a_cnt):,}" if a_cnt is not None else "unavailable"
             headline = (
                 f"{scope} tracks operational patient volume rather than financial revenue: "
-                f"{b_cnt:,} Bookings and {a_cnt:,} Attended visits in {period} ({branch})."
+                f"{b_text} Bookings and {a_text} Attended visits in {period} ({branch})."
             )
-            bullets.append(f"Total calls handled in scope: {c_cnt:,} calls.")
+            bullets.append(f"Total calls handled in scope: {int(c_cnt):,} calls." if c_cnt is not None else "Calls handled data is unavailable.")
             bullets.append("Financial revenue metrics are tracked under Marketing and RCM.")
 
         # 2. Branch comparison
         elif merged.get("branch_comparison"):
-            bc = merged["branch_comparison"]
+            bc = list(merged.get("branch_comparison") or [])
             req_branches = list(merged.get("requested_branches") or [])
             if len(req_branches) >= 2:
-                req_set = {rb.casefold() for rb in req_branches}
-                target_bc = [b for b in bc if str(b.get("branch") or "").casefold() in req_set]
-                if len(target_bc) < 2:
-                    target_bc = list(bc[:2])
+                req_set = {rb.casefold(): rb for rb in req_branches}
+                bc_by_name = {str(b.get("branch") or "").casefold(): b for b in bc}
+                target_bc = []
+                for rb_cf, rb_orig in req_set.items():
+                    if rb_cf in bc_by_name:
+                        target_bc.append(bc_by_name[rb_cf])
+                    else:
+                        target_bc.append({
+                            "branch": rb_orig.capitalize(),
+                            "bookings": None,
+                            "data_present": False,
+                            "period_published": True,
+                        })
             else:
-                target_bc = list(bc[:2])
+                target_bc = list(bc[:2]) if len(bc) >= 2 else list(bc)
 
-            asks_least = any(w in (prompt or "").casefold() for w in ("fewer", "least", "lowest"))
+            asks_least = any(w in (prompt or "").casefold() for w in ("fewer", "fewest", "least", "lowest", "bottom"))
             prompt_lower_bc = (prompt or "").casefold()
             asks_bc_bookings = bool(
                 signals.asks_booking_count
@@ -519,63 +530,219 @@ class DeterministicLocalProviderAdapter:
                 )
             )
             if asks_bc_bookings:
-                ranked_b = sorted(
-                    target_bc,
-                    key=lambda b: int(b.get("bookings") or 0),
-                    reverse=not asks_least,
-                )
-                winner = ranked_b[0]
-                others = ranked_b[1:]
-                if len(others) == 1:
-                    others_txt = f"{others[0]['branch']} with {int(others[0].get('bookings') or 0):,}"
-                elif len(others) == 2:
-                    others_txt = (
-                        f"{others[0]['branch']} with {int(others[0].get('bookings') or 0):,} and "
-                        f"{others[1]['branch']} with {int(others[1].get('bookings') or 0):,}"
+                valid_bc = [
+                    b for b in target_bc
+                    if b.get("data_present") is not False
+                    and b.get("bookings") is not None
+                    and b.get("status") not in ("missing", "unpublished", "no_data")
+                    and b.get("period_published") is not False
+                    and not b.get("has_partial_evidence")
+                ]
+                partial_bc = [b for b in target_bc if b.get("has_partial_evidence")]
+                missing_bc = [b for b in target_bc if b not in valid_bc and b not in partial_bc]
+
+                # 1. All missing or period unpublished
+                if not valid_bc and not partial_bc:
+                    branch_names = ", ".join(str(b.get("branch") or "") for b in target_bc)
+                    headline = f"Booking data is missing or unpublished for {branch_names} in {period}."
+                    bullets.append("No booking records were found for the requested branches in this period.")
+
+                # 2. Partially available branch comparison (missing branches or partial evidence in some branches)
+                elif missing_bc or partial_bc:
+                    missing_names = ", ".join(str(b.get("branch") or "") for b in (missing_bc + partial_bc))
+                    valid_details = ", ".join(
+                        f"{b['branch']} recorded {int(b['bookings']):,} bookings"
+                        for b in valid_bc
                     )
+                    if not valid_details and partial_bc:
+                        valid_details = ", ".join(
+                            f"{b['branch']} recorded {int(b['bookings']):,} bookings (partial)"
+                            for b in partial_bc
+                        )
+                    headline = (
+                        f"Booking data is only partially available for {scope} in {period}: "
+                        f"{valid_details}, while {missing_names} booking data is missing or unpublished. "
+                        f"A complete branch winner cannot be determined without all requested branch records."
+                    )
+                    bullets.append(
+                        "A complete branch comparison cannot be made because data is missing or incomplete for one or more requested branches."
+                    )
+                    bullets.append(
+                        "Branch booking breakdown: "
+                        + " · ".join(
+                            (
+                                f"{b['branch']}: {int(b['bookings']):,} bookings"
+                                + (
+                                    f" ({int(b['attended']):,} attended, {float(b['attendance_rate_pct']):.1f}%)"
+                                    if b.get("attended") is not None and b.get("attendance_rate_pct") is not None
+                                    else " (attendance unrecorded)"
+                                )
+                                + (" [partial data]" if b.get("has_partial_evidence") else "")
+                            )
+                            if b.get("bookings") is not None
+                            else f"{b['branch']}: data missing or unpublished"
+                            for b in target_bc
+                        )
+                        + "."
+                    )
+
+                # 3. All requested branches have valid recorded data
                 else:
-                    others_txt = ", ".join(f"{o['branch']} with {int(o.get('bookings') or 0):,}" for o in others)
-                verb = "had the fewest" if asks_least else "led"
-                headline = (
-                    f"{winner['branch']} {verb} {period} {scope} bookings with "
-                    f"{int(winner.get('bookings') or 0):,}, followed by {others_txt}."
-                )
-                bullets.append(
-                    "Branch booking breakdown: "
-                    + " · ".join(
-                        f"{b['branch']}: {int(b.get('bookings') or 0):,} bookings ({int(b.get('attended') or 0):,} attended, {float(b.get('attendance_rate_pct') or 0.0):.1f}%)"
-                        for b in ranked_b
+                    counts = [int(b.get("bookings") or 0) for b in valid_bc]
+                    max_count = max(counts)
+                    min_count = min(counts)
+                    top_branches = [b for b in valid_bc if int(b.get("bookings") or 0) == max_count]
+                    bottom_branches = [b for b in valid_bc if int(b.get("bookings") or 0) == min_count]
+                    ranked_b = sorted(
+                        valid_bc,
+                        key=lambda b: int(b.get("bookings") or 0),
+                        reverse=not asks_least,
                     )
-                    + "."
-                )
+
+                    def _join_names(names: list[str]) -> str:
+                        if not names:
+                            return ""
+                        if len(names) == 1:
+                            return names[0]
+                        if len(names) == 2:
+                            return f"{names[0]} and {names[1]}"
+                        return ", ".join(names[:-1]) + f", and {names[-1]}"
+
+                    def _format_others_txt(others_list: list[dict[str, Any]]) -> str:
+                        if not others_list:
+                            return ""
+                        parts = [f"{o['branch']} with {int(o.get('bookings') or 0):,}" for o in others_list]
+                        if len(parts) == 1:
+                            return parts[0]
+                        if len(parts) == 2:
+                            return f"{parts[0]} and {parts[1]}"
+                        return ", ".join(parts[:-1]) + f", and {parts[-1]}"
+
+                    # Subcase 3.1: All branches tied with same count (including all zero!)
+                    if len(top_branches) == len(valid_bc):
+                        val = max_count
+                        branch_names = _join_names([b["branch"] for b in valid_bc])
+                        headline = f"In {period}, {branch_names} tied with {val:,} bookings each for {scope}."
+
+                    # Subcase 3.2: Highest / Most / General comparison (not asks_least)
+                    elif not asks_least:
+                        # Tie for first place
+                        if len(top_branches) > 1:
+                            top_names = _join_names([b["branch"] for b in top_branches])
+                            others = [b for b in ranked_b if b not in top_branches]
+                            others_txt = _format_others_txt(others)
+                            headline = (
+                                f"In {period}, {top_names} tied for the most {scope} bookings with "
+                                f"{max_count:,} each, followed by {others_txt}."
+                            )
+                        else:
+                            winner = top_branches[0]
+                            others = [b for b in ranked_b if b != winner]
+                            # Check if remaining branches are tied for lowest
+                            if len(others) >= 2 and all(int(o.get("bookings") or 0) == min_count for o in others):
+                                bottom_names = _join_names([b["branch"] for b in others])
+                                headline = (
+                                    f"{winner['branch']} led {period} {scope} bookings with "
+                                    f"{int(winner.get('bookings') or 0):,}, followed by a tie between "
+                                    f"{bottom_names} with {min_count:,} each."
+                                )
+                            else:
+                                others_txt = _format_others_txt(others)
+                                headline = (
+                                    f"{winner['branch']} led {period} {scope} bookings with "
+                                    f"{int(winner.get('bookings') or 0):,}, followed by {others_txt}."
+                                )
+
+                    # Subcase 3.3: Fewest / Lowest comparison (asks_least is True)
+                    else:
+                        # Tie for lowest place
+                        if len(bottom_branches) > 1:
+                            bottom_names = _join_names([b["branch"] for b in bottom_branches])
+                            others = [b for b in ranked_b if b not in bottom_branches]
+                            others_txt = _format_others_txt(others)
+                            headline = (
+                                f"In {period}, {bottom_names} tied for the fewest {scope} bookings with "
+                                f"{min_count:,} each, while {others_txt}."
+                            )
+                        else:
+                            least_branch = bottom_branches[0]
+                            others = [b for b in ranked_b if b != least_branch]
+                            if len(others) >= 2 and all(int(o.get("bookings") or 0) == max_count for o in others):
+                                top_names = _join_names([b["branch"] for b in others])
+                                headline = (
+                                    f"{least_branch['branch']} had the fewest {period} {scope} bookings with "
+                                    f"{int(least_branch.get('bookings') or 0):,}, while {top_names} tied with {max_count:,} each."
+                                )
+                            else:
+                                others_txt = _format_others_txt(others)
+                                headline = (
+                                    f"{least_branch['branch']} had the fewest {period} {scope} bookings with "
+                                    f"{int(least_branch.get('bookings') or 0):,}, followed by {others_txt}."
+                                )
+
+                    bullets.append(
+                        "Branch booking breakdown: "
+                        + " · ".join(
+                            (
+                                f"{b['branch']}: {int(b.get('bookings') or 0):,} bookings"
+                                + (
+                                    f" ({int(b.get('attended') or 0):,} attended, {float(b.get('attendance_rate_pct') or 0.0):.1f}%)"
+                                    if b.get("attended") is not None and b.get("attendance_rate_pct") is not None
+                                    else " (attendance unrecorded)"
+                                )
+                            )
+                            for b in ranked_b
+                        )
+                        + "."
+                    )
             elif len(target_bc) >= 3:
-                ranked_b = sorted(
-                    target_bc,
-                    key=lambda b: float(b.get("score") or 0.0),
-                    reverse=not asks_least,
-                )
-                winner = ranked_b[0]
-                others_txt = ", ".join(f"{o['branch']} at {float(o.get('score') or 0.0):.1f}%" for o in ranked_b[1:])
-                headline = (
-                    f"In {period}, {winner['branch']} leads {scope} at {float(winner.get('score') or 0.0):.1f}%, "
-                    f"followed by {others_txt}."
-                )
+                valid_scores = [b for b in target_bc if b.get("score") is not None]
+                missing_scores = [b for b in target_bc if b.get("score") is None]
+                if not valid_scores:
+                    branch_names = ", ".join(b["branch"] for b in target_bc)
+                    headline = f"Performance score data is missing or unpublished for {branch_names} in {period}."
+                elif missing_scores:
+                    missing_names = ", ".join(b["branch"] for b in missing_scores)
+                    valid_txt = ", ".join(f"{b['branch']} at {b['score']:.1f}%" for b in valid_scores)
+                    headline = f"In {period}, score data is only partially available for {scope}: {valid_txt}, while score data for {missing_names} is unavailable or unpublished."
+                else:
+                    ranked_b = sorted(
+                        valid_scores,
+                        key=lambda b: float(b["score"]),
+                        reverse=not asks_least,
+                    )
+                    winner = ranked_b[0]
+                    others_txt = ", ".join(f"{o['branch']} at {float(o['score']):.1f}%" for o in ranked_b[1:])
+                    headline = (
+                        f"In {period}, {winner['branch']} leads {scope} at {float(winner['score']):.1f}%, "
+                        f"followed by {others_txt}."
+                    )
+            elif len(target_bc) < 2:
+                headline = f"A branch comparison requires at least two accessible branches for {scope} in {period}."
             else:
                 b1, b2 = target_bc[0], target_bc[1]
-                diff = round(float(b1["score"] or 0.0) - float(b2["score"] or 0.0), 1)
-                leader = b1 if diff >= 0 else b2
-                lagger = b2 if diff >= 0 else b1
-                with_vol = [b for b in bc if int(b.get("bookings") or 0) > 0]
-                most_noshows = max(with_vol, key=lambda b: int(b.get("no_shows") or 0)) if with_vol else None
-                headline = (
-                    f"In {period}, {leader['branch']} leads at {leader['score']:.1f}% vs. "
-                    f"{lagger['branch']} at {lagger['score']:.1f}% ({abs(diff):.1f} pts gap)."
-                )
-                if most_noshows:
-                    bullets.append(
-                        f"{most_noshows['branch']} holds the largest No-Show volume ({most_noshows['no_shows']:,} missed visits out of "
-                        f"{most_noshows['bookings']:,} bookings · {most_noshows['attendance_rate_pct']:.1f}% Attended)."
+                s1, s2 = b1.get("score"), b2.get("score")
+                if s1 is None and s2 is None:
+                    headline = f"Performance score data is missing or unpublished for {b1['branch']} and {b2['branch']} in {period}."
+                elif s1 is None or s2 is None:
+                    avail_b = b1 if s1 is not None else b2
+                    unavail_b = b2 if s1 is not None else b1
+                    headline = f"In {period}, {avail_b['branch']} recorded {avail_b['score']:.1f}%, while score data for {unavail_b['branch']} is unavailable or unpublished."
+                else:
+                    diff = round(float(s1) - float(s2), 1)
+                    leader = b1 if diff >= 0 else b2
+                    lagger = b2 if diff >= 0 else b1
+                    with_vol = [b for b in target_bc if int(b.get("bookings") or 0) > 0 and b.get("no_shows") is not None and b.get("attendance_rate_pct") is not None and not b.get("has_partial_evidence")]
+                    most_noshows = max(with_vol, key=lambda b: int(b.get("no_shows") or 0)) if with_vol else None
+                    headline = (
+                        f"In {period}, {leader['branch']} leads at {leader['score']:.1f}% vs. "
+                        f"{lagger['branch']} at {lagger['score']:.1f}% ({abs(diff):.1f} pts gap)."
                     )
+                    if most_noshows:
+                        bullets.append(
+                            f"{most_noshows['branch']} holds the largest No-Show volume ({most_noshows['no_shows']:,} missed visits out of "
+                            f"{most_noshows['bookings']:,} bookings · {most_noshows['attendance_rate_pct']:.1f}% Attended)."
+                        )
 
         # 3. Root-cause employees (People Contribution — when user explicitly asks who/employees or no KPI diagnosis is active)
         elif merged.get("top_contributors") and (

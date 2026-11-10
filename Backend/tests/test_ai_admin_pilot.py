@@ -133,6 +133,7 @@ def _client(monkeypatch) -> TestClient:
     monkeypatch.setattr(ai_workspace, "TrainingTraceLogger", Boom)
     monkeypatch.setattr(ai_workspace, "confirm_corrective_action_proposal", boom)
     monkeypatch.setattr(ai_workspace, "get_ai_catalog", lambda: Boom())
+    monkeypatch.setattr(ai_workspace, "build_ai_diagnostics_payload", boom)
 
     app = FastAPI()
     app.include_router(ai_workspace.router, prefix="/api")

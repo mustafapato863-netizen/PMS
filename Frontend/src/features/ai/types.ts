@@ -252,7 +252,9 @@ export interface AiChatMessage {
 
 export interface AiBarItem {
   label: string;
-  value: number;
+  // Null means "no recorded value" (e.g. an unrecorded branch) — never a
+  // fake 0.0. Render a null bar with no fill; display_value says "Unavailable".
+  value: number | null;
   display_value: string;
   target_value?: number | null;
   secondary_label?: string | null;

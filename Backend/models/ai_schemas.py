@@ -329,7 +329,7 @@ class AiCorrectiveActionConfirmResponse(BaseModel):
 
 
 class SessionFilterContext(BaseModel):
-    function: str | None = Field(default="Call Center")
+    function: str | None = None
     team: str | None = None
     position: str | None = None
     branch: str | None = None
@@ -362,7 +362,10 @@ class AiChatRequest(BaseModel):
 
 class AiBarItem(BaseModel):
     label: str
-    value: float
+    # Null means "no recorded value" (e.g. a branch with no published
+    # bookings/score) — never a fake 0.0. Consumers must render a null bar
+    # with no fill, using display_value ("Unavailable") as the label.
+    value: float | None
     display_value: str
     target_value: float | None = None
     secondary_label: str | None = None
@@ -756,50 +759,31 @@ class AiTraceReviewResponse(BaseModel):
     is_distillation_eligible: bool
 
 
-class AiDiagnosticsFeature(BaseModel):
-    ai_enabled: bool = False
-    intent_enabled: bool = False
-    synthesis_enabled: bool = False
-    exploration_enabled: bool = False
-
-
-class AiDiagnosticsModel(BaseModel):
-    available: bool = False
-    name: str
-    version: str | None = None
-    probe: str = "not_sent"
-    reason: str = "unavailable"
-    last_known: dict[str, str] | None = None
-
-
-class AiDiagnosticsProviders(BaseModel):
-    routing: Literal["llama_cpp", "deterministic"] = "deterministic"
-    synthesis: Literal["llama_cpp", "deterministic"] = "deterministic"
-
-
-class AiDiagnosticsFallback(BaseModel):
-    reason: str | None = None
-    source: str | None = None
-    recorded_at: str | None = None
-
-
-class AiDiagnosticsDataset(BaseModel):
-    latest_upload_at: str | None = None
-    latest_performance_record_at: str | None = None
-    data_version: int = 0
-    config_version: int = 0
-    status: Literal["ok", "unavailable"] = "unavailable"
-
-
 class AiDiagnosticsPayload(BaseModel):
-    feature: AiDiagnosticsFeature
-    model: AiDiagnosticsModel
-    providers: AiDiagnosticsProviders
-    last_fallback: AiDiagnosticsFallback
-    dataset: AiDiagnosticsDataset
+    feature_enabled: bool
+    pilot_role_restricted: bool = True
+    model_configured_name: str
+    model_endpoint_configured: bool
+    model_endpoint_host: str | None = None
+    model_available: bool
+    inference_verified: bool = False
+    model_availability_reason: str
+    router_mode: str
+    intent_routing_enabled: bool
+    synthesis_enabled: bool
+    exploration_enabled: bool
+    routing_provider: Literal["llama_cpp", "deterministic"] = "deterministic"
+    synthesis_provider: Literal["llama_cpp", "deterministic"] = "deterministic"
+    brief_default_enabled: bool
+    conversation_state_enabled: bool
+    provider_timeout_seconds: float
+    concurrency_limit: int = 1
+    recent_fallback_reason: str | None = None
+    fallback_scope: str = "process_local"
+    data_freshness: dict[str, Any] = Field(default_factory=dict)
 
 
 class AiDiagnosticsResponse(BaseModel):
     success: bool = True
-    message: str = "PMS AI diagnostics"
+    message: str = "Admin AI diagnostics loaded"
     data: AiDiagnosticsPayload

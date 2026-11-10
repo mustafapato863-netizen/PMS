@@ -675,8 +675,8 @@ def _build_unknown_response(
     provider_calls: int,
     provider_ms: float,
 ) -> LocalExplorationResult:
-    target_team = team or session_state.team or "Inbound"
-    target_fn = function or session_state.function or "Call Center"
+    target_team = team or session_state.team or None
+    target_fn = function or session_state.function or (function_for_team(target_team) if target_team else None)
     latest_human = _format_period_label(latest_published_period)
 
     if unknown_code == "missing_hr_join_date":
@@ -684,11 +684,12 @@ def _build_unknown_response(
             "PMS tracks monthly evaluation scores and KPIs rather than employee hire or joining dates. "
             "Would you like to inspect their tracked evaluation history instead?"
         )
+        disp_team = target_team or "your team"
         choices = [
             ClarificationChoice(
                 id="choice-explore-history",
-                label=f"Show tracked evaluation history in {target_team}",
-                prompt_to_send=f"Who is the best agent in {target_team} in {latest_human}?",
+                label=f"Show tracked evaluation history in {disp_team}",
+                prompt_to_send=f"Who is the best agent in {disp_team} in {latest_human}?",
                 team=target_team,
                 performance_level="Employee",
             )
@@ -1284,13 +1285,53 @@ def _validate_and_normalize_tool_call(
             resolved_metric_id = m_def.metric_id
             resolved_kpi_key = m_def.kpi_key or m_def.metric_id.split(":")[-1]
             if not norm_team and m_def.team and m_def.team != "Call Center":
-                norm_team = m_def.team
+                # NOTE (Task 2): only infer a team from the metric when the
+                # label belongs to exactly one team. A shared Call Center
+                # metric (Booking Rate is tracked by both Inbound and
+                # Outbound) used to narrow the scope to whichever team the
+                # catalog lists first, so a function-wide Clinics booking
+                # question was answered with the Inbound-only count (20)
+                # instead of the authorised function-wide count (30).
+                # Ambiguous metrics leave the team unset (function scope),
+                # matching the rules-only path.
+                label_needle = raw_metric.strip().casefold()
+                label_teams = {
+                    cand.team
+                    for cand in catalog.metrics.values()
+                    if cand.team
+                    and (
+                        cand.kpi_key.casefold() == label_needle
+                        or cand.display_name.casefold() == label_needle
+                        or label_needle in cand.aliases
+                        or cand.metric_id == label_needle
+                    )
+                }
+                if len(label_teams) == 1:
+                    norm_team = next(iter(label_teams))
 
-    if tool_name == "compare_branches" and re.search(r"\bbookings?\b", lower_prompt) and not re.search(
-        r"\b(?:rate|ratio|conversion|attendance|attended)\b", lower_prompt
-    ):
-        resolved_kpi_key = "TotalBookings"
-        resolved_metric_id = f"{(norm_team or 'inbound').casefold().replace(' ', '_')}:bookings_count"
+    # NOTE (Task 2): a bookings question without rate language asks for the
+    # authorised booking counter, whatever metric label the model supplied.
+    # The old code only forced bookings_count for compare_branches, so a
+    # single-branch Clinics booking question kept Qwen's "Booking Rate" and
+    # was answered with an unrelated percentage. This override applies to
+    # every tool and wins over a model-supplied rate label; explicit rate,
+    # attendance, or trend wording is left alone.
+    asks_booking_count = bool(re.search(r"\bbookings?\b", lower_prompt)) and not re.search(
+        r"\b(?:rate|ratio|conversion|attendance|attended|percent|percentage|trend)\b", lower_prompt
+    )
+    if asks_booking_count:
+        count_def = catalog.find_metric_definition(
+            team=norm_team,
+            kpi_key_or_label="bookings count",
+            position=session_state.position,
+            performance_level=eff_level,
+        )
+        resolved_metric_id = (
+            count_def.metric_id
+            if count_def is not None
+            else f"{(norm_team or 'inbound').casefold().replace(' ', '_')}:bookings_count"
+        )
+        resolved_kpi_key = count_def.kpi_key if count_def is not None else "TotalBookings"
     elif not resolved_metric_id and norm_team:
         prompt_m_def = catalog.find_metric_definition(
             team=norm_team,
@@ -1329,7 +1370,7 @@ def _validate_and_normalize_tool_call(
     eff_fn = (
         function_for_team(norm_team)
         if norm_team
-        else (session_state.function or "Call Center")
+        else (session_state.function or None)
     )
     direction_raw = str(raw_tool.get("direction") or "").strip().casefold()
     if any(w in lower_prompt for w in ("worst", "lowest", "bottom", "weakest")):
@@ -1621,7 +1662,7 @@ def _build_evidence_items_from_results(
         op_id = f"op_{idx}"
         perf_lvl = call.performance_level if call.performance_level in ("Employee", "Managerial", "Corporate") else "Employee"
         scope_v2 = QueryScopeV2(
-            function=call.function or "Call Center",
+            function=call.function or (function_for_team(call.team) if call.team else None),
             team=call.team,
             position=call.position,
             performance_level=perf_lvl,  # type: ignore[arg-type]
@@ -1663,7 +1704,7 @@ def _build_evidence_items_from_results(
 
         sp = tr.digest.get("spotlight") or tr.digest.get("agent_spotlight")
         if isinstance(sp, dict) and sp.get("entity_id"):
-            emp_team = str(sp.get("team") or call.team or "Call Center")
+            emp_team = str(sp.get("team") or call.team or "")
             envelope.append(
                 EvidenceItemV2(
                     operation_id=op_id,
@@ -2369,7 +2410,7 @@ def run_bounded_exploration(
 
         required_parts = _extract_required_question_parts(clean_prompt)
         active_context = {
-            "function": session_state.function or "Call Center",
+            "function": session_state.function or (function_for_team(explicit_teams[0]) if len(explicit_teams) == 1 else None),
             "team": (explicit_teams[0] if len(explicit_teams) == 1 else None) or session_state.team,
             "branch": session_state.branch,
             "performance_level": session_state.performance_level or "Employee",
@@ -2949,7 +2990,7 @@ def run_bounded_exploration(
 
         perf_lvl = primary_call.performance_level if primary_call.performance_level in ("Employee", "Managerial", "Corporate") else "Employee"
         scope_v2 = QueryScopeV2(
-            function=primary_call.function or "Call Center",
+            function=primary_call.function or (function_for_team(primary_call.team) if primary_call.team else session_state.function),
             team=primary_call.team,
             position=primary_call.position,
             performance_level=perf_lvl,  # type: ignore[arg-type]
@@ -2995,7 +3036,7 @@ def run_bounded_exploration(
             single_person=primary_call.single_person,
         )
         resolved_state = SessionFilterContext(
-            function=primary_call.function or session_state.function or "Call Center",
+            function=primary_call.function or (function_for_team(primary_call.team) if primary_call.team else session_state.function),
             team=primary_call.team or session_state.team,
             position=primary_call.position or session_state.position,
             branch=None if primary_call.tool == "compare_branches" else (primary_call.branch or session_state.branch),

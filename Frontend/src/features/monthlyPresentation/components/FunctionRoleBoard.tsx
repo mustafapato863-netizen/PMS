@@ -55,8 +55,11 @@ function Movement({
 }) {
   if (change === null) {
     return (
-      <span className="text-slate-400">
-        {compact ? '—' : `No ${previousMonthLabel} baseline`}
+      <span
+        className="text-slate-400"
+        title={`No measured score for ${previousMonthLabel}`}
+      >
+        {compact ? '—' : 'No previous-month data'}
       </span>
     );
   }

@@ -1,0 +1,173 @@
+{
+  "run_id": "rules_only_339cbf30_dirty_9796cf217d62",
+  "base_commit": "339cbf305f08fe3a1b1d2920874380c66612e650",
+  "candidate_commit": null,
+  "working_tree_dirty": true,
+  "evaluated_diff_hash": "9796cf217d62",
+  "question_set_versions": {
+    "frozen_v0": {
+      "file": "frozen_v0.json",
+      "sha256": "a76f216afb659085"
+    },
+    "heldout_v0": {
+      "file": "heldout_v0.json",
+      "sha256": "5208d3a6de8ac747"
+    }
+  },
+  "performance_record_count": 0,
+  "execution_start_time": "2026-11-10T10:19:24.247217+00:00",
+  "execution_duration_seconds": 11.18,
+  "summary": {
+    "counts": {
+      "frozen_v0": {
+        "passed": 26,
+        "failed": 0,
+        "ungraded": 29,
+        "errored": 0,
+        "total": 55
+      },
+      "heldout_v0": {
+        "passed": 24,
+        "failed": 0,
+        "ungraded": 57,
+        "errored": 0,
+        "total": 81
+      }
+    },
+    "by_family": {
+      "greeting": {
+        "passed": 4,
+        "failed": 0,
+        "ungraded": 0,
+        "errored": 0
+      },
+      "ranking": {
+        "passed": 1,
+        "failed": 0,
+        "ungraded": 11,
+        "errored": 0
+      },
+      "person_period": {
+        "passed": 0,
+        "failed": 0,
+        "ungraded": 1,
+        "errored": 0
+      },
+      "employment_status": {
+        "passed": 3,
+        "failed": 0,
+        "ungraded": 0,
+        "errored": 0
+      },
+      "branch_comparison": {
+        "passed": 2,
+        "failed": 0,
+        "ungraded": 9,
+        "errored": 0
+      },
+      "trend": {
+        "passed": 2,
+        "failed": 0,
+        "ungraded": 10,
+        "errored": 0
+      },
+      "corrective_action": {
+        "passed": 3,
+        "failed": 0,
+        "ungraded": 1,
+        "errored": 0
+      },
+      "cross_department": {
+        "passed": 0,
+        "failed": 0,
+        "ungraded": 4,
+        "errored": 0
+      },
+      "compound": {
+        "passed": 0,
+        "failed": 0,
+        "ungraded": 8,
+        "errored": 0
+      },
+      "follow_up": {
+        "passed": 0,
+        "failed": 0,
+        "ungraded": 6,
+        "errored": 0
+      },
+      "ambiguous_identity": {
+        "passed": 4,
+        "failed": 0,
+        "ungraded": 1,
+        "errored": 0
+      },
+      "tie": {
+        "passed": 0,
+        "failed": 0,
+        "ungraded": 1,
+        "errored": 0
+      },
+      "data_state": {
+        "passed": 2,
+        "failed": 0,
+        "ungraded": 12,
+        "errored": 0
+      },
+      "shared_ownership": {
+        "passed": 4,
+        "failed": 0,
+        "ungraded": 0,
+        "errored": 0
+      },
+      "same_name_team": {
+        "passed": 6,
+        "failed": 0,
+        "ungraded": 4,
+        "errored": 0
+      },
+      "access_denial": {
+        "passed": 10,
+        "failed": 0,
+        "ungraded": 0,
+        "errored": 0
+      },
+      "prompt_injection": {
+        "passed": 6,
+        "failed": 0,
+        "ungraded": 0,
+        "errored": 0
+      },
+      "navigation": {
+        "passed": 1,
+        "failed": 0,
+        "ungraded": 4,
+        "errored": 0
+      },
+      "current_value": {
+        "passed": 0,
+        "failed": 0,
+        "ungraded": 14,
+        "errored": 0
+      },
+      "unsupported": {
+        "passed": 2,
+        "failed": 0,
+        "ungraded": 0,
+        "errored": 0
+      }
+    },
+    "by_category": {},
+    "providers": {
+      "deterministic": 96,
+      "local": 41,
+      "http_403": 10
+    },
+    "model_attempted_turns": 0,
+    "turn_count": 147,
+    "latency_ms": {
+      "p50": 50.96,
+      "p95": 69.47,
+      "max": 391.37
+    }
+  }
+}

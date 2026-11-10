@@ -1,14 +1,14 @@
 from __future__ import annotations
 
+import threading
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session
 
 from api.dependencies import require_authenticated_scope, require_role
-from services.ai.diagnostics import build_ai_diagnostics
-from services.ai.feature_gate import require_ai_admin, require_ai_diagnostic_session, require_ai_enabled
+from services.ai.feature_gate import read_ai_enabled, require_ai_admin, require_ai_diagnostic_session, require_ai_enabled
 from config.database import get_db, release_read_transaction
 from models.ai_schemas import (
-    AiDiagnosticsResponse,
     AiCatalogResponse,
     AiChatRequest,
     AiChatResponse,
@@ -16,6 +16,8 @@ from models.ai_schemas import (
     AiConversationResponse,
     AiCorrectiveActionConfirmRequest,
     AiCorrectiveActionConfirmResponse,
+    AiDiagnosticsPayload,
+    AiDiagnosticsResponse,
     AiDistillationExportResponse,
     AiFeedbackRequest,
     AiFeedbackResponse,
@@ -24,7 +26,15 @@ from models.ai_schemas import (
     AiWatchingResponse,
     SessionFilterContext,
 )
+from services.ai.config import get_ai_runtime_config
 from services.ai.catalog import get_ai_catalog
+from services.ai.llm_client import (
+    check_model_health,
+    get_recent_fallback_reason,
+    local_exploration_enabled,
+    local_intent_enabled,
+    local_synthesis_enabled,
+)
 from services.ai.contextual_assistant import (
     ProposalStaleEvidenceError,
     confirm_corrective_action_proposal,
@@ -75,16 +85,17 @@ def get_ai_diagnostics(
     _session: None = Depends(require_ai_diagnostic_session),
     _role: str = Depends(require_ai_admin),
 ) -> AiDiagnosticsResponse:
-    payload = build_ai_diagnostics(db)
+    """Admin diagnostics. Available while AI is off so an Admin can see why."""
+    payload = build_ai_diagnostics_payload(db)
     release_read_transaction(db)
-    return payload
+    return AiDiagnosticsResponse(success=True, message="Admin AI diagnostics loaded", data=payload)
 
 
 @router.get("/watching", response_model=AiWatchingResponse)
 def get_ai_watching_workspace(
     request: Request,
     db: Session = Depends(get_db),
-    function: str | None = Query(default="Call Center"),
+    function: str | None = Query(default=None),
     team: str | None = Query(default=None),
     branch: str | None = Query(default=None),
     region: str | None = Query(default=None),
@@ -366,4 +377,122 @@ def export_ai_distillation_traces(
         success=True,
         total_exported=len(records),
         records=records,
+    )
+
+
+def _bounded_model_health(timeout_seconds: float = 1.5) -> dict[str, Any]:
+    """Return model health without letting a stuck probe hold the request."""
+    box: dict[str, Any] = {}
+
+    def run() -> None:
+        try:
+            box["value"] = check_model_health(timeout_seconds)
+        except Exception:
+            box["value"] = {
+                "configured_model": "unavailable",
+                "endpoint_configured": False,
+                "endpoint_host": None,
+                "available": False,
+                "inference_verified": False,
+                "reason": "unavailable",
+            }
+
+    worker = threading.Thread(target=run, daemon=True)
+    worker.start()
+    worker.join(timeout_seconds)
+    if worker.is_alive() or "value" not in box:
+        return {
+            "configured_model": "unavailable",
+            "endpoint_configured": False,
+            "endpoint_host": None,
+            "available": False,
+            "inference_verified": False,
+            "reason": "timeout",
+        }
+    return box["value"]
+
+
+def _safe_host(value: object) -> str | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    host = value.strip()
+    if "://" in host or "@" in host or "/" in host or " " in host:
+        return None
+    return host
+
+
+def build_ai_diagnostics_payload(db: Session | None) -> AiDiagnosticsPayload:
+    cfg = get_ai_runtime_config()
+    model_health = _bounded_model_health()
+
+    freshness: dict[str, object] = {}
+    try:
+        if db is not None:
+            from datetime import datetime
+
+            from models.models import PerformanceRecord, UploadLog
+            from sqlalchemy import func
+            count = db.query(func.count(PerformanceRecord.id)).scalar()
+            freshness["performance_records_count"] = int(count) if count is not None else 0
+            latest_upload = db.query(func.max(UploadLog.uploaded_at)).scalar()
+            latest_record = db.query(func.max(PerformanceRecord.uploaded_at)).scalar()
+            if isinstance(latest_upload, datetime):
+                freshness["latest_upload_at"] = latest_upload.isoformat()
+            if isinstance(latest_record, datetime):
+                freshness["latest_performance_record_at"] = latest_record.isoformat()
+            if count and count > 0:
+                rows = db.query(PerformanceRecord.year, PerformanceRecord.month).distinct().all()
+                month_order = {
+                    "january": 1, "february": 2, "march": 3, "april": 4, "may": 5, "june": 6,
+                    "july": 7, "august": 8, "september": 9, "october": 10, "november": 11, "december": 12,
+                }
+                def _sort_key(item: tuple[Any, Any]) -> tuple[int, int]:
+                    yr = int(item[0] or 0)
+                    mo = month_order.get(str(item[1]).strip().casefold(), 0)
+                    return yr, mo
+                sorted_rows = sorted(rows, key=_sort_key)
+                if sorted_rows:
+                    latest = sorted_rows[-1]
+                    freshness["latest_published_period"] = f"{latest[1]} {latest[0]}"
+    except Exception:
+        freshness = {"performance_records_count": None, "database_status": "read_failed"}
+
+    feature_enabled = False
+    try:
+        if db is not None:
+            feature_enabled = read_ai_enabled(db)
+    except Exception:
+        feature_enabled = False
+
+    model_up = bool(model_health.get("available"))
+    intent_on = local_intent_enabled()
+    synthesis_on = local_synthesis_enabled()
+    model_name = str(model_health.get("configured_model") or "")
+    reason = str(model_health.get("reason") or "unavailable")
+    from services.ai.diagnostics import scrub_text
+
+    model_name = scrub_text(model_name)
+    reason = scrub_text(reason)
+    return AiDiagnosticsPayload(
+        feature_enabled=feature_enabled,
+        pilot_role_restricted=True,
+        model_configured_name=model_name,
+        model_endpoint_configured=bool(model_health.get("endpoint_configured")),
+        model_endpoint_host=_safe_host(model_health.get("endpoint_host")),
+        model_available=model_up,
+        inference_verified=bool(model_health.get("inference_verified", False)),
+        model_availability_reason=reason,
+        router_mode=cfg.router_mode,
+        intent_routing_enabled=intent_on,
+        synthesis_enabled=synthesis_on,
+        exploration_enabled=local_exploration_enabled(),
+        routing_provider="llama_cpp" if intent_on and model_up else "deterministic",
+        synthesis_provider="llama_cpp" if synthesis_on and model_up else "deterministic",
+        brief_default_enabled=cfg.brief_default_enabled,
+        conversation_state_enabled=cfg.conversation_state_enabled,
+        provider_timeout_seconds=cfg.provider_timeout_seconds,
+        concurrency_limit=1,
+        recent_fallback_reason=get_recent_fallback_reason(),
+        fallback_scope="process_local",
+        data_freshness=freshness,
     )

@@ -3191,3 +3191,139 @@ def test_v2_post_b470ef6_nine_review_fixes(monkeypatch):
     ok_contra, errs_contra = verify_semantic_answer_correctness(scenario_item, contradictory_resp)
     assert ok_contra is False
     assert len(errs_contra) >= 2
+
+
+def test_ai_admin_diagnostics_endpoint():
+    """Verify GET /api/ai/diagnostics returns safe operational posture and blocks non-Admins."""
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.pool import StaticPool
+
+    from api.middleware.auth_middleware import AuthMiddleware
+    from api.routers.ai_workspace import diagnostics_router, router as ai_router
+    from config.database import Base, get_db
+    from models.models import ProductSetting
+    from services.auth_service import AuthenticationService
+
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(bind=engine)
+    Session = sessionmaker(bind=engine)
+
+    with Session() as db:
+        AuthenticationService.create_user(db, "diag_admin", "diag_admin@example.invalid", "AdminSecret123!", "Admin")
+        AuthenticationService.create_user(db, "diag_user", "diag_user@example.invalid", "UserSecret123!", "Manager")
+        db.add(ProductSetting(key="ai_enabled", enabled=True))
+        db.commit()
+        admin_tok = AuthenticationService.authenticate_user(db, "diag_admin", "AdminSecret123!")
+        user_tok = AuthenticationService.authenticate_user(db, "diag_user", "UserSecret123!")
+
+    app = FastAPI()
+    app.add_middleware(AuthMiddleware)
+    app.include_router(ai_router, prefix="/api")
+    app.include_router(diagnostics_router, prefix="/api")
+
+    def override_db():
+        db = Session()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    app.dependency_overrides[get_db] = override_db
+    client = TestClient(app)
+
+    # 1. Non-Admin receives 403 Forbidden
+    res_user = client.get("/api/ai/diagnostics", headers={"Authorization": f"Bearer {user_tok}"})
+    assert res_user.status_code == 403
+
+    # 2. Admin receives 200 OK with safe diagnostics
+    res_admin = client.get("/api/ai/diagnostics", headers={"Authorization": f"Bearer {admin_tok}"})
+    assert res_admin.status_code == 200
+    data = res_admin.json()["data"]
+    assert data["feature_enabled"] is True
+    assert data["pilot_role_restricted"] is True
+    assert "model_configured_name" in data
+    assert "concurrency_limit" in data
+    assert data["concurrency_limit"] == 1
+    assert data["fallback_scope"] == "process_local"
+    assert "inference_verified" in data
+    # Secrets must NEVER be present
+    assert "api_key" not in str(res_admin.json()).lower()
+    assert "password" not in str(res_admin.json()).lower()
+
+
+def test_ai_catalog_truthful_certification_statuses():
+    """Verify that catalog does NOT make blanket certified claims without proof."""
+    from services.ai.catalog import get_ai_catalog
+
+    catalog = get_ai_catalog()
+    full_registry = catalog.get_full_coverage_scope_registry()
+    assert len(full_registry) > 0
+
+    # Unverified scopes must have certified=False and status='unverified'
+    unverified_teams = {"Finance", "CSR", "IT", "Human Resources", "Marketing", "Pharmacy", "PMO"}
+    found_unverified = 0
+    for entry in full_registry:
+        team = entry["team"]
+        if team in unverified_teams:
+            assert entry["certified"] is False, f"Scope {team} ({entry.get('country')}) claimed certified without evidence"
+            assert entry["status"] in ("blocked", "partial", "not_applicable", "unverified"), f"Unexpected status {entry['status']} for {team}"
+            found_unverified += 1
+    assert found_unverified > 0
+
+    # Application tests do not provide independent source parity, so these remain partial.
+    inbound_entries = [e for e in full_registry if e["team"] == "Inbound" and e.get("region") == "EGY"]
+    assert len(inbound_entries) > 0
+    assert inbound_entries[0]["certified"] is False
+    assert inbound_entries[0]["status"] == "partial"
+
+
+def test_ai_diagnostics_db_failure_and_model_probe_rejection(monkeypatch):
+    """Diagnostics must report performance_records_count=None on DB error, reject 400/422 probe, and sort chronologically."""
+    import urllib.error
+    from api.routers.ai_workspace import build_ai_diagnostics_payload
+    from services.ai.llm_client import check_model_health
+    from unittest.mock import MagicMock
+
+    # 1. DB failure must return None (not 0) in data_freshness
+    broken_db = MagicMock()
+    broken_db.query.side_effect = RuntimeError("Database connection died")
+    diag = build_ai_diagnostics_payload(broken_db)
+    assert diag.data_freshness["performance_records_count"] is None
+    assert diag.data_freshness["database_status"] == "read_failed"
+    assert "database_error" not in diag.data_freshness
+    assert diag.fallback_scope == "process_local"
+
+    # 2. Chronological calendar sorting check: October 2026 must be later than September 2026
+    normal_db = MagicMock()
+    normal_db.query.return_value.scalar.return_value = 10
+    normal_db.query.return_value.distinct.return_value.all.return_value = [
+        (2026, "March"),
+        (2026, "October"),
+        (2026, "September"),
+    ]
+    diag_sorted = build_ai_diagnostics_payload(normal_db)
+    assert diag_sorted.data_freshness["latest_published_period"] == "October 2026"
+
+    # 3. Model probe rejecting HTTP 400 or HTTP 422
+    class MockOpener:
+        def open(self, *args, **kwargs):
+            raise urllib.error.HTTPError(
+                url="http://localhost:18080/v1/chat/completions",
+                code=400,
+                msg="Bad Request",
+                hdrs={},
+                fp=None,
+            )
+
+    monkeypatch.setattr("services.ai.llm_client.urllib.request.build_opener", lambda *_: MockOpener())
+    health = check_model_health()
+    assert health["available"] is False
+    assert health["inference_verified"] is False
+    assert "400" in health["reason"]

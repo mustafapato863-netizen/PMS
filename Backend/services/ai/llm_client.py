@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import re
 import threading
@@ -26,7 +27,7 @@ from dataclasses import dataclass
 from typing import Any, Iterator
 
 from services.ai.config import redact_secrets
-from services.ai.runtime_status import last_known_model, note_fallback, remember_model
+from services.ai.runtime_status import note_fallback
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +43,21 @@ _MAX_RESPONSE_BYTES = 65536
 # One in-flight completion for the whole process. A 2 vCPU box cannot run two inferences.
 _SLOT = threading.BoundedSemaphore(1)
 _remaining: ContextVar[int | None] = ContextVar("pms_ai_llm_remaining", default=None)
+_last_fallback_reason: str = "none"
+
+
+def get_recent_fallback_reason() -> str | None:
+    from services.ai.runtime_status import last_fallback
+
+    recorded = last_fallback().get("reason")
+    if recorded:
+        return str(recorded)
+    if not _last_fallback_reason or _last_fallback_reason == "none":
+        return None
+    if len(_last_fallback_reason) > 64 or any(char.isspace() for char in _last_fallback_reason):
+        return "unspecified"
+    return _last_fallback_reason
+
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -293,6 +309,9 @@ def _finish(
     purpose: str,
     http_status: int | None = None,
 ) -> LlmCompletion:
+    global _last_fallback_reason
+    if not ok:
+        _last_fallback_reason = reason
     elapsed_ms = round((time.perf_counter() - started) * 1000.0, 2)
     _log_call(model=model, host=host, purpose=purpose, elapsed_ms=elapsed_ms, reason=reason, http_status=http_status)
     if not ok:
@@ -465,83 +484,133 @@ def chat_completion(
         _SLOT.release()
 
 
-_MODEL_TOKEN = re.compile(r"^[A-Za-z0-9_.:-]{1,80}$")
-_PROBE_LIMIT_SECONDS = 1.5
+def check_model_health(timeout_seconds: float = 1.5) -> dict[str, Any]:
+    """Admin-only probe that confirms a real completion from the configured model.
 
-
-def _model_version(raw: bytes) -> str | None:
-    try:
-        payload = json.loads(raw.decode("utf-8", errors="replace"))
-    except ValueError:
-        return None
-    data = payload.get("data") if isinstance(payload, dict) else None
-    if not isinstance(data, list) or not data or not isinstance(data[0], dict):
-        return None
-    token = data[0].get("id")
-    if isinstance(token, str) and _MODEL_TOKEN.match(token):
-        return token
-    return None
-
-
-def probe_model_availability(timeout_seconds: float = 0.8) -> dict[str, Any]:
-    """GET the configured model's id. The request cannot outlive ``timeout_seconds``.
-
-    The returned dict never includes the URL, credentials, or the response body.
+    Model listing is used only as an early mismatch check. The completion response
+    must identify the configured model and contain non-empty assistant text.
+    Both HTTP calls share a short deadline and the same single-inference slot as chat.
     """
-    timeout = max(0.2, min(float(timeout_seconds), _PROBE_LIMIT_SECONDS))
-    configured = configured_model_name()
+    model_name = configured_model_name()
     url, url_reason = resolve_chat_url()
-    result: dict[str, Any] = {
-        "available": False,
-        "name": configured,
-        "version": None,
-        "probe": "not_sent",
-        "reason": "invalid_endpoint",
-        "last_known": last_known_model(),
-    }
-    if url is None:
-        result["reason"] = url_reason if url_reason == "invalid_endpoint" else "invalid_endpoint"
-        return result
+    host = _normalize_host(urllib.parse.urlsplit(url).hostname or "") if url else None
 
-    def once() -> dict[str, Any]:
-        models_url = url[: -len("/chat/completions")] + "/models"
-        request = urllib.request.Request(models_url, method="GET")
-        try:
-            with urllib.request.build_opener(_NoRedirect()).open(request, timeout=timeout) as response:
-                raw = response.read(4096)
-                status = getattr(response, "status", 0)
-            if not isinstance(status, int) or status < 200 or status >= 300:
-                return {"available": False, "version": None, "reason": "unavailable"}
-            return {"available": True, "version": _model_version(raw), "reason": "ok"}
-        except TimeoutError:
-            return {"available": False, "version": None, "reason": "timeout"}
-        except Exception:
-            return {"available": False, "version": None, "reason": "unavailable"}
-
-    box: dict[str, Any] = {}
-
-    def run() -> None:
-        box["value"] = once()
-
-    worker = threading.Thread(target=run, daemon=True)
-    worker.start()
-    worker.join(timeout)
-    if worker.is_alive():
-        result["probe"] = "models"
-        result["reason"] = "timeout"
-        result["last_known"] = last_known_model()
-        return result
-    value = box.get("value") or {"available": False, "version": None, "reason": "unavailable"}
-    version = value.get("version") if isinstance(value.get("version"), str) else None
-    if value.get("available"):
-        remember_model(version or configured)
-    result.update(
-        {
-            "available": bool(value.get("available")),
-            "version": version,
-            "probe": "models",
-            "reason": str(value.get("reason") or "unavailable"),
-            "last_known": last_known_model(),
+    def result(available: bool, reason: str, http_status: int | None = None) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "configured_model": model_name,
+            "endpoint_configured": url is not None,
+            "endpoint_host": host,
+            "available": available,
+            "inference_verified": available,
+            "reason": reason,
         }
-    )
-    return result
+        if http_status is not None:
+            payload["http_status"] = http_status
+        return payload
+
+    if url is None:
+        return result(False, url_reason)
+
+    try:
+        requested_timeout = float(timeout_seconds)
+    except (TypeError, ValueError):
+        requested_timeout = 1.5
+    if not math.isfinite(requested_timeout):
+        requested_timeout = 1.5
+    total_timeout = max(0.2, min(requested_timeout, 3.0))
+    deadline = time.monotonic() + total_timeout
+    if not _SLOT.acquire(blocking=False):
+        return result(False, "busy")
+
+    try:
+        api_key = os.environ.get("PMS_AI_LLM_API_KEY", "").strip()
+        parsed = urllib.parse.urlsplit(url)
+        models_url = urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, "/v1/models", "", ""))
+        req_models = urllib.request.Request(models_url, headers={"Accept": "application/json"}, method="GET")
+        if api_key:
+            req_models.add_header("Authorization", f"Bearer {api_key}")
+
+        # A valid list can quickly reject a wrong model. Invalid or unavailable
+        # listing endpoints cannot prove health; the completion probe remains required.
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return result(False, "timeout")
+        try:
+            with urllib.request.build_opener(_NoRedirect()).open(req_models, timeout=remaining) as resp:
+                if getattr(resp, "status", None) == 200:
+                    raw_models = resp.read(8193)
+                    if len(raw_models) <= 8192:
+                        try:
+                            model_data = json.loads(raw_models.decode("utf-8"))
+                            model_items = model_data.get("data") if isinstance(model_data, dict) else None
+                            if isinstance(model_items, list) and model_items:
+                                listed_ids = [
+                                    item.get("id", "").strip()
+                                    for item in model_items
+                                    if isinstance(item, dict) and isinstance(item.get("id"), str)
+                                ]
+                                if len(listed_ids) == len(model_items) and all(listed_ids):
+                                    if not any(mid.casefold() == model_name.casefold() for mid in listed_ids):
+                                        return result(False, "configured_model_not_listed", 200)
+                        except (ValueError, UnicodeDecodeError, AttributeError):
+                            pass
+        except (TimeoutError, urllib.error.URLError):
+            # Continue only if the overall deadline still leaves time for inference.
+            pass
+        except OSError:
+            pass
+
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return result(False, "timeout")
+        probe_text = "Reply with the short text PMS_AI_HEALTH_CHECK_OK."
+        body = json.dumps({
+            "model": model_name,
+            "messages": [{"role": "user", "content": probe_text}],
+            "max_tokens": 16,
+            "temperature": 0.0,
+        }).encode("utf-8")
+        req = urllib.request.Request(
+            url,
+            data=body,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        if api_key:
+            req.add_header("Authorization", f"Bearer {api_key}")
+
+        try:
+            with urllib.request.build_opener(_NoRedirect()).open(req, timeout=remaining) as resp:
+                status_code = getattr(resp, "status", None)
+                if status_code != 200:
+                    return result(False, f"http_{status_code}", status_code)
+                raw_body = resp.read(_MAX_RESPONSE_BYTES + 1)
+            if len(raw_body) > _MAX_RESPONSE_BYTES:
+                return result(False, "completion_response_too_large", status_code)
+            try:
+                comp_data = json.loads(raw_body.decode("utf-8"))
+            except (ValueError, UnicodeDecodeError):
+                return result(False, "malformed_completion_json", status_code)
+            if not isinstance(comp_data, dict):
+                return result(False, "malformed_completion_envelope", status_code)
+            reported_model = comp_data.get("model")
+            if not isinstance(reported_model, str) or not reported_model.strip():
+                return result(False, "model_identity_missing", status_code)
+            if reported_model.strip().casefold() != model_name.casefold():
+                return result(False, "model_identity_mismatch", status_code)
+            choices = comp_data.get("choices")
+            if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
+                return result(False, "malformed_completion_missing_choices", status_code)
+            message = choices[0].get("message")
+            if not isinstance(message, dict) or message.get("role") not in (None, "assistant"):
+                return result(False, "malformed_completion_message", status_code)
+            content = message.get("content")
+            if not isinstance(content, str) or not strip_thinking(content):
+                return result(False, "empty_completion", status_code)
+            return result(True, "completion_verified", status_code)
+        except urllib.error.HTTPError as exc:
+            return result(False, f"http_{exc.code}_rejected", exc.code)
+        except (TimeoutError, urllib.error.URLError, OSError):
+            return result(False, "timeout_or_unreachable")
+    finally:
+        _SLOT.release()

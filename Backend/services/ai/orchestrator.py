@@ -1269,6 +1269,14 @@ class PmsAiOrchestrator:
                 "Call Center (Inbound & Outbound) measures operational patient volume (Bookings, Attended Visits, and Handled Calls) rather than financial revenue. Financial revenue is tracked under Marketing and RCM."
             )
 
+        # Shared All-region scorecard choice (PR #84): the router already
+        # authorised the choice; the scorecard must be computed by the
+        # exact-team + region='All' tool, never by the domain rollup tools
+        # (team=RCM would otherwise expand to every RCM sub-team).
+        shared_choice_team = {"choice-shared-rcm": "RCM", "choice-shared-finance": "Finance"}.get(
+            str(req.clarification_choice_id or "")
+        )
+
         cache_sig = {
             "intents": list(signals.primary_intents[:2]),
             "region": req.session_state.region,
@@ -1291,6 +1299,10 @@ class PmsAiOrchestrator:
             "asks_worst_month_history": signals.asks_worst_month_history,
             "asks_specific_month_in_prompt": signals.asks_specific_month_in_prompt,
             "asks_revenue_in_call_center": signals.asks_revenue_in_call_center,
+            # The shared scorecard and the plain team scorecard share every
+            # other signature field; without this they would share a cache
+            # entry and return each other's numbers.
+            "shared_region_team": shared_choice_team,
         }
         eval_id = evaluation_cache_identity(self.db)
         cached_results = ai_evidence_cache.get(
@@ -1303,6 +1315,14 @@ class PmsAiOrchestrator:
         if cached_results is not None:
             tool_results = cached_results
             cache_hit = True
+        elif shared_choice_team:
+            tool_results.append(
+                registry.execute_shared_region_scorecard(
+                    team=shared_choice_team,
+                    month=signals.detected_month or req.session_state.month,
+                    year=signals.detected_year or req.session_state.year,
+                )
+            )
         else:
             for intent in signals.primary_intents[:2]:
                 if intent == "agent_spotlight_trend":

@@ -22,7 +22,6 @@ from services.ai import feature_gate
 from services.ai.catalog import evidence_for_team, get_ai_catalog
 from services.ai.coverage_manifest import build_coverage_manifest, validate_coverage_manifest
 from services.ai.evidence import CatalogEvidence, evidence_passes, publish_evidence
-from services.ai.llm_client import probe_model_availability
 from services.ai.orchestrator import PmsAiOrchestrator
 from services.ai.runtime_status import last_fallback, note_fallback, reset_runtime_status
 from test_ai_workspace import _build_in_memory_db, _make_call_center_record, _patch_records
@@ -168,14 +167,14 @@ def test_diagnostics_auth_boundary_and_redaction(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setenv("PMS_AI_LLM_API_KEY", API_KEY)
     monkeypatch.setenv("PMS_AI_LLM_BASE_URL", f"http://phase1user:{PASSWORD}@127.0.0.1:9/v1")
     monkeypatch.setattr(
-        "services.ai.diagnostics.probe_model_availability",
-        lambda timeout_seconds=0.8: {
+        "api.routers.ai_workspace.check_model_health",
+        lambda timeout_seconds=1.5: {
+            "configured_model": API_KEY,
+            "endpoint_configured": False,
+            "endpoint_host": f"phase1user:{PASSWORD}@127.0.0.1",
             "available": False,
-            "name": API_KEY,
-            "version": f"http://phase1user:{PASSWORD}@127.0.0.1:9/v1",
-            "probe": "not_sent",
+            "inference_verified": False,
             "reason": f"http://phase1user:{PASSWORD}@127.0.0.1:9/v1",
-            "last_known": None,
         },
     )
     note_fallback(PROMPT, "routing")
@@ -251,18 +250,23 @@ def test_diagnostics_auth_boundary_and_redaction(monkeypatch: pytest.MonkeyPatch
     assert "base_url" not in encoded
     assert "api_key" not in encoded
     data = body["data"]
-    assert data["feature"]["ai_enabled"] is False
-    assert data["feature"]["intent_enabled"] is False
-    assert data["feature"]["synthesis_enabled"] is False
-    assert data["feature"]["exploration_enabled"] is False
-    assert data["providers"] == {"routing": "deterministic", "synthesis": "deterministic"}
-    assert data["model"]["available"] is False
-    assert data["model"]["name"] == "[REDACTED]"
-    assert PASSWORD not in data["model"]["reason"]
-    assert data["last_fallback"]["reason"] == "unspecified"
-    assert data["dataset"]["status"] == "ok"
-    assert data["dataset"]["latest_upload_at"].startswith("2026-11-01T08:30:00")
-    assert data["dataset"]["latest_performance_record_at"].startswith("2026-11-01T08:30:00")
+    assert data["feature_enabled"] is False
+    assert data["intent_routing_enabled"] is False
+    assert data["synthesis_enabled"] is False
+    assert data["exploration_enabled"] is False
+    assert data["routing_provider"] == "deterministic"
+    assert data["synthesis_provider"] == "deterministic"
+    assert data["model_available"] is False
+    assert data["model_configured_name"] == "[REDACTED]"
+    assert data["model_endpoint_host"] is None
+    assert PASSWORD not in data["model_availability_reason"]
+    assert data["recent_fallback_reason"] == "unspecified"
+    assert data["data_freshness"]["latest_upload_at"].startswith("2026-11-01T08:30:00")
+    assert data["data_freshness"]["latest_performance_record_at"].startswith("2026-11-01T08:30:00")
+    finance = next(row for row in get_ai_catalog().get_full_coverage_scope_registry() if row["team"] == "Finance")
+    rcm = next(row for row in get_ai_catalog().get_full_coverage_scope_registry() if row["team"] == "RCM")
+    assert finance["region"] == "All" and finance["certified"] is False and finance["evidence_state"] != "verified"
+    assert rcm["region"] == "All" and rcm["certified"] is False and rcm["evidence_state"] != "verified"
 
     closed = client.post("/api/ai/chat", headers={"X-User-Role": "Admin"}, json={"prompt": "Hi"})
     assert closed.status_code == 403
@@ -277,18 +281,20 @@ def test_model_probe_returns_before_a_slow_endpoint(monkeypatch: pytest.MonkeyPa
 
     class _Slow:
         def open(self, *_args, **_kwargs):
-            time.sleep(2)
+            time.sleep(1.2)
             raise TimeoutError("slow")
 
     monkeypatch.setattr("services.ai.llm_client.urllib.request.build_opener", lambda *_args, **_kwargs: _Slow())
+    from api.routers.ai_workspace import _bounded_model_health
+
     started = time.perf_counter()
-    result = probe_model_availability(0.3)
+    result = _bounded_model_health(0.3)
     elapsed = time.perf_counter() - started
-    assert elapsed < 1.5
+    assert elapsed < 1.2
     assert result["available"] is False
     assert result["reason"] == "timeout"
     assert "127.0.0.1" not in json.dumps(result)
-    assert "http" not in json.dumps(result)
+    time.sleep(1.1)
 
 
 def test_turning_ai_off_and_model_flags_off_returns_cleanly(monkeypatch: pytest.MonkeyPatch) -> None:
