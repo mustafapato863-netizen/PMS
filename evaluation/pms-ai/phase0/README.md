@@ -13,6 +13,8 @@ People in the questions are fixture identities (Adham, Mariam, Nour) or role pla
 - Keep v0 in the repo so a later run can say which questions moved.
 - Historical results stay `unverified` even after v0 is signed. Signing v0 does not certify an old report.
 - `frozen_v1.json` and `heldout_v1.json` are the derived layer. `derive_expected.py` fills a value only when the checked-in team catalog or the employee schema proves it, and it records the file, commit, and method. Everything else stays `PENDING` with `pending_reason`. The reviewer stays `PENDING`. v0 is not edited. See `DERIVATION.md`.
+- Under `docs/plans/PMS_AI_EVIDENCE_FIRST_IMPLEMENTATION_PLAN.md`, this freeze is Plan Phase 1 (Baseline). The owner's registers are `docs/plans/pms-ai-evidence-first/PHASE_1_BASELINE.md` and `ISSUE_REGISTER.md`. `OWNER_REGISTER_MAP.md` points each derivation reason at those docs and is not a second issue list. Evidence status uses verified, verified no data, partial, blocked, or not applicable. The derivation as a whole is partial: 18 values are filled and 172 stay blocked or partial. Corrective-action suggestion cases are a later version, not a v0 or v1 edit.
+- `TEST_TYPE_INVENTORY.md` is the Plan Phase 1.5 list for these tests and the AI tests they relate to. Labels are synthetic, mocked, live-model, source-parity, or browser.
 
 `Backend/tests/test_pms_ai_phase0_eval_schema.py` checks required fields, the unsigned-value rule, and the split below. It does not call the assistant. `Backend/tests/test_pms_ai_phase0_derivation.py` checks that v1 matches the script.
 
