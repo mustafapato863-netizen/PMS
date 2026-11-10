@@ -556,6 +556,10 @@ function MonthlyPresentationScreen({
       storedActions,
       activeRegion,
       selectedPeriodKey,
+      // Explicit preview (the September 2026 presentation demo) may stand
+      // in the published September snapshot when nothing was measured at
+      // all. Production measured dives never fall back to it.
+      { allowSnapshotFallback: explicitPreview },
     );
   }, [activeRegion, authorizedRecords, callCenterDeepDiveData, currentFunctionRecords.length, explicitPreview, functionSlug, isFunctionAuthorized, selectedPeriodKey, storedActions]);
 
@@ -917,6 +921,7 @@ function MonthlyPresentationScreen({
               storedActions,
               activeRegion,
               selectedPeriodKey,
+              { allowSnapshotFallback: explicitPreview },
             );
 
       if (isRoleBasedFunction(fn.slug)) {

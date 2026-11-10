@@ -182,19 +182,26 @@ def extract_prompt_signals(prompt: str, session_state: SessionFilterContext) -> 
     ):
         signals.asks_branch_comparison = True
 
-    if any(
-        k in lower
-        for k in (
-            "more bookings",
-            "most bookings",
-            "fewer bookings",
-            "least bookings",
-            "bookings count",
-            "total bookings",
-            "number of bookings",
-            "booking volume",
-            "how many bookings",
+    # NOTE (Task 2): keep in step with router._detect_metric_id — a bare
+    # "bookings" noun and "how many <branch> bookings" are count questions,
+    # not Booking Rate questions.
+    if (
+        any(
+            k in lower
+            for k in (
+                "more bookings",
+                "most bookings",
+                "fewer bookings",
+                "least bookings",
+                "bookings count",
+                "booking count",
+                "total bookings",
+                "number of bookings",
+                "booking volume",
+                "how many bookings",
+            )
         )
+        or re.search(r"how many\b.{0,50}\bbookings?\b", lower)
     ):
         signals.asks_booking_count = True
 
@@ -450,9 +457,66 @@ def build_call_center_guardrails() -> list[AiGuardrailItem]:
 
 def build_call_center_starter_prompts(session_state: SessionFilterContext) -> list[AiStarterPrompt]:
     """Role- and filter-aware starter prompts for the empty state and scenario explorer."""
-    team_label = session_state.team if session_state.team and session_state.team != "All" else "Call Center"
+    is_cc = (
+        (session_state.function or "").casefold() == "call center"
+        or (session_state.team or "").casefold() in ("inbound", "outbound", "call center", "support positions")
+    )
+    team_label = (
+        session_state.team
+        if session_state.team and session_state.team != "All"
+        else (session_state.function or ("Call Center" if is_cc else "All authorized departments"))
+    )
     branch_label = session_state.branch.capitalize() if session_state.branch and session_state.branch != "all" else None
     scope_suffix = f" in {branch_label}" if branch_label else ""
+
+    if not is_cc and team_label != "Call Center":
+        return [
+            AiStarterPrompt(
+                id="team-drop",
+                label=f"Which team in {team_label} dropped most?",
+                subtitle="Identify the team with the largest performance drop and see key drivers.",
+                badge="TEAM",
+                prompt=f"Which team in {team_label} dropped the most this month{scope_suffix}, what is the main KPI driver, and what decisions do you recommend?",
+                category="team",
+                icon_key="users",
+            ),
+            AiStarterPrompt(
+                id="people-root-cause",
+                label=f"Top negative contributors in {team_label}",
+                subtitle="Find the employees driving KPI gaps and coaching opportunities.",
+                badge="PEOPLE",
+                prompt=f"Who are the top negative contributors in {team_label}{scope_suffix} and what happens if we coach the bottom 3?",
+                category="people",
+                icon_key="users",
+            ),
+            AiStarterPrompt(
+                id="branch-compare",
+                label="Compare UAE Branches",
+                subtitle="Compare performance and operational metrics across Dubai, Sharjah, Ajman, and Clinics.",
+                badge="BRANCH",
+                prompt=f"Compare all UAE branches (Dubai, Sharjah, Ajman, Clinics) performance for {team_label} and recommend branch decisions.",
+                category="branch",
+                icon_key="chart",
+            ),
+            AiStarterPrompt(
+                id="governance-actions",
+                label="Pending corrective actions",
+                subtitle="Review open corrective actions and items with owners and due dates.",
+                badge="GOVERNANCE",
+                prompt=f"Summarize open or overdue corrective actions in {team_label} with recommended next steps.",
+                category="governance",
+                icon_key="shield",
+            ),
+            AiStarterPrompt(
+                id="agent-spotlight-trend",
+                label=f"Top performer in {team_label}",
+                subtitle="Instant spotlight of top performer with score and trend.",
+                badge="PEOPLE · TREND",
+                prompt=f"Who is the top performer in {team_label} and what is their score trend?",
+                category="people",
+                icon_key="users",
+            ),
+        ]
 
     return [
         AiStarterPrompt(

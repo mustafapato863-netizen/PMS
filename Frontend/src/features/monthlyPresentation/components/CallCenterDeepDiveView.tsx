@@ -34,6 +34,7 @@ import {
 import type { TeamSlug } from '../teamDeepDiveData';
 import { KpiTrendMovement, SelectableKpiCard } from './SelectableKpiCard';
 import { FullWordGradeBadge } from './TeamDeepDiveView';
+import ScoreTrendChart from '../../../components/employee/ScoreTrendChart';
 
 const CARDS_PER_ROW = 4;
 
@@ -93,7 +94,9 @@ function AgentTeamCard({
 }) {
   const gradeStyle = GRADE_STYLES[team.grade];
   const isPositiveCarrier = team.roleTone === 'positive';
-  const isUp = team.changeVsPrev >= 0;
+  const change = team.changeVsPrev;
+  const hasChange = change !== null;
+  const isUp = hasChange && change >= 0;
 
   return (
     <button
@@ -167,18 +170,27 @@ function AgentTeamCard({
               <div className="text-[9px] font-medium text-slate-400">
                 vs {previousMonthLabel.slice(0, 3)}
               </div>
-              <div
-                className={`inline-flex items-center gap-0.5 font-bold tabular-nums ${
-                  isUp ? 'text-emerald-700' : 'text-rose-700'
-                }`}
-              >
-                {isUp ? (
-                  <ArrowUpRight className="size-3" />
-                ) : (
-                  <ArrowDownRight className="size-3" />
-                )}
-                {isUp ? `+${team.changeVsPrev.toFixed(1)}%` : `${team.changeVsPrev.toFixed(1)}%`}
-              </div>
+              {hasChange && change !== null ? (
+                <div
+                  className={`inline-flex items-center gap-0.5 font-bold tabular-nums ${
+                    isUp ? 'text-emerald-700' : 'text-rose-700'
+                  }`}
+                >
+                  {isUp ? (
+                    <ArrowUpRight className="size-3" />
+                  ) : (
+                    <ArrowDownRight className="size-3" />
+                  )}
+                  {isUp ? `+${change.toFixed(1)}%` : `${change.toFixed(1)}%`}
+                </div>
+              ) : (
+                <div
+                  className="font-bold text-slate-400 tabular-nums"
+                  title="No previous-month data"
+                >
+                  —
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -396,7 +408,18 @@ export default function CallCenterDeepDiveView({
   toolbar,
 }: CallCenterDeepDiveViewProps) {
   const headlineGradeStyle = GRADE_STYLES[data.headline.grade];
-  const isPositiveChange = data.headline.changeVsPrev >= 0;
+  const measuredChange = data.scoreTrend ? data.scoreTrend.changeVsPrevious : data.headline.changeVsPrev;
+  const showChange = measuredChange !== null && Number.isFinite(measuredChange);
+  const isPositiveChange = showChange && measuredChange > 0;
+  const comparedMonth = data.scoreTrend?.previousMonthLabel ?? data.previousMonthLabel;
+  const hasTrendData = Boolean(
+    data.scoreTrend &&
+    data.scoreTrend.points.length > 0 &&
+    data.scoreTrend.points.some((p) => p.score !== null),
+  );
+  // A truthful empty dive: no measured rows for this region/period, so no
+  // score, grade, gap or projection is shown anywhere on the page.
+  const isEmpty = data.isEmpty === true;
   const [openKpiTrends, setOpenKpiTrends] = useState<Record<string, boolean>>({});
   const [teamsStart, setTeamsStart] = useState(0);
   const [supportStart, setSupportStart] = useState(0);
@@ -466,80 +489,166 @@ export default function CallCenterDeepDiveView({
         )}
       </header>
 
+      {/* Truthful empty state: no measured rows for this region/period. */}
+      {isEmpty && (
+        <section
+          data-testid="deep-dive-empty-state"
+          aria-label="No measured Call Center data"
+          className="rounded-2xl border border-amber-200 bg-amber-50/70 p-6 shadow-xs"
+        >
+          <h2 className="text-lg font-bold text-slate-900">No measured Call Center data</h2>
+          <p className="mt-1 text-sm font-medium leading-relaxed text-slate-700">
+            {data.emptyReason ??
+              `No measured Call Center rows for ${data.regionName} in ${data.monthLabel}.`}
+          </p>
+          <p className="mt-2 text-xs leading-relaxed text-slate-500">
+            Scores, teams, support positions, KPIs, attention lists and actions are
+            shown only when published records exist for this scope. Nothing on this
+            page is a placeholder or an estimate.
+          </p>
+        </section>
+      )}
+
       {/* 2. Diagnostic Headline */}
+      {!isEmpty && (
       <section
         id="presentation-section-cc-score"
         data-section-label="Score"
         aria-labelledby="diagnostic-headline-title"
         className="relative scroll-mt-24 overflow-hidden rounded-2xl border border-slate-200/90 bg-gradient-to-br from-white via-white to-blue-50/40 p-6 shadow-xs sm:p-7"
       >
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-12 lg:items-stretch">
           {/* Left: Score + Grade + Movement + Gap */}
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-6">
-            <div className="flex items-baseline gap-3.5">
-              <span
-                data-testid="deep-dive-function-score"
-                className={`text-5xl font-extrabold tracking-tight sm:text-6xl ${headlineGradeStyle.scoreText}`}
-              >
-                {data.headline.score.toFixed(1)}%
-              </span>
-              <FullWordGradeBadge
-                grade={data.headline.grade}
-                gradeFullLabel={data.headline.gradeLabel}
-                size="lg"
-              />
+          <div className="flex flex-col justify-between gap-4 rounded-2xl border border-slate-200/80 bg-white p-5 shadow-2xs lg:col-span-5">
+            <div>
+              <div className="text-[11px] font-bold tracking-wider text-slate-400 uppercase">
+                Function Score
+              </div>
+              <div className="mt-1 flex items-baseline gap-3.5">
+                <span
+                  data-testid="deep-dive-function-score"
+                  className={`text-5xl font-extrabold tracking-tight sm:text-6xl ${headlineGradeStyle.scoreText}`}
+                >
+                  {data.headline.score.toFixed(1)}%
+                </span>
+                <FullWordGradeBadge
+                  grade={data.headline.grade}
+                  gradeFullLabel={data.headline.gradeLabel}
+                  size="lg"
+                />
+              </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2.5 sm:flex-col sm:items-start sm:gap-1.5">
-              <span
-                className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-xs font-bold ${
-                  isPositiveChange
-                    ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                    : 'border-rose-200 bg-rose-50 text-rose-700'
-                }`}
-              >
-                {isPositiveChange ? (
-                  <ArrowUpRight className="size-3.5" />
-                ) : (
-                  <ArrowDownRight className="size-3.5" />
-                )}
-                {isPositiveChange
-                  ? `+${data.headline.changeVsPrev.toFixed(1)}%`
-                  : `${data.headline.changeVsPrev.toFixed(1)}%`}{' '}
-                vs {data.previousMonthLabel}
-              </span>
-
+            <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3 text-xs">
               <span className="inline-flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50/80 px-2.5 py-1 text-xs font-bold text-amber-800">
                 <Target className="size-3.5 text-amber-600" />
                 {Math.abs(data.headline.gap).toFixed(1)}% below {data.headline.target.toFixed(0)}% target
               </span>
+
+              {showChange && measuredChange !== null && (
+                <span
+                  className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-xs font-bold ${
+                    isPositiveChange
+                      ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                      : measuredChange < 0
+                      ? 'border-rose-200 bg-rose-50 text-rose-700'
+                      : 'border-slate-200 bg-white text-slate-700'
+                  }`}
+                >
+                  {isPositiveChange ? (
+                    <ArrowUpRight className="size-3.5" />
+                  ) : measuredChange < 0 ? (
+                    <ArrowDownRight className="size-3.5" />
+                  ) : null}
+                  {isPositiveChange
+                    ? `+${measuredChange.toFixed(1)}%`
+                    : `${measuredChange.toFixed(1)}%`}{' '}
+                  vs {comparedMonth}
+                </span>
+              )}
+              {!showChange && (
+                <span
+                  title={`No measured score for ${comparedMonth || 'the previous month'}`}
+                  className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-bold text-slate-400"
+                >
+                  — No previous-month data
+                </span>
+              )}
             </div>
           </div>
 
-          {/* Right: Narrative Callout */}
-          <div className="max-w-2xl flex-1 rounded-2xl border border-blue-200/80 bg-white/90 p-4 shadow-2xs lg:p-5">
-            <div className="flex items-center gap-2 text-xs font-bold tracking-wider text-blue-600 uppercase">
-              <Sparkles className="size-3.5" />
-              <h2 id="diagnostic-headline-title">Executive Diagnostic</h2>
+          {/* Right: 6-Month Function Score Trend */}
+          <section
+            aria-label={`${data.functionName} score trend`}
+            data-testid="function-score-trend"
+            className="flex flex-col justify-between rounded-2xl border border-slate-200/80 bg-white p-4 shadow-2xs lg:col-span-7"
+          >
+            <div>
+              <div className="flex items-center justify-between pb-1">
+                <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                  6-month function score
+                </div>
+                <span className="text-[11px] font-medium text-slate-400">
+                  Target: 100%
+                </span>
+              </div>
+              {hasTrendData ? (
+                <ScoreTrendChart
+                  data={data.scoreTrend!.points.map((point) => ({
+                    month: point.month,
+                    score: point.score,
+                    periodKey: point.periodKey,
+                    selected: point.selected,
+                    basisDetail: point.basisDetail,
+                  }))}
+                  targetScore={100}
+                  targetLabel="100% target"
+                  targetLabelPosition="insideTopRight"
+                  height={140}
+                  animate={false}
+                  caption={`${data.functionName} ${data.regionName} function score, selected month and five preceding months`}
+                />
+              ) : (
+                <div
+                  data-testid="function-score-trend-empty"
+                  className="flex h-[140px] items-center justify-center text-xs font-medium text-slate-400"
+                >
+                  No trend data available for this function in the 6-month window.
+                </div>
+              )}
             </div>
-            <p
-              data-testid="diagnostic-narrative"
-              className="mt-1.5 text-sm font-medium leading-relaxed text-slate-800 sm:text-[15px]"
-            >
-              {data.headline.narrative}
-            </p>
-            <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] font-semibold text-slate-500">
-              <span className="rounded-md bg-slate-100 px-2 py-0.5 text-slate-700">
-                Layer 1: {data.headline.measuredTeamsCount} teams ({data.headline.measuredAgentsCount} people)
-              </span>
-              <span>→</span>
-              <span className="rounded-md bg-slate-100 px-2 py-0.5 text-slate-700">
-                Layer 2: {data.headline.supportPositionsCount} support positions
-              </span>
-            </div>
+            {data.scoreTrend?.points?.some((point) => point.basisDetail) && (
+              <p className="mt-2 border-t border-slate-100 pt-2 text-xs leading-relaxed text-slate-500">
+                Hover over a month to see what is known about its scoring basis.
+              </p>
+            )}
+          </section>
+        </div>
+
+        {/* Bottom Full-Width: Narrative Callout */}
+        <div className="mt-5 rounded-2xl border border-blue-200/80 bg-white/90 p-4 shadow-2xs lg:p-5">
+          <div className="flex items-center gap-2 text-xs font-bold tracking-wider text-blue-600 uppercase">
+            <Sparkles className="size-3.5" />
+            <h2 id="diagnostic-headline-title">Executive Diagnostic</h2>
+          </div>
+          <p
+            data-testid="diagnostic-narrative"
+            className="mt-1.5 text-sm font-medium leading-relaxed text-slate-800 sm:text-[15px]"
+          >
+            {data.headline.narrative}
+          </p>
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] font-semibold text-slate-500">
+            <span className="rounded-md bg-slate-100 px-2 py-0.5 text-slate-700">
+              Layer 1: {data.headline.measuredTeamsCount} teams ({data.headline.measuredAgentsCount} people)
+            </span>
+            <span>→</span>
+            <span className="rounded-md bg-slate-100 px-2 py-0.5 text-slate-700">
+              Layer 2: {data.headline.supportPositionsCount} support positions
+            </span>
           </div>
         </div>
       </section>
+      )}
 
       {/* 3. Layer 1 — Directly measured teams (Compact Single-Row Carousel, Worst to Best) */}
       <section
@@ -609,14 +718,24 @@ export default function CallCenterDeepDiveView({
               : 'sm:grid-cols-2 lg:grid-cols-4'
           }`}
         >
-          {visibleTeams.map((team) => (
-            <AgentTeamCard
-              key={team.id}
-              team={team}
-              previousMonthLabel={data.previousMonthLabel}
-              onSelectTeam={onSelectAgentTeam}
-            />
-          ))}
+          {visibleTeams.length === 0 ? (
+            <div
+              data-testid="agent-teams-empty"
+              className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-6 text-sm font-medium text-slate-500"
+            >
+              No agent teams measured for {data.monthLabel}. A channel is shown
+              only when it has published records for this month.
+            </div>
+          ) : (
+            visibleTeams.map((team) => (
+              <AgentTeamCard
+                key={team.id}
+                team={team}
+                previousMonthLabel={data.previousMonthLabel}
+                onSelectTeam={onSelectAgentTeam}
+              />
+            ))
+          )}
         </div>
       </section>
 
@@ -693,9 +812,19 @@ export default function CallCenterDeepDiveView({
         </div>
 
         <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {visibleSupport.map((pos) => (
-            <SupportPositionCard key={pos.id} position={pos} onSelectRole={onSelectRole} />
-          ))}
+          {visibleSupport.length === 0 ? (
+            <div
+              data-testid="support-positions-empty"
+              className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-6 text-sm font-medium text-slate-500 sm:col-span-2 lg:col-span-4"
+            >
+              No support positions measured for {data.monthLabel}. A position is
+              shown only when it has a record in this month.
+            </div>
+          ) : (
+            visibleSupport.map((pos) => (
+              <SupportPositionCard key={pos.id} position={pos} onSelectRole={onSelectRole} />
+            ))
+          )}
         </div>
       </section>
 
@@ -719,7 +848,16 @@ export default function CallCenterDeepDiveView({
               : 'lg:grid-cols-3'
           }`}
         >
-          {(() => {
+          {data.keyKpis.length === 0 ? (
+            <div
+              data-testid="key-kpis-empty"
+              className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-6 text-sm font-medium text-slate-500 lg:col-span-3"
+            >
+              No key KPIs measured for {data.monthLabel}. A KPI card is shown
+              only when it has a published row for this month.
+            </div>
+          ) : (
+            (() => {
             const count = data.keyKpis.length;
             const weights =
               count === 1
@@ -758,7 +896,8 @@ export default function CallCenterDeepDiveView({
                 onToggleTrend={() => toggleKpiTrend(item.kpi.id)}
               />
             ));
-          })()}
+          })()
+          )}
         </div>
       </section>
 
@@ -790,7 +929,15 @@ export default function CallCenterDeepDiveView({
             </div>
 
             <div className="mt-4 divide-y divide-slate-100">
-              {data.agentsNeedingAttention.map((agent: AgentNeedingAttentionItem) => {
+              {data.agentsNeedingAttention.length === 0 ? (
+                <div
+                  data-testid="attention-empty"
+                  className="py-3.5 text-sm font-medium text-slate-500"
+                >
+                  No agents need attention in {data.monthLabel}.
+                </div>
+              ) : (
+                data.agentsNeedingAttention.map((agent: AgentNeedingAttentionItem) => {
                 const ownerStyle = positionBadge(agent.owningPosition);
                 const gradeStyle = GRADE_STYLES[agent.grade];
                 return (
@@ -836,7 +983,8 @@ export default function CallCenterDeepDiveView({
                     </div>
                   </div>
                 );
-              })}
+              })
+              )}
             </div>
           </div>
 
@@ -862,14 +1010,24 @@ export default function CallCenterDeepDiveView({
                   Actions by Position
                 </h2>
               </div>
-              <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-0.5 text-xs font-bold text-emerald-700">
-                <TrendingUp className="size-3.5" />
-                +{data.actionsByPosition.totalExpectedLiftPct.toFixed(1)}% expected lift
-              </span>
+              {!isEmpty && (
+                <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-0.5 text-xs font-bold text-emerald-700">
+                  <TrendingUp className="size-3.5" />
+                  +{data.actionsByPosition.totalExpectedLiftPct.toFixed(1)}% expected lift
+                </span>
+              )}
             </div>
 
             <div className="mt-4 space-y-3">
-              {data.actionsByPosition.items.map((item: PositionActionPlanItem) => {
+              {data.actionsByPosition.items.length === 0 ? (
+                <div
+                  data-testid="actions-empty"
+                  className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-6 text-sm font-medium text-slate-500"
+                >
+                  No corrective actions recorded for {data.monthLabel}.
+                </div>
+              ) : (
+                data.actionsByPosition.items.map((item: PositionActionPlanItem) => {
                 const ownerStyle = positionBadge(item.owningPosition);
                 return (
                   <div
@@ -911,12 +1069,14 @@ export default function CallCenterDeepDiveView({
                     </div>
                   </div>
                 );
-              })}
+              })
+              )}
             </div>
           </div>
 
           {/* Projected Next Month Score Footer */}
-          <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50/70 px-4 py-3">
+          {!isEmpty && (
+            <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50/70 px-4 py-3">
             <div className="flex items-center gap-2 text-xs font-semibold text-emerald-900">
               <Activity className="size-4 text-emerald-600" />
               <span>Projected next-month score</span>
@@ -933,6 +1093,7 @@ export default function CallCenterDeepDiveView({
               </span>
             </div>
           </div>
+          )}
         </section>
       </div>
     </div>

@@ -498,6 +498,14 @@ function TeamDeepDiveViewContent({
                     {isPositiveChange ? `+${measuredChange.toFixed(1)}%` : `${measuredChange.toFixed(1)}%`} vs {comparedMonth}
                   </span>
                 )}
+                {!showChange && (
+                  <span
+                    title={`No measured score for ${comparedMonth || 'the previous month'}`}
+                    className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 font-bold text-slate-400"
+                  >
+                    — No previous-month data
+                  </span>
+                )}
                 {data.scoreTrend?.basisNote && (
                   <span
                     data-testid="team-score-basis-note"
@@ -785,7 +793,7 @@ function TeamDeepDiveViewContent({
                         <div className={`text-base font-extrabold ${gradeStyle.scoreText}`}>
                           {agent.score.toFixed(1)}%
                         </div>
-                        {agent.changeVsPrev !== null && (
+                        {agent.changeVsPrev !== null ? (
                           <div
                             className={`text-[11px] font-semibold ${
                               agent.changeVsPrev >= 0 ? 'text-emerald-600' : 'text-rose-600'
@@ -795,6 +803,13 @@ function TeamDeepDiveViewContent({
                               ? `+${agent.changeVsPrev.toFixed(1)}%`
                               : `${agent.changeVsPrev.toFixed(1)}%`}{' '}
                             vs {data.previousMonthLabel}
+                          </div>
+                        ) : (
+                          <div
+                            className="text-[11px] font-semibold text-slate-400"
+                            title="No previous-month data"
+                          >
+                            —
                           </div>
                         )}
                       </td>

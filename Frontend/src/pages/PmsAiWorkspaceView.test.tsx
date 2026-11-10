@@ -490,6 +490,12 @@ describe('PmsAiWorkspaceView', () => {
     let chatCallIdx = 0;
 
     mockedApiFetch.mockImplementation(async (path: string) => {
+      if (path === '/api/ai/catalog') {
+        return { success: true, data: { eligible_teams: [
+          { value: 'Inbound', label: 'Inbound', function: 'Call Center' },
+          { value: 'Outbound', label: 'Outbound', function: 'Call Center' },
+        ] } };
+      }
       if (path.startsWith('/api/ai/watching')) {
         return WATCHING_RESPONSE;
       }
@@ -750,5 +756,67 @@ describe('PmsAiWorkspaceView', () => {
 
     // Only one user prompt bubble for Turn 2 should exist (no duplicate bubble on Retry)
     expect(screen.getAllByText('Check target after other tab update')).toHaveLength(1);
+  });
+
+  it('renders neutral opening with "All authorized departments" and allows department switching', async () => {
+    mockedApiFetch.mockImplementation(async (path: string) => {
+      if (path === '/api/ai/catalog') {
+        return {
+          success: true,
+          data: {
+            functions: [
+              { key: 'Call Center', label: 'Call Center' },
+              { key: 'Operations', label: 'Operations' },
+              { key: 'Finance', label: 'Finance' },
+            ],
+            teams: [
+              { key: 'Inbound', label: 'Inbound', function_key: 'Call Center' },
+              { key: 'Outbound', label: 'Outbound', function_key: 'Call Center' },
+              { key: 'Dispatch', label: 'Dispatch', function_key: 'Operations' },
+            ],
+            branches: [{ key: 'dubai', label: 'Dubai' }],
+            performance_levels: [{ key: 'Employee', label: 'Employee' }],
+            kpis: [],
+          },
+        };
+      }
+      if (path === '/api/ai/chat') {
+        return CHAT_RESPONSE;
+      }
+      return { success: true };
+    });
+
+    renderWorkspace('/ai?position=Old%20Role');
+
+    // With multiple catalog functions, Department dropdown is rendered once catalog query resolves
+    const deptBtn = await screen.findByLabelText('Filter Department');
+    expect(deptBtn).toBeInTheDocument();
+
+    // Both department and team filter dropdowns default to neutral "All authorized departments"
+    expect(screen.getAllByText('All authorized departments').length).toBeGreaterThanOrEqual(2);
+
+    // Select Department: Operations
+    fireEvent.click(deptBtn);
+    await waitFor(() => {
+      expect(screen.getByRole('option', { name: /Operations/i })).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole('option', { name: /Operations/i }));
+
+    fireEvent.click(screen.getByLabelText('Filter Operations Team'));
+    expect(screen.getByRole('option', { name: /Dispatch/i })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: /Inbound/i })).not.toBeInTheDocument();
+
+    // Send a prompt and verify the request session state includes function='Operations'
+    const input = screen.getByLabelText('Ask PMS AI a question');
+    fireEvent.change(input, { target: { value: 'What is Operations performance?' } });
+    fireEvent.click(screen.getByLabelText('Send prompt'));
+
+    await waitFor(() => {
+      const chatCalls = mockedApiFetch.mock.calls.filter((call) => call[0] === '/api/ai/chat');
+      expect(chatCalls.length).toBeGreaterThan(0);
+      const reqBody = JSON.parse(String(chatCalls[0][1]?.body || '{}'));
+      expect(reqBody.session_state.function).toBe('Operations');
+      expect(reqBody.session_state.position).toBeNull();
+    });
   });
 });

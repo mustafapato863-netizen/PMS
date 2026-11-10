@@ -232,7 +232,7 @@ export function ContextualAssistantPanel({
               answer_detail: 'brief',
               page_context: pageContext,
               session_state: {
-                function: pageContext.function_id ?? 'Call Center',
+                function: pageContext.function_id ?? null,
                 team: pageContext.team_id ?? null,
                 position: pageContext.position_id ?? null,
                 branch: pageContext.branch ?? null,

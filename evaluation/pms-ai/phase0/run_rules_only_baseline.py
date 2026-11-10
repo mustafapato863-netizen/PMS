@@ -13,6 +13,7 @@ import re
 import statistics
 import subprocess
 import sys
+import tempfile
 import time
 import uuid
 from pathlib import Path
@@ -21,7 +22,7 @@ REPO = Path(__file__).resolve().parents[3]
 BACKEND = REPO / "Backend"
 PHASE0 = REPO / "evaluation" / "pms-ai" / "phase0"
 RESULTS = PHASE0 / "results"
-DB_PATH = Path("/tmp/pms-phase0-rules.sqlite")
+DB_PATH = Path(tempfile.gettempdir()) / f"pms-phase0-rules-{uuid.uuid4().hex}.sqlite"
 
 # Process environment wins over dotenv. Set it before importing the app.
 os.environ["APP_ENV"] = "test"
@@ -153,7 +154,119 @@ CONTRACTS = {
 
 
 def git_sha(rev: str) -> str:
-    return subprocess.check_output(["git", "rev-parse", rev], cwd=REPO, text=True).strip()
+    try:
+        return subprocess.check_output(["git", "rev-parse", rev], cwd=REPO, text=True).strip()
+    except Exception:
+        return "unknown"
+
+
+INCLUDED_ROOTS = ("Backend/", "Frontend/src/", "evaluation/pms-ai/", "docs/plans/")
+EXCLUDED_PATTERNS = (
+    ".git/", "__pycache__/", ".pytest_cache/", ".venv/", "node_modules/",
+    "/results/", "results/", ".sqlite", ".env", "secrets"
+)
+
+
+def is_path_included(rel_path: str) -> bool:
+    rel_posix = rel_path.replace("\\", "/")
+    if not any(rel_posix.startswith(root) for root in INCLUDED_ROOTS):
+        return False
+    if any(pat in rel_posix for pat in EXCLUDED_PATTERNS):
+        return False
+    return True
+
+
+def get_relevant_untracked_files(repo_path: Path) -> list[dict[str, str]]:
+    import hashlib
+    try:
+        raw = subprocess.check_output(
+            ["git", "ls-files", "--others", "--exclude-standard"],
+            cwd=repo_path,
+            text=True,
+        )
+        lines = [line.strip() for line in raw.splitlines() if line.strip()]
+    except Exception:
+        return []
+
+    untracked_list = []
+    for line in lines:
+        if is_path_included(line):
+            file_path = repo_path / line
+            if file_path.is_file():
+                try:
+                    h = hashlib.sha256(file_path.read_bytes()).hexdigest()
+                    untracked_list.append({"path": line.replace("\\", "/"), "sha256": h})
+                except Exception:
+                    pass
+    return sorted(untracked_list, key=lambda x: x["path"])
+
+
+def compute_candidate_provenance(repo_path: Path) -> dict[str, Any]:
+    import hashlib
+    base_commit = git_sha("HEAD")
+    try:
+        staged_diff = subprocess.check_output(["git", "diff", "--cached"], cwd=repo_path)
+    except Exception:
+        staged_diff = b""
+    try:
+        unstaged_diff = subprocess.check_output(["git", "diff"], cwd=repo_path)
+    except Exception:
+        unstaged_diff = b""
+
+    relevant_untracked = get_relevant_untracked_files(repo_path)
+
+    frozen_hash = file_sha256(repo_path / "evaluation" / "pms-ai" / "phase0" / "frozen_v0.json") or "none"
+    heldout_hash = file_sha256(repo_path / "evaluation" / "pms-ai" / "phase0" / "heldout_v0.json") or "none"
+
+    is_dirty = bool(staged_diff or unstaged_diff or relevant_untracked)
+
+    hasher = hashlib.sha256()
+    hasher.update(base_commit.encode("utf-8"))
+    hasher.update(staged_diff)
+    hasher.update(unstaged_diff)
+    hasher.update(json.dumps(relevant_untracked, sort_keys=True).encode("utf-8"))
+    hasher.update(frozen_hash.encode("utf-8"))
+    hasher.update(heldout_hash.encode("utf-8"))
+    diff_hash = hasher.hexdigest()[:12] if is_dirty else None
+
+    short_base = base_commit[:8]
+    if is_dirty and diff_hash:
+        candidate_run_id = f"rules_only_{short_base}_dirty_{diff_hash}"
+    else:
+        candidate_run_id = f"rules_only_{short_base}"
+
+    return {
+        "base_commit": base_commit,
+        "is_dirty": is_dirty,
+        "candidate_commit": None if is_dirty else base_commit,
+        "diff_hash": diff_hash,
+        "candidate_run_id": candidate_run_id,
+        "relevant_untracked_files": relevant_untracked,
+        "question_set_versions": {
+            "frozen_v0": {"file": "frozen_v0.json", "sha256": frozen_hash},
+            "heldout_v0": {"file": "heldout_v0.json", "sha256": heldout_hash},
+        },
+    }
+
+
+def git_working_tree_dirty() -> bool:
+    prov = compute_candidate_provenance(REPO)
+    return prov["is_dirty"]
+
+
+def git_diff_hash() -> str | None:
+    prov = compute_candidate_provenance(REPO)
+    return prov["diff_hash"]
+
+
+def file_sha256(path: Path) -> str | None:
+    try:
+        import hashlib
+        if path.exists():
+            return hashlib.sha256(path.read_bytes()).hexdigest()[:16]
+    except Exception:
+        pass
+    return None
 
 
 def production_posture() -> dict:
@@ -476,6 +589,9 @@ def percentile(values: list[float], pct: float) -> float | None:
 
 
 def main() -> None:
+    import datetime
+    t_start_wall = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    t_start_perf = time.perf_counter()
     if DB_PATH.exists():
         DB_PATH.unlink()
     engine = create_engine(
@@ -617,13 +733,41 @@ def main() -> None:
     for name in providers:
         summary["providers"][name] = summary["providers"].get(name, 0) + 1
 
+    t_end_wall = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    duration_s = round(time.perf_counter() - t_start_perf, 2)
+    prov = compute_candidate_provenance(REPO)
+    base_commit = prov["base_commit"]
+    is_dirty = prov["is_dirty"]
+    diff_hash = prov["diff_hash"]
+    candidate_commit = prov["candidate_commit"]
+    candidate_run_id = prov["candidate_run_id"]
+
+    out_file = RESULTS / f"{candidate_run_id}.json"
+    if out_file.exists():
+        timestamp_suffix = int(time.time())
+        candidate_run_id = f"{candidate_run_id}_{timestamp_suffix}"
+        out_file = RESULTS / f"{candidate_run_id}.json"
+
     payload = {
-        "run_id": "rules_only_bd51e73",
-        "main_sha": git_sha("origin/main"),
-        "evaluated_sha": git_sha("HEAD"),
+        "run_id": candidate_run_id,
+        "base_commit": base_commit,
+        "candidate_commit": candidate_commit,
+        "working_tree_dirty": is_dirty,
+        "evaluated_diff_hash": diff_hash,
+        "relevant_untracked_files": prov["relevant_untracked_files"],
+        "question_set_versions": prov["question_set_versions"],
+        "main_sha": git_sha("origin/main") if (REPO / ".git").exists() else base_commit,
+        "evaluated_sha": base_commit,
         "performance_record_count": int(record_count or 0),
+        "dataset_identity": "empty_sqlite_baseline",
         "model_server": "not started",
+        "model_name": None,
+        "model_hash": None,
         "ai_switch": True,
+        "environment_type": os.environ.get("APP_ENV", "test"),
+        "execution_start_time": t_start_wall,
+        "execution_end_time": t_end_wall,
+        "execution_duration_seconds": duration_s,
         "production_posture": production_posture(),
         "process_env_masked": masked_env(),
         "observations": observations,
@@ -631,12 +775,27 @@ def main() -> None:
         "cases": results,
     }
     RESULTS.mkdir(parents=True, exist_ok=True)
-    out = RESULTS / "rules_only_bd51e73.json"
-    out.write_text(json.dumps(payload, indent=2, default=str) + "\n", encoding="utf-8")
-    (RESULTS / "rules_only_bd51e73.summary.json").write_text(
-        json.dumps({key: payload[key] for key in ("run_id", "main_sha", "evaluated_sha", "performance_record_count", "summary")}, indent=2) + "\n",
+    out_file.write_text(json.dumps(payload, indent=2, default=str) + "\n", encoding="utf-8")
+    summary_file = RESULTS / f"{candidate_run_id}.summary.json"
+    summary_file.write_text(
+        json.dumps({
+            key: payload[key]
+            for key in (
+                "run_id",
+                "base_commit",
+                "candidate_commit",
+                "working_tree_dirty",
+                "evaluated_diff_hash",
+                "question_set_versions",
+                "performance_record_count",
+                "execution_start_time",
+                "execution_duration_seconds",
+                "summary",
+            )
+        }, indent=2) + "\n",
         encoding="utf-8",
     )
+    print(f"Results recorded to {out_file.name} (run_id: {candidate_run_id})")
     print(json.dumps(summary, indent=2))
 
 

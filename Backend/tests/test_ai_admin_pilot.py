@@ -124,6 +124,7 @@ def _client(monkeypatch) -> TestClient:
     monkeypatch.setattr(ai_workspace, "TrainingTraceLogger", Boom)
     monkeypatch.setattr(ai_workspace, "confirm_corrective_action_proposal", boom)
     monkeypatch.setattr(ai_workspace, "get_ai_catalog", lambda: Boom())
+    monkeypatch.setattr(ai_workspace, "build_ai_diagnostics_payload", boom)
 
     app = FastAPI()
     app.include_router(ai_workspace.router, prefix="/api")
@@ -138,6 +139,7 @@ def test_router_registry_lists_every_ai_capability_route_behind_both_gates():
         "DELETE /api/ai/conversations/{conversation_id}",
         "GET /api/ai/catalog",
         "GET /api/ai/conversations/{conversation_id}/context",
+        "GET /api/ai/diagnostics",
         "GET /api/ai/traces/export",
         "GET /api/ai/watching",
         "POST /api/ai/chat",

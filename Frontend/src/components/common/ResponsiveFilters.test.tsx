@@ -59,7 +59,12 @@ describe('ResponsiveFilters', () => {
     expect(onClear).toHaveBeenCalledOnce();
     expect(screen.getByRole('dialog', { name: 'Filters' })).toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole('button', { name: 'Clear filters' })).toBeDisabled());
-    expect(within(screen.getByRole('dialog', { name: 'Filters' })).getByRole('button', { name: 'Close filters' })).toHaveFocus();
+    // Focus moves to Close via requestAnimationFrame after clearing, so wait
+    // for it instead of asserting synchronously: under load the frame can
+    // lag behind the disabled-state update and the assertion flakes.
+    await waitFor(() =>
+      expect(within(screen.getByRole('dialog', { name: 'Filters' })).getByRole('button', { name: 'Close filters' })).toHaveFocus(),
+    );
   });
 
   it('does not show a clear icon when no optional filters are active', async () => {
