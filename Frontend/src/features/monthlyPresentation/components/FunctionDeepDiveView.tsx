@@ -23,6 +23,7 @@ import FunctionRoleBoard from './FunctionRoleBoard';
 import { KpiTrendMovement, SelectableKpiCard } from './SelectableKpiCard';
 import { showActionSection } from '../presentationMode';
 import { FullWordGradeBadge } from './TeamDeepDiveView';
+import ScoreTrendChart from '../../../components/employee/ScoreTrendChart';
 
 export interface FunctionDeepDiveViewProps {
   data: CallCenterDeepDiveData;
@@ -201,11 +202,23 @@ export default function FunctionDeepDiveView({
   presentationMode = false,
 }: FunctionDeepDiveViewProps) {
   const gradeStyle = GRADE_STYLES[data.headline.grade];
-  const up = data.headline.changeVsPrev >= 0;
   const [openKpiTrends, setOpenKpiTrends] = useState<Record<string, boolean>>({});
 
   const draggingCount = roles.filter((r) => r.score < 90).length;
   const carryingCount = roles.filter((r) => r.score >= 90).length;
+
+  const measuredChange = data.scoreTrend ? data.scoreTrend.changeVsPrevious : data.headline.changeVsPrev;
+  const showChange = measuredChange !== null && Number.isFinite(measuredChange);
+  const isPositiveChange = showChange && measuredChange > 0;
+  const comparedMonth = data.scoreTrend?.previousMonthLabel ?? data.previousMonthLabel;
+  const hasTrendData = Boolean(
+    data.scoreTrend &&
+    data.scoreTrend.points.length > 0 &&
+    data.scoreTrend.points.some((p) => p.score !== null),
+  );
+  // A truthful empty dive: no measured rows for this region/period, so no
+  // score, grade, gap or projection is shown anywhere on the page.
+  const isEmpty = data.isEmpty === true;
 
   const toggleKpiTrend = (id: string) => {
     setOpenKpiTrends((prev) => ({ ...prev, [id]: !prev[id] }));
@@ -258,16 +271,38 @@ export default function FunctionDeepDiveView({
         ) : null}
       </header>
 
-      {/* 2. Diagnostic Headline Card (Dominant Score + Narrative Balance) */}
+      {/* Truthful empty state: no measured rows for this region/period. */}
+      {isEmpty && (
+        <section
+          data-testid="deep-dive-empty-state"
+          aria-label={`No measured ${data.functionName} data`}
+          className="rounded-2xl border border-amber-200 bg-amber-50/70 p-6 shadow-xs"
+        >
+          <h2 className="text-lg font-bold text-slate-900">No measured {data.functionName} data</h2>
+          <p className="mt-1 text-sm font-medium leading-relaxed text-slate-700">
+            {data.emptyReason ??
+              `No measured ${data.functionName} rows for ${data.regionName} in ${data.monthLabel}.`}
+          </p>
+          <p className="mt-2 text-xs leading-relaxed text-slate-500">
+            Scores, roles, KPIs and actions are shown only when published
+            records exist for this scope. Nothing on this page is a placeholder
+            or an estimate.
+          </p>
+        </section>
+      )}
+
+      {!isEmpty && (
+      <>
+      {/* 2. Diagnostic Headline Card (Dominant Score + 6-Month Trend + Narrative Balance) */}
       <section
         id="presentation-section-function-score"
         data-section-label="Score"
         aria-labelledby="function-diagnostic-heading"
         className="relative scroll-mt-24 overflow-hidden rounded-2xl border border-slate-200/90 bg-gradient-to-br from-white via-white to-blue-50/40 p-6 shadow-xs sm:p-7"
       >
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-12 lg:items-stretch">
           {/* Left: Dominant Score + Full-Word Grade + Movement + Gap */}
-          <div className="flex flex-col gap-3.5 sm:flex-row sm:items-center sm:gap-6">
+          <div className="flex flex-col justify-between gap-4 rounded-2xl border border-slate-200/80 bg-white p-5 shadow-2xs lg:col-span-5">
             <div>
               <div className="text-[11px] font-bold tracking-wider text-slate-400 uppercase">
                 Function Score
@@ -287,55 +322,114 @@ export default function FunctionDeepDiveView({
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2.5 sm:flex-col sm:items-start sm:gap-1.5">
-              <span
-                className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-xs font-bold tabular-nums ${
-                  up
-                    ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                    : 'border-rose-200 bg-rose-50 text-rose-700'
-                }`}
-              >
-                {up ? (
-                  <ArrowUpRight className="size-3.5" aria-hidden />
-                ) : (
-                  <ArrowDownRight className="size-3.5" aria-hidden />
-                )}
-                {up ? '+' : ''}
-                {data.headline.changeVsPrev.toFixed(1)}% vs {data.previousMonthLabel}
-              </span>
-
+            <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3 text-xs">
               <span className="inline-flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50/80 px-2.5 py-1 text-xs font-bold text-amber-800">
                 <Target className="size-3.5 text-amber-600" aria-hidden />
                 {gapCopy(data.headline.gap, data.headline.target)}
               </span>
+
+              {showChange && measuredChange !== null && (
+                <span
+                  className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-xs font-bold tabular-nums ${
+                    isPositiveChange
+                      ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                      : measuredChange < 0
+                      ? 'border-rose-200 bg-rose-50 text-rose-700'
+                      : 'border-slate-200 bg-white text-slate-700'
+                  }`}
+                >
+                  {isPositiveChange ? (
+                    <ArrowUpRight className="size-3.5" aria-hidden />
+                  ) : measuredChange < 0 ? (
+                    <ArrowDownRight className="size-3.5" aria-hidden />
+                  ) : null}
+                  {isPositiveChange ? '+' : ''}
+                  {measuredChange.toFixed(1)}% vs {comparedMonth}
+                </span>
+              )}
+              {!showChange && (
+                <span
+                  title={`No measured score for ${comparedMonth || 'the previous month'}`}
+                  className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-bold text-slate-400"
+                >
+                  — No previous-month data
+                </span>
+              )}
             </div>
           </div>
 
-          {/* Right: Executive Narrative Box */}
-          <div className="max-w-2xl flex-1 rounded-2xl border border-blue-200/80 bg-white/95 p-4 shadow-2xs lg:p-5">
-            <div className="flex items-center gap-2 text-xs font-bold tracking-wider text-blue-600 uppercase">
-              <Sparkles className="size-3.5" aria-hidden />
-              <h2 id="function-diagnostic-heading">Executive Diagnostic</h2>
+          {/* Right: 6-Month Function Score Trend */}
+          <section
+            aria-label={`${data.functionName} score trend`}
+            data-testid="function-score-trend"
+            className="flex flex-col justify-between rounded-2xl border border-slate-200/80 bg-white p-4 shadow-2xs lg:col-span-7"
+          >
+            <div>
+              <div className="flex items-center justify-between pb-1">
+                <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                  6-month function score
+                </div>
+                <span className="text-[11px] font-medium text-slate-400">
+                  Target: 100%
+                </span>
+              </div>
+              {hasTrendData ? (
+                <ScoreTrendChart
+                  data={data.scoreTrend!.points.map((point) => ({
+                    month: point.month,
+                    score: point.score,
+                    periodKey: point.periodKey,
+                    selected: point.selected,
+                    basisDetail: point.basisDetail,
+                  }))}
+                  targetScore={100}
+                  targetLabel="100% target"
+                  targetLabelPosition="insideTopRight"
+                  height={140}
+                  animate={false}
+                  caption={`${data.functionName} ${data.regionName} function score, selected month and five preceding months`}
+                />
+              ) : (
+                <div
+                  data-testid="function-score-trend-empty"
+                  className="flex h-[140px] items-center justify-center text-xs font-medium text-slate-400"
+                >
+                  No trend data available for this function in the 6-month window.
+                </div>
+              )}
             </div>
-            <p
-              data-testid="diagnostic-narrative"
-              className="mt-1.5 text-sm font-medium leading-relaxed text-slate-800 sm:text-[15px]"
-            >
-              {data.headline.narrative}
-            </p>
-            <div className="mt-3.5 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3 text-[11px] font-semibold text-slate-600">
-              <span className="inline-flex items-center gap-1.5 rounded-md border border-rose-200/80 bg-rose-50/70 px-2.5 py-0.5 text-rose-800">
-                <span className="size-1.5 rounded-full bg-rose-500" />
-                {draggingCount} {draggingCount === 1 ? 'role' : 'roles'} dragging (&lt; 90%)
-              </span>
-              <span className="inline-flex items-center gap-1.5 rounded-md border border-emerald-200/80 bg-emerald-50/70 px-2.5 py-0.5 text-emerald-800">
-                <span className="size-1.5 rounded-full bg-emerald-500" />
-                {carryingCount} {carryingCount === 1 ? 'role' : 'roles'} carrying (≥ 90%)
-              </span>
-              <span className="ml-auto text-slate-400">
-                {roles.length} evaluated {roles.length === 1 ? 'role' : 'roles'}
-              </span>
-            </div>
+            {data.scoreTrend?.points?.some((point) => point.basisDetail) && (
+              <p className="mt-2 border-t border-slate-100 pt-2 text-xs leading-relaxed text-slate-500">
+                Hover over a month to see what is known about its scoring basis.
+              </p>
+            )}
+          </section>
+        </div>
+
+        {/* Bottom Full-Width: Executive Narrative Box */}
+        <div className="mt-5 rounded-2xl border border-blue-200/80 bg-white/95 p-4 shadow-2xs lg:p-5">
+          <div className="flex items-center gap-2 text-xs font-bold tracking-wider text-blue-600 uppercase">
+            <Sparkles className="size-3.5" aria-hidden />
+            <h2 id="function-diagnostic-heading">Executive Diagnostic</h2>
+          </div>
+          <p
+            data-testid="diagnostic-narrative"
+            className="mt-1.5 text-sm font-medium leading-relaxed text-slate-800 sm:text-[15px]"
+          >
+            {data.headline.narrative}
+          </p>
+          <div className="mt-3.5 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3 text-[11px] font-semibold text-slate-600">
+            <span className="inline-flex items-center gap-1.5 rounded-md border border-rose-200/80 bg-rose-50/70 px-2.5 py-0.5 text-rose-800">
+              <span className="size-1.5 rounded-full bg-rose-500" />
+              {draggingCount} {draggingCount === 1 ? 'role' : 'roles'} dragging (&lt; 90%)
+            </span>
+            <span className="inline-flex items-center gap-1.5 rounded-md border border-emerald-200/80 bg-emerald-50/70 px-2.5 py-0.5 text-emerald-800">
+              <span className="size-1.5 rounded-full bg-emerald-500" />
+              {carryingCount} {carryingCount === 1 ? 'role' : 'roles'} carrying (≥ 90%)
+            </span>
+            <span className="ml-auto text-slate-400">
+              {roles.length} evaluated {roles.length === 1 ? 'role' : 'roles'}
+            </span>
           </div>
         </div>
       </section>
@@ -462,6 +556,7 @@ export default function FunctionDeepDiveView({
         )}
       </section>
       )}
+      </>)}
     </div>
   );
 }

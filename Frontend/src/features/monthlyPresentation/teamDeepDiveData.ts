@@ -146,7 +146,10 @@ export interface TeamDeepDiveData {
     gradeFullLabel: FullGradeLabel;
     target: number;
     gap: number;
-    changeVsPrev: number;
+    // Null when the immediately preceding calendar month has no measured
+    // score: "no previous-month data" is not a 0.0% change. A real measured
+    // zero change stays 0.
+    changeVsPrev: number | null;
     headcount: number;
     averageOrBelowCount: number;
     diagnosis: string;
@@ -341,7 +344,7 @@ export function applyTeamTrendConfig(data: TeamDeepDiveData, config: TeamConfig)
   return {
     ...data,
     scoreTrend,
-    summary: { ...data.summary, score, grade, gradeFullLabel: fullGradeLabel(grade), gap: round1(score - data.summary.target), changeVsPrev: scoreTrend.changeVsPrevious ?? 0, scoreLabel: scoreTrend.points.find((point) => point.selected)?.basisDetail ? 'Team score · current pooling rules' : data.summary.scoreLabel, diagnosis: `${data.teamDisplayName} scored ${score.toFixed(1)}% across ${data.summary.headcount} measured people.` },
+    summary: { ...data.summary, score, grade, gradeFullLabel: fullGradeLabel(grade), gap: round1(score - data.summary.target), changeVsPrev: scoreTrend.changeVsPrevious, scoreLabel: scoreTrend.points.find((point) => point.selected)?.basisDetail ? 'Team score · current pooling rules' : data.summary.scoreLabel, diagnosis: `${data.teamDisplayName} scored ${score.toFixed(1)}% across ${data.summary.headcount} measured people.` },
   };
 }
 
@@ -1395,7 +1398,7 @@ function buildGenericTeamDeepDive(
         gradeFullLabel: 'Unsatisfactory',
         target: 100,
         gap: -100,
-        changeVsPrev: 0,
+        changeVsPrev: null,
         headcount: 0,
         averageOrBelowCount: 0,
         diagnosis: 'No scored people for this team in the locked month.',
@@ -1424,7 +1427,9 @@ function buildGenericTeamDeepDive(
   const scoreTrend = measuredScore === null
     ? buildTeamScoreTrend(teamRecords, effective, canonicalTeam)
     : withSelectedTeamScore(buildTeamScoreTrend(teamRecords, effective, canonicalTeam), measuredScore);
-  const changeVsPrev = scoreTrend.changeVsPrevious ?? 0;
+  // Null when the immediately preceding calendar month has no measured
+  // score — "no previous-month data", never a displayed 0.0%.
+  const changeVsPrev = scoreTrend.changeVsPrevious;
   const grade = gradeForScore(score);
   const headcount = new Set(current.map((record) => record.employeeId)).size;
   const fnName =
@@ -1676,7 +1681,9 @@ export function buildTeamDeepDiveFromRecords(
   const scoreTrend = measuredScore === null
     ? buildTeamScoreTrend(teamRecords, effective, canonicalTeam)
     : withSelectedTeamScore(buildTeamScoreTrend(teamRecords, effective, canonicalTeam), measuredScore);
-  const changeVsPrev = scoreTrend.changeVsPrevious ?? 0;
+  // Null when the immediately preceding calendar month has no measured
+  // score — "no previous-month data", never a displayed 0.0%.
+  const changeVsPrev = scoreTrend.changeVsPrevious;
   const grade = gradeForScore(score);
   const gradeFull = fullGradeLabel(grade);
   const headcount = new Set(current.map((r) => r.employeeId)).size;

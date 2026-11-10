@@ -32,6 +32,307 @@ from utils.report_scope import (
     user_can_access_team_level,
 )
 
+
+@dataclass(frozen=True)
+class CapabilityEvidenceEntry:
+    country: str
+    function: str
+    team: str
+    performance_level: str
+    operation_family: str
+    state: str  # "verified", "partial_evidence", "unverified", "unsupported"
+    evidence_ref: str
+    validated_at: str
+    known_limitations: str = ""
+
+
+CAPABILITY_EVIDENCE_REGISTRY: list[CapabilityEvidenceEntry] = [
+    # Call Center Egypt - Inbound Employee
+    CapabilityEvidenceEntry(
+        country="EGY",
+        function="Call Center",
+        team="Inbound",
+        performance_level="Employee",
+        operation_family="operational_summary",
+        state="partial_evidence",
+        evidence_ref="Backend/tests/test_ai_workspace.py",
+        validated_at="2026-11-10",
+        known_limitations="Application tests exist; independent source-parity evidence is pending. Monthly level aggregation only; daily drill-downs unverified",
+    ),
+    CapabilityEvidenceEntry(
+        country="EGY",
+        function="Call Center",
+        team="Inbound",
+        performance_level="Employee",
+        operation_family="ranking",
+        state="partial_evidence",
+        evidence_ref="Backend/tests/test_ai_workspace.py",
+        validated_at="2026-11-10",
+        known_limitations="Application tests exist; independent source-parity evidence is pending. Tested for top/bottom cohorts across score thresholds",
+    ),
+    CapabilityEvidenceEntry(
+        country="EGY",
+        function="Call Center",
+        team="Inbound",
+        performance_level="Employee",
+        operation_family="branch_comparison",
+        state="partial_evidence",
+        evidence_ref="Backend/tests/test_ai_booking_comparisons.py",
+        validated_at="2026-11-10",
+        known_limitations="Application tests exist; independent source-parity evidence is pending. Requires branch geo breakdown in records; handles ties and missing data conservatively",
+    ),
+    CapabilityEvidenceEntry(
+        country="EGY",
+        function="Call Center",
+        team="Inbound",
+        performance_level="Employee",
+        operation_family="root_cause",
+        state="partial_evidence",
+        evidence_ref="Backend/tests/test_ai_workspace.py",
+        validated_at="2026-11-10",
+        known_limitations="Application tests exist; independent source-parity evidence is pending. Attributed to KPI drag on score",
+    ),
+    # Call Center Egypt - Outbound Employee
+    CapabilityEvidenceEntry(
+        country="EGY",
+        function="Call Center",
+        team="Outbound",
+        performance_level="Employee",
+        operation_family="operational_summary",
+        state="partial_evidence",
+        evidence_ref="Backend/tests/test_ai_workspace.py",
+        validated_at="2026-11-10",
+        known_limitations="Application tests exist; independent source-parity evidence is pending. Monthly level aggregation only",
+    ),
+    CapabilityEvidenceEntry(
+        country="EGY",
+        function="Call Center",
+        team="Outbound",
+        performance_level="Employee",
+        operation_family="ranking",
+        state="partial_evidence",
+        evidence_ref="Backend/tests/test_ai_workspace.py",
+        validated_at="2026-11-10",
+        known_limitations="Application tests exist; independent source-parity evidence is pending. Tested for bottom drag cohorts",
+    ),
+    # Call Center Egypt - Support Positions Employee
+    CapabilityEvidenceEntry(
+        country="EGY",
+        function="Call Center",
+        team="Support Positions",
+        performance_level="Employee",
+        operation_family="operational_summary",
+        state="partial_evidence",
+        evidence_ref="Backend/tests/test_ai_workspace.py",
+        validated_at="2026-11-10",
+        known_limitations="Application tests exist; independent source-parity evidence is pending. Average across 3 support roles",
+    ),
+    # RCM Egypt - Coding
+    CapabilityEvidenceEntry(
+        country="EGY",
+        function="RCM",
+        team="Coding EGY",
+        performance_level="Employee",
+        operation_family="operational_summary",
+        state="partial_evidence",
+        evidence_ref="Backend/tests/test_ai_workspace.py",
+        validated_at="2026-11-10",
+        known_limitations="Scoring rules covered by application tests; independent source-parity evidence is pending",
+    ),
+    CapabilityEvidenceEntry(
+        country="EGY",
+        function="RCM",
+        team="Pre-Approvals IP Offshore",
+        performance_level="Employee",
+        operation_family="operational_summary",
+        state="partial_evidence",
+        evidence_ref="Backend/tests/test_ai_workspace.py",
+        validated_at="2026-11-10",
+        known_limitations="Scoring rules covered by application tests; independent source-parity evidence is pending",
+    ),
+    CapabilityEvidenceEntry(
+        country="EGY",
+        function="RCM",
+        team="Resubmission",
+        performance_level="Employee",
+        operation_family="operational_summary",
+        state="partial_evidence",
+        evidence_ref="Backend/tests/test_ai_workspace.py",
+        validated_at="2026-11-10",
+        known_limitations="Egypt aliases covered by application tests; independent source-parity evidence is pending, along with full production data",
+    ),
+    CapabilityEvidenceEntry(
+        country="EGY",
+        function="Shared Functions",
+        team="Marketing",
+        performance_level="Employee",
+        operation_family="operational_summary",
+        state="partial_evidence",
+        evidence_ref="Backend/tests/test_ai_workspace.py",
+        validated_at="2026-11-10",
+        known_limitations="Partial application-test evidence; independent source-parity evidence is pending",
+    ),
+    CapabilityEvidenceEntry(
+        country="UAE",
+        function="Shared Functions",
+        team="Pharmacy",
+        performance_level="Employee",
+        operation_family="operational_summary",
+        state="partial_evidence",
+        evidence_ref="Backend/tests/test_ai_workspace.py",
+        validated_at="2026-11-10",
+        known_limitations="Partial application-test evidence; independent source-parity evidence is pending",
+    ),
+]
+
+
+def get_capability_evidence(
+    *,
+    country: str | None = None,
+    function: str | None = None,
+    team: str | None = None,
+    performance_level: str | None = None,
+    operation_family: str | None = None,
+) -> CapabilityEvidenceEntry:
+    country_aliases = {
+        "egy": "EGY",
+        "egypt": "EGY",
+        "offshore egypt": "EGY",
+        "uae": "UAE",
+        "united arab emirates": "UAE",
+        "emirates": "UAE",
+    }
+    country_key = str(country or "").strip().casefold()
+    c_norm = country_aliases.get(country_key)
+    fn_aliases = {
+        "call center": "Call Center",
+        "contact center": "Call Center",
+        "cc": "Call Center",
+        "rcm": "RCM",
+        "revenue cycle": "RCM",
+        "revenue cycle management": "RCM",
+        "shared functions": "Shared Functions",
+        "shared services": "Shared Functions",
+    }
+    fn_norm = fn_aliases.get(str(function or "").strip().casefold())
+    team_value = str(team or "").strip()
+    team_canonical = resolve_canonical_team_name(team_value, region=c_norm) if team_value and c_norm else None
+    lvl_value = str(performance_level or "").strip()
+    lvl_norm = next(
+        (entry.performance_level for entry in CAPABILITY_EVIDENCE_REGISTRY
+         if entry.performance_level.casefold() == lvl_value.casefold()),
+        None,
+    ) if lvl_value else None
+    op_value = str(operation_family or "").strip()
+    op_norm = op_value.casefold()
+
+    # Certification is always scoped across every dimension. Missing, unknown,
+    # or ambiguous values must never inherit the first matching registry row.
+    if c_norm and fn_norm and team_canonical and lvl_norm and op_norm:
+        matches = [
+            entry for entry in CAPABILITY_EVIDENCE_REGISTRY
+            if entry.country == c_norm
+            and entry.function.casefold() == fn_norm.casefold()
+            and entry.team.casefold() == team_canonical.casefold()
+            and entry.performance_level.casefold() == lvl_norm.casefold()
+            and entry.operation_family.casefold() == op_norm
+        ]
+        if len(matches) == 1:
+            return matches[0]
+
+    return CapabilityEvidenceEntry(
+        country=country or "UNKNOWN",
+        function=function or "UNKNOWN",
+        team=team or "UNKNOWN",
+        performance_level=lvl_norm or "UNKNOWN",
+        operation_family=operation_family or "UNKNOWN",
+        state="unverified",
+        evidence_ref="none",
+        validated_at="none",
+        known_limitations="Scope is missing, unknown, ambiguous, or has no unique validation entry",
+    )
+
+
+def check_scope_data_availability(
+    records: list[Any],
+    *,
+    country: str | None = None,
+    function: str | None = None,
+    team: str | None = None,
+    month: str | None = None,
+    year: int | None = None,
+) -> dict[str, Any]:
+    """Dynamically determines whether published records exist for the specified scope and period.
+
+    Never claims 'no data' permanently; checks all records and lists periods that have data.
+    """
+    country_aliases = {
+        "egy": "EGY", "egypt": "EGY", "offshore egypt": "EGY",
+        "uae": "UAE", "united arab emirates": "UAE", "emirates": "UAE",
+    }
+    country_key = str(country or "").strip().casefold()
+    c_norm = country_aliases.get(country_key) if country_key else None
+    t_norm = (team or "").strip().casefold()
+    fn_value = str(function or "").strip().casefold()
+    fn_aliases = {
+        "call center": "call center",
+        "contact center": "call center",
+        "cc": "call center",
+        "rcm": "rcm",
+        "revenue cycle": "rcm",
+        "revenue cycle management": "rcm",
+        "shared functions": "shared functions",
+        "shared services": "shared functions",
+    }
+    fn_norm = fn_aliases.get(fn_value, fn_value)
+    m_norm = (month or "").strip().casefold() if month else None
+    y_int = int(year) if year else None
+
+    matching_period_records = 0
+    available_periods_set: set[str] = set()
+
+    for rec in records:
+        emp = getattr(rec, "employee", None)
+        rec_team = str(getattr(emp, "team", "") or getattr(rec, "team", "") or "").strip()
+        rec_region = str(getattr(rec, "region", "") or "").strip().upper()
+        record_country = {
+            "egy": "EGY", "egypt": "EGY", "offshore egypt": "EGY",
+            "uae": "UAE", "united arab emirates": "UAE", "emirates": "UAE",
+        }.get(rec_region.casefold()) if rec_region else None
+        if country_key and (c_norm is None or record_country != c_norm):
+            continue
+        if t_norm:
+            requested_team = resolve_canonical_team_name(team, region=c_norm or record_country)
+            actual_team = resolve_canonical_team_name(rec_team, region=record_country or c_norm)
+            if not requested_team or not actual_team or requested_team.casefold() != actual_team.casefold():
+                continue
+        if fn_norm:
+            rec_fn = function_for_team(resolve_canonical_team_name(rec_team, region=record_country or c_norm) or rec_team) or rec_team
+            rec_fn_norm = fn_aliases.get(rec_fn.casefold(), rec_fn.casefold())
+            if rec_fn_norm != fn_norm:
+                continue
+
+        r_m = str(getattr(rec, "month", "") or "").strip()
+        r_y = int(getattr(rec, "year", 0) or 0)
+        period_str = f"{r_m} {r_y}" if r_m and r_y else "Unknown Period"
+        available_periods_set.add(period_str)
+
+        if m_norm and r_m.casefold() != m_norm:
+            continue
+        if y_int and r_y != y_int:
+            continue
+
+        matching_period_records += 1
+
+    return {
+        "has_data": matching_period_records > 0,
+        "record_count": matching_period_records,
+        "period": f"{month} {year}" if month and year else "All periods",
+        "scope": team or function or "All",
+        "country": country or "All",
+        "available_periods": sorted(list(available_periods_set)),
+    }
+
 # Canonical country attribution by team and performance level.
 TEAM_DEFAULT_REGION: dict[str, str] = {
     "inbound": "EGY",
@@ -707,7 +1008,13 @@ class PmsAiCatalog:
                         "and is distinct from Booking Rate (Bookings / Handled Calls)."
                     ),
                     aliases=(
+                        # NOTE (Task 2): bare "bookings" and singular "booking
+                        # count" belong to the counter, not the Booking Rate.
+                        # Without them a bare booking-count question had no
+                        # exact alias and fell through to the rate metric.
+                        "bookings",
                         "bookings count",
+                        "booking count",
                         "total bookings",
                         "number of bookings",
                         "booking volume",
@@ -735,7 +1042,18 @@ class PmsAiCatalog:
                     aggregation_method="sum",
                     contributes_to_score=False,
                     tracking_only_note="Attended Bookings (Count) measures total attended patient appointments.",
-                    aliases=("attended count", "attended bookings count", "total attended", "attended patients"),
+                    aliases=(
+                        "attended count",
+                        # NOTE (Task 2): "attended bookings" is also the count
+                        # of attended appointments. It stays an alias of the
+                        # Attendance Rate too; find_metric_definition prefers
+                        # the count metric when the question carries a count
+                        # cue ("how many attended bookings?").
+                        "attended bookings",
+                        "attended bookings count",
+                        "total attended",
+                        "attended patients",
+                    ),
                     value_kind="count",
                     storage_scale="raw",
                     aggregation="sum",
@@ -980,7 +1298,12 @@ class PmsAiCatalog:
         elif metric_slug == "attendance_rate":
             items.update({"attendance rate", "patient attendance", "attended bookings", "no-show", "no show"})
         elif metric_slug == "booking_rate":
-            items.update({"booking rate", "booking conversion", "bookings", "booking cr"})
+            # NOTE (Task 2): the bare noun "bookings" is deliberately NOT a
+            # Booking Rate alias. A bare "bookings" denotes a count, so it
+            # lives on the Bookings (Count) metric; otherwise every booking
+            # count question ("How many Clinics bookings?") resolved to the
+            # Booking Rate percentage instead of the authorised counter.
+            items.update({"booking rate", "booking conversion", "booking cr"})
         elif metric_slug == "quality_score":
             items.update({"quality", "quality score", "qa score", "call quality"})
         elif metric_slug == "aht":
@@ -1066,10 +1389,42 @@ class PmsAiCatalog:
                 or needle in m.aliases
             ):
                 return m
-        for m in candidates:
-            if any(alias in needle or needle in alias for alias in m.aliases if len(alias) >= 3):
-                return m
-        return None
+        # Substring fallback: pick the best match, not the first metric in
+        # team order. A short alias of an early metric ("booking" on Booking
+        # Rate) used to win over the longer, more specific alias of the metric
+        # the user actually asked about ("bookings" on Bookings (Count)), so
+        # every booking-count question resolved to a rate. Prefer, in order:
+        #   1. a count metric when the question carries a count cue
+        #      ("how many", "count", "number of", "total", "volume", ...),
+        #      or a non-count metric when it carries only a rate cue;
+        #   2. the longest matching alias;
+        #   3. the earliest metric in team order (stable tie-break).
+        count_cue = bool(
+            re.search(
+                r"\b(?:how many|count|counts|number of|total|volume|most|fewest|fewer|least|many)\b",
+                needle,
+            )
+        )
+        rate_cue = bool(
+            re.search(r"\b(?:rate|ratio|conversion|percentage|percent|achievement)\b|%", needle)
+        )
+        best: tuple[int, int, int, CatalogMetricDefinition] | None = None
+        for order, m in enumerate(candidates):
+            longest = 0
+            for alias in m.aliases:
+                if len(alias) >= 3 and (alias in needle or needle in alias):
+                    longest = max(longest, len(alias))
+            if not longest:
+                continue
+            kind_rank = 0
+            if count_cue and m.value_kind == "count":
+                kind_rank = 1
+            elif rate_cue and not count_cue and m.value_kind != "count":
+                kind_rank = 1
+            key = (kind_rank, longest, -order)
+            if best is None or key > best[:3]:
+                best = (*key, m)
+        return best[3] if best is not None else None
 
     def get_scope_certification_registry(self) -> list[dict[str, Any]]:
         """Returns the scope certification matrix across all PMS teams, functions, and BSC levels.
@@ -1098,13 +1453,6 @@ class PmsAiCatalog:
             "IT",
             "Offshore Admin & Management",
         ]
-        fully_certified_teams = {"Inbound", "Outbound", "Support Positions"}
-        partial_evidence_teams = {
-            "Coding",
-            "Pre-Approvals IP Offshore",
-            "Marketing",
-            "Pharmacy",
-        }
         cfg = get_ai_runtime_config()
         rows: list[dict[str, Any]] = []
         for t_name in ordered_teams:
@@ -1116,9 +1464,17 @@ class PmsAiCatalog:
             perf_levels = list(t_def.performance_levels) if t_def else ["Employee"]
 
             is_enabled = bool(cfg.is_scope_enabled(t_name) or cfg.is_scope_enabled(fn_name))
-            is_certified = t_name in fully_certified_teams
-            if is_certified:
+            ev = get_capability_evidence(
+                country=canonical_team_region(t_name) or "EGY",
+                function=fn_name,
+                team=t_name,
+                performance_level="Employee",
+                operation_family="operational_summary",
+            )
+            if ev.state == "verified":
+                is_certified = True
                 cert_status = "certified"
+                status_lbl = "verified"
                 verified_levels = ["Employee"]
                 gates = {
                     "source_mappings": True,
@@ -1128,8 +1484,10 @@ class PmsAiCatalog:
                     "periods": True,
                     "destination_links": True,
                 }
-            elif t_name in partial_evidence_teams:
-                cert_status = "partial_evidence"
+            elif ev.state == "partial_evidence":
+                is_certified = False
+                cert_status = "partial"
+                status_lbl = "partial_evidence"
                 verified_levels = []
                 gates = {
                     "source_mappings": True,
@@ -1140,10 +1498,12 @@ class PmsAiCatalog:
                     "destination_links": True,
                 }
             else:
+                is_certified = False
                 cert_status = "unverified"
+                status_lbl = "unverified"
                 verified_levels = []
                 gates = {
-                    "source_mappings": True,
+                    "source_mappings": True if t_def else False,
                     "metric_semantics": False,
                     "calculations": False,
                     "permissions": True,
@@ -1166,7 +1526,7 @@ class PmsAiCatalog:
                     "enabled": is_enabled,
                     "certified": is_certified,
                     "certification_status": cert_status,
-                    "status": "verified" if is_certified else cert_status,
+                    "status": "verified" if is_certified else status_lbl,
                     "verification_gates": gates,
                 }
             )
@@ -1218,6 +1578,68 @@ class PmsAiCatalog:
             tracking_metrics = [m for m in t_metrics if not m.contributes_to_score]
             perf_levels = list(t_def.performance_levels) if t_def else ["Employee"]
             is_enabled = bool(cfg.is_scope_enabled(t_name) or cfg.is_scope_enabled(fn_name))
+
+            ev = get_capability_evidence(
+                country=t_def.region if t_def else (canonical_team_region(t_name) or "UAE"),
+                function=fn_name,
+                team=t_name,
+                performance_level="Employee",
+                operation_family="operational_summary",
+            )
+            if ev.state == "verified":
+                is_certified = True
+                cert_status = "certified"
+                status_lbl = "verified"
+                verified_levels = ["Employee"]
+                gates = {
+                    "source_mappings": True,
+                    "metric_semantics": True,
+                    "calculations": True,
+                    "permissions": True,
+                    "periods": True,
+                    "destination_links": True,
+                }
+            elif ev.state == "partial_evidence":
+                is_certified = False
+                cert_status = "partial"
+                status_lbl = "partial"
+                verified_levels = []
+                gates = {
+                    "source_mappings": True,
+                    "metric_semantics": True,
+                    "calculations": False,
+                    "permissions": True,
+                    "periods": False,
+                    "destination_links": True,
+                }
+            elif ev.state == "unsupported":
+                is_certified = False
+                cert_status = "unsupported"
+                status_lbl = "unsupported"
+                verified_levels = []
+                gates = {
+                    "source_mappings": False,
+                    "metric_semantics": False,
+                    "calculations": False,
+                    "permissions": True,
+                    "periods": False,
+                    "destination_links": False,
+                }
+            else:
+                is_certified = False
+                cert_status = "unverified"
+                status_lbl = "unverified"
+                verified_levels = []
+                gates = {
+                    "source_mappings": True if t_def else False,
+                    "metric_semantics": False,
+                    "calculations": False,
+                    "permissions": True,
+                    "periods": False,
+                    "destination_links": False,
+                }
+
+            unverified_levels = [lvl for lvl in perf_levels if lvl not in verified_levels]
             rows.append(
                 {
                     "team": t_name,
@@ -1227,23 +1649,16 @@ class PmsAiCatalog:
                     "corporate_region": canonical_team_region(t_name, performance_level="Corporate") if "Corporate" in perf_levels else None,
                     "positions": list(t_def.positions) if t_def else [],
                     "performance_levels": perf_levels,
-                    "verified_levels": perf_levels,
-                    "unverified_levels": [],
+                    "verified_levels": verified_levels,
+                    "unverified_levels": unverified_levels,
                     "supports_branches": bool(t_def.supports_branches) if t_def else False,
                     "scored_kpi_count": len(scored_metrics),
                     "tracking_only_kpi_count": len(tracking_metrics),
                     "enabled": is_enabled,
-                    "certified": True,
-                    "certification_status": "certified",
-                    "status": "verified",
-                    "verification_gates": {
-                        "source_mappings": True,
-                        "metric_semantics": True,
-                        "calculations": True,
-                        "permissions": True,
-                        "periods": True,
-                        "destination_links": True,
-                    },
+                    "certified": is_certified,
+                    "certification_status": cert_status,
+                    "status": status_lbl,
+                    "verification_gates": gates,
                 }
             )
         return rows

@@ -1,0 +1,165 @@
+{
+  "run_id": "rules_only_bd51e73",
+  "main_sha": "bd51e73ce711e8fa14c72e98fcc13e9a671cde56",
+  "evaluated_sha": "9b238b028b40f1b1cca994fae06624232002ea51",
+  "performance_record_count": 0,
+  "summary": {
+    "counts": {
+      "frozen_v0": {
+        "passed": 11,
+        "failed": 18,
+        "ungraded": 26,
+        "errored": 0,
+        "total": 55
+      },
+      "heldout_v0": {
+        "passed": 16,
+        "failed": 18,
+        "ungraded": 47,
+        "errored": 0,
+        "total": 81
+      }
+    },
+    "by_family": {
+      "greeting": {
+        "passed": 4,
+        "failed": 0,
+        "ungraded": 0,
+        "errored": 0
+      },
+      "ranking": {
+        "passed": 0,
+        "failed": 1,
+        "ungraded": 11,
+        "errored": 0
+      },
+      "person_period": {
+        "passed": 0,
+        "failed": 0,
+        "ungraded": 1,
+        "errored": 0
+      },
+      "employment_status": {
+        "passed": 2,
+        "failed": 1,
+        "ungraded": 0,
+        "errored": 0
+      },
+      "branch_comparison": {
+        "passed": 0,
+        "failed": 11,
+        "ungraded": 0,
+        "errored": 0
+      },
+      "trend": {
+        "passed": 0,
+        "failed": 2,
+        "ungraded": 10,
+        "errored": 0
+      },
+      "corrective_action": {
+        "passed": 3,
+        "failed": 0,
+        "ungraded": 1,
+        "errored": 0
+      },
+      "cross_department": {
+        "passed": 0,
+        "failed": 0,
+        "ungraded": 4,
+        "errored": 0
+      },
+      "compound": {
+        "passed": 0,
+        "failed": 2,
+        "ungraded": 6,
+        "errored": 0
+      },
+      "follow_up": {
+        "passed": 0,
+        "failed": 1,
+        "ungraded": 5,
+        "errored": 0
+      },
+      "ambiguous_identity": {
+        "passed": 3,
+        "failed": 2,
+        "ungraded": 0,
+        "errored": 0
+      },
+      "tie": {
+        "passed": 0,
+        "failed": 0,
+        "ungraded": 1,
+        "errored": 0
+      },
+      "data_state": {
+        "passed": 2,
+        "failed": 0,
+        "ungraded": 12,
+        "errored": 0
+      },
+      "shared_ownership": {
+        "passed": 0,
+        "failed": 4,
+        "ungraded": 0,
+        "errored": 0
+      },
+      "same_name_team": {
+        "passed": 0,
+        "failed": 6,
+        "ungraded": 4,
+        "errored": 0
+      },
+      "access_denial": {
+        "passed": 10,
+        "failed": 0,
+        "ungraded": 0,
+        "errored": 0
+      },
+      "prompt_injection": {
+        "passed": 0,
+        "failed": 6,
+        "ungraded": 0,
+        "errored": 0
+      },
+      "navigation": {
+        "passed": 1,
+        "failed": 0,
+        "ungraded": 4,
+        "errored": 0
+      },
+      "current_value": {
+        "passed": 0,
+        "failed": 0,
+        "ungraded": 14,
+        "errored": 0
+      },
+      "unsupported": {
+        "passed": 2,
+        "failed": 0,
+        "ungraded": 0,
+        "errored": 0
+      }
+    },
+    "by_category": {
+      "intent": 25,
+      "source": 13,
+      "calculation": 13,
+      "identity": 10,
+      "scope": 7
+    },
+    "providers": {
+      "deterministic": 130,
+      "local": 7,
+      "http_403": 10
+    },
+    "model_attempted_turns": 0,
+    "turn_count": 147,
+    "latency_ms": {
+      "p50": 37.38,
+      "p95": 49.64,
+      "max": 137.76
+    }
+  }
+}

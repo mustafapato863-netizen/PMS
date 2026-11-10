@@ -1,5 +1,11 @@
 import type { PMSAction } from '../../types';
-import { SUMMARY_BRANCHES, kpiRows, normalizeRegion, type ExecRecord } from '../executive/compose';
+import {
+  SUMMARY_BRANCHES,
+  kpiRows,
+  normalizeRegion,
+  trailingPeriods,
+  type ExecRecord,
+} from '../executive/compose';
 import { executiveFunctionForTeam } from '../executive/functions';
 import { gradeForScore, type GradeLetter } from './monthlyOverviewData';
 import {
@@ -364,13 +370,17 @@ function stripTrailingRoleFromReason(reason: string): string {
 }
 
 const SUPPLEMENTAL_BASELINE_ROLES: Record<string, RoleSeed[]> = {
+  // Baseline role seeds carry no measured previous-month movement: their
+  // change is null ("No previous-month data"), never an invented constant.
+  // The September snapshot these seeds belong to is an explicit preview;
+  // no per-person prior-month record exists for them.
   marketing: [
     {
       roleTitle: 'Content Writer',
       personName: 'Nourshan',
       employeeId: 'Nourshan',
       score: 97.7,
-      changeVsPrev: 1.4,
+      changeVsPrev: null,
       signal: 'Content delivery timeliness at 95.5% & Error-free content ratio at 2.7% (vs 5.0% ceiling)',
       linkedKpis: ['Content Delivery Timeliness', 'Error-Free Content Ratio'],
       impactLevel: 'Strong',
@@ -380,7 +390,7 @@ const SUPPLEMENTAL_BASELINE_ROLES: Record<string, RoleSeed[]> = {
       personName: 'Elsayed Mohamed',
       employeeId: 'Elsayed Mohamed',
       score: 91.9,
-      changeVsPrev: 1.1,
+      changeVsPrev: null,
       signal: '170 of 180 projects delivered on schedule with 98.0% brand consistency & 1.8% rework rate',
       linkedKpis: ['Projects Delivered on Schedule', 'Brand Consistency Score', 'Edits Rate'],
       impactLevel: 'Partial',
@@ -390,7 +400,7 @@ const SUPPLEMENTAL_BASELINE_ROLES: Record<string, RoleSeed[]> = {
       personName: 'Abdulwahab',
       employeeId: 'Abdulwahab',
       score: 86.8,
-      changeVsPrev: -0.8,
+      changeVsPrev: null,
       signal: 'Edits Rate at 14.3% (vs 7.0% target) & 140 of 160 projects delivered on schedule',
       linkedKpis: ['Edits Rate', 'Projects Delivered on Schedule'],
       impactLevel: 'Mixed',
@@ -400,7 +410,7 @@ const SUPPLEMENTAL_BASELINE_ROLES: Record<string, RoleSeed[]> = {
       personName: 'Asser Mohamed',
       employeeId: 'Asser Mohamed',
       score: 84.8,
-      changeVsPrev: -1.5,
+      changeVsPrev: null,
       signal: 'Edits Rate at 16.4% (vs 8.0% target) & 110 of 130 projects delivered on schedule',
       linkedKpis: ['Edits Rate', 'Projects Delivered on Schedule'],
       impactLevel: 'Mixed',
@@ -412,34 +422,12 @@ const SUPPLEMENTAL_BASELINE_ROLES: Record<string, RoleSeed[]> = {
       personName: 'Fatma Ramadan Ali Ibrahim',
       employeeId: 'Fatma Ramadan Ali Ibrahim',
       score: 92.5,
-      changeVsPrev: 1.2,
+      changeVsPrev: null,
       signal: 'Personnel File Accuracy 100.0% & HR Records Accuracy 99.4% · Onboarding Readiness at 79.6%',
       linkedKpis: ['First-Day Onboarding Readiness Rate', 'Payroll & Attendance Input Accuracy'],
       impactLevel: 'Partial',
     },
   ],
-};
-
-const BASELINE_ROLE_MOVEMENT: Record<string, number> = {
-  'mohamed abdelmegid diab': 0.9,
-  'dina samir': 1.3,
-  'hossam el-naggar': -1.8,
-  'ahmed mohamed shehata': -2.4,
-  'abdelrahman yousry abdelaziz hamdy': -4.2,
-  'bahy hamed amer': -1.9,
-  'mina nabil': -2.1,
-  'samya ismail': -2.1,
-  'ziad sayed hassan': 0.6,
-  'mohamed gamal mohamed abouzeid': 0.9,
-  'mohamed diaa eldin youssef': 0.0,
-  'sherif nasr-eldeen ahmed salah elidn mohamed': 1.8,
-  'fatma ramadan ali ibrahim': 1.2,
-  'anwaar abdelmoneem mohamed ali': 0.7,
-  'ahmed mohamed sayed ahmed': 0.4,
-  'amr badawy': 1.1,
-  'amr badawy mohamed': 1.1,
-  'adham sameh': -0.8,
-  'adham sameh abdallah arafa': -0.8,
 };
 
 export function parseHoldersFromSupportPosition(
@@ -489,10 +477,10 @@ export function parseHoldersFromSupportPosition(
         linkedKpis = ['Quality Score', 'Booking CR%', 'Booking Rate', 'AHT'];
       }
 
-      const cleanLower = rawName.toLowerCase();
-      const movement =
-        BASELINE_ROLE_MOVEMENT[cleanLower] ??
-        (isOutbound ? 1.1 : isInbound ? -0.8 : null);
+      // No measured previous-month movement exists for a baseline holder:
+      // the change is null ("No previous-month data"), never a hardcoded
+      // per-person constant and never the function headline change.
+      const movement: number | null = null;
 
       return {
         roleTitle,
@@ -517,8 +505,8 @@ export function parseHoldersFromSupportPosition(
       personName: holderText,
       employeeId: holderText,
       score: round1(position.evaluatedScore ?? data.headline.score),
-      changeVsPrev:
-        BASELINE_ROLE_MOVEMENT[holderText.toLowerCase()] ?? data.headline.changeVsPrev,
+      // No measured previous-month movement exists for a baseline holder.
+      changeVsPrev: null,
       signal: position.explanation,
       linkedKpis: position.linkedKpis,
       impactLevel: position.impactLevel,
@@ -676,7 +664,8 @@ function cardsFromBaseline(data: CallCenterDeepDiveData): FunctionRoleCard[] {
       personName,
       employeeId: agent.employeeId || personName,
       score: agent.score,
-      changeVsPrev: BASELINE_ROLE_MOVEMENT[personName.toLowerCase()] ?? data.headline.changeVsPrev,
+      // No measured previous-month movement exists for a baseline seed.
+      changeVsPrev: null,
       signal: stripTrailingRoleFromReason(agent.reason),
       linkedKpis: agent.weakestKpiKey ? [agent.weakestKpiKey] : [],
     });
@@ -708,9 +697,16 @@ function recordsForFunction(data: CallCenterDeepDiveData, records: ExecRecord[])
 }
 
 function movementFor(record: ExecRecord, records: ExecRecord[]): number | null {
-  const prior = records
-    .filter((item) => item.employeeId === record.employeeId && item.period.key < record.period.key)
-    .sort((a, b) => b.period.key.localeCompare(a.period.key))[0];
+  // Month-over-month movement is always against the immediately preceding
+  // calendar month — never the last available month. When September is
+  // missing, an October record has no movement (null), even if an August
+  // record exists; comparing against August while labelling it "vs Sep"
+  // would invent a change.
+  const previousMonth = trailingPeriods(record.period, 2)[0];
+  if (!previousMonth) return null;
+  const prior = records.find(
+    (item) => item.employeeId === record.employeeId && item.period.key === previousMonth.key,
+  );
   if (!prior) return null;
   return round1(record.score - prior.score);
 }

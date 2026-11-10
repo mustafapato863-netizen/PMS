@@ -55,6 +55,7 @@ from services.ai.local_evidence_synthesis import (
     synthesize_branch_bookings,
     synthesize_overall_score,
 )
+from services.ai.llm_client import configured_model_name, llm_turn
 from services.ai.local_data_explorer import local_exploration_enabled, run_bounded_exploration
 from services.ai.providers import DeterministicLocalProviderAdapter
 from services.ai.router import HybridQueryRouter, RouterValidationResult
@@ -431,6 +432,10 @@ class PmsAiOrchestrator:
         )
 
     def run_chat_turn(self, req: AiChatRequest) -> AiChatResponsePayload:
+        with llm_turn():
+            return self._execute_chat_turn(req)
+
+    def _execute_chat_turn(self, req: AiChatRequest) -> AiChatResponsePayload:
         t0 = time.perf_counter()
         cfg = get_ai_runtime_config()
         role = str(self.scope.get("role") or "Manager")
@@ -648,7 +653,7 @@ class PmsAiOrchestrator:
                 tool_digest={"capability_mode": capability_mode, "outcome": "answer"},
                 structured_response={"headline": h_head, "narrative_bullets": h_bullets, "outcome": "answer"},
                 provider_name="llama_cpp" if cap_source == "local_model_router" else "local",
-                model_name="qwen3-4b-q4_k_m" if cap_source == "local_model_router" else "contextual-catalog-v1",
+                model_name=configured_model_name() if cap_source == "local_model_router" else "contextual-catalog-v1",
                 latency_ms=int((time.perf_counter() - t0) * 1000),
                 non_empty_evidence=True,
                 guardrail_triggered=False,
@@ -675,7 +680,7 @@ class PmsAiOrchestrator:
                 navigation_targets=nav_targets,
                 basis_warning=fb_warn,
                 provider_used="llama_cpp" if cap_source == "local_model_router" else "deterministic",
-                model_used="qwen3-4b-q4_k_m" if cap_source == "local_model_router" else "contextual-catalog-v1",
+                model_used=configured_model_name() if cap_source == "local_model_router" else "contextual-catalog-v1",
                 latency_ms=max(0, int(round(tot_help_ms))),
                 timings=AiTurnTimingBreakdown(
                     resolution_ms=round(cap_provider_ms, 2),
@@ -873,7 +878,7 @@ class PmsAiOrchestrator:
                             "outcome": explored.outcome,
                         },
                         provider_name="llama_cpp" if explored.provider_calls > 0 else "local",
-                        model_name="qwen3-4b-explorer" if explored.provider_calls > 0 else "deterministic-explorer-v1",
+                        model_name=configured_model_name() if explored.provider_calls > 0 else "deterministic-explorer-v1",
                         latency_ms=int((t_trace_exp - t0) * 1000),
                         non_empty_evidence=explored.records_evaluated > 0,
                         guardrail_triggered=explored.outcome in ("restricted_access", "unsupported_request"),
@@ -913,7 +918,7 @@ class PmsAiOrchestrator:
                     evidence_envelope_v2=explored.evidence_envelope_v2,
                     tool_calls=explored.tool_calls,
                     provider_used="llama_cpp" if explored.provider_calls > 0 else "deterministic",
-                    model_used="qwen3-4b-explorer" if explored.provider_calls > 0 else "deterministic-explorer-v1",
+                    model_used=configured_model_name() if explored.provider_calls > 0 else "deterministic-explorer-v1",
                     latency_ms=max(0, int(round(tot_exp_ms))),
                     timings=AiTurnTimingBreakdown(
                         resolution_ms=explored.provider_ms,
@@ -1264,6 +1269,14 @@ class PmsAiOrchestrator:
                 "Call Center (Inbound & Outbound) measures operational patient volume (Bookings, Attended Visits, and Handled Calls) rather than financial revenue. Financial revenue is tracked under Marketing and RCM."
             )
 
+        # Shared All-region scorecard choice (PR #84): the router already
+        # authorised the choice; the scorecard must be computed by the
+        # exact-team + region='All' tool, never by the domain rollup tools
+        # (team=RCM would otherwise expand to every RCM sub-team).
+        shared_choice_team = {"choice-shared-rcm": "RCM", "choice-shared-finance": "Finance"}.get(
+            str(req.clarification_choice_id or "")
+        )
+
         cache_sig = {
             "intents": list(signals.primary_intents[:2]),
             "region": req.session_state.region,
@@ -1286,6 +1299,10 @@ class PmsAiOrchestrator:
             "asks_worst_month_history": signals.asks_worst_month_history,
             "asks_specific_month_in_prompt": signals.asks_specific_month_in_prompt,
             "asks_revenue_in_call_center": signals.asks_revenue_in_call_center,
+            # The shared scorecard and the plain team scorecard share every
+            # other signature field; without this they would share a cache
+            # entry and return each other's numbers.
+            "shared_region_team": shared_choice_team,
         }
         eval_id = evaluation_cache_identity(self.db)
         cached_results = ai_evidence_cache.get(
@@ -1298,6 +1315,14 @@ class PmsAiOrchestrator:
         if cached_results is not None:
             tool_results = cached_results
             cache_hit = True
+        elif shared_choice_team:
+            tool_results.append(
+                registry.execute_shared_region_scorecard(
+                    team=shared_choice_team,
+                    month=signals.detected_month or req.session_state.month,
+                    year=signals.detected_year or req.session_state.year,
+                )
+            )
         else:
             for intent in signals.primary_intents[:2]:
                 if intent == "agent_spotlight_trend":

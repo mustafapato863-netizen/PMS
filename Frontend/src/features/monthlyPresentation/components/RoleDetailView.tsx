@@ -158,7 +158,7 @@ export default function RoleDetailView({
 
   const gradeStyle = GRADE_STYLES[data.grade];
   const impact = IMPACT_LEVEL_STYLES[data.impactLevel];
-  const up = (data.changeVsPrev ?? 0) >= 0;
+  const up = data.changeVsPrev !== null && data.changeVsPrev >= 0;
   const isProblemRole = data.score < 90;
   const monthName = data.monthLabel.split(' ')[0] || data.periodKey;
 
@@ -393,7 +393,7 @@ export default function RoleDetailView({
                 }`}
               >
                 {data.changeVsPrev === null ? (
-                  `No ${data.previousMonthLabel} baseline`
+                  <span title="No previous-month data">— No previous-month data</span>
                 ) : (
                   <>
                     {up ? (
@@ -759,7 +759,7 @@ export default function RoleDetailView({
                         >
                           {member.score.toFixed(1)}%
                         </div>
-                        {member.changeVsPrev !== null && (
+                        {member.changeVsPrev !== null ? (
                           <div
                             className={`text-[11px] font-semibold ${
                               member.changeVsPrev >= 0 ? 'text-emerald-600' : 'text-rose-600'
@@ -769,6 +769,13 @@ export default function RoleDetailView({
                               ? `+${member.changeVsPrev.toFixed(1)}%`
                               : `${member.changeVsPrev.toFixed(1)}%`}{' '}
                             vs {data.previousMonthLabel}
+                          </div>
+                        ) : (
+                          <div
+                            className="text-[11px] font-semibold text-slate-400"
+                            title="No previous-month data"
+                          >
+                            —
                           </div>
                         )}
                       </td>

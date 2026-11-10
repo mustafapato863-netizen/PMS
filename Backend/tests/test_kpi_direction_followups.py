@@ -16,7 +16,16 @@ from sqlalchemy.pool import StaticPool
 
 import utils.kpi_direction as kd
 from config.loader import load_team_config
-from models.models import Base, Employee as DBEmployee, KPIValue, PerformanceRecord as DBPerformanceRecord, Team, TeamKPIConfig
+from models.models import (
+    Base,
+    Employee as DBEmployee,
+    EmployeeUploadBatch,
+    KPIValue,
+    PerformanceRecord as DBPerformanceRecord,
+    Team,
+    TeamKPIConfig,
+    UploadLog,
+)
 from services.balanced_scorecard_service import BalancedScorecardService
 from services.bsc_template_service import BSCTemplateService
 from services.dashboard_record_service import DashboardRecordService, _normalise_kpi_values
@@ -158,7 +167,15 @@ def db_session():
     engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     Base.metadata.create_all(
         bind=engine,
-        tables=[Team.__table__, DBEmployee.__table__, DBPerformanceRecord.__table__, KPIValue.__table__, TeamKPIConfig.__table__],
+        tables=[
+            Team.__table__,
+            EmployeeUploadBatch.__table__,
+            UploadLog.__table__,
+            DBEmployee.__table__,
+            DBPerformanceRecord.__table__,
+            KPIValue.__table__,
+            TeamKPIConfig.__table__,
+        ],
     )
     session = sessionmaker(bind=engine, autocommit=False, autoflush=False)()
     try:

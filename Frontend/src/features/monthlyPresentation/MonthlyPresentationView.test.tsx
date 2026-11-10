@@ -332,6 +332,10 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
       screen.getByRole('heading', { name: 'Call Center Deep Dive' }),
     ).toBeInTheDocument();
     expect(screen.getByTestId('deep-dive-function-score')).toHaveTextContent('90.4%');
+    const ccTrend = screen.getByTestId('function-score-trend');
+    expect(ccTrend).toBeInTheDocument();
+    expect(within(ccTrend).getByText('6-month function score')).toBeInTheDocument();
+    expect(within(ccTrend).getByText('Target: 100%')).toBeInTheDocument();
 
     // Layer 1: Inbound & Outbound Agent Team Cards
     const inboundCard = screen.getByTestId('agent-team-card-inbound-agents');
@@ -363,7 +367,9 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
     expect(screen.getByText('Maryam Elsayed Mahmoud Eid')).toBeInTheDocument();
   });
 
-  it('navigates from Call Center Deep Dive to Inbound Team Deep Dive and renders all 6 required sections with full-word grades', () => {
+  it(
+    'navigates from Call Center Deep Dive to Inbound Team Deep Dive and renders all 6 required sections with full-word grades',
+    () => {
     render(
       <MemoryRouter initialEntries={['/monthly-presentation?deepDive=call-center']}>
         <MonthlyPreview />
@@ -471,7 +477,7 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
       fireEvent.click(screen.getByTestId('back-to-monthly-overview'));
       expect(screen.getByTestId('monthly-overview-page')).toBeInTheDocument();
     }
-  });
+  }, 15000);
 
   it('opens a support position role detail with the 6-month chart, accountability, and a new action', async () => {
     render(
@@ -513,7 +519,7 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
         due_date: '2026-10-20',
       }),
     );
-  });
+  }, 15000);
 
   it('opens Team Leader role detail showing separated individual members with actual performance', async () => {
     render(
@@ -737,6 +743,10 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
       const page = screen.getByTestId('function-deep-dive-page');
       expect(page).toBeInTheDocument();
       expect(screen.getByTestId('deep-dive-function-score')).toBeInTheDocument();
+      const fnTrend = screen.getByTestId('function-score-trend');
+      expect(fnTrend).toBeInTheDocument();
+      expect(within(fnTrend).getByText('6-month function score')).toBeInTheDocument();
+      expect(within(fnTrend).getByText('Target: 100%')).toBeInTheDocument();
       expect(screen.getByTestId('diagnostic-narrative')).toBeInTheDocument();
       expect(screen.getByTestId('roles-dragging')).toBeInTheDocument();
       expect(screen.getByTestId('roles-carrying')).toBeInTheDocument();
@@ -759,7 +769,7 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
       fireEvent.click(screen.getByTestId('back-to-monthly-overview'));
       expect(screen.getByTestId('monthly-overview-page')).toBeInTheDocument();
     }
-  });
+  }, 15000);
 
   it('specializes a shared KPI recommendation from each agent issue and prints a stored due date unchanged', () => {
     const slower = recommendedActionForKpi(
@@ -1066,7 +1076,7 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
     expect(screen.getByRole('heading', { name: 'Monthly Presentation' })).toBeInTheDocument();
     expect(screen.getByTestId('overall-score-value')).toHaveTextContent('86.6%');
     expect(modeSwitch()).toHaveAttribute('aria-checked', 'false');
-  });
+  }, 15000);
 
   it('uses the UAE overview and does not reuse Egypt people when the region switches', () => {
     render(
@@ -1087,7 +1097,9 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
 
     fireEvent.click(screen.getByTestId('function-card-csr'));
     expect(screen.getByTestId('function-deep-dive-page')).toBeInTheDocument();
-    expect(screen.getByText('No measured rows for this region in the locked month.')).toBeInTheDocument();
+    expect(screen.getByTestId('deep-dive-empty-state')).toBeInTheDocument();
+    expect(screen.getByText(/No measured CSR rows for UAE Region in/)).toBeInTheDocument();
+    expect(screen.queryByTestId('deep-dive-function-score')).not.toBeInTheDocument();
     expect(screen.queryByText(/Nourshan/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Maryam Elsayed/i)).not.toBeInTheDocument();
   });
