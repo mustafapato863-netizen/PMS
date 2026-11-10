@@ -896,13 +896,13 @@ class HybridQueryRouter:
                 ClarificationChoice(
                     id="choice-bookings-inbound",
                     label="Inbound Bookings by Branch",
-                    prompt_to_send=f"{text} (Team: Inbound)",
+                    prompt_to_send=text,
                     team="Inbound",
                 ),
                 ClarificationChoice(
                     id="choice-bookings-outbound",
                     label="Outbound Bookings by Branch",
-                    prompt_to_send=f"{text} (Team: Outbound)",
+                    prompt_to_send=text,
                     team="Outbound",
                 ),
             ]

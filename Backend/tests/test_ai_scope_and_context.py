@@ -19,7 +19,7 @@ def test_booking_clarification_preserves_original_question():
     assert result.clarification is not None
     choice = next(c for c in result.clarification.choices if c.id == "choice-bookings-inbound")
     assert prompt in choice.prompt_to_send
-    assert "Inbound" in choice.prompt_to_send
+    assert choice.team == "Inbound"
 
 
 def test_shared_scope_choice_does_not_repeat_clarification():

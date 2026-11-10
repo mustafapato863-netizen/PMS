@@ -360,6 +360,35 @@ def test_partial_attendance_is_not_reported_as_a_complete_total():
     assert result["total_attended"] is None
 
 
+def test_all_branch_attendance_is_unavailable_if_a_recorded_branch_is_missing():
+    from types import SimpleNamespace
+    from services.ai.tool_registry import DeterministicToolRegistry
+
+    rec = SimpleNamespace(
+        team="Inbound", month="September", year=2026, calls=None,
+        geo=SimpleNamespace(bookings=SimpleNamespace(dubai=100, sharjah=50), attended=SimpleNamespace(dubai=80)),
+    )
+    result = DeterministicToolRegistry(_MockContext([rec]))._compute_operational_volumes(
+        month="September", year=2026, team="Inbound", function=None, branch=None,
+    )
+    assert result["total_bookings"] == 150
+    assert result["total_attended"] is None
+    assert result["attendance_complete"] is False
+
+
+def test_revenue_guardrail_does_not_report_missing_operational_data_as_zero():
+    signals = ParsedPromptSignals()
+    signals.asks_revenue_in_call_center = True
+    result = DeterministicLocalProviderAdapter().synthesize(
+        prompt="What was Call Center revenue?", signals=signals,
+        tool_digests=[{"period": "September 2026", "scope": "Inbound", "operational_volumes": {
+            "total_bookings": 100, "total_attended": None, "total_calls_handled": None,
+        }}], guardrail_notes=[],
+    )
+    assert "unavailable Attended visits" in result.headline
+    assert "0 Attended" not in result.headline
+
+
 def test_scenario_1_attendance_present_booking_absent():
     from types import SimpleNamespace
     from services.ai.tool_registry import DeterministicToolRegistry

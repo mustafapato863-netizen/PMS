@@ -486,14 +486,16 @@ class DeterministicLocalProviderAdapter:
         # 1. Revenue guardrail note
         elif signals.asks_revenue_in_call_center:
             vols = merged.get("operational_volumes") or {}
-            b_cnt = int(vols.get("total_bookings") or 0)
-            a_cnt = int(vols.get("total_attended") or 0)
-            c_cnt = int(vols.get("total_calls_handled") or 0)
+            b_cnt = vols.get("total_bookings")
+            a_cnt = vols.get("total_attended")
+            c_cnt = vols.get("total_calls_handled")
+            b_text = f"{int(b_cnt):,}" if b_cnt is not None and not vols.get("has_partial_evidence") else "unavailable"
+            a_text = f"{int(a_cnt):,}" if a_cnt is not None else "unavailable"
             headline = (
                 f"{scope} tracks operational patient volume rather than financial revenue: "
-                f"{b_cnt:,} Bookings and {a_cnt:,} Attended visits in {period} ({branch})."
+                f"{b_text} Bookings and {a_text} Attended visits in {period} ({branch})."
             )
-            bullets.append(f"Total calls handled in scope: {c_cnt:,} calls.")
+            bullets.append(f"Total calls handled in scope: {int(c_cnt):,} calls." if c_cnt is not None else "Calls handled data is unavailable.")
             bullets.append("Financial revenue metrics are tracked under Marketing and RCM.")
 
         # 2. Branch comparison

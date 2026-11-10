@@ -2795,35 +2795,29 @@ class DeterministicToolRegistry:
             else:
                 # All branches
                 matching_branch_records += 1
-                rec_has_b = False
-                rec_has_a = False
-                if b_obj is not None:
-                    for bk in BRANCH_KEYS:
-                        vb = _extract_metric_val(b_obj, bk)
-                        if vb is not None:
-                            try:
-                                total_bookings += float(vb)
-                                rec_has_b = True
-                            except (ValueError, TypeError):
-                                pass
-                if a_obj is not None:
-                    for bk in BRANCH_KEYS:
-                        va = _extract_metric_val(a_obj, bk)
-                        if va is not None:
-                            try:
-                                total_attended += float(va)
-                                rec_has_a = True
-                            except (ValueError, TypeError):
-                                pass
-
-                if rec_has_b:
-                    bookings_present_count += 1
-                else:
+                rec_has_branch_data = False
+                for bk in BRANCH_KEYS:
+                    vb = _extract_metric_val(b_obj, bk)
+                    va = _extract_metric_val(a_obj, bk)
+                    if vb is None and va is None:
+                        continue
+                    rec_has_branch_data = True
+                    try:
+                        if vb is None:
+                            raise ValueError
+                        total_bookings += float(vb)
+                        bookings_present_count += 1
+                    except (ValueError, TypeError):
+                        bookings_missing_count += 1
+                    try:
+                        if va is None:
+                            raise ValueError
+                        total_attended += float(va)
+                        attended_present_count += 1
+                    except (ValueError, TypeError):
+                        attended_missing_count += 1
+                if not rec_has_branch_data:
                     bookings_missing_count += 1
-
-                if rec_has_a:
-                    attended_present_count += 1
-                else:
                     attended_missing_count += 1
 
             # Calls metric presence
