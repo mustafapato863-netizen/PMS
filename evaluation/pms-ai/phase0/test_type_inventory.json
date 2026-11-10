@@ -9,11 +9,11 @@
     "source-parity",
     "browser"
   ],
-  "file_count": 25,
-  "case_count": 223,
+  "file_count": 28,
+  "case_count": 235,
   "files_by_label": {
-    "synthetic": 8,
-    "mocked": 15,
+    "synthetic": 10,
+    "mocked": 16,
     "live-model": 3,
     "source-parity": 2,
     "browser": 0
@@ -110,6 +110,16 @@
       "note": ""
     },
     {
+      "path": "Backend/tests/test_ai_person_name_routing.py",
+      "kind": "test",
+      "labels": [
+        "synthetic"
+      ],
+      "cases": 4,
+      "evidence_status": "not applicable",
+      "note": ""
+    },
+    {
       "path": "Backend/tests/test_ai_review_repairs.py",
       "kind": "test",
       "labels": [
@@ -137,6 +147,16 @@
       ],
       "cases": 12,
       "evidence_status": "not applicable",
+      "note": ""
+    },
+    {
+      "path": "Backend/tests/test_ai_scope_and_fallback_regressions.py",
+      "kind": "test",
+      "labels": [
+        "mocked"
+      ],
+      "cases": 4,
+      "evidence_status": "partial",
       "note": ""
     },
     {
@@ -243,6 +263,16 @@
       "note": ""
     },
     {
+      "path": "Frontend/src/components/ai/AiWatchingRail.test.tsx",
+      "kind": "test",
+      "labels": [
+        "synthetic"
+      ],
+      "cases": 1,
+      "evidence_status": "not applicable",
+      "note": ""
+    },
+    {
       "path": "Frontend/src/components/ai/ContextualAssistantPanel.test.tsx",
       "kind": "test",
       "labels": [
@@ -268,7 +298,7 @@
       "labels": [
         "mocked"
       ],
-      "cases": 9,
+      "cases": 12,
       "evidence_status": "partial",
       "note": ""
     }

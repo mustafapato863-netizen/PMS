@@ -8,13 +8,13 @@ verified is not used. source-parity here is partial because the reviewer has not
 
 ## Counts
 
-Test files: 25. Test functions or `it` blocks: 223.
+Test files: 28. Test functions or `it` blocks: 235.
 A file can carry more than one label, so the label counts can add up to more than the file count.
 
 | Label | Files | Evidence status of what the label proves |
 | --- | ---: | --- |
-| `synthetic` | 8 | not applicable |
-| `mocked` | 15 | partial |
+| `synthetic` | 10 | not applicable |
+| `mocked` | 16 | partial |
 | `live-model` | 3 | blocked |
 | `source-parity` | 2 | partial |
 | `browser` | 0 | not applicable |
@@ -32,9 +32,11 @@ A file can carry more than one label, so the label counts can add up to more tha
 | `Backend/tests/test_ai_diagnostics.py` | test | `mocked` | 11 | partial |
 | `Backend/tests/test_ai_feature_gate.py` | test | `mocked` | 2 | partial |
 | `Backend/tests/test_ai_full_coverage_egy_uae.py` | test | `mocked` | 7 | partial |
+| `Backend/tests/test_ai_person_name_routing.py` | test | `synthetic` | 4 | not applicable |
 | `Backend/tests/test_ai_review_repairs.py` | test | `mocked` | 8 | partial |
 | `Backend/tests/test_ai_reviewed_export_api.py` | test | `synthetic` | 1 | not applicable |
 | `Backend/tests/test_ai_scope_and_context.py` | test | `synthetic` | 12 | not applicable |
+| `Backend/tests/test_ai_scope_and_fallback_regressions.py` | test | `mocked` | 4 | partial |
 | `Backend/tests/test_ai_shared_region_scorecard.py` | test | `synthetic` | 8 | not applicable |
 | `Backend/tests/test_ai_workspace.py` | test | `mocked` | 22 | partial |
 | `Backend/tests/test_evaluation_outbound_productivity_golden.py` | test | `source-parity` | 9 | partial |
@@ -45,9 +47,10 @@ A file can carry more than one label, so the label counts can add up to more tha
 | `Backend/tests/test_pms_ai_phase0_derivation.py` | test | `source-parity` | 5 | partial |
 | `Backend/tests/test_pms_ai_phase0_eval_schema.py` | test | `synthetic` | 6 | not applicable |
 | `Frontend/src/components/ai/AiResponseCard.test.tsx` | test | `synthetic` | 1 | not applicable |
+| `Frontend/src/components/ai/AiWatchingRail.test.tsx` | test | `synthetic` | 1 | not applicable |
 | `Frontend/src/components/ai/ContextualAssistantPanel.test.tsx` | test | `mocked` | 7 | partial |
 | `Frontend/src/components/settings/shell/AiFeatureSwitch.test.tsx` | test | `mocked` | 3 | partial |
-| `Frontend/src/pages/PmsAiWorkspaceView.test.tsx` | test | `mocked` | 9 | partial |
+| `Frontend/src/pages/PmsAiWorkspaceView.test.tsx` | test | `mocked` | 12 | partial |
 | `evaluation/pms-ai/phase0/run_rules_only_baseline.py` | runner | `synthetic` | 0 | not applicable |
 
 ## Notes
