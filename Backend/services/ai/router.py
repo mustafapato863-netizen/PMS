@@ -457,14 +457,24 @@ def _detect_metric_id(
     ):
         prefix = "outbound" if t_norm == "outbound" else "inbound"
         return f"{prefix}:booking_rate"
+    # Plural "bookings" without count/rate cues resolves to bookings_count
     if (
         t_norm in ("inbound", "outbound", "call center", "")
-        and re.search(r"\bbookings?\b", text_lower)
+        and re.search(r"\bbookings\b", text_lower)
         and "attendance" not in text_lower
         and "attended" not in text_lower
     ):
         prefix = "outbound" if t_norm == "outbound" else "inbound"
         return f"{prefix}:bookings_count"
+    # Singular "booking" without count cues resolves to the primary rate KPI (e.g. "Inbound booking")
+    if (
+        t_norm in ("inbound", "outbound", "call center", "")
+        and re.search(r"\bbooking\b", text_lower)
+        and "attendance" not in text_lower
+        and "attended" not in text_lower
+    ):
+        prefix = "outbound" if t_norm == "outbound" else "inbound"
+        return f"{prefix}:booking_rate"
     if any(k in text_lower for k in ("quality score", "qa quality", "quality achievement")):
         prefix = "outbound" if t_norm == "outbound" else "inbound"
         return f"{prefix}:quality_score"
