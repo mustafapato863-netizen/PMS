@@ -2304,7 +2304,7 @@ export function buildCallCenterDeepDiveFromRecords(
 
   const inboundScore = inboundAgents.length > 0
     ? (channelBoardScore({ agents: inboundAgents, config: INBOUND_TEAM_CONFIG, employeeAverage: inbAvg }) ?? round1(inbAvg))
-    : fallback.agentTeams[0].score;
+    : inboundCurr.length ? round1(inbAvg) : fallback.agentTeams[0].score;
   const inboundPrevScore = inboundPrevAgents.length > 0 && inbPrevAvg !== null
     ? (channelBoardScore({ agents: inboundPrevAgents, config: INBOUND_TEAM_CONFIG, employeeAverage: inbPrevAvg }) ?? round1(inbPrevAvg))
     : inbPrevAvg;
@@ -2317,7 +2317,7 @@ export function buildCallCenterDeepDiveFromRecords(
 
   const outboundScore = outboundAgents.length > 0
     ? (channelBoardScore({ agents: outboundAgents, config: OUTBOUND_TEAM_CONFIG, employeeAverage: outAvg }) ?? round1(outAvg))
-    : fallback.agentTeams[1].score;
+    : outboundCurr.length ? round1(outAvg) : fallback.agentTeams[1].score;
   const outboundPrevScore = outboundPrevAgents.length > 0 && outPrevAvg !== null
     ? (channelBoardScore({ agents: outboundPrevAgents, config: OUTBOUND_TEAM_CONFIG, employeeAverage: outPrevAvg }) ?? round1(outPrevAvg))
     : outPrevAvg;
@@ -2338,9 +2338,9 @@ export function buildCallCenterDeepDiveFromRecords(
   // Overall Call Center Function Score is the unweighted average of the 3 groups
   // (Inbound, Outbound, Support Positions), matching the Team Dashboard.
   const fnScore = averagePrintedChannelScores([
-    { score: inboundScore, count: inboundHc },
-    { score: outboundScore, count: outboundHc },
-    { score: supportScore, count: supportCurr.length || 4 },
+    { score: inboundCurr.length ? inboundScore : null, count: inboundHc },
+    { score: outboundCurr.length ? outboundScore : null, count: outboundHc },
+    { score: supportCurr.length ? supportScore : null, count: supportCurr.length },
   ]) ?? fallback.headline.score;
 
   const fnPrevScore = averagePrintedChannelScores([
@@ -2355,7 +2355,7 @@ export function buildCallCenterDeepDiveFromRecords(
       : (fnPrevScore !== null
         ? round1(fnScore - round1(fnPrevScore))
         : fallback.headline.changeVsPrev);
-  const previousMonthLabel = scoreTrend.previousMonthLabel ?? previous?.month ?? 'August';
+  const previousMonthLabel = previous?.month ?? scoreTrend.previousMonthLabel ?? 'August';
   const fnGrade = gradeForScore(fnScore);
   const totalMeasuredAgents = inboundHc + outboundHc;
 

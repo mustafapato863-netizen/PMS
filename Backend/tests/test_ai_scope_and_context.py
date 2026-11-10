@@ -12,6 +12,30 @@ from services.ai.router import HybridQueryRouter
 from tests.test_ai_booking_comparisons import _build_test_db_session
 
 
+def test_booking_clarification_preserves_original_question():
+    router = HybridQueryRouter(scope={"role": "Admin", "accessible_teams": ["Inbound", "Outbound"]})
+    prompt = "Which had the fewest bookings, Dubai or Sharjah, in October 2026?"
+    result = router.resolve_and_validate(prompt=prompt, session_state=SessionFilterContext(), provider_override="deterministic")
+    assert result.clarification is not None
+    choice = next(c for c in result.clarification.choices if c.id == "choice-bookings-inbound")
+    assert prompt in choice.prompt_to_send
+    assert "Inbound" in choice.prompt_to_send
+
+
+def test_shared_scope_choice_does_not_repeat_clarification():
+    router = HybridQueryRouter(scope={"role": "Admin", "accessible_teams": ["RCM"]})
+    first = router.resolve_and_validate(prompt="What is the shared RCM score?", session_state=SessionFilterContext(), provider_override="deterministic")
+    assert first.clarification is not None
+    result = router.resolve_and_validate(
+        prompt="What is the shared RCM score?",
+        session_state=SessionFilterContext(last_confirmed_query=first.confirmed_context),
+        clarification_choice_id="choice-shared-rcm",
+        provider_override="deterministic",
+    )
+    assert result.outcome == "unsupported_request"
+    assert "not available" in result.headline
+
+
 def test_neutral_opening_greeting_and_starter_prompts():
     """A neutral opening must return a concise greeting without unsolicited Call Center analysis."""
     session = _build_test_db_session()

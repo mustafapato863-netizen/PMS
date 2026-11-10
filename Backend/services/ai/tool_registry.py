@@ -646,7 +646,9 @@ class DeterministicToolRegistry:
                 data_present = bool(b_vols.get("data_present"))
                 period_published = bool(b_vols.get("period_published", True))
                 b_book = int(b_vols["total_bookings"]) if b_vols.get("total_bookings") is not None else None
-                b_att = int(b_vols["total_attended"]) if b_vols.get("total_attended") is not None else None
+                b_att = int(b_vols["total_attended"]) if b_vols.get("attendance_complete") and b_vols.get("total_attended") is not None else None
+                if not b_vols.get("booking_complete"):
+                    b_att = None
                 b_noshows = max(0, b_book - b_att) if (b_book is not None and b_att is not None) else None
                 b_att_pct = (
                     round((b_att / b_book) * 100.0, 1)
@@ -2843,12 +2845,13 @@ class DeterministicToolRegistry:
 
         return {
             "total_bookings": round(total_bookings, 1) if booking_present else None,
-            "total_attended": round(total_attended, 1) if attended_present else None,
+            "total_attended": round(total_attended, 1) if attended_present and attended_missing_count == 0 else None,
             "total_calls_handled": round(total_calls, 1) if calls_present else None,
             "booking_present": booking_present,
             "booking_complete": booking_complete,
             "has_partial_evidence": has_partial_evidence,
             "attended_present": attended_present,
+            "attendance_complete": attended_present and attended_missing_count == 0,
             "calls_present": calls_present,
             "data_present": booking_present,
             "period_published": has_period_records,

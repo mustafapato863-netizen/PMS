@@ -575,6 +575,16 @@ class HybridQueryRouter:
                 text = matched_choice.prompt_to_send.strip()
         lower = text.casefold()
 
+        if matched_choice and matched_choice.id in {"choice-shared-rcm", "choice-shared-finance"}:
+            return RouterValidationResult(
+                outcome="unsupported_request",
+                plan=StructuredQueryPlan(intent="unsupported"),
+                confirmed_context=ConfirmedQueryContext(intent="unsupported"),
+                headline="The shared All-region scorecard is not available for this comparison yet.",
+                narrative_bullets=["Shared records cannot be attributed to a country without an approved rule."],
+                route_used="local_rules",
+            )
+
         # 1. Unsupported Write / Mutation Guardrail
         if any(
             re.search(pat, lower)
@@ -886,13 +896,13 @@ class HybridQueryRouter:
                 ClarificationChoice(
                     id="choice-bookings-inbound",
                     label="Inbound Bookings by Branch",
-                    prompt_to_send="Which branch had the most Inbound bookings?",
+                    prompt_to_send=f"{text} (Team: Inbound)",
                     team="Inbound",
                 ),
                 ClarificationChoice(
                     id="choice-bookings-outbound",
                     label="Outbound Bookings by Branch",
-                    prompt_to_send="Which branch had the most Outbound bookings?",
+                    prompt_to_send=f"{text} (Team: Outbound)",
                     team="Outbound",
                 ),
             ]

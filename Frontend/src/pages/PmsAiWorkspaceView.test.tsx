@@ -490,6 +490,12 @@ describe('PmsAiWorkspaceView', () => {
     let chatCallIdx = 0;
 
     mockedApiFetch.mockImplementation(async (path: string) => {
+      if (path === '/api/ai/catalog') {
+        return { success: true, data: { eligible_teams: [
+          { value: 'Inbound', label: 'Inbound', function: 'Call Center' },
+          { value: 'Outbound', label: 'Outbound', function: 'Call Center' },
+        ] } };
+      }
       if (path.startsWith('/api/ai/watching')) {
         return WATCHING_RESPONSE;
       }
@@ -780,7 +786,7 @@ describe('PmsAiWorkspaceView', () => {
       return { success: true };
     });
 
-    renderWorkspace('/ai');
+    renderWorkspace('/ai?position=Old%20Role');
 
     // With multiple catalog functions, Department dropdown is rendered once catalog query resolves
     const deptBtn = await screen.findByLabelText('Filter Department');
@@ -796,6 +802,10 @@ describe('PmsAiWorkspaceView', () => {
     });
     fireEvent.click(screen.getByRole('option', { name: /Operations/i }));
 
+    fireEvent.click(screen.getByLabelText('Filter Operations Team'));
+    expect(screen.getByRole('option', { name: /Dispatch/i })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: /Inbound/i })).not.toBeInTheDocument();
+
     // Send a prompt and verify the request session state includes function='Operations'
     const input = screen.getByLabelText('Ask PMS AI a question');
     fireEvent.change(input, { target: { value: 'What is Operations performance?' } });
@@ -806,6 +816,7 @@ describe('PmsAiWorkspaceView', () => {
       expect(chatCalls.length).toBeGreaterThan(0);
       const reqBody = JSON.parse(String(chatCalls[0][1]?.body || '{}'));
       expect(reqBody.session_state.function).toBe('Operations');
+      expect(reqBody.session_state.position).toBeNull();
     });
   });
 });

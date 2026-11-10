@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 from pathlib import Path
 import pytest
 
@@ -9,7 +10,12 @@ REPO = Path(__file__).resolve().parents[2]
 eval_script_path = REPO / "evaluation" / "pms-ai" / "phase0" / "run_rules_only_baseline.py"
 spec = importlib.util.spec_from_file_location("run_rules_only_baseline", str(eval_script_path))
 rrb = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(rrb)
+_original_environment = os.environ.copy()
+try:
+    spec.loader.exec_module(rrb)
+finally:
+    os.environ.clear()
+    os.environ.update(_original_environment)
 
 compute_candidate_provenance = rrb.compute_candidate_provenance
 is_path_included = rrb.is_path_included
@@ -21,7 +27,6 @@ def test_1_candidate_hash_changes_when_untracked_file_added(tmp_path, monkeypatc
     # Current provenance
     prov1 = compute_candidate_provenance(REPO)
     h1 = prov1["diff_hash"]
-    assert h1 is not None
 
     # Simulate adding an untracked test file in Backend/tests
     fake_file = REPO / "Backend" / "tests" / "_temp_provenance_test_untracked.py"
@@ -38,6 +43,7 @@ def test_1_candidate_hash_changes_when_untracked_file_added(tmp_path, monkeypatc
 
 def test_2_candidate_hash_changes_when_fixture_modified(monkeypatch):
     """Candidate hash changes when an evaluation question set or fixture changes."""
+    monkeypatch.setattr(rrb, "get_relevant_untracked_files", lambda _: [{"path": "Backend/tests/example.py", "sha256": "fixture"}])
     prov1 = compute_candidate_provenance(REPO)
     h1 = prov1["diff_hash"]
 

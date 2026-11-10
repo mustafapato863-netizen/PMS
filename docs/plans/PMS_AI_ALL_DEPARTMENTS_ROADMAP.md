@@ -1,8 +1,8 @@
 # PMS AI: all-department chat and assistant roadmap
 
-**Status (10 November 2026):** Phase -1 Qwen wiring and Admin-only pilot, plus the unsigned Phase 0 question freeze, are merged on `main`; all-department implementation and production enablement remain incomplete and unauthorized.  
-**Product language:** English.  
-**Reviewed baseline:** local `main` at `339cbf30` (includes PR #82 and PR #83), 10 November 2026. PR #81's Qwen changes are included through PR #82. This review record describes a local implementation candidate; it does not establish an upstream merge, deployment, live-model availability or source correctness.  
+**Status (10 November 2026):** Phase -1 Qwen wiring and Admin-only pilot, plus the unsigned Phase 0 question freeze, are merged on `main`; all-department implementation and production enablement remain incomplete and unauthorized.
+**Product language:** English.
+**Reviewed baseline:** local `main` at `339cbf30` (includes PR #82 and PR #83), 10 November 2026. PR #81's Qwen changes are included through PR #82. This review record describes a local implementation candidate; it does not establish an upstream merge, deployment, live-model availability or source correctness.
 **Goal:** one concise, conversational PMS assistant that can answer supported questions across all authorized PMS departments and their teams in Egypt, the UAE and explicitly shared scopes, using the same business facts as PMS.
 
 ## 1. Outcome and non-negotiable decisions

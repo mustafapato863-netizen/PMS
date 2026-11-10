@@ -176,6 +176,34 @@ def test_missing_or_unpublished_month():
     assert "No booking records were found" in bullets[0]
 
 
+def test_score_comparison_does_not_invent_missing_attendance():
+    adapter = DeterministicLocalProviderAdapter()
+    result = adapter.synthesize(
+        prompt="Compare Dubai and Sharjah performance scores",
+        signals=ParsedPromptSignals(),
+        tool_digests=[{
+            "period": "September 2026", "scope": "Inbound",
+            "branch_comparison": [
+                {"branch": "Dubai", "score": 90.0, "bookings": 20, "no_shows": None, "attendance_rate_pct": None},
+                {"branch": "Sharjah", "score": 80.0, "bookings": 10, "no_shows": None, "attendance_rate_pct": None},
+            ],
+        }],
+        guardrail_notes=[],
+    )
+    assert "Dubai" in result.headline
+    assert not any("No-Show" in bullet for bullet in result.narrative_bullets)
+
+
+def test_single_authorized_branch_does_not_crash_score_comparison():
+    result = DeterministicLocalProviderAdapter().synthesize(
+        prompt="Compare branch performance scores",
+        signals=ParsedPromptSignals(),
+        tool_digests=[{"period": "September 2026", "scope": "Inbound", "branch_comparison": [{"branch": "Dubai", "score": 90.0}]}],
+        guardrail_notes=[],
+    )
+    assert "at least two accessible branches" in result.headline
+
+
 def _build_test_db_session():
     from config.database import Base
     from models.models import ProductSetting
@@ -237,7 +265,7 @@ def test_full_data_path_normal_winner(monkeypatch):
     rec = _make_schema_record(emp_id="E001", name="Agent 1", team="Inbound", score=88.0, dubai_b=200, sharjah_b=110, ajman_b=65)
     monkeypatch.setattr("services.dashboard_record_service.DashboardRecordService.list_records", lambda _self, **_kw: [rec])
     monkeypatch.setattr("services.dashboard_record_service.DashboardRecordService.list_analysis_records", lambda _self, **_kw: [rec])
-    
+
     from services.ai.orchestrator import PmsAiOrchestrator
     from models.ai_schemas import AiChatRequest, SessionFilterContext
 
@@ -262,7 +290,7 @@ def test_full_data_path_three_valid_zeros(monkeypatch):
     rec = _make_schema_record(emp_id="E001", name="Agent 1", team="Inbound", score=88.0, dubai_b=0, sharjah_b=0, ajman_b=0)
     monkeypatch.setattr("services.dashboard_record_service.DashboardRecordService.list_records", lambda _self, **_kw: [rec])
     monkeypatch.setattr("services.dashboard_record_service.DashboardRecordService.list_analysis_records", lambda _self, **_kw: [rec])
-    
+
     from services.ai.orchestrator import PmsAiOrchestrator
     from models.ai_schemas import AiChatRequest, SessionFilterContext
 
@@ -311,6 +339,25 @@ class _MockContext:
 
     def get_scoped_records(self):
         return self._records
+
+
+def test_partial_attendance_is_not_reported_as_a_complete_total():
+    from types import SimpleNamespace
+    from services.ai.tool_registry import DeterministicToolRegistry
+
+    def record(bookings, attended):
+        return SimpleNamespace(
+            team="Inbound", month="September", year=2026, branch_key="dubai", calls=None,
+            geo=SimpleNamespace(bookings=SimpleNamespace(dubai=bookings), attended=SimpleNamespace(dubai=attended)),
+        )
+
+    result = DeterministicToolRegistry(_MockContext([record(100, 80), record(100, None)]))._compute_operational_volumes(
+        month="September", year=2026, team="Inbound", function=None, branch="dubai",
+    )
+    assert result["total_bookings"] == 200
+    assert result["attended_present"] is True
+    assert result["attendance_complete"] is False
+    assert result["total_attended"] is None
 
 
 def test_scenario_1_attendance_present_booking_absent():
@@ -513,6 +560,3 @@ def test_scenario_15_missing_score_with_available_booking_counts():
         guardrail_notes=[],
     )
     assert "0.0%" not in res.headline
-
-
-

@@ -37,6 +37,18 @@ import type {
   SessionFilterContext,
 } from '../features/ai/types';
 
+type CatalogChoice = string | { value?: string; key?: string; label?: string; name?: string; badge?: string | null; function?: string; function_key?: string };
+interface CatalogOptions {
+  eligible_functions?: CatalogChoice[];
+  functions?: CatalogChoice[];
+  eligible_teams?: CatalogChoice[];
+  teams?: CatalogChoice[];
+  eligible_branches?: CatalogChoice[];
+  branches?: CatalogChoice[];
+  eligible_levels?: CatalogChoice[];
+  performance_levels?: CatalogChoice[];
+}
+
 interface ConversationTurn {
   id: string;
   userPrompt: string;
@@ -225,6 +237,7 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
     }
     if (key === 'function') {
       next.delete('team');
+      next.delete('position');
       setSelectedTeam('All');
     }
     setSearchParams(next, { replace: true });
@@ -301,7 +314,7 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
   const { data: catalogData } = useQuery({
     queryKey: ['pms-ai-catalog'],
     queryFn: async () => {
-      const res = await apiFetch<{ success: boolean; data: any }>('/api/ai/catalog');
+      const res = await apiFetch<{ success: boolean; data: CatalogOptions }>('/api/ai/catalog');
       return res?.data ?? null;
     },
     staleTime: 300_000,
@@ -309,9 +322,9 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
   });
 
   const availableFunctions = useMemo<string[]>(() => {
-    const list: any[] = catalogData?.eligible_functions || catalogData?.functions || [];
+    const list = catalogData?.eligible_functions || catalogData?.functions || [];
     if (list && list.length > 0) {
-      return list.map((fn: any) =>
+      return list.map((fn) =>
         typeof fn === 'string' ? fn : fn.label || fn.name || fn.key || String(fn),
       );
     }
@@ -322,52 +335,40 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
   }, [catalogData, watchingData]);
 
   const availableTeams = useMemo<Array<{ value: string; label: string; badge?: string }>>(() => {
-    const list: any[] = catalogData?.eligible_teams || catalogData?.teams || [];
-    if (list && list.length > 0) {
-      return list.map((t: any) => ({
-        value: typeof t === 'string' ? t : t.value || t.key || t.name,
-        label: typeof t === 'string' ? t : t.label || t.name || t.value,
+    const list: CatalogChoice[] = catalogData?.eligible_teams ?? catalogData?.teams ?? watchingData?.eligible_teams ?? [];
+    return list
+      .filter((t) => !sessionState.function || (typeof t !== 'string' && String(t.function || t.function_key || '').trim().toLowerCase() === sessionState.function.trim().toLowerCase()))
+      .map((t) => ({
+        value: typeof t === 'string' ? t : t.value || t.key || t.name || '',
+        label: typeof t === 'string' ? t : t.label || t.name || t.value || '',
         badge: typeof t === 'object' ? t.badge || t.function || t.function_key : undefined,
       }));
-    }
-    if (watchingData?.eligible_teams && watchingData.eligible_teams.length > 0) {
-      return watchingData.eligible_teams.map((t) => ({
-        value: t.value,
-        label: t.label,
-        badge: t.badge || t.function,
-      }));
-    }
-    return [
-      { value: 'Inbound', label: 'Inbound', badge: 'Call Center' },
-      { value: 'Outbound', label: 'Outbound', badge: 'Call Center' },
-      { value: 'Support Positions', label: 'Support Positions', badge: 'Call Center' },
-    ];
-  }, [catalogData, watchingData]);
+  }, [catalogData, watchingData, sessionState.function]);
 
   const availableBranches = useMemo<string[]>(() => {
-    const list: any[] = catalogData?.eligible_branches || catalogData?.branches || [];
+    const list = catalogData?.eligible_branches || catalogData?.branches || [];
     if (list && list.length > 0) {
-      return list.map((b: any) =>
+      return list.map((b) =>
         typeof b === 'string' ? b : b.value || b.key || b.label || String(b),
       );
     }
     if (watchingData?.eligible_branches && watchingData.eligible_branches.length > 0) {
       return watchingData.eligible_branches;
     }
-    return ['dubai', 'sharjah', 'ajman'];
+    return [];
   }, [catalogData, watchingData]);
 
   const availableLevels = useMemo<string[]>(() => {
-    const list: any[] = catalogData?.eligible_levels || catalogData?.performance_levels || [];
+    const list = catalogData?.eligible_levels || catalogData?.performance_levels || [];
     if (list && list.length > 0) {
-      return list.map((lvl: any) =>
+      return list.map((lvl) =>
         typeof lvl === 'string' ? lvl : lvl.value || lvl.key || lvl.label || String(lvl),
       );
     }
     if (watchingData?.eligible_levels && watchingData.eligible_levels.length > 0) {
       return watchingData.eligible_levels;
     }
-    return ['Employee', 'Manager'];
+    return [];
   }, [catalogData, watchingData]);
 
   useEffect(() => {

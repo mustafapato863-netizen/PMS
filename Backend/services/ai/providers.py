@@ -715,6 +715,8 @@ class DeterministicLocalProviderAdapter:
                         f"In {period}, {winner['branch']} leads {scope} at {float(winner['score']):.1f}%, "
                         f"followed by {others_txt}."
                     )
+            elif len(target_bc) < 2:
+                headline = f"A branch comparison requires at least two accessible branches for {scope} in {period}."
             else:
                 b1, b2 = target_bc[0], target_bc[1]
                 s1, s2 = b1.get("score"), b2.get("score")
@@ -728,7 +730,7 @@ class DeterministicLocalProviderAdapter:
                     diff = round(float(s1) - float(s2), 1)
                     leader = b1 if diff >= 0 else b2
                     lagger = b2 if diff >= 0 else b1
-                    with_vol = [b for b in bc if int(b.get("bookings") or 0) > 0]
+                    with_vol = [b for b in target_bc if int(b.get("bookings") or 0) > 0 and b.get("no_shows") is not None and b.get("attendance_rate_pct") is not None and not b.get("has_partial_evidence")]
                     most_noshows = max(with_vol, key=lambda b: int(b.get("no_shows") or 0)) if with_vol else None
                     headline = (
                         f"In {period}, {leader['branch']} leads at {leader['score']:.1f}% vs. "

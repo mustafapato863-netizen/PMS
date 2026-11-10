@@ -172,6 +172,17 @@ describe('Six-Month Function Score Trend', () => {
     }
   });
 
+  it('does not add absent channels or synthetic support scores to the selected month', () => {
+    const records: ExecRecord[] = [
+      makeRecord('inb1', 'Inbound Agent', 'Inbound', 'Call Center', 'EGY', '2026-09', 'September', 2026, 80),
+      makeRecord('inb1', 'Inbound Agent', 'Inbound', 'Call Center', 'EGY', '2026-10', 'October', 2026, 80),
+    ];
+    const dive = buildCallCenterDeepDiveFromRecords(records, [], 'EGY', '2026-10');
+    expect(dive.headline.score).toBe(80);
+    expect(dive.scoreTrend?.points.slice(-2).map((point) => point.score)).toEqual([80, 80]);
+    expect(dive.scoreTrend?.changeVsPrevious).toBe(0);
+  });
+
   it('provides an honest empty state with empty points when no records exist', () => {
     const emptyDive = emptyMeasuredFunctionDeepDive('human-resources', 'UAE');
     expect(emptyDive.scoreTrend).toBeDefined();
