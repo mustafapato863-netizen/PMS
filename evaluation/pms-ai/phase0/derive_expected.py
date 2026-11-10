@@ -88,21 +88,40 @@ def _reject_forbidden(path: Path) -> None:
             raise SystemExit(f"refusing forbidden source {text}")
 
 
+def _git_line(args: list[str]) -> str:
+    return subprocess.check_output(args, cwd=ROOT, text=True).strip()
+
+
 def file_commit(path: Path) -> str:
+    """Last commit that touched the file in this clone's history.
+
+    A shallow CI checkout can name a different commit than a full clone.
+    ``file_blob`` is the history-independent identity. The recorded commit is
+    the full-history SHA captured when the files were generated.
+    """
     _reject_forbidden(path)
     rel = _rel(path)
-    commit = subprocess.check_output(
-        ["git", "log", "-1", "--format=%H", "--", rel],
-        cwd=ROOT,
-        text=True,
-    ).strip()
+    commit = _git_line(["git", "log", "-1", "--format=%H", "--", rel])
     if len(commit) != 40:
         raise SystemExit(f"no commit for {rel}")
     return commit
 
 
+def file_blob(path: Path) -> str:
+    """Git blob of the working-tree file. Stable in a shallow checkout."""
+    _reject_forbidden(path)
+    blob = _git_line(["git", "hash-object", "--", _rel(path)])
+    if len(blob) != 40:
+        raise SystemExit(f"no blob for {_rel(path)}")
+    return blob
+
+
+def file_ref(path: Path) -> dict:
+    return {"path": _rel(path), "commit": file_commit(path), "blob": file_blob(path)}
+
+
 def source_label(paths: list[Path], method: str) -> str:
-    parts = [f"{_rel(path)}@{file_commit(path)}" for path in paths]
+    parts = [f"{_rel(path)}@{file_commit(path)} blob={file_blob(path)}" for path in paths]
     return f"{'; '.join(parts)} | method: {method} | script: {SCRIPT_REL}"
 
 
@@ -232,6 +251,7 @@ def survey_populations() -> dict:
         "january": {
             "path": _rel(JANUARY_SNAPSHOT),
             "commit": file_commit(JANUARY_SNAPSHOT),
+            "blob": file_blob(JANUARY_SNAPSHOT),
             "n": len(january),
             "months": sorted({row.get("month") for row in january}),
             "levels": sorted({row.get("performance_level") for row in january}),
@@ -240,11 +260,13 @@ def survey_populations() -> dict:
         "resolver": {
             "path": _rel(RESOLVER_BASELINE),
             "commit": file_commit(RESOLVER_BASELINE),
+            "blob": file_blob(RESOLVER_BASELINE),
             "n": len(records),
         },
         "inbound_sample": {
             "path": _rel(INBOUND_SAMPLE),
             "commit": file_commit(INBOUND_SAMPLE),
+            "blob": file_blob(INBOUND_SAMPLE),
             "n": len(sample["rows"]),
             "months": sample_months,
             "source_says_157": "157" in str(sample.get("_source")),
@@ -317,16 +339,10 @@ def not_applied_outbound() -> dict:
             "_score_month. Result stored only in this report."
         ),
         "inputs": [
-            {"path": _rel(OUTBOUND_REFERENCE), "commit": file_commit(OUTBOUND_REFERENCE)},
-            {
-                "path": "Backend/services/scoring/engine.py",
-                "commit": file_commit(ROOT / "Backend/services/scoring/engine.py"),
-            },
-            {
-                "path": "Backend/services/outbound_period_basis.py",
-                "commit": file_commit(ROOT / "Backend/services/outbound_period_basis.py"),
-            },
-            {"path": _rel(INSIGHTS_SERVICE), "commit": file_commit(INSIGHTS_SERVICE)},
+            file_ref(OUTBOUND_REFERENCE),
+            file_ref(ROOT / "Backend/services/scoring/engine.py"),
+            file_ref(ROOT / "Backend/services/outbound_period_basis.py"),
+            file_ref(INSIGHTS_SERVICE),
         ],
         "august_pooled_score_0_to_100": august["score_0_to_100"],
         "august_pooled_earned_0_to_1": august["earned_0_to_1"],
@@ -448,9 +464,7 @@ def apply_fills(documents: dict[str, dict], teams: list[dict], join_proof: dict)
             item["derivation"] = {
                 "method": resolved["method"],
                 "script": SCRIPT_REL,
-                "inputs": [
-                    {"path": _rel(path), "commit": file_commit(path)} for path in resolved["paths"]
-                ],
+                "inputs": [file_ref(path) for path in resolved["paths"]],
                 "notes": resolved["notes"],
             }
             applied.append({"id": case_id, "field": field, "value": resolved["value"]})

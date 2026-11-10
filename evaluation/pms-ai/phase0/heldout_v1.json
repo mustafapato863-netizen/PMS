@@ -61,7 +61,7 @@
           "field": "country_binding",
           "value": "EGY",
           "unit": "country",
-          "source": "Backend/config/teams/outbound.json@5f47b890654100f93db22eafd9d315d1f684d016 | method: Exact casefold match on the team field of Backend/config/teams/*.json. The value is that file's region. It is not inferred from a branch name. | script: evaluation/pms-ai/phase0/derive_expected.py",
+          "source": "Backend/config/teams/outbound.json@5f47b890654100f93db22eafd9d315d1f684d016 blob=a49c82c6a3f6c28ac2b073dd9ad6f6c8ba59aa77 | method: Exact casefold match on the team field of Backend/config/teams/*.json. The value is that file's region. It is not inferred from a branch name. | script: evaluation/pms-ai/phase0/derive_expected.py",
           "reviewer": "PENDING",
           "pending_needs": "Catalog owner states Outbound's country. Do not infer it from a branch name.",
           "derivation": {
@@ -70,7 +70,8 @@
             "inputs": [
               {
                 "path": "Backend/config/teams/outbound.json",
-                "commit": "5f47b890654100f93db22eafd9d315d1f684d016"
+                "commit": "5f47b890654100f93db22eafd9d315d1f684d016",
+                "blob": "a49c82c6a3f6c28ac2b073dd9ad6f6c8ba59aa77"
               }
             ],
             "notes": "One config team named Outbound."
@@ -152,7 +153,7 @@
           "field": "country_binding",
           "value": "EGY",
           "unit": "country",
-          "source": "Backend/config/teams/outbound.json@5f47b890654100f93db22eafd9d315d1f684d016 | method: Exact casefold match on the team field of Backend/config/teams/*.json. The value is that file's region. It is not inferred from a branch name. | script: evaluation/pms-ai/phase0/derive_expected.py",
+          "source": "Backend/config/teams/outbound.json@5f47b890654100f93db22eafd9d315d1f684d016 blob=a49c82c6a3f6c28ac2b073dd9ad6f6c8ba59aa77 | method: Exact casefold match on the team field of Backend/config/teams/*.json. The value is that file's region. It is not inferred from a branch name. | script: evaluation/pms-ai/phase0/derive_expected.py",
           "reviewer": "PENDING",
           "pending_needs": "Same Outbound country binding as ho-001.",
           "derivation": {
@@ -161,7 +162,8 @@
             "inputs": [
               {
                 "path": "Backend/config/teams/outbound.json",
-                "commit": "5f47b890654100f93db22eafd9d315d1f684d016"
+                "commit": "5f47b890654100f93db22eafd9d315d1f684d016",
+                "blob": "a49c82c6a3f6c28ac2b073dd9ad6f6c8ba59aa77"
               }
             ],
             "notes": "One config team named Outbound."
@@ -2081,7 +2083,7 @@
           "field": "joiner_flag",
           "value": "no_join_date_source",
           "unit": "date",
-          "source": "Database/pms_scheme.sql@5f47b890654100f93db22eafd9d315d1f684d016; Backend/models/models.py@9008d74bde9ae25adeb12bc413a2173b91283c96 | method: Read CREATE TABLE employees in Database/pms_scheme.sql and the Employee columns in Backend/models/models.py. Neither defines a join, hire, or tenure column. OnboardingState is team setup (team_id) and is not an employee hire date. No date is invented. | script: evaluation/pms-ai/phase0/derive_expected.py",
+          "source": "Database/pms_scheme.sql@5f47b890654100f93db22eafd9d315d1f684d016 blob=a6118d3bb6244b65fea2cae5312ba9c9b1e4e044; Backend/models/models.py@9008d74bde9ae25adeb12bc413a2173b91283c96 blob=143f3820aa9e2ae183b2d67f3898a756bde0ebc7 | method: Read CREATE TABLE employees in Database/pms_scheme.sql and the Employee columns in Backend/models/models.py. Neither defines a join, hire, or tenure column. OnboardingState is team setup (team_id) and is not an employee hire date. No date is invented. | script: evaluation/pms-ai/phase0/derive_expected.py",
           "reviewer": "PENDING",
           "pending_needs": "HR owner binds fixture identity Nour in Outbound and supplies an authorized join date, or confirms none exists.",
           "derivation": {
@@ -2090,11 +2092,13 @@
             "inputs": [
               {
                 "path": "Database/pms_scheme.sql",
-                "commit": "5f47b890654100f93db22eafd9d315d1f684d016"
+                "commit": "5f47b890654100f93db22eafd9d315d1f684d016",
+                "blob": "a6118d3bb6244b65fea2cae5312ba9c9b1e4e044"
               },
               {
                 "path": "Backend/models/models.py",
-                "commit": "9008d74bde9ae25adeb12bc413a2173b91283c96"
+                "commit": "9008d74bde9ae25adeb12bc413a2173b91283c96",
+                "blob": "143f3820aa9e2ae183b2d67f3898a756bde0ebc7"
               }
             ],
             "notes": "Value means the checked-in schema has no join-date column. It is not a calendar date and not a yes/no joiner flag for a named person."
@@ -2165,7 +2169,7 @@
           "field": "joiner_flag",
           "value": "no_join_date_source",
           "unit": "date",
-          "source": "Database/pms_scheme.sql@5f47b890654100f93db22eafd9d315d1f684d016; Backend/models/models.py@9008d74bde9ae25adeb12bc413a2173b91283c96 | method: Read CREATE TABLE employees in Database/pms_scheme.sql and the Employee columns in Backend/models/models.py. Neither defines a join, hire, or tenure column. OnboardingState is team setup (team_id) and is not an employee hire date. No date is invented. | script: evaluation/pms-ai/phase0/derive_expected.py",
+          "source": "Database/pms_scheme.sql@5f47b890654100f93db22eafd9d315d1f684d016 blob=a6118d3bb6244b65fea2cae5312ba9c9b1e4e044; Backend/models/models.py@9008d74bde9ae25adeb12bc413a2173b91283c96 blob=143f3820aa9e2ae183b2d67f3898a756bde0ebc7 | method: Read CREATE TABLE employees in Database/pms_scheme.sql and the Employee columns in Backend/models/models.py. Neither defines a join, hire, or tenure column. OnboardingState is team setup (team_id) and is not an employee hire date. No date is invented. | script: evaluation/pms-ai/phase0/derive_expected.py",
           "reviewer": "PENDING",
           "pending_needs": "Same Nour join-date binding as ho-028.",
           "derivation": {
@@ -2174,11 +2178,13 @@
             "inputs": [
               {
                 "path": "Database/pms_scheme.sql",
-                "commit": "5f47b890654100f93db22eafd9d315d1f684d016"
+                "commit": "5f47b890654100f93db22eafd9d315d1f684d016",
+                "blob": "a6118d3bb6244b65fea2cae5312ba9c9b1e4e044"
               },
               {
                 "path": "Backend/models/models.py",
-                "commit": "9008d74bde9ae25adeb12bc413a2173b91283c96"
+                "commit": "9008d74bde9ae25adeb12bc413a2173b91283c96",
+                "blob": "143f3820aa9e2ae183b2d67f3898a756bde0ebc7"
               }
             ],
             "notes": "Value means the checked-in schema has no join-date column. It is not a calendar date and not a yes/no joiner flag for a named person."
@@ -5478,7 +5484,7 @@
           "field": "country_binding",
           "value": "UAE",
           "unit": "country",
-          "source": "Backend/config/teams/pharmacy.json@a7403f89b0bc9a5c3eca03124e01bd3e81e3ccc0 | method: Exact casefold match on the team field of Backend/config/teams/*.json. The value is that file's region. It is not inferred from a branch name. | script: evaluation/pms-ai/phase0/derive_expected.py",
+          "source": "Backend/config/teams/pharmacy.json@a7403f89b0bc9a5c3eca03124e01bd3e81e3ccc0 blob=42ee2d2649547c82c75bf6643375aab917ecd011 | method: Exact casefold match on the team field of Backend/config/teams/*.json. The value is that file's region. It is not inferred from a branch name. | script: evaluation/pms-ai/phase0/derive_expected.py",
           "reviewer": "PENDING",
           "pending_needs": "Catalog owner states Pharmacy's country.",
           "derivation": {
@@ -5487,7 +5493,8 @@
             "inputs": [
               {
                 "path": "Backend/config/teams/pharmacy.json",
-                "commit": "a7403f89b0bc9a5c3eca03124e01bd3e81e3ccc0"
+                "commit": "a7403f89b0bc9a5c3eca03124e01bd3e81e3ccc0",
+                "blob": "42ee2d2649547c82c75bf6643375aab917ecd011"
               }
             ],
             "notes": "One config team named Pharmacy."
@@ -5560,7 +5567,7 @@
           "field": "country_binding",
           "value": "UAE",
           "unit": "country",
-          "source": "Backend/config/teams/pharmacy.json@a7403f89b0bc9a5c3eca03124e01bd3e81e3ccc0 | method: Exact casefold match on the team field of Backend/config/teams/*.json. The value is that file's region. It is not inferred from a branch name. | script: evaluation/pms-ai/phase0/derive_expected.py",
+          "source": "Backend/config/teams/pharmacy.json@a7403f89b0bc9a5c3eca03124e01bd3e81e3ccc0 blob=42ee2d2649547c82c75bf6643375aab917ecd011 | method: Exact casefold match on the team field of Backend/config/teams/*.json. The value is that file's region. It is not inferred from a branch name. | script: evaluation/pms-ai/phase0/derive_expected.py",
           "reviewer": "PENDING",
           "pending_needs": "Same Pharmacy country as ho-078.",
           "derivation": {
@@ -5569,7 +5576,8 @@
             "inputs": [
               {
                 "path": "Backend/config/teams/pharmacy.json",
-                "commit": "a7403f89b0bc9a5c3eca03124e01bd3e81e3ccc0"
+                "commit": "a7403f89b0bc9a5c3eca03124e01bd3e81e3ccc0",
+                "blob": "42ee2d2649547c82c75bf6643375aab917ecd011"
               }
             ],
             "notes": "One config team named Pharmacy."

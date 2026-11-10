@@ -7,9 +7,13 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import re
+import subprocess
 from pathlib import Path
 
 import pytest
+
+_COMMIT_IN_SOURCE = re.compile(r"@[0-9a-f]{40}\b")
 
 ROOT = Path(__file__).resolve().parents[2]
 PHASE0 = ROOT / "evaluation" / "pms-ai" / "phase0"
@@ -47,6 +51,40 @@ def built() -> dict:
     return _module().build()
 
 
+def _without_commits(value):
+    """Drop history-dependent commit SHAs. Blob ids stay."""
+    if isinstance(value, dict):
+        return {
+            key: ("COMMIT" if key == "commit" else _without_commits(item))
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_without_commits(item) for item in value]
+    if isinstance(value, str):
+        return _COMMIT_IN_SOURCE.sub("@COMMIT", value)
+    return value
+
+
+def _blob(path: str) -> str:
+    return subprocess.check_output(
+        ["git", "hash-object", "--", path],
+        cwd=ROOT,
+        text=True,
+    ).strip()
+
+
+def _assert_blobs(value) -> None:
+    if isinstance(value, dict):
+        if "path" in value and "blob" in value:
+            assert value["blob"] == _blob(value["path"])
+            assert len(value["blob"]) == 40
+        for item in value.values():
+            _assert_blobs(item)
+    elif isinstance(value, list):
+        for item in value:
+            _assert_blobs(item)
+
+
 def _pending_count(doc: dict) -> int:
     return sum(
         1
@@ -66,8 +104,12 @@ def test_v0_freeze_is_unchanged_and_still_unsigned() -> None:
 
 def test_committed_v1_matches_the_script(built: dict) -> None:
     for name in ("frozen_v1", "heldout_v1"):
-        assert _load(PHASE0 / f"{name}.json") == built["documents"][name]
-    assert _load(PHASE0 / "derivation_report.json") == built["report"]
+        on_disk = _load(PHASE0 / f"{name}.json")
+        assert _without_commits(on_disk) == _without_commits(built["documents"][name])
+        _assert_blobs(on_disk)
+    report = _load(PHASE0 / "derivation_report.json")
+    assert _without_commits(report) == _without_commits(built["report"])
+    _assert_blobs(report)
     assert (PHASE0 / "DERIVATION.md").read_text(encoding="utf-8") == built["markdown"]
 
 
@@ -131,6 +173,7 @@ def test_fills_are_catalog_or_schema_and_still_unsigned(built: dict) -> None:
                     assert marker not in blob
                 for source in item["derivation"]["inputs"]:
                     assert len(source["commit"]) == 40
+                    assert source["blob"] == _blob(source["path"])
                 previous = grouped[case["group_id"]].get(item["field"])
                 assert previous in (None, item["value"])
                 grouped[case["group_id"]][item["field"]] = item["value"]

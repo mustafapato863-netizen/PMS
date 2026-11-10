@@ -574,7 +574,7 @@
           "field": "joiner_flag",
           "value": "no_join_date_source",
           "unit": "date",
-          "source": "Database/pms_scheme.sql@5f47b890654100f93db22eafd9d315d1f684d016; Backend/models/models.py@9008d74bde9ae25adeb12bc413a2173b91283c96 | method: Read CREATE TABLE employees in Database/pms_scheme.sql and the Employee columns in Backend/models/models.py. Neither defines a join, hire, or tenure column. OnboardingState is team setup (team_id) and is not an employee hire date. No date is invented. | script: evaluation/pms-ai/phase0/derive_expected.py",
+          "source": "Database/pms_scheme.sql@5f47b890654100f93db22eafd9d315d1f684d016 blob=a6118d3bb6244b65fea2cae5312ba9c9b1e4e044; Backend/models/models.py@9008d74bde9ae25adeb12bc413a2173b91283c96 blob=143f3820aa9e2ae183b2d67f3898a756bde0ebc7 | method: Read CREATE TABLE employees in Database/pms_scheme.sql and the Employee columns in Backend/models/models.py. Neither defines a join, hire, or tenure column. OnboardingState is team setup (team_id) and is not an employee hire date. No date is invented. | script: evaluation/pms-ai/phase0/derive_expected.py",
           "reviewer": "PENDING",
           "pending_needs": "HR owner supplies the authorized join date for the bound Mariam in Inbound, or confirms that no such source is in PMS.",
           "derivation": {
@@ -583,11 +583,13 @@
             "inputs": [
               {
                 "path": "Database/pms_scheme.sql",
-                "commit": "5f47b890654100f93db22eafd9d315d1f684d016"
+                "commit": "5f47b890654100f93db22eafd9d315d1f684d016",
+                "blob": "a6118d3bb6244b65fea2cae5312ba9c9b1e4e044"
               },
               {
                 "path": "Backend/models/models.py",
-                "commit": "9008d74bde9ae25adeb12bc413a2173b91283c96"
+                "commit": "9008d74bde9ae25adeb12bc413a2173b91283c96",
+                "blob": "143f3820aa9e2ae183b2d67f3898a756bde0ebc7"
               }
             ],
             "notes": "Value means the checked-in schema has no join-date column. It is not a calendar date and not a yes/no joiner flag for a named person."
@@ -1264,7 +1266,7 @@
             "region": "UAE"
           },
           "unit": "team",
-          "source": "Backend/config/teams/coding.json@5f47b890654100f93db22eafd9d315d1f684d016 | method: Exact casefold match on the team field. Region is the config region and must match the case country when the case already names EGY or UAE. sheet_team aliases are not merged. | script: evaluation/pms-ai/phase0/derive_expected.py",
+          "source": "Backend/config/teams/coding.json@5f47b890654100f93db22eafd9d315d1f684d016 blob=cbc3a5536a9def54473978febf98793b41bd4061 | method: Exact casefold match on the team field. Region is the config region and must match the case country when the case already names EGY or UAE. sheet_team aliases are not merged. | script: evaluation/pms-ai/phase0/derive_expected.py",
           "reviewer": "PENDING",
           "pending_needs": "Catalog owner confirms the canonical UAE Coding team name. The label Coding is provisional.",
           "derivation": {
@@ -1273,7 +1275,8 @@
             "inputs": [
               {
                 "path": "Backend/config/teams/coding.json",
-                "commit": "5f47b890654100f93db22eafd9d315d1f684d016"
+                "commit": "5f47b890654100f93db22eafd9d315d1f684d016",
+                "blob": "cbc3a5536a9def54473978febf98793b41bd4061"
               }
             ],
             "notes": "Canonical team field is Coding. sheet_team was not used. Coding EGY exists at Backend/config/teams/coding_egy.json with sheet_team values ['Coding']."
@@ -1352,7 +1355,7 @@
             "region": "UAE"
           },
           "unit": "team",
-          "source": "Backend/config/teams/coding.json@5f47b890654100f93db22eafd9d315d1f684d016 | method: Exact casefold match on the team field. Region is the config region and must match the case country when the case already names EGY or UAE. sheet_team aliases are not merged. | script: evaluation/pms-ai/phase0/derive_expected.py",
+          "source": "Backend/config/teams/coding.json@5f47b890654100f93db22eafd9d315d1f684d016 blob=cbc3a5536a9def54473978febf98793b41bd4061 | method: Exact casefold match on the team field. Region is the config region and must match the case country when the case already names EGY or UAE. sheet_team aliases are not merged. | script: evaluation/pms-ai/phase0/derive_expected.py",
           "reviewer": "PENDING",
           "pending_needs": "Same UAE Coding catalog binding as fz-017.",
           "derivation": {
@@ -1361,7 +1364,8 @@
             "inputs": [
               {
                 "path": "Backend/config/teams/coding.json",
-                "commit": "5f47b890654100f93db22eafd9d315d1f684d016"
+                "commit": "5f47b890654100f93db22eafd9d315d1f684d016",
+                "blob": "cbc3a5536a9def54473978febf98793b41bd4061"
               }
             ],
             "notes": "Canonical team field is Coding. sheet_team was not used. Coding EGY exists at Backend/config/teams/coding_egy.json with sheet_team values ['Coding']."
@@ -1582,7 +1586,7 @@
           "field": "country_binding",
           "value": "EGY",
           "unit": "country",
-          "source": "Backend/config/teams/marketing.json@a91b53ab34074b8f48393967b5b96470fc0565a8 | method: Exact casefold match on the team field of Backend/config/teams/*.json. The value is that file's region. It is not inferred from a branch name. | script: evaluation/pms-ai/phase0/derive_expected.py",
+          "source": "Backend/config/teams/marketing.json@a91b53ab34074b8f48393967b5b96470fc0565a8 blob=6c475caac050cde31e67ba022de03a7f7d8e6543 | method: Exact casefold match on the team field of Backend/config/teams/*.json. The value is that file's region. It is not inferred from a branch name. | script: evaluation/pms-ai/phase0/derive_expected.py",
           "reviewer": "PENDING",
           "pending_needs": "Catalog owner states whether Marketing is one country or more. A second country changes this case to clarify.",
           "derivation": {
@@ -1591,7 +1595,8 @@
             "inputs": [
               {
                 "path": "Backend/config/teams/marketing.json",
-                "commit": "a91b53ab34074b8f48393967b5b96470fc0565a8"
+                "commit": "a91b53ab34074b8f48393967b5b96470fc0565a8",
+                "blob": "6c475caac050cde31e67ba022de03a7f7d8e6543"
               }
             ],
             "notes": "One config team named Marketing."
@@ -1675,7 +1680,7 @@
           "field": "country_binding",
           "value": "EGY",
           "unit": "country",
-          "source": "Backend/config/teams/marketing.json@a91b53ab34074b8f48393967b5b96470fc0565a8 | method: Exact casefold match on the team field of Backend/config/teams/*.json. The value is that file's region. It is not inferred from a branch name. | script: evaluation/pms-ai/phase0/derive_expected.py",
+          "source": "Backend/config/teams/marketing.json@a91b53ab34074b8f48393967b5b96470fc0565a8 blob=6c475caac050cde31e67ba022de03a7f7d8e6543 | method: Exact casefold match on the team field of Backend/config/teams/*.json. The value is that file's region. It is not inferred from a branch name. | script: evaluation/pms-ai/phase0/derive_expected.py",
           "reviewer": "PENDING",
           "pending_needs": "Same Marketing country binding as fz-021.",
           "derivation": {
@@ -1684,7 +1689,8 @@
             "inputs": [
               {
                 "path": "Backend/config/teams/marketing.json",
-                "commit": "a91b53ab34074b8f48393967b5b96470fc0565a8"
+                "commit": "a91b53ab34074b8f48393967b5b96470fc0565a8",
+                "blob": "6c475caac050cde31e67ba022de03a7f7d8e6543"
               }
             ],
             "notes": "One config team named Marketing."
@@ -1772,7 +1778,7 @@
             "region": "EGY"
           },
           "unit": "team",
-          "source": "Backend/config/teams/inbound.json@5f47b890654100f93db22eafd9d315d1f684d016 | method: Exact casefold match on the team field. Region is the config region and must match the case country when the case already names EGY or UAE. sheet_team aliases are not merged. | script: evaluation/pms-ai/phase0/derive_expected.py",
+          "source": "Backend/config/teams/inbound.json@5f47b890654100f93db22eafd9d315d1f684d016 blob=2c944fc0aca1e2ce8b4d3729f76abe0405617da7 | method: Exact casefold match on the team field. Region is the config region and must match the case country when the case already names EGY or UAE. sheet_team aliases are not merged. | script: evaluation/pms-ai/phase0/derive_expected.py",
           "reviewer": "PENDING",
           "pending_needs": "Catalog owner confirms which Inbound team this name denotes, and its country. Two matches change this case to clarify.",
           "derivation": {
@@ -1781,7 +1787,8 @@
             "inputs": [
               {
                 "path": "Backend/config/teams/inbound.json",
-                "commit": "5f47b890654100f93db22eafd9d315d1f684d016"
+                "commit": "5f47b890654100f93db22eafd9d315d1f684d016",
+                "blob": "2c944fc0aca1e2ce8b4d3729f76abe0405617da7"
               }
             ],
             "notes": "Canonical team field is Inbound."
@@ -1879,7 +1886,7 @@
             "region": "EGY"
           },
           "unit": "team",
-          "source": "Backend/config/teams/inbound.json@5f47b890654100f93db22eafd9d315d1f684d016 | method: Exact casefold match on the team field. Region is the config region and must match the case country when the case already names EGY or UAE. sheet_team aliases are not merged. | script: evaluation/pms-ai/phase0/derive_expected.py",
+          "source": "Backend/config/teams/inbound.json@5f47b890654100f93db22eafd9d315d1f684d016 blob=2c944fc0aca1e2ce8b4d3729f76abe0405617da7 | method: Exact casefold match on the team field. Region is the config region and must match the case country when the case already names EGY or UAE. sheet_team aliases are not merged. | script: evaluation/pms-ai/phase0/derive_expected.py",
           "reviewer": "PENDING",
           "pending_needs": "Same Inbound binding as fz-023.",
           "derivation": {
@@ -1888,7 +1895,8 @@
             "inputs": [
               {
                 "path": "Backend/config/teams/inbound.json",
-                "commit": "5f47b890654100f93db22eafd9d315d1f684d016"
+                "commit": "5f47b890654100f93db22eafd9d315d1f684d016",
+                "blob": "2c944fc0aca1e2ce8b4d3729f76abe0405617da7"
               }
             ],
             "notes": "Canonical team field is Inbound."
@@ -2076,7 +2084,7 @@
             "region": "EGY"
           },
           "unit": "team",
-          "source": "Backend/config/teams/inbound.json@5f47b890654100f93db22eafd9d315d1f684d016 | method: Exact casefold match on the team field. Region is the config region and must match the case country when the case already names EGY or UAE. sheet_team aliases are not merged. | script: evaluation/pms-ai/phase0/derive_expected.py",
+          "source": "Backend/config/teams/inbound.json@5f47b890654100f93db22eafd9d315d1f684d016 blob=2c944fc0aca1e2ce8b4d3729f76abe0405617da7 | method: Exact casefold match on the team field. Region is the config region and must match the case country when the case already names EGY or UAE. sheet_team aliases are not merged. | script: evaluation/pms-ai/phase0/derive_expected.py",
           "reviewer": "PENDING",
           "pending_needs": "Same Inbound binding as fz-023.",
           "derivation": {
@@ -2085,7 +2093,8 @@
             "inputs": [
               {
                 "path": "Backend/config/teams/inbound.json",
-                "commit": "5f47b890654100f93db22eafd9d315d1f684d016"
+                "commit": "5f47b890654100f93db22eafd9d315d1f684d016",
+                "blob": "2c944fc0aca1e2ce8b4d3729f76abe0405617da7"
               }
             ],
             "notes": "Canonical team field is Inbound."
@@ -3098,7 +3107,7 @@
             "region": "EGY"
           },
           "unit": "team",
-          "source": "Backend/config/teams/pre_approvals_ip.json@4fd2948705614c5cd0f260073ba5a7edbfa025d6 | method: Exact casefold match on the team field. Region is the config region and must match the case country when the case already names EGY or UAE. sheet_team aliases are not merged. | script: evaluation/pms-ai/phase0/derive_expected.py",
+          "source": "Backend/config/teams/pre_approvals_ip.json@4fd2948705614c5cd0f260073ba5a7edbfa025d6 blob=cf14a04531e49383100cec5be0cc4ec6afaab5f8 | method: Exact casefold match on the team field. Region is the config region and must match the case country when the case already names EGY or UAE. sheet_team aliases are not merged. | script: evaluation/pms-ai/phase0/derive_expected.py",
           "reviewer": "PENDING",
           "pending_needs": "Catalog owner confirms the canonical Egypt Pre-Approvals IP team name.",
           "derivation": {
@@ -3107,7 +3116,8 @@
             "inputs": [
               {
                 "path": "Backend/config/teams/pre_approvals_ip.json",
-                "commit": "4fd2948705614c5cd0f260073ba5a7edbfa025d6"
+                "commit": "4fd2948705614c5cd0f260073ba5a7edbfa025d6",
+                "blob": "cf14a04531e49383100cec5be0cc4ec6afaab5f8"
               }
             ],
             "notes": "Canonical team field is Pre-Approvals IP."
@@ -3184,7 +3194,7 @@
             "region": "EGY"
           },
           "unit": "team",
-          "source": "Backend/config/teams/pre_approvals_ip.json@4fd2948705614c5cd0f260073ba5a7edbfa025d6 | method: Exact casefold match on the team field. Region is the config region and must match the case country when the case already names EGY or UAE. sheet_team aliases are not merged. | script: evaluation/pms-ai/phase0/derive_expected.py",
+          "source": "Backend/config/teams/pre_approvals_ip.json@4fd2948705614c5cd0f260073ba5a7edbfa025d6 blob=cf14a04531e49383100cec5be0cc4ec6afaab5f8 | method: Exact casefold match on the team field. Region is the config region and must match the case country when the case already names EGY or UAE. sheet_team aliases are not merged. | script: evaluation/pms-ai/phase0/derive_expected.py",
           "reviewer": "PENDING",
           "pending_needs": "Same Egypt Pre-Approvals IP binding as fz-041.",
           "derivation": {
@@ -3193,7 +3203,8 @@
             "inputs": [
               {
                 "path": "Backend/config/teams/pre_approvals_ip.json",
-                "commit": "4fd2948705614c5cd0f260073ba5a7edbfa025d6"
+                "commit": "4fd2948705614c5cd0f260073ba5a7edbfa025d6",
+                "blob": "cf14a04531e49383100cec5be0cc4ec6afaab5f8"
               }
             ],
             "notes": "Canonical team field is Pre-Approvals IP."
@@ -3270,7 +3281,7 @@
             "region": "UAE"
           },
           "unit": "team",
-          "source": "Backend/config/teams/pre_approvals_op_dubai.json@5f47b890654100f93db22eafd9d315d1f684d016 | method: Exactly one config team name contains 'OP Dubai' after casefold. Region on that file is UAE. Historical aliases were not consulted. | script: evaluation/pms-ai/phase0/derive_expected.py",
+          "source": "Backend/config/teams/pre_approvals_op_dubai.json@5f47b890654100f93db22eafd9d315d1f684d016 blob=3d079404044630e70f721a5878e5e34dbdd36d80 | method: Exactly one config team name contains 'OP Dubai' after casefold. Region on that file is UAE. Historical aliases were not consulted. | script: evaluation/pms-ai/phase0/derive_expected.py",
           "reviewer": "PENDING",
           "pending_needs": "Catalog owner names the canonical UAE Pre-Approvals team for OP Dubai. Historical aliases disagree and are not authoritative.",
           "derivation": {
@@ -3279,7 +3290,8 @@
             "inputs": [
               {
                 "path": "Backend/config/teams/pre_approvals_op_dubai.json",
-                "commit": "5f47b890654100f93db22eafd9d315d1f684d016"
+                "commit": "5f47b890654100f93db22eafd9d315d1f684d016",
+                "blob": "3d079404044630e70f721a5878e5e34dbdd36d80"
               }
             ],
             "notes": "Matched team field Pre-Approvals OP Dubai."
@@ -3356,7 +3368,7 @@
             "region": "UAE"
           },
           "unit": "team",
-          "source": "Backend/config/teams/pre_approvals_op_dubai.json@5f47b890654100f93db22eafd9d315d1f684d016 | method: Exactly one config team name contains 'OP Dubai' after casefold. Region on that file is UAE. Historical aliases were not consulted. | script: evaluation/pms-ai/phase0/derive_expected.py",
+          "source": "Backend/config/teams/pre_approvals_op_dubai.json@5f47b890654100f93db22eafd9d315d1f684d016 blob=3d079404044630e70f721a5878e5e34dbdd36d80 | method: Exactly one config team name contains 'OP Dubai' after casefold. Region on that file is UAE. Historical aliases were not consulted. | script: evaluation/pms-ai/phase0/derive_expected.py",
           "reviewer": "PENDING",
           "pending_needs": "Same UAE OP Dubai team binding as fz-043.",
           "derivation": {
@@ -3365,7 +3377,8 @@
             "inputs": [
               {
                 "path": "Backend/config/teams/pre_approvals_op_dubai.json",
-                "commit": "5f47b890654100f93db22eafd9d315d1f684d016"
+                "commit": "5f47b890654100f93db22eafd9d315d1f684d016",
+                "blob": "3d079404044630e70f721a5878e5e34dbdd36d80"
               }
             ],
             "notes": "Matched team field Pre-Approvals OP Dubai."

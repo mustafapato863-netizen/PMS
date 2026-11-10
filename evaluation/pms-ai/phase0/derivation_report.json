@@ -386,19 +386,23 @@
     "inputs": [
       {
         "path": "docs/plans/monthly-evaluation/outbound-anonymous-reference.json",
-        "commit": "2a8b3ece1f282c37f9743e27f5c3966560ff76e7"
+        "commit": "2a8b3ece1f282c37f9743e27f5c3966560ff76e7",
+        "blob": "dae9f969c541ae31a892d6b7d91130b412c13363"
       },
       {
         "path": "Backend/services/scoring/engine.py",
-        "commit": "a34140b2f5395ddb6c941d67ca1a7f4cf2dfd8f0"
+        "commit": "a34140b2f5395ddb6c941d67ca1a7f4cf2dfd8f0",
+        "blob": "4e518665d719a505a6249a9d885dc718b2ccb493"
       },
       {
         "path": "Backend/services/outbound_period_basis.py",
-        "commit": "e4eaac9c03c1a81ae1995db2aef33fcd94480a9b"
+        "commit": "e4eaac9c03c1a81ae1995db2aef33fcd94480a9b",
+        "blob": "98c237b3ffc4038b3e71c851c13c239a8eb10856"
       },
       {
         "path": "Backend/services/insights_service.py",
-        "commit": "10eb735e5fcd748a6d068a96cf5141f4d4930e59"
+        "commit": "10eb735e5fcd748a6d068a96cf5141f4d4930e59",
+        "blob": "a02d26834cd47762c3ca68faf4b201b7f891faee"
       }
     ],
     "august_pooled_score_0_to_100": 79.82419863297693,
