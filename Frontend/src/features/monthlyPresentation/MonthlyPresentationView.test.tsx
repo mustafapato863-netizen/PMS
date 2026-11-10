@@ -332,6 +332,10 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
       screen.getByRole('heading', { name: 'Call Center Deep Dive' }),
     ).toBeInTheDocument();
     expect(screen.getByTestId('deep-dive-function-score')).toHaveTextContent('90.4%');
+    const ccTrend = screen.getByTestId('function-score-trend');
+    expect(ccTrend).toBeInTheDocument();
+    expect(within(ccTrend).getByText('6-month function score')).toBeInTheDocument();
+    expect(within(ccTrend).getByText('Target: 100%')).toBeInTheDocument();
 
     // Layer 1: Inbound & Outbound Agent Team Cards
     const inboundCard = screen.getByTestId('agent-team-card-inbound-agents');
@@ -737,6 +741,10 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
       const page = screen.getByTestId('function-deep-dive-page');
       expect(page).toBeInTheDocument();
       expect(screen.getByTestId('deep-dive-function-score')).toBeInTheDocument();
+      const fnTrend = screen.getByTestId('function-score-trend');
+      expect(fnTrend).toBeInTheDocument();
+      expect(within(fnTrend).getByText('6-month function score')).toBeInTheDocument();
+      expect(within(fnTrend).getByText('Target: 100%')).toBeInTheDocument();
       expect(screen.getByTestId('diagnostic-narrative')).toBeInTheDocument();
       expect(screen.getByTestId('roles-dragging')).toBeInTheDocument();
       expect(screen.getByTestId('roles-carrying')).toBeInTheDocument();

@@ -143,7 +143,7 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
 
   const monthParam = searchParams.get('month') || (activeMonth !== 'All' ? activeMonth : null);
   const yearParam = searchParams.get('year') ? Number(searchParams.get('year')) : null;
-  const functionParam = searchParams.get('function') || 'Call Center';
+  const functionParam = searchParams.get('function') || null;
   const positionParam = searchParams.get('position') || null;
 
   const prevScopeParamsRef = useRef({
@@ -215,7 +215,7 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
     [functionParam, selectedTeam, positionParam, selectedBranch, selectedLevel, monthParam, yearParam, lastConfirmedQuery],
   );
 
-  const handleFilterChange = (key: 'team' | 'branch' | 'performance_level', value: string) => {
+  const handleFilterChange = (key: 'team' | 'branch' | 'performance_level' | 'function', value: string) => {
     cancelInFlightRequests();
     const next = new URLSearchParams(searchParams);
     if (value === 'All' || value === 'all' || !value) {
@@ -223,7 +223,14 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
     } else {
       next.set(key, value);
     }
+    if (key === 'function') {
+      next.delete('team');
+      setSelectedTeam('All');
+    }
     setSearchParams(next, { replace: true });
+    if (key === 'function') {
+      setLastConfirmedQuery(null);
+    }
     if (key === 'team') {
       setSelectedTeam(value);
       setLastConfirmedQuery((prev) =>
@@ -290,6 +297,78 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
     staleTime: 60_000,
     retry: false,
   });
+
+  const { data: catalogData } = useQuery({
+    queryKey: ['pms-ai-catalog'],
+    queryFn: async () => {
+      const res = await apiFetch<{ success: boolean; data: any }>('/api/ai/catalog');
+      return res?.data ?? null;
+    },
+    staleTime: 300_000,
+    retry: false,
+  });
+
+  const availableFunctions = useMemo<string[]>(() => {
+    const list: any[] = catalogData?.eligible_functions || catalogData?.functions || [];
+    if (list && list.length > 0) {
+      return list.map((fn: any) =>
+        typeof fn === 'string' ? fn : fn.label || fn.name || fn.key || String(fn),
+      );
+    }
+    if (watchingData?.eligible_functions && watchingData.eligible_functions.length > 0) {
+      return watchingData.eligible_functions;
+    }
+    return [];
+  }, [catalogData, watchingData]);
+
+  const availableTeams = useMemo<Array<{ value: string; label: string; badge?: string }>>(() => {
+    const list: any[] = catalogData?.eligible_teams || catalogData?.teams || [];
+    if (list && list.length > 0) {
+      return list.map((t: any) => ({
+        value: typeof t === 'string' ? t : t.value || t.key || t.name,
+        label: typeof t === 'string' ? t : t.label || t.name || t.value,
+        badge: typeof t === 'object' ? t.badge || t.function || t.function_key : undefined,
+      }));
+    }
+    if (watchingData?.eligible_teams && watchingData.eligible_teams.length > 0) {
+      return watchingData.eligible_teams.map((t) => ({
+        value: t.value,
+        label: t.label,
+        badge: t.badge || t.function,
+      }));
+    }
+    return [
+      { value: 'Inbound', label: 'Inbound', badge: 'Call Center' },
+      { value: 'Outbound', label: 'Outbound', badge: 'Call Center' },
+      { value: 'Support Positions', label: 'Support Positions', badge: 'Call Center' },
+    ];
+  }, [catalogData, watchingData]);
+
+  const availableBranches = useMemo<string[]>(() => {
+    const list: any[] = catalogData?.eligible_branches || catalogData?.branches || [];
+    if (list && list.length > 0) {
+      return list.map((b: any) =>
+        typeof b === 'string' ? b : b.value || b.key || b.label || String(b),
+      );
+    }
+    if (watchingData?.eligible_branches && watchingData.eligible_branches.length > 0) {
+      return watchingData.eligible_branches;
+    }
+    return ['dubai', 'sharjah', 'ajman'];
+  }, [catalogData, watchingData]);
+
+  const availableLevels = useMemo<string[]>(() => {
+    const list: any[] = catalogData?.eligible_levels || catalogData?.performance_levels || [];
+    if (list && list.length > 0) {
+      return list.map((lvl: any) =>
+        typeof lvl === 'string' ? lvl : lvl.value || lvl.key || lvl.label || String(lvl),
+      );
+    }
+    if (watchingData?.eligible_levels && watchingData.eligible_levels.length > 0) {
+      return watchingData.eligible_levels;
+    }
+    return ['Employee', 'Manager'];
+  }, [catalogData, watchingData]);
 
   useEffect(() => {
     if (turns.length > 0) {
@@ -625,34 +704,48 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
 
               {/* Custom Luminous Scope Context Dropdowns + New Chat */}
               <div className="flex flex-wrap items-center gap-1.5">
+                {availableFunctions.length > 1 && (
+                  <AiScopeDropdown
+                    ariaLabel="Filter Department"
+                    prefix="Dept"
+                    value={sessionState.function || 'All'}
+                    defaultValue="All"
+                    icon={<Building2 size={12} />}
+                    onChange={(val) => handleFilterChange('function', val)}
+                    options={[
+                      {
+                        value: 'All',
+                        label: 'All authorized departments',
+                        badge: `${availableFunctions.length} Depts`,
+                      },
+                      ...availableFunctions.map((fn) => ({
+                        value: fn,
+                        label: fn,
+                        badge: 'Dept',
+                      })),
+                    ]}
+                  />
+                )}
+
                 <AiScopeDropdown
-                  ariaLabel="Filter Call Center Team"
+                  ariaLabel={sessionState.function === 'Call Center' || !sessionState.function ? 'Filter Call Center Team' : `Filter ${sessionState.function} Team`}
                   prefix="Team"
                   value={selectedTeam}
                   defaultValue="All"
                   icon={<Users size={12} />}
                   onChange={(val) => handleFilterChange('team', val)}
-                  options={
-                    watchingData?.eligible_teams && watchingData.eligible_teams.length > 0
-                      ? [
-                          {
-                            value: 'All',
-                            label: `All ${sessionState.function || 'Teams'}`,
-                            badge: `${watchingData.eligible_teams.length} Teams`,
-                          },
-                          ...watchingData.eligible_teams.map((t) => ({
-                            value: t.value,
-                            label: t.label,
-                            badge: t.badge || t.function,
-                          })),
-                        ]
-                      : [
-                          { value: 'All', label: 'All Call Center', badge: '3 Scopes' },
-                          { value: 'Inbound', label: 'Inbound', badge: '35 Agents' },
-                          { value: 'Outbound', label: 'Outbound', badge: '7 Agents' },
-                          { value: 'Support Positions', label: 'Support Positions', badge: 'Call Center' },
-                        ]
-                  }
+                  options={[
+                    {
+                      value: 'All',
+                      label: sessionState.function ? `All ${sessionState.function}` : 'All authorized departments',
+                      badge: `${availableTeams.length} Teams`,
+                    },
+                    ...availableTeams.map((t) => ({
+                      value: t.value,
+                      label: t.label,
+                      badge: t.badge,
+                    })),
+                  ]}
                 />
 
                 <AiScopeDropdown
@@ -662,32 +755,22 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
                   defaultValue="all"
                   icon={<Building2 size={12} />}
                   onChange={(val) => handleFilterChange('branch', val)}
-                  options={
-                    watchingData?.eligible_branches && watchingData.eligible_branches.length > 0
+                  options={[
+                    ...(availableBranches.length > 1
                       ? [
-                          ...(watchingData.eligible_branches.length > 1
-                            ? [
-                                {
-                                  value: 'all',
-                                  label: 'All UAE',
-                                  badge: `${watchingData.eligible_branches.length} Branches`,
-                                },
-                              ]
-                            : []),
-                          ...watchingData.eligible_branches.map((b) => ({
-                            value: b,
-                            label: b.charAt(0).toUpperCase() + b.slice(1),
-                            badge: b === 'clinics' ? 'Outpatient' : 'Hospital',
-                          })),
+                          {
+                            value: 'all',
+                            label: 'All UAE',
+                            badge: `${availableBranches.length} Branches`,
+                          },
                         ]
-                      : [
-                          { value: 'all', label: 'All UAE', badge: '4 Branches' },
-                          { value: 'dubai', label: 'Dubai', badge: 'Hospital' },
-                          { value: 'sharjah', label: 'Sharjah', badge: 'Hospital' },
-                          { value: 'ajman', label: 'Ajman', badge: 'Hospital' },
-                          { value: 'clinics', label: 'Clinics', badge: 'Outpatient' },
-                        ]
-                  }
+                      : []),
+                    ...availableBranches.map((bk) => ({
+                      value: bk.toLowerCase(),
+                      label: bk.charAt(0).toUpperCase() + bk.slice(1),
+                      badge: bk.toLowerCase() === 'clinics' ? 'Outpatient' : 'Hospital',
+                    })),
+                  ]}
                 />
 
                 <AiScopeDropdown
@@ -697,30 +780,21 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
                   defaultValue="All"
                   icon={<Layers size={12} />}
                   onChange={(val) => handleFilterChange('performance_level', val)}
-                  options={
-                    watchingData?.eligible_levels && watchingData.eligible_levels.length > 0
-                      ? [
-                          ...(watchingData.eligible_levels.length > 1
-                            ? [{ value: 'All', label: 'All Levels', badge: 'Full Scope' }]
-                            : []),
-                          ...watchingData.eligible_levels.map((lvl) => ({
-                            value: lvl,
-                            label: lvl === 'Employee' ? 'Employee' : `${lvl} BSC`,
-                            badge:
-                              lvl === 'Employee'
-                                ? 'Agents'
-                                : lvl === 'Managerial'
-                                ? 'Leaders'
-                                : 'Executive',
-                          })),
-                        ]
-                      : [
-                          { value: 'All', label: 'All Levels', badge: 'Full Scope' },
-                          { value: 'Employee', label: 'Employee', badge: 'Agents' },
-                          { value: 'Managerial', label: 'Managerial BSC', badge: 'Leaders' },
-                          { value: 'Corporate', label: 'Corporate BSC', badge: 'Executive' },
-                        ]
-                  }
+                  options={[
+                    ...(availableLevels.length > 1
+                      ? [{ value: 'All', label: 'All Levels', badge: 'Full Scope' }]
+                      : []),
+                    ...availableLevels.map((lvl) => ({
+                      value: lvl,
+                      label: lvl === 'Employee' ? 'Employee' : `${lvl} BSC`,
+                      badge:
+                        lvl === 'Employee'
+                          ? 'Agents'
+                          : lvl === 'Managerial'
+                          ? 'Leaders'
+                          : 'Executive',
+                    })),
+                  ]}
                 />
 
                 <div

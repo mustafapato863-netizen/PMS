@@ -190,6 +190,20 @@ export interface PositionActionPlanItem {
   expectedKpiOutcome: string;
 }
 
+export interface FunctionScoreTrendPoint {
+  month: string;
+  periodKey: string;
+  score: number | null;
+  selected: boolean;
+  basisDetail?: string;
+}
+
+export interface FunctionScoreTrend {
+  points: FunctionScoreTrendPoint[];
+  changeVsPrevious: number | null;
+  previousMonthLabel: string | null;
+}
+
 export interface CallCenterDeepDiveData {
   functionSlug: string;
   title: string;
@@ -212,6 +226,7 @@ export interface CallCenterDeepDiveData {
     measuredAgentsCount: number;
     supportPositionsCount: number;
   };
+  scoreTrend?: FunctionScoreTrend;
   agentTeams: AgentTeamPerformanceItem[];
   supportPositions: SupportPositionItem[];
   keyKpis: AgentKeyKpiItem[];
@@ -2027,6 +2042,11 @@ export function emptyMeasuredFunctionDeepDive(
       measuredAgentsCount: 0,
       supportPositionsCount: 0,
     },
+    scoreTrend: {
+      points: [],
+      changeVsPrevious: null,
+      previousMonthLabel: null,
+    },
     agentTeams: [],
     supportPositions: [],
     keyKpis: [],
@@ -2073,6 +2093,158 @@ export function getBaselineFunctionDeepDive(
 const round1 = (v: number) => Math.round(v * 10) / 10;
 const mean = (vals: number[]) =>
   vals.length ? vals.reduce((s, v) => s + v, 0) / vals.length : null;
+
+export function buildCallCenterScoreTrend(
+  ccRecords: ExecRecord[],
+  effective: ExecutivePeriod,
+  displayedScore?: number,
+): FunctionScoreTrend {
+  const periods = trailingPeriods(effective, 6);
+  const inboundAll = ccRecords.filter((r) => r.team === 'Inbound');
+  const outboundAll = ccRecords.filter((r) => r.team === 'Outbound');
+  const supportRecords = ccRecords.filter((r) => r.team === 'Call Center' && r.position);
+
+  const points: FunctionScoreTrendPoint[] = periods.map((period) => {
+    const isSelected = period.key === effective.key;
+    if (isSelected && displayedScore !== undefined) {
+      return {
+        month: period.month.slice(0, 3),
+        periodKey: period.key,
+        score: displayedScore,
+        selected: true,
+      };
+    }
+
+    const inboundMonth = inboundAll.filter((r) => r.period.key === period.key);
+    const outboundMonth = outboundAll.filter((r) => r.period.key === period.key);
+    const supportMonth = supportRecords.filter((r) => r.period.key === period.key);
+
+    if (!inboundMonth.length && !outboundMonth.length && !supportMonth.length) {
+      return {
+        month: period.month.slice(0, 3),
+        periodKey: period.key,
+        score: null,
+        selected: isSelected,
+      };
+    }
+
+    const inbAgents = inboundMonth.map((r) => r.rawAgent).filter((a): a is AgentRecord => Boolean(a));
+    const outAgents = outboundMonth.map((r) => r.rawAgent).filter((a): a is AgentRecord => Boolean(a));
+
+    const inbAvg = mean(inboundMonth.map((r) => r.score));
+    const outAvg = mean(outboundMonth.map((r) => r.score));
+    const supAvg = mean(supportMonth.map((r) => r.score));
+
+    const channelScores: Array<{ score: number; count: number }> = [];
+
+    if (inbAvg !== null) {
+      const inbScore = inbAgents.length > 0
+        ? (channelBoardScore({ agents: inbAgents, config: INBOUND_TEAM_CONFIG, employeeAverage: inbAvg }) ?? round1(inbAvg))
+        : round1(inbAvg);
+      channelScores.push({ score: inbScore, count: new Set(inboundMonth.map((r) => r.employeeId)).size || 1 });
+    }
+
+    if (outAvg !== null) {
+      const outScore = outAgents.length > 0
+        ? (channelBoardScore({ agents: outAgents, config: OUTBOUND_TEAM_CONFIG, employeeAverage: outAvg }) ?? round1(outAvg))
+        : round1(outAvg);
+      channelScores.push({ score: outScore, count: new Set(outboundMonth.map((r) => r.employeeId)).size || 1 });
+    }
+
+    if (supAvg !== null) {
+      channelScores.push({ score: round1(supAvg), count: supportMonth.length || 1 });
+    }
+
+    const monthScore = channelScores.length > 0
+      ? averagePrintedChannelScores(channelScores)
+      : null;
+
+    return {
+      month: period.month.slice(0, 3),
+      periodKey: period.key,
+      score: monthScore !== null ? round1(monthScore) : null,
+      selected: isSelected,
+    };
+  });
+
+  const previousPeriod = periods[periods.length - 2];
+  const selectedPoint = points[points.length - 1];
+  const previousPoint = previousPeriod ? points.find((p) => p.periodKey === previousPeriod.key) : undefined;
+
+  const selectedScore = selectedPoint?.score ?? null;
+  const previousScore = previousPoint?.score ?? null;
+
+  const changeVsPrevious =
+    selectedScore !== null && previousScore !== null
+      ? round1(selectedScore - previousScore)
+      : null;
+
+  return {
+    points,
+    changeVsPrevious,
+    previousMonthLabel: previousPeriod?.month ?? null,
+  };
+}
+
+export function buildFunctionScoreTrend(
+  fnRecords: ExecRecord[],
+  effective: ExecutivePeriod,
+  displayedScore?: number,
+): FunctionScoreTrend {
+  const periods = trailingPeriods(effective, 6);
+  const points: FunctionScoreTrendPoint[] = periods.map((period) => {
+    const isSelected = period.key === effective.key;
+    const monthRecords = fnRecords.filter((r) => r.period.key === period.key);
+
+    if (monthRecords.length === 0) {
+      return {
+        month: period.month.slice(0, 3),
+        periodKey: period.key,
+        score: null,
+        selected: isSelected,
+      };
+    }
+
+    if (isSelected && displayedScore !== undefined) {
+      return {
+        month: period.month.slice(0, 3),
+        periodKey: period.key,
+        score: displayedScore,
+        selected: true,
+      };
+    }
+
+    const scores = monthRecords
+      .map((r) => r.score)
+      .filter((s): s is number => typeof s === 'number' && !Number.isNaN(s));
+    const score = scores.length > 0 ? round1(mean(scores)!) : null;
+
+    return {
+      month: period.month.slice(0, 3),
+      periodKey: period.key,
+      score,
+      selected: isSelected,
+    };
+  });
+
+  const previousPeriod = periods[periods.length - 2];
+  const selectedPoint = points[points.length - 1];
+  const previousPoint = previousPeriod ? points.find((p) => p.periodKey === previousPeriod.key) : undefined;
+
+  const selectedScore = selectedPoint?.score ?? null;
+  const previousScore = previousPoint?.score ?? null;
+
+  const changeVsPrevious =
+    selectedScore !== null && previousScore !== null
+      ? round1(selectedScore - previousScore)
+      : null;
+
+  return {
+    points,
+    changeVsPrevious,
+    previousMonthLabel: previousPeriod?.month ?? null,
+  };
+}
 
 export function buildCallCenterDeepDiveFromRecords(
   allRecords: ExecRecord[],
@@ -2176,10 +2348,14 @@ export function buildCallCenterDeepDiveFromRecords(
     { score: outboundPrevScore, count: outboundPrev.length },
     { score: supportPrevScore, count: supportPrev.length },
   ]);
+  const scoreTrend = buildCallCenterScoreTrend(ccRecords, effective, fnScore);
   const fnChange =
-    fnPrevScore !== null
-      ? round1(fnScore - round1(fnPrevScore))
-      : fallback.headline.changeVsPrev;
+    scoreTrend.changeVsPrevious !== null
+      ? scoreTrend.changeVsPrevious
+      : (fnPrevScore !== null
+        ? round1(fnScore - round1(fnPrevScore))
+        : fallback.headline.changeVsPrev);
+  const previousMonthLabel = scoreTrend.previousMonthLabel ?? previous?.month ?? 'August';
   const fnGrade = gradeForScore(fnScore);
   const totalMeasuredAgents = inboundHc + outboundHc;
 
@@ -2460,7 +2636,7 @@ export function buildCallCenterDeepDiveFromRecords(
     regionCode: region,
     regionName: region === 'EGY' ? 'Offshore Egypt' : 'UAE Region',
     monthLabel: `${effective.month} ${effective.year}`,
-    previousMonthLabel: previous?.month ?? 'August',
+    previousMonthLabel: previousMonthLabel,
     periodKey: effective.key,
     headline: {
       score: fnScore,
@@ -2477,6 +2653,7 @@ export function buildCallCenterDeepDiveFromRecords(
       measuredAgentsCount: totalMeasuredAgents,
       supportPositionsCount: 4,
     },
+    scoreTrend,
     agentTeams: [inboundTeamCard, outboundTeamCard],
     supportPositions,
     keyKpis,
@@ -2569,10 +2746,14 @@ export function buildFunctionDeepDiveFromRecords(
 
   const fnScore = round1(mean(currRecords.map((r) => r.score)) ?? fallback.headline.score);
   const fnPrevScore = mean(prevRecords.map((r) => r.score));
+  const scoreTrend = buildFunctionScoreTrend(fnRecords, effective, fnScore);
   const fnChange =
-    fnPrevScore !== null
-      ? round1(fnScore - round1(fnPrevScore))
-      : fallback.headline.changeVsPrev;
+    scoreTrend.changeVsPrevious !== null
+      ? scoreTrend.changeVsPrevious
+      : (fnPrevScore !== null
+        ? round1(fnScore - round1(fnPrevScore))
+        : fallback.headline.changeVsPrev);
+  const previousMonthLabel = scoreTrend.previousMonthLabel ?? previous?.month ?? 'August';
   const fnGrade = gradeForScore(fnScore);
   const totalMeasuredHc = new Set(currRecords.map((r) => r.employeeId)).size;
 
@@ -2793,7 +2974,7 @@ export function buildFunctionDeepDiveFromRecords(
     regionCode: region,
     regionName: region === 'EGY' ? 'Offshore Egypt' : 'UAE Region',
     monthLabel: `${effective.month} ${effective.year}`,
-    previousMonthLabel: previous?.month ?? 'August',
+    previousMonthLabel,
     periodKey: effective.key,
     headline: {
       ...fallback.headline,
@@ -2807,6 +2988,7 @@ export function buildFunctionDeepDiveFromRecords(
       measuredAgentsCount: totalMeasuredHc,
       supportPositionsCount: supportPositions.length,
     },
+    scoreTrend,
     agentTeams: agentTeams.length > 0 ? agentTeams : fallback.agentTeams,
     supportPositions,
     keyKpis: keyKpis.length > 0 ? keyKpis : fallback.keyKpis,

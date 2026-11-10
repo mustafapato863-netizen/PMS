@@ -154,8 +154,11 @@ class ToolExecutionContext:
             self.session_state.position if self.session_state.position not in (None, "", "All", "all") else None
         )
         eff_fn = function if function not in (None, "", "All") else (
-            self.session_state.function if self.session_state.function not in (None, "", "All") else "Call Center"
+            self.session_state.function if self.session_state.function not in (None, "", "All") else None
         )
+        if eff_team and not eff_fn:
+            from services.ai.catalog import function_for_team
+            eff_fn = function_for_team(eff_team)
         if eff_team and eff_team.casefold() not in ("inbound", "outbound", "call center", "support positions"):
             if eff_fn and eff_fn.casefold() == "call center":
                 eff_fn = None
@@ -265,7 +268,7 @@ class DeterministicToolRegistry:
         res_month = ws.comparison.current.month if ws.comparison and ws.comparison.current else resolved["month"]
         res_year = ws.comparison.current.year if ws.comparison and ws.comparison.current else resolved["year"]
         period_label = f"{res_month} {res_year}" if res_month and res_year else "Latest Period"
-        base_scope = resolved["team"] or resolved["function"] or "Call Center"
+        base_scope = resolved["team"] or resolved["function"] or "All authorized departments"
         scope_label = (
             f"{base_scope} · {resolved['position']}"
             if resolved["position"] and resolved["position"].casefold() not in base_scope.casefold()
@@ -592,7 +595,7 @@ class DeterministicToolRegistry:
         res_month = ws.comparison.current.month if ws.comparison and ws.comparison.current else resolved["month"]
         res_year = ws.comparison.current.year if ws.comparison and ws.comparison.current else resolved["year"]
         period_label = f"{res_month} {res_year}" if res_month and res_year else "Latest Period"
-        base_scope = resolved["team"] or resolved["function"] or "Call Center"
+        base_scope = resolved["team"] or resolved["function"] or "All authorized departments"
         scope_label = (
             f"{base_scope} · {resolved['position']}"
             if resolved["position"] and resolved["position"].casefold() not in base_scope.casefold()
@@ -627,8 +630,12 @@ class DeterministicToolRegistry:
                     branch=bk,
                 )
                 b_name = bk.capitalize()
-                raw_s = float((ws_b.executive_story.current_score if ws_b.executive_story else 0.0) or 0.0)
-                capped_s = min(100.0, round(raw_s, 1))
+                has_score = (
+                    ws_b.executive_story is not None
+                    and ws_b.executive_story.current_score is not None
+                    and getattr(ws_b.executive_story, "period_records_count", 1) > 0
+                )
+                capped_s = min(100.0, round(float(ws_b.executive_story.current_score), 1)) if has_score else None
                 b_vols = self._compute_operational_volumes(
                     month=res_month,
                     year=res_year,
@@ -636,23 +643,36 @@ class DeterministicToolRegistry:
                     function=resolved["function"],
                     branch=bk,
                 )
-                b_book = int(b_vols.get("total_bookings") or 0)
-                b_att = int(b_vols.get("total_attended") or 0)
-                b_noshows = max(0, b_book - b_att)
-                b_att_pct = round((b_att / b_book) * 100.0, 1) if b_book > 0 else 0.0
-                sec_lbl = (
-                    f"Attended {b_att_pct:.1f}% ({b_att:,}/{b_book:,}) · {b_noshows:,} No-Shows"
-                    if b_book > 0
-                    else f"Score {capped_s:.1f}%"
+                data_present = bool(b_vols.get("data_present"))
+                period_published = bool(b_vols.get("period_published", True))
+                b_book = int(b_vols["total_bookings"]) if b_vols.get("total_bookings") is not None else None
+                b_att = int(b_vols["total_attended"]) if b_vols.get("total_attended") is not None else None
+                b_noshows = max(0, b_book - b_att) if (b_book is not None and b_att is not None) else None
+                b_att_pct = (
+                    round((b_att / b_book) * 100.0, 1)
+                    if (b_book is not None and b_book > 0 and b_att is not None)
+                    else None
                 )
-                sev = "critical" if capped_s < 75 or (b_book > 0 and b_att_pct < 60) else (
-                    "warning" if capped_s < 90 or (b_book > 0 and b_att_pct < 70) else "good"
+                if b_book is not None and b_att is not None and b_noshows is not None and b_book > 0 and b_att_pct is not None:
+                    sec_lbl = f"Attended {b_att_pct:.1f}% ({b_att:,}/{b_book:,}) · {b_noshows:,} No-Shows"
+                elif b_book is not None and b_book == 0:
+                    sec_lbl = "Bookings: 0"
+                elif b_book is not None and b_att is None:
+                    sec_lbl = f"Bookings: {b_book:,} · Attendance unrecorded"
+                elif capped_s is not None:
+                    sec_lbl = f"Score {capped_s:.1f}%"
+                else:
+                    sec_lbl = "Performance score unavailable"
+
+                sev = (
+                    "critical" if (capped_s is not None and capped_s < 75) or (b_att_pct is not None and b_att_pct < 60)
+                    else ("warning" if (capped_s is not None and capped_s < 90) or (b_att_pct is not None and b_att_pct < 70) else "good")
                 )
                 bars.append(
                     AiBarItem(
                         label=f"{scope_label} · {b_name}",
-                        value=capped_s,
-                        display_value=f"{capped_s:.1f}%",
+                        value=capped_s if capped_s is not None else 0.0,
+                        display_value=f"{capped_s:.1f}%" if capped_s is not None else "Unavailable",
                         target_value=100.0,
                         secondary_label=sec_lbl,
                         severity=sev,  # type: ignore[arg-type]
@@ -666,6 +686,13 @@ class DeterministicToolRegistry:
                         "attended": b_att,
                         "no_shows": b_noshows,
                         "attendance_rate_pct": b_att_pct,
+                        "data_present": data_present,
+                        "booking_present": bool(b_vols.get("booking_present")),
+                        "booking_complete": bool(b_vols.get("booking_complete")),
+                        "has_partial_evidence": bool(b_vols.get("has_partial_evidence")),
+                        "attended_present": bool(b_vols.get("attended_present")),
+                        "calls_present": bool(b_vols.get("calls_present")),
+                        "period_published": period_published,
                     }
                 )
 
@@ -819,19 +846,25 @@ class DeterministicToolRegistry:
                     tgt_disp_val = "0% Weight"
                     if getattr(req_cat, "value_kind", None) == "count":
                         vol_map = {
-                            "bookings_count": int(volume_summary.get("total_bookings") or 0),
-                            "TotalBookings": int(volume_summary.get("total_bookings") or 0),
-                            "attended_count": int(volume_summary.get("total_attended") or 0),
-                            "AttendedPatients": int(volume_summary.get("total_attended") or 0),
-                            "handled_calls_count": int(volume_summary.get("total_calls_handled") or 0),
-                            "HandledCalls": int(volume_summary.get("total_calls_handled") or 0),
-                            "abandoned_calls_count": int(volume_summary.get("total_abandoned") or 0),
-                            "AbandonedCalls": int(volume_summary.get("total_abandoned") or 0),
+                            "bookings_count": volume_summary.get("total_bookings"),
+                            "TotalBookings": volume_summary.get("total_bookings"),
+                            "attended_count": volume_summary.get("total_attended"),
+                            "AttendedPatients": volume_summary.get("total_attended"),
+                            "handled_calls_count": volume_summary.get("total_calls_handled"),
+                            "HandledCalls": volume_summary.get("total_calls_handled"),
+                            "abandoned_calls_count": volume_summary.get("total_abandoned"),
+                            "AbandonedCalls": volume_summary.get("total_abandoned"),
                         }
-                        cnt_v = vol_map.get(req_cat.kpi_key, 0)
-                        vol_val = float(cnt_v)
-                        act_disp_val = f"{cnt_v:,} {req_cat.unit}".strip()
-                        tgt_disp_val = "Volume Count"
+                        raw_cnt = vol_map.get(req_cat.kpi_key)
+                        if raw_cnt is not None:
+                            cnt_v = int(raw_cnt)
+                            vol_val = float(cnt_v)
+                            act_disp_val = f"{cnt_v:,} {req_cat.unit}".strip()
+                            tgt_disp_val = "Volume Count"
+                        else:
+                            vol_val = None
+                            act_disp_val = "Data Missing or Unpublished"
+                            tgt_disp_val = "—"
                     typed_evidence.insert(
                         0,
                         TypedMetricEvidence(
@@ -911,10 +944,11 @@ class DeterministicToolRegistry:
             SourceCitationPill(label=f"Scope · {scope_label}", category="scope"),
             SourceCitationPill(label=f"Branch · {branch_label}", category="branch"),
         ]
-        if volume_summary.get("total_bookings"):
+        if volume_summary.get("total_bookings") is not None:
+            att_txt = f"{int(volume_summary['total_attended']):,}" if volume_summary.get("total_attended") is not None else "Unrecorded"
             citations.append(
                 SourceCitationPill(
-                    label=f"Bookings · {int(volume_summary['total_bookings']):,} | Attended · {int(volume_summary['total_attended']):,}",
+                    label=f"Bookings · {int(volume_summary['total_bookings']):,} | Attended · {att_txt}",
                     category="metric",
                 )
             )
@@ -1096,7 +1130,7 @@ class DeterministicToolRegistry:
         res_month = ws.comparison.current.month if ws.comparison and ws.comparison.current else resolved["month"]
         res_year = ws.comparison.current.year if ws.comparison and ws.comparison.current else resolved["year"]
         period_label = f"{res_month} {res_year}" if res_month and res_year else "Latest Period"
-        scope_label = resolved["team"] or resolved["function"] or "Call Center"
+        scope_label = resolved["team"] or resolved["function"] or "All authorized departments"
         branch_label = resolved["branch"].capitalize() if resolved["branch"] else "All Branches"
         total_employees = sum(int(t.total_employees or 0) for t in (ws.team_summaries or []))
 
@@ -1389,7 +1423,7 @@ class DeterministicToolRegistry:
         # Filter to Employee-level records in the requested team/position/function
         target_team = resolved["team"]
         target_pos = resolved["position"]
-        target_fn = (resolved["function"] or "Call Center").casefold()
+        target_fn = (resolved["function"] or "").casefold()
         scoped_recs = []
         for rec in all_records:
             lvl = str(getattr(rec, "performance_level", None) or "Employee")
@@ -1405,8 +1439,11 @@ class DeterministicToolRegistry:
                         continue
                 elif r_team.casefold() != target_team.casefold() and r_team.casefold() not in selection_team_keys(target_team):
                     continue
-            elif not target_team and target_fn == "call center" and r_team.casefold() not in ("inbound", "outbound", "call center"):
-                continue
+            elif target_fn:
+                from services.ai.catalog import function_for_team
+                r_fn = (function_for_team(r_team) or ("call center" if r_team.casefold() in ("inbound", "outbound", "call center", "support positions") else "")).casefold()
+                if r_fn != target_fn:
+                    continue
             if target_pos and r_pos.casefold() != target_pos.casefold():
                 continue
             if resolved["branch"]:
@@ -1955,7 +1992,7 @@ class DeterministicToolRegistry:
         all_records = self.ctx.get_scoped_records()
         target_team = resolved["team"]
         target_pos = resolved["position"]
-        target_fn = (resolved["function"] or "Call Center").casefold()
+        target_fn = (resolved["function"] or "").casefold()
 
         cat_def = (
             get_ai_catalog().find_metric_definition(
@@ -1983,8 +2020,11 @@ class DeterministicToolRegistry:
                         continue
                 elif r_team.casefold() != target_team.casefold() and r_team.casefold() not in selection_team_keys(target_team):
                     continue
-            elif not target_team and target_fn == "call center" and r_team.casefold() not in ("inbound", "outbound", "call center"):
-                continue
+            elif target_fn:
+                from services.ai.catalog import function_for_team
+                r_fn = (function_for_team(r_team) or ("call center" if r_team.casefold() in ("inbound", "outbound", "call center", "support positions") else "")).casefold()
+                if r_fn != target_fn:
+                    continue
             if target_pos and r_pos.casefold() != target_pos.casefold():
                 continue
             if resolved["branch"]:
@@ -2033,7 +2073,7 @@ class DeterministicToolRegistry:
         scope_label = (
             _display_team_name(target_team, target_pos)
             if target_team
-            else (resolved["function"] or "Call Center")
+            else (resolved["function"] or "All authorized departments")
         )
         if target_pos:
             scope_label = f"{scope_label} · {target_pos}"
@@ -2219,7 +2259,7 @@ class DeterministicToolRegistry:
         res_month = ws.comparison.current.month if ws.comparison and ws.comparison.current else (resolved["month"] or "September")
         res_year = ws.comparison.current.year if ws.comparison and ws.comparison.current else (resolved["year"] or 2026)
         period_label = f"{res_month} {res_year}"
-        scope_label = resolved["team"] or resolved["function"] or "Call Center"
+        scope_label = resolved["team"] or resolved["function"] or "All authorized departments"
         total_employees = sum(int(t.total_employees or 0) for t in (ws.team_summaries or []))
 
         items: list[AiEntityListItem] = []
@@ -2636,52 +2676,185 @@ class DeterministicToolRegistry:
         team: str | None,
         function: str | None,
         branch: str | None,
-    ) -> dict[str, float]:
+    ) -> dict[str, Any]:
         records = self.ctx.get_scoped_records()
         total_bookings = 0.0
         total_attended = 0.0
         total_calls = 0.0
 
+        # Scope-aware period publication: only set True if a record matches scope (team/function & period)
+        has_period_records = False
+        matching_branch_records = 0
+        bookings_present_count = 0
+        bookings_missing_count = 0
+        attended_present_count = 0
+        attended_missing_count = 0
+        calls_present_count = 0
+
+        def _extract_metric_val(container: Any, field_name: str) -> Any:
+            if container is None:
+                return None
+            if isinstance(container, dict):
+                return container.get(field_name)
+            return getattr(container, field_name, None)
+
         for rec in records:
+            # 1. Period check
             r_month = str(getattr(rec, "month", "") or "").strip()
             r_year = int(getattr(rec, "year", 0) or 0)
             if month and r_month.casefold() != month.casefold():
                 continue
             if year and r_year != int(year):
                 continue
+
+            # 2. Team & function check (publication is scope-aware)
             emp = getattr(rec, "employee", None)
             r_team = str(getattr(emp, "team", "") or getattr(rec, "team", "") or "").strip()
             if team and r_team.casefold() != team.casefold():
                 continue
-            if not team and (function or "").casefold() == "call center":
-                if r_team.casefold() not in ("inbound", "outbound", "call center"):
+            if not team and function:
+                from services.ai.catalog import function_for_team
+                r_fn = function_for_team(r_team) or ("Call Center" if r_team.casefold() in ("inbound", "outbound", "call center") else r_team)
+                if r_fn.casefold() != function.casefold():
                     continue
-            if branch and not record_matches_branch(rec, branch):
-                continue
 
+            # If we reached here, this record belongs to the requested month, year, and team/function scope!
+            has_period_records = True
+
+            # 3. Branch matching & volume extraction
             geo = getattr(rec, "geo", None)
-            if geo:
-                b_obj = getattr(geo, "bookings", None)
-                a_obj = getattr(geo, "attended", None)
-                if branch and branch in BRANCH_KEYS:
-                    total_bookings += float(getattr(b_obj, branch, 0.0) or 0.0) if b_obj else 0.0
-                    total_attended += float(getattr(a_obj, branch, 0.0) or 0.0) if a_obj else 0.0
-                else:
-                    if b_obj:
-                        for bk in BRANCH_KEYS:
-                            total_bookings += float(getattr(b_obj, bk, 0.0) or 0.0)
-                    if a_obj:
-                        for bk in BRANCH_KEYS:
-                            total_attended += float(getattr(a_obj, bk, 0.0) or 0.0)
+            b_obj = getattr(geo, "bookings", None) if geo else None
+            a_obj = getattr(geo, "attended", None) if geo else None
 
+            norm_branch = branch.strip().casefold() if branch else None
+            if norm_branch and norm_branch in BRANCH_KEYS:
+                r_bk = str(getattr(rec, "branch_key", "") or "").strip().casefold()
+                val_b = _extract_metric_val(b_obj, norm_branch)
+                val_a = _extract_metric_val(a_obj, norm_branch)
+
+                is_branch_match = False
+                if r_bk and r_bk == norm_branch:
+                    is_branch_match = True
+                elif val_b is not None or val_a is not None:
+                    is_branch_match = True
+                elif not r_bk and not geo:
+                    is_branch_match = record_matches_branch(rec, norm_branch)
+
+                if not is_branch_match:
+                    continue
+
+                matching_branch_records += 1
+
+                # Bookings metric presence
+                if val_b is not None:
+                    try:
+                        total_bookings += float(val_b)
+                        bookings_present_count += 1
+                    except (ValueError, TypeError):
+                        bookings_missing_count += 1
+                else:
+                    bookings_missing_count += 1
+
+                # Attended metric presence
+                if val_a is not None:
+                    try:
+                        total_attended += float(val_a)
+                        attended_present_count += 1
+                    except (ValueError, TypeError):
+                        attended_missing_count += 1
+                else:
+                    attended_missing_count += 1
+
+            elif norm_branch:
+                if not record_matches_branch(rec, norm_branch):
+                    continue
+                matching_branch_records += 1
+
+                val_b = getattr(rec, "bookings", None)
+                if val_b is not None:
+                    try:
+                        total_bookings += float(val_b)
+                        bookings_present_count += 1
+                    except (ValueError, TypeError):
+                        bookings_missing_count += 1
+                else:
+                    bookings_missing_count += 1
+
+                val_a = getattr(rec, "attended", None)
+                if val_a is not None:
+                    try:
+                        total_attended += float(val_a)
+                        attended_present_count += 1
+                    except (ValueError, TypeError):
+                        attended_missing_count += 1
+                else:
+                    attended_missing_count += 1
+
+            else:
+                # All branches
+                matching_branch_records += 1
+                rec_has_b = False
+                rec_has_a = False
+                if b_obj is not None:
+                    for bk in BRANCH_KEYS:
+                        vb = _extract_metric_val(b_obj, bk)
+                        if vb is not None:
+                            try:
+                                total_bookings += float(vb)
+                                rec_has_b = True
+                            except (ValueError, TypeError):
+                                pass
+                if a_obj is not None:
+                    for bk in BRANCH_KEYS:
+                        va = _extract_metric_val(a_obj, bk)
+                        if va is not None:
+                            try:
+                                total_attended += float(va)
+                                rec_has_a = True
+                            except (ValueError, TypeError):
+                                pass
+
+                if rec_has_b:
+                    bookings_present_count += 1
+                else:
+                    bookings_missing_count += 1
+
+                if rec_has_a:
+                    attended_present_count += 1
+                else:
+                    attended_missing_count += 1
+
+            # Calls metric presence
             calls = getattr(rec, "calls", None)
-            if calls:
-                total_calls += float(getattr(calls, "total_handled", 0.0) or getattr(calls, "inbound", 0.0) or 0.0)
+            if calls is not None:
+                val_c = _extract_metric_val(calls, "total_handled") or _extract_metric_val(calls, "inbound")
+                if val_c is not None:
+                    try:
+                        total_calls += float(val_c)
+                        calls_present_count += 1
+                    except (ValueError, TypeError):
+                        pass
+
+        booking_present = bookings_present_count > 0
+        attended_present = attended_present_count > 0
+        calls_present = calls_present_count > 0
+        has_partial_evidence = (bookings_present_count > 0 and bookings_missing_count > 0)
+        booking_complete = (bookings_present_count > 0 and bookings_missing_count == 0)
 
         return {
-            "total_bookings": round(total_bookings, 1),
-            "total_attended": round(total_attended, 1),
-            "total_calls_handled": round(total_calls, 1),
+            "total_bookings": round(total_bookings, 1) if booking_present else None,
+            "total_attended": round(total_attended, 1) if attended_present else None,
+            "total_calls_handled": round(total_calls, 1) if calls_present else None,
+            "booking_present": booking_present,
+            "booking_complete": booking_complete,
+            "has_partial_evidence": has_partial_evidence,
+            "attended_present": attended_present,
+            "calls_present": calls_present,
+            "data_present": booking_present,
+            "period_published": has_period_records,
+            "records_matched": matching_branch_records,
+            "bookings_present_count": bookings_present_count,
+            "bookings_missing_count": bookings_missing_count,
         }
 
     def _build_kpi_and_branch_decisions(
@@ -2704,15 +2877,20 @@ class DeterministicToolRegistry:
         other_row = by_key.get("other")
         aht_row = by_key.get("aht")
 
-        total_book = int(volume_summary.get("total_bookings") or 0)
-        total_att = int(volume_summary.get("total_attended") or 0)
-        no_shows = max(0, total_book - total_att)
-        plus5_patients = max(1, int(round(total_book * 0.05))) if total_book > 0 else 0
+        total_book = int(volume_summary["total_bookings"]) if volume_summary.get("total_bookings") is not None else None
+        total_att = int(volume_summary["total_attended"]) if volume_summary.get("total_attended") is not None else None
+        no_shows = max(0, total_book - total_att) if (total_book is not None and total_att is not None) else None
+        plus5_patients = max(1, int(round(total_book * 0.05))) if (total_book is not None and total_book > 0) else 0
 
-        # 1. Branch-Specific Conversion Decision (if branch comparison active)
+        # 1. Branch-Specific Conversion Decision (if branch comparison active and all requested have valid data)
         if len(branch_comparison_digest) >= 2:
-            with_vol = [b for b in branch_comparison_digest if int(b.get("bookings") or 0) > 0]
-            if len(with_vol) >= 2:
+            with_vol = [
+                b for b in branch_comparison_digest
+                if b.get("bookings") is not None
+                and int(b.get("bookings") or 0) > 0
+                and b.get("attendance_rate_pct") is not None
+            ]
+            if len(with_vol) >= 2 and all(b.get("data_present") is not False for b in branch_comparison_digest):
                 best_b = max(with_vol, key=lambda b: float(b.get("attendance_rate_pct") or 0.0))
                 most_noshows_b = max(with_vol, key=lambda b: int(b.get("no_shows") or 0))
                 lowest_rate_b = min(with_vol, key=lambda b: float(b.get("attendance_rate_pct") or 0.0))
@@ -2762,7 +2940,7 @@ class DeterministicToolRegistry:
             )
             vol_impact = (
                 f" Recovers +{plus5_patients:,} attended visits from {no_shows:,} monthly No-Shows and"
-                if total_book > 0
+                if (no_shows is not None and total_book is not None and total_book > 0)
                 else " Closing this gap"
             )
             decisions.append(

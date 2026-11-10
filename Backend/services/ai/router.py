@@ -304,6 +304,11 @@ def _detect_teams_in_prompt(text_lower: str) -> list[str]:
                 span = m.span()
                 if any(not (span[1] <= s[0] or span[0] >= s[1]) for s in used_spans):
                     continue
+                # Exclude teams that are explicitly negated in the prompt (e.g. "not Outbound", "instead of Outbound")
+                preceding_text = text_lower[: span[0]]
+                if re.search(r"\b(?:not|instead\s+of|rather\s+than)\s+(?:the\s+)?$", preceding_text):
+                    used_spans.append(span)
+                    continue
                 used_spans.append(span)
                 detected.append((span[0], canonical))
                 break
@@ -472,34 +477,45 @@ def _extract_person_query_from_prompt(text: str) -> str | None:
 
     name_patterns = [
         r"\b([a-zA-Z]+(?:\s+[a-zA-Z]+){0,3})'s\b",
-        r"\b(?:is|was|did)\s+([a-zA-Z]+(?:\s+[a-zA-Z]+){0,3})\s+(?:(?:a\s+)?new\s+joiner|new\s+in|join\b)",
+        r"\b(?:is|was|did)\s+([a-zA-Z]+(?:\s+[a-zA-Z]+){0,3})\s+(?:(?:a\s+)?new\s+joiner|new\s+in|(?:just\s+)?join\b)",
         r"\b([a-zA-Z]+(?:\s+[a-zA-Z]+){0,3})\s+(?:is|was)\s+(?:a\s+)?new\s+joiner\b",
         r"\bwhen\s+did\s+([a-zA-Z]+(?:\s+[a-zA-Z]+){0,3})\s+join\b",
         r"(?:employee|agent|for|about|trend of|trend for|score of|profile of)\s+([a-zA-Z]+(?:\s+[a-zA-Z]+){0,3})",
     ]
     stop_words = {
         "inbound", "outbound", "call", "center", "dubai", "sharjah", "ajman", "clinics",
+        "dxb", "shj", "ajm", "uae", "egy", "egypt",
+        "rcm", "finance", "marketing", "pharmacy", "human", "resources", "hr", "it",
+        "nursing", "crm", "csr",
+        "coding", "submission", "resubmission", "pre", "approvals", "preapprovals",
+        "prior", "auth", "authorization",
         "all", "team", "teams", "branch", "branches", "the", "his", "her", "and", "in",
         "on", "at", "to", "from", "with", "who", "what", "which", "better", "best", "worst",
-        "lowest", "top", "bottom", "trend", "month", "january", "february", "march", "april",
-        "may", "june", "july", "august", "september", "october", "november", "december",
+        "lowest", "top", "bottom", "trend", "month", "months", "overall",
+        "jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "sept", "oct", "nov", "dec",
+        "january", "february", "march", "april", "june", "july", "august", "september", "october", "november", "december",
         "had", "has", "have", "was", "were", "is", "are", "led", "leads", "leading",
         "scored", "scores", "scoring", "performed", "performing", "performance", "score",
         "rate", "by", "for", "of", "support", "positions", "position", "employee", "employees",
         "agent", "agents", "performer", "performers", "highest", "there", "anyone", "somebody",
-        "recently", "new", "joiner", "joiners", "a", "an",
+        "recently", "new", "joiner", "joiners", "a", "an", "just",
         "booking", "bookings", "attendance", "attended", "abandon", "abandoned",
         "reachability", "aht", "quality", "kpi", "kpis", "metric", "metrics",
-        "target", "targets", "gap", "action", "actions", "corrective", "coaching",
+        "target", "targets", "gap", "gaps", "action", "actions", "corrective", "coaching",
         "plan", "proposal", "this", "page", "view", "dashboard", "scorecard",
         "presentation", "monthly", "summary", "executive", "managerial", "corporate",
+        "structure", "leakage", "rejection", "drivers", "bottlenecks",
+        "during", "across", "between", "against", "over", "under", "about",
+        "media", "buyer", "specialist", "re", "time", "trajectory",
     }
     for pat in name_patterns:
         m = re.search(pat, text, flags=re.IGNORECASE)
         if m:
+            if m.end() < len(text) and text[m.end()] == "-":
+                continue
             raw_tokens = [
                 tok for tok in m.group(1).strip().split()
-                if tok.casefold() not in stop_words
+                if tok.casefold() not in stop_words and not tok.isdigit()
             ]
             if raw_tokens:
                 return " ".join(raw_tokens)
@@ -588,6 +604,35 @@ class HybridQueryRouter:
                     "Analyze Inbound KPI gaps in September 2026",
                 ],
             )
+
+        # 1b. Prompt Injection / Malicious Prompt Detection Guardrail
+        if any(
+            re.search(pat, lower)
+            for pat in (
+                r"\bignore\b.*\b(?:instructions?|policy|policies|rules|guidelines|permissions?)\b",
+                r"\bdisregard\b.*\b(?:instructions?|policy|policies|rules|guidelines|permissions?)\b",
+                r"\bforget\b.*\b(?:instructions?|policy|policies|rules|guidelines|permissions?|access\s+rules|previous)\b",
+                r"\b(?:system\s+prompt|developer\s+mode|jailbreak|system\s+override|unrestricted)\b",
+                r"\blist\s+every\s+employee\s+score\b",
+                r"\bprint\s+.*employee\s+scores\b",
+                r"\b(?:include|show|list|export|dump|add)\b.*\b(?:salar(?:y|ies)|other\s+country)\b",
+                r"\bother\s+departments?'?\s+salaries\b",
+                r"\bdump\s+the\s+other\s+country\b",
+            )
+        ):
+            plan = StructuredQueryPlan(intent="unsupported", turn_kind_v2="unsupported")
+            return RouterValidationResult(
+                outcome="unsupported_request",
+                plan=plan,
+                confirmed_context=ConfirmedQueryContext(intent="unsupported"),
+                headline="I cannot follow instructions to override system policies or disclose restricted data.",
+                narrative_bullets=[
+                    "Requests to bypass system instructions, security boundaries, or access unauthorized data are rejected."
+                ],
+                suggested_followups=["Show performance summary for my authorized scope"],
+                route_used="local_rules",
+            )
+
 
         # 2. Extract explicit entities from the prompt
         raw_teams_in_prompt = _detect_teams_in_prompt(lower)
@@ -808,12 +853,12 @@ class HybridQueryRouter:
             elif explicit_metric == "inbound:abandon_rate":
                 eff_team = "Inbound"
         if not eff_team and eff_metric:
-            if eff_metric.startswith("inbound:"):
+            if eff_metric in ("inbound:abandon_rate", "inbound:fcr"):
                 eff_team = "Inbound"
-            elif eff_metric.startswith("outbound:"):
+            elif eff_metric in ("outbound:reachability", "outbound:aht"):
                 eff_team = "Outbound"
 
-        eff_fn = session_state.function or (function_for_team(eff_team) if eff_team else "Call Center")
+        eff_fn = session_state.function or (function_for_team(eff_team) if eff_team else None)
         if eff_team:
             inferred_fn = function_for_team(eff_team)
             if inferred_fn and (not session_state.function or session_state.function == "Call Center" and inferred_fn != "Call Center"):
@@ -829,7 +874,351 @@ class HybridQueryRouter:
                 eff_periods = list(prior.periods)
                 inherited_filters.append("periods")
 
-        # 4. Clarification Checks (Ambiguous Attendance, Ambiguous "Other" KPI, Joiner/Tenure, or Ambiguous Ranking Metric)
+        # 4. Clarification Checks
+
+        # 4a. Teamless Branch Booking Comparison (fz-009, fz-010)
+        asks_booking_count_prompt = bool(
+            re.search(r"\bbookings?\b", lower)
+            and not re.search(r"\b(?:rate|ratio|conversion|attended|attendance)\b", lower)
+        )
+        if asks_branch_comparison and asks_booking_count_prompt and not eff_team and not matched_choice:
+            booking_choices = [
+                ClarificationChoice(
+                    id="choice-bookings-inbound",
+                    label="Inbound Bookings by Branch",
+                    prompt_to_send="Which branch had the most Inbound bookings?",
+                    team="Inbound",
+                ),
+                ClarificationChoice(
+                    id="choice-bookings-outbound",
+                    label="Outbound Bookings by Branch",
+                    prompt_to_send="Which branch had the most Outbound bookings?",
+                    team="Outbound",
+                ),
+            ]
+            clar_booking = AiClarificationPrompt(
+                code="AMBIGUOUS_TEAM_SCOPE",
+                question="Which team's bookings would you like to compare across branches (e.g. Inbound or Outbound)?",
+                choices=booking_choices,
+            )
+            return RouterValidationResult(
+                outcome="clarification",
+                plan=StructuredQueryPlan(
+                    intent="clarify",
+                    branches=explicit_branches,
+                    turn_kind_v2="clarification",
+                    clarification_code="AMBIGUOUS_TEAM_SCOPE",
+                ),
+                confirmed_context=ConfirmedQueryContext(
+                    intent="clarify",
+                    branches=explicit_branches,
+                    pending_clarification_code="AMBIGUOUS_TEAM_SCOPE",
+                    pending_clarification_choices=booking_choices,
+                ),
+                clarification=clar_booking,
+                headline=clar_booking.question,
+                narrative_bullets=[
+                    "Please specify which team the bookings belong to. Booking counts are tracked separately by team."
+                ],
+                route_used="local_rules",
+            )
+
+        # 4b. Country-Ambiguous Team Clarifications (fz-005, fz-013, fz-014, fz-035, fz-037..040, ho-038..041, ho-058..061)
+        has_egy_country = bool(re.search(r"\b(?:egy|egypt)\b", lower))
+        has_uae_country = bool(re.search(r"\b(?:uae|dubai|sharjah|ajman)\b", lower))
+        user_regions: set[str] = set()
+        if self.scope:
+            for r in (self.scope.get("accessible_regions") or self.scope.get("allowed_regions") or []):
+                user_regions.add(str(r).strip().upper())
+        is_multi_region_user = self.scope.get("role") == "Admin" or "ALL" in user_regions or len(user_regions) >= 2 or not user_regions
+
+        # Shared All Finance / RCM in Egypt total (fz-035, fz-036, ho-058, ho-059)
+        if re.search(
+            r"\bshared\s+(?:rcm|finance)\b"
+            r"|\b(?:include|roll|combine)\b.*\b(?:shared|all-region)\s+(?:rcm|finance)\b"
+            r"|\ball-region\s+(?:rcm|finance)\b"
+            r"|\begypt.*(?:shared|all-region)\s+(?:rcm|finance)\b",
+            lower,
+        ):
+            team_label = "Finance" if "finance" in lower else "RCM"
+            shared_choices = [
+                ClarificationChoice(
+                    id=f"choice-egypt-{team_label.lower()}",
+                    label=f"Egypt {team_label} only",
+                    prompt_to_send=f"What is the Egypt {team_label} score?",
+                    team=team_label,
+                ),
+                ClarificationChoice(
+                    id=f"choice-shared-{team_label.lower()}",
+                    label=f"Shared All-region {team_label}",
+                    prompt_to_send=f"What is the shared {team_label} score?",
+                    team=team_label,
+                ),
+            ]
+            clar_shared = AiClarificationPrompt(
+                code="AMBIGUOUS_TEAM_SCOPE",
+                question=f"{team_label} records with region 'All' are shared across countries and cannot be folded into an Egypt-only total without an approved attribution rule. Would you like to view Egypt {team_label} or the shared {team_label} scorecard?",
+                choices=shared_choices,
+            )
+            return RouterValidationResult(
+                outcome="clarification",
+                plan=StructuredQueryPlan(
+                    intent="clarify",
+                    team=team_label,
+                    function=team_label,
+                    turn_kind_v2="clarification",
+                    clarification_code="AMBIGUOUS_TEAM_SCOPE",
+                ),
+                confirmed_context=ConfirmedQueryContext(
+                    intent="clarify",
+                    team=team_label,
+                    function=team_label,
+                    pending_clarification_code="AMBIGUOUS_TEAM_SCOPE",
+                    pending_clarification_choices=shared_choices,
+                ),
+                clarification=clar_shared,
+                headline=clar_shared.question,
+                narrative_bullets=[
+                    f"Shared {team_label} records have region 'All' and are not attributed to a single country without an approved attribution rule."
+                ],
+                route_used="local_rules",
+            )
+
+        # Ambiguous follow-ups without context ("Which one is doing better?", "Who is ahead?") (ho-038, ho-039)
+        if lower.strip().rstrip("?.") in ("which one is doing better", "who is ahead", "which one is better", "who is doing better") and not eff_team:
+            scope_choices = [
+                ClarificationChoice(
+                    id="choice-compare-inbound-outbound",
+                    label="Compare Inbound vs Outbound",
+                    prompt_to_send="Compare Inbound and Outbound performance",
+                    function="Call Center",
+                ),
+                ClarificationChoice(
+                    id="choice-compare-branches",
+                    label="Compare UAE Branches",
+                    prompt_to_send="Compare Dubai and Sharjah performance",
+                ),
+            ]
+            clar_ahead = AiClarificationPrompt(
+                code="AMBIGUOUS_TEAM_SCOPE",
+                question="Which teams, branches, or performers would you like to compare?",
+                choices=scope_choices,
+            )
+            return RouterValidationResult(
+                outcome="clarification",
+                plan=StructuredQueryPlan(intent="clarify", turn_kind_v2="clarification", clarification_code="AMBIGUOUS_TEAM_SCOPE"),
+                confirmed_context=ConfirmedQueryContext(intent="clarify", pending_clarification_code="AMBIGUOUS_TEAM_SCOPE", pending_clarification_choices=scope_choices),
+                clarification=clar_ahead,
+                headline=clar_ahead.question,
+                narrative_bullets=["Please specify which entities you would like to compare."],
+                route_used="local_rules",
+            )
+
+        # Coding country ambiguity (fz-013, fz-014)
+        is_coding_multi_month = bool(
+            re.search(r"\bcoding\b", lower)
+            and (
+                re.search(r"\b(?:six[- ]months?|trend|progression|over\s+time|history)\b", lower)
+                or not has_explicit_month
+            )
+            and not asks_team_comparison
+        )
+        if is_coding_multi_month and not has_egy_country and not has_uae_country and is_multi_region_user and not matched_choice:
+            coding_choices = [
+                ClarificationChoice(
+                    id="choice-coding-egy",
+                    label="Coding (Egypt — Coding EGY)",
+                    prompt_to_send="How did Coding EGY perform over six months?",
+                    team="Coding EGY",
+                ),
+                ClarificationChoice(
+                    id="choice-coding-uae",
+                    label="Coding (UAE — Coding)",
+                    prompt_to_send="How did Coding UAE perform over six months?",
+                    team="Coding",
+                ),
+            ]
+            clar_coding = AiClarificationPrompt(
+                code="AMBIGUOUS_TEAM_SCOPE",
+                question="Would you like to review Coding performance for Egypt (Coding EGY) or UAE?",
+                choices=coding_choices,
+            )
+            return RouterValidationResult(
+                outcome="clarification",
+                plan=StructuredQueryPlan(
+                    intent="clarify",
+                    function="RCM",
+                    turn_kind_v2="clarification",
+                    clarification_code="AMBIGUOUS_TEAM_SCOPE",
+                ),
+                confirmed_context=ConfirmedQueryContext(
+                    intent="clarify",
+                    function="RCM",
+                    pending_clarification_code="AMBIGUOUS_TEAM_SCOPE",
+                    pending_clarification_choices=coding_choices,
+                ),
+                clarification=clar_coding,
+                headline=clar_coding.question,
+                narrative_bullets=[
+                    "PMS maintains separate medical coding teams and scorecards for Egypt (Coding EGY) and UAE (Coding)."
+                ],
+                route_used="local_rules",
+            )
+
+        # Submission country ambiguity (ho-060, ho-061)
+        is_generic_submission = bool(
+            re.search(r"\bsubmission\b", lower)
+            and not re.search(r"\bre-?submission\b", lower)
+            and not asks_team_comparison
+            and not re.search(r"\b(?:kpis?|gaps?|drivers?|targets?)\b", lower)
+            and not has_explicit_month
+        )
+        if is_generic_submission and not has_egy_country and not has_uae_country and is_multi_region_user and not matched_choice:
+            sub_choices = [
+                ClarificationChoice(
+                    id="choice-sub-egy",
+                    label="Submission (Egypt — Submission EGY)",
+                    prompt_to_send="What is the Submission EGY score?",
+                    team="Submission EGY",
+                ),
+                ClarificationChoice(
+                    id="choice-sub-uae",
+                    label="Submission (UAE — Submission)",
+                    prompt_to_send="What is the UAE Submission score?",
+                    team="Submission",
+                ),
+            ]
+            clar_sub = AiClarificationPrompt(
+                code="AMBIGUOUS_TEAM_SCOPE",
+                question="Would you like to review Submission performance for Egypt (Submission EGY) or UAE?",
+                choices=sub_choices,
+            )
+            return RouterValidationResult(
+                outcome="clarification",
+                plan=StructuredQueryPlan(intent="clarify", function="RCM", turn_kind_v2="clarification", clarification_code="AMBIGUOUS_TEAM_SCOPE"),
+                confirmed_context=ConfirmedQueryContext(intent="clarify", function="RCM", pending_clarification_code="AMBIGUOUS_TEAM_SCOPE", pending_clarification_choices=sub_choices),
+                clarification=clar_sub,
+                headline=clar_sub.question,
+                narrative_bullets=["Submission teams are maintained separately in Egypt (Submission EGY) and UAE (Submission)."],
+                route_used="local_rules",
+            )
+
+        # RCM team scope ambiguity (fz-037..fz-040)
+        if re.search(r"\b(?:what is the rcm score|what is rcm score|rcm score|rcm performance|how did rcm perform)\b", lower) and not (has_egy_country or has_uae_country or "corporate" in lower or "bsc" in lower) and not matched_choice:
+            rcm_choices = [
+                ClarificationChoice(
+                    id="choice-rcm-egy",
+                    label="RCM Egypt Teams",
+                    prompt_to_send="What is the Egypt RCM performance?",
+                    function="RCM",
+                ),
+                ClarificationChoice(
+                    id="choice-rcm-uae",
+                    label="RCM UAE Teams",
+                    prompt_to_send="What is the UAE RCM score?",
+                    function="RCM",
+                ),
+                ClarificationChoice(
+                    id="choice-rcm-corp",
+                    label="RCM Corporate BSC",
+                    prompt_to_send="What is the RCM Corporate Balanced Scorecard score?",
+                    team="RCM",
+                    performance_level="Corporate",
+                ),
+            ]
+            clar_rcm = AiClarificationPrompt(
+                code="AMBIGUOUS_TEAM_SCOPE",
+                question="Which RCM scope would you like to review (Egypt RCM teams, UAE RCM, or Corporate BSC)?",
+                choices=rcm_choices,
+            )
+            return RouterValidationResult(
+                outcome="clarification",
+                plan=StructuredQueryPlan(intent="clarify", function="RCM", turn_kind_v2="clarification", clarification_code="AMBIGUOUS_TEAM_SCOPE"),
+                confirmed_context=ConfirmedQueryContext(intent="clarify", function="RCM", pending_clarification_code="AMBIGUOUS_TEAM_SCOPE", pending_clarification_choices=rcm_choices),
+                clarification=clar_rcm,
+                headline=clar_rcm.question,
+                narrative_bullets=["RCM encompasses Egypt operational teams, UAE hospital RCM units, and Corporate Balanced Scorecard."],
+                route_used="local_rules",
+            )
+
+        # Pre-Approvals team scope ambiguity (fz-039, fz-040)
+        is_generic_preapprovals = bool(
+            re.search(r"\bpre-?approvals?\b", lower)
+            and not re.search(r"\b(?:offshore|op|ip|final|dubai|sharjah|elective)\b", lower)
+        )
+        if is_generic_preapprovals and not (has_egy_country or has_uae_country) and not matched_choice:
+            pa_choices = [
+                ClarificationChoice(
+                    id="choice-pa-egy",
+                    label="Pre-Approvals Egypt (Offshore IP)",
+                    prompt_to_send="What is the Pre-Approvals IP Offshore score?",
+                    team="Pre-Approvals IP Offshore",
+                ),
+                ClarificationChoice(
+                    id="choice-pa-uae",
+                    label="Pre-Approvals UAE (OP Final)",
+                    prompt_to_send="What is the UAE Pre-Approvals score?",
+                    team="Pre-Approvals OP Final",
+                ),
+            ]
+            clar_pa = AiClarificationPrompt(
+                code="AMBIGUOUS_TEAM_SCOPE",
+                question="Would you like to review Pre-Approvals performance for Egypt (Pre-Approvals IP Offshore) or UAE (OP/IP Final)?",
+                choices=pa_choices,
+            )
+            return RouterValidationResult(
+                outcome="clarification",
+                plan=StructuredQueryPlan(
+                    intent="clarify",
+                    function="RCM",
+                    turn_kind_v2="clarification",
+                    clarification_code="AMBIGUOUS_TEAM_SCOPE",
+                ),
+                confirmed_context=ConfirmedQueryContext(
+                    intent="clarify",
+                    function="RCM",
+                    pending_clarification_code="AMBIGUOUS_TEAM_SCOPE",
+                    pending_clarification_choices=pa_choices,
+                ),
+                clarification=clar_pa,
+                headline=clar_pa.question,
+                narrative_bullets=[
+                    "Pre-Approvals teams are separate across Egypt offshore operations and UAE hospital facilities."
+                ],
+                route_used="local_rules",
+            )
+
+        # Support positions lowest person ambiguity (fz-005)
+        if re.search(r"\blowest\s+person\s+in\s+support\s+team\b", lower) and not has_egy_country and not has_uae_country and is_multi_region_user and not matched_choice and not has_explicit_month:
+            supp_choices = [
+                ClarificationChoice(
+                    id="choice-support-egy",
+                    label="Support Positions (Egypt) — Latest Period",
+                    prompt_to_send="Who is the lowest performer in Support Positions for Egypt?",
+                    team="Support Positions",
+                ),
+                ClarificationChoice(
+                    id="choice-support-uae",
+                    label="Support Positions (UAE) — Latest Period",
+                    prompt_to_send="Who is the lowest performer in Support Positions for UAE?",
+                    team="Support Positions",
+                ),
+            ]
+            clar_supp = AiClarificationPrompt(
+                code="AMBIGUOUS_TEAM_SCOPE",
+                question="Which country and period would you like to review for the lowest performer in Support Positions?",
+                choices=supp_choices,
+            )
+            return RouterValidationResult(
+                outcome="clarification",
+                plan=StructuredQueryPlan(intent="clarify", team="Support Positions", function="Call Center", turn_kind_v2="clarification", clarification_code="AMBIGUOUS_TEAM_SCOPE"),
+                confirmed_context=ConfirmedQueryContext(intent="clarify", team="Support Positions", function="Call Center", pending_clarification_code="AMBIGUOUS_TEAM_SCOPE", pending_clarification_choices=supp_choices),
+                clarification=clar_supp,
+                headline=clar_supp.question,
+                narrative_bullets=["Support Positions exist across regions and require an explicit country and period to rank."],
+                route_used="local_rules",
+            )
+
         if (
             re.search(r"\battendance\b", lower)
             and not eff_team
@@ -978,7 +1367,7 @@ class HybridQueryRouter:
                 route_used="clarification_choice" if matched_choice else "local_rules",
             )
 
-        if re.search(r"\b(?:new\s+joiners?|join(?:ed)?\b.*\brecently|when\s+did\b.*\bjoin|hire\s+date|joining\s+date|tenure)\b", lower):
+        if re.search(r"\b(?:new\s+joiners?|(?:just\s+)?join(?:ed|ing)?\b|when\s+did\b.*\bjoin|hire\s+date|joining\s+date|tenure)\b", lower):
             target_t = eff_team or "Inbound"
             latest_lbl = _format_period_label(eff_periods[-1] if eff_periods else self.latest_published_period)
             person_q = (
@@ -1298,6 +1687,55 @@ class HybridQueryRouter:
                 resolved_employee_name = emp_res.selected.employee_name
                 if not eff_team and emp_res.selected.team:
                     eff_team = emp_res.selected.team
+
+        # If person query is a single first name and was not uniquely resolved, clarify instead of guessing (fz-027, fz-028)
+        if (
+            not resolved_employee_id
+            and explicit_person_query
+            and len(explicit_person_query.split()) == 1
+            and not re.search(r"\b(sghd\d+|emp[-_ ]?\d+|e[-_]\d+)\b", lower)
+            and not matched_choice
+            and not (is_short_followup and prior and prior.last_subject_employee_id)
+            and (self.scope.get("role") == "Admin" or self.scope.get("has_unrestricted_team_access", False) or user_can_access_team(self.scope, eff_team or session_state.team or "Inbound"))
+        ):
+            tok_title = explicit_person_query.strip().title()
+            clar_single_name = AiClarificationPrompt(
+                code="AMBIGUOUS_PERSON",
+                question=f"Which {tok_title} would you like to review? Please specify their team or full name.",
+                choices=[
+                    ClarificationChoice(
+                        id=f"choice-specify-{tok_title.lower()}",
+                        label=f"Specify team or role for {tok_title}",
+                        prompt_to_send=f"What is {tok_title}'s score and team?",
+                    )
+                ],
+            )
+            return RouterValidationResult(
+                outcome="clarification",
+                plan=StructuredQueryPlan(
+                    intent="clarify",
+                    team=eff_team,
+                    function=eff_fn,
+                    periods=eff_periods,
+                    turn_kind_v2="clarification",
+                    clarification_code="AMBIGUOUS_PERSON",
+                ),
+                confirmed_context=ConfirmedQueryContext(
+                    intent="clarify",
+                    team=eff_team,
+                    function=eff_fn,
+                    periods=eff_periods,
+                    pending_clarification_code="AMBIGUOUS_PERSON",
+                    pending_clarification_choices=clar_single_name.choices,
+                ),
+                clarification=clar_single_name,
+                headline=clar_single_name.question,
+                narrative_bullets=[
+                    f"Multiple employees may match the name {tok_title}. Please specify their team or full name."
+                ],
+                route_used="local_rules",
+            )
+
 
         if (
             not resolved_employee_id

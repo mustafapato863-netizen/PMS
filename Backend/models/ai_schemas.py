@@ -326,7 +326,7 @@ class AiCorrectiveActionConfirmResponse(BaseModel):
 
 
 class SessionFilterContext(BaseModel):
-    function: str | None = Field(default="Call Center")
+    function: str | None = None
     team: str | None = None
     position: str | None = None
     branch: str | None = None
@@ -724,3 +724,31 @@ class AiTraceReviewResponse(BaseModel):
     reviewer_id: str
     reviewed_at: str
     is_distillation_eligible: bool
+
+
+class AiDiagnosticsPayload(BaseModel):
+    feature_enabled: bool
+    pilot_role_restricted: bool = True
+    model_configured_name: str
+    model_endpoint_configured: bool
+    model_endpoint_host: str | None = None
+    model_available: bool
+    inference_verified: bool = False
+    model_availability_reason: str
+    router_mode: str
+    intent_routing_enabled: bool
+    synthesis_enabled: bool
+    exploration_enabled: bool
+    brief_default_enabled: bool
+    conversation_state_enabled: bool
+    provider_timeout_seconds: float
+    concurrency_limit: int = 1
+    recent_fallback_reason: str | None = None
+    fallback_scope: str = "process_local"
+    data_freshness: dict[str, Any] = Field(default_factory=dict)
+
+
+class AiDiagnosticsResponse(BaseModel):
+    success: bool = True
+    message: str = "Admin AI diagnostics loaded"
+    data: AiDiagnosticsPayload
