@@ -88,14 +88,35 @@ def _reject_forbidden(path: Path) -> None:
             raise SystemExit(f"refusing forbidden source {text}")
 
 
+def _git(args: list[str]) -> str:
+    return subprocess.check_output(["git", *args], cwd=ROOT, text=True).strip()
+
+
+def ensure_commit_history() -> None:
+    """A depth-1 checkout makes HEAD look like the commit that added every file.
+
+    Source commits are then all the graft commit. Deepen once so `git log`
+    names the commit that last changed each file.
+    """
+    if _git(["rev-parse", "--is-shallow-repository"]) != "true":
+        return
+    try:
+        subprocess.check_call(["git", "fetch", "--unshallow"], cwd=ROOT)
+    except subprocess.CalledProcessError as exc:
+        raise SystemExit(
+            "derive_expected.py needs the commits that last changed each source file. "
+            "This checkout is shallow and git fetch --unshallow failed. "
+            "Unshallow the clone, or set actions/checkout fetch-depth to 0."
+        ) from exc
+    if _git(["rev-parse", "--is-shallow-repository"]) == "true":
+        raise SystemExit("git fetch --unshallow left the repository shallow")
+
+
 def file_commit(path: Path) -> str:
     _reject_forbidden(path)
+    ensure_commit_history()
     rel = _rel(path)
-    commit = subprocess.check_output(
-        ["git", "log", "-1", "--format=%H", "--", rel],
-        cwd=ROOT,
-        text=True,
-    ).strip()
+    commit = _git(["log", "-1", "--format=%H", "--", rel])
     if len(commit) != 40:
         raise SystemExit(f"no commit for {rel}")
     return commit

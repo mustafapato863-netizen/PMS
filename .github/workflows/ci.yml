@@ -24,6 +24,10 @@ jobs:
         working-directory: Backend
     steps:
       - uses: actions/checkout@v5
+        with:
+          # Phase 0 derivation records the commit that last changed each source file.
+          # A depth-1 checkout reports the graft commit for every path.
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
