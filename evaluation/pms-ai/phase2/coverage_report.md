@@ -1,7 +1,7 @@
 # PMS Phase 2 coverage manifest
 
-Version `2.0.0` from repository sources at baseline `bd51e73ce711e8fa14c72e98fcc13e9a671cde56`.
-Input fingerprint `bb94c488e3aa1883fc3bf3cd3df941d51a4e2adedc57a2569dc0c1fd7a628f31`.
+Version `2.0.0` from repository sources at baseline `fabbb3d461c044bd367e6cc38a9c514fcfe300d2`.
+Input fingerprint `6186e544c75c10f776b7fb7b424b99a36cb9a0a83281fa9f183a3438aed8929b`.
 
 No cell is verified. Verified would require a passing source-parity check and a passing permission check. Permission checks were not executed. Published performance rows were not read. AI is not enabled. The file has no employee names, identifiers, emails, or scores.
 
@@ -21,9 +21,9 @@ No cell is verified. Verified would require a passing source-parity check and a 
 - verified: 0
 - verified no data: 0
 - partial: 14
-- blocked: 196
+- blocked: 190
 - not applicable: 35
-- unknown: 539
+- unknown: 545
 
 ## RCM Egypt and RCM UAE
 

@@ -31,7 +31,7 @@ from typing import Any
 
 
 MANIFEST_VERSION = "2.0.0"
-BASELINE_COMMIT = "bd51e73ce711e8fa14c72e98fcc13e9a671cde56"
+BASELINE_COMMIT = "fabbb3d461c044bd367e6cc38a9c514fcfe300d2"
 PHASE = "phase-2"
 
 OPERATIONS = (

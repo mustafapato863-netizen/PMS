@@ -3603,7 +3603,7 @@
       ]
     }
   },
-  "baseline_commit": "bd51e73ce711e8fa14c72e98fcc13e9a671cde56",
+  "baseline_commit": "fabbb3d461c044bd367e6cc38a9c514fcfe300d2",
   "catalog": {
     "countries": [
       "EGY",
@@ -3952,10 +3952,10 @@
     "kpis_not_in_score": 35,
     "levels": 3,
     "matrix_by_status": {
-      "blocked": 196,
+      "blocked": 190,
       "not applicable": 35,
       "partial": 14,
-      "unknown": 539,
+      "unknown": 545,
       "verified": 0,
       "verified no data": 0
     },
@@ -4816,7 +4816,7 @@
     }
   ],
   "generator": "evaluation/pms-ai/phase2/generate_coverage_manifest.py",
-  "inputs_fingerprint": "bb94c488e3aa1883fc3bf3cd3df941d51a4e2adedc57a2569dc0c1fd7a628f31",
+  "inputs_fingerprint": "6186e544c75c10f776b7fb7b424b99a36cb9a0a83281fa9f183a3438aed8929b",
   "kpis": [
     {
       "actual_col": "Actual Value",
@@ -15172,10 +15172,10 @@
       "ownership": "EGY",
       "permission_check": "not_run",
       "position": "",
-      "reason": "CallCenterChannelSummary says Support Positions uses a position average, while Call Center position KPIs declare weighted_average. The two rollups were not reconciled.",
+      "reason": "Definition is only in one repository source, or no second source agrees. performance_records were not read and no permission check was executed.",
       "source": "Frontend/src/components/team/CallCenterChannelSummary.tsx",
       "source_parity": "fail",
-      "status": "blocked",
+      "status": "unknown",
       "subteam": "Support Positions",
       "team": "Call Center"
     },
@@ -15217,10 +15217,10 @@
       "ownership": "EGY",
       "permission_check": "not_run",
       "position": "",
-      "reason": "CallCenterChannelSummary says Support Positions uses a position average, while Call Center position KPIs declare weighted_average. The two rollups were not reconciled.",
+      "reason": "Route id call-center is present. Access was not checked with user_can_access_team.",
       "source": "Frontend/src/components/team/CallCenterChannelSummary.tsx",
       "source_parity": "fail",
-      "status": "blocked",
+      "status": "unknown",
       "subteam": "Support Positions",
       "team": "Call Center"
     },
@@ -16299,10 +16299,10 @@
       "ownership": "EGY",
       "permission_check": "not_run",
       "position": "",
-      "reason": "team JSON scored keys/weights differ from kpi_service.DEFAULT_WEIGHTS",
+      "reason": "Definition is only in one repository source, or no second source agrees. performance_records were not read and no permission check was executed.",
       "source": "Backend/config/teams/inbound.json#kpis",
       "source_parity": "fail",
-      "status": "blocked",
+      "status": "unknown",
       "subteam": "",
       "team": "Inbound"
     },
@@ -16344,10 +16344,10 @@
       "ownership": "EGY",
       "permission_check": "not_run",
       "position": "",
-      "reason": "team JSON scored keys/weights differ from kpi_service.DEFAULT_WEIGHTS",
+      "reason": "Route id inbound is present. Access was not checked with user_can_access_team.",
       "source": "Backend/config/teams/inbound.json#kpis",
       "source_parity": "fail",
-      "status": "blocked",
+      "status": "unknown",
       "subteam": "",
       "team": "Inbound"
     },
@@ -17106,10 +17106,10 @@
       "ownership": "EGY",
       "permission_check": "not_run",
       "position": "",
-      "reason": "team JSON scored keys/weights differ from kpi_service.DEFAULT_WEIGHTS",
+      "reason": "Definition is only in one repository source, or no second source agrees. performance_records were not read and no permission check was executed.",
       "source": "Backend/config/teams/outbound.json#kpis",
       "source_parity": "fail",
-      "status": "blocked",
+      "status": "unknown",
       "subteam": "",
       "team": "Outbound"
     },
@@ -17151,10 +17151,10 @@
       "ownership": "EGY",
       "permission_check": "not_run",
       "position": "",
-      "reason": "team JSON scored keys/weights differ from kpi_service.DEFAULT_WEIGHTS",
+      "reason": "Route id outbound is present. Access was not checked with user_can_access_team.",
       "source": "Backend/config/teams/outbound.json#kpis",
       "source_parity": "fail",
-      "status": "blocked",
+      "status": "unknown",
       "subteam": "",
       "team": "Outbound"
     },
