@@ -530,19 +530,62 @@ def _extract_person_query_from_prompt(text: str) -> str | None:
         "structure", "leakage", "rejection", "drivers", "bottlenecks",
         "during", "across", "between", "against", "over", "under", "about",
         "media", "buyer", "specialist", "re", "time", "trajectory",
+        # Closed-class leftovers. A wide match such as "Show Marketing's" or
+        # "for the month that" used to drop the real head ("Marketing",
+        # "month") and return the residue ("Show", "that") as a person.
+        "show", "tell", "give", "list", "find", "get", "display", "open",
+        "please", "can", "me", "you", "my", "your", "our", "we",
+        "that", "those", "these", "last", "latest", "first", "next",
+        "previous", "current", "published", "unpublished", "selected",
+        "not", "been", "did", "does", "do", "would", "could", "should",
     }
-    for pat in name_patterns:
-        m = re.search(pat, text, flags=re.IGNORECASE)
-        if m:
+    # Pattern 0 is the possessive span. Its head is the token glued to "'s".
+    # The other patterns introduce a name after a cue ("for", "employee", ...).
+    for index, pat in enumerate(name_patterns):
+        for m in re.finditer(pat, text, flags=re.IGNORECASE):
             if m.end() < len(text) and text[m.end()] == "-":
                 continue
-            raw_tokens = [
-                tok for tok in m.group(1).strip().split()
-                if tok.casefold() not in stop_words and not tok.isdigit()
-            ]
-            if raw_tokens:
-                return " ".join(raw_tokens)
+            name = _person_name_from_span(m.group(1), stop_words, possessive=index == 0)
+            if name:
+                return name
     return None
+
+
+def _person_name_from_span(span: str, stop_words: set[str], *, possessive: bool) -> str | None:
+    """Return a name span, or None when the match is only leftover wording.
+
+    Stopword filtering used to keep whatever tokens remained inside a wider
+    phrase. "Show Marketing's" became "Show", "for the month that" became
+    "that", and "selected team's" became "selected". A person span is the
+    contiguous non-stopword tokens at the possessive head, or the contiguous
+    name that begins the cue. A stopword head or a stopword where the name
+    should start means this match is not a person.
+    """
+    tokens = [tok for tok in span.strip().split() if tok and not tok.isdigit()]
+    if not tokens:
+        return None
+    folded = [tok.casefold() for tok in tokens]
+    if possessive:
+        if folded[-1] in stop_words:
+            return None
+        kept = [tokens[-1]]
+        for tok, fold in zip(reversed(tokens[:-1]), reversed(folded[:-1])):
+            if fold in stop_words:
+                break
+            kept.append(tok)
+        kept.reverse()
+        return " ".join(kept)
+    index = 0
+    while index < len(tokens) and folded[index] in {"a", "an", "the"}:
+        index += 1
+    if index >= len(tokens) or folded[index] in stop_words:
+        return None
+    kept: list[str] = []
+    for tok, fold in zip(tokens[index:], folded[index:]):
+        if fold in stop_words:
+            break
+        kept.append(tok)
+    return " ".join(kept) if kept else None
 
 
 _COUNT_WORDS: dict[int, str] = {
