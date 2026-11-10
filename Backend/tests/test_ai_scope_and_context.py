@@ -23,6 +23,7 @@ def test_booking_clarification_preserves_original_question():
 
 
 def test_shared_scope_choice_does_not_repeat_clarification():
+    """Choosing the Shared All-region scorecard answers it (PR #84) instead of looping or saying "not available"."""
     router = HybridQueryRouter(scope={"role": "Admin", "accessible_teams": ["RCM"]})
     first = router.resolve_and_validate(prompt="What is the shared RCM score?", session_state=SessionFilterContext(), provider_override="deterministic")
     assert first.clarification is not None
@@ -32,8 +33,103 @@ def test_shared_scope_choice_does_not_repeat_clarification():
         clarification_choice_id="choice-shared-rcm",
         provider_override="deterministic",
     )
-    assert result.outcome == "unsupported_request"
-    assert "not available" in result.headline
+    assert result.outcome == "answer"
+    assert result.clarification is None
+    assert result.plan.team == "RCM"
+    assert result.plan.intent == "current_value"
+
+
+def test_shared_finance_choice_answers_for_admin():
+    router = HybridQueryRouter(scope={"role": "Admin", "accessible_teams": ["Finance"]})
+    first = router.resolve_and_validate(prompt="What is the shared Finance score?", session_state=SessionFilterContext(), provider_override="deterministic")
+    assert first.clarification is not None
+    result = router.resolve_and_validate(
+        prompt="What is the shared Finance score?",
+        session_state=SessionFilterContext(last_confirmed_query=first.confirmed_context),
+        clarification_choice_id="choice-shared-finance",
+        provider_override="deterministic",
+    )
+    assert result.outcome == "answer"
+    assert result.clarification is None
+    assert result.plan.team == "Finance"
+
+
+def test_shared_choice_denied_for_single_region_manager():
+    """A Regional Manager scoped to EGY only cannot see region='All' rows, so the shared choice is a scoped denial, not "not available"."""
+    router = HybridQueryRouter(
+        scope={"role": "Regional Manager", "accessible_regions": ["EGY"], "accessible_teams": ["RCM"]}
+    )
+    first = router.resolve_and_validate(prompt="What is the shared RCM score?", session_state=SessionFilterContext(), provider_override="deterministic")
+    assert first.clarification is not None
+    result = router.resolve_and_validate(
+        prompt="What is the shared RCM score?",
+        session_state=SessionFilterContext(last_confirmed_query=first.confirmed_context),
+        clarification_choice_id="choice-shared-rcm",
+        provider_override="deterministic",
+    )
+    assert result.outcome == "restricted_access"
+    assert "Access restricted" in result.headline
+    assert "not available" not in result.headline
+
+
+def test_shared_choice_denied_for_manager_without_team_grant():
+    router = HybridQueryRouter(scope={"role": "Manager", "accessible_teams": ["Inbound"]})
+    first = router.resolve_and_validate(prompt="What is the shared Finance score?", session_state=SessionFilterContext(), provider_override="deterministic")
+    assert first.clarification is not None
+    result = router.resolve_and_validate(
+        prompt="What is the shared Finance score?",
+        session_state=SessionFilterContext(last_confirmed_query=first.confirmed_context),
+        clarification_choice_id="choice-shared-finance",
+        provider_override="deterministic",
+    )
+    assert result.outcome == "restricted_access"
+    assert "Access restricted" in result.headline
+
+
+def test_shared_choice_denied_for_branch_director():
+    """Branch Directors only ever see rows carrying one of their branches; shared rows carry none."""
+    router = HybridQueryRouter(
+        scope={"role": "Branch Director", "accessible_branches": ["dubai"], "accessible_teams": ["RCM"]}
+    )
+    first = router.resolve_and_validate(prompt="What is the shared RCM score?", session_state=SessionFilterContext(), provider_override="deterministic")
+    assert first.clarification is not None
+    result = router.resolve_and_validate(
+        prompt="What is the shared RCM score?",
+        session_state=SessionFilterContext(last_confirmed_query=first.confirmed_context),
+        clarification_choice_id="choice-shared-rcm",
+        provider_override="deterministic",
+    )
+    assert result.outcome == "restricted_access"
+
+
+def test_shared_choice_allowed_for_manager_with_explicit_team_grant():
+    router = HybridQueryRouter(scope={"role": "Manager", "accessible_teams": ["RCM"]})
+    first = router.resolve_and_validate(prompt="What is the shared RCM score?", session_state=SessionFilterContext(), provider_override="deterministic")
+    assert first.clarification is not None
+    result = router.resolve_and_validate(
+        prompt="What is the shared RCM score?",
+        session_state=SessionFilterContext(last_confirmed_query=first.confirmed_context),
+        clarification_choice_id="choice-shared-rcm",
+        provider_override="deterministic",
+    )
+    assert result.outcome == "answer"
+    assert result.plan.team == "RCM"
+
+
+def test_shared_choice_allowed_for_all_region_manager():
+    router = HybridQueryRouter(
+        scope={"role": "Regional Manager", "accessible_regions": ["All"], "accessible_teams": ["Finance"]}
+    )
+    first = router.resolve_and_validate(prompt="What is the shared Finance score?", session_state=SessionFilterContext(), provider_override="deterministic")
+    assert first.clarification is not None
+    result = router.resolve_and_validate(
+        prompt="What is the shared Finance score?",
+        session_state=SessionFilterContext(last_confirmed_query=first.confirmed_context),
+        clarification_choice_id="choice-shared-finance",
+        provider_override="deterministic",
+    )
+    assert result.outcome == "answer"
+    assert result.plan.team == "Finance"
 
 
 def test_neutral_opening_greeting_and_starter_prompts():

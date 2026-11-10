@@ -22,7 +22,7 @@ from models.ai_schemas import (
     StructuredVisualCard,
     TypedMetricEvidence,
 )
-from services.ai.catalog import get_ai_catalog, user_can_access_branch
+from services.ai.catalog import canonical_team_region, get_ai_catalog, user_can_access_branch
 from services.ai.domain_policies import (
     disambiguate_call_center_kpi_label,
     sanitize_untrusted_text,
@@ -36,6 +36,7 @@ from utils.branch_scope import (
     project_record_for_branch,
     record_matches_branch,
 )
+from utils.regions import first_region
 from utils.report_scope import filter_records_by_scope, selection_team_keys
 
 logger = logging.getLogger(__name__)
@@ -57,6 +58,49 @@ def _display_team_name(team_name: str | None, position: str | None = None) -> st
     if norm.casefold() in ("call center", "support positions", "call center support positions"):
         return "Support Positions"
     return norm
+
+
+def _record_field(record: Any, key: str, default: Any = None) -> Any:
+    """Read one field from a scoped record whether it is a dict or an object."""
+    if isinstance(record, dict):
+        return record.get(key, default)
+    return getattr(record, key, default)
+
+
+def _record_evaluation_score(record: Any) -> float | None:
+    """The stored overall evaluation score of one scoped record, if any."""
+    evaluation = _record_field(record, "evaluation", None)
+    if evaluation is not None:
+        raw = _record_field(evaluation, "score", None)
+        try:
+            value = float(raw)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            value = None
+        if value is not None and value == value:  # drop NaN, keep real scores
+            return value
+    raw_direct = _record_field(record, "score", None)
+    try:
+        direct = float(raw_direct)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    return direct if direct == direct else None
+
+
+def _shared_record_region(record: Any, team_name: str | None) -> str:
+    """Effective region of one record: record, then employee, then team.
+
+    Mirrors the DB-row rule (utils.regions.first_region /
+    PerformanceRepository._row_region). For the shared teams the team
+    fallback is 'All' (catalog.TEAM_DEFAULT_REGION), so a shared record
+    with a blank stored region still resolves to the shared region.
+    """
+    employee = _record_field(record, "employee", None)
+    employee_region = _record_field(employee, "region", None) if employee is not None else None
+    return first_region(
+        _record_field(record, "region", None),
+        employee_region,
+        canonical_team_region(team_name),
+    )
 
 
 def build_verified_deep_link(
@@ -538,6 +582,154 @@ class DeterministicToolRegistry:
             basis_warning=basis_warn,
         )
 
+    def execute_shared_region_scorecard(
+        self,
+        *,
+        team: str | None = None,
+        month: str | None = None,
+        year: int | None = None,
+    ) -> ToolExecutionResult:
+        """Shared All-region scorecard for one shared team (Finance / RCM).
+
+        The scorecard averages the stored overall evaluation scores of that
+        team's own region='All' Employee records for one period, using the
+        same single averaging rule as ``executive_story.current_score``.
+        It is deliberately NOT built on ``generate_workspace``: a team=RCM
+        call there expands to the whole RCM function rollup (Coding,
+        Submission, Pre-Approvals, ...), and ``resolve_filters`` drops a
+        session region of 'All' to "no region filter", so the existing tools
+        cannot express "region='All' only".
+
+        Attribution boundary (PR #84): shared records are reported only as
+        their own All-region scorecard. They are never folded into an
+        Egypt-only or UAE-only total — no approved attribution rule exists
+        for that, and none is invented here. The record filter is exact:
+        team name must match the requested team (not the function rollup)
+        and the effective region must be 'All'. The scope filter in
+        ``get_scoped_records`` has already removed every row the caller may
+        not see, so a restricted scope can only ever average its own
+        authorised shared rows.
+        """
+        team_name = str(team or "").strip()
+        resolved = self.ctx.resolve_filters(
+            team=team_name or None,
+            month=month,
+            year=year,
+        )
+        scope_label = f"Shared All-region {team_name}" if team_name else "Shared All-region"
+        # Only teams whose canonical region is 'All' have a shared
+        # scorecard (Finance, RCM). Anything else has no shared rows by
+        # definition, so it reports no data rather than a wrong average.
+        is_shared_team = bool(team_name) and canonical_team_region(team_name) == "All"
+
+        matched: list[Any] = []
+        if is_shared_team:
+            for record in self.ctx.get_scoped_records():
+                if str(_record_field(record, "team", "") or "").strip().casefold() != team_name.casefold():
+                    continue
+                if _shared_record_region(record, team_name).casefold() != "all":
+                    continue
+                level = str(_record_field(record, "performance_level", "") or "Employee").strip().casefold()
+                if level != "employee":
+                    continue
+                matched.append(record)
+
+        req_month = resolved["month"]
+        req_year = resolved["year"]
+        period_records = matched
+        if req_month and req_year:
+            period_records = [
+                r
+                for r in matched
+                if str(_record_field(r, "month", "") or "").strip().casefold() == str(req_month).strip().casefold()
+                and int(_record_field(r, "year", 0) or 0) == int(req_year)
+            ]
+            res_month, res_year = str(req_month).strip(), int(req_year)
+        else:
+            # No explicit period: latest period that actually has shared
+            # records for this team (same "latest present period" rule the
+            # workspace uses when no month is selected).
+            dated = [
+                (int(_record_field(r, "year", 0) or 0), MONTH_ORDER.get(str(_record_field(r, "month", "") or "").strip(), 0), r)
+                for r in matched
+            ]
+            dated = [d for d in dated if d[0] >= 2000 and d[1] >= 1]
+            if dated:
+                latest_year, latest_month_num, _ = max(dated, key=lambda d: (d[0], d[1]))
+                res_month = next(name for name, num in MONTH_ORDER.items() if num == latest_month_num)
+                res_year = latest_year
+                period_records = [
+                    r
+                    for r in matched
+                    if int(_record_field(r, "year", 0) or 0) == latest_year
+                    and MONTH_ORDER.get(str(_record_field(r, "month", "") or "").strip(), 0) == latest_month_num
+                ]
+            else:
+                res_month, res_year = None, None
+
+        period_label = f"{res_month} {res_year}" if res_month and res_year else "Latest Period"
+        scores = [
+            s for s in (_record_evaluation_score(r) for r in period_records)
+            if s is not None
+        ]
+        avg_score: float | None = None
+        if scores:
+            avg_score = min(100.0, round(sum(scores) / len(scores), 1))
+
+        cards: list[StructuredVisualCard] = []
+        if avg_score is not None:
+            cards.append(
+                StructuredVisualCard(
+                    card_type="horizontal_bar",
+                    title=f"Shared All-region {team_name} Scorecard · {period_label}",
+                    subtitle=(
+                        "Region 'All' records only — shared records are not attributed to a single "
+                        "country and are never folded into an Egypt-only or UAE-only total."
+                    ),
+                    bars=[
+                        AiBarItem(
+                            label=f"Shared All-region {team_name}",
+                            value=avg_score,
+                            display_value=f"{avg_score:.1f}%",
+                            target_value=100.0,
+                            secondary_label=f"{len(period_records)} evaluated records",
+                            severity="good" if avg_score >= 88 else ("warning" if avg_score >= 75 else "critical"),  # type: ignore[arg-type]
+                        )
+                    ],
+                )
+            )
+
+        citations = [
+            SourceCitationPill(label=f"Period · {period_label}", category="period"),
+            SourceCitationPill(label=f"Scope · {scope_label}", category="scope"),
+            SourceCitationPill(label="Region · All (shared)", category="scope"),
+            SourceCitationPill(label=f"Evaluated · {len(period_records)}", category="metric"),
+        ]
+
+        # Same digest shape as the executive insights tool, so the
+        # deterministic synthesizer renders it truthfully: a score headline
+        # when records exist, "No performance records matched the selected
+        # filters" when the shared team has no rows in the period.
+        digest = {
+            "period": period_label,
+            "scope": scope_label,
+            "branch": "All Branches",
+            "average_score": avg_score,
+            "score_change": None,
+            "total_records": len(period_records),
+        }
+        return ToolExecutionResult(
+            tool_name="get_shared_region_scorecard",
+            arguments={"team": team_name, "month": res_month, "year": res_year, "region": "All"},
+            records_evaluated=len(period_records),
+            digest=digest,
+            visual_cards=cards,
+            citations=citations,
+            deep_links=[],
+            resolved_month=res_month,
+            resolved_year=res_year,
+        )
+
     def execute_kpi_diagnosis_and_trends(
         self,
         *,
@@ -702,7 +894,8 @@ class DeterministicToolRegistry:
                     bars.append(
                         AiBarItem(
                             label=f"{scope_label} · {b_name}",
-                            value=float(count_val) if count_val is not None else 0.0,
+                            # Unrecorded count: null, never a fake 0.0.
+                            value=float(count_val) if count_val is not None else None,
                             display_value=f"{int(count_val):,} {count_label}" if count_val is not None else "Unavailable",
                             target_value=None,
                             secondary_label=sec_lbl,
@@ -717,7 +910,8 @@ class DeterministicToolRegistry:
                     bars.append(
                         AiBarItem(
                             label=f"{scope_label} · {b_name}",
-                            value=capped_s if capped_s is not None else 0.0,
+                            # Unrecorded score: null, never a fake 0.0.
+                            value=capped_s,
                             display_value=f"{capped_s:.1f}%" if capped_s is not None else "Unavailable",
                             target_value=100.0,
                             secondary_label=sec_lbl,
@@ -962,7 +1156,23 @@ class DeterministicToolRegistry:
                     kpi_rows=kpi_rows,
                 )
             )
-        if kpi_bars and not branch_comparison_digest:
+        # A count question (bookings count, attended count, ...) has no
+        # achievement to break down: the asked metric carries no target or
+        # achievement, so these bars would be unrelated rate achievements
+        # sitting next to a count headline. Omit the card for count-kind
+        # questions; rate questions keep it. The diagnosis table above is
+        # labelled per KPI (actual vs target) and stays as context.
+        asked_count_metric = False
+        if kpi:
+            asked_cat = catalog.find_metric_definition(
+                team=resolved["team"],
+                kpi_key_or_label=kpi,
+                performance_level=resolved["performance_level"] or "Employee",
+            )
+            asked_count_metric = bool(
+                asked_cat and getattr(asked_cat, "value_kind", None) == "count"
+            )
+        if kpi_bars and not branch_comparison_digest and not asked_count_metric:
             cards.append(
                 StructuredVisualCard(
                     card_type="horizontal_bar",

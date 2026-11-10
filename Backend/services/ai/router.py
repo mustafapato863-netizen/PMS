@@ -553,6 +553,31 @@ _COUNT_WORDS: dict[int, str] = {
 }
 
 
+def _shared_region_accessible(scope: dict[str, Any], team_name: str) -> bool:
+    """Whether `scope` can see the shared region='All' rows of `team_name`.
+
+    Mirrors the record filter (``utils.report_scope.filter_records_by_scope``),
+    which is the enforcement point: a Regional Manager only ever sees rows
+    whose region is in their grant, and 'All' is in that grant only when the
+    grant itself is 'All'; a Branch Director only ever sees rows carrying one
+    of their branches, and shared rows carry no branch. Every other role is
+    decided by the catalog team check.
+    """
+    if not user_can_access_team(scope, team_name, performance_level="Employee"):
+        return False
+    role = str(scope.get("role") or "")
+    if role == "Branch Director":
+        return False
+    if role == "Regional Manager":
+        regions = {
+            str(r).strip().upper()
+            for r in (scope.get("accessible_regions") or scope.get("allowed_regions") or [])
+            if str(r).strip()
+        }
+        return "ALL" in regions
+    return True
+
+
 class HybridQueryRouter:
     """Local-first query router and pre-read validator for PMS AI."""
 
@@ -599,14 +624,40 @@ class HybridQueryRouter:
         lower = text.casefold()
 
         if matched_choice and matched_choice.id in {"choice-shared-rcm", "choice-shared-finance"}:
-            return RouterValidationResult(
-                outcome="unsupported_request",
-                plan=StructuredQueryPlan(intent="unsupported"),
-                confirmed_context=ConfirmedQueryContext(intent="unsupported"),
-                headline="The shared All-region scorecard is not available for this comparison yet.",
-                narrative_bullets=["Shared records cannot be attributed to a country without an approved rule."],
-                route_used="local_rules",
-            )
+            # Shared All-region scorecard (PR #84): an authorised choice
+            # resolves to a read-only answer plan below instead of
+            # "not available". Shared records (region='All') are
+            # authoritative PMS rows, aggregable on their own by the single
+            # averaging rule, and never folded into an Egypt-only or
+            # UAE-only total — no approved attribution rule exists for that,
+            # and none is invented here. Access is gated to scopes that can
+            # actually see region='All' rows (see _shared_region_accessible):
+            # the record filter drops 'All' rows for single-region Regional
+            # Managers and branchless rows for Branch Directors, so those
+            # roles get a scoped denial here instead of an empty answer
+            # downstream.
+            shared_team = "RCM" if matched_choice.id == "choice-shared-rcm" else "Finance"
+            if not _shared_region_accessible(self.scope, shared_team):
+                allowed_fns = ", ".join(self.scope.get("accessible_functions") or []) or "your assigned teams"
+                return RouterValidationResult(
+                    outcome="restricted_access",
+                    plan=StructuredQueryPlan(intent="current_value", team=shared_team, function=shared_team),
+                    confirmed_context=prior or ConfirmedQueryContext(),
+                    headline=(
+                        f"Access restricted: your role does not have permission to view the shared All-region {shared_team} scorecard."
+                    ),
+                    narrative_bullets=[
+                        f"Your account is scoped to {allowed_fns}.",
+                        "Shared records have region 'All' and are only visible to scopes that include the shared region.",
+                    ],
+                    suggested_followups=[
+                        f"Show performance summary for my authorized scope in {_format_period_label(self.latest_published_period)}"
+                    ],
+                    route_used="local_rules",
+                )
+            # Authorised: fall through to normal plan building. The
+            # shared-scope clarification below is skipped for a matched
+            # choice so the answer is produced instead of looping.
 
         # 1. Unsupported Write / Mutation Guardrail
         if any(
@@ -966,7 +1017,9 @@ class HybridQueryRouter:
         is_multi_region_user = self.scope.get("role") == "Admin" or "ALL" in user_regions or len(user_regions) >= 2 or not user_regions
 
         # Shared All Finance / RCM in Egypt total (fz-035, fz-036, ho-058, ho-059)
-        if re.search(
+        # Skipped for a matched clarification choice: choosing "Shared
+        # All-region ..." must answer, not ask the same question again.
+        if not matched_choice and re.search(
             r"\bshared\s+(?:rcm|finance)\b"
             r"|\b(?:include|roll|combine)\b.*\b(?:shared|all-region)\s+(?:rcm|finance)\b"
             r"|\ball-region\s+(?:rcm|finance)\b"

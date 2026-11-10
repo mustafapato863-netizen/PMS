@@ -359,7 +359,10 @@ class AiChatRequest(BaseModel):
 
 class AiBarItem(BaseModel):
     label: str
-    value: float
+    # Null means "no recorded value" (e.g. a branch with no published
+    # bookings/score) — never a fake 0.0. Consumers must render a null bar
+    # with no fill, using display_value ("Unavailable") as the label.
+    value: float | None
     display_value: str
     target_value: float | None = None
     secondary_label: str | None = None
