@@ -406,6 +406,9 @@ export default function CallCenterDeepDiveView({
     data.scoreTrend.points.length > 0 &&
     data.scoreTrend.points.some((p) => p.score !== null),
   );
+  // A truthful empty dive: no measured rows for this region/period, so no
+  // score, grade, gap or projection is shown anywhere on the page.
+  const isEmpty = data.isEmpty === true;
   const [openKpiTrends, setOpenKpiTrends] = useState<Record<string, boolean>>({});
   const [teamsStart, setTeamsStart] = useState(0);
   const [supportStart, setSupportStart] = useState(0);
@@ -475,7 +478,28 @@ export default function CallCenterDeepDiveView({
         )}
       </header>
 
+      {/* Truthful empty state: no measured rows for this region/period. */}
+      {isEmpty && (
+        <section
+          data-testid="deep-dive-empty-state"
+          aria-label="No measured Call Center data"
+          className="rounded-2xl border border-amber-200 bg-amber-50/70 p-6 shadow-xs"
+        >
+          <h2 className="text-lg font-bold text-slate-900">No measured Call Center data</h2>
+          <p className="mt-1 text-sm font-medium leading-relaxed text-slate-700">
+            {data.emptyReason ??
+              `No measured Call Center rows for ${data.regionName} in ${data.monthLabel}.`}
+          </p>
+          <p className="mt-2 text-xs leading-relaxed text-slate-500">
+            Scores, teams, support positions, KPIs, attention lists and actions are
+            shown only when published records exist for this scope. Nothing on this
+            page is a placeholder or an estimate.
+          </p>
+        </section>
+      )}
+
       {/* 2. Diagnostic Headline */}
+      {!isEmpty && (
       <section
         id="presentation-section-cc-score"
         data-section-label="Score"
@@ -605,6 +629,7 @@ export default function CallCenterDeepDiveView({
           </div>
         </div>
       </section>
+      )}
 
       {/* 3. Layer 1 — Directly measured teams (Compact Single-Row Carousel, Worst to Best) */}
       <section
@@ -674,14 +699,24 @@ export default function CallCenterDeepDiveView({
               : 'sm:grid-cols-2 lg:grid-cols-4'
           }`}
         >
-          {visibleTeams.map((team) => (
-            <AgentTeamCard
-              key={team.id}
-              team={team}
-              previousMonthLabel={data.previousMonthLabel}
-              onSelectTeam={onSelectAgentTeam}
-            />
-          ))}
+          {visibleTeams.length === 0 ? (
+            <div
+              data-testid="agent-teams-empty"
+              className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-6 text-sm font-medium text-slate-500"
+            >
+              No agent teams measured for {data.monthLabel}. A channel is shown
+              only when it has published records for this month.
+            </div>
+          ) : (
+            visibleTeams.map((team) => (
+              <AgentTeamCard
+                key={team.id}
+                team={team}
+                previousMonthLabel={data.previousMonthLabel}
+                onSelectTeam={onSelectAgentTeam}
+              />
+            ))
+          )}
         </div>
       </section>
 
@@ -758,9 +793,19 @@ export default function CallCenterDeepDiveView({
         </div>
 
         <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {visibleSupport.map((pos) => (
-            <SupportPositionCard key={pos.id} position={pos} onSelectRole={onSelectRole} />
-          ))}
+          {visibleSupport.length === 0 ? (
+            <div
+              data-testid="support-positions-empty"
+              className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-6 text-sm font-medium text-slate-500 sm:col-span-2 lg:col-span-4"
+            >
+              No support positions measured for {data.monthLabel}. A position is
+              shown only when it has a record in this month.
+            </div>
+          ) : (
+            visibleSupport.map((pos) => (
+              <SupportPositionCard key={pos.id} position={pos} onSelectRole={onSelectRole} />
+            ))
+          )}
         </div>
       </section>
 
@@ -784,7 +829,16 @@ export default function CallCenterDeepDiveView({
               : 'lg:grid-cols-3'
           }`}
         >
-          {(() => {
+          {data.keyKpis.length === 0 ? (
+            <div
+              data-testid="key-kpis-empty"
+              className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-6 text-sm font-medium text-slate-500 lg:col-span-3"
+            >
+              No key KPIs measured for {data.monthLabel}. A KPI card is shown
+              only when it has a published row for this month.
+            </div>
+          ) : (
+            (() => {
             const count = data.keyKpis.length;
             const weights =
               count === 1
@@ -823,7 +877,8 @@ export default function CallCenterDeepDiveView({
                 onToggleTrend={() => toggleKpiTrend(item.kpi.id)}
               />
             ));
-          })()}
+          })()
+          )}
         </div>
       </section>
 
@@ -855,7 +910,15 @@ export default function CallCenterDeepDiveView({
             </div>
 
             <div className="mt-4 divide-y divide-slate-100">
-              {data.agentsNeedingAttention.map((agent: AgentNeedingAttentionItem) => {
+              {data.agentsNeedingAttention.length === 0 ? (
+                <div
+                  data-testid="attention-empty"
+                  className="py-3.5 text-sm font-medium text-slate-500"
+                >
+                  No agents need attention in {data.monthLabel}.
+                </div>
+              ) : (
+                data.agentsNeedingAttention.map((agent: AgentNeedingAttentionItem) => {
                 const ownerStyle = positionBadge(agent.owningPosition);
                 const gradeStyle = GRADE_STYLES[agent.grade];
                 return (
@@ -901,7 +964,8 @@ export default function CallCenterDeepDiveView({
                     </div>
                   </div>
                 );
-              })}
+              })
+              )}
             </div>
           </div>
 
@@ -927,14 +991,24 @@ export default function CallCenterDeepDiveView({
                   Actions by Position
                 </h2>
               </div>
-              <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-0.5 text-xs font-bold text-emerald-700">
-                <TrendingUp className="size-3.5" />
-                +{data.actionsByPosition.totalExpectedLiftPct.toFixed(1)}% expected lift
-              </span>
+              {!isEmpty && (
+                <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-0.5 text-xs font-bold text-emerald-700">
+                  <TrendingUp className="size-3.5" />
+                  +{data.actionsByPosition.totalExpectedLiftPct.toFixed(1)}% expected lift
+                </span>
+              )}
             </div>
 
             <div className="mt-4 space-y-3">
-              {data.actionsByPosition.items.map((item: PositionActionPlanItem) => {
+              {data.actionsByPosition.items.length === 0 ? (
+                <div
+                  data-testid="actions-empty"
+                  className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-6 text-sm font-medium text-slate-500"
+                >
+                  No corrective actions recorded for {data.monthLabel}.
+                </div>
+              ) : (
+                data.actionsByPosition.items.map((item: PositionActionPlanItem) => {
                 const ownerStyle = positionBadge(item.owningPosition);
                 return (
                   <div
@@ -976,12 +1050,14 @@ export default function CallCenterDeepDiveView({
                     </div>
                   </div>
                 );
-              })}
+              })
+              )}
             </div>
           </div>
 
           {/* Projected Next Month Score Footer */}
-          <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50/70 px-4 py-3">
+          {!isEmpty && (
+            <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50/70 px-4 py-3">
             <div className="flex items-center gap-2 text-xs font-semibold text-emerald-900">
               <Activity className="size-4 text-emerald-600" />
               <span>Projected next-month score</span>
@@ -998,6 +1074,7 @@ export default function CallCenterDeepDiveView({
               </span>
             </div>
           </div>
+          )}
         </section>
       </div>
     </div>

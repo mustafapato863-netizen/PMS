@@ -214,6 +214,13 @@ export interface CallCenterDeepDiveData {
   previousMonthLabel: string;
   periodKey: string;
   pageIndicator: string;
+  /**
+   * True when no measured rows exist for the requested region/period.
+   * The page must render this as "no measured data", never as a score.
+   */
+  isEmpty?: boolean;
+  /** Human-readable reason when `isEmpty` is true. */
+  emptyReason?: string;
   headline: {
     score: number;
     grade: GradeLetter;
@@ -2009,34 +2016,49 @@ export function scopeRecordsToRegion(
   return records.filter((record) => normalizeRegion(record.region) === region);
 }
 
-/** Same page shape as a measured function, with no Egypt rows copied in under another region. */
+/**
+ * Truthful empty state for a function/region with no measured rows.
+ *
+ * Nothing here is a measured score: the headline score is 0 with zero
+ * measured teams/agents/positions, and every section list is empty, so a
+ * missing scope can never borrow a September snapshot score, a holder name,
+ * or a KPI card from another region or month. Callers that know the
+ * requested period should pass it so the empty state is labelled with the
+ * month that was actually requested, not the September snapshot month.
+ */
 export function emptyMeasuredFunctionDeepDive(
   functionSlug: string,
   region: 'EGY' | 'UAE',
+  requestedPeriodKey?: string,
 ): CallCenterDeepDiveData {
   const norm = normalizeFunctionSlug(functionSlug);
   const fnName = canonicalFunctionNameFromSlug(norm);
+  const regionName = region === 'EGY' ? 'Offshore Egypt' : 'UAE Region';
+  const requested = requestedPeriodKey ? periodFromKey(requestedPeriodKey) : null;
   const snapshot = region === 'UAE' ? UAE_SEP_2026_DATA : null;
-  const card = snapshot?.functions.find((item) => item.slug === norm);
-  const score = card?.score ?? 0;
-  const grade = card?.grade ?? gradeForScore(score);
+  const monthLabel = requested
+    ? `${requested.month} ${requested.year}`
+    : (snapshot?.monthLabel ?? 'September 2026');
+  const periodKey = requested?.key ?? snapshot?.periodKey ?? '2026-09';
   return {
     functionSlug: norm,
     title: `${fnName} Deep Dive`,
     functionName: fnName,
     regionCode: region,
-    regionName: region === 'EGY' ? 'Offshore Egypt' : 'UAE Region',
-    monthLabel: snapshot?.monthLabel ?? 'September 2026',
+    regionName,
+    monthLabel,
     previousMonthLabel: snapshot?.previousMonthLabel ?? 'August',
-    periodKey: snapshot?.periodKey ?? '2026-09',
+    periodKey,
     pageIndicator: 'Function Deep Dive',
+    isEmpty: true,
+    emptyReason: `No measured ${fnName} rows for ${regionName} in ${monthLabel}.`,
     headline: {
-      score,
-      grade,
-      gradeLabel: fullGradeLabel(grade),
+      score: 0,
+      grade: gradeForScore(0),
+      gradeLabel: fullGradeLabel(gradeForScore(0)),
       target: 100,
-      gap: card?.gap ?? Number((score - 100).toFixed(1)),
-      changeVsPrev: card?.change ?? 0,
+      gap: -100,
+      changeVsPrev: 0,
       narrative: 'No measured rows for this region in the locked month.',
       measuredTeamsCount: 0,
       measuredAgentsCount: 0,
@@ -2054,7 +2076,7 @@ export function emptyMeasuredFunctionDeepDive(
     actionsByPosition: {
       items: [],
       totalExpectedLiftPct: 0,
-      projectedNextMonthScore: score,
+      projectedNextMonthScore: 0,
     },
   };
 }
@@ -2251,19 +2273,28 @@ export function buildCallCenterDeepDiveFromRecords(
   actions: PMSAction[] = [],
   region: 'EGY' | 'UAE' = 'EGY',
   requestedPeriodKey?: string,
+  options: { allowSnapshotFallback?: boolean } = {},
 ): CallCenterDeepDiveData {
   const scopedRecords = scopeRecordsToRegion(allRecords, region);
-  const fallback =
-    region === 'UAE'
-      ? emptyMeasuredFunctionDeepDive('call-center', 'UAE')
-      : CALL_CENTER_DEEP_DIVE_SEP_2026;
+  // Empty state only — never September baseline numbers. Any section that
+  // has no measured rows for the requested scope/period is omitted by the
+  // builders below instead of being filled from this template.
+  const emptyState = emptyMeasuredFunctionDeepDive('call-center', region, requestedPeriodKey);
+  // Explicit preview only (the September 2026 presentation demo): the
+  // published September snapshot may stand in when nothing was measured at
+  // all. Measured dives never use it — a missing channel, position, KPI or
+  // action in a measured month stays empty.
+  const snapshotFallback =
+    options.allowSnapshotFallback === true
+      ? getBaselineFunctionDeepDive('call-center', region)
+      : null;
 
   // Filter records to Call Center family (Inbound, Outbound, Call Center support positions)
   const ccRecords = scopedRecords.filter(
     (r) => r.team === 'Inbound' || r.team === 'Outbound' || r.team === 'Call Center',
   );
   if (!ccRecords.length) {
-    return fallback;
+    return snapshotFallback ?? emptyState;
   }
 
   // Determine effective period and previous period
@@ -2284,78 +2315,94 @@ export function buildCallCenterDeepDiveFromRecords(
   const inboundAll = ccRecords.filter((r) => r.team === 'Inbound');
   const outboundAll = ccRecords.filter((r) => r.team === 'Outbound');
   const inboundCurr = inPeriod(inboundAll, effective);
-  const inboundPrev = inPeriod(inboundAll, previous);
   const outboundCurr = inPeriod(outboundAll, effective);
-  const outboundPrev = inPeriod(outboundAll, previous);
 
   if (!inboundCurr.length && !outboundCurr.length) {
-    return fallback;
+    // Support-position rows alone do not make a Call Center deep dive:
+    // there is no measured channel score for the effective month.
+    return (
+      snapshotFallback ??
+      emptyMeasuredFunctionDeepDive('call-center', region, effective.key)
+    );
   }
+  const inboundPrev = inPeriod(inboundAll, previous);
+  const outboundPrev = inPeriod(outboundAll, previous);
 
   const inboundAgents = inboundCurr.map((r) => r.rawAgent).filter((a): a is AgentRecord => Boolean(a));
   const inboundPrevAgents = inboundPrev.map((r) => r.rawAgent).filter((a): a is AgentRecord => Boolean(a));
   const outboundAgents = outboundCurr.map((r) => r.rawAgent).filter((a): a is AgentRecord => Boolean(a));
   const outboundPrevAgents = outboundPrev.map((r) => r.rawAgent).filter((a): a is AgentRecord => Boolean(a));
 
-  const inbAvg = mean(inboundCurr.map((r) => r.score)) ?? fallback.agentTeams[0].score;
+  // A channel with no records in the effective month has no score at all:
+  // it is omitted from agentTeams below instead of borrowing the
+  // September baseline score for that channel.
+  const inbAvg = mean(inboundCurr.map((r) => r.score));
   const inbPrevAvg = mean(inboundPrev.map((r) => r.score));
-  const outAvg = mean(outboundCurr.map((r) => r.score)) ?? fallback.agentTeams[1].score;
+  const outAvg = mean(outboundCurr.map((r) => r.score));
   const outPrevAvg = mean(outboundPrev.map((r) => r.score));
 
-  const inboundScore = inboundAgents.length > 0
-    ? (channelBoardScore({ agents: inboundAgents, config: INBOUND_TEAM_CONFIG, employeeAverage: inbAvg }) ?? round1(inbAvg))
-    : inboundCurr.length ? round1(inbAvg) : fallback.agentTeams[0].score;
+  const inboundScore =
+    inboundCurr.length === 0 || inbAvg === null
+      ? null
+      : inboundAgents.length > 0
+        ? (channelBoardScore({ agents: inboundAgents, config: INBOUND_TEAM_CONFIG, employeeAverage: inbAvg }) ?? round1(inbAvg))
+        : round1(inbAvg);
   const inboundPrevScore = inboundPrevAgents.length > 0 && inbPrevAvg !== null
     ? (channelBoardScore({ agents: inboundPrevAgents, config: INBOUND_TEAM_CONFIG, employeeAverage: inbPrevAvg }) ?? round1(inbPrevAvg))
     : inbPrevAvg;
+  // No previous-month measurement means "no measured change", not the
+  // September baseline change.
   const inboundChange =
-    inboundPrevScore !== null
+    inboundScore !== null && inboundPrevScore !== null
       ? round1(inboundScore - round1(inboundPrevScore))
-      : fallback.agentTeams[0].changeVsPrev;
-  const inboundGrade = gradeForScore(inboundScore);
+      : 0;
+  const inboundGrade = inboundScore !== null ? gradeForScore(inboundScore) : gradeForScore(0);
   const inboundHc = new Set(inboundCurr.map((r) => r.employeeId)).size;
 
-  const outboundScore = outboundAgents.length > 0
-    ? (channelBoardScore({ agents: outboundAgents, config: OUTBOUND_TEAM_CONFIG, employeeAverage: outAvg }) ?? round1(outAvg))
-    : outboundCurr.length ? round1(outAvg) : fallback.agentTeams[1].score;
+  const outboundScore =
+    outboundCurr.length === 0 || outAvg === null
+      ? null
+      : outboundAgents.length > 0
+        ? (channelBoardScore({ agents: outboundAgents, config: OUTBOUND_TEAM_CONFIG, employeeAverage: outAvg }) ?? round1(outAvg))
+        : round1(outAvg);
   const outboundPrevScore = outboundPrevAgents.length > 0 && outPrevAvg !== null
     ? (channelBoardScore({ agents: outboundPrevAgents, config: OUTBOUND_TEAM_CONFIG, employeeAverage: outPrevAvg }) ?? round1(outPrevAvg))
     : outPrevAvg;
   const outboundChange =
-    outboundPrevScore !== null
+    outboundScore !== null && outboundPrevScore !== null
       ? round1(outboundScore - round1(outboundPrevScore))
-      : fallback.agentTeams[1].changeVsPrev;
-  const outboundGrade = gradeForScore(outboundScore);
+      : 0;
+  const outboundGrade = outboundScore !== null ? gradeForScore(outboundScore) : gradeForScore(0);
   const outboundHc = new Set(outboundCurr.map((r) => r.employeeId)).size;
 
   // Support Positions: evaluated average across Call Center support position records
   const supportRecords = ccRecords.filter((r) => r.team === 'Call Center' && r.position);
   const supportCurr = inPeriod(supportRecords, effective);
-  const supportPrev = inPeriod(supportRecords, previous);
-  const supportScore = round1(mean(supportCurr.map((r) => r.score)) ?? 91.0);
-  const supportPrevScore = mean(supportPrev.map((r) => r.score));
+  // No invented 91.0: with no support records in the effective month there
+  // is no support score, and the channel is excluded from fnScore below.
+  const supportScoreMean = mean(supportCurr.map((r) => r.score));
+  const supportScore = supportScoreMean !== null ? round1(supportScoreMean) : null;
 
-  // Overall Call Center Function Score is the unweighted average of the 3 groups
-  // (Inbound, Outbound, Support Positions), matching the Team Dashboard.
+  // Overall Call Center Function Score is the unweighted average of the
+  // measured groups (Inbound, Outbound, Support Positions), matching the
+  // Team Dashboard. At least one channel is measured here (both-empty
+  // returns the empty state above), so this cannot be null.
   const fnScore = averagePrintedChannelScores([
-    { score: inboundCurr.length ? inboundScore : null, count: inboundHc },
-    { score: outboundCurr.length ? outboundScore : null, count: outboundHc },
+    { score: inboundScore, count: inboundHc },
+    { score: outboundScore, count: outboundHc },
     { score: supportCurr.length ? supportScore : null, count: supportCurr.length },
-  ]) ?? fallback.headline.score;
-
-  const fnPrevScore = averagePrintedChannelScores([
-    { score: inboundPrevScore, count: inboundPrev.length },
-    { score: outboundPrevScore, count: outboundPrev.length },
-    { score: supportPrevScore, count: supportPrev.length },
   ]);
+  if (fnScore === null) {
+    return emptyMeasuredFunctionDeepDive('call-center', region, effective.key);
+  }
+
   const scoreTrend = buildCallCenterScoreTrend(ccRecords, effective, fnScore);
-  const fnChange =
-    scoreTrend.changeVsPrevious !== null
-      ? scoreTrend.changeVsPrevious
-      : (fnPrevScore !== null
-        ? round1(fnScore - round1(fnPrevScore))
-        : fallback.headline.changeVsPrev);
-  const previousMonthLabel = previous?.month ?? scoreTrend.previousMonthLabel ?? 'August';
+  // The headline change is the measured change vs the immediately preceding
+  // calendar month, exactly as the 6-month trend reports it. When that
+  // month has no measured score (a gap), the change is 0 — never a change
+  // computed against an older month, and never the September baseline.
+  const fnChange = scoreTrend.changeVsPrevious ?? 0;
+  const previousMonthLabel = previous?.month ?? scoreTrend.previousMonthLabel ?? '';
   const fnGrade = gradeForScore(fnScore);
   const totalMeasuredAgents = inboundHc + outboundHc;
 
@@ -2375,115 +2422,149 @@ export function buildCallCenterDeepDiveFromRecords(
   const inboundBelow90 = inboundCurr.filter((r) => r.score < 90).length;
   const outboundBelow90 = outboundCurr.filter((r) => r.score < 90).length;
 
-  const inboundTeamCard: AgentTeamPerformanceItem = {
-    id: 'inbound-agents',
-    teamSlug: 'inbound',
-    canonicalTeam: 'Inbound',
-    teamName: 'Inbound Agents',
-    roleTag: inboundScore >= outboundScore ? 'Carrying Function' : 'Pulling Average Down',
-    roleTone: inboundScore >= 90 ? 'positive' : 'warning',
-    score: inboundScore,
-    grade: inboundGrade,
-    gradeLabel: fullGradeLabel(inboundGrade),
-    target: 100.0,
-    gap: round1(inboundScore - 100),
-    changeVsPrev: inboundChange,
-    headcount: inboundHc,
-    memberUnitLabel: 'agents',
-    diagnosis:
-      inbWeakest && inbStrongest
-        ? `Carrying the Call Center score with ${inboundHc} measured agents at ${inboundScore.toFixed(1)}% (${inboundChange >= 0 ? '+' : ''}${inboundChange.toFixed(1)}% vs ${previous?.month ?? 'prior month'}). Strong ${inbStrongest.kpi_label} (${formatKpiValue(inbStrongest.actual, inbStrongest.unit)} vs ${formatKpiValue(inbStrongest.target, inbStrongest.unit)} target) offsets pressure on ${inbWeakest.kpi_label} (${formatKpiValue(inbWeakest.actual, inbWeakest.unit)} vs ${formatKpiValue(inbWeakest.target, inbWeakest.unit)} target).`
-        : fallback.agentTeams[0].diagnosis,
-    keyStrengthOrDrag: `Primary carrier · ${inboundHc} agents (${Math.round((inboundHc / Math.max(1, totalMeasuredAgents)) * 100)}% of measured headcount)`,
-  };
+  // Only measured channels get a card. A missing channel is omitted
+  // entirely — it must not appear with a September score and headcount.
+  const inboundTeamCard: AgentTeamPerformanceItem | null =
+    inboundScore === null
+      ? null
+      : {
+          id: 'inbound-agents',
+          teamSlug: 'inbound',
+          canonicalTeam: 'Inbound',
+          teamName: 'Inbound Agents',
+          roleTag:
+            outboundScore === null || inboundScore >= outboundScore
+              ? 'Carrying Function'
+              : 'Pulling Average Down',
+          roleTone: inboundScore >= 90 ? 'positive' : 'warning',
+          score: inboundScore,
+          grade: inboundGrade,
+          gradeLabel: fullGradeLabel(inboundGrade),
+          target: 100.0,
+          gap: round1(inboundScore - 100),
+          changeVsPrev: inboundChange,
+          headcount: inboundHc,
+          memberUnitLabel: 'agents',
+          diagnosis:
+            inbWeakest && inbStrongest
+              ? `Carrying the Call Center score with ${inboundHc} measured agents at ${inboundScore.toFixed(1)}% (${inboundChange >= 0 ? '+' : ''}${inboundChange.toFixed(1)}% vs ${previous?.month ?? 'prior month'}). Strong ${inbStrongest.kpi_label} (${formatKpiValue(inbStrongest.actual, inbStrongest.unit)} vs ${formatKpiValue(inbStrongest.target, inbStrongest.unit)} target) offsets pressure on ${inbWeakest.kpi_label} (${formatKpiValue(inbWeakest.actual, inbWeakest.unit)} vs ${formatKpiValue(inbWeakest.target, inbWeakest.unit)} target).`
+              : `No KPI rows measured for Inbound in ${effective.month} ${effective.year}.`,
+          keyStrengthOrDrag: `Primary carrier · ${inboundHc} agents (${Math.round((inboundHc / Math.max(1, totalMeasuredAgents)) * 100)}% of measured headcount)`,
+        };
 
-  const outboundTeamCard: AgentTeamPerformanceItem = {
-    id: 'outbound-agents',
-    teamSlug: 'outbound',
-    canonicalTeam: 'Outbound',
-    teamName: 'Outbound Agents',
-    roleTag: outboundScore < inboundScore ? 'Pulling Average Down' : 'Carrying Function',
-    roleTone: outboundScore >= 90 ? 'positive' : 'warning',
-    score: outboundScore,
-    grade: outboundGrade,
-    gradeLabel: fullGradeLabel(outboundGrade),
-    target: 100.0,
-    gap: round1(outboundScore - 100),
-    changeVsPrev: outboundChange,
-    headcount: outboundHc,
-    memberUnitLabel: 'agents',
-    diagnosis:
-      outWeakest && outStrongest
-        ? `Moved ${outboundChange >= 0 ? '+' : ''}${outboundChange.toFixed(1)}% vs ${previous?.month ?? 'prior month'} to ${outboundScore.toFixed(1)}%, with ${outStrongest.kpi_label} reaching ${formatKpiValue(outStrongest.actual, outStrongest.unit)} (target ${formatKpiValue(outStrongest.target, outStrongest.unit)}), while ${outWeakest.kpi_label} (${formatKpiValue(outWeakest.actual, outWeakest.unit)} vs ${formatKpiValue(outWeakest.target, outWeakest.unit)} target) across ${outboundBelow90} of ${outboundHc} agents pulls the function down.`
-        : fallback.agentTeams[1].diagnosis,
-    keyStrengthOrDrag: `Main drag · ${outboundBelow90} of ${outboundHc} agents below 90% threshold`,
-  };
+  const outboundTeamCard: AgentTeamPerformanceItem | null =
+    outboundScore === null
+      ? null
+      : {
+          id: 'outbound-agents',
+          teamSlug: 'outbound',
+          canonicalTeam: 'Outbound',
+          teamName: 'Outbound Agents',
+          roleTag:
+            inboundScore === null || outboundScore >= inboundScore
+              ? 'Carrying Function'
+              : 'Pulling Average Down',
+          roleTone: outboundScore >= 90 ? 'positive' : 'warning',
+          score: outboundScore,
+          grade: outboundGrade,
+          gradeLabel: fullGradeLabel(outboundGrade),
+          target: 100.0,
+          gap: round1(outboundScore - 100),
+          changeVsPrev: outboundChange,
+          headcount: outboundHc,
+          memberUnitLabel: 'agents',
+          diagnosis:
+            outWeakest && outStrongest
+              ? `Moved ${outboundChange >= 0 ? '+' : ''}${outboundChange.toFixed(1)}% vs ${previous?.month ?? 'prior month'} to ${outboundScore.toFixed(1)}%, with ${outStrongest.kpi_label} reaching ${formatKpiValue(outStrongest.actual, outStrongest.unit)} (target ${formatKpiValue(outStrongest.target, outStrongest.unit)}), while ${outWeakest.kpi_label} (${formatKpiValue(outWeakest.actual, outWeakest.unit)} vs ${formatKpiValue(outWeakest.target, outWeakest.unit)} target) across ${outboundBelow90} of ${outboundHc} agents pulls the function down.`
+              : `No KPI rows measured for Outbound in ${effective.month} ${effective.year}.`,
+          keyStrengthOrDrag: `Main drag · ${outboundBelow90} of ${outboundHc} agents below 90% threshold`,
+        };
 
-  // Layer 2: Support Positions derived from real Call Center position records
-  const findSupportLatest = (matchFn: (pos: string) => boolean) => {
-    const matching = supportRecords
+  const agentTeams: AgentTeamPerformanceItem[] = [inboundTeamCard, outboundTeamCard].filter(
+    (card): card is AgentTeamPerformanceItem => card !== null,
+  );
+
+  // Layer 2: Support Positions — only records from the effective month.
+  // A position with no record in the effective month is omitted, and a
+  // record from an earlier month is never carried forward as "current":
+  // presenting a stale holder or score as this month's would invent data.
+  const findSupportCurrent = (matchFn: (pos: string) => boolean) =>
+    supportRecords
       .filter((r) => matchFn((r.position ?? '').toLowerCase()))
-      .sort((a, b) => b.period.key.localeCompare(a.period.key));
-    const inEff = matching.filter((r) => r.period.key === effective.key);
-    return inEff.length ? inEff : matching.slice(0, 1);
-  };
+      .filter((r) => r.period.key === effective.key);
 
-  const trainerRecs = findSupportLatest((p) => p.includes('trainer'));
-  const qaRecs = findSupportLatest((p) => p.includes('quality'));
-  const tlRecs = findSupportLatest((p) => p.includes('leader'));
-  const wfmRecs = findSupportLatest((p) => p.includes('workforce'));
+  const trainerRecs = findSupportCurrent((p) => p.includes('trainer'));
+  const qaRecs = findSupportCurrent((p) => p.includes('quality'));
+  const tlRecs = findSupportCurrent((p) => p.includes('leader'));
+  const wfmRecs = findSupportCurrent((p) => p.includes('workforce'));
 
   const trainerScore = mean(trainerRecs.map((r) => r.score));
   const qaScore = mean(qaRecs.map((r) => r.score));
   const tlScore = mean(tlRecs.map((r) => r.score));
   const wfmScore = mean(wfmRecs.map((r) => r.score));
 
+  const monthSuffix = `in ${effective.month} ${effective.year}`;
   const supportPositions: SupportPositionItem[] = [
-    {
-      ...fallback.supportPositions[0],
-      holderName: trainerRecs[0]?.name ?? fallback.supportPositions[0].holderName,
-      evaluatedScore: trainerScore !== null ? round1(trainerScore) : 100.0,
-      impactLevel: (trainerScore ?? 100) >= 95 ? 'Strong' : 'Partial',
-      evidenceStat:
-        trainerScore !== null
-          ? `Evaluated ${round1(trainerScore).toFixed(1)}% (${trainerRecs[0]?.name}) · Quality sessions ↑ +22.9%`
-          : fallback.supportPositions[0].evidenceStat,
-    },
-    {
-      ...fallback.supportPositions[1],
-      holderName: qaRecs[0]?.name ?? fallback.supportPositions[1].holderName,
-      evaluatedScore: qaScore !== null ? round1(qaScore) : 84.4,
-      impactLevel: (qaScore ?? 84.4) >= 90 ? 'Strong' : 'Partial',
-      evidenceStat:
-        qaScore !== null
-          ? `Evaluated ${round1(qaScore).toFixed(1)}% (${qaRecs[0]?.name}) · ${inboundBelow90 + outboundBelow90} agents need QA coaching loop`
-          : fallback.supportPositions[1].evidenceStat,
-    },
-    {
-      ...fallback.supportPositions[2],
-      holderName:
-        tlRecs.length > 0
-          ? tlRecs.map((r) => `${r.name.split(' ').slice(0, 2).join(' ')} (${r.score.toFixed(1)}%)`).join(' · ')
-          : fallback.supportPositions[2].holderName,
-      evaluatedScore: tlScore !== null ? round1(tlScore) : 89.8,
-      impactLevel: 'Mixed',
-      evidenceStat:
-        tlRecs.length > 0
-          ? tlRecs
+    ...(trainerScore !== null
+      ? [
+          {
+            id: 'pos-trainer',
+            positionName: 'Trainer',
+            holderName: trainerRecs[0]?.name,
+            evaluatedScore: round1(trainerScore),
+            impactLevel: (trainerScore >= 95 ? 'Strong' : 'Partial') as SupportPositionItem['impactLevel'],
+            linkedKpis: ['Booking Rate', 'Quality Score'],
+            evidenceStat: `Evaluated ${round1(trainerScore).toFixed(1)}% (${trainerRecs[0]?.name})`,
+            explanation: `Measured Trainer score ${monthSuffix}.`,
+          },
+        ]
+      : []),
+    ...(qaScore !== null
+      ? [
+          {
+            id: 'pos-quality',
+            positionName: 'Quality Specialist',
+            holderName: qaRecs[0]?.name,
+            evaluatedScore: round1(qaScore),
+            impactLevel: (qaScore >= 90 ? 'Strong' : 'Partial') as SupportPositionItem['impactLevel'],
+            linkedKpis: ['Quality Score', 'Booking Rate'],
+            evidenceStat: `Evaluated ${round1(qaScore).toFixed(1)}% (${qaRecs[0]?.name}) · ${inboundBelow90 + outboundBelow90} agents need QA coaching loop`,
+            explanation: `Measured Quality Specialist score ${monthSuffix}.`,
+          },
+        ]
+      : []),
+    ...(tlScore !== null
+      ? [
+          {
+            id: 'pos-team-leader',
+            positionName: 'Team Leader',
+            holderName: tlRecs
+              .map((r) => `${r.name.split(' ').slice(0, 2).join(' ')} (${r.score.toFixed(1)}%)`)
+              .join(' · '),
+            evaluatedScore: round1(tlScore),
+            impactLevel: 'Mixed' as SupportPositionItem['impactLevel'],
+            linkedKpis: ['Attendance Rate', 'AHT (Handle Time)', 'Reachability'],
+            evidenceStat: tlRecs
               .map((r) => `${r.position?.replace('Team Leader', 'TL')}: ${r.score.toFixed(1)}%`)
-              .join(' · ')
-          : fallback.supportPositions[2].evidenceStat,
-    },
-    {
-      ...fallback.supportPositions[3],
-      holderName: wfmRecs[0]?.name ?? fallback.supportPositions[3].holderName,
-      evaluatedScore: wfmScore !== null ? round1(wfmScore) : 88.7,
-      impactLevel: 'Limited',
-      evidenceStat:
-        wfmScore !== null
-          ? `Latest evaluated ${round1(wfmScore).toFixed(1)}% (${wfmRecs[0]?.period.month}) · Inbound AHT at ${inbWeakest?.kpi_key === 'AHT' ? formatKpiValue(inbWeakest.actual, inbWeakest.unit) : '3.01 min'}`
-          : fallback.supportPositions[3].evidenceStat,
-    },
+              .join(' · '),
+            explanation: `Measured Team Leader scores ${monthSuffix}.`,
+          },
+        ]
+      : []),
+    ...(wfmScore !== null
+      ? [
+          {
+            id: 'pos-workforce',
+            positionName: 'Workforce Analyst',
+            holderName: wfmRecs[0]?.name,
+            evaluatedScore: round1(wfmScore),
+            impactLevel: 'Limited' as SupportPositionItem['impactLevel'],
+            linkedKpis: ['AHT (Handle Time)', 'Utilization'],
+            evidenceStat: `Latest evaluated ${round1(wfmScore).toFixed(1)}% (${wfmRecs[0]?.period.month})`,
+            explanation: `Measured Workforce Analyst score ${monthSuffix}.`,
+          },
+        ]
+      : []),
   ];
 
   // Key Agent KPIs with real 6-month trends from trailingPeriods(effective, 6)
@@ -2495,17 +2576,18 @@ export function buildCallCenterDeepDiveFromRecords(
 
   const buildKpiCard = (
     targetKey: string,
-    fallbackCard: AgentKeyKpiItem,
     scopeRecords: ExecRecord[] = agentOnlyRecords,
-  ): AgentKeyKpiItem => {
+  ): AgentKeyKpiItem | null => {
     const scopeCurr = inPeriod(scopeRecords, effective);
     const scopePrev = inPeriod(scopeRecords, previous);
     const row =
       kpiRows(scopeCurr, scopePrev).find((k) => k.kpi_key === targetKey) ??
       combinedKpiRows.find((k) => k.kpi_key === targetKey);
-    if (!row) return fallbackCard;
+    // No row for this KPI in the effective month: omit the card instead of
+    // showing the September baseline card for it.
+    if (!row) return null;
 
-    const unit = row.unit ?? fallbackCard.unit;
+    const unit = row.unit ?? '';
     const lowerBetter = String(row.kpi_direction ?? '').toLowerCase().startsWith('lower');
     const trend6Mo: KpiMonthlyPoint[] = sixPeriods.map((p) => {
       const mRows = kpiRows(inPeriod(scopeRecords, p), []);
@@ -2531,28 +2613,33 @@ export function buildCallCenterDeepDiveFromRecords(
 
     const rawDelta = row.raw_change;
     const improved = (row.change_value ?? 0) > 0;
-    const evaluatedMonths = trend6Mo.filter((pt) => pt.metTarget !== null).length || 6;
+    const evaluatedMonths = trend6Mo.filter((pt) => pt.metTarget !== null).length;
     const metInMonths = trend6Mo.filter((pt) => pt.metTarget === true).length;
     const uniqueTargets = [
       ...new Set(trend6Mo.map((pt) => pt.target).filter((t): t is number => t !== null)),
     ];
     const targetShifted = uniqueTargets.length > 1;
 
-    const targetRealismDiagnosis = targetShifted
-      ? `Target shifted from ${formatKpiValue(uniqueTargets[0], unit)} to ${formatKpiValue(uniqueTargets[uniqueTargets.length - 1], unit)} during the 6-month window; actuals met target in ${metInMonths} of ${evaluatedMonths} months.`
-      : metInMonths >= Math.ceil(evaluatedMonths / 2)
-      ? `Target (${formatKpiValue(row.target, unit)}) is realistic — achieved in ${metInMonths} of ${evaluatedMonths} measured months.`
-      : `Actuals missed the ${formatKpiValue(row.target, unit)} target in ${evaluatedMonths - metInMonths} of ${evaluatedMonths} measured months; top-quartile agents achieve target, pointing to bottom-quartile execution variance.`;
+    const targetRealismDiagnosis =
+      evaluatedMonths === 0
+        ? 'No measured months in the 6-month window to judge the target against.'
+        : targetShifted
+        ? `Target shifted from ${formatKpiValue(uniqueTargets[0], unit)} to ${formatKpiValue(uniqueTargets[uniqueTargets.length - 1], unit)} during the 6-month window; actuals met target in ${metInMonths} of ${evaluatedMonths} months.`
+        : metInMonths >= Math.ceil(evaluatedMonths / 2)
+        ? `Target (${formatKpiValue(row.target, unit)}) is realistic — achieved in ${metInMonths} of ${evaluatedMonths} measured months.`
+        : `Actuals missed the ${formatKpiValue(row.target, unit)} target in ${evaluatedMonths - metInMonths} of ${evaluatedMonths} measured months; top-quartile agents achieve target, pointing to bottom-quartile execution variance.`;
 
     return {
-      ...fallbackCard,
+      id: `kpi-${targetKey.toLowerCase()}`,
       kpiKey: row.kpi_key,
-      name: row.kpi_label || fallbackCard.name,
+      name: row.kpi_label || targetKey,
+      shortName: row.kpi_label || targetKey,
       unit,
       actualDisplay: formatKpiValue(row.actual, unit),
       targetDisplay: formatKpiValue(row.target, unit),
-      achievementPct: row.achievement_percent ?? fallbackCard.achievementPct,
+      achievementPct: row.achievement_percent ?? 0,
       betterDirection: lowerBetter ? 'lower' : 'higher',
+      diagnosis: `${row.kpi_label || targetKey} averaged ${formatKpiValue(row.actual, unit)} vs the ${formatKpiValue(row.target, unit)} target in ${effective.month} ${effective.year}.`,
       trendTone:
         row.target_status === 'met'
           ? 'positive'
@@ -2563,7 +2650,7 @@ export function buildCallCenterDeepDiveFromRecords(
           : 'warning',
       trendLabel:
         rawDelta !== null
-          ? `${rawDelta >= 0 ? '▲ +' : '▼ '}${formatKpiValue(Math.abs(rawDelta), unit)} vs ${previous?.month ?? 'August'} (${improved ? 'Improving' : 'Needs attention'})`
+          ? `${rawDelta >= 0 ? '▲ +' : '▼ '}${formatKpiValue(Math.abs(rawDelta), unit)} vs ${previous?.month ?? 'prior month'} (${improved ? 'Improving' : 'Needs attention'})`
           : 'No previous-month data',
       targetRealismDiagnosis,
       trend6Mo,
@@ -2571,10 +2658,10 @@ export function buildCallCenterDeepDiveFromRecords(
   };
 
   const keyKpis: AgentKeyKpiItem[] = [
-    buildKpiCard('AHT', fallback.keyKpis[0], inboundAll),
-    buildKpiCard('Booking', fallback.keyKpis[1], inboundAll),
-    buildKpiCard('Quality', fallback.keyKpis[2], agentOnlyRecords),
-  ];
+    buildKpiCard('AHT', inboundAll),
+    buildKpiCard('Booking', inboundAll),
+    buildKpiCard('Quality', agentOnlyRecords),
+  ].filter((card): card is AgentKeyKpiItem => card !== null);
 
   // Real Agents Needing Attention (all Inbound + Outbound agents < 90, sorted lowest score first)
   const realLowAgents: AgentNeedingAttentionItem[] = [...inboundCurr, ...outboundCurr]
@@ -2625,19 +2712,23 @@ export function buildCallCenterDeepDiveFromRecords(
           expectedImpactPct: round1(1.4 - idx * 0.25),
           expectedKpiOutcome: act.root_cause_note || 'Improves target KPI achievement next month',
         }))
-      : fallback.actionsByPosition.items;
+      : [];
 
   const totalLift = round1(
     actionItems.reduce((sum, item) => sum + item.expectedImpactPct, 0),
   );
 
   return {
-    ...fallback,
+    functionSlug: 'call-center',
+    title: 'Call Center Deep Dive',
+    functionName: 'Call Center',
     regionCode: region,
     regionName: region === 'EGY' ? 'Offshore Egypt' : 'UAE Region',
     monthLabel: `${effective.month} ${effective.year}`,
     previousMonthLabel: previousMonthLabel,
     periodKey: effective.key,
+    pageIndicator: 'Page 2 of 6 · Function Deep Dive',
+    isEmpty: false,
     headline: {
       score: fnScore,
       grade: fnGrade,
@@ -2646,19 +2737,22 @@ export function buildCallCenterDeepDiveFromRecords(
       gap: round1(fnScore - 100),
       changeVsPrev: fnChange,
       narrative:
-        region === 'UAE'
-          ? `${totalMeasuredAgents} measured people in ${effective.month} ${effective.year}.`
-          : fallback.headline.narrative,
-      measuredTeamsCount: 2,
+        `${totalMeasuredAgents} measured people in ${effective.month} ${effective.year}.` +
+        (inboundScore === null
+          ? ` Inbound has no published records for ${effective.month} ${effective.year}.`
+          : '') +
+        (outboundScore === null
+          ? ` Outbound has no published records for ${effective.month} ${effective.year}.`
+          : ''),
+      measuredTeamsCount: agentTeams.length,
       measuredAgentsCount: totalMeasuredAgents,
-      supportPositionsCount: 4,
+      supportPositionsCount: supportPositions.length,
     },
     scoreTrend,
-    agentTeams: [inboundTeamCard, outboundTeamCard],
+    agentTeams,
     supportPositions,
     keyKpis,
-    agentsNeedingAttention:
-      realLowAgents.length > 0 ? realLowAgents : fallback.agentsNeedingAttention,
+    agentsNeedingAttention: realLowAgents,
     actionsByPosition: {
       items: actionItems,
       totalExpectedLiftPct: totalLift,
@@ -2700,11 +2794,12 @@ export function buildFunctionDeepDiveFromRecords(
   actions: PMSAction[] = [],
   region: 'EGY' | 'UAE' = 'EGY',
   requestedPeriodKey?: string,
+  options: { allowSnapshotFallback?: boolean } = {},
 ): CallCenterDeepDiveData {
   const normSlug = normalizeFunctionSlug(functionSlug);
   const scopedRecords = dedupeEgyptResubmissionRecords(scopeRecordsToRegion(allRecords, region));
   if (normSlug === 'call-center') {
-    return buildCallCenterDeepDiveFromRecords(scopedRecords, actions, region, requestedPeriodKey);
+    return buildCallCenterDeepDiveFromRecords(scopedRecords, actions, region, requestedPeriodKey, options);
   }
 
   const fallback = getBaselineFunctionDeepDive(normSlug, region);
