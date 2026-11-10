@@ -431,6 +431,9 @@ def build_ai_diagnostics_payload(db: Session | None) -> AiDiagnosticsPayload:
         feature_enabled = False
 
     version = model_health.get("model_version")
+    model_up = bool(model_health.get("available"))
+    intent_on = local_intent_enabled()
+    synthesis_on = local_synthesis_enabled()
     return AiDiagnosticsPayload(
         feature_enabled=feature_enabled,
         pilot_role_restricted=True,
@@ -438,13 +441,15 @@ def build_ai_diagnostics_payload(db: Session | None) -> AiDiagnosticsPayload:
         model_version=version if isinstance(version, str) else None,
         model_endpoint_configured=bool(model_health.get("endpoint_configured")),
         model_endpoint_host=_safe_host(model_health.get("endpoint_host")),
-        model_available=bool(model_health.get("available")),
+        model_available=model_up,
         inference_verified=bool(model_health.get("inference_verified", False)),
         model_availability_reason=str(model_health.get("reason") or "unavailable"),
         router_mode=cfg.router_mode,
-        intent_routing_enabled=local_intent_enabled(),
-        synthesis_enabled=local_synthesis_enabled(),
+        intent_routing_enabled=intent_on,
+        synthesis_enabled=synthesis_on,
         exploration_enabled=local_exploration_enabled(),
+        routing_provider="llama_cpp" if intent_on and model_up else "deterministic",
+        synthesis_provider="llama_cpp" if synthesis_on and model_up else "deterministic",
         brief_default_enabled=cfg.brief_default_enabled,
         conversation_state_enabled=cfg.conversation_state_enabled,
         provider_timeout_seconds=cfg.provider_timeout_seconds,

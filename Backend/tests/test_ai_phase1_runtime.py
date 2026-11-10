@@ -15,11 +15,9 @@ from api.routers import ai_workspace
 from config.database import get_db
 from models.ai_schemas import AiChatRequest, SessionFilterContext
 from services.ai import feature_gate
-from services.ai.catalog import (
-    CapabilityEvidenceEntry,
-    evidence_counts_as_pass,
-    get_ai_catalog,
-)
+from services.ai.catalog import CatalogMetricDefinition, get_ai_catalog
+from services.ai.coverage_manifest import build_coverage_manifest
+from services.ai.evidence import CatalogEvidence, evidence_passes, publish_evidence
 from services.ai.llm_client import check_model_health
 from services.ai.orchestrator import PmsAiOrchestrator
 from test_ai_workspace import _build_in_memory_db, _make_call_center_record, _patch_records
@@ -40,94 +38,66 @@ def _flags_off(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv(name, "false")
 
 
-def test_pending_reviewer_is_not_a_pass() -> None:
-    pending = CapabilityEvidenceEntry(
-        country="EGY",
-        function="Call Center",
-        team="Inbound",
-        performance_level="Employee",
-        operation_family="operational_summary",
+_PASSING_STATES = {"verified", "verified_no_data", "certified", "CERTIFIED"}
+_PENDING_REVIEWERS = {"", "pending", "unknown", "none", "n/a", "na", "tbd", "unreviewed"}
+
+
+def _evidence_is_complete(evidence: dict) -> bool:
+    tests = [str(item).strip() for item in (evidence.get("tests") or []) if str(item).strip()]
+    reviewer = str(evidence.get("reviewer") or "").strip().casefold()
+    return bool(tests) and bool(str(evidence.get("fixture_or_source_version") or "").strip()) and bool(
+        str(evidence.get("reviewed_on") or "").strip()
+    ) and reviewer not in _PENDING_REVIEWERS
+
+
+def test_verified_or_certified_requires_evidence_and_a_reviewer() -> None:
+    """A verified or certified label without linked evidence and a real reviewer is a failure."""
+    incomplete = CatalogEvidence(
         state="verified",
-        evidence_ref="Backend/tests/test_ai_workspace.py",
-        validated_at="2026-11-10",
+        tests=("Backend/tests/test_ai_phase1_runtime.py",),
+        fixture_or_source_version="pms-ai-english-eval-v1",
+        reviewed_on="2026-11-10",
         reviewer="pending",
     )
-    assert evidence_counts_as_pass(pending) is False
-    blank = CapabilityEvidenceEntry(
-        country="EGY",
-        function="Call Center",
-        team="Inbound",
-        performance_level="Employee",
-        operation_family="operational_summary",
+    assert evidence_passes(incomplete) is False
+    assert publish_evidence(incomplete) == ("blocked", False)
+    assert publish_evidence(CatalogEvidence(state="verified", reviewer="")) == ("blocked", False)
+    complete = CatalogEvidence(
         state="verified",
-        evidence_ref="Backend/tests/test_ai_workspace.py",
-        validated_at="2026-11-10",
-        reviewer="",
-    )
-    assert evidence_counts_as_pass(blank) is False
-    signed = CapabilityEvidenceEntry(
-        country="EGY",
-        function="Call Center",
-        team="Inbound",
-        performance_level="Employee",
-        operation_family="operational_summary",
-        state="verified",
-        evidence_ref="Backend/tests/test_ai_workspace.py",
-        validated_at="2026-11-10",
+        tests=("Backend/tests/test_ai_phase1_runtime.py",),
+        fixture_or_source_version="pms-ai-english-eval-v1",
+        reviewed_on="2026-11-10",
         reviewer="Vi",
     )
-    assert evidence_counts_as_pass(signed) is True
-    partial = CapabilityEvidenceEntry(
-        country="EGY",
-        function="Call Center",
-        team="Inbound",
-        performance_level="Employee",
-        operation_family="operational_summary",
-        state="partial_evidence",
-        evidence_ref="Backend/tests/test_ai_workspace.py",
-        validated_at="2026-11-10",
-        reviewer="Vi",
-    )
-    assert evidence_counts_as_pass(partial) is False
+    assert evidence_passes(complete) is True
+    assert publish_evidence(complete) == ("verified", True)
 
+    assert CatalogMetricDefinition.__dataclass_fields__["status"].default == "blocked"
+    catalog = get_ai_catalog()
+    for metric in catalog.metrics.values():
+        if metric.status in _PASSING_STATES or evidence_passes(metric.evidence):
+            published = {
+                "tests": list(metric.evidence.tests),
+                "fixture_or_source_version": metric.evidence.fixture_or_source_version,
+                "reviewed_on": metric.evidence.reviewed_on,
+                "reviewer": metric.evidence.reviewer,
+            }
+            assert _evidence_is_complete(published), metric.metric_id
+            assert evidence_passes(metric.evidence) is True
+    assert not any(metric.status in _PASSING_STATES for metric in catalog.metrics.values())
 
-def test_registry_does_not_certify_a_verified_row_without_a_reviewer(monkeypatch: pytest.MonkeyPatch) -> None:
-    def pending(**_kwargs):
-        return CapabilityEvidenceEntry(
-            country="EGY",
-            function="Call Center",
-            team="Inbound",
-            performance_level="Employee",
-            operation_family="operational_summary",
-            state="verified",
-            evidence_ref="Backend/tests/test_ai_workspace.py",
-            validated_at="2026-11-10",
-            reviewer="pending",
-        )
+    for row in catalog.get_full_coverage_scope_registry():
+        if row.get("certified") or row.get("passes") or row.get("evidence_state") in _PASSING_STATES or row.get("status") in _PASSING_STATES:
+            assert _evidence_is_complete(row.get("evidence") or {}), row["team"]
+    assert not any(row.get("certified") or row.get("evidence_state") in _PASSING_STATES for row in catalog.get_full_coverage_scope_registry())
 
-    monkeypatch.setattr("services.ai.catalog.get_capability_evidence", pending)
-    rows = get_ai_catalog().get_scope_certification_registry()
-    assert rows
-    assert all(row["certified"] is False and row["passes"] is False for row in rows)
-    assert all(row["reviewer"] == "pending" for row in rows)
-
-    def signed(**_kwargs):
-        return CapabilityEvidenceEntry(
-            country="EGY",
-            function="Call Center",
-            team="Inbound",
-            performance_level="Employee",
-            operation_family="operational_summary",
-            state="verified",
-            evidence_ref="Backend/tests/test_ai_workspace.py",
-            validated_at="2026-11-10",
-            reviewer="Vi",
-        )
-
-    monkeypatch.setattr("services.ai.catalog.get_capability_evidence", signed)
-    signed_rows = get_ai_catalog().get_scope_certification_registry()
-    assert all(row["certified"] is True and row["passes"] is True for row in signed_rows)
-    assert signed_rows[0]["reviewer"] == "Vi"
+    cells = build_coverage_manifest()["coverage_cells"]
+    assert cells
+    for cell in cells:
+        state = str(cell.get("coverage_state") or "")
+        if state in _PASSING_STATES or cell.get("evidence_passes") is True:
+            assert _evidence_is_complete(cell.get("evidence") or {}), cell.get("team")
+    assert not any(str(cell.get("coverage_state")) in _PASSING_STATES for cell in cells)
 
 
 def test_shared_all_region_finance_and_rcm_are_not_certified() -> None:
@@ -136,8 +106,8 @@ def test_shared_all_region_finance_and_rcm_are_not_certified() -> None:
     assert rows["RCM"]["region"] == "All"
     assert rows["Finance"]["certified"] is False
     assert rows["RCM"]["certified"] is False
-    assert rows["Finance"]["reviewer"] == "pending"
-    assert rows["RCM"]["reviewer"] == "pending"
+    assert rows["Finance"]["evidence"]["reviewer"] == "pending"
+    assert rows["RCM"]["evidence"]["reviewer"] == "pending"
 
 
 def test_diagnostics_stay_open_for_an_admin_when_ai_is_off(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -159,6 +129,9 @@ def test_diagnostics_stay_open_for_an_admin_when_ai_is_off(monkeypatch: pytest.M
     assert admin.status_code == 200
     data = admin.json()["data"]
     assert data["feature_enabled"] is False
+    assert data["routing_provider"] == "deterministic"
+    assert data["synthesis_provider"] == "deterministic"
+    assert "model_version" in data
     assert "api_key" not in json.dumps(admin.json()).casefold()
 
     chat = client.post("/api/ai/chat", headers={"X-User-Role": "Admin"}, json={"prompt": "Hi"})
