@@ -38,7 +38,11 @@ describe('AppErrorBoundary', () => {
       </AppErrorBoundary>
     );
 
-    expect(await screen.findByText('Application Protected & Recovered')).toBeInTheDocument();
+    // MaintenanceView is lazy-loaded behind <Suspense fallback={null}>, so
+    // the fallback can take longer than findByText's 1000 ms default to
+    // appear when the machine is loaded. Wait longer instead of failing
+    // on a slow chunk import; the requirement is that it renders at all.
+    expect(await screen.findByText('Application Protected & Recovered', {}, { timeout: 10000 })).toBeInTheDocument();
     expect(screen.getByText('Protected Safe Mode')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /try again \/ reconnect/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /return home/i })).toBeInTheDocument();

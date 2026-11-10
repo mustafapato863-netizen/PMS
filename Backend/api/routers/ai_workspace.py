@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session
 
 from api.dependencies import require_authenticated_scope, require_role
-from services.ai.feature_gate import require_ai_admin, require_ai_enabled
+from services.ai.feature_gate import read_ai_enabled, require_ai_admin, require_ai_enabled
 from config.database import get_db, release_read_transaction
 from models.ai_schemas import (
     AiCatalogResponse,
@@ -14,6 +14,8 @@ from models.ai_schemas import (
     AiConversationResponse,
     AiCorrectiveActionConfirmRequest,
     AiCorrectiveActionConfirmResponse,
+    AiDiagnosticsPayload,
+    AiDiagnosticsResponse,
     AiDistillationExportResponse,
     AiFeedbackRequest,
     AiFeedbackResponse,
@@ -22,7 +24,15 @@ from models.ai_schemas import (
     AiWatchingResponse,
     SessionFilterContext,
 )
+from services.ai.config import get_ai_runtime_config
 from services.ai.catalog import get_ai_catalog
+from services.ai.llm_client import (
+    check_model_health,
+    get_recent_fallback_reason,
+    local_exploration_enabled,
+    local_intent_enabled,
+    local_synthesis_enabled,
+)
 from services.ai.contextual_assistant import (
     ProposalStaleEvidenceError,
     confirm_corrective_action_proposal,
@@ -64,7 +74,7 @@ AI_WORKSPACE_ROLES = [
 def get_ai_watching_workspace(
     request: Request,
     db: Session = Depends(get_db),
-    function: str | None = Query(default="Call Center"),
+    function: str | None = Query(default=None),
     team: str | None = Query(default=None),
     branch: str | None = Query(default=None),
     region: str | None = Query(default=None),
@@ -346,4 +356,81 @@ def export_ai_distillation_traces(
         success=True,
         total_exported=len(records),
         records=records,
+    )
+
+
+def build_ai_diagnostics_payload(db: Session | None) -> AiDiagnosticsPayload:
+    cfg = get_ai_runtime_config()
+    model_health = check_model_health()
+
+    # Query latest published period / record count safely
+    freshness: dict[str, object] = {}
+    try:
+        if db is not None:
+            from models.models import PerformanceRecord
+            from sqlalchemy import func
+            count = db.query(func.count(PerformanceRecord.id)).scalar()
+            freshness["performance_records_count"] = int(count) if count is not None else 0
+            if count and count > 0:
+                rows = db.query(PerformanceRecord.year, PerformanceRecord.month).distinct().all()
+                month_order = {
+                    "january": 1, "february": 2, "march": 3, "april": 4, "may": 5, "june": 6,
+                    "july": 7, "august": 8, "september": 9, "october": 10, "november": 11, "december": 12,
+                }
+                def _sort_key(item: tuple[Any, Any]) -> tuple[int, int]:
+                    yr = int(item[0] or 0)
+                    mo = month_order.get(str(item[1]).strip().casefold(), 0)
+                    return yr, mo
+                sorted_rows = sorted(rows, key=_sort_key)
+                if sorted_rows:
+                    latest = sorted_rows[-1]
+                    freshness["latest_published_period"] = f"{latest[1]} {latest[0]}"
+    except Exception:
+        freshness["performance_records_count"] = None
+        freshness["database_status"] = "read_failed"
+
+    feature_enabled = False
+    try:
+        if db is not None:
+            feature_enabled = read_ai_enabled(db)
+    except Exception:
+        feature_enabled = False
+
+    return AiDiagnosticsPayload(
+        feature_enabled=feature_enabled,
+        pilot_role_restricted=True,
+        model_configured_name=model_health["configured_model"],
+        model_endpoint_configured=model_health["endpoint_configured"],
+        model_endpoint_host=model_health.get("endpoint_host"),
+        model_available=model_health["available"],
+        inference_verified=model_health.get("inference_verified", False),
+        model_availability_reason=model_health["reason"],
+        router_mode=cfg.router_mode,
+        intent_routing_enabled=local_intent_enabled(),
+        synthesis_enabled=local_synthesis_enabled(),
+        exploration_enabled=local_exploration_enabled(),
+        brief_default_enabled=cfg.brief_default_enabled,
+        conversation_state_enabled=cfg.conversation_state_enabled,
+        provider_timeout_seconds=cfg.provider_timeout_seconds,
+        concurrency_limit=1,
+        recent_fallback_reason=get_recent_fallback_reason(),
+        fallback_scope="process_local",
+        data_freshness=freshness,
+    )
+
+
+@router.get("/diagnostics", response_model=AiDiagnosticsResponse)
+def get_ai_admin_diagnostics(
+    request: Request,
+    db: Session = Depends(get_db),
+    _role: str = Depends(require_role(["Admin"])),
+) -> AiDiagnosticsResponse:
+    """Admin-only safe diagnostics. Exposes feature posture, model health, and data freshness without secrets."""
+    scope = require_authenticated_scope(db, request)
+    payload = build_ai_diagnostics_payload(db)
+    release_read_transaction(db)
+    return AiDiagnosticsResponse(
+        success=True,
+        message="Admin AI diagnostics loaded",
+        data=payload,
     )

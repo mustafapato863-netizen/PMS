@@ -313,7 +313,9 @@ function VisualBlock({ card }: { card: StructuredVisualCard }) {
   /*  Compact Horizontal Bar Card                                             */
   /* ------------------------------------------------------------------------ */
   if (card.card_type === 'horizontal_bar' && card.bars.length > 0) {
-    const maxVal = Math.max(...card.bars.map((b) => Math.max(b.value, 1)), 100);
+    // Null bars carry no value and must not influence the scale (nor render
+    // the 8% minimum-width stub a fake 0.0 used to get).
+    const maxVal = Math.max(...card.bars.map((b) => (b.value === null ? 1 : Math.max(b.value, 1))), 100);
     return (
       <div className="mt-3 overflow-hidden rounded-2xl border border-slate-200/90 bg-slate-50/70 p-3 shadow-2xs">
         <div className="mb-2">
@@ -324,7 +326,7 @@ function VisualBlock({ card }: { card: StructuredVisualCard }) {
         </div>
         <div className="space-y-2">
           {card.bars.map((bar, idx) => {
-            const widthPct = Math.max(8, Math.min(100, Math.round((bar.value / maxVal) * 100)));
+            const widthPct = bar.value === null ? 0 : Math.max(8, Math.min(100, Math.round((bar.value / maxVal) * 100)));
             const grad = BAR_GRADIENT_CLASSES[bar.severity] || BAR_GRADIENT_CLASSES.neutral;
             const badgeStyle =
               SEVERITY_BADGE_CLASSES[bar.severity] || SEVERITY_BADGE_CLASSES.neutral;
