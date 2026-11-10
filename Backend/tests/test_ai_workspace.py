@@ -830,7 +830,12 @@ def test_pr5_multi_scope_certification_and_200_employee_latency_gate(monkeypatch
     registry = cat.get_scope_certification_registry()
     assert len(registry) == 18
     assert all(r["enabled"] is True for r in registry)
-    assert {r["team"] for r in registry if r["certified"] is True} == {"Inbound", "Outbound", "Support Positions"}
+    assert {r["team"] for r in registry if r["certified"] is True} == set()
+    assert {r["team"] for r in registry if r["evidence_state"] == "partial"} >= {
+        "Inbound",
+        "Outbound",
+        "Support Positions",
+    }
 
     # 1. Verify Offshore Pre-Approvals June 2026 controllable vs policy rejection definitions
     offshore_rej = cat.find_metric_definition(
@@ -2256,14 +2261,13 @@ def test_v2_review_findings_all_nine_fixes(monkeypatch):
     cat = get_ai_catalog()
     reg = cat.get_scope_certification_registry()
     certified_teams = {r["team"] for r in reg if r["certified"] is True}
-    assert certified_teams == {"Inbound", "Outbound", "Support Positions"}
+    assert certified_teams == set()
     for r in reg:
-        if r["certified"]:
-            assert r["status"] == "verified"
-            assert all(r["verification_gates"].values())
-        else:
-            assert r["status"] in {"partial_evidence", "unverified"}
-            assert not all(r["verification_gates"].values())
+        assert r["passes"] is False
+        assert r["evidence_state"] in {"partial", "blocked"}
+        assert r["status"] == r["evidence_state"]
+        assert r["evidence"]["reviewer"] == "pending"
+        assert not all(r["verification_gates"].values())
 
     monkeypatch.setenv("PMS_AI_ENABLED_SCOPES", "Inbound,Outbound")
     reg_filtered = cat.get_scope_certification_registry()

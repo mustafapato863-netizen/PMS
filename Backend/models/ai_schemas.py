@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from typing import Any, Literal
-from pydantic import BaseModel, Field
+
+from pydantic import BaseModel, Field, model_validator
+
+from services.ai.evidence import CatalogEvidence, publish_evidence
 
 
 RouterIntentType = Literal[
@@ -677,6 +680,16 @@ class AiConversationResponse(BaseModel):
     data: AiConversationContextPayload
 
 
+EvidenceState = Literal["verified", "verified_no_data", "partial", "blocked", "not_applicable"]
+
+
+class AiCatalogEvidence(BaseModel):
+    tests: list[str] = Field(default_factory=list)
+    fixture_or_source_version: str = ""
+    reviewed_on: str = ""
+    reviewer: str = "pending"
+
+
 class AiCatalogMetricItem(BaseModel):
     metric_id: str
     kpi_key: str
@@ -693,7 +706,24 @@ class AiCatalogMetricItem(BaseModel):
     weight_percent: float = 0.0
     contributes_to_score: bool = True
     available_operations: list[str] = Field(default_factory=list)
-    status: Literal["verified", "partial", "unverified", "unavailable"] = "verified"
+    status: EvidenceState = "blocked"
+    evidence: AiCatalogEvidence = Field(default_factory=AiCatalogEvidence)
+    evidence_passes: bool = False
+
+    @model_validator(mode="after")
+    def incomplete_evidence_is_not_a_pass(self) -> "AiCatalogMetricItem":
+        state, passes = publish_evidence(
+            CatalogEvidence(
+                state=self.status,
+                tests=tuple(self.evidence.tests),
+                fixture_or_source_version=self.evidence.fixture_or_source_version,
+                reviewed_on=self.evidence.reviewed_on,
+                reviewer=self.evidence.reviewer,
+            )
+        )
+        self.status = state  # type: ignore[assignment]
+        self.evidence_passes = passes
+        return self
 
 
 class AiCatalogPayload(BaseModel):
@@ -724,3 +754,52 @@ class AiTraceReviewResponse(BaseModel):
     reviewer_id: str
     reviewed_at: str
     is_distillation_eligible: bool
+
+
+class AiDiagnosticsFeature(BaseModel):
+    ai_enabled: bool = False
+    intent_enabled: bool = False
+    synthesis_enabled: bool = False
+    exploration_enabled: bool = False
+
+
+class AiDiagnosticsModel(BaseModel):
+    available: bool = False
+    name: str
+    version: str | None = None
+    probe: str = "not_sent"
+    reason: str = "unavailable"
+    last_known: dict[str, str] | None = None
+
+
+class AiDiagnosticsProviders(BaseModel):
+    routing: Literal["llama_cpp", "deterministic"] = "deterministic"
+    synthesis: Literal["llama_cpp", "deterministic"] = "deterministic"
+
+
+class AiDiagnosticsFallback(BaseModel):
+    reason: str | None = None
+    source: str | None = None
+    recorded_at: str | None = None
+
+
+class AiDiagnosticsDataset(BaseModel):
+    latest_upload_at: str | None = None
+    latest_performance_record_at: str | None = None
+    data_version: int = 0
+    config_version: int = 0
+    status: Literal["ok", "unavailable"] = "unavailable"
+
+
+class AiDiagnosticsPayload(BaseModel):
+    feature: AiDiagnosticsFeature
+    model: AiDiagnosticsModel
+    providers: AiDiagnosticsProviders
+    last_fallback: AiDiagnosticsFallback
+    dataset: AiDiagnosticsDataset
+
+
+class AiDiagnosticsResponse(BaseModel):
+    success: bool = True
+    message: str = "PMS AI diagnostics"
+    data: AiDiagnosticsPayload

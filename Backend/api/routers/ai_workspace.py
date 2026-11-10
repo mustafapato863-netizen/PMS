@@ -4,9 +4,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session
 
 from api.dependencies import require_authenticated_scope, require_role
-from services.ai.feature_gate import require_ai_admin, require_ai_enabled
+from services.ai.diagnostics import build_ai_diagnostics
+from services.ai.feature_gate import require_ai_admin, require_ai_diagnostic_session, require_ai_enabled
 from config.database import get_db, release_read_transaction
 from models.ai_schemas import (
+    AiDiagnosticsResponse,
     AiCatalogResponse,
     AiChatRequest,
     AiChatResponse,
@@ -53,11 +55,29 @@ router = APIRouter(
     dependencies=[Depends(require_ai_enabled), Depends(require_ai_admin)],
 )
 
+# Diagnostics stay available when the product switch is off so an Admin can see why.
+diagnostics_router = APIRouter(
+    prefix="/ai",
+    tags=["PMS AI Diagnostics"],
+)
+
 # The router dependency is the pilot boundary. This list stays Admin-only so a
 # route-level check cannot admit a wider role if the router dependency is copied.
 AI_WORKSPACE_ROLES = [
     "Admin",
 ]
+
+
+@diagnostics_router.get("/diagnostics", response_model=AiDiagnosticsResponse)
+def get_ai_diagnostics(
+    request: Request,
+    db: Session = Depends(get_db),
+    _session: None = Depends(require_ai_diagnostic_session),
+    _role: str = Depends(require_ai_admin),
+) -> AiDiagnosticsResponse:
+    payload = build_ai_diagnostics(db)
+    release_read_transaction(db)
+    return payload
 
 
 @router.get("/watching", response_model=AiWatchingResponse)

@@ -5,7 +5,7 @@ import hashlib
 import json
 import re
 import threading
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from config.loader import load_all_team_configs
 from models.ai_schemas import (
+    AiCatalogEvidence,
     AiCatalogMetricItem,
     AiCatalogPayload,
     AiEligibleTeamItem,
@@ -20,6 +21,7 @@ from models.ai_schemas import (
     TypedMetricEvidence,
 )
 from services.ai.config import get_ai_runtime_config
+from services.ai.evidence import CatalogEvidence, evidence_dict, publish_evidence
 from services.ai.corporate_bsc_catalog_data import CORPORATE_BSC_CATALOG_TEAMS
 from services.cache_invalidation_service import CacheInvalidationService
 from services.evaluation.cache_identity import evaluation_cache_identity
@@ -183,7 +185,8 @@ class CatalogMetricDefinition:
         "trend",
         "ranking",
     )
-    status: str = "verified"
+    status: str = "blocked"
+    evidence: CatalogEvidence = CatalogEvidence()
 
 
 @dataclass(frozen=True)
@@ -426,6 +429,59 @@ def resolve_canonical_team_name(
     return cand
 
 
+# Incomplete on purpose: a pending reviewer cannot pass. Tests and fixture
+# versions below are files that exist in this repo. No review date is recorded
+# because nobody has signed these scopes.
+_CALL_CENTER_EVIDENCE = CatalogEvidence(
+    state="partial",
+    tests=("Backend/tests/test_ai_workspace.py",),
+    fixture_or_source_version="pms-ai-english-eval-v1",
+    reviewed_on="",
+    reviewer="pending",
+)
+_DEFINITION_EVIDENCE = CatalogEvidence(
+    state="partial",
+    tests=("Backend/tests/test_ai_workspace.py",),
+    fixture_or_source_version="",
+    reviewed_on="",
+    reviewer="pending",
+)
+_BSC_REGISTRATION_EVIDENCE = CatalogEvidence(
+    state="partial",
+    tests=("Backend/tests/test_ai_full_coverage_egy_uae.py",),
+    fixture_or_source_version="",
+    reviewed_on="",
+    reviewer="pending",
+)
+_BLOCKED_EVIDENCE = CatalogEvidence(state="blocked", reviewer="pending")
+
+_TEAM_EVIDENCE: dict[str, CatalogEvidence] = {
+    "Inbound": _CALL_CENTER_EVIDENCE,
+    "Outbound": _CALL_CENTER_EVIDENCE,
+    "Support Positions": _CALL_CENTER_EVIDENCE,
+    "Call Center": _CALL_CENTER_EVIDENCE,
+    "Pre-Approvals IP Offshore": _DEFINITION_EVIDENCE,
+    "Marketing": _DEFINITION_EVIDENCE,
+    "Pharmacy": _DEFINITION_EVIDENCE,
+    "Finance": _BSC_REGISTRATION_EVIDENCE,
+    "RCM": _BSC_REGISTRATION_EVIDENCE,
+    "CRM": _BSC_REGISTRATION_EVIDENCE,
+    "Nursing": _BSC_REGISTRATION_EVIDENCE,
+    "PMO": _BSC_REGISTRATION_EVIDENCE,
+}
+
+
+def evidence_for_team(team_name: str) -> CatalogEvidence:
+    """Evidence on file for a team. Unknown teams stay blocked."""
+    return _TEAM_EVIDENCE.get(str(team_name or "").strip(), _BLOCKED_EVIDENCE)
+
+
+def evidence_for_level(team_name: str, level: str, defined_levels: list[str] | tuple[str, ...]) -> CatalogEvidence:
+    if str(level or "").strip() not in {str(item) for item in defined_levels}:
+        return CatalogEvidence(state="not_applicable", tests=(), fixture_or_source_version="", reviewed_on="", reviewer="")
+    return evidence_for_team(team_name)
+
+
 class PmsAiCatalog:
     """Authoritative PMS AI catalog projected from team configurations and KPI definitions."""
 
@@ -436,6 +492,9 @@ class PmsAiCatalog:
         self._build()
 
     def _register_metric(self, metric: CatalogMetricDefinition) -> None:
+        evidence = evidence_for_team(metric.team)
+        state, _passes = publish_evidence(evidence)
+        metric = replace(metric, status=state, evidence=evidence)
         self.metrics[metric.metric_id] = metric
         team_key = metric.team.casefold()
         self.metrics_by_team.setdefault(team_key, []).append(metric)
@@ -830,7 +889,6 @@ class PmsAiCatalog:
                             "person_best_period",
                             "person_worst_period",
                         ),
-                        status="verified",
                     )
                 )
 
@@ -931,10 +989,6 @@ class PmsAiCatalog:
             scale = "ratio_0_1"
             agg_sem = "simple_average"
 
-        is_certified_cc_emp = (
-            team_name in ("Inbound", "Outbound", "Support Positions", "Call Center")
-            and str(performance_level or "Employee").strip().casefold() == "employee"
-        )
         self._register_metric(
             CatalogMetricDefinition(
                 metric_id=metric_id,
@@ -955,7 +1009,6 @@ class PmsAiCatalog:
                 value_kind=val_kind,
                 storage_scale=scale,
                 aggregation=agg_sem,
-                status="verified" if is_certified_cc_emp else "unverified",
             )
         )
 
@@ -1071,13 +1124,67 @@ class PmsAiCatalog:
                 return m
         return None
 
-    def get_scope_certification_registry(self) -> list[dict[str, Any]]:
-        """Returns the scope certification matrix across all PMS teams, functions, and BSC levels.
+    def _scope_row(self, t_name: str) -> dict[str, Any]:
+        """One scope row. ``certified`` is true only when published evidence passes."""
+        t_def = self.teams.get(t_name) or self.teams.get(t_name.casefold())
+        fn_name = t_def.function if t_def else (function_for_team(t_name) or t_name)
+        t_metrics = self.metrics_by_team.get(t_name.casefold(), [])
+        scored_metrics = [m for m in t_metrics if m.contributes_to_score]
+        tracking_metrics = [m for m in t_metrics if not m.contributes_to_score]
+        perf_levels = list(t_def.performance_levels) if t_def else ["Employee"]
+        cfg = get_ai_runtime_config()
+        is_enabled = bool(cfg.is_scope_enabled(t_name) or cfg.is_scope_enabled(fn_name))
+        evidence = evidence_for_team(t_name)
+        state, passes = publish_evidence(evidence)
+        level_rows: list[dict[str, Any]] = []
+        for lvl in perf_levels:
+            lvl_evidence = evidence_for_level(t_name, lvl, perf_levels)
+            lvl_state, lvl_passes = publish_evidence(lvl_evidence)
+            level_rows.append(
+                {
+                    "level": lvl,
+                    "evidence_state": lvl_state,
+                    "passes": lvl_passes,
+                    "certified": lvl_passes,
+                    "evidence": evidence_dict(lvl_evidence),
+                }
+            )
+        verified_levels = [row["level"] for row in level_rows if row["passes"]]
+        unverified_levels = [lvl for lvl in perf_levels if lvl not in verified_levels]
+        gates = {
+            "source_mappings": passes,
+            "metric_semantics": passes,
+            "calculations": passes,
+            "permissions": passes,
+            "periods": passes,
+            "destination_links": passes,
+        }
+        return {
+            "team": t_name,
+            "db_name": t_def.db_name if t_def else t_name,
+            "function": fn_name,
+            "region": t_def.region if t_def else (canonical_team_region(t_name) or "UAE"),
+            "corporate_region": canonical_team_region(t_name, performance_level="Corporate") if "Corporate" in perf_levels else None,
+            "positions": list(t_def.positions) if t_def else [],
+            "performance_levels": perf_levels,
+            "verified_levels": verified_levels,
+            "unverified_levels": unverified_levels,
+            "supports_branches": bool(t_def.supports_branches) if t_def else False,
+            "scored_kpi_count": len(scored_metrics),
+            "tracking_only_kpi_count": len(tracking_metrics),
+            "enabled": is_enabled,
+            "certified": passes,
+            "passes": passes,
+            "certification_status": state,
+            "status": state,
+            "evidence_state": state,
+            "evidence": evidence_dict(evidence),
+            "level_evidence": level_rows,
+            "verification_gates": gates,
+        }
 
-        Separates configuration allowlisting (`enabled`) from end-to-end evidence certification (`certified`).
-        Only scopes where source mappings, metric semantics, calculations, permissions, periods,
-        and destination links have been verified against PMS evidence are marked `certified = True`.
-        """
+    def get_scope_certification_registry(self) -> list[dict[str, Any]]:
+        """Scope matrix. ``certified`` follows published evidence and is not a default."""
         ordered_teams = [
             "Inbound",
             "Outbound",
@@ -1098,82 +1205,10 @@ class PmsAiCatalog:
             "IT",
             "Offshore Admin & Management",
         ]
-        fully_certified_teams = {"Inbound", "Outbound", "Support Positions"}
-        partial_evidence_teams = {
-            "Coding",
-            "Pre-Approvals IP Offshore",
-            "Marketing",
-            "Pharmacy",
-        }
-        cfg = get_ai_runtime_config()
-        rows: list[dict[str, Any]] = []
-        for t_name in ordered_teams:
-            t_def = self.teams.get(t_name) or self.teams.get(t_name.casefold())
-            fn_name = t_def.function if t_def else (function_for_team(t_name) or t_name)
-            t_metrics = self.metrics_by_team.get(t_name.casefold(), [])
-            scored_metrics = [m for m in t_metrics if m.contributes_to_score]
-            tracking_metrics = [m for m in t_metrics if not m.contributes_to_score]
-            perf_levels = list(t_def.performance_levels) if t_def else ["Employee"]
-
-            is_enabled = bool(cfg.is_scope_enabled(t_name) or cfg.is_scope_enabled(fn_name))
-            is_certified = t_name in fully_certified_teams
-            if is_certified:
-                cert_status = "certified"
-                verified_levels = ["Employee"]
-                gates = {
-                    "source_mappings": True,
-                    "metric_semantics": True,
-                    "calculations": True,
-                    "permissions": True,
-                    "periods": True,
-                    "destination_links": True,
-                }
-            elif t_name in partial_evidence_teams:
-                cert_status = "partial_evidence"
-                verified_levels = []
-                gates = {
-                    "source_mappings": True,
-                    "metric_semantics": True,
-                    "calculations": False,
-                    "permissions": True,
-                    "periods": False,
-                    "destination_links": True,
-                }
-            else:
-                cert_status = "unverified"
-                verified_levels = []
-                gates = {
-                    "source_mappings": True,
-                    "metric_semantics": False,
-                    "calculations": False,
-                    "permissions": True,
-                    "periods": False,
-                    "destination_links": False,
-                }
-            unverified_levels = [lvl for lvl in perf_levels if lvl not in verified_levels]
-            rows.append(
-                {
-                    "team": t_name,
-                    "function": fn_name,
-                    "region": t_def.region if t_def else "UAE",
-                    "positions": list(t_def.positions) if t_def else [],
-                    "performance_levels": perf_levels,
-                    "verified_levels": verified_levels,
-                    "unverified_levels": unverified_levels,
-                    "supports_branches": bool(t_def.supports_branches) if t_def else False,
-                    "scored_kpi_count": len(scored_metrics),
-                    "tracking_only_kpi_count": len(tracking_metrics),
-                    "enabled": is_enabled,
-                    "certified": is_certified,
-                    "certification_status": cert_status,
-                    "status": "verified" if is_certified else cert_status,
-                    "verification_gates": gates,
-                }
-            )
-        return rows
+        return [self._scope_row(t_name) for t_name in ordered_teams]
 
     def get_full_coverage_scope_registry(self) -> list[dict[str, Any]]:
-        """Returns the full EGY + UAE + Shared + Corporate BSC coverage registry across all canonical PMS teams."""
+        """Full EGY, UAE, shared, and Corporate BSC registry. Same evidence rule as the scope matrix."""
         ordered_full_teams = [
             "Inbound",
             "Outbound",
@@ -1208,45 +1243,7 @@ class PmsAiCatalog:
             "Nursing",
             "PMO",
         ]
-        cfg = get_ai_runtime_config()
-        rows: list[dict[str, Any]] = []
-        for t_name in ordered_full_teams:
-            t_def = self.teams.get(t_name) or self.teams.get(t_name.casefold())
-            fn_name = t_def.function if t_def else (function_for_team(t_name) or t_name)
-            t_metrics = self.metrics_by_team.get(t_name.casefold(), [])
-            scored_metrics = [m for m in t_metrics if m.contributes_to_score]
-            tracking_metrics = [m for m in t_metrics if not m.contributes_to_score]
-            perf_levels = list(t_def.performance_levels) if t_def else ["Employee"]
-            is_enabled = bool(cfg.is_scope_enabled(t_name) or cfg.is_scope_enabled(fn_name))
-            rows.append(
-                {
-                    "team": t_name,
-                    "db_name": t_def.db_name if t_def else t_name,
-                    "function": fn_name,
-                    "region": t_def.region if t_def else (canonical_team_region(t_name) or "UAE"),
-                    "corporate_region": canonical_team_region(t_name, performance_level="Corporate") if "Corporate" in perf_levels else None,
-                    "positions": list(t_def.positions) if t_def else [],
-                    "performance_levels": perf_levels,
-                    "verified_levels": perf_levels,
-                    "unverified_levels": [],
-                    "supports_branches": bool(t_def.supports_branches) if t_def else False,
-                    "scored_kpi_count": len(scored_metrics),
-                    "tracking_only_kpi_count": len(tracking_metrics),
-                    "enabled": is_enabled,
-                    "certified": True,
-                    "certification_status": "certified",
-                    "status": "verified",
-                    "verification_gates": {
-                        "source_mappings": True,
-                        "metric_semantics": True,
-                        "calculations": True,
-                        "permissions": True,
-                        "periods": True,
-                        "destination_links": True,
-                    },
-                }
-            )
-        return rows
+        return [self._scope_row(t_name) for t_name in ordered_full_teams]
 
     def get_eligible_scope_options(
         self,
@@ -1347,6 +1344,7 @@ class PmsAiCatalog:
                 continue
             if m.performance_level.casefold() not in eligible_levels_set:
                 continue
+            state, passes = publish_evidence(m.evidence)
             metrics_out.append(
                 AiCatalogMetricItem(
                     metric_id=m.metric_id,
@@ -1364,7 +1362,9 @@ class PmsAiCatalog:
                     weight_percent=m.weight_percent,
                     contributes_to_score=m.contributes_to_score,
                     available_operations=list(m.available_operations),
-                    status=m.status,  # type: ignore[arg-type]
+                    status=state,  # type: ignore[arg-type]
+                    evidence=AiCatalogEvidence(**evidence_dict(m.evidence)),
+                    evidence_passes=passes,
                 )
             )
         capabilities = [

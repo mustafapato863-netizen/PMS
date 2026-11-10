@@ -26,6 +26,7 @@ from dataclasses import dataclass
 from typing import Any, Iterator
 
 from services.ai.config import redact_secrets
+from services.ai.runtime_status import last_known_model, note_fallback, remember_model
 
 logger = logging.getLogger(__name__)
 
@@ -294,6 +295,9 @@ def _finish(
 ) -> LlmCompletion:
     elapsed_ms = round((time.perf_counter() - started) * 1000.0, 2)
     _log_call(model=model, host=host, purpose=purpose, elapsed_ms=elapsed_ms, reason=reason, http_status=http_status)
+    if not ok:
+        source = purpose if purpose in {"intent", "routing", "synthesis", "exploration", "probe"} else "llm"
+        note_fallback(reason, source)
     return LlmCompletion(ok=ok, content=content, model=model, elapsed_ms=elapsed_ms, reason=reason, http_status=http_status)
 
 
@@ -459,3 +463,85 @@ def chat_completion(
         )
     finally:
         _SLOT.release()
+
+
+_MODEL_TOKEN = re.compile(r"^[A-Za-z0-9_.:-]{1,80}$")
+_PROBE_LIMIT_SECONDS = 1.5
+
+
+def _model_version(raw: bytes) -> str | None:
+    try:
+        payload = json.loads(raw.decode("utf-8", errors="replace"))
+    except ValueError:
+        return None
+    data = payload.get("data") if isinstance(payload, dict) else None
+    if not isinstance(data, list) or not data or not isinstance(data[0], dict):
+        return None
+    token = data[0].get("id")
+    if isinstance(token, str) and _MODEL_TOKEN.match(token):
+        return token
+    return None
+
+
+def probe_model_availability(timeout_seconds: float = 0.8) -> dict[str, Any]:
+    """GET the configured model's id. The request cannot outlive ``timeout_seconds``.
+
+    The returned dict never includes the URL, credentials, or the response body.
+    """
+    timeout = max(0.2, min(float(timeout_seconds), _PROBE_LIMIT_SECONDS))
+    configured = configured_model_name()
+    url, url_reason = resolve_chat_url()
+    result: dict[str, Any] = {
+        "available": False,
+        "name": configured,
+        "version": None,
+        "probe": "not_sent",
+        "reason": "invalid_endpoint",
+        "last_known": last_known_model(),
+    }
+    if url is None:
+        result["reason"] = url_reason if url_reason == "invalid_endpoint" else "invalid_endpoint"
+        return result
+
+    def once() -> dict[str, Any]:
+        models_url = url[: -len("/chat/completions")] + "/models"
+        request = urllib.request.Request(models_url, method="GET")
+        try:
+            with urllib.request.build_opener(_NoRedirect()).open(request, timeout=timeout) as response:
+                raw = response.read(4096)
+                status = getattr(response, "status", 0)
+            if not isinstance(status, int) or status < 200 or status >= 300:
+                return {"available": False, "version": None, "reason": "unavailable"}
+            return {"available": True, "version": _model_version(raw), "reason": "ok"}
+        except TimeoutError:
+            return {"available": False, "version": None, "reason": "timeout"}
+        except Exception:
+            return {"available": False, "version": None, "reason": "unavailable"}
+
+    box: dict[str, Any] = {}
+
+    def run() -> None:
+        box["value"] = once()
+
+    worker = threading.Thread(target=run, daemon=True)
+    worker.start()
+    worker.join(timeout)
+    if worker.is_alive():
+        result["probe"] = "models"
+        result["reason"] = "timeout"
+        result["last_known"] = last_known_model()
+        return result
+    value = box.get("value") or {"available": False, "version": None, "reason": "unavailable"}
+    version = value.get("version") if isinstance(value.get("version"), str) else None
+    if value.get("available"):
+        remember_model(version or configured)
+    result.update(
+        {
+            "available": bool(value.get("available")),
+            "version": version,
+            "probe": "models",
+            "reason": str(value.get("reason") or "unavailable"),
+            "last_known": last_known_model(),
+        }
+    )
+    return result

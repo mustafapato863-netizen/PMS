@@ -10,6 +10,7 @@ import re
 import time
 from dataclasses import dataclass
 
+from services.ai.runtime_status import note_fallback
 from services.ai.llm_client import (
     chat_completion,
     configured_model_name,
@@ -107,15 +108,19 @@ def suggest_intent(question: str) -> LocalIntentResult:
     )
     if not call.ok:
         reason = "unavailable_or_invalid" if call.reason == "http_error" else call.reason
+        note_fallback(reason, "routing")
         return result(None, reason, call.elapsed_ms)
     try:
         cleaned = _JSON_FENCE_RE.sub("", call.content.strip() if call.content else "").strip()
         suggestion = json.loads(cleaned)
         if not isinstance(suggestion, dict) or set(suggestion) != {"intent"}:
+            note_fallback("invalid_response", "routing")
             return result(None, "invalid_response", call.elapsed_ms)
         intent = suggestion["intent"]
         if not isinstance(intent, str) or intent not in ALLOWED_INTENTS:
+            note_fallback("invalid_intent", "routing")
             return result(None, "invalid_intent", call.elapsed_ms)
         return result(intent, "ok", call.elapsed_ms)
     except (ValueError, TypeError, AttributeError):
+        note_fallback("invalid_response", "routing")
         return result(None, "invalid_response", call.elapsed_ms)
