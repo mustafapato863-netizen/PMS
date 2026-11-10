@@ -20,6 +20,19 @@ Examples: answer a greeting briefly; identify the lowest Support performer and p
 - **Cleanup:** inventory redundant prompt-specific routing, canned answers, stale scripts and duplicated libraries; remove only after a verified replacement exists and regression tests pass. Preserve security controls, calculations, original upload contracts, and independent evaluation sets.
 - **Change control:** no production deployment, feature enablement, destructive testing, migration, or release implied by this plan. Keep existing user work and historical artifacts intact. For any database change audit the schema, justify it, use an additive separately reviewed migration and test upgrade/rollback against a production-shaped copy.
 
+## First product pilot — contextual corrective-action suggestions
+
+The first proposed user-facing AI capability is a contextual suggestion inside the existing corrective-action workflow. Keep the standalone AI chat hidden during this pilot. This product milestone does not bypass the evidence, evaluation, access-control, or release gates below.
+
+- Generate an editable action-plan draft for the selected employee or team using authorized PMS evidence: the selected reporting period, performance level, relevant KPI actual/target/direction, and available prior actions. Show the supporting issue and period, and say when evidence is insufficient.
+- Tailor the suggestion to the evidence rather than inserting the same fixed action for everyone. Keep it concise. Do not invent causes, employee facts, owner assignments, due dates, or guaranteed outcomes.
+- An authorized user must review, edit, and explicitly confirm through the existing corrective-action workflow before anything is saved. A generated draft is not an approved or executed action; preserve user-entered actions and audit history.
+- Do not display a numerical employee-score or team uplift unless a separately validated methodology and supporting evidence exist. Otherwise offer an unquantified suggestion. When the model is unavailable or times out, show a clear retry or manual-entry option.
+- Start behind a separate default-off feature control, restricted to Admin for the initial pilot. Existing action permissions remain authoritative; expanding access requires explicit approval and scope tests.
+- Verify that the configured Qwen provider is actually called when enabled, distinguish fallback from AI generation, and evaluate suggestions for evidence alignment, diversity, relevance, latency, privacy, prompt injection and misleading certainty. Do not send employee information to an external model without explicit authorization and an approved data-handling policy.
+
+The broader assistant, all-page chat experience and optional training remain later milestones, after this focused pilot is evaluated.
+
 ## Phase 1 — Establish and preserve the baseline
 
 **Objective:** identify what actually runs and make current behavior reproducible before changing it.
@@ -90,7 +103,7 @@ Benchmark candidate versus original Qwen on the same held-out data, permission/i
 
 ## Phase 9 — Controlled release
 
-Test an exact candidate locally and in a production-shaped isolated environment; confirm hosted model identity and configuration before any equivalence claim. Measure CPU, memory, p50/p95 latency, concurrency, fallback and impact on PMS on target-like hardware. Verify feature-off, Admin-only behavior, migrations if any, monitoring and rollback. Obtain owner acceptance before enabling the Admin pilot, then expand role access only after scope-specific authorization and source-parity tests.
+Test an exact candidate locally and in a production-shaped isolated environment; confirm hosted model identity and configuration before any equivalence claim. Measure CPU, memory, p50/p95 latency, concurrency, fallback and impact on PMS on target-like hardware. Verify feature-off, Admin-only behavior, migrations if any, monitoring and rollback. The first proposed release is the contextual corrective-action pilot with chat hidden. Obtain owner acceptance before enabling it; expand role access or expose chat only after scope-specific authorization and source-parity tests.
 
 **Gate:** reviewed release evidence, user acceptance, tested rollback and operational ownership. No automatic rollout follows from completing a development phase.
 
