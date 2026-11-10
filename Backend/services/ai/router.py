@@ -425,33 +425,46 @@ def _detect_metric_id(
     if any(k in text_lower for k in ("aht", "handle time")):
         prefix = "outbound" if t_norm == "outbound" else "inbound"
         return f"{prefix}:aht"
-    if any(
-        k in text_lower
-        for k in (
-            "more bookings",
-            "most bookings",
-            "fewer bookings",
-            "least bookings",
-            "bookings count",
-            "total bookings",
-            "number of bookings",
-            "booking volume",
-            "how many bookings",
+    # NOTE (Task 2): a bare "bookings" noun is a count, not a rate. The old
+    # fallback sent any bare "bookings" ("How many Clinics bookings?",
+    # "What is the Inbound booking count?") to booking_rate, so count
+    # questions were answered with a percentage. Count phrasing wins first,
+    # explicit rate phrasing second, and a bare bookings noun resolves to
+    # the authorised booking counter.
+    if (
+        any(
+            k in text_lower
+            for k in (
+                "more bookings",
+                "most bookings",
+                "fewer bookings",
+                "least bookings",
+                "bookings count",
+                "booking count",
+                "total bookings",
+                "number of bookings",
+                "booking volume",
+                "how many bookings",
+            )
         )
+        or re.search(r"how many\b.{0,50}\bbookings?\b", text_lower)
     ):
         prefix = "outbound" if t_norm == "outbound" else "inbound"
         return f"{prefix}:bookings_count"
     if any(
         k in text_lower
         for k in ("booking rate", "booking conversion", "booking trend", "by booking", "on booking")
-    ) or (
+    ):
+        prefix = "outbound" if t_norm == "outbound" else "inbound"
+        return f"{prefix}:booking_rate"
+    if (
         t_norm in ("inbound", "outbound", "call center", "")
         and re.search(r"\bbookings?\b", text_lower)
         and "attendance" not in text_lower
         and "attended" not in text_lower
     ):
         prefix = "outbound" if t_norm == "outbound" else "inbound"
-        return f"{prefix}:booking_rate"
+        return f"{prefix}:bookings_count"
     if any(k in text_lower for k in ("quality score", "qa quality", "quality achievement")):
         prefix = "outbound" if t_norm == "outbound" else "inbound"
         return f"{prefix}:quality_score"

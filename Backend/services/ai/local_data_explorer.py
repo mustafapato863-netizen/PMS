@@ -1278,13 +1278,53 @@ def _validate_and_normalize_tool_call(
             resolved_metric_id = m_def.metric_id
             resolved_kpi_key = m_def.kpi_key or m_def.metric_id.split(":")[-1]
             if not norm_team and m_def.team and m_def.team != "Call Center":
-                norm_team = m_def.team
+                # NOTE (Task 2): only infer a team from the metric when the
+                # label belongs to exactly one team. A shared Call Center
+                # metric (Booking Rate is tracked by both Inbound and
+                # Outbound) used to narrow the scope to whichever team the
+                # catalog lists first, so a function-wide Clinics booking
+                # question was answered with the Inbound-only count (20)
+                # instead of the authorised function-wide count (30).
+                # Ambiguous metrics leave the team unset (function scope),
+                # matching the rules-only path.
+                label_needle = raw_metric.strip().casefold()
+                label_teams = {
+                    cand.team
+                    for cand in catalog.metrics.values()
+                    if cand.team
+                    and (
+                        cand.kpi_key.casefold() == label_needle
+                        or cand.display_name.casefold() == label_needle
+                        or label_needle in cand.aliases
+                        or cand.metric_id == label_needle
+                    )
+                }
+                if len(label_teams) == 1:
+                    norm_team = next(iter(label_teams))
 
-    if tool_name == "compare_branches" and re.search(r"\bbookings?\b", lower_prompt) and not re.search(
-        r"\b(?:rate|ratio|conversion|attendance|attended)\b", lower_prompt
-    ):
-        resolved_kpi_key = "TotalBookings"
-        resolved_metric_id = f"{(norm_team or 'inbound').casefold().replace(' ', '_')}:bookings_count"
+    # NOTE (Task 2): a bookings question without rate language asks for the
+    # authorised booking counter, whatever metric label the model supplied.
+    # The old code only forced bookings_count for compare_branches, so a
+    # single-branch Clinics booking question kept Qwen's "Booking Rate" and
+    # was answered with an unrelated percentage. This override applies to
+    # every tool and wins over a model-supplied rate label; explicit rate,
+    # attendance, or trend wording is left alone.
+    asks_booking_count = bool(re.search(r"\bbookings?\b", lower_prompt)) and not re.search(
+        r"\b(?:rate|ratio|conversion|attendance|attended|percent|percentage|trend)\b", lower_prompt
+    )
+    if asks_booking_count:
+        count_def = catalog.find_metric_definition(
+            team=norm_team,
+            kpi_key_or_label="bookings count",
+            position=session_state.position,
+            performance_level=eff_level,
+        )
+        resolved_metric_id = (
+            count_def.metric_id
+            if count_def is not None
+            else f"{(norm_team or 'inbound').casefold().replace(' ', '_')}:bookings_count"
+        )
+        resolved_kpi_key = count_def.kpi_key if count_def is not None else "TotalBookings"
     elif not resolved_metric_id and norm_team:
         prompt_m_def = catalog.find_metric_definition(
             team=norm_team,

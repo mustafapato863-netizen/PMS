@@ -606,6 +606,27 @@ class DeterministicToolRegistry:
 
         cards: list[StructuredVisualCard] = []
 
+        # NOTE (Task 2): when the comparison is about a booking (or
+        # attended) count, the branch bars must show counts, not performance
+        # scores as percentages. The old code always rendered the branch
+        # score ("66.7%") as the bar value, so a branch booking-count
+        # question was answered with performance percentages. A branch with
+        # no recorded count is labelled Unavailable, never 0%.
+        count_field: str | None = None
+        count_label = ""
+        count_title = ""
+        if kpi:
+            _count_def = get_ai_catalog().find_metric_definition(
+                team=resolved["team"],
+                kpi_key_or_label=kpi,
+                performance_level=resolved["performance_level"] or "Employee",
+            )
+            if _count_def is not None and _count_def.value_kind == "count":
+                if _count_def.kpi_key == "TotalBookings":
+                    count_field, count_label, count_title = "bookings", "bookings", "Booking Counts"
+                elif _count_def.kpi_key == "AttendedPatients":
+                    count_field, count_label, count_title = "attended", "attended", "Attended Counts"
+
         branch_comparison_digest: list[dict[str, Any]] = []
         if is_comparing_branches:
             branches_to_compare = list(BRANCH_KEYS)
@@ -662,24 +683,47 @@ class DeterministicToolRegistry:
                 elif b_book is not None and b_att is None:
                     sec_lbl = f"Bookings: {b_book:,} · Attendance unrecorded"
                 elif capped_s is not None:
-                    sec_lbl = f"Score {capped_s:.1f}%"
-                else:
-                    sec_lbl = "Performance score unavailable"
-
-                sev = (
-                    "critical" if (capped_s is not None and capped_s < 75) or (b_att_pct is not None and b_att_pct < 60)
-                    else ("warning" if (capped_s is not None and capped_s < 90) or (b_att_pct is not None and b_att_pct < 70) else "good")
-                )
-                bars.append(
-                    AiBarItem(
-                        label=f"{scope_label} · {b_name}",
-                        value=capped_s if capped_s is not None else 0.0,
-                        display_value=f"{capped_s:.1f}%" if capped_s is not None else "Unavailable",
-                        target_value=100.0,
-                        secondary_label=sec_lbl,
-                        severity=sev,  # type: ignore[arg-type]
+                    # NOTE (Task 2): never answer a count comparison with a
+                    # performance score — an unrecorded count stays unrecorded.
+                    sec_lbl = (
+                        f"Score {capped_s:.1f}%"
+                        if count_field is None
+                        else f"{count_label.capitalize()} unrecorded"
                     )
-                )
+                else:
+                    sec_lbl = (
+                        "Performance score unavailable"
+                        if count_field is None
+                        else f"{count_label.capitalize()} unrecorded"
+                    )
+
+                if count_field is not None:
+                    count_val = b_book if count_field == "bookings" else b_att
+                    bars.append(
+                        AiBarItem(
+                            label=f"{scope_label} · {b_name}",
+                            value=float(count_val) if count_val is not None else 0.0,
+                            display_value=f"{int(count_val):,} {count_label}" if count_val is not None else "Unavailable",
+                            target_value=None,
+                            secondary_label=sec_lbl,
+                            severity="neutral",
+                        )
+                    )
+                else:
+                    sev = (
+                        "critical" if (capped_s is not None and capped_s < 75) or (b_att_pct is not None and b_att_pct < 60)
+                        else ("warning" if (capped_s is not None and capped_s < 90) or (b_att_pct is not None and b_att_pct < 70) else "good")
+                    )
+                    bars.append(
+                        AiBarItem(
+                            label=f"{scope_label} · {b_name}",
+                            value=capped_s if capped_s is not None else 0.0,
+                            display_value=f"{capped_s:.1f}%" if capped_s is not None else "Unavailable",
+                            target_value=100.0,
+                            secondary_label=sec_lbl,
+                            severity=sev,  # type: ignore[arg-type]
+                        )
+                    )
                 branch_comparison_digest.append(
                     {
                         "branch": b_name,
@@ -698,16 +742,24 @@ class DeterministicToolRegistry:
                     }
                 )
 
-            title_prefix = (
-                f"UAE Branch Comparison: {branch.capitalize()} vs {compare_branch.capitalize()} + All Branches"
-                if (branch and compare_branch)
-                else f"UAE 4-Branch Performance & Conversion Matrix · {scope_label}"
-            )
+            if count_field is not None:
+                title_prefix = f"UAE Branch {count_title} · {scope_label}"
+                card_subtitle = (
+                    "Booking counts per branch · Attendance shown where recorded; unrecorded branches are labelled Unavailable, never 0%"
+                    if count_field == "bookings"
+                    else "Attended counts per branch · Unrecorded branches are labelled Unavailable, never 0%"
+                )
+            elif branch and compare_branch:
+                title_prefix = f"UAE Branch Comparison: {branch.capitalize()} vs {compare_branch.capitalize()} + All Branches"
+                card_subtitle = "Scores capped at 100% · Shows actual patient Attended / Bookings conversion & No-Show volume per branch"
+            else:
+                title_prefix = f"UAE 4-Branch Performance & Conversion Matrix · {scope_label}"
+                card_subtitle = "Scores capped at 100% · Shows actual patient Attended / Bookings conversion & No-Show volume per branch"
             cards.append(
                 StructuredVisualCard(
                     card_type="horizontal_bar",
                     title=f"{title_prefix} ({period_label})",
-                    subtitle="Scores capped at 100% · Shows actual patient Attended / Bookings conversion & No-Show volume per branch",
+                    subtitle=card_subtitle,
                     bars=bars,
                 )
             )

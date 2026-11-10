@@ -182,19 +182,26 @@ def extract_prompt_signals(prompt: str, session_state: SessionFilterContext) -> 
     ):
         signals.asks_branch_comparison = True
 
-    if any(
-        k in lower
-        for k in (
-            "more bookings",
-            "most bookings",
-            "fewer bookings",
-            "least bookings",
-            "bookings count",
-            "total bookings",
-            "number of bookings",
-            "booking volume",
-            "how many bookings",
+    # NOTE (Task 2): keep in step with router._detect_metric_id — a bare
+    # "bookings" noun and "how many <branch> bookings" are count questions,
+    # not Booking Rate questions.
+    if (
+        any(
+            k in lower
+            for k in (
+                "more bookings",
+                "most bookings",
+                "fewer bookings",
+                "least bookings",
+                "bookings count",
+                "booking count",
+                "total bookings",
+                "number of bookings",
+                "booking volume",
+                "how many bookings",
+            )
         )
+        or re.search(r"how many\b.{0,50}\bbookings?\b", lower)
     ):
         signals.asks_booking_count = True
 

@@ -1008,7 +1008,13 @@ class PmsAiCatalog:
                         "and is distinct from Booking Rate (Bookings / Handled Calls)."
                     ),
                     aliases=(
+                        # NOTE (Task 2): bare "bookings" and singular "booking
+                        # count" belong to the counter, not the Booking Rate.
+                        # Without them a bare booking-count question had no
+                        # exact alias and fell through to the rate metric.
+                        "bookings",
                         "bookings count",
+                        "booking count",
                         "total bookings",
                         "number of bookings",
                         "booking volume",
@@ -1036,7 +1042,18 @@ class PmsAiCatalog:
                     aggregation_method="sum",
                     contributes_to_score=False,
                     tracking_only_note="Attended Bookings (Count) measures total attended patient appointments.",
-                    aliases=("attended count", "attended bookings count", "total attended", "attended patients"),
+                    aliases=(
+                        "attended count",
+                        # NOTE (Task 2): "attended bookings" is also the count
+                        # of attended appointments. It stays an alias of the
+                        # Attendance Rate too; find_metric_definition prefers
+                        # the count metric when the question carries a count
+                        # cue ("how many attended bookings?").
+                        "attended bookings",
+                        "attended bookings count",
+                        "total attended",
+                        "attended patients",
+                    ),
                     value_kind="count",
                     storage_scale="raw",
                     aggregation="sum",
@@ -1281,7 +1298,12 @@ class PmsAiCatalog:
         elif metric_slug == "attendance_rate":
             items.update({"attendance rate", "patient attendance", "attended bookings", "no-show", "no show"})
         elif metric_slug == "booking_rate":
-            items.update({"booking rate", "booking conversion", "bookings", "booking cr"})
+            # NOTE (Task 2): the bare noun "bookings" is deliberately NOT a
+            # Booking Rate alias. A bare "bookings" denotes a count, so it
+            # lives on the Bookings (Count) metric; otherwise every booking
+            # count question ("How many Clinics bookings?") resolved to the
+            # Booking Rate percentage instead of the authorised counter.
+            items.update({"booking rate", "booking conversion", "booking cr"})
         elif metric_slug == "quality_score":
             items.update({"quality", "quality score", "qa score", "call quality"})
         elif metric_slug == "aht":
@@ -1367,10 +1389,42 @@ class PmsAiCatalog:
                 or needle in m.aliases
             ):
                 return m
-        for m in candidates:
-            if any(alias in needle or needle in alias for alias in m.aliases if len(alias) >= 3):
-                return m
-        return None
+        # Substring fallback: pick the best match, not the first metric in
+        # team order. A short alias of an early metric ("booking" on Booking
+        # Rate) used to win over the longer, more specific alias of the metric
+        # the user actually asked about ("bookings" on Bookings (Count)), so
+        # every booking-count question resolved to a rate. Prefer, in order:
+        #   1. a count metric when the question carries a count cue
+        #      ("how many", "count", "number of", "total", "volume", ...),
+        #      or a non-count metric when it carries only a rate cue;
+        #   2. the longest matching alias;
+        #   3. the earliest metric in team order (stable tie-break).
+        count_cue = bool(
+            re.search(
+                r"\b(?:how many|count|counts|number of|total|volume|most|fewest|fewer|least|many)\b",
+                needle,
+            )
+        )
+        rate_cue = bool(
+            re.search(r"\b(?:rate|ratio|conversion|percentage|percent|achievement)\b|%", needle)
+        )
+        best: tuple[int, int, int, CatalogMetricDefinition] | None = None
+        for order, m in enumerate(candidates):
+            longest = 0
+            for alias in m.aliases:
+                if len(alias) >= 3 and (alias in needle or needle in alias):
+                    longest = max(longest, len(alias))
+            if not longest:
+                continue
+            kind_rank = 0
+            if count_cue and m.value_kind == "count":
+                kind_rank = 1
+            elif rate_cue and not count_cue and m.value_kind != "count":
+                kind_rank = 1
+            key = (kind_rank, longest, -order)
+            if best is None or key > best[:3]:
+                best = (*key, m)
+        return best[3] if best is not None else None
 
     def get_scope_certification_registry(self) -> list[dict[str, Any]]:
         """Returns the scope certification matrix across all PMS teams, functions, and BSC levels.
