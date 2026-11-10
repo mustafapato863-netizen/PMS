@@ -3080,7 +3080,13 @@ def run_bounded_exploration(
             synthesis_fallback_reason=synthesis_fallback_reason,
             database_ms=total_db_ms,
             records_evaluated=total_records,
-            fallback_reason="none",
+            # A handled turn still used the rules headline when synthesis could
+            # not reach the model. "none" would report that fallback as success.
+            fallback_reason=(
+                synthesis_fallback_reason
+                if synthesis_fallback_reason in {"timeout", "connection_refused", "unavailable_or_invalid"}
+                else "none"
+            ),
         )
     finally:
         _EXPLORATION_SLOT.release()

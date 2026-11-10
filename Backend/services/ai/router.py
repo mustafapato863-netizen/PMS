@@ -123,6 +123,8 @@ ORDERED_TEAM_PATTERNS: tuple[tuple[str, tuple[str, ...]], ...] = (
             "support positions",
             "call center support positions",
             "call center support",
+            "egypt support",
+            "support in egypt",
             "support roles",
             "support position",
             "support team",

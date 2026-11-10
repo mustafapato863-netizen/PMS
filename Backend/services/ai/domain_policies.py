@@ -35,6 +35,7 @@ TEAM_ALIASES: dict[str, str] = {
     "inbound": "Inbound", "انباوند": "Inbound", "إنباوند": "Inbound", "الاستقبال": "Inbound",
     "outbound": "Outbound", "اوتباوند": "Outbound", "أوتباوند": "Outbound", "اوت باوند": "Outbound",
     "support positions": "Support Positions", "call center support": "Support Positions",
+    "egypt support": "Support Positions", "support in egypt": "Support Positions",
     "support team": "Support Positions", "in support": "Support Positions",
     "lowest in support": "Support Positions", "best in support": "Support Positions",
     "top in support": "Support Positions", "worst in support": "Support Positions",

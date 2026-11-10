@@ -261,8 +261,8 @@ describe('PmsAiWorkspaceView', () => {
   it('dispatches a starter prompt and records feedback without claiming it was verified', async () => {
     renderWorkspace('/ai');
 
-    expect(screen.getByText('Which Call Center team dropped most?')).toBeInTheDocument();
-    fireEvent.click(screen.getByText('Which Call Center team dropped most?'));
+    expect(screen.getByText('Which team in All authorized departments dropped most?')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Which team in All authorized departments dropped most?'));
 
     await waitFor(() => {
       expect(
@@ -301,7 +301,7 @@ describe('PmsAiWorkspaceView', () => {
       return { success: true };
     });
     renderWorkspace('/ai');
-    fireEvent.click(screen.getByText('Which Call Center team dropped most?'));
+    fireEvent.click(screen.getByText('Which team in All authorized departments dropped most?'));
     const useful = await screen.findByLabelText('Mark response as useful');
     fireEvent.click(useful);
     expect(await screen.findByRole('alert')).toHaveTextContent('Could not save feedback');
@@ -333,7 +333,7 @@ describe('PmsAiWorkspaceView', () => {
 
     renderWorkspace('/ai');
 
-    fireEvent.click(screen.getByText('Which Call Center team dropped most?'));
+    fireEvent.click(screen.getByText('Which team in All authorized departments dropped most?'));
 
     await waitFor(() => {
       expect(
@@ -560,7 +560,7 @@ describe('PmsAiWorkspaceView', () => {
     expect(screen.getByLabelText('Analyzing workspace data')).toBeInTheDocument();
 
     // Change Team filter to Outbound while request 2 is still in flight
-    const teamDropdownBtn = screen.getByLabelText('Filter Call Center Team');
+    const teamDropdownBtn = screen.getByLabelText('Filter Team');
     fireEvent.click(teamDropdownBtn);
     const outboundOption = await screen.findByRole('option', { name: /Outbound/i });
     fireEvent.click(outboundOption);
@@ -818,5 +818,32 @@ describe('PmsAiWorkspaceView', () => {
       expect(reqBody.session_state.function).toBe('Operations');
       expect(reqBody.session_state.position).toBeNull();
     });
+  });
+
+  it('names an empty team control and the branch control without a Call Center or UAE default', () => {
+    renderWorkspace('/ai');
+
+    expect(screen.getByLabelText('Filter Team')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Filter Call Center Team')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Filter Branch')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Filter UAE Branch')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Call Center/i)).not.toBeInTheDocument();
+  });
+
+  it('keeps Call Center labels only when Call Center is the selected function', () => {
+    renderWorkspace('/ai?function=Call%20Center');
+
+    expect(screen.getByLabelText('Filter Call Center Team')).toBeInTheDocument();
+    expect(screen.getByText('Which Call Center team dropped most?')).toBeInTheDocument();
+    expect(screen.getByLabelText('Filter Branch')).toBeInTheDocument();
+  });
+
+  it('uses the selected function in the empty-state starter fallback', () => {
+    renderWorkspace('/ai?function=Pharmacy');
+
+    expect(screen.getByLabelText('Filter Pharmacy Team')).toBeInTheDocument();
+    expect(screen.getByText('Which team in Pharmacy dropped most?')).toBeInTheDocument();
+    expect(screen.queryByText(/Call Center/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Filter UAE Branch')).not.toBeInTheDocument();
   });
 });

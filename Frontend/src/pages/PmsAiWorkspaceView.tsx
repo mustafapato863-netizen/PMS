@@ -28,6 +28,7 @@ import type { User } from '../types';
 import AiResponseCard from '../components/ai/AiResponseCard';
 import AiScopeDropdown from '../components/ai/AiScopeDropdown';
 import AiWatchingRail from '../components/ai/AiWatchingRail';
+import { buildFallbackStarterPrompts } from '../features/ai/starterPrompts';
 import type {
   AiChatMessage,
   AiChatResponsePayload,
@@ -574,74 +575,12 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
     if (serverStarterPrompts && serverStarterPrompts.length > 0) {
       return serverStarterPrompts;
     }
-    return [
-      {
-        id: 'team-drop',
-        label: 'Which Call Center team dropped most?',
-        subtitle:
-          'Identify the team with the largest performance drop and key KPI drivers.',
-        badge: 'TEAM',
-        prompt:
-          'Which Call Center team dropped the most this month, what is the main KPI driver, and what decisions do you recommend?',
-        category: 'team',
-        icon_key: 'users',
-      },
-      {
-        id: 'people-root-cause',
-        label: 'Who caused the Attendance gap?',
-        subtitle:
-          'Find employees driving the attendance gap and What-If coaching ROI.',
-        badge: 'PEOPLE',
-        prompt:
-          'Who are the top negative contributors to the Attendance Rate gap in Call Center and what happens if we coach the bottom 3?',
-        category: 'people',
-        icon_key: 'users',
-      },
-      {
-        id: 'branch-compare',
-        label: 'Compare Dubai vs Sharjah & Branches',
-        subtitle:
-          'Compare attendance, bookings, and no-shows across all UAE branches.',
-        badge: 'BRANCH',
-        prompt:
-          'Compare all UAE branches (Dubai, Sharjah, Ajman, Clinics) Attendance and Booking conversion for Call Center and recommend branch decisions.',
-        category: 'branch',
-        icon_key: 'chart',
-      },
-      {
-        id: 'governance-actions',
-        label: 'Pending corrective actions & SIP',
-        subtitle:
-          'Review open corrective actions, overdue items, and SIP candidates.',
-        badge: 'GOVERNANCE',
-        prompt:
-          'Summarize open or overdue corrective actions and SIP/PI risk candidates in Call Center with recommended next steps.',
-        category: 'governance',
-        icon_key: 'shield',
-      },
-      {
-        id: 'agent-spotlight-trend',
-        label: 'Best Agent & 6-Month Score Trend',
-        subtitle:
-          'Instant spotlight of the #1 agent with grade, KPIs, and 6-month trend.',
-        badge: 'TREND',
-        prompt: 'Who is the best agent in Inbound and his trend?',
-        category: 'people',
-        icon_key: 'users',
-      },
-      {
-        id: 'outbound-paradox',
-        label: 'Outbound Booking vs. No-Show',
-        subtitle:
-          'Diagnose why Booking is 100% while Attendance is 56.6% with actions.',
-        badge: 'DECISIONS',
-        prompt:
-          'Diagnose Outbound KPIs (Attendance Rate, Reachability, Booking Rate) and propose an executive decision playbook to reduce patient no-shows.',
-        category: 'kpi',
-        icon_key: 'chart',
-      },
-    ];
-  }, [serverStarterPrompts]);
+    return buildFallbackStarterPrompts({
+      functionName: sessionState.function,
+      team: sessionState.team,
+      branch: sessionState.branch,
+    });
+  }, [serverStarterPrompts, sessionState.function, sessionState.team, sessionState.branch]);
 
   const filteredStarterPrompts = useMemo(() => {
     if (selectedCategory === 'all') return starterPrompts;
@@ -729,7 +668,7 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
                 )}
 
                 <AiScopeDropdown
-                  ariaLabel={sessionState.function === 'Call Center' || !sessionState.function ? 'Filter Call Center Team' : `Filter ${sessionState.function} Team`}
+                  ariaLabel={sessionState.function ? `Filter ${sessionState.function} Team` : 'Filter Team'}
                   prefix="Team"
                   value={selectedTeam}
                   defaultValue="All"
@@ -750,7 +689,7 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
                 />
 
                 <AiScopeDropdown
-                  ariaLabel="Filter UAE Branch"
+                  ariaLabel="Filter Branch"
                   prefix="Branch"
                   value={selectedBranch}
                   defaultValue="all"
@@ -761,7 +700,7 @@ function PmsAiWorkspaceSession({ currentUser }: { currentUser: User | null }) {
                       ? [
                           {
                             value: 'all',
-                            label: 'All UAE',
+                            label: 'All branches',
                             badge: `${availableBranches.length} Branches`,
                           },
                         ]
