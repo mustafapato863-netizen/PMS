@@ -102,17 +102,28 @@ def test_fills_are_catalog_or_schema_and_still_unsigned(built: dict) -> None:
     assert filled[("fz-008", "joiner_flag")] == "no_join_date_source"
     assert filled[("ho-028", "joiner_flag")] == "no_join_date_source"
 
-    for doc in built["documents"].values():
+    originals = {
+        "frozen_v1": {case["id"]: case for case in _load(FROZEN_V0)["cases"]},
+        "heldout_v1": {case["id"]: case for case in _load(HELDOUT_V0)["cases"]},
+    }
+    for name, doc in built["documents"].items():
         grouped: dict[str, dict] = {}
         for case in doc["cases"]:
             grouped.setdefault(case["group_id"], {})
+            original_items = {
+                item["field"]: item for item in originals[name][case["id"]]["expected_values"]
+            }
             for item in case["expected_values"]:
                 assert item["reviewer"] == "PENDING"
+                was_pending = original_items[item["field"]]["value"] == "PENDING"
                 if item["value"] == "PENDING":
+                    assert was_pending
                     assert item["source"] == "PENDING"
                     assert item["pending_reason"].strip()
                     continue
                 assert item["source"] != "PENDING"
+                if not was_pending:
+                    continue
                 assert item["derivation"]["script"] == "evaluation/pms-ai/phase0/derive_expected.py"
                 assert item["derivation"]["inputs"]
                 blob = json.dumps(item)
