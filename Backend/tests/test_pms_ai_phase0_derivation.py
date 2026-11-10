@@ -102,24 +102,36 @@ def test_fills_are_catalog_or_schema_and_still_unsigned(built: dict) -> None:
     assert filled[("fz-008", "joiner_flag")] == "no_join_date_source"
     assert filled[("ho-028", "joiner_flag")] == "no_join_date_source"
 
-    for doc in built["documents"].values():
+    originals = {"frozen_v1": _load(FROZEN_V0), "heldout_v1": _load(HELDOUT_V0)}
+    for name, doc in built["documents"].items():
+        original_cases = {case["id"]: case for case in originals[name]["cases"]}
         grouped: dict[str, dict] = {}
         for case in doc["cases"]:
+            prior_values = {
+                item["field"]: item for item in original_cases[case["id"]]["expected_values"]
+            }
             grouped.setdefault(case["group_id"], {})
             for item in case["expected_values"]:
                 assert item["reviewer"] == "PENDING"
+                prior = prior_values[item["field"]]
                 if item["value"] == "PENDING":
+                    assert prior["value"] == "PENDING"
                     assert item["source"] == "PENDING"
                     assert item["pending_reason"].strip()
                     continue
                 assert item["source"] != "PENDING"
-                assert item["derivation"]["script"] == "evaluation/pms-ai/phase0/derive_expected.py"
-                assert item["derivation"]["inputs"]
-                blob = json.dumps(item)
-                for marker in FORBIDDEN:
-                    assert marker not in blob
-                for source in item["derivation"]["inputs"]:
-                    assert len(source["commit"]) == 40
+                if prior["value"] != "PENDING":
+                    assert item["value"] == prior["value"]
+                    assert item["source"] == prior["source"]
+                    assert "derivation" not in item
+                else:
+                    assert item["derivation"]["script"] == "evaluation/pms-ai/phase0/derive_expected.py"
+                    assert item["derivation"]["inputs"]
+                    blob = json.dumps(item)
+                    for marker in FORBIDDEN:
+                        assert marker not in blob
+                    for source in item["derivation"]["inputs"]:
+                        assert len(source["commit"]) == 40
                 previous = grouped[case["group_id"]].get(item["field"])
                 assert previous in (None, item["value"])
                 grouped[case["group_id"]][item["field"]] = item["value"]
