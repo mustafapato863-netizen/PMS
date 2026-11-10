@@ -1097,7 +1097,9 @@ describe('MonthlyPresentationView — Overview, Call Center Deep Dive & Team Dee
 
     fireEvent.click(screen.getByTestId('function-card-csr'));
     expect(screen.getByTestId('function-deep-dive-page')).toBeInTheDocument();
-    expect(screen.getByText('No measured rows for this region in the locked month.')).toBeInTheDocument();
+    expect(screen.getByTestId('deep-dive-empty-state')).toBeInTheDocument();
+    expect(screen.getByText(/No measured CSR rows for UAE Region in/)).toBeInTheDocument();
+    expect(screen.queryByTestId('deep-dive-function-score')).not.toBeInTheDocument();
     expect(screen.queryByText(/Nourshan/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Maryam Elsayed/i)).not.toBeInTheDocument();
   });

@@ -2084,10 +2084,13 @@ export function emptyMeasuredFunctionDeepDive(
 export function getBaselineFunctionDeepDive(
   functionSlug: string,
   region: 'EGY' | 'UAE' = 'EGY',
+  requestedPeriodKey?: string,
 ): CallCenterDeepDiveData {
   const norm = normalizeFunctionSlug(functionSlug);
   if (region === 'UAE') {
-    return emptyMeasuredFunctionDeepDive(norm, 'UAE');
+    // A no-rows dive is labelled with the month that was actually
+    // requested, not the September snapshot month.
+    return emptyMeasuredFunctionDeepDive(norm, 'UAE', requestedPeriodKey);
   }
   const found = FUNCTION_DEEP_DIVE_BASELINES_SEP_2026[norm];
   if (found) {
@@ -2141,7 +2144,10 @@ export function buildCallCenterScoreTrend(
     const outboundMonth = outboundAll.filter((r) => r.period.key === period.key);
     const supportMonth = supportRecords.filter((r) => r.period.key === period.key);
 
-    if (!inboundMonth.length && !outboundMonth.length && !supportMonth.length) {
+    // Support-position rows alone do not make a Call Center score for a
+    // month: a dive built for such a month is an empty state, so the trend
+    // point is a gap (null), not the support average.
+    if (!inboundMonth.length && !outboundMonth.length) {
       return {
         month: period.month.slice(0, 3),
         periodKey: period.key,
@@ -2328,18 +2334,27 @@ export function buildCallCenterDeepDiveFromRecords(
   const inboundPrev = inPeriod(inboundAll, previous);
   const outboundPrev = inPeriod(outboundAll, previous);
 
+  // Month-over-month change is always against the immediately preceding
+  // calendar month, never the last available month: when that month is a
+  // gap, the change is 0 instead of a change computed against an older
+  // month. (`previous` above is the last measured period and stays the
+  // basis for the KPI diagnostic rows only.)
+  const exactPrevious = trailingPeriods(effective, 2)[0];
+  const inboundPrevForChange = inPeriod(inboundAll, exactPrevious);
+  const outboundPrevForChange = inPeriod(outboundAll, exactPrevious);
+
   const inboundAgents = inboundCurr.map((r) => r.rawAgent).filter((a): a is AgentRecord => Boolean(a));
-  const inboundPrevAgents = inboundPrev.map((r) => r.rawAgent).filter((a): a is AgentRecord => Boolean(a));
+  const inboundPrevAgents = inboundPrevForChange.map((r) => r.rawAgent).filter((a): a is AgentRecord => Boolean(a));
   const outboundAgents = outboundCurr.map((r) => r.rawAgent).filter((a): a is AgentRecord => Boolean(a));
-  const outboundPrevAgents = outboundPrev.map((r) => r.rawAgent).filter((a): a is AgentRecord => Boolean(a));
+  const outboundPrevAgents = outboundPrevForChange.map((r) => r.rawAgent).filter((a): a is AgentRecord => Boolean(a));
 
   // A channel with no records in the effective month has no score at all:
   // it is omitted from agentTeams below instead of borrowing the
   // September baseline score for that channel.
   const inbAvg = mean(inboundCurr.map((r) => r.score));
-  const inbPrevAvg = mean(inboundPrev.map((r) => r.score));
+  const inbPrevAvg = mean(inboundPrevForChange.map((r) => r.score));
   const outAvg = mean(outboundCurr.map((r) => r.score));
-  const outPrevAvg = mean(outboundPrev.map((r) => r.score));
+  const outPrevAvg = mean(outboundPrevForChange.map((r) => r.score));
 
   const inboundScore =
     inboundCurr.length === 0 || inbAvg === null
@@ -2402,7 +2417,7 @@ export function buildCallCenterDeepDiveFromRecords(
   // month has no measured score (a gap), the change is 0 — never a change
   // computed against an older month, and never the September baseline.
   const fnChange = scoreTrend.changeVsPrevious ?? 0;
-  const previousMonthLabel = previous?.month ?? scoreTrend.previousMonthLabel ?? '';
+  const previousMonthLabel = scoreTrend.previousMonthLabel ?? previous?.month ?? '';
   const fnGrade = gradeForScore(fnScore);
   const totalMeasuredAgents = inboundHc + outboundHc;
 
@@ -2447,7 +2462,7 @@ export function buildCallCenterDeepDiveFromRecords(
           memberUnitLabel: 'agents',
           diagnosis:
             inbWeakest && inbStrongest
-              ? `Carrying the Call Center score with ${inboundHc} measured agents at ${inboundScore.toFixed(1)}% (${inboundChange >= 0 ? '+' : ''}${inboundChange.toFixed(1)}% vs ${previous?.month ?? 'prior month'}). Strong ${inbStrongest.kpi_label} (${formatKpiValue(inbStrongest.actual, inbStrongest.unit)} vs ${formatKpiValue(inbStrongest.target, inbStrongest.unit)} target) offsets pressure on ${inbWeakest.kpi_label} (${formatKpiValue(inbWeakest.actual, inbWeakest.unit)} vs ${formatKpiValue(inbWeakest.target, inbWeakest.unit)} target).`
+              ? `Carrying the Call Center score with ${inboundHc} measured agents at ${inboundScore.toFixed(1)}% (${inboundChange >= 0 ? '+' : ''}${inboundChange.toFixed(1)}% vs ${previousMonthLabel || 'prior month'}). Strong ${inbStrongest.kpi_label} (${formatKpiValue(inbStrongest.actual, inbStrongest.unit)} vs ${formatKpiValue(inbStrongest.target, inbStrongest.unit)} target) offsets pressure on ${inbWeakest.kpi_label} (${formatKpiValue(inbWeakest.actual, inbWeakest.unit)} vs ${formatKpiValue(inbWeakest.target, inbWeakest.unit)} target).`
               : `No KPI rows measured for Inbound in ${effective.month} ${effective.year}.`,
           keyStrengthOrDrag: `Primary carrier · ${inboundHc} agents (${Math.round((inboundHc / Math.max(1, totalMeasuredAgents)) * 100)}% of measured headcount)`,
         };
@@ -2475,7 +2490,7 @@ export function buildCallCenterDeepDiveFromRecords(
           memberUnitLabel: 'agents',
           diagnosis:
             outWeakest && outStrongest
-              ? `Moved ${outboundChange >= 0 ? '+' : ''}${outboundChange.toFixed(1)}% vs ${previous?.month ?? 'prior month'} to ${outboundScore.toFixed(1)}%, with ${outStrongest.kpi_label} reaching ${formatKpiValue(outStrongest.actual, outStrongest.unit)} (target ${formatKpiValue(outStrongest.target, outStrongest.unit)}), while ${outWeakest.kpi_label} (${formatKpiValue(outWeakest.actual, outWeakest.unit)} vs ${formatKpiValue(outWeakest.target, outWeakest.unit)} target) across ${outboundBelow90} of ${outboundHc} agents pulls the function down.`
+              ? `Moved ${outboundChange >= 0 ? '+' : ''}${outboundChange.toFixed(1)}% vs ${previousMonthLabel || 'prior month'} to ${outboundScore.toFixed(1)}%, with ${outStrongest.kpi_label} reaching ${formatKpiValue(outStrongest.actual, outStrongest.unit)} (target ${formatKpiValue(outStrongest.target, outStrongest.unit)}), while ${outWeakest.kpi_label} (${formatKpiValue(outWeakest.actual, outWeakest.unit)} vs ${formatKpiValue(outWeakest.target, outWeakest.unit)} target) across ${outboundBelow90} of ${outboundHc} agents pulls the function down.`
               : `No KPI rows measured for Outbound in ${effective.month} ${effective.year}.`,
           keyStrengthOrDrag: `Main drag · ${outboundBelow90} of ${outboundHc} agents below 90% threshold`,
         };
@@ -2802,7 +2817,7 @@ export function buildFunctionDeepDiveFromRecords(
     return buildCallCenterDeepDiveFromRecords(scopedRecords, actions, region, requestedPeriodKey, options);
   }
 
-  const fallback = getBaselineFunctionDeepDive(normSlug, region);
+  const fallback = getBaselineFunctionDeepDive(normSlug, region, requestedPeriodKey);
   const canonicalFn = canonicalFunctionNameFromSlug(normSlug);
 
   // Filter records belonging to this function
@@ -2840,17 +2855,20 @@ export function buildFunctionDeepDiveFromRecords(
   }
 
   const fnScore = round1(mean(currRecords.map((r) => r.score)) ?? fallback.headline.score);
-  const fnPrevScore = mean(prevRecords.map((r) => r.score));
   const scoreTrend = buildFunctionScoreTrend(fnRecords, effective, fnScore);
-  const fnChange =
-    scoreTrend.changeVsPrevious !== null
-      ? scoreTrend.changeVsPrevious
-      : (fnPrevScore !== null
-        ? round1(fnScore - round1(fnPrevScore))
-        : fallback.headline.changeVsPrev);
+  // The headline change is the trend's change vs the immediately preceding
+  // calendar month. When that month is a gap the change is 0 — never a
+  // change computed against an older measured month, and never the
+  // September baseline change.
+  const fnChange = scoreTrend.changeVsPrevious ?? 0;
   const previousMonthLabel = scoreTrend.previousMonthLabel ?? previous?.month ?? 'August';
   const fnGrade = gradeForScore(fnScore);
   const totalMeasuredHc = new Set(currRecords.map((r) => r.employeeId)).size;
+
+  // Team change is likewise against the immediately preceding calendar
+  // month. (`previous` is the last measured period and stays the basis for
+  // the KPI diagnostic rows only.)
+  const exactPrevious = trailingPeriods(effective, 2)[0];
 
   // Group Layer 1 Measured Teams from currRecords by canonical team
   const distinctTeams = [...new Set(currRecords.map((r) => canonicalEgyptResubmissionTeam(r.team)))];
@@ -2862,8 +2880,9 @@ export function buildFunctionDeepDiveFromRecords(
       const leaderTotal = preApprovalsLeaderTeamTotal(tCurr);
       const pooledTotal = resubmissionPooledScore(tCurr);
       const tScore = leaderTotal ?? pooledTotal ?? round1(mean(tCurr.map((r) => r.score)) ?? fnScore);
-      const tPrevMean = preApprovalsLeaderTeamTotal(tPrev) ?? resubmissionPooledScore(tPrev) ?? mean(tPrev.map((r) => r.score));
-      const tChange = tPrevMean !== null ? round1(tScore - round1(tPrevMean)) : 0;
+      const tPrevForChange = inPeriod(tAll, exactPrevious);
+      const tPrevMeanForChange = preApprovalsLeaderTeamTotal(tPrevForChange) ?? resubmissionPooledScore(tPrevForChange) ?? mean(tPrevForChange.map((r) => r.score));
+      const tChange = tPrevMeanForChange !== null ? round1(tScore - round1(tPrevMeanForChange)) : 0;
       const tGrade = gradeForScore(tScore);
       const tHc = new Set(tCurr.map((r) => r.employeeId)).size;
       const tBelow90 = tCurr.filter((r) => r.score < 90).length;

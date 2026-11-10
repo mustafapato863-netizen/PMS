@@ -216,6 +216,9 @@ export default function FunctionDeepDiveView({
     data.scoreTrend.points.length > 0 &&
     data.scoreTrend.points.some((p) => p.score !== null),
   );
+  // A truthful empty dive: no measured rows for this region/period, so no
+  // score, grade, gap or projection is shown anywhere on the page.
+  const isEmpty = data.isEmpty === true;
 
   const toggleKpiTrend = (id: string) => {
     setOpenKpiTrends((prev) => ({ ...prev, [id]: !prev[id] }));
@@ -268,6 +271,28 @@ export default function FunctionDeepDiveView({
         ) : null}
       </header>
 
+      {/* Truthful empty state: no measured rows for this region/period. */}
+      {isEmpty && (
+        <section
+          data-testid="deep-dive-empty-state"
+          aria-label={`No measured ${data.functionName} data`}
+          className="rounded-2xl border border-amber-200 bg-amber-50/70 p-6 shadow-xs"
+        >
+          <h2 className="text-lg font-bold text-slate-900">No measured {data.functionName} data</h2>
+          <p className="mt-1 text-sm font-medium leading-relaxed text-slate-700">
+            {data.emptyReason ??
+              `No measured ${data.functionName} rows for ${data.regionName} in ${data.monthLabel}.`}
+          </p>
+          <p className="mt-2 text-xs leading-relaxed text-slate-500">
+            Scores, roles, KPIs and actions are shown only when published
+            records exist for this scope. Nothing on this page is a placeholder
+            or an estimate.
+          </p>
+        </section>
+      )}
+
+      {!isEmpty && (
+      <>
       {/* 2. Diagnostic Headline Card (Dominant Score + 6-Month Trend + Narrative Balance) */}
       <section
         id="presentation-section-function-score"
@@ -523,6 +548,7 @@ export default function FunctionDeepDiveView({
         )}
       </section>
       )}
+      </>)}
     </div>
   );
 }
