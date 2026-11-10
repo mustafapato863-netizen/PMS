@@ -94,7 +94,9 @@ function AgentTeamCard({
 }) {
   const gradeStyle = GRADE_STYLES[team.grade];
   const isPositiveCarrier = team.roleTone === 'positive';
-  const isUp = team.changeVsPrev >= 0;
+  const change = team.changeVsPrev;
+  const hasChange = change !== null;
+  const isUp = hasChange && change >= 0;
 
   return (
     <button
@@ -168,18 +170,27 @@ function AgentTeamCard({
               <div className="text-[9px] font-medium text-slate-400">
                 vs {previousMonthLabel.slice(0, 3)}
               </div>
-              <div
-                className={`inline-flex items-center gap-0.5 font-bold tabular-nums ${
-                  isUp ? 'text-emerald-700' : 'text-rose-700'
-                }`}
-              >
-                {isUp ? (
-                  <ArrowUpRight className="size-3" />
-                ) : (
-                  <ArrowDownRight className="size-3" />
-                )}
-                {isUp ? `+${team.changeVsPrev.toFixed(1)}%` : `${team.changeVsPrev.toFixed(1)}%`}
-              </div>
+              {hasChange && change !== null ? (
+                <div
+                  className={`inline-flex items-center gap-0.5 font-bold tabular-nums ${
+                    isUp ? 'text-emerald-700' : 'text-rose-700'
+                  }`}
+                >
+                  {isUp ? (
+                    <ArrowUpRight className="size-3" />
+                  ) : (
+                    <ArrowDownRight className="size-3" />
+                  )}
+                  {isUp ? `+${change.toFixed(1)}%` : `${change.toFixed(1)}%`}
+                </div>
+              ) : (
+                <div
+                  className="font-bold text-slate-400 tabular-nums"
+                  title="No previous-month data"
+                >
+                  —
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -553,6 +564,14 @@ export default function CallCenterDeepDiveView({
                     ? `+${measuredChange.toFixed(1)}%`
                     : `${measuredChange.toFixed(1)}%`}{' '}
                   vs {comparedMonth}
+                </span>
+              )}
+              {!showChange && (
+                <span
+                  title={`No measured score for ${comparedMonth || 'the previous month'}`}
+                  className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-bold text-slate-400"
+                >
+                  — No previous-month data
                 </span>
               )}
             </div>

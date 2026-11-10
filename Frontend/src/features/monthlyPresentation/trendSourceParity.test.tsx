@@ -34,18 +34,18 @@ function makeRecord(
 }
 
 describe('Trend source parity', () => {
-  it('generic headline change is 0 when the previous calendar month is a gap', () => {
+  it('generic headline change is null when the previous calendar month is a gap', () => {
     const records: ExecRecord[] = [
       makeRecord('hr1', 'Nour HR', 'Human Resources', 'EGY', '2026-08', 'August', 2026, 85.0),
       makeRecord('hr1', 'Nour HR', 'Human Resources', 'EGY', '2026-10', 'October', 2026, 91.0),
     ];
     const dive = buildFunctionDeepDiveFromRecords('human-resources', records, [], 'EGY', '2026-10');
     expect(dive.scoreTrend?.changeVsPrevious).toBeNull();
-    expect(dive.headline.changeVsPrev).toBe(0);
-    expect(dive.agentTeams[0]?.changeVsPrev).toBe(0);
+    expect(dive.headline.changeVsPrev).toBeNull();
+    expect(dive.agentTeams[0]?.changeVsPrev).toBeNull();
   });
 
-  it('Call Center channel change is 0 when the previous calendar month is a gap', () => {
+  it('Call Center channel change is null when the previous calendar month is a gap', () => {
     const records: ExecRecord[] = [
       makeRecord('inb1', 'Inbound Agent', 'Inbound', 'EGY', '2026-08', 'August', 2026, 80.0),
       makeRecord('out1', 'Outbound Agent', 'Outbound', 'EGY', '2026-08', 'August', 2026, 80.0),
@@ -54,11 +54,11 @@ describe('Trend source parity', () => {
     ];
     const dive = buildCallCenterDeepDiveFromRecords(records, [], 'EGY', '2026-10');
     expect(dive.scoreTrend?.changeVsPrevious).toBeNull();
-    expect(dive.headline.changeVsPrev).toBe(0);
+    expect(dive.headline.changeVsPrev).toBeNull();
     const inbound = dive.agentTeams.find((t) => t.teamSlug === 'inbound');
     const outbound = dive.agentTeams.find((t) => t.teamSlug === 'outbound');
-    expect(inbound?.changeVsPrev).toBe(0);
-    expect(outbound?.changeVsPrev).toBe(0);
+    expect(inbound?.changeVsPrev).toBeNull();
+    expect(outbound?.changeVsPrev).toBeNull();
   });
 
   it('Call Center trend leaves a support-only month as a gap', () => {

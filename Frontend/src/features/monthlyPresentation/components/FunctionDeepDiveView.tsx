@@ -347,6 +347,14 @@ export default function FunctionDeepDiveView({
                   {measuredChange.toFixed(1)}% vs {comparedMonth}
                 </span>
               )}
+              {!showChange && (
+                <span
+                  title={`No measured score for ${comparedMonth || 'the previous month'}`}
+                  className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-bold text-slate-400"
+                >
+                  — No previous-month data
+                </span>
+              )}
             </div>
           </div>
 

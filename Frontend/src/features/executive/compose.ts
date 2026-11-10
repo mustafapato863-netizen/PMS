@@ -777,6 +777,35 @@ function functionCohorts(name: ExecutiveFunction, current: ExecRecord[], previou
   };
 }
 
+/**
+ * Call Center score for one month on the channel-averaged basis the deep
+ * dive uses: the unweighted average of the printed Inbound, Outbound and
+ * Support Positions scores (each agent channel via channelBoardScore when
+ * agent records exist, else the plain employee mean). Support-position rows
+ * alone do not make a Call Center score — a dive built for such a month is
+ * an empty state — so the month is a gap (null), never the support average
+ * and never the plain record mean across unequal channel headcounts.
+ */
+function callCenterChannelScore(monthRecords: ExecRecord[]): number | null {
+  const inb = monthRecords.filter((record) => record.team === 'Inbound');
+  const out = monthRecords.filter((record) => record.team === 'Outbound');
+  if (!inb.length && !out.length) return null;
+  const sup = monthRecords.filter((record) => record.team === 'Call Center');
+  const channelScore = (rows: ExecRecord[], config: TeamConfig | undefined) => {
+    const avg = scoreOf(rows);
+    if (avg === null) return null;
+    const agents = rows.map((record) => record.rawAgent).filter((a): a is AgentRecord => Boolean(a));
+    return agents.length > 0
+      ? channelBoardScore({ agents, config, employeeAverage: avg })
+      : avg;
+  };
+  return averagePrintedChannelScores([
+    { score: channelScore(inb, INBOUND_TEAM_CONFIG), count: inb.length },
+    { score: channelScore(out, OUTBOUND_TEAM_CONFIG), count: out.length },
+    { score: scoreOf(sup), count: sup.length },
+  ]);
+}
+
 function functionCards(scoped: ExecRecord[], effective: ExecutivePeriod, previous: ExecutivePeriod | null, teamFunctions?: TeamFunctionMap, monthly: ExecRecord[] | null = null, rangeMonths: ExecutivePeriod[] | null = null): ExecutiveFunctionCard[] {
   const monthlyRecords = monthly ?? scoped;
   const cards = EXECUTIVE_FUNCTIONS.flatMap((name): ExecutiveFunctionCard[] => {
@@ -787,56 +816,20 @@ function functionCards(scoped: ExecRecord[], effective: ExecutivePeriod, previou
     let score = scoreOf(current);
     let previousScore = scoreOf(previousRows);
     if (name === 'Call Center' && !rangeMonths) {
-      const inbCurr = current.filter((r) => r.team === 'Inbound');
-      const outCurr = current.filter((r) => r.team === 'Outbound');
-      const supCurr = current.filter((r) => r.team === 'Call Center');
-      const inbAgents = inbCurr.map((r) => r.rawAgent).filter((a): a is AgentRecord => Boolean(a));
-      const outAgents = outCurr.map((r) => r.rawAgent).filter((a): a is AgentRecord => Boolean(a));
-      const inbAvg = scoreOf(inbCurr);
-      const outAvg = scoreOf(outCurr);
-      const supAvg = scoreOf(supCurr);
-      const inbScore = inbAgents.length > 0 && inbAvg !== null
-        ? channelBoardScore({ agents: inbAgents, config: INBOUND_TEAM_CONFIG, employeeAverage: inbAvg })
-        : inbAvg;
-      const outScore = outAgents.length > 0 && outAvg !== null
-        ? channelBoardScore({ agents: outAgents, config: OUTBOUND_TEAM_CONFIG, employeeAverage: outAvg })
-        : outAvg;
-      const overall = averagePrintedChannelScores([
-        { score: inbScore, count: inbCurr.length },
-        { score: outScore, count: outCurr.length },
-        { score: supAvg, count: supCurr.length },
-      ]);
-      if (overall !== null) score = overall;
-
-      if (previousRows.length > 0) {
-        const inbPrev = previousRows.filter((r) => r.team === 'Inbound');
-        const outPrev = previousRows.filter((r) => r.team === 'Outbound');
-        const supPrev = previousRows.filter((r) => r.team === 'Call Center');
-        const inbPrevAgents = inbPrev.map((r) => r.rawAgent).filter((a): a is AgentRecord => Boolean(a));
-        const outPrevAgents = outPrev.map((r) => r.rawAgent).filter((a): a is AgentRecord => Boolean(a));
-        const inbPrevAvg = scoreOf(inbPrev);
-        const outPrevAvg = scoreOf(outPrev);
-        const supPrevAvg = scoreOf(supPrev);
-        const inbPrevScore = inbPrevAgents.length > 0 && inbPrevAvg !== null
-          ? channelBoardScore({ agents: inbPrevAgents, config: INBOUND_TEAM_CONFIG, employeeAverage: inbPrevAvg })
-          : inbPrevAvg;
-        const outPrevScore = outPrevAgents.length > 0 && outPrevAvg !== null
-          ? channelBoardScore({ agents: outPrevAgents, config: OUTBOUND_TEAM_CONFIG, employeeAverage: outPrevAvg })
-          : outPrevAvg;
-        const prevOverall = averagePrintedChannelScores([
-          { score: inbPrevScore, count: inbPrev.length },
-          { score: outPrevScore, count: outPrev.length },
-          { score: supPrevAvg, count: supPrev.length },
-        ]);
-        if (prevOverall !== null) previousScore = prevOverall;
-      }
+      // One scoring basis for the whole card — headline, previous month
+      // and every trend month — the channel-averaged basis above, matching
+      // a deep dive built for the same month. Previously only the effective
+      // and previous months were overridden, so older trend months kept the
+      // plain record mean and disagreed with the deep dive whenever channel
+      // headcounts differed.
+      score = callCenterChannelScore(current);
+      previousScore = callCenterChannelScore(previousRows);
     }
     const monthlyFunction = monthlyRecords.filter((record) => executiveFunctionForTeam(record.team, teamFunctions) === name);
     const trend = trendOf(monthlyFunction, effective);
     if (name === 'Call Center' && !rangeMonths) {
       trend.forEach((pt) => {
-        if (pt.period.key === effective.key && score !== null) pt.score = score;
-        if (previous && pt.period.key === previous.key && previousScore !== null) pt.score = previousScore;
+        pt.score = callCenterChannelScore(inPeriod(monthlyFunction, pt.period));
       });
     }
     return [{

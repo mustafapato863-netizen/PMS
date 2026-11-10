@@ -128,8 +128,9 @@ describe('Call Center Deep Dive — truthful empty states (Task 1)', () => {
 
     expect(points.find((p) => p.periodKey === '2026-09')?.score).toBeNull();
     expect(dive.scoreTrend?.changeVsPrevious).toBeNull();
-    // No invented September-baseline change (the old fallback was +3.3).
-    expect(dive.headline.changeVsPrev).toBe(0);
+    // No invented September-baseline change (the old fallback was +3.3),
+    // and no fake 0.0%: with no September measurement there is no change.
+    expect(dive.headline.changeVsPrev).toBeNull();
   });
 
   it('returns a truthful empty state — not the September baseline — when no Call Center rows exist', () => {
