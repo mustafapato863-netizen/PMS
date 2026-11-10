@@ -12,8 +12,9 @@ People in the questions are fixture identities (Adham, Mariam, Nour) or role pla
 - Do not edit a v0 question, group id, required part, or expected value in place. Add `frozen_v1` / `heldout_v1` (and bump `schema_version` if a field changes).
 - Keep v0 in the repo so a later run can say which questions moved.
 - Historical results stay `unverified` even after v0 is signed. Signing v0 does not certify an old report.
+- `frozen_v1.json` and `heldout_v1.json` are the derived layer. `derive_expected.py` fills a value only when the checked-in team catalog or the employee schema proves it, and it records the file, commit, and method. Everything else stays `PENDING` with `pending_reason`. The reviewer stays `PENDING`. v0 is not edited. See `DERIVATION.md`.
 
-`Backend/tests/test_pms_ai_phase0_eval_schema.py` checks required fields, the unsigned-value rule, and the split below. It does not call the assistant.
+`Backend/tests/test_pms_ai_phase0_eval_schema.py` checks required fields, the unsigned-value rule, and the split below. It does not call the assistant. `Backend/tests/test_pms_ai_phase0_derivation.py` checks that v1 matches the script.
 
 ## Split rule (`phase0-paraphrase-group-disjoint-v0`)
 
