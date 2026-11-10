@@ -1,0 +1,428 @@
+{
+  "pending_before": 190,
+  "filled_count": 18,
+  "still_pending_count": 172,
+  "filled": [
+    {
+      "id": "fz-021",
+      "field": "country_binding",
+      "value": "EGY"
+    },
+    {
+      "id": "fz-022",
+      "field": "country_binding",
+      "value": "EGY"
+    },
+    {
+      "id": "ho-078",
+      "field": "country_binding",
+      "value": "UAE"
+    },
+    {
+      "id": "ho-079",
+      "field": "country_binding",
+      "value": "UAE"
+    },
+    {
+      "id": "ho-001",
+      "field": "country_binding",
+      "value": "EGY"
+    },
+    {
+      "id": "ho-002",
+      "field": "country_binding",
+      "value": "EGY"
+    },
+    {
+      "id": "fz-023",
+      "field": "team_binding",
+      "value": {
+        "team": "Inbound",
+        "region": "EGY"
+      }
+    },
+    {
+      "id": "fz-024",
+      "field": "team_binding",
+      "value": {
+        "team": "Inbound",
+        "region": "EGY"
+      }
+    },
+    {
+      "id": "fz-026",
+      "field": "team_binding",
+      "value": {
+        "team": "Inbound",
+        "region": "EGY"
+      }
+    },
+    {
+      "id": "fz-041",
+      "field": "team_binding",
+      "value": {
+        "team": "Pre-Approvals IP",
+        "region": "EGY"
+      }
+    },
+    {
+      "id": "fz-042",
+      "field": "team_binding",
+      "value": {
+        "team": "Pre-Approvals IP",
+        "region": "EGY"
+      }
+    },
+    {
+      "id": "fz-017",
+      "field": "team_binding",
+      "value": {
+        "team": "Coding",
+        "region": "UAE"
+      }
+    },
+    {
+      "id": "fz-018",
+      "field": "team_binding",
+      "value": {
+        "team": "Coding",
+        "region": "UAE"
+      }
+    },
+    {
+      "id": "fz-043",
+      "field": "team_binding",
+      "value": {
+        "team": "Pre-Approvals OP Dubai",
+        "region": "UAE"
+      }
+    },
+    {
+      "id": "fz-044",
+      "field": "team_binding",
+      "value": {
+        "team": "Pre-Approvals OP Dubai",
+        "region": "UAE"
+      }
+    },
+    {
+      "id": "fz-008",
+      "field": "joiner_flag",
+      "value": "no_join_date_source"
+    },
+    {
+      "id": "ho-028",
+      "field": "joiner_flag",
+      "value": "no_join_date_source"
+    },
+    {
+      "id": "ho-029",
+      "field": "joiner_flag",
+      "value": "no_join_date_source"
+    }
+  ],
+  "still_pending_by_reason": {
+    "no_complete_team_population": {
+      "count": 39,
+      "ids": [
+        "fz-006.score",
+        "fz-015.monthly_series",
+        "fz-015.basis_changes",
+        "fz-016.monthly_series",
+        "fz-016.basis_changes",
+        "fz-017.monthly_series",
+        "fz-018.monthly_series",
+        "fz-019.decline_evidence",
+        "fz-021.score",
+        "fz-022.score",
+        "fz-023.team_score",
+        "fz-041.score",
+        "fz-042.score",
+        "fz-043.score",
+        "fz-044.score",
+        "ho-005.score",
+        "ho-006.score",
+        "ho-007.score",
+        "ho-008.score",
+        "ho-009.score",
+        "ho-010.score",
+        "ho-013.score",
+        "ho-014.score",
+        "ho-022.monthly_series",
+        "ho-023.monthly_series",
+        "ho-024.monthly_series",
+        "ho-025.monthly_series",
+        "ho-026.monthly_series",
+        "ho-027.monthly_series",
+        "ho-032.team_score",
+        "ho-033.team_score",
+        "ho-034.monthly_series",
+        "ho-035.monthly_series",
+        "ho-050.score",
+        "ho-051.score",
+        "ho-068.decline_evidence",
+        "ho-069.decline_evidence",
+        "ho-078.score",
+        "ho-079.score"
+      ],
+      "example_reason": "No complete published population for this team and period, so the team score, series, basis changes, and decline cannot be computed. Backend/tests/fixtures/regression_january_snapshot.json has 156 rows, months ['January'], levels ['Employee'], person-name field present=False. Backend/tests/fixtures/record_resolver_baseline.json records: all has 10 rows."
+    },
+    "branch_counts_not_in_repo": {
+      "count": 33,
+      "ids": [
+        "fz-011.dubai_count",
+        "fz-011.ajman_count",
+        "fz-011.sharjah_count",
+        "fz-011.winner",
+        "fz-012.dubai_count",
+        "fz-012.ajman_count",
+        "fz-012.sharjah_count",
+        "fz-012.winner",
+        "ho-015.dubai_count",
+        "ho-015.sharjah_count",
+        "ho-015.comparison",
+        "ho-016.dubai_count",
+        "ho-016.sharjah_count",
+        "ho-016.comparison",
+        "ho-017.dubai_count",
+        "ho-017.sharjah_count",
+        "ho-017.comparison",
+        "ho-018.dubai_count",
+        "ho-018.sharjah_count",
+        "ho-018.comparison",
+        "ho-019.dubai_count",
+        "ho-019.sharjah_count",
+        "ho-019.comparison",
+        "ho-020.dubai_count",
+        "ho-020.ajman_count",
+        "ho-021.dubai_count",
+        "ho-021.ajman_count",
+        "ho-036.dubai_count",
+        "ho-036.sharjah_count",
+        "ho-036.winner",
+        "ho-037.dubai_count",
+        "ho-037.sharjah_count",
+        "ho-037.winner"
+      ],
+      "example_reason": "No complete Inbound branch booking-count population for the asked period. Backend/tests/fixtures/inbound_prod_utilization_rows.json has 3 April rows out of the 157 mentioned in its source note; columns present but not summed: ['Dubai_Booking', 'Ajman_Booking', 'Sharjah_Booking']. The Outbound anonymous reference omits operational counts. A rate cannot be turned back into a count."
+    },
+    "no_authorized_person_roster": {
+      "count": 31,
+      "ids": [
+        "fz-005.ranked_people_after_clarification",
+        "fz-006.person_name",
+        "fz-006.position",
+        "fz-006.tie",
+        "fz-007.adham_binding",
+        "fz-007.september_score",
+        "fz-007.best_month",
+        "fz-007.best_score",
+        "fz-023.lowest_person",
+        "fz-024.lowest_person",
+        "fz-024.person_score",
+        "fz-025.adham_binding",
+        "fz-025.august_score",
+        "fz-026.lowest_person",
+        "fz-027.match_count",
+        "fz-028.tie_exists",
+        "fz-028.tied_people",
+        "ho-005.lowest_person",
+        "ho-006.lowest_person",
+        "ho-007.lowest_person",
+        "ho-008.lowest_person",
+        "ho-009.best_person",
+        "ho-010.best_person",
+        "ho-011.best_person",
+        "ho-012.best_person",
+        "ho-013.lowest_person",
+        "ho-014.lowest_person",
+        "ho-032.best_person",
+        "ho-033.best_person",
+        "ho-034.best_person",
+        "ho-035.best_person"
+      ],
+      "example_reason": "No complete authorized roster. Partial fixtures are not the Admin scope, and names from assistant fixtures were not used. Backend/tests/fixtures/regression_january_snapshot.json has 156 rows, months ['January'], levels ['Employee'], person-name field present=False. Backend/tests/fixtures/record_resolver_baseline.json records: all has 10 rows."
+    },
+    "no_publication_registry": {
+      "count": 20,
+      "ids": [
+        "fz-006.period_label",
+        "fz-011.period_label",
+        "fz-012.period_label",
+        "fz-021.period_label",
+        "fz-022.period_label",
+        "fz-023.period_label",
+        "fz-024.period_label",
+        "fz-025.august_publication",
+        "fz-026.period_label",
+        "fz-033.month_binding",
+        "fz-034.month_binding",
+        "fz-054.period_label",
+        "ho-005.publication",
+        "ho-006.publication",
+        "ho-007.publication",
+        "ho-008.publication",
+        "ho-011.publication",
+        "ho-012.publication",
+        "ho-056.month_binding",
+        "ho-057.month_binding"
+      ],
+      "example_reason": "No publication registry in the repo names the latest published month or proves a month unpublished. Backend/services/evaluation/periods.py has calendar helpers and no published-month list."
+    },
+    "zero_or_blank_actual_not_in_repo": {
+      "count": 12,
+      "ids": [
+        "fz-029.metric_binding",
+        "fz-029.actual",
+        "fz-030.metric_binding",
+        "fz-030.actual",
+        "fz-031.metric_binding",
+        "fz-032.metric_binding",
+        "ho-052.metric_binding",
+        "ho-052.actual",
+        "ho-053.metric_binding",
+        "ho-053.actual",
+        "ho-054.metric_binding",
+        "ho-055.metric_binding"
+      ],
+      "example_reason": "No checked-in published team actual is proven to be a true zero, or a blank inside a published month and distinct from zero, for this function. The three-row Inbound sample and the synthetic cap-boundary fixture are not that published actual."
+    },
+    "level_not_proven_from_catalog_or_rows": {
+      "count": 9,
+      "ids": [
+        "fz-054.score",
+        "fz-055.country_binding",
+        "fz-055.score",
+        "ho-070.country_binding",
+        "ho-070.score",
+        "ho-071.country_binding",
+        "ho-071.score",
+        "ho-072.score",
+        "ho-073.score"
+      ],
+      "example_reason": "No fixture supplies a published Managerial result for Inbound. Backend/config/teams/inbound.json does define performance_levels Managerial."
+    },
+    "page_context_not_in_repo": {
+      "count": 6,
+      "ids": [
+        "ho-044.score",
+        "ho-044.period_label",
+        "ho-045.score",
+        "ho-045.period_label",
+        "ho-076.score",
+        "ho-077.score"
+      ],
+      "example_reason": "The contextual page's selected period is not stored in the repo."
+    },
+    "no_country_total_attribution_rule": {
+      "count": 4,
+      "ids": [
+        "fz-035.attribution_rule",
+        "fz-036.attribution_rule",
+        "ho-058.attribution_rule",
+        "ho-059.attribution_rule"
+      ],
+      "example_reason": "Finance region=All, RCM region=All in team config. No non-AI scoring function states whether region All enters an Egypt total."
+    },
+    "outbound_august_pooled_reference_not_applied": {
+      "count": 4,
+      "ids": [
+        "ho-003.score",
+        "ho-004.score",
+        "ho-048.august_score",
+        "ho-049.august_score"
+      ],
+      "example_reason": "August pooled EmployeePolicy total was computed and not stored as the expected score. score_0_to_100=79.82419863297693, earned_0_to_1=0.7982419863297692. Employee rows are omitted, so the team-dashboard average cannot be computed. The August pooled total is not the published team score. docs/plans/monthly-evaluation/outbound-anonymous-reference.json is source_reference_only_not_activated and its provenance omits identities and operational counts. Backend/services/insights_service.py team summaries set the team score to the average of employee record scores, and those employee rows are not in the repo. September has no actuals in the reference; period_capability(2026, 9) is unconfigured with approved_binding refuse, which is a scoring-basis refusal, not a publication flag."
+    },
+    "outbound_september_not_a_published_score": {
+      "count": 4,
+      "ids": [
+        "ho-001.publication",
+        "ho-001.score",
+        "ho-002.publication",
+        "ho-002.score"
+      ],
+      "example_reason": "period_capability(2026, 9) status=unconfigured, approved_binding=refuse. That refusal is not a publication flag, and the anonymous reference has no September actuals. Backend/tests/fixtures/regression_january_snapshot.json has 156 rows, months ['January'], levels ['Employee'], person-name field present=False. Backend/tests/fixtures/record_resolver_baseline.json records: all has 10 rows."
+    },
+    "position_configured_but_not_proven_live": {
+      "count": 4,
+      "ids": [
+        "ho-074.position_binding",
+        "ho-074.score",
+        "ho-075.position_binding",
+        "ho-075.score"
+      ],
+      "example_reason": "Catalog position: Quality Assurance on Call Center (Backend/config/teams/call_center.json, Employee). No employee rows prove the position is live or supply its published score."
+    },
+    "outbound_august_not_a_publication_record": {
+      "count": 2,
+      "ids": [
+        "ho-003.publication",
+        "ho-004.publication"
+      ],
+      "example_reason": "August basis status=august_2026 approved_binding=apply, but the anonymous reference status is source_reference_only_not_activated. That is not a publication record."
+    },
+    "page_selection_not_in_repo": {
+      "count": 2,
+      "ids": [
+        "ho-076.team_binding",
+        "ho-077.team_binding"
+      ],
+      "example_reason": "The Monthly Review page's selected team and country are not stored in the repo."
+    },
+    "scorecard_route_not_verified": {
+      "count": 2,
+      "ids": [
+        "ho-042.destination",
+        "ho-043.destination"
+      ],
+      "example_reason": "No signed scorecard route in the non-AI sources. A frontend path was not treated as verified help."
+    }
+  },
+  "not_applied": {
+    "applied_to_expected_values": false,
+    "why_not": "The August pooled total is not the published team score. docs/plans/monthly-evaluation/outbound-anonymous-reference.json is source_reference_only_not_activated and its provenance omits identities and operational counts. Backend/services/insights_service.py team summaries set the team score to the average of employee record scores, and those employee rows are not in the repo. September has no actuals in the reference; period_capability(2026, 9) is unconfigured with approved_binding refuse, which is a scoring-basis refusal, not a publication flag.",
+    "method": "EmployeePolicy higher_better: achievement = min(max(actual/target, 0), 1); contribution = achievement * weight; score = earned / measured_weight * 100. Same call as Backend/tests/test_evaluation_outbound_productivity_golden.py _score_month. Result stored only in this report.",
+    "inputs": [
+      {
+        "path": "docs/plans/monthly-evaluation/outbound-anonymous-reference.json",
+        "commit": "2a8b3ece1f282c37f9743e27f5c3966560ff76e7"
+      },
+      {
+        "path": "Backend/services/scoring/engine.py",
+        "commit": "a34140b2f5395ddb6c941d67ca1a7f4cf2dfd8f0"
+      },
+      {
+        "path": "Backend/services/outbound_period_basis.py",
+        "commit": "e4eaac9c03c1a81ae1995db2aef33fcd94480a9b"
+      },
+      {
+        "path": "Backend/services/insights_service.py",
+        "commit": "10eb735e5fcd748a6d068a96cf5141f4d4930e59"
+      }
+    ],
+    "august_pooled_score_0_to_100": 79.82419863297693,
+    "august_pooled_earned_0_to_1": 0.7982419863297692,
+    "august_engine_state": "measured",
+    "august_basis_status": "august_2026",
+    "august_approved_binding": "apply",
+    "september_basis_status": "unconfigured",
+    "september_approved_binding": "refuse",
+    "reference_has_september_actuals": false
+  },
+  "population_survey": {
+    "january_n": 156,
+    "january_months": [
+      "January"
+    ],
+    "january_has_person_name": false,
+    "resolver_n": 10,
+    "inbound_sample_n": 3,
+    "inbound_sample_months": [
+      "April",
+      "June"
+    ]
+  },
+  "reviewer": "PENDING",
+  "note": "Reviewer is still PENDING. Filled values are repo derivations, not a signed data-owner review."
+}
