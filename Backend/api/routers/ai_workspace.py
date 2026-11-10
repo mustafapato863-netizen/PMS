@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import threading
-
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session
 
@@ -380,38 +378,6 @@ def export_ai_distillation_traces(
     )
 
 
-def _bounded_model_health(timeout_seconds: float = 1.5) -> dict[str, Any]:
-    """Return model health without letting a stuck probe hold the request."""
-    box: dict[str, Any] = {}
-
-    def run() -> None:
-        try:
-            box["value"] = check_model_health(timeout_seconds)
-        except Exception:
-            box["value"] = {
-                "configured_model": "unavailable",
-                "endpoint_configured": False,
-                "endpoint_host": None,
-                "available": False,
-                "inference_verified": False,
-                "reason": "unavailable",
-            }
-
-    worker = threading.Thread(target=run, daemon=True)
-    worker.start()
-    worker.join(timeout_seconds)
-    if worker.is_alive() or "value" not in box:
-        return {
-            "configured_model": "unavailable",
-            "endpoint_configured": False,
-            "endpoint_host": None,
-            "available": False,
-            "inference_verified": False,
-            "reason": "timeout",
-        }
-    return box["value"]
-
-
 def _safe_host(value: object) -> str | None:
     if not isinstance(value, str) or not value.strip():
         return None
@@ -423,7 +389,7 @@ def _safe_host(value: object) -> str | None:
 
 def build_ai_diagnostics_payload(db: Session | None) -> AiDiagnosticsPayload:
     cfg = get_ai_runtime_config()
-    model_health = _bounded_model_health()
+    model_health = check_model_health()
 
     freshness: dict[str, object] = {}
     try:
@@ -464,30 +430,21 @@ def build_ai_diagnostics_payload(db: Session | None) -> AiDiagnosticsPayload:
     except Exception:
         feature_enabled = False
 
-    model_up = bool(model_health.get("available"))
-    intent_on = local_intent_enabled()
-    synthesis_on = local_synthesis_enabled()
-    model_name = str(model_health.get("configured_model") or "")
-    reason = str(model_health.get("reason") or "unavailable")
-    from services.ai.diagnostics import scrub_text
-
-    model_name = scrub_text(model_name)
-    reason = scrub_text(reason)
+    version = model_health.get("model_version")
     return AiDiagnosticsPayload(
         feature_enabled=feature_enabled,
         pilot_role_restricted=True,
-        model_configured_name=model_name,
+        model_configured_name=str(model_health.get("configured_model") or ""),
+        model_version=version if isinstance(version, str) else None,
         model_endpoint_configured=bool(model_health.get("endpoint_configured")),
         model_endpoint_host=_safe_host(model_health.get("endpoint_host")),
-        model_available=model_up,
+        model_available=bool(model_health.get("available")),
         inference_verified=bool(model_health.get("inference_verified", False)),
-        model_availability_reason=reason,
+        model_availability_reason=str(model_health.get("reason") or "unavailable"),
         router_mode=cfg.router_mode,
-        intent_routing_enabled=intent_on,
-        synthesis_enabled=synthesis_on,
+        intent_routing_enabled=local_intent_enabled(),
+        synthesis_enabled=local_synthesis_enabled(),
         exploration_enabled=local_exploration_enabled(),
-        routing_provider="llama_cpp" if intent_on and model_up else "deterministic",
-        synthesis_provider="llama_cpp" if synthesis_on and model_up else "deterministic",
         brief_default_enabled=cfg.brief_default_enabled,
         conversation_state_enabled=cfg.conversation_state_enabled,
         provider_timeout_seconds=cfg.provider_timeout_seconds,

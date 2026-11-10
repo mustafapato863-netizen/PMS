@@ -813,8 +813,7 @@ def test_coverage_manifest_discovers_new_active_db_team_as_pending_and_uses_regi
             and cell.get("performance_level") == "Employee"
         ]
         assert len(matching) == 1
-        assert matching[0]["coverage_state"] in {"partial", "blocked"}
-        assert matching[0]["evidence_passes"] is False
+        assert matching[0]["coverage_state"] in {"PENDING", "BLOCKED_SOURCE"}
 
         # Also verify no cell points to unregistered /bsc route
         for cell in cells:

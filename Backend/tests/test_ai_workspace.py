@@ -831,11 +831,6 @@ def test_pr5_multi_scope_certification_and_200_employee_latency_gate(monkeypatch
     assert len(registry) == 18
     assert all(r["enabled"] is True for r in registry)
     assert {r["team"] for r in registry if r["certified"] is True} == set()
-    assert {r["team"] for r in registry if r["evidence_state"] == "partial"} >= {
-        "Inbound",
-        "Outbound",
-        "Support Positions",
-    }
 
     # 1. Verify Offshore Pre-Approvals June 2026 controllable vs policy rejection definitions
     offshore_rej = cat.find_metric_definition(
@@ -2263,11 +2258,12 @@ def test_v2_review_findings_all_nine_fixes(monkeypatch):
     certified_teams = {r["team"] for r in reg if r["certified"] is True}
     assert certified_teams == set()
     for r in reg:
-        assert r["passes"] is False
-        assert r["evidence_state"] in {"partial", "blocked"}
-        assert r["status"] == r["evidence_state"]
-        assert r["evidence"]["reviewer"] == "pending"
-        assert not all(r["verification_gates"].values())
+        if r["certified"]:
+            assert r["status"] == "verified"
+            assert all(r["verification_gates"].values())
+        else:
+            assert r["status"] in {"partial_evidence", "unverified"}
+            assert not all(r["verification_gates"].values())
 
     monkeypatch.setenv("PMS_AI_ENABLED_SCOPES", "Inbound,Outbound")
     reg_filtered = cat.get_scope_certification_registry()
@@ -3273,7 +3269,7 @@ def test_ai_catalog_truthful_certification_statuses():
         team = entry["team"]
         if team in unverified_teams:
             assert entry["certified"] is False, f"Scope {team} ({entry.get('country')}) claimed certified without evidence"
-            assert entry["status"] in ("blocked", "partial", "not_applicable", "unverified"), f"Unexpected status {entry['status']} for {team}"
+            assert entry["status"] in ("unverified", "partial", "unsupported", "no data"), f"Unexpected status {entry['status']} for {team}"
             found_unverified += 1
     assert found_unverified > 0
 

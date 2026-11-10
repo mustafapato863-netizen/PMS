@@ -106,7 +106,6 @@ def test_2_feature_switch_off_returns_disabled_status_cleanly(test_db_session):
     resp_diag = client.get("/api/ai/diagnostics", headers=headers_admin)
     assert resp_diag.status_code == 200
     assert resp_diag.json()["data"]["feature_enabled"] is False
-    assert resp_diag.json()["data"]["routing_provider"] == "deterministic"
 
     resp_chat = client.post("/api/ai/chat", json={"prompt": "Hi"}, headers=headers_admin)
     assert resp_chat.status_code == 403
