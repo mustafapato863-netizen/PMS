@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
-"""Repeatable Phase 2 PMS coverage manifest.
+"""Repeatable Phase 2 domain and data map.
 
 Reads repository catalog and configuration only. It does not open a network
 connection and does not read a database unless ``--read-db`` is passed.
 Outputs contain aggregate structure only: no employee names, identifiers,
 emails, or individual scores.
+
+Governing write-up: ``docs/plans/pms-ai-evidence-first/``. This generator
+cross-checks those docs and lists disagreements. It does not replace them
+and it does not change ``catalog.py`` or ``coverage_manifest.py``.
 
 Nothing in this manifest is marked verified. Verified requires a source-parity
 check and a permission check that both exist and pass for that cell. This
@@ -22,6 +26,7 @@ import argparse
 import ast
 import csv
 import hashlib
+import importlib.util
 import json
 import re
 from collections import defaultdict
@@ -30,7 +35,18 @@ from pathlib import Path
 from typing import Any
 
 
-MANIFEST_VERSION = "2.0.0"
+def _load_doc_crosscheck():
+    path = Path(__file__).with_name("doc_crosscheck.py")
+    spec = importlib.util.spec_from_file_location("phase2_doc_crosscheck", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+doc_crosscheck = _load_doc_crosscheck()
+
+
+MANIFEST_VERSION = "2.1.0"
 BASELINE_COMMIT = "fabbb3d461c044bd367e6cc38a9c514fcfe300d2"
 PHASE = "phase-2"
 
@@ -44,14 +60,7 @@ OPERATIONS = (
     "navigation",
 )
 
-STATUSES = (
-    "verified",
-    "verified no data",
-    "partial",
-    "blocked",
-    "not applicable",
-    "unknown",
-)
+STATUSES = doc_crosscheck.ROADMAP_STATUSES
 
 KPI_VALUE_KEY_MAX = 50
 MANAGEMENT_KPI_KEY_MAX = 100
@@ -1064,7 +1073,13 @@ class ManifestBuilder:
                 "performance_records_read": published["read"],
                 "no_employee_data": True,
                 "ai_enabled": False,
-                "default_status": "unknown or blocked with a reason; never verified from catalog presence alone",
+                "default_status": "blocked with a reason when a check was not run or a source disagrees; never verified from catalog presence alone",
+                "vocabulary": "verified, verified no data, partial, blocked, not applicable",
+                "governing_docs": list(doc_crosscheck.GOVERNING_DOCS),
+                "runtime_capability_registries_unchanged": [
+                    "Backend/services/ai/catalog.py",
+                    "Backend/services/ai/coverage_manifest.py",
+                ],
                 "prior_coverage_claims": "docs/plans/contextual-ai-assistant/coverage_manifest_v1.json was not used as evidence",
             },
             "catalog": self._catalog(entries, kpi_rows),
@@ -1072,6 +1087,16 @@ class ManifestBuilder:
             "kpis": kpi_rows,
             "matrix": matrix,
             "alias_report": self._alias_report(),
+            "vocabulary": doc_crosscheck.vocabulary_mapping(),
+            "doc_disagreements": doc_crosscheck.crosscheck(
+                self.root,
+                self.configs,
+                matrix,
+                self.conflicts,
+                also_teams=list(self.sources["corporate_bsc"]),
+            ),
+            "open_questions": doc_crosscheck.open_questions(self.conflicts, self._undetermined(published)),
+            "corrective_action_pilot": doc_crosscheck.build_pilot(scopes),
             "reconciliation": reconciliation,
             "published_periods": published,
             "undetermined_from_repo": self._undetermined(published),
@@ -1100,6 +1125,8 @@ class ManifestBuilder:
                 self.root / "Frontend" / "src" / "components" / "team" / "CallCenterChannelSummary.tsx",
             ]
         )
+        for rel_path in doc_crosscheck.GOVERNING_DOCS:
+            paths.append(self.root / rel_path)
         return paths
 
     def _team_entry(self, cfg: dict[str, Any], primary: str, functions: list[str], ownership: dict[str, Any]) -> dict[str, Any]:
@@ -1459,7 +1486,9 @@ class ManifestBuilder:
     def _cells_for_scope(self, scope: dict[str, Any]) -> list[dict[str, Any]]:
         cells = []
         for operation in OPERATIONS:
-            status, reason, parity, permission = self._status(scope, operation)
+            status, reason, parity, permission, status_basis = self._status(scope, operation)
+            if status not in STATUSES:
+                raise RuntimeError(f"refusing to emit {status} for {scope['team']} {operation}")
             if status in {"verified", "verified no data"}:
                 raise RuntimeError(f"refusing to emit {status} for {scope['team']} {operation}")
             cells.append(
@@ -1474,6 +1503,7 @@ class ManifestBuilder:
                     "measure": scope["measure"],
                     "operation": operation,
                     "status": status,
+                    "status_basis": status_basis,
                     "reason": reason,
                     "not_in_score": bool(scope["not_in_score"] or scope["tracking_only_row"]),
                     "source": scope["source"],
@@ -1486,7 +1516,7 @@ class ManifestBuilder:
             )
         return cells
 
-    def _status(self, scope: dict[str, Any], operation: str) -> tuple[str, str, str, str]:
+    def _status(self, scope: dict[str, Any], operation: str) -> tuple[str, str, str, str, str]:
         permission = "not_run"
         checks = scope["parity_checks"]
         failed = [check for check in checks if check["status"] == "fail"]
@@ -1500,6 +1530,7 @@ class ManifestBuilder:
                 "Follow-up is an AI conversation operation. AI stays off; this inventory does not enable it, and no per-scope permission check was executed.",
                 parity,
                 permission,
+                "structural_block",
             )
         if scope.get("inactive_or_unsupported") or scope["basis"] == "unsupported-name":
             return (
@@ -1507,6 +1538,7 @@ class ManifestBuilder:
                 issues[0] if issues else "Name has no KPI config.",
                 "fail",
                 permission,
+                "structural_block",
             )
         if operation == "score" and (scope["tracking_only_row"] or scope["not_in_score"]):
             return (
@@ -1514,6 +1546,7 @@ class ManifestBuilder:
                 "Tracking-only or zero-weight measure. It does not count toward the score.",
                 parity,
                 permission,
+                "not_applicable",
             )
         if operation == "comparison" and scope["shared_country_blocked"]:
             return (
@@ -1521,6 +1554,7 @@ class ManifestBuilder:
                 "Region All is shared ownership. A single-country comparison needs record-level attribution, which was not read. Team name was not used as a country.",
                 parity,
                 permission,
+                "structural_block",
             )
         if operation == "navigation" and not scope.get("route_id") and scope["team"] not in self.sources["team_id_map"]:
             return (
@@ -1528,37 +1562,42 @@ class ManifestBuilder:
                 "No TEAM_ID_MAP route for this scope. Permission was not checked.",
                 parity,
                 permission,
+                "structural_block",
             )
         if failed and operation in {"score", "actual/target"}:
-            return ("blocked", failed[0]["reason"], "fail", permission)
+            return ("blocked", failed[0]["reason"], "fail", permission, "structural_block")
         if issues and operation in {"score", "actual/target"} and any("exceeds" in issue or "missing fields" in issue or "weights sum" in issue for issue in issues):
-            return ("blocked", "; ".join(issues), "fail", permission)
+            return ("blocked", "; ".join(issues), "fail", permission, "structural_block")
         if scope["period_basis_unselected"] and operation in {"score", "actual/target", "trend", "ranking", "comparison"}:
             return (
-                "unknown",
+                "blocked",
                 "A period-specific KPI basis exists, and the published month is not in the repo, so the active basis cannot be selected. Permission check was not executed.",
                 parity,
                 permission,
+                "not_checked",
             )
         if passed and not failed and operation in {"score", "actual/target"}:
             return (
                 "partial",
-                passed[0]["reason"] + " Permission check was not executed and performance_records were not read, so this is not verified.",
+                passed[0]["reason"] + " Permission check was not executed and performance_records were not read, so this is not verified. This partial is not catalog partial_evidence.",
                 "pass",
                 permission,
+                "single_source_pass",
             )
         if operation == "navigation" and scope.get("route_id"):
             return (
-                "unknown",
+                "blocked",
                 f"Route id {scope['route_id']} is present. Access was not checked with user_can_access_team.",
                 parity,
                 permission,
+                "not_checked",
             )
         return (
-            "unknown",
-            "Definition is only in one repository source, or no second source agrees. performance_records were not read and no permission check was executed.",
+            "blocked",
+            "Definition is only in one repository source, or no second source agrees. performance_records were not read and no permission check was executed. status_basis not_checked: no check failed.",
             parity,
             permission,
+            "not_checked",
         )
 
     def _missing(self, scope: dict[str, Any], operation: str) -> list[str]:
@@ -1856,6 +1895,7 @@ def render_csv(manifest: dict[str, Any]) -> str:
         "source",
         "source_parity",
         "permission_check",
+        "status_basis",
         "reason",
         "missing_evidence",
     ]
@@ -1896,6 +1936,23 @@ def render_markdown(manifest: dict[str, Any]) -> str:
         for item in recon["inactive_unsupported_nodata"]
     )
     undetermined = "\n".join(f"- {item}" for item in manifest["undetermined_from_repo"])
+    disagreements = "\n".join(
+        f"- `{item['id']}` — doc claim: {item['claim']} Repo: {item['repo']}"
+        for item in manifest["doc_disagreements"]
+    ) or "- none"
+    pilot = manifest["corrective_action_pilot"]
+    pilot_lines = "\n".join(
+        f"- {need}: " + ", ".join(f"{status} {count}" for status, count in counts.items() if count)
+        for need, counts in pilot["counts_by_need"].items()
+    )
+    catalog_map = "\n".join(
+        f"- `{item['from']}` → {item['to']}. {item['rule']}"
+        for item in manifest["vocabulary"]["catalog_py"]
+    )
+    runtime_map = "\n".join(
+        f"- `{item['from']}` → {item['to']}. {item['rule']}"
+        for item in manifest["vocabulary"]["coverage_manifest_py"]
+    )
     separation = manifest["alias_report"]["rcm_separation"]
     no_config = "\n".join(
         f"- {item['team']}: {item['kpi_count']} catalog KPIs, no team JSON"
@@ -1911,7 +1968,35 @@ def render_markdown(manifest: dict[str, Any]) -> str:
 Version `{manifest['manifest_version']}` from repository sources at baseline `{manifest['baseline_commit']}`.
 Input fingerprint `{manifest['inputs_fingerprint']}`.
 
+This is the domain/data map for Plan Phase 2. The governing write-up is `docs/plans/pms-ai-evidence-first/`. Capability claims in that write-up are not copied here. Runtime registries `Backend/services/ai/catalog.py` and `Backend/services/ai/coverage_manifest.py` were not changed.
+
 No cell is verified. Verified would require a passing source-parity check and a passing permission check. Permission checks were not executed. Published performance rows were not read. AI is not enabled. The file has no employee names, identifiers, emails, or scores.
+
+Status words are only: verified, verified no data, partial, blocked, not applicable. `partial` here means one repository parity check passed. It is not catalog `partial_evidence`. `blocked` with `status_basis` `not_checked` means the check was not run.
+
+## Vocabulary mapping (Backend follow-up, not applied in runtime)
+
+### catalog.py
+
+{catalog_map}
+
+### coverage_manifest.py
+
+{runtime_map}
+
+## Disagreements with the governing docs
+
+{disagreements}
+
+## Corrective-action pilot cells
+
+{pilot['cell_count']} scorecard scopes. Plan: `{pilot['plan']}`.
+
+{pilot_lines}
+
+{pilot['note']}
+
+Alias conflicts are filed under `open_questions.unresolved_naming_and_hierarchy`, in the shape of `OPEN_QUESTIONS_AND_EVIDENCE_GAPS.md`. That register was not edited.
 
 ## Counts
 

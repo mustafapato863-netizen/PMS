@@ -70,11 +70,13 @@ def test_nothing_is_marked_verified_without_passing_checks():
     for cell in manifest["matrix"]:
         assert cell["permission_check"] == "not_run"
         assert cell["status"] in {
+            "verified",
+            "verified no data",
             "partial",
             "blocked",
             "not applicable",
-            "unknown",
         }
+        assert cell["status"] != "unknown"
         if cell["status"] == "partial":
             assert cell["source_parity"] == "pass"
             assert cell["operation"] in {"score", "actual/target"}
@@ -134,3 +136,58 @@ def test_matrix_covers_every_operation_and_hides_employee_data():
     assert operations == set(module.OPERATIONS)
     assert all(cell["operation"] != "follow-up" or cell["status"] == "blocked" for cell in manifest["matrix"])
     assert manifest["reconciliation"]["corporate_region_disagreements"]
+
+
+def test_vocabulary_is_the_roadmap_set_and_runtime_registries_are_unchanged():
+    module = load_generator()
+    manifest = module.build_manifest()
+    assert set(manifest["vocabulary"]["single_vocabulary"]) == set(module.STATUSES)
+    catalog_from = {item["from"] for item in manifest["vocabulary"]["catalog_py"]}
+    assert catalog_from == {"verified", "partial_evidence", "unverified", "unsupported"}
+    runtime_from = {item["from"] for item in manifest["vocabulary"]["coverage_manifest_py"]}
+    assert "CERTIFIED" in runtime_from
+    assert "VERIFIED_NO_DATA" in runtime_from
+    certified = next(item for item in manifest["vocabulary"]["coverage_manifest_py"] if item["from"] == "CERTIFIED")
+    assert certified["to"] is None
+    assert manifest["rules"]["runtime_capability_registries_unchanged"] == [
+        "Backend/services/ai/catalog.py",
+        "Backend/services/ai/coverage_manifest.py",
+    ]
+
+
+def test_governing_docs_are_cross_checked_and_aliases_use_the_open_questions_shape():
+    manifest = json.loads((PHASE2 / "coverage_manifest.json").read_text(encoding="utf-8"))
+    ids = {item["id"] for item in manifest["doc_disagreements"]}
+    assert "glossary:call-center-is-a-team-file" in ids
+    assert "glossary:resubmission-alias-already-resolved" in ids
+    assert "glossary:pre-approvals-northern-name" in ids
+    assert "glossary:inbound-aht-tracking-only" in ids
+    assert "kpi-weight:Inbound:aht" in ids
+    assert "relationships:missing-branch-as-zero" in ids
+    assert "matrix:status-mismatch" in ids
+    assert "matrix:bsc-teams-unnamed" in ids
+    assert "matrix:unverified-has-no-roadmap-word" in ids
+    for item in manifest["doc_disagreements"]:
+        assert item["resolution"] == "unresolved"
+        assert item["doc"].startswith("docs/plans/pms-ai-evidence-first/")
+    naming_ids = {item["area"] for item in manifest["open_questions"]["unresolved_naming_and_hierarchy"]}
+    assert naming_ids == {conflict["id"] for conflict in manifest["alias_report"]["conflicts"]}
+    assert all(item["recommended_resolution_path"] == "unresolved" for item in manifest["open_questions"]["unresolved_naming_and_hierarchy"])
+
+
+def test_corrective_action_pilot_cells_state_actual_target_direction_and_prior_actions():
+    manifest = json.loads((PHASE2 / "coverage_manifest.json").read_text(encoding="utf-8"))
+    pilot = manifest["corrective_action_pilot"]
+    assert pilot["needs"] == ["kpi_actual", "kpi_target", "kpi_direction", "prior_corrective_actions"]
+    inbound = [
+        cell for cell in pilot["cells"]
+        if cell["team"] == "Inbound" and cell["level"] == "Employee" and cell["position"] == "" and cell["basis"] == "template"
+    ]
+    assert len(inbound) == 1
+    needs = inbound[0]["needs"]
+    assert needs["kpi_actual"]["status"] == "blocked"
+    assert needs["kpi_target"]["status"] == "blocked"
+    assert needs["kpi_direction"]["status"] == "partial"
+    assert needs["prior_corrective_actions"]["status"] == "blocked"
+    assert "action_history.py" in needs["prior_corrective_actions"]["source"]
+    assert inbound[0]["pilot_required"] is True
