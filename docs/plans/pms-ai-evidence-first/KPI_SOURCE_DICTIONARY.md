@@ -1,8 +1,8 @@
 # Phase 2: KPI & Metric Source Dictionary
 
-**Document Version:** 1.0  
-**Date:** 10 November 2026  
-**Status:** Metric Definitions & Provenance Verified  
+**Document Version:** 1.0
+**Date:** 10 November 2026
+**Status:** Metric Definitions & Provenance Verified
 **Scope:** Phase 2 Deliverable for PMS AI Evidence-First Upgrade ([Implementation Plan](file:///D:/Projects/PMS_Dashboard/docs/plans/PMS_AI_EVIDENCE_FIRST_IMPLEMENTATION_PLAN.md))
 
 ---

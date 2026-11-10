@@ -1,8 +1,8 @@
 # Phase 2: Data Relationships & Evidence Semantics
 
-**Document Version:** 1.0  
-**Date:** 10 November 2026  
-**Status:** Data Model & Semantics Verified  
+**Document Version:** 1.0
+**Date:** 10 November 2026
+**Status:** Data Model & Semantics Verified
 **Scope:** Phase 2 Deliverable for PMS AI Evidence-First Upgrade ([Implementation Plan](file:///D:/Projects/PMS_Dashboard/docs/plans/PMS_AI_EVIDENCE_FIRST_IMPLEMENTATION_PLAN.md))
 
 ---
@@ -13,10 +13,10 @@ To ensure analytical integrity, the PMS AI platform strictly differentiates four
 
 ```
 Data State Taxonomy
-├── 1. True Factual Zero (Measured value = 0)
-├── 2. Missing / Unmeasured (Metric not tracked for this entity)
-├── 3. Unpublished Period (No workbook uploaded for this month)
-└── 4. Access Denied / Unscoped (User lacks RBAC permission)
+â”œâ”€â”€ 1. True Factual Zero (Measured value = 0)
+â”œâ”€â”€ 2. Missing / Unmeasured (Metric not tracked for this entity)
+â”œâ”€â”€ 3. Unpublished Period (No workbook uploaded for this month)
+â””â”€â”€ 4. Access Denied / Unscoped (User lacks RBAC permission)
 ```
 
 ### 1.1 True Zero vs Missing vs Unpublished
@@ -74,7 +74,7 @@ erDiagram
     users ||--o{ user_team_assignments : "assigned to"
     users ||--o{ ai_conversations : "owns"
     users ||--o{ ai_interaction_traces : "initiates"
-    
+
     product_settings {
         string key PK
         boolean enabled
@@ -89,7 +89,7 @@ erDiagram
     teams ||--o{ management_kpi_config : "configures"
 
     employee_upload_batches ||--o{ upload_log : "contains logs"
-    
+
     upload_log ||--o{ performance_records : "creates"
 
     employees ||--o{ performance_records : "evaluated in"

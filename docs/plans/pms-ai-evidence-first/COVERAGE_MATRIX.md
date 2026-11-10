@@ -1,8 +1,8 @@
 # Phase 2: Scope & Operation Coverage Matrix
 
-**Document Version:** 1.0  
-**Date:** 10 November 2026  
-**Status:** Conservative Verification Audit  
+**Document Version:** 1.0
+**Date:** 10 November 2026
+**Status:** Conservative Verification Audit
 **Scope:** Phase 2 Deliverable for PMS AI Evidence-First Upgrade ([Implementation Plan](file:///D:/Projects/PMS_Dashboard/docs/plans/PMS_AI_EVIDENCE_FIRST_IMPLEMENTATION_PLAN.md))
 
 ---
@@ -21,7 +21,7 @@ To prevent unwarranted claims of capability, every cell in this matrix is classi
 
 ---
 
-## 2. Country × Function × Team × Level × Operation Coverage Matrix
+## 2. Country Ã— Function Ã— Team Ã— Level Ã— Operation Coverage Matrix
 
 ### 2.1 Offshore Egypt Operations
 

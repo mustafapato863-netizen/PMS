@@ -1,8 +1,8 @@
 # Phase 1: End-to-End Request Flow Architecture
 
-**Document Version:** 1.0  
-**Date:** 10 November 2026  
-**Status:** Architecture Map Verified  
+**Document Version:** 1.0
+**Date:** 10 November 2026
+**Status:** Architecture Map Verified
 **Scope:** Phase 1 Deliverable for PMS AI Evidence-First Upgrade ([Implementation Plan](file:///D:/Projects/PMS_Dashboard/docs/plans/PMS_AI_EVIDENCE_FIRST_IMPLEMENTATION_PLAN.md))
 
 ---
@@ -44,7 +44,7 @@ sequenceDiagram
 
     User->>UI: Submit query ("What was Inbound booking rate in Oct 2026?")
     UI->>Gateway: POST /api/ai/chat (Prompt, Session, PageContext)
-    
+
     rect rgb(240, 245, 255)
     Note over Gateway: Step 1-2: Security & Gates
     Gateway->>Gateway: Check require_ai_enabled() (ProductSetting: ai_enabled)
@@ -172,7 +172,7 @@ sequenceDiagram
 ### Step 9: Response Synthesis
 - **File:** [`Backend/services/ai/local_evidence_synthesis.py`](file:///D:/Projects/PMS_Dashboard/Backend/services/ai/local_evidence_synthesis.py).
 - **Synthesis Logic:**
-  - If `local_synthesis_enabled` and model reachable: Qwen composes a concise 1–2 sentence English answer strictly grounded in the evidence digest.
+  - If `local_synthesis_enabled` and model reachable: Qwen composes a concise 1â€“2 sentence English answer strictly grounded in the evidence digest.
   - If model offline or fallback active: Deterministic string template formats the final response from evidence fields.
   - Strict Rule: No speculative extrapolation or correlation-to-causation claims are permitted.
 

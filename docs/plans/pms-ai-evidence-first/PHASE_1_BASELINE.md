@@ -1,8 +1,8 @@
 # Phase 1: Baseline and Runtime Environment Audit
 
-**Document Version:** 1.0  
-**Date:** 10 November 2026  
-**Status:** Audit Verified — Read-Only Baseline  
+**Document Version:** 1.0
+**Date:** 10 November 2026
+**Status:** Audit Verified â€” Read-Only Baseline
 **Scope:** Phase 1 Deliverable for PMS AI Evidence-First Upgrade ([Implementation Plan](file:///D:/Projects/PMS_Dashboard/docs/plans/PMS_AI_EVIDENCE_FIRST_IMPLEMENTATION_PLAN.md))
 
 ---

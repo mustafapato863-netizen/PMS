@@ -1,8 +1,8 @@
 # Phase 2: Domain Glossary and Entity Hierarchy
 
-**Document Version:** 1.0  
-**Date:** 10 November 2026  
-**Status:** Domain Reference Verified  
+**Document Version:** 1.0
+**Date:** 10 November 2026
+**Status:** Domain Reference Verified
 **Scope:** Phase 2 Deliverable for PMS AI Evidence-First Upgrade ([Implementation Plan](file:///D:/Projects/PMS_Dashboard/docs/plans/PMS_AI_EVIDENCE_FIRST_IMPLEMENTATION_PLAN.md))
 
 ---
@@ -13,11 +13,11 @@ The PMS platform organizes performance data across five strictly typed structura
 
 ```
 Organization (SGH Group)
-└── Country Scope (Egypt / UAE / Shared "All")
-    └── Function (e.g. Call Center, RCM, Shared Functions)
-        └── Team / Channel (e.g. Inbound, Outbound, Support Positions, Coding EGY)
-            └── Position / Role (e.g. Agent, Trainer, Quality Specialist, Coder)
-                └── Performance Level (Employee, Managerial, Corporate BSC)
+â””â”€â”€ Country Scope (Egypt / UAE / Shared "All")
+    â””â”€â”€ Function (e.g. Call Center, RCM, Shared Functions)
+        â””â”€â”€ Team / Channel (e.g. Inbound, Outbound, Support Positions, Coding EGY)
+            â””â”€â”€ Position / Role (e.g. Agent, Trainer, Quality Specialist, Coder)
+                â””â”€â”€ Performance Level (Employee, Managerial, Corporate BSC)
 ```
 
 ### 1.1 Country Scope
@@ -64,18 +64,18 @@ RCM exists in both countries but operates under completely distinct calculations
 
 ```
 RCM Function
-├── Egypt RCM (Offshore)
-│   ├── Coding EGY
-│   ├── Submission EGY
-│   ├── Resubmission (Aliases: "Resubmission", "Re-Submission EGY")
-│   └── Pre-Approvals IP
-└── UAE RCM (Onshore)
-    ├── Coding
-    ├── Submission
-    ├── Re-Submission (Separate UAE calculation & source)
-    ├── Pre-Approvals OP Final (Dubai / Sharjah & Ajman)
-    ├── Pre-Approvals IP Final Dubai
-    └── Pre-Approvals IP Final Northern (Sharjah & Ajman)
+â”œâ”€â”€ Egypt RCM (Offshore)
+â”‚   â”œâ”€â”€ Coding EGY
+â”‚   â”œâ”€â”€ Submission EGY
+â”‚   â”œâ”€â”€ Resubmission (Aliases: "Resubmission", "Re-Submission EGY")
+â”‚   â””â”€â”€ Pre-Approvals IP
+â””â”€â”€ UAE RCM (Onshore)
+    â”œâ”€â”€ Coding
+    â”œâ”€â”€ Submission
+    â”œâ”€â”€ Re-Submission (Separate UAE calculation & source)
+    â”œâ”€â”€ Pre-Approvals OP Final (Dubai / Sharjah & Ajman)
+    â”œâ”€â”€ Pre-Approvals IP Final Dubai
+    â””â”€â”€ Pre-Approvals IP Final Northern (Sharjah & Ajman)
 ```
 
 #### Re-Submission Naming & Calculation Decision (Confirmed)
@@ -96,7 +96,7 @@ The system defines three distinct calculation tiers via [`PerformanceLevel`](fil
 
 | Level | Database Value | Scope & Aggregation Rules | Authoritative Model |
 | :--- | :--- | :--- | :--- |
-| **Employee** | `'employee'` | Monthly evaluations for individual contributors (Agents, Coders, Billers, Support Roles). Includes employee ID, name, grade (A–E), status (Exceeds, Meets, Below), and raw KPI achievements. | `PerformanceRecord` & `KPIValue` |
+| **Employee** | `'employee'` | Monthly evaluations for individual contributors (Agents, Coders, Billers, Support Roles). Includes employee ID, name, grade (Aâ€“E), status (Exceeds, Meets, Below), and raw KPI achievements. | `PerformanceRecord` & `KPIValue` |
 | **Managerial** | `'management'` | Department head and team leader scorecards. Evaluates supervisory KPIs (team SLA, attrition, escalation resolution). | `ManagementKPISnapshot` |
 | **Corporate** | `'corporate'` | Organization-wide Balanced Scorecard (BSC). Structured across four perspectives: Financial, Customer, Internal Business Processes, and Learning & Growth. | `management_kpi_snapshots` |
 

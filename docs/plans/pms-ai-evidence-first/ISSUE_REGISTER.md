@@ -1,8 +1,8 @@
 # Phase 1: Issue Register & Known Defect Reproduction
 
-**Document Version:** 1.0  
-**Date:** 10 November 2026  
-**Status:** Defect Reproduction Verified  
+**Document Version:** 1.0
+**Date:** 10 November 2026
+**Status:** Defect Reproduction Verified
 **Scope:** Phase 1 Deliverable for PMS AI Evidence-First Upgrade ([Implementation Plan](file:///D:/Projects/PMS_Dashboard/docs/plans/PMS_AI_EVIDENCE_FIRST_IMPLEMENTATION_PLAN.md))
 
 ---
@@ -42,7 +42,7 @@ All three issues were reproduced against isolated, local database sessions witho
 - **Expected Behavior:** Direct, concise identification of the lowest-performing agent based on authorized records:
   > *"Agent 1 (E001) is the lowest-scoring agent in Inbound for September 2026 with an overall score of 76.7%."*
 - **Actual Output Observed:**
-  > *"No performance records matched the selected filters (Inbound · September 2026). Agent 1 (E001) is the lowest-scoring agent in Inbound with an overall score of 76.7%."*
+  > *"No performance records matched the selected filters (Inbound Â· September 2026). Agent 1 (E001) is the lowest-scoring agent in Inbound with an overall score of 76.7%."*
 - **Provider Used:** `local_rules` (Deterministic fallback).
 
 #### Root Cause Analysis
@@ -65,11 +65,11 @@ All three issues were reproduced against isolated, local database sessions witho
 - **Scope / Period:** `country="UAE"`, `branch="Clinics"`, `period="September 2026"`.
 - **Expected Behavior:** Return the operational booking volume for the Clinics branch (e.g. 180 bookings from `record_payload['geo']['bookings']['clinics']`), or ask for channel clarification.
 - **Actual Output Observed:**
-  > *"The primary KPI bottleneck in All authorized departments (September 2026 · Clinics) is AHT (Handle Time) at 0.0% achievement against a target of 2.50 min (100.0% below target)."*
+  > *"The primary KPI bottleneck in All authorized departments (September 2026 Â· Clinics) is AHT (Handle Time) at 0.0% achievement against a target of 2.50 min (100.0% below target)."*
 - **Provider Used:** `local_rules` (Deterministic router).
 
 #### Root Cause Analysis
-1. In [`Backend/services/ai/router.py`](file:///D:/Projects/PMS_Dashboard/Backend/services/ai/router.py) lines 447–454, the router detects the substring `"booking"`.
+1. In [`Backend/services/ai/router.py`](file:///D:/Projects/PMS_Dashboard/Backend/services/ai/router.py) lines 447â€“454, the router detects the substring `"booking"`.
 2. Because the query does not contain explicit multi-branch comparison keywords (such as `"compare"`, `"versus"`, `"vs"`), the router maps `"booking"` to the standard Call Center KPI key `inbound:booking_rate`.
 3. Entity extraction identifies `"Clinics"` as a branch key, leaving `team = None`.
 4. When searching for `booking_rate` at the department level with `team = None`, the query router fails to resolve a valid team scorecard and falls back to its default diagnostic handler: `get_executive_and_priority_insights(bottleneck=True)`.

@@ -1,8 +1,8 @@
 # Phase 2: Open Questions, Conflicts & Evidence Gaps Register
 
-**Document Version:** 1.0  
-**Date:** 10 November 2026  
-**Status:** Gap Register Verified  
+**Document Version:** 1.0
+**Date:** 10 November 2026
+**Status:** Gap Register Verified
 **Scope:** Phase 2 Deliverable for PMS AI Evidence-First Upgrade ([Implementation Plan](file:///D:/Projects/PMS_Dashboard/docs/plans/PMS_AI_EVIDENCE_FIRST_IMPLEMENTATION_PLAN.md))
 
 ---
@@ -20,7 +20,7 @@
 ## 2. Open Business Questions Requiring Stakeholder Alignment
 
 ### Question 1: Historical Target & Weight Basis for Pre-September 2026 Trends
-- **Context:** When computing a 6-month historical score trend (e.g. May 2026 – October 2026), older months may have operated under different KPI weights, targets, or excel calculation formulas that were not archived in `team_kpi_config`.
+- **Context:** When computing a 6-month historical score trend (e.g. May 2026 â€“ October 2026), older months may have operated under different KPI weights, targets, or excel calculation formulas that were not archived in `team_kpi_config`.
 - **Business Risk:** Applying October 2026 targets retroactively to May 2026 records changes historical performance facts and causes discrepancies with previously signed-off monthly review slide decks.
 - **Current Conservative Rule:** Calculate historical points using the records and scoring basis available for that month. Where historical basis cannot be verified, display the limitation honestly or show gaps; never present unverified backfills as historical fact.
 
@@ -56,5 +56,5 @@
    - The Windows host port 8080 is occupied by `AgentService.exe` (unrelated background service).
 2. **Target VPS Resource Constraints (Hostinger KVM 2):**
    - The production VPS is an 8 GB RAM KVM 2 instance.
-   - Hosting a Qwen3 4B Q4_K_M model requires ~4.5–6.0 GB RAM alongside PostgreSQL, FastAPI backend, Next.js frontend, and Redis.
+   - Hosting a Qwen3 4B Q4_K_M model requires ~4.5â€“6.0 GB RAM alongside PostgreSQL, FastAPI backend, Next.js frontend, and Redis.
    - **Gate:** Live Qwen execution must be benchmarked on target-like hardware for concurrency, memory consumption, and fallback under high load before any pilot rollout.
