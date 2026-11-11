@@ -436,8 +436,15 @@ def build_authorized_concept_summary(
         for row in catalog.get_scope_certification_registry()
         if str(row.get("team") or "").casefold() in authorized_teams_cf
     ]
-    certified_teams = [row["team"] for row in cert_rows if row.get("certified")]
-    unverified_teams = [row["team"] for row in cert_rows if not row.get("certified")]
+    def _scope_passes(row: dict[str, Any]) -> bool:
+        return (
+            row.get("passes") is True
+            and row.get("certified") is True
+            and row.get("evidence_state") in {"verified", "verified_no_data"}
+        )
+
+    certified_teams = [row["team"] for row in cert_rows if _scope_passes(row)]
+    unverified_teams = [row["team"] for row in cert_rows if not _scope_passes(row)]
 
     active_team = session_state.team if session_state.team in authorized_teams else (
         authorized_teams[0] if len(authorized_teams) == 1 else None

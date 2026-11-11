@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session
 
 from api.dependencies import require_authenticated_scope, require_role
-from services.ai.feature_gate import read_ai_enabled, require_ai_admin, require_ai_enabled
+from services.ai.feature_gate import read_ai_enabled, require_ai_admin, require_ai_diagnostic_session, require_ai_enabled
 from config.database import get_db, release_read_transaction
 from models.ai_schemas import (
     AiCatalogResponse,
@@ -63,11 +63,30 @@ router = APIRouter(
     dependencies=[Depends(require_ai_enabled), Depends(require_ai_admin)],
 )
 
+# Diagnostics stay available when the product switch is off so an Admin can see why.
+diagnostics_router = APIRouter(
+    prefix="/ai",
+    tags=["PMS AI Diagnostics"],
+)
+
 # The router dependency is the pilot boundary. This list stays Admin-only so a
 # route-level check cannot admit a wider role if the router dependency is copied.
 AI_WORKSPACE_ROLES = [
     "Admin",
 ]
+
+
+@diagnostics_router.get("/diagnostics", response_model=AiDiagnosticsResponse)
+def get_ai_diagnostics(
+    request: Request,
+    db: Session = Depends(get_db),
+    _session: None = Depends(require_ai_diagnostic_session),
+    _role: str = Depends(require_ai_admin),
+) -> AiDiagnosticsResponse:
+    """Admin diagnostics. Available while AI is off so an Admin can see why."""
+    payload = build_ai_diagnostics_payload(db)
+    release_read_transaction(db)
+    return AiDiagnosticsResponse(success=True, message="Admin AI diagnostics loaded", data=payload)
 
 
 @router.get("/watching", response_model=AiWatchingResponse)
@@ -359,18 +378,34 @@ def export_ai_distillation_traces(
     )
 
 
+def _safe_host(value: object) -> str | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    host = value.strip()
+    if "://" in host or "@" in host or "/" in host or " " in host:
+        return None
+    return host
+
+
 def build_ai_diagnostics_payload(db: Session | None) -> AiDiagnosticsPayload:
     cfg = get_ai_runtime_config()
     model_health = check_model_health()
 
-    # Query latest published period / record count safely
     freshness: dict[str, object] = {}
     try:
         if db is not None:
-            from models.models import PerformanceRecord
+            from datetime import datetime
+
+            from models.models import PerformanceRecord, UploadLog
             from sqlalchemy import func
             count = db.query(func.count(PerformanceRecord.id)).scalar()
             freshness["performance_records_count"] = int(count) if count is not None else 0
+            latest_upload = db.query(func.max(UploadLog.uploaded_at)).scalar()
+            latest_record = db.query(func.max(PerformanceRecord.uploaded_at)).scalar()
+            if isinstance(latest_upload, datetime):
+                freshness["latest_upload_at"] = latest_upload.isoformat()
+            if isinstance(latest_record, datetime):
+                freshness["latest_performance_record_at"] = latest_record.isoformat()
             if count and count > 0:
                 rows = db.query(PerformanceRecord.year, PerformanceRecord.month).distinct().all()
                 month_order = {
@@ -386,8 +421,7 @@ def build_ai_diagnostics_payload(db: Session | None) -> AiDiagnosticsPayload:
                     latest = sorted_rows[-1]
                     freshness["latest_published_period"] = f"{latest[1]} {latest[0]}"
     except Exception:
-        freshness["performance_records_count"] = None
-        freshness["database_status"] = "read_failed"
+        freshness = {"performance_records_count": None, "database_status": "read_failed"}
 
     feature_enabled = False
     try:
@@ -396,19 +430,26 @@ def build_ai_diagnostics_payload(db: Session | None) -> AiDiagnosticsPayload:
     except Exception:
         feature_enabled = False
 
+    version = model_health.get("model_version")
+    model_up = bool(model_health.get("available"))
+    intent_on = local_intent_enabled()
+    synthesis_on = local_synthesis_enabled()
     return AiDiagnosticsPayload(
         feature_enabled=feature_enabled,
         pilot_role_restricted=True,
-        model_configured_name=model_health["configured_model"],
-        model_endpoint_configured=model_health["endpoint_configured"],
-        model_endpoint_host=model_health.get("endpoint_host"),
-        model_available=model_health["available"],
-        inference_verified=model_health.get("inference_verified", False),
-        model_availability_reason=model_health["reason"],
+        model_configured_name=str(model_health.get("configured_model") or ""),
+        model_version=version if isinstance(version, str) else None,
+        model_endpoint_configured=bool(model_health.get("endpoint_configured")),
+        model_endpoint_host=_safe_host(model_health.get("endpoint_host")),
+        model_available=model_up,
+        inference_verified=bool(model_health.get("inference_verified", False)),
+        model_availability_reason=str(model_health.get("reason") or "unavailable"),
         router_mode=cfg.router_mode,
-        intent_routing_enabled=local_intent_enabled(),
-        synthesis_enabled=local_synthesis_enabled(),
+        intent_routing_enabled=intent_on,
+        synthesis_enabled=synthesis_on,
         exploration_enabled=local_exploration_enabled(),
+        routing_provider="llama_cpp" if intent_on and model_up else "deterministic",
+        synthesis_provider="llama_cpp" if synthesis_on and model_up else "deterministic",
         brief_default_enabled=cfg.brief_default_enabled,
         conversation_state_enabled=cfg.conversation_state_enabled,
         provider_timeout_seconds=cfg.provider_timeout_seconds,
@@ -416,21 +457,4 @@ def build_ai_diagnostics_payload(db: Session | None) -> AiDiagnosticsPayload:
         recent_fallback_reason=get_recent_fallback_reason(),
         fallback_scope="process_local",
         data_freshness=freshness,
-    )
-
-
-@router.get("/diagnostics", response_model=AiDiagnosticsResponse)
-def get_ai_admin_diagnostics(
-    request: Request,
-    db: Session = Depends(get_db),
-    _role: str = Depends(require_role(["Admin"])),
-) -> AiDiagnosticsResponse:
-    """Admin-only safe diagnostics. Exposes feature posture, model health, and data freshness without secrets."""
-    scope = require_authenticated_scope(db, request)
-    payload = build_ai_diagnostics_payload(db)
-    release_read_transaction(db)
-    return AiDiagnosticsResponse(
-        success=True,
-        message="Admin AI diagnostics loaded",
-        data=payload,
     )

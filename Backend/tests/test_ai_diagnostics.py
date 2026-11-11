@@ -29,6 +29,7 @@ def _create_test_app(session):
     app = FastAPI()
     app.add_middleware(AuthMiddleware)
     app.include_router(ai_workspace.router, prefix="/api")
+    app.include_router(ai_workspace.diagnostics_router, prefix="/api")
     app.dependency_overrides[get_db] = lambda: session
     return app
 
@@ -101,10 +102,10 @@ def test_2_feature_switch_off_returns_disabled_status_cleanly(test_db_session):
     tok = _get_user_token(test_db_session, "admin_user", "Admin")
     headers_admin = {"Authorization": f"Bearer {tok}"}
 
-    # 2. When switch is off, API routes return clean 403 (no 500 errors)
+    # 2. When the switch is off, diagnostics still load for an Admin and chat stays closed.
     resp_diag = client.get("/api/ai/diagnostics", headers=headers_admin)
-    assert resp_diag.status_code == 403
-    assert "turned off" in resp_diag.json()["detail"].lower()
+    assert resp_diag.status_code == 200
+    assert resp_diag.json()["data"]["feature_enabled"] is False
 
     resp_chat = client.post("/api/ai/chat", json={"prompt": "Hi"}, headers=headers_admin)
     assert resp_chat.status_code == 403
@@ -115,6 +116,19 @@ def test_2_feature_switch_off_returns_disabled_status_cleanly(test_db_session):
     resp_diag_on = client.get("/api/ai/diagnostics", headers=headers_admin)
     assert resp_diag_on.status_code == 200
     assert resp_diag_on.json()["data"]["feature_enabled"] is True
+
+
+def test_anonymous_caller_is_rejected_on_diagnostics_before_any_role_check(test_db_session):
+    """No token and no legacy header: the diagnostics route answers 401, not 403."""
+    test_db_session.query(ProductSetting).delete()
+    test_db_session.commit()
+
+    app = _create_test_app(test_db_session)
+    client = TestClient(app, raise_server_exceptions=False)
+
+    resp = client.get("/api/ai/diagnostics")
+    assert resp.status_code == 401
+    assert "authorization" in resp.json()["detail"].lower()
 
 
 def test_3_model_listing_missing_configured_model_reported_as_model_missing(monkeypatch):

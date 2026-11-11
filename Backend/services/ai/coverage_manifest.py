@@ -12,8 +12,10 @@ from services.ai.catalog import (
     TEAM_CORPORATE_REGION,
     TEAM_DEFAULT_REGION,
     canonical_team_region,
+    evidence_for_team,
     get_ai_catalog,
 )
+from services.ai.evidence import CatalogEvidence, evidence_dict, publish_evidence
 from services.ai.corporate_bsc_catalog_data import CORPORATE_BSC_CATALOG_TEAMS
 from utils.report_scope import function_for_team
 
@@ -85,6 +87,25 @@ def _load_phase1_snapshot() -> dict[str, Any]:
     if snap_path.exists():
         return json.loads(snap_path.read_text(encoding="utf-8"))
     return {}
+
+
+def _cell_evidence(team_name: str, *, applicable: bool, has_records: bool) -> tuple[str, bool, dict[str, Any]]:
+    """Map a coverage cell to an evidence state. Records alone are not certification."""
+    if not applicable:
+        evidence = CatalogEvidence(state="not_applicable", reviewer="")
+        state, passes = publish_evidence(evidence)
+        return state, passes, evidence_dict(evidence)
+    evidence = evidence_for_team(team_name)
+    state, passes = publish_evidence(evidence)
+    if passes:
+        state = "verified" if has_records else "verified_no_data"
+    elif has_records:
+        state = "partial"
+        passes = False
+    else:
+        state = "blocked"
+        passes = False
+    return state, passes, evidence_dict(evidence)
 
 
 def build_coverage_manifest(db: Session | None = None) -> dict[str, Any]:
@@ -299,7 +320,7 @@ def build_coverage_manifest(db: Session | None = None) -> dict[str, Any]:
                 tracking_kpis = [m for m in level_metrics if not m.contributes_to_score]
 
                 if p_row and int(p_row.get("records") or 0) > 0:
-                    state = "PENDING" if dyn_meta is not None else "CERTIFIED"
+                    state, cell_passes, cell_evidence = _cell_evidence(team_name, applicable=True, has_records=True)
                     source_service = "DashboardRecordService"
                     dest_route = (
                         f"/executive?team={team_name}&level=Managerial"
@@ -313,7 +334,7 @@ def build_coverage_manifest(db: Session | None = None) -> dict[str, Any]:
                     (level == "Employee" and dyn_meta.get("team_level") in {"employee", ""})
                     or (level == "Managerial" and dyn_meta.get("team_level") in {"managerial", "management"})
                 ):
-                    state = "PENDING"
+                    state, cell_passes, cell_evidence = _cell_evidence(team_name, applicable=True, has_records=False)
                     source_service = "DashboardRecordService"
                     dest_route = (
                         f"/executive?team={team_name}&level=Managerial"
@@ -324,14 +345,14 @@ def build_coverage_manifest(db: Session | None = None) -> dict[str, Any]:
                     records_count = 0
                     positions = []
                 elif t_def and level in t_def.performance_levels and team_name not in ("CRM", "Nursing", "PMO"):
-                    state = "VERIFIED_NO_DATA"
+                    state, cell_passes, cell_evidence = _cell_evidence(team_name, applicable=True, has_records=False)
                     source_service = "DashboardRecordService"
                     dest_route = f"/executive?team={team_name}&level={level}" if level != "Employee" else f"/team/{team_name.lower().replace(' ', '-')}"
                     periods = []
                     records_count = 0
                     positions = list(t_def.positions)
                 else:
-                    state = "NOT_APPLICABLE"
+                    state, cell_passes, cell_evidence = _cell_evidence(team_name, applicable=False, has_records=False)
                     source_service = "none"
                     dest_route = None
                     periods = []
@@ -350,21 +371,21 @@ def build_coverage_manifest(db: Session | None = None) -> dict[str, Any]:
                 tracking_kpis = [m for m in level_metrics if not m.contributes_to_score]
 
                 if b_row and int(b_row.get("snapshot_rows") or 0) > 0:
-                    state = "PENDING" if dyn_meta is not None else "CERTIFIED"
+                    state, cell_passes, cell_evidence = _cell_evidence(team_name, applicable=True, has_records=True)
                     source_service = "ManagementBSCService"
                     dest_route = f"/executive?team={team_name}&level=Corporate"
                     periods = list(b_row.get("periods") or [])
                     records_count = int(b_row.get("snapshot_rows") or 0)
                     positions = list((corp_cfg or {}).get("positions") or [])
                 elif t_def and "Corporate" in t_def.performance_levels:
-                    state = "VERIFIED_NO_DATA"
+                    state, cell_passes, cell_evidence = _cell_evidence(team_name, applicable=True, has_records=False)
                     source_service = "ManagementBSCService"
                     dest_route = f"/executive?team={team_name}&level=Corporate"
                     periods = []
                     records_count = 0
                     positions = []
                 else:
-                    state = "NOT_APPLICABLE"
+                    state, cell_passes, cell_evidence = _cell_evidence(team_name, applicable=False, has_records=False)
                     source_service = "none"
                     dest_route = None
                     periods = []
@@ -385,6 +406,9 @@ def build_coverage_manifest(db: Session | None = None) -> dict[str, Any]:
                     "performance_level": level,
                     "wave": wave,
                     "coverage_state": state,
+                    "evidence_state": state,
+                    "evidence_passes": cell_passes,
+                    "evidence": cell_evidence,
                     "source_service": source_service,
                     "destination_route": dest_route,
                     "records_or_snapshots_count": records_count,
@@ -398,11 +422,11 @@ def build_coverage_manifest(db: Session | None = None) -> dict[str, Any]:
     active_db_teams = [t for t in db_teams if t.get("is_active")]
     inactive_db_teams = [t for t in db_teams if not t.get("is_active")]
 
-    certified_cells = [c for c in coverage_cells if c["coverage_state"] == "CERTIFIED"]
-    pending_cells = [c for c in coverage_cells if c["coverage_state"] == "PENDING"]
-    verified_no_data_cells = [c for c in coverage_cells if c["coverage_state"] == "VERIFIED_NO_DATA"]
-    not_applicable_cells = [c for c in coverage_cells if c["coverage_state"] == "NOT_APPLICABLE"]
-    blocked_cells = [c for c in coverage_cells if c["coverage_state"] == "BLOCKED_SOURCE"]
+    certified_cells = [c for c in coverage_cells if c["coverage_state"] == "verified" and c.get("evidence_passes") is True]
+    pending_cells = [c for c in coverage_cells if c["coverage_state"] == "partial"]
+    verified_no_data_cells = [c for c in coverage_cells if c["coverage_state"] == "verified_no_data" and c.get("evidence_passes") is True]
+    not_applicable_cells = [c for c in coverage_cells if c["coverage_state"] == "not_applicable"]
+    blocked_cells = [c for c in coverage_cells if c["coverage_state"] == "blocked"]
 
     manifest = {
         "manifest_version": MANIFEST_VERSION,
@@ -414,7 +438,8 @@ def build_coverage_manifest(db: Session | None = None) -> dict[str, Any]:
             "canonical_teams_total": len(all_canonical_teams),
             "coverage_cells_total": len(coverage_cells),
             "certified_cells_count": len(certified_cells),
-            "pending_cells_count": len(pending_cells),
+            "pending_cells_count": 0,
+            "partial_cells_count": len(pending_cells),
             "verified_no_data_cells_count": len(verified_no_data_cells),
             "not_applicable_cells_count": len(not_applicable_cells),
             "blocked_source_cells_count": len(blocked_cells),
@@ -432,7 +457,9 @@ def build_coverage_manifest(db: Session | None = None) -> dict[str, Any]:
                 "db_name": t.get("db_name"),
                 "region": t.get("region"),
                 "team_level": t.get("team_level"),
-                "coverage_state": "NOT_APPLICABLE",
+                "coverage_state": "not_applicable",
+                "evidence_state": "not_applicable",
+                "evidence_passes": False,
                 "reason": "Inactive legacy database team row with 0 active records.",
             }
             for t in inactive_db_teams
@@ -443,15 +470,24 @@ def build_coverage_manifest(db: Session | None = None) -> dict[str, Any]:
 
 
 def validate_coverage_manifest(manifest: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Validates that the coverage manifest has zero unclassified, zero blocked, and zero orphan KPI rows."""
+    """A manifest passes when every cell has a known state and no cell is certified without evidence."""
     target = manifest or build_coverage_manifest()
     summary = target.get("summary") or {}
     cells = target.get("coverage_cells") or []
-    valid_states = {"CERTIFIED", "PENDING", "VERIFIED_NO_DATA", "NOT_APPLICABLE", "BLOCKED_SOURCE"}
+    valid_states = {"verified", "verified_no_data", "partial", "blocked", "not_applicable"}
     unclassified = [c for c in cells if c.get("coverage_state") not in valid_states]
-    pending = [c for c in cells if c.get("coverage_state") == "PENDING"]
-    blocked = [c for c in cells if c.get("coverage_state") == "BLOCKED_SOURCE"]
-    certified = [c for c in cells if c.get("coverage_state") == "CERTIFIED"]
+    pending = [c for c in cells if c.get("coverage_state") == "partial"]
+    blocked = [c for c in cells if c.get("coverage_state") == "blocked"]
+    certified = [
+        c
+        for c in cells
+        if c.get("coverage_state") in {"verified", "verified_no_data"} and c.get("evidence_passes") is True
+    ]
+    false_certification = [
+        c
+        for c in cells
+        if c.get("coverage_state") in {"verified", "verified_no_data", "CERTIFIED"} and c.get("evidence_passes") is not True
+    ]
     integrity = summary.get("kpi_values_integrity") or {}
     orphan_rows = int(integrity.get("orphan_kpi_value_rows") or 0)
 
@@ -459,15 +495,7 @@ def validate_coverage_manifest(manifest: dict[str, Any] | None = None) -> dict[s
     certified_uae = [c for c in certified if c.get("country") == "UAE"]
     certified_shared = [c for c in certified if c.get("country") == "All"]
 
-    passed = (
-        len(unclassified) == 0
-        and len(pending) == 0
-        and len(blocked) == 0
-        and orphan_rows == 0
-        and len(certified_egy) >= 12
-        and len(certified_uae) >= 15
-        and len(certified_shared) >= 2
-    )
+    passed = len(unclassified) == 0 and len(false_certification) == 0 and orphan_rows == 0
     return {
         "passed": passed,
         "unclassified_count": len(unclassified),

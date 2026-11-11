@@ -506,19 +506,65 @@ def chat_completion(
 
 
 def check_model_health(timeout_seconds: float = 1.5) -> dict[str, Any]:
-    """Admin-only probe that confirms a real completion from the configured model.
+    """Real availability probe. The caller returns even if the socket ignores its timeout."""
+    try:
+        requested = float(timeout_seconds)
+    except (TypeError, ValueError):
+        requested = 1.5
+    if not math.isfinite(requested):
+        requested = 1.5
+    timeout = max(0.2, min(requested, 3.0))
+    box: dict[str, Any] = {}
 
-    Model listing is used only as an early mismatch check. The completion response
-    must identify the configured model and contain non-empty assistant text.
-    Both HTTP calls share a short deadline and the same single-inference slot as chat.
+    def run() -> None:
+        try:
+            box["value"] = _probe_configured_model(timeout)
+        except Exception:
+            # A crashing probe is not a timeout: report it as such so an
+            # Admin does not mistake a probe bug for a slow model.
+            logger.exception("model health probe failed")
+            box["value"] = {
+                "configured_model": configured_model_name(),
+                "endpoint_configured": False,
+                "endpoint_host": None,
+                "available": False,
+                "inference_verified": False,
+                "model_version": None,
+                "reason": "probe_error",
+            }
+
+    worker = threading.Thread(target=run, daemon=True)
+    worker.start()
+    worker.join(timeout)
+    if worker.is_alive() or "value" not in box:
+        return {
+            "configured_model": configured_model_name(),
+            "endpoint_configured": False,
+            "endpoint_host": None,
+            "available": False,
+            "inference_verified": False,
+            "model_version": None,
+            "reason": "timeout",
+        }
+    return box["value"]
+
+
+def _probe_configured_model(timeout_seconds: float = 1.5) -> dict[str, Any]:
+    """Confirm a completion from the configured model and record its listed version.
+
+    Model listing is an early mismatch check. The completion response must identify
+    the configured model and contain non-empty assistant text. Both HTTP calls share
+    a short deadline and the same single-inference slot as chat.
     """
     model_name = configured_model_name()
     url, url_reason = resolve_chat_url()
     host = _normalize_host(urllib.parse.urlsplit(url).hostname or "") if url else None
+    listed_version: str | None = None
 
     def result(available: bool, reason: str, http_status: int | None = None) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "configured_model": model_name,
+            "model_version": listed_version,
             "endpoint_configured": url is not None,
             "endpoint_host": host,
             "available": available,
@@ -571,8 +617,13 @@ def check_model_health(timeout_seconds: float = 1.5) -> dict[str, Any]:
                                     if isinstance(item, dict) and isinstance(item.get("id"), str)
                                 ]
                                 if len(listed_ids) == len(model_items) and all(listed_ids):
-                                    if not any(mid.casefold() == model_name.casefold() for mid in listed_ids):
+                                    match = next(
+                                        (mid for mid in listed_ids if mid.casefold() == model_name.casefold()),
+                                        None,
+                                    )
+                                    if match is None:
                                         return result(False, "configured_model_not_listed", 200)
+                                    listed_version = match
                         except (ValueError, UnicodeDecodeError, AttributeError):
                             pass
         except (TimeoutError, urllib.error.URLError):

@@ -1,7 +1,7 @@
 # PMS Phase 2 coverage manifest
 
 Version `2.1.0` from repository sources at baseline `fabbb3d461c044bd367e6cc38a9c514fcfe300d2`.
-Input fingerprint `35efde3746219d67abcfb2b19f2295ae2b0ff57557cdd4ba5b5b1052a204aa8c`.
+Input fingerprint `799e34351900b786ab0d0c6af04ad2422682517b8ee371d47a6ccb51ab647633`.
 
 This is the domain/data map for Plan Phase 2. The governing write-up is `docs/plans/pms-ai-evidence-first/`. Capability claims in that write-up are not copied here. Runtime registries `Backend/services/ai/catalog.py` and `Backend/services/ai/coverage_manifest.py` were not changed.
 

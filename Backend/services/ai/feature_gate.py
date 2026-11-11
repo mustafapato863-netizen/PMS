@@ -96,3 +96,19 @@ def require_ai_admin(request: Request) -> str:
             detail="PMS AI is limited to administrators during the pilot.",
         )
     return role
+
+
+def require_ai_diagnostic_session(request: Request) -> None:
+    """Reject callers with no session, legacy role header, or bearer token.
+
+    The Admin decision itself stays in ``require_ai_admin``. This only separates
+    an anonymous request from a signed-in non-Admin.
+    """
+    user = getattr(request.state, "user", None)
+    has_session = isinstance(user, dict) and bool(str(user.get("user_id") or user.get("role") or "").strip())
+    if has_session or request.headers.get("x-user-role") or request.headers.get("authorization"):
+        return
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Authentication required",
+    )

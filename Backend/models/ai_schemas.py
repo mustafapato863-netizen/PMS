@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from typing import Any, Literal
-from pydantic import BaseModel, Field
+
+from pydantic import BaseModel, Field, model_validator
+
+from services.ai.evidence import CatalogEvidence, publish_evidence
 
 
 RouterIntentType = Literal[
@@ -680,6 +683,16 @@ class AiConversationResponse(BaseModel):
     data: AiConversationContextPayload
 
 
+EvidenceState = Literal["verified", "verified_no_data", "partial", "blocked", "not_applicable"]
+
+
+class AiCatalogEvidence(BaseModel):
+    tests: list[str] = Field(default_factory=list)
+    fixture_or_source_version: str = ""
+    reviewed_on: str = ""
+    reviewer: str = "pending"
+
+
 class AiCatalogMetricItem(BaseModel):
     metric_id: str
     kpi_key: str
@@ -696,7 +709,24 @@ class AiCatalogMetricItem(BaseModel):
     weight_percent: float = 0.0
     contributes_to_score: bool = True
     available_operations: list[str] = Field(default_factory=list)
-    status: Literal["verified", "partial", "unverified", "unavailable"] = "verified"
+    status: EvidenceState = "blocked"
+    evidence: AiCatalogEvidence = Field(default_factory=AiCatalogEvidence)
+    evidence_passes: bool = False
+
+    @model_validator(mode="after")
+    def incomplete_evidence_is_not_a_pass(self) -> "AiCatalogMetricItem":
+        state, passes = publish_evidence(
+            CatalogEvidence(
+                state=self.status,
+                tests=tuple(self.evidence.tests),
+                fixture_or_source_version=self.evidence.fixture_or_source_version,
+                reviewed_on=self.evidence.reviewed_on,
+                reviewer=self.evidence.reviewer,
+            )
+        )
+        self.status = state  # type: ignore[assignment]
+        self.evidence_passes = passes
+        return self
 
 
 class AiCatalogPayload(BaseModel):
@@ -733,6 +763,7 @@ class AiDiagnosticsPayload(BaseModel):
     feature_enabled: bool
     pilot_role_restricted: bool = True
     model_configured_name: str
+    model_version: str | None = None
     model_endpoint_configured: bool
     model_endpoint_host: str | None = None
     model_available: bool
@@ -742,6 +773,8 @@ class AiDiagnosticsPayload(BaseModel):
     intent_routing_enabled: bool
     synthesis_enabled: bool
     exploration_enabled: bool
+    routing_provider: Literal["llama_cpp", "deterministic"] = "deterministic"
+    synthesis_provider: Literal["llama_cpp", "deterministic"] = "deterministic"
     brief_default_enabled: bool
     conversation_state_enabled: bool
     provider_timeout_seconds: float

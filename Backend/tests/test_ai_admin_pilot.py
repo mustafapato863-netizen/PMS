@@ -26,7 +26,12 @@ from config.database import Base, get_db
 from models.models import ProductSetting
 from services.ai import feature_gate
 from services.ai.config import get_ai_runtime_config
-from services.ai.feature_gate import read_ai_enabled, require_ai_admin, require_ai_enabled
+from services.ai.feature_gate import (
+    read_ai_enabled,
+    require_ai_admin,
+    require_ai_diagnostic_session,
+    require_ai_enabled,
+)
 from services.ai.llm_client import local_exploration_enabled, local_intent_enabled, local_synthesis_enabled
 from services.permission_seed import PERMISSION_MATRIX, seed_role_permissions
 
@@ -92,6 +97,10 @@ def _ai_routes() -> list[tuple[str, str, APIRoute]]:
     return [(method, path, route) for method, path, route in _api_routes() if path.startswith("/ai")]
 
 
+def _capability_routes() -> list[tuple[str, str, APIRoute]]:
+    return [item for item in _ai_routes() if not item[1].endswith("/diagnostics")]
+
+
 def _body_for(path: str) -> dict | None:
     if path.endswith("/chat"):
         return CHAT_BODY
@@ -133,13 +142,12 @@ def _client(monkeypatch) -> TestClient:
 
 
 def test_router_registry_lists_every_ai_capability_route_behind_both_gates():
-    routes = _ai_routes()
+    routes = _capability_routes()
     inventory = sorted(f"{method} /api{path}" for method, path, _route in routes)
     assert inventory == [
         "DELETE /api/ai/conversations/{conversation_id}",
         "GET /api/ai/catalog",
         "GET /api/ai/conversations/{conversation_id}/context",
-        "GET /api/ai/diagnostics",
         "GET /api/ai/traces/export",
         "GET /api/ai/watching",
         "POST /api/ai/chat",
@@ -153,6 +161,12 @@ def test_router_registry_lists_every_ai_capability_route_behind_both_gates():
         calls = _walk_calls(route.dependant)
         assert require_ai_enabled in calls
         assert require_ai_admin in calls
+    diagnostic = [item for item in _ai_routes() if item[1].endswith("/diagnostics")]
+    assert [f"{method} /api{path}" for method, path, _route in diagnostic] == ["GET /api/ai/diagnostics"]
+    diagnostic_calls = _walk_calls(diagnostic[0][2].dependant)
+    assert require_ai_enabled not in diagnostic_calls
+    assert require_ai_admin in diagnostic_calls
+    assert require_ai_diagnostic_session in diagnostic_calls
 
     control_plane = sorted(
         {path for _method, path, _route in _api_routes() if "ai" in path.casefold() and not path.startswith("/ai")}
@@ -168,7 +182,7 @@ def test_router_registry_lists_every_ai_capability_route_behind_both_gates():
 
 def test_non_admin_is_forbidden_on_every_ai_route_when_the_switch_is_on(monkeypatch):
     client = _client(monkeypatch)
-    for method, path, _route in _ai_routes():
+    for method, path, _route in _capability_routes():
         url = "/api" + path.format(conversation_id="conv-1", trace_id="trace-1")
         body = _body_for(path)
         admin = client.request(method, url, headers={"X-User-Role": "Admin"}, json=body)
@@ -182,7 +196,7 @@ def test_non_admin_is_forbidden_on_every_ai_route_when_the_switch_is_on(monkeypa
 def test_ai_routes_stay_closed_for_admin_when_the_switch_is_off(monkeypatch):
     monkeypatch.setattr(feature_gate, "is_ai_enabled", lambda db: False)
     client = _client(monkeypatch)
-    for method, path, _route in _ai_routes():
+    for method, path, _route in _capability_routes():
         url = "/api" + path.format(conversation_id="conv-1", trace_id="trace-1")
         response = client.request(method, url, headers={"X-User-Role": "Admin"}, json=_body_for(path))
         assert response.status_code == 403
