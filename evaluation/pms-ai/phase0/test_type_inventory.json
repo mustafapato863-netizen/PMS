@@ -9,10 +9,10 @@
     "source-parity",
     "browser"
   ],
-  "file_count": 31,
-  "case_count": 267,
+  "file_count": 32,
+  "case_count": 297,
   "files_by_label": {
-    "synthetic": 12,
+    "synthetic": 13,
     "mocked": 17,
     "live-model": 3,
     "source-parity": 2,
@@ -186,6 +186,16 @@
         "synthetic"
       ],
       "cases": 8,
+      "evidence_status": "not applicable",
+      "note": ""
+    },
+    {
+      "path": "Backend/tests/test_ai_source_parity_matrix.py",
+      "kind": "test",
+      "labels": [
+        "synthetic"
+      ],
+      "cases": 30,
       "evidence_status": "not applicable",
       "note": ""
     },
