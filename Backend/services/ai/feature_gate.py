@@ -22,6 +22,7 @@ from services.audit_service import AuditService
 logger = logging.getLogger(__name__)
 
 AI_SETTING_KEY = "ai_enabled"
+AI_CORRECTIVE_ACTION_PILOT_KEY = "ai_corrective_action_pilot_enabled"
 AI_PILOT_ROLE = "Admin"
 
 
@@ -84,6 +85,62 @@ def require_ai_enabled(db: Session = Depends(get_db)) -> None:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="PMS AI is turned off.",
+        )
+
+
+def read_ai_corrective_action_pilot_enabled(db: Session) -> bool:
+    """Separate pilot switch for contextual corrective-action suggestions.
+
+    Independent of the standalone AI chat switch (``ai_enabled``): enabling
+    this pilot must never expose standalone chat. A missing row or an
+    unreadable table means the pilot is off.
+    """
+    try:
+        row = db.query(ProductSetting).filter(ProductSetting.key == AI_CORRECTIVE_ACTION_PILOT_KEY).one_or_none()
+    except SQLAlchemyError:
+        db.rollback()
+        logger.warning("PMS AI corrective-action pilot setting could not be read; treating the pilot as off")
+        return False
+    return bool(row and row.enabled)
+
+
+def set_ai_corrective_action_pilot_enabled(db: Session, enabled: bool, user_id: str | None) -> bool:
+    row = db.query(ProductSetting).filter(ProductSetting.key == AI_CORRECTIVE_ACTION_PILOT_KEY).one_or_none()
+    previous = bool(row.enabled) if row is not None else False
+    actor_id = None
+    if user_id:
+        try:
+            actor_id = uuid.UUID(str(user_id))
+        except (TypeError, ValueError):
+            actor_id = None
+    if row is None:
+        row = ProductSetting(key=AI_CORRECTIVE_ACTION_PILOT_KEY, enabled=enabled, updated_by_user_id=actor_id)
+        db.add(row)
+    else:
+        row.enabled = enabled
+        row.updated_by_user_id = actor_id
+    db.commit()
+    try:
+        AuditService.log_operation(
+            db,
+            "product_settings",
+            "UPDATE",
+            None,
+            {"key": AI_CORRECTIVE_ACTION_PILOT_KEY, "enabled": previous},
+            {"key": AI_CORRECTIVE_ACTION_PILOT_KEY, "enabled": enabled},
+            str(actor_id) if actor_id else None,
+        )
+    except Exception:
+        logger.exception("PMS AI corrective-action pilot setting was saved but the audit row was not")
+    return enabled
+
+
+def require_ai_corrective_action_pilot_enabled(db: Session = Depends(get_db)) -> None:
+    """Gate for corrective-action pilot routes. Standalone chat stays separate."""
+    if not read_ai_corrective_action_pilot_enabled(db):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="The corrective-action pilot is turned off.",
         )
 
 

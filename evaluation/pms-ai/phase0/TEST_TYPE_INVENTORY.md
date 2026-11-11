@@ -8,12 +8,12 @@ verified is not used. source-parity here is partial because the reviewer has not
 
 ## Counts
 
-Test files: 32. Test functions or `it` blocks: 297.
+Test files: 33. Test functions or `it` blocks: 312.
 A file can carry more than one label, so the label counts can add up to more than the file count.
 
 | Label | Files | Evidence status of what the label proves |
 | --- | ---: | --- |
-| `synthetic` | 13 | not applicable |
+| `synthetic` | 14 | not applicable |
 | `mocked` | 17 | partial |
 | `live-model` | 3 | blocked |
 | `source-parity` | 2 | partial |
@@ -28,6 +28,7 @@ A file can carry more than one label, so the label counts can add up to more tha
 | `Backend/tests/test_ai_booking_count_parity.py` | test | `mocked` | 25 | partial |
 | `Backend/tests/test_ai_branch_bar_missing_value.py` | test | `synthetic` | 2 | not applicable |
 | `Backend/tests/test_ai_catalog_evidence.py` | test | `mocked` | 12 | partial |
+| `Backend/tests/test_ai_corrective_action_evidence.py` | test | `synthetic` | 11 | not applicable |
 | `Backend/tests/test_ai_count_achievement_card.py` | test | `synthetic` | 3 | not applicable |
 | `Backend/tests/test_ai_diagnostics.py` | test | `mocked` | 12 | partial |
 | `Backend/tests/test_ai_feature_gate.py` | test | `mocked` | 2 | partial |
@@ -52,7 +53,7 @@ A file can carry more than one label, so the label counts can add up to more tha
 | `Frontend/src/components/ai/AiResponseCard.test.tsx` | test | `synthetic` | 1 | not applicable |
 | `Frontend/src/components/ai/AiWatchingRail.test.tsx` | test | `synthetic` | 1 | not applicable |
 | `Frontend/src/components/ai/ContextualAssistantPanel.test.tsx` | test | `mocked` | 7 | partial |
-| `Frontend/src/components/settings/shell/AiFeatureSwitch.test.tsx` | test | `mocked` | 3 | partial |
+| `Frontend/src/components/settings/shell/AiFeatureSwitch.test.tsx` | test | `mocked` | 7 | partial |
 | `Frontend/src/features/ai/starterPrompts.test.ts` | test | `synthetic` | 3 | not applicable |
 | `Frontend/src/pages/PmsAiWorkspaceView.test.tsx` | test | `mocked` | 12 | partial |
 | `evaluation/pms-ai/phase0/run_rules_only_baseline.py` | runner | `synthetic` | 0 | not applicable |

@@ -14,7 +14,12 @@ from models.models import ErrorLog
 from models.schemas import StandardResponse, KPIWeight, Target
 from services.cache_invalidation_service import CacheInvalidationService
 from services.corrective_action_service import CorrectiveActionService, CorrectiveActionValidationError
-from services.ai.feature_gate import read_ai_enabled, set_ai_enabled
+from services.ai.feature_gate import (
+    read_ai_corrective_action_pilot_enabled,
+    read_ai_enabled,
+    set_ai_corrective_action_pilot_enabled,
+    set_ai_enabled,
+)
 from services.kpi_configuration_service import KPIConfigurationService
 from sqlalchemy.orm import Session
 
@@ -195,12 +200,19 @@ def get_ai_assistant_setting(
     request: Request,
     db: Session = Depends(get_db),
 ):
-    """Any signed-in user can see whether PMS AI is on. The value is a switch, not performance data."""
+    """Any signed-in user can see whether PMS AI is on. The value is a switch, not performance data.
+
+    The separate corrective-action pilot flag is included additively so
+    existing consumers that read only ``enabled`` keep working.
+    """
     _signed_in_user(request)
     return StandardResponse(
         success=True,
         message="PMS AI setting retrieved",
-        data={"enabled": read_ai_enabled(db)},
+        data={
+            "enabled": read_ai_enabled(db),
+            "corrective_action_pilot_enabled": read_ai_corrective_action_pilot_enabled(db),
+        },
     )
 
 
@@ -217,5 +229,46 @@ def update_ai_assistant_setting(
     return StandardResponse(
         success=True,
         message="PMS AI setting updated",
-        data={"enabled": enabled},
+        data={
+            "enabled": enabled,
+            "corrective_action_pilot_enabled": read_ai_corrective_action_pilot_enabled(db),
+        },
+    )
+
+
+@router.get("/ai-corrective-action-pilot", response_model=StandardResponse)
+def get_ai_corrective_action_pilot_setting(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Any signed-in user can see whether the corrective-action pilot is on.
+
+    This is a separate default-off switch from standalone PMS AI chat:
+    the pilot being on never exposes the standalone assistant.
+    """
+    _signed_in_user(request)
+    return StandardResponse(
+        success=True,
+        message="Corrective-action pilot setting retrieved",
+        data={"corrective_action_pilot_enabled": read_ai_corrective_action_pilot_enabled(db)},
+    )
+
+
+@router.put("/ai-corrective-action-pilot", response_model=StandardResponse)
+def update_ai_corrective_action_pilot_setting(
+    payload: AiAssistantSettingUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
+    _role: str = Depends(require_role(["Admin"])),
+):
+    """Administrators turn the corrective-action pilot on or off (audited).
+
+    Turning the pilot on does not turn on standalone PMS AI chat.
+    """
+    user = _signed_in_user(request)
+    enabled = set_ai_corrective_action_pilot_enabled(db, payload.enabled, user.get("user_id"))
+    return StandardResponse(
+        success=True,
+        message="Corrective-action pilot setting updated",
+        data={"corrective_action_pilot_enabled": enabled},
     )

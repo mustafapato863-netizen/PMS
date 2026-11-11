@@ -9,10 +9,10 @@
     "source-parity",
     "browser"
   ],
-  "file_count": 32,
-  "case_count": 297,
+  "file_count": 33,
+  "case_count": 312,
   "files_by_label": {
-    "synthetic": 13,
+    "synthetic": 14,
     "mocked": 17,
     "live-model": 3,
     "source-parity": 2,
@@ -67,6 +67,16 @@
       ],
       "cases": 12,
       "evidence_status": "partial",
+      "note": ""
+    },
+    {
+      "path": "Backend/tests/test_ai_corrective_action_evidence.py",
+      "kind": "test",
+      "labels": [
+        "synthetic"
+      ],
+      "cases": 11,
+      "evidence_status": "not applicable",
       "note": ""
     },
     {
@@ -318,7 +328,7 @@
       "labels": [
         "mocked"
       ],
-      "cases": 3,
+      "cases": 7,
       "evidence_status": "partial",
       "note": ""
     },
