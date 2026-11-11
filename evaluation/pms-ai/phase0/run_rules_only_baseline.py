@@ -3,6 +3,12 @@
 Hits the same FastAPI routes the UI uses, with the product switch on, an
 Admin fixture, and every model flag off. The database is a disposable SQLite
 file with no performance rows. No production data and no Qwen process.
+
+Question-set version: PMS_PHASE0_SET_VERSION selects the layer to score.
+The default "v0" scores frozen_v0.json / heldout_v0.json (all bindings
+PENDING). "v1" scores frozen_v1.json / heldout_v1.json, the derived layer
+with the filled bindings. The chosen version is recorded in the results
+payload as question_set_version.
 """
 
 from __future__ import annotations
@@ -351,9 +357,27 @@ def masked_env() -> dict:
     return out
 
 
-def load_cases() -> list[dict]:
+def question_set_version() -> str:
+    """Which derived question-set layer the baseline scores ("v0" or "v1").
+
+    Read from PMS_PHASE0_SET_VERSION so a v1 rerun is reproducible from the
+    committed code instead of needing the filenames swapped by hand.
+    """
+    version = os.environ.get("PMS_PHASE0_SET_VERSION", "v0").strip().casefold()
+    if version not in ("v0", "v1"):
+        raise ValueError(
+            "PMS_PHASE0_SET_VERSION must be 'v0' or 'v1', "
+            f"got {os.environ.get('PMS_PHASE0_SET_VERSION')!r}."
+        )
+    return version
+
+
+def load_cases(version: str | None = None) -> list[dict]:
+    version = (version or question_set_version()).strip().casefold()
+    if version not in ("v0", "v1"):
+        raise ValueError(f"Unknown question-set version {version!r}; expected 'v0' or 'v1'.")
     cases = []
-    for name in ("frozen_v0.json", "heldout_v0.json"):
+    for name in (f"frozen_{version}.json", f"heldout_{version}.json"):
         document = json.loads((PHASE0 / name).read_text(encoding="utf-8"))
         for case in document["cases"]:
             case = dict(case)
@@ -547,7 +571,14 @@ def _collect(nodes: list[dict], keys: set[str]) -> list[object]:
     return found
 
 
-def _names_and_ids(values: list[object]) -> tuple[set[str], set[str]]:
+def _split_names_ids(values: list[object]) -> tuple[set[str], set[str]]:
+    """Split trace values into display names and opaque ids.
+
+    A value that looks like a UUID (long and hyphenated) is an id even when
+    it arrives under a "team" key; anything else is a display name. Callers
+    add "team_id" values to the id set directly, whatever their shape, so a
+    short slug id is never mistaken for a second team name.
+    """
     names: set[str] = set()
     ids: set[str] = set()
     for value in values:
@@ -562,20 +593,26 @@ def _names_and_ids(values: list[object]) -> tuple[set[str], set[str]]:
 
 
 def _compare_team(expected: object, nodes: list[dict]) -> str:
-    """Return match, mismatch, or unobservable for a team name or id."""
+    """Return match, mismatch, or unobservable for a team name or id.
+
+    A name is compared with the names the trace shows and an id with the
+    ids it shows. A display name next to a matching id (or an id next to a
+    matching name) is the same team, not a conflict. Only a different shown
+    name, or a different shown id, is a mismatch. A name expected against
+    opaque ids alone cannot be compared, so it is unobservable.
+    """
     wanted = _norm_token(expected)
     if not wanted:
         return "unobservable"
-    names, ids = _names_and_ids(
-        _collect(nodes, {"team", "team_name"}) + _collect(nodes, {"team_id"})
-    )
-    if wanted in names or str(expected).strip() in ids:
-        if names and wanted not in names and str(expected).strip() not in ids:
-            return "mismatch"
+    names, ids = _split_names_ids(_collect(nodes, {"team", "team_name"}))
+    ids.update(str(value).strip() for value in _collect(nodes, {"team_id"}) if _norm_token(value))
+    raw = str(expected).strip()
+    if wanted in names:
         extra = names - {wanted}
-        if extra:
-            return "mismatch"
-        return "match"
+        return "mismatch" if extra else "match"
+    if raw in ids:
+        extra_ids = ids - {raw}
+        return "mismatch" if extra_ids else "match"
     if names:
         return "mismatch"
     return "unobservable"
@@ -709,6 +746,7 @@ def grade(case: dict, turns: list[dict]) -> dict:
             "failure_categories": ["composition"],
             "notes": ["The API returned a server error or no response."],
             "proposed_contracts": CONTRACTS.get(case["id"], []),
+            "binding_grades": [],
         }
     last = turns[-1]
     text = " ".join(response_text(turn) for turn in turns)
@@ -818,6 +856,7 @@ def main() -> None:
     import datetime
     t_start_wall = datetime.datetime.now(datetime.timezone.utc).isoformat()
     t_start_perf = time.perf_counter()
+    version = question_set_version()
     if DB_PATH.exists():
         DB_PATH.unlink()
     engine = create_engine(
@@ -876,7 +915,7 @@ def main() -> None:
     }
 
     results = []
-    for case in load_cases():
+    for case in load_cases(version):
         method, path = route_for(case)
         token = tokens[case["user_fixture"]["fixture_id"]]
         context = page_context_for(case.get("page_context")) if case["channel"] == "contextual_panel" else None
@@ -967,6 +1006,12 @@ def main() -> None:
     diff_hash = prov["diff_hash"]
     candidate_commit = prov["candidate_commit"]
     candidate_run_id = prov["candidate_run_id"]
+    question_sets = dict(prov["question_set_versions"])
+    for label in (f"frozen_{version}", f"heldout_{version}"):
+        question_sets[label] = {
+            "file": f"{label}.json",
+            "sha256": file_sha256(PHASE0 / f"{label}.json") or "none",
+        }
 
     out_file = RESULTS / f"{candidate_run_id}.json"
     if out_file.exists():
@@ -981,7 +1026,8 @@ def main() -> None:
         "working_tree_dirty": is_dirty,
         "evaluated_diff_hash": diff_hash,
         "relevant_untracked_files": prov["relevant_untracked_files"],
-        "question_set_versions": prov["question_set_versions"],
+        "question_set_version": version,
+        "question_set_versions": question_sets,
         "main_sha": git_sha("origin/main") if (REPO / ".git").exists() else base_commit,
         "evaluated_sha": base_commit,
         "performance_record_count": int(record_count or 0),
@@ -1012,6 +1058,7 @@ def main() -> None:
                 "candidate_commit",
                 "working_tree_dirty",
                 "evaluated_diff_hash",
+                "question_set_version",
                 "question_set_versions",
                 "performance_record_count",
                 "execution_start_time",

@@ -18,6 +18,10 @@ People in the questions are fixture identities (Adham, Mariam, Nour) or role pla
 
 `Backend/tests/test_pms_ai_phase0_eval_schema.py` checks required fields, the unsigned-value rule, and the split below. It does not call the assistant. `Backend/tests/test_pms_ai_phase0_derivation.py` checks that v1 matches the script.
 
+## Running the rules-only baseline
+
+`run_rules_only_baseline.py` hits the local API with an empty SQLite file, the AI product switch on, and every model flag off. No model is started. It scores `v0` by default. Set `PMS_PHASE0_SET_VERSION=v1` to score the derived layer (`frozen_v1.json` / `heldout_v1.json`), where the filled bindings live; any other value is rejected. The run record keeps `question_set_version` and the SHA-256 of the scored files, so a v0 run and a v1 run on the same commit (same `run_id` stem) stay distinguishable. Results are written under `evaluation/pms-ai/phase0/results/`; do not hand-edit them. Filled `team_binding`, `country_binding`, and `joiner_flag` values are graded from the router plan and tool arguments only, never from the headline: a mismatch is an identity or scope failure, and a binding the trace does not show leaves the case ungraded.
+
 ## Split rule (`phase0-paraphrase-group-disjoint-v0`)
 
 A paraphrase key is the fixture id, the channel, the page context, and the full turn sequence (wording, order, and prior turns). Casefold and collapsed whitespace count as the same wording.
