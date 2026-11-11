@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import functools
 import logging
 from dataclasses import dataclass, field
 from typing import Any
@@ -27,6 +28,7 @@ from services.ai.domain_policies import (
     disambiguate_call_center_kpi_label,
     sanitize_untrusted_text,
 )
+from services.ai.read_only_guard import ReadOnlySessionGuard
 from services.corrective_action_service import CorrectiveActionService
 from services.database_record_source import DatabaseRecordSource
 from services.insights_service import InsightsService
@@ -40,6 +42,26 @@ from utils.regions import first_region
 from utils.report_scope import filter_records_by_scope, selection_team_keys
 
 logger = logging.getLogger(__name__)
+
+
+def _read_only_tool(fn):
+    """Run one registry entrypoint under the Phase 3 read-only guard.
+
+    Every public ``execute_*`` tool runs its reads inside
+    :class:`services.ai.read_only_guard.ReadOnlySessionGuard`, so a tool
+    that tried to flush or stage ORM writes fails with
+    ``RuntimeError("AI read tools cannot write to the database")`` instead
+    of mutating rows. Contexts without a real session (unit-test doubles)
+    leave the guard inactive.
+    """
+
+    @functools.wraps(fn)
+    def _wrapped(self, *args, **kwargs):
+        db = getattr(getattr(self, "ctx", None), "db", None)
+        with ReadOnlySessionGuard(db):
+            return fn(self, *args, **kwargs)
+
+    return _wrapped
 
 
 def _team_route_slug(team_name: str | None) -> str:
@@ -275,6 +297,7 @@ class DeterministicToolRegistry:
     def __init__(self, ctx: ToolExecutionContext) -> None:
         self.ctx = ctx
 
+    @_read_only_tool
     def execute_executive_and_priority_insights(
         self,
         *,
@@ -582,6 +605,7 @@ class DeterministicToolRegistry:
             basis_warning=basis_warn,
         )
 
+    @_read_only_tool
     def execute_shared_region_scorecard(
         self,
         *,
@@ -730,6 +754,7 @@ class DeterministicToolRegistry:
             resolved_year=res_year,
         )
 
+    @_read_only_tool
     def execute_kpi_diagnosis_and_trends(
         self,
         *,
@@ -1345,6 +1370,7 @@ class DeterministicToolRegistry:
             basis_warning=basis_note,
         )
 
+    @_read_only_tool
     def execute_people_contribution_and_rankings(
         self,
         *,
@@ -1659,6 +1685,7 @@ class DeterministicToolRegistry:
             }
         return None
 
+    @_read_only_tool
     def execute_agent_spotlight_and_trend(
         self,
         *,
@@ -1747,7 +1774,13 @@ class DeterministicToolRegistry:
             if str(getattr(r, "month", "")).casefold() == str(res_month).casefold()
             and int(getattr(r, "year", 0) or 0) == int(res_year)
         ]
-        if not period_recs and scoped_recs:
+        # An explicitly pinned period with no records is an honest empty
+        # result, never a substitution: falling back to other months here
+        # used to spotlight a person from a different period (with a
+        # "0.0%" display for the missing score) under the requested
+        # period's label. The fallback below survives only when no period
+        # was pinned at all (latest-period behaviour).
+        if not period_recs and scoped_recs and not (resolved["month"] and resolved["year"]):
             period_recs = list(scoped_recs)
 
         def _rank_key(r: Any) -> tuple[float, float]:
@@ -1778,7 +1811,7 @@ class DeterministicToolRegistry:
                 if q_norm == emp_id.casefold() or q_norm in emp_name.casefold() or q_norm in emp_id.casefold():
                     selected_rec = r
                     break
-            if not selected_rec:
+            if not selected_rec and not (resolved["month"] and resolved["year"]):
                 for r in reversed(scoped_recs):
                     emp_id = str(getattr(r, "employee_id", "") or "").strip()
                     emp_name = str(getattr(r, "employee_name", "") or "").strip()
@@ -2233,6 +2266,7 @@ class DeterministicToolRegistry:
             resolved_year=res_year,
         )
 
+    @_read_only_tool
     def execute_team_trend_spotlight(
         self,
         *,
@@ -2481,6 +2515,7 @@ class DeterministicToolRegistry:
             resolved_year=latest_pt.year,
         )
 
+    @_read_only_tool
     def execute_employee_multi_month_history(
         self,
         *,
@@ -2495,6 +2530,7 @@ class DeterministicToolRegistry:
             single_person=True,
         )
 
+    @_read_only_tool
     def execute_governance_candidates_and_plans(
         self,
         *,
@@ -2596,6 +2632,7 @@ class DeterministicToolRegistry:
             resolved_year=res_year,
         )
 
+    @_read_only_tool
     def execute_corrective_actions_status(
         self,
         *,
@@ -2690,6 +2727,7 @@ class DeterministicToolRegistry:
             deep_links=deep_links,
         )
 
+    @_read_only_tool
     def execute_management_balanced_scorecard(
         self,
         *,
