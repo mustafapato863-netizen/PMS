@@ -9,10 +9,10 @@
     "source-parity",
     "browser"
   ],
-  "file_count": 28,
-  "case_count": 235,
+  "file_count": 29,
+  "case_count": 239,
   "files_by_label": {
-    "synthetic": 10,
+    "synthetic": 11,
     "mocked": 16,
     "live-model": 3,
     "source-parity": 2,
@@ -155,7 +155,7 @@
       "labels": [
         "mocked"
       ],
-      "cases": 4,
+      "cases": 5,
       "evidence_status": "partial",
       "note": ""
     },
@@ -290,6 +290,16 @@
       ],
       "cases": 3,
       "evidence_status": "partial",
+      "note": ""
+    },
+    {
+      "path": "Frontend/src/features/ai/starterPrompts.test.ts",
+      "kind": "test",
+      "labels": [
+        "synthetic"
+      ],
+      "cases": 3,
+      "evidence_status": "not applicable",
       "note": ""
     },
     {

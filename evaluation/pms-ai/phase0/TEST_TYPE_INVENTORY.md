@@ -8,12 +8,12 @@ verified is not used. source-parity here is partial because the reviewer has not
 
 ## Counts
 
-Test files: 28. Test functions or `it` blocks: 235.
+Test files: 29. Test functions or `it` blocks: 239.
 A file can carry more than one label, so the label counts can add up to more than the file count.
 
 | Label | Files | Evidence status of what the label proves |
 | --- | ---: | --- |
-| `synthetic` | 10 | not applicable |
+| `synthetic` | 11 | not applicable |
 | `mocked` | 16 | partial |
 | `live-model` | 3 | blocked |
 | `source-parity` | 2 | partial |
@@ -36,7 +36,7 @@ A file can carry more than one label, so the label counts can add up to more tha
 | `Backend/tests/test_ai_review_repairs.py` | test | `mocked` | 8 | partial |
 | `Backend/tests/test_ai_reviewed_export_api.py` | test | `synthetic` | 1 | not applicable |
 | `Backend/tests/test_ai_scope_and_context.py` | test | `synthetic` | 12 | not applicable |
-| `Backend/tests/test_ai_scope_and_fallback_regressions.py` | test | `mocked` | 4 | partial |
+| `Backend/tests/test_ai_scope_and_fallback_regressions.py` | test | `mocked` | 5 | partial |
 | `Backend/tests/test_ai_shared_region_scorecard.py` | test | `synthetic` | 8 | not applicable |
 | `Backend/tests/test_ai_workspace.py` | test | `mocked` | 22 | partial |
 | `Backend/tests/test_evaluation_outbound_productivity_golden.py` | test | `source-parity` | 9 | partial |
@@ -50,6 +50,7 @@ A file can carry more than one label, so the label counts can add up to more tha
 | `Frontend/src/components/ai/AiWatchingRail.test.tsx` | test | `synthetic` | 1 | not applicable |
 | `Frontend/src/components/ai/ContextualAssistantPanel.test.tsx` | test | `mocked` | 7 | partial |
 | `Frontend/src/components/settings/shell/AiFeatureSwitch.test.tsx` | test | `mocked` | 3 | partial |
+| `Frontend/src/features/ai/starterPrompts.test.ts` | test | `synthetic` | 3 | not applicable |
 | `Frontend/src/pages/PmsAiWorkspaceView.test.tsx` | test | `mocked` | 12 | partial |
 | `evaluation/pms-ai/phase0/run_rules_only_baseline.py` | runner | `synthetic` | 0 | not applicable |
 

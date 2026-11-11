@@ -130,3 +130,35 @@ def test_chat_reports_timeout_when_model_synthesis_cannot_be_reached(monkeypatch
     response = _admin_chat(monkeypatch, Opener())
     assert response.provider_usage.fallback_outcome == "timeout"
     assert response.outcome == "answer"
+
+
+def test_chat_reports_invalid_response_when_model_synthesis_is_unusable(monkeypatch):
+    """A synthesis draft the validator cannot use is a fallback, not success.
+
+    The fallback whitelist used to propagate only transport reasons, so an
+    unparsable synthesis draft still reported fallback_outcome "none" while
+    the turn silently fell back to the rules headline.
+    """
+
+    class Opener:
+        def __init__(self):
+            self.calls = 0
+
+        def open(self, request, timeout):
+            self.calls += 1
+            if self.calls == 1:
+                content = json.dumps(
+                    {
+                        "action": "call_tools",
+                        "unknown_code": "none",
+                        "tools": [{"tool": "get_team_score_summary", "team": "Inbound", "period": "2026-09"}],
+                    }
+                )
+            else:
+                content = "this is not a grounded synthesis payload"
+            return io.BytesIO(json.dumps({"choices": [{"message": {"content": content}}]}).encode())
+
+    response = _admin_chat(monkeypatch, Opener())
+    assert response.provider_usage.fallback_outcome == "invalid_response"
+    assert response.provider_usage.fallback_outcome != "none"
+    assert response.outcome == "answer"
