@@ -7,8 +7,10 @@ Outputs contain aggregate structure only: no employee names, identifiers,
 emails, or individual scores.
 
 Governing write-up: ``docs/plans/pms-ai-evidence-first/``. This generator
-cross-checks those docs and lists disagreements. It does not replace them
-and it does not change ``catalog.py`` or ``coverage_manifest.py``.
+cross-checks those docs and lists disagreements. It does not replace them.
+Phase 2 (issue #94) applied the roadmap capability vocabulary in the
+runtime (``catalog.py`` and ``coverage_manifest.py``); this generator only
+reads those files, it does not change them.
 
 Nothing in this manifest is marked verified. Verified requires a source-parity
 check and a permission check that both exist and pass for that cell. This
@@ -1076,10 +1078,11 @@ class ManifestBuilder:
                 "default_status": "blocked with a reason when a check was not run or a source disagrees; never verified from catalog presence alone",
                 "vocabulary": "verified, verified no data, partial, blocked, not applicable",
                 "governing_docs": list(doc_crosscheck.GOVERNING_DOCS),
-                "runtime_capability_registries_unchanged": [
-                    "Backend/services/ai/catalog.py",
-                    "Backend/services/ai/coverage_manifest.py",
-                ],
+                "runtime_capability_vocabulary": (
+                    "Roadmap statuses only (verified, verified no data, partial, blocked, not applicable). "
+                    "Phase 2 applied this vocabulary in Backend/services/ai/catalog.py and "
+                    "Backend/services/ai/coverage_manifest.py; CERTIFIED is never emitted."
+                ),
                 "prior_coverage_claims": "docs/plans/contextual-ai-assistant/coverage_manifest_v1.json was not used as evidence",
             },
             "catalog": self._catalog(entries, kpi_rows),
@@ -1968,11 +1971,11 @@ def render_markdown(manifest: dict[str, Any]) -> str:
 Version `{manifest['manifest_version']}` from repository sources at baseline `{manifest['baseline_commit']}`.
 Input fingerprint `{manifest['inputs_fingerprint']}`.
 
-This is the domain/data map for Plan Phase 2. The governing write-up is `docs/plans/pms-ai-evidence-first/`. Capability claims in that write-up are not copied here. Runtime registries `Backend/services/ai/catalog.py` and `Backend/services/ai/coverage_manifest.py` were not changed.
+This is the domain/data map for Plan Phase 2. The governing write-up is `docs/plans/pms-ai-evidence-first/`. Capability claims in that write-up are not copied here. The runtime registries `Backend/services/ai/catalog.py` and `Backend/services/ai/coverage_manifest.py` use the same roadmap vocabulary (Phase 2, issue #94); `CERTIFIED` is never emitted.
 
 No cell is verified. Verified would require a passing source-parity check and a passing permission check. Permission checks were not executed. Published performance rows were not read. AI is not enabled. The file has no employee names, identifiers, emails, or scores.
 
-Status words are only: verified, verified no data, partial, blocked, not applicable. `partial` here means one repository parity check passed. It is not catalog `partial_evidence`. `blocked` with `status_basis` `not_checked` means the check was not run.
+Status words are only: verified, verified no data, partial, blocked, not applicable. `partial` here means one repository parity check passed. `blocked` with `status_basis` `not_checked` means the check was not run.
 
 ## Vocabulary mapping (Backend follow-up, not applied in runtime)
 

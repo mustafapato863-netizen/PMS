@@ -1,8 +1,8 @@
 # Phase 2: KPI & Metric Source Dictionary
 
-**Document Version:** 1.0
-**Date:** 10 November 2026
-**Status:** Metric Definitions & Provenance Verified
+**Document Version:** 1.1
+**Date:** 11 November 2026
+**Status:** Metric Definitions & Provenance Verified — reconciled to repository sources in Phase 2 (issue #94)
 **Scope:** Phase 2 Deliverable for PMS AI Evidence-First Upgrade ([Implementation Plan](file:///D:/Projects/PMS_Dashboard/docs/plans/PMS_AI_EVIDENCE_FIRST_IMPLEMENTATION_PLAN.md))
 
 ---
@@ -24,42 +24,84 @@ A major source of historical query confusion was conflating operational counts w
 
 ## 2. Call Center Metric Catalog (Offshore Egypt)
 
+Keys, weights, directions, and units below are the team-JSON template keys (`Backend/config/teams/inbound.json`, `outbound.json`). Targets are the code defaults in `Backend/services/kpi_service.py` (`DEFAULT_TARGETS`); the team JSONs carry no target values. Inbound and Outbound have different template keys, so each team has its own table. Record-payload volumes (abandoned-call counts, handled-call counts, branch booking counts) are not team-JSON KPIs; see section 4.
+
+### Inbound — template KPIs (`inbound.json`)
+
 | KPI Key | Canonical Display Name | Metric Type | Unit | Polarity (Direction) | Default Target | Scored vs Tracking | Source Field / Storage Key |
-| :--- | :--- | :---: | :---: | :---: | :---: | :---: | :--- |
-| **`booking_rate`** | Booking Rate | Rate | `%` | `higher_better` | 65.0% | **Scored** (Weight: 40%) | `kpi_values.actual_value`<br>Workbook: `Booking %` |
-| **`attendance_rate`** | Attendance Rate | Rate | `%` | `higher_better` | 75.0% | **Scored** (Weight: 30%) | `kpi_values.actual_value`<br>Workbook: `Attendance %` |
-| **`quality_score`** | Quality Score | Rate | `%` | `higher_better` | 95.0% | **Scored** (Weight: 30%) | `kpi_values.actual_value`<br>Workbook: `Quality %` |
-| **`aht`** | Average Handle Time (AHT) | Duration | `min` | `lower_better` | 2.50 min | **Tracking-Only** (Weight: 0%) | `record_payload['calls']['aht']`<br>Workbook: `AHT` |
-| **`abandoned_calls`** | Abandoned Calls | Count | Calls | `lower_better` | 0 | **Tracking-Only** (Weight: 0%) | `record_payload['calls']['abandoned']`<br>Workbook: `Abandoned` |
-| **`total_calls`** | Total Calls Handled | Count | Calls | `higher_better` | N/A (Volume) | **Tracking-Only** (Weight: 0%) | `record_payload['calls']['handled']`<br>Workbook: `Handled Calls` |
-| **`branch_bookings`** | Branch Booking Count | Count | Bookings | `higher_better` | N/A (Volume) | **Operational Volume** | `record_payload['geo']['bookings'][branch_key]` |
+| :--- | :--- | :---: | :---: | :---: | :---: | :--- | :--- |
+| **`Attendance`** | Attendance Rate | Rate | `%` | `higher_better` | 75.0% | **Scored** (Weight: 70%) | `kpi_values.actual_value`<br>Workbook: `Attendance %` |
+| **`Booking`** | Booking Rate | Rate | `%` | `higher_better` | 45.0% | **Scored** (Weight: 10%) | `kpi_values.actual_value`<br>Workbook: `Booking %` |
+| **`Quality`** | Quality Score | Rate | `%` | `higher_better` | 95.0% | **Scored** (Weight: 5%) | `kpi_values.actual_value`<br>Workbook: `Quality %` |
+| **`AHT`** | Average Handle Time (AHT) | Duration | `min` | `lower_better` | 150 seconds (2.50 min) | **Scored** (Weight: 5%) | `record_payload['calls']['aht']`<br>Workbook: `AHT` |
+| **`Other`** | Abandon Rate | Rate | `%` | `lower_better` | 1.0% | **Scored** (Weight: 10%) | `kpi_values.actual_value`<br>Workbook: `Abandoned` |
 
----
+Inbound AHT is scored at weight 0.05. It is not a tracking-only indicator. The `Other` slot in Inbound is the Abandon Rate.
 
+### Outbound — template KPIs (`outbound.json`)
+
+| KPI Key | Canonical Display Name | Metric Type | Unit | Polarity (Direction) | Default Target | Scored vs Tracking | Source Field / Storage Key |
+| :--- | :--- | :---: | :---: | :---: | :---: | :--- | :--- |
+| **`Attendance`** | Attendance Rate | Rate | `%` | `higher_better` | 55.0% | **Scored** (Weight: 70%) | `kpi_values.actual_value`<br>Workbook: `Attendance %` |
+| **`Booking`** | Booking Rate | Rate | `%` | `higher_better` | 46.0% | **Scored** (Weight: 10%) | `kpi_values.actual_value`<br>Workbook: `Booking %` |
+| **`Quality`** | Quality Score | Rate | `%` | `higher_better` | 95.0% | **Scored** (Weight: 10%) | `kpi_values.actual_value`<br>Workbook: `Quality %` |
+| **`Other`** | Reachability | Rate | `%` | `higher_better` | 75.0% | **Scored** (Weight: 10%) | `kpi_values.actual_value`<br>Workbook: `Reachability` |
+
+Outbound has no AHT KPI in its team JSON. AHT in Outbound is a tracking-only measure at weight 0 (`Backend/services/outbound_period_basis.py`). The `Other` slot in Outbound is Reachability, not Abandon Rate.
 ## 3. RCM Metric Catalog (Revenue Cycle Management)
 
 ### 3.1 Egypt RCM Metrics (`Coding EGY`, `Submission EGY`, `Resubmission`)
-In Egypt RCM, scoring focuses on throughput and clean submission turnaround:
+
+Egypt RCM KPIs live under Employee positions in the team JSONs, not under top-level team keys, and each team has its own key set. No numeric targets are recorded for these keys in the team JSONs or in `kpi_service.DEFAULT_TARGETS`; do not invent targets for them.
+
+### Coding EGY — position KPIs (`coding_egy.json`, position `RCM -SHJ- OP CODING`)
 
 | KPI Key | Display Name | Unit | Direction | Target | Weight | Status | Source Location |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :--- |
-| **`productivity_ach`** | Daily Productivity Target | `%` | `higher_better` | 100.0% | 40% | Scored | `kpi_values`<br>Workbook: `Productivity Ach%` |
-| **`quality_accuracy`** | Quality & Audit Accuracy | `%` | `higher_better` | 98.0% | 40% | Scored | `kpi_values`<br>Workbook: `Quality %` |
-| **`tat_compliance`** | Turnaround Time (TAT) SLA | `%` | `higher_better` | 95.0% | 20% | Scored | `kpi_values`<br>Workbook: `TAT SLA %` |
-| **`rejection_rate`** | First-Pass Rejection Rate | `%` | `lower_better` | 3.0% | 0% | Tracking | `record_payload['rcm']['rejection_rate']` |
+| **`egy_coding_quality_errors`** | Quality Errors Rate | `%` | `lower_better` | — (not in team JSON or code defaults) | 50% | Scored | `kpi_values`<br>Workbook: `Quality Errors Rate` |
+| **`egy_coding_rejection`** | Rejection Rate | `%` | `lower_better` | — (not in team JSON or code defaults) | 0% | Tracking | `kpi_values`<br>Workbook: `Rejection Rate` |
+| **`egy_coding_tat`** | TAT | `%` | `higher_better` | — (not in team JSON or code defaults) | 50% | Scored | `kpi_values`<br>Workbook: `TAT` |
 
+### Submission EGY — position KPIs (`submission_egy.json`, position `Claim & Audit Specialist`)
+
+| KPI Key | Display Name | Unit | Direction | Target | Weight | Status | Source Location |
+| :--- | :--- | :---: | :---: | :---: | :---: | :---: | :--- |
+| **`egy_submission_initial_rejection`** | Initial Rejection % | `%` | `lower_better` | — (not in team JSON or code defaults) | 60% | Scored | `kpi_values`<br>Workbook: `Initial Rejection %` |
+| **`egy_submission_due_date`** | % of Submission Within Due date | `%` | `higher_better` | — (not in team JSON or code defaults) | 40% | Scored | `kpi_values`<br>Workbook: `% of Submission Within Due date` |
+
+### Resubmission — position KPIs (`resubmission.json`, position `Resubmission Analyst`)
+
+| KPI Key | Display Name | Unit | Direction | Target | Weight | Status | Source Location |
+| :--- | :--- | :---: | :---: | :---: | :---: | :---: | :--- |
+| **`egy_resubmission_quality_errors`** | Quality Errors Rate | `%` | `lower_better` | — (not in team JSON or code defaults) | 50% | Scored | `kpi_values`<br>Workbook: `Quality Errors Rate` |
+| **`egy_resubmission_rejection`** | Rejection Rate After Re-Submission | `%` | `lower_better` | — (not in team JSON or code defaults) | 0% | Tracking | `kpi_values`<br>Workbook: `Rejection Rate After Re-Submission` |
+| **`egy_resubmission_tat`** | TAT | `%` | `higher_better` | — (not in team JSON or code defaults) | 50% | Scored | `kpi_values`<br>Workbook: `TAT` |
 ### 3.2 UAE RCM Metrics (`Coding`, `Submission`, `Re-Submission`, `Pre-Approvals`)
-UAE RCM employs onshore hospital KPIs, separate weight distributions, and insurer-specific denial metrics:
+
+UAE RCM employs onshore hospital KPIs, separate weight distributions, and insurer-specific denial metrics. Each team has its own key set; there is no shared UAE RCM key set. Targets below are the code defaults in `kpi_service.DEFAULT_TARGETS` where one exists for the team; otherwise no target is recorded in the team JSON or the code defaults.
+
+### Coding — template KPIs (`coding.json`)
 
 | KPI Key | Display Name | Unit | Direction | Target | Weight | Status | Source Location |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :--- |
-| **`clean_claim_rate`** | Clean Claim Rate | `%` | `higher_better` | 92.0% | 35% | Scored | `kpi_values`<br>Workbook: `Clean Claim Rate` |
-| **`denial_rate`** | Initial Denial Rate | `%` | `lower_better` | 5.0% | 35% | Scored | `kpi_values`<br>Workbook: `Denial Rate` |
-| **`collection_ratio`** | Net Collection Ratio | `%` | `higher_better` | 95.0% | 30% | Scored | `kpi_values`<br>Workbook: `Collection %` |
-| **`resubmission_tat`** | Resubmission Turnaround | Days | `lower_better` | 7.0 days | 0% | Tracking | `record_payload['rcm']['resub_tat']` |
+| **`QualityErrors`** | Quality Errors | `%` | `lower_better` | 5.0% | 20% | Scored | `kpi_values`<br>Workbook: `Quality Errors` |
+| **`Rejection`** | Rejection | `%` | `lower_better` | 4.0% | 50% | Scored | `kpi_values`<br>Workbook: `Rejection` |
+| **`TAT`** | Turnaround Time | `hours` | `lower_better` | 2.5 hours | 30% | Scored | `kpi_values`<br>Workbook: `TAT` |
 
----
+### Submission — template KPIs (`submission.json`)
 
+| KPI Key | Display Name | Unit | Direction | Target | Weight | Status | Source Location |
+| :--- | :--- | :---: | :---: | :---: | :---: | :---: | :--- |
+| **`initial_rejection_rate`** | Initial Rejection Rate | `%` | `lower_better` | — (not in team JSON or code defaults) | 60% | Scored | `kpi_values`<br>Workbook: `Initial Rejection Rate` |
+| **`submission_within_due_date`** | Submission Within Due Date | `%` | `higher_better` | — (not in team JSON or code defaults) | 40% | Scored | `kpi_values`<br>Workbook: `Submission Within Due Date` |
+
+### Re-Submission — template KPIs (`re_submission.json`)
+
+| KPI Key | Display Name | Unit | Direction | Target | Weight | Status | Source Location |
+| :--- | :--- | :---: | :---: | :---: | :---: | :---: | :--- |
+| **`quality_errors_rate`** | Quality Errors Rate | `%` | `lower_better` | — (not in team JSON or code defaults) | 20% | Scored | `kpi_values`<br>Workbook: `Quality Errors Rate` |
+| **`rejection_rate_after_resubmission`** | Rejection Rate After Re-Submission | `%` | `lower_better` | — (not in team JSON or code defaults) | 50% | Scored | `kpi_values`<br>Workbook: `Rejection Rate After Re-Submission` |
+| **`tat`** | TAT compliance % | `%` | `higher_better` | — (not in team JSON or code defaults) | 30% | Scored | `kpi_values`<br>Workbook: `TAT` |
 ## 4. Operational Volumes & Branch Attribution Structure
 
 Operational breakdown evidence (e.g. clinic bookings, hospital split) is preserved directly within the JSONB column `performance_records.record_payload`:

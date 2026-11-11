@@ -138,38 +138,37 @@ def test_matrix_covers_every_operation_and_hides_employee_data():
     assert manifest["reconciliation"]["corporate_region_disagreements"]
 
 
-def test_vocabulary_is_the_roadmap_set_and_runtime_registries_are_unchanged():
+def test_vocabulary_is_the_roadmap_set_and_runtime_vocabulary_is_applied():
     module = load_generator()
     manifest = module.build_manifest()
     assert set(manifest["vocabulary"]["single_vocabulary"]) == set(module.STATUSES)
-    catalog_from = {item["from"] for item in manifest["vocabulary"]["catalog_py"]}
-    assert catalog_from == {"verified", "partial_evidence", "unverified", "unsupported"}
+    catalog_to = {item["to"] for item in manifest["vocabulary"]["catalog_py"]}
+    assert catalog_to == {"verified", "partial", "blocked", "not applicable"}
     runtime_from = {item["from"] for item in manifest["vocabulary"]["coverage_manifest_py"]}
     assert "CERTIFIED" in runtime_from
     assert "VERIFIED_NO_DATA" in runtime_from
     certified = next(item for item in manifest["vocabulary"]["coverage_manifest_py"] if item["from"] == "CERTIFIED")
     assert certified["to"] is None
-    assert manifest["rules"]["runtime_capability_registries_unchanged"] == [
+    # Phase 2 (issue #94) applied the roadmap vocabulary in the runtime.
+    assert manifest["vocabulary"]["runtime_applied"] == [
         "Backend/services/ai/catalog.py",
         "Backend/services/ai/coverage_manifest.py",
     ]
+    assert "runtime_capability_vocabulary" in manifest["rules"]
+    assert "runtime_capability_registries_unchanged" not in manifest["rules"]
 
 
 def test_governing_docs_are_cross_checked_and_aliases_use_the_open_questions_shape():
     manifest = json.loads((PHASE2 / "coverage_manifest.json").read_text(encoding="utf-8"))
-    ids = {item["id"] for item in manifest["doc_disagreements"]}
-    assert "glossary:call-center-is-a-team-file" in ids
-    assert "glossary:resubmission-alias-already-resolved" in ids
-    assert "glossary:pre-approvals-northern-name" in ids
-    assert "glossary:inbound-aht-tracking-only" in ids
-    assert "kpi-weight:Inbound:aht" in ids
-    assert "relationships:missing-branch-as-zero" in ids
-    assert "matrix:status-mismatch" in ids
-    assert "matrix:bsc-teams-unnamed" in ids
-    assert "matrix:unverified-has-no-roadmap-word" in ids
-    for item in manifest["doc_disagreements"]:
-        assert item["resolution"] == "unresolved"
-        assert item["doc"].startswith("docs/plans/pms-ai-evidence-first/")
+    # Phase 2 (issue #94) reconciled the governing docs to the repository:
+    # no doc/config disagreement remains. The previously known disagreement
+    # ids (glossary:call-center-is-a-team-file, glossary:resubmission-alias-
+    # already-resolved, glossary:pre-approvals-northern-name,
+    # glossary:inbound-aht-tracking-only, kpi-weight:Inbound:aht,
+    # relationships:missing-branch-as-zero, matrix:status-mismatch,
+    # matrix:bsc-teams-unnamed, matrix:unverified-has-no-roadmap-word)
+    # must not reappear; if one does, the docs or the cross-checker regressed.
+    assert manifest["doc_disagreements"] == []
     naming_ids = {item["area"] for item in manifest["open_questions"]["unresolved_naming_and_hierarchy"]}
     assert naming_ids == {conflict["id"] for conflict in manifest["alias_report"]["conflicts"]}
     assert all(item["recommended_resolution_path"] == "unresolved" for item in manifest["open_questions"]["unresolved_naming_and_hierarchy"])

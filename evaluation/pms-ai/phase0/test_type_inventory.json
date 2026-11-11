@@ -9,10 +9,10 @@
     "source-parity",
     "browser"
   ],
-  "file_count": 30,
-  "case_count": 247,
+  "file_count": 31,
+  "case_count": 267,
   "files_by_label": {
-    "synthetic": 11,
+    "synthetic": 12,
     "mocked": 17,
     "live-model": 3,
     "source-parity": 2,
@@ -127,6 +127,16 @@
       ],
       "cases": 7,
       "evidence_status": "partial",
+      "note": ""
+    },
+    {
+      "path": "Backend/tests/test_ai_phase2_reconciliation.py",
+      "kind": "test",
+      "labels": [
+        "synthetic"
+      ],
+      "cases": 20,
+      "evidence_status": "not applicable",
       "note": ""
     },
     {
