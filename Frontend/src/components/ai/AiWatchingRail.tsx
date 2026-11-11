@@ -25,8 +25,11 @@ export default function AiWatchingRail({
               AI is watching
             </h2>
           </div>
-          <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-700">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+          <span
+            className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-700"
+            aria-label={`${alerts.length} watching ${alerts.length === 1 ? 'alert' : 'alerts'}`}
+          >
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" aria-hidden="true" />
             {alerts.length}
           </span>
         </div>

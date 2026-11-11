@@ -1,0 +1,343 @@
+{
+  "plan_phase": "1.5",
+  "plan_doc": "docs/plans/PMS_AI_EVIDENCE_FIRST_IMPLEMENTATION_PLAN.md",
+  "owner_inventory": "docs/plans/pms-ai-evidence-first/PHASE_1_BASELINE.md",
+  "labels": [
+    "synthetic",
+    "mocked",
+    "live-model",
+    "source-parity",
+    "browser"
+  ],
+  "file_count": 29,
+  "case_count": 239,
+  "files_by_label": {
+    "synthetic": 11,
+    "mocked": 16,
+    "live-model": 3,
+    "source-parity": 2,
+    "browser": 0
+  },
+  "tests": [
+    {
+      "path": "Backend/tests/test_ai_admin_pilot.py",
+      "kind": "test",
+      "labels": [
+        "mocked"
+      ],
+      "cases": 9,
+      "evidence_status": "partial",
+      "note": ""
+    },
+    {
+      "path": "Backend/tests/test_ai_booking_comparisons.py",
+      "kind": "test",
+      "labels": [
+        "mocked"
+      ],
+      "cases": 23,
+      "evidence_status": "partial",
+      "note": ""
+    },
+    {
+      "path": "Backend/tests/test_ai_booking_count_parity.py",
+      "kind": "test",
+      "labels": [
+        "mocked"
+      ],
+      "cases": 25,
+      "evidence_status": "partial",
+      "note": "The module text says source parity. The model side is DeterministicLocalProviderAdapter, so the label is mocked."
+    },
+    {
+      "path": "Backend/tests/test_ai_branch_bar_missing_value.py",
+      "kind": "test",
+      "labels": [
+        "synthetic"
+      ],
+      "cases": 2,
+      "evidence_status": "not applicable",
+      "note": ""
+    },
+    {
+      "path": "Backend/tests/test_ai_catalog_evidence.py",
+      "kind": "test",
+      "labels": [
+        "mocked"
+      ],
+      "cases": 12,
+      "evidence_status": "partial",
+      "note": ""
+    },
+    {
+      "path": "Backend/tests/test_ai_count_achievement_card.py",
+      "kind": "test",
+      "labels": [
+        "synthetic"
+      ],
+      "cases": 3,
+      "evidence_status": "not applicable",
+      "note": ""
+    },
+    {
+      "path": "Backend/tests/test_ai_diagnostics.py",
+      "kind": "test",
+      "labels": [
+        "mocked"
+      ],
+      "cases": 11,
+      "evidence_status": "partial",
+      "note": ""
+    },
+    {
+      "path": "Backend/tests/test_ai_feature_gate.py",
+      "kind": "test",
+      "labels": [
+        "mocked"
+      ],
+      "cases": 2,
+      "evidence_status": "partial",
+      "note": ""
+    },
+    {
+      "path": "Backend/tests/test_ai_full_coverage_egy_uae.py",
+      "kind": "test",
+      "labels": [
+        "mocked"
+      ],
+      "cases": 7,
+      "evidence_status": "partial",
+      "note": ""
+    },
+    {
+      "path": "Backend/tests/test_ai_person_name_routing.py",
+      "kind": "test",
+      "labels": [
+        "synthetic"
+      ],
+      "cases": 4,
+      "evidence_status": "not applicable",
+      "note": ""
+    },
+    {
+      "path": "Backend/tests/test_ai_review_repairs.py",
+      "kind": "test",
+      "labels": [
+        "mocked"
+      ],
+      "cases": 8,
+      "evidence_status": "partial",
+      "note": ""
+    },
+    {
+      "path": "Backend/tests/test_ai_reviewed_export_api.py",
+      "kind": "test",
+      "labels": [
+        "synthetic"
+      ],
+      "cases": 1,
+      "evidence_status": "not applicable",
+      "note": ""
+    },
+    {
+      "path": "Backend/tests/test_ai_scope_and_context.py",
+      "kind": "test",
+      "labels": [
+        "synthetic"
+      ],
+      "cases": 12,
+      "evidence_status": "not applicable",
+      "note": ""
+    },
+    {
+      "path": "Backend/tests/test_ai_scope_and_fallback_regressions.py",
+      "kind": "test",
+      "labels": [
+        "mocked"
+      ],
+      "cases": 5,
+      "evidence_status": "partial",
+      "note": ""
+    },
+    {
+      "path": "Backend/tests/test_ai_shared_region_scorecard.py",
+      "kind": "test",
+      "labels": [
+        "synthetic"
+      ],
+      "cases": 8,
+      "evidence_status": "not applicable",
+      "note": ""
+    },
+    {
+      "path": "Backend/tests/test_ai_workspace.py",
+      "kind": "test",
+      "labels": [
+        "mocked"
+      ],
+      "cases": 22,
+      "evidence_status": "partial",
+      "note": ""
+    },
+    {
+      "path": "Backend/tests/test_evaluation_outbound_productivity_golden.py",
+      "kind": "test",
+      "labels": [
+        "source-parity"
+      ],
+      "cases": 9,
+      "evidence_status": "partial",
+      "note": "Compares EmployeePolicy with outbound-anonymous-reference.json. That file is source_reference_only_not_activated, so the parity status is partial."
+    },
+    {
+      "path": "Backend/tests/test_evaluation_provenance.py",
+      "kind": "test",
+      "labels": [
+        "synthetic"
+      ],
+      "cases": 7,
+      "evidence_status": "not applicable",
+      "note": ""
+    },
+    {
+      "path": "Backend/tests/test_local_assistant_exploration.py",
+      "kind": "test",
+      "labels": [
+        "live-model",
+        "mocked"
+      ],
+      "cases": 8,
+      "evidence_status": "partial",
+      "note": "The live-model test is skipped unless PMS_AI_RUN_LIVE_MODEL_TESTS=true. Default CI does not call Qwen."
+    },
+    {
+      "path": "Backend/tests/test_local_evidence_synthesis.py",
+      "kind": "test",
+      "labels": [
+        "live-model",
+        "mocked"
+      ],
+      "cases": 12,
+      "evidence_status": "partial",
+      "note": "The live-model test is skipped unless PMS_AI_RUN_LIVE_MODEL_TESTS=true. Default CI does not call Qwen."
+    },
+    {
+      "path": "Backend/tests/test_local_model_router.py",
+      "kind": "test",
+      "labels": [
+        "live-model",
+        "mocked"
+      ],
+      "cases": 11,
+      "evidence_status": "partial",
+      "note": "The live-model test is skipped unless PMS_AI_RUN_LIVE_MODEL_TESTS=true. Default CI does not call Qwen."
+    },
+    {
+      "path": "Backend/tests/test_pms_ai_phase0_derivation.py",
+      "kind": "test",
+      "labels": [
+        "source-parity"
+      ],
+      "cases": 5,
+      "evidence_status": "partial",
+      "note": "Recomputes v1 from team config and the employee schema. It does not call the assistant. Reviewer sign-off is still open, so the status is partial."
+    },
+    {
+      "path": "Backend/tests/test_pms_ai_phase0_eval_schema.py",
+      "kind": "test",
+      "labels": [
+        "synthetic"
+      ],
+      "cases": 6,
+      "evidence_status": "not applicable",
+      "note": ""
+    },
+    {
+      "path": "Frontend/src/components/ai/AiResponseCard.test.tsx",
+      "kind": "test",
+      "labels": [
+        "synthetic"
+      ],
+      "cases": 1,
+      "evidence_status": "not applicable",
+      "note": ""
+    },
+    {
+      "path": "Frontend/src/components/ai/AiWatchingRail.test.tsx",
+      "kind": "test",
+      "labels": [
+        "synthetic"
+      ],
+      "cases": 1,
+      "evidence_status": "not applicable",
+      "note": ""
+    },
+    {
+      "path": "Frontend/src/components/ai/ContextualAssistantPanel.test.tsx",
+      "kind": "test",
+      "labels": [
+        "mocked"
+      ],
+      "cases": 7,
+      "evidence_status": "partial",
+      "note": ""
+    },
+    {
+      "path": "Frontend/src/components/settings/shell/AiFeatureSwitch.test.tsx",
+      "kind": "test",
+      "labels": [
+        "mocked"
+      ],
+      "cases": 3,
+      "evidence_status": "partial",
+      "note": ""
+    },
+    {
+      "path": "Frontend/src/features/ai/starterPrompts.test.ts",
+      "kind": "test",
+      "labels": [
+        "synthetic"
+      ],
+      "cases": 3,
+      "evidence_status": "not applicable",
+      "note": ""
+    },
+    {
+      "path": "Frontend/src/pages/PmsAiWorkspaceView.test.tsx",
+      "kind": "test",
+      "labels": [
+        "mocked"
+      ],
+      "cases": 12,
+      "evidence_status": "partial",
+      "note": ""
+    }
+  ],
+  "runners": [
+    {
+      "path": "evaluation/pms-ai/phase0/run_rules_only_baseline.py",
+      "kind": "runner",
+      "labels": [
+        "synthetic"
+      ],
+      "cases": 0,
+      "evidence_status": "not applicable",
+      "note": "Rules-only runner. PHASE_1_BASELINE.md records zero performance records and zero model turns for this kind of run. It is not a factual score."
+    }
+  ],
+  "absent_owner_paths": [
+    {
+      "path": "Frontend/tests/pms-ai.spec.ts",
+      "claimed_in": "docs/plans/pms-ai-evidence-first/PHASE_1_BASELINE.md section 4",
+      "evidence_status": "not applicable",
+      "note": "The path is not in this tree. It is not a browser test."
+    },
+    {
+      "path": "Frontend/src/features/pmsAi/__tests__/",
+      "claimed_in": "docs/plans/pms-ai-evidence-first/PHASE_1_BASELINE.md section 4",
+      "evidence_status": "not applicable",
+      "note": "The directory is not in this tree. It is not a browser test."
+    }
+  ],
+  "status_note": "verified is not used. source-parity here is partial because the reviewer has not signed the values and the Outbound reference is not an activated publication. mocked and synthetic results are not source-parity. live-model is blocked in default CI."
+}

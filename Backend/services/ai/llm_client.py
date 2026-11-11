@@ -327,6 +327,39 @@ def _take_budget() -> bool:
     return True
 
 
+def _transport_failure_reason(exc: BaseException) -> str:
+    """Name a refused or timed-out model connection instead of a generic bucket.
+
+    urllib wraps `ConnectionRefusedError` and some timeouts in `URLError`.
+    Those used to collapse to `unavailable_or_invalid`, so chat reported a
+    generic fallback (or `none` once the rules answer succeeded).
+    """
+    pending: list[BaseException] = [exc]
+    seen: set[int] = set()
+    while pending:
+        current = pending.pop()
+        marker = id(current)
+        if marker in seen:
+            continue
+        seen.add(marker)
+        if isinstance(current, TimeoutError):
+            return "timeout"
+        if isinstance(current, ConnectionRefusedError):
+            return "connection_refused"
+        text = str(current).casefold()
+        if "timed out" in text:
+            return "timeout"
+        if "connection refused" in text:
+            return "connection_refused"
+        cause = current.__cause__
+        if isinstance(cause, BaseException):
+            pending.append(cause)
+        nested = getattr(current, "reason", None)
+        if isinstance(nested, BaseException):
+            pending.append(nested)
+    return "unavailable_or_invalid"
+
+
 def chat_completion(
     *,
     messages: list[dict[str, str]],
@@ -457,13 +490,14 @@ def chat_completion(
             http_status=getattr(exc, "code", None),
         )
     except (OSError, urllib.error.URLError) as exc:
-        logger.warning("ai_llm_call unavailable: %s", redact_secrets(str(exc)))
+        reason = _transport_failure_reason(exc)
+        logger.warning("ai_llm_call %s: %s", reason, redact_secrets(str(exc)))
         return _finish(
             ok=False,
             content=None,
             model=model,
             started=started,
-            reason="unavailable_or_invalid",
+            reason=reason,
             host=host,
             purpose=purpose,
         )

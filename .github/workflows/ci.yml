@@ -24,6 +24,10 @@ jobs:
         working-directory: Backend
     steps:
       - uses: actions/checkout@v5
+        with:
+          # Phase 0 derivation records the commit that last changed each source file.
+          # A depth-1 checkout reports the graft commit for every path.
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -34,6 +38,17 @@ jobs:
       - run: python -m pip install --upgrade pip
       - run: python -m pip install -r requirements-dev.txt
       - run: python -m pytest -q
+
+  coverage-manifest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install "$(grep -E '^pytest(==|>=|~=)' Backend/requirements-dev.txt)"
+      - run: python -m pytest -q evaluation/pms-ai/phase2/tests/test_coverage_manifest.py
 
   frontend:
     runs-on: ubuntu-latest

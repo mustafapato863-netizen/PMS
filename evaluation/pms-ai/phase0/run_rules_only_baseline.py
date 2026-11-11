@@ -3,6 +3,12 @@
 Hits the same FastAPI routes the UI uses, with the product switch on, an
 Admin fixture, and every model flag off. The database is a disposable SQLite
 file with no performance rows. No production data and no Qwen process.
+
+Question-set version: PMS_PHASE0_SET_VERSION selects the layer to score.
+The default "v0" scores frozen_v0.json / heldout_v0.json (all bindings
+PENDING). "v1" scores frozen_v1.json / heldout_v1.json, the derived layer
+with the filled bindings. The chosen version is recorded in the results
+payload as question_set_version.
 """
 
 from __future__ import annotations
@@ -351,9 +357,27 @@ def masked_env() -> dict:
     return out
 
 
-def load_cases() -> list[dict]:
+def question_set_version() -> str:
+    """Which derived question-set layer the baseline scores ("v0" or "v1").
+
+    Read from PMS_PHASE0_SET_VERSION so a v1 rerun is reproducible from the
+    committed code instead of needing the filenames swapped by hand.
+    """
+    version = os.environ.get("PMS_PHASE0_SET_VERSION", "v0").strip().casefold()
+    if version not in ("v0", "v1"):
+        raise ValueError(
+            "PMS_PHASE0_SET_VERSION must be 'v0' or 'v1', "
+            f"got {os.environ.get('PMS_PHASE0_SET_VERSION')!r}."
+        )
+    return version
+
+
+def load_cases(version: str | None = None) -> list[dict]:
+    version = (version or question_set_version()).strip().casefold()
+    if version not in ("v0", "v1"):
+        raise ValueError(f"Unknown question-set version {version!r}; expected 'v0' or 'v1'.")
     cases = []
-    for name in ("frozen_v0.json", "heldout_v0.json"):
+    for name in (f"frozen_{version}.json", f"heldout_{version}.json"):
         document = json.loads((PHASE0 / name).read_text(encoding="utf-8"))
         for case in document["cases"]:
             case = dict(case)
@@ -480,6 +504,239 @@ def looks_like_number(text: str) -> bool:
     return bool(NUMBER_RE.search(text))
 
 
+BINDING_FIELDS = ("team_binding", "country_binding", "joiner_flag")
+_REGION_ALIASES = {
+    "egy": "egy",
+    "egypt": "egy",
+    "uae": "uae",
+    "united arab emirates": "uae",
+    "emirates": "uae",
+    "all": "all",
+    "shared": "all",
+}
+_JOIN_KEY = re.compile(r"join|hire|tenure|joiner", re.I)
+_JOIN_ABSENT = {"", "none", "null", "false", "no", "no_join_date_source", "pending"}
+
+
+def _norm_token(value: object) -> str:
+    return " ".join(str(value or "").strip().casefold().split())
+
+
+def _norm_region(value: object) -> str:
+    token = _norm_token(value)
+    return _REGION_ALIASES.get(token, token)
+
+
+def _filled_bindings(case: dict) -> list[dict]:
+    found = []
+    for item in case.get("expected_values") or []:
+        if item.get("field") in BINDING_FIELDS and item.get("value") != "PENDING":
+            found.append(item)
+    return found
+
+
+def _structured_nodes(data: dict) -> list[dict]:
+    """Router plan, session, and tool arguments. Headline text is not a resolution."""
+    nodes: list[dict] = []
+    for key in ("structured_query", "resolved_session_state"):
+        node = data.get(key)
+        if isinstance(node, dict):
+            nodes.append(node)
+            confirmed = node.get("last_confirmed_query")
+            if isinstance(confirmed, dict):
+                nodes.append(confirmed)
+    plan = data.get("validated_plan_v2")
+    if isinstance(plan, dict) and isinstance(plan.get("scope"), dict):
+        nodes.append(plan["scope"])
+    for tool in data.get("tool_calls") or []:
+        if isinstance(tool, dict) and isinstance(tool.get("arguments"), dict):
+            nodes.append(tool["arguments"])
+    return nodes
+
+
+def _flatten(value: object) -> list[object]:
+    if isinstance(value, (list, tuple)):
+        return [item for item in value if item not in (None, "", [], {})]
+    if value in (None, "", [], {}):
+        return []
+    return [value]
+
+
+def _collect(nodes: list[dict], keys: set[str]) -> list[object]:
+    found: list[object] = []
+    for node in nodes:
+        for key, value in node.items():
+            if key in keys:
+                found.extend(_flatten(value))
+    return found
+
+
+def _split_names_ids(values: list[object]) -> tuple[set[str], set[str]]:
+    """Split trace values into display names and opaque ids.
+
+    A value that looks like a UUID (long and hyphenated) is an id even when
+    it arrives under a "team" key; anything else is a display name. Callers
+    add "team_id" values to the id set directly, whatever their shape, so a
+    short slug id is never mistaken for a second team name.
+    """
+    names: set[str] = set()
+    ids: set[str] = set()
+    for value in values:
+        token = _norm_token(value)
+        if not token:
+            continue
+        if len(token) >= 32 and "-" in token:
+            ids.add(str(value).strip())
+        else:
+            names.add(token)
+    return names, ids
+
+
+def _compare_team(expected: object, nodes: list[dict]) -> str:
+    """Return match, mismatch, or unobservable for a team name or id.
+
+    A name is compared with the names the trace shows and an id with the
+    ids it shows. A display name next to a matching id (or an id next to a
+    matching name) is the same team, not a conflict. Only a different shown
+    name, or a different shown id, is a mismatch. A name expected against
+    opaque ids alone cannot be compared, so it is unobservable.
+    """
+    wanted = _norm_token(expected)
+    if not wanted:
+        return "unobservable"
+    names, ids = _split_names_ids(_collect(nodes, {"team", "team_name"}))
+    ids.update(str(value).strip() for value in _collect(nodes, {"team_id"}) if _norm_token(value))
+    raw = str(expected).strip()
+    if wanted in names:
+        extra = names - {wanted}
+        return "mismatch" if extra else "match"
+    if raw in ids:
+        extra_ids = ids - {raw}
+        return "mismatch" if extra_ids else "match"
+    if names:
+        return "mismatch"
+    return "unobservable"
+
+
+def _compare_region(expected: object, nodes: list[dict]) -> str:
+    wanted = _norm_region(expected)
+    if not wanted:
+        return "unobservable"
+    seen = {_norm_region(value) for value in _collect(nodes, {"region", "country", "country_code"})}
+    seen.discard("")
+    if not seen:
+        return "unobservable"
+    if seen == {wanted}:
+        return "match"
+    if wanted in seen and len(seen) == 1:
+        return "match"
+    return "mismatch"
+
+
+def _join_signals(nodes: list[dict]) -> list[object]:
+    found: list[object] = []
+    for node in nodes:
+        for key, value in node.items():
+            if not _JOIN_KEY.search(str(key)):
+                continue
+            for item in _flatten(value):
+                if _norm_token(item) not in _JOIN_ABSENT:
+                    found.append(item)
+    return found
+
+
+def _compare_joiner(expected: object, nodes: list[dict]) -> str:
+    if not nodes:
+        return "unobservable"
+    signals = _join_signals(nodes)
+    wanted = _norm_token(expected)
+    if wanted == "no_join_date_source":
+        return "mismatch" if signals else "match"
+    if not signals:
+        return "unobservable"
+    if any(_norm_token(item) == wanted for item in signals):
+        return "match"
+    return "mismatch"
+
+
+def assess_bindings(case: dict, data: dict) -> dict:
+    """Grade filled team, country, and joiner bindings from structured resolution.
+
+    Headline text is ignored. A filled binding that the trace does not carry
+    is unobservable and must not count as a pass. A contradictory team or
+    country is a failure.
+    """
+    nodes = _structured_nodes(data if isinstance(data, dict) else {})
+    fields: list[dict] = []
+    for item in _filled_bindings(case):
+        field = item["field"]
+        value = item["value"]
+        if field == "team_binding":
+            if isinstance(value, dict):
+                team_status = _compare_team(value.get("team") or value.get("team_id"), nodes)
+                region_status = _compare_region(value.get("region") or value.get("country"), nodes) if (
+                    value.get("region") or value.get("country")
+                ) else "match"
+                if team_status == "mismatch" or region_status == "mismatch":
+                    status = "mismatch"
+                elif team_status == "unobservable" or region_status == "unobservable":
+                    status = "unobservable"
+                else:
+                    status = "match"
+                if team_status == "mismatch" and region_status == "mismatch":
+                    category = "identity"
+                elif team_status == "mismatch":
+                    category = "identity"
+                elif region_status == "mismatch":
+                    category = "scope"
+                else:
+                    category = None
+            else:
+                status = _compare_team(value, nodes)
+                category = "identity" if status == "mismatch" else None
+            note = _binding_note(field, status, value, category)
+        elif field == "country_binding":
+            expected_region = value.get("region") or value.get("country") if isinstance(value, dict) else value
+            status = _compare_region(expected_region, nodes)
+            category = "scope" if status == "mismatch" else None
+            note = _binding_note(field, status, expected_region, category)
+        else:
+            status = _compare_joiner(value, nodes)
+            category = "identity" if status == "mismatch" else None
+            note = _binding_note(field, status, value, category)
+        fields.append({"field": field, "status": status, "category": category, "note": note})
+    categories = [row["category"] for row in fields if row["status"] == "mismatch" and row["category"]]
+    # A team-name mismatch and a region mismatch on the same binding both count.
+    for row in fields:
+        if row["field"] != "team_binding" or row["status"] != "mismatch":
+            continue
+        value = next(item["value"] for item in _filled_bindings(case) if item["field"] == "team_binding")
+        if isinstance(value, dict):
+            if _compare_team(value.get("team") or value.get("team_id"), nodes) == "mismatch" and "identity" not in categories:
+                categories.append("identity")
+            if (value.get("region") or value.get("country")) and _compare_region(
+                value.get("region") or value.get("country"), nodes
+            ) == "mismatch" and "scope" not in categories:
+                categories.append("scope")
+    return {
+        "fields": fields,
+        "categories": list(dict.fromkeys(categories)),
+        "notes": [row["note"] for row in fields if row["status"] != "match"],
+        "unobservable": any(row["status"] == "unobservable" for row in fields),
+        "mismatch": any(row["status"] == "mismatch" for row in fields),
+    }
+
+
+def _binding_note(field: str, status: str, value: object, category: str | None = None) -> str:
+    shown = json.dumps(value, ensure_ascii=False) if not isinstance(value, str) else value
+    if status == "match":
+        return f"{field} matches the structured resolution ({shown})."
+    if status == "mismatch":
+        kind = category or ("scope" if field == "country_binding" else "identity")
+        return f"{field} does not match the structured resolution ({shown}); {kind} failure."
+    return f"{field} is filled ({shown}) but the structured trace does not show it, so the case is ungraded."
+
+
 def grade(case: dict, turns: list[dict]) -> dict:
     categories: list[str] = []
     notes: list[str] = []
@@ -489,6 +746,7 @@ def grade(case: dict, turns: list[dict]) -> dict:
             "failure_categories": ["composition"],
             "notes": ["The API returned a server error or no response."],
             "proposed_contracts": CONTRACTS.get(case["id"], []),
+            "binding_grades": [],
         }
     last = turns[-1]
     text = " ".join(response_text(turn) for turn in turns)
@@ -547,6 +805,9 @@ def grade(case: dict, turns: list[dict]) -> dict:
         categories.append("intent")
         notes.append("A model call was attempted while every model flag was off.")
 
+    binding = assess_bindings(case, data)
+    categories.extend(binding["categories"])
+    notes.extend(binding["notes"])
     categories = list(dict.fromkeys(categories))
     pending = all(item["value"] == "PENDING" for item in case["expected_values"])
     if categories:
@@ -570,6 +831,8 @@ def grade(case: dict, turns: list[dict]) -> dict:
     else:
         status = "ungraded"
         notes.append(f"Outcome {outcome!r} on HTTP {last['http_status']} was not an obvious failure, and a signed value is still missing.")
+    if status == "passed" and binding["unobservable"]:
+        status = "ungraded"
     return {
         "status": status,
         "failure_categories": categories,
@@ -577,6 +840,7 @@ def grade(case: dict, turns: list[dict]) -> dict:
         "proposed_contracts": CONTRACTS.get(case["id"], []),
         "outcome": outcome,
         "http_status": last["http_status"],
+        "binding_grades": binding["fields"],
     }
 
 
@@ -592,6 +856,7 @@ def main() -> None:
     import datetime
     t_start_wall = datetime.datetime.now(datetime.timezone.utc).isoformat()
     t_start_perf = time.perf_counter()
+    version = question_set_version()
     if DB_PATH.exists():
         DB_PATH.unlink()
     engine = create_engine(
@@ -650,7 +915,7 @@ def main() -> None:
     }
 
     results = []
-    for case in load_cases():
+    for case in load_cases(version):
         method, path = route_for(case)
         token = tokens[case["user_fixture"]["fixture_id"]]
         context = page_context_for(case.get("page_context")) if case["channel"] == "contextual_panel" else None
@@ -741,6 +1006,12 @@ def main() -> None:
     diff_hash = prov["diff_hash"]
     candidate_commit = prov["candidate_commit"]
     candidate_run_id = prov["candidate_run_id"]
+    question_sets = dict(prov["question_set_versions"])
+    for label in (f"frozen_{version}", f"heldout_{version}"):
+        question_sets[label] = {
+            "file": f"{label}.json",
+            "sha256": file_sha256(PHASE0 / f"{label}.json") or "none",
+        }
 
     out_file = RESULTS / f"{candidate_run_id}.json"
     if out_file.exists():
@@ -755,7 +1026,8 @@ def main() -> None:
         "working_tree_dirty": is_dirty,
         "evaluated_diff_hash": diff_hash,
         "relevant_untracked_files": prov["relevant_untracked_files"],
-        "question_set_versions": prov["question_set_versions"],
+        "question_set_version": version,
+        "question_set_versions": question_sets,
         "main_sha": git_sha("origin/main") if (REPO / ".git").exists() else base_commit,
         "evaluated_sha": base_commit,
         "performance_record_count": int(record_count or 0),
@@ -786,6 +1058,7 @@ def main() -> None:
                 "candidate_commit",
                 "working_tree_dirty",
                 "evaluated_diff_hash",
+                "question_set_version",
                 "question_set_versions",
                 "performance_record_count",
                 "execution_start_time",

@@ -73,6 +73,21 @@ from utils.report_scope import filter_records_by_scope
 REVERSE_MONTHS: dict[int, str] = {v: k for k, v in MONTHS.items()}
 
 
+def _watching_scope_label(resolved: dict[str, Any]) -> str:
+    """Name the alert from the active scope, not a Call Center default.
+
+    An insight with no team used to badge and prompt "Call Center" even when
+    the workspace was another function, or had no function selected.
+    """
+    team = str(resolved.get("team") or "").strip()
+    function = str(resolved.get("function") or "").strip()
+    if team and team.casefold() not in {"all"}:
+        return team
+    if function and function.casefold() not in {"all"}:
+        return function
+    return "this scope"
+
+
 def _period_key_to_month_year(period_key: str) -> tuple[str | None, int | None]:
     try:
         yr_s, mo_s = period_key.split("-", 1)
@@ -326,19 +341,21 @@ class PmsAiOrchestrator:
         release_read_transaction(self.db)
 
         alerts: list[AiWatchingAlertItem] = []
+        scope_label = _watching_scope_label(resolved)
 
         # 1. Priority Insights / Team Drop Alert
         for ins in (ws.priority_insights or [])[:2]:
             sev_val = "critical" if str(ins.severity).casefold() == "critical" else "warning"
             focus_txt = ins.explanation or (ins.detail.recommended_focus if ins.detail else "")
+            insight_scope = ins.team or scope_label
             alerts.append(
                 AiWatchingAlertItem(
                     id=f"watch-{ins.id}",
                     title=ins.title,
                     subtitle=sanitize_untrusted_text(focus_txt, 110),
                     severity=sev_val,  # type: ignore[arg-type]
-                    badge_text=ins.team or (resolved["function"] or "Call Center"),
-                    prompt_to_ask=f"Diagnose why {ins.team or 'Call Center'} triggered '{ins.title}' and show the top employees causing it.",
+                    badge_text=insight_scope,
+                    prompt_to_ask=f"Diagnose why {insight_scope} triggered '{ins.title}' and show the top employees causing it.",
                     deep_link=build_verified_deep_link(
                         "/insights",
                         month=res_month,
@@ -362,7 +379,7 @@ class PmsAiOrchestrator:
                         subtitle=sanitize_untrusted_text(top_r.explanation, 110),
                         severity="warning",
                         badge_text=f"{top_r.count} flagged",
-                        prompt_to_ask=f"Who are the employees in {top_r.label} for {resolved['team'] or 'Call Center'}?",
+                        prompt_to_ask=f"Who are the employees in {top_r.label} for {scope_label}?",
                         deep_link=build_verified_deep_link("/planning", month=res_month, year=res_year, team=resolved["team"]),
                     )
                 )
