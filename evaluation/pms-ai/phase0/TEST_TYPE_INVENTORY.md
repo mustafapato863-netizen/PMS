@@ -8,12 +8,12 @@ verified is not used. source-parity here is partial because the reviewer has not
 
 ## Counts
 
-Test files: 31. Test functions or `it` blocks: 267.
+Test files: 32. Test functions or `it` blocks: 297.
 A file can carry more than one label, so the label counts can add up to more than the file count.
 
 | Label | Files | Evidence status of what the label proves |
 | --- | ---: | --- |
-| `synthetic` | 12 | not applicable |
+| `synthetic` | 13 | not applicable |
 | `mocked` | 17 | partial |
 | `live-model` | 3 | blocked |
 | `source-parity` | 2 | partial |
@@ -40,6 +40,7 @@ A file can carry more than one label, so the label counts can add up to more tha
 | `Backend/tests/test_ai_scope_and_context.py` | test | `synthetic` | 12 | not applicable |
 | `Backend/tests/test_ai_scope_and_fallback_regressions.py` | test | `mocked` | 5 | partial |
 | `Backend/tests/test_ai_shared_region_scorecard.py` | test | `synthetic` | 8 | not applicable |
+| `Backend/tests/test_ai_source_parity_matrix.py` | test | `synthetic` | 30 | not applicable |
 | `Backend/tests/test_ai_workspace.py` | test | `mocked` | 22 | partial |
 | `Backend/tests/test_evaluation_outbound_productivity_golden.py` | test | `source-parity` | 9 | partial |
 | `Backend/tests/test_evaluation_provenance.py` | test | `synthetic` | 7 | not applicable |
