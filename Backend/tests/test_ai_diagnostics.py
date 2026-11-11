@@ -118,6 +118,19 @@ def test_2_feature_switch_off_returns_disabled_status_cleanly(test_db_session):
     assert resp_diag_on.json()["data"]["feature_enabled"] is True
 
 
+def test_anonymous_caller_is_rejected_on_diagnostics_before_any_role_check(test_db_session):
+    """No token and no legacy header: the diagnostics route answers 401, not 403."""
+    test_db_session.query(ProductSetting).delete()
+    test_db_session.commit()
+
+    app = _create_test_app(test_db_session)
+    client = TestClient(app, raise_server_exceptions=False)
+
+    resp = client.get("/api/ai/diagnostics")
+    assert resp.status_code == 401
+    assert "authorization" in resp.json()["detail"].lower()
+
+
 def test_3_model_listing_missing_configured_model_reported_as_model_missing(monkeypatch):
     """When /v1/models returns models that do NOT include the configured model, report as model_missing."""
     monkeypatch.setenv("PMS_AI_LLM_BASE_URL", "http://127.0.0.1:18080")

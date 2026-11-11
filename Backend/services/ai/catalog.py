@@ -778,12 +778,6 @@ def evidence_for_team(team_name: str) -> CatalogEvidence:
     return _TEAM_EVIDENCE.get(str(team_name or "").strip(), _BLOCKED_EVIDENCE)
 
 
-def evidence_for_level(team_name: str, level: str, defined_levels: list[str] | tuple[str, ...]) -> CatalogEvidence:
-    if str(level or "").strip() not in {str(item) for item in defined_levels}:
-        return CatalogEvidence(state="not_applicable", tests=(), fixture_or_source_version="", reviewed_on="", reviewer="")
-    return evidence_for_team(team_name)
-
-
 class PmsAiCatalog:
     """Authoritative PMS AI catalog projected from team configurations and KPI definitions."""
 
@@ -1524,8 +1518,6 @@ class PmsAiCatalog:
         for lvl in perf_levels:
             if lvl == "Employee":
                 lvl_evidence = evidence
-            elif lvl not in perf_levels:
-                lvl_evidence = CatalogEvidence(state="not_applicable", reviewer="")
             else:
                 lvl_evidence = CatalogEvidence(state="blocked", reviewer="pending")
             lvl_state, lvl_passes = publish_evidence(lvl_evidence)

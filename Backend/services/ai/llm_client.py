@@ -517,7 +517,21 @@ def check_model_health(timeout_seconds: float = 1.5) -> dict[str, Any]:
     box: dict[str, Any] = {}
 
     def run() -> None:
-        box["value"] = _probe_configured_model(timeout)
+        try:
+            box["value"] = _probe_configured_model(timeout)
+        except Exception:
+            # A crashing probe is not a timeout: report it as such so an
+            # Admin does not mistake a probe bug for a slow model.
+            logger.exception("model health probe failed")
+            box["value"] = {
+                "configured_model": configured_model_name(),
+                "endpoint_configured": False,
+                "endpoint_host": None,
+                "available": False,
+                "inference_verified": False,
+                "model_version": None,
+                "reason": "probe_error",
+            }
 
     worker = threading.Thread(target=run, daemon=True)
     worker.start()

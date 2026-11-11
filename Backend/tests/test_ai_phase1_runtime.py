@@ -203,6 +203,22 @@ def test_real_model_probe_reads_version_and_does_not_hang(monkeypatch: pytest.Mo
     time.sleep(1.6)
 
 
+def test_crashing_model_probe_is_reported_as_probe_error_not_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A probe that raises is a probe bug, not a slow model: report probe_error."""
+
+    def _boom(*_args, **_kwargs):
+        raise RuntimeError("probe blew up")
+
+    monkeypatch.setattr("services.ai.llm_client._probe_configured_model", _boom)
+    started = time.perf_counter()
+    health = check_model_health(1.5)
+    assert time.perf_counter() - started < 1.0
+    assert health["available"] is False
+    assert health["inference_verified"] is False
+    assert health["reason"] == "probe_error"
+    assert health["model_version"] is None
+
+
 def test_turning_ai_off_and_model_flags_off_returns_cleanly(monkeypatch: pytest.MonkeyPatch) -> None:
     _flags_off(monkeypatch)
     monkeypatch.setenv("PMS_AI_CONVERSATION_STATE_ENABLED", "false")
@@ -260,4 +276,7 @@ def test_turning_ai_off_and_model_flags_off_returns_cleanly(monkeypatch: pytest.
     assert fallback.outcome == "answer"
     assert fallback.headline
     assert fallback.provider_used == "deterministic"
-    assert fallback.provider_usage.fallback_outcome == "unavailable_or_invalid"
+    # Since #92, a refused model connection is named specifically instead of
+    # collapsing to the generic bucket: the endpoint at 127.0.0.1:9 refuses
+    # the connection, so the fallback outcome is "connection_refused".
+    assert fallback.provider_usage.fallback_outcome == "connection_refused"
