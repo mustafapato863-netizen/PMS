@@ -44,11 +44,7 @@ TEAM_ALIASES: dict[str, str] = {
     "csr": "CSR",
     "pharmacy": "Pharmacy",
     "coding egy": "Coding EGY",
-    "coding": "Coding", "كودينج": "Coding",
     "submission egy": "Submission EGY",
-    "submission": "Submission", "سبمشن": "Submission",
-    "re-submission": "Re-Submission",
-    "resubmission": "Resubmission",
     "pre-approvals ip offshore": "Pre-Approvals IP Offshore",
     "pre-approvals ip elective dubai": "Pre-Approvals IP Elective Dubai",
     "ip elective dubai": "Pre-Approvals IP Elective Dubai",
@@ -75,6 +71,20 @@ REVENUE_KEYWORDS: tuple[str, ...] = (
     "revenue", "revenues", "income", "financial return", "cash",
     "ايراد", "إيراد", "ايرادات", "إيرادات", "مبيعات", "عائد مالي", "فلوس", "دخل",
 )
+
+# Bare cross-country team names. These deliberately have NO entry in
+# TEAM_ALIASES: without a country word, a single-region scope, or a scoped
+# session team they are ambiguous, and signal extraction must not silently
+# assign them to one country (previously UAE, or EGY for "resubmission").
+# The router asks for clarification; see
+# Backend/services/ai/catalog.py#BARE_CROSS_COUNTRY_TEAMS and
+# Backend/services/ai/router.py#resolve_and_validate.
+BARE_CROSS_COUNTRY_TEAM_ALIASES: dict[str, tuple[str, str]] = {
+    "coding": ("Coding EGY", "Coding"),
+    "submission": ("Submission EGY", "Submission"),
+    "re-submission": ("Resubmission", "Re-Submission"),
+    "resubmission": ("Resubmission", "Re-Submission"),
+}
 
 
 def is_arabic_text(text: str) -> bool:

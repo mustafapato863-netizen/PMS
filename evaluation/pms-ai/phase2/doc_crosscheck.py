@@ -31,11 +31,16 @@ ROADMAP_STATUSES = (
     "not applicable",
 )
 
-# Owner-matrix words that have a roadmap word. "unverified" does not.
+# Owner-matrix words that have a roadmap word. "unverified" does not. The
+# roadmap words map to themselves so a doc cell written directly in the
+# roadmap vocabulary is verified against the inventory instead of skipped.
 DOC_STATUS_TO_ROADMAP = {
     "verified": "verified",
-    "partial_evidence": "partial",
     "verified_no_data": "verified no data",
+    "partial": "partial",
+    "partial_evidence": "partial",
+    "blocked": "blocked",
+    "not_applicable": "not applicable",
     "unsupported": "not applicable",
 }
 
@@ -62,14 +67,15 @@ def vocabulary_mapping() -> dict[str, Any]:
             "docs/plans/pms-ai-evidence-first/ is the governing domain write-up. "
             "This file is a cross-check, not a third runtime registry."
         ),
-        "runtime_not_changed": [
+        "runtime_applied": [
             "Backend/services/ai/catalog.py",
             "Backend/services/ai/coverage_manifest.py",
         ],
         "backend_follow_up": (
-            "Adopt this mapping in catalog.py and coverage_manifest.py. "
-            "Do not leave CAPABILITY_EVIDENCE_REGISTRY or coverage_state as a second vocabulary. "
-            "Do not map CERTIFIED, or the legacy all-gates-true catalog path, to verified."
+            "Applied in Phase 2 (issue #94): catalog.py CapabilityEvidenceEntry "
+            "and coverage_manifest.py emit only the roadmap vocabulary. "
+            "CERTIFIED has no emitter in the runtime and is refused as a "
+            "coverage state. Do not reintroduce a second vocabulary."
         ),
         "catalog_py": [
             {
@@ -84,7 +90,7 @@ def vocabulary_mapping() -> dict[str, Any]:
                 "from": "partial_evidence",
                 "to": "partial",
                 "rule": (
-                    "Synthetic or application tests exist and independent source parity is still open. "
+                    "Legacy word, no longer emitted. Synthetic or application tests exist and independent source parity is still open. "
                     "That is not the same event as a team JSON matching kpi_service.DEFAULT_WEIGHTS."
                 ),
             },
@@ -92,44 +98,44 @@ def vocabulary_mapping() -> dict[str, Any]:
                 "from": "unverified",
                 "to": "blocked",
                 "rule": (
-                    "The roadmap set has no unverified member. An unchecked scope is blocked from certification. "
+                    "Legacy word, no longer emitted. The roadmap set has no unverified member. An unchecked scope is blocked from certification. "
                     "status_basis not_checked means no check failed."
                 ),
             },
             {
                 "from": "unsupported",
                 "to": "not applicable",
-                "rule": "The operation does not apply. Use blocked when a source contradiction or a missing permission stops an operation that does apply.",
+                "rule": "Legacy word, no longer emitted. The operation does not apply. Use blocked when a source contradiction or a missing permission stops an operation that does apply.",
             },
         ],
         "coverage_manifest_py": [
             {
                 "from": "CERTIFIED",
                 "to": None,
-                "rule": "Refused. A snapshot row count is not source parity plus permission. Backend must stop emitting CERTIFIED as capability truth.",
+                "rule": "Refused. A snapshot row count is not source parity plus permission. The runtime never emits CERTIFIED as capability truth.",
             },
             {
                 "from": "PENDING",
                 "to": "blocked",
-                "rule": "status_basis not_checked. Not partial.",
+                "rule": "Legacy word, no emitter. status_basis not_checked. Not partial.",
             },
             {
                 "from": "VERIFIED_NO_DATA",
                 "to": "verified no data",
                 "rule": (
-                    "Only after the scope and calculation are verified and the requested period is confirmed empty. "
-                    "The current runtime sets this when a level exists and a snapshot count is 0, without a permission check."
+                    "Legacy word, no emitter. Only after the scope and calculation are verified and the requested period is confirmed empty. "
+                    "A level existing with a snapshot count of 0, without a permission check, is blocked, not verified no data."
                 ),
             },
             {
                 "from": "NOT_APPLICABLE",
                 "to": "not applicable",
-                "rule": "Same meaning when the operation or level does not apply.",
+                "rule": "Legacy word, no emitter. Same meaning when the operation or level does not apply.",
             },
             {
                 "from": "BLOCKED_SOURCE",
                 "to": "blocked",
-                "rule": "Same meaning when a source contradiction stops the cell.",
+                "rule": "Legacy word, no emitter. Same meaning when a source contradiction stops the cell.",
             },
         ],
         "this_map": [
@@ -418,9 +424,15 @@ def _kpi_disagreements(text: str, by_team: dict[str, dict[str, Any]]) -> list[di
     )
     rows = []
     for slug, start, end, teams in sections:
-        claims = _doc_kpi_rows(_section(text, start, end))
-        claim_keys = {item["key"].casefold() for item in claims}
+        section = _section(text, start, end)
         for team in teams:
+            # Per-team subsections (e.g. "### Inbound", "### Coding EGY")
+            # carry that team's keys; a shared section table applies to
+            # every team in the section only when no per-team subsection
+            # exists. Team JSON template keys differ per team, so one shared
+            # claim set cannot be right for all of them.
+            claims = _doc_kpi_rows(_team_subsection(section, team) or section)
+            claim_keys = {item["key"].casefold() for item in claims}
             repo_kpis = _template_kpis(by_team.get(team))
             repo_keys = {str(item.get("key") or "") for item in repo_kpis}
             repo_fold = {key.casefold() for key in repo_keys}
@@ -453,6 +465,31 @@ def _kpi_disagreements(text: str, by_team: dict[str, dict[str, Any]]) -> list[di
                         )
                     )
     return rows
+
+
+def _team_subsection(section: str, team: str) -> str:
+    """Return the per-team subsection for `team`, or "" when there is none.
+
+    A subsection starts at a heading line whose text is the team name
+    (optionally followed by " — ..." detail) and runs to the next heading.
+    """
+    lines = section.splitlines()
+    start_idx = None
+    for index, line in enumerate(lines):
+        match = re.match(r"^#{1,4}\s+(.+?)\s*$", line)
+        if not match:
+            continue
+        heading = match.group(1).strip()
+        head_team = re.split(r"\s+—\s+|\s+-\s+|\s+\(", heading, maxsplit=1)[0].strip()
+        if head_team == team:
+            start_idx = index
+            break
+    if start_idx is None:
+        return ""
+    for end_idx in range(start_idx + 1, len(lines)):
+        if re.match(r"^#{1,4}\s+", lines[end_idx]):
+            return "\n".join(lines[start_idx:end_idx])
+    return "\n".join(lines[start_idx:])
 
 
 def _glossary_disagreements(
@@ -610,7 +647,17 @@ def _matrix_disagreements(
                 "Those names are not Backend/config/teams entries. Support Positions is a Call Center subteam and is not in this list.",
             )
         )
-    bsc_unnamed = sorted(set(also_teams) - config_teams - doc_teams)
+    # Management BSC catalog teams with no team JSON (CRM, Nursing, PMO)
+    # are Corporate-only: they do not belong in the Employee rows of
+    # sections 2.1/2.2. They count as named when section 2.3 (Managerial &
+    # Corporate BSC) lists them as BSC-only teams.
+    section_23 = text[text.find("### 2.3 ") :] if "### 2.3 " in text else ""
+    bsc_named_in_23 = {
+        team
+        for team in set(also_teams) - config_teams - doc_teams
+        if re.search(rf"(?<![A-Za-z]){re.escape(team)}(?![A-Za-z])", section_23)
+    }
+    bsc_unnamed = sorted(set(also_teams) - config_teams - doc_teams - bsc_named_in_23)
     if bsc_unnamed:
         rows.append(
             _disagreement(
@@ -669,7 +716,35 @@ def _find_cell(matrix: list[dict[str, Any]], team: str, level: str, operation: s
         and (cell["team"] == team or cell["subteam"] == team)
         and cell["basis"] in {"template", "channel-rollup"}
     ]
-    if not matches:
+    if matches:
+        matches.sort(key=lambda cell: (cell["basis"] != "template", cell["team"]))
+        return matches[0]
+    # Teams whose KPIs live under positions (e.g. Coding EGY, Finance) have
+    # no team-level cell. Fall back to their position cells, but only when
+    # every position agrees on the status for this operation; a split is
+    # reported as no cell rather than silently picking one position.
+    fallback = [
+        cell
+        for cell in matrix
+        if cell["operation"] == operation
+        and cell["level"] == level
+        and cell["measure"] == ""
+        and (cell["team"] == team or cell["subteam"] == team)
+        and cell["basis"] in {"template", "channel-rollup"}
+    ]
+    if not fallback:
+        fallback = [
+            cell
+            for cell in matrix
+            if cell["operation"] == operation
+            and cell["level"] == level
+            and cell["measure"] == ""
+            and (cell["team"] == team or cell["subteam"] == team)
+        ]
+    if not fallback:
         return None
-    matches.sort(key=lambda cell: (cell["basis"] != "template", cell["team"]))
-    return matches[0]
+    statuses = {cell["status"] for cell in fallback}
+    if len(statuses) != 1:
+        return None
+    fallback.sort(key=lambda cell: (cell["basis"] != "template", cell["position"], cell["team"]))
+    return fallback[0]

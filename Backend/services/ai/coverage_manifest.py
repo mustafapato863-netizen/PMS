@@ -21,6 +21,13 @@ from utils.report_scope import function_for_team
 
 MANIFEST_VERSION = "1.0.0"
 
+# Roadmap capability vocabulary only (Phase 2). No legacy state is ever
+# emitted: "CERTIFIED", "PENDING", "VERIFIED_NO_DATA", "NOT_APPLICABLE" and
+# "BLOCKED_SOURCE" have no emitter in this module. A cell is "verified" or
+# "verified_no_data" only when its evidence passes (see evidence.py); a
+# snapshot row count alone never certifies a cell.
+COVERAGE_STATES = frozenset({"verified", "verified_no_data", "partial", "blocked", "not_applicable"})
+
 SHARED_REGION_POLICY = {
     "Finance": {
         "employee_region": "All",
@@ -474,7 +481,7 @@ def validate_coverage_manifest(manifest: dict[str, Any] | None = None) -> dict[s
     target = manifest or build_coverage_manifest()
     summary = target.get("summary") or {}
     cells = target.get("coverage_cells") or []
-    valid_states = {"verified", "verified_no_data", "partial", "blocked", "not_applicable"}
+    valid_states = COVERAGE_STATES
     unclassified = [c for c in cells if c.get("coverage_state") not in valid_states]
     pending = [c for c in cells if c.get("coverage_state") == "partial"]
     blocked = [c for c in cells if c.get("coverage_state") == "blocked"]
@@ -483,6 +490,8 @@ def validate_coverage_manifest(manifest: dict[str, Any] | None = None) -> dict[s
         for c in cells
         if c.get("coverage_state") in {"verified", "verified_no_data"} and c.get("evidence_passes") is True
     ]
+    # Regression guard: the legacy CERTIFIED label must never reappear as a
+    # coverage state, with or without passing evidence.
     false_certification = [
         c
         for c in cells

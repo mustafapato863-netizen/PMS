@@ -42,11 +42,26 @@ class CapabilityEvidenceEntry:
     team: str
     performance_level: str
     operation_family: str
-    state: str  # "verified", "partial_evidence", "unverified", "unsupported"
+    # Roadmap vocabulary only (Phase 2): "verified", "verified_no_data",
+    # "partial", "blocked", "not_applicable". Legacy "partial_evidence",
+    # "unverified" and "unsupported" are never emitted here.
+    state: str
     evidence_ref: str
     validated_at: str
     reviewer: str = "pending"
     known_limitations: str = ""
+
+
+# Cross-country teams whose bare name is ambiguous without country context.
+# A bare alias must never silently default to one country: it resolves only
+# when a country is supplied (explicit country, single-region scope, scoped
+# session team, or a prompt country word). See resolve_canonical_team_name.
+BARE_CROSS_COUNTRY_TEAMS: dict[str, tuple[str, str]] = {
+    "Coding": ("Coding EGY", "Coding"),
+    "Submission": ("Submission EGY", "Submission"),
+    "Re-Submission": ("Resubmission", "Re-Submission"),
+    "Resubmission": ("Resubmission", "Re-Submission"),
+}
 
 
 CAPABILITY_EVIDENCE_REGISTRY: list[CapabilityEvidenceEntry] = [
@@ -57,7 +72,7 @@ CAPABILITY_EVIDENCE_REGISTRY: list[CapabilityEvidenceEntry] = [
         team="Inbound",
         performance_level="Employee",
         operation_family="operational_summary",
-        state="partial_evidence",
+        state="partial",
         evidence_ref="Backend/tests/test_ai_workspace.py",
         validated_at="2026-11-10",
         known_limitations="Application tests exist; independent source-parity evidence is pending. Monthly level aggregation only; daily drill-downs unverified",
@@ -68,7 +83,7 @@ CAPABILITY_EVIDENCE_REGISTRY: list[CapabilityEvidenceEntry] = [
         team="Inbound",
         performance_level="Employee",
         operation_family="ranking",
-        state="partial_evidence",
+        state="partial",
         evidence_ref="Backend/tests/test_ai_workspace.py",
         validated_at="2026-11-10",
         known_limitations="Application tests exist; independent source-parity evidence is pending. Tested for top/bottom cohorts across score thresholds",
@@ -79,7 +94,7 @@ CAPABILITY_EVIDENCE_REGISTRY: list[CapabilityEvidenceEntry] = [
         team="Inbound",
         performance_level="Employee",
         operation_family="branch_comparison",
-        state="partial_evidence",
+        state="partial",
         evidence_ref="Backend/tests/test_ai_booking_comparisons.py",
         validated_at="2026-11-10",
         known_limitations="Application tests exist; independent source-parity evidence is pending. Requires branch geo breakdown in records; handles ties and missing data conservatively",
@@ -90,7 +105,7 @@ CAPABILITY_EVIDENCE_REGISTRY: list[CapabilityEvidenceEntry] = [
         team="Inbound",
         performance_level="Employee",
         operation_family="root_cause",
-        state="partial_evidence",
+        state="partial",
         evidence_ref="Backend/tests/test_ai_workspace.py",
         validated_at="2026-11-10",
         known_limitations="Application tests exist; independent source-parity evidence is pending. Attributed to KPI drag on score",
@@ -102,7 +117,7 @@ CAPABILITY_EVIDENCE_REGISTRY: list[CapabilityEvidenceEntry] = [
         team="Outbound",
         performance_level="Employee",
         operation_family="operational_summary",
-        state="partial_evidence",
+        state="partial",
         evidence_ref="Backend/tests/test_ai_workspace.py",
         validated_at="2026-11-10",
         known_limitations="Application tests exist; independent source-parity evidence is pending. Monthly level aggregation only",
@@ -113,7 +128,7 @@ CAPABILITY_EVIDENCE_REGISTRY: list[CapabilityEvidenceEntry] = [
         team="Outbound",
         performance_level="Employee",
         operation_family="ranking",
-        state="partial_evidence",
+        state="partial",
         evidence_ref="Backend/tests/test_ai_workspace.py",
         validated_at="2026-11-10",
         known_limitations="Application tests exist; independent source-parity evidence is pending. Tested for bottom drag cohorts",
@@ -125,7 +140,7 @@ CAPABILITY_EVIDENCE_REGISTRY: list[CapabilityEvidenceEntry] = [
         team="Support Positions",
         performance_level="Employee",
         operation_family="operational_summary",
-        state="partial_evidence",
+        state="partial",
         evidence_ref="Backend/tests/test_ai_workspace.py",
         validated_at="2026-11-10",
         known_limitations="Application tests exist; independent source-parity evidence is pending. Average across 3 support roles",
@@ -137,7 +152,7 @@ CAPABILITY_EVIDENCE_REGISTRY: list[CapabilityEvidenceEntry] = [
         team="Coding EGY",
         performance_level="Employee",
         operation_family="operational_summary",
-        state="partial_evidence",
+        state="partial",
         evidence_ref="Backend/tests/test_ai_workspace.py",
         validated_at="2026-11-10",
         known_limitations="Scoring rules covered by application tests; independent source-parity evidence is pending",
@@ -148,7 +163,7 @@ CAPABILITY_EVIDENCE_REGISTRY: list[CapabilityEvidenceEntry] = [
         team="Pre-Approvals IP Offshore",
         performance_level="Employee",
         operation_family="operational_summary",
-        state="partial_evidence",
+        state="partial",
         evidence_ref="Backend/tests/test_ai_workspace.py",
         validated_at="2026-11-10",
         known_limitations="Scoring rules covered by application tests; independent source-parity evidence is pending",
@@ -159,7 +174,7 @@ CAPABILITY_EVIDENCE_REGISTRY: list[CapabilityEvidenceEntry] = [
         team="Resubmission",
         performance_level="Employee",
         operation_family="operational_summary",
-        state="partial_evidence",
+        state="partial",
         evidence_ref="Backend/tests/test_ai_workspace.py",
         validated_at="2026-11-10",
         known_limitations="Egypt aliases covered by application tests; independent source-parity evidence is pending, along with full production data",
@@ -170,7 +185,7 @@ CAPABILITY_EVIDENCE_REGISTRY: list[CapabilityEvidenceEntry] = [
         team="Marketing",
         performance_level="Employee",
         operation_family="operational_summary",
-        state="partial_evidence",
+        state="partial",
         evidence_ref="Backend/tests/test_ai_workspace.py",
         validated_at="2026-11-10",
         known_limitations="Partial application-test evidence; independent source-parity evidence is pending",
@@ -181,7 +196,7 @@ CAPABILITY_EVIDENCE_REGISTRY: list[CapabilityEvidenceEntry] = [
         team="Pharmacy",
         performance_level="Employee",
         operation_family="operational_summary",
-        state="partial_evidence",
+        state="partial",
         evidence_ref="Backend/tests/test_ai_workspace.py",
         validated_at="2026-11-10",
         known_limitations="Partial application-test evidence; independent source-parity evidence is pending",
@@ -249,7 +264,7 @@ def get_capability_evidence(
         team=team or "UNKNOWN",
         performance_level=lvl_norm or "UNKNOWN",
         operation_family=operation_family or "UNKNOWN",
-        state="unverified",
+        state="blocked",
         evidence_ref="none",
         validated_at="none",
         known_limitations="Scope is missing, unknown, ambiguous, or has no unique validation entry",
@@ -702,23 +717,27 @@ def resolve_canonical_team_name(
         elif re.search(r"\b(uae|dubai|sharjah|ajman)\b", prompt_lower):
             eff_region = "UAE"
 
-    # Country-disambiguated pairs first
+    # Country-disambiguated pairs first. A bare cross-country alias with no
+    # country context must NOT silently default to one country (previously
+    # UAE, or EGY for bare "resubmission"): return None so the caller asks
+    # for clarification or resolves from scoped session context instead.
+    # Country-qualified forms below keep resolving directly.
     if cand_lower in ("coding egy", "egypt coding", "coding in egypt"):
         return "Coding EGY"
     if cand_lower == "coding":
-        return "Coding EGY" if eff_region == "EGY" else "Coding"
+        return "Coding EGY" if eff_region == "EGY" else "Coding" if eff_region == "UAE" else None
 
     if cand_lower in ("submission egy", "egypt submission", "submission in egypt"):
         return "Submission EGY"
     if cand_lower == "submission":
-        return "Submission EGY" if eff_region == "EGY" else "Submission"
+        return "Submission EGY" if eff_region == "EGY" else "Submission" if eff_region == "UAE" else None
 
     if cand_lower in ("resubmission egy", "egypt resubmission", "resubmission in egypt"):
         return "Resubmission"
     if cand_lower == "resubmission":
-        return "Re-Submission" if eff_region == "UAE" else "Resubmission"
+        return "Resubmission" if eff_region == "EGY" else "Re-Submission" if eff_region == "UAE" else None
     if cand_lower in ("re-submission", "re submission"):
-        return "Resubmission" if eff_region == "EGY" else "Re-Submission"
+        return "Resubmission" if eff_region == "EGY" else "Re-Submission" if eff_region == "UAE" else None
 
     if cand_lower in ("pre-approvals ip offshore", "offshore pre-approvals", "pre-approvals offshore"):
         return "Pre-Approvals IP Offshore"
@@ -1497,11 +1516,15 @@ class PmsAiCatalog:
                 operation_family="operational_summary",
             )
             mapped = {
+                # Roadmap vocabulary (Phase 2). Legacy registry words are
+                # kept as defensive aliases; the registry no longer emits them.
                 "verified": "verified",
                 "verified_no_data": "verified_no_data",
-                "partial_evidence": "partial",
                 "partial": "partial",
+                "partial_evidence": "partial",
+                "blocked": "blocked",
                 "unverified": "blocked",
+                "not_applicable": "not_applicable",
                 "unsupported": "not_applicable",
             }.get(looked_up.state, "blocked")
             tests = (looked_up.evidence_ref,) if str(looked_up.evidence_ref).startswith("Backend/tests/") else ()

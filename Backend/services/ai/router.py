@@ -16,6 +16,7 @@ from models.ai_schemas import (
 )
 from models.report_schemas import MONTHS
 from services.ai.catalog import (
+    BARE_CROSS_COUNTRY_TEAMS,
     get_ai_catalog,
     resolve_canonical_team_name,
     user_can_access_branch,
@@ -784,14 +785,63 @@ class HybridQueryRouter:
                 suggested_followups=["What is the Inbound score in September 2026?"],
             )
         teams_in_prompt: list[str] = []
+        # Bare cross-country aliases (Coding / Submission / Re-Submission /
+        # Resubmission) with no country context are ambiguous: they are
+        # recorded here and clarified in section 4b instead of silently
+        # defaulting to one country. Scoped session context resolves them:
+        # an explicit session team, or a short follow-up to a prior turn
+        # about one side of the pair, is that context.
+        ambiguous_bare_teams: list[str] = []
+        # Two or more distinct team mentions make this a team comparison:
+        # comparisons skip the bare-alias clarification (section 4b) and are
+        # handled downstream, so the bare names stay in teams_in_prompt.
+        is_multi_team_prompt = len(set(raw_teams_in_prompt)) >= 2
         has_egy_hint = bool(re.search(r"\b(?:egy|egypt)\b", lower))
         has_uae_hint = bool(re.search(r"\buae\b", lower))
         for raw_t in raw_teams_in_prompt:
-            resolved_t = raw_t
+            # The "Re-Submission" spelling with an unhyphenated
+            # "resubmission" elsewhere in the prompt is the same bare
+            # alias as "resubmission": resolve it through the bare-alias
+            # path below, never through a silent country default.
+            bare_t = raw_t
+            if raw_t == "Re-Submission" and "resubmission" in lower and "re-submission" not in lower and not has_uae_hint:
+                bare_t = "Resubmission"
             if has_egy_hint:
                 resolved_t = resolve_canonical_team_name(raw_t, prompt=lower, scope=self.scope) or raw_t
-            elif raw_t == "Re-Submission" and "resubmission" in lower and "re-submission" not in lower and not has_uae_hint:
-                resolved_t = resolve_canonical_team_name("resubmission", prompt=lower, scope=self.scope) or raw_t
+            elif bare_t in BARE_CROSS_COUNTRY_TEAMS:
+                resolved_t = resolve_canonical_team_name(bare_t, prompt=lower, scope=self.scope)
+                if resolved_t is None:
+                    pair = BARE_CROSS_COUNTRY_TEAMS[bare_t]
+                    session_team = (session_state.team or "").strip()
+                    prior_team = (prior.team or "").strip() if prior else ""
+                    is_followup_like = (
+                        lower.startswith("and ")
+                        or lower.startswith("what about ")
+                        or "compare it with" in lower
+                        or any(phrase in lower for phrase in ("this team", "this score", "about this", "for this"))
+                    )
+                    if session_team in pair:
+                        resolved_t = session_team
+                    elif is_followup_like and prior_team in pair:
+                        resolved_t = prior_team
+                    elif is_multi_team_prompt or not (
+                        user_can_access_team(self.scope, pair[0])
+                        or user_can_access_team(self.scope, pair[1])
+                    ):
+                        # Team comparison, or a caller who cannot access
+                        # either side of the pair: keep the bare name the
+                        # caller used so the comparison and the final access
+                        # guard see it. The guard denies the unauthorised
+                        # caller; the comparison proceeds downstream. This
+                        # is not a silent country default: no answer is ever
+                        # produced for one country from a bare name.
+                        resolved_t = bare_t
+                    else:
+                        if bare_t not in ambiguous_bare_teams:
+                            ambiguous_bare_teams.append(bare_t)
+                        continue
+            else:
+                resolved_t = raw_t
             if resolved_t not in teams_in_prompt:
                 teams_in_prompt.append(resolved_t)
         pos_team, detected_pos = _detect_position(lower)
@@ -1145,34 +1195,45 @@ class HybridQueryRouter:
                 route_used="local_rules",
             )
 
-        # Coding country ambiguity (fz-013, fz-014)
-        is_coding_multi_month = bool(
-            re.search(r"\bcoding\b", lower)
-            and (
-                re.search(r"\b(?:six[- ]months?|trend|progression|over\s+time|history)\b", lower)
-                or not has_explicit_month
-            )
-            and not asks_team_comparison
-        )
-        if is_coding_multi_month and not has_egy_country and not has_uae_country and is_multi_region_user and not matched_choice:
-            coding_choices = [
+        # Bare cross-country team ambiguity (Phase 2; fz-013, fz-014, ho-060, ho-061).
+        # A bare Coding / Submission / Re-Submission / Resubmission with no
+        # country word, no single-region scope and no scoped session team
+        # must not silently default to one country. The resolver returns
+        # None for such names and the team loop records them in
+        # ambiguous_bare_teams; ask here instead of answering for the
+        # wrong country. Team comparisons are excluded: comparing the two
+        # countries (or a restricted-access answer for an unauthorised
+        # scope) is handled downstream, not by this clarification.
+        # Single-region users never reach this block: the resolver already
+        # resolved the bare name to their one authorised country.
+        if ambiguous_bare_teams and not asks_team_comparison and not has_egy_country and not has_uae_country and is_multi_region_user and not matched_choice:
+            bare_t = ambiguous_bare_teams[0]
+            egy_team, uae_team = BARE_CROSS_COUNTRY_TEAMS[bare_t]
+            bare_slugs = {
+                "Coding": ("choice-coding-egy", "choice-coding-uae", "Coding"),
+                "Submission": ("choice-sub-egy", "choice-sub-uae", "Submission"),
+                "Re-Submission": ("choice-resub-egy", "choice-resub-uae", "Re-Submission"),
+                "Resubmission": ("choice-resub-egy", "choice-resub-uae", "Resubmission"),
+            }
+            egy_id, uae_id, bare_label = bare_slugs[bare_t]
+            bare_choices = [
                 ClarificationChoice(
-                    id="choice-coding-egy",
-                    label="Coding (Egypt — Coding EGY)",
-                    prompt_to_send="How did Coding EGY perform over six months?",
-                    team="Coding EGY",
+                    id=egy_id,
+                    label=f"{bare_label} (Egypt — {egy_team})",
+                    prompt_to_send=f"What is the {egy_team} score?",
+                    team=egy_team,
                 ),
                 ClarificationChoice(
-                    id="choice-coding-uae",
-                    label="Coding (UAE — Coding)",
-                    prompt_to_send="How did Coding UAE perform over six months?",
-                    team="Coding",
+                    id=uae_id,
+                    label=f"{bare_label} (UAE — {uae_team})",
+                    prompt_to_send=f"What is the {uae_team} score?",
+                    team=uae_team,
                 ),
             ]
-            clar_coding = AiClarificationPrompt(
+            clar_bare = AiClarificationPrompt(
                 code="AMBIGUOUS_TEAM_SCOPE",
-                question="Would you like to review Coding performance for Egypt (Coding EGY) or UAE?",
-                choices=coding_choices,
+                question=f"Would you like to review {bare_label} performance for Egypt ({egy_team}) or UAE ({uae_team})?",
+                choices=bare_choices,
             )
             return RouterValidationResult(
                 outcome="clarification",
@@ -1186,53 +1247,81 @@ class HybridQueryRouter:
                     intent="clarify",
                     function="RCM",
                     pending_clarification_code="AMBIGUOUS_TEAM_SCOPE",
-                    pending_clarification_choices=coding_choices,
+                    pending_clarification_choices=bare_choices,
                 ),
-                clarification=clar_coding,
-                headline=clar_coding.question,
+                clarification=clar_bare,
+                headline=clar_bare.question,
                 narrative_bullets=[
-                    "PMS maintains separate medical coding teams and scorecards for Egypt (Coding EGY) and UAE (Coding)."
+                    f"PMS maintains separate {bare_label} teams and scorecards for Egypt ({egy_team}) and UAE ({uae_team})."
                 ],
                 route_used="local_rules",
             )
 
-        # Submission country ambiguity (ho-060, ho-061)
-        is_generic_submission = bool(
-            re.search(r"\bsubmission\b", lower)
-            and not re.search(r"\bre-?submission\b", lower)
-            and not asks_team_comparison
-            and not re.search(r"\b(?:kpis?|gaps?|drivers?|targets?)\b", lower)
-            and not has_explicit_month
-        )
-        if is_generic_submission and not has_egy_country and not has_uae_country and is_multi_region_user and not matched_choice:
-            sub_choices = [
+        # Collapsed Pre-Approvals presentation names (Phase 2). "Pre-Approvals
+        # IP Final" / "Pre-Approvals OP Final" are presentation merges of two
+        # distinct config teams (Dubai and SHJAJM); without a city qualifier
+        # the name must not silently answer for one of them. Ask which source
+        # team is meant. "Pre-Approvals IP Elective" has a single source team
+        # (IP Elective Dubai) and needs no clarification.
+        collapsed_pa = None
+        if re.search(r"\bpre-approvals ip final\b", lower) and not re.search(r"\b(?:dubai|sharjah|shjajm|shj|ajman|ajm)\b", lower):
+            collapsed_pa = ("Pre-Approvals IP Final", "Pre-Approvals IP Final Dubai", "Pre-Approvals IP Final SHJAJM")
+        elif re.search(r"\bpre-approvals op final\b", lower) and not re.search(r"\b(?:dubai|sharjah|shjajm|shj|ajman|ajm)\b", lower):
+            collapsed_pa = ("Pre-Approvals OP Final", "Pre-Approvals OP Dubai", "Pre-Approvals OP Final SHJAJM")
+        if collapsed_pa and not matched_choice and (session_state.team or "").strip() not in (collapsed_pa[1], collapsed_pa[2]):
+            pa_label, pa_dubai, pa_shjajm = collapsed_pa
+            pa_choices = [
                 ClarificationChoice(
-                    id="choice-sub-egy",
-                    label="Submission (Egypt — Submission EGY)",
-                    prompt_to_send="What is the Submission EGY score?",
-                    team="Submission EGY",
+                    id="choice-pa-final-dubai",
+                    label=f"{pa_label} — Dubai ({pa_dubai})",
+                    prompt_to_send=f"What is the {pa_dubai} score?",
+                    team=pa_dubai,
                 ),
                 ClarificationChoice(
-                    id="choice-sub-uae",
-                    label="Submission (UAE — Submission)",
-                    prompt_to_send="What is the UAE Submission score?",
-                    team="Submission",
+                    id="choice-pa-final-shjajm",
+                    label=f"{pa_label} — Sharjah & Ajman ({pa_shjajm})",
+                    prompt_to_send=f"What is the {pa_shjajm} score?",
+                    team=pa_shjajm,
                 ),
             ]
-            clar_sub = AiClarificationPrompt(
+            clar_pa_collapsed = AiClarificationPrompt(
                 code="AMBIGUOUS_TEAM_SCOPE",
-                question="Would you like to review Submission performance for Egypt (Submission EGY) or UAE?",
-                choices=sub_choices,
+                question=f"{pa_label} merges two separate teams. Would you like Dubai ({pa_dubai}) or Sharjah & Ajman ({pa_shjajm})?",
+                choices=pa_choices,
             )
             return RouterValidationResult(
                 outcome="clarification",
-                plan=StructuredQueryPlan(intent="clarify", function="RCM", turn_kind_v2="clarification", clarification_code="AMBIGUOUS_TEAM_SCOPE"),
-                confirmed_context=ConfirmedQueryContext(intent="clarify", function="RCM", pending_clarification_code="AMBIGUOUS_TEAM_SCOPE", pending_clarification_choices=sub_choices),
-                clarification=clar_sub,
-                headline=clar_sub.question,
-                narrative_bullets=["Submission teams are maintained separately in Egypt (Submission EGY) and UAE (Submission)."],
+                plan=StructuredQueryPlan(
+                    intent="clarify",
+                    function="RCM",
+                    turn_kind_v2="clarification",
+                    clarification_code="AMBIGUOUS_TEAM_SCOPE",
+                ),
+                confirmed_context=ConfirmedQueryContext(
+                    intent="clarify",
+                    function="RCM",
+                    pending_clarification_code="AMBIGUOUS_TEAM_SCOPE",
+                    pending_clarification_choices=pa_choices,
+                ),
+                clarification=clar_pa_collapsed,
+                headline=clar_pa_collapsed.question,
+                narrative_bullets=[
+                    f"{pa_label} is a presentation name for {pa_dubai} and {pa_shjajm}, which have separate config teams and scorecards."
+                ],
                 route_used="local_rules",
             )
+        elif collapsed_pa and not matched_choice:
+            # Scoped session team is one of the source teams: answer for
+            # that source team, not for the merged presentation name (which
+            # has no team JSON and no scorecard of its own).
+            _pa_session_team = (session_state.team or "").strip()
+            if _pa_session_team in (collapsed_pa[1], collapsed_pa[2]):
+                teams_in_prompt = [
+                    _pa_session_team if t == collapsed_pa[0] else t for t in teams_in_prompt
+                ]
+                if explicit_team == collapsed_pa[0]:
+                    explicit_team = _pa_session_team
+                eff_team = _pa_session_team
 
         # RCM team scope ambiguity (fz-037..fz-040)
         if re.search(r"\b(?:what is the rcm score|what is rcm score|rcm score|rcm performance|how did rcm perform)\b", lower) and not (has_egy_country or has_uae_country or "corporate" in lower or "bsc" in lower) and not matched_choice:
