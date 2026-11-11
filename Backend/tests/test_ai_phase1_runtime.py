@@ -200,7 +200,35 @@ def test_real_model_probe_reads_version_and_does_not_hang(monkeypatch: pytest.Mo
     assert hung["available"] is False
     assert hung["reason"] == "timeout"
     assert hung["model_version"] is None
-    time.sleep(1.6)
+    # The timed-out probe must release _SLOT immediately rather than leaking it
+    # while the abandoned socket thread finishes in the background.
+    from services.ai.llm_client import _SLOT
+
+    assert _SLOT.acquire(blocking=False) is True
+    _SLOT.release()
+    time.sleep(1.3)
+    assert _SLOT.acquire(blocking=False) is True
+    _SLOT.release()
+
+
+def test_production_mode_ignores_legacy_role_header_without_auth_middleware(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Defense in depth: without PYTEST_CURRENT_TEST or dev opt-in, X-User-Role is ignored."""
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+    monkeypatch.delenv("ALLOW_LEGACY_API_ACCESS", raising=False)
+    monkeypatch.setattr(feature_gate.settings, "APP_ENV", "production")
+    monkeypatch.setattr(feature_gate, "is_ai_enabled", lambda db: False)
+
+    app = FastAPI()
+    app.include_router(ai_workspace.diagnostics_router, prefix="/api")
+    app.dependency_overrides[get_db] = lambda: None
+    client = TestClient(app)
+
+    spoofed = client.get("/api/ai/diagnostics", headers={"X-User-Role": "Admin"})
+    assert spoofed.status_code == 401
+    spoofed_bearer = client.get("/api/ai/diagnostics", headers={"Authorization": "Bearer unvalidated"})
+    assert spoofed_bearer.status_code == 401
 
 
 def test_crashing_model_probe_is_reported_as_probe_error_not_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -255,8 +283,11 @@ def test_turning_ai_off_and_model_flags_off_returns_cleanly(monkeypatch: pytest.
     monkeypatch.setenv("PMS_AI_LLM_INTENT_ENABLED", "true")
     monkeypatch.setenv("PMS_AI_LLM_SYNTHESIS_ENABLED", "true")
     monkeypatch.setenv("PMS_AI_LLM_BASE_URL", "http://127.0.0.1:9")
-    monkeypatch.setenv("PMS_AI_LLM_TIMEOUT_SECONDS", "0.4")
-    monkeypatch.setenv("PMS_AI_LLM_SYNTHESIS_TIMEOUT_SECONDS", "0.4")
+    # Windows loopback TCP SYN retries take ~2.0s before raising WSAECONNREFUSED;
+    # Linux returns ECONNREFUSED in <1ms. A 2.5s budget exercises real loopback
+    # refusal on both platforms without timing out early on Windows.
+    monkeypatch.setenv("PMS_AI_LLM_TIMEOUT_SECONDS", "2.5")
+    monkeypatch.setenv("PMS_AI_LLM_SYNTHESIS_TIMEOUT_SECONDS", "2.5")
     monkeypatch.setattr("services.ai.local_model_router.chat_completion", chat_completion)
     monkeypatch.setattr("services.ai.local_evidence_synthesis.chat_completion", chat_completion)
     _patch_records(monkeypatch, records)

@@ -7,12 +7,14 @@ A missing row or an unreadable table means AI is off. Existing tests replace
 from __future__ import annotations
 
 import logging
+import os
 import uuid
 
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from config import settings
 from config.database import get_db
 from models.models import ProductSetting
 from services.audit_service import AuditService
@@ -21,6 +23,15 @@ logger = logging.getLogger(__name__)
 
 AI_SETTING_KEY = "ai_enabled"
 AI_PILOT_ROLE = "Admin"
+
+
+def _legacy_role_header_allowed() -> bool:
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        return True
+    return (
+        settings.APP_ENV in {"development", "test"}
+        and os.environ.get("ALLOW_LEGACY_API_ACCESS") == "1"
+    )
 
 
 def read_ai_enabled(db: Session) -> bool:
@@ -77,13 +88,14 @@ def require_ai_enabled(db: Session = Depends(get_db)) -> None:
 
 
 def request_role(request: Request) -> str:
-    """Role attached by auth middleware, otherwise the legacy test header."""
+    """Role attached by auth middleware, otherwise the legacy test header when permitted."""
     user = getattr(request.state, "user", None)
     if isinstance(user, dict) and user.get("role"):
         return str(user.get("role"))
-    header = request.headers.get("x-user-role")
-    if header:
-        return header
+    if _legacy_role_header_allowed():
+        header = request.headers.get("x-user-role")
+        if header:
+            return header
     return "Viewer"
 
 
@@ -99,14 +111,18 @@ def require_ai_admin(request: Request) -> str:
 
 
 def require_ai_diagnostic_session(request: Request) -> None:
-    """Reject callers with no session, legacy role header, or bearer token.
+    """Reject callers with no session (or legacy test header when permitted).
 
     The Admin decision itself stays in ``require_ai_admin``. This only separates
     an anonymous request from a signed-in non-Admin.
     """
     user = getattr(request.state, "user", None)
     has_session = isinstance(user, dict) and bool(str(user.get("user_id") or user.get("role") or "").strip())
-    if has_session or request.headers.get("x-user-role") or request.headers.get("authorization"):
+    if has_session:
+        return
+    if _legacy_role_header_allowed() and (
+        request.headers.get("x-user-role") or request.headers.get("authorization")
+    ):
         return
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,

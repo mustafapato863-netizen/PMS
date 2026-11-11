@@ -45,6 +45,43 @@ _remaining: ContextVar[int | None] = ContextVar("pms_ai_llm_remaining", default=
 _last_fallback_reason: str = "none"
 
 
+class _SlotLease:
+    """Idempotent single-slot lease so a timed-out health probe cannot leak ``_SLOT``."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._held = False
+        self._abandoned = False
+
+    @property
+    def abandoned(self) -> bool:
+        with self._lock:
+            return self._abandoned
+
+    def acquire(self) -> bool:
+        with self._lock:
+            if self._abandoned:
+                return False
+            if self._held:
+                return True
+            if not _SLOT.acquire(blocking=False):
+                return False
+            self._held = True
+            return True
+
+    def release(self, *, abandon: bool = False) -> None:
+        with self._lock:
+            if abandon:
+                self._abandoned = True
+            if not self._held:
+                return
+            self._held = False
+            _SLOT.release()
+
+
+_PROBE_LEASE: ContextVar[_SlotLease | None] = ContextVar("pms_ai_llm_probe_lease", default=None)
+
+
 def get_recent_fallback_reason() -> str:
     return _last_fallback_reason
 
@@ -515,8 +552,10 @@ def check_model_health(timeout_seconds: float = 1.5) -> dict[str, Any]:
         requested = 1.5
     timeout = max(0.2, min(requested, 3.0))
     box: dict[str, Any] = {}
+    lease = _SlotLease()
 
     def run() -> None:
+        token: Token[_SlotLease | None] = _PROBE_LEASE.set(lease)
         try:
             box["value"] = _probe_configured_model(timeout)
         except Exception:
@@ -532,11 +571,15 @@ def check_model_health(timeout_seconds: float = 1.5) -> dict[str, Any]:
                 "model_version": None,
                 "reason": "probe_error",
             }
+        finally:
+            _PROBE_LEASE.reset(token)
+            lease.release()
 
     worker = threading.Thread(target=run, daemon=True)
     worker.start()
-    worker.join(timeout)
+    worker.join(timeout + 0.05)
     if worker.is_alive() or "value" not in box:
+        lease.release(abandon=True)
         return {
             "configured_model": configured_model_name(),
             "endpoint_configured": False,
@@ -586,7 +629,8 @@ def _probe_configured_model(timeout_seconds: float = 1.5) -> dict[str, Any]:
         requested_timeout = 1.5
     total_timeout = max(0.2, min(requested_timeout, 3.0))
     deadline = time.monotonic() + total_timeout
-    if not _SLOT.acquire(blocking=False):
+    lease = _PROBE_LEASE.get() or _SlotLease()
+    if not lease.acquire():
         return result(False, "busy")
 
     try:
@@ -600,10 +644,11 @@ def _probe_configured_model(timeout_seconds: float = 1.5) -> dict[str, Any]:
         # A valid list can quickly reject a wrong model. Invalid or unavailable
         # listing endpoints cannot prove health; the completion probe remains required.
         remaining = deadline - time.monotonic()
-        if remaining <= 0:
+        if remaining <= 0 or lease.abandoned:
             return result(False, "timeout")
+        models_timeout = min(remaining * 0.4, 0.5)
         try:
-            with urllib.request.build_opener(_NoRedirect()).open(req_models, timeout=remaining) as resp:
+            with urllib.request.build_opener(_NoRedirect()).open(req_models, timeout=models_timeout) as resp:
                 if getattr(resp, "status", None) == 200:
                     raw_models = resp.read(8193)
                     if len(raw_models) <= 8192:
@@ -633,7 +678,7 @@ def _probe_configured_model(timeout_seconds: float = 1.5) -> dict[str, Any]:
             pass
 
         remaining = deadline - time.monotonic()
-        if remaining <= 0:
+        if remaining <= 0 or lease.abandoned:
             return result(False, "timeout")
         probe_text = "Reply with the short text PMS_AI_HEALTH_CHECK_OK."
         body = json.dumps({
@@ -685,4 +730,4 @@ def _probe_configured_model(timeout_seconds: float = 1.5) -> dict[str, Any]:
         except (TimeoutError, urllib.error.URLError, OSError):
             return result(False, "timeout_or_unreachable")
     finally:
-        _SLOT.release()
+        lease.release()

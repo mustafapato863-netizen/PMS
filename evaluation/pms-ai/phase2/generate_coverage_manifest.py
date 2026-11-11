@@ -231,7 +231,7 @@ def sha256_files(paths: list[Path]) -> str:
     for path in sorted(paths, key=lambda item: rel(item)):
         digest.update(rel(path).encode("utf-8"))
         digest.update(b"\0")
-        digest.update(path.read_bytes())
+        digest.update(path.read_bytes().replace(b"\r\n", b"\n"))
         digest.update(b"\0")
     return digest.hexdigest()
 
