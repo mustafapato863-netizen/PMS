@@ -171,7 +171,7 @@ def test_router_registry_lists_every_ai_capability_route_behind_both_gates():
     control_plane = sorted(
         {path for _method, path, _route in _api_routes() if "ai" in path.casefold() and not path.startswith("/ai")}
     )
-    assert control_plane == ["/settings/ai-assistant"]
+    assert control_plane == ["/settings/ai-assistant", "/settings/ai-corrective-action-pilot"]
     for _method, path, route in _api_routes():
         if path != "/settings/ai-assistant":
             continue
