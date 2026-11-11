@@ -328,6 +328,142 @@ class AiCorrectiveActionConfirmResponse(BaseModel):
     action: dict[str, Any]
 
 
+# ---------------------------------------------------------------------------
+# Corrective-action suggestion drafter (#98). Read-only: a suggestion is an
+# unapproved draft; saving goes through the existing corrective-action workflow.
+# ---------------------------------------------------------------------------
+
+CorrectiveActionSuggestionOutcome = Literal[
+    "suggested",
+    "insufficient_evidence",
+    "model_unavailable",
+    # The model answered, but the answer was malformed or failed validation
+    # against the evidence. No draft is returned and nothing is substituted.
+    "draft_rejected",
+]
+
+# Who produced ``draft``. ``"deterministic"`` is part of the shared provider
+# vocabulary but this endpoint never emits it: it does not substitute a static
+# draft when the model is unavailable or its answer is rejected.
+CorrectiveActionSuggestionProvider = Literal["llama_cpp", "deterministic", "none"]
+
+# A draft may only propose a non-disciplinary action type. PIP, Warning,
+# Reward and Promotion remain human decisions in the existing workflow.
+CorrectiveActionDraftType = Literal["Coaching", "Training", "Monitor"]
+
+
+class AiCorrectiveActionSuggestionRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    team: str = Field(..., min_length=1, max_length=120)
+    month: str = Field(..., min_length=1, max_length=30)
+    year: int = Field(..., ge=2000, le=2100)
+    performance_level: str = Field(default="Employee", min_length=1, max_length=40)
+    employee_id: str | None = Field(default=None, min_length=1, max_length=80)
+    linked_kpi_key: str | None = Field(default=None, min_length=1, max_length=100)
+
+
+class AiCorrectiveActionSuggestionPeriod(BaseModel):
+    month: str
+    year: int
+
+
+class AiCorrectiveActionSuggestionContext(BaseModel):
+    subject: Literal["employee", "team"]
+    employee_id: str | None = None
+    employee_name: str | None = None
+    country: str | None = None
+    function: str | None = None
+    team: str
+    position: str | None = None
+    period: AiCorrectiveActionSuggestionPeriod
+    performance_level: str
+    scoring_basis: str | None = None
+    linked_kpi_key: str | None = None
+
+
+class AiCorrectiveActionSuggestionKpiEvidence(BaseModel):
+    """One stored KPI row, as read. ``None`` means missing; ``0.0`` is a real zero."""
+
+    employee_id: str | None = None
+    kpi_key: str
+    display_name: str
+    actual: float | None = None
+    target: float | None = None
+    unit: str | None = None
+    direction: str | None = None
+    weight: float | None = None
+    achievement_percent: float | None = None
+    contributes_to_score: bool = True
+    status: Literal["below_target", "at_or_above_target", "unknown"] = "unknown"
+
+
+class AiCorrectiveActionSuggestionPriorAction(BaseModel):
+    action_type: str | None = None
+    status: str | None = None
+    linked_kpi_key: str | None = None
+    period: dict[str, Any] = Field(default_factory=dict)
+    summary: str | None = None
+
+
+class AiCorrectiveActionSuggestionDraft(BaseModel):
+    """Unapproved draft. Facts and uncertainty come from PMS evidence; only the
+    steps are written by the model, and only after closed-vocabulary validation."""
+
+    title: str
+    focus_kpi_key: str
+    focus_kpi_name: str
+    action_type: CorrectiveActionDraftType
+    # Built in code from the evidence ledger; the model cannot alter it.
+    measured_issue: str
+    measured_issue_source: Literal["pms_evidence"] = "pms_evidence"
+    # Model-written, validated: imperative, no numbers, closed vocabulary.
+    recommended_steps: list[str] = Field(default_factory=list, min_length=1, max_length=3)
+    recommended_steps_source: Literal["llama_cpp"] = "llama_cpp"
+    # Built in code: what the evidence does not show.
+    uncertainty: str
+    uncertainty_source: Literal["pms_evidence"] = "pms_evidence"
+    approval_status: Literal["unapproved_draft"] = "unapproved_draft"
+
+
+class AiCorrectiveActionSuggestionPayload(BaseModel):
+    outcome: CorrectiveActionSuggestionOutcome
+    provider_used: CorrectiveActionSuggestionProvider = "none"
+    model_called: bool = False
+    model_version: str | None = None
+    fallback_reason: str | None = None
+    validation_errors: list[str] = Field(default_factory=list)
+    context: AiCorrectiveActionSuggestionContext
+    focus_kpi_key: str | None = None
+    # Deterministic statements built from the evidence ledger, never by the model.
+    measured_facts: list[str] = Field(default_factory=list)
+    # Deterministic evidence caveats (always includes that the cause is not established).
+    evidence_limitations: list[str] = Field(default_factory=list)
+    supporting_kpis: list[AiCorrectiveActionSuggestionKpiEvidence] = Field(default_factory=list)
+    supporting_kpis_truncated: bool = False
+    prior_actions: list[AiCorrectiveActionSuggestionPriorAction] = Field(default_factory=list)
+    insufficient_evidence_reasons: list[str] = Field(default_factory=list)
+    draft: AiCorrectiveActionSuggestionDraft | None = None
+    model_latency_ms: float | None = None
+    read_only: Literal[True] = True
+    requires_human_confirmation: Literal[True] = True
+
+    @model_validator(mode="after")
+    def _draft_matches_outcome(self) -> "AiCorrectiveActionSuggestionPayload":
+        if self.outcome == "suggested":
+            if self.draft is None or self.provider_used != "llama_cpp":
+                raise ValueError("a suggested outcome requires a validated model draft")
+        elif self.draft is not None:
+            raise ValueError("only a suggested outcome may carry a draft")
+        return self
+
+
+class AiCorrectiveActionSuggestionResponse(BaseModel):
+    success: bool = True
+    message: str
+    data: AiCorrectiveActionSuggestionPayload
+
+
 class SessionFilterContext(BaseModel):
     function: str | None = None
     team: str | None = None

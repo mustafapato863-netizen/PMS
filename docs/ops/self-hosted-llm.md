@@ -1,6 +1,11 @@
-# Self-hosted PMS model
+# Self-hosted PMS model (Decommissioned & Retired)
 
-The chat brain is the Qwen3-4B server already running on the Hostinger KVM. PMS still computes every score. The model classifies intent and, for two narrow answers, phrases numbers PMS already calculated. A timeout, HTTP error, bad JSON, or a failed numeric check falls back to the rules engine.
+> [!NOTE]
+> The self-hosted Qwen3-4B pilot has been completely decommissioned and removed from both local development and the hosting environment. The container `pms-qwen-pilot-dkp`, model files `/opt/pms-qwen-pilot/models/Qwen3-4B-Q4_K_M.gguf`, and dedicated Compose service have been retired. PMS backend operates in standalone mode without any self-hosted model process. Future phases will integrate Gemini (primary) and OpenAI (fallback).
+
+## Historical Architecture Reference (Archived)
+
+The chat brain was previously the Qwen3-4B server running on the Hostinger KVM. PMS still computed every score. The model classified intent and, for two narrow answers, phrased numbers PMS already calculated. A timeout, HTTP error, bad JSON, or a failed numeric check fell back to the rules engine.
 
 ## Earlier standalone container
 

@@ -133,6 +133,7 @@ def test_http_error_and_bad_json_fall_back_to_verified_counts(monkeypatch):
 
     monkeypatch.setenv("PMS_AI_LLM_SYNTHESIS_ENABLED", "true")
     monkeypatch.setenv("PMS_AI_LLM_BASE_URL", "http://127.0.0.1:8080/v1")
+    monkeypatch.setenv("PMS_AI_LLM_MODEL", "test-model")
     evidence = [{
         "period": "September 2026",
         "scope": "Inbound",
@@ -168,6 +169,7 @@ def test_http_error_and_bad_json_fall_back_to_verified_counts(monkeypatch):
 
 def test_validator_rejection_keeps_the_rules_headline(monkeypatch):
     monkeypatch.setenv("PMS_AI_LLM_SYNTHESIS_ENABLED", "true")
+    monkeypatch.setenv("PMS_AI_LLM_BASE_URL", "http://127.0.0.1:8080/v1")
     monkeypatch.setenv("PMS_AI_LLM_MODEL", "qwen2.5-3b-instruct")
 
     class Opener:
@@ -196,6 +198,7 @@ def test_validator_rejection_keeps_the_rules_headline(monkeypatch):
 def test_per_turn_call_cap_stops_further_http(monkeypatch):
     monkeypatch.setenv("PMS_AI_LLM_MAX_CALLS_PER_TURN", "2")
     monkeypatch.setenv("PMS_AI_LLM_BASE_URL", "http://llm:8080/v1")
+    monkeypatch.setenv("PMS_AI_LLM_MODEL", "test-model")
     calls = {"n": 0}
 
     class Opener:
@@ -218,6 +221,7 @@ def test_intent_router_reports_the_configured_model_and_stops_when_disabled(monk
     assert suggest_intent("How has booking evolved?").reason == "disabled"
 
     monkeypatch.setenv("PMS_AI_LLM_INTENT_ENABLED", "true")
+    monkeypatch.setenv("PMS_AI_LLM_BASE_URL", "http://127.0.0.1:8080/v1")
     monkeypatch.setenv("PMS_AI_LLM_MODEL", "qwen3-4b-q4")
     captured: dict = {}
 
@@ -247,7 +251,7 @@ def test_cpu_timeouts_default_to_fifteen_and_thirty_seconds(monkeypatch):
 
 
 def test_prompt_and_completion_fit_2048_token_context(monkeypatch):
-    monkeypatch.delenv("PMS_AI_LLM_MODEL", raising=False)
+    monkeypatch.setenv("PMS_AI_LLM_MODEL", "qwen3-4b-q4_k_m")
     monkeypatch.setenv("PMS_AI_LLM_BASE_URL", "http://pms-qwen-pilot:8080")
     monkeypatch.setenv("PMS_AI_LLM_CONTEXT", "2048")
     captured: dict = {}
@@ -275,6 +279,7 @@ def test_prompt_and_completion_fit_2048_token_context(monkeypatch):
 def test_think_blocks_are_stripped_before_json_parsing(monkeypatch):
     monkeypatch.setenv("PMS_AI_LLM_INTENT_ENABLED", "true")
     monkeypatch.setenv("PMS_AI_LLM_BASE_URL", "http://pms-qwen-pilot:8080")
+    monkeypatch.setenv("PMS_AI_LLM_MODEL", "test-model")
 
     class Opener:
         def open(self, request, timeout):

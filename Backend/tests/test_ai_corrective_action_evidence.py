@@ -8,6 +8,7 @@ missing value to 0, and must never write to the database.
 
 from __future__ import annotations
 
+import datetime as dt
 import json
 import uuid
 
@@ -24,6 +25,7 @@ from models.models import Action, Employee, KPIValue, PerformanceRecord, Product
 from services.ai import feature_gate
 from services.ai.corrective_action_evidence import (
     CorrectiveActionEvidenceService,
+    MONTH_MAP,
     build_corrective_action_evidence,
 )
 from services.ai.feature_gate import (
@@ -119,6 +121,7 @@ def _seed_period(db, *, month="September", year=2026):
             branch_key=None,
             month=month,
             year=year,
+            created_at=dt.datetime(year, MONTH_MAP.get(str(month).strip().casefold(), 1), 1, 0, 0, tzinfo=dt.timezone.utc),
             action_type="Coaching",
             action_text="Coach on closing technique",
             root_cause_note="Secret cause that must not leak",

@@ -20,7 +20,7 @@ from sqlalchemy.pool import StaticPool
 
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
-from api.routers import ai_workspace, router as api_router
+from api.routers import ai_corrective_actions, ai_workspace, router as api_router
 from api.routers.settings import router as settings_router
 from config.database import Base, get_db
 from models.models import ProductSetting
@@ -29,6 +29,7 @@ from services.ai.config import get_ai_runtime_config
 from services.ai.feature_gate import (
     read_ai_enabled,
     require_ai_admin,
+    require_ai_corrective_action_pilot_enabled,
     require_ai_diagnostic_session,
     require_ai_enabled,
 )
@@ -97,8 +98,20 @@ def _ai_routes() -> list[tuple[str, str, APIRoute]]:
     return [(method, path, route) for method, path, route in _api_routes() if path.startswith("/ai")]
 
 
+def _is_pilot_route(route: APIRoute) -> bool:
+    """Corrective-action pilot routes (#98) have their own gates, checked below."""
+    return route in ai_corrective_actions.router.routes
+
+
 def _capability_routes() -> list[tuple[str, str, APIRoute]]:
-    return [item for item in _ai_routes() if not item[1].endswith("/diagnostics")]
+    return [
+        item for item in _ai_routes()
+        if not item[1].endswith("/diagnostics") and not _is_pilot_route(item[2])
+    ]
+
+
+def _pilot_routes() -> list[tuple[str, str, APIRoute]]:
+    return [item for item in _ai_routes() if _is_pilot_route(item[2])]
 
 
 def _body_for(path: str) -> dict | None:
@@ -168,6 +181,19 @@ def test_router_registry_lists_every_ai_capability_route_behind_both_gates():
     assert require_ai_admin in diagnostic_calls
     assert require_ai_diagnostic_session in diagnostic_calls
 
+    # Every /ai route is either a chat capability, diagnostics, or a pilot route.
+    assert len(_ai_routes()) == len(routes) + len(diagnostic) + len(_pilot_routes())
+    # The corrective-action pilot is behind session + Admin + its own switch,
+    # and deliberately NOT behind the standalone chat switch.
+    pilot = _pilot_routes()
+    assert [f"{method} /api{path}" for method, path, _route in pilot] == ["POST /api/ai/corrective-action-suggestions"]
+    for _method, _path, route in pilot:
+        calls = _walk_calls(route.dependant)
+        assert require_ai_diagnostic_session in calls
+        assert require_ai_admin in calls
+        assert require_ai_corrective_action_pilot_enabled in calls
+        assert require_ai_enabled not in calls
+
     control_plane = sorted(
         {path for _method, path, _route in _api_routes() if "ai" in path.casefold() and not path.startswith("/ai")}
     )
@@ -201,6 +227,42 @@ def test_ai_routes_stay_closed_for_admin_when_the_switch_is_off(monkeypatch):
         response = client.request(method, url, headers={"X-User-Role": "Admin"}, json=_body_for(path))
         assert response.status_code == 403
         assert response.json()["detail"] == "PMS AI is turned off."
+
+
+def test_corrective_action_pilot_route_is_admin_only_and_needs_its_own_switch(monkeypatch):
+    class Boom:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def suggest(self, **_kwargs):
+            raise HTTPException(status_code=418, detail="handler")
+
+    monkeypatch.setattr(ai_corrective_actions, "require_authenticated_scope", lambda db, request: {"role": "Admin", "user_id": "admin"})
+    monkeypatch.setattr(ai_corrective_actions, "release_read_transaction", lambda db: None)
+    monkeypatch.setattr(ai_corrective_actions, "CorrectiveActionDrafter", Boom)
+    app = FastAPI()
+    app.include_router(ai_corrective_actions.router, prefix="/api")
+    app.dependency_overrides[get_db] = lambda: None
+    client = TestClient(app, raise_server_exceptions=False)
+    url = "/api/ai/corrective-action-suggestions"
+    body = {"team": "Inbound", "month": "September", "year": 2026}
+
+    # Chat on, pilot off: the pilot stays closed for Admin.
+    monkeypatch.setattr(feature_gate, "is_ai_enabled", lambda db: True)
+    monkeypatch.setattr(feature_gate, "read_ai_corrective_action_pilot_enabled", lambda db: False)
+    closed = client.post(url, headers={"X-User-Role": "Admin"}, json=body)
+    assert closed.status_code == 403
+    assert closed.json()["detail"] == "The corrective-action pilot is turned off."
+
+    # Pilot on, chat off: Admin reaches the handler, every other role is refused.
+    monkeypatch.setattr(feature_gate, "is_ai_enabled", lambda db: False)
+    monkeypatch.setattr(feature_gate, "read_ai_corrective_action_pilot_enabled", lambda db: True)
+    assert client.post(url, headers={"X-User-Role": "Admin"}, json=body).status_code == 418
+    for role in NON_ADMIN_ROLES:
+        denied = client.post(url, headers={"X-User-Role": role}, json=body)
+        assert denied.status_code == 403, (role, denied.status_code, denied.text)
+        assert denied.json()["detail"] == "PMS AI is limited to administrators during the pilot."
+    assert client.post(url, json=body).status_code == 401
 
 
 def test_only_an_admin_can_change_the_switch_and_startup_cannot_enable_it(monkeypatch):

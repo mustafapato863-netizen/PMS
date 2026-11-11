@@ -275,14 +275,20 @@ def _chat_url_from_base(base: str) -> str:
 
 def resolve_chat_url() -> tuple[str | None, str]:
     """Return ``(url, reason)``. ``url`` is set only when ``reason`` is ``ok``."""
-    base = os.environ.get("PMS_AI_LLM_BASE_URL", "").strip()
-    legacy = os.environ.get("PMS_AI_LOCAL_ROUTER_URL", "").strip()
-    if base:
-        candidate = _chat_url_from_base(base)
-    elif legacy:
-        candidate = legacy
+    if "PMS_AI_LLM_BASE_URL" in os.environ:
+        raw = os.environ["PMS_AI_LLM_BASE_URL"].strip()
+        if not raw:
+            return None, "no_endpoint_configured"
+        candidate = _chat_url_from_base(raw)
+    elif "PMS_AI_LOCAL_ROUTER_URL" in os.environ:
+        raw = os.environ["PMS_AI_LOCAL_ROUTER_URL"].strip()
+        if not raw:
+            return None, "no_endpoint_configured"
+        candidate = raw
     else:
         candidate = DEFAULT_CHAT_URL
+    if not candidate:
+        return None, "no_endpoint_configured"
     return _validate_chat_url(candidate)
 
 
@@ -416,6 +422,10 @@ def chat_completion(
     if url is None:
         return _finish(
             ok=False, content=None, model=model, started=started, reason=url_reason, host=host, purpose=purpose
+        )
+    if not model:
+        return _finish(
+            ok=False, content=None, model="", started=started, reason="no_model_configured", host=host, purpose=purpose
         )
     if not _SLOT.acquire(blocking=False):
         return _finish(ok=False, content=None, model=model, started=started, reason="busy", host=host, purpose=purpose)
@@ -620,6 +630,8 @@ def _probe_configured_model(timeout_seconds: float = 1.5) -> dict[str, Any]:
 
     if url is None:
         return result(False, url_reason)
+    if not model_name:
+        return result(False, "no_model_configured")
 
     try:
         requested_timeout = float(timeout_seconds)

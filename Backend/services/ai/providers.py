@@ -965,3 +965,27 @@ class DeterministicLocalProviderAdapter:
                 provider_calls=0,
             ),
         )
+
+
+# ---------------------------------------------------------------------------
+# Unified Multi-Provider Engine Export (Phase 1: Gemini Primary, OpenAI Fallback)
+# ---------------------------------------------------------------------------
+from services.ai.provider_engine import (  # noqa: E402
+    GeminiProviderAdapter,
+    OpenAIProviderAdapter,
+    ProviderAttempt,
+    ProviderError,
+    ProviderMessage,
+    ProviderNonRetryableError,
+    ProviderRateLimitError,
+    ProviderRequest,
+    ProviderResponse,
+    ProviderTimeoutError,
+    ProviderTransientError,
+    TokenUsage,
+    UnifiedProviderConfig,
+    UnifiedProviderEngine,
+    estimate_cost_usd,
+    get_unified_provider_engine,
+    load_unified_provider_config,
+)

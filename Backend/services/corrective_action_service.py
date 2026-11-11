@@ -250,7 +250,8 @@ class CorrectiveActionService:
         performance_record = performance_record or self._performance_record_for_action(action)
         score, grade = self._score_snapshot(action, performance_record)
         created_by = action.created_by_user
-        timestamp = action.created_at or dt.datetime.now(dt.timezone.utc)
+        created_at_dt = getattr(action, "created_at", None)
+        timestamp_str = created_at_dt.isoformat() if created_at_dt is not None else None
         display_team = effective_team or self._effective_action_team(action, performance_record)
         payload = {
             "id": str(action.id),
@@ -266,7 +267,7 @@ class CorrectiveActionService:
             "suggested_action": action.action_type,
             "manager_action": f"{action.action_type}: {action.action_text}",
             "manager_notes": action.root_cause_note or "",
-            "timestamp": timestamp.isoformat(),
+            "timestamp": timestamp_str,
             "created_by_name": created_by.username if created_by else None,
             "created_by_role": created_by.role if created_by else None,
             "status": action.status,

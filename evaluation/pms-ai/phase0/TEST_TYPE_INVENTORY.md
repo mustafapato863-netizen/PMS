@@ -8,14 +8,14 @@ verified is not used. source-parity here is partial because the reviewer has not
 
 ## Counts
 
-Test files: 33. Test functions or `it` blocks: 312.
+Test files: 34. Test functions or `it` blocks: 355.
 A file can carry more than one label, so the label counts can add up to more than the file count.
 
 | Label | Files | Evidence status of what the label proves |
 | --- | ---: | --- |
 | `synthetic` | 14 | not applicable |
-| `mocked` | 17 | partial |
-| `live-model` | 3 | blocked |
+| `mocked` | 18 | partial |
+| `live-model` | 4 | blocked |
 | `source-parity` | 2 | partial |
 | `browser` | 0 | not applicable |
 
@@ -23,11 +23,12 @@ A file can carry more than one label, so the label counts can add up to more tha
 
 | Path | Kind | Labels | Cases | Evidence status |
 | --- | --- | --- | ---: | --- |
-| `Backend/tests/test_ai_admin_pilot.py` | test | `mocked` | 9 | partial |
+| `Backend/tests/test_ai_admin_pilot.py` | test | `mocked` | 10 | partial |
 | `Backend/tests/test_ai_booking_comparisons.py` | test | `mocked` | 23 | partial |
 | `Backend/tests/test_ai_booking_count_parity.py` | test | `mocked` | 25 | partial |
 | `Backend/tests/test_ai_branch_bar_missing_value.py` | test | `synthetic` | 2 | not applicable |
 | `Backend/tests/test_ai_catalog_evidence.py` | test | `mocked` | 12 | partial |
+| `Backend/tests/test_ai_corrective_action_drafter.py` | test | `live-model`, `mocked` | 42 | partial |
 | `Backend/tests/test_ai_corrective_action_evidence.py` | test | `synthetic` | 11 | not applicable |
 | `Backend/tests/test_ai_count_achievement_card.py` | test | `synthetic` | 3 | not applicable |
 | `Backend/tests/test_ai_diagnostics.py` | test | `mocked` | 12 | partial |
@@ -61,6 +62,7 @@ A file can carry more than one label, so the label counts can add up to more tha
 ## Notes
 
 - `Backend/tests/test_ai_booking_count_parity.py`: The module text says source parity. The model side is DeterministicLocalProviderAdapter, so the label is mocked.
+- `Backend/tests/test_ai_corrective_action_drafter.py`: The live-model test is skipped unless PMS_AI_RUN_LIVE_MODEL_TESTS=true. Default CI does not call Qwen.
 - `Backend/tests/test_evaluation_outbound_productivity_golden.py`: Compares EmployeePolicy with outbound-anonymous-reference.json. That file is source_reference_only_not_activated, so the parity status is partial.
 - `Backend/tests/test_local_assistant_exploration.py`: The live-model test is skipped unless PMS_AI_RUN_LIVE_MODEL_TESTS=true. Default CI does not call Qwen.
 - `Backend/tests/test_local_evidence_synthesis.py`: The live-model test is skipped unless PMS_AI_RUN_LIVE_MODEL_TESTS=true. Default CI does not call Qwen.
