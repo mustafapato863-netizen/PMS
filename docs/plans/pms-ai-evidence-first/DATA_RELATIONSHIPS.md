@@ -46,7 +46,8 @@ Data State Taxonomy
      > *"There are 2 employees named Ahmed in Inbound (September 2026): Ahmed Hassan (ID: 70112) and Ahmed Mansour (ID: 70145). Which employee would you like to review?"*
 2. **Team & Country Disambiguation:**
    - If a user asks *"How did Coding perform?"* without specifying a country, the query router checks the user's authorized scope.
-   - If the user has access to both Egypt and UAE, the assistant clarifies: *"Would you like to review Coding EGY (Offshore Egypt) or Coding (UAE)?"*.
+   - If the user's scope covers exactly one country, that country's team is used and the answer names the country. If the user has access to both Egypt and UAE and no scoped session team is already set, the assistant clarifies: *"Would you like to review Coding EGY (Offshore Egypt) or Coding (UAE)?"*. A bare `Coding`, `Submission`, `Re-Submission`, or `Resubmission` never silently defaults to one country.
+   - The same rule applies to collapsed presentation names: `Pre-Approvals IP Final` or `Pre-Approvals OP Final` without a city qualifier asks whether Dubai or Sharjah & Ajman is meant.
 3. **Handling Ties in Rankings:**
    - When ranking performers or identifying top/bottom cohorts, the system must evaluate exact numerical values.
    - If two or more agents share the lowest score (e.g. both at 76.7%), **both agents must be named as tied**. Arbitrarily picking the first row in the database is strictly prohibited.
@@ -61,7 +62,7 @@ Data State Taxonomy
 - **Canonical Branch Keys:** Defined in [`Backend/utils/branch_scope.py`](file:///D:/Projects/PMS_Dashboard/Backend/utils/branch_scope.py): `dubai`, `ajman`, `sharjah`, `clinics`.
 - **Relational Column:** `performance_records.branch_key`.
 - **Legacy Row Guard:** Legacy rows with `branch_key IS NULL` remain hidden from specific branch filters to prevent cross-facility pollution.
-- **Operational Breakdown:** Multi-branch booking volumes reside in `performance_records.record_payload['geo']['bookings']`. Comparing branches requires all requested branches to be present; missing branches are noted explicitly as having zero recorded bookings.
+- **Operational Breakdown:** Multi-branch booking volumes reside in `performance_records.record_payload['geo']['bookings']`. Comparing branches requires all requested branches to be present; a branch absent from the published payload is reported as unavailable (no recorded bookings in the published payload for that branch), never as zero.
 
 ---
 

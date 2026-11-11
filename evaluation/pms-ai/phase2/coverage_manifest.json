@@ -6527,155 +6527,7 @@
     "teams": 28,
     "unexplained_active": 0
   },
-  "doc_disagreements": [
-    {
-      "claim": "Call Center is a function, not a team.",
-      "doc": "docs/plans/pms-ai-evidence-first/DOMAIN_GLOSSARY.md",
-      "id": "glossary:call-center-is-a-team-file",
-      "repo": "Backend/config/teams/call_center.json defines a team named Call Center. The function list also contains Call Center.",
-      "resolution": "unresolved"
-    },
-    {
-      "claim": "Inbound AHT is a tracking-only indicator.",
-      "doc": "docs/plans/pms-ai-evidence-first/DOMAIN_GLOSSARY.md",
-      "id": "glossary:inbound-aht-tracking-only",
-      "repo": "inbound.json scores AHT at weight 0.05.",
-      "resolution": "unresolved"
-    },
-    {
-      "claim": "Performance level database values are employee and management.",
-      "doc": "docs/plans/pms-ai-evidence-first/DOMAIN_GLOSSARY.md",
-      "id": "glossary:performance-level-database-values",
-      "repo": "performance_records.performance_level is constrained to Employee, Managerial, and Corporate. teams.team_level is a different column and uses employee and management.",
-      "resolution": "unresolved"
-    },
-    {
-      "claim": "UAE RCM includes Pre-Approvals IP Final Northern (Sharjah & Ajman).",
-      "doc": "docs/plans/pms-ai-evidence-first/DOMAIN_GLOSSARY.md",
-      "id": "glossary:pre-approvals-northern-name",
-      "repo": "No team JSON uses Northern. The config name is Pre-Approvals IP Final SHJAJM.",
-      "resolution": "unresolved"
-    },
-    {
-      "claim": "Resubmission and Re-Submission EGY are confirmed aliases of one Egypt team.",
-      "doc": "docs/plans/pms-ai-evidence-first/DOMAIN_GLOSSARY.md",
-      "id": "glossary:resubmission-alias-already-resolved",
-      "repo": "Repository alias tables still list that pair as an unresolved conflict (team:re-submission egy). This map does not pick the doc's resolution.",
-      "resolution": "unresolved"
-    },
-    {
-      "claim": "Support roles: Quality Specialist, Trainer, Workforce Specialist",
-      "doc": "docs/plans/pms-ai-evidence-first/DOMAIN_GLOSSARY.md",
-      "id": "glossary:support-role-names",
-      "repo": "Call Center JSON positions: Call Center trainer, Inbound Team Leader, Outbound Team Leader, Quality Assurance, Workforce analyst",
-      "resolution": "unresolved"
-    },
-    {
-      "claim": "Section keys for Inbound: booking_rate, attendance_rate, quality_score, aht, abandoned_calls, total_calls, branch_bookings",
-      "doc": "docs/plans/pms-ai-evidence-first/KPI_SOURCE_DICTIONARY.md",
-      "id": "kpi-keys:call-center:Inbound",
-      "repo": "Team JSON template keys: AHT, Attendance, Booking, Other, Quality. In the doc but not the JSON: abandoned_calls, attendance_rate, booking_rate, branch_bookings, quality_score, total_calls. In the JSON but not the doc: Attendance, Booking, Other, Quality.",
-      "resolution": "unresolved"
-    },
-    {
-      "claim": "Section keys for Outbound: booking_rate, attendance_rate, quality_score, aht, abandoned_calls, total_calls, branch_bookings",
-      "doc": "docs/plans/pms-ai-evidence-first/KPI_SOURCE_DICTIONARY.md",
-      "id": "kpi-keys:call-center:Outbound",
-      "repo": "Team JSON template keys: Attendance, Booking, Other, Quality. In the doc but not the JSON: abandoned_calls, aht, attendance_rate, booking_rate, branch_bookings, quality_score, total_calls. In the JSON but not the doc: Attendance, Booking, Other, Quality.",
-      "resolution": "unresolved"
-    },
-    {
-      "claim": "Section keys for Coding EGY: productivity_ach, quality_accuracy, tat_compliance, rejection_rate",
-      "doc": "docs/plans/pms-ai-evidence-first/KPI_SOURCE_DICTIONARY.md",
-      "id": "kpi-keys:egypt-rcm:Coding EGY",
-      "repo": "Team JSON template keys: egy_coding_quality_errors, egy_coding_rejection, egy_coding_tat. In the doc but not the JSON: productivity_ach, quality_accuracy, rejection_rate, tat_compliance. In the JSON but not the doc: egy_coding_quality_errors, egy_coding_rejection, egy_coding_tat.",
-      "resolution": "unresolved"
-    },
-    {
-      "claim": "Section keys for Resubmission: productivity_ach, quality_accuracy, tat_compliance, rejection_rate",
-      "doc": "docs/plans/pms-ai-evidence-first/KPI_SOURCE_DICTIONARY.md",
-      "id": "kpi-keys:egypt-rcm:Resubmission",
-      "repo": "Team JSON template keys: egy_resubmission_quality_errors, egy_resubmission_rejection, egy_resubmission_tat. In the doc but not the JSON: productivity_ach, quality_accuracy, rejection_rate, tat_compliance. In the JSON but not the doc: egy_resubmission_quality_errors, egy_resubmission_rejection, egy_resubmission_tat.",
-      "resolution": "unresolved"
-    },
-    {
-      "claim": "Section keys for Submission EGY: productivity_ach, quality_accuracy, tat_compliance, rejection_rate",
-      "doc": "docs/plans/pms-ai-evidence-first/KPI_SOURCE_DICTIONARY.md",
-      "id": "kpi-keys:egypt-rcm:Submission EGY",
-      "repo": "Team JSON template keys: egy_submission_due_date, egy_submission_initial_rejection. In the doc but not the JSON: productivity_ach, quality_accuracy, rejection_rate, tat_compliance. In the JSON but not the doc: egy_submission_due_date, egy_submission_initial_rejection.",
-      "resolution": "unresolved"
-    },
-    {
-      "claim": "Section keys for Coding: clean_claim_rate, denial_rate, collection_ratio, resubmission_tat",
-      "doc": "docs/plans/pms-ai-evidence-first/KPI_SOURCE_DICTIONARY.md",
-      "id": "kpi-keys:uae-rcm:Coding",
-      "repo": "Team JSON template keys: QualityErrors, Rejection, TAT. In the doc but not the JSON: clean_claim_rate, collection_ratio, denial_rate, resubmission_tat. In the JSON but not the doc: QualityErrors, Rejection, TAT.",
-      "resolution": "unresolved"
-    },
-    {
-      "claim": "Section keys for Re-Submission: clean_claim_rate, denial_rate, collection_ratio, resubmission_tat",
-      "doc": "docs/plans/pms-ai-evidence-first/KPI_SOURCE_DICTIONARY.md",
-      "id": "kpi-keys:uae-rcm:Re-Submission",
-      "repo": "Team JSON template keys: quality_errors_rate, rejection_rate_after_resubmission, tat. In the doc but not the JSON: clean_claim_rate, collection_ratio, denial_rate, resubmission_tat. In the JSON but not the doc: quality_errors_rate, rejection_rate_after_resubmission, tat.",
-      "resolution": "unresolved"
-    },
-    {
-      "claim": "Section keys for Submission: clean_claim_rate, denial_rate, collection_ratio, resubmission_tat",
-      "doc": "docs/plans/pms-ai-evidence-first/KPI_SOURCE_DICTIONARY.md",
-      "id": "kpi-keys:uae-rcm:Submission",
-      "repo": "Team JSON template keys: initial_rejection_rate, submission_within_due_date. In the doc but not the JSON: clean_claim_rate, collection_ratio, denial_rate, resubmission_tat. In the JSON but not the doc: initial_rejection_rate, submission_within_due_date.",
-      "resolution": "unresolved"
-    },
-    {
-      "claim": "aht weight 0.0 tracking=True",
-      "doc": "docs/plans/pms-ai-evidence-first/KPI_SOURCE_DICTIONARY.md",
-      "id": "kpi-weight:Inbound:aht",
-      "repo": "Inbound JSON key AHT weight 0.05",
-      "resolution": "unresolved"
-    },
-    {
-      "claim": "Sections 2.1 and 2.2 do not name these Management BSC catalog teams.",
-      "doc": "docs/plans/pms-ai-evidence-first/COVERAGE_MATRIX.md",
-      "id": "matrix:bsc-teams-unnamed",
-      "repo": "Present only in corporate_bsc_catalog_data.py: CRM, Nursing, PMO",
-      "resolution": "unresolved"
-    },
-    {
-      "claim": "The governing matrix does not list every config team.",
-      "doc": "docs/plans/pms-ai-evidence-first/COVERAGE_MATRIX.md",
-      "id": "matrix:config-teams-absent",
-      "repo": "Config teams with no row in sections 2.1 or 2.2: Call Center, Finance, Human Resources, IT, Offshore Admin & Management, Pre-Approvals IP Elective Dubai, Pre-Approvals IP Final Dubai, Pre-Approvals IP Final SHJAJM, Pre-Approvals IP Offshore, Pre-Approvals OP Dubai, Pre-Approvals OP Final SHJAJM, RCM",
-      "resolution": "unresolved"
-    },
-    {
-      "claim": "Matrix team names with no team JSON: Pre-Approvals IP Dubai, Pre-Approvals OP Final",
-      "doc": "docs/plans/pms-ai-evidence-first/COVERAGE_MATRIX.md",
-      "id": "matrix:names-without-team-json",
-      "repo": "Those names are not Backend/config/teams entries. Support Positions is a Call Center subteam and is not in this list.",
-      "resolution": "unresolved"
-    },
-    {
-      "claim": "Mapped governing status differs from this inventory.",
-      "doc": "docs/plans/pms-ai-evidence-first/COVERAGE_MATRIX.md",
-      "id": "matrix:status-mismatch",
-      "repo": "Inbound score: doc partial_evidence maps to partial; inventory status is blocked (structural_block) ; Inbound actual/target: doc partial_evidence maps to partial; inventory status is blocked (structural_block) ; Inbound ranking: doc partial_evidence maps to partial; inventory status is blocked (not_checked) ; Inbound trend: doc partial_evidence maps to partial; inventory status is blocked (not_checked) ; Inbound comparison: doc partial_evidence maps to partial; inventory status is blocked (not_checked) ; Inbound follow-up: doc partial_evidence maps to partial; inventory status is blocked (structural_block) ; Inbound navigation: doc partial_evidence maps to partial; inventory status is blocked (not_checked) ; Outbound score: doc partial_evidence maps to partial; inventory status is blocked (structural_block) ; Outbound actual/target: doc partial_evidence maps to partial; inventory status is blocked (structural_block) ; Outbound ranking: doc partial_evidence maps to partial; inventory status is blocked (not_checked) ; Outbound trend: doc partial_evidence maps to partial; inventory status is blocked (not_checked) ; Outbound comparison: doc unsupported maps to not applicable; inventory status is blocked (not_checked) ; Outbound follow-up: doc partial_evidence maps to partial; inventory status is blocked (structural_block) ; Outbound navigation: doc partial_evidence maps to partial; inventory status is blocked (not_checked) ; Support Positions score: doc partial_evidence maps to partial; inventory status is blocked (structural_block) ; Support Positions actual/target: doc partial_evidence maps to partial; inventory status is blocked (structural_block) ; Support Positions ranking: doc partial_evidence maps to partial; inventory status is blocked (not_checked) ; Support Positions trend: doc partial_evidence maps to partial; inventory status is blocked (not_checked) ; Support Positions comparison: doc unsupported maps to not applicable; inventory status is blocked (not_checked) ; Support Positions follow-up: doc partial_evidence maps to partial; inventory status is blocked (structural_block) ; Support Positions navigation: doc partial_evidence maps to partial; inventory status is blocked (not_checked) ; Coding EGY score: doc partial_evidence, no inventory cell ; Coding EGY actual/target: doc partial_evidence, no inventory cell ; Coding EGY comparison: doc unsupported, no inventory cell ; Coding EGY navigation: doc partial_evidence, no inventory cell ; Submission EGY score: doc partial_evidence, no inventory cell ; Submission EGY actual/target: doc partial_evidence, no inventory cell ; Submission EGY comparison: doc unsupported, no inventory cell ; Submission EGY navigation: doc partial_evidence, no inventory cell ; Resubmission score: doc partial_evidence, no inventory cell ; Resubmission actual/target: doc partial_evidence, no inventory cell ; Resubmission comparison: doc unsupported, no inventory cell ; Resubmission navigation: doc partial_evidence, no inventory cell ; Pre-Approvals IP score: doc partial_evidence, no inventory cell ; Pre-Approvals IP actual/target: doc partial_evidence, no inventory cell ; Pre-Approvals IP comparison: doc unsupported, no inventory cell ; Pre-Approvals IP navigation: doc partial_evidence, no inventory cell ; Marketing score: doc partial_evidence, no inventory cell ; Marketing comparison: doc unsupported, no inventory cell ; Marketing navigation: doc partial_evidence, no inventory cell ; Coding navigation: doc partial_evidence maps to partial; inventory status is blocked (not_checked) ; Submission navigation: doc partial_evidence maps to partial; inventory status is blocked (not_checked) ; Re-Submission navigation: doc partial_evidence maps to partial; inventory status is blocked (not_checked) ; Pre-Approvals OP Final navigation: doc partial_evidence, no inventory cell ; Pre-Approvals IP Dubai navigation: doc partial_evidence, no inventory cell ; Pharmacy comparison: doc partial_evidence maps to partial; inventory status is blocked (not_checked) ; Pharmacy navigation: doc partial_evidence maps to partial; inventory status is blocked (not_checked) ; CSR navigation: doc partial_evidence maps to partial; inventory status is blocked (not_checked) ; Sales navigation: doc partial_evidence maps to partial; inventory status is blocked (not_checked)",
-      "resolution": "unresolved"
-    },
-    {
-      "claim": "62 section 2.1/2.2 cells use unverified.",
-      "doc": "docs/plans/pms-ai-evidence-first/COVERAGE_MATRIX.md",
-      "id": "matrix:unverified-has-no-roadmap-word",
-      "repo": "This map does not emit unverified. Unchecked inventory cells use blocked with status_basis not_checked. Cells: Coding EGY Employee ranking; Coding EGY Employee trend; Coding EGY Employee follow-up; Submission EGY Employee ranking; Submission EGY Employee trend; Submission EGY Employee follow-up; Resubmission Employee ranking; Resubmission Employee trend; Resubmission Employee follow-up; Pre-Approvals IP Employee ranking; Pre-Approvals IP Employee trend; Pre-Approvals IP Employee follow-up; Marketing Employee actual/target; Marketing Employee ranking; Marketing Employee trend; Marketing Employee follow-up; Coding Employee score; Coding Employee actual/target; Coding Employee ranking; Coding Employee trend; Coding Employee comparison; Coding Employee follow-up; Submission Employee score; Submission Employee actual/target; Submission Employee ranking; Submission Employee trend; Submission Employee comparison; Submission Employee follow-up; Re-Submission Employee score; Re-Submission Employee actual/target; Re-Submission Employee ranking; Re-Submission Employee trend; Re-Submission Employee comparison; Re-Submission Employee follow-up; Pre-Approvals OP Final Employee score; Pre-Approvals OP Final Employee actual/target; Pre-Approvals OP Final Employee ranking; Pre-Approvals OP Final Employee trend; Pre-Approvals OP Final Employee comparison; Pre-Approvals OP Final Employee follow-up; Pre-Approvals IP Dubai Employee score; Pre-Approvals IP Dubai Employee actual/target; Pre-Approvals IP Dubai Employee ranking; Pre-Approvals IP Dubai Employee trend; Pre-Approvals IP Dubai Employee comparison; Pre-Approvals IP Dubai Employee follow-up; Pharmacy Employee actual/target; Pharmacy Employee ranking; Pharmacy Employee trend; Pharmacy Employee follow-up; CSR Employee score; CSR Employee actual/target; CSR Employee ranking; CSR Employee trend; CSR Employee comparison; CSR Employee follow-up; Sales Employee score; Sales Employee actual/target; Sales Employee ranking; Sales Employee trend; Sales Employee comparison; Sales Employee follow-up",
-      "resolution": "unresolved"
-    },
-    {
-      "claim": "A missing value must not be replaced with zero, and a missing branch is also described as zero recorded bookings.",
-      "doc": "docs/plans/pms-ai-evidence-first/DATA_RELATIONSHIPS.md",
-      "id": "relationships:missing-branch-as-zero",
-      "repo": "The two sentences disagree. This map does not treat a missing branch as zero.",
-      "resolution": "unresolved"
-    }
-  ],
+  "doc_disagreements": [],
   "entries": [
     {
       "active": true,
@@ -7527,7 +7379,7 @@
     }
   ],
   "generator": "evaluation/pms-ai/phase2/generate_coverage_manifest.py",
-  "inputs_fingerprint": "799e34351900b786ab0d0c6af04ad2422682517b8ee371d47a6ccb51ab647633",
+  "inputs_fingerprint": "b185c6c3755f3a481cb1496fed84aae6c558f2b40f2061522cf516e41e83c42d",
   "kpis": [
     {
       "actual_col": "Actual Value",
@@ -37201,10 +37053,7 @@
     "performance_records_read": false,
     "permission_checks_executed": false,
     "prior_coverage_claims": "docs/plans/contextual-ai-assistant/coverage_manifest_v1.json was not used as evidence",
-    "runtime_capability_registries_unchanged": [
-      "Backend/services/ai/catalog.py",
-      "Backend/services/ai/coverage_manifest.py"
-    ],
+    "runtime_capability_vocabulary": "Roadmap statuses only (verified, verified no data, partial, blocked, not applicable). Phase 2 applied this vocabulary in Backend/services/ai/catalog.py and Backend/services/ai/coverage_manifest.py; CERTIFIED is never emitted.",
     "verified_requires": [
       "a source-parity check that exists and passes for the cell",
       "a permission check that exists and passes for the cell"
@@ -37222,7 +37071,7 @@
   ],
   "vocabulary": {
     "authority": "Roadmap statuses are the only capability words this map emits. docs/plans/pms-ai-evidence-first/ is the governing domain write-up. This file is a cross-check, not a third runtime registry.",
-    "backend_follow_up": "Adopt this mapping in catalog.py and coverage_manifest.py. Do not leave CAPABILITY_EVIDENCE_REGISTRY or coverage_state as a second vocabulary. Do not map CERTIFIED, or the legacy all-gates-true catalog path, to verified.",
+    "backend_follow_up": "Applied in Phase 2 (issue #94): catalog.py CapabilityEvidenceEntry and coverage_manifest.py emit only the roadmap vocabulary. CERTIFIED has no emitter in the runtime and is refused as a coverage state. Do not reintroduce a second vocabulary.",
     "catalog_py": [
       {
         "from": "verified",
@@ -37231,48 +37080,48 @@
       },
       {
         "from": "partial_evidence",
-        "rule": "Synthetic or application tests exist and independent source parity is still open. That is not the same event as a team JSON matching kpi_service.DEFAULT_WEIGHTS.",
+        "rule": "Legacy word, no longer emitted. Synthetic or application tests exist and independent source parity is still open. That is not the same event as a team JSON matching kpi_service.DEFAULT_WEIGHTS.",
         "to": "partial"
       },
       {
         "from": "unverified",
-        "rule": "The roadmap set has no unverified member. An unchecked scope is blocked from certification. status_basis not_checked means no check failed.",
+        "rule": "Legacy word, no longer emitted. The roadmap set has no unverified member. An unchecked scope is blocked from certification. status_basis not_checked means no check failed.",
         "to": "blocked"
       },
       {
         "from": "unsupported",
-        "rule": "The operation does not apply. Use blocked when a source contradiction or a missing permission stops an operation that does apply.",
+        "rule": "Legacy word, no longer emitted. The operation does not apply. Use blocked when a source contradiction or a missing permission stops an operation that does apply.",
         "to": "not applicable"
       }
     ],
     "coverage_manifest_py": [
       {
         "from": "CERTIFIED",
-        "rule": "Refused. A snapshot row count is not source parity plus permission. Backend must stop emitting CERTIFIED as capability truth.",
+        "rule": "Refused. A snapshot row count is not source parity plus permission. The runtime never emits CERTIFIED as capability truth.",
         "to": null
       },
       {
         "from": "PENDING",
-        "rule": "status_basis not_checked. Not partial.",
+        "rule": "Legacy word, no emitter. status_basis not_checked. Not partial.",
         "to": "blocked"
       },
       {
         "from": "VERIFIED_NO_DATA",
-        "rule": "Only after the scope and calculation are verified and the requested period is confirmed empty. The current runtime sets this when a level exists and a snapshot count is 0, without a permission check.",
+        "rule": "Legacy word, no emitter. Only after the scope and calculation are verified and the requested period is confirmed empty. A level existing with a snapshot count of 0, without a permission check, is blocked, not verified no data.",
         "to": "verified no data"
       },
       {
         "from": "NOT_APPLICABLE",
-        "rule": "Same meaning when the operation or level does not apply.",
+        "rule": "Legacy word, no emitter. Same meaning when the operation or level does not apply.",
         "to": "not applicable"
       },
       {
         "from": "BLOCKED_SOURCE",
-        "rule": "Same meaning when a source contradiction stops the cell.",
+        "rule": "Legacy word, no emitter. Same meaning when a source contradiction stops the cell.",
         "to": "blocked"
       }
     ],
-    "runtime_not_changed": [
+    "runtime_applied": [
       "Backend/services/ai/catalog.py",
       "Backend/services/ai/coverage_manifest.py"
     ],

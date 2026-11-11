@@ -1617,15 +1617,14 @@
       "session_state": {
         "function": "RCM"
       },
-      "expected_outcome": "answer",
-      "expected_intent": "current_value",
+      "expected_outcome": "clarification",
+      "expected_intent": "clarify",
       "expected_filters": {
-        "team": "Coding",
+        "team": null,
         "function": "RCM",
-        "performance_level": "Employee",
-        "periods": [
-          "2026-09"
-        ]
+        "performance_level": null,
+        "periods": [],
+        "clarification_code": "AMBIGUOUS_TEAM_SCOPE"
       }
     },
     {
@@ -1638,15 +1637,14 @@
       "session_state": {
         "function": "RCM"
       },
-      "expected_outcome": "answer",
-      "expected_intent": "current_value",
+      "expected_outcome": "clarification",
+      "expected_intent": "clarify",
       "expected_filters": {
-        "team": "Coding",
+        "team": null,
         "function": "RCM",
-        "performance_level": "Employee",
-        "periods": [
-          "2026-09"
-        ]
+        "performance_level": null,
+        "periods": [],
+        "clarification_code": "AMBIGUOUS_TEAM_SCOPE"
       }
     },
     {
@@ -1703,15 +1701,14 @@
       "session_state": {
         "function": "RCM"
       },
-      "expected_outcome": "answer",
-      "expected_intent": "score_drivers",
+      "expected_outcome": "clarification",
+      "expected_intent": "clarify",
       "expected_filters": {
-        "team": "Submission",
+        "team": null,
         "function": "RCM",
-        "performance_level": "Employee",
-        "periods": [
-          "2026-09"
-        ]
+        "performance_level": null,
+        "periods": [],
+        "clarification_code": "AMBIGUOUS_TEAM_SCOPE"
       }
     },
     {
@@ -1724,15 +1721,14 @@
       "session_state": {
         "function": "RCM"
       },
-      "expected_outcome": "answer",
-      "expected_intent": "score_drivers",
+      "expected_outcome": "clarification",
+      "expected_intent": "clarify",
       "expected_filters": {
-        "team": "Re-Submission",
+        "team": null,
         "function": "RCM",
-        "performance_level": "Employee",
-        "periods": [
-          "2026-09"
-        ]
+        "performance_level": null,
+        "periods": [],
+        "clarification_code": "AMBIGUOUS_TEAM_SCOPE"
       }
     },
     {

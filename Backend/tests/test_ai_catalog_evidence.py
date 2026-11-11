@@ -14,8 +14,8 @@ from models.ai_schemas import AiChatRequest, SessionFilterContext
 from tests.test_ai_booking_comparisons import _build_test_db_session
 
 
-def test_1_unknown_or_newly_added_team_defaults_to_unverified():
-    """Any (country, function, team, level, operation) tuple not explicitly listed is unverified."""
+def test_1_unknown_or_newly_added_team_defaults_to_blocked():
+    """Any (country, function, team, level, operation) tuple not explicitly listed is blocked."""
     ev = get_capability_evidence(
         country="EGY",
         function="Radiology",
@@ -23,12 +23,12 @@ def test_1_unknown_or_newly_added_team_defaults_to_unverified():
         performance_level="Employee",
         operation_family="operational_summary",
     )
-    assert ev.state == "unverified"
+    assert ev.state == "blocked"
     assert ev.evidence_ref == "none"
     assert "missing, unknown, ambiguous" in ev.known_limitations
 
 
-def test_2_verifying_operational_summary_leaves_branch_comparison_unverified():
+def test_2_verifying_operational_summary_leaves_branch_comparison_blocked():
     """A team verified for one operation is not verified for all operations."""
     # Outbound has only application-test evidence for operational_summary.
     ev_summary = get_capability_evidence(
@@ -38,7 +38,7 @@ def test_2_verifying_operational_summary_leaves_branch_comparison_unverified():
         performance_level="Employee",
         operation_family="operational_summary",
     )
-    assert ev_summary.state == "partial_evidence"
+    assert ev_summary.state == "partial"
 
     # Outbound has NOT been verified for branch_comparison
     ev_branches = get_capability_evidence(
@@ -48,12 +48,12 @@ def test_2_verifying_operational_summary_leaves_branch_comparison_unverified():
         performance_level="Employee",
         operation_family="branch_comparison",
     )
-    assert ev_branches.state == "unverified"
+    assert ev_branches.state == "blocked"
 
 
-def test_3_verifying_egypt_team_leaves_uae_team_unverified():
+def test_3_verifying_egypt_team_leaves_uae_team_blocked():
     """Verification for Egypt does not imply verification for UAE."""
-    # Resubmission in Egypt has verified/partial evidence mappings
+    # Resubmission in Egypt has partial evidence mappings
     ev_egy = get_capability_evidence(
         country="EGY",
         function="RCM",
@@ -61,9 +61,9 @@ def test_3_verifying_egypt_team_leaves_uae_team_unverified():
         performance_level="Employee",
         operation_family="operational_summary",
     )
-    assert ev_egy.state == "partial_evidence"
+    assert ev_egy.state == "partial"
 
-    # Re-Submission in UAE has its own calculation and is unverified for this operation
+    # Re-Submission in UAE has its own calculation and is blocked for this operation
     ev_uae = get_capability_evidence(
         country="UAE",
         function="RCM",
@@ -71,10 +71,10 @@ def test_3_verifying_egypt_team_leaves_uae_team_unverified():
         performance_level="Employee",
         operation_family="operational_summary",
     )
-    assert ev_uae.state == "unverified"
+    assert ev_uae.state == "blocked"
 
 
-def test_4_verifying_employee_leaves_managerial_unverified():
+def test_4_verifying_employee_leaves_managerial_blocked():
     """Verification for Employee does not imply verification for Managerial or Corporate."""
     # Inbound Employee has application-test evidence, pending independent parity.
     ev_emp = get_capability_evidence(
@@ -84,9 +84,9 @@ def test_4_verifying_employee_leaves_managerial_unverified():
         performance_level="Employee",
         operation_family="operational_summary",
     )
-    assert ev_emp.state == "partial_evidence"
+    assert ev_emp.state == "partial"
 
-    # Inbound Managerial is unverified
+    # Inbound Managerial is blocked
     ev_mgr = get_capability_evidence(
         country="EGY",
         function="Call Center",
@@ -94,33 +94,33 @@ def test_4_verifying_employee_leaves_managerial_unverified():
         performance_level="Managerial",
         operation_family="operational_summary",
     )
-    assert ev_mgr.state == "unverified"
+    assert ev_mgr.state == "blocked"
 
 
 def test_5_missing_or_mismatched_scope_dimensions_never_inherit_a_match():
     assert get_capability_evidence(
         team="Inbound",
         operation_family="operational_summary",
-    ).state == "unverified"
+    ).state == "blocked"
     assert get_capability_evidence(
         country="EGY",
         function="RCM",
         team="Inbound",
         performance_level="Employee",
         operation_family="operational_summary",
-    ).state == "unverified"
+    ).state == "blocked"
     assert get_capability_evidence(
         country="EGY",
         function="Call Center",
         team="Inbound",
         performance_level="Employee",
-    ).state == "unverified"
+    ).state == "blocked"
     assert get_capability_evidence(
         country="EGY",
         function="Call Center",
         team="Inbound",
         operation_family="operational_summary",
-    ).state == "unverified"
+    ).state == "blocked"
 
 
 def test_6_country_and_team_aliases_resolve_only_with_explicit_country():
@@ -131,7 +131,7 @@ def test_6_country_and_team_aliases_resolve_only_with_explicit_country():
         performance_level="employee",
         operation_family="operational_summary",
     )
-    assert aliased.state == "partial_evidence"
+    assert aliased.state == "partial"
     assert aliased.team == "Inbound"
 
     egypt_coding = get_capability_evidence(
@@ -141,7 +141,7 @@ def test_6_country_and_team_aliases_resolve_only_with_explicit_country():
         performance_level="Employee",
         operation_family="operational_summary",
     )
-    assert egypt_coding.state == "partial_evidence"
+    assert egypt_coding.state == "partial"
     assert egypt_coding.team == "Coding EGY"
 
     assert get_capability_evidence(
@@ -150,7 +150,7 @@ def test_6_country_and_team_aliases_resolve_only_with_explicit_country():
         team="Coding",
         performance_level="Employee",
         operation_family="operational_summary",
-    ).state == "unverified"
+    ).state == "blocked"
 
 
 def test_7_no_scope_is_certified_without_independent_source_parity_evidence():
@@ -220,8 +220,8 @@ def test_9_availability_checks_country_function_and_team_alias_together():
     assert missing_country_evidence["has_data"] is False
 
 
-def test_10_authorized_users_can_select_unverified_team():
-    """A user authorized to access a team can select it in the workspace even if AI capability is unverified."""
+def test_10_authorized_users_can_select_blocked_team():
+    """A user authorized to access a team can select it in the workspace even if AI capability is blocked."""
     catalog = get_ai_catalog()
     scope = {
         "role": "Admin",
@@ -229,14 +229,14 @@ def test_10_authorized_users_can_select_unverified_team():
         "accessible_functions": ["Call Center", "Finance", "Customer Service"],
     }
     options = catalog.get_eligible_scope_options(scope)
-    # Even though Finance and CSR are unverified for AI capability, they appear in eligible scope options
+    # Even though Finance and CSR are blocked for AI capability, they appear in eligible scope options
     team_names = [t.value for t in options["eligible_teams"]]
     assert "Finance" in team_names
     assert "CSR" in team_names
 
 
-def test_11_unverified_or_unsupported_operation_returns_guarded_answer(monkeypatch):
-    """An unverified or unsupported operation returns a guarded answer or disclosure, never invented numbers."""
+def test_11_blocked_operation_returns_guarded_answer(monkeypatch):
+    """A blocked operation returns a guarded answer or disclosure, never invented numbers."""
     session = _build_test_db_session()
     scope = {"role": "Admin", "accessible_teams": ["Finance"], "accessible_functions": ["Finance"]}
     orchestrator = PmsAiOrchestrator(session, scope)
@@ -252,16 +252,16 @@ def test_11_unverified_or_unsupported_operation_returns_guarded_answer(monkeypat
             provider_override="deterministic",
         )
     )
-    # Must report no data / unverified / no matched records, not invent a score
+    # Must report no data / blocked / no matched records, not invent a score
     h_lower = res.headline.lower()
-    assert "no performance records" in h_lower or "no data" in h_lower or "not available" in h_lower or "unverified" in h_lower
+    assert "no performance records" in h_lower or "no data" in h_lower or "not available" in h_lower or "blocked" in h_lower
     assert "100%" not in res.headline
 
 
 def test_12_scope_and_permissions_enforced_independently_of_capability(monkeypatch):
     """A user cannot access teams outside their authorization, regardless of whether the team is verified."""
     session = _build_test_db_session()
-    # User only has access to Outbound, but tries to query Inbound (which is fully verified)
+    # User only has access to Outbound, but tries to query Inbound (which is partial for operational_summary)
     scope = {"role": "Agent", "accessible_teams": ["Outbound"], "accessible_functions": ["Call Center"]}
     orchestrator = PmsAiOrchestrator(session, scope)
 
