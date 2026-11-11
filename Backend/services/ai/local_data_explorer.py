@@ -3080,7 +3080,19 @@ def run_bounded_exploration(
             synthesis_fallback_reason=synthesis_fallback_reason,
             database_ms=total_db_ms,
             records_evaluated=total_records,
-            fallback_reason="none",
+            # A handled turn still used the rules headline when synthesis could
+            # not reach the model, or when the model answered but the draft
+            # failed validation. "none" would report that fallback as success,
+            # so any synthesis reason other than "none" (accepted) or
+            # "not_requested" (never attempted) is reported as-is: transport
+            # failures ("timeout", "connection_refused",
+            # "unavailable_or_invalid") and unusable drafts
+            # ("invalid_response", "invented_number", ...).
+            fallback_reason=(
+                synthesis_fallback_reason
+                if synthesis_fallback_reason not in {"none", "not_requested"}
+                else "none"
+            ),
         )
     finally:
         _EXPLORATION_SLOT.release()

@@ -36,6 +36,7 @@ GLOBS = (
     "Backend/tests/test_evaluation_outbound_productivity_golden.py",
     "Backend/tests/test_evaluation_provenance.py",
     "Frontend/src/components/ai/**/*.test.tsx",
+    "Frontend/src/features/ai/**/*.test.ts",
     "Frontend/src/pages/PmsAiWorkspaceView.test.tsx",
     "Frontend/src/components/settings/shell/AiFeatureSwitch.test.tsx",
 )
