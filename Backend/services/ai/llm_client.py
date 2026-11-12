@@ -22,6 +22,8 @@ from __future__ import annotations
 import os
 import re
 import threading
+import time
+from typing import Any
 
 from services.ai.provider_engine import UnifiedProviderConfig, load_unified_provider_config
 
@@ -193,8 +195,65 @@ def strip_thinking(text: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Diagnostics (configuration only; never makes a network call, never returns secrets)
+# Diagnostics (configuration & verification state; never makes a network call, never returns secrets)
 # ---------------------------------------------------------------------------
+
+DIAGNOSTIC_STATUS_CONFIGURED = "configured"
+DIAGNOSTIC_STATUS_CREDENTIALS_PRESENT = "credentials_present"
+DIAGNOSTIC_STATUS_LIVE_VERIFIED = "live_verified"
+DIAGNOSTIC_STATUS_LIVE_FAILED = "live_failed"
+DIAGNOSTIC_STATUS_FALLBACK_ACTIVE = "fallback_active"
+DIAGNOSTIC_STATUS_UNAVAILABLE = "unavailable"
+
+DIAGNOSTIC_STATUSES = (
+    DIAGNOSTIC_STATUS_CONFIGURED,
+    DIAGNOSTIC_STATUS_CREDENTIALS_PRESENT,
+    DIAGNOSTIC_STATUS_LIVE_VERIFIED,
+    DIAGNOSTIC_STATUS_LIVE_FAILED,
+    DIAGNOSTIC_STATUS_FALLBACK_ACTIVE,
+    DIAGNOSTIC_STATUS_UNAVAILABLE,
+)
+
+# Short aliases for tests and external callers
+STATUS_CONFIGURED = DIAGNOSTIC_STATUS_CONFIGURED
+STATUS_CREDENTIALS_PRESENT = DIAGNOSTIC_STATUS_CREDENTIALS_PRESENT
+STATUS_LIVE_VERIFIED = DIAGNOSTIC_STATUS_LIVE_VERIFIED
+STATUS_LIVE_FAILED = DIAGNOSTIC_STATUS_LIVE_FAILED
+STATUS_FALLBACK_ACTIVE = DIAGNOSTIC_STATUS_FALLBACK_ACTIVE
+STATUS_UNAVAILABLE = DIAGNOSTIC_STATUS_UNAVAILABLE
+
+_live_verification_lock = threading.Lock()
+_last_live_verification: dict[str, Any] | None = None
+
+
+def record_live_verification(result: dict[str, Any]) -> None:
+    """Record the result of an explicit Admin-only live verification check (process-local)."""
+    global _last_live_verification
+    with _live_verification_lock:
+        is_verified = bool(result.get("verified"))
+        _last_live_verification = {
+            "verified": is_verified,
+            "status": DIAGNOSTIC_STATUS_LIVE_VERIFIED if is_verified else DIAGNOSTIC_STATUS_LIVE_FAILED,
+            "provider": str(result.get("provider") or "cloudflare"),
+            "model": str(result.get("model") or ""),
+            "latency_ms": float(result.get("total_latency_ms") or 0.0),
+            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "error": str(result.get("error")) if result.get("error") else None,
+        }
+
+
+def get_live_verification() -> dict[str, Any] | None:
+    """Retrieve the cached result of the most recent live verification check (process-local)."""
+    with _live_verification_lock:
+        return dict(_last_live_verification) if _last_live_verification else None
+
+
+def clear_live_verification() -> None:
+    """Clear cached live verification result (useful for test resets)."""
+    global _last_live_verification
+    with _live_verification_lock:
+        _last_live_verification = None
+
 
 _PROVIDER_HOSTS = {
     "cloudflare": "api.cloudflare.com",
@@ -202,18 +261,54 @@ _PROVIDER_HOSTS = {
 }
 
 
-def provider_status() -> dict[str, object]:
-    """Credential-free snapshot of the provider hierarchy for admin diagnostics."""
-    cfg = load_unified_provider_config()
+def provider_status(config: UnifiedProviderConfig | None = None) -> dict[str, object]:
+    """Credential-free snapshot of the provider hierarchy for admin diagnostics.
+    
+    Distinguishes 6 diagnostic states:
+    - configured: Enabled in config but missing required credentials
+    - credentials_present: Valid credentials configured, live inference not run
+    - live_verified: Explicit live inference succeeded and validated
+    - live_failed: Explicit live inference was attempted and failed
+    - fallback_active: Fallback provider is currently serving requests
+    - unavailable: Provider disabled, unconfigured, or unusable
+    
+    Never makes an external network call; routine diagnostic reads never consume AI tokens.
+    """
+    import time
+    cfg = config or load_unified_provider_config()
     primary = cfg.effective_primary_provider
     usable = configured_providers(cfg)
     lead = usable[0] if usable else primary
-    if usable:
-        reason = "configured" if lead == primary else "primary_unconfigured_fallback_only"
-    elif primary == "cloudflare" and not cfg.cloudflare_enabled:
-        reason = "disabled"
+
+    live_info = get_live_verification()
+    fallback_reason = get_recent_fallback_reason()
+
+    if not usable:
+        if (primary == "cloudflare" and not cfg.cloudflare_enabled) or (not cfg.cloudflare_enabled and not cfg.gemini_enabled):
+            status_code = DIAGNOSTIC_STATUS_UNAVAILABLE
+            reason = "disabled"
+        else:
+            status_code = DIAGNOSTIC_STATUS_CONFIGURED
+            reason = "no_credentials_configured"
     else:
-        reason = "no_credentials_configured"
+        # Credentials are present for at least one provider
+        if live_info is not None:
+            if live_info.get("verified"):
+                status_code = DIAGNOSTIC_STATUS_LIVE_VERIFIED
+                reason = "live_verified"
+            else:
+                status_code = DIAGNOSTIC_STATUS_LIVE_FAILED
+                reason = "live_failed"
+        elif lead == cfg.effective_fallback_provider and lead != primary:
+            status_code = DIAGNOSTIC_STATUS_FALLBACK_ACTIVE
+            reason = "fallback_active" if fallback_reason not in ("none", "") else "primary_unconfigured_fallback_only"
+        elif fallback_reason not in ("none", "") and lead == cfg.effective_fallback_provider:
+            status_code = DIAGNOSTIC_STATUS_FALLBACK_ACTIVE
+            reason = "fallback_active"
+        else:
+            status_code = DIAGNOSTIC_STATUS_CREDENTIALS_PRESENT
+            reason = "configured" if lead == primary else "primary_unconfigured_fallback_only"
+
     return {
         "primary_provider": primary,
         "fallback_provider": cfg.effective_fallback_provider if cfg.fallback_enabled else None,
@@ -223,4 +318,7 @@ def provider_status() -> dict[str, object]:
         "available": bool(usable),
         "active_provider": lead if usable else "deterministic",
         "reason": reason,
+        "status_code": status_code,
+        "live_verified": bool(live_info and live_info.get("verified")),
+        "live_verification": live_info,
     }

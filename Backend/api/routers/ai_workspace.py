@@ -32,6 +32,7 @@ from services.ai.llm_client import (
     local_intent_enabled,
     local_synthesis_enabled,
     provider_status,
+    record_live_verification,
 )
 from services.ai.contextual_assistant import (
     ProposalStaleEvidenceError,
@@ -87,6 +88,32 @@ def get_ai_diagnostics(
     payload = build_ai_diagnostics_payload(db)
     release_read_transaction(db)
     return AiDiagnosticsResponse(success=True, message="Admin AI diagnostics loaded", data=payload)
+
+
+@diagnostics_router.post("/diagnostics/verify-live", response_model=AiDiagnosticsResponse)
+def verify_ai_live(
+    request: Request,
+    db: Session = Depends(get_db),
+    _session: None = Depends(require_ai_diagnostic_session),
+    _role: str = Depends(require_ai_admin),
+) -> AiDiagnosticsResponse:
+    """Explicit Admin-only diagnostic action: runs bounded synthetic live connectivity check.
+
+    Never called during routine health checks or normal page loads. Never consumes tokens
+    unless explicitly triggered by an authenticated Administrator.
+    """
+    from scripts.verify_cloudflare_ai import run_live_verification
+    live_result = run_live_verification()
+    record_live_verification(live_result)
+    payload = build_ai_diagnostics_payload(db)
+    release_read_transaction(db)
+    success = bool(live_result.get("verified"))
+    msg = (
+        "Live Cloudflare AI verification succeeded"
+        if success
+        else f"Live Cloudflare AI verification failed: {live_result.get('error') or 'check details'}"
+    )
+    return AiDiagnosticsResponse(success=success, message=msg, data=payload)
 
 
 @router.get("/watching", response_model=AiWatchingResponse)
@@ -436,6 +463,9 @@ def build_ai_diagnostics_payload(db: Session | None) -> AiDiagnosticsPayload:
         active_provider = "cloudflare"
     intent_on = local_intent_enabled()
     synthesis_on = local_synthesis_enabled()
+    live_ver = model_health.get("live_verification") or {}
+    status_code = str(model_health.get("status_code") or "unavailable")
+    is_live_verified = bool(model_health.get("live_verified"))
     return AiDiagnosticsPayload(
         feature_enabled=feature_enabled,
         pilot_role_restricted=True,
@@ -443,7 +473,11 @@ def build_ai_diagnostics_payload(db: Session | None) -> AiDiagnosticsPayload:
         model_endpoint_configured=bool(model_health.get("endpoint_configured")),
         model_endpoint_host=_safe_host(model_health.get("endpoint_host")),
         model_available=model_up,
-        inference_verified=False,
+        inference_verified=is_live_verified,
+        provider_status_code=status_code,
+        live_verified_at=live_ver.get("timestamp"),
+        live_verification_latency_ms=live_ver.get("latency_ms"),
+        live_verification_error=live_ver.get("error"),
         model_availability_reason=str(model_health.get("reason") or "unavailable"),
         router_mode=cfg.router_mode,
         intent_routing_enabled=intent_on,

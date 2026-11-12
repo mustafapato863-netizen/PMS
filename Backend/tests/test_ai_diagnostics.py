@@ -215,3 +215,174 @@ def test_8_diagnostics_payload_providers_are_cloudflare_gemini_or_deterministic(
     assert payload.model_endpoint_host == "api.cloudflare.com"
     assert payload.inference_verified is False
     assert "token-test-not-real" not in payload.model_dump_json()
+
+
+# ---------------------------------------------------------------------------
+# Phase 1 & 2 Live Verification and 6-State Diagnostics Tests
+# ---------------------------------------------------------------------------
+
+
+def test_9_diagnostics_six_states_distinction(clean_provider_env):
+    """Verify clean transitions across the 6 diagnostic states without network calls."""
+    from services.ai.llm_client import (
+        STATUS_CONFIGURED,
+        STATUS_UNAVAILABLE,
+        STATUS_CREDENTIALS_PRESENT,
+        STATUS_LIVE_VERIFIED,
+        STATUS_LIVE_FAILED,
+        STATUS_FALLBACK_ACTIVE,
+        clear_live_verification,
+        record_live_verification,
+    )
+
+    clear_live_verification()
+
+    # 1. STATUS_CONFIGURED: Provider enabled in config, but credentials not yet configured
+    st1 = provider_status()
+    assert st1["status_code"] == STATUS_CONFIGURED
+    assert st1["live_verified"] is False
+    assert st1["reason"] == "no_credentials_configured"
+
+    # 2. STATUS_UNAVAILABLE: Providers explicitly disabled in config
+    clean_provider_env.setenv("PMS_AI_CLOUDFLARE_ENABLED", "false")
+    clean_provider_env.setenv("PMS_AI_GEMINI_ENABLED", "false")
+    st_unavail = provider_status()
+    assert st_unavail["status_code"] == STATUS_UNAVAILABLE
+    assert st_unavail["available"] is False
+    clean_provider_env.delenv("PMS_AI_CLOUDFLARE_ENABLED", raising=False)
+    clean_provider_env.delenv("PMS_AI_GEMINI_ENABLED", raising=False)
+
+    # 3. STATUS_CREDENTIALS_PRESENT: Credentials configured, but live verification not yet executed
+    clean_provider_env.setenv("CLOUDFLARE_ACCOUNT_ID", "acct-test")
+    clean_provider_env.setenv("CLOUDFLARE_API_TOKEN", "token-test")
+    st2 = provider_status()
+    assert st2["status_code"] == STATUS_CREDENTIALS_PRESENT
+    assert st2["live_verified"] is False
+
+    # 4. STATUS_LIVE_VERIFIED: Explicit successful live verification recorded
+    record_live_verification({
+        "verified": True,
+        "provider": "cloudflare",
+        "model": "@cf/ibm-granite/granite-4.0-h-micro",
+        "total_latency_ms": 125.0,
+    })
+    st3 = provider_status()
+    assert st3["status_code"] == STATUS_LIVE_VERIFIED
+    assert st3["live_verified"] is True
+    assert st3["live_verification"]["latency_ms"] == 125.0
+
+    # 5. STATUS_LIVE_FAILED: Explicit failed live verification recorded
+    record_live_verification({
+        "verified": False,
+        "provider": "cloudflare",
+        "model": "@cf/ibm-granite/granite-4.0-h-micro",
+        "total_latency_ms": 450.0,
+        "error": "Cloudflare 401 Unauthorized",
+    })
+    st4 = provider_status()
+    assert st4["status_code"] == STATUS_LIVE_FAILED
+    assert st4["live_verified"] is False
+    assert "401" in st4["live_verification"]["error"]
+
+    # 6. STATUS_FALLBACK_ACTIVE: Primary unconfigured, fallback configured
+    clear_live_verification()
+    clean_provider_env.delenv("CLOUDFLARE_ACCOUNT_ID", raising=False)
+    clean_provider_env.delenv("CLOUDFLARE_API_TOKEN", raising=False)
+    clean_provider_env.setenv("GEMINI_API_KEY", "gemini-key-test")
+    st5 = provider_status()
+    assert st5["status_code"] == STATUS_FALLBACK_ACTIVE
+    assert st5["active_provider"] == "gemini"
+
+
+def test_10_verify_live_endpoint_admin_success(test_db_session, monkeypatch):
+    """POST /api/ai/diagnostics/verify-live succeeds for Admin and records live verified state."""
+    from scripts import verify_cloudflare_ai
+    from services.ai.llm_client import clear_live_verification, get_live_verification
+
+    clear_live_verification()
+    app = _create_test_app(test_db_session)
+    client = TestClient(app, raise_server_exceptions=False)
+
+    fake_result = {
+        "verified": True,
+        "provider": "cloudflare",
+        "model": "@cf/ibm-granite/granite-4.0-h-micro",
+        "account_id_configured": True,
+        "api_token_configured": True,
+        "test_a_completion": {"status": "passed", "latency_ms": 110.0},
+        "test_b_structured": {"status": "passed", "latency_ms": 220.0},
+        "total_latency_ms": 330.0,
+        "error": None,
+    }
+    monkeypatch.setattr(verify_cloudflare_ai, "run_live_verification", lambda **kwargs: fake_result)
+
+    tok = _get_user_token(test_db_session, "admin_user_verify", "Admin")
+    headers = {"Authorization": f"Bearer {tok}"}
+
+    resp = client.post("/api/ai/diagnostics/verify-live", headers=headers)
+    assert resp.status_code == 200
+    res_body = resp.json()
+    assert res_body["success"] is True
+    data = res_body["data"]
+    assert data["inference_verified"] is True
+    assert data["provider_status_code"] == "live_verified"
+    assert data["live_verification_latency_ms"] == 330.0
+
+    live_state = get_live_verification()
+    assert live_state["verified"] is True
+    assert live_state["provider"] == "cloudflare"
+
+
+def test_11_verify_live_endpoint_non_admin_forbidden(test_db_session):
+    """POST /api/ai/diagnostics/verify-live is forbidden for non-Admin callers."""
+    app = _create_test_app(test_db_session)
+    client = TestClient(app, raise_server_exceptions=False)
+
+    for role in ("Manager", "Employee", "Viewer"):
+        username = f"user_block_{role.lower()}"
+        tok = _get_user_token(test_db_session, username, role)
+        headers = {"Authorization": f"Bearer {tok}"}
+        resp = client.post("/api/ai/diagnostics/verify-live", headers=headers)
+        assert resp.status_code == 403, f"Expected 403 for role {role}, got {resp.status_code}"
+
+
+def test_12_verify_cloudflare_ai_script_mocked(monkeypatch):
+    """Unit test verify_cloudflare_ai.run_live_verification with mocked urllib calls."""
+    from scripts.verify_cloudflare_ai import run_live_verification
+
+    call_count = 0
+
+    def fake_urlopen(req, timeout=None):
+        nonlocal call_count
+        call_count += 1
+        resp = MagicMock()
+        if call_count == 1:
+            body = json.dumps({
+                "choices": [{"message": {"role": "assistant", "content": "PMS AI connection successful."}, "finish_reason": "stop"}],
+                "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+                "success": True,
+            }).encode("utf-8")
+        else:
+            body = json.dumps({
+                "choices": [{"message": {"role": "assistant", "content": '{"intent": "performance_lookup", "requires_data": true}'}, "finish_reason": "stop"}],
+                "usage": {"prompt_tokens": 15, "completion_tokens": 8, "total_tokens": 23},
+                "success": True,
+            }).encode("utf-8")
+        resp.read.side_effect = [body, b""]
+        resp.__enter__.return_value = resp
+        resp.__exit__.return_value = False
+        return resp
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+
+    res = run_live_verification(
+        account_id="fake-acct-123",
+        api_token="mock-cf-token-12345",
+        model="@cf/ibm-granite/granite-4.0-h-micro",
+        timeout=5.0,
+    )
+    assert res["verified"] is True
+    assert res["test_a_completion"]["status"] == "passed"
+    assert res["test_b_structured"]["status"] == "passed"
+    assert res["error"] is None
+

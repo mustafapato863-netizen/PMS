@@ -45,18 +45,49 @@ from services.ai.config import redact_secrets
 
 logger = logging.getLogger(__name__)
 
-# Known reference pricing per 1,000,000 tokens (USD)
-_KNOWN_MODEL_PRICING: dict[str, tuple[float, float]] = {
-    # model_substring: (input_per_m, output_per_m)
-    "granite-4.0-h-micro": (0.05, 0.15),
-    "glm-4.7-flash": (0.10, 0.30),
-    "llama-3.3-70b": (0.20, 0.60),
-    "llama-3.1-8b": (0.05, 0.15),
-    "gemini-2.5-flash": (0.15, 0.60),
-    "gemini-1.5-flash": (0.15, 0.60),
-    "gemini-2.0-flash": (0.10, 0.40),
-    "gpt-4o-mini": (0.15, 0.60),
-    "gpt-4o": (2.50, 10.00),
+
+@dataclass(frozen=True)
+class ModelPricing:
+    """Accurate token pricing metadata per 1,000,000 tokens (USD).
+    
+    Supports indexing (`pricing[0]`, `pricing[1]`) for full backwards compatibility.
+    """
+    input_per_million: float
+    output_per_million: float
+    currency: str = "USD"
+    effective_date: str = "2026-11-12"
+    source: str = "Published Provider Reference (Cloudflare Workers AI / Google AI Studio)"
+
+    def __getitem__(self, idx: int) -> float:
+        if idx == 0:
+            return self.input_per_million
+        if idx == 1:
+            return self.output_per_million
+        raise IndexError(f"ModelPricing index out of range: {idx}")
+
+
+# Known verified reference pricing per 1,000,000 tokens (USD)
+# Verified: 2026-11-12 from official Cloudflare Workers AI & Google AI Studio published rates
+_KNOWN_MODEL_PRICING: dict[str, ModelPricing] = {
+    # Cloudflare Workers AI — IBM Granite 4.0 H Micro ($0.05 in, $0.15 out)
+    "granite-4.0-h-micro": ModelPricing(0.05, 0.15, source="Cloudflare Workers AI granite-4.0-h-micro reference"),
+    # Cloudflare Workers AI — GLM 4.7 Flash ($0.10 in, $0.30 out)
+    "glm-4.7-flash": ModelPricing(0.10, 0.30, source="Cloudflare Workers AI glm-4.7-flash reference"),
+    # Cloudflare Workers AI — Llama 3.3 70B & 3.1 8B
+    "llama-3.3-70b": ModelPricing(0.20, 0.60, source="Cloudflare Workers AI llama-3.3-70b reference"),
+    "llama-3.1-8b": ModelPricing(0.05, 0.15, source="Cloudflare Workers AI llama-3.1-8b reference"),
+    # Google Gemini 3.5 Flash ($0.075 in, $0.30 out on paid tier; $0.00 on free tier up to limits)
+    "gemini-3.5-flash": ModelPricing(0.075, 0.30, source="Google AI Studio gemini-3.5-flash reference"),
+    # Google Gemini 3.5 Flash Lite ($0.0375 in, $0.15 out on paid tier; $0.00 on free tier up to limits)
+    "gemini-3.5-flash-lite": ModelPricing(0.0375, 0.15, source="Google AI Studio gemini-3.5-flash-lite reference"),
+    "gemini-3.1-flash-lite": ModelPricing(0.0375, 0.15, source="Google AI Studio gemini-3.1-flash-lite reference"),
+    # Historical Gemini reference entries
+    "gemini-2.5-flash": ModelPricing(0.15, 0.60, source="Google AI Studio gemini-2.5-flash legacy reference"),
+    "gemini-1.5-flash": ModelPricing(0.15, 0.60, source="Google AI Studio gemini-1.5-flash legacy reference"),
+    "gemini-2.0-flash": ModelPricing(0.10, 0.40, source="Google AI Studio gemini-2.0-flash legacy reference"),
+    # Legacy reference (for historical cost queries)
+    "gpt-4o-mini": ModelPricing(0.15, 0.60, source="OpenAI gpt-4o-mini reference"),
+    "gpt-4o": ModelPricing(2.50, 10.00, source="OpenAI gpt-4o reference"),
 }
 
 
@@ -127,6 +158,14 @@ class ProviderTruncatedError(ProviderError):
         super().__init__(message, http_code=502, error_code="truncated_response")
 
 
+class ProviderEmptyResponseError(ProviderTransientError):
+    """Provider returned empty text or whitespace."""
+
+    def __init__(self, message: str = "Provider returned empty response") -> None:
+        super().__init__(message, http_code=502)
+        self.error_code = "empty_response"
+
+
 # ---------------------------------------------------------------------------
 # Data Contracts
 # ---------------------------------------------------------------------------
@@ -146,13 +185,17 @@ class TokenUsage:
     prompt_tokens: int = 0
     completion_tokens: int = 0
     total_tokens: int = 0
+    neurons: float | None = None
 
-    def to_dict(self) -> dict[str, int]:
-        return {
+    def to_dict(self) -> dict[str, Any]:
+        res: dict[str, Any] = {
             "prompt_tokens": self.prompt_tokens,
             "completion_tokens": self.completion_tokens,
             "total_tokens": self.total_tokens,
         }
+        if self.neurons is not None:
+            res["neurons"] = self.neurons
+        return res
 
 
 @dataclass
@@ -164,9 +207,12 @@ class ProviderAttempt:
     http_code: int | None = None
     error_detail: str | None = None
     retry_count: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    neurons: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        res: dict[str, Any] = {
             "provider": self.provider,
             "model": self.model,
             "status": self.status,
@@ -174,7 +220,12 @@ class ProviderAttempt:
             "http_code": self.http_code,
             "error_detail": redact_secrets(self.error_detail) if self.error_detail else None,
             "retry_count": self.retry_count,
+            "input_tokens": self.input_tokens,
+            "output_tokens": self.output_tokens,
         }
+        if self.neurons is not None:
+            res["neurons"] = self.neurons
+        return res
 
 
 @dataclass
@@ -189,6 +240,8 @@ class ProviderRequest:
     purpose: str = "general"
     user_id: str | None = None
     user_role: str | None = None
+    model: str | None = None
+    use_alter_model: bool = False
 
     def validate_input(self) -> str | None:
         """Validate input before calling external providers."""
@@ -218,13 +271,14 @@ class ProviderResponse:
     estimated_cost_usd: float | None = None
     attempts: list[ProviderAttempt] = field(default_factory=list)
     error_detail: str | None = None
+    neurons: float | None = None
 
     @property
     def is_success(self) -> bool:
         return self.outcome in ("success", "fallback_success") and bool(self.content.strip())
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        res: dict[str, Any] = {
             "content": self.content if self.is_success else "",
             "provider": self.provider,
             "model": self.model,
@@ -235,6 +289,9 @@ class ProviderResponse:
             "attempts": [a.to_dict() for a in self.attempts],
             "error_detail": redact_secrets(self.error_detail) if self.error_detail else None,
         }
+        if self.neurons is not None:
+            res["neurons"] = self.neurons
+        return res
 
 
 # ---------------------------------------------------------------------------
@@ -406,10 +463,11 @@ def estimate_cost_usd(provider: str, model: str, usage: TokenUsage | None) -> fl
     if not model_lower:
         return None
 
-    rates: tuple[float, float] | None = None
-    for pattern, pattern_rates in _KNOWN_MODEL_PRICING.items():
+    rates: Any = None
+    # Sort patterns by length descending so more specific patterns (e.g. "gemini-3.5-flash-lite") match before prefixes ("gemini-3.5-flash")
+    for pattern in sorted(_KNOWN_MODEL_PRICING.keys(), key=len, reverse=True):
         if pattern in model_lower:
-            rates = pattern_rates
+            rates = _KNOWN_MODEL_PRICING[pattern]
             break
 
     if rates is None:
@@ -728,11 +786,12 @@ class CloudflareAIProviderAdapter:
         if not config.cloudflare_api_token:
             raise ProviderClientError("Cloudflare API Token is not configured", http_code=401)
 
-        model = (
-            getattr(request, "model", None)
-            or config.cloudflare_model
-            or "@cf/ibm-granite/granite-4.0-h-micro"
-        )
+        if getattr(request, "use_alter_model", False):
+            model = config.cloudflare_alter_model or "@cf/zai-org/glm-4.7-flash"
+        elif getattr(request, "model", None):
+            model = request.model
+        else:
+            model = config.cloudflare_model or "@cf/ibm-granite/granite-4.0-h-micro"
         url = f"https://api.cloudflare.com/client/v4/accounts/{config.cloudflare_account_id}/ai/v1/chat/completions"
 
         messages = []
@@ -827,10 +886,13 @@ class CloudflareAIProviderAdapter:
                 raise ProviderSchemaValidationError(f"Cloudflare structured output failed schema validation: {err}")
 
         usage_raw = data.get("usage") or {}
+        raw_neurons = usage_raw.get("neurons")
+        neurons = float(raw_neurons) if raw_neurons is not None else None
         usage = TokenUsage(
             prompt_tokens=int(usage_raw.get("prompt_tokens") or 0),
             completion_tokens=int(usage_raw.get("completion_tokens") or 0),
             total_tokens=int(usage_raw.get("total_tokens") or 0),
+            neurons=neurons,
         )
         return text_result.strip(), usage
 
@@ -856,7 +918,12 @@ class GeminiProviderAdapter:
         if not config.gemini_api_key:
             raise ProviderClientError("Gemini API key is not configured", http_code=401)
 
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{config.gemini_model}:generateContent"
+        model = (
+            request.model
+            if (request.model and "gemini" in request.model.lower())
+            else config.gemini_model
+        )
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
         system_parts = []
         if request.system_instruction:
@@ -1030,10 +1097,16 @@ class UnifiedProviderEngine:
             return self.config.gemini_enabled
         return False
 
-    def _get_model(self, provider: str) -> str:
+    def _get_model(self, provider: str, request: ProviderRequest | None = None) -> str:
         if provider == "cloudflare":
+            if request and getattr(request, "use_alter_model", False):
+                return self.config.cloudflare_alter_model or "@cf/zai-org/glm-4.7-flash"
+            if request and getattr(request, "model", None) and ("@" in request.model or "cf" in request.model or "granite" in request.model or "glm" in request.model):
+                return request.model
             return self.config.cloudflare_model
         if provider == "gemini":
+            if request and getattr(request, "model", None) and "gemini" in request.model.lower():
+                return request.model
             return self.config.gemini_model
         return "unknown"
 
@@ -1097,7 +1170,7 @@ class UnifiedProviderEngine:
 
         primary_name = self.config.effective_primary_provider
         primary_adapter = self._get_adapter(primary_name)
-        primary_model = self._get_model(primary_name)
+        primary_model = self._get_model(primary_name, request)
 
         if not self._is_enabled(primary_name):
             attempts.append(ProviderAttempt(
@@ -1161,6 +1234,9 @@ class UnifiedProviderEngine:
                         status="success",
                         latency_ms=call_ms,
                         retry_count=retries,
+                        input_tokens=usage.prompt_tokens,
+                        output_tokens=usage.completion_tokens,
+                        neurons=usage.neurons,
                     ))
                     primary_success = True
                     primary_response_text = text
@@ -1298,7 +1374,7 @@ class UnifiedProviderEngine:
         # 4. Fallback Provider Loop
         fallback_name = self.config.effective_fallback_provider
         fallback_adapter = self._get_adapter(fallback_name)
-        fallback_model = self._get_model(fallback_name)
+        fallback_model = self._get_model(fallback_name, request)
 
         if not self.config.fallback_enabled or fallback_name == "none" or fallback_adapter is None:
             total_ms = round((time.perf_counter() - t_overall_start) * 1000.0, 2)
@@ -1370,6 +1446,9 @@ class UnifiedProviderEngine:
                         model=fallback_model,
                         status="success",
                         latency_ms=call_ms,
+                        input_tokens=usage.prompt_tokens,
+                        output_tokens=usage.completion_tokens,
+                        neurons=usage.neurons,
                     ))
                     total_ms = round((time.perf_counter() - t_overall_start) * 1000.0, 2)
                     cost = estimate_cost_usd(fallback_name, fallback_model, usage)
@@ -1472,15 +1551,35 @@ class UnifiedProviderEngine:
 
     def _record_observability(self, request: ProviderRequest, response: ProviderResponse) -> None:
         """Structured observability recording without logging sensitive content or secrets."""
+        fallback_used = (
+            response.provider == self.config.effective_fallback_provider
+            and response.outcome == "fallback_success"
+        )
+        attempt_summaries = [
+            {
+                "provider": a.provider,
+                "model": a.model,
+                "status": a.status,
+                "latency_ms": a.latency_ms,
+                "input_tokens": a.input_tokens,
+                "output_tokens": a.output_tokens,
+                "neurons": a.neurons,
+                "retry_count": a.retry_count,
+            }
+            for a in response.attempts
+        ]
         logger.info(
-            "UnifiedProviderEngine purpose=%s outcome=%s provider=%s model=%s latency_ms=%.1f tokens=%d cost=%s",
+            "UnifiedProviderEngine purpose=%s outcome=%s provider=%s model=%s latency_ms=%.1f tokens=%d neurons=%s cost=%s fallback_used=%s attempts=%s",
             request.purpose,
             response.outcome,
             response.provider,
             response.model,
             response.latency_ms,
             response.usage.total_tokens,
+            f"{response.usage.neurons:.4f}" if response.usage.neurons is not None else "none",
             f"${response.estimated_cost_usd:.6f}" if response.estimated_cost_usd is not None else "unknown",
+            fallback_used,
+            attempt_summaries,
         )
 
 
