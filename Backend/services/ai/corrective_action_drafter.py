@@ -633,7 +633,7 @@ class CorrectiveActionDrafter:
                     model_latency_ms=latency, **common,
                 ))
 
-            provider_used = resp.provider if resp.provider in ("gemini", "openai") else "gemini"
+            provider_used = resp.provider if resp.provider in ("cloudflare", "gemini", "openai") else "cloudflare"
 
         clean, errors = validate_model_draft(raw, facts)
         if clean is None:
@@ -651,7 +651,7 @@ class CorrectiveActionDrafter:
             action_type=clean["action_type"],
             measured_issue=measured_facts[0],
             recommended_steps=clean["steps"],
-            recommended_steps_source=provider_used if provider_used in ("gemini", "openai", "llama_cpp") else "gemini",
+            recommended_steps_source=provider_used if provider_used in ("cloudflare", "gemini", "openai", "llama_cpp") else "cloudflare",
             uncertainty=self._uncertainty(bundle, focus),
         )
         return self._log(AiCorrectiveActionSuggestionPayload(

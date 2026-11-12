@@ -345,7 +345,7 @@ CorrectiveActionSuggestionOutcome = Literal[
 # Who produced ``draft``. ``"deterministic"`` is part of the shared provider
 # vocabulary but this endpoint never emits it: it does not substitute a static
 # draft when the model is unavailable or its answer is rejected.
-CorrectiveActionSuggestionProvider = Literal["gemini", "openai", "llama_cpp", "deterministic", "none"]
+CorrectiveActionSuggestionProvider = Literal["cloudflare", "gemini", "openai", "llama_cpp", "deterministic", "none"]
 
 # A draft may only propose a non-disciplinary action type. PIP, Warning,
 # Reward and Promotion remain human decisions in the existing workflow.
@@ -451,7 +451,7 @@ class AiCorrectiveActionSuggestionPayload(BaseModel):
     @model_validator(mode="after")
     def _draft_matches_outcome(self) -> "AiCorrectiveActionSuggestionPayload":
         if self.outcome == "suggested":
-            if self.draft is None or self.provider_used not in ("gemini", "openai", "llama_cpp"):
+            if self.draft is None or self.provider_used not in ("cloudflare", "gemini", "openai", "llama_cpp"):
                 raise ValueError("a suggested outcome requires a validated model draft")
         elif self.draft is not None:
             raise ValueError("only a suggested outcome may carry a draft")

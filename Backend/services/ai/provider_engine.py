@@ -47,6 +47,10 @@ logger = logging.getLogger(__name__)
 # Known reference pricing per 1,000,000 tokens (USD)
 _KNOWN_MODEL_PRICING: dict[str, tuple[float, float]] = {
     # model_substring: (input_per_m, output_per_m)
+    "granite-4.0-h-micro": (0.05, 0.15),
+    "glm-4.7-flash": (0.10, 0.30),
+    "llama-3.3-70b": (0.20, 0.60),
+    "llama-3.1-8b": (0.05, 0.15),
     "gemini-2.5-flash": (0.15, 0.60),
     "gemini-1.5-flash": (0.15, 0.60),
     "gemini-2.0-flash": (0.10, 0.40),
@@ -252,11 +256,17 @@ def _parse_bool(value: str | None, default: bool = False) -> bool:
 class UnifiedProviderConfig:
     """Configuration for AI provider hierarchy.
     
-    Fixed architecture: Gemini is primary, OpenAI is fallback.
+    Default architecture: Cloudflare Workers AI is primary, Google Gemini is fallback.
     """
+    primary_provider: str | None = None
+    fallback_provider: str | None = None
+    cloudflare_enabled: bool = True
     gemini_enabled: bool = True
-    openai_enabled: bool = True
+    openai_enabled: bool = False
     fallback_enabled: bool = True
+    cloudflare_account_id: str = ""
+    cloudflare_api_token: str = ""
+    cloudflare_model: str = "@cf/ibm-granite/granite-4.0-h-micro"
     gemini_model: str = "gemini-2.5-flash"
     openai_model: str = "gpt-4o-mini"
     timeout_seconds: float = 10.0
@@ -265,23 +275,64 @@ class UnifiedProviderConfig:
     openai_api_key: str = ""
 
     @property
-    def primary_provider(self) -> str:
-        return "gemini"
+    def effective_primary_provider(self) -> str:
+        if self.primary_provider:
+            return self.primary_provider
+        if self.cloudflare_account_id and self.cloudflare_api_token:
+            return "cloudflare"
+        if not self.cloudflare_account_id and not self.cloudflare_api_token and (self.gemini_api_key or self.openai_api_key):
+            return "gemini"
+        return "cloudflare"
 
     @property
-    def fallback_provider(self) -> str:
+    def effective_fallback_provider(self) -> str:
+        if self.fallback_provider:
+            return self.fallback_provider
+        if self.effective_primary_provider == "cloudflare":
+            return "gemini"
         return "openai"
 
 
 def load_unified_provider_config() -> UnifiedProviderConfig:
     """Load unified AI provider configuration from environment."""
+    primary_provider = (
+        os.environ.get("PMS_AI_PRIMARY_PROVIDER")
+        or "cloudflare"
+    ).strip().casefold()
+
+    fallback_provider = (
+        os.environ.get("PMS_AI_FALLBACK_PROVIDER")
+        or "gemini"
+    ).strip().casefold()
+
+    cloudflare_enabled = _parse_bool(os.environ.get("PMS_AI_CLOUDFLARE_ENABLED"), default=True)
     gemini_enabled = _parse_bool(os.environ.get("PMS_AI_GEMINI_ENABLED"), default=True)
-    openai_enabled = _parse_bool(os.environ.get("PMS_AI_OPENAI_ENABLED"), default=True)
     fallback_enabled = _parse_bool(os.environ.get("PMS_AI_FALLBACK_ENABLED"), default=True)
+
+    cloudflare_account_id = (
+        os.environ.get("CLOUDFLARE_ACCOUNT_ID")
+        or os.environ.get("CF_ACCOUNT_ID")
+        or ""
+    ).strip()
+
+    cloudflare_api_token = (
+        os.environ.get("CLOUDFLARE_API_TOKEN")
+        or os.environ.get("CF_API_TOKEN")
+        or os.environ.get("CLOUDFLARE_API_KEY")
+        or ""
+    ).strip()
+
+    cloudflare_model = (
+        os.environ.get("CLOUDFLARE_AI_MODEL")
+        or os.environ.get("CF_AI_MODEL")
+        or os.environ.get("PMS_CLOUDFLARE_MODEL")
+        or "@cf/ibm-granite/granite-4.0-h-micro"
+    ).strip()
 
     gemini_model = (
         os.environ.get("PMS_GEMINI_MODEL")
         or os.environ.get("PMS_AI_GEMINI_MODEL")
+        or os.environ.get("GEMINI_MODEL")
         or "gemini-2.5-flash"
     ).strip()
 
@@ -321,9 +372,15 @@ def load_unified_provider_config() -> UnifiedProviderConfig:
     ).strip()
 
     return UnifiedProviderConfig(
+        primary_provider=primary_provider,
+        fallback_provider=fallback_provider,
+        cloudflare_enabled=cloudflare_enabled,
         gemini_enabled=gemini_enabled,
-        openai_enabled=openai_enabled,
+        openai_enabled=False,
         fallback_enabled=fallback_enabled,
+        cloudflare_account_id=cloudflare_account_id,
+        cloudflare_api_token=cloudflare_api_token,
+        cloudflare_model=cloudflare_model,
         gemini_model=gemini_model,
         openai_model=openai_model,
         timeout_seconds=timeout_seconds,
@@ -656,6 +713,132 @@ def _parse_http_error(exc: urllib.error.HTTPError, provider_name: str) -> Provid
 
 
 # ---------------------------------------------------------------------------
+# Cloudflare Workers AI Provider Adapter
+# ---------------------------------------------------------------------------
+
+
+class CloudflareAIProviderAdapter:
+    """Invokes Cloudflare Workers AI REST API or OpenAI-compatible endpoint."""
+
+    def __init__(self, http_client: Callable[..., Any] | None = None) -> None:
+        self._http_client = http_client or urllib.request.urlopen
+
+    def execute(
+        self,
+        request: ProviderRequest,
+        config: UnifiedProviderConfig,
+        *,
+        timeout: float,
+    ) -> tuple[str, TokenUsage]:
+        if not config.cloudflare_account_id:
+            raise ProviderClientError("Cloudflare Account ID is not configured", http_code=401)
+        if not config.cloudflare_api_token:
+            raise ProviderClientError("Cloudflare API Token is not configured", http_code=401)
+
+        model = config.cloudflare_model or "@cf/ibm-granite/granite-4.0-h-micro"
+        url = f"https://api.cloudflare.com/client/v4/accounts/{config.cloudflare_account_id}/ai/v1/chat/completions"
+
+        messages = []
+        system_content = request.system_instruction or ""
+        if request.response_format == "json" and request.json_schema:
+            schema_instruction = f"\nYou must output JSON conforming to this schema:\n{json.dumps(request.json_schema)}"
+            system_content = (system_content + schema_instruction).strip()
+
+        if system_content:
+            messages.append({"role": "system", "content": system_content})
+
+        for msg in request.messages:
+            messages.append({"role": msg.role, "content": msg.content})
+
+        if not messages:
+            messages.append({"role": "user", "content": ""})
+
+        payload: dict[str, Any] = {
+            "model": model,
+            "messages": messages,
+            "temperature": max(0.0, min(request.temperature, 2.0)),
+            "max_tokens": request.max_tokens or 2048,
+        }
+        if request.response_format == "json":
+            payload["response_format"] = {"type": "json_object"}
+
+        raw_data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        req = urllib.request.Request(
+            url,
+            data=raw_data,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {config.cloudflare_api_token}",
+            },
+            method="POST",
+        )
+
+        t_call_start = time.perf_counter()
+        try:
+            with self._http_client(req, timeout=timeout) as resp:
+                elapsed_connect = time.perf_counter() - t_call_start
+                remaining_read = timeout - elapsed_connect
+                if remaining_read <= 0:
+                    raise ProviderTimeoutError(f"Cloudflare call timed out connecting after {elapsed_connect:.1f}s")
+                raw_response = _read_with_deadline(resp, remaining_read)
+        except urllib.error.HTTPError as exc:
+            raise _parse_http_error(exc, "Cloudflare") from exc
+        except (TimeoutError, socket.timeout) as exc:
+            raise ProviderTimeoutError(f"Cloudflare call timed out after {timeout:.1f}s") from exc
+        except (urllib.error.URLError, ConnectionError, OSError) as exc:
+            if "timed out" in str(exc).casefold():
+                raise ProviderTimeoutError(f"Cloudflare connection timed out after {timeout:.1f}s") from exc
+            raise ProviderTransientError(f"Cloudflare connection reset or unreachable: {type(exc).__name__}") from exc
+
+        if time.perf_counter() - t_call_start > timeout:
+            raise ProviderTimeoutError(f"Cloudflare call exceeded timeout deadline of {timeout:.1f}s")
+
+        try:
+            data = json.loads(raw_response)
+        except (json.JSONDecodeError, TypeError, ValueError) as exc:
+            raise ProviderTransientError("Cloudflare returned invalid non-JSON HTTP response body") from exc
+
+        if isinstance(data, dict) and data.get("success") is False:
+            errors = data.get("errors") or []
+            msg = "; ".join(str(e.get("message", e)) for e in errors) if errors else "Cloudflare Workers AI returned success: false"
+            code = (errors[0].get("code") if errors and isinstance(errors[0], dict) else None)
+            if code in (10000, 10001, 10002):
+                raise ProviderClientError(f"Cloudflare authentication failed: {msg}", http_code=401)
+            raise ProviderTransientError(f"Cloudflare error: {msg}")
+
+        text_result = ""
+        choices = data.get("choices") or []
+        if choices and isinstance(choices, list):
+            first_choice = choices[0] or {}
+            finish_reason = str(first_choice.get("finish_reason") or "").casefold()
+            if finish_reason in ("length", "max_tokens"):
+                raise ProviderTruncatedError("Cloudflare output truncated: model reached maxOutputTokens limit")
+            if finish_reason in ("content_filter",):
+                raise ProviderSafetyRefusalError("Cloudflare blocked response due to content safety policy")
+            msg_obj = first_choice.get("message") or {}
+            text_result = str(msg_obj.get("content") or "")
+        elif "result" in data and isinstance(data.get("result"), dict):
+            res_obj = data["result"]
+            text_result = str(res_obj.get("response") or "")
+
+        if not text_result.strip():
+            raise ProviderEmptyResponseError("Cloudflare returned empty text response")
+
+        if request.response_format == "json" and request.json_schema:
+            valid, err = validate_structured_output(text_result, request.json_schema)
+            if not valid:
+                raise ProviderSchemaValidationError(f"Cloudflare structured output failed schema validation: {err}")
+
+        usage_raw = data.get("usage") or {}
+        usage = TokenUsage(
+            prompt_tokens=int(usage_raw.get("prompt_tokens") or 0),
+            completion_tokens=int(usage_raw.get("completion_tokens") or 0),
+            total_tokens=int(usage_raw.get("total_tokens") or 0),
+        )
+        return text_result.strip(), usage
+
+
+# ---------------------------------------------------------------------------
 # Gemini Provider Adapter
 # ---------------------------------------------------------------------------
 
@@ -920,21 +1103,59 @@ class OpenAIProviderAdapter:
 
 
 class UnifiedProviderEngine:
-    """Orchestrates primary (Gemini) and fallback (OpenAI) AI completion calls.
+    """Orchestrates primary (Cloudflare Workers AI) and fallback (Gemini) AI completion calls.
     
-    Fixed hierarchy: Gemini is primary, OpenAI is fallback.
+    Default hierarchy: Cloudflare Workers AI is primary, Google Gemini is fallback.
     """
 
     def __init__(
         self,
         config: UnifiedProviderConfig | None = None,
         *,
+        cloudflare_adapter: CloudflareAIProviderAdapter | None = None,
         gemini_adapter: GeminiProviderAdapter | None = None,
         openai_adapter: OpenAIProviderAdapter | None = None,
     ) -> None:
         self.config = config or load_unified_provider_config()
+        self.cloudflare_adapter = cloudflare_adapter or CloudflareAIProviderAdapter()
         self.gemini_adapter = gemini_adapter or GeminiProviderAdapter()
         self.openai_adapter = openai_adapter or OpenAIProviderAdapter()
+
+    def _is_enabled(self, provider: str) -> bool:
+        if provider == "cloudflare":
+            return self.config.cloudflare_enabled
+        if provider == "gemini":
+            return self.config.gemini_enabled
+        if provider == "openai":
+            return self.config.openai_enabled
+        return False
+
+    def _get_model(self, provider: str) -> str:
+        if provider == "cloudflare":
+            return self.config.cloudflare_model
+        if provider == "gemini":
+            return self.config.gemini_model
+        if provider == "openai":
+            return self.config.openai_model
+        return "unknown"
+
+    def _has_credentials(self, provider: str) -> bool:
+        if provider == "cloudflare":
+            return bool(self.config.cloudflare_account_id and self.config.cloudflare_api_token)
+        if provider == "gemini":
+            return bool(self.config.gemini_api_key)
+        if provider == "openai":
+            return bool(self.config.openai_api_key)
+        return False
+
+    def _get_adapter(self, provider: str) -> Any:
+        if provider == "cloudflare":
+            return self.cloudflare_adapter
+        if provider == "gemini":
+            return self.gemini_adapter
+        if provider == "openai":
+            return self.openai_adapter
+        return None
 
     # -- Public API -----------------------------------------------------
 
@@ -972,7 +1193,7 @@ class UnifiedProviderEngine:
 
         attempts: list[ProviderAttempt] = []
 
-        # 3. Primary Provider Loop (Gemini)
+        # 3. Primary Provider Loop
         primary_success = False
         primary_response_text = ""
         primary_usage = TokenUsage()
@@ -980,19 +1201,30 @@ class UnifiedProviderEngine:
         terminal_outcome: str | None = None
         terminal_detail: str | None = None
 
-        if not self.config.gemini_enabled:
+        primary_name = self.config.effective_primary_provider
+        primary_adapter = self._get_adapter(primary_name)
+        primary_model = self._get_model(primary_name)
+
+        if not self._is_enabled(primary_name):
             attempts.append(ProviderAttempt(
-                provider="gemini",
-                model=self.config.gemini_model,
+                provider=primary_name,
+                model=primary_model,
                 status="disabled",
-                error_detail="Gemini primary provider is disabled in configuration",
+                error_detail=f"{primary_name} primary provider is disabled in configuration",
             ))
-        elif not self.config.gemini_api_key:
+        elif not self._has_credentials(primary_name):
             attempts.append(ProviderAttempt(
-                provider="gemini",
-                model=self.config.gemini_model,
+                provider=primary_name,
+                model=primary_model,
                 status="missing_key",
-                error_detail="GEMINI_API_KEY is not configured",
+                error_detail=f"{primary_name} credentials are not configured",
+            ))
+        elif primary_adapter is None:
+            attempts.append(ProviderAttempt(
+                provider=primary_name,
+                model=primary_model,
+                status="client_error",
+                error_detail=f"Unknown primary provider: {primary_name}",
             ))
         else:
             retries = 0
@@ -1000,10 +1232,10 @@ class UnifiedProviderEngine:
                 remaining_time = deadline - time.perf_counter()
                 if remaining_time <= 0:
                     attempts.append(ProviderAttempt(
-                        provider="gemini",
-                        model=self.config.gemini_model,
+                        provider=primary_name,
+                        model=primary_model,
                         status="timeout",
-                        error_detail="Overall request deadline exceeded before Gemini call",
+                        error_detail=f"Overall request deadline exceeded before {primary_name} call",
                         retry_count=retries,
                     ))
                     allow_fallback = False
@@ -1014,12 +1246,12 @@ class UnifiedProviderEngine:
                 per_call_timeout = min(self.config.timeout_seconds, remaining_time)
                 t0 = time.perf_counter()
                 try:
-                    text, usage = self.gemini_adapter.execute(request, self.config, timeout=per_call_timeout)
+                    text, usage = primary_adapter.execute(request, self.config, timeout=per_call_timeout)
                     call_ms = round((time.perf_counter() - t0) * 1000.0, 2)
                     if time.perf_counter() > deadline:
                         attempts.append(ProviderAttempt(
-                            provider="gemini",
-                            model=self.config.gemini_model,
+                            provider=primary_name,
+                            model=primary_model,
                             status="timeout",
                             error_detail="Response completed after overall deadline expired",
                             latency_ms=call_ms,
@@ -1030,8 +1262,8 @@ class UnifiedProviderEngine:
                         terminal_detail = "Overall request deadline exceeded"
                         break
                     attempts.append(ProviderAttempt(
-                        provider="gemini",
-                        model=self.config.gemini_model,
+                        provider=primary_name,
+                        model=primary_model,
                         status="success",
                         latency_ms=call_ms,
                         retry_count=retries,
@@ -1043,8 +1275,8 @@ class UnifiedProviderEngine:
                 except ProviderSafetyRefusalError as exc:
                     call_ms = round((time.perf_counter() - t0) * 1000.0, 2)
                     attempts.append(ProviderAttempt(
-                        provider="gemini",
-                        model=self.config.gemini_model,
+                        provider=primary_name,
+                        model=primary_model,
                         status="safety_refusal",
                         latency_ms=call_ms,
                         http_code=exc.http_code,
@@ -1055,13 +1287,13 @@ class UnifiedProviderEngine:
                     allow_fallback = False
                     terminal_outcome = "safety_refusal"
                     terminal_detail = str(exc)
-                    logger.warning("Gemini refused content due to safety. Fallback to OpenAI forbidden.")
+                    logger.warning("%s refused content due to safety. Fallback forbidden.", primary_name)
                     break
                 except ProviderClientError as exc:
                     call_ms = round((time.perf_counter() - t0) * 1000.0, 2)
                     attempts.append(ProviderAttempt(
-                        provider="gemini",
-                        model=self.config.gemini_model,
+                        provider=primary_name,
+                        model=primary_model,
                         status="client_error",
                         latency_ms=call_ms,
                         http_code=exc.http_code,
@@ -1072,27 +1304,27 @@ class UnifiedProviderEngine:
                     allow_fallback = False
                     terminal_outcome = "invalid_request" if exc.http_code == 400 else "error"
                     terminal_detail = str(exc)
-                    logger.warning("Gemini returned client error HTTP %s. Fallback forbidden.", exc.http_code)
+                    logger.warning("%s returned client error HTTP %s. Fallback forbidden.", primary_name, exc.http_code)
                     break
                 except ProviderRateLimitError as exc:
                     call_ms = round((time.perf_counter() - t0) * 1000.0, 2)
                     attempts.append(ProviderAttempt(
-                        provider="gemini",
-                        model=self.config.gemini_model,
+                        provider=primary_name,
+                        model=primary_model,
                         status="rate_limited",
                         latency_ms=call_ms,
                         http_code=exc.http_code,
                         error_detail=str(exc),
                         retry_count=retries,
                     ))
-                    # 429 permits immediate fallback to OpenAI without retrying Gemini
-                    logger.info("Gemini rate limited (HTTP 429). Triggering fallback to OpenAI.")
+                    # 429 permits immediate fallback without retrying primary
+                    logger.info("%s rate limited (HTTP 429). Triggering fallback.", primary_name)
                     break
                 except ProviderTimeoutError as exc:
                     call_ms = round((time.perf_counter() - t0) * 1000.0, 2)
                     attempts.append(ProviderAttempt(
-                        provider="gemini",
-                        model=self.config.gemini_model,
+                        provider=primary_name,
+                        model=primary_model,
                         status="timeout",
                         latency_ms=call_ms,
                         http_code=exc.http_code,
@@ -1107,25 +1339,25 @@ class UnifiedProviderEngine:
                 except (ProviderSchemaValidationError, ProviderTruncatedError) as exc:
                     call_ms = round((time.perf_counter() - t0) * 1000.0, 2)
                     attempts.append(ProviderAttempt(
-                        provider="gemini",
-                        model=self.config.gemini_model,
+                        provider=primary_name,
+                        model=primary_model,
                         status=exc.error_code,
                         latency_ms=call_ms,
                         http_code=exc.http_code,
                         error_detail=str(exc),
                         retry_count=retries,
                     ))
-                    # STRICT BOUNDARY: Schema validation failures and truncated output must NOT fall back to OpenAI
+                    # STRICT BOUNDARY: Schema validation failures and truncated output must NOT fall back
                     allow_fallback = False
                     terminal_outcome = exc.error_code
                     terminal_detail = str(exc)
-                    logger.warning("Gemini output failed validation (%s). Fallback forbidden.", exc.error_code)
+                    logger.warning("%s output failed validation (%s). Fallback forbidden.", primary_name, exc.error_code)
                     break
                 except ProviderTransientError as exc:
                     call_ms = round((time.perf_counter() - t0) * 1000.0, 2)
                     attempts.append(ProviderAttempt(
-                        provider="gemini",
-                        model=self.config.gemini_model,
+                        provider=primary_name,
+                        model=primary_model,
                         status=exc.error_code,
                         latency_ms=call_ms,
                         http_code=exc.http_code,
@@ -1140,11 +1372,11 @@ class UnifiedProviderEngine:
 
         if primary_success:
             total_ms = round((time.perf_counter() - t_overall_start) * 1000.0, 2)
-            cost = estimate_cost_usd("gemini", self.config.gemini_model, primary_usage)
+            cost = estimate_cost_usd(primary_name, primary_model, primary_usage)
             response = ProviderResponse(
                 content=primary_response_text,
-                provider="gemini",
-                model=self.config.gemini_model,
+                provider=primary_name,
+                model=primary_model,
                 outcome="success",
                 latency_ms=total_ms,
                 usage=primary_usage,
@@ -1169,8 +1401,12 @@ class UnifiedProviderEngine:
             self._record_observability(request, response)
             return response
 
-        # 4. Fallback Provider Loop (OpenAI)
-        if not self.config.fallback_enabled:
+        # 4. Fallback Provider Loop
+        fallback_name = self.config.effective_fallback_provider
+        fallback_adapter = self._get_adapter(fallback_name)
+        fallback_model = self._get_model(fallback_name)
+
+        if not self.config.fallback_enabled or fallback_name == "none" or fallback_adapter is None:
             total_ms = round((time.perf_counter() - t_overall_start) * 1000.0, 2)
             return ProviderResponse(
                 content="",
@@ -1187,8 +1423,8 @@ class UnifiedProviderEngine:
         if remaining_time <= 0:
             total_ms = round((time.perf_counter() - t_overall_start) * 1000.0, 2)
             attempts.append(ProviderAttempt(
-                provider="openai",
-                model=self.config.openai_model,
+                provider=fallback_name,
+                model=fallback_model,
                 status="timeout",
                 error_detail="Overall request deadline exceeded before fallback call",
             ))
@@ -1202,32 +1438,32 @@ class UnifiedProviderEngine:
                 error_detail="Overall request deadline exceeded",
             )
 
-        logger.info("Engaging fallback provider (OpenAI) after eligible primary failure.")
+        logger.info("Engaging fallback provider (%s) after eligible primary failure.", fallback_name)
 
-        if not self.config.openai_enabled:
+        if not self._is_enabled(fallback_name):
             attempts.append(ProviderAttempt(
-                provider="openai",
-                model=self.config.openai_model,
+                provider=fallback_name,
+                model=fallback_model,
                 status="disabled",
-                error_detail="OpenAI fallback provider is disabled in configuration",
+                error_detail=f"{fallback_name} fallback provider is disabled in configuration",
             ))
-        elif not self.config.openai_api_key:
+        elif not self._has_credentials(fallback_name):
             attempts.append(ProviderAttempt(
-                provider="openai",
-                model=self.config.openai_model,
+                provider=fallback_name,
+                model=fallback_model,
                 status="missing_key",
-                error_detail="OPENAI_API_KEY is not configured",
+                error_detail=f"{fallback_name} credentials are not configured",
             ))
         else:
             t0 = time.perf_counter()
             per_call_timeout = min(self.config.timeout_seconds, remaining_time)
             try:
-                text, usage = self.openai_adapter.execute(request, self.config, timeout=per_call_timeout)
+                text, usage = fallback_adapter.execute(request, self.config, timeout=per_call_timeout)
                 call_ms = round((time.perf_counter() - t0) * 1000.0, 2)
                 if time.perf_counter() > deadline:
                     attempts.append(ProviderAttempt(
-                        provider="openai",
-                        model=self.config.openai_model,
+                        provider=fallback_name,
+                        model=fallback_model,
                         status="timeout",
                         error_detail="Response completed after overall deadline expired",
                         latency_ms=call_ms,
@@ -1236,17 +1472,17 @@ class UnifiedProviderEngine:
                     terminal_detail = "Overall request deadline exceeded"
                 else:
                     attempts.append(ProviderAttempt(
-                        provider="openai",
-                        model=self.config.openai_model,
+                        provider=fallback_name,
+                        model=fallback_model,
                         status="success",
                         latency_ms=call_ms,
                     ))
                     total_ms = round((time.perf_counter() - t_overall_start) * 1000.0, 2)
-                    cost = estimate_cost_usd("openai", self.config.openai_model, usage)
+                    cost = estimate_cost_usd(fallback_name, fallback_model, usage)
                     response = ProviderResponse(
                         content=text,
-                        provider="openai",
-                        model=self.config.openai_model,
+                        provider=fallback_name,
+                        model=fallback_model,
                         outcome="fallback_success",
                         latency_ms=total_ms,
                         usage=usage,
@@ -1258,8 +1494,8 @@ class UnifiedProviderEngine:
             except ProviderSafetyRefusalError as exc:
                 call_ms = round((time.perf_counter() - t0) * 1000.0, 2)
                 attempts.append(ProviderAttempt(
-                    provider="openai",
-                    model=self.config.openai_model,
+                    provider=fallback_name,
+                    model=fallback_model,
                     status="safety_refusal",
                     latency_ms=call_ms,
                     http_code=exc.http_code,
@@ -1268,8 +1504,8 @@ class UnifiedProviderEngine:
             except ProviderRateLimitError as exc:
                 call_ms = round((time.perf_counter() - t0) * 1000.0, 2)
                 attempts.append(ProviderAttempt(
-                    provider="openai",
-                    model=self.config.openai_model,
+                    provider=fallback_name,
+                    model=fallback_model,
                     status="rate_limited",
                     latency_ms=call_ms,
                     http_code=exc.http_code,
@@ -1278,8 +1514,8 @@ class UnifiedProviderEngine:
             except ProviderTimeoutError as exc:
                 call_ms = round((time.perf_counter() - t0) * 1000.0, 2)
                 attempts.append(ProviderAttempt(
-                    provider="openai",
-                    model=self.config.openai_model,
+                    provider=fallback_name,
+                    model=fallback_model,
                     status="timeout",
                     latency_ms=call_ms,
                     http_code=exc.http_code,
@@ -1288,8 +1524,8 @@ class UnifiedProviderEngine:
             except ProviderError as exc:
                 call_ms = round((time.perf_counter() - t0) * 1000.0, 2)
                 attempts.append(ProviderAttempt(
-                    provider="openai",
-                    model=self.config.openai_model,
+                    provider=fallback_name,
+                    model=fallback_model,
                     status=exc.error_code,
                     latency_ms=call_ms,
                     http_code=exc.http_code,
@@ -1299,21 +1535,27 @@ class UnifiedProviderEngine:
         # 5. All Eligible Providers Exhausted
         total_ms = round((time.perf_counter() - t_overall_start) * 1000.0, 2)
         active_attempts = [a for a in attempts if a.status not in ("disabled", "missing_key")]
-        any_safety_refusal = any(a.status == "safety_refusal" for a in attempts)
+        refusal_attempt = next((a for a in attempts if a.status == "safety_refusal"), None)
+        any_safety_refusal = refusal_attempt is not None
         is_all_rate_limited = bool(active_attempts) and all(a.status == "rate_limited" for a in active_attempts)
         is_all_timeout = bool(active_attempts) and all(a.status == "timeout" for a in active_attempts)
 
-        if any_safety_refusal:
-            outcome = "safety_refusal"
-        elif is_all_rate_limited:
-            outcome = "rate_limited"
-        elif is_all_timeout:
-            outcome = "timeout"
-        else:
-            outcome = "provider_unavailable"
-
         summary_errors = [f"{a.provider}: {a.status}" for a in attempts]
         error_summary = "; ".join(summary_errors) if summary_errors else "no_attempts"
+
+        if any_safety_refusal:
+            outcome = "safety_refusal"
+            detail = (refusal_attempt.error_detail if refusal_attempt and refusal_attempt.error_detail else "Provider safety refusal")
+        elif is_all_rate_limited:
+            outcome = "rate_limited"
+            detail = f"All AI providers rate limited or quota exhausted ({error_summary})"
+        elif is_all_timeout:
+            outcome = "timeout"
+            detail = f"Overall request deadline exceeded ({error_summary})"
+        else:
+            outcome = "provider_unavailable"
+            detail = f"All AI providers are currently unavailable ({error_summary})"
+
         logger.warning("All AI providers unavailable for request: %s", error_summary)
 
         response = ProviderResponse(
@@ -1323,7 +1565,7 @@ class UnifiedProviderEngine:
             outcome=outcome,
             latency_ms=total_ms,
             attempts=attempts,
-            error_detail=f"All AI providers are currently unavailable ({error_summary})",
+            error_detail=detail,
         )
         self._record_observability(request, response)
         return response

@@ -246,7 +246,7 @@ def _generate_local_answer(
             metrics.fallback_outcome = "invalid_or_unverified_response"
             return result(fallback, "deterministic")
 
-        provider_used = resp.provider if resp.provider in ("gemini", "openai") else "deterministic"
+        provider_used = resp.provider if resp.provider in ("cloudflare", "gemini", "openai") else "deterministic"
         model_used = resp.model or fallback_model
         metrics.provider_used = provider_used
         metrics.model_used = model_used

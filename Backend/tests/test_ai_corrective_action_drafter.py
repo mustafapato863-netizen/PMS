@@ -919,6 +919,12 @@ def test_unconfigured_model_returns_model_unavailable_cleanly(db, monkeypatch):
     monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("OpenAI_API_KEY", raising=False)
+    monkeypatch.delenv("CLOUDFLARE_ACCOUNT_ID", raising=False)
+    monkeypatch.delenv("CLOUDFLARE_API_TOKEN", raising=False)
+    monkeypatch.delenv("CF_ACCOUNT_ID", raising=False)
+    monkeypatch.delenv("CF_API_TOKEN", raising=False)
+    monkeypatch.delenv("CLOUDFLARE_API_KEY", raising=False)
+    monkeypatch.setenv("PMS_AI_CLOUDFLARE_ENABLED", "false")
     from services.ai.provider_engine import reset_unified_provider_engine
     reset_unified_provider_engine()
     _seed(db)

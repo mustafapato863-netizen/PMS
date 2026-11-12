@@ -695,7 +695,7 @@ def _call_local_exploration_model(
         )
         engine = get_unified_provider_engine()
         resp = engine.generate(req)
-        provider = resp.provider if resp.provider in ("gemini", "openai") else "gemini"
+        provider = resp.provider if resp.provider in ("cloudflare", "gemini", "openai") else "cloudflare"
         _last_exploration_provider.set(provider)
         _last_exploration_model.set(resp.model or provider)
         if not resp.is_success:
@@ -2222,7 +2222,7 @@ def _compose_grounded_answer(
         )
         engine = get_unified_provider_engine()
         resp = engine.generate(req)
-        provider = resp.provider if resp.provider in ("gemini", "openai") else "gemini"
+        provider = resp.provider if resp.provider in ("cloudflare", "gemini", "openai") else "cloudflare"
         _last_exploration_provider.set(provider)
         _last_exploration_model.set(resp.model or provider)
         if not resp.is_success:

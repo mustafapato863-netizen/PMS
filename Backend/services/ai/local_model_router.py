@@ -119,7 +119,7 @@ def suggest_intent(question: str) -> LocalIntentResult:
         )
         engine = get_unified_provider_engine()
         resp = engine.generate(req)
-        prov_used = resp.provider if resp.provider in ("gemini", "openai") else "gemini"
+        prov_used = resp.provider if resp.provider in ("cloudflare", "gemini", "openai") else "cloudflare"
         if not resp.is_success:
             reason = resp.outcome or "unavailable_or_invalid"
             return result(None, reason, resp.latency_ms, prov=prov_used)
@@ -132,7 +132,7 @@ def suggest_intent(question: str) -> LocalIntentResult:
             intent = suggestion["intent"]
             if not isinstance(intent, str) or intent not in ALLOWED_INTENTS:
                 return result(None, "invalid_intent", resp.latency_ms, prov=prov_used)
-            return LocalIntentResult(intent, resp.latency_ms, "ok", resp.model or "gemini", provider=prov_used)
+            return LocalIntentResult(intent, resp.latency_ms, "ok", resp.model or "cloudflare", provider=prov_used)
         except (ValueError, TypeError, AttributeError):
             return result(None, "invalid_response", resp.latency_ms, prov=prov_used)
 

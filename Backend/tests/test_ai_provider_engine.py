@@ -32,6 +32,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from services.ai.provider_engine import (
+    CloudflareAIProviderAdapter,
     GeminiProviderAdapter,
     OpenAIProviderAdapter,
     ProviderAttempt,
@@ -68,6 +69,30 @@ def mock_gemini():
 @pytest.fixture
 def mock_openai():
     return MagicMock(spec=OpenAIProviderAdapter)
+
+
+@pytest.fixture
+def mock_cloudflare():
+    return MagicMock(spec=CloudflareAIProviderAdapter)
+
+
+@pytest.fixture
+def cloudflare_config():
+    return UnifiedProviderConfig(
+        primary_provider="cloudflare",
+        fallback_provider="gemini",
+        cloudflare_enabled=True,
+        gemini_enabled=True,
+        openai_enabled=False,
+        fallback_enabled=True,
+        cloudflare_account_id="mock-cf-account",
+        cloudflare_api_token="mock-cf-token",
+        cloudflare_model="@cf/ibm-granite/granite-4.0-h-micro",
+        gemini_model="gemini-2.5-flash",
+        timeout_seconds=5.0,
+        max_retries=1,
+        gemini_api_key="mock-gemini-key",
+    )
 
 
 @pytest.fixture
@@ -1103,4 +1128,223 @@ def test_overall_deadline_expiration_after_completion_returns_timeout(mock_gemin
     assert response.content == ""
     # OpenAI fallback must not be called after deadline expired
     mock_openai.execute.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Cloudflare Workers AI Primary Hierarchy Tests
+# ---------------------------------------------------------------------------
+
+
+def test_cloudflare_primary_success(mock_cloudflare, mock_gemini, cloudflare_config, sample_request):
+    """When Cloudflare Workers AI succeeds, Gemini fallback is never invoked."""
+    mock_cloudflare.execute.return_value = (
+        "Action step 1 from Cloudflare.",
+        TokenUsage(prompt_tokens=15, completion_tokens=12, total_tokens=27),
+    )
+
+    engine = UnifiedProviderEngine(
+        config=cloudflare_config,
+        cloudflare_adapter=mock_cloudflare,
+        gemini_adapter=mock_gemini,
+    )
+    resp = engine.generate(sample_request)
+
+    assert resp.is_success is True
+    assert resp.provider == "cloudflare"
+    assert resp.model == "@cf/ibm-granite/granite-4.0-h-micro"
+    assert resp.outcome == "success"
+    assert resp.content == "Action step 1 from Cloudflare."
+    assert resp.usage.total_tokens == 27
+    assert resp.estimated_cost_usd is not None
+    assert resp.estimated_cost_usd > 0
+    assert len(resp.attempts) == 1
+    assert resp.attempts[0].status == "success"
+
+    mock_cloudflare.execute.assert_called_once()
+    mock_gemini.execute.assert_not_called()
+
+
+def test_cloudflare_transient_error_retries_and_succeeds(mock_cloudflare, mock_gemini, cloudflare_config, sample_request):
+    """Cloudflare transient 503 triggers a bounded retry, succeeding on 2nd attempt."""
+    mock_cloudflare.execute.side_effect = [
+        ProviderTransientError("Cloudflare service temporarily unavailable", http_code=503),
+        ("Recovered action step from Cloudflare.", TokenUsage(prompt_tokens=15, completion_tokens=10, total_tokens=25)),
+    ]
+
+    engine = UnifiedProviderEngine(
+        config=cloudflare_config,
+        cloudflare_adapter=mock_cloudflare,
+        gemini_adapter=mock_gemini,
+    )
+    resp = engine.generate(sample_request)
+
+    assert resp.is_success is True
+    assert resp.provider == "cloudflare"
+    assert resp.outcome == "success"
+    assert resp.content == "Recovered action step from Cloudflare."
+    assert len(resp.attempts) == 2
+    assert resp.attempts[0].status == "transient_error"
+    assert resp.attempts[1].status == "success"
+    assert mock_cloudflare.execute.call_count == 2
+    mock_gemini.execute.assert_not_called()
+
+
+def test_cloudflare_rate_limit_falls_back_to_gemini_immediately(mock_cloudflare, mock_gemini, cloudflare_config, sample_request):
+    """Cloudflare 429 triggers immediate fallback to Gemini without retrying Cloudflare."""
+    mock_cloudflare.execute.side_effect = ProviderRateLimitError("Cloudflare rate limited", http_code=429)
+    mock_gemini.execute.return_value = (
+        "Fallback response from Gemini.",
+        TokenUsage(prompt_tokens=20, completion_tokens=15, total_tokens=35),
+    )
+
+    engine = UnifiedProviderEngine(
+        config=cloudflare_config,
+        cloudflare_adapter=mock_cloudflare,
+        gemini_adapter=mock_gemini,
+    )
+    resp = engine.generate(sample_request)
+
+    assert resp.is_success is True
+    assert resp.provider == "gemini"
+    assert resp.outcome == "fallback_success"
+    assert resp.content == "Fallback response from Gemini."
+    assert len(resp.attempts) == 2
+    assert resp.attempts[0].status == "rate_limited"
+    assert resp.attempts[1].status == "success"
+
+    mock_cloudflare.execute.assert_called_once()
+    mock_gemini.execute.assert_called_once()
+
+
+def test_cloudflare_timeout_falls_back_to_gemini(mock_cloudflare, mock_gemini, cloudflare_config, sample_request):
+    """Cloudflare timeout exhausts retries and then successfully falls back to Gemini."""
+    mock_cloudflare.execute.side_effect = ProviderTimeoutError("Cloudflare timed out", http_code=408)
+    mock_gemini.execute.return_value = (
+        "Gemini response after Cloudflare timeout.",
+        TokenUsage(prompt_tokens=10, completion_tokens=10, total_tokens=20),
+    )
+
+    engine = UnifiedProviderEngine(
+        config=cloudflare_config,
+        cloudflare_adapter=mock_cloudflare,
+        gemini_adapter=mock_gemini,
+    )
+    resp = engine.generate(sample_request)
+
+    assert resp.is_success is True
+    assert resp.provider == "gemini"
+    assert resp.outcome == "fallback_success"
+    assert resp.content == "Gemini response after Cloudflare timeout."
+    # 1 initial + 1 retry on Cloudflare, then 1 on Gemini
+    assert mock_cloudflare.execute.call_count == 2
+    mock_gemini.execute.assert_called_once()
+
+
+def test_cloudflare_missing_key_falls_back_to_gemini(mock_cloudflare, mock_gemini, sample_request):
+    """When Cloudflare credentials are unset, engine skips to Gemini fallback."""
+    cfg = UnifiedProviderConfig(
+        primary_provider="cloudflare",
+        fallback_provider="gemini",
+        cloudflare_enabled=True,
+        gemini_enabled=True,
+        fallback_enabled=True,
+        cloudflare_account_id="",  # unset
+        cloudflare_api_token="",   # unset
+        gemini_api_key="mock-gemini-key",
+    )
+    mock_gemini.execute.return_value = ("Gemini response", TokenUsage(5, 5, 10))
+
+    engine = UnifiedProviderEngine(
+        config=cfg,
+        cloudflare_adapter=mock_cloudflare,
+        gemini_adapter=mock_gemini,
+    )
+    resp = engine.generate(sample_request)
+
+    assert resp.is_success is True
+    assert resp.provider == "gemini"
+    assert resp.outcome == "fallback_success"
+    assert resp.attempts[0].status == "missing_key"
+    mock_cloudflare.execute.assert_not_called()
+    mock_gemini.execute.assert_called_once()
+
+
+def test_cloudflare_client_error_forbids_fallback(mock_cloudflare, mock_gemini, cloudflare_config, sample_request):
+    """Cloudflare 400 Bad Request is a client error that strictly forbids fallback to Gemini."""
+    mock_cloudflare.execute.side_effect = ProviderClientError("Cloudflare 400 Bad Request", http_code=400)
+
+    engine = UnifiedProviderEngine(
+        config=cloudflare_config,
+        cloudflare_adapter=mock_cloudflare,
+        gemini_adapter=mock_gemini,
+    )
+    resp = engine.generate(sample_request)
+
+    assert resp.is_success is False
+    assert resp.outcome == "invalid_request"
+    mock_cloudflare.execute.assert_called_once()
+    mock_gemini.execute.assert_not_called()
+
+
+def test_cloudflare_safety_refusal_forbids_fallback(mock_cloudflare, mock_gemini, cloudflare_config, sample_request):
+    """Cloudflare safety refusal is terminal and strictly forbids fallback to Gemini."""
+    mock_cloudflare.execute.side_effect = ProviderSafetyRefusalError("Cloudflare blocked prompt due to content filter")
+
+    engine = UnifiedProviderEngine(
+        config=cloudflare_config,
+        cloudflare_adapter=mock_cloudflare,
+        gemini_adapter=mock_gemini,
+    )
+    resp = engine.generate(sample_request)
+
+    assert resp.is_success is False
+    assert resp.outcome == "safety_refusal"
+    assert "content filter" in (resp.error_detail or "")
+    mock_cloudflare.execute.assert_called_once()
+    mock_gemini.execute.assert_not_called()
+
+
+def test_cloudflare_adapter_execute_direct():
+    """Unit test CloudflareAIProviderAdapter.execute with mock HTTP response."""
+    adapter = CloudflareAIProviderAdapter()
+
+    fake_resp_body = json.dumps({
+        "choices": [
+            {
+                "message": {"role": "assistant", "content": "Direct Cloudflare output"},
+                "finish_reason": "stop",
+            }
+        ],
+        "usage": {"prompt_tokens": 12, "completion_tokens": 8, "total_tokens": 20},
+        "success": True,
+    }).encode("utf-8")
+
+    mock_resp = MagicMock()
+    mock_resp.read.side_effect = [fake_resp_body, b""]
+    mock_resp.__enter__.return_value = mock_resp
+    mock_resp.__exit__.return_value = False
+
+    mock_client = MagicMock(return_value=mock_resp)
+    adapter._http_client = mock_client
+
+    cfg = UnifiedProviderConfig(
+        cloudflare_account_id="test-account-123",
+        cloudflare_api_token="test-token-456",
+        cloudflare_model="@cf/ibm-granite/granite-4.0-h-micro",
+    )
+    req = ProviderRequest(messages=[ProviderMessage(role="user", content="Hello")])
+
+    text, usage = adapter.execute(req, cfg, timeout=5.0)
+
+    assert text == "Direct Cloudflare output"
+    assert usage.total_tokens == 20
+    assert usage.prompt_tokens == 12
+    assert usage.completion_tokens == 8
+
+    # Verify HTTP request details
+    call_args = mock_client.call_args
+    req_sent = call_args[0][0]
+    assert "https://api.cloudflare.com/client/v4/accounts/test-account-123/ai/v1/chat/completions" in req_sent.full_url
+    assert req_sent.get_header("Authorization") == "Bearer test-token-456"
+
 
