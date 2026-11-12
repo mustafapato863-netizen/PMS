@@ -121,7 +121,7 @@ function resolveAiReportingPeriod(month: string, employee: TeamAgentRow | null):
   return { month: monthName, year };
 }
 
-const EmployeeActionModal = ({ employee, month, teamWeights, onClose, onSaved, editAction }: EmployeeActionModalProps) => {
+const EmployeeActionModalBody = ({ employee, month, teamWeights, onClose, onSaved, editAction }: EmployeeActionModalProps) => {
   const { saveAction, updateAction, isSaving } = useActionStore();
   const { currentUser } = useAuth();
   const { correctiveActionPilotEnabled, ready: isAiAvailabilityReady } = useAiAvailability();
@@ -132,12 +132,6 @@ const EmployeeActionModal = ({ employee, month, teamWeights, onClose, onSaved, e
   const [pendingDraft, setPendingDraft] = useState<{ actionType: ActionType; actionDescription: string } | null>(null);
 
   const aiReportingPeriod = useMemo(() => resolveAiReportingPeriod(month, employee), [month, employee]);
-  // A replacement confirmation must never carry over to another employee or period.
-  useEffect(() => {
-    setAiCardDismissed(false);
-    setPendingDraft(null);
-    setShowOverwriteConfirm(false);
-  }, [employee?.id, month]);
   const [actionType, setActionType] = useState<ActionType>(editAction ? editAction.action_type : 'Coaching');
   const [actionText, setActionText] = useState(editAction ? editAction.action_text : '');
   const [rootCauseNote, setRootCauseNote] = useState(editAction ? editAction.root_cause_note : '');
@@ -672,6 +666,15 @@ const EmployeeActionModal = ({ employee, month, teamWeights, onClose, onSaved, e
     </OverlayPortal>
   );
 };
+
+// A change of employee, reporting period, or existing action starts a new modal
+// state, so pending AI drafts and confirmations cannot cross subjects.
+const EmployeeActionModal = (props: EmployeeActionModalProps) => (
+  <EmployeeActionModalBody
+    key={JSON.stringify([props.employee?.id ?? null, props.month, props.editAction?.id ?? null])}
+    {...props}
+  />
+);
 
 function TrackPlanFields({
   team,
