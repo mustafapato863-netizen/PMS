@@ -4,7 +4,7 @@
 This Pull Request resolves all review findings for **Phase 1 (Live Cloudflare Verification)** and **Phase 2 (Provider Optimization)** of the PMS AI integration. It solidifies the primary AI provider as **Cloudflare Workers AI** (`@cf/ibm-granite/granite-4.0-h-micro`), preserves **Google Gemini** as the independent secondary fallback provider, guarantees strict enterprise data safety, eliminates deadlocks and stale diagnostic states, hardens administrative diagnostic endpoints, and aligns model pricing with official upstream provider documentation.
 
 - **Baseline Commit SHA:** `eb502a7f017d31ad7123077c6629d01f46406c35`
-- **Head Commit SHA:** `dd7d4c67fbf0728eba67872da9a5dbed5b7160ea`
+- **Head Commit SHA:** `b9886e4729bae416c2d5bfacf6590b03bf119c1a`
 - **Branch:** `feat/pms-ai-live-verification-optimization`
 - **Status:** Draft Pull Request (`isDraft: true`) — Preserved for Final Human Review.
 - **Production Guardrails:** AI remains **Admin-only** and **strictly default-off** (`ai_enabled=false`, `ai_corrective_action_pilot_enabled=false`). Zero database migrations, zero scoring alterations, and zero real employee data processed.
@@ -116,11 +116,12 @@ If unexpected regressions occur:
 - **Action Required:** Human reviewer inspection and explicit approval. Do NOT auto-merge. PR remains in draft.
 
 
-## Additional four-point hardening — 12 November 2026
+## Additional Hardening & CI Remediation — 12 November 2026
 
 1. All workers now rely on an atomic Redis daily budget for live AI verification; if Redis is unavailable, the endpoint fails closed (503).
 2. Both verification requests share a single monotonic time budget; response reads use remaining timeout and are checked after completion. OS-level blocking I/O is not a hard real-time cancellation guarantee.
 3. The rollback playbook creates an isolated revert branch from origin/main and respects the merge method.
 4. Google confirms Gemini 2.5 Flash automatic routing to 3.5 Flash-Lite starts **1 December 2026**. https://ai.google.dev/gemini-api/docs/models/gemini-2.5-flash
+5. Preserved deadline error classification in `Backend/scripts/verify_cloudflare_ai.py`: when the cooperative verification deadline is exceeded, the error is classified as `"Overall live verification deadline exceeded"` rather than generic `"TimeoutError"`, resolving the mock assertion in `test_12_verify_cloudflare_ai_script_mocked` and bringing backend CI to 2,803 passed (0 failures).
 
 No production deployment, production setting change, AI user enablement, or production database mutation is included in this follow-up.
