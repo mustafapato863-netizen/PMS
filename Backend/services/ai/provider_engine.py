@@ -267,6 +267,7 @@ class UnifiedProviderConfig:
     cloudflare_account_id: str = ""
     cloudflare_api_token: str = ""
     cloudflare_model: str = "@cf/ibm-granite/granite-4.0-h-micro"
+    cloudflare_alter_model: str = "@cf/zai-org/glm-4.7-flash"
     gemini_model: str = "gemini-2.5-flash"
     openai_model: str = "gpt-4o-mini"
     timeout_seconds: float = 10.0
@@ -329,6 +330,13 @@ def load_unified_provider_config() -> UnifiedProviderConfig:
         or "@cf/ibm-granite/granite-4.0-h-micro"
     ).strip()
 
+    cloudflare_alter_model = (
+        os.environ.get("CLOUDFLARE_AI_MODEL_ALTER")
+        or os.environ.get("CF_AI_MODEL_ALTER")
+        or os.environ.get("CLOUDFLARE_MODEL_ALTER")
+        or "@cf/zai-org/glm-4.7-flash"
+    ).strip()
+
     gemini_model = (
         os.environ.get("PMS_GEMINI_MODEL")
         or os.environ.get("PMS_AI_GEMINI_MODEL")
@@ -381,6 +389,7 @@ def load_unified_provider_config() -> UnifiedProviderConfig:
         cloudflare_account_id=cloudflare_account_id,
         cloudflare_api_token=cloudflare_api_token,
         cloudflare_model=cloudflare_model,
+        cloudflare_alter_model=cloudflare_alter_model,
         gemini_model=gemini_model,
         openai_model=openai_model,
         timeout_seconds=timeout_seconds,
@@ -735,7 +744,11 @@ class CloudflareAIProviderAdapter:
         if not config.cloudflare_api_token:
             raise ProviderClientError("Cloudflare API Token is not configured", http_code=401)
 
-        model = config.cloudflare_model or "@cf/ibm-granite/granite-4.0-h-micro"
+        model = (
+            getattr(request, "model", None)
+            or config.cloudflare_model
+            or "@cf/ibm-granite/granite-4.0-h-micro"
+        )
         url = f"https://api.cloudflare.com/client/v4/accounts/{config.cloudflare_account_id}/ai/v1/chat/completions"
 
         messages = []
