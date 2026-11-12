@@ -90,6 +90,37 @@ const formatKpiValue = (label: string, actual: number, target: number, unit: str
   return `${formattedActual} / ${formattedTarget}`;
 };
 
+/** Only send a confirmed reporting period to the AI. Never invent a year. */
+function resolveAiReportingPeriod(month: string, employee: TeamAgentRow | null): { month: string; year: number } | null {
+  const raw = (month || employee?.month || employee?.raw?.identity?.month || '').trim();
+  const monthNames = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December',
+  ];
+
+  const exactKey = /^(20\\d{2})-(0[1-9]|1[0-2])$/.exec(raw);
+  if (exactKey) return { month: monthNames[Number(exactKey[2]) - 1], year: Number(exactKey[1]) };
+
+  const named = /^(January|February|March|April|May|June|July|August|September|October|November|December)(?:\\s+(20\\d{2}))?$/i.exec(raw);
+  if (!named) return null;
+  const monthName = monthNames.find((item) => item.toLowerCase() === named[1].toLowerCase());
+  if (!monthName) return null;
+
+  // A named-month selector often has no year. Use only a year present in the
+  // actual performance record, or an explicitly dated employee month.
+  const rowMonth = (employee?.month || '').trim();
+  const rowPeriod = /^(January|February|March|April|May|June|July|August|September|October|November|December)\\s+(20\\d{2})$/i.exec(rowMonth);
+  const rowYear = rowPeriod && rowPeriod[1].toLowerCase() === monthName.toLowerCase()
+    ? Number(rowPeriod[2])
+    : null;
+  const rawYear = employee?.raw?.identity?.month?.toLowerCase() === monthName.toLowerCase()
+    ? employee?.raw?.year
+    : undefined;
+  const year = named[2] ? Number(named[2]) : (rowYear ?? rawYear);
+  if (!Number.isInteger(year) || !year || year < 2000 || year > 2100) return null;
+  return { month: monthName, year };
+}
+
 const EmployeeActionModal = ({ employee, month, teamWeights, onClose, onSaved, editAction }: EmployeeActionModalProps) => {
   const { saveAction, updateAction, isSaving } = useActionStore();
   const { currentUser } = useAuth();
@@ -99,13 +130,7 @@ const EmployeeActionModal = ({ employee, month, teamWeights, onClose, onSaved, e
   const [showOverwriteConfirm, setShowOverwriteConfirm] = useState(false);
   const [pendingDraft, setPendingDraft] = useState<{ actionType: ActionType; actionDescription: string } | null>(null);
 
-  const { parsedMonth, parsedYear } = useMemo(() => {
-    const raw = month || employee?.month || '';
-    const yearMatch = raw.match(/\b(20\d\d)\b/);
-    const year = yearMatch ? parseInt(yearMatch[1], 10) : 2026;
-    const cleanMonth = raw.replace(/\b(20\d\d)\b/, '').trim() || 'September';
-    return { parsedMonth: cleanMonth, parsedYear: year };
-  }, [month, employee?.month]);
+  const aiReportingPeriod = useMemo(() => resolveAiReportingPeriod(month, employee), [month, employee]);
   const [actionType, setActionType] = useState<ActionType>(editAction ? editAction.action_type : 'Coaching');
   const [actionText, setActionText] = useState(editAction ? editAction.action_text : '');
   const [rootCauseNote, setRootCauseNote] = useState(editAction ? editAction.root_cause_note : '');
@@ -209,6 +234,16 @@ const EmployeeActionModal = ({ employee, month, teamWeights, onClose, onSaved, e
     addPriority('Reward', 10);
     return priorities;
   }, [employee, failedKpis]);
+
+  // A display label is not necessarily the canonical backend KPI identifier.
+  // If a source mapping is absent, let the backend select a KPI from evidence.
+  const aiLinkedKpiKey = useMemo(() => {
+    const requested = linkedKpi || failedKpis[0]?.label;
+    if (!requested) return null;
+    return employee?.raw?.kpi_values?.find(
+      (kpi) => kpi.kpi_key === requested || kpi.label === requested
+    )?.kpi_key ?? null;
+  }, [employee, linkedKpi, failedKpis]);
 
   const orderedActionTypes = useMemo(() => {
     return [...ACTION_TYPES].sort((a, b) => (actionPriority.get(b.value) ?? 0) - (actionPriority.get(a.value) ?? 0));
@@ -449,16 +484,22 @@ const EmployeeActionModal = ({ employee, month, teamWeights, onClose, onSaved, e
             </div>
 
             {/* AI Corrective Action Suggestion Card (Admin Only Pilot) */}
-            {isAiPilotVisible && (
+            {isAiPilotVisible && aiReportingPeriod && (
               <CorrectiveActionSuggestionCard
                 employeeId={employee.id || employee.raw?.identity?.employee_id}
                 employeeName={employee.name}
                 team={employee.team}
-                month={parsedMonth}
-                year={parsedYear}
-                linkedKpiKey={linkedKpi || (failedKpis[0]?.label ?? null)}
+                month={aiReportingPeriod.month}
+                year={aiReportingPeriod.year}
+                linkedKpiKey={aiLinkedKpiKey}
                 onApplyDraft={handleApplyDraft}
               />
+            )}
+
+            {isAiPilotVisible && !aiReportingPeriod && (
+              <p role="status" className="rounded-xl border border-[var(--border-light)] bg-[var(--bg-sunken)] px-3 py-2 text-xs text-[var(--text-secondary)]">
+                AI suggestion unavailable: select a reporting month with a verified year. Manual action entry is still available.
+              </p>
             )}
 
             {/* Action Type */}

@@ -167,11 +167,15 @@ function renderModalWithProviders({
   pilotEnabled = true,
   chatEnabled = false,
   ready = true,
+  modalMonth = 'September 2026',
+  modalEmployee = mockEmployee,
 }: {
   role?: string;
   pilotEnabled?: boolean;
   chatEnabled?: boolean;
   ready?: boolean;
+  modalMonth?: string;
+  modalEmployee?: TeamAgentRow;
 } = {}) {
   const authValue = {
     currentUser: { id: 'user-admin', name: 'Admin User', role } as unknown as User,
@@ -204,8 +208,8 @@ function renderModalWithProviders({
     <AuthContext.Provider value={authValue}>
       <AiAvailabilityContext.Provider value={aiAvailabilityValue}>
         <EmployeeActionModal
-          employee={mockEmployee}
-          month="September 2026"
+          employee={modalEmployee}
+          month={modalMonth}
           onClose={vi.fn()}
         />
       </AiAvailabilityContext.Provider>
@@ -273,7 +277,8 @@ describe('CorrectiveActionSuggestionCard Unit Tests', () => {
           employee_id: 'EMP-101',
           linked_kpi_key: 'booking_rate',
         }),
-      })
+      }),
+      { abortBody: true }
     );
   });
 
@@ -594,11 +599,84 @@ describe('CorrectiveActionSuggestionCard Unit Tests', () => {
   });
 });
 
+  it('ignores an old completed response after the selected KPI changes', async () => {
+    const user = userEvent.setup();
+    let finishOldRequest!: (value: MockApiResponse) => void;
+    aiResponseHandler = () => new Promise((resolve) => { finishOldRequest = resolve; });
+    const { rerender } = render(
+      <CorrectiveActionSuggestionCard employeeId="EMP-101" team="Inbound"
+        month="September" year={2026} linkedKpiKey="booking_rate"
+        onApplyDraft={vi.fn()} />
+    );
+    await user.click(screen.getByTestId('generate-suggestion-btn'));
+    rerender(
+      <CorrectiveActionSuggestionCard employeeId="EMP-101" team="Inbound"
+        month="September" year={2026} linkedKpiKey="quality_score"
+        onApplyDraft={vi.fn()} />
+    );
+    finishOldRequest({ success: true, data: createMockSuggestedPayload() });
+    await waitFor(() => {
+      expect(screen.getByTestId('generate-suggestion-btn')).toBeInTheDocument();
+      expect(screen.queryByTestId('ai-card-suggested')).not.toBeInTheDocument();
+    });
+  });
+
+  it('discards stale model responses when an earlier request completes after the current request', async () => {
+    const user = userEvent.setup();
+    let resolveFirst!: (value: MockApiResponse) => void;
+    let resolveSecond!: (value: MockApiResponse) => void;
+    let count = 0;
+    aiResponseHandler = () => new Promise((resolve) => {
+      if (++count === 1) resolveFirst = resolve;
+      else resolveSecond = resolve;
+    });
+    const { rerender } = render(
+      <CorrectiveActionSuggestionCard employeeId="EMP-101" team="Inbound"
+        month="September" year={2026} onApplyDraft={vi.fn()} />
+    );
+    await user.click(screen.getByTestId('generate-suggestion-btn'));
+    rerender(
+      <CorrectiveActionSuggestionCard employeeId="EMP-202" team="Inbound"
+        month="September" year={2026} onApplyDraft={vi.fn()} />
+    );
+    await user.click(screen.getByTestId('generate-suggestion-btn'));
+    resolveFirst({ success: true, data: createMockSuggestedPayload() });
+    expect(screen.getByTestId('ai-card-loading')).toBeInTheDocument();
+    resolveSecond({ success: true, data: createMockSuggestedPayload() });
+    await waitFor(() => expect(screen.getByTestId('ai-card-suggested')).toBeInTheDocument());
+  });
+
 describe('EmployeeActionModal Phase 3 Integration Tests', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     aiResponseHandler = null;
     setupDefaultApiFetch();
+  });
+
+  it('uses source record year for a month-only selector instead of assuming 2026', async () => {
+    const user = userEvent.setup();
+    const previousYearEmployee: TeamAgentRow = {
+      ...mockEmployee,
+      month: 'September',
+      raw: { ...mockEmployee.raw, year: 2025, identity: { ...mockEmployee.raw.identity, month: 'September' } },
+    };
+    renderModalWithProviders({
+      role: 'Admin', pilotEnabled: true, modalMonth: 'September', modalEmployee: previousYearEmployee,
+    });
+    await user.click(screen.getByTestId('generate-suggestion-btn'));
+    const requests = mockApiFetch.mock.calls.filter(([url]) => String(url).includes('/corrective-action-suggestions'));
+    expect(requests).toHaveLength(1);
+    expect(JSON.parse(String(requests[0][1]?.body))).toMatchObject({ month: 'September', year: 2025 });
+  });
+
+  it('keeps the manual form but hides the generator without a verified reporting year', () => {
+    renderModalWithProviders({
+      role: 'Admin', pilotEnabled: true, modalMonth: 'September',
+      modalEmployee: { ...mockEmployee, month: 'September', raw: { ...mockEmployee.raw, year: undefined, identity: { ...mockEmployee.raw.identity, month: 'September' } } },
+    });
+    expect(screen.queryByTestId('generate-suggestion-btn')).not.toBeInTheDocument();
+    expect(screen.getByText(/select a reporting month with a verified year/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /save action/i })).toBeInTheDocument();
   });
 
   it('hides AI suggestion card completely when pilot is disabled', () => {

@@ -24,7 +24,7 @@ export interface CorrectiveActionSuggestionCardProps {
   employeeName?: string | null;
   team: string;
   month: string;
-  year?: number;
+  year: number;
   linkedKpiKey?: string | null;
   onApplyDraft: (draft: { actionType: ActionType; actionDescription: string }) => void;
   onDismiss?: () => void;
@@ -71,7 +71,7 @@ export default function CorrectiveActionSuggestionCard({
   employeeName,
   team,
   month,
-  year = 2026,
+  year,
   linkedKpiKey,
   onApplyDraft,
   onDismiss,
@@ -85,7 +85,7 @@ export default function CorrectiveActionSuggestionCard({
 
   // Stale request / context change protection:
   // Reset state during render when context changes (React recommended pattern)
-  const contextKey = `${employeeId || ''}-${team}-${month}-${year}`;
+  const contextKey = JSON.stringify([employeeId ?? null, team, month, year, linkedKpiKey ?? null]);
   const [prevContextKey, setPrevContextKey] = useState(contextKey);
   if (prevContextKey !== contextKey) {
     setPrevContextKey(contextKey);
@@ -103,7 +103,7 @@ export default function CorrectiveActionSuggestionCard({
         abortControllerRef.current = null;
       }
     };
-  }, [employeeId, team, month, year]);
+  }, [employeeId, team, month, year, linkedKpiKey]);
 
   const handleGenerate = useCallback(async () => {
     if (!team || !month) return;
@@ -135,9 +135,13 @@ export default function CorrectiveActionSuggestionCard({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
           signal: controller.signal,
-        }
+        },
+        { abortBody: true }
       );
 
+      // Some transports and test doubles resolve even after abort. Never show
+      // a response from an obsolete employee, period, KPI, or superseded request.
+      if (controller.signal.aborted || abortControllerRef.current !== controller) return;
       const result = response.data;
       setData(result);
 
@@ -159,6 +163,7 @@ export default function CorrectiveActionSuggestionCard({
           break;
       }
     } catch (err: unknown) {
+      if (controller.signal.aborted || abortControllerRef.current !== controller) return;
       if (err instanceof Error && err.name === 'AbortError') {
         return; // Silent on user cancellation / context switch
       }
@@ -185,7 +190,7 @@ export default function CorrectiveActionSuggestionCard({
       setErrorMessage(message);
       setState('error');
     } finally {
-      abortControllerRef.current = null;
+      if (abortControllerRef.current === controller) abortControllerRef.current = null;
     }
   }, [team, month, year, employeeId, linkedKpiKey]);
 
@@ -318,6 +323,7 @@ export default function CorrectiveActionSuggestionCard({
                     const actualStr = formatKpiEvidenceValue(kpi.actual, kpi.unit);
                     const targetStr = formatKpiEvidenceValue(kpi.target, kpi.unit);
                     const isBelow = kpi.status === 'below_target';
+                    const isMet = kpi.status === 'at_or_above_target';
 
                     return (
                       <div
@@ -336,10 +342,12 @@ export default function CorrectiveActionSuggestionCard({
                             className={`rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
                               isBelow
                                 ? 'bg-rose-500/10 text-rose-700 dark:text-rose-400 border border-rose-500/20'
-                                : 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20'
+                                : isMet
+                                  ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20'
+                                  : 'bg-slate-500/10 text-slate-600 dark:text-slate-300 border border-slate-500/20'
                             }`}
                           >
-                            {isBelow ? 'Below Target' : 'Target Met'}
+                            {isBelow ? 'Below Target' : isMet ? 'Target Met' : 'Unavailable'}
                           </span>
                         </div>
                       </div>
