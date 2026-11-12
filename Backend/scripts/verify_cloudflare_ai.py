@@ -233,8 +233,14 @@ def run_live_verification(
     except urllib.error.HTTPError as exc:
         test_a_res["http_code"] = exc.code
         test_a_res["error"] = f"HTTP Error {exc.code}"
-    except (TimeoutError, urllib.error.URLError) as exc:
-        test_a_res["error"] = f"Connection error / timeout: {type(exc).__name__}"
+    except TimeoutError as exc:
+        test_a_res["error"] = (
+            "Overall live verification deadline exceeded"
+            if "overall live verification deadline exceeded" in str(exc).casefold()
+            else "Cloudflare verification timed out"
+        )
+    except urllib.error.URLError as exc:
+        test_a_res["error"] = f"Connection error: {type(exc).__name__}"
     except Exception as exc:
         test_a_res["error"] = redact_text(str(exc))
     finally:
@@ -359,8 +365,14 @@ def run_live_verification(
     except urllib.error.HTTPError as exc:
         test_b_res["http_code"] = exc.code
         test_b_res["error"] = f"HTTP Error {exc.code}"
-    except (TimeoutError, urllib.error.URLError) as exc:
-        test_b_res["error"] = f"Connection error / timeout: {type(exc).__name__}"
+    except TimeoutError as exc:
+        test_b_res["error"] = (
+            "Overall live verification deadline exceeded"
+            if "overall live verification deadline exceeded" in str(exc).casefold()
+            else "Cloudflare verification timed out"
+        )
+    except urllib.error.URLError as exc:
+        test_b_res["error"] = f"Connection error: {type(exc).__name__}"
     except Exception as exc:
         test_b_res["error"] = redact_text(str(exc))
     finally:
