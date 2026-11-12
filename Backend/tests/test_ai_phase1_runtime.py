@@ -309,5 +309,5 @@ def test_turning_ai_off_and_model_flags_off_returns_cleanly(monkeypatch: pytest.
     assert fallback.provider_used == "deterministic"
     # Since #92, a refused model connection is named specifically instead of
     # collapsing to the generic bucket: the endpoint at 127.0.0.1:9 refuses
-    # the connection, so the fallback outcome is "connection_refused".
-    assert fallback.provider_usage.fallback_outcome == "connection_refused"
+    # or drops the connection, so the fallback outcome is "connection_refused" (Linux RST) or "timeout" (Windows packet drop).
+    assert fallback.provider_usage.fallback_outcome in ("connection_refused", "timeout")

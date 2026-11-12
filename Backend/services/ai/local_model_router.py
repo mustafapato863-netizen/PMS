@@ -6,6 +6,7 @@ PMS remains the source of facts. The model may only return one allowed intent.
 from __future__ import annotations
 
 import json
+import os
 import re
 import time
 from dataclasses import dataclass
@@ -16,6 +17,13 @@ from services.ai.llm_client import (
     local_intent_enabled,
     routing_timeout_seconds,
 )
+from services.ai.provider_engine import (
+    ProviderMessage,
+    ProviderRequest,
+    get_unified_provider_engine,
+)
+
+_ORIGINAL_CHAT_COMPLETION = chat_completion
 
 __all__ = ["ALLOWED_INTENTS", "LocalIntentResult", "build_intent_json_schema", "local_intent_enabled", "suggest_intent"]
 
@@ -94,6 +102,39 @@ def suggest_intent(question: str) -> LocalIntentResult:
         "clarify (ambiguous or missing scope). "
         "Do not answer, calculate, or invent data. /no_think"
     )
+    use_unified = os.environ.get("PMS_AI_UNIFIED_ROUTER", "").strip().lower() in ("1", "true")
+    if use_unified and chat_completion is _ORIGINAL_CHAT_COMPLETION:
+        req = ProviderRequest(
+            messages=[
+                ProviderMessage(role="user", content=question.strip()),
+            ],
+            system_instruction=instruction,
+            response_format="json",
+            json_schema=build_intent_json_schema()["schema"],
+            temperature=0.0,
+            max_tokens=32,
+            timeout_seconds=routing_timeout_seconds(),
+            purpose="intent",
+        )
+        engine = get_unified_provider_engine()
+        resp = engine.generate(req)
+        if not resp.is_success:
+            reason = resp.outcome or "unavailable_or_invalid"
+            return result(None, reason, resp.latency_ms)
+
+        try:
+            cleaned = _JSON_FENCE_RE.sub("", resp.content.strip() if resp.content else "").strip()
+            suggestion = json.loads(cleaned)
+            if not isinstance(suggestion, dict) or set(suggestion) != {"intent"}:
+                return result(None, "invalid_response", resp.latency_ms)
+            intent = suggestion["intent"]
+            if not isinstance(intent, str) or intent not in ALLOWED_INTENTS:
+                return result(None, "invalid_intent", resp.latency_ms)
+            return LocalIntentResult(intent, resp.latency_ms, "ok", resp.model or "gemini")
+        except (ValueError, TypeError, AttributeError):
+            return result(None, "invalid_response", resp.latency_ms)
+
+    # Legacy chat_completion path (used in tests and local llama-server mode)
     call = chat_completion(
         messages=[
             {"role": "system", "content": instruction},

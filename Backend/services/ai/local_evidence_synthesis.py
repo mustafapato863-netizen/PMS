@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import re
 from dataclasses import dataclass
 from typing import Any, Callable
@@ -18,7 +19,14 @@ from services.ai.llm_client import (
     local_synthesis_enabled,
     synthesis_timeout_seconds,
 )
+from services.ai.provider_engine import (
+    ProviderMessage,
+    ProviderRequest,
+    get_unified_provider_engine,
+)
 from services.ai.providers import NarrativeSynthesisResult, ProviderCallMetrics
+
+_ORIGINAL_CHAT_COMPLETION = chat_completion
 
 _number = re.compile(r"\d[\d,]*(?:\.\d+)?")
 _dangerous = re.compile(r"[<>`\n\r]|\b(?:less|fewer|lower|lowest|least|equal|same|tied|tie|not|no|never|without|neither|declin(?:e|ed)|dropped|increased|decreased|difference|gap|percent|percentage)\b|%", re.I)
@@ -200,10 +208,63 @@ def _generate_local_answer(
             "additionalProperties": False,
         },
     }
+    user_payload_str = json.dumps({"question": question[:600], **facts_payload}, ensure_ascii=False)
+
+    use_unified = os.environ.get("PMS_AI_UNIFIED_SYNTHESIS", "").strip().lower() in ("1", "true")
+    if use_unified and chat_completion is _ORIGINAL_CHAT_COMPLETION:
+        req = ProviderRequest(
+            messages=[
+                ProviderMessage(role="user", content=user_payload_str),
+            ],
+            system_instruction=instruction,
+            response_format="json",
+            json_schema=schema["schema"],
+            temperature=0.0,
+            max_tokens=120,
+            timeout_seconds=synthesis_timeout_seconds(),
+            purpose="synthesis",
+        )
+        engine = get_unified_provider_engine()
+        resp = engine.generate(req)
+        metrics.provider_ms = resp.latency_ms
+
+        if not resp.is_success:
+            metrics.fallback_outcome = resp.outcome or "unavailable"
+            if bool(resp.attempts) and any(a.status not in ("missing_key", "disabled") for a in resp.attempts):
+                metrics.provider_calls = 1
+            return result(fallback, "deterministic")
+
+        metrics.provider_calls = 1
+        try:
+            data = json.loads(resp.content or "")
+        except (ValueError, TypeError):
+            metrics.fallback_outcome = "invalid_or_unverified_response"
+            return result(fallback, "deterministic")
+
+        answer = data.get("answer") if isinstance(data, dict) and set(data) == {"answer"} else None
+        if not validator(answer):
+            metrics.fallback_outcome = "invalid_or_unverified_response"
+            return result(fallback, "deterministic")
+
+        provider_used = resp.provider if resp.provider in ("gemini", "openai") else "deterministic"
+        model_used = resp.model or fallback_model
+        metrics.provider_used = provider_used
+        metrics.model_used = model_used
+        metrics.fallback_outcome = "none"
+        return NarrativeSynthesisResult(
+            headline=str(answer).strip(),
+            narrative_bullets=[],
+            suggested_followups=[],
+            provider_used=provider_used,
+            model_used=model_used,
+            metrics=metrics,
+        )
+
+    # Legacy chat_completion path (used in tests and local llama-server mode)
     call = chat_completion(
         messages=[
             {"role": "system", "content": instruction},
-            {"role": "user", "content": json.dumps({"question": question[:600], **facts_payload}, ensure_ascii=False)},
+            {"role": "user", "content": user_payload_str},
         ],
         max_tokens=120,
         temperature=0,
