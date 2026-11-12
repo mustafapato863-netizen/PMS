@@ -63,3 +63,14 @@ jobs:
             PMS_AI_LLM_MAX_CALLS_PER_TURN=${{ vars.PMS_AI_LLM_MAX_CALLS_PER_TURN || '3' }}
             PMS_AI_LLM_CONTEXT=${{ vars.PMS_AI_LLM_CONTEXT || '2048' }}
             PMS_RATE_LIMIT_AI_CHAT_PER_MINUTE=${{ vars.PMS_RATE_LIMIT_AI_CHAT_PER_MINUTE || '20' }}
+            PMS_AI_PRIMARY_PROVIDER=${{ vars.PMS_AI_PRIMARY_PROVIDER || 'cloudflare' }}
+            PMS_AI_FALLBACK_PROVIDER=${{ vars.PMS_AI_FALLBACK_PROVIDER || 'gemini' }}
+            PMS_AI_CLOUDFLARE_ENABLED=${{ vars.PMS_AI_CLOUDFLARE_ENABLED || 'true' }}
+            PMS_AI_GEMINI_ENABLED=${{ vars.PMS_AI_GEMINI_ENABLED || 'true' }}
+            PMS_AI_FALLBACK_ENABLED=${{ vars.PMS_AI_FALLBACK_ENABLED || 'true' }}
+            CLOUDFLARE_ACCOUNT_ID=${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID || '' }}
+            CLOUDFLARE_API_TOKEN=${{ secrets.CLOUDFLARE_API_TOKEN || '' }}
+            CLOUDFLARE_AI_MODEL=${{ vars.CLOUDFLARE_AI_MODEL || '@cf/ibm-granite/granite-4.0-h-micro' }}
+            CLOUDFLARE_AI_MODEL_ALTER=${{ vars.CLOUDFLARE_AI_MODEL_ALTER || '@cf/zai-org/glm-4.7-flash' }}
+            GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY || '' }}
+            PMS_GEMINI_MODEL=${{ vars.PMS_GEMINI_MODEL || 'gemini-2.5-flash' }}
