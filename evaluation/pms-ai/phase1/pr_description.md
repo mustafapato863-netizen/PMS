@@ -19,7 +19,7 @@ This Pull Request resolves all review findings for **Phase 1 (Live Cloudflare Ve
 | **FIX 2** | Cloudflare alternative model (`use_alter_model=True` / GLM) did not consistently record the executed model in telemetry, attempts, response, or pricing. | Implemented authoritative `resolve_provider_model(provider, config, request)` function. Resolved model is propagated to HTTP request, `ProviderAttempt.model`, `ProviderResponse.model`, cost estimation, and observability logs. Unauthorized arbitrary user overrides are rejected with a warning and safely default to server-approved models. | **RESOLVED** |
 | **FIX 3** | In-memory `live_verified` diagnostic state became stale upon credential rotation or config change without cache invalidation. | Implemented cryptographic internal configuration fingerprinting (`_compute_provider_config_fingerprint`) binding cache entries to active credentials, Account ID, and model IDs. Added 900-second freshness TTL (`PMS_AI_VERIFY_CACHE_TTL_SECONDS`). Diagnostics report `credentials_present` with `reason="verification_expired"` when TTL expires. | **RESOLVED** |
 | **FIX 4** | Changing code default fallback model to `gemini-3.5-flash-lite` broke baseline configuration expectations. | Preserved `gemini-2.5-flash` as the code default in `UnifiedProviderConfig` and `services.ai.config`. Full support provided for configuring candidate `gemini-3.5-flash-lite` via `PMS_GEMINI_MODEL`. Tests verify both default preservation and candidate configuration. | **RESOLVED** |
-| **FIX 5** | The live verification endpoint lacked production gating, rate limiting, and had non-reentrant lock deadlocks. | Replaced lock with `threading.RLock()`. Guarded endpoint behind `PMS_AI_LIVE_VERIFY_ENDPOINT_ENABLED` (default: `false`), blocked in `APP_ENV=production` unless `PMS_AI_ALLOW_PRODUCTION_LIVE_VERIFY=true`, added multi-worker daily budget limiting (`PMS_AI_LIVE_VERIFY_DAILY_BUDGET=10`), non-blocking concurrency guard returning HTTP 429, and a strict 5.0s deadline. | **RESOLVED** |
+| **FIX 5** | The live verification endpoint lacked production gating, rate limiting, and had non-reentrant lock deadlocks. | Replaced lock with `threading.RLock()`. Guarded endpoint behind `PMS_AI_LIVE_VERIFY_ENDPOINT_ENABLED` (default: `false`), blocked in `APP_ENV=production` unless `PMS_AI_ALLOW_PRODUCTION_LIVE_VERIFY=true`, added a shared atomic Redis daily budget (fails closed HTTP 503 when missing, max 10 checks/day), non-blocking concurrency guard returning HTTP 429, and one 5.0s overall cooperative deadline across both Cloudflare requests. | **RESOLVED** |
 | **FIX 6** | Live verification script lacked strict JSON schema enforcement, discarded raw responses, and failed noisily without credentials. | Upgraded `Backend/scripts/verify_cloudflare_ai.py` Test B to deterministic synthetic PMS question with strict JSON schema (`additionalProperties: false`, enum intents `['performance_lookup', 'coaching_advice', 'system_status']`). Retains raw response text, tokens, latency, and neurons. Saves machine-readable JSON via `--output`. Returns status `BLOCKED` cleanly when unconfigured. | **RESOLVED** |
 | **FIX 7** | Operational runbook contained stale commit SHAs, outdated pricing, and destructive `git reset --hard` rollback instructions. | Updated `docs/ops/pms-ai-provider-verification.md` with baseline SHA `eb502a7f017d31ad7123077c6629d01f46406c35`, official pricing sources, documented live verification safeguards, and replaced hard reset with safe Dokploy rollback and `git revert` procedures. | **RESOLVED** |
 | **FIX 8** | PR deliverable summary needed reconciliation against all review findings and passing CI verification. | Reconciled all deliverables, verified 100% test pass rate across all suites, documented full merge readiness, and preserved PR in Draft status for human review. | **RESOLVED** |
@@ -70,10 +70,11 @@ If unexpected regressions occur:
 2. **Git Version Control Revert (Audit Trail):**
    If merged to `main`, create a safe revert commit via PR:
    ```bash
-   git checkout main
-   git pull origin main
+   git fetch origin
+   git switch -c revert/pr-110 origin/main
+   # Use '-m 1' only for real merge commits; revert the squash SHA if squash-merged.
    git revert -m 1 <merge_commit_sha>
-   git push origin revert-ai-pr-110
+   git push -u origin revert/pr-110
    ```
 
 ---
@@ -83,7 +84,7 @@ If unexpected regressions occur:
 | Dimension | Risk Description | Severity | Architectural Mitigation |
 |---|---|---|---|
 | **Account-Level Quota** | Cloudflare Workers AI free allowance (10,000 Neurons/day) is enforced per Account ID. If exhausted, all Cloudflare models throttle with HTTP 429. | Medium | Automatic failover to Google Gemini handles 429 immediately without consuming additional Cloudflare timeout budget. |
-| **Upstream Deprecation** | Google AI Studio deprecated `gemini-2.5-flash` for newly created API keys, routing calls to `gemini-3.5-flash-lite`. | Low | `gemini-2.5-flash` is preserved as the repository baseline; setting `PMS_GEMINI_MODEL=gemini-3.5-flash-lite` seamlessly transitions fallback without code changes. |
+| **Upstream Deprecation** | Automatic Gemini 2.5 Flash routing to 3.5 Flash-Lite **starts 1 December 2026** per Google, not already on 12 November. | Low | `gemini-2.5-flash` is preserved as the repository baseline; setting `PMS_GEMINI_MODEL=gemini-3.5-flash-lite` seamlessly transitions fallback without code changes. |
 | **Diagnostic Endpoint Abuse** | `POST /api/ai/diagnostics/verify-live` makes real external calls and could consume provider quota if invoked repeatedly. | Low | 6-layer defense: mandatory Admin role, disabled by default (`PMS_AI_LIVE_VERIFY_ENDPOINT_ENABLED=false`), blocked in production, daily budget limit (10 calls/day), non-blocking concurrency guard (HTTP 429), and 5.0s timeout ceiling. |
 | **Data Privacy on Fallback** | Google AI Studio Free Tier logs prompts for model training. | Critical | Runbook explicitly mandates Paid Tier (Pay-As-You-Go) for production environments containing corporate KPI data. On Paid Tier, Google contractually guarantees zero prompt training. |
 
@@ -107,3 +108,13 @@ If unexpected regressions occur:
 ## Merge Readiness Verdict
 - **Verdict:** `READY FOR FINAL HUMAN REVIEW`
 - **Action Required:** Human reviewer inspection and explicit approval. Do NOT auto-merge. PR remains in draft.
+
+
+## Additional four-point hardening — 12 November 2026
+
+1. All workers now rely on an atomic Redis daily budget for live AI verification; if Redis is unavailable, the endpoint fails closed (503).
+2. Both verification requests share a single monotonic time budget; response reads use remaining timeout and are checked after completion. OS-level blocking I/O is not a hard real-time cancellation guarantee.
+3. The rollback playbook creates an isolated revert branch from origin/main and respects the merge method.
+4. Google confirms Gemini 2.5 Flash automatic routing to 3.5 Flash-Lite starts **1 December 2026**. https://ai.google.dev/gemini-api/docs/models/gemini-2.5-flash
+
+No production deployment, production setting change, AI user enablement, or production database mutation is included in this follow-up.

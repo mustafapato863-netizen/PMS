@@ -148,7 +148,7 @@ We investigated whether `UnifiedProviderEngine` should automatically retry GLM 4
 ### 1. Empirical Model Investigation
 Google Gemini acts as the isolated secondary fallback provider. Testing and official Google AI documentation indicate:
 
-1. **`gemini-2.5-flash`:** Baseline preserved fallback model in the repository configuration. For legacy Google AI Studio accounts, requests continue to function; for newer accounts, Google AI Studio routes requests to `gemini-3.5-flash-lite` billed at Flash-Lite rates.
+1. **`gemini-2.5-flash`:** Baseline preserved fallback model in the repository configuration. For legacy Google AI Studio accounts, requests continue to function; Google documents automatic routing to `gemini-3.5-flash-lite` **starting 1 December 2026**, not yet in effect on 12 November. Check the exact API model and approve migration explicitly. Official notice: https://ai.google.dev/gemini-api/docs/models/gemini-2.5-flash
 2. **`gemini-3.5-flash-lite`:** Recommended next-generation fallback candidate with robust structured JSON output and low latency (~1.1s). Configurable via `PMS_GEMINI_MODEL=gemini-3.5-flash-lite`.
 3. **`gemini-1.5-flash`:** Supported legacy fallback option with verified rates ($0.075 input / $0.30 output per 1M tokens <=128k context).
 
@@ -164,7 +164,7 @@ Pricing sources verified directly from official provider documentation (November
 * **Google Gemini API:**
   * **Billing Unit:** Tokens (per 1,000,000 input/output tokens).
   * **`gemini-3.5-flash-lite`:** $0.30 input / $2.50 output per 1M tokens (<=128k prompt); Free tier allowance: 15 RPM, 500 RPD.
-  * **`gemini-2.5-flash`:** Billed at 3.5 Flash-Lite rates ($0.30 in / $2.50 out per 1M tokens) when routed upstream.
+  * **`gemini-2.5-flash`:** Automatic routing and Flash-Lite billing **start 1 December 2026**; do not apply future pricing to earlier requests.
   * **`gemini-1.5-flash`:** $0.075 input / $0.30 output per 1M tokens (<=128k prompt); Free tier allowance: 15 RPM, 1,500 RPD.
   * **Official Reference:** [Google AI Studio Pricing](https://ai.google.dev/pricing)
 
@@ -172,7 +172,7 @@ Pricing sources verified directly from official provider documentation (November
 |---|---|---|---|---|---|---|
 | `@cf/ibm-granite/granite-4.0-h-micro` | Neurons | 10k Neurons/day | N/A (Neuron-based) | N/A (Neuron-based) | $0.011 / 1k Neurons | Primary Default |
 | `@cf/zai-org/glm-4.7-flash` | Neurons | 10k Neurons/day | N/A (Neuron-based) | N/A (Neuron-based) | $0.011 / 1k Neurons | Alter (Opt-In) |
-| `gemini-2.5-flash` | Tokens | Legacy accounts | $0.30 | $2.50 | N/A | Preserved Baseline Fallback |
+| `gemini-2.5-flash` | Tokens | Legacy access before 1 Dec 2026 | Verify model-specific rate | Verify model-specific rate | N/A | Future auto-route starts 1 Dec 2026 |
 | `gemini-3.5-flash-lite` | Tokens | 15 RPM / 500 RPD | $0.30 | $2.50 | N/A | Candidate Fallback Standard |
 | `gemini-1.5-flash` | Tokens | 15 RPM / 1,500 RPD | $0.075 | $0.30 | N/A | Legacy Fallback |
 
@@ -254,9 +254,9 @@ curl -s -X POST -H "Authorization: Bearer $ADMIN_JWT" https://bkpms.zainx.cloud/
 > 1. **Authentication & Session:** Strictly restricted to authenticated users with the `Admin` role and valid diagnostic session.
 > 2. **Explicit Feature Switch:** Controlled by `PMS_AI_LIVE_VERIFY_ENDPOINT_ENABLED` (default: `false`). Must be explicitly set to `true` to accept calls.
 > 3. **Production Environment Blocking:** In `APP_ENV=production`, calls return HTTP 403 unless explicitly overridden by `PMS_AI_ALLOW_PRODUCTION_LIVE_VERIFY=true`.
-> 4. **Multi-Worker Daily Budget:** Enforces a daily limit (default 10 calls/day, configurable via `PMS_AI_LIVE_VERIFY_DAILY_BUDGET`) across workers, backed by Redis or an in-memory counter. Excess calls return HTTP 429.
+> 4. **Multi-Worker Daily Budget:** Enforces a daily limit (default 10 calls/day, configurable via `PMS_AI_LIVE_VERIFY_DAILY_BUDGET`) across workers, backed by a single atomic Redis counter. If Redis is unavailable the request **fails closed with HTTP 503**, not a per-worker counter. Excess calls return HTTP 429.
 > 5. **Non-Blocking Concurrency Guard:** Rejects overlapping concurrent verification attempts with HTTP 429 without waiting.
-> 6. **Strict 5.0-Second Deadline:** Never blocks worker processes; timeout is strictly capped at 5.0s.
+> 6. **Strict 5.0-Second Deadline:** A single 5-second **cooperative overall deadline** is shared by both requests, with bounded read checks; OS-level blocking DNS and socket operations are not guaranteed hard-cancellable.
 > 7. **Cryptographic Fingerprint & Freshness TTL:** Verification status is cryptographically bound to active provider credentials and models. Any configuration change invalidates the cache immediately. Cached results expire after 900 seconds (configurable via `PMS_AI_VERIFY_CACHE_TTL_SECONDS`), reverting the diagnostic state truthfully to `credentials_present`.
 
 ### 3. Monitoring Application Logs
@@ -323,10 +323,11 @@ If unexpected regressions occur:
 2. **Git Version Control Revert (Clean, Reviewable Audit Trail):**
    If the PR has been merged to `main`, create a safe revert commit via PR:
    ```bash
-   git checkout main
-   git pull origin main
+   git fetch origin
+   git switch -c revert/pr-110 origin/main
+   # Use '-m 1' ONLY for a true merge commit; for squash merges revert the squash SHA.
    git revert -m 1 <merge_commit_sha>
-   git push origin revert-ai-pr-110
+   git push -u origin revert/pr-110
    ```
    Open a pull request to merge the revert, preserving full commit history and review integrity.
 
@@ -353,7 +354,7 @@ TOTAL SUITE:                                                   204 passed (100% 
 | Dimension | Risk Description | Severity | Architectural Mitigation |
 |---|---|---|---|
 | **Account-Level Quota** | Cloudflare Workers AI free allowance (10,000 Neurons/day) is enforced per Account ID. If exhausted, all Cloudflare models throttle with HTTP 429. | Medium | Automatic failover to Google Gemini handles 429 immediately without consuming additional Cloudflare timeout budget. |
-| **Upstream Deprecation** | Google AI Studio deprecated `gemini-2.5-flash` for newly created API keys, routing calls to `gemini-3.5-flash-lite`. | Low | `gemini-2.5-flash` is preserved as the repository baseline; setting `PMS_GEMINI_MODEL=gemini-3.5-flash-lite` seamlessly transitions fallback without code changes. |
+| **Upstream Deprecation** | Gemini 2.5 Flash auto-routing to 3.5 Flash-Lite **starts 1 December 2026** per Google, not already on 12 November. | Low | `gemini-2.5-flash` is preserved as the repository baseline; setting `PMS_GEMINI_MODEL=gemini-3.5-flash-lite` seamlessly transitions fallback without code changes. |
 | **Diagnostic Endpoint Abuse** | `POST /api/ai/diagnostics/verify-live` makes real external calls and could consume provider quota if invoked repeatedly. | Low | 6-layer defense: mandatory Admin role, disabled by default (`PMS_AI_LIVE_VERIFY_ENDPOINT_ENABLED=false`), blocked in production, daily budget limit (10 calls/day), non-blocking concurrency guard (HTTP 429), and 5.0s timeout ceiling. |
 | **Data Privacy on Fallback** | Google AI Studio Free Tier logs prompts for model training. | Critical | Runbook explicitly mandates Paid Tier (Pay-As-You-Go) for production environments containing corporate KPI data. On Paid Tier, Google contractually guarantees zero prompt training. |
 
@@ -373,3 +374,11 @@ Before promoting PR #110 from Draft to Merged and enabling AI in Dokploy product
 3. **Product Owner Sign-Off:**
    - Authorize activation of `PMS_GEMINI_MODEL=gemini-3.5-flash-lite` in Dokploy environment variables.
    - Authorize switching `ai_enabled` to `true` in the database when the Phase 3 administrative rollout commences.
+
+
+### Final four-point review follow-up (12 November 2026)
+
+- Live verification now requires atomic shared Redis quota (maximum 10 calls per UTC day) and **fails closed** on Redis outages; no process-local budget fallback.
+- Both synthetic Cloudflare calls share one monotonic overall timeout, with bounded reads and remaining-time checks. Blocking DNS/OS operations are not hard wall-clock cancellable.
+- The documented rollback creates a new review branch first; use the correct revert command for the merge method, not a hard reset or direct push to main.
+- Google documents Gemini 2.5 Flash automatic routing to 3.5 Flash-Lite **starting 1 December 2026**: https://ai.google.dev/gemini-api/docs/models/gemini-2.5-flash
