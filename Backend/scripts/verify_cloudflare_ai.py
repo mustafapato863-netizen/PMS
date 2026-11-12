@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import time
 import urllib.error
@@ -39,6 +40,7 @@ def redact_text(text: str | None) -> str:
     cleaned = re.sub(r"cfut_[A-Za-z0-9_-]{20,}", "cfut_***REDACTED***", str(text))
     cleaned = re.sub(r"Bearer\s+[A-Za-z0-9_-]{20,}", "Bearer ***REDACTED***", cleaned)
     cleaned = re.sub(r"AIzaSy[A-Za-z0-9_-]{20,}", "AIzaSy***REDACTED***", cleaned)
+    cleaned = re.sub(r"(accounts/)[0-9a-f]{32}(/ai)", r"\1***REDACTED***\2", cleaned, flags=re.IGNORECASE)
     return cleaned
 
 
@@ -246,9 +248,11 @@ def run_live_verification(
                     test_b_res["completion_tokens"] = int(usage_b.get("completion_tokens") or 0)
                     test_b_res["neurons"] = usage_b.get("neurons")
 
-                    # Programmatic JSON validation
+                    # Programmatic JSON validation (strip <think> reasoning blocks and markdown fences)
+                    cleaned_b = re.sub(r"<think\b[^>]*>.*?</think>", "", content_b, flags=re.DOTALL | re.IGNORECASE)
+                    cleaned_b = re.sub(r"^```(?:json)?\s*|\s*```$", "", cleaned_b.strip(), flags=re.IGNORECASE).strip()
                     try:
-                        parsed_b = json.loads(content_b)
+                        parsed_b = json.loads(cleaned_b)
                         if isinstance(parsed_b, dict) and "intent" in parsed_b and "requires_data" in parsed_b:
                             if isinstance(parsed_b["intent"], str) and isinstance(parsed_b["requires_data"], bool):
                                 test_b_res["parsed"] = parsed_b

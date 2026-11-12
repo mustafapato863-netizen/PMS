@@ -328,7 +328,7 @@ class UnifiedProviderConfig:
     cloudflare_api_token: str = ""
     cloudflare_model: str = "@cf/ibm-granite/granite-4.0-h-micro"
     cloudflare_alter_model: str = "@cf/zai-org/glm-4.7-flash"
-    gemini_model: str = "gemini-2.5-flash"
+    gemini_model: str = "gemini-3.5-flash-lite"
     timeout_seconds: float = 10.0
     max_retries: int = 1
     gemini_api_key: str = ""
@@ -397,7 +397,7 @@ def load_unified_provider_config() -> UnifiedProviderConfig:
         os.environ.get("PMS_GEMINI_MODEL")
         or os.environ.get("PMS_AI_GEMINI_MODEL")
         or os.environ.get("GEMINI_MODEL")
-        or "gemini-2.5-flash"
+        or "gemini-3.5-flash-lite"
     ).strip()
 
     try:
@@ -660,8 +660,10 @@ def validate_structured_output(text: str, schema: dict[str, Any] | None) -> tupl
     """Validate that text is valid JSON and satisfies requested schema properties."""
     if not text or not text.strip():
         return False, "Empty content returned"
+    cleaned = re.sub(r"<think\b[^>]*>.*?</think>", "", text, flags=re.DOTALL | re.IGNORECASE)
+    cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", cleaned.strip(), flags=re.IGNORECASE).strip()
     try:
-        data = json.loads(text)
+        data = json.loads(cleaned)
     except (json.JSONDecodeError, TypeError, ValueError):
         return False, "Response is not valid JSON"
 
@@ -1350,6 +1352,7 @@ class UnifiedProviderEngine:
                 outcome="success",
                 latency_ms=total_ms,
                 usage=primary_usage,
+                neurons=primary_usage.neurons,
                 estimated_cost_usd=cost,
                 attempts=attempts,
             )
@@ -1388,15 +1391,16 @@ class UnifiedProviderEngine:
                 error_detail="Primary provider failed and fallback is disabled",
             )
 
-        # Check overall deadline before initiating fallback
+        # Check overall deadline before initiating fallback (require at least 1.5s)
         remaining_time = deadline - time.perf_counter()
-        if remaining_time <= 0:
+        MIN_FALLBACK_DEADLINE_SECONDS = 1.5
+        if remaining_time < MIN_FALLBACK_DEADLINE_SECONDS:
             total_ms = round((time.perf_counter() - t_overall_start) * 1000.0, 2)
             attempts.append(ProviderAttempt(
                 provider=fallback_name,
                 model=fallback_model,
                 status="timeout",
-                error_detail="Overall request deadline exceeded before fallback call",
+                error_detail=f"Remaining deadline ({remaining_time:.2f}s) insufficient for fallback call",
             ))
             return ProviderResponse(
                 content="",
@@ -1452,6 +1456,11 @@ class UnifiedProviderEngine:
                     ))
                     total_ms = round((time.perf_counter() - t_overall_start) * 1000.0, 2)
                     cost = estimate_cost_usd(fallback_name, fallback_model, usage)
+                    try:
+                        from services.ai.llm_client import record_fallback_reason
+                        record_fallback_reason(f"fallback_active:{fallback_name}")
+                    except Exception:
+                        pass
                     response = ProviderResponse(
                         content=text,
                         provider=fallback_name,
@@ -1459,6 +1468,7 @@ class UnifiedProviderEngine:
                         outcome="fallback_success",
                         latency_ms=total_ms,
                         usage=usage,
+                        neurons=usage.neurons,
                         estimated_cost_usd=cost,
                         attempts=attempts,
                     )

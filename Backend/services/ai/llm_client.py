@@ -36,19 +36,32 @@ _FALSY = {"0", "false", "no", "off", "disabled"}
 
 _fallback_lock = threading.Lock()
 _last_fallback_reason: str = "none"
+_last_fallback_time: float = 0.0
 
 
-def get_recent_fallback_reason() -> str:
+def get_recent_fallback_reason(ttl_seconds: float = 300.0) -> str:
+    """Return recent fallback reason if within the active sliding window (default 5 minutes)."""
     with _fallback_lock:
-        return _last_fallback_reason
+        if _last_fallback_reason != "none" and (time.time() - _last_fallback_time) < ttl_seconds:
+            return _last_fallback_reason
+        return "none"
 
 
 def record_fallback_reason(reason: str | None) -> None:
     """Remember why the most recent provider call fell back (process-local)."""
-    global _last_fallback_reason
+    global _last_fallback_reason, _last_fallback_time
     if reason:
         with _fallback_lock:
             _last_fallback_reason = str(reason)[:80]
+            _last_fallback_time = time.time()
+
+
+def clear_fallback_reason() -> None:
+    """Clear recorded fallback state (useful for test resets)."""
+    global _last_fallback_reason, _last_fallback_time
+    with _fallback_lock:
+        _last_fallback_reason = "none"
+        _last_fallback_time = 0.0
 
 
 def flag_enabled(name: str) -> bool:
@@ -292,7 +305,10 @@ def provider_status(config: UnifiedProviderConfig | None = None) -> dict[str, ob
             reason = "no_credentials_configured"
     else:
         # Credentials are present for at least one provider
-        if live_info is not None:
+        if fallback_reason not in ("none", ""):
+            status_code = DIAGNOSTIC_STATUS_FALLBACK_ACTIVE
+            reason = f"fallback_active:{fallback_reason}"
+        elif live_info is not None:
             if live_info.get("verified"):
                 status_code = DIAGNOSTIC_STATUS_LIVE_VERIFIED
                 reason = "live_verified"
@@ -301,10 +317,7 @@ def provider_status(config: UnifiedProviderConfig | None = None) -> dict[str, ob
                 reason = "live_failed"
         elif lead == cfg.effective_fallback_provider and lead != primary:
             status_code = DIAGNOSTIC_STATUS_FALLBACK_ACTIVE
-            reason = "fallback_active" if fallback_reason not in ("none", "") else "primary_unconfigured_fallback_only"
-        elif fallback_reason not in ("none", "") and lead == cfg.effective_fallback_provider:
-            status_code = DIAGNOSTIC_STATUS_FALLBACK_ACTIVE
-            reason = "fallback_active"
+            reason = "primary_unconfigured_fallback_only"
         else:
             status_code = DIAGNOSTIC_STATUS_CREDENTIALS_PRESENT
             reason = "configured" if lead == primary else "primary_unconfigured_fallback_only"
@@ -319,6 +332,6 @@ def provider_status(config: UnifiedProviderConfig | None = None) -> dict[str, ob
         "active_provider": lead if usable else "deterministic",
         "reason": reason,
         "status_code": status_code,
-        "live_verified": bool(live_info and live_info.get("verified")),
-        "live_verification": live_info,
+        "live_verified": bool(usable and live_info and live_info.get("verified")),
+        "live_verification": live_info if usable else None,
     }

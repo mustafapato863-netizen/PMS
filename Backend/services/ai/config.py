@@ -76,7 +76,10 @@ DEFAULT_PILOT_SCOPES: frozenset[str] = frozenset(
     }
 )
 
-_API_KEY_PATTERN = re.compile(r"(?:AIza[0-9A-Za-z\-_]{20,}|AQ\.[0-9A-Za-z\-_]{20,}|oc_sk_[0-9A-Za-z\-_]{16,}|sk-[0-9A-Za-z\-_]{16,})")
+_API_KEY_PATTERN = re.compile(
+    r"(?:cfut_[0-9A-Za-z\-_]{20,}|Bearer\s+[0-9A-Za-z\-_]{20,}|AIza[0-9A-Za-z\-_]{20,}|AQ\.[0-9A-Za-z\-_]{20,}|oc_sk_[0-9A-Za-z\-_]{16,}|sk-[0-9A-Za-z\-_]{16,})",
+    flags=re.IGNORECASE,
+)
 
 
 def _parse_bool(value: str | None, default: bool = False) -> bool:
@@ -143,8 +146,8 @@ def get_ai_runtime_config() -> AiRuntimeConfig:
     )
 
     gemini_model = (
-        os.environ.get("PMS_GEMINI_MODEL", "gemini-2.5-flash").strip()
-        or "gemini-2.5-flash"
+        os.environ.get("PMS_GEMINI_MODEL", "gemini-3.5-flash-lite").strip()
+        or "gemini-3.5-flash-lite"
     )
     gemini_api_key = (
         os.environ.get("GEMINI_API_KEY")
@@ -193,9 +196,10 @@ def get_ai_runtime_config() -> AiRuntimeConfig:
 
 
 def redact_secrets(text: str) -> str:
-    """Ensure API keys or bearer tokens never leak into logs, traces, or error messages."""
+    """Ensure API keys, bearer tokens, or account IDs never leak into logs, traces, or error messages."""
     if not text:
         return ""
     cleaned = _API_KEY_PATTERN.sub("[REDACTED_API_KEY]", str(text))
     cleaned = re.sub(r"([?&]key=)[^&\s]+", r"\1[REDACTED_API_KEY]", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"(accounts/)[0-9a-f]{32}(/ai)", r"\1[REDACTED_ACCOUNT_ID]\2", cleaned, flags=re.IGNORECASE)
     return cleaned

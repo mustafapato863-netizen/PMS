@@ -141,6 +141,9 @@ _PROVIDER_ENV = (
 
 @pytest.fixture
 def clean_provider_env(monkeypatch):
+    from services.ai.llm_client import clear_fallback_reason, clear_live_verification
+    clear_fallback_reason()
+    clear_live_verification()
     for name in _PROVIDER_ENV:
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setattr("urllib.request.urlopen", lambda *a, **k: pytest.fail("diagnostics must not make a network call"))
@@ -175,7 +178,7 @@ def test_5_gemini_only_credentials_fall_back_to_gemini(clean_provider_env):
     health = provider_status()
     assert health["available"] is True
     assert health["active_provider"] == "gemini"
-    assert health["configured_model"] == "gemini-2.5-flash"
+    assert health["configured_model"] == "gemini-3.5-flash-lite"
     assert health["reason"] == "primary_unconfigured_fallback_only"
     assert "key-test-not-real" not in json.dumps(health)
 
@@ -300,6 +303,7 @@ def test_10_verify_live_endpoint_admin_success(test_db_session, monkeypatch):
     from services.ai.llm_client import clear_live_verification, get_live_verification
 
     clear_live_verification()
+    ai_workspace._last_live_verify_ts = 0.0
     app = _create_test_app(test_db_session)
     client = TestClient(app, raise_server_exceptions=False)
 

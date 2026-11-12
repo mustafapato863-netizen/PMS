@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import threading
+import time
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session
 
@@ -90,6 +93,11 @@ def get_ai_diagnostics(
     return AiDiagnosticsResponse(success=True, message="Admin AI diagnostics loaded", data=payload)
 
 
+_live_verify_lock = threading.Lock()
+_last_live_verify_ts: float = 0.0
+_MIN_LIVE_VERIFY_INTERVAL_SEC: float = 2.0  # Max 1 live check every 2 seconds per worker to prevent thread exhaustion
+
+
 @diagnostics_router.post("/diagnostics/verify-live", response_model=AiDiagnosticsResponse)
 def verify_ai_live(
     request: Request,
@@ -100,20 +108,32 @@ def verify_ai_live(
     """Explicit Admin-only diagnostic action: runs bounded synthetic live connectivity check.
 
     Never called during routine health checks or normal page loads. Never consumes tokens
-    unless explicitly triggered by an authenticated Administrator.
+    unless explicitly triggered by an authenticated Administrator. Includes debounce protection.
     """
-    from scripts.verify_cloudflare_ai import run_live_verification
-    live_result = run_live_verification()
-    record_live_verification(live_result)
-    payload = build_ai_diagnostics_payload(db)
-    release_read_transaction(db)
-    success = bool(live_result.get("verified"))
-    msg = (
-        "Live Cloudflare AI verification succeeded"
-        if success
-        else f"Live Cloudflare AI verification failed: {live_result.get('error') or 'check details'}"
-    )
-    return AiDiagnosticsResponse(success=success, message=msg, data=payload)
+    global _last_live_verify_ts
+    with _live_verify_lock:
+        now = time.time()
+        if now - _last_live_verify_ts < _MIN_LIVE_VERIFY_INTERVAL_SEC:
+            payload = build_ai_diagnostics_payload(db)
+            release_read_transaction(db)
+            return AiDiagnosticsResponse(
+                success=payload.inference_verified,
+                message="Live Cloudflare AI verification (debounced cached state)",
+                data=payload,
+            )
+        _last_live_verify_ts = now
+        from scripts.verify_cloudflare_ai import run_live_verification
+        live_result = run_live_verification()
+        record_live_verification(live_result)
+        payload = build_ai_diagnostics_payload(db)
+        release_read_transaction(db)
+        success = bool(live_result.get("verified"))
+        msg = (
+            "Live Cloudflare AI verification succeeded"
+            if success
+            else f"Live Cloudflare AI verification failed: {live_result.get('error') or 'check details'}"
+        )
+        return AiDiagnosticsResponse(success=success, message=msg, data=payload)
 
 
 @router.get("/watching", response_model=AiWatchingResponse)
@@ -473,7 +493,7 @@ def build_ai_diagnostics_payload(db: Session | None) -> AiDiagnosticsPayload:
         model_endpoint_configured=bool(model_health.get("endpoint_configured")),
         model_endpoint_host=_safe_host(model_health.get("endpoint_host")),
         model_available=model_up,
-        inference_verified=is_live_verified,
+        inference_verified=bool(is_live_verified and model_up),
         provider_status_code=status_code,
         live_verified_at=live_ver.get("timestamp"),
         live_verification_latency_ms=live_ver.get("latency_ms"),
