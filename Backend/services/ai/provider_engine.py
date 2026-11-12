@@ -48,46 +48,104 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class ModelPricing:
-    """Accurate token pricing metadata per 1,000,000 tokens (USD).
+    """Accurate token pricing metadata per 1,000,000 tokens (USD) or per compute unit.
     
-    Supports indexing (`pricing[0]`, `pricing[1]`) for full backwards compatibility.
+    Supports indexing (`pricing[0]`, `pricing[1]`) for backwards compatibility with verified token rates.
     """
-    input_per_million: float
-    output_per_million: float
+    input_per_million: float | None = None
+    output_per_million: float | None = None
     currency: str = "USD"
     effective_date: str = "2026-11-12"
-    source: str = "Published Provider Reference (Cloudflare Workers AI / Google AI Studio)"
+    source: str = ""
+    source_url: str = ""
+    billing_unit: str = "tokens"  # "tokens" | "neurons"
+    free_tier_allowance: str = ""
+    paid_tier_rate: str = ""
+    disclaimer: str = (
+        "Cost estimates are for budget/capacity modeling and do NOT represent actual provider invoices."
+    )
 
     def __getitem__(self, idx: int) -> float:
         if idx == 0:
+            if self.input_per_million is None:
+                raise ValueError(f"input_per_million is unverified or Neuron-based for {self.source}")
             return self.input_per_million
         if idx == 1:
+            if self.output_per_million is None:
+                raise ValueError(f"output_per_million is unverified or Neuron-based for {self.source}")
             return self.output_per_million
         raise IndexError(f"ModelPricing index out of range: {idx}")
 
 
-# Known verified reference pricing per 1,000,000 tokens (USD)
-# Verified: 2026-11-12 from official Cloudflare Workers AI & Google AI Studio published rates
+# Known verified reference pricing per 1,000,000 tokens (USD) or compute unit
+# Verified: 2026-11-12 from official Cloudflare Workers AI & Google AI Studio published documentation
 _KNOWN_MODEL_PRICING: dict[str, ModelPricing] = {
-    # Cloudflare Workers AI — IBM Granite 4.0 H Micro ($0.05 in, $0.15 out)
-    "granite-4.0-h-micro": ModelPricing(0.05, 0.15, source="Cloudflare Workers AI granite-4.0-h-micro reference"),
-    # Cloudflare Workers AI — GLM 4.7 Flash ($0.10 in, $0.30 out)
-    "glm-4.7-flash": ModelPricing(0.10, 0.30, source="Cloudflare Workers AI glm-4.7-flash reference"),
-    # Cloudflare Workers AI — Llama 3.3 70B & 3.1 8B
-    "llama-3.3-70b": ModelPricing(0.20, 0.60, source="Cloudflare Workers AI llama-3.3-70b reference"),
-    "llama-3.1-8b": ModelPricing(0.05, 0.15, source="Cloudflare Workers AI llama-3.1-8b reference"),
-    # Google Gemini 3.5 Flash ($0.075 in, $0.30 out on paid tier; $0.00 on free tier up to limits)
-    "gemini-3.5-flash": ModelPricing(0.075, 0.30, source="Google AI Studio gemini-3.5-flash reference"),
-    # Google Gemini 3.5 Flash Lite ($0.0375 in, $0.15 out on paid tier; $0.00 on free tier up to limits)
-    "gemini-3.5-flash-lite": ModelPricing(0.0375, 0.15, source="Google AI Studio gemini-3.5-flash-lite reference"),
-    "gemini-3.1-flash-lite": ModelPricing(0.0375, 0.15, source="Google AI Studio gemini-3.1-flash-lite reference"),
-    # Historical Gemini reference entries
-    "gemini-2.5-flash": ModelPricing(0.15, 0.60, source="Google AI Studio gemini-2.5-flash legacy reference"),
-    "gemini-1.5-flash": ModelPricing(0.15, 0.60, source="Google AI Studio gemini-1.5-flash legacy reference"),
-    "gemini-2.0-flash": ModelPricing(0.10, 0.40, source="Google AI Studio gemini-2.0-flash legacy reference"),
-    # Legacy reference (for historical cost queries)
-    "gpt-4o-mini": ModelPricing(0.15, 0.60, source="OpenAI gpt-4o-mini reference"),
-    "gpt-4o": ModelPricing(2.50, 10.00, source="OpenAI gpt-4o reference"),
+    # Cloudflare Workers AI — Billed strictly in Neurons ($0.011 / 1,000 Neurons), 10,000 Neurons/day free.
+    # Official Source: https://developers.cloudflare.com/workers-ai/platform/pricing/ (Verified: 2026-11-12)
+    "granite-4.0-h-micro": ModelPricing(
+        input_per_million=None,
+        output_per_million=None,
+        billing_unit="neurons",
+        paid_tier_rate="$0.011 per 1,000 Neurons ($0.000011/Neuron)",
+        free_tier_allowance="10,000 Neurons/day across all plans",
+        source="Cloudflare Workers AI granite-4.0-h-micro reference",
+        source_url="https://developers.cloudflare.com/workers-ai/platform/pricing/",
+    ),
+    "glm-4.7-flash": ModelPricing(
+        input_per_million=None,
+        output_per_million=None,
+        billing_unit="neurons",
+        paid_tier_rate="$0.011 per 1,000 Neurons ($0.000011/Neuron)",
+        free_tier_allowance="10,000 Neurons/day across all plans",
+        source="Cloudflare Workers AI glm-4.7-flash reference",
+        source_url="https://developers.cloudflare.com/workers-ai/platform/pricing/",
+    ),
+    # Google Gemini — Published rates per 1,000,000 tokens (USD)
+    # Official Source: https://ai.google.dev/pricing (Verified: 2026-11-12)
+    "gemini-3.5-flash-lite": ModelPricing(
+        input_per_million=0.30,
+        output_per_million=2.50,
+        billing_unit="tokens",
+        paid_tier_rate="$0.30 in / $2.50 out per 1M tokens",
+        free_tier_allowance="500 requests/day, 15 RPM",
+        source="Google AI Studio gemini-3.5-flash-lite reference",
+        source_url="https://ai.google.dev/pricing",
+    ),
+    "gemini-2.5-flash": ModelPricing(
+        input_per_million=0.30,
+        output_per_million=2.50,
+        billing_unit="tokens",
+        paid_tier_rate="$0.30 in / $2.50 out per 1M tokens (routed to 3.5 Flash-Lite)",
+        free_tier_allowance="20 requests/day (legacy accounts)",
+        source="Google AI Studio gemini-2.5-flash reference (deprecated, routed to 3.5 Flash-Lite)",
+        source_url="https://ai.google.dev/pricing",
+    ),
+    "gemini-1.5-flash": ModelPricing(
+        input_per_million=0.075,
+        output_per_million=0.30,
+        billing_unit="tokens",
+        paid_tier_rate="$0.075 in / $0.30 out per 1M tokens (<=128k context)",
+        free_tier_allowance="1,500 requests/day, 15 RPM",
+        source="Google AI Studio gemini-1.5-flash legacy reference",
+        source_url="https://ai.google.dev/pricing",
+    ),
+    # Legacy reference (for historical cost queries on decommissioned models)
+    "gpt-4o-mini": ModelPricing(
+        input_per_million=0.15,
+        output_per_million=0.60,
+        billing_unit="tokens",
+        paid_tier_rate="$0.15 in / $0.60 out per 1M tokens",
+        source="OpenAI gpt-4o-mini reference",
+        source_url="https://openai.com/api/pricing/",
+    ),
+    "gpt-4o": ModelPricing(
+        input_per_million=2.50,
+        output_per_million=10.00,
+        billing_unit="tokens",
+        paid_tier_rate="$2.50 in / $10.00 out per 1M tokens",
+        source="OpenAI gpt-4o reference",
+        source_url="https://openai.com/api/pricing/",
+    ),
 }
 
 
@@ -328,7 +386,7 @@ class UnifiedProviderConfig:
     cloudflare_api_token: str = ""
     cloudflare_model: str = "@cf/ibm-granite/granite-4.0-h-micro"
     cloudflare_alter_model: str = "@cf/zai-org/glm-4.7-flash"
-    gemini_model: str = "gemini-3.5-flash-lite"
+    gemini_model: str = "gemini-2.5-flash"
     timeout_seconds: float = 10.0
     max_retries: int = 1
     gemini_api_key: str = ""
@@ -397,7 +455,7 @@ def load_unified_provider_config() -> UnifiedProviderConfig:
         os.environ.get("PMS_GEMINI_MODEL")
         or os.environ.get("PMS_AI_GEMINI_MODEL")
         or os.environ.get("GEMINI_MODEL")
-        or "gemini-3.5-flash-lite"
+        or "gemini-2.5-flash"
     ).strip()
 
     try:
@@ -441,14 +499,84 @@ def load_unified_provider_config() -> UnifiedProviderConfig:
 
 
 # ---------------------------------------------------------------------------
-# Pricing & Cost Estimation
+# Pricing, Model Resolution & Cost Estimation
 # ---------------------------------------------------------------------------
 
 
+def resolve_provider_model(
+    provider: str,
+    config: UnifiedProviderConfig,
+    request: ProviderRequest | None = None,
+) -> str:
+    """Single authoritative resolution for the provider model.
+    
+    Enforces server-approved model configuration:
+    - Default Cloudflare model: config.cloudflare_model (@cf/ibm-granite/granite-4.0-h-micro)
+    - Opt-in Alternative Cloudflare model: config.cloudflare_alter_model (@cf/zai-org/glm-4.7-flash)
+      when request.use_alter_model is True or request.model matches the approved alter model.
+    - User-supplied model identifiers cannot bypass server-approved configuration.
+    """
+    provider_lower = str(provider or "").casefold()
+    if provider_lower == "cloudflare":
+        default_model = config.cloudflare_model or "@cf/ibm-granite/granite-4.0-h-micro"
+        alter_model = config.cloudflare_alter_model or "@cf/zai-org/glm-4.7-flash"
+
+        if request is not None and getattr(request, "use_alter_model", False):
+            return alter_model
+
+        req_model = getattr(request, "model", None) if request else None
+        if req_model:
+            req_model_clean = str(req_model).strip()
+            if req_model_clean == alter_model:
+                return alter_model
+            if req_model_clean == default_model:
+                return default_model
+            logger.warning(
+                "Rejected unauthorized Cloudflare model override %r; using server default %r",
+                req_model_clean,
+                default_model,
+            )
+        return default_model
+
+    if provider_lower == "gemini":
+        default_model = config.gemini_model or "gemini-2.5-flash"
+        req_model = getattr(request, "model", None) if request else None
+        if req_model:
+            req_model_clean = str(req_model).strip()
+            if req_model_clean in (default_model, "gemini-3.5-flash-lite", "gemini-2.5-flash", "gemini-1.5-flash"):
+                return req_model_clean
+            logger.warning(
+                "Rejected unapproved Gemini model override %r; using server default %r",
+                req_model_clean,
+                default_model,
+            )
+        return default_model
+
+    return "unknown"
+
+
 def estimate_cost_usd(provider: str, model: str, usage: TokenUsage | None) -> float | None:
-    """Calculate estimated cost in USD. Returns None (unknown) if model or usage is unrecognized/incomplete."""
+    """Calculate estimated cost in USD.
+    
+    Returns None (unknown) if model pricing is unverified, usage is unrecognized,
+    or token/neuron data is incomplete.
+    Estimates are for budget/capacity modeling and do NOT claim to represent actual invoices.
+    """
     if usage is None:
         return None
+
+    provider_lower = str(provider or "").casefold()
+    model_lower = str(model or "").casefold()
+
+    # Cloudflare Workers AI billing is based on Neurons ($0.011 per 1,000 Neurons)
+    if provider_lower == "cloudflare" or "granite" in model_lower or "glm" in model_lower:
+        neurons = getattr(usage, "neurons", None)
+        if neurons is not None and neurons >= 0:
+            # $0.011 / 1,000 Neurons = $0.000011 per Neuron on paid tier (10k/day free allowance)
+            return round(neurons * 0.000011, 8)
+        # Cloudflare does not publish flat per-token USD rates; without neurons, cost is unknown
+        return None
+
     tot = getattr(usage, "total_tokens", None)
     prompt = getattr(usage, "prompt_tokens", None)
     comp = getattr(usage, "completion_tokens", None)
@@ -459,23 +587,21 @@ def estimate_cost_usd(provider: str, model: str, usage: TokenUsage | None) -> fl
     if prompt == 0 and comp == 0 and tot > 0:
         return None
 
-    model_lower = str(model or "").casefold()
     if not model_lower:
         return None
 
-    rates: Any = None
-    # Sort patterns by length descending so more specific patterns (e.g. "gemini-3.5-flash-lite") match before prefixes ("gemini-3.5-flash")
+    rates: ModelPricing | None = None
+    # Sort patterns by length descending so more specific patterns match before prefixes
     for pattern in sorted(_KNOWN_MODEL_PRICING.keys(), key=len, reverse=True):
         if pattern in model_lower:
             rates = _KNOWN_MODEL_PRICING[pattern]
             break
 
-    if rates is None:
-        # Truthful reporting: do not guess cost for unknown models
+    if rates is None or rates.input_per_million is None or rates.output_per_million is None:
+        # Truthful reporting: do not guess cost for unverified models or non-token models
         return None
 
-    in_per_m, out_per_m = rates
-    cost = (prompt / 1_000_000.0 * in_per_m) + (comp / 1_000_000.0 * out_per_m)
+    cost = (prompt / 1_000_000.0 * rates.input_per_million) + (comp / 1_000_000.0 * rates.output_per_million)
     return round(cost, 8)
 
 
@@ -782,18 +908,14 @@ class CloudflareAIProviderAdapter:
         config: UnifiedProviderConfig,
         *,
         timeout: float,
+        model: str | None = None,
     ) -> tuple[str, TokenUsage]:
         if not config.cloudflare_account_id:
             raise ProviderClientError("Cloudflare Account ID is not configured", http_code=401)
         if not config.cloudflare_api_token:
             raise ProviderClientError("Cloudflare API Token is not configured", http_code=401)
 
-        if getattr(request, "use_alter_model", False):
-            model = config.cloudflare_alter_model or "@cf/zai-org/glm-4.7-flash"
-        elif getattr(request, "model", None):
-            model = request.model
-        else:
-            model = config.cloudflare_model or "@cf/ibm-granite/granite-4.0-h-micro"
+        resolved_model = model or resolve_provider_model("cloudflare", config, request)
         url = f"https://api.cloudflare.com/client/v4/accounts/{config.cloudflare_account_id}/ai/v1/chat/completions"
 
         messages = []
@@ -812,7 +934,7 @@ class CloudflareAIProviderAdapter:
             messages.append({"role": "user", "content": ""})
 
         payload: dict[str, Any] = {
-            "model": model,
+            "model": resolved_model,
             "messages": messages,
             "temperature": max(0.0, min(request.temperature, 2.0)),
             "max_tokens": request.max_tokens or 2048,
@@ -916,16 +1038,13 @@ class GeminiProviderAdapter:
         config: UnifiedProviderConfig,
         *,
         timeout: float,
+        model: str | None = None,
     ) -> tuple[str, TokenUsage]:
         if not config.gemini_api_key:
             raise ProviderClientError("Gemini API key is not configured", http_code=401)
 
-        model = (
-            request.model
-            if (request.model and "gemini" in request.model.lower())
-            else config.gemini_model
-        )
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+        resolved_model = model or resolve_provider_model("gemini", config, request)
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{resolved_model}:generateContent"
 
         system_parts = []
         if request.system_instruction:
@@ -1100,17 +1219,7 @@ class UnifiedProviderEngine:
         return False
 
     def _get_model(self, provider: str, request: ProviderRequest | None = None) -> str:
-        if provider == "cloudflare":
-            if request and getattr(request, "use_alter_model", False):
-                return self.config.cloudflare_alter_model or "@cf/zai-org/glm-4.7-flash"
-            if request and getattr(request, "model", None) and ("@" in request.model or "cf" in request.model or "granite" in request.model or "glm" in request.model):
-                return request.model
-            return self.config.cloudflare_model
-        if provider == "gemini":
-            if request and getattr(request, "model", None) and "gemini" in request.model.lower():
-                return request.model
-            return self.config.gemini_model
-        return "unknown"
+        return resolve_provider_model(provider, self.config, request)
 
     def _has_credentials(self, provider: str) -> bool:
         if provider == "cloudflare":
@@ -1215,7 +1324,12 @@ class UnifiedProviderEngine:
                 per_call_timeout = min(self.config.timeout_seconds, remaining_time)
                 t0 = time.perf_counter()
                 try:
-                    text, usage = primary_adapter.execute(request, self.config, timeout=per_call_timeout)
+                    try:
+                        text, usage = primary_adapter.execute(
+                            request, self.config, timeout=per_call_timeout, model=primary_model
+                        )
+                    except TypeError:
+                        text, usage = primary_adapter.execute(request, self.config, timeout=per_call_timeout)
                     call_ms = round((time.perf_counter() - t0) * 1000.0, 2)
                     if time.perf_counter() > deadline:
                         attempts.append(ProviderAttempt(
@@ -1432,7 +1546,12 @@ class UnifiedProviderEngine:
             t0 = time.perf_counter()
             per_call_timeout = min(self.config.timeout_seconds, remaining_time)
             try:
-                text, usage = fallback_adapter.execute(request, self.config, timeout=per_call_timeout)
+                try:
+                    text, usage = fallback_adapter.execute(
+                        request, self.config, timeout=per_call_timeout, model=fallback_model
+                    )
+                except TypeError:
+                    text, usage = fallback_adapter.execute(request, self.config, timeout=per_call_timeout)
                 call_ms = round((time.perf_counter() - t0) * 1000.0, 2)
                 if time.perf_counter() > deadline:
                     attempts.append(ProviderAttempt(

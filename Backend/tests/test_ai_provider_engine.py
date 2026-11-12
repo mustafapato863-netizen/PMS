@@ -129,7 +129,7 @@ def test_primary_primary_success(mock_cloudflare, mock_gemini, sample_config, sa
     """When Gemini succeeds, it returns immediately and OpenAI is never invoked."""
     mock_cloudflare.execute.return_value = (
         "Action step 1 from Gemini.",
-        TokenUsage(prompt_tokens=10, completion_tokens=8, total_tokens=18),
+        TokenUsage(prompt_tokens=10, completion_tokens=8, total_tokens=18, neurons=1.0),
     )
 
     engine = UnifiedProviderEngine(
@@ -596,8 +596,8 @@ def test_cost_estimation_supported_models():
     """Cost estimation correctly applies token pricing for Gemini and OpenAI."""
     gemini_usage = TokenUsage(prompt_tokens=1_000_000, completion_tokens=1_000_000, total_tokens=2_000_000)
     cost_gemini = estimate_cost_usd("gemini", "gemini-2.5-flash", gemini_usage)
-    # 0.15 + 0.60 = 0.75 USD
-    assert cost_gemini == pytest.approx(0.75, rel=1e-4)
+    # Verified pricing: 0.30 in + 2.50 out = 2.80 USD
+    assert cost_gemini == pytest.approx(2.80, rel=1e-4)
 
     openai_mini_usage = TokenUsage(prompt_tokens=1_000_000, completion_tokens=1_000_000, total_tokens=2_000_000)
     cost_mini = estimate_cost_usd("openai", "gpt-4o-mini", openai_mini_usage)
@@ -1162,7 +1162,7 @@ def test_cloudflare_primary_success(mock_cloudflare, mock_gemini, cloudflare_con
     """When Cloudflare Workers AI succeeds, Gemini fallback is never invoked."""
     mock_cloudflare.execute.return_value = (
         "Action step 1 from Cloudflare.",
-        TokenUsage(prompt_tokens=15, completion_tokens=12, total_tokens=27),
+        TokenUsage(prompt_tokens=15, completion_tokens=12, total_tokens=27, neurons=1.5),
     )
 
     engine = UnifiedProviderEngine(
@@ -1587,7 +1587,7 @@ def test_cloudflare_explicit_alter_model_selection():
 
 
 def test_cloudflare_explicit_specific_model_selection():
-    """Setting model on ProviderRequest uses the requested model string."""
+    """Setting approved alter model on ProviderRequest uses the alter model; arbitrary unapproved models are rejected."""
     adapter = CloudflareAIProviderAdapter()
     captured_payload = {}
 
@@ -1610,15 +1610,26 @@ def test_cloudflare_explicit_specific_model_selection():
         cloudflare_account_id="acc-123",
         cloudflare_api_token="tok-456",
         cloudflare_model="@cf/ibm-granite/granite-4.0-h-micro",
+        cloudflare_alter_model="@cf/zai-org/glm-4.7-flash",
     )
+    # Server-approved alter model selection
     req = ProviderRequest(
         messages=[ProviderMessage(role="user", content="test specific model")],
-        model="@cf/meta/llama-3.3-70b-instruct",
+        model="@cf/zai-org/glm-4.7-flash",
     )
     text, usage = adapter.execute(req, cfg, timeout=5.0)
     assert text == "Specific model answer"
-    assert captured_payload.get("model") == "@cf/meta/llama-3.3-70b-instruct"
+    assert captured_payload.get("model") == "@cf/zai-org/glm-4.7-flash"
     assert usage.neurons == 1.2
+
+    # Unauthorized arbitrary model override is safely rejected and falls back to server default
+    req_unauth = ProviderRequest(
+        messages=[ProviderMessage(role="user", content="test unauth model")],
+        model="@cf/meta/llama-3.3-70b-instruct",
+    )
+    text2, _ = adapter.execute(req_unauth, cfg, timeout=5.0)
+    assert text2 == "Specific model answer"
+    assert captured_payload.get("model") == "@cf/ibm-granite/granite-4.0-h-micro"
 
 
 def test_model_pricing_dataclass_and_cost_estimation_verified():
@@ -1630,16 +1641,20 @@ def test_model_pricing_dataclass_and_cost_estimation_verified():
     with pytest.raises(IndexError):
         _ = pricing[2]
 
-    # Verify estimate_cost_usd calculation for granite-4.0-h-micro
+    # Verify estimate_cost_usd calculation for granite-4.0-h-micro via Neurons
     usage = TokenUsage(prompt_tokens=100_000, completion_tokens=100_000, total_tokens=200_000, neurons=1.5)
     cost = estimate_cost_usd("cloudflare", "@cf/ibm-granite/granite-4.0-h-micro", usage)
-    # 0.1 * 0.05 + 0.1 * 0.15 = 0.005 + 0.015 = 0.02 USD
-    assert cost == pytest.approx(0.02, rel=1e-4)
+    # 1.5 neurons * $0.000011/neuron = 0.0000165 USD
+    assert cost == pytest.approx(1.65e-5, rel=1e-4)
+
+    # Cloudflare without neurons returns None (unverified flat token pricing)
+    usage_no_neurons = TokenUsage(prompt_tokens=100_000, completion_tokens=100_000, total_tokens=200_000, neurons=None)
+    assert estimate_cost_usd("cloudflare", "@cf/ibm-granite/granite-4.0-h-micro", usage_no_neurons) is None
 
     # Verify gemini-3.5-flash-lite pricing
     cost_lite = estimate_cost_usd("gemini", "gemini-3.5-flash-lite", usage)
-    # 0.1 * 0.0375 + 0.1 * 0.15 = 0.00375 + 0.015 = 0.01875 USD
-    assert cost_lite == pytest.approx(0.01875, rel=1e-4)
+    # 0.1 * 0.30 + 0.1 * 2.50 = 0.03 + 0.25 = 0.28 USD
+    assert cost_lite == pytest.approx(0.28, rel=1e-4)
 
 
 def test_attempt_captures_token_usage_and_neurons(mock_cloudflare, mock_gemini, cloudflare_config, sample_request):
@@ -1666,6 +1681,37 @@ def test_attempt_captures_token_usage_and_neurons(mock_cloudflare, mock_gemini, 
     assert att_dict["input_tokens"] == 45
     assert att_dict["output_tokens"] == 55
     assert att_dict["neurons"] == 0.85
+
+
+def test_glm_selection_recorded_everywhere_consistently(mock_cloudflare, mock_gemini, cloudflare_config):
+    """FIX 2: Selecting GLM alter model records GLM consistently in request, attempt, and response."""
+    mock_cloudflare.execute.return_value = (
+        "GLM generated analysis",
+        TokenUsage(prompt_tokens=50, completion_tokens=30, total_tokens=80, neurons=1.4),
+    )
+    engine = UnifiedProviderEngine(
+        config=cloudflare_config,
+        cloudflare_adapter=mock_cloudflare,
+        gemini_adapter=mock_gemini,
+    )
+    req = ProviderRequest(
+        messages=[ProviderMessage(role="user", content="Analyze with GLM")],
+        use_alter_model=True,
+    )
+    resp = engine.generate(req)
+
+    assert resp.is_success is True
+    assert resp.provider == "cloudflare"
+    assert resp.model == "@cf/zai-org/glm-4.7-flash"
+    assert len(resp.attempts) == 1
+    attempt = resp.attempts[0]
+    assert attempt.model == "@cf/zai-org/glm-4.7-flash"
+    assert attempt.status == "success"
+    assert attempt.neurons == 1.4
+    assert resp.usage.neurons == 1.4
+    # Estimated cost: 1.4 neurons * 0.000011 USD/neuron
+    assert resp.estimated_cost_usd == pytest.approx(1.4 * 0.000011, rel=1e-4)
+
 
 
 

@@ -44,6 +44,18 @@ def redact_text(text: str | None) -> str:
     return cleaned
 
 
+def get_git_commit_sha() -> str:
+    """Safely get the current git commit SHA without raising exceptions."""
+    try:
+        import subprocess
+        out = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], stderr=subprocess.DEVNULL, timeout=2.0
+        )
+        return out.decode("utf-8").strip()
+    except Exception:
+        return "unknown"
+
+
 def run_live_verification(
     *,
     model: str | None = None,
@@ -53,7 +65,11 @@ def run_live_verification(
 ) -> dict[str, Any]:
     """Execute bounded 2-step synthetic verification against Cloudflare Workers AI.
 
-    Returns structured diagnostics dictionary. Never raises unhandled exceptions.
+    Performs exactly two synthetic requests:
+    - Test A: Single basic completion with exact expected string validation.
+    - Test B: Deterministic structured output with known expected intent.
+
+    Strictly no database mutations, no PII, no account IDs in output, and safe timeout.
     """
     t_start = time.perf_counter()
 
@@ -78,7 +94,14 @@ def run_live_verification(
         or DEFAULT_MODEL
     ).strip()
 
+    app_env = os.environ.get("APP_ENV", "development").strip().casefold() or "development"
+
     result: dict[str, Any] = {
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "git_commit_sha": get_git_commit_sha(),
+        "environment": app_env,
+        "is_live_test": True,
+        "status": "unverified",
         "verified": False,
         "provider": "cloudflare",
         "model": selected_model,
@@ -90,13 +113,9 @@ def run_live_verification(
         "error": None,
     }
 
-    if not acct:
-        result["error"] = "Cloudflare Account ID is missing (CLOUDFLARE_ACCOUNT_ID)"
-        result["total_latency_ms"] = round((time.perf_counter() - t_start) * 1000.0, 2)
-        return result
-
-    if not token:
-        result["error"] = "Cloudflare API Token is missing (CLOUDFLARE_API_TOKEN)"
+    if not acct or not token:
+        result["status"] = "BLOCKED"
+        result["error"] = "BLOCKED: Cloudflare credentials are not configured in environment"
         result["total_latency_ms"] = round((time.perf_counter() - t_start) * 1000.0, 2)
         return result
 
@@ -111,6 +130,7 @@ def run_live_verification(
     # -------------------------------------------------------------------------
     t_a_start = time.perf_counter()
     test_a_res: dict[str, Any] = {
+        "test_type": "completion",
         "status": "failed",
         "http_code": None,
         "content": "",
@@ -118,6 +138,7 @@ def run_live_verification(
         "prompt_tokens": 0,
         "completion_tokens": 0,
         "neurons": None,
+        "validation_result": "failed",
         "error": None,
     }
 
@@ -159,6 +180,7 @@ def run_live_verification(
                     # Programmatic validation: verify message confirms connection
                     if "PMS AI" in content or "connection successful" in content.lower():
                         test_a_res["status"] = "passed"
+                        test_a_res["validation_result"] = "passed"
                     else:
                         test_a_res["error"] = f"Response did not match expected confirmation: {content[:80]}"
                 else:
@@ -176,37 +198,50 @@ def run_live_verification(
     result["test_a_completion"] = test_a_res
 
     if test_a_res["status"] != "passed":
+        result["status"] = "failed"
         result["error"] = f"Test A failed: {test_a_res.get('error') or 'unknown error'}"
         result["total_latency_ms"] = round((time.perf_counter() - t_start) * 1000.0, 2)
         return result
 
     # -------------------------------------------------------------------------
-    # Call 2: Test B — Structured JSON response
+    # Call 2: Test B — Deterministic Structured JSON Response
     # -------------------------------------------------------------------------
     t_b_start = time.perf_counter()
     test_b_res: dict[str, Any] = {
+        "test_type": "structured_output",
         "status": "failed",
         "http_code": None,
+        "raw_response": "",
         "parsed": None,
         "latency_ms": 0.0,
         "prompt_tokens": 0,
         "completion_tokens": 0,
         "neurons": None,
+        "validation_result": "failed",
         "error": None,
     }
 
     target_schema = {
         "type": "object",
         "properties": {
-            "intent": {"type": "string"},
+            "intent": {
+                "type": "string",
+                "enum": ["performance_lookup", "coaching_advice", "system_status"],
+            },
             "requires_data": {"type": "boolean"},
         },
         "required": ["intent", "requires_data"],
+        "additionalProperties": False,
     }
 
+    synthetic_question = "What was the booking achievement percentage for team Inbound in September 2026?"
     prompt_b = (
-        "Return a JSON object identifying the intent of a synthetic performance question.\n"
-        f"Output schema: {json.dumps(target_schema)}"
+        f"Classify the intent of this synthetic PMS performance question: {synthetic_question!r}\n"
+        "Allowed intent values: \"performance_lookup\", \"coaching_advice\", \"system_status\".\n"
+        "Return ONLY a JSON object with exactly two keys: 'intent' and 'requires_data'.\n"
+        "Do NOT output schema definitions, wrapper types, or extra keys.\n"
+        "Example output:\n"
+        "{\"intent\": \"performance_lookup\", \"requires_data\": true}"
     )
 
     payload_b = {
@@ -214,7 +249,7 @@ def run_live_verification(
         "messages": [
             {
                 "role": "system",
-                "content": "You are a performance management classifier. Output ONLY valid JSON adhering to the specified schema.",
+                "content": "You are a deterministic performance management intent classifier. Output ONLY valid JSON adhering to the specified schema.",
             },
             {"role": "user", "content": prompt_b},
         ],
@@ -243,6 +278,7 @@ def run_live_verification(
                 choices = data_b.get("choices") or []
                 if choices:
                     content_b = str(choices[0].get("message", {}).get("content") or "").strip()
+                    test_b_res["raw_response"] = content_b
                     usage_b = data_b.get("usage") or {}
                     test_b_res["prompt_tokens"] = int(usage_b.get("prompt_tokens") or 0)
                     test_b_res["completion_tokens"] = int(usage_b.get("completion_tokens") or 0)
@@ -253,14 +289,25 @@ def run_live_verification(
                     cleaned_b = re.sub(r"^```(?:json)?\s*|\s*```$", "", cleaned_b.strip(), flags=re.IGNORECASE).strip()
                     try:
                         parsed_b = json.loads(cleaned_b)
-                        if isinstance(parsed_b, dict) and "intent" in parsed_b and "requires_data" in parsed_b:
-                            if isinstance(parsed_b["intent"], str) and isinstance(parsed_b["requires_data"], bool):
+                        if not isinstance(parsed_b, dict):
+                            test_b_res["error"] = f"Expected JSON object, got: {type(parsed_b).__name__}"
+                        else:
+                            # 1. Check schema keys strictly (forbid unsupported extra fields)
+                            keys = set(parsed_b.keys())
+                            if keys != {"intent", "requires_data"}:
+                                extra = keys - {"intent", "requires_data"}
+                                missing = {"intent", "requires_data"} - keys
+                                test_b_res["error"] = f"Schema violation: extra={list(extra)}, missing={list(missing)}"
+                            # 2. Check exact deterministic intent
+                            elif parsed_b.get("intent") != "performance_lookup":
+                                test_b_res["error"] = f"Expected intent 'performance_lookup', got {parsed_b.get('intent')!r}"
+                            # 3. Check correct boolean requires_data
+                            elif parsed_b.get("requires_data") is not True:
+                                test_b_res["error"] = f"Expected requires_data=True, got {parsed_b.get('requires_data')!r}"
+                            else:
                                 test_b_res["parsed"] = parsed_b
                                 test_b_res["status"] = "passed"
-                            else:
-                                test_b_res["error"] = f"JSON fields invalid types: {parsed_b}"
-                        else:
-                            test_b_res["error"] = f"JSON missing required keys (intent, requires_data): {parsed_b}"
+                                test_b_res["validation_result"] = "passed"
                     except json.JSONDecodeError as json_err:
                         test_b_res["error"] = f"Non-JSON response text: {content_b[:80]}"
                 else:
@@ -278,8 +325,10 @@ def run_live_verification(
     result["test_b_structured"] = test_b_res
 
     if test_b_res["status"] == "passed":
+        result["status"] = "passed"
         result["verified"] = True
     else:
+        result["status"] = "failed"
         result["error"] = f"Test B failed: {test_b_res.get('error') or 'unknown error'}"
 
     result["total_latency_ms"] = round((time.perf_counter() - t_start) * 1000.0, 2)
@@ -291,6 +340,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--model", default=None, help=f"Cloudflare model ID (default: {DEFAULT_MODEL})")
     parser.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT, help="Per-call timeout seconds")
     parser.add_argument("--json", action="store_true", help="Output machine-readable JSON only")
+    parser.add_argument("--output", default=None, help="Save machine-readable JSON report to file path")
     args = parser.parse_args(argv)
 
     try:
@@ -304,6 +354,16 @@ def main(argv: list[str] | None = None) -> int:
         pass
 
     diagnostics = run_live_verification(model=args.model, timeout=args.timeout)
+
+    if args.output:
+        try:
+            out_dir = os.path.dirname(args.output)
+            if out_dir:
+                os.makedirs(out_dir, exist_ok=True)
+            with open(args.output, "w", encoding="utf-8") as f:
+                json.dump(diagnostics, f, indent=2, ensure_ascii=False)
+        except Exception as exc:
+            print(f"Warning: Failed to write output report to {args.output}: {exc}", file=sys.stderr)
 
     if args.json:
         print(json.dumps(diagnostics, indent=2))

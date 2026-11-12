@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import threading
 import time
 
@@ -93,9 +94,36 @@ def get_ai_diagnostics(
     return AiDiagnosticsResponse(success=True, message="Admin AI diagnostics loaded", data=payload)
 
 
-_live_verify_lock = threading.Lock()
-_last_live_verify_ts: float = 0.0
-_MIN_LIVE_VERIFY_INTERVAL_SEC: float = 2.0  # Max 1 live check every 2 seconds per worker to prevent thread exhaustion
+_live_verify_flight_lock = threading.RLock()
+_live_verify_in_flight: bool = False
+_daily_verify_counts: dict[str, int] = {}
+
+
+def _is_live_verify_endpoint_enabled() -> bool:
+    raw = os.environ.get("PMS_AI_LIVE_VERIFY_ENDPOINT_ENABLED", "false").strip().casefold()
+    return raw in ("true", "1", "yes", "on", "enabled")
+
+
+def _check_and_increment_daily_budget(daily_budget: int) -> bool:
+    """Check and increment daily live verification count using Redis or local counter."""
+    today = time.strftime("%Y-%m-%d", time.gmtime())
+    key = f"pms:ai:live_verify:budget:{today}"
+    if os.environ.get("PMS_AI_USE_REDIS_BUDGET", "false").strip().casefold() in ("true", "1"):
+        try:
+            from services.redis_provider import redis_client
+            if redis_client:
+                val = redis_client.incr(key)
+                if val == 1:
+                    redis_client.expire(key, 86400)
+                return bool(val <= daily_budget)
+        except Exception:
+            pass
+    with _live_verify_flight_lock:
+        cnt = _daily_verify_counts.get(today, 0)
+        if cnt >= daily_budget:
+            return False
+        _daily_verify_counts[today] = cnt + 1
+        return True
 
 
 @diagnostics_router.post("/diagnostics/verify-live", response_model=AiDiagnosticsResponse)
@@ -108,22 +136,53 @@ def verify_ai_live(
     """Explicit Admin-only diagnostic action: runs bounded synthetic live connectivity check.
 
     Never called during routine health checks or normal page loads. Never consumes tokens
-    unless explicitly triggered by an authenticated Administrator. Includes debounce protection.
+    unless explicitly triggered by an authenticated Administrator.
+    Guarded by:
+    1. Mandatory Admin role and diagnostic session.
+    2. PMS_AI_LIVE_VERIFY_ENDPOINT_ENABLED switch (default: false).
+    3. Production environment blocking (unless PMS_AI_ALLOW_PRODUCTION_LIVE_VERIFY=true).
+    4. Multi-worker daily budget limiting (default 10 calls/day).
+    5. Non-blocking concurrency lock (rejects concurrent calls with HTTP 429).
+    6. Strict 5-second deadline.
     """
-    global _last_live_verify_ts
-    with _live_verify_lock:
-        now = time.time()
-        if now - _last_live_verify_ts < _MIN_LIVE_VERIFY_INTERVAL_SEC:
-            payload = build_ai_diagnostics_payload(db)
-            release_read_transaction(db)
-            return AiDiagnosticsResponse(
-                success=payload.inference_verified,
-                message="Live Cloudflare AI verification (debounced cached state)",
-                data=payload,
+    global _live_verify_in_flight
+
+    # 1. Feature Switch Check
+    if not _is_live_verify_endpoint_enabled():
+        raise HTTPException(
+            status_code=403,
+            detail="Live verification endpoint is disabled by configuration (PMS_AI_LIVE_VERIFY_ENDPOINT_ENABLED=false)",
+        )
+
+    # 2. Environment Protection Check
+    app_env = os.environ.get("APP_ENV", "").strip().casefold()
+    allow_prod = os.environ.get("PMS_AI_ALLOW_PRODUCTION_LIVE_VERIFY", "false").strip().casefold() in ("true", "1")
+    if app_env == "production" and not allow_prod:
+        raise HTTPException(
+            status_code=403,
+            detail="Live verification endpoint is disabled in production environments",
+        )
+
+    # 3. Concurrency Lock Check (do NOT hold lock during network calls!)
+    with _live_verify_flight_lock:
+        if _live_verify_in_flight:
+            raise HTTPException(
+                status_code=429,
+                detail="A live verification check is already in progress. Please wait for completion.",
             )
-        _last_live_verify_ts = now
-        from scripts.verify_cloudflare_ai import run_live_verification
-        live_result = run_live_verification()
+        # 4. Daily Budget Check
+        daily_budget = int(os.environ.get("PMS_AI_LIVE_VERIFY_DAILY_BUDGET", "10"))
+        if not _check_and_increment_daily_budget(daily_budget):
+            raise HTTPException(
+                status_code=429,
+                detail=f"Live verification daily budget exceeded (maximum {daily_budget} calls/day).",
+            )
+        _live_verify_in_flight = True
+
+    try:
+        import scripts.verify_cloudflare_ai as verify_module
+        timeout = float(os.environ.get("PMS_AI_LIVE_VERIFY_TIMEOUT_SECONDS", "5.0"))
+        live_result = verify_module.run_live_verification(timeout=timeout)
         record_live_verification(live_result)
         payload = build_ai_diagnostics_payload(db)
         release_read_transaction(db)
@@ -134,6 +193,9 @@ def verify_ai_live(
             else f"Live Cloudflare AI verification failed: {live_result.get('error') or 'check details'}"
         )
         return AiDiagnosticsResponse(success=success, message=msg, data=payload)
+    finally:
+        with _live_verify_flight_lock:
+            _live_verify_in_flight = False
 
 
 @router.get("/watching", response_model=AiWatchingResponse)
