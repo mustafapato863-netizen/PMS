@@ -2649,8 +2649,8 @@ class HybridQueryRouter:
         ):
             local_result = suggest_intent(text)
             provider_metrics = ProviderCallMetrics(
-                provider_used="llama_cpp",
-                model_used=configured_model_name(),
+                provider_used=getattr(local_result, "provider", None) or "llama_cpp",
+                model_used=local_result.model or configured_model_name(),
                 provider_calls=1,
                 provider_ms=local_result.elapsed_ms,
                 fallback_outcome="none" if local_result.reason == "ok" else local_result.reason,

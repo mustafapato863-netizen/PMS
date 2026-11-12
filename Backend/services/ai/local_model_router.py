@@ -50,6 +50,7 @@ class LocalIntentResult:
     elapsed_ms: float
     reason: str
     model: str = ""
+    provider: str = "llama_cpp"
 
 
 def build_intent_json_schema() -> dict[str, object]:
@@ -80,9 +81,9 @@ def suggest_intent(question: str) -> LocalIntentResult:
     started = time.perf_counter()
     model = configured_model_name()
 
-    def result(intent: str | None, reason: str, elapsed: float | None = None) -> LocalIntentResult:
+    def result(intent: str | None, reason: str, elapsed: float | None = None, prov: str = "llama_cpp") -> LocalIntentResult:
         duration = elapsed if elapsed is not None else round((time.perf_counter() - started) * 1000, 2)
-        return LocalIntentResult(intent, duration, reason, model)
+        return LocalIntentResult(intent, duration, reason, model, provider=prov)
 
     if not local_intent_enabled():
         return result(None, "disabled")
@@ -118,21 +119,22 @@ def suggest_intent(question: str) -> LocalIntentResult:
         )
         engine = get_unified_provider_engine()
         resp = engine.generate(req)
+        prov_used = resp.provider if resp.provider in ("gemini", "openai") else "gemini"
         if not resp.is_success:
             reason = resp.outcome or "unavailable_or_invalid"
-            return result(None, reason, resp.latency_ms)
+            return result(None, reason, resp.latency_ms, prov=prov_used)
 
         try:
             cleaned = _JSON_FENCE_RE.sub("", resp.content.strip() if resp.content else "").strip()
             suggestion = json.loads(cleaned)
             if not isinstance(suggestion, dict) or set(suggestion) != {"intent"}:
-                return result(None, "invalid_response", resp.latency_ms)
+                return result(None, "invalid_response", resp.latency_ms, prov=prov_used)
             intent = suggestion["intent"]
             if not isinstance(intent, str) or intent not in ALLOWED_INTENTS:
-                return result(None, "invalid_intent", resp.latency_ms)
-            return LocalIntentResult(intent, resp.latency_ms, "ok", resp.model or "gemini")
+                return result(None, "invalid_intent", resp.latency_ms, prov=prov_used)
+            return LocalIntentResult(intent, resp.latency_ms, "ok", resp.model or "gemini", provider=prov_used)
         except (ValueError, TypeError, AttributeError):
-            return result(None, "invalid_response", resp.latency_ms)
+            return result(None, "invalid_response", resp.latency_ms, prov=prov_used)
 
     # Legacy chat_completion path (used in tests and local llama-server mode)
     call = chat_completion(

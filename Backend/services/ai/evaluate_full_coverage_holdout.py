@@ -638,16 +638,16 @@ def run_evaluation() -> dict[str, Any]:
     ai_evidence_cache.clear()
     holdout_turns = _build_holdout_turns()
 
-    # Run a representative live-Qwen multi-country slice (16 turns across EGY & UAE including Qwen-authored synthesis)
+    # Run a representative live-model multi-country slice (16 turns across EGY & UAE including model-authored synthesis)
     # and run the full 122-turn holdout matrix with deterministic/live verification
-    live_qwen_slice_indices = {0, 4, 10, 11, 21, 31, 41, 51, 61, 65, 72, 82, 92, 102, 112, 121}
+    live_model_slice_indices = {0, 4, 10, 11, 21, 31, 41, 51, 61, 65, 72, 82, 92, 102, 112, 121}
     holdout_results: list[dict[str, Any]] = []
 
     with _build_in_memory_db() as db:
         assistant = PmsAiOrchestrator(db, {"role": "Admin", "has_unrestricted_team_access": True})
         for idx, item in enumerate(holdout_turns):
-            use_live_qwen = idx in live_qwen_slice_indices
-            os.environ["PMS_AI_LOCAL_EXPLORATION_ENABLED"] = "true" if use_live_qwen else "false"
+            use_live_model = idx in live_model_slice_indices
+            os.environ["PMS_AI_LOCAL_EXPLORATION_ENABLED"] = "true" if use_live_model else "false"
             os.environ["PMS_AI_LOCAL_EXPLORATION_SYNTHESIS_ENABLED"] = (
                 "true" if idx in (0, 61) else "false"
             )
@@ -683,14 +683,14 @@ def run_evaluation() -> dict[str, Any]:
                     "headline": headline,
                     "missing": missing,
                     "passed": passed,
-                    "live_qwen": use_live_qwen,
+                    "live_model": use_live_model,
                     "elapsed_s": elapsed,
                 }
             )
-            if not passed or use_live_qwen:
+            if not passed or use_live_model:
                 print(
                     f"[HOLDOUT] {idx+1:03d}/{len(holdout_turns)} {item['country']} {item['family']:28s} "
-                    f"{'LIVE-QWEN' if use_live_qwen else 'ROUTER   '} {'PASS' if passed else 'FAIL'} ({elapsed:.2f}s) -> {headline}",
+                    f"{'LIVE-MODEL' if use_live_model else 'ROUTER   '} {'PASS' if passed else 'FAIL'} ({elapsed:.2f}s) -> {headline}",
                     flush=True,
                 )
 

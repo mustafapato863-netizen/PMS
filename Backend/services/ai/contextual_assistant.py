@@ -554,8 +554,8 @@ def detect_contextual_capability(
         if pat.search(lower):
             return "proposal", "local_rules", 0.0
 
-    # If local model router is enabled and prompt contains contextual help/navigation/proposal cues without
-    # explicit analytical data query keywords, allow Qwen3 4B to classify page_help / navigation / proposal intents.
+    # If model router is enabled and prompt contains contextual help/navigation/proposal cues without
+    # explicit analytical data query keywords, allow the configured AI model to classify page_help / navigation / proposal intents.
     has_contextual_cue = any(
         cue in lower
         for cue in (

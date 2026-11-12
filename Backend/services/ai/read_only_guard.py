@@ -268,7 +268,9 @@ class ReadOnlySessionGuard:
         self._original_commit = getattr(session, "commit", None)
 
         def _blocked_flush(*args: Any, **kwargs: Any) -> Any:
-            raise RuntimeError(AI_READ_ONLY_WRITE_ERROR)
+            if getattr(session, "new", None) or getattr(session, "dirty", None) or getattr(session, "deleted", None):
+                raise RuntimeError(AI_READ_ONLY_WRITE_ERROR)
+            return None
 
         def _blocked_commit(*args: Any, **kwargs: Any) -> Any:
             raise RuntimeError(AI_READ_ONLY_WRITE_ERROR)

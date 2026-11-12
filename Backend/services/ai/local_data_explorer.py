@@ -21,6 +21,7 @@ import os
 import re
 import threading
 import time
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any, Iterable
 
@@ -57,7 +58,18 @@ from services.ai.entity_resolver import (
     EmployeeHistoryCandidate,
     resolve_employee_from_candidates,
 )
-from services.ai.llm_client import chat_completion, exploration_timeout_seconds, local_exploration_enabled, synthesis_timeout_seconds
+from services.ai.llm_client import (
+    chat_completion,
+    configured_model_name,
+    exploration_timeout_seconds,
+    local_exploration_enabled,
+    synthesis_timeout_seconds,
+)
+from services.ai.provider_engine import (
+    ProviderMessage,
+    ProviderRequest,
+    get_unified_provider_engine,
+)
 from services.ai.providers import DeterministicLocalProviderAdapter
 from services.ai.router import (
     UNAVAILABLE_FUTURE_PERIODS,
@@ -76,6 +88,9 @@ from utils.report_scope import function_for_team, user_can_access_team_level
 
 _EXPLORATION_SLOT = threading.BoundedSemaphore(1)
 _JSON_FENCE_RE = re.compile(r"^```(?:json)?\s*|\s*```$", re.IGNORECASE)
+_ORIGINAL_CHAT_COMPLETION = chat_completion
+_last_exploration_provider: ContextVar[str] = ContextVar("last_exploration_provider", default="llama_cpp")
+_last_exploration_model: ContextVar[str] = ContextVar("last_exploration_model", default="")
 
 # Reject any parameter value that resembles raw SQL, script injection, path traversal, or control chars
 _UNSAFE_PARAM_RE = re.compile(
@@ -327,6 +342,24 @@ class LocalExplorationResult:
     database_ms: float = 0.0
     records_evaluated: int = 0
     fallback_reason: str = "none"
+    provider_name: str = ""
+    provider_used: str = ""
+    model_name: str = ""
+
+    def __post_init__(self) -> None:
+        if not self.provider_name:
+            if self.provider_calls > 0:
+                self.provider_name = _last_exploration_provider.get()
+            else:
+                self.provider_name = "local"
+        if not self.provider_used:
+            if self.provider_calls > 0:
+                self.provider_used = _last_exploration_provider.get()
+            else:
+                self.provider_used = "deterministic"
+        if not self.model_name:
+            if self.provider_calls > 0:
+                self.model_name = _last_exploration_model.get()
 
 
 def get_max_exploration_steps() -> int:
@@ -341,7 +374,7 @@ def build_exploration_step_json_schema() -> dict[str, object]:
     """Production-shaped JSON Schema for bounded local-model exploration steps.
 
     Matches the exact `{"action", "unknown_code", "tools"}` payload used by both
-    live Qwen exploration and unit test mocks.
+    live model exploration and unit test mocks.
     """
     return {
         "name": "pms_bounded_exploration_step",
@@ -643,10 +676,42 @@ def _call_local_exploration_model(
         "missing_parts": missing_parts if missing_parts is not None else (required_parts or ["score"]),
         "collected_evidence": compact_evidence,
     }
+    user_payload_str = json.dumps(user_payload, ensure_ascii=False, separators=(",", ":"))
+    use_unified = os.environ.get("PMS_AI_UNIFIED_EXPLORER", "").strip().lower() in ("1", "true")
+    if use_unified and chat_completion is _ORIGINAL_CHAT_COMPLETION:
+        step_schema_wrap = build_exploration_step_json_schema()
+        step_schema = step_schema_wrap.get("schema", step_schema_wrap)
+        req = ProviderRequest(
+            messages=[
+                ProviderMessage(role="user", content=user_payload_str),
+            ],
+            system_instruction=instruction,
+            response_format="json",
+            json_schema=step_schema,
+            temperature=0.0,
+            max_tokens=140,
+            timeout_seconds=exploration_timeout_seconds(),
+            purpose="exploration",
+        )
+        engine = get_unified_provider_engine()
+        resp = engine.generate(req)
+        provider = resp.provider if resp.provider in ("gemini", "openai") else "gemini"
+        _last_exploration_provider.set(provider)
+        _last_exploration_model.set(resp.model or provider)
+        if not resp.is_success:
+            reason = resp.outcome or "unavailable_or_invalid"
+            return None, resp.latency_ms, reason
+        parsed, status = _parse_and_validate_step_payload(resp.content or "")
+        if parsed is None:
+            return None, resp.latency_ms, status
+        return parsed, resp.latency_ms, "ok"
+
+    _last_exploration_provider.set("llama_cpp")
+    _last_exploration_model.set(configured_model_name())
     call = chat_completion(
         messages=[
             {"role": "system", "content": instruction},
-            {"role": "user", "content": json.dumps(user_payload, ensure_ascii=False, separators=(",", ":"))},
+            {"role": "user", "content": user_payload_str},
         ],
         max_tokens=140,
         temperature=0,
@@ -1312,7 +1377,7 @@ def _validate_and_normalize_tool_call(
     # NOTE (Task 2): a bookings question without rate language asks for the
     # authorised booking counter, whatever metric label the model supplied.
     # The old code only forced bookings_count for compare_branches, so a
-    # single-branch Clinics booking question kept Qwen's "Booking Rate" and
+    # single-branch Clinics booking question kept the model's "Booking Rate" and
     # was answered with an unrelated percentage. This override applies to
     # every tool and wins over a model-supplied rate label; explicit rate,
     # attendance, or trend wording is left alone.
@@ -1970,12 +2035,12 @@ def build_fact_ledger_from_evidence(
     return ledger
 
 
-def validate_qwen_grounded_synthesis(
+def validate_grounded_synthesis(
     *,
     draft_payload: dict[str, Any] | None,
     fact_ledger: list[dict[str, Any]],
 ) -> tuple[str | None, str]:
-    """Validate a Qwen-authored synthesis response against the authoritative fact ledger."""
+    """Validate a model-authored synthesis response against the authoritative fact ledger."""
     if not isinstance(draft_payload, dict):
         return None, "not_dict"
     fact_ids = draft_payload.get("fact_ids")
@@ -2111,7 +2176,7 @@ def validate_qwen_grounded_synthesis(
     return text, "ok"
 
 
-def _compose_grounded_answer_with_qwen(
+def _compose_grounded_answer(
     *,
     question: str,
     fact_ledger: list[dict[str, Any]],
@@ -2135,16 +2200,52 @@ def _compose_grounded_answer_with_qwen(
         'Include every fact_id in fact_ids and state each subject, period, and exact display value in headline. '
         'Never invent numbers. Return compact JSON: {"fact_ids":["F1"],"headline":"..."}. /no_think'
     )
+    user_payload_str = json.dumps(
+        {"question": question[:240], "facts": fact_ledger},
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    use_unified = os.environ.get("PMS_AI_UNIFIED_EXPLORER", "").strip().lower() in ("1", "true")
+    if use_unified and chat_completion is _ORIGINAL_CHAT_COMPLETION:
+        syn_schema = schema.get("schema", schema)
+        req = ProviderRequest(
+            messages=[
+                ProviderMessage(role="user", content=user_payload_str),
+            ],
+            system_instruction=sys_msg,
+            response_format="json",
+            json_schema=syn_schema,
+            temperature=0.0,
+            max_tokens=96,
+            timeout_seconds=synthesis_timeout_seconds(),
+            purpose="exploration_synthesis",
+        )
+        engine = get_unified_provider_engine()
+        resp = engine.generate(req)
+        provider = resp.provider if resp.provider in ("gemini", "openai") else "gemini"
+        _last_exploration_provider.set(provider)
+        _last_exploration_model.set(resp.model or provider)
+        if not resp.is_success:
+            reason = resp.outcome or "unavailable_or_invalid"
+            return None, resp.latency_ms, reason
+        try:
+            content = _JSON_FENCE_RE.sub("", (resp.content or "").strip()).strip()
+            draft = json.loads(content)
+        except (ValueError, TypeError):
+            return None, resp.latency_ms, "invalid_response"
+        validated_text, v_status = validate_grounded_synthesis(draft_payload=draft, fact_ledger=fact_ledger)
+        if validated_text is None:
+            return None, resp.latency_ms, v_status
+        return validated_text, resp.latency_ms, "ok"
+
+    _last_exploration_provider.set("llama_cpp")
+    _last_exploration_model.set(configured_model_name())
     call = chat_completion(
         messages=[
             {"role": "system", "content": sys_msg},
             {
                 "role": "user",
-                "content": json.dumps(
-                    {"question": question[:240], "facts": fact_ledger},
-                    ensure_ascii=False,
-                    separators=(",", ":"),
-                ),
+                "content": user_payload_str,
             },
         ],
         max_tokens=96,
@@ -2161,10 +2262,14 @@ def _compose_grounded_answer_with_qwen(
         draft = json.loads(content)
     except (ValueError, TypeError):
         return None, call.elapsed_ms, "invalid_response"
-    validated_text, v_status = validate_qwen_grounded_synthesis(draft_payload=draft, fact_ledger=fact_ledger)
+    validated_text, v_status = validate_grounded_synthesis(draft_payload=draft, fact_ledger=fact_ledger)
     if validated_text is None:
         return None, call.elapsed_ms, v_status
     return validated_text, call.elapsed_ms, "ok"
+
+
+_compose_grounded_answer_with_qwen = _compose_grounded_answer
+validate_qwen_grounded_synthesis = validate_grounded_synthesis
 
 
 def _covered_parts_for_calls(calls: list[ValidatedExplorationToolCall]) -> set[str]:
@@ -2682,7 +2787,7 @@ def run_bounded_exploration(
             covered_after = _covered_parts_for_calls(executed_calls)
             still_missing = [p for p in required_parts if p not in covered_after]
             is_compound_prompt = bool(len(required_parts) >= 2 or re.search(r"\b(?:and|also|plus|both|as well as)\b|;", lower))
-            # If only discovery tools have been called so far, continue to next step so Qwen can issue a data tool
+            # If only discovery tools have been called so far, continue to next step so the model can issue a data tool
             if all(c.tool in DISCOVERY_EXPLORATION_TOOLS for c in executed_calls):
                 if is_schema_unknown_prompt:
                     break
@@ -2902,15 +3007,15 @@ def run_bounded_exploration(
         ev_syn_val = os.environ.get("PMS_AI_LOCAL_EVIDENCE_SYNTHESIS_ENABLED", "").strip().casefold()
         legacy_syn_val = os.environ.get("PMS_AI_LOCAL_SYNTHESIS_ENABLED", "").strip().casefold()
         if exp_syn_val in falsy_syn or ev_syn_val in falsy_syn:
-            should_run_qwen_synthesis = False
+            should_run_synthesis = False
         elif exp_syn_val in truthy_syn or ev_syn_val in truthy_syn or legacy_syn_val in truthy_syn:
-            should_run_qwen_synthesis = True
+            should_run_synthesis = True
         else:
-            should_run_qwen_synthesis = planner_ms <= 6000.0
-        if should_run_qwen_synthesis:
-            # Revalidate live grants immediately before sending fact_ledger to Qwen synthesis
-            ok_before_qwen_syn, scope = _revalidate_live_scope_and_evidence(scope, executed_calls, tool_results)
-            if not ok_before_qwen_syn:
+            should_run_synthesis = planner_ms <= 6000.0
+        if should_run_synthesis:
+            # Revalidate live grants immediately before sending fact_ledger to synthesis
+            ok_before_syn, scope = _revalidate_live_scope_and_evidence(scope, executed_calls, tool_results)
+            if not ok_before_syn:
                 return _restricted_revoked_result(
                     step_traces_now=step_traces,
                     prov_calls_now=total_provider_calls,
@@ -2932,9 +3037,9 @@ def run_bounded_exploration(
             synthesis_ms = syn_ms
             total_provider_calls += 1
             total_provider_ms = round(total_provider_ms + syn_ms, 2)
-            # Revalidate live grants immediately after Qwen synthesis returns
-            ok_after_qwen_syn, scope = _revalidate_live_scope_and_evidence(scope, executed_calls, tool_results)
-            if not ok_after_qwen_syn:
+            # Revalidate live grants immediately after synthesis returns
+            ok_after_syn, scope = _revalidate_live_scope_and_evidence(scope, executed_calls, tool_results)
+            if not ok_after_syn:
                 return _restricted_revoked_result(
                     step_traces_now=step_traces,
                     prov_calls_now=total_provider_calls,
