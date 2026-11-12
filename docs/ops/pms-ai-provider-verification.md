@@ -345,3 +345,31 @@ evaluation/pms-ai/phase2/tests/test_coverage_manifest.py:      10 passed
 -------------------------------------------------------------------------
 TOTAL SUITE:                                                   204 passed (100% pass, 0 failures)
 ```
+
+---
+
+## G. Outstanding Risks & Mitigation Matrix
+
+| Dimension | Risk Description | Severity | Architectural Mitigation |
+|---|---|---|---|
+| **Account-Level Quota** | Cloudflare Workers AI free allowance (10,000 Neurons/day) is enforced per Account ID. If exhausted, all Cloudflare models throttle with HTTP 429. | Medium | Automatic failover to Google Gemini handles 429 immediately without consuming additional Cloudflare timeout budget. |
+| **Upstream Deprecation** | Google AI Studio deprecated `gemini-2.5-flash` for newly created API keys, routing calls to `gemini-3.5-flash-lite`. | Low | `gemini-2.5-flash` is preserved as the repository baseline; setting `PMS_GEMINI_MODEL=gemini-3.5-flash-lite` seamlessly transitions fallback without code changes. |
+| **Diagnostic Endpoint Abuse** | `POST /api/ai/diagnostics/verify-live` makes real external calls and could consume provider quota if invoked repeatedly. | Low | 6-layer defense: mandatory Admin role, disabled by default (`PMS_AI_LIVE_VERIFY_ENDPOINT_ENABLED=false`), blocked in production, daily budget limit (10 calls/day), non-blocking concurrency guard (HTTP 429), and 5.0s timeout ceiling. |
+| **Data Privacy on Fallback** | Google AI Studio Free Tier logs prompts for model training. | Critical | Runbook explicitly mandates Paid Tier (Pay-As-You-Go) for production environments containing corporate KPI data. On Paid Tier, Google contractually guarantees zero prompt training. |
+
+---
+
+## H. Required Approvals for Production Deployment
+
+Before promoting PR #110 from Draft to Merged and enabling AI in Dokploy production:
+
+1. **AI Security Reviewer Approval:**
+   - Verify that all Cloudflare and Google tokens remain redacted in logs (`redact_secrets`).
+   - Confirm that live verification endpoints remain disabled by default in production.
+   - Confirm that AI workspace features remain strictly restricted to `Admin` role.
+2. **Lead Backend / Infrastructure Architect Approval:**
+   - Approve the model resolution mechanism and Cloudflare primary / Gemini fallback architecture.
+   - Confirm Dokploy container rollback procedure to baseline commit `eb502a7f017d31ad7123077c6629d01f46406c35`.
+3. **Product Owner Sign-Off:**
+   - Authorize activation of `PMS_GEMINI_MODEL=gemini-3.5-flash-lite` in Dokploy environment variables.
+   - Authorize switching `ai_enabled` to `true` in the database when the Phase 3 administrative rollout commences.
