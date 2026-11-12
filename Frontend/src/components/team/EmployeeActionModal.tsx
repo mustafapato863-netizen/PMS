@@ -98,10 +98,10 @@ function resolveAiReportingPeriod(month: string, employee: TeamAgentRow | null):
     'July', 'August', 'September', 'October', 'November', 'December',
   ];
 
-  const exactKey = /^(20\\d{2})-(0[1-9]|1[0-2])$/.exec(raw);
+  const exactKey = /^(20\d{2})-(0[1-9]|1[0-2])$/.exec(raw);
   if (exactKey) return { month: monthNames[Number(exactKey[2]) - 1], year: Number(exactKey[1]) };
 
-  const named = /^(January|February|March|April|May|June|July|August|September|October|November|December)(?:\\s+(20\\d{2}))?$/i.exec(raw);
+  const named = /^(January|February|March|April|May|June|July|August|September|October|November|December)(?:\s+(20\d{2}))?$/i.exec(raw);
   if (!named) return null;
   const monthName = monthNames.find((item) => item.toLowerCase() === named[1].toLowerCase());
   if (!monthName) return null;
@@ -109,7 +109,7 @@ function resolveAiReportingPeriod(month: string, employee: TeamAgentRow | null):
   // A named-month selector often has no year. Use only a year present in the
   // actual performance record, or an explicitly dated employee month.
   const rowMonth = (employee?.month || '').trim();
-  const rowPeriod = /^(January|February|March|April|May|June|July|August|September|October|November|December)\\s+(20\\d{2})$/i.exec(rowMonth);
+  const rowPeriod = /^(January|February|March|April|May|June|July|August|September|October|November|December)\s+(20\d{2})$/i.exec(rowMonth);
   const rowYear = rowPeriod && rowPeriod[1].toLowerCase() === monthName.toLowerCase()
     ? Number(rowPeriod[2])
     : null;
@@ -126,11 +126,18 @@ const EmployeeActionModal = ({ employee, month, teamWeights, onClose, onSaved, e
   const { currentUser } = useAuth();
   const { correctiveActionPilotEnabled, ready: isAiAvailabilityReady } = useAiAvailability();
   const isAiPilotVisible = isAiAvailabilityReady && currentUser?.role === 'Admin' && correctiveActionPilotEnabled;
+  const [aiCardDismissed, setAiCardDismissed] = useState(false);
 
   const [showOverwriteConfirm, setShowOverwriteConfirm] = useState(false);
   const [pendingDraft, setPendingDraft] = useState<{ actionType: ActionType; actionDescription: string } | null>(null);
 
   const aiReportingPeriod = useMemo(() => resolveAiReportingPeriod(month, employee), [month, employee]);
+  // A replacement confirmation must never carry over to another employee or period.
+  useEffect(() => {
+    setAiCardDismissed(false);
+    setPendingDraft(null);
+    setShowOverwriteConfirm(false);
+  }, [employee?.id, month]);
   const [actionType, setActionType] = useState<ActionType>(editAction ? editAction.action_type : 'Coaching');
   const [actionText, setActionText] = useState(editAction ? editAction.action_text : '');
   const [rootCauseNote, setRootCauseNote] = useState(editAction ? editAction.root_cause_note : '');
@@ -484,7 +491,7 @@ const EmployeeActionModal = ({ employee, month, teamWeights, onClose, onSaved, e
             </div>
 
             {/* AI Corrective Action Suggestion Card (Admin Only Pilot) */}
-            {isAiPilotVisible && aiReportingPeriod && (
+            {isAiPilotVisible && aiReportingPeriod && !aiCardDismissed && (
               <CorrectiveActionSuggestionCard
                 employeeId={employee.id || employee.raw?.identity?.employee_id}
                 employeeName={employee.name}
@@ -493,6 +500,7 @@ const EmployeeActionModal = ({ employee, month, teamWeights, onClose, onSaved, e
                 year={aiReportingPeriod.year}
                 linkedKpiKey={aiLinkedKpiKey}
                 onApplyDraft={handleApplyDraft}
+                onDismiss={() => setAiCardDismissed(true)}
               />
             )}
 

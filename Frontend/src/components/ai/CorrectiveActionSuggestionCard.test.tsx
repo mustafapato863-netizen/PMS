@@ -599,6 +599,13 @@ describe('CorrectiveActionSuggestionCard Unit Tests', () => {
   });
 });
 
+describe('CorrectiveActionSuggestionCard stale-request regression', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    aiResponseHandler = null;
+    setupDefaultApiFetch();
+  });
+
   it('ignores an old completed response after the selected KPI changes', async () => {
     const user = userEvent.setup();
     let finishOldRequest!: (value: MockApiResponse) => void;
@@ -645,6 +652,7 @@ describe('CorrectiveActionSuggestionCard Unit Tests', () => {
     resolveSecond({ success: true, data: createMockSuggestedPayload() });
     await waitFor(() => expect(screen.getByTestId('ai-card-suggested')).toBeInTheDocument());
   });
+});
 
 describe('EmployeeActionModal Phase 3 Integration Tests', () => {
   beforeEach(() => {
