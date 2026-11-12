@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Save, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { X, Save, AlertCircle, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { useActionStore, type ActionTrackingInput } from '../../hooks/useActionStore';
 import { apiFetch } from '../../lib/apiClient';
 import { useAuth } from '../../context/auth';
@@ -12,6 +12,8 @@ import { getWeightForLabel } from '../../utils/kpiScore';
 import { formatPercentRatio } from '../../utils/percentForm';
 import { extractKpiMentions, formatKpiMentions } from '../../utils/rootCauseInsights';
 import OverlayPortal from '../common/OverlayPortal';
+import { useAiAvailability } from '../../features/ai/aiAvailabilityContext';
+import CorrectiveActionSuggestionCard from '../ai/CorrectiveActionSuggestionCard';
 
 interface EmployeeActionModalProps {
   employee: TeamAgentRow | null;
@@ -88,9 +90,48 @@ const formatKpiValue = (label: string, actual: number, target: number, unit: str
   return `${formattedActual} / ${formattedTarget}`;
 };
 
-const EmployeeActionModal = ({ employee, month, teamWeights, onClose, onSaved, editAction }: EmployeeActionModalProps) => {
+/** Only send a confirmed reporting period to the AI. Never invent a year. */
+function resolveAiReportingPeriod(month: string, employee: TeamAgentRow | null): { month: string; year: number } | null {
+  const raw = (month || employee?.month || employee?.raw?.identity?.month || '').trim();
+  const monthNames = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December',
+  ];
+
+  const exactKey = /^(20\d{2})-(0[1-9]|1[0-2])$/.exec(raw);
+  if (exactKey) return { month: monthNames[Number(exactKey[2]) - 1], year: Number(exactKey[1]) };
+
+  const named = /^(January|February|March|April|May|June|July|August|September|October|November|December)(?:\s+(20\d{2}))?$/i.exec(raw);
+  if (!named) return null;
+  const monthName = monthNames.find((item) => item.toLowerCase() === named[1].toLowerCase());
+  if (!monthName) return null;
+
+  // A named-month selector often has no year. Use only a year present in the
+  // actual performance record, or an explicitly dated employee month.
+  const rowMonth = (employee?.month || '').trim();
+  const rowPeriod = /^(January|February|March|April|May|June|July|August|September|October|November|December)\s+(20\d{2})$/i.exec(rowMonth);
+  const rowYear = rowPeriod && rowPeriod[1].toLowerCase() === monthName.toLowerCase()
+    ? Number(rowPeriod[2])
+    : null;
+  const rawYear = employee?.raw?.identity?.month?.toLowerCase() === monthName.toLowerCase()
+    ? employee?.raw?.year
+    : undefined;
+  const year = named[2] ? Number(named[2]) : (rowYear ?? rawYear);
+  if (!Number.isInteger(year) || !year || year < 2000 || year > 2100) return null;
+  return { month: monthName, year };
+}
+
+const EmployeeActionModalBody = ({ employee, month, teamWeights, onClose, onSaved, editAction }: EmployeeActionModalProps) => {
   const { saveAction, updateAction, isSaving } = useActionStore();
   const { currentUser } = useAuth();
+  const { correctiveActionPilotEnabled, ready: isAiAvailabilityReady } = useAiAvailability();
+  const isAiPilotVisible = isAiAvailabilityReady && currentUser?.role === 'Admin' && correctiveActionPilotEnabled;
+  const [aiCardDismissed, setAiCardDismissed] = useState(false);
+
+  const [showOverwriteConfirm, setShowOverwriteConfirm] = useState(false);
+  const [pendingDraft, setPendingDraft] = useState<{ actionType: ActionType; actionDescription: string } | null>(null);
+
+  const aiReportingPeriod = useMemo(() => resolveAiReportingPeriod(month, employee), [month, employee]);
   const [actionType, setActionType] = useState<ActionType>(editAction ? editAction.action_type : 'Coaching');
   const [actionText, setActionText] = useState(editAction ? editAction.action_text : '');
   const [rootCauseNote, setRootCauseNote] = useState(editAction ? editAction.root_cause_note : '');
@@ -195,6 +236,16 @@ const EmployeeActionModal = ({ employee, month, teamWeights, onClose, onSaved, e
     return priorities;
   }, [employee, failedKpis]);
 
+  // A display label is not necessarily the canonical backend KPI identifier.
+  // If a source mapping is absent, let the backend select a KPI from evidence.
+  const aiLinkedKpiKey = useMemo(() => {
+    const requested = linkedKpi || failedKpis[0]?.label;
+    if (!requested) return null;
+    return employee?.raw?.kpi_values?.find(
+      (kpi) => kpi.kpi_key === requested || kpi.label === requested
+    )?.kpi_key ?? null;
+  }, [employee, linkedKpi, failedKpis]);
+
   const orderedActionTypes = useMemo(() => {
     return [...ACTION_TYPES].sort((a, b) => (actionPriority.get(b.value) ?? 0) - (actionPriority.get(a.value) ?? 0));
   }, [actionPriority]);
@@ -213,6 +264,27 @@ const EmployeeActionModal = ({ employee, month, teamWeights, onClose, onSaved, e
       if (existing.includes(line)) return existing;
       return `${existing}\n${line}`;
     });
+  };
+
+  const executeApplyDraft = (draft: { actionType: ActionType; actionDescription: string }) => {
+    setActionType(draft.actionType);
+    setActionText(draft.actionDescription);
+    setPendingDraft(null);
+    setShowOverwriteConfirm(false);
+  };
+
+  const handleApplyDraft = (draft: { actionType: ActionType; actionDescription: string }) => {
+    if (actionText.trim().length > 0) {
+      setPendingDraft(draft);
+      setShowOverwriteConfirm(true);
+    } else {
+      executeApplyDraft(draft);
+    }
+  };
+
+  const cancelOverwriteDraft = () => {
+    setPendingDraft(null);
+    setShowOverwriteConfirm(false);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -412,6 +484,26 @@ const EmployeeActionModal = ({ employee, month, teamWeights, onClose, onSaved, e
               </div>
             </div>
 
+            {/* AI Corrective Action Suggestion Card (Admin Only Pilot) */}
+            {isAiPilotVisible && aiReportingPeriod && !aiCardDismissed && (
+              <CorrectiveActionSuggestionCard
+                employeeId={employee.id || employee.raw?.identity?.employee_id}
+                employeeName={employee.name}
+                team={employee.team}
+                month={aiReportingPeriod.month}
+                year={aiReportingPeriod.year}
+                linkedKpiKey={aiLinkedKpiKey}
+                onApplyDraft={handleApplyDraft}
+                onDismiss={() => setAiCardDismissed(true)}
+              />
+            )}
+
+            {isAiPilotVisible && !aiReportingPeriod && (
+              <p role="status" className="rounded-xl border border-[var(--border-light)] bg-[var(--bg-sunken)] px-3 py-2 text-xs text-[var(--text-secondary)]">
+                AI suggestion unavailable: select a reporting month with a verified year. Manual action entry is still available.
+              </p>
+            )}
+
             {/* Action Type */}
             <div>
               <label className="block text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider mb-2">
@@ -473,6 +565,57 @@ const EmployeeActionModal = ({ employee, month, teamWeights, onClose, onSaved, e
               />
             )}
 
+            {/* Existing Text Overwrite Confirmation Dialog */}
+            {showOverwriteConfirm && pendingDraft && (
+              <div
+                role="alertdialog"
+                aria-labelledby="overwrite-confirm-title"
+                aria-describedby="overwrite-confirm-desc"
+                data-testid="overwrite-confirm-dialog"
+                className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3.5 space-y-2.5"
+              >
+                <div className="flex items-start gap-2.5">
+                  <AlertTriangle size={18} className="shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
+                  <div>
+                    <h5 id="overwrite-confirm-title" className="text-xs font-bold text-amber-800 dark:text-amber-300">
+                      Replace Existing Action Description?
+                    </h5>
+                    <p id="overwrite-confirm-desc" className="text-xs text-amber-700 dark:text-amber-400 mt-0.5">
+                      You have already entered an action description. Inserting this suggestion will replace your current text:
+                    </p>
+                    <div className="mt-2 rounded-lg bg-[var(--bg-sunken)] p-2 text-xs font-mono text-[var(--text-secondary)] space-y-1">
+                      <div>
+                        <span className="font-bold text-[var(--text-muted)] uppercase text-[10px]">Current description: </span>
+                        <span className="text-[var(--text-primary)]">{actionText}</span>
+                      </div>
+                      <div>
+                        <span className="font-bold text-purple-600 dark:text-purple-400 uppercase text-[10px]">Will replace with ({pendingDraft.actionType}): </span>
+                        <span className="text-[var(--text-primary)]">{pendingDraft.actionDescription}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center justify-end gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={cancelOverwriteDraft}
+                    data-testid="cancel-overwrite-btn"
+                    className="rounded-lg border border-[var(--border-light)] bg-[var(--bg-surface)] px-3 py-1.5 text-xs font-semibold text-[var(--text-secondary)] hover:bg-[var(--bg-sunken)] transition-colors cursor-pointer"
+                  >
+                    Cancel (Keep My Text)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => executeApplyDraft(pendingDraft)}
+                    data-testid="confirm-overwrite-btn"
+                    className="rounded-lg bg-amber-600 px-3.5 py-1.5 text-xs font-bold text-white hover:bg-amber-700 transition-colors shadow-sm cursor-pointer"
+                  >
+                    Confirm & Replace
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Action Text */}
             <div>
               <label className="block text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider mb-1.5">
@@ -523,6 +666,15 @@ const EmployeeActionModal = ({ employee, month, teamWeights, onClose, onSaved, e
     </OverlayPortal>
   );
 };
+
+// A change of employee, reporting period, or existing action starts a new modal
+// state, so pending AI drafts and confirmations cannot cross subjects.
+const EmployeeActionModal = (props: EmployeeActionModalProps) => (
+  <EmployeeActionModalBody
+    key={JSON.stringify([props.employee?.id ?? null, props.month, props.editAction?.id ?? null])}
+    {...props}
+  />
+);
 
 function TrackPlanFields({
   team,

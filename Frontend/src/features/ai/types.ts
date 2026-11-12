@@ -471,3 +471,108 @@ export interface AiWatchingPayload {
   summary_score_change?: number | null;
   measured_records: number;
 }
+
+// ============================================================================
+// Phase 3 — Contextual Corrective-Action Pilot Suggestion Types (#98, #100)
+// ============================================================================
+
+export type CorrectiveActionSuggestionOutcome =
+  | 'suggested'
+  | 'insufficient_evidence'
+  | 'model_unavailable'
+  | 'draft_rejected';
+
+export type CorrectiveActionSuggestionProvider = 'cloudflare' | 'gemini' | 'deterministic' | 'none';
+
+export type CorrectiveActionDraftType = 'Coaching' | 'Training' | 'Monitor';
+
+export interface AiCorrectiveActionSuggestionRequest {
+  team: string;
+  month: string;
+  year: number;
+  performance_level?: string;
+  employee_id?: string | null;
+  linked_kpi_key?: string | null;
+}
+
+export interface AiCorrectiveActionSuggestionPeriod {
+  month: string;
+  year: number;
+}
+
+export interface AiCorrectiveActionSuggestionContext {
+  subject: 'employee' | 'team';
+  employee_id?: string | null;
+  employee_name?: string | null;
+  country?: string | null;
+  function?: string | null;
+  team: string;
+  position?: string | null;
+  period: AiCorrectiveActionSuggestionPeriod;
+  performance_level: string;
+  scoring_basis?: string | null;
+  linked_kpi_key?: string | null;
+}
+
+export interface AiCorrectiveActionSuggestionKpiEvidence {
+  employee_id?: string | null;
+  kpi_key: string;
+  display_name: string;
+  actual?: number | null;
+  target?: number | null;
+  unit?: string | null;
+  direction?: string | null;
+  weight?: number | null;
+  achievement_percent?: number | null;
+  contributes_to_score?: boolean;
+  status?: 'below_target' | 'at_or_above_target' | 'unknown';
+}
+
+export interface AiCorrectiveActionSuggestionPriorAction {
+  action_type?: string | null;
+  status?: string | null;
+  linked_kpi_key?: string | null;
+  period?: { month?: string; year?: number };
+  summary?: string | null;
+}
+
+export interface AiCorrectiveActionSuggestionDraft {
+  title: string;
+  focus_kpi_key: string;
+  focus_kpi_name: string;
+  action_type: CorrectiveActionDraftType;
+  measured_issue: string;
+  measured_issue_source: 'pms_evidence';
+  recommended_steps: string[];
+  recommended_steps_source: 'cloudflare' | 'gemini';
+  uncertainty: string;
+  uncertainty_source: 'pms_evidence';
+  approval_status: 'unapproved_draft';
+}
+
+export interface AiCorrectiveActionSuggestionPayload {
+  outcome: CorrectiveActionSuggestionOutcome;
+  provider_used: CorrectiveActionSuggestionProvider;
+  model_called?: boolean;
+  model_version?: string | null;
+  fallback_reason?: string | null;
+  validation_errors?: string[];
+  context: AiCorrectiveActionSuggestionContext;
+  focus_kpi_key?: string | null;
+  measured_facts?: string[];
+  evidence_limitations?: string[];
+  supporting_kpis?: AiCorrectiveActionSuggestionKpiEvidence[];
+  supporting_kpis_truncated?: boolean;
+  prior_actions?: AiCorrectiveActionSuggestionPriorAction[];
+  insufficient_evidence_reasons?: string[];
+  draft?: AiCorrectiveActionSuggestionDraft | null;
+  model_latency_ms?: number | null;
+  read_only: true;
+  requires_human_confirmation: true;
+}
+
+export interface AiCorrectiveActionSuggestionResponse {
+  success: boolean;
+  message: string;
+  data: AiCorrectiveActionSuggestionPayload;
+}
