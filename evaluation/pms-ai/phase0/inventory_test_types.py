@@ -99,6 +99,8 @@ def classify(path: Path, text: str) -> list[str]:
             "MagicMock",
             "unittest.mock",
             "DeterministicLocalProviderAdapter",
+            "install_scripted_provider",
+            "ScriptedProviderFake",
             "vi.mock",
             "vi.fn",
         )

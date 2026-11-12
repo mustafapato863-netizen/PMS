@@ -1,7 +1,7 @@
 # PMS Phase 2 coverage manifest
 
 Version `2.1.0` from repository sources at baseline `fabbb3d461c044bd367e6cc38a9c514fcfe300d2`.
-Input fingerprint `b185c6c3755f3a481cb1496fed84aae6c558f2b40f2061522cf516e41e83c42d`.
+Input fingerprint `62a43d291ba9f60160e907d677dcd2e6b116b2191d1a83a3ab03a530d23ba66b`.
 
 This is the domain/data map for Plan Phase 2. The governing write-up is `docs/plans/pms-ai-evidence-first/`. Capability claims in that write-up are not copied here. The runtime registries `Backend/services/ai/catalog.py` and `Backend/services/ai/coverage_manifest.py` use the same roadmap vocabulary (Phase 2, issue #94); `CERTIFIED` is never emitted.
 

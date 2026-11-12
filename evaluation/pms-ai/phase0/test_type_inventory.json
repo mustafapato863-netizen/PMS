@@ -9,11 +9,11 @@
     "source-parity",
     "browser"
   ],
-  "file_count": 34,
-  "case_count": 355,
+  "file_count": 39,
+  "case_count": 452,
   "files_by_label": {
-    "synthetic": 14,
-    "mocked": 18,
+    "synthetic": 15,
+    "mocked": 22,
     "live-model": 4,
     "source-parity": 2,
     "browser": 0
@@ -76,9 +76,19 @@
         "live-model",
         "mocked"
       ],
-      "cases": 42,
+      "cases": 44,
       "evidence_status": "partial",
       "note": "The live-model test is skipped unless PMS_AI_RUN_LIVE_MODEL_TESTS=true. Default CI does not call Qwen."
+    },
+    {
+      "path": "Backend/tests/test_ai_corrective_action_drafter_unified.py",
+      "kind": "test",
+      "labels": [
+        "mocked"
+      ],
+      "cases": 7,
+      "evidence_status": "partial",
+      "note": ""
     },
     {
       "path": "Backend/tests/test_ai_corrective_action_evidence.py",
@@ -101,12 +111,32 @@
       "note": ""
     },
     {
+      "path": "Backend/tests/test_ai_data_access.py",
+      "kind": "test",
+      "labels": [
+        "synthetic"
+      ],
+      "cases": 27,
+      "evidence_status": "not applicable",
+      "note": ""
+    },
+    {
       "path": "Backend/tests/test_ai_diagnostics.py",
       "kind": "test",
       "labels": [
         "mocked"
       ],
-      "cases": 12,
+      "cases": 10,
+      "evidence_status": "partial",
+      "note": ""
+    },
+    {
+      "path": "Backend/tests/test_ai_explorer_unified.py",
+      "kind": "test",
+      "labels": [
+        "mocked"
+      ],
+      "cases": 8,
       "evidence_status": "partial",
       "note": ""
     },
@@ -146,7 +176,7 @@
       "labels": [
         "mocked"
       ],
-      "cases": 7,
+      "cases": 6,
       "evidence_status": "partial",
       "note": ""
     },
@@ -158,6 +188,16 @@
       ],
       "cases": 20,
       "evidence_status": "not applicable",
+      "note": ""
+    },
+    {
+      "path": "Backend/tests/test_ai_provider_engine.py",
+      "kind": "test",
+      "labels": [
+        "mocked"
+      ],
+      "cases": 48,
+      "evidence_status": "partial",
       "note": ""
     },
     {
@@ -221,6 +261,16 @@
       "note": ""
     },
     {
+      "path": "Backend/tests/test_ai_synthesis_and_routing_unified.py",
+      "kind": "test",
+      "labels": [
+        "mocked"
+      ],
+      "cases": 7,
+      "evidence_status": "partial",
+      "note": ""
+    },
+    {
       "path": "Backend/tests/test_ai_workspace.py",
       "kind": "test",
       "labels": [
@@ -257,7 +307,7 @@
         "live-model",
         "mocked"
       ],
-      "cases": 8,
+      "cases": 7,
       "evidence_status": "partial",
       "note": "The live-model test is skipped unless PMS_AI_RUN_LIVE_MODEL_TESTS=true. Default CI does not call Qwen."
     },
@@ -268,7 +318,7 @@
         "live-model",
         "mocked"
       ],
-      "cases": 12,
+      "cases": 13,
       "evidence_status": "partial",
       "note": "The live-model test is skipped unless PMS_AI_RUN_LIVE_MODEL_TESTS=true. Default CI does not call Qwen."
     },
@@ -279,7 +329,7 @@
         "live-model",
         "mocked"
       ],
-      "cases": 11,
+      "cases": 12,
       "evidence_status": "partial",
       "note": "The live-model test is skipped unless PMS_AI_RUN_LIVE_MODEL_TESTS=true. Default CI does not call Qwen."
     },

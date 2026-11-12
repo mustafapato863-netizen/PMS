@@ -8,13 +8,13 @@ verified is not used. source-parity here is partial because the reviewer has not
 
 ## Counts
 
-Test files: 34. Test functions or `it` blocks: 355.
+Test files: 39. Test functions or `it` blocks: 452.
 A file can carry more than one label, so the label counts can add up to more than the file count.
 
 | Label | Files | Evidence status of what the label proves |
 | --- | ---: | --- |
-| `synthetic` | 14 | not applicable |
-| `mocked` | 18 | partial |
+| `synthetic` | 15 | not applicable |
+| `mocked` | 22 | partial |
 | `live-model` | 4 | blocked |
 | `source-parity` | 2 | partial |
 | `browser` | 0 | not applicable |
@@ -28,27 +28,32 @@ A file can carry more than one label, so the label counts can add up to more tha
 | `Backend/tests/test_ai_booking_count_parity.py` | test | `mocked` | 25 | partial |
 | `Backend/tests/test_ai_branch_bar_missing_value.py` | test | `synthetic` | 2 | not applicable |
 | `Backend/tests/test_ai_catalog_evidence.py` | test | `mocked` | 12 | partial |
-| `Backend/tests/test_ai_corrective_action_drafter.py` | test | `live-model`, `mocked` | 42 | partial |
+| `Backend/tests/test_ai_corrective_action_drafter.py` | test | `live-model`, `mocked` | 44 | partial |
+| `Backend/tests/test_ai_corrective_action_drafter_unified.py` | test | `mocked` | 7 | partial |
 | `Backend/tests/test_ai_corrective_action_evidence.py` | test | `synthetic` | 11 | not applicable |
 | `Backend/tests/test_ai_count_achievement_card.py` | test | `synthetic` | 3 | not applicable |
-| `Backend/tests/test_ai_diagnostics.py` | test | `mocked` | 12 | partial |
+| `Backend/tests/test_ai_data_access.py` | test | `synthetic` | 27 | not applicable |
+| `Backend/tests/test_ai_diagnostics.py` | test | `mocked` | 10 | partial |
+| `Backend/tests/test_ai_explorer_unified.py` | test | `mocked` | 8 | partial |
 | `Backend/tests/test_ai_feature_gate.py` | test | `mocked` | 2 | partial |
 | `Backend/tests/test_ai_full_coverage_egy_uae.py` | test | `mocked` | 7 | partial |
 | `Backend/tests/test_ai_person_name_routing.py` | test | `synthetic` | 4 | not applicable |
-| `Backend/tests/test_ai_phase1_runtime.py` | test | `mocked` | 7 | partial |
+| `Backend/tests/test_ai_phase1_runtime.py` | test | `mocked` | 6 | partial |
 | `Backend/tests/test_ai_phase2_reconciliation.py` | test | `synthetic` | 20 | not applicable |
+| `Backend/tests/test_ai_provider_engine.py` | test | `mocked` | 48 | partial |
 | `Backend/tests/test_ai_review_repairs.py` | test | `mocked` | 8 | partial |
 | `Backend/tests/test_ai_reviewed_export_api.py` | test | `synthetic` | 1 | not applicable |
 | `Backend/tests/test_ai_scope_and_context.py` | test | `synthetic` | 12 | not applicable |
 | `Backend/tests/test_ai_scope_and_fallback_regressions.py` | test | `mocked` | 5 | partial |
 | `Backend/tests/test_ai_shared_region_scorecard.py` | test | `synthetic` | 8 | not applicable |
 | `Backend/tests/test_ai_source_parity_matrix.py` | test | `synthetic` | 30 | not applicable |
+| `Backend/tests/test_ai_synthesis_and_routing_unified.py` | test | `mocked` | 7 | partial |
 | `Backend/tests/test_ai_workspace.py` | test | `mocked` | 22 | partial |
 | `Backend/tests/test_evaluation_outbound_productivity_golden.py` | test | `source-parity` | 9 | partial |
 | `Backend/tests/test_evaluation_provenance.py` | test | `synthetic` | 7 | not applicable |
-| `Backend/tests/test_local_assistant_exploration.py` | test | `live-model`, `mocked` | 8 | partial |
-| `Backend/tests/test_local_evidence_synthesis.py` | test | `live-model`, `mocked` | 12 | partial |
-| `Backend/tests/test_local_model_router.py` | test | `live-model`, `mocked` | 11 | partial |
+| `Backend/tests/test_local_assistant_exploration.py` | test | `live-model`, `mocked` | 7 | partial |
+| `Backend/tests/test_local_evidence_synthesis.py` | test | `live-model`, `mocked` | 13 | partial |
+| `Backend/tests/test_local_model_router.py` | test | `live-model`, `mocked` | 12 | partial |
 | `Backend/tests/test_pms_ai_phase0_derivation.py` | test | `source-parity` | 5 | partial |
 | `Backend/tests/test_pms_ai_phase0_eval_schema.py` | test | `synthetic` | 6 | not applicable |
 | `Frontend/src/components/ai/AiResponseCard.test.tsx` | test | `synthetic` | 1 | not applicable |
