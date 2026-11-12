@@ -1351,9 +1351,15 @@ class UnifiedProviderEngine:
 _default_engine: UnifiedProviderEngine | None = None
 
 
-def get_unified_provider_engine() -> UnifiedProviderEngine:
+def reset_unified_provider_engine() -> None:
+    """Reset the global default engine instance (useful for testing and reload)."""
+    global _default_engine
+    _default_engine = None
+
+
+def get_unified_provider_engine(reload: bool = False) -> UnifiedProviderEngine:
     """Return or initialize global UnifiedProviderEngine instance."""
     global _default_engine
-    if _default_engine is None:
+    if _default_engine is None or reload:
         _default_engine = UnifiedProviderEngine()
     return _default_engine

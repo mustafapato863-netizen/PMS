@@ -914,6 +914,13 @@ def test_unconfigured_model_returns_model_unavailable_cleanly(db, monkeypatch):
     monkeypatch.setenv("PMS_AI_LLM_BASE_URL", "")
     monkeypatch.setenv("PMS_AI_LOCAL_ROUTER_URL", "")
     monkeypatch.setenv("PMS_AI_LLM_MODEL", "")
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("Gemini_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OpenAI_API_KEY", raising=False)
+    from services.ai.provider_engine import reset_unified_provider_engine
+    reset_unified_provider_engine()
     _seed(db)
     payload = CorrectiveActionDrafter(db).suggest(
         user_scope=ADMIN_SCOPE,
