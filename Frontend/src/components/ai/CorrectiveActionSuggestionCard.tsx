@@ -224,11 +224,11 @@ export default function CorrectiveActionSuggestionCard({
               <h4 className="text-xs font-extrabold uppercase tracking-wider text-[var(--text-primary)]">
                 AI Corrective Action Suggestion
               </h4>
-              <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400">
+              <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-xs font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400">
                 Draft — Requires Review
               </span>
             </div>
-            <p className="mt-0.5 text-[11px] font-medium text-[var(--text-muted)]">
+            <p className="mt-0.5 text-xs font-medium text-[var(--text-muted)]">
               {employeeName || 'Selected Employee'} · {team} · {month} {year}
               {linkedKpiKey ? ` · Focus KPI: ${linkedKpiKey}` : ''}
             </p>
@@ -239,7 +239,7 @@ export default function CorrectiveActionSuggestionCard({
           {data?.provider_used && data.provider_used !== 'none' && (
             <span
               data-testid="provider-badge"
-              className="rounded-md border border-[var(--border-light)] bg-[var(--bg-sunken)] px-2 py-0.5 text-[10px] font-semibold text-[var(--text-secondary)]"
+              className="rounded-md border border-[var(--border-light)] bg-[var(--bg-sunken)] px-2 py-0.5 text-xs font-semibold text-[var(--text-secondary)]"
             >
               {getProviderBadgeText(data.provider_used)}
             </span>
@@ -315,7 +315,7 @@ export default function CorrectiveActionSuggestionCard({
             {/* Supporting KPI Evidence Grid */}
             {data.supporting_kpis && data.supporting_kpis.length > 0 && (
               <div className="rounded-xl border border-[var(--border-light)] bg-[var(--bg-surface)] p-2.5">
-                <span className="block text-[11px] font-bold uppercase tracking-wider text-[var(--text-muted)] mb-2">
+                <span className="block text-xs font-bold uppercase tracking-wider text-[var(--text-muted)] mb-2">
                   Verified Performance Evidence:
                 </span>
                 <div className="space-y-1.5">
@@ -339,7 +339,7 @@ export default function CorrectiveActionSuggestionCard({
                             Actual: <strong className="text-[var(--text-primary)]">{actualStr}</strong> / Target: {targetStr}
                           </span>
                           <span
-                            className={`rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
+                            className={`rounded px-1.5 py-0.5 text-xs font-bold uppercase tracking-wider ${
                               isBelow
                                 ? 'bg-rose-500/10 text-rose-700 dark:text-rose-400 border border-rose-500/20'
                                 : isMet
@@ -363,14 +363,14 @@ export default function CorrectiveActionSuggestionCard({
                 <span className="text-xs font-bold text-[var(--text-primary)]">
                   {data.draft.title}
                 </span>
-                <span className="rounded-md border border-purple-500/30 bg-purple-500/10 px-2 py-0.5 text-[11px] font-bold text-purple-700 dark:text-purple-300">
+                <span className="rounded-md border border-purple-500/30 bg-purple-500/10 px-2 py-0.5 text-xs font-bold text-purple-700 dark:text-purple-300">
                   {data.draft.action_type}
                 </span>
               </div>
 
               {/* Recommended Steps */}
               <div className="space-y-1 pt-1">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-[var(--text-muted)]">
+                <span className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">
                   Recommended Steps:
                 </span>
                 <ol className="list-decimal list-inside space-y-1 text-xs font-medium text-[var(--text-primary)]">
@@ -384,7 +384,7 @@ export default function CorrectiveActionSuggestionCard({
 
               {/* Evidence Limitation / Uncertainty Caveat */}
               {(data.draft.uncertainty || (data.evidence_limitations && data.evidence_limitations[0])) && (
-                <div className="border-t border-purple-500/15 pt-2 text-[11px] font-medium text-[var(--text-muted)]">
+                <div className="border-t border-purple-500/15 pt-2 text-xs font-medium text-[var(--text-muted)]">
                   <span className="font-bold text-[var(--text-secondary)]">Evidence Limitation: </span>
                   {data.draft.uncertainty || data.evidence_limitations?.[0]}
                 </div>
@@ -431,7 +431,7 @@ export default function CorrectiveActionSuggestionCard({
               <Info size={16} className="shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
               <div>
                 <p className="font-bold">Not enough verified performance data is available.</p>
-                <p className="mt-0.5 text-[11px] opacity-90">
+                <p className="mt-0.5 text-xs opacity-90">
                   {data?.insufficient_evidence_reasons?.[0] ||
                     'There is not enough recorded evidence to generate an actionable draft for this selection.'}
                 </p>
@@ -466,7 +466,7 @@ export default function CorrectiveActionSuggestionCard({
               <AlertTriangle size={16} className="shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
               <div>
                 <p className="font-bold">AI suggestion service is temporarily unavailable.</p>
-                <p className="mt-0.5 text-[11px] opacity-90">
+                <p className="mt-0.5 text-xs opacity-90">
                   The AI model could not be reached. You can retry or enter the action manually.
                 </p>
               </div>
@@ -500,7 +500,7 @@ export default function CorrectiveActionSuggestionCard({
               <ShieldAlert size={16} className="shrink-0 mt-0.5 text-rose-600 dark:text-rose-400" />
               <div>
                 <p className="font-bold">Suggestion discarded for safety.</p>
-                <p className="mt-0.5 text-[11px] opacity-90">
+                <p className="mt-0.5 text-xs opacity-90">
                   The AI draft did not match the verified performance evidence and was safely discarded.
                 </p>
               </div>
@@ -534,7 +534,7 @@ export default function CorrectiveActionSuggestionCard({
               <AlertCircle size={16} className="shrink-0 mt-0.5 text-rose-600 dark:text-rose-400" />
               <div>
                 <p className="font-bold">Request Error</p>
-                <p className="mt-0.5 text-[11px] opacity-90">{errorMessage || 'An error occurred.'}</p>
+                <p className="mt-0.5 text-xs opacity-90">{errorMessage || 'An error occurred.'}</p>
               </div>
             </div>
             {errorStatus !== 401 && errorStatus !== 403 && (
