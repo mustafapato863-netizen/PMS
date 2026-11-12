@@ -303,13 +303,32 @@ def test_9_diagnostics_six_states_distinction(clean_provider_env):
     assert st5["active_provider"] == "gemini"
 
 
+class _FakeSharedVerifyRedis:
+    """Test double simulating one atomic shared Redis quota."""
+
+    def __init__(self):
+        self.counts = {}
+
+    def __bool__(self):
+        return True
+
+    def eval(self, script, num_keys, key, limit):
+        assert num_keys == 1
+        assert "INCR" in script and "EXPIRE" in script
+        count = self.counts.get(key, 0)
+        if count >= int(limit):
+            return 0
+        self.counts[key] = count + 1
+        return 1
+
+
 def test_10_verify_live_endpoint_admin_success(test_db_session, monkeypatch):
     """POST /api/ai/diagnostics/verify-live succeeds for Admin and records live verified state."""
     from scripts import verify_cloudflare_ai
     from services.ai.llm_client import clear_live_verification, get_live_verification
 
     clear_live_verification()
-    ai_workspace._daily_verify_counts.clear()
+    monkeypatch.setattr("services.redis_provider.redis_client", _FakeSharedVerifyRedis())
     ai_workspace._live_verify_in_flight = False
     monkeypatch.setenv("PMS_AI_LIVE_VERIFY_ENDPOINT_ENABLED", "true")
     monkeypatch.setenv("APP_ENV", "development")
@@ -404,6 +423,39 @@ def test_12_verify_cloudflare_ai_script_mocked(monkeypatch):
     assert res["test_b_structured"]["status"] == "passed"
     assert res["error"] is None
 
+    # If the first call consumes the total deadline, no second call is issued.
+    from scripts import verify_cloudflare_ai as verifier
+    clock = [100.0]
+    calls = []
+
+    def over_budget_urlopen(req, timeout=None):
+        calls.append(timeout)
+        response = MagicMock()
+        response.status = 200
+        payload = json.dumps({
+            "choices": [{"message": {"content": "PMS AI connection successful."}}],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 5},
+        }).encode("utf-8")
+
+        def delayed_read(_size):
+            clock[0] += 5.1
+            return payload
+
+        response.read.side_effect = delayed_read
+        response.__enter__.return_value = response
+        response.__exit__.return_value = False
+        return response
+
+    monkeypatch.setattr(verifier.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr("urllib.request.urlopen", over_budget_urlopen)
+    expired = run_live_verification(
+        account_id="fake-acct-123", api_token="mock-cf-token-12345", timeout=5.0
+    )
+    assert expired["verified"] is False
+    assert len(calls) == 1
+    assert calls[0] <= 5.0
+    assert "deadline" in (expired["error"] or "").lower()
+
 
 def test_13_live_endpoint_disabled_by_default(test_db_session, monkeypatch):
     """POST /api/ai/diagnostics/verify-live returns 403 when the enablement flag is false."""
@@ -438,7 +490,7 @@ def test_15_live_endpoint_daily_budget_exceeded(test_db_session, monkeypatch):
     monkeypatch.setenv("PMS_AI_LIVE_VERIFY_ENDPOINT_ENABLED", "true")
     monkeypatch.setenv("APP_ENV", "development")
     monkeypatch.setenv("PMS_AI_LIVE_VERIFY_DAILY_BUDGET", "2")
-    ai_workspace._daily_verify_counts.clear()
+    monkeypatch.setattr("services.redis_provider.redis_client", _FakeSharedVerifyRedis())
     ai_workspace._live_verify_in_flight = False
 
     app = _create_test_app(test_db_session)
@@ -460,6 +512,25 @@ def test_15_live_endpoint_daily_budget_exceeded(test_db_session, monkeypatch):
     r3 = client.post("/api/ai/diagnostics/verify-live", headers=headers)
     assert r3.status_code == 429
     assert "daily budget exceeded" in r3.json()["detail"]
+
+    # Redis is mandatory; the endpoint may NOT silently reset to per-worker quotas.
+    from fastapi import HTTPException
+    monkeypatch.setattr("services.redis_provider.redis_client", None)
+    with pytest.raises(HTTPException) as missing:
+        ai_workspace._check_and_increment_daily_budget(2)
+    assert missing.value.status_code == 503
+
+    class BrokenRedis:
+        def __bool__(self):
+            return True
+
+        def eval(self, *_args):
+            raise ConnectionError("Redis offline")
+
+    monkeypatch.setattr("services.redis_provider.redis_client", BrokenRedis())
+    with pytest.raises(HTTPException) as broken:
+        ai_workspace._check_and_increment_daily_budget(2)
+    assert broken.value.status_code == 503
 
 
 def test_16_live_endpoint_rejects_concurrent_execution(test_db_session, monkeypatch):

@@ -96,7 +96,16 @@ def get_ai_diagnostics(
 
 _live_verify_flight_lock = threading.RLock()
 _live_verify_in_flight: bool = False
-_daily_verify_counts: dict[str, int] = {}
+
+# Atomic and shared across all backend workers; keys expire after their UTC day.
+_LIVE_VERIFY_BUDGET_LUA = """
+local count = tonumber(redis.call('GET', KEYS[1]) or '0')
+local limit = tonumber(ARGV[1])
+if count >= limit then return 0 end
+count = redis.call('INCR', KEYS[1])
+if count == 1 then redis.call('EXPIRE', KEYS[1], 172800) end
+return 1
+"""
 
 
 def _is_live_verify_endpoint_enabled() -> bool:
@@ -105,25 +114,26 @@ def _is_live_verify_endpoint_enabled() -> bool:
 
 
 def _check_and_increment_daily_budget(daily_budget: int) -> bool:
-    """Check and increment daily live verification count using Redis or local counter."""
+    """Shared UTC-day quota with fail-closed Redis availability.
+
+    No in-memory fallback: per-worker counters can exceed the global quota.
+    Use the standalone non-production CLI when Redis cannot be reached.
+    """
+    if not 1 <= daily_budget <= 10:
+        raise HTTPException(status_code=503, detail="Invalid live verification budget configuration")
     today = time.strftime("%Y-%m-%d", time.gmtime())
     key = f"pms:ai:live_verify:budget:{today}"
-    if os.environ.get("PMS_AI_USE_REDIS_BUDGET", "false").strip().casefold() in ("true", "1"):
-        try:
-            from services.redis_provider import redis_client
-            if redis_client:
-                val = redis_client.incr(key)
-                if val == 1:
-                    redis_client.expire(key, 86400)
-                return bool(val <= daily_budget)
-        except Exception:
-            pass
-    with _live_verify_flight_lock:
-        cnt = _daily_verify_counts.get(today, 0)
-        if cnt >= daily_budget:
-            return False
-        _daily_verify_counts[today] = cnt + 1
-        return True
+    try:
+        from services.redis_provider import redis_client
+        if not redis_client:
+            raise RuntimeError("Shared Redis unavailable")
+        allowed = redis_client.eval(_LIVE_VERIFY_BUDGET_LUA, 1, key, daily_budget)
+        return int(allowed) == 1
+    except Exception:
+        raise HTTPException(
+            status_code=503,
+            detail="Shared live verification budget unavailable; use the non-production CLI",
+        ) from None
 
 
 @diagnostics_router.post("/diagnostics/verify-live", response_model=AiDiagnosticsResponse)
@@ -141,9 +151,9 @@ def verify_ai_live(
     1. Mandatory Admin role and diagnostic session.
     2. PMS_AI_LIVE_VERIFY_ENDPOINT_ENABLED switch (default: false).
     3. Production environment blocking (unless PMS_AI_ALLOW_PRODUCTION_LIVE_VERIFY=true).
-    4. Multi-worker daily budget limiting (default 10 calls/day).
+    4. Atomic Redis-backed daily budget (max 10/day); fail closed if Redis is unavailable.
     5. Non-blocking concurrency lock (rejects concurrent calls with HTTP 429).
-    6. Strict 5-second deadline.
+    6. One shared five-second deadline for both synthetic calls.
     """
     global _live_verify_in_flight
 
@@ -171,7 +181,10 @@ def verify_ai_live(
                 detail="A live verification check is already in progress. Please wait for completion.",
             )
         # 4. Daily Budget Check
-        daily_budget = int(os.environ.get("PMS_AI_LIVE_VERIFY_DAILY_BUDGET", "10"))
+        try:
+            daily_budget = int(os.environ.get("PMS_AI_LIVE_VERIFY_DAILY_BUDGET", "10"))
+        except ValueError:
+            raise HTTPException(status_code=503, detail="Invalid live verification budget configuration") from None
         if not _check_and_increment_daily_budget(daily_budget):
             raise HTTPException(
                 status_code=429,
@@ -181,8 +194,13 @@ def verify_ai_live(
 
     try:
         import scripts.verify_cloudflare_ai as verify_module
-        timeout = float(os.environ.get("PMS_AI_LIVE_VERIFY_TIMEOUT_SECONDS", "5.0"))
-        live_result = verify_module.run_live_verification(timeout=timeout)
+        try:
+            total_timeout = float(os.environ.get("PMS_AI_LIVE_VERIFY_TIMEOUT_SECONDS", "5.0"))
+            if not (0 < total_timeout <= 5.0):
+                raise ValueError("Total deadline must be between 0 and 5 seconds")
+        except ValueError:
+            raise HTTPException(status_code=503, detail="Invalid live verification timeout configuration") from None
+        live_result = verify_module.run_live_verification(timeout=total_timeout)
         record_live_verification(live_result)
         payload = build_ai_diagnostics_payload(db)
         release_read_transaction(db)

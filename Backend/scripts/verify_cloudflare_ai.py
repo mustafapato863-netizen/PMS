@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import re
 import sys
@@ -30,6 +31,41 @@ from typing import Any
 DEFAULT_MODEL = "@cf/ibm-granite/granite-4.0-h-micro"
 ALTER_MODEL = "@cf/zai-org/glm-4.7-flash"
 DEFAULT_TIMEOUT = 10.0
+MAX_VERIFICATION_RESPONSE_BYTES = 65536
+
+
+def _remaining_budget(deadline: float) -> float:
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise TimeoutError("Overall live verification deadline exceeded")
+    return remaining
+
+
+def _read_json_with_deadline(resp: Any, deadline: float) -> dict[str, Any]:
+    """Bound size and read time within the same overall verification budget."""
+    chunks: list[bytes] = []
+    received = 0
+    while True:
+        remaining = _remaining_budget(deadline)
+        sock = getattr(getattr(getattr(resp, "fp", None), "raw", None), "_sock", None)
+        if sock is not None and hasattr(sock, "settimeout"):
+            try:
+                sock.settimeout(remaining)
+            except (AttributeError, OSError, TypeError):
+                pass
+        chunk = resp.read(8192)
+        _remaining_budget(deadline)
+        if not chunk:
+            break
+        received += len(chunk)
+        if received > MAX_VERIFICATION_RESPONSE_BYTES:
+            raise ValueError("Cloudflare verification response exceeded 64 KiB")
+        chunks.append(chunk)
+    parsed = json.loads(b"".join(chunks).decode("utf-8"))
+    if not isinstance(parsed, dict):
+        raise ValueError("Cloudflare verification returned non-object JSON")
+    return parsed
+
 
 
 def redact_text(text: str | None) -> str:
@@ -119,6 +155,16 @@ def run_live_verification(
         result["total_latency_ms"] = round((time.perf_counter() - t_start) * 1000.0, 2)
         return result
 
+    try:
+        timeout = float(timeout)
+        if not math.isfinite(timeout) or not 0 < timeout <= 30.0:
+            raise ValueError("Invalid total deadline")
+    except (TypeError, ValueError):
+        result["status"] = "BLOCKED"
+        result["error"] = "BLOCKED: Invalid total verification timeout"
+        return result
+    # One monotonic budget for both requests and their response reads.
+    deadline = time.monotonic() + timeout
     url = f"https://api.cloudflare.com/client/v4/accounts/{acct}/ai/v1/chat/completions"
     headers = {
         "Content-Type": "application/json",
@@ -158,10 +204,9 @@ def run_live_verification(
             headers=headers,
             method="POST",
         )
-        with urllib.request.urlopen(req_a, timeout=timeout) as resp:
+        with urllib.request.urlopen(req_a, timeout=_remaining_budget(deadline)) as resp:
             test_a_res["http_code"] = resp.status
-            raw_body = resp.read().decode("utf-8")
-            data_a = json.loads(raw_body)
+            data_a = _read_json_with_deadline(resp, deadline)
 
             if isinstance(data_a, dict) and data_a.get("success") is False:
                 errors = data_a.get("errors") or []
@@ -265,10 +310,9 @@ def run_live_verification(
             headers=headers,
             method="POST",
         )
-        with urllib.request.urlopen(req_b, timeout=timeout) as resp:
+        with urllib.request.urlopen(req_b, timeout=_remaining_budget(deadline)) as resp:
             test_b_res["http_code"] = resp.status
-            raw_body = resp.read().decode("utf-8")
-            data_b = json.loads(raw_body)
+            data_b = _read_json_with_deadline(resp, deadline)
 
             if isinstance(data_b, dict) and data_b.get("success") is False:
                 errors = data_b.get("errors") or []
@@ -338,7 +382,7 @@ def run_live_verification(
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Verify Cloudflare Workers AI live connectivity.")
     parser.add_argument("--model", default=None, help=f"Cloudflare model ID (default: {DEFAULT_MODEL})")
-    parser.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT, help="Per-call timeout seconds")
+    parser.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT, help="Total deadline seconds shared across both calls")
     parser.add_argument("--json", action="store_true", help="Output machine-readable JSON only")
     parser.add_argument("--output", default=None, help="Save machine-readable JSON report to file path")
     args = parser.parse_args(argv)
