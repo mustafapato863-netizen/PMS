@@ -232,12 +232,20 @@ def run_live_verification(
     except urllib.error.HTTPError as exc:
         test_a_res["http_code"] = exc.code
         test_a_res["error"] = f"HTTP Error {exc.code}"
-    except (TimeoutError, urllib.error.URLError) as exc:
+    except TimeoutError as exc:
+        detail = str(exc).strip()
+        if "overall live verification deadline exceeded" in detail.casefold() or "deadline" in detail.casefold():
+            test_a_res["error"] = "Overall live verification deadline exceeded"
+        elif detail:
+            test_a_res["error"] = f"Connection error / timeout: TimeoutError: {detail}"
+        else:
+            test_a_res["error"] = "Cloudflare verification timed out"
+    except urllib.error.URLError as exc:
         detail = str(exc).strip()
         if detail:
-            test_a_res["error"] = f"Connection error / timeout: {type(exc).__name__}: {detail}"
+            test_a_res["error"] = f"Connection error: {type(exc).__name__}: {detail}"
         else:
-            test_a_res["error"] = f"Connection error / timeout: {type(exc).__name__}"
+            test_a_res["error"] = f"Connection error: {type(exc).__name__}"
     except Exception as exc:
         test_a_res["error"] = redact_text(str(exc))
     finally:
@@ -362,12 +370,20 @@ def run_live_verification(
     except urllib.error.HTTPError as exc:
         test_b_res["http_code"] = exc.code
         test_b_res["error"] = f"HTTP Error {exc.code}"
-    except (TimeoutError, urllib.error.URLError) as exc:
+    except TimeoutError as exc:
+        detail = str(exc).strip()
+        if "overall live verification deadline exceeded" in detail.casefold() or "deadline" in detail.casefold():
+            test_b_res["error"] = "Overall live verification deadline exceeded"
+        elif detail:
+            test_b_res["error"] = f"Connection error / timeout: TimeoutError: {detail}"
+        else:
+            test_b_res["error"] = "Cloudflare verification timed out"
+    except urllib.error.URLError as exc:
         detail = str(exc).strip()
         if detail:
-            test_b_res["error"] = f"Connection error / timeout: {type(exc).__name__}: {detail}"
+            test_b_res["error"] = f"Connection error: {type(exc).__name__}: {detail}"
         else:
-            test_b_res["error"] = f"Connection error / timeout: {type(exc).__name__}"
+            test_b_res["error"] = f"Connection error: {type(exc).__name__}"
     except Exception as exc:
         test_b_res["error"] = redact_text(str(exc))
     finally:

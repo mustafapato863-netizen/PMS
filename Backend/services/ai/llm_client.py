@@ -19,9 +19,12 @@ when ``APP_ENV=production``. The global kill switch remains the database-backed
 
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 import threading
+import time
+from typing import Any
 
 from services.ai.provider_engine import UnifiedProviderConfig, load_unified_provider_config
 
@@ -34,19 +37,32 @@ _FALSY = {"0", "false", "no", "off", "disabled"}
 
 _fallback_lock = threading.Lock()
 _last_fallback_reason: str = "none"
+_last_fallback_time: float = 0.0
 
 
-def get_recent_fallback_reason() -> str:
+def get_recent_fallback_reason(ttl_seconds: float = 300.0) -> str:
+    """Return recent fallback reason if within the active sliding window (default 5 minutes)."""
     with _fallback_lock:
-        return _last_fallback_reason
+        if _last_fallback_reason != "none" and (time.time() - _last_fallback_time) < ttl_seconds:
+            return _last_fallback_reason
+        return "none"
 
 
 def record_fallback_reason(reason: str | None) -> None:
     """Remember why the most recent provider call fell back (process-local)."""
-    global _last_fallback_reason
+    global _last_fallback_reason, _last_fallback_time
     if reason:
         with _fallback_lock:
             _last_fallback_reason = str(reason)[:80]
+            _last_fallback_time = time.time()
+
+
+def clear_fallback_reason() -> None:
+    """Clear recorded fallback state (useful for test resets)."""
+    global _last_fallback_reason, _last_fallback_time
+    with _fallback_lock:
+        _last_fallback_reason = "none"
+        _last_fallback_time = 0.0
 
 
 def flag_enabled(name: str) -> bool:
@@ -193,8 +209,124 @@ def strip_thinking(text: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Diagnostics (configuration only; never makes a network call, never returns secrets)
+# Diagnostics (configuration & verification state; never makes a network call, never returns secrets)
 # ---------------------------------------------------------------------------
+
+DIAGNOSTIC_STATUS_CONFIGURED = "configured"
+DIAGNOSTIC_STATUS_CREDENTIALS_PRESENT = "credentials_present"
+DIAGNOSTIC_STATUS_LIVE_VERIFIED = "live_verified"
+DIAGNOSTIC_STATUS_LIVE_FAILED = "live_failed"
+DIAGNOSTIC_STATUS_FALLBACK_ACTIVE = "fallback_active"
+DIAGNOSTIC_STATUS_UNAVAILABLE = "unavailable"
+
+DIAGNOSTIC_STATUSES = (
+    DIAGNOSTIC_STATUS_CONFIGURED,
+    DIAGNOSTIC_STATUS_CREDENTIALS_PRESENT,
+    DIAGNOSTIC_STATUS_LIVE_VERIFIED,
+    DIAGNOSTIC_STATUS_LIVE_FAILED,
+    DIAGNOSTIC_STATUS_FALLBACK_ACTIVE,
+    DIAGNOSTIC_STATUS_UNAVAILABLE,
+)
+
+# Short aliases for tests and external callers
+STATUS_CONFIGURED = DIAGNOSTIC_STATUS_CONFIGURED
+STATUS_CREDENTIALS_PRESENT = DIAGNOSTIC_STATUS_CREDENTIALS_PRESENT
+STATUS_LIVE_VERIFIED = DIAGNOSTIC_STATUS_LIVE_VERIFIED
+STATUS_LIVE_FAILED = DIAGNOSTIC_STATUS_LIVE_FAILED
+STATUS_FALLBACK_ACTIVE = DIAGNOSTIC_STATUS_FALLBACK_ACTIVE
+STATUS_UNAVAILABLE = DIAGNOSTIC_STATUS_UNAVAILABLE
+STATUS_EXPIRED = "verification_expired"
+
+PMS_AI_VERIFY_CACHE_TTL_SECONDS = int(os.environ.get("PMS_AI_VERIFY_CACHE_TTL_SECONDS", "900"))  # 15 minutes default
+
+_live_verification_lock = threading.Lock()
+_last_live_verification: dict[str, Any] | None = None
+
+
+def _compute_provider_config_fingerprint(cfg: UnifiedProviderConfig) -> str:
+    """Compute an internal cryptographic digest of active provider credentials & models.
+    
+    NEVER logs or exposes the digest or secrets. Used purely for cache invalidation.
+    """
+    primary = cfg.effective_primary_provider
+    lead_model = cfg.gemini_model if primary == "gemini" else cfg.cloudflare_model
+    acct = cfg.cloudflare_account_id or ""
+    cf_token = cfg.cloudflare_api_token or ""
+    gem_key = cfg.gemini_api_key or ""
+    token_digest = hashlib.sha256(f"{cf_token}:{gem_key}".encode("utf-8")).hexdigest()[:16]
+    raw = f"{primary}:{lead_model}:{acct}:{token_digest}:{cfg.fallback_enabled}:{cfg.cloudflare_enabled}:{cfg.gemini_enabled}"
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def record_live_verification(result: dict[str, Any], config: UnifiedProviderConfig | None = None) -> None:
+    """Record the result of an explicit Admin-only live verification check (process-local)."""
+    global _last_live_verification
+    cfg = config or load_unified_provider_config()
+    with _live_verification_lock:
+        is_verified = bool(result.get("verified"))
+        fingerprint = _compute_provider_config_fingerprint(cfg)
+        _last_live_verification = {
+            "verified": is_verified,
+            "status": DIAGNOSTIC_STATUS_LIVE_VERIFIED if is_verified else DIAGNOSTIC_STATUS_LIVE_FAILED,
+            "provider": str(result.get("provider") or cfg.effective_primary_provider),
+            "model": str(result.get("model") or cfg.cloudflare_model),
+            "latency_ms": float(result.get("total_latency_ms") or 0.0),
+            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "monotonic_ts": time.monotonic(),
+            "fingerprint": fingerprint,
+            "scope": "worker_local",
+            "error": str(result.get("error")) if result.get("error") else None,
+        }
+
+
+def get_live_verification(config: UnifiedProviderConfig | None = None) -> dict[str, Any] | None:
+    """Retrieve the cached result of the most recent live verification check (process-local).
+    
+    Invalidates immediately if active configuration changed or if TTL expired.
+    Never exposes internal fingerprints or credentials.
+    """
+    global _last_live_verification
+    with _live_verification_lock:
+        if _last_live_verification is None:
+            return None
+
+        cfg = config or load_unified_provider_config()
+        current_fp = _compute_provider_config_fingerprint(cfg)
+
+        # 1. Configuration Invalidation check
+        if _last_live_verification.get("fingerprint") != current_fp:
+            _last_live_verification = None
+            return None
+
+        # 2. TTL Expiration check
+        rec_time = _last_live_verification.get("monotonic_ts", 0.0)
+        age = time.monotonic() - rec_time
+        ttl = int(os.environ.get("PMS_AI_VERIFY_CACHE_TTL_SECONDS", str(PMS_AI_VERIFY_CACHE_TTL_SECONDS)))
+        if age > ttl:
+            return {
+                "verified": False,
+                "status": STATUS_EXPIRED,
+                "provider": _last_live_verification.get("provider"),
+                "model": _last_live_verification.get("model"),
+                "latency_ms": _last_live_verification.get("latency_ms"),
+                "timestamp": _last_live_verification.get("timestamp"),
+                "scope": "worker_local",
+                "error": "Verification expired (freshness window exceeded)",
+            }
+
+        # Return sanitized copy without internal fields
+        copy_res = dict(_last_live_verification)
+        copy_res.pop("fingerprint", None)
+        copy_res.pop("monotonic_ts", None)
+        return copy_res
+
+
+def clear_live_verification() -> None:
+    """Clear cached live verification result (useful for test resets)."""
+    global _last_live_verification
+    with _live_verification_lock:
+        _last_live_verification = None
+
 
 _PROVIDER_HOSTS = {
     "cloudflare": "api.cloudflare.com",
@@ -202,18 +334,56 @@ _PROVIDER_HOSTS = {
 }
 
 
-def provider_status() -> dict[str, object]:
-    """Credential-free snapshot of the provider hierarchy for admin diagnostics."""
-    cfg = load_unified_provider_config()
+def provider_status(config: UnifiedProviderConfig | None = None) -> dict[str, object]:
+    """Credential-free snapshot of the provider hierarchy for admin diagnostics.
+    
+    Distinguishes 6 diagnostic states:
+    - configured: Enabled in config but missing required credentials
+    - credentials_present: Valid credentials configured, live inference not run or expired
+    - live_verified: Explicit live inference succeeded and validated within freshness TTL
+    - live_failed: Explicit live inference was attempted and failed
+    - fallback_active: Fallback provider is currently serving requests
+    - unavailable: Provider disabled, unconfigured, or unusable
+    
+    Never makes an external network call; routine diagnostic reads never consume AI tokens.
+    """
+    cfg = config or load_unified_provider_config()
     primary = cfg.effective_primary_provider
     usable = configured_providers(cfg)
     lead = usable[0] if usable else primary
-    if usable:
-        reason = "configured" if lead == primary else "primary_unconfigured_fallback_only"
-    elif primary == "cloudflare" and not cfg.cloudflare_enabled:
-        reason = "disabled"
+
+    live_info = get_live_verification(cfg)
+    fallback_reason = get_recent_fallback_reason()
+
+    if not usable:
+        if (primary == "cloudflare" and not cfg.cloudflare_enabled) or (not cfg.cloudflare_enabled and not cfg.gemini_enabled):
+            status_code = DIAGNOSTIC_STATUS_UNAVAILABLE
+            reason = "disabled"
+        else:
+            status_code = DIAGNOSTIC_STATUS_CONFIGURED
+            reason = "no_credentials_configured"
     else:
-        reason = "no_credentials_configured"
+        # Credentials are present for at least one provider
+        if fallback_reason not in ("none", ""):
+            status_code = DIAGNOSTIC_STATUS_FALLBACK_ACTIVE
+            reason = f"fallback_active:{fallback_reason}"
+        elif live_info is not None:
+            if live_info.get("verified"):
+                status_code = DIAGNOSTIC_STATUS_LIVE_VERIFIED
+                reason = "live_verified"
+            elif live_info.get("status") == STATUS_EXPIRED:
+                status_code = DIAGNOSTIC_STATUS_CREDENTIALS_PRESENT
+                reason = "verification_expired"
+            else:
+                status_code = DIAGNOSTIC_STATUS_LIVE_FAILED
+                reason = "live_failed"
+        elif lead == cfg.effective_fallback_provider and lead != primary:
+            status_code = DIAGNOSTIC_STATUS_FALLBACK_ACTIVE
+            reason = "primary_unconfigured_fallback_only"
+        else:
+            status_code = DIAGNOSTIC_STATUS_CREDENTIALS_PRESENT
+            reason = "configured" if lead == primary else "primary_unconfigured_fallback_only"
+
     return {
         "primary_provider": primary,
         "fallback_provider": cfg.effective_fallback_provider if cfg.fallback_enabled else None,
@@ -223,4 +393,7 @@ def provider_status() -> dict[str, object]:
         "available": bool(usable),
         "active_provider": lead if usable else "deterministic",
         "reason": reason,
+        "status_code": status_code,
+        "live_verified": bool(usable and live_info and live_info.get("verified")),
+        "live_verification": live_info if usable else None,
     }

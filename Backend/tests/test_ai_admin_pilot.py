@@ -103,10 +103,15 @@ def _is_pilot_route(route: APIRoute) -> bool:
     return route in ai_corrective_actions.router.routes
 
 
+def _is_diagnostic_route(route: APIRoute) -> bool:
+    """Diagnostics stay available when AI is off so an Admin can see why."""
+    return route in ai_workspace.diagnostics_router.routes
+
+
 def _capability_routes() -> list[tuple[str, str, APIRoute]]:
     return [
         item for item in _ai_routes()
-        if not item[1].endswith("/diagnostics") and not _is_pilot_route(item[2])
+        if not _is_diagnostic_route(item[2]) and not _is_pilot_route(item[2])
     ]
 
 
@@ -174,12 +179,17 @@ def test_router_registry_lists_every_ai_capability_route_behind_both_gates():
         calls = _walk_calls(route.dependant)
         assert require_ai_enabled in calls
         assert require_ai_admin in calls
-    diagnostic = [item for item in _ai_routes() if item[1].endswith("/diagnostics")]
-    assert [f"{method} /api{path}" for method, path, _route in diagnostic] == ["GET /api/ai/diagnostics"]
-    diagnostic_calls = _walk_calls(diagnostic[0][2].dependant)
-    assert require_ai_enabled not in diagnostic_calls
-    assert require_ai_admin in diagnostic_calls
-    assert require_ai_diagnostic_session in diagnostic_calls
+    diagnostic = [item for item in _ai_routes() if _is_diagnostic_route(item[2])]
+    diagnostic_inventory = sorted(f"{method} /api{path}" for method, path, _route in diagnostic)
+    assert diagnostic_inventory == [
+        "GET /api/ai/diagnostics",
+        "POST /api/ai/diagnostics/verify-live",
+    ]
+    for _method, _path, route in diagnostic:
+        diagnostic_calls = _walk_calls(route.dependant)
+        assert require_ai_enabled not in diagnostic_calls
+        assert require_ai_admin in diagnostic_calls
+        assert require_ai_diagnostic_session in diagnostic_calls
 
     # Every /ai route is either a chat capability, diagnostics, or a pilot route.
     assert len(_ai_routes()) == len(routes) + len(diagnostic) + len(_pilot_routes())

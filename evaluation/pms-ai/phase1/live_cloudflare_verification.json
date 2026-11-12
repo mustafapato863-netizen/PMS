@@ -1,0 +1,42 @@
+{
+  "timestamp": "2026-11-12T13:55:38Z",
+  "git_commit_sha": "bb4a7aba1effc7cfbcbfbff4e7a509539c45c088",
+  "environment": "development",
+  "is_live_test": true,
+  "status": "passed",
+  "verified": true,
+  "provider": "cloudflare",
+  "model": "@cf/ibm-granite/granite-4.0-h-micro",
+  "account_id_configured": true,
+  "api_token_configured": true,
+  "test_a_completion": {
+    "test_type": "completion",
+    "status": "passed",
+    "http_code": 200,
+    "content": "PMS AI connection successful.",
+    "latency_ms": 1245.11,
+    "prompt_tokens": 40,
+    "completion_tokens": 7,
+    "neurons": 0.1327747106552124,
+    "validation_result": "passed",
+    "error": null
+  },
+  "test_b_structured": {
+    "test_type": "structured_output",
+    "status": "passed",
+    "http_code": 200,
+    "raw_response": "{\"intent\": \"performance_lookup\", \"requires_data\": true}",
+    "parsed": {
+      "intent": "performance_lookup",
+      "requires_data": true
+    },
+    "latency_ms": 967.73,
+    "prompt_tokens": 128,
+    "completion_tokens": 14,
+    "neurons": 0.33954912424087524,
+    "validation_result": "passed",
+    "error": null
+  },
+  "total_latency_ms": 2281.94,
+  "error": null
+}

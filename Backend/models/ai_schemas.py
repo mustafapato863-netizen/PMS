@@ -904,6 +904,10 @@ class AiDiagnosticsPayload(BaseModel):
     model_endpoint_host: str | None = None
     model_available: bool
     inference_verified: bool = False
+    provider_status_code: Literal["configured", "credentials_present", "live_verified", "live_failed", "fallback_active", "unavailable"] = "unavailable"
+    live_verified_at: str | None = None
+    live_verification_latency_ms: float | None = None
+    live_verification_error: str | None = None
     model_availability_reason: str
     router_mode: str
     intent_routing_enabled: bool

@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import os
+import threading
+import time
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session
 
@@ -32,6 +36,7 @@ from services.ai.llm_client import (
     local_intent_enabled,
     local_synthesis_enabled,
     provider_status,
+    record_live_verification,
 )
 from services.ai.contextual_assistant import (
     ProposalStaleEvidenceError,
@@ -87,6 +92,128 @@ def get_ai_diagnostics(
     payload = build_ai_diagnostics_payload(db)
     release_read_transaction(db)
     return AiDiagnosticsResponse(success=True, message="Admin AI diagnostics loaded", data=payload)
+
+
+_live_verify_flight_lock = threading.RLock()
+_live_verify_in_flight: bool = False
+
+# Atomic and shared across all backend workers; keys expire after their UTC day.
+_LIVE_VERIFY_BUDGET_LUA = """
+local count = tonumber(redis.call('GET', KEYS[1]) or '0')
+local limit = tonumber(ARGV[1])
+if count >= limit then return 0 end
+count = redis.call('INCR', KEYS[1])
+if count == 1 then redis.call('EXPIRE', KEYS[1], 172800) end
+return 1
+"""
+
+
+def _is_live_verify_endpoint_enabled() -> bool:
+    raw = os.environ.get("PMS_AI_LIVE_VERIFY_ENDPOINT_ENABLED", "false").strip().casefold()
+    return raw in ("true", "1", "yes", "on", "enabled")
+
+
+def _check_and_increment_daily_budget(daily_budget: int) -> bool:
+    """Shared UTC-day quota with fail-closed Redis availability.
+
+    No in-memory fallback: per-worker counters can exceed the global quota.
+    Use the standalone non-production CLI when Redis cannot be reached.
+    """
+    if not 1 <= daily_budget <= 10:
+        raise HTTPException(status_code=503, detail="Invalid live verification budget configuration")
+    today = time.strftime("%Y-%m-%d", time.gmtime())
+    key = f"pms:ai:live_verify:budget:{today}"
+    try:
+        from services.redis_provider import redis_client
+        if not redis_client:
+            raise RuntimeError("Shared Redis unavailable")
+        allowed = redis_client.eval(_LIVE_VERIFY_BUDGET_LUA, 1, key, daily_budget)
+        return int(allowed) == 1
+    except Exception:
+        raise HTTPException(
+            status_code=503,
+            detail="Shared live verification budget unavailable; use the non-production CLI",
+        ) from None
+
+
+@diagnostics_router.post("/diagnostics/verify-live", response_model=AiDiagnosticsResponse)
+def verify_ai_live(
+    request: Request,
+    db: Session = Depends(get_db),
+    _session: None = Depends(require_ai_diagnostic_session),
+    _role: str = Depends(require_ai_admin),
+) -> AiDiagnosticsResponse:
+    """Explicit Admin-only diagnostic action: runs bounded synthetic live connectivity check.
+
+    Never called during routine health checks or normal page loads. Never consumes tokens
+    unless explicitly triggered by an authenticated Administrator.
+    Guarded by:
+    1. Mandatory Admin role and diagnostic session.
+    2. PMS_AI_LIVE_VERIFY_ENDPOINT_ENABLED switch (default: false).
+    3. Production environment blocking (unless PMS_AI_ALLOW_PRODUCTION_LIVE_VERIFY=true).
+    4. Atomic Redis-backed daily budget (max 10/day); fail closed if Redis is unavailable.
+    5. Non-blocking concurrency lock (rejects concurrent calls with HTTP 429).
+    6. One shared five-second deadline for both synthetic calls.
+    """
+    global _live_verify_in_flight
+
+    # 1. Feature Switch Check
+    if not _is_live_verify_endpoint_enabled():
+        raise HTTPException(
+            status_code=403,
+            detail="Live verification endpoint is disabled by configuration (PMS_AI_LIVE_VERIFY_ENDPOINT_ENABLED=false)",
+        )
+
+    # 2. Environment Protection Check
+    app_env = os.environ.get("APP_ENV", "").strip().casefold()
+    allow_prod = os.environ.get("PMS_AI_ALLOW_PRODUCTION_LIVE_VERIFY", "false").strip().casefold() in ("true", "1")
+    if app_env == "production" and not allow_prod:
+        raise HTTPException(
+            status_code=403,
+            detail="Live verification endpoint is disabled in production environments",
+        )
+
+    # 3. Concurrency Lock Check (do NOT hold lock during network calls!)
+    with _live_verify_flight_lock:
+        if _live_verify_in_flight:
+            raise HTTPException(
+                status_code=429,
+                detail="A live verification check is already in progress. Please wait for completion.",
+            )
+        # 4. Daily Budget Check
+        try:
+            daily_budget = int(os.environ.get("PMS_AI_LIVE_VERIFY_DAILY_BUDGET", "10"))
+        except ValueError:
+            raise HTTPException(status_code=503, detail="Invalid live verification budget configuration") from None
+        if not _check_and_increment_daily_budget(daily_budget):
+            raise HTTPException(
+                status_code=429,
+                detail=f"Live verification daily budget exceeded (maximum {daily_budget} calls/day).",
+            )
+        _live_verify_in_flight = True
+
+    try:
+        import scripts.verify_cloudflare_ai as verify_module
+        try:
+            total_timeout = float(os.environ.get("PMS_AI_LIVE_VERIFY_TIMEOUT_SECONDS", "5.0"))
+            if not (0 < total_timeout <= 5.0):
+                raise ValueError("Total deadline must be between 0 and 5 seconds")
+        except ValueError:
+            raise HTTPException(status_code=503, detail="Invalid live verification timeout configuration") from None
+        live_result = verify_module.run_live_verification(timeout=total_timeout)
+        record_live_verification(live_result)
+        payload = build_ai_diagnostics_payload(db)
+        release_read_transaction(db)
+        success = bool(live_result.get("verified"))
+        msg = (
+            "Live Cloudflare AI verification succeeded"
+            if success
+            else f"Live Cloudflare AI verification failed: {live_result.get('error') or 'check details'}"
+        )
+        return AiDiagnosticsResponse(success=success, message=msg, data=payload)
+    finally:
+        with _live_verify_flight_lock:
+            _live_verify_in_flight = False
 
 
 @router.get("/watching", response_model=AiWatchingResponse)
@@ -436,6 +563,9 @@ def build_ai_diagnostics_payload(db: Session | None) -> AiDiagnosticsPayload:
         active_provider = "cloudflare"
     intent_on = local_intent_enabled()
     synthesis_on = local_synthesis_enabled()
+    live_ver = model_health.get("live_verification") or {}
+    status_code = str(model_health.get("status_code") or "unavailable")
+    is_live_verified = bool(model_health.get("live_verified"))
     return AiDiagnosticsPayload(
         feature_enabled=feature_enabled,
         pilot_role_restricted=True,
@@ -443,7 +573,11 @@ def build_ai_diagnostics_payload(db: Session | None) -> AiDiagnosticsPayload:
         model_endpoint_configured=bool(model_health.get("endpoint_configured")),
         model_endpoint_host=_safe_host(model_health.get("endpoint_host")),
         model_available=model_up,
-        inference_verified=False,
+        inference_verified=bool(is_live_verified and model_up),
+        provider_status_code=status_code,
+        live_verified_at=live_ver.get("timestamp"),
+        live_verification_latency_ms=live_ver.get("latency_ms"),
+        live_verification_error=live_ver.get("error"),
         model_availability_reason=str(model_health.get("reason") or "unavailable"),
         router_mode=cfg.router_mode,
         intent_routing_enabled=intent_on,

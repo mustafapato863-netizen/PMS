@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from unittest.mock import MagicMock
 import pytest
 from fastapi import FastAPI
@@ -141,6 +142,9 @@ _PROVIDER_ENV = (
 
 @pytest.fixture
 def clean_provider_env(monkeypatch):
+    from services.ai.llm_client import clear_fallback_reason, clear_live_verification
+    clear_fallback_reason()
+    clear_live_verification()
     for name in _PROVIDER_ENV:
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setattr("urllib.request.urlopen", lambda *a, **k: pytest.fail("diagnostics must not make a network call"))
@@ -179,6 +183,11 @@ def test_5_gemini_only_credentials_fall_back_to_gemini(clean_provider_env):
     assert health["reason"] == "primary_unconfigured_fallback_only"
     assert "key-test-not-real" not in json.dumps(health)
 
+    # Candidate model is configurable via PMS_GEMINI_MODEL
+    clean_provider_env.setenv("PMS_GEMINI_MODEL", "gemini-3.5-flash-lite")
+    health_candidate = provider_status()
+    assert health_candidate["configured_model"] == "gemini-3.5-flash-lite"
+
 
 def test_6_disabled_providers_are_never_active(clean_provider_env):
     clean_provider_env.setenv("CLOUDFLARE_ACCOUNT_ID", "acct-test")
@@ -215,3 +224,412 @@ def test_8_diagnostics_payload_providers_are_cloudflare_gemini_or_deterministic(
     assert payload.model_endpoint_host == "api.cloudflare.com"
     assert payload.inference_verified is False
     assert "token-test-not-real" not in payload.model_dump_json()
+
+
+# ---------------------------------------------------------------------------
+# Phase 1 & 2 Live Verification and 6-State Diagnostics Tests
+# ---------------------------------------------------------------------------
+
+
+def test_9_diagnostics_six_states_distinction(clean_provider_env):
+    """Verify clean transitions across the 6 diagnostic states without network calls."""
+    from services.ai.llm_client import (
+        STATUS_CONFIGURED,
+        STATUS_UNAVAILABLE,
+        STATUS_CREDENTIALS_PRESENT,
+        STATUS_LIVE_VERIFIED,
+        STATUS_LIVE_FAILED,
+        STATUS_FALLBACK_ACTIVE,
+        clear_live_verification,
+        record_live_verification,
+    )
+
+    clear_live_verification()
+
+    # 1. STATUS_CONFIGURED: Provider enabled in config, but credentials not yet configured
+    st1 = provider_status()
+    assert st1["status_code"] == STATUS_CONFIGURED
+    assert st1["live_verified"] is False
+    assert st1["reason"] == "no_credentials_configured"
+
+    # 2. STATUS_UNAVAILABLE: Providers explicitly disabled in config
+    clean_provider_env.setenv("PMS_AI_CLOUDFLARE_ENABLED", "false")
+    clean_provider_env.setenv("PMS_AI_GEMINI_ENABLED", "false")
+    st_unavail = provider_status()
+    assert st_unavail["status_code"] == STATUS_UNAVAILABLE
+    assert st_unavail["available"] is False
+    clean_provider_env.delenv("PMS_AI_CLOUDFLARE_ENABLED", raising=False)
+    clean_provider_env.delenv("PMS_AI_GEMINI_ENABLED", raising=False)
+
+    # 3. STATUS_CREDENTIALS_PRESENT: Credentials configured, but live verification not yet executed
+    clean_provider_env.setenv("CLOUDFLARE_ACCOUNT_ID", "acct-test")
+    clean_provider_env.setenv("CLOUDFLARE_API_TOKEN", "token-test")
+    st2 = provider_status()
+    assert st2["status_code"] == STATUS_CREDENTIALS_PRESENT
+    assert st2["live_verified"] is False
+
+    # 4. STATUS_LIVE_VERIFIED: Explicit successful live verification recorded
+    record_live_verification({
+        "verified": True,
+        "provider": "cloudflare",
+        "model": "@cf/ibm-granite/granite-4.0-h-micro",
+        "total_latency_ms": 125.0,
+    })
+    st3 = provider_status()
+    assert st3["status_code"] == STATUS_LIVE_VERIFIED
+    assert st3["live_verified"] is True
+    assert st3["live_verification"]["latency_ms"] == 125.0
+
+    # 5. STATUS_LIVE_FAILED: Explicit failed live verification recorded
+    record_live_verification({
+        "verified": False,
+        "provider": "cloudflare",
+        "model": "@cf/ibm-granite/granite-4.0-h-micro",
+        "total_latency_ms": 450.0,
+        "error": "Cloudflare 401 Unauthorized",
+    })
+    st4 = provider_status()
+    assert st4["status_code"] == STATUS_LIVE_FAILED
+    assert st4["live_verified"] is False
+    assert "401" in st4["live_verification"]["error"]
+
+    # 6. STATUS_FALLBACK_ACTIVE: Primary unconfigured, fallback configured
+    clear_live_verification()
+    clean_provider_env.delenv("CLOUDFLARE_ACCOUNT_ID", raising=False)
+    clean_provider_env.delenv("CLOUDFLARE_API_TOKEN", raising=False)
+    clean_provider_env.setenv("GEMINI_API_KEY", "gemini-key-test")
+    st5 = provider_status()
+    assert st5["status_code"] == STATUS_FALLBACK_ACTIVE
+    assert st5["active_provider"] == "gemini"
+
+
+class _FakeSharedVerifyRedis:
+    """Test double simulating one atomic shared Redis quota."""
+
+    def __init__(self):
+        self.counts = {}
+
+    def __bool__(self):
+        return True
+
+    def eval(self, script, num_keys, key, limit):
+        assert num_keys == 1
+        assert "INCR" in script and "EXPIRE" in script
+        count = self.counts.get(key, 0)
+        if count >= int(limit):
+            return 0
+        self.counts[key] = count + 1
+        return 1
+
+
+def test_10_verify_live_endpoint_admin_success(test_db_session, monkeypatch):
+    """POST /api/ai/diagnostics/verify-live succeeds for Admin and records live verified state."""
+    from scripts import verify_cloudflare_ai
+    from services.ai.llm_client import clear_live_verification, get_live_verification
+
+    clear_live_verification()
+    monkeypatch.setattr("services.redis_provider.redis_client", _FakeSharedVerifyRedis())
+    ai_workspace._live_verify_in_flight = False
+    monkeypatch.setenv("PMS_AI_LIVE_VERIFY_ENDPOINT_ENABLED", "true")
+    monkeypatch.setenv("APP_ENV", "development")
+    monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", "test-acct-123456789012345678901234")
+    monkeypatch.setenv("CLOUDFLARE_API_TOKEN", "cfut_testtoken12345678901234567890")
+
+    app = _create_test_app(test_db_session)
+    client = TestClient(app, raise_server_exceptions=False)
+
+    fake_result = {
+        "verified": True,
+        "provider": "cloudflare",
+        "model": "@cf/ibm-granite/granite-4.0-h-micro",
+        "account_id_configured": True,
+        "api_token_configured": True,
+        "test_a_completion": {"status": "passed", "latency_ms": 110.0},
+        "test_b_structured": {"status": "passed", "latency_ms": 220.0},
+        "total_latency_ms": 330.0,
+        "error": None,
+    }
+    monkeypatch.setattr(verify_cloudflare_ai, "run_live_verification", lambda **kwargs: fake_result)
+
+    tok = _get_user_token(test_db_session, "admin_user_verify", "Admin")
+    headers = {"Authorization": f"Bearer {tok}"}
+
+    resp = client.post("/api/ai/diagnostics/verify-live", headers=headers)
+    assert resp.status_code == 200
+    res_body = resp.json()
+    assert res_body["success"] is True
+    data = res_body["data"]
+    assert data["inference_verified"] is True
+    assert data["provider_status_code"] == "live_verified"
+    assert data["live_verification_latency_ms"] == 330.0
+
+    live_state = get_live_verification()
+    assert live_state["verified"] is True
+    assert live_state["provider"] == "cloudflare"
+
+
+def test_11_verify_live_endpoint_non_admin_forbidden(test_db_session, monkeypatch):
+    """POST /api/ai/diagnostics/verify-live is forbidden for non-Admin callers."""
+    monkeypatch.setenv("PMS_AI_LIVE_VERIFY_ENDPOINT_ENABLED", "true")
+    monkeypatch.setenv("APP_ENV", "development")
+    app = _create_test_app(test_db_session)
+    client = TestClient(app, raise_server_exceptions=False)
+
+    for role in ("Manager", "Employee", "Viewer"):
+        username = f"user_block_{role.lower()}"
+        tok = _get_user_token(test_db_session, username, role)
+        headers = {"Authorization": f"Bearer {tok}"}
+        resp = client.post("/api/ai/diagnostics/verify-live", headers=headers)
+        assert resp.status_code == 403, f"Expected 403 for role {role}, got {resp.status_code}"
+
+
+def test_12_verify_cloudflare_ai_script_mocked(monkeypatch):
+    """Unit test verify_cloudflare_ai.run_live_verification with mocked urllib calls."""
+    from scripts.verify_cloudflare_ai import run_live_verification
+
+    call_count = 0
+
+    def fake_urlopen(req, timeout=None):
+        nonlocal call_count
+        call_count += 1
+        resp = MagicMock()
+        if call_count == 1:
+            body = json.dumps({
+                "choices": [{"message": {"role": "assistant", "content": "PMS AI connection successful."}, "finish_reason": "stop"}],
+                "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+                "success": True,
+            }).encode("utf-8")
+        else:
+            body = json.dumps({
+                "choices": [{"message": {"role": "assistant", "content": '{"intent": "performance_lookup", "requires_data": true}'}, "finish_reason": "stop"}],
+                "usage": {"prompt_tokens": 15, "completion_tokens": 8, "total_tokens": 23},
+                "success": True,
+            }).encode("utf-8")
+        resp.read.side_effect = [body, b""]
+        resp.__enter__.return_value = resp
+        resp.__exit__.return_value = False
+        return resp
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+
+    res = run_live_verification(
+        account_id="fake-acct-123",
+        api_token="mock-cf-token-12345",
+        model="@cf/ibm-granite/granite-4.0-h-micro",
+        timeout=5.0,
+    )
+    assert res["verified"] is True
+    assert res["test_a_completion"]["status"] == "passed"
+    assert res["test_b_structured"]["status"] == "passed"
+    assert res["error"] is None
+
+    # If the first call consumes the total deadline, no second call is issued.
+    from scripts import verify_cloudflare_ai as verifier
+    clock = [100.0]
+    calls = []
+
+    def over_budget_urlopen(req, timeout=None):
+        calls.append(timeout)
+        response = MagicMock()
+        response.status = 200
+        payload = json.dumps({
+            "choices": [{"message": {"content": "PMS AI connection successful."}}],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 5},
+        }).encode("utf-8")
+
+        def delayed_read(_size):
+            clock[0] += 5.1
+            return payload
+
+        response.read.side_effect = delayed_read
+        response.__enter__.return_value = response
+        response.__exit__.return_value = False
+        return response
+
+    monkeypatch.setattr(verifier.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr("urllib.request.urlopen", over_budget_urlopen)
+    expired = run_live_verification(
+        account_id="fake-acct-123", api_token="mock-cf-token-12345", timeout=5.0
+    )
+    assert expired["verified"] is False
+    assert len(calls) == 1
+    assert calls[0] <= 5.0
+    assert "deadline" in (expired["error"] or "").lower()
+
+
+def test_13_live_endpoint_disabled_by_default(test_db_session, monkeypatch):
+    """POST /api/ai/diagnostics/verify-live returns 403 when the enablement flag is false."""
+    monkeypatch.delenv("PMS_AI_LIVE_VERIFY_ENDPOINT_ENABLED", raising=False)
+    app = _create_test_app(test_db_session)
+    client = TestClient(app, raise_server_exceptions=False)
+    tok = _get_user_token(test_db_session, "admin_user_flag", "Admin")
+    headers = {"Authorization": f"Bearer {tok}"}
+
+    resp = client.post("/api/ai/diagnostics/verify-live", headers=headers)
+    assert resp.status_code == 403
+    assert "disabled by configuration" in resp.json()["detail"]
+
+
+def test_14_live_endpoint_blocked_in_production(test_db_session, monkeypatch):
+    """POST /api/ai/diagnostics/verify-live returns 403 in production environment."""
+    monkeypatch.setenv("PMS_AI_LIVE_VERIFY_ENDPOINT_ENABLED", "true")
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.delenv("PMS_AI_ALLOW_PRODUCTION_LIVE_VERIFY", raising=False)
+    app = _create_test_app(test_db_session)
+    client = TestClient(app, raise_server_exceptions=False)
+    tok = _get_user_token(test_db_session, "admin_user_prod", "Admin")
+    headers = {"Authorization": f"Bearer {tok}"}
+
+    resp = client.post("/api/ai/diagnostics/verify-live", headers=headers)
+    assert resp.status_code == 403
+    assert "disabled in production" in resp.json()["detail"]
+
+
+def test_15_live_endpoint_daily_budget_exceeded(test_db_session, monkeypatch):
+    """POST /api/ai/diagnostics/verify-live returns 429 when daily budget is exhausted."""
+    monkeypatch.setenv("PMS_AI_LIVE_VERIFY_ENDPOINT_ENABLED", "true")
+    monkeypatch.setenv("APP_ENV", "development")
+    monkeypatch.setenv("PMS_AI_LIVE_VERIFY_DAILY_BUDGET", "2")
+    monkeypatch.setattr("services.redis_provider.redis_client", _FakeSharedVerifyRedis())
+    ai_workspace._live_verify_in_flight = False
+
+    app = _create_test_app(test_db_session)
+    client = TestClient(app, raise_server_exceptions=False)
+    tok = _get_user_token(test_db_session, "admin_user_budget", "Admin")
+    headers = {"Authorization": f"Bearer {tok}"}
+
+    from scripts import verify_cloudflare_ai
+    fake_result = {"verified": True, "provider": "cloudflare", "model": "test", "total_latency_ms": 50.0}
+    monkeypatch.setattr(verify_cloudflare_ai, "run_live_verification", lambda **kwargs: fake_result)
+
+    # First 2 calls pass
+    r1 = client.post("/api/ai/diagnostics/verify-live", headers=headers)
+    assert r1.status_code == 200
+    r2 = client.post("/api/ai/diagnostics/verify-live", headers=headers)
+    assert r2.status_code == 200
+
+    # 3rd call exceeds budget
+    r3 = client.post("/api/ai/diagnostics/verify-live", headers=headers)
+    assert r3.status_code == 429
+    assert "daily budget exceeded" in r3.json()["detail"]
+
+    # Redis is mandatory; the endpoint may NOT silently reset to per-worker quotas.
+    from fastapi import HTTPException
+    monkeypatch.setattr("services.redis_provider.redis_client", None)
+    with pytest.raises(HTTPException) as missing:
+        ai_workspace._check_and_increment_daily_budget(2)
+    assert missing.value.status_code == 503
+
+    class BrokenRedis:
+        def __bool__(self):
+            return True
+
+        def eval(self, *_args):
+            raise ConnectionError("Redis offline")
+
+    monkeypatch.setattr("services.redis_provider.redis_client", BrokenRedis())
+    with pytest.raises(HTTPException) as broken:
+        ai_workspace._check_and_increment_daily_budget(2)
+    assert broken.value.status_code == 503
+
+
+def test_16_live_endpoint_rejects_concurrent_execution(test_db_session, monkeypatch):
+    """POST /api/ai/diagnostics/verify-live returns 429 if another check is already in-flight."""
+    monkeypatch.setenv("PMS_AI_LIVE_VERIFY_ENDPOINT_ENABLED", "true")
+    monkeypatch.setenv("APP_ENV", "development")
+    ai_workspace._live_verify_in_flight = True  # Simulate active execution
+
+    app = _create_test_app(test_db_session)
+    client = TestClient(app, raise_server_exceptions=False)
+    tok = _get_user_token(test_db_session, "admin_user_concurrent", "Admin")
+    headers = {"Authorization": f"Bearer {tok}"}
+
+    resp = client.post("/api/ai/diagnostics/verify-live", headers=headers)
+    assert resp.status_code == 429
+    assert "already in progress" in resp.json()["detail"]
+    ai_workspace._live_verify_in_flight = False
+
+
+def test_17_live_verification_ttl_expiration(monkeypatch):
+    """get_live_verification marks expired results as not verified after TTL."""
+    from services.ai.llm_client import (
+        clear_live_verification,
+        get_live_verification,
+        provider_status,
+        record_live_verification,
+    )
+    from services.ai.provider_engine import UnifiedProviderConfig
+
+    clear_live_verification()
+    cfg = UnifiedProviderConfig(
+        cloudflare_account_id="test-acct",
+        cloudflare_api_token="test-token",
+        cloudflare_model="@cf/ibm-granite/granite-4.0-h-micro",
+    )
+    record_live_verification({"verified": True, "provider": "cloudflare", "model": cfg.cloudflare_model}, config=cfg)
+
+    # Fresh state
+    fresh = get_live_verification(cfg)
+    assert fresh is not None
+    assert fresh["verified"] is True
+
+    # Simulate TTL expiration (16 minutes later with 15 min TTL)
+    from services.ai import llm_client
+    with llm_client._live_verification_lock:
+        llm_client._last_live_verification["monotonic_ts"] = time.monotonic() - 1000.0
+
+    expired = get_live_verification(cfg)
+    assert expired is not None
+    assert expired["verified"] is False
+    assert expired["status"] == "verification_expired"
+
+    # provider_status reflects expired state
+    st = provider_status(cfg)
+    assert st["live_verified"] is False
+    assert st["reason"] == "verification_expired"
+
+
+def test_18_live_verification_invalidated_on_config_or_credential_change():
+    """Live verification is invalidated immediately when credentials or model change."""
+    from services.ai.llm_client import (
+        clear_live_verification,
+        get_live_verification,
+        provider_status,
+        record_live_verification,
+    )
+    from services.ai.provider_engine import UnifiedProviderConfig
+
+    clear_live_verification()
+    cfg1 = UnifiedProviderConfig(
+        cloudflare_account_id="acct-initial",
+        cloudflare_api_token="token-initial",
+        cloudflare_model="@cf/ibm-granite/granite-4.0-h-micro",
+    )
+    record_live_verification({"verified": True, "provider": "cloudflare", "model": cfg1.cloudflare_model}, config=cfg1)
+
+    # Verified under cfg1
+    assert get_live_verification(cfg1)["verified"] is True
+
+    # Token changed in cfg2 -> prior verification invalidated
+    cfg2 = UnifiedProviderConfig(
+        cloudflare_account_id="acct-initial",
+        cloudflare_api_token="token-NEW",
+        cloudflare_model="@cf/ibm-granite/granite-4.0-h-micro",
+    )
+    assert get_live_verification(cfg2) is None
+    st2 = provider_status(cfg2)
+    assert st2["live_verified"] is False
+    assert st2["status_code"] == "credentials_present"
+
+    # Model changed in cfg3 -> prior verification invalidated
+    record_live_verification({"verified": True, "provider": "cloudflare", "model": cfg2.cloudflare_model}, config=cfg2)
+    assert get_live_verification(cfg2)["verified"] is True
+    cfg3 = UnifiedProviderConfig(
+        cloudflare_account_id="acct-initial",
+        cloudflare_api_token="token-NEW",
+        cloudflare_model="@cf/zai-org/glm-4.7-flash",
+    )
+    assert get_live_verification(cfg3) is None
+    st3 = provider_status(cfg3)
+    assert st3["live_verified"] is False
+
