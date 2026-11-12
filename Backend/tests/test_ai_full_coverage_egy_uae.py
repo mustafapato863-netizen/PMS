@@ -8,7 +8,7 @@ Covers Phases 1–6 of `docs/plans/contextual-ai-assistant/FULL_COVERAGE_EXECUTI
 3. Full RBAC & privacy isolation matrix: Regional Manager (EGY vs UAE), Branch Director
    (allowed vs denied branch comparison), Function Director, Team/Level isolation, Self-only
    employee isolation, and mid-turn scope revocation.
-4. Qwen exploration & grounded synthesis contract: production-shaped schema parity,
+4. Provider exploration & grounded synthesis contract: production-shaped schema parity,
    discovery -> data read multi-step loop, compound 2-part evidence, fact-ID ledger
    validation (rejecting invented numbers), and separate planner/synthesis attribution.
 5. Shared contextual surfaces (Monthly Review, Team Dashboard, Executive Summary, BSC,
@@ -46,7 +46,7 @@ from services.ai.local_data_explorer import (
     build_authorized_concept_summary,
     build_exploration_step_json_schema,
     build_fact_ledger_from_evidence,
-    validate_qwen_grounded_synthesis,
+    validate_grounded_synthesis,
 )
 from services.ai.orchestrator import PmsAiOrchestrator
 from test_ai_workspace import (
@@ -54,7 +54,7 @@ from test_ai_workspace import (
     _make_call_center_record,
     _patch_records,
 )
-from test_local_assistant_exploration import _mock_llama_steps
+from test_local_assistant_exploration import _mock_provider_steps
 
 
 def _make_generic_record(
@@ -253,7 +253,7 @@ def test_phase2_regional_branch_function_level_and_self_only_authorization_matri
         assert res_denied_uae.tool_calls == []
 
         # Allowed EGY Coding EGY query
-        _mock_llama_steps(
+        _mock_provider_steps(
             monkeypatch,
             [
                 {
@@ -325,7 +325,7 @@ def test_phase2_mid_turn_scope_revocation_halts_exploration_and_blocks_data_leak
     _patch_records(monkeypatch, records)
     ai_evidence_cache.clear()
 
-    _mock_llama_steps(
+    _mock_provider_steps(
         monkeypatch,
         [
             {
@@ -487,7 +487,7 @@ def test_phase3_all_data_waves_egy_uae_shared_managerial_and_corporate_bsc(
         assistant = PmsAiOrchestrator(db, admin_scope)
 
         # 1. Wave A: UAE Pharmacy Employee score
-        _mock_llama_steps(
+        _mock_provider_steps(
             monkeypatch,
             [
                 {
@@ -507,7 +507,7 @@ def test_phase3_all_data_waves_egy_uae_shared_managerial_and_corporate_bsc(
         assert "92.0%" in r_pharm.headline
 
         # 2. Wave B: EGY Coding EGY vs UAE Coding stay strictly separate
-        _mock_llama_steps(
+        _mock_provider_steps(
             monkeypatch,
             [
                 {
@@ -526,7 +526,7 @@ def test_phase3_all_data_waves_egy_uae_shared_managerial_and_corporate_bsc(
         assert r_coding_egy.outcome == "answer"
         assert "88.0%" in r_coding_egy.headline
 
-        _mock_llama_steps(
+        _mock_provider_steps(
             monkeypatch,
             [
                 {
@@ -546,7 +546,7 @@ def test_phase3_all_data_waves_egy_uae_shared_managerial_and_corporate_bsc(
         assert "94.0%" in r_coding_uae.headline
 
         # 3. Wave C: Shared Finance (region="All") & Active empty team ("Collections" -> VERIFIED_NO_DATA)
-        _mock_llama_steps(
+        _mock_provider_steps(
             monkeypatch,
             [
                 {
@@ -565,7 +565,7 @@ def test_phase3_all_data_waves_egy_uae_shared_managerial_and_corporate_bsc(
         assert r_fin.outcome == "answer"
         assert "86.0%" in r_fin.headline
 
-        _mock_llama_steps(
+        _mock_provider_steps(
             monkeypatch,
             [
                 {
@@ -584,7 +584,7 @@ def test_phase3_all_data_waves_egy_uae_shared_managerial_and_corporate_bsc(
         assert r_empty.outcome == "unavailable_data"
 
         # 4. Wave D: Egypt Managerial (Pre-Approvals IP Managerial)
-        _mock_llama_steps(
+        _mock_provider_steps(
             monkeypatch,
             [
                 {
@@ -617,7 +617,7 @@ def test_phase3_all_data_waves_egy_uae_shared_managerial_and_corporate_bsc(
         assert "88.5%" in r_mgr.headline
 
         # 5. Wave D: Corporate BSC (UAE CRM & EGY Marketing)
-        _mock_llama_steps(
+        _mock_provider_steps(
             monkeypatch,
             [
                 {
@@ -682,7 +682,7 @@ def test_phase4_discovery_then_data_read_and_grounded_synthesis_validation(
     assert st1 == "ok" and parsed1 is not None
     assert st2 == "ok" and parsed2 is not None
 
-    _mock_llama_steps(monkeypatch, [step1_payload, step2_payload])
+    _mock_provider_steps(monkeypatch, [step1_payload, step2_payload])
     with _build_in_memory_db() as db:
         resp = PmsAiOrchestrator(db, admin_scope).run_chat_turn(
             AiChatRequest(
@@ -694,7 +694,7 @@ def test_phase4_discovery_then_data_read_and_grounded_synthesis_validation(
     assert "85.0%" in resp.headline
     assert resp.provider_usage.provider_calls in (2, 3)
 
-    # Verify Qwen grounded synthesis validator accepts exact facts and rejects invented numbers / missing facts
+    # Verify grounded synthesis validator accepts exact facts and rejects invented numbers / missing facts
     ledger = [
         {
             "fact_id": "F1",
@@ -718,7 +718,7 @@ def test_phase4_discovery_then_data_read_and_grounded_synthesis_validation(
             "unit": "%",
         },
     ]
-    valid_text, status_ok = validate_qwen_grounded_synthesis(
+    valid_text, status_ok = validate_grounded_synthesis(
         draft_payload={
             "fact_ids": ["F1", "F2"],
             "headline": "Inbound scored 85.0% in September 2026, and Alice Example is the lowest performer at 80.0%.",
@@ -729,7 +729,7 @@ def test_phase4_discovery_then_data_read_and_grounded_synthesis_validation(
     assert valid_text is not None
 
     # Rejects invented number (e.g. 92.5%)
-    bad_num_text, status_bad_num = validate_qwen_grounded_synthesis(
+    bad_num_text, status_bad_num = validate_grounded_synthesis(
         draft_payload={
             "fact_ids": ["F1", "F2"],
             "headline": "Inbound scored 85.0% in September 2026 (up from 92.5%), and Alice Example scored 80.0%.",
@@ -740,7 +740,7 @@ def test_phase4_discovery_then_data_read_and_grounded_synthesis_validation(
     assert status_bad_num == "invented_number"
 
     # Rejects missing subject
-    bad_subj_text, status_bad_subj = validate_qwen_grounded_synthesis(
+    bad_subj_text, status_bad_subj = validate_grounded_synthesis(
         draft_payload={
             "fact_ids": ["F1", "F2"],
             "headline": "Inbound scored 85.0% in September 2026, and the lowest agent scored 80.0%.",

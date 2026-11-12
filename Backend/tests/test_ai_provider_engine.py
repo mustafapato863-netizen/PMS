@@ -1,7 +1,7 @@
 """Tests for Unified PMS AI Provider Engine (Phase 1).
 
 Covers:
-- Gemini success as primary provider (OpenAI never called).
+- Primary provider success (fallback never called).
 - Gemini transient failure retry and eventual success.
 - Gemini rate limit (HTTP 429) immediate fallback to OpenAI without retry.
 - Gemini timeout fallback to OpenAI.
@@ -67,11 +67,6 @@ def mock_gemini():
 
 
 @pytest.fixture
-def mock_openai():
-    return MagicMock(spec=OpenAIProviderAdapter)
-
-
-@pytest.fixture
 def mock_cloudflare():
     return MagicMock(spec=CloudflareAIProviderAdapter)
 
@@ -83,7 +78,6 @@ def cloudflare_config():
         fallback_provider="gemini",
         cloudflare_enabled=True,
         gemini_enabled=True,
-        openai_enabled=False,
         fallback_enabled=True,
         cloudflare_account_id="mock-cf-account",
         cloudflare_api_token="mock-cf-token",
@@ -98,15 +92,18 @@ def cloudflare_config():
 @pytest.fixture
 def sample_config():
     return UnifiedProviderConfig(
+        primary_provider="cloudflare",
+        fallback_provider="gemini",
+        cloudflare_enabled=True,
         gemini_enabled=True,
-        openai_enabled=True,
         fallback_enabled=True,
+        cloudflare_account_id="mock-cf-account",
+        cloudflare_api_token="mock-cf-token",
+        cloudflare_model="@cf/ibm-granite/granite-4.0-h-micro",
         gemini_model="gemini-2.5-flash",
-        openai_model="gpt-4o-mini",
         timeout_seconds=5.0,
         max_retries=1,
         gemini_api_key="mock-gemini-key",
-        openai_api_key="mock-openai-key",
     )
 
 
@@ -126,23 +123,23 @@ def sample_request():
 # ---------------------------------------------------------------------------
 
 
-def test_gemini_primary_success(mock_gemini, mock_openai, sample_config, sample_request):
+def test_primary_primary_success(mock_cloudflare, mock_gemini, sample_config, sample_request):
     """When Gemini succeeds, it returns immediately and OpenAI is never invoked."""
-    mock_gemini.execute.return_value = (
+    mock_cloudflare.execute.return_value = (
         "Action step 1 from Gemini.",
         TokenUsage(prompt_tokens=10, completion_tokens=8, total_tokens=18),
     )
 
     engine = UnifiedProviderEngine(
         config=sample_config,
+        cloudflare_adapter=mock_cloudflare,
         gemini_adapter=mock_gemini,
-        openai_adapter=mock_openai,
     )
     resp = engine.generate(sample_request)
 
     assert resp.is_success is True
-    assert resp.provider == "gemini"
-    assert resp.model == "gemini-2.5-flash"
+    assert resp.provider == "cloudflare"
+    assert resp.model == "@cf/ibm-granite/granite-4.0-h-micro"
     assert resp.outcome == "success"
     assert resp.content == "Action step 1 from Gemini."
     assert resp.usage.total_tokens == 18
@@ -152,26 +149,26 @@ def test_gemini_primary_success(mock_gemini, mock_openai, sample_config, sample_
     assert resp.attempts[0].status == "success"
 
     # OpenAI must never be called when primary succeeds
-    mock_gemini.execute.assert_called_once()
-    mock_openai.execute.assert_not_called()
+    mock_cloudflare.execute.assert_called_once()
+    mock_gemini.execute.assert_not_called()
 
 
-def test_gemini_transient_error_retries_and_succeeds(mock_gemini, mock_openai, sample_config, sample_request):
+def test_primary_transient_error_retries_and_succeeds(mock_cloudflare, mock_gemini, sample_config, sample_request):
     """Gemini transient error (e.g. 503) triggers a bounded retry, succeeding on 2nd attempt."""
-    mock_gemini.execute.side_effect = [
+    mock_cloudflare.execute.side_effect = [
         ProviderTransientError("Service temporarily unavailable", http_code=503),
         ("Recovered action step from Gemini.", TokenUsage(prompt_tokens=12, completion_tokens=10, total_tokens=22)),
     ]
 
     engine = UnifiedProviderEngine(
         config=sample_config,
+        cloudflare_adapter=mock_cloudflare,
         gemini_adapter=mock_gemini,
-        openai_adapter=mock_openai,
     )
     resp = engine.generate(sample_request)
 
     assert resp.is_success is True
-    assert resp.provider == "gemini"
+    assert resp.provider == "cloudflare"
     assert resp.outcome == "success"
     assert resp.content == "Recovered action step from Gemini."
     assert len(resp.attempts) == 2
@@ -180,59 +177,59 @@ def test_gemini_transient_error_retries_and_succeeds(mock_gemini, mock_openai, s
     assert resp.attempts[1].status == "success"
     assert resp.attempts[1].retry_count == 1
 
-    assert mock_gemini.execute.call_count == 2
-    mock_openai.execute.assert_not_called()
+    assert mock_cloudflare.execute.call_count == 2
+    mock_gemini.execute.assert_not_called()
 
 
-def test_gemini_rate_limit_falls_back_to_openai_immediately(mock_gemini, mock_openai, sample_config, sample_request):
+def test_primary_rate_limit_falls_back_to_gemini_immediately(mock_cloudflare, mock_gemini, sample_config, sample_request):
     """Gemini HTTP 429 rate limit or quota exhaustion immediately falls back to OpenAI without retrying Gemini."""
-    mock_gemini.execute.side_effect = ProviderRateLimitError("Quota exceeded", http_code=429)
-    mock_openai.execute.return_value = (
+    mock_cloudflare.execute.side_effect = ProviderRateLimitError("Quota exceeded", http_code=429)
+    mock_gemini.execute.return_value = (
         "Action step from OpenAI fallback.",
         TokenUsage(prompt_tokens=15, completion_tokens=12, total_tokens=27),
     )
 
     engine = UnifiedProviderEngine(
         config=sample_config,
+        cloudflare_adapter=mock_cloudflare,
         gemini_adapter=mock_gemini,
-        openai_adapter=mock_openai,
     )
     resp = engine.generate(sample_request)
 
     assert resp.is_success is True
-    assert resp.provider == "openai"
-    assert resp.model == "gpt-4o-mini"
+    assert resp.provider == "gemini"
+    assert resp.model == "gemini-2.5-flash"
     assert resp.outcome == "fallback_success"
     assert resp.content == "Action step from OpenAI fallback."
     assert resp.usage.total_tokens == 27
     assert len(resp.attempts) == 2
     assert resp.attempts[0].status == "rate_limited"
-    assert resp.attempts[0].provider == "gemini"
+    assert resp.attempts[0].provider == "cloudflare"
     assert resp.attempts[1].status == "success"
-    assert resp.attempts[1].provider == "openai"
+    assert resp.attempts[1].provider == "gemini"
 
     # Gemini must only be called once (no pointless retries on 429 quota exhaustion)
-    assert mock_gemini.execute.call_count == 1
-    mock_openai.execute.assert_called_once()
+    assert mock_cloudflare.execute.call_count == 1
+    mock_gemini.execute.assert_called_once()
 
 
-def test_gemini_timeout_falls_back_to_openai(mock_gemini, mock_openai, sample_config, sample_request):
+def test_primary_timeout_falls_back_to_gemini(mock_cloudflare, mock_gemini, sample_config, sample_request):
     """Gemini timeout after max retries falls back cleanly to OpenAI."""
-    mock_gemini.execute.side_effect = ProviderTimeoutError("Gemini timed out after 5.0s")
-    mock_openai.execute.return_value = (
+    mock_cloudflare.execute.side_effect = ProviderTimeoutError("Gemini timed out after 5.0s")
+    mock_gemini.execute.return_value = (
         "Action step from OpenAI after timeout.",
         TokenUsage(prompt_tokens=10, completion_tokens=10, total_tokens=20),
     )
 
     engine = UnifiedProviderEngine(
         config=sample_config,
+        cloudflare_adapter=mock_cloudflare,
         gemini_adapter=mock_gemini,
-        openai_adapter=mock_openai,
     )
     resp = engine.generate(sample_request)
 
     assert resp.is_success is True
-    assert resp.provider == "openai"
+    assert resp.provider == "gemini"
     assert resp.outcome == "fallback_success"
     assert resp.content == "Action step from OpenAI after timeout."
     # 1 initial + 1 retry = 2 Gemini attempts, followed by 1 OpenAI attempt
@@ -241,64 +238,68 @@ def test_gemini_timeout_falls_back_to_openai(mock_gemini, mock_openai, sample_co
     assert resp.attempts[1].status == "timeout"
     assert resp.attempts[2].status == "success"
 
-    assert mock_gemini.execute.call_count == 2
-    mock_openai.execute.assert_called_once()
+    assert mock_cloudflare.execute.call_count == 2
+    mock_gemini.execute.assert_called_once()
 
 
-def test_gemini_disabled_falls_back_to_openai(mock_gemini, mock_openai, sample_request):
+def test_primary_disabled_falls_back_to_gemini(mock_cloudflare, mock_gemini, sample_request):
     """When Gemini is disabled by config, it falls back to OpenAI without calling Gemini."""
     cfg = UnifiedProviderConfig(
-        gemini_enabled=False,
-        openai_enabled=True,
+        primary_provider="cloudflare",
+        fallback_provider="gemini",
+        cloudflare_enabled=False,
+        gemini_enabled=True,
         fallback_enabled=True,
+        cloudflare_account_id="acct", cloudflare_api_token="mock-key",
         gemini_api_key="mock-key",
-        openai_api_key="mock-key",
     )
-    mock_openai.execute.return_value = ("OpenAI response", TokenUsage(5, 5, 10))
+    mock_gemini.execute.return_value = ("OpenAI response", TokenUsage(5, 5, 10))
 
-    engine = UnifiedProviderEngine(config=cfg, gemini_adapter=mock_gemini, openai_adapter=mock_openai)
+    engine = UnifiedProviderEngine(config=cfg, cloudflare_adapter=mock_cloudflare, gemini_adapter=mock_gemini)
     resp = engine.generate(sample_request)
 
     assert resp.is_success is True
-    assert resp.provider == "openai"
+    assert resp.provider == "gemini"
     assert resp.outcome == "fallback_success"
     assert resp.attempts[0].status == "disabled"
     assert resp.attempts[1].status == "success"
 
-    mock_gemini.execute.assert_not_called()
-    mock_openai.execute.assert_called_once()
+    mock_cloudflare.execute.assert_not_called()
+    mock_gemini.execute.assert_called_once()
 
 
-def test_gemini_missing_key_falls_back_to_openai(mock_gemini, mock_openai, sample_request):
+def test_primary_missing_key_falls_back_to_gemini(mock_cloudflare, mock_gemini, sample_request):
     """When Gemini key is empty, it records missing_key and falls back to OpenAI."""
     cfg = UnifiedProviderConfig(
+        primary_provider="cloudflare",
+        fallback_provider="gemini",
+        cloudflare_enabled=True,
         gemini_enabled=True,
-        openai_enabled=True,
         fallback_enabled=True,
-        gemini_api_key="",  # Unset
-        openai_api_key="mock-openai-key",
+        cloudflare_account_id="", cloudflare_api_token="",  # Unset
+        gemini_api_key="mock-openai-key",
     )
-    mock_openai.execute.return_value = ("OpenAI response", TokenUsage(5, 5, 10))
+    mock_gemini.execute.return_value = ("OpenAI response", TokenUsage(5, 5, 10))
 
-    engine = UnifiedProviderEngine(config=cfg, gemini_adapter=mock_gemini, openai_adapter=mock_openai)
+    engine = UnifiedProviderEngine(config=cfg, cloudflare_adapter=mock_cloudflare, gemini_adapter=mock_gemini)
     resp = engine.generate(sample_request)
 
     assert resp.is_success is True
-    assert resp.provider == "openai"
+    assert resp.provider == "gemini"
     assert resp.outcome == "fallback_success"
     assert resp.attempts[0].status == "missing_key"
     assert resp.attempts[1].status == "success"
 
-    mock_gemini.execute.assert_not_called()
-    mock_openai.execute.assert_called_once()
+    mock_cloudflare.execute.assert_not_called()
+    mock_gemini.execute.assert_called_once()
 
 
-def test_both_providers_fail_returns_clear_provider_unavailable(mock_gemini, mock_openai, sample_config, sample_request):
+def test_both_providers_fail_returns_clear_provider_unavailable(mock_cloudflare, mock_gemini, sample_config, sample_request):
     """When both primary and fallback fail, returns a provider-neutral unavailable response."""
-    mock_gemini.execute.side_effect = ProviderTransientError("Gemini 500 error", http_code=500)
-    mock_openai.execute.side_effect = ProviderRateLimitError("OpenAI 429 quota error", http_code=429)
+    mock_cloudflare.execute.side_effect = ProviderTransientError("Gemini 500 error", http_code=500)
+    mock_gemini.execute.side_effect = ProviderRateLimitError("OpenAI 429 quota error", http_code=429)
 
-    engine = UnifiedProviderEngine(config=sample_config, gemini_adapter=mock_gemini, openai_adapter=mock_openai)
+    engine = UnifiedProviderEngine(config=sample_config, cloudflare_adapter=mock_cloudflare, gemini_adapter=mock_gemini)
     resp = engine.generate(sample_request)
 
     assert resp.is_success is False
@@ -310,42 +311,46 @@ def test_both_providers_fail_returns_clear_provider_unavailable(mock_gemini, moc
     assert len(resp.attempts) == 3  # 2 Gemini + 1 OpenAI
 
 
-def test_both_providers_disabled_returns_provider_unavailable(mock_gemini, mock_openai, sample_request):
+def test_both_providers_disabled_returns_provider_unavailable(mock_cloudflare, mock_gemini, sample_request):
     """When all providers are disabled, returns clean unavailable response with zero network calls."""
     cfg = UnifiedProviderConfig(
+        primary_provider="cloudflare",
+        fallback_provider="gemini",
+        cloudflare_enabled=False,
         gemini_enabled=False,
-        openai_enabled=False,
         fallback_enabled=True,
     )
-    engine = UnifiedProviderEngine(config=cfg, gemini_adapter=mock_gemini, openai_adapter=mock_openai)
+    engine = UnifiedProviderEngine(config=cfg, cloudflare_adapter=mock_cloudflare, gemini_adapter=mock_gemini)
     resp = engine.generate(sample_request)
 
     assert resp.is_success is False
     assert resp.outcome == "provider_unavailable"
     assert resp.content == ""
+    mock_cloudflare.execute.assert_not_called()
     mock_gemini.execute.assert_not_called()
-    mock_openai.execute.assert_not_called()
 
 
-def test_fallback_disabled_does_not_call_openai(mock_gemini, mock_openai, sample_request):
+def test_fallback_disabled_does_not_call_fallback(mock_cloudflare, mock_gemini, sample_request):
     """When fallback_enabled=False, primary failure stops immediately and never calls OpenAI."""
     cfg = UnifiedProviderConfig(
+        primary_provider="cloudflare",
+        fallback_provider="gemini",
+        cloudflare_enabled=True,
         gemini_enabled=True,
-        openai_enabled=True,
         fallback_enabled=False,  # Fallback disabled
+        cloudflare_account_id="acct", cloudflare_api_token="mock-key",
         gemini_api_key="mock-key",
-        openai_api_key="mock-key",
         max_retries=0,
     )
-    mock_gemini.execute.side_effect = ProviderTransientError("Gemini down")
+    mock_cloudflare.execute.side_effect = ProviderTransientError("Gemini down")
 
-    engine = UnifiedProviderEngine(config=cfg, gemini_adapter=mock_gemini, openai_adapter=mock_openai)
+    engine = UnifiedProviderEngine(config=cfg, cloudflare_adapter=mock_cloudflare, gemini_adapter=mock_gemini)
     resp = engine.generate(sample_request)
 
     assert resp.is_success is False
     assert resp.outcome == "provider_unavailable"
-    mock_gemini.execute.assert_called_once()
-    mock_openai.execute.assert_not_called()
+    mock_cloudflare.execute.assert_called_once()
+    mock_gemini.execute.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -354,11 +359,11 @@ def test_fallback_disabled_does_not_call_openai(mock_gemini, mock_openai, sample
 
 
 @pytest.mark.parametrize("http_code", [400, 401, 403])
-def test_gemini_client_error_does_not_fallback_to_openai(http_code, mock_gemini, mock_openai, sample_config, sample_request):
+def test_primary_client_error_does_not_fallback(http_code, mock_cloudflare, mock_gemini, sample_config, sample_request):
     """HTTP 400, 401, 403 on Gemini are client errors and MUST NOT trigger fallback to OpenAI."""
-    mock_gemini.execute.side_effect = ProviderClientError(f"Client error {http_code}", http_code=http_code)
+    mock_cloudflare.execute.side_effect = ProviderClientError(f"Client error {http_code}", http_code=http_code)
 
-    engine = UnifiedProviderEngine(config=sample_config, gemini_adapter=mock_gemini, openai_adapter=mock_openai)
+    engine = UnifiedProviderEngine(config=sample_config, cloudflare_adapter=mock_cloudflare, gemini_adapter=mock_gemini)
     resp = engine.generate(sample_request)
 
     assert resp.is_success is False
@@ -368,15 +373,15 @@ def test_gemini_client_error_does_not_fallback_to_openai(http_code, mock_gemini,
     assert resp.attempts[0].http_code == http_code
 
     # CRITICAL: OpenAI fallback must NOT be called for client errors
-    mock_openai.execute.assert_not_called()
+    mock_gemini.execute.assert_not_called()
     assert len(resp.attempts) == 1
 
 
-def test_gemini_safety_refusal_does_not_fallback_to_openai(mock_gemini, mock_openai, sample_config, sample_request):
+def test_primary_safety_refusal_does_not_fallback(mock_cloudflare, mock_gemini, sample_config, sample_request):
     """Gemini safety refusals MUST NOT trigger fallback to OpenAI to prevent safety filter circumvention."""
-    mock_gemini.execute.side_effect = ProviderSafetyRefusalError("Content blocked by Gemini safety policy")
+    mock_cloudflare.execute.side_effect = ProviderSafetyRefusalError("Content blocked by Gemini safety policy")
 
-    engine = UnifiedProviderEngine(config=sample_config, gemini_adapter=mock_gemini, openai_adapter=mock_openai)
+    engine = UnifiedProviderEngine(config=sample_config, cloudflare_adapter=mock_cloudflare, gemini_adapter=mock_gemini)
     resp = engine.generate(sample_request)
 
     assert resp.is_success is False
@@ -386,36 +391,36 @@ def test_gemini_safety_refusal_does_not_fallback_to_openai(mock_gemini, mock_ope
     assert resp.attempts[0].status == "safety_refusal"
 
     # CRITICAL: OpenAI fallback must NOT be called for safety blocks
-    mock_openai.execute.assert_not_called()
+    mock_gemini.execute.assert_not_called()
     assert len(resp.attempts) == 1
 
 
-def test_empty_request_rejected_without_calling_providers(mock_gemini, mock_openai, sample_config):
+def test_empty_request_rejected_without_calling_providers(mock_cloudflare, mock_gemini, sample_config):
     """Empty request fails input validation immediately without invoking any model."""
     empty_req = ProviderRequest(messages=[], system_instruction=None)
-    engine = UnifiedProviderEngine(config=sample_config, gemini_adapter=mock_gemini, openai_adapter=mock_openai)
+    engine = UnifiedProviderEngine(config=sample_config, cloudflare_adapter=mock_cloudflare, gemini_adapter=mock_gemini)
     resp = engine.generate(empty_req)
 
     assert resp.is_success is False
     assert resp.outcome == "invalid_request"
     assert "empty_request" in (resp.error_detail or "")
+    mock_cloudflare.execute.assert_not_called()
     mock_gemini.execute.assert_not_called()
-    mock_openai.execute.assert_not_called()
 
 
-def test_excessive_prompt_length_rejected_without_calling_providers(mock_gemini, mock_openai, sample_config):
+def test_excessive_prompt_length_rejected_without_calling_providers(mock_cloudflare, mock_gemini, sample_config):
     """Request exceeding 120,000 characters is rejected without calling any provider."""
     huge_req = ProviderRequest(
         messages=[ProviderMessage(role="user", content="x" * 125_000)],
     )
-    engine = UnifiedProviderEngine(config=sample_config, gemini_adapter=mock_gemini, openai_adapter=mock_openai)
+    engine = UnifiedProviderEngine(config=sample_config, cloudflare_adapter=mock_cloudflare, gemini_adapter=mock_gemini)
     resp = engine.generate(huge_req)
 
     assert resp.is_success is False
     assert resp.outcome == "invalid_request"
     assert "prompt_exceeds_maximum_length" in (resp.error_detail or "")
+    mock_cloudflare.execute.assert_not_called()
     mock_gemini.execute.assert_not_called()
-    mock_openai.execute.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -423,7 +428,7 @@ def test_excessive_prompt_length_rejected_without_calling_providers(mock_gemini,
 # ---------------------------------------------------------------------------
 
 
-def test_overall_deadline_exhaustion_prevents_subsequent_attempts(mock_gemini, mock_openai, sample_config):
+def test_overall_deadline_exhaustion_prevents_subsequent_attempts(mock_cloudflare, mock_gemini, sample_config):
     """If timeout_seconds is exceeded, engine halts and does not initiate further retries or fallback."""
     # Set a very tight request timeout (0.001 seconds)
     req = ProviderRequest(
@@ -436,15 +441,15 @@ def test_overall_deadline_exhaustion_prevents_subsequent_attempts(mock_gemini, m
         time.sleep(0.005)
         raise ProviderTimeoutError("Gemini timed out")
 
-    mock_gemini.execute.side_effect = slow_gemini
+    mock_cloudflare.execute.side_effect = slow_gemini
 
-    engine = UnifiedProviderEngine(config=sample_config, gemini_adapter=mock_gemini, openai_adapter=mock_openai)
+    engine = UnifiedProviderEngine(config=sample_config, cloudflare_adapter=mock_cloudflare, gemini_adapter=mock_gemini)
     resp = engine.generate(req)
 
     assert resp.is_success is False
     assert resp.outcome == "timeout"
     # OpenAI must NOT have been called because overall deadline expired
-    mock_openai.execute.assert_not_called()
+    mock_gemini.execute.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -481,9 +486,9 @@ def test_schema_validation_helper():
     assert "missing required fields" in err
 
 
-def test_gemini_schema_validation_failure_is_handled(mock_gemini, mock_openai, sample_config):
+def test_primary_schema_validation_failure_is_handled(mock_cloudflare, mock_gemini, sample_config):
     """When Gemini returns invalid JSON for a structured request, schema error is terminal and MUST NOT fall back to OpenAI."""
-    mock_gemini.execute.side_effect = ProviderSchemaValidationError("Gemini JSON output validation failed: missing key")
+    mock_cloudflare.execute.side_effect = ProviderSchemaValidationError("Gemini JSON output validation failed: missing key")
 
     req = ProviderRequest(
         messages=[ProviderMessage(role="user", content="Give JSON")],
@@ -491,19 +496,19 @@ def test_gemini_schema_validation_failure_is_handled(mock_gemini, mock_openai, s
         json_schema={"type": "object", "required": ["valid"]},
     )
 
-    engine = UnifiedProviderEngine(config=sample_config, gemini_adapter=mock_gemini, openai_adapter=mock_openai)
+    engine = UnifiedProviderEngine(config=sample_config, cloudflare_adapter=mock_cloudflare, gemini_adapter=mock_gemini)
     resp = engine.generate(req)
 
     assert resp.is_success is False
     assert resp.outcome == "schema_validation_failed"
     assert "missing key" in resp.error_detail
-    mock_openai.execute.assert_not_called()
+    mock_gemini.execute.assert_not_called()
 
 
-def test_openai_schema_validation_failure_never_reports_success(mock_gemini, mock_openai, sample_config):
+def test_fallback_schema_validation_failure_never_reports_success(mock_cloudflare, mock_gemini, sample_config):
     """When OpenAI fallback also fails schema validation, response is marked unavailable/failed."""
-    mock_gemini.execute.side_effect = ProviderRateLimitError("Quota exceeded", http_code=429)
-    mock_openai.execute.side_effect = ProviderSchemaValidationError("OpenAI JSON output validation failed: invalid format")
+    mock_cloudflare.execute.side_effect = ProviderRateLimitError("Quota exceeded", http_code=429)
+    mock_gemini.execute.side_effect = ProviderSchemaValidationError("OpenAI JSON output validation failed: invalid format")
 
     req = ProviderRequest(
         messages=[ProviderMessage(role="user", content="Give JSON")],
@@ -511,7 +516,7 @@ def test_openai_schema_validation_failure_never_reports_success(mock_gemini, moc
         json_schema={"type": "object", "required": ["valid"]},
     )
 
-    engine = UnifiedProviderEngine(config=sample_config, gemini_adapter=mock_gemini, openai_adapter=mock_openai)
+    engine = UnifiedProviderEngine(config=sample_config, cloudflare_adapter=mock_cloudflare, gemini_adapter=mock_gemini)
     resp = engine.generate(req)
 
     assert resp.is_success is False
@@ -519,17 +524,17 @@ def test_openai_schema_validation_failure_never_reports_success(mock_gemini, moc
     assert resp.content == ""
 
 
-def test_truncated_response_never_reports_success(mock_gemini, mock_openai, sample_config, sample_request):
+def test_truncated_response_never_reports_success(mock_cloudflare, mock_gemini, sample_config, sample_request):
     """When response is truncated (max tokens reached), fallback is forbidden and error is reported."""
-    mock_gemini.execute.side_effect = ProviderTruncatedError("Gemini candidate truncated due to max output tokens")
+    mock_cloudflare.execute.side_effect = ProviderTruncatedError("Gemini candidate truncated due to max output tokens")
 
-    engine = UnifiedProviderEngine(config=sample_config, gemini_adapter=mock_gemini, openai_adapter=mock_openai)
+    engine = UnifiedProviderEngine(config=sample_config, cloudflare_adapter=mock_cloudflare, gemini_adapter=mock_gemini)
     resp = engine.generate(sample_request)
 
     assert resp.is_success is False
     assert resp.outcome == "truncated_response"
     assert resp.content == ""
-    mock_openai.execute.assert_not_called()
+    mock_gemini.execute.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -537,16 +542,16 @@ def test_truncated_response_never_reports_success(mock_gemini, mock_openai, samp
 # ---------------------------------------------------------------------------
 
 
-def test_secret_redaction_in_logs_and_error_details(mock_gemini, mock_openai, sample_config, sample_request, caplog):
+def test_secret_redaction_in_logs_and_error_details(mock_cloudflare, mock_gemini, sample_config, sample_request, caplog):
     """API keys in exceptions and error details must be strictly redacted."""
     raw_secret_gemini = "AIzaSyD-mock1234567890abcdef"
     raw_secret_openai = "sk-proj-mock1234567890abcdef"
 
-    mock_gemini.execute.side_effect = ProviderTransientError(f"Failed calling key={raw_secret_gemini} connection refused")
-    mock_openai.execute.side_effect = ProviderRateLimitError(f"Key {raw_secret_openai} exhausted quota")
+    mock_cloudflare.execute.side_effect = ProviderTransientError(f"Failed calling key={raw_secret_gemini} connection refused")
+    mock_gemini.execute.side_effect = ProviderRateLimitError(f"Key {raw_secret_openai} exhausted quota")
 
     with caplog.at_level(logging.WARNING):
-        engine = UnifiedProviderEngine(config=sample_config, gemini_adapter=mock_gemini, openai_adapter=mock_openai)
+        engine = UnifiedProviderEngine(config=sample_config, cloudflare_adapter=mock_cloudflare, gemini_adapter=mock_gemini)
         resp = engine.generate(sample_request)
 
     # Neither raw key must appear anywhere in the response error_detail
@@ -665,52 +670,68 @@ def test_gemini_adapter_payload_formatting():
     assert captured_request["timeout"] == 4.5
 
 
-def test_openai_adapter_payload_formatting():
-    """OpenAI adapter properly formats messages, model, and JSON object mode."""
-    captured_request = {}
+def test_openai_adapter_is_inert_and_makes_no_outbound_request():
+    """OpenAIProviderAdapter is deprecated: it never performs I/O, whatever client or config is supplied."""
+    calls = []
 
-    class MockResp:
-        def __enter__(self):
-            return self
+    def must_not_be_called(*args, **kwargs):
+        calls.append((args, kwargs))
+        raise AssertionError("outbound request attempted")
 
-        def __exit__(self, *args):
-            pass
+    adapter = OpenAIProviderAdapter(http_client=must_not_be_called)
+    req = ProviderRequest(messages=[ProviderMessage(role="user", content="hello")], response_format="json")
+    with pytest.raises(ProviderClientError) as excinfo:
+        adapter.execute(req, UnifiedProviderConfig(), timeout=1.0)
+    assert "decommissioned" in str(excinfo.value)
+    assert calls == []
 
-        def read(self):
-            return json.dumps({
-                "choices": [{"message": {"content": "{\"result\": \"ok\"}"}}],
-                "usage": {"prompt_tokens": 8, "completion_tokens": 4, "total_tokens": 12},
-            }).encode("utf-8")
 
-    def mock_urlopen(req, timeout):
-        captured_request["url"] = req.full_url
-        captured_request["headers"] = dict(req.headers)
-        captured_request["body"] = json.loads(req.data.decode("utf-8"))
-        captured_request["timeout"] = timeout
-        return MockResp()
+def test_openai_adapter_source_has_no_endpoint_or_credentials():
+    import inspect
 
-    adapter = OpenAIProviderAdapter(http_client=mock_urlopen)
-    cfg = UnifiedProviderConfig(openai_api_key="test-openai-key", openai_model="gpt-4o-mini")
-    req = ProviderRequest(
-        messages=[
-            ProviderMessage(role="system", content="System text"),
-            ProviderMessage(role="user", content="User text"),
-        ],
-        response_format="json",
-        timeout_seconds=6.0,
+    source = inspect.getsource(OpenAIProviderAdapter)
+    assert "api.openai.com" not in source
+    assert "Authorization" not in source
+    assert "urllib" not in source
+
+
+def test_openai_config_surface_is_removed():
+    cfg = UnifiedProviderConfig()
+    for attr in ("openai_enabled", "openai_model", "openai_api_key"):
+        assert not hasattr(cfg, attr)
+
+
+def test_openai_can_never_be_selected_as_a_provider(monkeypatch, sample_request):
+    """Even if configuration names openai (provider, flag, key), the engine never routes to it."""
+    from services.ai.provider_engine import load_unified_provider_config
+
+    monkeypatch.setenv("PMS_AI_PRIMARY_PROVIDER", "openai")
+    monkeypatch.setenv("PMS_AI_FALLBACK_PROVIDER", "openai")
+    monkeypatch.setenv("PMS_AI_OPENAI_ENABLED", "true")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-not-real")
+    monkeypatch.delenv("CLOUDFLARE_ACCOUNT_ID", raising=False)
+    monkeypatch.delenv("CLOUDFLARE_API_TOKEN", raising=False)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    cfg = load_unified_provider_config()
+    assert cfg.effective_primary_provider == "cloudflare"
+    assert cfg.effective_fallback_provider == "gemini"
+
+    cloudflare = MagicMock(spec=CloudflareAIProviderAdapter)
+    gemini = MagicMock(spec=GeminiProviderAdapter)
+    opener = MagicMock()
+    engine = UnifiedProviderEngine(
+        config=cfg,
+        cloudflare_adapter=cloudflare,
+        gemini_adapter=gemini,
     )
-
-    text, usage = adapter.execute(req, cfg, timeout=req.timeout_seconds)
-    assert text == "{\"result\": \"ok\"}"
-    assert usage.total_tokens == 12
-
-    assert "Authorization" in captured_request["headers"]
-    assert captured_request["headers"]["Authorization"] == "Bearer test-openai-key"
-    assert captured_request["body"]["model"] == "gpt-4o-mini"
-    assert captured_request["body"]["response_format"] == {"type": "json_object"}
-    assert captured_request["body"]["messages"][0] == {"role": "system", "content": "System text"}
-    assert captured_request["body"]["messages"][1] == {"role": "user", "content": "User text"}
-    assert captured_request["timeout"] == 6.0
+    monkeypatch.setattr("urllib.request.urlopen", opener)
+    resp = engine.generate(sample_request)
+    assert resp.is_success is False
+    assert resp.provider == "none"
+    assert all(a.provider in ("cloudflare", "gemini") for a in resp.attempts)
+    cloudflare.execute.assert_not_called()
+    gemini.execute.assert_not_called()
+    opener.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -718,7 +739,7 @@ def test_openai_adapter_payload_formatting():
 # ---------------------------------------------------------------------------
 
 
-def test_parse_http_error_does_not_turn_400_with_rate_into_rate_limit(mock_gemini, mock_openai, sample_config):
+def test_parse_http_error_does_not_turn_400_with_rate_into_rate_limit(mock_cloudflare, mock_gemini, sample_config):
     """HTTP 400 containing substrings like 'completion_rate' must never be classified as rate limit."""
     import io
     import urllib.error
@@ -740,14 +761,14 @@ def test_parse_http_error_does_not_turn_400_with_rate_into_rate_limit(mock_gemin
     assert parsed.http_code == 400
 
     # In engine: must report invalid_request and strictly forbid fallback
-    mock_gemini.execute.side_effect = parsed
-    engine = UnifiedProviderEngine(config=sample_config, gemini_adapter=mock_gemini, openai_adapter=mock_openai)
+    mock_cloudflare.execute.side_effect = parsed
+    engine = UnifiedProviderEngine(config=sample_config, cloudflare_adapter=mock_cloudflare, gemini_adapter=mock_gemini)
     req = ProviderRequest(messages=[ProviderMessage(role="user", content="Test")])
     resp = engine.generate(req)
 
     assert resp.is_success is False
     assert resp.outcome == "invalid_request"
-    mock_openai.execute.assert_not_called()
+    mock_gemini.execute.assert_not_called()
 
 
 def test_complete_json_schema_validation_features():
@@ -960,19 +981,19 @@ def test_http_404_classified_as_client_error_not_rate_limit():
     assert err.http_code == 404
 
 
-def test_safety_refusal_outcome_preserved(mock_gemini, mock_openai, sample_config, sample_request):
+def test_safety_refusal_outcome_preserved(mock_cloudflare, mock_gemini, sample_config, sample_request):
     """Safety refusal from provider must be preserved in outcome, never masked as provider_unavailable."""
-    mock_gemini.execute.side_effect = ProviderSafetyRefusalError("Content blocked by safety policy")
+    mock_cloudflare.execute.side_effect = ProviderSafetyRefusalError("Content blocked by safety policy")
     engine = UnifiedProviderEngine(
         config=sample_config,
+        cloudflare_adapter=mock_cloudflare,
         gemini_adapter=mock_gemini,
-        openai_adapter=mock_openai,
     )
     response = engine.generate(sample_request)
     assert response.outcome == "safety_refusal"
     assert response.is_success is False
     # OpenAI must NOT have been called to bypass safety
-    mock_openai.execute.assert_not_called()
+    mock_gemini.execute.assert_not_called()
 
 
 def test_cost_estimation_incomplete_data_returns_none():
@@ -1090,22 +1111,22 @@ def test_string_numeric_and_object_constraints():
     "PROHIBITED_CONTENT",
     "MALICIOUS",
 ])
-def test_gemini_terminal_finish_reasons_never_fallback(mock_gemini, mock_openai, sample_config, sample_request, finish_reason):
+def test_primary_terminal_finish_reasons_never_fallback(mock_cloudflare, mock_gemini, sample_config, sample_request, finish_reason):
     """Gemini finish reasons (BLOCKLIST, SPII, etc.) are terminal refusals that never trigger OpenAI fallback."""
-    mock_gemini.execute.side_effect = ProviderSafetyRefusalError(f"Gemini candidate blocked by content filter: {finish_reason}")
+    mock_cloudflare.execute.side_effect = ProviderSafetyRefusalError(f"Gemini candidate blocked by content filter: {finish_reason}")
     engine = UnifiedProviderEngine(
         config=sample_config,
+        cloudflare_adapter=mock_cloudflare,
         gemini_adapter=mock_gemini,
-        openai_adapter=mock_openai,
     )
     response = engine.generate(sample_request)
     assert response.outcome == "safety_refusal"
     assert response.is_success is False
     assert finish_reason in (response.error_detail or "")
-    mock_openai.execute.assert_not_called()
+    mock_gemini.execute.assert_not_called()
 
 
-def test_overall_deadline_expiration_after_completion_returns_timeout(mock_gemini, mock_openai, sample_config, sample_request, monkeypatch):
+def test_overall_deadline_expiration_after_completion_returns_timeout(mock_cloudflare, mock_gemini, sample_config, sample_request, monkeypatch):
     """If provider completes after overall deadline expired, engine must report timeout, never success."""
     import dataclasses
     import time
@@ -1114,20 +1135,20 @@ def test_overall_deadline_expiration_after_completion_returns_timeout(mock_gemin
         time.sleep(0.05)
         return "Delayed response text", TokenUsage(prompt_tokens=10, completion_tokens=10, total_tokens=20)
 
-    mock_gemini.execute.side_effect = slow_execute
+    mock_cloudflare.execute.side_effect = slow_execute
     cfg = dataclasses.replace(sample_config, timeout_seconds=0.01)  # Very short deadline
 
     engine = UnifiedProviderEngine(
         config=cfg,
+        cloudflare_adapter=mock_cloudflare,
         gemini_adapter=mock_gemini,
-        openai_adapter=mock_openai,
     )
     response = engine.generate(sample_request)
     assert response.outcome == "timeout"
     assert response.is_success is False
     assert response.content == ""
     # OpenAI fallback must not be called after deadline expired
-    mock_openai.execute.assert_not_called()
+    mock_gemini.execute.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

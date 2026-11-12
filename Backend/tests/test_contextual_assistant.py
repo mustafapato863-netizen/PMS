@@ -659,31 +659,10 @@ def test_categorized_user_feedback_and_ownership(monkeypatch: pytest.MonkeyPatch
         )
 
 
-def test_qwen_4b_json_schema_contract_and_live_smoke(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Verify Qwen3 4B JSON Schema contract and live local llama-server classification if running."""
+def test_intent_json_schema_contract(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The provider-side structured-output schema accepts exactly the allowed intents."""
     schema = build_intent_json_schema()
     assert schema["strict"] is True
     assert schema["schema"]["additionalProperties"] is False
     assert set(schema["schema"]["properties"]["intent"]["enum"]) == ALLOWED_INTENTS
     assert {"page_help", "navigation", "proposal"}.issubset(ALLOWED_INTENTS)
-
-    # Check if local llama-server on 127.0.0.1:18080 is reachable for live smoke verification
-    server_up = False
-    try:
-        with urllib.request.urlopen("http://127.0.0.1:18080/health", timeout=1.0) as resp:
-            server_up = resp.status == 200
-    except Exception:
-        server_up = False
-
-    if server_up:
-        monkeypatch.setenv("PMS_AI_LOCAL_ROUTER_ENABLED", "true")
-        monkeypatch.setenv("PMS_AI_LOCAL_ROUTER_URL", "http://127.0.0.1:18080/v1/chat/completions")
-        monkeypatch.setenv("PMS_AI_LOCAL_ROUTER_TIMEOUT_SECONDS", "8.0")
-
-        r_help = suggest_intent("What does this page show and how do I use its filters?")
-        assert r_help.reason == "ok"
-        assert r_help.intent == "page_help"
-
-        r_prop = suggest_intent("Propose a corrective action plan for the low Booking Rate")
-        assert r_prop.reason == "ok"
-        assert r_prop.intent == "proposal"

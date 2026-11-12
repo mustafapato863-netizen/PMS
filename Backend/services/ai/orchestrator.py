@@ -55,7 +55,7 @@ from services.ai.local_evidence_synthesis import (
     synthesize_branch_bookings,
     synthesize_overall_score,
 )
-from services.ai.llm_client import configured_model_name, llm_turn
+from services.ai.llm_client import active_provider_name, configured_model_name
 from services.ai.local_data_explorer import local_exploration_enabled, run_bounded_exploration
 from services.ai.providers import DeterministicLocalProviderAdapter
 from services.ai.router import HybridQueryRouter, RouterValidationResult
@@ -449,8 +449,7 @@ class PmsAiOrchestrator:
         )
 
     def run_chat_turn(self, req: AiChatRequest) -> AiChatResponsePayload:
-        with llm_turn():
-            return self._execute_chat_turn(req)
+        return self._execute_chat_turn(req)
 
     def _execute_chat_turn(self, req: AiChatRequest) -> AiChatResponsePayload:
         t0 = time.perf_counter()
@@ -669,7 +668,7 @@ class PmsAiOrchestrator:
                 tool_calls=[],
                 tool_digest={"capability_mode": capability_mode, "outcome": "answer"},
                 structured_response={"headline": h_head, "narrative_bullets": h_bullets, "outcome": "answer"},
-                provider_name=("cloud_ai" if os.environ.get("PMS_AI_UNIFIED_ROUTER", "").strip().lower() in ("1", "true") else "llama_cpp") if cap_source == "local_model_router" else "local",
+                provider_name=active_provider_name() if cap_source == "local_model_router" else "local",
                 model_name=configured_model_name() if cap_source == "local_model_router" else "contextual-catalog-v1",
                 latency_ms=int((time.perf_counter() - t0) * 1000),
                 non_empty_evidence=True,
@@ -696,7 +695,7 @@ class PmsAiOrchestrator:
                 page_help=help_sec,
                 navigation_targets=nav_targets,
                 basis_warning=fb_warn,
-                provider_used=("cloud_ai" if os.environ.get("PMS_AI_UNIFIED_ROUTER", "").strip().lower() in ("1", "true") else "llama_cpp") if cap_source == "local_model_router" else "deterministic",
+                provider_used=active_provider_name() if cap_source == "local_model_router" else "deterministic",
                 model_used=configured_model_name() if cap_source == "local_model_router" else "contextual-catalog-v1",
                 latency_ms=max(0, int(round(tot_help_ms))),
                 timings=AiTurnTimingBreakdown(
@@ -894,7 +893,7 @@ class PmsAiOrchestrator:
                             "narrative_bullets": explored.narrative_bullets,
                             "outcome": explored.outcome,
                         },
-                        provider_name=(explored.provider_name if hasattr(explored, "provider_name") and explored.provider_name else ("llama_cpp" if explored.provider_calls > 0 else "local")),
+                        provider_name=(explored.provider_name if hasattr(explored, "provider_name") and explored.provider_name else (active_provider_name() if explored.provider_calls > 0 else "local")),
                         model_name=(explored.model_name or configured_model_name()) if explored.provider_calls > 0 else "deterministic-explorer-v1",
                         latency_ms=int((t_trace_exp - t0) * 1000),
                         non_empty_evidence=explored.records_evaluated > 0,
@@ -934,7 +933,7 @@ class PmsAiOrchestrator:
                     typed_evidence=explored.typed_evidence,
                     evidence_envelope_v2=explored.evidence_envelope_v2,
                     tool_calls=explored.tool_calls,
-                    provider_used=(explored.provider_used if hasattr(explored, "provider_used") and explored.provider_used else ("llama_cpp" if explored.provider_calls > 0 else "deterministic")),
+                    provider_used=(explored.provider_used if hasattr(explored, "provider_used") and explored.provider_used else (active_provider_name() if explored.provider_calls > 0 else "deterministic")),
                     model_used=(explored.model_name or configured_model_name()) if explored.provider_calls > 0 else "deterministic-explorer-v1",
                     latency_ms=max(0, int(round(tot_exp_ms))),
                     timings=AiTurnTimingBreakdown(

@@ -38,7 +38,7 @@ from services.ai.contextual_assistant import (
     validate_page_context_scope,
 )
 from services.ai.coverage_manifest import build_coverage_manifest
-from services.ai.local_data_explorer import validate_qwen_grounded_synthesis
+from services.ai.local_data_explorer import validate_grounded_synthesis
 from services.ai.orchestrator import PmsAiOrchestrator
 from services.corrective_action_service import CorrectiveActionService
 from services.dashboard_record_service import DashboardRecordService
@@ -665,7 +665,7 @@ def test_explicit_branch_on_dubai_page_denies_dubai_only_branch_director(monkeyp
 # ---------------------------------------------------------------------------
 
 def test_claim_validator_rejects_swapped_values_wrong_units_wrong_month_and_contradictory_winner():
-    """validate_qwen_grounded_synthesis must verify subject-to-value binding, units, period, and comparison winner."""
+    """validate_grounded_synthesis must verify subject-to-value binding, units, period, and comparison winner."""
     fact_ledger = [
         {
             "fact_id": "F1",
@@ -686,7 +686,7 @@ def test_claim_validator_rejects_swapped_values_wrong_units_wrong_month_and_cont
     ]
 
     # 1) Correct synthesis passes
-    text_ok, reason = validate_qwen_grounded_synthesis(
+    text_ok, reason = validate_grounded_synthesis(
         draft_payload={
             "fact_ids": ["F1", "F2"],
             "headline": "In September 2026, Dubai recorded 180 bookings compared with 70 in Sharjah, so Dubai led Sharjah.",
@@ -696,7 +696,7 @@ def test_claim_validator_rejects_swapped_values_wrong_units_wrong_month_and_cont
     assert text_ok is not None, f"Expected valid, got {reason}"
 
     # 2) Swapped values: Dubai 70 and Sharjah 180 -> MUST FAIL
-    text_swap, _ = validate_qwen_grounded_synthesis(
+    text_swap, _ = validate_grounded_synthesis(
         draft_payload={
             "fact_ids": ["F1", "F2"],
             "headline": "In September 2026, Dubai recorded 70 bookings and Sharjah recorded 180 bookings.",
@@ -706,7 +706,7 @@ def test_claim_validator_rejects_swapped_values_wrong_units_wrong_month_and_cont
     assert text_swap is None
 
     # 3) Counts presented as percentages -> MUST FAIL
-    text_unit, _ = validate_qwen_grounded_synthesis(
+    text_unit, _ = validate_grounded_synthesis(
         draft_payload={
             "fact_ids": ["F1", "F2"],
             "headline": "In September 2026, Dubai recorded 180% and Sharjah recorded 70%.",
@@ -716,7 +716,7 @@ def test_claim_validator_rejects_swapped_values_wrong_units_wrong_month_and_cont
     assert text_unit is None
 
     # 4) Wrong month attribution -> MUST FAIL
-    text_month, _ = validate_qwen_grounded_synthesis(
+    text_month, _ = validate_grounded_synthesis(
         draft_payload={
             "fact_ids": ["F1", "F2"],
             "headline": "In August 2026, Dubai recorded 180 bookings and Sharjah recorded 70 bookings.",
@@ -726,7 +726,7 @@ def test_claim_validator_rejects_swapped_values_wrong_units_wrong_month_and_cont
     assert text_month is None
 
     # 5) Contradicting winner claim -> MUST FAIL
-    text_winner, _ = validate_qwen_grounded_synthesis(
+    text_winner, _ = validate_grounded_synthesis(
         draft_payload={
             "fact_ids": ["F1", "F2"],
             "headline": "In September 2026, Sharjah led Dubai with 70 bookings vs 180 bookings in Dubai.",
@@ -746,7 +746,7 @@ def test_claim_validator_rejects_swapped_values_wrong_units_wrong_month_and_cont
             "period": "September 2026",
         }
     ]
-    text_invented, _ = validate_qwen_grounded_synthesis(
+    text_invented, _ = validate_grounded_synthesis(
         draft_payload={
             "fact_ids": ["F1"],
             "headline": "Inbound achieved 92.5% in September 2026.",
@@ -920,7 +920,7 @@ def test_live_grant_revocation_between_steps_and_during_synthesis_with_and_witho
 
         monkeypatch.setenv("PMS_AI_LOCAL_DATA_EXPLORATION_ENABLED", "true")
         monkeypatch.setenv("PMS_AI_LOCAL_EVIDENCE_SYNTHESIS_ENABLED", "true")
-        monkeypatch.setattr(lde, "_compose_grounded_answer_with_qwen", _revoke_during_synth)
+        monkeypatch.setattr(lde, "_compose_grounded_answer", _revoke_during_synth)
         monkeypatch.setattr(lde, "local_exploration_enabled", lambda: True)
         monkeypatch.setattr(lde, "_call_local_exploration_model", _fake_planner)
 

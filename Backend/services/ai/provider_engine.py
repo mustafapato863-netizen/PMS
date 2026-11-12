@@ -1,13 +1,14 @@
 """Unified PMS AI Provider Engine (Phase 1).
 
 Provides a unified, provider-neutral abstraction for AI text and structured generation:
-1. Fixed agreed provider hierarchy: Google Gemini as primary, OpenAI as fallback.
-2. Bounded retries for transient failures on Gemini (HTTP 500/502/503/504, network reset).
-3. Fallback to OpenAI permitted ONLY for:
-   - Gemini provider unavailability / disabled in config / missing key.
-   - Gemini rate/quota limits (HTTP 429).
-   - Gemini transient server errors after retries are exhausted.
-   - Gemini connection errors or timeouts.
+1. Fixed provider hierarchy: Cloudflare Workers AI as primary, Google Gemini as fallback.
+   OpenAI is decommissioned: no adapter makes outbound requests to it.
+2. Bounded retries for transient failures on the primary provider (HTTP 500/502/503/504, network reset).
+3. Fallback to Gemini permitted ONLY for:
+   - Primary provider unavailability / disabled in config / missing credentials.
+   - Primary rate/quota limits (HTTP 429).
+   - Primary transient server errors after retries are exhausted.
+   - Primary connection errors or timeouts.
 4. Fallback STRICTLY FORBIDDEN for:
    - Authorization denials or missing user permissions.
    - Input validation failures or empty requests.
@@ -156,7 +157,7 @@ class TokenUsage:
 
 @dataclass
 class ProviderAttempt:
-    provider: str  # "gemini" | "openai"
+    provider: str  # "cloudflare" | "gemini"
     model: str
     status: str  # "success" | "rate_limited" | "timeout" | "transient_error" | "safety_refusal" | "client_error" | "schema_validation_failed" | "truncated" | "disabled" | "missing_key"
     latency_ms: float = 0.0
@@ -209,7 +210,7 @@ class ProviderRequest:
 @dataclass
 class ProviderResponse:
     content: str
-    provider: str  # "gemini" | "openai" | "none"
+    provider: str  # "cloudflare" | "gemini" | "none"
     model: str  # e.g. "gemini-2.5-flash", "gpt-4o-mini", "none"
     outcome: str  # "success" | "fallback_success" | "provider_unavailable" | "rate_limited" | "timeout" | "safety_refusal" | "invalid_request" | "error"
     latency_ms: float = 0.0
@@ -237,8 +238,11 @@ class ProviderResponse:
 
 
 # ---------------------------------------------------------------------------
-# Configuration (Fixed Hierarchy: Gemini Primary, OpenAI Fallback)
+# Configuration (Fixed Hierarchy: Cloudflare Workers AI Primary, Gemini Fallback)
 # ---------------------------------------------------------------------------
+
+
+SUPPORTED_PROVIDERS = ("cloudflare", "gemini")
 
 
 def _parse_bool(value: str | None, default: bool = False) -> bool:
@@ -262,36 +266,31 @@ class UnifiedProviderConfig:
     fallback_provider: str | None = None
     cloudflare_enabled: bool = True
     gemini_enabled: bool = True
-    openai_enabled: bool = False
     fallback_enabled: bool = True
     cloudflare_account_id: str = ""
     cloudflare_api_token: str = ""
     cloudflare_model: str = "@cf/ibm-granite/granite-4.0-h-micro"
     cloudflare_alter_model: str = "@cf/zai-org/glm-4.7-flash"
     gemini_model: str = "gemini-2.5-flash"
-    openai_model: str = "gpt-4o-mini"
     timeout_seconds: float = 10.0
     max_retries: int = 1
     gemini_api_key: str = ""
-    openai_api_key: str = ""
 
     @property
     def effective_primary_provider(self) -> str:
-        if self.primary_provider:
+        if self.primary_provider in SUPPORTED_PROVIDERS:
             return self.primary_provider
         if self.cloudflare_account_id and self.cloudflare_api_token:
             return "cloudflare"
-        if not self.cloudflare_account_id and not self.cloudflare_api_token and (self.gemini_api_key or self.openai_api_key):
+        if not self.cloudflare_account_id and not self.cloudflare_api_token and self.gemini_api_key:
             return "gemini"
         return "cloudflare"
 
     @property
     def effective_fallback_provider(self) -> str:
-        if self.fallback_provider:
+        if self.fallback_provider in SUPPORTED_PROVIDERS and self.fallback_provider != self.effective_primary_provider:
             return self.fallback_provider
-        if self.effective_primary_provider == "cloudflare":
-            return "gemini"
-        return "openai"
+        return "gemini" if self.effective_primary_provider == "cloudflare" else "cloudflare"
 
 
 def load_unified_provider_config() -> UnifiedProviderConfig:
@@ -344,12 +343,6 @@ def load_unified_provider_config() -> UnifiedProviderConfig:
         or "gemini-2.5-flash"
     ).strip()
 
-    openai_model = (
-        os.environ.get("PMS_OPENAI_MODEL")
-        or os.environ.get("PMS_AI_OPENAI_MODEL")
-        or "gpt-4o-mini"
-    ).strip()
-
     try:
         raw_timeout = float(
             os.environ.get("PMS_AI_PROVIDER_TIMEOUT_SECONDS")
@@ -373,29 +366,20 @@ def load_unified_provider_config() -> UnifiedProviderConfig:
         or ""
     ).strip()
 
-    openai_api_key = (
-        os.environ.get("OPENAI_API_KEY")
-        or os.environ.get("OpenAI_API_KEY")
-        or ""
-    ).strip()
-
     return UnifiedProviderConfig(
         primary_provider=primary_provider,
         fallback_provider=fallback_provider,
         cloudflare_enabled=cloudflare_enabled,
         gemini_enabled=gemini_enabled,
-        openai_enabled=False,
         fallback_enabled=fallback_enabled,
         cloudflare_account_id=cloudflare_account_id,
         cloudflare_api_token=cloudflare_api_token,
         cloudflare_model=cloudflare_model,
         cloudflare_alter_model=cloudflare_alter_model,
         gemini_model=gemini_model,
-        openai_model=openai_model,
         timeout_seconds=timeout_seconds,
         max_retries=max_retries,
         gemini_api_key=gemini_api_key,
-        openai_api_key=openai_api_key,
     )
 
 
@@ -727,7 +711,7 @@ def _parse_http_error(exc: urllib.error.HTTPError, provider_name: str) -> Provid
 
 
 class CloudflareAIProviderAdapter:
-    """Invokes Cloudflare Workers AI REST API or OpenAI-compatible endpoint."""
+    """Invokes the Cloudflare Workers AI REST API."""
 
     def __init__(self, http_client: Callable[..., Any] | None = None) -> None:
         self._http_client = http_client or urllib.request.urlopen
@@ -991,15 +975,21 @@ class GeminiProviderAdapter:
 
 
 # ---------------------------------------------------------------------------
-# OpenAI Provider Adapter
+# OpenAI (decommissioned)
 # ---------------------------------------------------------------------------
 
 
 class OpenAIProviderAdapter:
-    """Invokes OpenAI REST API (v1/chat/completions)."""
+    """DEPRECATED, inert. Kept only so old imports keep resolving.
+
+    OpenAI is decommissioned. ``execute`` never performs I/O and always raises
+    ``ProviderClientError``; the engine never selects this adapter because
+    ``openai`` is not in ``SUPPORTED_PROVIDERS``.
+    """
 
     def __init__(self, http_client: Callable[..., Any] | None = None) -> None:
-        self._http_client = http_client or urllib.request.urlopen
+        # The injected client is intentionally ignored: zero outbound requests.
+        self._http_client = None
 
     def execute(
         self,
@@ -1008,106 +998,7 @@ class OpenAIProviderAdapter:
         *,
         timeout: float,
     ) -> tuple[str, TokenUsage]:
-        if not config.openai_api_key:
-            raise ProviderClientError("OpenAI API key is not configured", http_code=401)
-
-        url = "https://api.openai.com/v1/chat/completions"
-
-        messages = []
-        # Enforce exact same schema instructions in system message for OpenAI
-        system_content = request.system_instruction or ""
-        if request.response_format == "json" and request.json_schema:
-            schema_instruction = f"\nYou must output JSON conforming to this schema:\n{json.dumps(request.json_schema)}"
-            system_content = (system_content + schema_instruction).strip()
-
-        if system_content:
-            messages.append({"role": "system", "content": system_content})
-
-        for msg in request.messages:
-            messages.append({"role": msg.role, "content": msg.content})
-
-        if not messages:
-            messages.append({"role": "user", "content": ""})
-
-        payload: dict[str, Any] = {
-            "model": config.openai_model,
-            "messages": messages,
-            "temperature": max(0.0, min(request.temperature, 2.0)),
-            "max_tokens": request.max_tokens or 2048,
-        }
-        if request.response_format == "json":
-            payload["response_format"] = {"type": "json_object"}
-
-        raw_data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-        req = urllib.request.Request(
-            url,
-            data=raw_data,
-            headers={
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {config.openai_api_key}",
-            },
-            method="POST",
-        )
-
-        t_call_start = time.perf_counter()
-        try:
-            with self._http_client(req, timeout=timeout) as resp:
-                elapsed_connect = time.perf_counter() - t_call_start
-                remaining_read = timeout - elapsed_connect
-                if remaining_read <= 0:
-                    raise ProviderTimeoutError(f"OpenAI call timed out connecting after {elapsed_connect:.1f}s")
-                raw_response = _read_with_deadline(resp, remaining_read)
-        except urllib.error.HTTPError as exc:
-            raise _parse_http_error(exc, "OpenAI") from exc
-        except (TimeoutError, socket.timeout) as exc:
-            raise ProviderTimeoutError(f"OpenAI call timed out after {timeout:.1f}s") from exc
-        except (urllib.error.URLError, ConnectionError, OSError) as exc:
-            if "timed out" in str(exc).casefold():
-                raise ProviderTimeoutError(f"OpenAI connection timed out after {timeout:.1f}s") from exc
-            raise ProviderTransientError(f"OpenAI connection reset or unreachable: {type(exc).__name__}") from exc
-
-        if time.perf_counter() - t_call_start > timeout:
-            raise ProviderTimeoutError(f"OpenAI call exceeded timeout deadline of {timeout:.1f}s")
-
-        try:
-            data = json.loads(raw_response)
-        except (json.JSONDecodeError, TypeError, ValueError) as exc:
-            raise ProviderTransientError("OpenAI returned invalid non-JSON HTTP response body") from exc
-
-        choices = data.get("choices") or []
-        if not choices:
-            raise ProviderTransientError("OpenAI returned zero choices in response")
-
-        choice = choices[0]
-        finish_reason = str(choice.get("finish_reason") or "").lower()
-
-        # Check for refusal / content filter
-        if (
-            finish_reason in {"content_filter", "safety", "refusal"}
-            or "content_filter" in finish_reason
-            or choice.get("message", {}).get("refusal")
-        ):
-            raise ProviderSafetyRefusalError("OpenAI candidate blocked by content filter / refusal")
-        if finish_reason == "length":
-            raise ProviderTruncatedError("OpenAI candidate truncated due to max output tokens")
-
-        text_result = choice.get("message", {}).get("content", "")
-        if not text_result or not text_result.strip():
-            raise ProviderTransientError("OpenAI returned empty message content")
-
-        # Schema validation for structured requests (enforced for both providers)
-        if request.response_format == "json":
-            valid, err = validate_structured_output(text_result, request.json_schema)
-            if not valid:
-                raise ProviderSchemaValidationError(f"OpenAI JSON output validation failed: {err}")
-
-        usage_raw = data.get("usage") or {}
-        usage = TokenUsage(
-            prompt_tokens=int(usage_raw.get("prompt_tokens") or 0),
-            completion_tokens=int(usage_raw.get("completion_tokens") or 0),
-            total_tokens=int(usage_raw.get("total_tokens") or 0),
-        )
-        return text_result.strip(), usage
+        raise ProviderClientError("OpenAI provider is decommissioned", http_code=410)
 
 
 # ---------------------------------------------------------------------------
@@ -1127,20 +1018,16 @@ class UnifiedProviderEngine:
         *,
         cloudflare_adapter: CloudflareAIProviderAdapter | None = None,
         gemini_adapter: GeminiProviderAdapter | None = None,
-        openai_adapter: OpenAIProviderAdapter | None = None,
     ) -> None:
         self.config = config or load_unified_provider_config()
         self.cloudflare_adapter = cloudflare_adapter or CloudflareAIProviderAdapter()
         self.gemini_adapter = gemini_adapter or GeminiProviderAdapter()
-        self.openai_adapter = openai_adapter or OpenAIProviderAdapter()
 
     def _is_enabled(self, provider: str) -> bool:
         if provider == "cloudflare":
             return self.config.cloudflare_enabled
         if provider == "gemini":
             return self.config.gemini_enabled
-        if provider == "openai":
-            return self.config.openai_enabled
         return False
 
     def _get_model(self, provider: str) -> str:
@@ -1148,8 +1035,6 @@ class UnifiedProviderEngine:
             return self.config.cloudflare_model
         if provider == "gemini":
             return self.config.gemini_model
-        if provider == "openai":
-            return self.config.openai_model
         return "unknown"
 
     def _has_credentials(self, provider: str) -> bool:
@@ -1157,8 +1042,6 @@ class UnifiedProviderEngine:
             return bool(self.config.cloudflare_account_id and self.config.cloudflare_api_token)
         if provider == "gemini":
             return bool(self.config.gemini_api_key)
-        if provider == "openai":
-            return bool(self.config.openai_api_key)
         return False
 
     def _get_adapter(self, provider: str) -> Any:
@@ -1166,8 +1049,6 @@ class UnifiedProviderEngine:
             return self.cloudflare_adapter
         if provider == "gemini":
             return self.gemini_adapter
-        if provider == "openai":
-            return self.openai_adapter
         return None
 
     # -- Public API -----------------------------------------------------

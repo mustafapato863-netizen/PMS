@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import io
-import json
 import os
 
 import pytest
+
+from ai_provider_fakes import failed_response, install_scripted_provider
 
 from models.ai_schemas import SessionFilterContext
 from services.ai.local_model_router import LocalIntentResult, suggest_intent
@@ -16,36 +16,35 @@ def test_disabled_does_not_call_model(monkeypatch):
     assert suggest_intent("How has booking evolved?").reason == "disabled"
 
 
-def test_remote_and_redirect_endpoints_are_not_allowed(monkeypatch):
+def test_provider_failure_returns_reason_and_never_a_legacy_provider(monkeypatch):
     monkeypatch.setenv("PMS_AI_LOCAL_ROUTER_ENABLED", "true")
-    monkeypatch.setenv("PMS_AI_LOCAL_ROUTER_URL", "http://example.com/v1/chat/completions")
-    assert suggest_intent("How has booking evolved?").reason == "invalid_endpoint"
+    install_scripted_provider(monkeypatch, failed_response("provider_unavailable"))
+    result = suggest_intent("How has booking evolved?")
+    assert result.intent is None
+    assert result.reason == "provider_unavailable"
+    assert result.provider in ("cloudflare", "gemini")
 
 
 def test_validates_model_response_and_sends_no_pms_data(monkeypatch):
     monkeypatch.setenv("PMS_AI_LOCAL_ROUTER_ENABLED", "true")
-    captured = {}
-
-    class Opener:
-        def open(self, request, timeout):
-            captured.update(json.loads(request.data))
-            return io.BytesIO(json.dumps({"choices": [{"message": {"content": '{"intent":"trend"}'}}]}).encode())
-
-    monkeypatch.setattr("services.ai.llm_client.urllib.request.build_opener", lambda *_: Opener())
+    captured = install_scripted_provider(monkeypatch, '{"intent":"trend"}')
     result = suggest_intent("How has booking evolved?")
     assert result.intent == "trend"
-    assert len(captured["messages"]) == 2
-    assert captured["messages"][1]["content"] == "How has booking evolved?"
+    assert result.provider == "cloudflare"
+    assert len(captured[0]["messages"]) == 2
+    assert captured[0]["messages"][1]["content"] == "How has booking evolved?"
+
+
+def test_gemini_fallback_provider_is_reported(monkeypatch):
+    monkeypatch.setenv("PMS_AI_LOCAL_ROUTER_ENABLED", "true")
+    install_scripted_provider(monkeypatch, '{"intent":"ranking"}', provider="gemini")
+    result = suggest_intent("Who is the best agent?")
+    assert (result.intent, result.provider) == ("ranking", "gemini")
 
 
 def test_rejects_model_generated_extra_fields(monkeypatch):
     monkeypatch.setenv("PMS_AI_LOCAL_ROUTER_ENABLED", "true")
-
-    class Opener:
-        def open(self, request, timeout):
-            return io.BytesIO(json.dumps({"choices": [{"message": {"content": '{"intent":"trend","score":99}'}}]}).encode())
-
-    monkeypatch.setattr("services.ai.llm_client.urllib.request.build_opener", lambda *_: Opener())
+    install_scripted_provider(monkeypatch, '{"intent":"trend","score":99}')
     assert suggest_intent("How has booking evolved?").reason == "invalid_response"
 
 

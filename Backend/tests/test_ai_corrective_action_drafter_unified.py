@@ -1,9 +1,9 @@
 """Tests for Phase 3: CorrectiveActionDrafter Integration with UnifiedProviderEngine.
 
 Verifies:
-1. Gemini succeeds as primary provider, returning validated suggestion with provider_used="gemini".
-2. Gemini rate limit or transient failure automatically falls back to OpenAI with provider_used="openai".
-3. Gemini safety refusal terminates immediately without OpenAI fallback.
+1. Cloudflare succeeds as primary provider, returning validated suggestion with provider_used="cloudflare".
+2. Cloudflare rate limit or transient failure automatically falls back to Gemini with provider_used="gemini".
+3. Cloudflare safety refusal terminates immediately without Gemini fallback.
 4. Closed vocabulary validator strictly blocks model hallucinations, causes, and digits from both providers.
 5. Insufficient evidence never calls either AI provider.
 6. End-to-end API router flow succeeds under Admin pilot gating with provider provenance intact.
@@ -34,8 +34,8 @@ from models.models import Action, Employee, KPIValue, PerformanceRecord, Team
 from services.ai import feature_gate
 from services.ai.corrective_action_drafter import CorrectiveActionDrafter
 from services.ai.provider_engine import (
+    CloudflareAIProviderAdapter,
     GeminiProviderAdapter,
-    OpenAIProviderAdapter,
     ProviderRateLimitError,
     ProviderSafetyRefusalError,
     TokenUsage,
@@ -118,36 +118,39 @@ def db():
 
 
 @pytest.fixture
+def mock_cloudflare():
+    return MagicMock(spec=CloudflareAIProviderAdapter)
+
+
+@pytest.fixture
 def mock_gemini():
     return MagicMock(spec=GeminiProviderAdapter)
 
 
 @pytest.fixture
-def mock_openai():
-    return MagicMock(spec=OpenAIProviderAdapter)
-
-
-@pytest.fixture
 def engine_config():
     return UnifiedProviderConfig(
+        primary_provider="cloudflare",
+        fallback_provider="gemini",
+        cloudflare_enabled=True,
         gemini_enabled=True,
-        openai_enabled=True,
         fallback_enabled=True,
+        cloudflare_account_id="acct-test",
+        cloudflare_api_token="valid-cloudflare-token",
+        cloudflare_model="@cf/ibm-granite/granite-4.0-h-micro",
         gemini_model="gemini-2.5-flash",
-        openai_model="gpt-4o-mini",
         timeout_seconds=5.0,
         max_retries=1,
         gemini_api_key="valid-gemini-key",
-        openai_api_key="valid-openai-key",
     )
 
 
 @pytest.fixture
-def unified_engine(engine_config, mock_gemini, mock_openai):
+def unified_engine(engine_config, mock_cloudflare, mock_gemini):
     return UnifiedProviderEngine(
         config=engine_config,
+        cloudflare_adapter=mock_cloudflare,
         gemini_adapter=mock_gemini,
-        openai_adapter=mock_openai,
     )
 
 
@@ -166,9 +169,9 @@ def _request_body():
 # ---------------------------------------------------------------------------
 
 
-def test_drafter_gemini_primary_success(db, unified_engine, mock_gemini, mock_openai):
-    """When Gemini returns a valid, grounded suggestion, drafter uses Gemini and never calls OpenAI."""
-    gemini_json = json.dumps({
+def test_drafter_cloudflare_primary_success(db, unified_engine, mock_cloudflare, mock_gemini):
+    """When Cloudflare returns a valid, grounded suggestion, drafter uses Cloudflare and never calls Gemini."""
+    cloudflare_json = json.dumps({
         "focus_kpi_key": "upsell",
         "action_type": "Coaching",
         "steps": [
@@ -176,9 +179,45 @@ def test_drafter_gemini_primary_success(db, unified_engine, mock_gemini, mock_op
             "Hold a short coaching session on upsell talk tracks.",
         ],
     })
+    mock_cloudflare.execute.return_value = (
+        cloudflare_json,
+        TokenUsage(prompt_tokens=150, completion_tokens=30, total_tokens=180),
+    )
+
+    drafter = CorrectiveActionDrafter(db, provider_engine=unified_engine)
+    req = AiCorrectiveActionSuggestionRequest(**_request_body())
+    payload = drafter.suggest(user_scope=ADMIN_SCOPE, request=req)
+
+    assert payload.outcome == "suggested"
+    assert payload.provider_used == "cloudflare"
+    assert payload.model_called is True
+    assert payload.model_version == "@cf/ibm-granite/granite-4.0-h-micro"
+    assert payload.draft is not None
+    assert payload.draft.action_type == "Coaching"
+    assert payload.draft.focus_kpi_key == "upsell"
+    assert payload.draft.recommended_steps_source == "cloudflare"
+    assert len(payload.draft.recommended_steps) == 2
+    assert "Review recent calls" in payload.draft.recommended_steps[0]
+
+    # The fallback provider must NOT have been called
+    mock_cloudflare.execute.assert_called_once()
+    mock_gemini.execute.assert_not_called()
+
+
+def test_drafter_gemini_fallback_on_cloudflare_rate_limit(db, unified_engine, mock_cloudflare, mock_gemini):
+    """When Cloudflare is rate-limited (HTTP 429), drafter seamlessly falls back to Gemini with provider_used='gemini'."""
+    mock_cloudflare.execute.side_effect = ProviderRateLimitError("Cloudflare quota exceeded", http_code=429)
+
+    gemini_json = json.dumps({
+        "focus_kpi_key": "upsell",
+        "action_type": "Training",
+        "steps": [
+            "Schedule a short training module on upsell processes.",
+        ],
+    })
     mock_gemini.execute.return_value = (
         gemini_json,
-        TokenUsage(prompt_tokens=150, completion_tokens=30, total_tokens=180),
+        TokenUsage(prompt_tokens=150, completion_tokens=25, total_tokens=175),
     )
 
     drafter = CorrectiveActionDrafter(db, provider_engine=unified_engine)
@@ -190,54 +229,18 @@ def test_drafter_gemini_primary_success(db, unified_engine, mock_gemini, mock_op
     assert payload.model_called is True
     assert payload.model_version == "gemini-2.5-flash"
     assert payload.draft is not None
-    assert payload.draft.action_type == "Coaching"
-    assert payload.draft.focus_kpi_key == "upsell"
-    assert payload.draft.recommended_steps_source == "gemini"
-    assert len(payload.draft.recommended_steps) == 2
-    assert "Review recent calls" in payload.draft.recommended_steps[0]
-
-    # OpenAI must NOT have been called
-    mock_gemini.execute.assert_called_once()
-    mock_openai.execute.assert_not_called()
-
-
-def test_drafter_openai_fallback_on_gemini_rate_limit(db, unified_engine, mock_gemini, mock_openai):
-    """When Gemini is rate-limited (HTTP 429), drafter seamlessly falls back to OpenAI with provider_used='openai'."""
-    mock_gemini.execute.side_effect = ProviderRateLimitError("Gemini quota exceeded", http_code=429)
-
-    openai_json = json.dumps({
-        "focus_kpi_key": "upsell",
-        "action_type": "Training",
-        "steps": [
-            "Schedule a short training module on upsell processes.",
-        ],
-    })
-    mock_openai.execute.return_value = (
-        openai_json,
-        TokenUsage(prompt_tokens=150, completion_tokens=25, total_tokens=175),
-    )
-
-    drafter = CorrectiveActionDrafter(db, provider_engine=unified_engine)
-    req = AiCorrectiveActionSuggestionRequest(**_request_body())
-    payload = drafter.suggest(user_scope=ADMIN_SCOPE, request=req)
-
-    assert payload.outcome == "suggested"
-    assert payload.provider_used == "openai"
-    assert payload.model_called is True
-    assert payload.model_version == "gpt-4o-mini"
-    assert payload.draft is not None
     assert payload.draft.action_type == "Training"
-    assert payload.draft.recommended_steps_source == "openai"
+    assert payload.draft.recommended_steps_source == "gemini"
     assert len(payload.draft.recommended_steps) == 1
 
-    # Both were called: Gemini once (rate limited), then OpenAI fallback
+    # Both were called: Cloudflare once (rate limited), then Gemini fallback
+    mock_cloudflare.execute.assert_called_once()
     mock_gemini.execute.assert_called_once()
-    mock_openai.execute.assert_called_once()
 
 
-def test_drafter_gemini_safety_refusal_terminal_no_fallback(db, unified_engine, mock_gemini, mock_openai):
-    """Safety refusals from Gemini are terminal: OpenAI fallback is forbidden, returning model_unavailable."""
-    mock_gemini.execute.side_effect = ProviderSafetyRefusalError("Prompt blocked due to SAFETY")
+def test_drafter_cloudflare_safety_refusal_terminal_no_fallback(db, unified_engine, mock_cloudflare, mock_gemini):
+    """Safety refusals from Cloudflare are terminal: Gemini fallback is forbidden, returning model_unavailable."""
+    mock_cloudflare.execute.side_effect = ProviderSafetyRefusalError("Prompt blocked due to SAFETY")
 
     drafter = CorrectiveActionDrafter(db, provider_engine=unified_engine)
     req = AiCorrectiveActionSuggestionRequest(**_request_body())
@@ -249,12 +252,12 @@ def test_drafter_gemini_safety_refusal_terminal_no_fallback(db, unified_engine, 
     assert payload.model_called is True
     assert payload.fallback_reason == "safety_refusal"
 
-    # OpenAI must NOT have been called to bypass safety policy
-    mock_gemini.execute.assert_called_once()
-    mock_openai.execute.assert_not_called()
+    # Gemini must NOT have been called to bypass safety policy
+    mock_cloudflare.execute.assert_called_once()
+    mock_gemini.execute.assert_not_called()
 
 
-def test_drafter_closed_vocabulary_rejects_hallucinations(db, unified_engine, mock_gemini, mock_openai):
+def test_drafter_closed_vocabulary_rejects_hallucinations(db, unified_engine, mock_cloudflare, mock_gemini):
     """Steps containing unauthorized causes ('lacks knowledge') are strictly rejected by the validator."""
     hallucinated_json = json.dumps({
         "focus_kpi_key": "upsell",
@@ -263,7 +266,7 @@ def test_drafter_closed_vocabulary_rejects_hallucinations(db, unified_engine, mo
             "Coach the agent because she lacks product knowledge.",
         ],
     })
-    mock_gemini.execute.return_value = (
+    mock_cloudflare.execute.return_value = (
         hallucinated_json,
         TokenUsage(prompt_tokens=150, completion_tokens=20, total_tokens=170),
     )
@@ -278,7 +281,7 @@ def test_drafter_closed_vocabulary_rejects_hallucinations(db, unified_engine, mo
     assert len(payload.validation_errors) > 0
 
 
-def test_drafter_closed_vocabulary_rejects_digits_and_numbers(db, unified_engine, mock_gemini, mock_openai):
+def test_drafter_closed_vocabulary_rejects_digits_and_numbers(db, unified_engine, mock_cloudflare, mock_gemini):
     """Steps containing digits or numerical targets are strictly rejected."""
     digits_json = json.dumps({
         "focus_kpi_key": "upsell",
@@ -287,7 +290,7 @@ def test_drafter_closed_vocabulary_rejects_digits_and_numbers(db, unified_engine
             "Increase upsell attempts by 20 percent weekly.",
         ],
     })
-    mock_gemini.execute.return_value = (
+    mock_cloudflare.execute.return_value = (
         digits_json,
         TokenUsage(prompt_tokens=150, completion_tokens=20, total_tokens=170),
     )
@@ -302,7 +305,7 @@ def test_drafter_closed_vocabulary_rejects_digits_and_numbers(db, unified_engine
     assert any("number" in err for err in payload.validation_errors)
 
 
-def test_drafter_insufficient_evidence_never_calls_provider(db, unified_engine, mock_gemini, mock_openai):
+def test_drafter_insufficient_evidence_never_calls_provider(db, unified_engine, mock_cloudflare, mock_gemini):
     """When evidence is insufficient (e.g. unknown requested linked KPI), providers are never called."""
     drafter = CorrectiveActionDrafter(db, provider_engine=unified_engine)
     req = AiCorrectiveActionSuggestionRequest(
@@ -318,23 +321,23 @@ def test_drafter_insufficient_evidence_never_calls_provider(db, unified_engine, 
     assert payload.outcome == "insufficient_evidence"
     assert payload.model_called is False
     assert payload.provider_used == "none"
+    mock_cloudflare.execute.assert_not_called()
     mock_gemini.execute.assert_not_called()
-    mock_openai.execute.assert_not_called()
 
 
-def test_api_endpoint_end_to_end_with_gemini(db, unified_engine, mock_gemini, mock_openai, monkeypatch):
-    """API router returns 200 with data.provider_used='gemini' and validated draft under Admin pilot."""
+def test_api_endpoint_end_to_end_with_cloudflare(db, unified_engine, mock_cloudflare, mock_gemini, monkeypatch):
+    """API router returns 200 with data.provider_used="cloudflare" and validated draft under Admin pilot."""
     feature_gate.set_ai_corrective_action_pilot_enabled(db, True, None)
 
-    gemini_json = json.dumps({
+    cloudflare_json = json.dumps({
         "focus_kpi_key": "upsell",
         "action_type": "Coaching",
         "steps": [
             "Review recent calls with missed upsell opportunities.",
         ],
     })
-    mock_gemini.execute.return_value = (
-        gemini_json,
+    mock_cloudflare.execute.return_value = (
+        cloudflare_json,
         TokenUsage(prompt_tokens=150, completion_tokens=20, total_tokens=170),
     )
 
@@ -358,8 +361,8 @@ def test_api_endpoint_end_to_end_with_gemini(db, unified_engine, mock_gemini, mo
     data = resp.json()
     assert data["success"] is True
     assert data["data"]["outcome"] == "suggested"
-    assert data["data"]["provider_used"] == "gemini"
-    assert data["data"]["model_version"] == "gemini-2.5-flash"
+    assert data["data"]["provider_used"] == "cloudflare"
+    assert data["data"]["model_version"] == "@cf/ibm-granite/granite-4.0-h-micro"
     assert data["data"]["draft"]["action_type"] == "Coaching"
-    assert data["data"]["draft"]["recommended_steps_source"] == "gemini"
+    assert data["data"]["draft"]["recommended_steps_source"] == "cloudflare"
     assert len(data["data"]["draft"]["recommended_steps"]) == 1

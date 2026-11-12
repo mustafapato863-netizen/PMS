@@ -1,4 +1,4 @@
-"""Optional intent suggestions from the configured self-hosted model.
+"""Optional intent suggestions from the configured AI provider (Cloudflare primary, Gemini fallback).
 
 PMS remains the source of facts. The model may only return one allowed intent.
 """
@@ -6,15 +6,15 @@ PMS remains the source of facts. The model may only return one allowed intent.
 from __future__ import annotations
 
 import json
-import os
 import re
 import time
 from dataclasses import dataclass
 
 from services.ai.llm_client import (
-    chat_completion,
+    active_provider_name,
     configured_model_name,
     local_intent_enabled,
+    record_fallback_reason,
     routing_timeout_seconds,
 )
 from services.ai.provider_engine import (
@@ -22,8 +22,6 @@ from services.ai.provider_engine import (
     ProviderRequest,
     get_unified_provider_engine,
 )
-
-_ORIGINAL_CHAT_COMPLETION = chat_completion
 
 __all__ = ["ALLOWED_INTENTS", "LocalIntentResult", "build_intent_json_schema", "local_intent_enabled", "suggest_intent"]
 
@@ -50,11 +48,21 @@ class LocalIntentResult:
     elapsed_ms: float
     reason: str
     model: str = ""
-    provider: str = "llama_cpp"
+    provider: str = "cloudflare"
+
+
+def _fallback_provider_name() -> str:
+    name = active_provider_name()
+    return name if name in ("cloudflare", "gemini") else "cloudflare"
+
+
+def _resolve_provider(name: str | None) -> str:
+    """``provider`` is always exactly ``cloudflare`` or ``gemini``."""
+    return name if name in ("cloudflare", "gemini") else _fallback_provider_name()
 
 
 def build_intent_json_schema() -> dict[str, object]:
-    """Return strict JSON Schema for llama.cpp / OpenAI-compatible grammar enforcement."""
+    """Return strict JSON Schema for provider-side structured output."""
     return {
         "name": "intent_classification",
         "strict": True,
@@ -81,9 +89,9 @@ def suggest_intent(question: str) -> LocalIntentResult:
     started = time.perf_counter()
     model = configured_model_name()
 
-    def result(intent: str | None, reason: str, elapsed: float | None = None, prov: str = "llama_cpp") -> LocalIntentResult:
+    def result(intent: str | None, reason: str, elapsed: float | None = None, prov: str | None = None) -> LocalIntentResult:
         duration = elapsed if elapsed is not None else round((time.perf_counter() - started) * 1000, 2)
-        return LocalIntentResult(intent, duration, reason, model, provider=prov)
+        return LocalIntentResult(intent, duration, reason, model, provider=prov or _fallback_provider_name())
 
     if not local_intent_enabled():
         return result(None, "disabled")
@@ -101,64 +109,36 @@ def suggest_intent(question: str) -> LocalIntentResult:
         "ranking (best, top, worst, or lowest performer), "
         "score_drivers (why a score or metric is low/high, root causes, KPI gaps), "
         "clarify (ambiguous or missing scope). "
-        "Do not answer, calculate, or invent data. /no_think"
+        "Do not answer, calculate, or invent data."
     )
-    use_unified = os.environ.get("PMS_AI_UNIFIED_ROUTER", "").strip().lower() in ("1", "true")
-    if use_unified and chat_completion is _ORIGINAL_CHAT_COMPLETION:
-        req = ProviderRequest(
-            messages=[
-                ProviderMessage(role="user", content=question.strip()),
-            ],
-            system_instruction=instruction,
-            response_format="json",
-            json_schema=build_intent_json_schema()["schema"],
-            temperature=0.0,
-            max_tokens=32,
-            timeout_seconds=routing_timeout_seconds(),
-            purpose="intent",
-        )
-        engine = get_unified_provider_engine()
-        resp = engine.generate(req)
-        prov_used = resp.provider if resp.provider in ("cloudflare", "gemini", "openai") else "cloudflare"
-        if not resp.is_success:
-            reason = resp.outcome or "unavailable_or_invalid"
-            return result(None, reason, resp.latency_ms, prov=prov_used)
-
-        try:
-            cleaned = _JSON_FENCE_RE.sub("", resp.content.strip() if resp.content else "").strip()
-            suggestion = json.loads(cleaned)
-            if not isinstance(suggestion, dict) or set(suggestion) != {"intent"}:
-                return result(None, "invalid_response", resp.latency_ms, prov=prov_used)
-            intent = suggestion["intent"]
-            if not isinstance(intent, str) or intent not in ALLOWED_INTENTS:
-                return result(None, "invalid_intent", resp.latency_ms, prov=prov_used)
-            return LocalIntentResult(intent, resp.latency_ms, "ok", resp.model or "cloudflare", provider=prov_used)
-        except (ValueError, TypeError, AttributeError):
-            return result(None, "invalid_response", resp.latency_ms, prov=prov_used)
-
-    # Legacy chat_completion path (used in tests and local llama-server mode)
-    call = chat_completion(
+    req = ProviderRequest(
         messages=[
-            {"role": "system", "content": instruction},
-            {"role": "user", "content": question.strip()},
+            ProviderMessage(role="user", content=question.strip()),
         ],
+        system_instruction=instruction,
+        response_format="json",
+        json_schema=build_intent_json_schema()["schema"],
+        temperature=0.0,
         max_tokens=32,
-        temperature=0,
-        response_format={"type": "json_schema", "json_schema": build_intent_json_schema()},
         timeout_seconds=routing_timeout_seconds(),
         purpose="intent",
     )
-    if not call.ok:
-        reason = "unavailable_or_invalid" if call.reason == "http_error" else call.reason
-        return result(None, reason, call.elapsed_ms)
+    engine = get_unified_provider_engine()
+    resp = engine.generate(req)
+    prov_used = _resolve_provider(resp.provider)
+    if not resp.is_success:
+        reason = resp.outcome or "unavailable_or_invalid"
+        record_fallback_reason(reason)
+        return result(None, reason, resp.latency_ms, prov=prov_used)
+
     try:
-        cleaned = _JSON_FENCE_RE.sub("", call.content.strip() if call.content else "").strip()
+        cleaned = _JSON_FENCE_RE.sub("", resp.content.strip() if resp.content else "").strip()
         suggestion = json.loads(cleaned)
         if not isinstance(suggestion, dict) or set(suggestion) != {"intent"}:
-            return result(None, "invalid_response", call.elapsed_ms)
+            return result(None, "invalid_response", resp.latency_ms, prov=prov_used)
         intent = suggestion["intent"]
         if not isinstance(intent, str) or intent not in ALLOWED_INTENTS:
-            return result(None, "invalid_intent", call.elapsed_ms)
-        return result(intent, "ok", call.elapsed_ms)
+            return result(None, "invalid_intent", resp.latency_ms, prov=prov_used)
+        return LocalIntentResult(intent, resp.latency_ms, "ok", resp.model or model, provider=prov_used)
     except (ValueError, TypeError, AttributeError):
-        return result(None, "invalid_response", call.elapsed_ms)
+        return result(None, "invalid_response", resp.latency_ms, prov=prov_used)

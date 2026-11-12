@@ -1,17 +1,17 @@
-"""Opt-in, bounded local-model data exploration loop over permission-scoped PMS tools.
+"""Opt-in, bounded AI data exploration loop over permission-scoped PMS tools.
 
 Security & Architecture Invariants:
-1. Opt-in only (`PMS_AI_LLM_EXPLORATION_ENABLED` or `PMS_AI_LOCAL_EXPLORATION_ENABLED`, disabled by default and in production).
-2. Allowlisted OpenAI-compatible HTTP transport (no credentials, no redirects, max 64 KB).
+1. Opt-in only (`PMS_AI_EXPLORATION_ENABLED` or `PMS_AI_LOCAL_EXPLORATION_ENABLED`, disabled by default and in production).
+2. All model calls go through the unified provider engine (Cloudflare Workers AI primary, Gemini fallback); `provider_used` is `cloudflare` or `gemini`.
 3. Zero raw SQL, zero dynamic filter expressions, zero model-computed scores.
-4. Strictly scoped concept catalog: the local model only sees teams, functions, branches,
+4. Strictly scoped concept catalog: the model only sees teams, functions, branches,
    performance levels, periods, and KPI definitions authorized for the caller's live RBAC scope.
 5. Pre-execution & post-execution RBAC enforcement on every tool call (`0` unauthorized record reads).
 6. Explicit unknown disclosures (`missing_hr_join_date`, `unsupported_compensation_data`,
    `call_center_revenue_not_tracked`, `unpublished_period`, `unverified_scope_calculation`,
    `missing_metric_evidence`) instead of guessing or fabricating data.
 7. Bounded step count (`max_steps` 1..3, default 2) and bounded tool count (`max 2` per step,
-   `max 3` total), with automatic deterministic fallback on timeout, busy slot, or invalid output.
+   `max 3` total), with automatic deterministic fallback on timeout, provider unavailability, or invalid output.
 """
 
 from __future__ import annotations
@@ -19,7 +19,6 @@ from __future__ import annotations
 import json
 import os
 import re
-import threading
 import time
 from contextvars import ContextVar
 from dataclasses import dataclass, field
@@ -59,8 +58,6 @@ from services.ai.entity_resolver import (
     resolve_employee_from_candidates,
 )
 from services.ai.llm_client import (
-    chat_completion,
-    configured_model_name,
     exploration_timeout_seconds,
     local_exploration_enabled,
     synthesis_timeout_seconds,
@@ -86,10 +83,8 @@ from services.ai.tool_registry import (
 from utils.branch_scope import BRANCH_KEYS
 from utils.report_scope import function_for_team, user_can_access_team_level
 
-_EXPLORATION_SLOT = threading.BoundedSemaphore(1)
 _JSON_FENCE_RE = re.compile(r"^```(?:json)?\s*|\s*```$", re.IGNORECASE)
-_ORIGINAL_CHAT_COMPLETION = chat_completion
-_last_exploration_provider: ContextVar[str] = ContextVar("last_exploration_provider", default="llama_cpp")
+_last_exploration_provider: ContextVar[str] = ContextVar("last_exploration_provider", default="cloudflare")
 _last_exploration_model: ContextVar[str] = ContextVar("last_exploration_model", default="")
 
 # Reject any parameter value that resembles raw SQL, script injection, path traversal, or control chars
@@ -643,7 +638,7 @@ def _call_local_exploration_model(
         "- get_employee_summary: specific named employee\n"
         "- get_corrective_actions: corrective action plan\n"
         "- get_management_balanced_scorecard: Corporate BSC scorecard\n"
-        "- find_concepts / describe_metric / list_available_periods / inspect_authorized_concepts: metadata discovery only. /no_think"
+        "- find_concepts / describe_metric / list_available_periods / inspect_authorized_concepts: metadata discovery only."
     )
     compact_evidence: list[dict[str, Any]] = []
     for ev in collected_evidence:
@@ -677,55 +672,32 @@ def _call_local_exploration_model(
         "collected_evidence": compact_evidence,
     }
     user_payload_str = json.dumps(user_payload, ensure_ascii=False, separators=(",", ":"))
-    use_unified = os.environ.get("PMS_AI_UNIFIED_EXPLORER", "").strip().lower() in ("1", "true")
-    if use_unified and chat_completion is _ORIGINAL_CHAT_COMPLETION:
-        step_schema_wrap = build_exploration_step_json_schema()
-        step_schema = step_schema_wrap.get("schema", step_schema_wrap)
-        req = ProviderRequest(
-            messages=[
-                ProviderMessage(role="user", content=user_payload_str),
-            ],
-            system_instruction=instruction,
-            response_format="json",
-            json_schema=step_schema,
-            temperature=0.0,
-            max_tokens=140,
-            timeout_seconds=exploration_timeout_seconds(),
-            purpose="exploration",
-        )
-        engine = get_unified_provider_engine()
-        resp = engine.generate(req)
-        provider = resp.provider if resp.provider in ("cloudflare", "gemini", "openai") else "cloudflare"
-        _last_exploration_provider.set(provider)
-        _last_exploration_model.set(resp.model or provider)
-        if not resp.is_success:
-            reason = resp.outcome or "unavailable_or_invalid"
-            return None, resp.latency_ms, reason
-        parsed, status = _parse_and_validate_step_payload(resp.content or "")
-        if parsed is None:
-            return None, resp.latency_ms, status
-        return parsed, resp.latency_ms, "ok"
-
-    _last_exploration_provider.set("llama_cpp")
-    _last_exploration_model.set(configured_model_name())
-    call = chat_completion(
+    step_schema_wrap = build_exploration_step_json_schema()
+    step_schema = step_schema_wrap.get("schema", step_schema_wrap)
+    req = ProviderRequest(
         messages=[
-            {"role": "system", "content": instruction},
-            {"role": "user", "content": user_payload_str},
+            ProviderMessage(role="user", content=user_payload_str),
         ],
+        system_instruction=instruction,
+        response_format="json",
+        json_schema=step_schema,
+        temperature=0.0,
         max_tokens=140,
-        temperature=0,
-        response_format={"type": "json_schema", "json_schema": build_exploration_step_json_schema()},
         timeout_seconds=exploration_timeout_seconds(),
         purpose="exploration",
     )
-    if not call.ok:
-        reason = "unavailable_or_invalid" if call.reason == "http_error" else call.reason
-        return None, call.elapsed_ms, reason
-    parsed, status = _parse_and_validate_step_payload(call.content or "")
+    engine = get_unified_provider_engine()
+    resp = engine.generate(req)
+    provider = resp.provider if resp.provider in ("cloudflare", "gemini") else "cloudflare"
+    _last_exploration_provider.set(provider)
+    _last_exploration_model.set(resp.model or provider)
+    if not resp.is_success:
+        reason = resp.outcome or "unavailable_or_invalid"
+        return None, resp.latency_ms, reason
+    parsed, status = _parse_and_validate_step_payload(resp.content or "")
     if parsed is None:
-        return None, call.elapsed_ms, status
-    return parsed, call.elapsed_ms, "ok"
+        return None, resp.latency_ms, status
+    return parsed, resp.latency_ms, "ok"
 
 
 def _build_unknown_response(
@@ -2198,78 +2170,43 @@ def _compose_grounded_answer(
     sys_msg = (
         'Compose a concise 1-2 sentence English answer using ONLY the supplied facts. '
         'Include every fact_id in fact_ids and state each subject, period, and exact display value in headline. '
-        'Never invent numbers. Return compact JSON: {"fact_ids":["F1"],"headline":"..."}. /no_think'
+        'Never invent numbers. Return compact JSON: {"fact_ids":["F1"],"headline":"..."}.'
     )
     user_payload_str = json.dumps(
         {"question": question[:240], "facts": fact_ledger},
         ensure_ascii=False,
         separators=(",", ":"),
     )
-    use_unified = os.environ.get("PMS_AI_UNIFIED_EXPLORER", "").strip().lower() in ("1", "true")
-    if use_unified and chat_completion is _ORIGINAL_CHAT_COMPLETION:
-        syn_schema = schema.get("schema", schema)
-        req = ProviderRequest(
-            messages=[
-                ProviderMessage(role="user", content=user_payload_str),
-            ],
-            system_instruction=sys_msg,
-            response_format="json",
-            json_schema=syn_schema,
-            temperature=0.0,
-            max_tokens=96,
-            timeout_seconds=synthesis_timeout_seconds(),
-            purpose="exploration_synthesis",
-        )
-        engine = get_unified_provider_engine()
-        resp = engine.generate(req)
-        provider = resp.provider if resp.provider in ("cloudflare", "gemini", "openai") else "cloudflare"
-        _last_exploration_provider.set(provider)
-        _last_exploration_model.set(resp.model or provider)
-        if not resp.is_success:
-            reason = resp.outcome or "unavailable_or_invalid"
-            return None, resp.latency_ms, reason
-        try:
-            content = _JSON_FENCE_RE.sub("", (resp.content or "").strip()).strip()
-            draft = json.loads(content)
-        except (ValueError, TypeError):
-            return None, resp.latency_ms, "invalid_response"
-        validated_text, v_status = validate_grounded_synthesis(draft_payload=draft, fact_ledger=fact_ledger)
-        if validated_text is None:
-            return None, resp.latency_ms, v_status
-        return validated_text, resp.latency_ms, "ok"
-
-    _last_exploration_provider.set("llama_cpp")
-    _last_exploration_model.set(configured_model_name())
-    call = chat_completion(
+    syn_schema = schema.get("schema", schema)
+    req = ProviderRequest(
         messages=[
-            {"role": "system", "content": sys_msg},
-            {
-                "role": "user",
-                "content": user_payload_str,
-            },
+            ProviderMessage(role="user", content=user_payload_str),
         ],
+        system_instruction=sys_msg,
+        response_format="json",
+        json_schema=syn_schema,
+        temperature=0.0,
         max_tokens=96,
-        temperature=0,
-        response_format={"type": "json_schema", "json_schema": schema},
         timeout_seconds=synthesis_timeout_seconds(),
         purpose="exploration_synthesis",
     )
-    if not call.ok:
-        reason = "unavailable_or_invalid" if call.reason == "http_error" else call.reason
-        return None, call.elapsed_ms, reason
+    engine = get_unified_provider_engine()
+    resp = engine.generate(req)
+    provider = resp.provider if resp.provider in ("cloudflare", "gemini") else "cloudflare"
+    _last_exploration_provider.set(provider)
+    _last_exploration_model.set(resp.model or provider)
+    if not resp.is_success:
+        reason = resp.outcome or "unavailable_or_invalid"
+        return None, resp.latency_ms, reason
     try:
-        content = _JSON_FENCE_RE.sub("", (call.content or "").strip()).strip()
+        content = _JSON_FENCE_RE.sub("", (resp.content or "").strip()).strip()
         draft = json.loads(content)
     except (ValueError, TypeError):
-        return None, call.elapsed_ms, "invalid_response"
+        return None, resp.latency_ms, "invalid_response"
     validated_text, v_status = validate_grounded_synthesis(draft_payload=draft, fact_ledger=fact_ledger)
     if validated_text is None:
-        return None, call.elapsed_ms, v_status
-    return validated_text, call.elapsed_ms, "ok"
-
-
-_compose_grounded_answer_with_qwen = _compose_grounded_answer
-validate_qwen_grounded_synthesis = validate_grounded_synthesis
+        return None, resp.latency_ms, v_status
+    return validated_text, resp.latency_ms, "ok"
 
 
 def _covered_parts_for_calls(calls: list[ValidatedExplorationToolCall]) -> set[str]:
@@ -2417,9 +2354,6 @@ def run_bounded_exploration(
                 unknown_code="ambiguous_request",
             )
 
-    if not _EXPLORATION_SLOT.acquire(blocking=False):
-        return LocalExplorationResult(handled=False, fallback_reason="busy")
-
     def _restricted_revoked_result(
         *,
         step_traces_now: list[ExplorationStepTrace],
@@ -2482,148 +2416,173 @@ def run_bounded_exploration(
             release_read_transaction(db)
         return True, refreshed
 
-    try:
-        max_steps = get_max_exploration_steps()
-        if live_auth_service is not None:
-            scope = live_auth_service.validate_live_account_and_scope(scope)
-            release_read_transaction(db)
-        authorized_concepts = build_authorized_concept_summary(
-            scope=scope,
-            session_state=session_state,
-            published_periods=published_periods,
-            employee_candidates=employee_candidates,
-        )
-        latest_pub = str(authorized_concepts["latest_published_period"])
-        explicit_periods = _extract_explicit_periods_from_prompt(clean_prompt, session_state.year or 2026)
+    max_steps = get_max_exploration_steps()
+    if live_auth_service is not None:
+        scope = live_auth_service.validate_live_account_and_scope(scope)
+        release_read_transaction(db)
+    authorized_concepts = build_authorized_concept_summary(
+        scope=scope,
+        session_state=session_state,
+        published_periods=published_periods,
+        employee_candidates=employee_candidates,
+    )
+    latest_pub = str(authorized_concepts["latest_published_period"])
+    explicit_periods = _extract_explicit_periods_from_prompt(clean_prompt, session_state.year or 2026)
 
-        # Pre-check explicit unpublished future periods in the user prompt
-        for exp_p in explicit_periods:
-            if published_periods and exp_p not in published_periods and (
-                exp_p > latest_pub or exp_p in UNAVAILABLE_FUTURE_PERIODS
-            ):
-                return _build_unknown_response(
-                    unknown_code="unpublished_period",
-                    team=explicit_teams[0] if explicit_teams else session_state.team,
-                    function=session_state.function,
-                    period_key=exp_p,
-                    latest_published_period=latest_pub,
-                    session_state=session_state,
-                    step_traces=[],
-                    provider_calls=0,
-                    provider_ms=0.0,
-                )
-
-        required_parts = _extract_required_question_parts(clean_prompt)
-        active_context = {
-            "function": session_state.function or (function_for_team(explicit_teams[0]) if len(explicit_teams) == 1 else None),
-            "team": (explicit_teams[0] if len(explicit_teams) == 1 else None) or session_state.team,
-            "branch": session_state.branch,
-            "performance_level": session_state.performance_level or "Employee",
-            "period": explicit_periods[-1] if explicit_periods else None,
-            "month": session_state.month,
-            "year": session_state.year or 2026,
-        }
-
-        step_traces: list[ExplorationStepTrace] = []
-        collected_evidence: list[dict[str, Any]] = []
-        executed_calls: list[ValidatedExplorationToolCall] = []
-        tool_results: list[ToolExecutionResult] = []
-        seen_tool_signatures: set[tuple[Any, ...]] = set()
-        total_provider_calls = 0
-        total_provider_ms = 0.0
-        total_db_ms = 0.0
-
-        is_schema_unknown_prompt = bool(
-            re.search(
-                r"\b(?:salary|salaries|payroll|bonus|bonuses|commission|commissions|compensation|wage|wages|paycheck|"
-                r"hire\s+date|joining\s+date|join\s+date|date\s+of\s+joining|onboarded\s+date|new\s+joiner|"
-                r"when\s+did\s+[a-z]+\s+join)\b",
-                lower,
+    # Pre-check explicit unpublished future periods in the user prompt
+    for exp_p in explicit_periods:
+        if published_periods and exp_p not in published_periods and (
+            exp_p > latest_pub or exp_p in UNAVAILABLE_FUTURE_PERIODS
+        ):
+            return _build_unknown_response(
+                unknown_code="unpublished_period",
+                team=explicit_teams[0] if explicit_teams else session_state.team,
+                function=session_state.function,
+                period_key=exp_p,
+                latest_published_period=latest_pub,
+                session_state=session_state,
+                step_traces=[],
+                provider_calls=0,
+                provider_ms=0.0,
             )
+
+    required_parts = _extract_required_question_parts(clean_prompt)
+    active_context = {
+        "function": session_state.function or (function_for_team(explicit_teams[0]) if len(explicit_teams) == 1 else None),
+        "team": (explicit_teams[0] if len(explicit_teams) == 1 else None) or session_state.team,
+        "branch": session_state.branch,
+        "performance_level": session_state.performance_level or "Employee",
+        "period": explicit_periods[-1] if explicit_periods else None,
+        "month": session_state.month,
+        "year": session_state.year or 2026,
+    }
+
+    step_traces: list[ExplorationStepTrace] = []
+    collected_evidence: list[dict[str, Any]] = []
+    executed_calls: list[ValidatedExplorationToolCall] = []
+    tool_results: list[ToolExecutionResult] = []
+    seen_tool_signatures: set[tuple[Any, ...]] = set()
+    total_provider_calls = 0
+    total_provider_ms = 0.0
+    total_db_ms = 0.0
+
+    is_schema_unknown_prompt = bool(
+        re.search(
+            r"\b(?:salary|salaries|payroll|bonus|bonuses|commission|commissions|compensation|wage|wages|paycheck|"
+            r"hire\s+date|joining\s+date|join\s+date|date\s+of\s+joining|onboarded\s+date|new\s+joiner|"
+            r"when\s+did\s+[a-z]+\s+join)\b",
+            lower,
         )
+    )
 
-        for step_num in range(1, max_steps + 1):
-            covered_now = _covered_parts_for_calls(executed_calls)
-            missing_parts = [p for p in required_parts if p not in covered_now]
+    for step_num in range(1, max_steps + 1):
+        covered_now = _covered_parts_for_calls(executed_calls)
+        missing_parts = [p for p in required_parts if p not in covered_now]
 
-            # Revalidate live grants before sending evidence or metadata to the model
-            ok_pre_model, scope = _revalidate_live_scope_and_evidence(scope, executed_calls, tool_results)
-            if not ok_pre_model:
-                return _restricted_revoked_result(
-                    step_traces_now=step_traces,
-                    prov_calls_now=total_provider_calls,
-                    prov_ms_now=total_provider_ms,
-                    plan_calls_now=total_provider_calls,
-                    plan_ms_now=total_provider_ms,
-                    db_ms_now=total_db_ms,
-                )
-
-            parsed, step_ms, status = _call_local_exploration_model(
-                question=clean_prompt,
-                step=step_num,
-                max_steps=max_steps,
-                active_context=active_context,
-                authorized_concepts=authorized_concepts,
-                collected_evidence=collected_evidence,
-                required_parts=required_parts,
-                missing_parts=missing_parts,
+        # Revalidate live grants before sending evidence or metadata to the model
+        ok_pre_model, scope = _revalidate_live_scope_and_evidence(scope, executed_calls, tool_results)
+        if not ok_pre_model:
+            return _restricted_revoked_result(
+                step_traces_now=step_traces,
+                prov_calls_now=total_provider_calls,
+                prov_ms_now=total_provider_ms,
+                plan_calls_now=total_provider_calls,
+                plan_ms_now=total_provider_ms,
+                db_ms_now=total_db_ms,
             )
-            total_provider_calls += 1
-            total_provider_ms = round(total_provider_ms + step_ms, 2)
 
-            # Revalidate live grants immediately after the model call
-            ok_post_model, scope = _revalidate_live_scope_and_evidence(scope, executed_calls, tool_results)
-            if not ok_post_model:
-                return _restricted_revoked_result(
-                    step_traces_now=step_traces,
-                    prov_calls_now=total_provider_calls,
-                    prov_ms_now=total_provider_ms,
-                    plan_calls_now=total_provider_calls,
-                    plan_ms_now=total_provider_ms,
-                    db_ms_now=total_db_ms,
-                )
+        parsed, step_ms, status = _call_local_exploration_model(
+            question=clean_prompt,
+            step=step_num,
+            max_steps=max_steps,
+            active_context=active_context,
+            authorized_concepts=authorized_concepts,
+            collected_evidence=collected_evidence,
+            required_parts=required_parts,
+            missing_parts=missing_parts,
+        )
+        total_provider_calls += 1
+        total_provider_ms = round(total_provider_ms + step_ms, 2)
 
-            if parsed is None:
-                step_traces.append(
-                    ExplorationStepTrace(
-                        step=step_num,
-                        action="error",
-                        unknown_code="none",
-                        elapsed_ms=step_ms,
-                        status=status,
-                    )
-                )
-                return LocalExplorationResult(
-                    handled=False,
-                    steps_taken=len(step_traces),
-                    step_traces=step_traces,
-                    provider_calls=total_provider_calls,
-                    provider_ms=total_provider_ms,
-                    planner_calls=total_provider_calls,
-                    planner_ms=total_provider_ms,
-                    database_ms=total_db_ms,
-                    fallback_reason=status,
-                )
+        # Revalidate live grants immediately after the model call
+        ok_post_model, scope = _revalidate_live_scope_and_evidence(scope, executed_calls, tool_results)
+        if not ok_post_model:
+            return _restricted_revoked_result(
+                step_traces_now=step_traces,
+                prov_calls_now=total_provider_calls,
+                prov_ms_now=total_provider_ms,
+                plan_calls_now=total_provider_calls,
+                plan_ms_now=total_provider_ms,
+                db_ms_now=total_db_ms,
+            )
 
-            action = str(parsed["action"])
-            unknown_code = str(parsed["unknown_code"])
-            raw_tools = list(parsed.get("tools") or [])
-
+        if parsed is None:
             step_traces.append(
                 ExplorationStepTrace(
                     step=step_num,
-                    action=action,
-                    unknown_code=unknown_code,
-                    requested_tools=[str(t.get("tool") or "") for t in raw_tools],
+                    action="error",
+                    unknown_code="none",
                     elapsed_ms=step_ms,
-                    status="ok",
+                    status=status,
                 )
             )
+            return LocalExplorationResult(
+                handled=False,
+                steps_taken=len(step_traces),
+                step_traces=step_traces,
+                provider_calls=total_provider_calls,
+                provider_ms=total_provider_ms,
+                planner_calls=total_provider_calls,
+                planner_ms=total_provider_ms,
+                database_ms=total_db_ms,
+                fallback_reason=status,
+            )
 
-            if action == "unknown":
-                eff_code = unknown_code if unknown_code != "none" else "missing_metric_evidence"
+        action = str(parsed["action"])
+        unknown_code = str(parsed["unknown_code"])
+        raw_tools = list(parsed.get("tools") or [])
+
+        step_traces.append(
+            ExplorationStepTrace(
+                step=step_num,
+                action=action,
+                unknown_code=unknown_code,
+                requested_tools=[str(t.get("tool") or "") for t in raw_tools],
+                elapsed_ms=step_ms,
+                status="ok",
+            )
+        )
+
+        if action == "unknown":
+            eff_code = unknown_code if unknown_code != "none" else "missing_metric_evidence"
+            return _build_unknown_response(
+                unknown_code=eff_code,
+                team=active_context.get("team"),
+                function=active_context.get("function"),
+                period_key=latest_pub,
+                latest_published_period=latest_pub,
+                session_state=session_state,
+                step_traces=step_traces,
+                provider_calls=total_provider_calls,
+                provider_ms=total_provider_ms,
+            )
+
+        if is_schema_unknown_prompt:
+            if re.search(r"\b(?:hire\s+date|joining\s+date|join\s+date|date\s+of\s+joining|onboarded\s+date|new\s+joiner|when\s+did\s+[a-z]+\s+join)\b", lower):
                 return _build_unknown_response(
-                    unknown_code=eff_code,
+                    unknown_code="missing_hr_join_date",
+                    team=active_context.get("team"),
+                    function=active_context.get("function"),
+                    period_key=latest_pub,
+                    latest_published_period=latest_pub,
+                    session_state=session_state,
+                    step_traces=step_traces,
+                    provider_calls=total_provider_calls,
+                    provider_ms=total_provider_ms,
+                )
+            if re.search(r"\b(?:salary|salaries|payroll|bonus|bonuses|commission|commissions|compensation|wage|wages|paycheck)\b", lower):
+                return _build_unknown_response(
+                    unknown_code="unsupported_compensation_data",
                     team=active_context.get("team"),
                     function=active_context.get("function"),
                     period_key=latest_pub,
@@ -2634,50 +2593,8 @@ def run_bounded_exploration(
                     provider_ms=total_provider_ms,
                 )
 
-            if is_schema_unknown_prompt:
-                if re.search(r"\b(?:hire\s+date|joining\s+date|join\s+date|date\s+of\s+joining|onboarded\s+date|new\s+joiner|when\s+did\s+[a-z]+\s+join)\b", lower):
-                    return _build_unknown_response(
-                        unknown_code="missing_hr_join_date",
-                        team=active_context.get("team"),
-                        function=active_context.get("function"),
-                        period_key=latest_pub,
-                        latest_published_period=latest_pub,
-                        session_state=session_state,
-                        step_traces=step_traces,
-                        provider_calls=total_provider_calls,
-                        provider_ms=total_provider_ms,
-                    )
-                if re.search(r"\b(?:salary|salaries|payroll|bonus|bonuses|commission|commissions|compensation|wage|wages|paycheck)\b", lower):
-                    return _build_unknown_response(
-                        unknown_code="unsupported_compensation_data",
-                        team=active_context.get("team"),
-                        function=active_context.get("function"),
-                        period_key=latest_pub,
-                        latest_published_period=latest_pub,
-                        session_state=session_state,
-                        step_traces=step_traces,
-                        provider_calls=total_provider_calls,
-                        provider_ms=total_provider_ms,
-                    )
-
-            if action == "finish":
-                if not tool_results:
-                    return LocalExplorationResult(
-                        handled=False,
-                        steps_taken=len(step_traces),
-                        step_traces=step_traces,
-                        provider_calls=total_provider_calls,
-                        provider_ms=total_provider_ms,
-                        planner_calls=total_provider_calls,
-                        planner_ms=total_provider_ms,
-                        fallback_reason="finish_without_evidence",
-                    )
-                break
-
-            # action == "call_tools"
-            if not raw_tools:
-                if tool_results:
-                    break
+        if action == "finish":
+            if not tool_results:
                 return LocalExplorationResult(
                     handled=False,
                     steps_taken=len(step_traces),
@@ -2686,41 +2603,174 @@ def run_bounded_exploration(
                     provider_ms=total_provider_ms,
                     planner_calls=total_provider_calls,
                     planner_ms=total_provider_ms,
-                    fallback_reason="empty_tool_calls",
+                    fallback_reason="finish_without_evidence",
                 )
+            break
 
-            validated_step_calls: list[ValidatedExplorationToolCall] = []
-            for raw_t in raw_tools[:2]:
-                if len(executed_calls) + len(validated_step_calls) >= 4:
-                    break
-                v_call, early_res, v_status = _validate_and_normalize_tool_call(
-                    raw_tool=raw_t,
-                    prompt=clean_prompt,
-                    scope=scope,
-                    session_state=session_state,
-                    published_periods=published_periods,
-                    latest_published_period=latest_pub,
-                    employee_candidates=employee_candidates,
+        # action == "call_tools"
+        if not raw_tools:
+            if tool_results:
+                break
+            return LocalExplorationResult(
+                handled=False,
+                steps_taken=len(step_traces),
+                step_traces=step_traces,
+                provider_calls=total_provider_calls,
+                provider_ms=total_provider_ms,
+                planner_calls=total_provider_calls,
+                planner_ms=total_provider_ms,
+                fallback_reason="empty_tool_calls",
+            )
+
+        validated_step_calls: list[ValidatedExplorationToolCall] = []
+        for raw_t in raw_tools[:2]:
+            if len(executed_calls) + len(validated_step_calls) >= 4:
+                break
+            v_call, early_res, v_status = _validate_and_normalize_tool_call(
+                raw_tool=raw_t,
+                prompt=clean_prompt,
+                scope=scope,
+                session_state=session_state,
+                published_periods=published_periods,
+                latest_published_period=latest_pub,
+                employee_candidates=employee_candidates,
+            )
+            if early_res is not None:
+                early_res.steps_taken = len(step_traces)
+                early_res.step_traces = step_traces
+                early_res.provider_calls = total_provider_calls
+                early_res.provider_ms = total_provider_ms
+                early_res.planner_calls = total_provider_calls
+                early_res.planner_ms = total_provider_ms
+                return early_res
+            if v_call is None:
+                return LocalExplorationResult(
+                    handled=False,
+                    steps_taken=len(step_traces),
+                    step_traces=step_traces,
+                    provider_calls=total_provider_calls,
+                    provider_ms=total_provider_ms,
+                    planner_calls=total_provider_calls,
+                    planner_ms=total_provider_ms,
+                    fallback_reason=v_status,
                 )
-                if early_res is not None:
-                    early_res.steps_taken = len(step_traces)
-                    early_res.step_traces = step_traces
-                    early_res.provider_calls = total_provider_calls
-                    early_res.provider_ms = total_provider_ms
-                    early_res.planner_calls = total_provider_calls
-                    early_res.planner_ms = total_provider_ms
-                    return early_res
-                if v_call is None:
-                    return LocalExplorationResult(
-                        handled=False,
-                        steps_taken=len(step_traces),
-                        step_traces=step_traces,
-                        provider_calls=total_provider_calls,
-                        provider_ms=total_provider_ms,
-                        planner_calls=total_provider_calls,
-                        planner_ms=total_provider_ms,
-                        fallback_reason=v_status,
-                    )
+            sig = (
+                v_call.tool,
+                v_call.team,
+                v_call.metric_id,
+                v_call.branch,
+                v_call.compare_branch,
+                v_call.period,
+                v_call.performance_level,
+                v_call.direction,
+                v_call.employee_query,
+            )
+            if sig not in seen_tool_signatures:
+                seen_tool_signatures.add(sig)
+                validated_step_calls.append(v_call)
+
+        if not validated_step_calls:
+            break
+
+        # Revalidate live grants before executing protected tool queries
+        ok_pre_tools, scope = _revalidate_live_scope_and_evidence(
+            scope,
+            [*executed_calls, *validated_step_calls],
+            tool_results,
+        )
+        if not ok_pre_tools:
+            return _restricted_revoked_result(
+                step_traces_now=step_traces,
+                prov_calls_now=total_provider_calls,
+                prov_ms_now=total_provider_ms,
+                plan_calls_now=total_provider_calls,
+                plan_ms_now=total_provider_ms,
+                db_ms_now=total_db_ms,
+            )
+
+        t_db0 = time.perf_counter()
+        ctx = ToolExecutionContext(db=db, scope=scope, session_state=session_state)
+        registry = DeterministicToolRegistry(ctx)
+        for v_call in validated_step_calls:
+            tr, compact_ev = _execute_validated_exploration_tool(
+                call=v_call,
+                registry=registry,
+                authorized_concepts=authorized_concepts,
+            )
+            executed_calls.append(v_call)
+            tool_results.append(tr)
+            collected_evidence.append(compact_ev)
+        release_read_transaction(db)
+        total_db_ms = round(total_db_ms + (time.perf_counter() - t_db0) * 1000.0, 2)
+
+        # Revalidate actual returned evidence immediately after tool execution
+        ok_post_tools, scope = _revalidate_live_scope_and_evidence(scope, executed_calls, tool_results)
+        if not ok_post_tools:
+            return _restricted_revoked_result(
+                step_traces_now=step_traces,
+                prov_calls_now=total_provider_calls,
+                prov_ms_now=total_provider_ms,
+                plan_calls_now=total_provider_calls,
+                plan_ms_now=total_provider_ms,
+                db_ms_now=total_db_ms,
+            )
+
+        if len(executed_calls) >= 4:
+            break
+        covered_after = _covered_parts_for_calls(executed_calls)
+        still_missing = [p for p in required_parts if p not in covered_after]
+        is_compound_prompt = bool(len(required_parts) >= 2 or re.search(r"\b(?:and|also|plus|both|as well as)\b|;", lower))
+        # If only discovery tools have been called so far, continue to next step so the model can issue a data tool
+        if all(c.tool in DISCOVERY_EXPLORATION_TOOLS for c in executed_calls):
+            if is_schema_unknown_prompt:
+                break
+            continue
+        if not still_missing and not is_compound_prompt:
+            break
+        if not still_missing and len([c for c in executed_calls if c.tool not in DISCOVERY_EXPLORATION_TOOLS]) >= len(required_parts):
+            break
+
+    # Ensure multi-part compound requests that completed at least 1 data read do not drop a required second part
+    covered_final = _covered_parts_for_calls(executed_calls)
+    remaining_parts = [p for p in required_parts if p not in covered_final]
+    if remaining_parts and executed_calls and len(executed_calls) < 4:
+        ok_pre_extra, scope = _revalidate_live_scope_and_evidence(scope, executed_calls, tool_results)
+        if not ok_pre_extra:
+            return _restricted_revoked_result(
+                step_traces_now=step_traces,
+                prov_calls_now=total_provider_calls,
+                prov_ms_now=total_provider_ms,
+                plan_calls_now=total_provider_calls,
+                plan_ms_now=total_provider_ms,
+                db_ms_now=total_db_ms,
+            )
+        part_to_tool = {
+            "score": "get_team_score_summary",
+            "kpi_diagnosis": "get_kpi_diagnosis",
+            "ranking": "rank_employees",
+            "compare_branches": "compare_branches",
+            "compare_periods": "compare_periods",
+            "trend": "get_trend",
+        }
+        t_db_extra = time.perf_counter()
+        ctx = ToolExecutionContext(db=db, scope=scope, session_state=session_state)
+        registry = DeterministicToolRegistry(ctx)
+        for rem_p in remaining_parts:
+            mapped_tool = part_to_tool.get(rem_p)
+            if not mapped_tool or len(executed_calls) >= 4:
+                continue
+            v_call, early_res, _ = _validate_and_normalize_tool_call(
+                raw_tool={"tool": mapped_tool},
+                prompt=clean_prompt,
+                scope=scope,
+                session_state=session_state,
+                published_periods=published_periods,
+                latest_published_period=latest_pub,
+                employee_candidates=employee_candidates,
+            )
+            if early_res is not None:
+                return early_res
+            if v_call is not None:
                 sig = (
                     v_call.tool,
                     v_call.team,
@@ -2734,199 +2784,40 @@ def run_bounded_exploration(
                 )
                 if sig not in seen_tool_signatures:
                     seen_tool_signatures.add(sig)
-                    validated_step_calls.append(v_call)
-
-            if not validated_step_calls:
-                break
-
-            # Revalidate live grants before executing protected tool queries
-            ok_pre_tools, scope = _revalidate_live_scope_and_evidence(
-                scope,
-                [*executed_calls, *validated_step_calls],
-                tool_results,
-            )
-            if not ok_pre_tools:
-                return _restricted_revoked_result(
-                    step_traces_now=step_traces,
-                    prov_calls_now=total_provider_calls,
-                    prov_ms_now=total_provider_ms,
-                    plan_calls_now=total_provider_calls,
-                    plan_ms_now=total_provider_ms,
-                    db_ms_now=total_db_ms,
-                )
-
-            t_db0 = time.perf_counter()
-            ctx = ToolExecutionContext(db=db, scope=scope, session_state=session_state)
-            registry = DeterministicToolRegistry(ctx)
-            for v_call in validated_step_calls:
-                tr, compact_ev = _execute_validated_exploration_tool(
-                    call=v_call,
-                    registry=registry,
-                    authorized_concepts=authorized_concepts,
-                )
-                executed_calls.append(v_call)
-                tool_results.append(tr)
-                collected_evidence.append(compact_ev)
-            release_read_transaction(db)
-            total_db_ms = round(total_db_ms + (time.perf_counter() - t_db0) * 1000.0, 2)
-
-            # Revalidate actual returned evidence immediately after tool execution
-            ok_post_tools, scope = _revalidate_live_scope_and_evidence(scope, executed_calls, tool_results)
-            if not ok_post_tools:
-                return _restricted_revoked_result(
-                    step_traces_now=step_traces,
-                    prov_calls_now=total_provider_calls,
-                    prov_ms_now=total_provider_ms,
-                    plan_calls_now=total_provider_calls,
-                    plan_ms_now=total_provider_ms,
-                    db_ms_now=total_db_ms,
-                )
-
-            if len(executed_calls) >= 4:
-                break
-            covered_after = _covered_parts_for_calls(executed_calls)
-            still_missing = [p for p in required_parts if p not in covered_after]
-            is_compound_prompt = bool(len(required_parts) >= 2 or re.search(r"\b(?:and|also|plus|both|as well as)\b|;", lower))
-            # If only discovery tools have been called so far, continue to next step so the model can issue a data tool
-            if all(c.tool in DISCOVERY_EXPLORATION_TOOLS for c in executed_calls):
-                if is_schema_unknown_prompt:
-                    break
-                continue
-            if not still_missing and not is_compound_prompt:
-                break
-            if not still_missing and len([c for c in executed_calls if c.tool not in DISCOVERY_EXPLORATION_TOOLS]) >= len(required_parts):
-                break
-
-        # Ensure multi-part compound requests that completed at least 1 data read do not drop a required second part
-        covered_final = _covered_parts_for_calls(executed_calls)
-        remaining_parts = [p for p in required_parts if p not in covered_final]
-        if remaining_parts and executed_calls and len(executed_calls) < 4:
-            ok_pre_extra, scope = _revalidate_live_scope_and_evidence(scope, executed_calls, tool_results)
-            if not ok_pre_extra:
-                return _restricted_revoked_result(
-                    step_traces_now=step_traces,
-                    prov_calls_now=total_provider_calls,
-                    prov_ms_now=total_provider_ms,
-                    plan_calls_now=total_provider_calls,
-                    plan_ms_now=total_provider_ms,
-                    db_ms_now=total_db_ms,
-                )
-            part_to_tool = {
-                "score": "get_team_score_summary",
-                "kpi_diagnosis": "get_kpi_diagnosis",
-                "ranking": "rank_employees",
-                "compare_branches": "compare_branches",
-                "compare_periods": "compare_periods",
-                "trend": "get_trend",
-            }
-            t_db_extra = time.perf_counter()
-            ctx = ToolExecutionContext(db=db, scope=scope, session_state=session_state)
-            registry = DeterministicToolRegistry(ctx)
-            for rem_p in remaining_parts:
-                mapped_tool = part_to_tool.get(rem_p)
-                if not mapped_tool or len(executed_calls) >= 4:
-                    continue
-                v_call, early_res, _ = _validate_and_normalize_tool_call(
-                    raw_tool={"tool": mapped_tool},
-                    prompt=clean_prompt,
-                    scope=scope,
-                    session_state=session_state,
-                    published_periods=published_periods,
-                    latest_published_period=latest_pub,
-                    employee_candidates=employee_candidates,
-                )
-                if early_res is not None:
-                    return early_res
-                if v_call is not None:
-                    sig = (
-                        v_call.tool,
-                        v_call.team,
-                        v_call.metric_id,
-                        v_call.branch,
-                        v_call.compare_branch,
-                        v_call.period,
-                        v_call.performance_level,
-                        v_call.direction,
-                        v_call.employee_query,
+                    tr, compact_ev = _execute_validated_exploration_tool(
+                        call=v_call,
+                        registry=registry,
+                        authorized_concepts=authorized_concepts,
                     )
-                    if sig not in seen_tool_signatures:
-                        seen_tool_signatures.add(sig)
-                        tr, compact_ev = _execute_validated_exploration_tool(
-                            call=v_call,
-                            registry=registry,
-                            authorized_concepts=authorized_concepts,
-                        )
-                        executed_calls.append(v_call)
-                        tool_results.append(tr)
-                        collected_evidence.append(compact_ev)
-            release_read_transaction(db)
-            total_db_ms = round(total_db_ms + (time.perf_counter() - t_db_extra) * 1000.0, 2)
+                    executed_calls.append(v_call)
+                    tool_results.append(tr)
+                    collected_evidence.append(compact_ev)
+        release_read_transaction(db)
+        total_db_ms = round(total_db_ms + (time.perf_counter() - t_db_extra) * 1000.0, 2)
 
-        if not tool_results:
-            return LocalExplorationResult(
-                handled=False,
-                steps_taken=len(step_traces),
-                step_traces=step_traces,
-                provider_calls=total_provider_calls,
-                provider_ms=total_provider_ms,
-                planner_calls=total_provider_calls,
-                planner_ms=total_provider_ms,
-                database_ms=total_db_ms,
-                fallback_reason="no_tools_executed",
-            )
+    if not tool_results:
+        return LocalExplorationResult(
+            handled=False,
+            steps_taken=len(step_traces),
+            step_traces=step_traces,
+            provider_calls=total_provider_calls,
+            provider_ms=total_provider_ms,
+            planner_calls=total_provider_calls,
+            planner_ms=total_provider_ms,
+            database_ms=total_db_ms,
+            fallback_reason="no_tools_executed",
+        )
 
-        total_records = sum(tr.records_evaluated for tr in tool_results)
-        only_concept_inspection = all(c.tool in DISCOVERY_EXPLORATION_TOOLS for c in executed_calls)
-        if only_concept_inspection:
-            first_c = executed_calls[0]
-            if re.search(
-                r"\b(?:salary|salaries|payroll|bonus|bonuses|commission|commissions|compensation|wage|wages|paycheck)\b",
-                lower,
-            ):
-                return _build_unknown_response(
-                    unknown_code="unsupported_compensation_data",
-                    team=first_c.team,
-                    function=first_c.function,
-                    period_key=first_c.period or latest_pub,
-                    latest_published_period=latest_pub,
-                    session_state=session_state,
-                    step_traces=step_traces,
-                    provider_calls=total_provider_calls,
-                    provider_ms=total_provider_ms,
-                )
-            if re.search(
-                r"\b(?:hire\s+date|joining\s+date|join\s+date|date\s+of\s+joining|onboarded\s+date|new\s+joiner|when\s+did\s+[a-z]+\s+join)\b",
-                lower,
-            ):
-                return _build_unknown_response(
-                    unknown_code="missing_hr_join_date",
-                    team=first_c.team,
-                    function=first_c.function,
-                    period_key=first_c.period or latest_pub,
-                    latest_published_period=latest_pub,
-                    session_state=session_state,
-                    step_traces=step_traces,
-                    provider_calls=total_provider_calls,
-                    provider_ms=total_provider_ms,
-                )
-            if re.search(r"\brevenue\b", lower) and (
-                first_c.function == "Call Center" or first_c.team in ("Inbound", "Outbound", "Telemarketing")
-            ):
-                return _build_unknown_response(
-                    unknown_code="call_center_revenue_not_tracked",
-                    team=first_c.team,
-                    function=first_c.function,
-                    period_key=first_c.period or latest_pub,
-                    latest_published_period=latest_pub,
-                    session_state=session_state,
-                    step_traces=step_traces,
-                    provider_calls=total_provider_calls,
-                    provider_ms=total_provider_ms,
-                )
-        if total_records == 0 and not only_concept_inspection:
-            first_c = executed_calls[0]
+    total_records = sum(tr.records_evaluated for tr in tool_results)
+    only_concept_inspection = all(c.tool in DISCOVERY_EXPLORATION_TOOLS for c in executed_calls)
+    if only_concept_inspection:
+        first_c = executed_calls[0]
+        if re.search(
+            r"\b(?:salary|salaries|payroll|bonus|bonuses|commission|commissions|compensation|wage|wages|paycheck)\b",
+            lower,
+        ):
             return _build_unknown_response(
-                unknown_code="missing_metric_evidence",
+                unknown_code="unsupported_compensation_data",
                 team=first_c.team,
                 function=first_c.function,
                 period_key=first_c.period or latest_pub,
@@ -2936,275 +2827,315 @@ def run_bounded_exploration(
                 provider_calls=total_provider_calls,
                 provider_ms=total_provider_ms,
             )
+        if re.search(
+            r"\b(?:hire\s+date|joining\s+date|join\s+date|date\s+of\s+joining|onboarded\s+date|new\s+joiner|when\s+did\s+[a-z]+\s+join)\b",
+            lower,
+        ):
+            return _build_unknown_response(
+                unknown_code="missing_hr_join_date",
+                team=first_c.team,
+                function=first_c.function,
+                period_key=first_c.period or latest_pub,
+                latest_published_period=latest_pub,
+                session_state=session_state,
+                step_traces=step_traces,
+                provider_calls=total_provider_calls,
+                provider_ms=total_provider_ms,
+            )
+        if re.search(r"\brevenue\b", lower) and (
+            first_c.function == "Call Center" or first_c.team in ("Inbound", "Outbound", "Telemarketing")
+        ):
+            return _build_unknown_response(
+                unknown_code="call_center_revenue_not_tracked",
+                team=first_c.team,
+                function=first_c.function,
+                period_key=first_c.period or latest_pub,
+                latest_published_period=latest_pub,
+                session_state=session_state,
+                step_traces=step_traces,
+                provider_calls=total_provider_calls,
+                provider_ms=total_provider_ms,
+            )
+    if total_records == 0 and not only_concept_inspection:
+        first_c = executed_calls[0]
+        return _build_unknown_response(
+            unknown_code="missing_metric_evidence",
+            team=first_c.team,
+            function=first_c.function,
+            period_key=first_c.period or latest_pub,
+            latest_published_period=latest_pub,
+            session_state=session_state,
+            step_traces=step_traces,
+            provider_calls=total_provider_calls,
+            provider_ms=total_provider_ms,
+        )
 
-        # Post-execution live permission revalidation (before synthesis)
-        ok_pre_syn, scope = _revalidate_live_scope_and_evidence(scope, executed_calls, tool_results)
-        if not ok_pre_syn:
+    # Post-execution live permission revalidation (before synthesis)
+    ok_pre_syn, scope = _revalidate_live_scope_and_evidence(scope, executed_calls, tool_results)
+    if not ok_pre_syn:
+        return _restricted_revoked_result(
+            step_traces_now=step_traces,
+            prov_calls_now=total_provider_calls,
+            prov_ms_now=total_provider_ms,
+            plan_calls_now=total_provider_calls,
+            plan_ms_now=total_provider_ms,
+            db_ms_now=total_db_ms,
+        )
+
+    visual_cards: list[StructuredVisualCard] = []
+    citations: list[SourceCitationPill] = []
+    deep_links: list[DeepLinkCta] = []
+    typed_evidence: list[TypedMetricEvidence] = []
+    tool_call_records: list[AiToolCallRecord] = []
+    tool_digests: list[dict[str, Any]] = []
+    seen_cit: set[str] = set()
+    seen_dl: set[str] = set()
+    res_month = session_state.month
+    res_year = session_state.year
+    basis_warning: str | None = None
+
+    for tr in tool_results:
+        if tr.resolved_month:
+            res_month = tr.resolved_month
+        if tr.resolved_year:
+            res_year = tr.resolved_year
+        if tr.basis_warning and not basis_warning:
+            basis_warning = tr.basis_warning
+        tool_call_records.append(
+            AiToolCallRecord(
+                tool_name=tr.tool_name,
+                arguments=tr.arguments,
+                records_evaluated=tr.records_evaluated,
+            )
+        )
+        tool_digests.append(tr.digest)
+        visual_cards.extend(tr.visual_cards)
+        typed_evidence.extend(tr.typed_evidence)
+        for c_pill in tr.citations:
+            if c_pill.label not in seen_cit:
+                seen_cit.add(c_pill.label)
+                citations.append(c_pill)
+        for dl in tr.deep_links:
+            if dl.route not in seen_dl:
+                seen_dl.add(dl.route)
+                deep_links.append(dl)
+
+    headline, bullets, followups = _synthesize_explored_evidence(
+        prompt=clean_prompt,
+        session_state=session_state,
+        executed_calls=executed_calls,
+        tool_results=tool_results,
+    )
+
+    planner_calls = total_provider_calls
+    planner_ms = total_provider_ms
+    synthesis_calls = 0
+    synthesis_ms = 0.0
+    synthesis_validated = False
+    synthesis_fallback_reason = "not_requested"
+
+    truthy_syn = {"1", "true", "yes", "on", "enabled"}
+    falsy_syn = {"0", "false", "no", "off", "disabled"}
+    exp_syn_val = os.environ.get("PMS_AI_LOCAL_EXPLORATION_SYNTHESIS_ENABLED", "").strip().casefold()
+    ev_syn_val = os.environ.get("PMS_AI_LOCAL_EVIDENCE_SYNTHESIS_ENABLED", "").strip().casefold()
+    legacy_syn_val = os.environ.get("PMS_AI_LOCAL_SYNTHESIS_ENABLED", "").strip().casefold()
+    if exp_syn_val in falsy_syn or ev_syn_val in falsy_syn:
+        should_run_synthesis = False
+    elif exp_syn_val in truthy_syn or ev_syn_val in truthy_syn or legacy_syn_val in truthy_syn:
+        should_run_synthesis = True
+    else:
+        should_run_synthesis = planner_ms <= 6000.0
+    if should_run_synthesis:
+        # Revalidate live grants immediately before sending fact_ledger to synthesis
+        ok_before_syn, scope = _revalidate_live_scope_and_evidence(scope, executed_calls, tool_results)
+        if not ok_before_syn:
             return _restricted_revoked_result(
                 step_traces_now=step_traces,
                 prov_calls_now=total_provider_calls,
                 prov_ms_now=total_provider_ms,
-                plan_calls_now=total_provider_calls,
-                plan_ms_now=total_provider_ms,
+                plan_calls_now=planner_calls,
+                plan_ms_now=planner_ms,
                 db_ms_now=total_db_ms,
             )
-
-        visual_cards: list[StructuredVisualCard] = []
-        citations: list[SourceCitationPill] = []
-        deep_links: list[DeepLinkCta] = []
-        typed_evidence: list[TypedMetricEvidence] = []
-        tool_call_records: list[AiToolCallRecord] = []
-        tool_digests: list[dict[str, Any]] = []
-        seen_cit: set[str] = set()
-        seen_dl: set[str] = set()
-        res_month = session_state.month
-        res_year = session_state.year
-        basis_warning: str | None = None
-
-        for tr in tool_results:
-            if tr.resolved_month:
-                res_month = tr.resolved_month
-            if tr.resolved_year:
-                res_year = tr.resolved_year
-            if tr.basis_warning and not basis_warning:
-                basis_warning = tr.basis_warning
-            tool_call_records.append(
-                AiToolCallRecord(
-                    tool_name=tr.tool_name,
-                    arguments=tr.arguments,
-                    records_evaluated=tr.records_evaluated,
-                )
-            )
-            tool_digests.append(tr.digest)
-            visual_cards.extend(tr.visual_cards)
-            typed_evidence.extend(tr.typed_evidence)
-            for c_pill in tr.citations:
-                if c_pill.label not in seen_cit:
-                    seen_cit.add(c_pill.label)
-                    citations.append(c_pill)
-            for dl in tr.deep_links:
-                if dl.route not in seen_dl:
-                    seen_dl.add(dl.route)
-                    deep_links.append(dl)
-
-        headline, bullets, followups = _synthesize_explored_evidence(
-            prompt=clean_prompt,
-            session_state=session_state,
+        fact_ledger = build_fact_ledger_from_evidence(
             executed_calls=executed_calls,
             tool_results=tool_results,
+            default_headline=headline,
         )
-
-        planner_calls = total_provider_calls
-        planner_ms = total_provider_ms
-        synthesis_calls = 0
-        synthesis_ms = 0.0
-        synthesis_validated = False
-        synthesis_fallback_reason = "not_requested"
-
-        truthy_syn = {"1", "true", "yes", "on", "enabled"}
-        falsy_syn = {"0", "false", "no", "off", "disabled"}
-        exp_syn_val = os.environ.get("PMS_AI_LOCAL_EXPLORATION_SYNTHESIS_ENABLED", "").strip().casefold()
-        ev_syn_val = os.environ.get("PMS_AI_LOCAL_EVIDENCE_SYNTHESIS_ENABLED", "").strip().casefold()
-        legacy_syn_val = os.environ.get("PMS_AI_LOCAL_SYNTHESIS_ENABLED", "").strip().casefold()
-        if exp_syn_val in falsy_syn or ev_syn_val in falsy_syn:
-            should_run_synthesis = False
-        elif exp_syn_val in truthy_syn or ev_syn_val in truthy_syn or legacy_syn_val in truthy_syn:
-            should_run_synthesis = True
+        composed_h, syn_ms, syn_status = _compose_grounded_answer(
+            question=clean_prompt,
+            fact_ledger=fact_ledger,
+        )
+        synthesis_calls = 1
+        synthesis_ms = syn_ms
+        total_provider_calls += 1
+        total_provider_ms = round(total_provider_ms + syn_ms, 2)
+        # Revalidate live grants immediately after synthesis returns
+        ok_after_syn, scope = _revalidate_live_scope_and_evidence(scope, executed_calls, tool_results)
+        if not ok_after_syn:
+            return _restricted_revoked_result(
+                step_traces_now=step_traces,
+                prov_calls_now=total_provider_calls,
+                prov_ms_now=total_provider_ms,
+                plan_calls_now=planner_calls,
+                plan_ms_now=planner_ms,
+                db_ms_now=total_db_ms,
+            )
+        if composed_h is not None and syn_status == "ok":
+            headline = composed_h
+            synthesis_validated = True
+            synthesis_fallback_reason = "none"
         else:
-            should_run_synthesis = planner_ms <= 6000.0
-        if should_run_synthesis:
-            # Revalidate live grants immediately before sending fact_ledger to synthesis
-            ok_before_syn, scope = _revalidate_live_scope_and_evidence(scope, executed_calls, tool_results)
-            if not ok_before_syn:
-                return _restricted_revoked_result(
-                    step_traces_now=step_traces,
-                    prov_calls_now=total_provider_calls,
-                    prov_ms_now=total_provider_ms,
-                    plan_calls_now=planner_calls,
-                    plan_ms_now=planner_ms,
-                    db_ms_now=total_db_ms,
-                )
-            fact_ledger = build_fact_ledger_from_evidence(
-                executed_calls=executed_calls,
-                tool_results=tool_results,
-                default_headline=headline,
-            )
-            composed_h, syn_ms, syn_status = _compose_grounded_answer_with_qwen(
-                question=clean_prompt,
-                fact_ledger=fact_ledger,
-            )
-            synthesis_calls = 1
-            synthesis_ms = syn_ms
-            total_provider_calls += 1
-            total_provider_ms = round(total_provider_ms + syn_ms, 2)
-            # Revalidate live grants immediately after synthesis returns
-            ok_after_syn, scope = _revalidate_live_scope_and_evidence(scope, executed_calls, tool_results)
-            if not ok_after_syn:
-                return _restricted_revoked_result(
-                    step_traces_now=step_traces,
-                    prov_calls_now=total_provider_calls,
-                    prov_ms_now=total_provider_ms,
-                    plan_calls_now=planner_calls,
-                    plan_ms_now=planner_ms,
-                    db_ms_now=total_db_ms,
-                )
-            if composed_h is not None and syn_status == "ok":
-                headline = composed_h
-                synthesis_validated = True
-                synthesis_fallback_reason = "none"
-            else:
-                synthesis_validated = False
-                synthesis_fallback_reason = syn_status
+            synthesis_validated = False
+            synthesis_fallback_reason = syn_status
 
-        data_exec_calls = [c for c in executed_calls if c.tool not in DISCOVERY_EXPLORATION_TOOLS] or executed_calls
-        primary_call = data_exec_calls[0]
-        tool_to_intent = {
-            "inspect_authorized_concepts": "current_value",
-            "find_concepts": "current_value",
-            "describe_metric": "scorecard_structure",
-            "list_available_periods": "current_value",
-            "get_team_score_summary": "current_value",
-            "get_management_balanced_scorecard": "current_value",
-            "get_kpi_diagnosis": "actual_vs_target" if primary_call.metric_id else "score_drivers",
-            "compare_branches": "compare_branches",
-            "compare_periods": "compare_periods",
-            "get_trend": "trend",
-            "rank_employees": "ranking",
-            "get_employee_summary": "ranking",
-            "get_corrective_actions": "corrective_actions",
-        }
-        primary_intent = tool_to_intent.get(primary_call.tool, "actual_vs_target")
-        requested_parts = [tool_to_intent.get(c.tool, "actual_vs_target") for c in data_exec_calls[:2]]
+    data_exec_calls = [c for c in executed_calls if c.tool not in DISCOVERY_EXPLORATION_TOOLS] or executed_calls
+    primary_call = data_exec_calls[0]
+    tool_to_intent = {
+        "inspect_authorized_concepts": "current_value",
+        "find_concepts": "current_value",
+        "describe_metric": "scorecard_structure",
+        "list_available_periods": "current_value",
+        "get_team_score_summary": "current_value",
+        "get_management_balanced_scorecard": "current_value",
+        "get_kpi_diagnosis": "actual_vs_target" if primary_call.metric_id else "score_drivers",
+        "compare_branches": "compare_branches",
+        "compare_periods": "compare_periods",
+        "get_trend": "trend",
+        "rank_employees": "ranking",
+        "get_employee_summary": "ranking",
+        "get_corrective_actions": "corrective_actions",
+    }
+    primary_intent = tool_to_intent.get(primary_call.tool, "actual_vs_target")
+    requested_parts = [tool_to_intent.get(c.tool, "actual_vs_target") for c in data_exec_calls[:2]]
 
-        ops_v2: list[QueryOperationV2] = []
-        for idx, c_item in enumerate(data_exec_calls[:2], start=1):
-            op_kind = (
-                "person_summary"
-                if c_item.tool == "get_employee_summary"
-                else tool_to_intent.get(c_item.tool, "actual_vs_target")
+    ops_v2: list[QueryOperationV2] = []
+    for idx, c_item in enumerate(data_exec_calls[:2], start=1):
+        op_kind = (
+            "person_summary"
+            if c_item.tool == "get_employee_summary"
+            else tool_to_intent.get(c_item.tool, "actual_vs_target")
+        )
+        ops_v2.append(
+            QueryOperationV2(
+                operation_id=f"op_{idx}",
+                kind=op_kind,  # type: ignore[arg-type]
+                metric_id=c_item.metric_id,
+                direction=c_item.direction if op_kind == "ranking" else None,  # type: ignore[arg-type]
+                limit=c_item.limit,
             )
-            ops_v2.append(
-                QueryOperationV2(
-                    operation_id=f"op_{idx}",
-                    kind=op_kind,  # type: ignore[arg-type]
-                    metric_id=c_item.metric_id,
-                    direction=c_item.direction if op_kind == "ranking" else None,  # type: ignore[arg-type]
-                    limit=c_item.limit,
-                )
-            )
-
-        perf_lvl = primary_call.performance_level if primary_call.performance_level in ("Employee", "Managerial", "Corporate") else "Employee"
-        scope_v2 = QueryScopeV2(
-            function=primary_call.function or (function_for_team(primary_call.team) if primary_call.team else session_state.function),
-            team=primary_call.team,
-            position=primary_call.position,
-            performance_level=perf_lvl,  # type: ignore[arg-type]
-            branches=list(primary_call.branches) if primary_call.branches else ([primary_call.branch] if primary_call.branch else []),
-            periods=[primary_call.period] if primary_call.period else [],
-            employee_id=primary_call.employee_query if primary_call.tool == "get_employee_summary" else None,
-        )
-        validated_plan_v2 = ValidatedQueryPlanV2(
-            turn_kind="analytical",
-            scope=scope_v2,
-            operations=ops_v2,
-            clarification_code="NONE",
-            resolution_source="local_model_router",
-            confidence=1.0,
-        )
-        structured_plan = StructuredQueryPlan(
-            intent=primary_intent,  # type: ignore[arg-type]
-            requested_parts=requested_parts,
-            team=primary_call.team,
-            function=primary_call.function,
-            position=primary_call.position,
-            branch=primary_call.branch,
-            compare_branch=primary_call.compare_branch,
-            branches=list(primary_call.branches),
-            performance_level=primary_call.performance_level,
-            metric=primary_call.metric_id,
-            periods=[primary_call.period] if primary_call.period else [],
-            ranking_direction=primary_call.direction,  # type: ignore[arg-type]
-            single_person=primary_call.single_person,
-            employee_id=primary_call.employee_query if primary_call.tool == "get_employee_summary" else None,
-        )
-        confirmed = ConfirmedQueryContext(
-            intent=primary_intent,  # type: ignore[arg-type]
-            team=primary_call.team,
-            function=primary_call.function,
-            position=primary_call.position,
-            branch=primary_call.branch,
-            branches=list(primary_call.branches),
-            performance_level=primary_call.performance_level,
-            metric_id=primary_call.metric_id,
-            periods=[primary_call.period] if primary_call.period else [],
-            ranking_direction=primary_call.direction,  # type: ignore[arg-type]
-            single_person=primary_call.single_person,
-        )
-        resolved_state = SessionFilterContext(
-            function=primary_call.function or (function_for_team(primary_call.team) if primary_call.team else session_state.function),
-            team=primary_call.team or session_state.team,
-            position=primary_call.position or session_state.position,
-            branch=None if primary_call.tool == "compare_branches" else (primary_call.branch or session_state.branch),
-            region=session_state.region,
-            performance_level=primary_call.performance_level or session_state.performance_level,
-            month=res_month,
-            year=res_year,
-            employee_id=structured_plan.employee_id or session_state.employee_id,
-            last_confirmed_query=confirmed,
-        )
-        evidence_envelope_v2 = _build_evidence_items_from_results(
-            executed_calls=data_exec_calls,
-            tool_results=[tr for c, tr in zip(executed_calls, tool_results) if c.tool not in DISCOVERY_EXPLORATION_TOOLS] or tool_results,
-        )
-        primary_link = next(
-            (dl for dl in deep_links if dl.icon_key in ("team", "employee", "bsc")),
-            deep_links[0] if deep_links else None,
         )
 
-        return LocalExplorationResult(
-            handled=True,
-            outcome="answer",
-            headline=headline,
-            narrative_bullets=bullets,
-            visual_cards=visual_cards[:3],
-            citations=citations,
-            deep_links=deep_links[:3],
-            primary_source_link=primary_link,
-            suggested_followups=followups,
-            structured_query=structured_plan,
-            validated_plan_v2=validated_plan_v2,
-            typed_evidence=typed_evidence,
-            evidence_envelope_v2=evidence_envelope_v2,
-            tool_calls=tool_call_records,
-            tool_digests=tool_digests,
-            resolved_session_state=resolved_state,
-            basis_warning=basis_warning,
-            unknown_code="none",
-            steps_taken=len(step_traces),
-            step_traces=step_traces,
-            provider_calls=total_provider_calls,
-            provider_ms=total_provider_ms,
-            planner_calls=planner_calls,
-            planner_ms=planner_ms,
-            synthesis_calls=synthesis_calls,
-            synthesis_ms=synthesis_ms,
-            synthesis_validated=synthesis_validated,
-            synthesis_fallback_reason=synthesis_fallback_reason,
-            database_ms=total_db_ms,
-            records_evaluated=total_records,
-            # A handled turn still used the rules headline when synthesis could
-            # not reach the model, or when the model answered but the draft
-            # failed validation. "none" would report that fallback as success,
-            # so any synthesis reason other than "none" (accepted) or
-            # "not_requested" (never attempted) is reported as-is: transport
-            # failures ("timeout", "connection_refused",
-            # "unavailable_or_invalid") and unusable drafts
-            # ("invalid_response", "invented_number", ...).
-            fallback_reason=(
-                synthesis_fallback_reason
-                if synthesis_fallback_reason not in {"none", "not_requested"}
-                else "none"
-            ),
-        )
-    finally:
-        _EXPLORATION_SLOT.release()
+    perf_lvl = primary_call.performance_level if primary_call.performance_level in ("Employee", "Managerial", "Corporate") else "Employee"
+    scope_v2 = QueryScopeV2(
+        function=primary_call.function or (function_for_team(primary_call.team) if primary_call.team else session_state.function),
+        team=primary_call.team,
+        position=primary_call.position,
+        performance_level=perf_lvl,  # type: ignore[arg-type]
+        branches=list(primary_call.branches) if primary_call.branches else ([primary_call.branch] if primary_call.branch else []),
+        periods=[primary_call.period] if primary_call.period else [],
+        employee_id=primary_call.employee_query if primary_call.tool == "get_employee_summary" else None,
+    )
+    validated_plan_v2 = ValidatedQueryPlanV2(
+        turn_kind="analytical",
+        scope=scope_v2,
+        operations=ops_v2,
+        clarification_code="NONE",
+        resolution_source="local_model_router",
+        confidence=1.0,
+    )
+    structured_plan = StructuredQueryPlan(
+        intent=primary_intent,  # type: ignore[arg-type]
+        requested_parts=requested_parts,
+        team=primary_call.team,
+        function=primary_call.function,
+        position=primary_call.position,
+        branch=primary_call.branch,
+        compare_branch=primary_call.compare_branch,
+        branches=list(primary_call.branches),
+        performance_level=primary_call.performance_level,
+        metric=primary_call.metric_id,
+        periods=[primary_call.period] if primary_call.period else [],
+        ranking_direction=primary_call.direction,  # type: ignore[arg-type]
+        single_person=primary_call.single_person,
+        employee_id=primary_call.employee_query if primary_call.tool == "get_employee_summary" else None,
+    )
+    confirmed = ConfirmedQueryContext(
+        intent=primary_intent,  # type: ignore[arg-type]
+        team=primary_call.team,
+        function=primary_call.function,
+        position=primary_call.position,
+        branch=primary_call.branch,
+        branches=list(primary_call.branches),
+        performance_level=primary_call.performance_level,
+        metric_id=primary_call.metric_id,
+        periods=[primary_call.period] if primary_call.period else [],
+        ranking_direction=primary_call.direction,  # type: ignore[arg-type]
+        single_person=primary_call.single_person,
+    )
+    resolved_state = SessionFilterContext(
+        function=primary_call.function or (function_for_team(primary_call.team) if primary_call.team else session_state.function),
+        team=primary_call.team or session_state.team,
+        position=primary_call.position or session_state.position,
+        branch=None if primary_call.tool == "compare_branches" else (primary_call.branch or session_state.branch),
+        region=session_state.region,
+        performance_level=primary_call.performance_level or session_state.performance_level,
+        month=res_month,
+        year=res_year,
+        employee_id=structured_plan.employee_id or session_state.employee_id,
+        last_confirmed_query=confirmed,
+    )
+    evidence_envelope_v2 = _build_evidence_items_from_results(
+        executed_calls=data_exec_calls,
+        tool_results=[tr for c, tr in zip(executed_calls, tool_results) if c.tool not in DISCOVERY_EXPLORATION_TOOLS] or tool_results,
+    )
+    primary_link = next(
+        (dl for dl in deep_links if dl.icon_key in ("team", "employee", "bsc")),
+        deep_links[0] if deep_links else None,
+    )
+
+    return LocalExplorationResult(
+        handled=True,
+        outcome="answer",
+        headline=headline,
+        narrative_bullets=bullets,
+        visual_cards=visual_cards[:3],
+        citations=citations,
+        deep_links=deep_links[:3],
+        primary_source_link=primary_link,
+        suggested_followups=followups,
+        structured_query=structured_plan,
+        validated_plan_v2=validated_plan_v2,
+        typed_evidence=typed_evidence,
+        evidence_envelope_v2=evidence_envelope_v2,
+        tool_calls=tool_call_records,
+        tool_digests=tool_digests,
+        resolved_session_state=resolved_state,
+        basis_warning=basis_warning,
+        unknown_code="none",
+        steps_taken=len(step_traces),
+        step_traces=step_traces,
+        provider_calls=total_provider_calls,
+        provider_ms=total_provider_ms,
+        planner_calls=planner_calls,
+        planner_ms=planner_ms,
+        synthesis_calls=synthesis_calls,
+        synthesis_ms=synthesis_ms,
+        synthesis_validated=synthesis_validated,
+        synthesis_fallback_reason=synthesis_fallback_reason,
+        database_ms=total_db_ms,
+        records_evaluated=total_records,
+        # A handled turn still used the rules headline when synthesis could
+        # not reach the model, or when the model answered but the draft
+        # failed validation. "none" would report that fallback as success,
+        # so any synthesis reason other than "none" (accepted) or
+        # "not_requested" (never attempted) is reported as-is: transport
+        # failures ("timeout", "connection_refused",
+        # "unavailable_or_invalid") and unusable drafts
+        # ("invalid_response", "invented_number", ...).
+        fallback_reason=(
+            synthesis_fallback_reason
+            if synthesis_fallback_reason not in {"none", "not_requested"}
+            else "none"
+        ),
+    )

@@ -7,6 +7,8 @@ from typing import Any
 
 import pytest
 
+from ai_provider_fakes import install_scripted_provider
+
 from models.ai_schemas import AiChatRequest, SessionFilterContext
 from services.ai.catalog import ai_evidence_cache
 from services.ai.local_data_explorer import (
@@ -23,24 +25,9 @@ from test_ai_workspace import (
 )
 
 
-def _mock_llama_steps(monkeypatch: pytest.MonkeyPatch, step_payloads: list[dict[str, Any] | str]) -> list[dict[str, Any]]:
-    """Patch urllib.request.build_opener in local_data_explorer to return scripted step responses."""
-    captured_requests: list[dict[str, Any]] = []
-    idx = {"val": 0}
-
-    class _MockOpener:
-        def open(self, request: Any, timeout: float = 8.0) -> io.BytesIO:
-            req_body = json.loads(request.data.decode("utf-8"))
-            captured_requests.append(req_body)
-            step_idx = min(idx["val"], len(step_payloads) - 1)
-            idx["val"] += 1
-            payload_item = step_payloads[step_idx]
-            content_str = payload_item if isinstance(payload_item, str) else json.dumps(payload_item)
-            envelope = {"choices": [{"message": {"content": content_str}}]}
-            return io.BytesIO(json.dumps(envelope).encode("utf-8"))
-
-    monkeypatch.setattr("services.ai.llm_client.urllib.request.build_opener", lambda *_: _MockOpener())
-    return captured_requests
+def _mock_provider_steps(monkeypatch: pytest.MonkeyPatch, step_payloads: list[dict[str, Any] | str]) -> list[dict[str, Any]]:
+    """Script the unified provider engine (Cloudflare) to return the given step responses."""
+    return install_scripted_provider(monkeypatch, step_payloads)
 
 
 def test_exploration_disabled_by_default_and_in_production(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -52,26 +39,6 @@ def test_exploration_disabled_by_default_and_in_production(monkeypatch: pytest.M
 
     monkeypatch.setenv("APP_ENV", "production")
     assert not local_exploration_enabled()
-
-
-def test_remote_or_non_loopback_endpoint_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("PMS_AI_LOCAL_EXPLORATION_ENABLED", "true")
-    monkeypatch.setenv("PMS_AI_LOCAL_ROUTER_URL", "http://example.com/v1/chat/completions")
-    records = [_make_call_center_record("EMP001", "Alice Example", "Inbound", 84.0, 20, 40, 50, 80)]
-    _patch_records(monkeypatch, records)
-    ai_evidence_cache.clear()
-
-    with _build_in_memory_db() as db:
-        res = run_bounded_exploration(
-            db=db,
-            scope={"role": "Admin", "has_unrestricted_team_access": True},
-            prompt="What is Inbound score in September 2026?",
-            session_state=SessionFilterContext(function="Call Center", month="September", year=2026),
-            published_periods={"2026-09"},
-            employee_candidates=[],
-        )
-    assert not res.handled
-    assert res.fallback_reason == "invalid_endpoint"
 
 
 def test_authorized_concept_summary_never_leaks_unauthorized_scopes() -> None:
@@ -128,7 +95,7 @@ def test_cross_scope_isolation_blocks_unauthorized_team_branch_level_and_peer_em
     ai_evidence_cache.clear()
 
     # 1. Model attempts to request Outbound tool while user is scoped only to Inbound
-    _mock_llama_steps(
+    _mock_provider_steps(
         monkeypatch,
         [
             {
@@ -158,7 +125,7 @@ def test_cross_scope_isolation_blocks_unauthorized_team_branch_level_and_peer_em
     assert resp_team.evidence_envelope_v2 == []
 
     # 2. Model attempts to request Sharjah branch while user is scoped only to Dubai
-    _mock_llama_steps(
+    _mock_provider_steps(
         monkeypatch,
         [
             {
@@ -188,7 +155,7 @@ def test_cross_scope_isolation_blocks_unauthorized_team_branch_level_and_peer_em
     assert resp_branch.tool_calls == []
 
     # 3. Model attempts to request Managerial level while user only has Employee level grant
-    _mock_llama_steps(
+    _mock_provider_steps(
         monkeypatch,
         [
             {
@@ -217,7 +184,7 @@ def test_cross_scope_isolation_blocks_unauthorized_team_branch_level_and_peer_em
     assert resp_level.tool_calls == []
 
     # 4. Self-only employee attempts peer ranking or another employee's summary
-    _mock_llama_steps(
+    _mock_provider_steps(
         monkeypatch,
         [
             {
@@ -284,7 +251,7 @@ def test_malformed_requests_and_sql_injection_fall_back_safely(monkeypatch: pyte
     ]
 
     for bad_payload in malformed_cases:
-        _mock_llama_steps(monkeypatch, [bad_payload])
+        _mock_provider_steps(monkeypatch, [bad_payload])
         with _build_in_memory_db() as db:
             resp = PmsAiOrchestrator(db, admin_scope).run_chat_turn(
                 AiChatRequest(
@@ -307,7 +274,7 @@ def test_clear_unknowns_disclose_missing_schema_concepts_without_guessing(monkey
     admin_scope = {"role": "Admin", "has_unrestricted_team_access": True}
 
     # 1. Compensation / Salary unknown
-    _mock_llama_steps(
+    _mock_provider_steps(
         monkeypatch,
         [{"action": "unknown", "unknown_code": "unsupported_compensation_data", "tools": []}],
     )
@@ -323,7 +290,7 @@ def test_clear_unknowns_disclose_missing_schema_concepts_without_guessing(monkey
     assert resp_sal.tool_calls == []
 
     # 2. HR Join Date unknown
-    _mock_llama_steps(
+    _mock_provider_steps(
         monkeypatch,
         [{"action": "unknown", "unknown_code": "missing_hr_join_date", "tools": []}],
     )
@@ -340,7 +307,7 @@ def test_clear_unknowns_disclose_missing_schema_concepts_without_guessing(monkey
     assert resp_join.tool_calls == []
 
     # 3. Unpublished future period requested by model tool call
-    _mock_llama_steps(
+    _mock_provider_steps(
         monkeypatch,
         [
             {
@@ -365,7 +332,6 @@ def test_clear_unknowns_disclose_missing_schema_concepts_without_guessing(monkey
 def test_multi_part_iterative_exploration_combines_two_step_evidence(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("PMS_AI_LOCAL_EXPLORATION_ENABLED", "true")
     monkeypatch.setenv("PMS_AI_CONVERSATION_STATE_ENABLED", "false")
-    monkeypatch.setenv("PMS_AI_LLM_MODEL", "qwen2.5-3b-instruct")
     records = [
         _make_call_center_record("EMP001", "Alice Example", "Inbound", 76.0, 10, 30, 30, 80, month="September"),
         _make_call_center_record("EMP002", "Bob Example", "Inbound", 94.0, 25, 30, 70, 80, month="September"),
@@ -375,7 +341,7 @@ def test_multi_part_iterative_exploration_combines_two_step_evidence(monkeypatch
     admin_scope = {"role": "Admin", "has_unrestricted_team_access": True}
 
     # Step 1 requests KPI diagnosis; Step 2 inspects Step 1 evidence and requests worst employee ranking
-    captured = _mock_llama_steps(
+    captured = _mock_provider_steps(
         monkeypatch,
         [
             {
@@ -405,9 +371,8 @@ def test_multi_part_iterative_exploration_combines_two_step_evidence(monkeypatch
     assert step2_user_payload["collected_evidence"][0]["tool"] == "get_kpi_diagnosis"
 
     assert resp.outcome == "answer"
-    assert resp.provider_used == "llama_cpp"
-    assert resp.model_used == "qwen2.5-3b-instruct"
-    assert captured[0]["model"] == "qwen2.5-3b-instruct"
+    assert resp.provider_used == "cloudflare"
+    assert resp.model_used == "@cf/ibm-granite/granite-4.0-h-micro"
     assert resp.provider_usage.provider_calls in (2, 3)
     assert len(resp.tool_calls) == 2
     assert [tc.tool_name for tc in resp.tool_calls] == [
@@ -421,8 +386,8 @@ def test_multi_part_iterative_exploration_combines_two_step_evidence(monkeypatch
     assert "EMP001" in combined_text
 
 
-@pytest.mark.skipif(os.environ.get("PMS_AI_RUN_LIVE_MODEL_TESTS") != "true", reason="requires local Qwen server on 127.0.0.1:18080")
-def test_live_qwen_model_explores_authorized_concepts_and_multi_part_evidence(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.skipif(os.environ.get("PMS_AI_RUN_LIVE_MODEL_TESTS") != "true", reason="requires live Cloudflare/Gemini credentials")
+def test_live_provider_explores_authorized_concepts_and_multi_part_evidence(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("PMS_AI_LOCAL_EXPLORATION_ENABLED", "true")
     monkeypatch.setenv("PMS_AI_LOCAL_EXPLORATION_TIMEOUT_SECONDS", "15.0")
     monkeypatch.setenv("PMS_AI_CONVERSATION_STATE_ENABLED", "false")
@@ -445,7 +410,7 @@ def test_live_qwen_model_explores_authorized_concepts_and_multi_part_evidence(mo
             )
         )
         assert res_kpi.outcome == "answer"
-        assert res_kpi.provider_used == "llama_cpp"
+        assert res_kpi.provider_used in ("cloudflare", "gemini")
         assert res_kpi.tool_calls
         assert res_kpi.evidence_envelope_v2
 

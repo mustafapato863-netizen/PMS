@@ -2649,7 +2649,7 @@ class HybridQueryRouter:
         ):
             local_result = suggest_intent(text)
             provider_metrics = ProviderCallMetrics(
-                provider_used=getattr(local_result, "provider", None) or "llama_cpp",
+                provider_used=getattr(local_result, "provider", None) or "cloudflare",
                 model_used=local_result.model or configured_model_name(),
                 provider_calls=1,
                 provider_ms=local_result.elapsed_ms,

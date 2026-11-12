@@ -338,11 +338,19 @@ def test_fresh_migration_seed_and_missing_row_leave_ai_off():
         assert "ai_enabled" not in (BACKEND / "services" / name).read_text(encoding="utf-8")
 
 
-def test_model_stays_off_and_production_exploration_cannot_be_enabled(monkeypatch):
+def test_model_stays_off_without_credentials_and_production_exploration_cannot_be_enabled(monkeypatch):
     for name in (
-        "PMS_AI_LLM_INTENT_ENABLED",
-        "PMS_AI_LLM_SYNTHESIS_ENABLED",
-        "PMS_AI_LLM_EXPLORATION_ENABLED",
+        "PMS_AI_INTENT_ENABLED",
+        "PMS_AI_SYNTHESIS_ENABLED",
+        "PMS_AI_EXPLORATION_ENABLED",
+        "CLOUDFLARE_ACCOUNT_ID",
+        "CF_ACCOUNT_ID",
+        "CLOUDFLARE_API_TOKEN",
+        "CF_API_TOKEN",
+        "CLOUDFLARE_API_KEY",
+        "GEMINI_API_KEY",
+        "Gemini_API_KEY",
+        "GOOGLE_API_KEY",
         "PMS_AI_LOCAL_ROUTER_ENABLED",
         "PMS_AI_LOCAL_SYNTHESIS_ENABLED",
         "PMS_AI_LOCAL_EXPLORATION_ENABLED",
@@ -354,7 +362,7 @@ def test_model_stays_off_and_production_exploration_cannot_be_enabled(monkeypatc
     assert local_exploration_enabled() is False
 
     monkeypatch.setenv("APP_ENV", "production")
-    monkeypatch.setenv("PMS_AI_LLM_EXPLORATION_ENABLED", "true")
+    monkeypatch.setenv("PMS_AI_EXPLORATION_ENABLED", "true")
     monkeypatch.setenv("PMS_AI_LOCAL_EXPLORATION_ENABLED", "true")
     monkeypatch.setenv("PMS_AI_LOCAL_DATA_EXPLORATION_ENABLED", "true")
     monkeypatch.setenv("PMS_AI_CLASSIFIER_MODE", "enabled")
@@ -389,27 +397,56 @@ def test_hostinger_deploy_workflow_has_no_automatic_trigger():
     assert "manual-only" in header
 
 
-def test_compose_and_deploy_do_not_start_a_model_or_turn_ai_on():
+_REQUIRED_PROVIDER_VARS = (
+    "PMS_AI_PRIMARY_PROVIDER",
+    "PMS_AI_FALLBACK_PROVIDER",
+    "PMS_AI_CLOUDFLARE_ENABLED",
+    "PMS_AI_GEMINI_ENABLED",
+    "PMS_AI_FALLBACK_ENABLED",
+    "PMS_AI_OPENAI_ENABLED",
+    "CLOUDFLARE_ACCOUNT_ID",
+    "CLOUDFLARE_API_TOKEN",
+    "CLOUDFLARE_AI_MODEL",
+    "CLOUDFLARE_AI_MODEL_ALTER",
+    "GEMINI_API_KEY",
+    "PMS_GEMINI_MODEL",
+)
+
+_LEGACY_MARKERS = ("PMS_AI_LLM_", "pms-qwen-pilot", "llama.cpp", "qwen", "OPENAI_API_KEY")
+
+
+def test_compose_and_deploy_use_only_cloudflare_primary_gemini_fallback():
     for relative in ("docker-compose.yml", "compose.production.yml"):
         text_value = (REPO / relative).read_text(encoding="utf-8")
-        assert 'profiles: ["llm"]' in text_value
-        assert text_value.count("ghcr.io/ggml-org/llama.cpp:server") == 1
-        assert "PMS_AI_LLM_INTENT_ENABLED: ${PMS_AI_LLM_INTENT_ENABLED:-false}" in text_value
-        assert "PMS_AI_LLM_SYNTHESIS_ENABLED: ${PMS_AI_LLM_SYNTHESIS_ENABLED:-false}" in text_value
-        assert "PMS_AI_LLM_EXPLORATION_ENABLED: ${PMS_AI_LLM_EXPLORATION_ENABLED:-false}" in text_value
-        assert ":-true" not in text_value.split("PMS_AI_LLM_INTENT_ENABLED")[1].split("\n", 1)[0]
-        assert ":-true" not in text_value.split("PMS_AI_LLM_SYNTHESIS_ENABLED")[1].split("\n", 1)[0]
+        for var in _REQUIRED_PROVIDER_VARS:
+            assert f"  {var}:" in text_value, f"{relative} must pass {var}"
+        assert "PMS_AI_PRIMARY_PROVIDER: ${PMS_AI_PRIMARY_PROVIDER:-cloudflare}" in text_value
+        assert "PMS_AI_FALLBACK_PROVIDER: ${PMS_AI_FALLBACK_PROVIDER:-gemini}" in text_value
+        assert "PMS_AI_CLOUDFLARE_ENABLED: ${PMS_AI_CLOUDFLARE_ENABLED:-true}" in text_value
+        assert "PMS_AI_GEMINI_ENABLED: ${PMS_AI_GEMINI_ENABLED:-true}" in text_value
+        assert "PMS_AI_FALLBACK_ENABLED: ${PMS_AI_FALLBACK_ENABLED:-true}" in text_value
+        assert "PMS_AI_OPENAI_ENABLED: ${PMS_AI_OPENAI_ENABLED:-false}" in text_value
+        assert "CLOUDFLARE_AI_MODEL: ${CLOUDFLARE_AI_MODEL:-@cf/ibm-granite/granite-4.0-h-micro}" in text_value
+        assert "CLOUDFLARE_AI_MODEL_ALTER: ${CLOUDFLARE_AI_MODEL_ALTER:-@cf/zai-org/glm-4.7-flash}" in text_value
+        assert "PMS_GEMINI_MODEL: ${PMS_GEMINI_MODEL:-gemini-2.5-flash}" in text_value
+        # Secrets are pass-through only; no literal default value.
+        assert "CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:-}" in text_value
+        assert "GEMINI_API_KEY: ${GEMINI_API_KEY:-}" in text_value
+        for marker in _LEGACY_MARKERS:
+            assert marker.casefold() not in text_value.casefold(), f"{relative} still references {marker}"
 
     workflow = (REPO / ".github" / "workflows" / "deploy-hostinger.yml").read_text(encoding="utf-8")
     assert _hostinger_trigger_keys(workflow) == {"workflow_dispatch"}
-    assert "PMS_AI_LLM_INTENT_ENABLED=${{ vars.PMS_AI_LLM_INTENT_ENABLED || 'false' }}" in workflow
-    assert "PMS_AI_LLM_SYNTHESIS_ENABLED=${{ vars.PMS_AI_LLM_SYNTHESIS_ENABLED || 'false' }}" in workflow
-    assert "PMS_AI_LLM_EXPLORATION_ENABLED=false" in workflow
+    assert "PMS_AI_OPENAI_ENABLED=false" in workflow
+    for marker in _LEGACY_MARKERS:
+        assert marker.casefold() not in workflow.casefold(), f"deploy workflow still references {marker}"
     for example in (REPO / "DevOps" / ".env.example", REPO / "DevOps" / ".env.hostinger.example"):
         example_text = example.read_text(encoding="utf-8")
-        assert "PMS_AI_LLM_INTENT_ENABLED=false" in example_text
-        assert "PMS_AI_LLM_SYNTHESIS_ENABLED=false" in example_text
-        assert "PMS_AI_LLM_EXPLORATION_ENABLED=false" in example_text
+        assert "PMS_AI_OPENAI_ENABLED=false" in example_text
+        assert "PMS_AI_PRIMARY_PROVIDER=cloudflare" in example_text
+        assert "CLOUDFLARE_AI_MODEL_ALTER=@cf/zai-org/glm-4.7-flash" in example_text
+        for marker in _LEGACY_MARKERS:
+            assert marker.casefold() not in example_text.casefold(), f"{example.name} still references {marker}"
 
 
 @pytest.mark.parametrize("role", NON_ADMIN_ROLES)

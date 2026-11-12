@@ -3244,8 +3244,9 @@ def test_ai_admin_diagnostics_endpoint():
     assert data["feature_enabled"] is True
     assert data["pilot_role_restricted"] is True
     assert "model_configured_name" in data
-    assert "concurrency_limit" in data
-    assert data["concurrency_limit"] == 1
+    assert "concurrency_limit" not in data  # inference-slot tracking was removed with the self-hosted model
+    assert data["routing_provider"] in ("cloudflare", "gemini", "deterministic")
+    assert data["synthesis_provider"] in ("cloudflare", "gemini", "deterministic")
     assert data["fallback_scope"] == "process_local"
     assert "inference_verified" in data
     # Secrets must NEVER be present
@@ -3279,11 +3280,9 @@ def test_ai_catalog_truthful_certification_statuses():
     assert inbound_entries[0]["status"] == "partial"
 
 
-def test_ai_diagnostics_db_failure_and_model_probe_rejection(monkeypatch):
-    """Diagnostics must report performance_records_count=None on DB error, reject 400/422 probe, and sort chronologically."""
-    import urllib.error
+def test_ai_diagnostics_db_failure_and_provider_status(monkeypatch):
+    """Diagnostics must report performance_records_count=None on DB error, sort chronologically, and never probe a model over the network."""
     from api.routers.ai_workspace import build_ai_diagnostics_payload
-    from services.ai.llm_client import check_model_health
     from unittest.mock import MagicMock
 
     # 1. DB failure must return None (not 0) in data_freshness
@@ -3306,19 +3305,12 @@ def test_ai_diagnostics_db_failure_and_model_probe_rejection(monkeypatch):
     diag_sorted = build_ai_diagnostics_payload(normal_db)
     assert diag_sorted.data_freshness["latest_published_period"] == "October 2026"
 
-    # 3. Model probe rejecting HTTP 400 or HTTP 422
-    class MockOpener:
-        def open(self, *args, **kwargs):
-            raise urllib.error.HTTPError(
-                url="http://localhost:18080/v1/chat/completions",
-                code=400,
-                msg="Bad Request",
-                hdrs={},
-                fp=None,
-            )
-
-    monkeypatch.setattr("services.ai.llm_client.urllib.request.build_opener", lambda *_: MockOpener())
-    health = check_model_health()
-    assert health["available"] is False
-    assert health["inference_verified"] is False
-    assert "400" in health["reason"]
+    # 3. Diagnostics are configuration-only: no credentials means unavailable, never an HTTP probe.
+    for name in ("CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_API_TOKEN", "CF_ACCOUNT_ID", "CF_API_TOKEN", "CLOUDFLARE_API_KEY", "GEMINI_API_KEY", "Gemini_API_KEY", "GOOGLE_API_KEY"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr("urllib.request.urlopen", lambda *a, **k: pytest.fail("diagnostics made a network call"))
+    diag_none = build_ai_diagnostics_payload(normal_db)
+    assert diag_none.model_available is False
+    assert diag_none.inference_verified is False
+    assert diag_none.routing_provider == "deterministic"
+    assert diag_none.model_availability_reason == "no_credentials_configured"

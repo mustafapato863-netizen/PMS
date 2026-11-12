@@ -345,7 +345,7 @@ CorrectiveActionSuggestionOutcome = Literal[
 # Who produced ``draft``. ``"deterministic"`` is part of the shared provider
 # vocabulary but this endpoint never emits it: it does not substitute a static
 # draft when the model is unavailable or its answer is rejected.
-CorrectiveActionSuggestionProvider = Literal["cloudflare", "gemini", "openai", "llama_cpp", "deterministic", "none"]
+CorrectiveActionSuggestionProvider = Literal["cloudflare", "gemini", "deterministic", "none"]
 
 # A draft may only propose a non-disciplinary action type. PIP, Warning,
 # Reward and Promotion remain human decisions in the existing workflow.
@@ -419,7 +419,7 @@ class AiCorrectiveActionSuggestionDraft(BaseModel):
     measured_issue_source: Literal["pms_evidence"] = "pms_evidence"
     # Model-written, validated: imperative, no numbers, closed vocabulary.
     recommended_steps: list[str] = Field(default_factory=list, min_length=1, max_length=3)
-    recommended_steps_source: Literal["gemini", "openai", "llama_cpp"] = "gemini"
+    recommended_steps_source: Literal["cloudflare", "gemini"] = "cloudflare"
     # Built in code: what the evidence does not show.
     uncertainty: str
     uncertainty_source: Literal["pms_evidence"] = "pms_evidence"
@@ -451,7 +451,7 @@ class AiCorrectiveActionSuggestionPayload(BaseModel):
     @model_validator(mode="after")
     def _draft_matches_outcome(self) -> "AiCorrectiveActionSuggestionPayload":
         if self.outcome == "suggested":
-            if self.draft is None or self.provider_used not in ("cloudflare", "gemini", "openai", "llama_cpp"):
+            if self.draft is None or self.provider_used not in ("cloudflare", "gemini"):
                 raise ValueError("a suggested outcome requires a validated model draft")
         elif self.draft is not None:
             raise ValueError("only a suggested outcome may carry a draft")
@@ -488,7 +488,7 @@ class AiChatRequest(BaseModel):
     page_context: PageContextV1 | None = None
     capability_hint: Literal["auto", "page_help", "navigation", "performance_query", "proposal"] | None = "auto"
     history: list[AiChatMessage] = Field(default_factory=list, max_length=12)
-    provider_override: Literal["auto", "gemini", "openai", "local_ollama", "deterministic"] | None = "auto"
+    provider_override: Literal["auto", "gemini", "deterministic"] | None = "auto"
     answer_detail: Literal["auto", "brief", "details"] | None = "auto"
     conversation_id: str | None = Field(default=None, max_length=100)
     client_request_id: str | None = Field(default=None, max_length=100)
@@ -909,12 +909,11 @@ class AiDiagnosticsPayload(BaseModel):
     intent_routing_enabled: bool
     synthesis_enabled: bool
     exploration_enabled: bool
-    routing_provider: Literal["llama_cpp", "deterministic"] = "deterministic"
-    synthesis_provider: Literal["llama_cpp", "deterministic"] = "deterministic"
+    routing_provider: Literal["cloudflare", "gemini", "deterministic"] = "deterministic"
+    synthesis_provider: Literal["cloudflare", "gemini", "deterministic"] = "deterministic"
     brief_default_enabled: bool
     conversation_state_enabled: bool
     provider_timeout_seconds: float
-    concurrency_limit: int = 1
     recent_fallback_reason: str | None = None
     fallback_scope: str = "process_local"
     data_freshness: dict[str, Any] = Field(default_factory=dict)

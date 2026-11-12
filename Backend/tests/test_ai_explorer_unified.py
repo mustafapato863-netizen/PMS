@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import pytest
 
-from services.ai.llm_client import LlmCompletion
 from services.ai.local_data_explorer import (
     _call_local_exploration_model,
     _compose_grounded_answer,
@@ -70,7 +69,7 @@ def test_exploration_planner_uses_gemini_via_unified_engine(monkeypatch: pytest.
     assert mock_engine.last_request.purpose == "exploration"
 
 
-def test_exploration_planner_falls_back_to_openai(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_exploration_planner_falls_back_to_gemini(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("PMS_AI_UNIFIED_EXPLORER", "true")
 
     step_json = json.dumps(
@@ -82,13 +81,13 @@ def test_exploration_planner_falls_back_to_openai(monkeypatch: pytest.MonkeyPatc
     )
     mock_resp = ProviderResponse(
         content=step_json,
-        provider="openai",
-        model="gpt-4o-mini",
+        provider="gemini",
+        model="gemini-2.5-flash",
         outcome="fallback_success",
         latency_ms=250.0,
         attempts=[
-            ProviderAttempt(provider="gemini", model="gemini-2.5-flash", status="unavailable", latency_ms=100.0),
-            ProviderAttempt(provider="openai", model="gpt-4o-mini", status="success", latency_ms=150.0),
+            ProviderAttempt(provider="cloudflare", model="@cf/ibm-granite/granite-4.0-h-micro", status="transient_error", latency_ms=100.0),
+            ProviderAttempt(provider="gemini", model="gemini-2.5-flash", status="success", latency_ms=150.0),
         ],
     )
     mock_engine = MockUnifiedEngine(mock_resp)
@@ -109,7 +108,7 @@ def test_exploration_planner_falls_back_to_openai(monkeypatch: pytest.MonkeyPatc
     assert status == "ok"
     assert parsed is not None
     assert parsed["action"] == "finish"
-    assert _last_exploration_provider.get() == "openai"
+    assert _last_exploration_provider.get() == "gemini"
 
 
 def test_exploration_synthesis_uses_gemini_via_unified_engine(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -234,22 +233,25 @@ def test_no_model_configured_returns_unavailable(monkeypatch: pytest.MonkeyPatch
     assert status == "no_model_configured"
 
 
-def test_legacy_path_when_flag_off(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_no_legacy_transport_remains_and_flag_is_not_required(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The unified provider engine is the only path, with or without PMS_AI_UNIFIED_EXPLORER."""
+    import services.ai.local_data_explorer as explorer
+
     monkeypatch.delenv("PMS_AI_UNIFIED_EXPLORER", raising=False)
+    assert not hasattr(explorer, "chat_completion")
+    assert not hasattr(explorer, "_ORIGINAL_CHAT_COMPLETION")
 
-    legacy_called = []
-
-    def mock_legacy_chat(*args, **kwargs):
-        legacy_called.append(True)
-        return LlmCompletion(
-            ok=True,
+    mock_engine = MockUnifiedEngine(
+        ProviderResponse(
             content=json.dumps({"action": "finish", "unknown_code": "none", "tools": []}),
-            model="legacy-qwen-test",
-            elapsed_ms=45.0,
-            reason="ok",
+            provider="cloudflare",
+            model="@cf/ibm-granite/granite-4.0-h-micro",
+            outcome="success",
+            latency_ms=45.0,
+            attempts=[ProviderAttempt(provider="cloudflare", model="@cf/ibm-granite/granite-4.0-h-micro", status="success")],
         )
-
-    monkeypatch.setattr("services.ai.local_data_explorer.chat_completion", mock_legacy_chat)
+    )
+    monkeypatch.setattr("services.ai.local_data_explorer.get_unified_provider_engine", lambda: mock_engine)
 
     parsed, ms, status = _call_local_exploration_model(
         question="Finish exploring",
@@ -260,11 +262,10 @@ def test_legacy_path_when_flag_off(monkeypatch: pytest.MonkeyPatch) -> None:
         collected_evidence=[],
     )
 
-    assert len(legacy_called) == 1
     assert status == "ok"
     assert parsed is not None
     assert parsed["action"] == "finish"
-    assert _last_exploration_provider.get() == "llama_cpp"
+    assert _last_exploration_provider.get() == "cloudflare"
 
 
 def test_run_bounded_exploration_reports_unified_provider(monkeypatch: pytest.MonkeyPatch) -> None:

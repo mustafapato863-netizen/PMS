@@ -2,12 +2,12 @@
 
 Executes and records:
 1. The 50-case frozen Golden Suite (`D:/PMS_AI/pms_ai_golden_50.py`) on both the standard router
-   and live Qwen exploration (`PMS_AI_LOCAL_EXPLORATION_ENABLED=true`).
+   and live provider exploration (`PMS_AI_LOCAL_EXPLORATION_ENABLED=true`).
 2. Held-out multi-country evaluation (`>= 60` eligible turns for Egypt, `>= 60` eligible turns for UAE,
    `>= 10` per applicable operation family: `current_value`, `kpi_diagnosis`, `ranking`,
    `compare_branches_or_periods`, `trend`, `compound`), covering all data waves (Waves A, B, C, D)
    and performance levels (`Employee`, `Managerial`, `Corporate`).
-3. Live Qwen3-4B (`127.0.0.1:18080`) exploration & Qwen-authored grounded synthesis verification
+3. Live Cloudflare/Gemini provider exploration & model-authored grounded synthesis verification
    across Egypt and UAE, plus warm/cold latency and 200-employee scoped DB read capacity measurement.
 """
 
@@ -582,7 +582,7 @@ def _build_holdout_turns() -> list[dict[str, Any]]:
 def run_evaluation() -> dict[str, Any]:
     monkeypatch = pytest.MonkeyPatch()
 
-    # 1. Run the 50 Golden Cases with PMS_AI_LOCAL_EXPLORATION_ENABLED=true on live Qwen
+    # 1. Run the 50 Golden Cases with PMS_AI_LOCAL_EXPLORATION_ENABLED=true on a live provider
     sys.path.insert(0, "D:/PMS_AI")
     import pms_ai_golden_50 as golden
 
@@ -598,7 +598,7 @@ def run_evaluation() -> dict[str, Any]:
             prev_data = json.loads(out_path.read_text(encoding="utf-8"))
             if len(prev_data.get("golden_50_results") or []) == 50 and all(r.get("passed") for r in prev_data["golden_50_results"]):
                 golden_results = prev_data["golden_50_results"]
-                print("[GOLDEN-50] Reusing verified 50/50 live-Qwen exploration results from phase6_held_out_eval_results.json", flush=True)
+                print("[GOLDEN-50] Reusing verified 50/50 live-provider exploration results from phase6_held_out_eval_results.json", flush=True)
         except Exception:
             pass
 

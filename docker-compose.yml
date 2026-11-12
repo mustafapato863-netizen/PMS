@@ -1,6 +1,5 @@
 name: pms-backend-only
-
-x-backend-environment: &backend-environment
+x-backend-environment: &a1
   APP_ENV: production
   PORT: "7860"
   DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
@@ -14,19 +13,7 @@ x-backend-environment: &backend-environment
   PMS_REALTIME_MODE: ${PMS_REALTIME_MODE:-in_process}
   PMS_ASYNC_JOBS_ENABLED: ${PMS_ASYNC_JOBS_ENABLED:-true}
   PMS_JOB_DATA_DIR: /app/job_data
-  PMS_AI_LLM_BASE_URL: ${PMS_AI_LLM_BASE_URL:-http://pms-qwen-pilot:8080}
-  PMS_AI_LLM_MODEL: ${PMS_AI_LLM_MODEL:-qwen3-4b-q4_k_m}
-  PMS_AI_LLM_API_KEY: ${PMS_AI_LLM_API_KEY:-}
-  PMS_AI_LLM_ALLOWED_HOSTS: ${PMS_AI_LLM_ALLOWED_HOSTS:-localhost,127.0.0.1,::1,llm,pms-qwen-pilot,host.docker.internal}
-  PMS_AI_LLM_INTENT_ENABLED: ${PMS_AI_LLM_INTENT_ENABLED:-false}
-  PMS_AI_LLM_SYNTHESIS_ENABLED: ${PMS_AI_LLM_SYNTHESIS_ENABLED:-false}
-  PMS_AI_LLM_EXPLORATION_ENABLED: ${PMS_AI_LLM_EXPLORATION_ENABLED:-false}
-  PMS_AI_LLM_TIMEOUT_SECONDS: ${PMS_AI_LLM_TIMEOUT_SECONDS:-15}
-  PMS_AI_LLM_SYNTHESIS_TIMEOUT_SECONDS: ${PMS_AI_LLM_SYNTHESIS_TIMEOUT_SECONDS:-30}
-  PMS_AI_LLM_MAX_CALLS_PER_TURN: ${PMS_AI_LLM_MAX_CALLS_PER_TURN:-3}
-  PMS_AI_LLM_CONTEXT: ${PMS_AI_LLM_CONTEXT:-2048}
   PMS_RATE_LIMIT_AI_CHAT_PER_MINUTE: ${PMS_RATE_LIMIT_AI_CHAT_PER_MINUTE:-20}
-  # Cloudflare Workers AI Primary & Google Gemini Fallback
   PMS_AI_PRIMARY_PROVIDER: ${PMS_AI_PRIMARY_PROVIDER:-cloudflare}
   PMS_AI_FALLBACK_PROVIDER: ${PMS_AI_FALLBACK_PROVIDER:-gemini}
   PMS_AI_CLOUDFLARE_ENABLED: ${PMS_AI_CLOUDFLARE_ENABLED:-true}
@@ -39,94 +26,110 @@ x-backend-environment: &backend-environment
   CLOUDFLARE_AI_MODEL_ALTER: ${CLOUDFLARE_AI_MODEL_ALTER:-@cf/zai-org/glm-4.7-flash}
   GEMINI_API_KEY: ${GEMINI_API_KEY:-}
   PMS_GEMINI_MODEL: ${PMS_GEMINI_MODEL:-gemini-2.5-flash}
-
 services:
   redis:
     image: redis:7-alpine
-    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}"]
+    command:
+      - redis-server
+      - --appendonly
+      - yes
+      - --requirepass
+      - ${REDIS_PASSWORD}
     environment:
-      REDIS_PASSWORD: "${REDIS_PASSWORD}"
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
     volumes:
       - redis_data:/data
     restart: unless-stopped
-
+    labels:
+      - dokploy.organization.id=fHpOQZBWg5ovFVXv43-rO
+      - dokploy.project.id=5ZhN_93WVKALyaZi8gUYg
+      - dokploy.project=Performance Managment System
+      - dokploy.environment.id=UfSrbdaM5u87u4LjRB13I
+      - dokploy.environment=production
+      - dokploy.application.id=uncof75r2DnwMD4KV5hed
+      - dokploy.application=Backend
+      - dokploy.service=redis
   migrate:
     build:
       context: .
       dockerfile: DevOps/docker/Dockerfile.backend
-    command: ["sh", "-c", "python -m scripts.bootstrap_schema && alembic upgrade head"]
-    environment: *backend-environment
-    restart: "no"
+    command:
+      - sh
+      - -c
+      - python -m scripts.bootstrap_schema && alembic upgrade head
+    environment: *a1
+    restart: no
     networks:
       - dokploy-network
       - default
-
+    labels:
+      - dokploy.organization.id=fHpOQZBWg5ovFVXv43-rO
+      - dokploy.project.id=5ZhN_93WVKALyaZi8gUYg
+      - dokploy.project=Performance Managment System
+      - dokploy.environment.id=UfSrbdaM5u87u4LjRB13I
+      - dokploy.environment=production
+      - dokploy.application.id=uncof75r2DnwMD4KV5hed
+      - dokploy.application=Backend
+      - dokploy.service=migrate
   backend:
     build:
       context: .
       dockerfile: DevOps/docker/Dockerfile.backend
-    environment: *backend-environment
+    environment: *a1
     ports:
-      - "7860:7860"
+      - 7860:7860
     volumes:
       - job_data:/app/job_data
     depends_on:
       - redis
       - migrate
     extra_hosts:
-      - "host.docker.internal:host-gateway"
+      - host.docker.internal:host-gateway
     restart: unless-stopped
     networks:
       - dokploy-network
       - default
-
-  llm:
-    profiles: ["llm"]
-    image: ghcr.io/ggml-org/llama.cpp:server
-    command:
-      - -m
-      - ${PMS_AI_LLM_MODEL_PATH:-/models/Qwen3-4B-Q4_K_M.gguf}
-      - --host
-      - 0.0.0.0
-      - --port
-      - "8080"
-      - --ctx-size
-      - ${PMS_AI_LLM_CONTEXT:-2048}
-      - --parallel
-      - "1"
-      - --threads
-      - ${PMS_AI_LLM_THREADS:-1}
-      - --n-gpu-layers
-      - "0"
-      - --alias
-      - ${PMS_AI_LLM_MODEL:-qwen3-4b-q4_k_m}
-    volumes:
-      - ${PMS_AI_LLM_MODEL_DIR:-/opt/pms-qwen-pilot/models}:/models:ro
-    mem_limit: ${PMS_AI_LLM_MEMORY_LIMIT:-3584m}
-    cpus: ${PMS_AI_LLM_CPUS:-1}
-    healthcheck:
-      test: ["CMD-SHELL", "bash -c 'echo >/dev/tcp/127.0.0.1/8080'"]
-      interval: 20s
-      timeout: 5s
-      retries: 12
-      start_period: 90s
-    restart: unless-stopped
-    networks:
-      - dokploy-network
-
+    labels:
+      - traefik.docker.network=dokploy-network
+      - traefik.http.routers.performance-managment-system-backend-pwhfoc-6-web.rule=Host(`bkpms.zainx.cloud`)
+      - traefik.http.routers.performance-managment-system-backend-pwhfoc-6-web.entrypoints=web
+      - traefik.http.services.performance-managment-system-backend-pwhfoc-6-web.loadbalancer.server.port=7860
+      - traefik.http.routers.performance-managment-system-backend-pwhfoc-6-web.service=performance-managment-system-backend-pwhfoc-6-web
+      - traefik.http.routers.performance-managment-system-backend-pwhfoc-6-web.middlewares=redirect-to-https@file
+      - traefik.http.routers.performance-managment-system-backend-pwhfoc-6-websecure.rule=Host(`bkpms.zainx.cloud`)
+      - traefik.http.routers.performance-managment-system-backend-pwhfoc-6-websecure.entrypoints=websecure
+      - traefik.http.services.performance-managment-system-backend-pwhfoc-6-websecure.loadbalancer.server.port=7860
+      - traefik.http.routers.performance-managment-system-backend-pwhfoc-6-websecure.service=performance-managment-system-backend-pwhfoc-6-websecure
+      - traefik.http.routers.performance-managment-system-backend-pwhfoc-6-websecure.tls.certresolver=letsencrypt
+      - traefik.enable=true
+      - dokploy.organization.id=fHpOQZBWg5ovFVXv43-rO
+      - dokploy.project.id=5ZhN_93WVKALyaZi8gUYg
+      - dokploy.project=Performance Managment System
+      - dokploy.environment.id=UfSrbdaM5u87u4LjRB13I
+      - dokploy.environment=production
+      - dokploy.application.id=uncof75r2DnwMD4KV5hed
+      - dokploy.application=Backend
+      - dokploy.service=backend
   worker:
     build:
       context: .
       dockerfile: DevOps/docker/Dockerfile.backend
-    command: ["sh", "-c", "exec python worker.py"]
-    environment: *backend-environment
+    command:
+      - sh
+      - -c
+      - exec python worker.py
+    environment: *a1
     volumes:
       - job_data:/app/job_data
     depends_on:
       - redis
       - migrate
     healthcheck:
-      test: ["CMD", "python", "-m", "scripts.worker_healthcheck"]
+      test:
+        - CMD
+        - python
+        - -m
+        - scripts.worker_healthcheck
       interval: 15s
       timeout: 5s
       retries: 5
@@ -135,12 +138,19 @@ services:
     networks:
       - dokploy-network
       - default
-
+    labels:
+      - dokploy.organization.id=fHpOQZBWg5ovFVXv43-rO
+      - dokploy.project.id=5ZhN_93WVKALyaZi8gUYg
+      - dokploy.project=Performance Managment System
+      - dokploy.environment.id=UfSrbdaM5u87u4LjRB13I
+      - dokploy.environment=production
+      - dokploy.application.id=uncof75r2DnwMD4KV5hed
+      - dokploy.application=Backend
+      - dokploy.service=worker
 networks:
   dokploy-network:
     external: true
-  default:
-
+  default: null
 volumes:
-  redis_data:
-  job_data:
+  redis_data: null
+  job_data: null

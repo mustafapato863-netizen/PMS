@@ -15,7 +15,7 @@ from config.database import Base, get_db
 from models.models import ProductSetting, User
 from services.ai import feature_gate
 from services.ai.feature_gate import read_ai_enabled, set_ai_enabled
-from services.ai.llm_client import _SLOT, check_model_health
+from services.ai.llm_client import provider_status
 from services.auth_service import AuthenticationService
 
 
@@ -131,185 +131,87 @@ def test_anonymous_caller_is_rejected_on_diagnostics_before_any_role_check(test_
     assert "authorization" in resp.json()["detail"].lower()
 
 
-def test_3_model_listing_missing_configured_model_reported_as_model_missing(monkeypatch):
-    """When /v1/models returns models that do NOT include the configured model, report as model_missing."""
-    monkeypatch.setenv("PMS_AI_LLM_BASE_URL", "http://127.0.0.1:18080")
-    monkeypatch.setenv("PMS_AI_LLM_MODEL", "Qwen/Qwen2.5-3B-Instruct")
-
-    class MockResponse:
-        status = 200
-
-        def read(self, size=-1):
-            return json.dumps({
-                "data": [
-                    {"id": "meta-llama/Llama-3-8B-Instruct"},
-                    {"id": "mistralai/Mistral-7B-Instruct-v0.2"},
-                ]
-            }).encode("utf-8")
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *args):
-            pass
-
-    class MockOpener:
-        def open(self, req, timeout=None):
-            return MockResponse()
-
-    monkeypatch.setattr("urllib.request.build_opener", lambda *args: MockOpener())
-
-    health = check_model_health(timeout_seconds=0.5)
-    assert health["available"] is False
-    assert health["inference_verified"] is False
-    assert health["reason"] == "configured_model_not_listed"
-
-
-def test_4_model_response_http_200_malformed_json_reported_unhealthy(monkeypatch):
-    """When model completion endpoint returns HTTP 200 with malformed JSON, report unhealthy."""
-    monkeypatch.setenv("PMS_AI_LLM_BASE_URL", "http://127.0.0.1:18080")
-    monkeypatch.setenv("PMS_AI_LLM_MODEL", "Qwen/Qwen2.5-3B-Instruct")
-
-    class MockMalformedResponse:
-        status = 200
-
-        def read(self, size=-1):
-            return b"<html><body>502 Bad Gateway from reverse proxy</body></html>"
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *args):
-            pass
-
-    class MockOpener:
-        def open(self, req, timeout=None):
-            # If models endpoint, raise error so it falls back to completion
-            if "/v1/models" in req.full_url:
-                raise ConnectionError("No models endpoint")
-            return MockMalformedResponse()
-
-    monkeypatch.setattr("urllib.request.build_opener", lambda *args: MockOpener())
-
-    health = check_model_health(timeout_seconds=0.5)
-    assert health["available"] is False
-    assert health["inference_verified"] is False
-    assert health["reason"] == "malformed_completion_json"
-
-
-def _health_json_response(payload, status=200):
-    class MockResponse:
-        def __init__(self):
-            self.status = status
-
-        def read(self, size=-1):
-            raw = json.dumps(payload).encode("utf-8")
-            return raw if size < 0 else raw[:size]
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *args):
-            return None
-
-    return MockResponse()
-
-
-def _install_health_opener(monkeypatch, completion, model_list=None, *, list_error=False, inspect_request=None):
-    exact_model = "Qwen/Qwen2.5-3B-Instruct"
-    model_listing = model_list if model_list is not None else {"data": [{"id": exact_model}]}
-
-    class MockOpener:
-        def open(self, req, timeout=None):
-            if "/v1/models" in req.full_url:
-                if list_error:
-                    raise ConnectionError("models endpoint unavailable")
-                return _health_json_response(model_listing)
-            if inspect_request:
-                inspect_request(req, timeout)
-            return _health_json_response(completion)
-
-    monkeypatch.setenv("PMS_AI_LLM_BASE_URL", "http://127.0.0.1:18080")
-    monkeypatch.setenv("PMS_AI_LLM_MODEL", exact_model)
-    monkeypatch.setattr("urllib.request.build_opener", lambda *args: MockOpener())
-
-
-def test_5_completion_from_wrong_model_is_not_healthy(monkeypatch):
-    _install_health_opener(monkeypatch, {
-        "model": "Qwen/Qwen2.5-3B-Instruct-uncensored",
-        "choices": [{"message": {"role": "assistant", "content": "ready"}}],
-    })
-    health = check_model_health(timeout_seconds=0.5)
-    assert health["available"] is False
-    assert health["inference_verified"] is False
-    assert health["reason"] == "model_identity_mismatch"
-
-
-@pytest.mark.parametrize(
-    ("completion", "expected_reason"),
-    [
-        ({"model": "Qwen/Qwen2.5-3B-Instruct", "choices": []}, "malformed_completion_missing_choices"),
-        ({"model": "Qwen/Qwen2.5-3B-Instruct", "choices": [{"message": {"content": "  "}}]}, "empty_completion"),
-        ({"choices": [{"message": {"role": "assistant", "content": "ready"}}]}, "model_identity_missing"),
-    ],
+_PROVIDER_ENV = (
+    "PMS_AI_PRIMARY_PROVIDER", "PMS_AI_FALLBACK_PROVIDER", "PMS_AI_CLOUDFLARE_ENABLED", "PMS_AI_GEMINI_ENABLED",
+    "PMS_AI_FALLBACK_ENABLED", "CLOUDFLARE_ACCOUNT_ID", "CF_ACCOUNT_ID", "CLOUDFLARE_API_TOKEN", "CF_API_TOKEN",
+    "CLOUDFLARE_API_KEY", "GEMINI_API_KEY", "Gemini_API_KEY", "GOOGLE_API_KEY", "CLOUDFLARE_AI_MODEL", "CF_AI_MODEL",
+    "PMS_CLOUDFLARE_MODEL", "PMS_GEMINI_MODEL", "PMS_AI_GEMINI_MODEL", "GEMINI_MODEL",
 )
-def test_6_completion_requires_model_identity_and_nonempty_assistant_text(monkeypatch, completion, expected_reason):
-    _install_health_opener(monkeypatch, completion)
-    health = check_model_health(timeout_seconds=0.5)
+
+
+@pytest.fixture
+def clean_provider_env(monkeypatch):
+    for name in _PROVIDER_ENV:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr("urllib.request.urlopen", lambda *a, **k: pytest.fail("diagnostics must not make a network call"))
+    monkeypatch.setattr("urllib.request.build_opener", lambda *a, **k: pytest.fail("diagnostics must not make a network call"))
+    return monkeypatch
+
+
+def test_3_no_credentials_reports_unavailable_without_a_network_probe(clean_provider_env):
+    health = provider_status()
     assert health["available"] is False
-    assert health["inference_verified"] is False
-    assert health["reason"] == expected_reason
+    assert health["endpoint_configured"] is False
+    assert health["active_provider"] == "deterministic"
+    assert health["reason"] == "no_credentials_configured"
+    assert health["primary_provider"] == "cloudflare"
+    assert health["fallback_provider"] == "gemini"
 
 
-def test_7_model_listing_uses_exact_identity_not_substring(monkeypatch):
-    _install_health_opener(
-        monkeypatch,
-        {"model": "Qwen/Qwen2.5-3B-Instruct", "choices": [{"message": {"content": "ready"}}]},
-        model_list={"data": [{"id": "Qwen/Qwen2.5-3B-Instruct-uncensored"}]},
-    )
-    health = check_model_health(timeout_seconds=0.5)
-    assert health["available"] is False
-    assert health["reason"] == "configured_model_not_listed"
-
-
-def test_8_invalid_model_listing_does_not_replace_completion_verification(monkeypatch):
-    seen = {}
-
-    def inspect_request(req, timeout):
-        seen["body"] = json.loads(req.data.decode("utf-8"))
-        seen["timeout"] = timeout
-
-    _install_health_opener(
-        monkeypatch,
-        {"model": "Qwen/Qwen2.5-3B-Instruct", "choices": [{"message": {"role": "assistant", "content": "ready"}}]},
-        model_list={"data": "invalid"},
-        inspect_request=inspect_request,
-    )
-    health = check_model_health(timeout_seconds=0.5)
+def test_4_cloudflare_credentials_make_cloudflare_the_active_provider(clean_provider_env):
+    clean_provider_env.setenv("CLOUDFLARE_ACCOUNT_ID", "acct-test")
+    clean_provider_env.setenv("CLOUDFLARE_API_TOKEN", "token-test-not-real")
+    health = provider_status()
     assert health["available"] is True
-    assert health["inference_verified"] is True
-    assert seen["body"]["model"] == "Qwen/Qwen2.5-3B-Instruct"
-    assert seen["body"]["messages"][0]["content"]
-    assert 0 < seen["timeout"] <= 0.5
+    assert health["active_provider"] == "cloudflare"
+    assert health["configured_model"] == "@cf/ibm-granite/granite-4.0-h-micro"
+    assert health["endpoint_host"] == "api.cloudflare.com"
+    assert health["reason"] == "configured"
+    assert "token-test-not-real" not in json.dumps(health)
 
 
-def test_9_healthy_result_requires_a_valid_list_and_generated_identity(monkeypatch):
-    _install_health_opener(
-        monkeypatch,
-        {"model": "Qwen/Qwen2.5-3B-Instruct", "choices": [{"message": {"role": "assistant", "content": "PMS_AI_HEALTH_CHECK_OK"}}]},
-    )
-    health = check_model_health(timeout_seconds=0.5)
+def test_5_gemini_only_credentials_fall_back_to_gemini(clean_provider_env):
+    clean_provider_env.setenv("GEMINI_API_KEY", "key-test-not-real")
+    health = provider_status()
     assert health["available"] is True
-    assert health["inference_verified"] is True
-    assert health["reason"] == "completion_verified"
+    assert health["active_provider"] == "gemini"
+    assert health["configured_model"] == "gemini-2.5-flash"
+    assert health["reason"] == "primary_unconfigured_fallback_only"
+    assert "key-test-not-real" not in json.dumps(health)
 
 
-def test_10_health_probe_respects_the_shared_single_inference_slot(monkeypatch):
-    monkeypatch.setenv("PMS_AI_LLM_BASE_URL", "http://127.0.0.1:18080")
-    assert _SLOT.acquire(blocking=False)
-    try:
-        health = check_model_health(timeout_seconds=0.5)
-    finally:
-        _SLOT.release()
+def test_6_disabled_providers_are_never_active(clean_provider_env):
+    clean_provider_env.setenv("CLOUDFLARE_ACCOUNT_ID", "acct-test")
+    clean_provider_env.setenv("CLOUDFLARE_API_TOKEN", "token-test-not-real")
+    clean_provider_env.setenv("GEMINI_API_KEY", "key-test-not-real")
+    clean_provider_env.setenv("PMS_AI_CLOUDFLARE_ENABLED", "false")
+    clean_provider_env.setenv("PMS_AI_GEMINI_ENABLED", "false")
+    health = provider_status()
     assert health["available"] is False
-    assert health["reason"] == "busy"
+    assert health["active_provider"] == "deterministic"
+
+
+def test_7_openai_can_never_be_selected_even_when_configured(clean_provider_env):
+    clean_provider_env.setenv("PMS_AI_PRIMARY_PROVIDER", "openai")
+    clean_provider_env.setenv("PMS_AI_FALLBACK_PROVIDER", "openai")
+    clean_provider_env.setenv("PMS_AI_OPENAI_ENABLED", "true")
+    clean_provider_env.setenv("OPENAI_API_KEY", "sk-test-not-real")
+    health = provider_status()
+    assert health["primary_provider"] == "cloudflare"
+    assert health["fallback_provider"] == "gemini"
+    assert health["active_provider"] == "deterministic"
+
+
+def test_8_diagnostics_payload_providers_are_cloudflare_gemini_or_deterministic(clean_provider_env, test_db_session):
+    from api.routers.ai_workspace import build_ai_diagnostics_payload
+
+    clean_provider_env.setenv("CLOUDFLARE_ACCOUNT_ID", "acct-test")
+    clean_provider_env.setenv("CLOUDFLARE_API_TOKEN", "token-test-not-real")
+    clean_provider_env.setenv("PMS_AI_LOCAL_ROUTER_ENABLED", "true")
+    clean_provider_env.setenv("PMS_AI_LOCAL_SYNTHESIS_ENABLED", "true")
+    payload = build_ai_diagnostics_payload(test_db_session)
+    assert payload.routing_provider == "cloudflare"
+    assert payload.synthesis_provider == "cloudflare"
+    assert payload.model_endpoint_host == "api.cloudflare.com"
+    assert payload.inference_verified is False
+    assert "token-test-not-real" not in payload.model_dump_json()

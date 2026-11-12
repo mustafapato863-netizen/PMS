@@ -27,11 +27,11 @@ from models.ai_schemas import (
 from services.ai.config import get_ai_runtime_config
 from services.ai.catalog import get_ai_catalog
 from services.ai.llm_client import (
-    check_model_health,
     get_recent_fallback_reason,
     local_exploration_enabled,
     local_intent_enabled,
     local_synthesis_enabled,
+    provider_status,
 )
 from services.ai.contextual_assistant import (
     ProposalStaleEvidenceError,
@@ -389,7 +389,7 @@ def _safe_host(value: object) -> str | None:
 
 def build_ai_diagnostics_payload(db: Session | None) -> AiDiagnosticsPayload:
     cfg = get_ai_runtime_config()
-    model_health = check_model_health()
+    model_health = provider_status()
 
     freshness: dict[str, object] = {}
     try:
@@ -430,30 +430,30 @@ def build_ai_diagnostics_payload(db: Session | None) -> AiDiagnosticsPayload:
     except Exception:
         feature_enabled = False
 
-    version = model_health.get("model_version")
     model_up = bool(model_health.get("available"))
+    active_provider = str(model_health.get("active_provider") or "deterministic")
+    if active_provider not in ("cloudflare", "gemini"):
+        active_provider = "cloudflare"
     intent_on = local_intent_enabled()
     synthesis_on = local_synthesis_enabled()
     return AiDiagnosticsPayload(
         feature_enabled=feature_enabled,
         pilot_role_restricted=True,
         model_configured_name=str(model_health.get("configured_model") or ""),
-        model_version=version if isinstance(version, str) else None,
         model_endpoint_configured=bool(model_health.get("endpoint_configured")),
         model_endpoint_host=_safe_host(model_health.get("endpoint_host")),
         model_available=model_up,
-        inference_verified=bool(model_health.get("inference_verified", False)),
+        inference_verified=False,
         model_availability_reason=str(model_health.get("reason") or "unavailable"),
         router_mode=cfg.router_mode,
         intent_routing_enabled=intent_on,
         synthesis_enabled=synthesis_on,
         exploration_enabled=local_exploration_enabled(),
-        routing_provider="llama_cpp" if intent_on and model_up else "deterministic",
-        synthesis_provider="llama_cpp" if synthesis_on and model_up else "deterministic",
+        routing_provider=active_provider if intent_on and model_up else "deterministic",
+        synthesis_provider=active_provider if synthesis_on and model_up else "deterministic",
         brief_default_enabled=cfg.brief_default_enabled,
         conversation_state_enabled=cfg.conversation_state_enabled,
         provider_timeout_seconds=cfg.provider_timeout_seconds,
-        concurrency_limit=1,
         recent_fallback_reason=get_recent_fallback_reason(),
         fallback_scope="process_local",
         data_freshness=freshness,

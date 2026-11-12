@@ -36,19 +36,6 @@ x-backend-environment: &backend-environment
   MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-26214400}
   ENABLE_FILE_LOGGING: "false"
   LOG_LEVEL: ${LOG_LEVEL:-INFO}
-  # Self-hosted model. The llm service stays off unless Compose is started with --profile llm.
-  # Override every value in Dokploy or the Hostinger env file. Empty API key sends no Authorization header.
-  PMS_AI_LLM_BASE_URL: ${PMS_AI_LLM_BASE_URL:-http://pms-qwen-pilot:8080}
-  PMS_AI_LLM_MODEL: ${PMS_AI_LLM_MODEL:-qwen3-4b-q4_k_m}
-  PMS_AI_LLM_API_KEY: ${PMS_AI_LLM_API_KEY:-}
-  PMS_AI_LLM_ALLOWED_HOSTS: ${PMS_AI_LLM_ALLOWED_HOSTS:-localhost,127.0.0.1,::1,llm,pms-qwen-pilot,host.docker.internal}
-  PMS_AI_LLM_INTENT_ENABLED: ${PMS_AI_LLM_INTENT_ENABLED:-false}
-  PMS_AI_LLM_SYNTHESIS_ENABLED: ${PMS_AI_LLM_SYNTHESIS_ENABLED:-false}
-  PMS_AI_LLM_EXPLORATION_ENABLED: ${PMS_AI_LLM_EXPLORATION_ENABLED:-false}
-  PMS_AI_LLM_TIMEOUT_SECONDS: ${PMS_AI_LLM_TIMEOUT_SECONDS:-15}
-  PMS_AI_LLM_SYNTHESIS_TIMEOUT_SECONDS: ${PMS_AI_LLM_SYNTHESIS_TIMEOUT_SECONDS:-30}
-  PMS_AI_LLM_MAX_CALLS_PER_TURN: ${PMS_AI_LLM_MAX_CALLS_PER_TURN:-3}
-  PMS_AI_LLM_CONTEXT: ${PMS_AI_LLM_CONTEXT:-2048}
   PMS_RATE_LIMIT_AI_CHAT_PER_MINUTE: ${PMS_RATE_LIMIT_AI_CHAT_PER_MINUTE:-20}
   # Cloudflare Workers AI Primary & Google Gemini Fallback
   PMS_AI_PRIMARY_PROVIDER: ${PMS_AI_PRIMARY_PROVIDER:-cloudflare}
@@ -117,42 +104,6 @@ services:
     networks:
       - private
       - egress
-
-  # Optional. A normal deploy does not start this. The live model is the standalone
-  # container pms-qwen-pilot. Use this service only if that container is retired.
-  llm:
-    profiles: ["llm"]
-    image: ghcr.io/ggml-org/llama.cpp:server
-    command:
-      - -m
-      - ${PMS_AI_LLM_MODEL_PATH:-/models/Qwen3-4B-Q4_K_M.gguf}
-      - --host
-      - 0.0.0.0
-      - --port
-      - "8080"
-      - --ctx-size
-      - ${PMS_AI_LLM_CONTEXT:-2048}
-      - --parallel
-      - "1"
-      - --threads
-      - ${PMS_AI_LLM_THREADS:-1}
-      - --n-gpu-layers
-      - "0"
-      - --alias
-      - ${PMS_AI_LLM_MODEL:-qwen3-4b-q4_k_m}
-    volumes:
-      - ${PMS_AI_LLM_MODEL_DIR:-/opt/pms-qwen-pilot/models}:/models:ro
-    mem_limit: ${PMS_AI_LLM_MEMORY_LIMIT:-3584m}
-    cpus: ${PMS_AI_LLM_CPUS:-1}
-    healthcheck:
-      test: ["CMD-SHELL", "bash -c 'echo >/dev/tcp/127.0.0.1/8080'"]
-      interval: 20s
-      timeout: 5s
-      retries: 12
-      start_period: 90s
-    restart: unless-stopped
-    networks:
-      - private
 
   worker:
     image: pms-backend:${APP_VERSION:-latest}

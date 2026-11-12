@@ -1,7 +1,7 @@
 """Task 2 (PR #84): paired model-on vs rules-only source parity for booking
 counts, and honest handling of unsupported branch percentages.
 
-Background (Qwen smoke testing): a Clinics booking request was answered with
+Background (model smoke testing): a Clinics booking request was answered with
 the unrelated Booking Rate KPI, an Inbound booking-count question was answered
 with a rate percentage, and a branch booking count was answered as performance
 percentages. The fixes under test live in the tool/resolver layer only:
@@ -13,14 +13,14 @@ percentages. The fixes under test live in the tool/resolver layer only:
   phrasing to bookings_count and only explicit rate phrasing to booking_rate.
 - services/ai/domain_policies.py: extract_prompt_signals agrees.
 - services/ai/local_data_explorer.py: a bookings question without rate
-  language forces the booking counter even when Qwen labelled it a rate,
+  language forces the booking counter even when the model labelled it a rate,
   for every tool (not just compare_branches).
 - services/ai/tool_registry.py: branch-comparison bars show booking counts
   (not performance-score percentages) when the comparison is about counts,
   and an unrecorded count is labelled Unavailable, never 0%.
 
 All model behaviour here uses deterministic / mocked responses. No live
-Qwen endpoint is contacted and no live-model accuracy is claimed.
+provider is contacted and no live-model accuracy is claimed.
 """
 from __future__ import annotations
 
@@ -29,6 +29,8 @@ import json
 from typing import Any
 
 import pytest
+
+from ai_provider_fakes import install_scripted_provider
 
 from models.ai_schemas import AiChatRequest, SessionFilterContext
 from services.ai.catalog import ai_evidence_cache, get_ai_catalog
@@ -85,26 +87,10 @@ def _ask(monkeypatch, prompt, **env):
         )
 
 
-def _mock_llama_steps(monkeypatch: pytest.MonkeyPatch, step_payloads: list[dict[str, Any] | str]):
-    """Script Qwen step responses (copied pattern from
-    test_local_assistant_exploration.py); the model is never contacted.
+def _mock_provider_steps(monkeypatch: pytest.MonkeyPatch, step_payloads: list[dict[str, Any] | str]):
+    """Script the unified provider engine (Cloudflare) step responses; no provider is contacted.
     Returns the list of captured request bodies, proving the model path ran."""
-
-    captured_requests: list[dict[str, Any]] = []
-    counter = [0]
-
-    class _MockOpener:
-        def open(self, request: Any, timeout: float = 8.0) -> io.BytesIO:
-            captured_requests.append(json.loads(request.data.decode("utf-8")))
-            idx = min(counter[0], len(step_payloads) - 1)
-            counter[0] += 1
-            payload_item = step_payloads[idx]
-            content_str = payload_item if isinstance(payload_item, str) else json.dumps(payload_item)
-            envelope = {"choices": [{"message": {"content": content_str}}]}
-            return io.BytesIO(json.dumps(envelope).encode("utf-8"))
-
-    monkeypatch.setattr("services.ai.llm_client.urllib.request.build_opener", lambda *_: _MockOpener())
-    return captured_requests
+    return install_scripted_provider(monkeypatch, step_payloads)
 
 
 def _enable_exploration(monkeypatch):
@@ -262,7 +248,7 @@ def test_rules_only_branch_booking_comparison_bars_show_counts(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# 5. Explorer validation: Qwen's labels are corrected, not trusted blindly
+# 5. Explorer validation: the model's labels are corrected, not trusted blindly
 # ---------------------------------------------------------------------------
 def _validate(raw_tool, prompt, team=None):
     return _validate_and_normalize_tool_call(
@@ -276,7 +262,7 @@ def _validate(raw_tool, prompt, team=None):
     )
 
 
-def test_explorer_validation_overrides_qwen_rate_label_for_clinics_count():
+def test_explorer_validation_overrides_model_rate_label_for_clinics_count():
     call, early, status = _validate(
         {"tool": "get_kpi_diagnosis", "team": "Call Center", "metric": "Booking Rate", "branch": "clinics", "period": "2026-09"},
         "How many Clinics bookings in September 2026?",
@@ -289,7 +275,7 @@ def test_explorer_validation_overrides_qwen_rate_label_for_clinics_count():
 
 
 def test_explorer_validation_does_not_infer_team_from_shared_metric_label():
-    # "Booking Rate" is tracked by both Inbound and Outbound. Qwen's label
+    # "Booking Rate" is tracked by both Inbound and Outbound. the model's label
     # must not silently narrow a function-wide Clinics question to the
     # Inbound-only count (20) instead of the function-wide count (30).
     call, early, status = _validate(
@@ -317,7 +303,7 @@ def test_explorer_validation_infers_team_from_team_unique_metric_label():
     assert call.metric_id == "marketing:media_buyer:cpl"
 
 
-def test_explorer_validation_binds_explicit_inbound_team_over_qwen_call_center():
+def test_explorer_validation_binds_explicit_inbound_team_over_model_call_center():
     call, early, status = _validate(
         {"tool": "get_team_score_summary", "team": "Call Center", "period": "2026-09"},
         "What is the Inbound score in September 2026?",
@@ -327,7 +313,7 @@ def test_explorer_validation_binds_explicit_inbound_team_over_qwen_call_center()
     assert call.team == "Inbound"
 
 
-def test_explorer_validation_binds_explicit_inbound_team_over_qwen_wrong_team():
+def test_explorer_validation_binds_explicit_inbound_team_over_model_wrong_team():
     call, early, status = _validate(
         {"tool": "get_team_score_summary", "team": "Outbound", "period": "2026-09"},
         "What is the Inbound score in September 2026?",
@@ -361,7 +347,7 @@ def test_explorer_validation_forces_counter_for_branch_comparison_despite_rate_l
 
 
 # ---------------------------------------------------------------------------
-# 6. Paired parity: same prompt, mocked Qwen tool choice vs rules-only —
+# 6. Paired parity: same prompt, mocked provider tool choice vs rules-only —
 #    same authorised metric and same count
 # ---------------------------------------------------------------------------
 def test_paired_parity_clinics_bookings_model_on_vs_rules_only(monkeypatch):
@@ -369,7 +355,7 @@ def test_paired_parity_clinics_bookings_model_on_vs_rules_only(monkeypatch):
     rules_only = _ask(monkeypatch, prompt)
 
     _enable_exploration(monkeypatch)
-    captured = _mock_llama_steps(
+    captured = _mock_provider_steps(
         monkeypatch,
         [
             {
@@ -381,7 +367,7 @@ def test_paired_parity_clinics_bookings_model_on_vs_rules_only(monkeypatch):
     )
     model_on = _ask(monkeypatch, prompt)
 
-    assert captured, "mocked Qwen was never called — the model-on path did not run"
+    assert captured, "mocked provider was never called — the model-on path did not run"
     assert rules_only.structured_query.metric == "inbound:bookings_count"
     assert model_on.structured_query.metric == "inbound:bookings_count"
     assert model_on.headline == rules_only.headline
@@ -394,7 +380,7 @@ def test_paired_parity_branch_booking_comparison_model_on_vs_rules_only(monkeypa
     rules_only = _ask(monkeypatch, prompt)
 
     _enable_exploration(monkeypatch)
-    captured = _mock_llama_steps(
+    captured = _mock_provider_steps(
         monkeypatch,
         [
             {
@@ -406,7 +392,7 @@ def test_paired_parity_branch_booking_comparison_model_on_vs_rules_only(monkeypa
     )
     model_on = _ask(monkeypatch, prompt)
 
-    assert captured, "mocked Qwen was never called — the model-on path did not run"
+    assert captured, "mocked provider was never called — the model-on path did not run"
     assert rules_only.structured_query.metric == "inbound:bookings_count"
     assert model_on.structured_query.metric == "inbound:bookings_count"
     assert model_on.headline == rules_only.headline
@@ -418,7 +404,7 @@ def test_paired_parity_inbound_score_model_on_vs_rules_only(monkeypatch):
     rules_only = _ask(monkeypatch, prompt)
 
     _enable_exploration(monkeypatch)
-    captured = _mock_llama_steps(
+    captured = _mock_provider_steps(
         monkeypatch,
         [
             {
@@ -430,7 +416,7 @@ def test_paired_parity_inbound_score_model_on_vs_rules_only(monkeypatch):
     )
     model_on = _ask(monkeypatch, prompt)
 
-    assert captured, "mocked Qwen was never called — the model-on path did not run"
+    assert captured, "mocked provider was never called — the model-on path did not run"
     assert model_on.outcome == "answer"
     assert model_on.headline == rules_only.headline
     assert "Inbound has the lowest score at 88.0%" in model_on.headline

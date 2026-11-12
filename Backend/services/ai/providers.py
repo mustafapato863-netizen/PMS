@@ -968,11 +968,11 @@ class DeterministicLocalProviderAdapter:
 
 
 # ---------------------------------------------------------------------------
-# Unified Multi-Provider Engine Export (Phase 1: Gemini Primary, OpenAI Fallback)
+# Unified Multi-Provider Engine Export (Cloudflare Primary, Gemini Fallback)
 # ---------------------------------------------------------------------------
 from services.ai.provider_engine import (  # noqa: E402
+    CloudflareAIProviderAdapter,
     GeminiProviderAdapter,
-    OpenAIProviderAdapter,
     ProviderAttempt,
     ProviderError,
     ProviderMessage,

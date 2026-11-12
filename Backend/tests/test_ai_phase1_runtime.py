@@ -3,9 +3,6 @@
 from __future__ import annotations
 
 import json
-import threading
-import time
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 from fastapi import FastAPI
@@ -13,23 +10,22 @@ from fastapi.testclient import TestClient
 
 from api.routers import ai_workspace
 from config.database import get_db
+from ai_provider_fakes import failed_response, install_scripted_provider
 from models.ai_schemas import AiChatRequest, SessionFilterContext
 from services.ai import feature_gate
 from services.ai.catalog import CatalogMetricDefinition, get_ai_catalog
 from services.ai.coverage_manifest import build_coverage_manifest
 from services.ai.evidence import CatalogEvidence, evidence_passes, publish_evidence
-from services.ai.llm_client import check_model_health
+from services.ai.llm_client import provider_status
 from services.ai.orchestrator import PmsAiOrchestrator
 from test_ai_workspace import _build_in_memory_db, _make_call_center_record, _patch_records
-
-MODEL_ID = "qwen3-4b-q4_k_m"
 
 
 def _flags_off(monkeypatch: pytest.MonkeyPatch) -> None:
     for name in (
-        "PMS_AI_LLM_INTENT_ENABLED",
-        "PMS_AI_LLM_SYNTHESIS_ENABLED",
-        "PMS_AI_LLM_EXPLORATION_ENABLED",
+        "PMS_AI_INTENT_ENABLED",
+        "PMS_AI_SYNTHESIS_ENABLED",
+        "PMS_AI_EXPLORATION_ENABLED",
         "PMS_AI_LOCAL_ROUTER_ENABLED",
         "PMS_AI_LOCAL_SYNTHESIS_ENABLED",
         "PMS_AI_LOCAL_EXPLORATION_ENABLED",
@@ -139,76 +135,18 @@ def test_diagnostics_stay_open_for_an_admin_when_ai_is_off(monkeypatch: pytest.M
     assert chat.json()["detail"] == "PMS AI is turned off."
 
 
-def test_real_model_probe_reads_version_and_does_not_hang(monkeypatch: pytest.MonkeyPatch) -> None:
-    class Handler(BaseHTTPRequestHandler):
-        def do_GET(self):  # noqa: N802
-            if self.path != "/v1/models":
-                self.send_response(404)
-                self.end_headers()
-                return
-            body = json.dumps({"data": [{"id": MODEL_ID}]}).encode()
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-
-        def do_POST(self):  # noqa: N802
-            length = int(self.headers.get("Content-Length") or 0)
-            self.rfile.read(length)
-            body = json.dumps(
-                {"model": MODEL_ID, "choices": [{"message": {"role": "assistant", "content": "ready"}}]}
-            ).encode()
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-
-        def log_message(self, _format, *_args):
-            return
-
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-    port = server.server_address[1]
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    try:
-        monkeypatch.setenv("PMS_AI_LLM_BASE_URL", f"http://127.0.0.1:{port}")
-        monkeypatch.setenv("PMS_AI_LLM_MODEL", MODEL_ID)
-        started = time.perf_counter()
-        health = check_model_health(1.5)
-        assert time.perf_counter() - started < 2.5
-        assert health["available"] is True
-        assert health["inference_verified"] is True
-        assert health["model_version"] == MODEL_ID
-        assert "api_key" not in json.dumps(health).casefold()
-        assert f"127.0.0.1:{port}" not in json.dumps(health)
-    finally:
-        server.shutdown()
-        server.server_close()
-
-    class _Slow:
-        def open(self, *_args, **_kwargs):
-            time.sleep(1.5)
-            raise TimeoutError("slow")
-
-    monkeypatch.setattr("services.ai.llm_client.urllib.request.build_opener", lambda *_a, **_k: _Slow())
-    monkeypatch.setenv("PMS_AI_LLM_BASE_URL", "http://127.0.0.1:9")
-    started = time.perf_counter()
-    hung = check_model_health(0.3)
-    assert time.perf_counter() - started < 1.0
-    assert hung["available"] is False
-    assert hung["reason"] == "timeout"
-    assert hung["model_version"] is None
-    # The timed-out probe must release _SLOT immediately rather than leaking it
-    # while the abandoned socket thread finishes in the background.
-    from services.ai.llm_client import _SLOT
-
-    assert _SLOT.acquire(blocking=False) is True
-    _SLOT.release()
-    time.sleep(1.3)
-    assert _SLOT.acquire(blocking=False) is True
-    _SLOT.release()
+def test_provider_status_is_configuration_only_and_never_leaks_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Diagnostics read configuration only: no probe, no slot, no secret in the snapshot."""
+    monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", "acct-test")
+    monkeypatch.setenv("CLOUDFLARE_API_TOKEN", "token-test-not-real")
+    monkeypatch.setattr("urllib.request.urlopen", lambda *a, **k: pytest.fail("provider_status made a network call"))
+    status = provider_status()
+    assert status["available"] is True
+    assert status["active_provider"] == "cloudflare"
+    dumped = json.dumps(status).casefold()
+    assert "token-test-not-real" not in dumped
+    assert "acct-test" not in dumped
+    assert "api_key" not in dumped
 
 
 def test_production_mode_ignores_legacy_role_header_without_auth_middleware(
@@ -231,22 +169,6 @@ def test_production_mode_ignores_legacy_role_header_without_auth_middleware(
     assert spoofed_bearer.status_code == 401
 
 
-def test_crashing_model_probe_is_reported_as_probe_error_not_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A probe that raises is a probe bug, not a slow model: report probe_error."""
-
-    def _boom(*_args, **_kwargs):
-        raise RuntimeError("probe blew up")
-
-    monkeypatch.setattr("services.ai.llm_client._probe_configured_model", _boom)
-    started = time.perf_counter()
-    health = check_model_health(1.5)
-    assert time.perf_counter() - started < 1.0
-    assert health["available"] is False
-    assert health["inference_verified"] is False
-    assert health["reason"] == "probe_error"
-    assert health["model_version"] is None
-
-
 def test_turning_ai_off_and_model_flags_off_returns_cleanly(monkeypatch: pytest.MonkeyPatch) -> None:
     _flags_off(monkeypatch)
     monkeypatch.setenv("PMS_AI_CONVERSATION_STATE_ENABLED", "false")
@@ -254,9 +176,7 @@ def test_turning_ai_off_and_model_flags_off_returns_cleanly(monkeypatch: pytest.
     def boom(*_args, **_kwargs):
         raise AssertionError("the model was called while routing flags are off")
 
-    monkeypatch.setattr("services.ai.local_model_router.chat_completion", boom)
-    monkeypatch.setattr("services.ai.local_evidence_synthesis.chat_completion", boom)
-    monkeypatch.setattr("services.ai.local_data_explorer.chat_completion", boom)
+    install_scripted_provider(monkeypatch, boom)
 
     records = [_make_call_center_record("EMP101", "Sara Mahmoud", "Inbound", 91.0, 45, 50, 90, 200)]
     _patch_records(monkeypatch, records)
@@ -275,21 +195,13 @@ def test_turning_ai_off_and_model_flags_off_returns_cleanly(monkeypatch: pytest.
         db.close()
     assert response.outcome == "answer"
     assert response.headline
-    assert response.provider_used != "llama_cpp"
+    assert response.provider_used in ("deterministic", "local")
     assert response.provider_usage.provider_calls == 0
 
-    from services.ai.llm_client import chat_completion
-
-    monkeypatch.setenv("PMS_AI_LLM_INTENT_ENABLED", "true")
-    monkeypatch.setenv("PMS_AI_LLM_SYNTHESIS_ENABLED", "true")
-    monkeypatch.setenv("PMS_AI_LLM_BASE_URL", "http://127.0.0.1:9")
-    # Windows loopback TCP SYN retries take ~2.0s before raising WSAECONNREFUSED;
-    # Linux returns ECONNREFUSED in <1ms. A 2.5s budget exercises real loopback
-    # refusal on both platforms without timing out early on Windows.
-    monkeypatch.setenv("PMS_AI_LLM_TIMEOUT_SECONDS", "2.5")
-    monkeypatch.setenv("PMS_AI_LLM_SYNTHESIS_TIMEOUT_SECONDS", "2.5")
-    monkeypatch.setattr("services.ai.local_model_router.chat_completion", chat_completion)
-    monkeypatch.setattr("services.ai.local_evidence_synthesis.chat_completion", chat_completion)
+    # Flags on, but the provider cannot be reached: the rules answer wins and the reason is named.
+    monkeypatch.setenv("PMS_AI_INTENT_ENABLED", "true")
+    monkeypatch.setenv("PMS_AI_SYNTHESIS_ENABLED", "true")
+    install_scripted_provider(monkeypatch, failed_response("provider_unavailable"))
     _patch_records(monkeypatch, records)
     db = _build_in_memory_db()
     try:
@@ -307,7 +219,4 @@ def test_turning_ai_off_and_model_flags_off_returns_cleanly(monkeypatch: pytest.
     assert fallback.outcome == "answer"
     assert fallback.headline
     assert fallback.provider_used == "deterministic"
-    # Since #92, a refused model connection is named specifically instead of
-    # collapsing to the generic bucket: the endpoint at 127.0.0.1:9 refuses
-    # or drops the connection, so the fallback outcome is "connection_refused" (Linux RST) or "timeout" (Windows packet drop).
-    assert fallback.provider_usage.fallback_outcome in ("connection_refused", "timeout")
+    assert fallback.provider_usage.fallback_outcome == "provider_unavailable"

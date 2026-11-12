@@ -1,291 +1,203 @@
-"""Configurable self-hosted model client: URL allowlist, model name, timeouts, and the per-turn cap."""
+"""Provider-agnostic AI settings (services.ai.llm_client).
+
+The module no longer contains any transport, self-hosted model, inference slot
+or health probe. These tests pin the feature gates, limits and provider
+resolution, and prove nothing in it can reach the network or select OpenAI.
+"""
 
 from __future__ import annotations
 
-import io
-import json
-
 import pytest
 
+from services.ai import llm_client
 from services.ai.llm_client import (
-    chat_completion,
+    active_provider_name,
+    configured_model_name,
+    configured_providers,
     context_token_limit,
     estimate_tokens,
-    llm_turn,
-    resolve_chat_url,
+    exploration_timeout_seconds,
+    get_recent_fallback_reason,
+    local_exploration_enabled,
+    local_intent_enabled,
+    local_synthesis_enabled,
+    provider_available,
+    provider_status,
+    record_fallback_reason,
     routing_timeout_seconds,
+    strip_thinking,
     synthesis_timeout_seconds,
 )
-from services.ai.local_evidence_synthesis import synthesize_branch_bookings
-from services.ai.local_model_router import suggest_intent
+
+_ENV = (
+    "PMS_AI_PRIMARY_PROVIDER", "PMS_AI_FALLBACK_PROVIDER", "PMS_AI_CLOUDFLARE_ENABLED", "PMS_AI_GEMINI_ENABLED",
+    "PMS_AI_FALLBACK_ENABLED", "PMS_AI_OPENAI_ENABLED", "CLOUDFLARE_ACCOUNT_ID", "CF_ACCOUNT_ID",
+    "CLOUDFLARE_API_TOKEN", "CF_API_TOKEN", "CLOUDFLARE_API_KEY", "GEMINI_API_KEY", "Gemini_API_KEY",
+    "GOOGLE_API_KEY", "OPENAI_API_KEY", "CLOUDFLARE_AI_MODEL", "CF_AI_MODEL", "PMS_CLOUDFLARE_MODEL",
+    "PMS_GEMINI_MODEL", "PMS_AI_GEMINI_MODEL", "GEMINI_MODEL", "PMS_AI_INTENT_ENABLED", "PMS_AI_SYNTHESIS_ENABLED",
+    "PMS_AI_EXPLORATION_ENABLED", "PMS_AI_LOCAL_ROUTER_ENABLED", "PMS_AI_LOCAL_SYNTHESIS_ENABLED",
+    "PMS_AI_LOCAL_EXPLORATION_ENABLED", "PMS_AI_LOCAL_DATA_EXPLORATION_ENABLED", "APP_ENV",
+    "PMS_AI_ROUTER_TIMEOUT_SECONDS", "PMS_AI_SYNTHESIS_TIMEOUT_SECONDS", "PMS_AI_EXPLORATION_TIMEOUT_SECONDS",
+    "PMS_AI_PROVIDER_TIMEOUT_SECONDS", "PMS_AI_TIMEOUT_SECONDS", "PMS_AI_CONTEXT_TOKENS",
+)
 
 
-def _ok_opener(captured: dict):
-    class Opener:
-        def open(self, request, timeout):
-            captured["url"] = request.full_url
-            captured["body"] = json.loads(request.data)
-            captured["headers"] = {key.lower(): value for key, value in request.header_items()}
-            captured["timeout"] = timeout
-            message = json.dumps({"answer": "ok"})
-            return io.BytesIO(json.dumps({"choices": [{"message": {"content": message}}]}).encode())
-
-    return Opener()
+@pytest.fixture(autouse=True)
+def clean_env(monkeypatch):
+    for name in _ENV:
+        monkeypatch.delenv(name, raising=False)
+    return monkeypatch
 
 
-def test_url_allowlist_accepts_compose_and_host_gateway_names(monkeypatch):
-    monkeypatch.delenv("PMS_AI_LLM_BASE_URL", raising=False)
-    monkeypatch.delenv("PMS_AI_LOCAL_ROUTER_URL", raising=False)
-    monkeypatch.delenv("PMS_AI_LLM_ALLOWED_HOSTS", raising=False)
-    url, reason = resolve_chat_url()
-    assert reason == "ok" and url == "http://pms-qwen-pilot:8080/v1/chat/completions"
+def _cloudflare(monkeypatch):
+    monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", "acct-test")
+    monkeypatch.setenv("CLOUDFLARE_API_TOKEN", "token-test-not-real")
 
-    monkeypatch.setenv("PMS_AI_LLM_BASE_URL", "http://pms-qwen-pilot:8080")
-    url, reason = resolve_chat_url()
-    assert reason == "ok" and url == "http://pms-qwen-pilot:8080/v1/chat/completions"
 
-    monkeypatch.setenv("PMS_AI_LLM_BASE_URL", "http://llm:8080/v1")
-    url, reason = resolve_chat_url()
-    assert reason == "ok" and url == "http://llm:8080/v1/chat/completions"
+def _gemini(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "key-test-not-real")
 
-    monkeypatch.setenv("PMS_AI_LLM_BASE_URL", "https://host.docker.internal:9443/v1/")
-    url, reason = resolve_chat_url()
-    assert reason == "ok" and url == "https://host.docker.internal:9443/v1/chat/completions"
 
-    monkeypatch.setenv("PMS_AI_LOCAL_ROUTER_URL", "http://localhost:18080/v1/chat/completions")
-    monkeypatch.delenv("PMS_AI_LLM_BASE_URL", raising=False)
-    url, reason = resolve_chat_url()
-    assert reason == "ok" and url == "http://localhost:18080/v1/chat/completions"
+# -- decommissioning guarantees ---------------------------------------------------
 
 
 @pytest.mark.parametrize(
-    "raw",
-    [
-        "http://example.com/v1/chat/completions",
-        "http://user:secret@llm:8080/v1/chat/completions",
-        "http://llm:8080/v1/chat/completions?api_key=secret",
-        "ftp://llm:8080/v1/chat/completions",
-        "http://llm.evil.com/v1/chat/completions",
-        "http://llm:8080/v1/models",
-    ],
+    "name",
+    ["chat_completion", "check_model_health", "LlmCompletion", "llm_turn", "_SLOT", "_SlotLease",
+     "resolve_chat_url", "allowed_hosts", "max_calls_per_turn", "fit_messages", "DEFAULT_CHAT_URL",
+     "DEFAULT_ALLOWED_HOSTS", "urllib"],
 )
-def test_url_allowlist_rejects_remote_credentials_and_query_strings(monkeypatch, raw):
-    monkeypatch.setenv("PMS_AI_LLM_BASE_URL", raw)
-    url, reason = resolve_chat_url()
-    assert url is None and reason == "invalid_endpoint"
+def test_legacy_self_hosted_surface_is_gone(name):
+    assert not hasattr(llm_client, name)
 
 
-def test_request_uses_configured_model_and_optional_api_key(monkeypatch, caplog):
-    monkeypatch.setenv("PMS_AI_LLM_BASE_URL", "http://llm:8080/v1")
-    monkeypatch.setenv("PMS_AI_LLM_MODEL", "qwen2.5-3b-instruct")
-    monkeypatch.setenv("PMS_AI_LLM_API_KEY", "test-llm-key-should-not-log")
-    captured: dict = {}
-    monkeypatch.setattr("services.ai.llm_client.urllib.request.build_opener", lambda *_: _ok_opener(captured))
-
-    with caplog.at_level("INFO", logger="services.ai.llm_client"):
-        result = chat_completion(
-            messages=[{"role": "user", "content": "SECRET-PROMPT-TEXT"}],
-            max_tokens=8,
-            purpose="intent",
-        )
-
-    assert result.ok and result.model == "qwen2.5-3b-instruct" and result.reason == "ok"
-    assert captured["body"]["model"] == "qwen2.5-3b-instruct"
-    assert captured["url"] == "http://llm:8080/v1/chat/completions"
-    assert captured["headers"]["authorization"] == "Bearer test-llm-key-should-not-log"
-    logged = "\n".join(record.getMessage() for record in caplog.records)
-    assert "ai_llm_call" in logged
-    assert "qwen2.5-3b-instruct" in logged
-    assert '"outcome":"ok"' in logged
-    assert "SECRET-PROMPT-TEXT" not in logged
-    assert "test-llm-key-should-not-log" not in logged
+def test_module_source_has_no_legacy_or_openai_references():
+    source = open(llm_client.__file__, encoding="utf-8").read().casefold()
+    for marker in ("qwen", "llama", "pms_ai_llm_", "pms-qwen-pilot", "api.openai.com", "urllib"):
+        assert marker not in source
 
 
-def test_timeout_falls_back_before_any_number_is_trusted(monkeypatch):
-    monkeypatch.setenv("PMS_AI_LOCAL_SYNTHESIS_ENABLED", "true")
-    monkeypatch.setenv("PMS_AI_LLM_BASE_URL", "http://127.0.0.1:8080/v1")
-    monkeypatch.setenv("PMS_AI_LLM_MODEL", "qwen2.5-3b-instruct")
-
-    class Opener:
-        def open(self, request, timeout):
-            raise TimeoutError("model too slow")
-
-    monkeypatch.setattr("services.ai.llm_client.urllib.request.build_opener", lambda *_: Opener())
-    evidence = [{
-        "period": "September 2026",
-        "scope": "Inbound",
-        "requested_branches": ["Dubai", "Sharjah"],
-        "branch_comparison": [
-            {"branch": "Dubai", "bookings": 180},
-            {"branch": "Sharjah", "bookings": 70},
-        ],
-    }]
-    response = synthesize_branch_bookings("Compare Dubai and Sharjah Inbound bookings", evidence)
-    assert response is not None
-    assert response.provider_used == "deterministic"
-    assert response.metrics.fallback_outcome == "timeout"
-    assert "Dubai: 180" in response.headline and "Sharjah: 70" in response.headline
-    assert response.model_used != "qwen2.5-3b-instruct"
+# -- feature gates -------------------------------------------------------------------
 
 
-def test_http_error_and_bad_json_fall_back_to_verified_counts(monkeypatch):
-    import urllib.error
-
-    monkeypatch.setenv("PMS_AI_LLM_SYNTHESIS_ENABLED", "true")
-    monkeypatch.setenv("PMS_AI_LLM_BASE_URL", "http://127.0.0.1:8080/v1")
-    monkeypatch.setenv("PMS_AI_LLM_MODEL", "test-model")
-    evidence = [{
-        "period": "September 2026",
-        "scope": "Inbound",
-        "requested_branches": ["Dubai", "Sharjah"],
-        "branch_comparison": [
-            {"branch": "Dubai", "bookings": 180},
-            {"branch": "Sharjah", "bookings": 70},
-        ],
-    }]
-
-    class HttpOpener:
-        def open(self, request, timeout):
-            raise urllib.error.HTTPError(request.full_url, 503, "unavailable", hdrs=None, fp=io.BytesIO(b"no"))
-
-    monkeypatch.setattr("services.ai.llm_client.urllib.request.build_opener", lambda *_: HttpOpener())
-    http_response = synthesize_branch_bookings("Compare Dubai and Sharjah Inbound bookings", evidence)
-    assert http_response is not None
-    assert http_response.provider_used == "deterministic"
-    assert http_response.metrics.fallback_outcome == "http_error"
-    assert "Dubai: 180" in http_response.headline
-
-    class BadJsonOpener:
-        def open(self, request, timeout):
-            return io.BytesIO(b"not-json")
-
-    monkeypatch.setattr("services.ai.llm_client.urllib.request.build_opener", lambda *_: BadJsonOpener())
-    bad_json = synthesize_branch_bookings("Compare Dubai and Sharjah Inbound bookings", evidence)
-    assert bad_json is not None
-    assert bad_json.provider_used == "deterministic"
-    assert bad_json.metrics.fallback_outcome == "invalid_response"
-    assert "999" not in bad_json.headline
+def test_everything_is_off_without_credentials():
+    assert provider_available() is False
+    assert local_intent_enabled() is False
+    assert local_synthesis_enabled() is False
+    assert local_exploration_enabled() is False
+    assert active_provider_name() == "deterministic"
 
 
-def test_validator_rejection_keeps_the_rules_headline(monkeypatch):
-    monkeypatch.setenv("PMS_AI_LLM_SYNTHESIS_ENABLED", "true")
-    monkeypatch.setenv("PMS_AI_LLM_BASE_URL", "http://127.0.0.1:8080/v1")
-    monkeypatch.setenv("PMS_AI_LLM_MODEL", "qwen2.5-3b-instruct")
-
-    class Opener:
-        def open(self, request, timeout):
-            message = json.dumps({"answer": "Inbound bookings in September 2026: Dubai 999, Sharjah 1."})
-            return io.BytesIO(json.dumps({"choices": [{"message": {"content": message}}]}).encode())
-
-    monkeypatch.setattr("services.ai.llm_client.urllib.request.build_opener", lambda *_: Opener())
-    evidence = [{
-        "period": "September 2026",
-        "scope": "Inbound",
-        "requested_branches": ["Dubai", "Sharjah"],
-        "branch_comparison": [
-            {"branch": "Dubai", "bookings": 180},
-            {"branch": "Sharjah", "bookings": 70},
-        ],
-    }]
-    response = synthesize_branch_bookings("Compare Dubai and Sharjah Inbound bookings", evidence)
-    assert response is not None
-    assert response.provider_used == "deterministic"
-    assert response.metrics.fallback_outcome == "invalid_or_unverified_response"
-    assert "999" not in response.headline
-    assert "Dubai: 180" in response.headline
+def test_cloudflare_credentials_enable_intent_and_synthesis(clean_env):
+    _cloudflare(clean_env)
+    assert configured_providers() == ["cloudflare"]
+    assert local_intent_enabled() is True
+    assert local_synthesis_enabled() is True
+    assert local_exploration_enabled() is False  # exploration is always an explicit opt-in
 
 
-def test_per_turn_call_cap_stops_further_http(monkeypatch):
-    monkeypatch.setenv("PMS_AI_LLM_MAX_CALLS_PER_TURN", "2")
-    monkeypatch.setenv("PMS_AI_LLM_BASE_URL", "http://llm:8080/v1")
-    monkeypatch.setenv("PMS_AI_LLM_MODEL", "test-model")
-    calls = {"n": 0}
-
-    class Opener:
-        def open(self, request, timeout):
-            calls["n"] += 1
-            return io.BytesIO(json.dumps({"choices": [{"message": {"content": "{\"intent\":\"trend\"}"}}]}).encode())
-
-    monkeypatch.setattr("services.ai.llm_client.urllib.request.build_opener", lambda *_: Opener())
-    with llm_turn():
-        assert chat_completion(messages=[{"role": "user", "content": "one"}], max_tokens=8).ok
-        assert chat_completion(messages=[{"role": "user", "content": "two"}], max_tokens=8).ok
-        blocked = chat_completion(messages=[{"role": "user", "content": "three"}], max_tokens=8)
-    assert blocked.reason == "call_cap" and blocked.ok is False
-    assert calls["n"] == 2
+def test_explicit_flags_override_the_credential_default(clean_env):
+    _cloudflare(clean_env)
+    clean_env.setenv("PMS_AI_INTENT_ENABLED", "false")
+    clean_env.setenv("PMS_AI_LOCAL_SYNTHESIS_ENABLED", "false")
+    assert local_intent_enabled() is False
+    assert local_synthesis_enabled() is False
 
 
-def test_intent_router_reports_the_configured_model_and_stops_when_disabled(monkeypatch):
-    monkeypatch.delenv("PMS_AI_LLM_INTENT_ENABLED", raising=False)
-    monkeypatch.delenv("PMS_AI_LOCAL_ROUTER_ENABLED", raising=False)
-    assert suggest_intent("How has booking evolved?").reason == "disabled"
-
-    monkeypatch.setenv("PMS_AI_LLM_INTENT_ENABLED", "true")
-    monkeypatch.setenv("PMS_AI_LLM_BASE_URL", "http://127.0.0.1:8080/v1")
-    monkeypatch.setenv("PMS_AI_LLM_MODEL", "qwen3-4b-q4")
-    captured: dict = {}
-
-    class Opener:
-        def open(self, request, timeout):
-            captured["body"] = json.loads(request.data)
-            return io.BytesIO(json.dumps({"choices": [{"message": {"content": '{"intent":"trend"}'}}]}).encode())
-
-    monkeypatch.setattr("services.ai.llm_client.urllib.request.build_opener", lambda *_: Opener())
-    result = suggest_intent("How has booking evolved?")
-    assert result.reason == "ok" and result.intent == "trend"
-    assert result.model == "qwen3-4b-q4"
-    assert captured["body"]["model"] == "qwen3-4b-q4"
+def test_primary_is_cloudflare_and_fallback_is_gemini_in_call_order(clean_env):
+    _cloudflare(clean_env)
+    _gemini(clean_env)
+    assert configured_providers() == ["cloudflare", "gemini"]
+    assert active_provider_name() == "cloudflare"
 
 
-def test_cpu_timeouts_default_to_fifteen_and_thirty_seconds(monkeypatch):
-    monkeypatch.delenv("PMS_AI_LLM_TIMEOUT_SECONDS", raising=False)
-    monkeypatch.delenv("PMS_AI_LOCAL_ROUTER_TIMEOUT_SECONDS", raising=False)
-    monkeypatch.delenv("PMS_AI_LLM_SYNTHESIS_TIMEOUT_SECONDS", raising=False)
-    monkeypatch.delenv("PMS_AI_LOCAL_SYNTHESIS_TIMEOUT_SECONDS", raising=False)
-    assert routing_timeout_seconds() == 15.0
-    assert synthesis_timeout_seconds() == 30.0
-    monkeypatch.setenv("PMS_AI_LLM_TIMEOUT_SECONDS", "99")
-    monkeypatch.setenv("PMS_AI_LLM_SYNTHESIS_TIMEOUT_SECONDS", "99")
+def test_fallback_can_be_disabled(clean_env):
+    _cloudflare(clean_env)
+    _gemini(clean_env)
+    clean_env.setenv("PMS_AI_FALLBACK_ENABLED", "false")
+    assert configured_providers() == ["cloudflare"]
+
+
+def test_gemini_only_when_cloudflare_is_unconfigured(clean_env):
+    _gemini(clean_env)
+    assert configured_providers() == ["gemini"]
+    assert active_provider_name() == "gemini"
+
+
+def test_openai_is_never_a_usable_provider(clean_env):
+    clean_env.setenv("PMS_AI_PRIMARY_PROVIDER", "openai")
+    clean_env.setenv("PMS_AI_FALLBACK_PROVIDER", "openai")
+    clean_env.setenv("PMS_AI_OPENAI_ENABLED", "true")
+    clean_env.setenv("OPENAI_API_KEY", "sk-test-not-real")
+    assert configured_providers() == []
+    assert provider_available() is False
+    assert active_provider_name() == "deterministic"
+    assert provider_status()["primary_provider"] == "cloudflare"
+
+
+def test_exploration_is_opt_in_and_never_in_production(clean_env):
+    assert local_exploration_enabled() is False
+    clean_env.setenv("PMS_AI_EXPLORATION_ENABLED", "true")
+    assert local_exploration_enabled() is True
+    clean_env.setenv("PMS_AI_LOCAL_DATA_EXPLORATION_ENABLED", "false")
+    assert local_exploration_enabled() is False
+    clean_env.setenv("PMS_AI_LOCAL_DATA_EXPLORATION_ENABLED", "true")
+    clean_env.setenv("APP_ENV", "production")
+    assert local_exploration_enabled() is False
+
+
+# -- model names and limits -------------------------------------------------------------
+
+
+def test_configured_model_name_follows_the_primary_provider(clean_env):
+    assert configured_model_name() == "@cf/ibm-granite/granite-4.0-h-micro"
+    clean_env.setenv("CLOUDFLARE_AI_MODEL", "@cf/zai-org/glm-4.7-flash")
+    assert configured_model_name() == "@cf/zai-org/glm-4.7-flash"
+    clean_env.setenv("PMS_AI_PRIMARY_PROVIDER", "gemini")
+    assert configured_model_name() == "gemini-2.5-flash"
+
+
+def test_timeouts_are_bounded(clean_env):
+    assert routing_timeout_seconds() == 10.0
+    assert synthesis_timeout_seconds() == 15.0
+    assert exploration_timeout_seconds() == 15.0
+    clean_env.setenv("PMS_AI_PROVIDER_TIMEOUT_SECONDS", "500")
     assert routing_timeout_seconds() == 30.0
     assert synthesis_timeout_seconds() == 60.0
+    clean_env.setenv("PMS_AI_ROUTER_TIMEOUT_SECONDS", "not-a-number")
+    assert routing_timeout_seconds() == 10.0
+    clean_env.setenv("PMS_AI_SYNTHESIS_TIMEOUT_SECONDS", "0.01")
+    assert synthesis_timeout_seconds() == 0.5
 
 
-def test_prompt_and_completion_fit_2048_token_context(monkeypatch):
-    monkeypatch.setenv("PMS_AI_LLM_MODEL", "qwen3-4b-q4_k_m")
-    monkeypatch.setenv("PMS_AI_LLM_BASE_URL", "http://pms-qwen-pilot:8080")
-    monkeypatch.setenv("PMS_AI_LLM_CONTEXT", "2048")
-    captured: dict = {}
-    monkeypatch.setattr("services.ai.llm_client.urllib.request.build_opener", lambda *_: _ok_opener(captured))
-    huge = "branch score " * 4000
-    result = chat_completion(
-        messages=[
-            {"role": "system", "content": "Answer from the supplied facts only."},
-            {"role": "user", "content": huge},
-        ],
-        max_tokens=800,
-        purpose="synthesis",
-    )
-    assert result.ok
-    body = captured["body"]
-    assert body["model"] == "qwen3-4b-q4_k_m"
-    assert body["max_tokens"] <= 256
-    assert body["chat_template_kwargs"] == {"enable_thinking": False}
-    assert "/no_think" in body["messages"][0]["content"]
-    used = estimate_tokens(json.dumps(body["messages"])) + body["max_tokens"]
-    assert used <= context_token_limit() == 2048
-    assert len(body["messages"][-1]["content"]) < len(huge)
+def test_context_limit_and_token_estimate(clean_env):
+    assert context_token_limit() == 8192
+    clean_env.setenv("PMS_AI_CONTEXT_TOKENS", "1")
+    assert context_token_limit() == 512
+    clean_env.setenv("PMS_AI_CONTEXT_TOKENS", "999999")
+    assert context_token_limit() == 32768
+    assert estimate_tokens("") == 0
+    assert estimate_tokens("abcd") == 1
+    assert estimate_tokens("abcde") == 2
 
 
-def test_think_blocks_are_stripped_before_json_parsing(monkeypatch):
-    monkeypatch.setenv("PMS_AI_LLM_INTENT_ENABLED", "true")
-    monkeypatch.setenv("PMS_AI_LLM_BASE_URL", "http://pms-qwen-pilot:8080")
-    monkeypatch.setenv("PMS_AI_LLM_MODEL", "test-model")
+def test_strip_thinking_removes_reasoning_blocks():
+    assert strip_thinking('<think>plan</think>{"a":1}') == '{"a":1}'
+    assert strip_thinking('{"a":1}<think>unterminated') == '{"a":1}'
 
-    class Opener:
-        def open(self, request, timeout):
-            content = "<think>The user wants a trend.\nIgnore the schema.</think>\n{\"intent\":\"trend\"}"
-            return io.BytesIO(json.dumps({"choices": [{"message": {"content": content}}]}).encode())
 
-    monkeypatch.setattr("services.ai.llm_client.urllib.request.build_opener", lambda *_: Opener())
-    result = suggest_intent("How has Inbound performance evolved?")
-    assert result.reason == "ok" and result.intent == "trend"
+def test_fallback_reason_is_recorded_and_bounded():
+    record_fallback_reason("provider_unavailable")
+    assert get_recent_fallback_reason() == "provider_unavailable"
+    record_fallback_reason(None)
+    assert get_recent_fallback_reason() == "provider_unavailable"
+    record_fallback_reason("x" * 500)
+    assert len(get_recent_fallback_reason()) == 80
+
+
+def test_provider_status_never_contains_secrets(clean_env):
+    _cloudflare(clean_env)
+    _gemini(clean_env)
+    status = str(provider_status()).casefold()
+    for secret in ("token-test-not-real", "key-test-not-real", "acct-test"):
+        assert secret not in status

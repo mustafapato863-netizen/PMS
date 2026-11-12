@@ -9,7 +9,8 @@ Flow, for one authorized subject (employee or team) and reporting period:
    scored KPI furthest below target).
 3. Decide insufficient evidence in code. The model is not called when there
    is no complete, below-target KPI to address.
-4. Send the configured model (``llm_client.chat_completion``) only the
+4. Send the configured provider (Cloudflare primary, Gemini fallback, via
+   ``provider_engine``) only the
    minimum needed: function/team/position/level/period, the focus KPI's
    actual/target/direction, names of other below-target KPIs and
    allow-listed prior-action types. No employee name, employee ID, country,
@@ -59,8 +60,6 @@ from models.ai_schemas import (
 )
 from services.ai.corrective_action_evidence import CorrectiveActionEvidenceService
 from services.ai.llm_client import (
-    LlmCompletion,
-    chat_completion,
     context_token_limit,
     estimate_tokens,
     synthesis_timeout_seconds,
@@ -75,8 +74,6 @@ from services.ai.provider_engine import (
 from services.ai.read_only_guard import read_only_session
 
 logger = logging.getLogger(__name__)
-
-_ORIGINAL_CHAT_COMPLETION = chat_completion
 
 __all__ = [
     "ALLOWED_DRAFT_ACTION_TYPES",
@@ -115,9 +112,6 @@ _BLOCKING_REASON_PREFIXES = (
     "linked_kpi_not_found:",
     "multiple_regions_in_period",
 )
-
-# llm_client reasons that mean the model produced no usable answer at all.
-_MALFORMED_REASONS = frozenset({"invalid_response"})
 
 # ---------------------------------------------------------------------------
 # Closed step vocabulary
@@ -184,7 +178,7 @@ _SYSTEM_PROMPT_TEMPLATE = (
     "Use ONLY these words: {words}, plus words from the KPI, team, function and position names in the evidence. "
     "Refer to the focus KPI by the exact text of focus_kpi.name; never write the words focus KPI. "
     "Do not repeat a step for another KPI. "
-    "Never write numbers, dates, periods, names, people's roles, causes, reasons, or predictions. /no_think"
+    "Never write numbers, dates, periods, names, people's roles, causes, reasons, or predictions."
 )
 
 _RESPONSE_SCHEMA = {
@@ -432,9 +426,6 @@ def validate_model_draft(raw: Any, facts: DraftFacts) -> tuple[dict[str, Any] | 
 # ---------------------------------------------------------------------------
 
 
-ChatCompletionFn = Callable[..., LlmCompletion]
-
-
 @dataclass
 class _Focus:
     kpi_key: str
@@ -450,20 +441,17 @@ class _Focus:
 
 
 class CorrectiveActionDrafter:
-    """Evidence -> minimal prompt -> local Qwen -> validated, unapproved draft."""
+    """Evidence -> minimal prompt -> Cloudflare/Gemini provider -> validated, unapproved draft."""
 
     def __init__(
         self,
         db: Session,
         *,
         evidence_service: CorrectiveActionEvidenceService | None = None,
-        completion_fn: ChatCompletionFn | None = None,
         provider_engine: UnifiedProviderEngine | None = None,
     ) -> None:
         self.db = db
         self.evidence_service = evidence_service or CorrectiveActionEvidenceService(db)
-        # Resolved at call time so tests can patch ``chat_completion`` on this module.
-        self._completion_fn = completion_fn
         self._provider_engine = provider_engine
 
     # -- public ---------------------------------------------------------
@@ -537,7 +525,7 @@ class CorrectiveActionDrafter:
             {"role": "system", "content": _system_prompt()},
             {"role": "user", "content": json.dumps(prompt_evidence, ensure_ascii=True, separators=(",", ":"))},
         ]
-        # llm_client silently truncates an oversized prompt from the end, which
+        # A provider would silently truncate an oversized prompt, which
         # would cut the evidence. Refuse explicitly instead of sending a partial prompt.
         if estimate_tokens(json.dumps(messages, ensure_ascii=False)) + _MAX_OUTPUT_TOKENS + 64 > context_token_limit():
             return self._log(AiCorrectiveActionSuggestionPayload(
@@ -548,92 +536,52 @@ class CorrectiveActionDrafter:
         system_content = _system_prompt()
         user_content = json.dumps(prompt_evidence, ensure_ascii=True, separators=(",", ":"))
 
-        # Check if legacy completion_fn was explicitly injected or chat_completion monkeypatched
-        if self._completion_fn is not None or chat_completion is not _ORIGINAL_CHAT_COMPLETION:
-            completion_fn = self._completion_fn or chat_completion
-            call = completion_fn(
-                messages=[
-                    {"role": "system", "content": system_content},
-                    {"role": "user", "content": user_content},
-                ],
-                max_tokens=_MAX_OUTPUT_TOKENS,
-                temperature=0,
-                response_format={"type": "json_schema", "json_schema": _RESPONSE_SCHEMA},
-                timeout_seconds=synthesis_timeout_seconds(),
-                purpose="corrective_action_draft",
-            )
-            model_version = call.model or None
-            latency = call.elapsed_ms
+        # Unified Provider Engine (Cloudflare Workers AI primary, Gemini fallback)
+        engine = self._provider_engine or get_unified_provider_engine()
+        req = ProviderRequest(
+            messages=[
+                ProviderMessage(role="system", content=system_content),
+                ProviderMessage(role="user", content=user_content),
+            ],
+            system_instruction=system_content,
+            response_format="json",
+            json_schema=_RESPONSE_SCHEMA.get("schema", _RESPONSE_SCHEMA),
+            temperature=0.0,
+            max_tokens=_MAX_OUTPUT_TOKENS,
+            timeout_seconds=synthesis_timeout_seconds(),
+            purpose="corrective_action_draft",
+        )
+        resp = engine.generate(req)
+        model_version = resp.model or None
+        latency = resp.latency_ms
 
-            if not call.ok:
-                if call.reason in _MALFORMED_REASONS:
-                    return self._log(AiCorrectiveActionSuggestionPayload(
-                        outcome="draft_rejected", model_called=True, model_version=model_version,
-                        fallback_reason="malformed_model_response", validation_errors=["malformed_model_response"],
-                        model_latency_ms=latency, **common,
-                    ))
-                reached = call.reason not in {"invalid_endpoint", "busy", "call_cap", "no_endpoint_configured", "no_model_configured"}
+        if not resp.is_success:
+            if resp.outcome == "safety_refusal":
                 return self._log(AiCorrectiveActionSuggestionPayload(
-                    outcome="model_unavailable", model_called=reached, model_version=model_version,
-                    fallback_reason=call.reason or "unavailable", model_latency_ms=latency, **common,
+                    outcome="model_unavailable", model_called=True, model_version=model_version,
+                    fallback_reason="safety_refusal", model_latency_ms=latency, **common,
                 ))
+            reached = bool(resp.attempts) and any(a.status not in ("missing_key", "disabled") for a in resp.attempts)
+            if all(a.status in ("missing_key", "disabled") for a in resp.attempts):
+                fallback_reason = "no_model_configured"
+            else:
+                fallback_reason = resp.outcome or "unavailable"
+            return self._log(AiCorrectiveActionSuggestionPayload(
+                outcome="model_unavailable", model_called=reached, model_version=model_version,
+                fallback_reason=fallback_reason, model_latency_ms=latency, **common,
+            ))
 
-            try:
-                raw = json.loads(call.content or "")
-            except (TypeError, ValueError):
-                return self._log(AiCorrectiveActionSuggestionPayload(
-                    outcome="draft_rejected", model_called=True, model_version=model_version,
-                    fallback_reason="malformed_model_response", validation_errors=["malformed_model_response"],
-                    model_latency_ms=latency, **common,
-                ))
+        try:
+            raw = json.loads(resp.content or "")
+        except (TypeError, ValueError):
+            return self._log(AiCorrectiveActionSuggestionPayload(
+                outcome="draft_rejected", model_called=True, model_version=model_version,
+                fallback_reason="malformed_model_response", validation_errors=["malformed_model_response"],
+                model_latency_ms=latency, **common,
+            ))
 
-            provider_used = getattr(call, "provider", None) or "llama_cpp"
-        else:
-            # Unified Provider Engine (Gemini Primary, OpenAI Fallback)
-            engine = self._provider_engine or get_unified_provider_engine()
-            req = ProviderRequest(
-                messages=[
-                    ProviderMessage(role="system", content=system_content),
-                    ProviderMessage(role="user", content=user_content),
-                ],
-                system_instruction=system_content,
-                response_format="json",
-                json_schema=_RESPONSE_SCHEMA.get("schema", _RESPONSE_SCHEMA),
-                temperature=0.0,
-                max_tokens=_MAX_OUTPUT_TOKENS,
-                timeout_seconds=synthesis_timeout_seconds(),
-                purpose="corrective_action_draft",
-            )
-            resp = engine.generate(req)
-            model_version = resp.model or None
-            latency = resp.latency_ms
-
-            if not resp.is_success:
-                if resp.outcome == "safety_refusal":
-                    return self._log(AiCorrectiveActionSuggestionPayload(
-                        outcome="model_unavailable", model_called=True, model_version=model_version,
-                        fallback_reason="safety_refusal", model_latency_ms=latency, **common,
-                    ))
-                reached = bool(resp.attempts) and any(a.status not in ("missing_key", "disabled") for a in resp.attempts)
-                if all(a.status in ("missing_key", "disabled") for a in resp.attempts):
-                    fallback_reason = "no_model_configured"
-                else:
-                    fallback_reason = resp.outcome or "unavailable"
-                return self._log(AiCorrectiveActionSuggestionPayload(
-                    outcome="model_unavailable", model_called=reached, model_version=model_version,
-                    fallback_reason=fallback_reason, model_latency_ms=latency, **common,
-                ))
-
-            try:
-                raw = json.loads(resp.content or "")
-            except (TypeError, ValueError):
-                return self._log(AiCorrectiveActionSuggestionPayload(
-                    outcome="draft_rejected", model_called=True, model_version=model_version,
-                    fallback_reason="malformed_model_response", validation_errors=["malformed_model_response"],
-                    model_latency_ms=latency, **common,
-                ))
-
-            provider_used = resp.provider if resp.provider in ("cloudflare", "gemini", "openai") else "cloudflare"
+        # Exactly "cloudflare" or "gemini"; anything else is treated as the primary.
+        provider_used = resp.provider if resp.provider in ("cloudflare", "gemini") else "cloudflare"
 
         clean, errors = validate_model_draft(raw, facts)
         if clean is None:
@@ -651,7 +599,7 @@ class CorrectiveActionDrafter:
             action_type=clean["action_type"],
             measured_issue=measured_facts[0],
             recommended_steps=clean["steps"],
-            recommended_steps_source=provider_used if provider_used in ("cloudflare", "gemini", "openai", "llama_cpp") else "cloudflare",
+            recommended_steps_source=provider_used,
             uncertainty=self._uncertainty(bundle, focus),
         )
         return self._log(AiCorrectiveActionSuggestionPayload(
