@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Save, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { X, Save, AlertCircle, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { useActionStore, type ActionTrackingInput } from '../../hooks/useActionStore';
 import { apiFetch } from '../../lib/apiClient';
 import { useAuth } from '../../context/auth';
@@ -12,6 +12,8 @@ import { getWeightForLabel } from '../../utils/kpiScore';
 import { formatPercentRatio } from '../../utils/percentForm';
 import { extractKpiMentions, formatKpiMentions } from '../../utils/rootCauseInsights';
 import OverlayPortal from '../common/OverlayPortal';
+import { useAiAvailability } from '../../features/ai/aiAvailabilityContext';
+import CorrectiveActionSuggestionCard from '../ai/CorrectiveActionSuggestionCard';
 
 interface EmployeeActionModalProps {
   employee: TeamAgentRow | null;
@@ -91,6 +93,19 @@ const formatKpiValue = (label: string, actual: number, target: number, unit: str
 const EmployeeActionModal = ({ employee, month, teamWeights, onClose, onSaved, editAction }: EmployeeActionModalProps) => {
   const { saveAction, updateAction, isSaving } = useActionStore();
   const { currentUser } = useAuth();
+  const { correctiveActionPilotEnabled, ready: isAiAvailabilityReady } = useAiAvailability();
+  const isAiPilotVisible = isAiAvailabilityReady && currentUser?.role === 'Admin' && correctiveActionPilotEnabled;
+
+  const [showOverwriteConfirm, setShowOverwriteConfirm] = useState(false);
+  const [pendingDraft, setPendingDraft] = useState<{ actionType: ActionType; actionDescription: string } | null>(null);
+
+  const { parsedMonth, parsedYear } = useMemo(() => {
+    const raw = month || employee?.month || '';
+    const yearMatch = raw.match(/\b(20\d\d)\b/);
+    const year = yearMatch ? parseInt(yearMatch[1], 10) : 2026;
+    const cleanMonth = raw.replace(/\b(20\d\d)\b/, '').trim() || 'September';
+    return { parsedMonth: cleanMonth, parsedYear: year };
+  }, [month, employee?.month]);
   const [actionType, setActionType] = useState<ActionType>(editAction ? editAction.action_type : 'Coaching');
   const [actionText, setActionText] = useState(editAction ? editAction.action_text : '');
   const [rootCauseNote, setRootCauseNote] = useState(editAction ? editAction.root_cause_note : '');
@@ -213,6 +228,27 @@ const EmployeeActionModal = ({ employee, month, teamWeights, onClose, onSaved, e
       if (existing.includes(line)) return existing;
       return `${existing}\n${line}`;
     });
+  };
+
+  const executeApplyDraft = (draft: { actionType: ActionType; actionDescription: string }) => {
+    setActionType(draft.actionType);
+    setActionText(draft.actionDescription);
+    setPendingDraft(null);
+    setShowOverwriteConfirm(false);
+  };
+
+  const handleApplyDraft = (draft: { actionType: ActionType; actionDescription: string }) => {
+    if (actionText.trim().length > 0) {
+      setPendingDraft(draft);
+      setShowOverwriteConfirm(true);
+    } else {
+      executeApplyDraft(draft);
+    }
+  };
+
+  const cancelOverwriteDraft = () => {
+    setPendingDraft(null);
+    setShowOverwriteConfirm(false);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -412,6 +448,19 @@ const EmployeeActionModal = ({ employee, month, teamWeights, onClose, onSaved, e
               </div>
             </div>
 
+            {/* AI Corrective Action Suggestion Card (Admin Only Pilot) */}
+            {isAiPilotVisible && (
+              <CorrectiveActionSuggestionCard
+                employeeId={employee.id || employee.raw?.identity?.employee_id}
+                employeeName={employee.name}
+                team={employee.team}
+                month={parsedMonth}
+                year={parsedYear}
+                linkedKpiKey={linkedKpi || (failedKpis[0]?.label ?? null)}
+                onApplyDraft={handleApplyDraft}
+              />
+            )}
+
             {/* Action Type */}
             <div>
               <label className="block text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider mb-2">
@@ -471,6 +520,57 @@ const EmployeeActionModal = ({ employee, month, teamWeights, onClose, onSaved, e
                 onLinkedKpi={changeLinkedKpi}
                 onPlanId={changePlan}
               />
+            )}
+
+            {/* Existing Text Overwrite Confirmation Dialog */}
+            {showOverwriteConfirm && pendingDraft && (
+              <div
+                role="alertdialog"
+                aria-labelledby="overwrite-confirm-title"
+                aria-describedby="overwrite-confirm-desc"
+                data-testid="overwrite-confirm-dialog"
+                className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3.5 space-y-2.5"
+              >
+                <div className="flex items-start gap-2.5">
+                  <AlertTriangle size={18} className="shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
+                  <div>
+                    <h5 id="overwrite-confirm-title" className="text-xs font-bold text-amber-800 dark:text-amber-300">
+                      Replace Existing Action Description?
+                    </h5>
+                    <p id="overwrite-confirm-desc" className="text-xs text-amber-700 dark:text-amber-400 mt-0.5">
+                      You have already entered an action description. Inserting this suggestion will replace your current text:
+                    </p>
+                    <div className="mt-2 rounded-lg bg-[var(--bg-sunken)] p-2 text-xs font-mono text-[var(--text-secondary)] space-y-1">
+                      <div>
+                        <span className="font-bold text-[var(--text-muted)] uppercase text-[10px]">Current description: </span>
+                        <span className="text-[var(--text-primary)]">{actionText}</span>
+                      </div>
+                      <div>
+                        <span className="font-bold text-purple-600 dark:text-purple-400 uppercase text-[10px]">Will replace with ({pendingDraft.actionType}): </span>
+                        <span className="text-[var(--text-primary)]">{pendingDraft.actionDescription}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center justify-end gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={cancelOverwriteDraft}
+                    data-testid="cancel-overwrite-btn"
+                    className="rounded-lg border border-[var(--border-light)] bg-[var(--bg-surface)] px-3 py-1.5 text-xs font-semibold text-[var(--text-secondary)] hover:bg-[var(--bg-sunken)] transition-colors cursor-pointer"
+                  >
+                    Cancel (Keep My Text)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => executeApplyDraft(pendingDraft)}
+                    data-testid="confirm-overwrite-btn"
+                    className="rounded-lg bg-amber-600 px-3.5 py-1.5 text-xs font-bold text-white hover:bg-amber-700 transition-colors shadow-sm cursor-pointer"
+                  >
+                    Confirm & Replace
+                  </button>
+                </div>
+              </div>
             )}
 
             {/* Action Text */}

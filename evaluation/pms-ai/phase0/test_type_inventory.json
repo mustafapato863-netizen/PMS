@@ -9,11 +9,11 @@
     "source-parity",
     "browser"
   ],
-  "file_count": 39,
-  "case_count": 476,
+  "file_count": 40,
+  "case_count": 493,
   "files_by_label": {
     "synthetic": 15,
-    "mocked": 22,
+    "mocked": 23,
     "live-model": 4,
     "source-parity": 2,
     "browser": 0
@@ -380,6 +380,16 @@
         "mocked"
       ],
       "cases": 7,
+      "evidence_status": "partial",
+      "note": ""
+    },
+    {
+      "path": "Frontend/src/components/ai/CorrectiveActionSuggestionCard.test.tsx",
+      "kind": "test",
+      "labels": [
+        "mocked"
+      ],
+      "cases": 17,
       "evidence_status": "partial",
       "note": ""
     },
