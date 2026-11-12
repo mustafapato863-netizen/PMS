@@ -4,7 +4,7 @@
 This Pull Request resolves all review findings for **Phase 1 (Live Cloudflare Verification)** and **Phase 2 (Provider Optimization)** of the PMS AI integration. It solidifies the primary AI provider as **Cloudflare Workers AI** (`@cf/ibm-granite/granite-4.0-h-micro`), preserves **Google Gemini** as the independent secondary fallback provider, guarantees strict enterprise data safety, eliminates deadlocks and stale diagnostic states, hardens administrative diagnostic endpoints, and aligns model pricing with official upstream provider documentation.
 
 - **Baseline Commit SHA:** `eb502a7f017d31ad7123077c6629d01f46406c35`
-- **Head Commit SHA:** `b9886e4729bae416c2d5bfacf6590b03bf119c1a`
+- **Head Commit SHA:** `fe97a905`
 - **Branch:** `feat/pms-ai-live-verification-optimization`
 - **Status:** Draft Pull Request (`isDraft: true`) — Preserved for Final Human Review.
 - **Production Guardrails:** AI remains **Admin-only** and **strictly default-off** (`ai_enabled=false`, `ai_corrective_action_pilot_enabled=false`). Zero database migrations, zero scoring alterations, and zero real employee data processed.
@@ -123,5 +123,6 @@ If unexpected regressions occur:
 3. The rollback playbook creates an isolated revert branch from origin/main and respects the merge method.
 4. Google confirms Gemini 2.5 Flash automatic routing to 3.5 Flash-Lite starts **1 December 2026**. https://ai.google.dev/gemini-api/docs/models/gemini-2.5-flash
 5. Preserved deadline error classification in `Backend/scripts/verify_cloudflare_ai.py`: when the cooperative verification deadline is exceeded, the error is classified as `"Overall live verification deadline exceeded"` rather than generic `"TimeoutError"`, resolving the mock assertion in `test_12_verify_cloudflare_ai_script_mocked` and bringing backend CI to 2,803 passed (0 failures).
+6. Reconciled and resolved `add/add` merge conflict in `Backend/scripts/verify_cloudflare_ai.py` with latest `main` commit `047b4567`: unified deadline exception handling to preserve cooperative overall deadline enforcement while retaining detailed messaging for connection errors and socket timeouts.
 
 No production deployment, production setting change, AI user enablement, or production database mutation is included in this follow-up.
