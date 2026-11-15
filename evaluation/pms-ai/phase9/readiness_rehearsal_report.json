@@ -1,0 +1,89 @@
+{
+  "schema_version": "pms-ai-phase9-readiness-v1",
+  "generated_at": "2026-11-15T09:16:59.082955+00:00",
+  "mode": "in-process",
+  "read_only": true,
+  "candidate_sha": "173d2a7beb383db58c65c97758b9c28bf23ef186",
+  "working_tree_dirty": true,
+  "technical_gates_passed": true,
+  "pilot_ready_for_rollout": false,
+  "checks": {
+    "flags_default_off": {
+      "passed": true,
+      "ai_enabled": false,
+      "ai_corrective_action_pilot_enabled": false,
+      "chat_status_when_off": 403,
+      "pilot_status_when_off": 403,
+      "pilot_feedback_status_when_off": 403,
+      "verify_live_status_when_off": 403
+    },
+    "rbac_isolation": {
+      "passed": true,
+      "anonymous_statuses": {
+        "diagnostics": 401,
+        "pilot_suggest": 401,
+        "ai_assistant_setting": 401,
+        "feedback_clusters": 403
+      },
+      "non_admin_statuses": {
+        "manager_diagnostics": 403,
+        "viewer_diagnostics": 403,
+        "manager_chat": 403,
+        "manager_pilot": 403,
+        "manager_clusters": 403,
+        "manager_export_bundle": 403
+      }
+    },
+    "diagnostics_truthfulness_and_secret_scan": {
+      "passed": true,
+      "status_code": 200,
+      "secret_findings": [],
+      "diagnostics_snapshot": {
+        "feature_enabled": false,
+        "pilot_role_restricted": true,
+        "provider_status_code": "credentials_present",
+        "inference_verified": false,
+        "fallback_scope": "process_local",
+        "provider_timeout_seconds": 10.0
+      }
+    },
+    "bounded_concurrency_and_timeout_fallback": {
+      "passed": true,
+      "concurrent_live_verify_status": 429,
+      "fallback_outcome": "timeout",
+      "attempt_statuses": [
+        "timeout",
+        "timeout"
+      ],
+      "fallback_elapsed_ms": 1.09,
+      "secret_findings": []
+    }
+  },
+  "latency_ms": {
+    "samples": 18,
+    "p50_ms": 13.48,
+    "p95_ms": 326.16,
+    "max_ms": 326.16
+  },
+  "memory": {
+    "rss_mb": null,
+    "peak_tracemalloc_mb": 109.19
+  },
+  "secret_findings": [],
+  "blocking_human_gates": [
+    {
+      "gate_id": "issue_97",
+      "ref": "#97",
+      "owner": "Admin / DevOps",
+      "status": "PENDING",
+      "description": "Live provider verification and production credential attestation (#97) required before pilot activation."
+    },
+    {
+      "gate_id": "vi_phase9_approval",
+      "ref": "#103",
+      "owner": "Vi",
+      "status": "PENDING",
+      "description": "Final human Phase 9 sign-off from Vi required before enabling ai_corrective_action_pilot_enabled or ai_enabled."
+    }
+  ]
+}

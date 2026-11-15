@@ -1,7 +1,14 @@
-# Self-hosted PMS model (Decommissioned & Retired)
+# PMS AI Model Runtime & Operations (Qwen Retired; Unified Provider Engine Active)
 
 > [!NOTE]
-> The self-hosted Qwen3-4B pilot has been completely decommissioned and removed from both local development and the hosting environment. The container `pms-qwen-pilot-dkp`, model files `/opt/pms-qwen-pilot/models/Qwen3-4B-Q4_K_M.gguf`, and dedicated Compose service have been retired. PMS backend operates in standalone mode without any self-hosted model process. Future phases will integrate Gemini (primary) and OpenAI (fallback).
+> The self-hosted Qwen3-4B pilot (`pms-qwen-pilot-dkp`, `/opt/pms-qwen-pilot/models/Qwen3-4B-Q4_K_M.gguf`, and the opt-in Compose `llm` profile) has been **permanently decommissioned and retired**.
+>
+> As of Phases 5–9 (`#98`–`#103`), PMS AI uses the stateless **`UnifiedProviderEngine`** (`Backend/services/ai/provider_engine.py`):
+> - **Primary:** Cloudflare Workers AI (`@cf/ibm-granite/granite-4.0-h-micro`, alter `@cf/zai-org/glm-4.7-flash`)
+> - **Fallback:** Google Gemini (`gemini-2.5-flash`)
+> - **OpenAI:** Retired (`410` disabled stub only)
+> - **Product Switches:** Both `ai_enabled` (standalone chat) and `ai_corrective_action_pilot_enabled` (Admin corrective-action draft pilot) remain **`false` by default**.
+> - **Release & Rollback Runbook:** See [pms-ai-pilot-release-checklist.md](./pms-ai-pilot-release-checklist.md) and `evaluation/pms-ai/phase7/PHASE_8_MODEL_TRAINING_DECISION.md`.
 
 ## Historical Architecture Reference (Archived)
 

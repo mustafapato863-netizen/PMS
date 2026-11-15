@@ -9,11 +9,11 @@
     "source-parity",
     "browser"
   ],
-  "file_count": 45,
-  "case_count": 566,
+  "file_count": 46,
+  "case_count": 579,
   "files_by_label": {
     "synthetic": 16,
-    "mocked": 26,
+    "mocked": 27,
     "live-model": 6,
     "source-parity": 2,
     "browser": 0
@@ -240,6 +240,16 @@
       "cases": 12,
       "evidence_status": "blocked",
       "note": "The live-model test is skipped unless PMS_AI_RUN_LIVE_MODEL_TESTS=true. Default CI does not call Qwen."
+    },
+    {
+      "path": "Backend/tests/test_ai_pilot_readiness_script.py",
+      "kind": "test",
+      "labels": [
+        "mocked"
+      ],
+      "cases": 13,
+      "evidence_status": "partial",
+      "note": ""
     },
     {
       "path": "Backend/tests/test_ai_provider_engine.py",
